@@ -1,0 +1,19 @@
+package io.github.mojolowjo.entropybot;
+
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.common.NeoForge;
+
+/** The mod entry: client only. Everything happens in {@link Core} once per client tick. */
+@Mod(value = Core.MODID, dist = Dist.CLIENT)
+public final class EntropyBot {
+    public EntropyBot(IEventBus modBus) {
+        NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
+    }
+
+    private static void onClientTick(ClientTickEvent.Post event) {
+        Core.INSTANCE.onClientTick();
+    }
+}

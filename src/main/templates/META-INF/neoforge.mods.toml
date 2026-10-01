@@ -1,0 +1,37 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+issueTrackerURL="https://github.com/mojolowjo/entropy-bot/issues"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="${mod_authors}"
+description='''${mod_description}'''
+
+[[mixins]]
+config="entropybot.mixins.json"
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="${neo_version_range}"
+    ordering="NONE"
+    side="CLIENT"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="CLIENT"
+
+# Baritone: the mod id of the official jars (sic). The api and the unoptimized jar carry the same id
+# and version; the mod probes at startup whether the readable class names are there (see GuardMixinPlugin).
+[[dependencies.${mod_id}]]
+    modId="baritoe"
+    type="required"
+    versionRange="${baritone_version_range}"
+    ordering="AFTER"
+    side="CLIENT"

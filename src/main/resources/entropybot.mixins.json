@@ -1,0 +1,15 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "io.github.mojolowjo.entropybot.mixin",
+  "plugin": "io.github.mojolowjo.entropybot.mixin.GuardMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "GuardMixinGameMode",
+    "GuardMixinBlockItem",
+    "GuardMixinCalculationContext"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
