@@ -61,8 +61,11 @@ public final class GuardCore {
         }
     }
 
+    /** The mode the guard starts in. B0 (0.1.x): LOG, while the bridge takes no leases yet; B1 flips it to STRICT. */
+    public static final Mode DEFAULT_MODE = Mode.LOG;
+
     private volatile Policy policy = Policy.EMPTY;
-    private volatile Mode mode = Mode.STRICT;
+    private volatile Mode mode = DEFAULT_MODE;
     private volatile Map<String, Lease> leases = Collections.emptyMap();
     private final VetoLog log = new VetoLog();
     private volatile long tick;

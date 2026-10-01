@@ -13,11 +13,28 @@ class GuardCoreTest {
     static final String POLICY = "{\"areas\":[{\"name\":\"map\",\"x1\":-272,\"z1\":-64,\"x2\":223,\"z2\":431}],"
             + "\"protect\":[{\"name\":\"base\",\"x1\":-40,\"y1\":45,\"z1\":170,\"x2\":-10,\"y2\":80,\"z2\":200}]}";
 
-    private GuardCore withPolicy() {
+    /** A guard in strict mode (the compiled default is log mode during B0, see GuardCore.DEFAULT_MODE). */
+    private static GuardCore strict() {
         GuardCore g = new GuardCore();
+        g.setMode(GuardCore.Mode.STRICT);
+        return g;
+    }
+
+    private GuardCore withPolicy() {
+        GuardCore g = strict();
         g.tick(1);
         assertTrue(g.setPolicy(Policy.parse(POLICY)).startsWith("ok"));
         return g;
+    }
+
+    @Test
+    void startsInLogModeDuringB0() {
+        GuardCore g = new GuardCore();
+        assertEquals(GuardCore.DEFAULT_MODE, g.mode());
+        assertEquals(GuardCore.Mode.LOG, GuardCore.DEFAULT_MODE);
+        GuardCore.Verdict v = g.check(OW, 0, 16, 300, "break", PLAIN);
+        assertTrue(v.allowed() && v.wouldVeto(), "log mode records instead of refusing");
+        assertFalse(g.check(OW, 0, 16, 300, "break", CHEST).allowed(), "the floor holds in log mode even with no policy");
     }
 
     private String lease(GuardCore g, boolean place) {
@@ -28,7 +45,7 @@ class GuardCoreTest {
 
     @Test
     void failsClosedWithNoPolicy() {
-        GuardCore g = new GuardCore();
+        GuardCore g = strict();
         GuardCore.Verdict v = g.check(OW, 0, 16, 300, "break", PLAIN);
         assertFalse(v.allowed());
         assertEquals("no areas set", v.reason());
