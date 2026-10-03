@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.engine;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
+import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalXZ;
 import com.google.gson.JsonObject;
@@ -69,6 +70,7 @@ public final class Reflexes {
     private long eatCooldownUntil;
     // creepers
     private long fleeUntil;
+    private Goal fleeGoal, retreatGoal;
     // retreating
     private long retreatStart, calmSince, homeSentAt = -100000;
     private Place retreatTo;
@@ -259,8 +261,11 @@ public final class Reflexes {
         // one escape spot for 3 seconds: picking a new one every tick makes Baritone re-plan non-stop
         if (t.d < ReflexRules.CREEPER_RUN && now >= fleeUntil) {
             int[] a = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), ReflexRules.CREEPER_RUN_TO);
-            engine.override(new GoalXZ(a[0], a[1]));
+            fleeGoal = new GoalXZ(a[0], a[1]);
+            engine.override(fleeGoal);
             fleeUntil = now + 60;
+        } else if (now < fleeUntil && fleeGoal != null && engine.mode() == EngineProcess.Mode.NONE) {
+            engine.override(fleeGoal);      // a Baritone cancel (the bridge stopping a job) dropped it
         }
         // one that is already right here gets knocked back
         if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f) {
@@ -298,11 +303,12 @@ public final class Reflexes {
         Place b = base;
         if (b != null && b.dim.equals(dim) && dist2(p, b) > 64) {
             retreatTo = b;
-            engine.override(new GoalNear(new BlockPos(b.x, b.y, b.z), 2));
+            retreatGoal = new GoalNear(new BlockPos(b.x, b.y, b.z), 2);
         } else {
             fleeTo = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), 16);
-            engine.override(new GoalXZ(fleeTo[0], fleeTo[1]));
+            retreatGoal = new GoalXZ(fleeTo[0], fleeTo[1]);
         }
+        engine.override(retreatGoal);
         // far from home: /home as well, and keep moving (the server may have a warm-up)
         Place h = home;
         boolean tp = h != null && now - homeSentAt >= 1200 && (!h.dim.equals(dim) || dist2(p, h) > 16 * 16);
@@ -334,6 +340,8 @@ public final class Reflexes {
             settle("got away");
             return;
         }
+        // a Baritone cancel (the bridge stopping its job) dropped the goal: ask again
+        if (engine.mode() == EngineProcess.Mode.NONE && retreatGoal != null) engine.override(retreatGoal);
         Threat t = nearestThreat(mc, p, true);
         if (t != null) calmSince = now;
         if (now - calmSince >= 100 || now - retreatStart >= 1800) settle(now - calmSince >= 100 ? "nothing chasing me" : "gave up after 90 s");
