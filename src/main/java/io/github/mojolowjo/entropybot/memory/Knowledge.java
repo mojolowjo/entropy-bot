@@ -19,11 +19,14 @@ import java.util.TreeMap;
  * its backup is loaded instead. Plain Java: JUnit drives it with a temp folder.
  */
 public final class Knowledge {
-    public static final String PLACES = "places.json", CHESTS = "chests.json";
+    public static final String PLACES = "places.json", CHESTS = "chests.json", RS = "rs.json";
     static final long FLUSH_AFTER = 40, BACKUP_EVERY = 6000;
 
     private final Map<String, JsonObject> places = new TreeMap<>();
     private final Map<String, JsonObject> chests = new TreeMap<>();
+    /** B7b: the Refined Storage readings ("x y z" of the grid -> {dim, items, seen}) and the grid "rs" goes to. */
+    private final Map<String, JsonObject> rs = new TreeMap<>();
+    private String rsGrid;
     private long version;
     private long dirtySince = -1, lastBackup = -1;
     private BotFiles files;
@@ -31,7 +34,7 @@ public final class Knowledge {
 
     public synchronized long version() { return version; }
 
-    public synchronized boolean isEmpty() { return places.isEmpty() && chests.isEmpty(); }
+    public synchronized boolean isEmpty() { return places.isEmpty() && chests.isEmpty() && rs.isEmpty(); }
 
     public synchronized String problem() { return problem; }
 
@@ -39,7 +42,7 @@ public final class Knowledge {
     public synchronized String load(BotFiles f) {
         files = f;
         StringBuilder sb = new StringBuilder();
-        sb.append(loadOne(PLACES, places)).append("; ").append(loadOne(CHESTS, chests));
+        sb.append(loadOne(PLACES, places)).append("; ").append(loadOne(CHESTS, chests)).append("; ").append(loadRs());
         version = 1;
         return sb.toString();
     }
@@ -60,6 +63,34 @@ public final class Knowledge {
         }
         setAside(name, text);
         return name + ": broken and no good backup, starting empty";
+    }
+
+    /** rs.json: {"grid": "x y z", "readings": {...}}; a broken file starts empty (the next "rs" reads the grid again). */
+    private String loadRs() {
+        rs.clear();
+        rsGrid = null;
+        String text = files.readJson(RS);
+        if (text == null) return RS + ": none yet";
+        try {
+            JsonObject o = JsonParser.parseString(text).getAsJsonObject();
+            if (o.has("grid") && o.get("grid").isJsonPrimitive()) rsGrid = o.get("grid").getAsString();
+            if (o.has("readings") && o.get("readings").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> en : o.getAsJsonObject("readings").entrySet()) {
+                    if (en.getValue().isJsonObject()) rs.put(en.getKey(), en.getValue().getAsJsonObject());
+                }
+            }
+            return RS + ": " + rs.size() + " readings";
+        } catch (RuntimeException e) {
+            setAside(RS, text);
+            return RS + ": broken, starting empty";
+        }
+    }
+
+    private JsonObject rsJson() {
+        JsonObject o = new JsonObject();
+        if (rsGrid != null) o.addProperty("grid", rsGrid);
+        o.add("readings", mapJson(rs));
+        return o;
     }
 
     private void setAside(String name, String text) {
@@ -90,9 +121,19 @@ public final class Knowledge {
      */
     public synchronized long put(String json, long now) {
         JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-        boolean changed = apply(o, "places", places) | apply(o, "chests", chests);
+        boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | applyGrid(o, false);
         if (changed) touch(now);
         return version;
+    }
+
+    /** "rsGrid": "x y z" | null; onlyIfNone: a merge keeps the mod's own grid. */
+    private boolean applyGrid(JsonObject o, boolean onlyIfNone) {
+        if (!o.has("rsGrid")) return false;
+        String g = o.get("rsGrid").isJsonNull() ? null : o.get("rsGrid").getAsString();
+        if (onlyIfNone && (rsGrid != null || g == null)) return false;
+        if (java.util.Objects.equals(g, rsGrid)) return false;
+        rsGrid = g;
+        return true;
     }
 
     private static boolean apply(JsonObject o, String key, Map<String, JsonObject> map) {
@@ -133,6 +174,16 @@ public final class Knowledge {
                 changed = true;
             }
         }
+        if (o.has("rs") && o.get("rs").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> en : o.getAsJsonObject("rs").entrySet()) {
+                if (!en.getValue().isJsonObject()) continue;
+                JsonObject theirs = en.getValue().getAsJsonObject(), mine = rs.get(en.getKey());
+                if (mine != null && (mine.equals(theirs) || seen(mine) > seen(theirs))) continue;
+                rs.put(en.getKey(), theirs.deepCopy());
+                changed = true;
+            }
+        }
+        changed |= applyGrid(o, true);
         if (changed) touch(now);
         return version;
     }
@@ -148,6 +199,23 @@ public final class Knowledge {
         touch(now);
     }
 
+    /** Drops a chest note (a scan found the block gone, or the other half of a double chest). */
+    public synchronized void forgetChest(String key, long now) {
+        if (chests.remove(key) != null) touch(now);
+    }
+
+    /** A Refined Storage reading from the mod ("rs"); that grid becomes the one "rs take/put" use. */
+    public synchronized void noteRs(String key, JsonObject reading, long now) {
+        boolean changed = !reading.equals(rs.get(key)) || !key.equals(rsGrid);
+        rs.put(key, reading.deepCopy());
+        rsGrid = key;
+        if (changed) touch(now);
+    }
+
+    public synchronized Map<String, JsonObject> rs() { return copy(rs); }
+
+    public synchronized String rsGrid() { return rsGrid; }
+
     private void touch(long now) {
         version++;
         if (dirtySince < 0) dirtySince = now;
@@ -158,6 +226,8 @@ public final class Knowledge {
         o.addProperty("version", version);
         o.add("places", mapJson(places));
         o.add("chests", mapJson(chests));
+        o.add("rs", mapJson(rs));
+        if (rsGrid != null) o.addProperty("rsGrid", rsGrid);
         return o;
     }
 
@@ -186,6 +256,7 @@ public final class Knowledge {
             lastBackup = now;
             if (!places.isEmpty()) files.writeJson(bakName(PLACES), mapJson(places).toString());
             if (!chests.isEmpty()) files.writeJson(bakName(CHESTS), mapJson(chests).toString());
+            if (!rs.isEmpty()) files.writeJson(bakName(RS), rsJson().toString());
         }
     }
 
@@ -194,10 +265,11 @@ public final class Knowledge {
         if (files == null) return "error: no folder yet";
         String a = files.writeJson(PLACES, mapJson(places).toString());
         String b = files.writeJson(CHESTS, mapJson(chests).toString());
-        if (a.startsWith("ok") && b.startsWith("ok")) {
+        String c = files.writeJson(RS, rsJson().toString());
+        if (a.startsWith("ok") && b.startsWith("ok") && c.startsWith("ok")) {
             dirtySince = -1;
             return "ok";
         }
-        return a.startsWith("ok") ? b : a;
+        return !a.startsWith("ok") ? a : !b.startsWith("ok") ? b : c;
     }
 }

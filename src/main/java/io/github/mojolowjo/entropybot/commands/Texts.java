@@ -32,13 +32,17 @@ public final class Texts {
      * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
      * later stage of B7 moves some of them into the mod.
      */
-    public static final Set<String> BRIDGE_VERBS = Set.of("memory", "ores", "stripmine", "where",
-            "zone", "trust", "untrust", "need", "supplies", "farm", "go", "death",
-            "build", "b", "baritone", "mine", "craft", "recipe", "drop", "use", "put", "take", "close", "scan", "wear", "equip", "kit",
-            "corpse", "deposit", "dig", "place", "open", "rs", "pots", "explore", "smelt", "get", "restock", "compact");
+    public static final Set<String> BRIDGE_VERBS = Set.of("memory", "ores", "stripmine",
+            "zone", "need", "supplies", "farm",
+            "build", "b", "baritone", "mine", "craft", "recipe", "kit",
+            "dig", "place", "explore", "smelt", "get", "restock", "compact");
 
-    /** The jobs the mod runs itself since B7b part 1 ("go poi <id>" still goes to the bridge). */
-    public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find");
+    /** The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2. */
+    public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
+            "open", "scan", "deposit", "corpse", "death", "rs", "pots");
+
+    /** The instant GUI verbs the mod does since B7b part 2 (no job; they never wait for the bridge's job). */
+    public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
 
     public static final List<String> PM_HELP = List.of(
             "Moving: come, follow [name], goto x y z, go <place>, base, home (/home), sethome (my home = here), death (go back + empty my corpse), corpse (empty my corpse nearby), stop, spawn (use nearest bed)",

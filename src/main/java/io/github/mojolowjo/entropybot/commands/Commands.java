@@ -13,6 +13,7 @@ import io.github.mojolowjo.entropybot.commands.BridgeLink.Listener;
 import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
 import io.github.mojolowjo.entropybot.commands.Chains.Reply;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
+import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.guard.Policy;
@@ -69,11 +70,20 @@ public final class Commands implements Chains.Env {
     private int errors;
 
     public final Jobs jobs;
+    /** B7b part 2: the storage verbs (open/take/put/scan/deposit/where/trust/corpse/death/drop/rs/pots/go poi). */
+    public final Storage storage;
     private String placesSent;
 
     public Commands(Core core) {
         this.core = core;
         this.jobs = new Jobs(core, this);
+        this.storage = new Storage(core, this, jobs);
+    }
+
+    /** Where the bot last died: {x, y, z, dim, time}, or null. */
+    JsonObject lastDeath() {
+        JsonObject b = brainStore.data();
+        return b.has("lastDeath") && b.get("lastDeath").isJsonObject() ? b.getAsJsonObject("lastDeath") : null;
     }
 
     public boolean ready() { return ready; }
@@ -181,6 +191,13 @@ public final class Commands implements Chains.Env {
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] job: {}", e.toString());
                 jobs.finish("error: " + e);
+            }
+            if (tick % 20 == 10) {
+                try {
+                    storage.tick(player);
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] container notes: {}", e.toString());
+                }
             }
             if (tick % 200 == 150) pushPlaces();
             if (tick % 20 == 0) writeState(mc, tick);
@@ -367,9 +384,11 @@ public final class Commands implements Chains.Env {
             if (chains.isRoutine(verb) && Texts.splitChain(raw).size() == 1) return Reply.now(chains.startChain(from, verb, verb, 1));
             return Reply.now(chains.startChain(from, "chain", raw, 1));
         }
-        // memory lookups and edits never interrupt a job (where, zone and trust are still the bridge's notes)
+        // memory lookups and edits never interrupt a job (zone is still the bridge's)
         if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
-        if (verb.matches("^(where|zone|trust|untrust)$")) return forward(from, raw, internal, l);
+        if (verb.equals("where")) return Reply.now(storage.where(player, rest));
+        if (verb.equals("trust") || verb.equals("untrust")) return Reply.now(storage.trust(verb, rest));
+        if (verb.equals("zone")) return forward(from, raw, internal, l);
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
         if (verb.equals("need") || verb.equals("supplies")) return forward(from, raw, internal, l);
@@ -388,7 +407,7 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if ((verb.equals("b") || verb.equals("baritone")) && !isOwner) return Reply.now("only " + owner() + " can send raw Baritone commands");
-        boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.BRIDGE_VERBS.contains(verb);
+        boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb) || Texts.BRIDGE_VERBS.contains(verb);
         if (!known) return Reply.now("unknown command \"" + verb + "\" - pm me: help");
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
         if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
@@ -404,7 +423,7 @@ public final class Commands implements Chains.Env {
             }
             jobs.replaceWalk();
         }
-        if (Texts.MOD_JOB_VERBS.contains(verb) && !(verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$"))) {
+        if (Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb)) {
             String r = modJob(verb, rest, from, player);
             return new Reply(r, jobs.attach("pm", from, raw, r, l));
         }
@@ -445,6 +464,7 @@ public final class Commands implements Chains.Env {
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
             case "home" -> { return jobs.startHome(player); }
             case "go", "base" -> {
+                if (verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$")) return storage.goPoi(player, Integer.parseInt(rest.trim().split("\\s+")[1]));
                 String name = verb.equals("go") ? rest.toLowerCase() : "base";
                 JsonObject pos = core.knowledge.places().get(name);
                 if (pos == null) return "I have no place called " + name + " (see \"places\")";
@@ -456,6 +476,22 @@ public final class Commands implements Chains.Env {
             case "wait" -> { return jobs.startWait(rest); }
             case "twerk" -> { return jobs.startTwerk(rest); }
             case "find" -> { return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest); }
+            // B7b part 2: the GUI toolkit and the storage errands
+            case "open" -> { return storage.open(player, rest); }
+            case "scan" -> { return storage.scan(player, rest); }
+            case "deposit" -> { return storage.deposit(player, rest); }
+            case "corpse" -> { return storage.corpse(); }
+            case "death" -> { return storage.death(player); }
+            case "rs" -> { return storage.rs(player, rest); }
+            case "pots" -> { return storage.pots(player, rest); }
+            case "take" -> { return Storage.transfer(player, rest, false); }
+            case "put" -> { return Storage.transfer(player, rest, true); }
+            case "close" -> { return Gui.closeVerb(player); }
+            case "drop" -> { return Storage.drop(player, rest); }
+            case "use" -> { return storage.use(player, rest); }
+            case "wear", "equip" -> { return Gui.wearArmor(player); }
+            case "where" -> { return storage.where(player, rest); }
+            case "trust", "untrust" -> { return storage.trust(verb, rest); }
             default -> { return "unknown command \"" + verb + "\" - pm me: help"; }
         }
     }
@@ -882,8 +918,9 @@ public final class Commands implements Chains.Env {
             case "caves" -> { return Reply.now(cavesCommand(text)); }
             // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
             case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
-            case "spawn", "home", "base", "twerk", "find", "go" -> {
-                if (type.equals("go") && text.trim().toLowerCase().matches("^poi\\s+\\d+$")) return forwardCmd(cmd, type, text, from, notify, id);
+            // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
+            case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust" -> { return Reply.now(modJob(type, text, owner(), player)); }
+            case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots" -> {
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
                 if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
                 if (!type.equals("find")) {
@@ -1015,7 +1052,15 @@ public final class Commands implements Chains.Env {
             errs.add("lookingAt: " + e);
         }
         s.add("screen", mc.screen == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(mc.screen.getClass().getSimpleName()));
-        s.add("container", rep != null && rep.has("container") ? rep.get("container") : JsonNull.INSTANCE);
+        // the open container, as the mod's GUI toolkit reads it (upgrade and filter slots left out)
+        Map<String, Integer> open = null;
+        try { open = Gui.containerContents(p); } catch (RuntimeException e) { errs.add("container: " + e); }
+        JsonObject held = null;
+        if (open != null) {
+            held = new JsonObject();
+            for (Map.Entry<String, Integer> e : open.entrySet()) held.addProperty(e.getKey(), e.getValue());
+        }
+        s.add("container", held == null ? JsonNull.INSTANCE : held);
         // the job: the mod's while it runs (or when the bridge has none to show), else the bridge's
         if (jobs.job != null && (jobs.running() || !bridge.jobRunning(tick))) s.add("job", jobs.stateJson());
         else if (rep != null && rep.has("job")) s.add("job", rep.get("job"));

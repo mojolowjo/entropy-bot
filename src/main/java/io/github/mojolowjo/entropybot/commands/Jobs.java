@@ -57,6 +57,11 @@ public final class Jobs {
         // stepping off a block Baritone can't plan from (a modded altar, a pedestal): ticks left, tries made
         int unstickLeft, unstickTries;
         double[] unstickTo;
+        // B7b part 2: a job made of steps, the goal object of its walk (unsticking plans it again), and whether the
+        // open menu is closed when it ends ("always", or "fail" = unless it ended ok)
+        Seq seq;
+        baritone.api.pathing.goals.Goal goalObj;
+        String closeOnEnd;
     }
 
     static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 12;
@@ -76,6 +81,23 @@ public final class Jobs {
     }
 
     public boolean running() { return job != null && !job.done; }
+
+    Core core() { return core; }
+
+    /** A job made of steps (open, scan, deposit, corpse, rs, pots...): "started: <label>". */
+    String startSeq(Seq s, String closeOnEnd) {
+        followWatch = null;
+        Job j = new Job();
+        j.type = "seq";
+        j.startTick = core.tick();
+        j.label = s.label;
+        j.status = s.label;
+        j.seq = s;
+        j.closeOnEnd = closeOnEnd;
+        s.stepStart = core.tick();
+        job = j;
+        return "started: " + s.label;
+    }
 
     public boolean walking() { return running() && (job.type.equals("travel") || job.type.equals("spawn")); }
 
@@ -128,6 +150,13 @@ public final class Jobs {
         Minecraft mc = Minecraft.getInstance();
         if (j.type.equals("twerk")) mc.options.keyShift.setDown(false);
         if (j.unstickLeft > 0) endUnstick(j);
+        if (j.seq != null) {
+            LocalPlayer p = mc.player;
+            boolean close = "always".equals(j.closeOnEnd) || ("fail".equals(j.closeOnEnd) && !msg.startsWith("ok"));
+            if (close && p != null && (io.github.mojolowjo.entropybot.gui.Gui.open(p) || mc.screen != null)) io.github.mojolowjo.entropybot.gui.Gui.close(p);
+            IBaritone b = baritone();
+            if (b != null && !msg.startsWith("ok")) cancel(b);
+        }
         LOG.info("[entropybot] job finished: {}", msg);
         if (j.req != null) commands.bridge.done(j.req.id, msg);
     }
@@ -396,6 +425,7 @@ public final class Jobs {
             }
             case "wait" -> { if (now >= j.until) finish("ok: waited"); }
             case "travel", "spawn" -> { if (now % 20 == 0) stepWalk(p, j); }
+            case "seq" -> { if (now % 2 == 0) j.seq.tick(p); }
             default -> {}
         }
     }
@@ -506,7 +536,8 @@ public final class Jobs {
         endUnstick(j);
         // and plan again from the new spot (a fresh stuck clock and fresh path events)
         IBaritone b = baritone();
-        if (b != null && j.goal != null) b.getCommandManager().execute(j.goal);
+        if (b != null && j.goalObj != null) b.getCustomGoalProcess().setGoalAndPath(j.goalObj);
+        else if (b != null && j.goal != null) b.getCommandManager().execute(j.goal);
         j.startTick = core.tick();
         j.lastStepTick = -1;
         watch(j);
@@ -534,6 +565,7 @@ public final class Jobs {
             holdStart = -1;
             if (running()) {
                 job.startTick += held;
+                if (job.seq != null) job.seq.afterHold(held, p);
                 if (job.evSeq >= 0) {
                     job.evSeq = core.events.lastSeq();
                     job.evFails = 0;
@@ -642,6 +674,7 @@ public final class Jobs {
         o.addProperty("type", job.type);
         o.addProperty("status", job.status);
         o.addProperty("done", job.done);
+        if (job.seq != null && !job.done) o.addProperty("step", (job.seq.idx + 1) + "/" + job.seq.steps.size());
         o.add("requester", com.google.gson.JsonNull.INSTANCE);
         o.addProperty("mod", true);
         return o;

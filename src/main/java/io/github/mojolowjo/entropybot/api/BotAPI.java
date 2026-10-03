@@ -204,6 +204,16 @@ public final class BotAPI {
         }
     }
 
+    /** B7b part 2: the open menu's slots by role (the bridge's guiDescribe), for checking a modded chest in game. */
+    public static String guiDescribe() {
+        try {
+            net.minecraft.client.player.LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;
+            return p == null ? "not in a world" : io.github.mojolowjo.entropybot.gui.Gui.describe(p);
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
     /** B3a: the knowledge files' version; it goes up with every change (the bridge pulls when it moved). */
     public static long knowledgeVersion() {
         try { return core().knowledge.version(); } catch (Throwable t) { return -1; }
