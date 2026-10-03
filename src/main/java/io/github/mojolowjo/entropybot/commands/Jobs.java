@@ -148,7 +148,7 @@ public final class Jobs {
         j.done = true;
         j.status = msg;
         Minecraft mc = Minecraft.getInstance();
-        if (j.type.equals("twerk")) mc.options.keyShift.setDown(false);
+        if (j.type.equals("twerk") || j.seq != null) mc.options.keyShift.setDown(false);      // twerk, a farm round's crouch
         if (j.unstickLeft > 0) endUnstick(j);
         if (j.seq != null) {
             LocalPlayer p = mc.player;

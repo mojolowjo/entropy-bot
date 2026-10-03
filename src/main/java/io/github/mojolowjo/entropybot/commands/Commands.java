@@ -14,6 +14,7 @@ import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
 import io.github.mojolowjo.entropybot.commands.Chains.Reply;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
 import io.github.mojolowjo.entropybot.gui.Gui;
+import io.github.mojolowjo.entropybot.farm.FarmCommand;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.guard.Policy;
@@ -78,6 +79,28 @@ public final class Commands implements Chains.Env {
         this.core = core;
         this.jobs = new Jobs(core, this);
         this.storage = new Storage(core, this, jobs);
+        this.crafting = new Crafting(core, this, jobs, storage);
+        storage.crafting = crafting;
+    }
+
+    /** B7c: craft/smelt/get/need/recipe/kit/supplies/restock, farm and compact. */
+    final Crafting crafting;
+
+    /** What "restock" tops the bag up to: {id: n} (commands.json "supplies", moved over from memory.json once). */
+    Map<String, Integer> suppliesMap() {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        JsonObject b = brainStore.data();
+        if (b.has("supplies") && b.get("supplies").isJsonObject()) {
+            for (Map.Entry<String, com.google.gson.JsonElement> e : b.getAsJsonObject("supplies").entrySet()) out.put(e.getKey(), e.getValue().getAsInt());
+        }
+        return out;
+    }
+
+    void setSupplies(Map<String, Integer> s) {
+        JsonObject o = new JsonObject();
+        s.forEach(o::addProperty);
+        brainStore.data().add("supplies", o);
+        saved();
     }
 
     /** Where the bot last died: {x, y, z, dim, time}, or null. */
@@ -130,6 +153,15 @@ public final class Commands implements Chains.Env {
                 brainStore.data().add("home", memory.get("home").deepCopy());
                 brainStore.flush();
                 sb.append("; home from memory.json");
+            }
+        }
+        // B7c: the supplies "restock" keeps are the mod's now
+        if (!brainStore.data().has("supplies")) {
+            if (memory == null) memory = readBridgeJson(mc, "memory.json");
+            if (memory != null && memory.has("supplies") && memory.get("supplies").isJsonObject()) {
+                brainStore.data().add("supplies", memory.get("supplies").deepCopy());
+                brainStore.flush();
+                sb.append("; supplies from memory.json");
             }
         }
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
@@ -391,7 +423,10 @@ public final class Commands implements Chains.Env {
         if (verb.equals("zone")) return forward(from, raw, internal, l);
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
-        if (verb.equals("need") || verb.equals("supplies")) return forward(from, raw, internal, l);
+        // B7c: lookups and settings that never interrupt a job
+        if (verb.equals("need")) return Reply.now(crafting.need(player, rest));
+        if (verb.equals("supplies")) return Reply.now(crafting.supplies(player, rest));
+        if (verb.equals("recipe")) return Reply.now(crafting.recipe(player, rest));
         if (verb.equals("say")) {
             if (rest.isEmpty()) return Reply.now("say what?");
             String no = Texts.sayRefusal(rest, baritonePrefix());
@@ -411,7 +446,7 @@ public final class Commands implements Chains.Env {
         if (!known) return Reply.now("unknown command \"" + verb + "\" - pm me: help");
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
         if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
-        if (verb.equals("farm") && rest.toLowerCase().matches("^(compact|here)\\b.*")) return forward(from, raw, internal, l);
+        if (verb.equals("farm") && FarmCommand.instant(rest)) return Reply.now(crafting.farm(player, rest));
         // everything below may replace a running walk, but not a running task (find, recipe and close never interrupt)
         boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
         if (!quiet) {
@@ -492,6 +527,17 @@ public final class Commands implements Chains.Env {
             case "wear", "equip" -> { return Gui.wearArmor(player); }
             case "where" -> { return storage.where(player, rest); }
             case "trust", "untrust" -> { return storage.trust(verb, rest); }
+            // B7c: crafting, the furnace, fetching, the farm round and compact
+            case "craft" -> { return crafting.craft(player, rest, null); }
+            case "kit" -> { return crafting.kit(player, rest); }
+            case "smelt" -> { return crafting.smelt(player, rest); }
+            case "get" -> { return crafting.get(player, rest); }
+            case "restock" -> { return crafting.restock(player); }
+            case "farm" -> { return crafting.farm(player, rest); }
+            case "compact" -> { return crafting.compact(player, rest, from); }
+            case "recipe" -> { return crafting.recipe(player, rest); }
+            case "need" -> { return crafting.need(player, rest); }
+            case "supplies" -> { return crafting.supplies(player, rest); }
             default -> { return "unknown command \"" + verb + "\" - pm me: help"; }
         }
     }
@@ -578,7 +624,7 @@ public final class Commands implements Chains.Env {
         return "unknown command \"" + verb + "\"";
     }
 
-    private void putPlace(String name, JsonObject o) {
+    void putPlace(String name, JsonObject o) {
         JsonObject ch = new JsonObject(), pl = new JsonObject();
         pl.add(name, o == null ? JsonNull.INSTANCE : o);
         ch.add("places", pl);
@@ -919,8 +965,10 @@ public final class Commands implements Chains.Env {
             // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
             case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
-            case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust" -> { return Reply.now(modJob(type, text, owner(), player)); }
-            case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots" -> {
+            case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
+            case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
+                 "craft", "kit", "smelt", "get", "restock", "farm", "compact" -> {
+                if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
                 if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
                 if (!type.equals("find")) {
@@ -1190,8 +1238,8 @@ public final class Commands implements Chains.Env {
     }
 
     @Override public JsonObject supplies() {
-        JsonObject rep = bridge.report(core.tick());
-        return rep != null && rep.has("supplies") && rep.get("supplies").isJsonObject() ? rep.getAsJsonObject("supplies") : null;
+        JsonObject b = brainStore.data();
+        return b.has("supplies") && b.get("supplies").isJsonObject() ? b.getAsJsonObject("supplies") : null;
     }
 
     @Override public String orePrefer() {

@@ -33,13 +33,15 @@ public final class Texts {
      * later stage of B7 moves some of them into the mod.
      */
     public static final Set<String> BRIDGE_VERBS = Set.of("memory", "ores", "stripmine",
-            "zone", "need", "supplies", "farm",
-            "build", "b", "baritone", "mine", "craft", "recipe", "kit",
-            "dig", "place", "explore", "smelt", "get", "restock", "compact");
+            "zone", "build", "b", "baritone", "mine", "dig", "place", "explore");
 
-    /** The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2. */
+    /**
+     * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
+     * the furnace, get/restock, the farm and compact since B7c (need/supplies/recipe are instant there).
+     */
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
-            "open", "scan", "deposit", "corpse", "death", "rs", "pots");
+            "open", "scan", "deposit", "corpse", "death", "rs", "pots",
+            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job; they never wait for the bridge's job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");

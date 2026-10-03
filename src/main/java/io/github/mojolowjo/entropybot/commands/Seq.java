@@ -38,6 +38,12 @@ public final class Seq {
         public Integer n;
         public StorageRules.Spot center;
         public int radius;
+        // B7c (Crafting): a craft step's plan and its progress, a label or craft text, the furnace's numbers
+        public List<io.github.mojolowjo.entropybot.craft.Crafter.Craft> crafts;
+        public String text;
+        public int want, tries, ticks;
+        public boolean direct;
+        Object state;
 
         public Step(String type) { this.type = type; }
 
@@ -90,6 +96,10 @@ public final class Seq {
     Entity corpse;
     boolean lootEmpty, pressed;
     int lootBefore;
+    // B7c: the farm round, the compact run, what the bag held before a furnace step
+    io.github.mojolowjo.entropybot.farm.FarmRound farm;
+    io.github.mojolowjo.entropybot.farm.Compact.Run compact;
+    Map<String, Integer> smeltBase;
 
     Seq(Jobs jobs, Storage storage, String label, List<Step> steps, String closeOnEnd) {
         this.jobs = jobs;
@@ -136,6 +146,7 @@ public final class Seq {
         stepStart += held;
         stageTick += held;
         if (idx >= steps.size()) return;
+        Crafting.afterHold(steps.get(idx));
         String t = steps.get(idx).type;
         if ((t.equals("ops") || t.equals("put") || t.equals("note") || t.equals("rsmove") || t.equals("rsread")) && !Gui.open(p)) {
             int back = idx;
@@ -180,7 +191,7 @@ public final class Seq {
                 return "next";
             case "rsread": return rsReadStep(st, p, elapsed);
             case "rsmove": return storage.rsMoveStep(this, st, p, elapsed);
-            default: return "unknown step " + st.type;
+            default: return storage.crafting.step(this, st, p, elapsed);       // B7c: craft, smelt, farm, compact
         }
     }
 

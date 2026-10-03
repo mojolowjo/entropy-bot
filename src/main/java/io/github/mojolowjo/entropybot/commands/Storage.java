@@ -63,6 +63,8 @@ public final class Storage {
     private boolean containerSeen;
     /** Corpses already emptied (entity uuids). */
     final Set<UUID> emptyCorpses = new HashSet<>();
+    /** B7c: the crafting, farm and compact steps (Seq hands them over). */
+    Crafting crafting;
 
     Storage(Core core, Commands commands, Jobs jobs) {
         this.core = core;
