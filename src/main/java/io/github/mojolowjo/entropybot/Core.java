@@ -10,6 +10,7 @@ import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.io.BotFiles;
+import io.github.mojolowjo.entropybot.memory.Knowledge;
 import net.minecraft.client.Minecraft;
 import net.neoforged.fml.ModList;
 import org.slf4j.Logger;
@@ -27,7 +28,8 @@ public final class Core {
     public final Guard guard = Guard.INSTANCE;
     public final BaritoneHook baritone = new BaritoneHook();
     public final EngineProcess engine = new EngineProcess();
-    public final Reflexes reflexes = new Reflexes(events, engine);
+    public final Knowledge knowledge = new Knowledge();
+    public final Reflexes reflexes = new Reflexes(events, engine, knowledge);
     public final String token = UUID.randomUUID().toString();
     private volatile BotFiles files;
     private long tick;
@@ -57,6 +59,7 @@ public final class Core {
             if (!ready) {
                 files = new BotFiles(mc.gameDirectory.toPath().resolve(MODID));
                 guard.ensureProtectedBlocks();
+                LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
@@ -65,6 +68,7 @@ public final class Core {
             }
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
             reflexes.tick(tick);
+            knowledge.flushIfDue(tick);
             if (baritone.hooked() && tick % 20 == 0) {
                 List<String> turned = baritone.enforceSettings();
                 if (!turned.isEmpty()) {
@@ -88,6 +92,7 @@ public final class Core {
         if (MixinFlags.placeApplied) a.add("guard:place");
         if (MixinFlags.astarApplied) a.add("guard:astar");
         if (ready) a.add("reflexes");
+        if (ready) a.add("knowledge");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
         return a;

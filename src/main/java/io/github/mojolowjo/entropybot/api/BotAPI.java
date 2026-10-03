@@ -204,6 +204,36 @@ public final class BotAPI {
         }
     }
 
+    /** B3a: the knowledge files' version; it goes up with every change (the bridge pulls when it moved). */
+    public static long knowledgeVersion() {
+        try { return core().knowledge.version(); } catch (Throwable t) { return -1; }
+    }
+
+    /** {"version":n,"places":{name:{x,y,z,dim,...}},"chests":{"x y z":{dim,items,seen,trusted?}}} */
+    public static String knowledge() {
+        try { return core().knowledge.toJson().toString(); } catch (Throwable t) { return "{\"error\":\"" + t + "\"}"; }
+    }
+
+    /** Changes from the bridge: {"places":{name: obj|null}, "chests":{key: obj|null}} (null deletes). The new version, or -1. */
+    public static long knowledgePut(String token, String json) {
+        try {
+            if (!core().token.equals(token)) return -1;
+            return core().knowledge.put(json, core().tick());
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /** The bridge's whole notes at its load: its places win, a chest note seen later wins. The new version, or -1. */
+    public static long knowledgeMerge(String token, String json) {
+        try {
+            if (!core().token.equals(token)) return -1;
+            return core().knowledge.merge(json, core().tick());
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     /** Where to retreat to: {"base":{x,y,z,dim},"home":{x,y,z,dim}} (the /home landing), from the bridge's notes. */
     public static String setPlaces(String token, String json) {
         try {
