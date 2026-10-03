@@ -113,6 +113,23 @@ public final class Guard {
         return level.dimension().location().toString();
     }
 
+    /** "nether portal" / "end portal" when one lies within r blocks of x y z (loaded chunks only), else null. */
+    public static String portalNear(Level level, int x, int y, int z, int r) {
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    m.set(x + dx, y + dy, z + dz);
+                    if (!level.isLoaded(m)) continue;
+                    Block b = level.getBlockState(m).getBlock();
+                    if (b instanceof net.minecraft.world.level.block.NetherPortalBlock) return "nether portal";
+                    if (b instanceof net.minecraft.world.level.block.EndPortalBlock || b instanceof net.minecraft.world.level.block.EndGatewayBlock) return "end portal";
+                }
+            }
+        }
+        return null;
+    }
+
     // ---- entry points for the Mixins (client thread unless noted) ----
 
     /** Every block break this client starts or continues. True = refuse. */

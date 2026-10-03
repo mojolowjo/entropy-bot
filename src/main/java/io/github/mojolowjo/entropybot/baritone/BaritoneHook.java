@@ -5,6 +5,7 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import baritone.api.event.events.PathEvent;
 import baritone.api.event.listener.AbstractGameEventListener;
+import baritone.api.process.IBaritoneProcess;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.events.EventRing;
 import net.minecraft.network.chat.Component;
@@ -19,21 +20,54 @@ import java.util.function.Consumer;
 public final class BaritoneHook {
     private static final Logger LOG = LogUtils.getLogger();
 
-    private boolean hooked;
+    /**
+     * Settings no job may turn on (B2, the drift guard): chat and prefix control would let anyone with chat
+     * access drive Baritone, exploreForBlocks sends it wandering, a water-bucket fall places water. The
+     * bridge turns breaking and placing on for its own mine and build jobs until B4, so those stay its own.
+     */
+    static final String[] FIXED_OFF = { "chatcontrol", "chatcontrolanyway", "prefixcontrol", "exploreforblocks", "allowwaterbucketfall" };
+
+    private boolean hooked, engineRegistered;
     private int attempts;
     private String lastError;
 
     public boolean hooked() { return hooked; }
 
+    public boolean engineRegistered() { return engineRegistered; }
+
     public String lastError() { return lastError; }
 
+    /** Puts the FIXED_OFF settings back to false; the names it had to turn off (empty when none were on). */
+    @SuppressWarnings("unchecked")
+    public java.util.List<String> enforceSettings() {
+        java.util.List<String> turned = new java.util.ArrayList<>();
+        try {
+            Settings s = BaritoneAPI.getSettings();
+            for (String name : FIXED_OFF) {
+                Settings.Setting<?> st = s.byLowerName.get(name);
+                if (st == null || !(st.value instanceof Boolean)) continue;
+                if ((Boolean) st.value) {
+                    ((Settings.Setting<Boolean>) st).value = false;
+                    turned.add(name);
+                }
+            }
+        } catch (Throwable t) {
+            lastError = t.toString();
+        }
+        return turned;
+    }
+
     /** Tries once; call again later when it fails (Baritone's primary instance may not exist yet). */
-    public void tryHook(EventRing ring) {
+    public void tryHook(EventRing ring, IBaritoneProcess engine) {
         if (hooked) return;
         attempts++;
         try {
             IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
             if (b == null) { lastError = "no primary Baritone yet"; return; }
+            if (!engineRegistered) {
+                b.getPathingControlManager().registerProcess(engine);
+                engineRegistered = true;
+            }
             b.getGameEventHandler().registerEventListener(new AbstractGameEventListener() {
                 @Override
                 public void onPathEvent(PathEvent event) {
@@ -47,7 +81,7 @@ public final class BaritoneHook {
             });
             hooked = true;
             lastError = null;
-            LOG.info("[entropybot] hooked into Baritone: path events and the logger");
+            LOG.info("[entropybot] hooked into Baritone: path events, the logger and the engine process");
         } catch (Throwable t) {
             lastError = t.toString();
             if (attempts == 1 || attempts % 300 == 0) LOG.warn("[entropybot] Baritone hook not ready ({}): {}", attempts, lastError);

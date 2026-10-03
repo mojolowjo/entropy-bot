@@ -56,11 +56,13 @@ public final class BotAPI {
             String a = action == null ? "break" : action.toLowerCase();
             if (!a.equals("break") && !a.equals("place") && !a.equals("go")) return "error: action must be break, place or go";
             GuardCore.BlockInfo info = GuardCore.BlockInfo.PLAIN;
-            if (a.equals("break")) {
-                var mc = net.minecraft.client.Minecraft.getInstance();
-                if (mc.level != null && dim.equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level))) {
-                    info = core().guard.infoFor(mc.level, new net.minecraft.core.BlockPos(x, y, z));
-                }
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            boolean here = mc.level != null && dim.equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level));
+            if (a.equals("break") && here) info = core().guard.infoFor(mc.level, new net.minecraft.core.BlockPos(x, y, z));
+            // a walk that ends next to a portal could step in: part of the floor, so in every mode
+            if (a.equals("go") && here) {
+                String portal = io.github.mojolowjo.entropybot.guard.Guard.portalNear(mc.level, x, y, z, 2);
+                if (portal != null) return "would refuse: next to a " + portal + " (I stay out of the Nether and the End)";
             }
             GuardCore.Verdict v = core().guard.core.checkUnlogged(dim, x, y, z, a, info);
             if (v.allowed() && !v.wouldVeto()) return "ok";
@@ -168,8 +170,47 @@ public final class BotAPI {
         }
     }
 
-    /** B2: true while a reflex (eating, fighting, fleeing, retreating) runs and every job should hold still. */
+    /** True while a reflex (eating, fighting, fleeing, retreating) runs and every job should hold still. */
     public static boolean hold() {
-        return false;
+        try { return core().reflexes.hold(); } catch (Throwable t) { return false; }
+    }
+
+    /**
+     * The reflexes as JSON: {reflex: none|eating|fighting|fleeing|retreating, status, on, target?, dist?,
+     * urgent (just hurt, or a monster within 5), noFood, deniedDim?, engine: none|hold|override|off}.
+     */
+    public static String reflex() {
+        try { return core().reflexes.status().toString(); } catch (Throwable t) { return "{\"reflex\":\"none\",\"error\":\"" + t + "\"}"; }
+    }
+
+    /** The "eat" verb: eat now if hungry at all. "started: eating" or "error: ...". */
+    public static String eat(String token) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            return core().reflexes.eat();
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
+    /** "defend on|off": fighting, creepers and retreats (eating goes on either way). */
+    public static String defence(String token, boolean on) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            core().reflexes.setDefence(on);
+            return "ok: self-defence " + (on ? "on" : "off");
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
+    /** Where to retreat to: {"base":{x,y,z,dim},"home":{x,y,z,dim}} (the /home landing), from the bridge's notes. */
+    public static String setPlaces(String token, String json) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            return core().reflexes.setPlaces(json);
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
     }
 }
