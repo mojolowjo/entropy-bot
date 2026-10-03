@@ -42,15 +42,12 @@ public final class StorageRules {
      */
     public static Map<String, Integer> depositables(List<Held> inv, String text, boolean keepValuables, Pattern only) {
         Map<String, Integer> out = new LinkedHashMap<>(), counts = new LinkedHashMap<>();
-        java.util.Set<String> want = new java.util.HashSet<>();
-        for (String n : (text == null ? "" : text.trim().toLowerCase()).split("[\\s,]+")) {
-            if (!n.isEmpty() && !n.equals("all")) want.add(GuiCore.normId(n));
-        }
+        List<java.util.function.Predicate<String>> want = namedItems(text);
         boolean named = !want.isEmpty();
         for (Held h : inv) {
             if (h.id() == null) continue;
             counts.merge(h.id(), h.n(), Integer::sum);
-            if (named ? !want.contains(h.id()) : (KEEP.matcher(h.id()).find() || h.food())) continue;
+            if (named ? want.stream().noneMatch(w -> w.test(h.id())) : (KEEP.matcher(h.id()).find() || h.food())) continue;
             if ((keepValuables && VALUABLE.matcher(h.id()).find()) || (only != null && !only.matcher(h.id()).find())) continue;
             out.put(h.id(), named ? 0 : KEEP_COUNT.getOrDefault(h.id(), 0));
         }
@@ -58,6 +55,39 @@ public final class StorageRules {
         out.entrySet().removeIf(e -> counts.getOrDefault(e.getKey(), 0) <= e.getValue());
         return out;
     }
+
+    static final Pattern TOOLS = Pattern.compile("_(pickaxe|axe|shovel|hoe|sword)$"), ARMOR = Pattern.compile("_(helmet|chestplate|leggings|boots)$");
+
+    /**
+     * The items a "deposit ..." names: ids ("minecraft:dirt"), names in any mod's namespace ("copper_pickaxe" also
+     * matches leafscopperbackport:copper_pickaxe; "torches" = torch), and groups: "copper tools", "iron armor", "tools",
+     * "armor". Commas or spaces between them; "all" names nothing (everything but the kept kinds).
+     */
+    public static List<java.util.function.Predicate<String>> namedItems(String text) {
+        List<java.util.function.Predicate<String>> out = new ArrayList<>();
+        List<String> w = new ArrayList<>();
+        for (String n : (text == null ? "" : text.trim().toLowerCase()).split("[\\s,]+")) if (!n.isEmpty() && !n.equals("all")) w.add(n);
+        for (int i = 0; i < w.size(); i++) {
+            String n = w.get(i);
+            String next = i + 1 < w.size() ? w.get(i + 1) : "";
+            boolean groupNext = next.matches("tools?|armou?rs?");
+            if (groupNext && !n.contains(":")) {
+                // "copper tools", "iron armor": that material's tools or armor pieces, from any mod
+                Pattern kind = next.startsWith("tool") ? TOOLS : ARMOR;
+                String mat = n;
+                out.add(id -> path(id).startsWith(mat + "_") && kind.matcher(id).find());
+                i++;
+            } else if (n.matches("tools?|armou?rs?")) {
+                Pattern kind = n.startsWith("tool") ? TOOLS : ARMOR;
+                out.add(id -> kind.matcher(id).find());
+            } else {
+                out.add(GuiCore.nameMatcher(n));
+            }
+        }
+        return out;
+    }
+
+    static String path(String id) { return id.substring(id.indexOf(':') + 1); }
 
     /** A chest the deposit may use: its "x y z", position and last-seen items. */
     public record Chest(String key, int[] pos, Map<String, Integer> items) {}

@@ -227,6 +227,30 @@ public final class GuiCore {
         return s.contains(":") ? s : "minecraft:" + s;
     }
 
+    /** Does an item id answer to name q? "mod:x" exactly; "x" or "xs" in any namespace (copper_pickaxe = leafscopperbackport:copper_pickaxe). */
+    public static java.util.function.Predicate<String> nameMatcher(String q) {
+        String n = q.toLowerCase();
+        if (n.contains(":")) return id -> id.equals(n);
+        String one = n.endsWith("s") ? n.substring(0, n.length() - 1) : n, es = n.endsWith("es") ? n.substring(0, n.length() - 2) : n;
+        return id -> {
+            String p = id.substring(id.indexOf(':') + 1);
+            return p.equals(n) || p.equals(one) || p.equals(es);
+        };
+    }
+
+    /** The id among candidates that name q means (minecraft's first), else normId(q) (for the "no ..." replies). */
+    public static String resolve(String q, java.util.Collection<String> candidates) {
+        String exact = normId(q);
+        if (candidates.contains(exact)) return exact;
+        java.util.function.Predicate<String> m = nameMatcher(q);
+        String best = null;
+        for (String id : candidates) {
+            if (!m.test(id)) continue;
+            if (best == null || (id.startsWith("minecraft:") && !best.startsWith("minecraft:"))) best = id;
+        }
+        return best != null ? best : exact;
+    }
+
     /** {id: n} -> "96 rotten_flesh, 40 bone, +3 more" (the n biggest). */
     public static String top(Map<String, Integer> map, int n) {
         List<Map.Entry<String, Integer>> list = new ArrayList<>(map.entrySet());
@@ -258,12 +282,13 @@ public final class GuiCore {
         }
         if (q.isEmpty() || !(want > 0)) return "error: usage " + verb + " <item|all> [count|all]";
         boolean explicit = parts.length > 1 && !parts[1].equals("all");
-        String id = q.equals("all") ? "all" : normId(q);
-        boolean all = id.equals("all");
-        String name = all ? "items" : shortId(id);
         Map<String, List<Integer>> roles = roles(m);
         List<String> names = toContainer ? PUT_ROLES : TAKE_ROLES;
         Map<String, Integer> before = carried(m);
+        // a name in any mod's namespace: what the bot carries (put) or the container holds (take)
+        String id = q.equals("all") ? "all" : resolve(q, toContainer ? before.keySet() : contents(m, names, roles).keySet());
+        boolean all = id.equals("all");
+        String name = all ? "items" : shortId(id);
         if (toContainer) {
             int have = all ? sum(before) : before.getOrDefault(id, 0);
             if (have == 0) return all ? "error: I carry nothing to put" : "error: I carry no " + name;
@@ -311,7 +336,7 @@ public final class GuiCore {
             }
         }
         if (q.isEmpty()) return "error: usage drop <item|all> [count|all]";
-        String id = q.equals("all") ? "all" : normId(q);
+        String id = q.equals("all") ? "all" : resolve(q, carried(m).keySet());
         long dropped = 0;
         for (int i = 0; i < m.size() && dropped < want; i++) {
             if (!m.mine(i) || m.id(i) == null || !(id.equals("all") || m.id(i).equals(id))) continue;

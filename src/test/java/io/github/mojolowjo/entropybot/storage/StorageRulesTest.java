@@ -28,6 +28,19 @@ class StorageRulesTest {
     }
 
     @Test
+    void depositNamesWorkAcrossModNamespacesAndAsGroups() {
+        List<StorageRules.Held> inv = List.of(h("leafscopperbackport:copper_pickaxe", 1), h("leafscopperbackport:copper_axe", 1),
+                h("leafscopperbackport:copper_armor_chestplate", 1), h("minecraft:stone_pickaxe", 3), h("minecraft:torch", 39), h("minecraft:dirt", 5));
+        assertEquals(Map.of("leafscopperbackport:copper_pickaxe", 0), StorageRules.depositables(inv, "copper_pickaxe", false, null));
+        assertEquals(Map.of("leafscopperbackport:copper_pickaxe", 0, "leafscopperbackport:copper_axe", 0), StorageRules.depositables(inv, "copper tools", false, null));
+        assertEquals(Map.of("leafscopperbackport:copper_armor_chestplate", 0), StorageRules.depositables(inv, "copper armor", false, null));
+        assertEquals(Map.of("leafscopperbackport:copper_pickaxe", 0, "minecraft:dirt", 0), StorageRules.depositables(inv, "copper_pickaxe and dirt".replace(" and ", ", "), false, null));
+        assertEquals(Map.of("minecraft:torch", 0), StorageRules.depositables(inv, "torches", false, null));
+        assertEquals(3, StorageRules.depositables(inv, "tools", false, null).size(), "all tools: both copper ones and the stone pickaxes");
+        assertTrue(StorageRules.depositables(inv, "gold tools", false, null).isEmpty());
+    }
+
+    @Test
     void depositPlanUsesTheChestWithTheMostAndTheJunkChestForTheRest() {
         StorageRules.Chest ores = new StorageRules.Chest("1 0 0", new int[]{1, 0, 0}, Map.of("minecraft:raw_iron", 40));
         StorageRules.Chest junk = new StorageRules.Chest("5 0 0", new int[]{5, 0, 0}, Map.of("minecraft:cobblestone", 900));

@@ -201,6 +201,17 @@ class GuiCoreTest {
     }
 
     @Test
+    void namesWorkInAnyModNamespace() {
+        Fake m = Fake.chest(27);
+        m.set(m.firstMine(), "leafscopperbackport:copper_pickaxe", 1);
+        assertEquals("ok: put 1 leafscopperbackport:copper_pickaxe (the container now has 1)", GuiCore.transferVerb(m, "copper_pickaxe", true, null));
+        assertEquals("ok: took 1 leafscopperbackport:copper_pickaxe (nothing left in the container)", GuiCore.transferVerb(m, "copper_pickaxe", false, null));
+        assertEquals("ok: dropped 1 copper_pickaxe", GuiCore.drop(m, "copper_pickaxe"));
+        assertEquals("minecraft:torch", GuiCore.resolve("torches", List.of("minecraft:torch")));
+        assertEquals("minecraft:stone", GuiCore.resolve("stone", List.of("minecraft:dirt")));
+    }
+
+    @Test
     void dropThrowsExactCounts() {
         Fake m = Fake.chest(0);
         m.set(m.firstMine(), "minecraft:dirt", 10).set(m.firstMine() + 1, "minecraft:dirt", 64);
