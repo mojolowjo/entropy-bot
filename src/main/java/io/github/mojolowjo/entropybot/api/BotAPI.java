@@ -234,6 +234,21 @@ public final class BotAPI {
         }
     }
 
+    /** B3b: the points of interest: {"next":n,"pois":[{id,kind,x,y,z,dim,first,last}]} */
+    public static String pois() {
+        try { return core().pois.toJson().toString(); } catch (Throwable t) { return "{\"pois\":[],\"error\":\"" + t + "\"}"; }
+    }
+
+    /** Forgets one point of interest: "ok: ..." or "error: ...". */
+    public static String poiForget(String token, int id) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            return core().pois.forget(id, core().tick()) ? "ok: forgot poi " + id : "error: no poi " + id;
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
     /** Where to retreat to: {"base":{x,y,z,dim},"home":{x,y,z,dim}} (the /home landing), from the bridge's notes. */
     public static String setPlaces(String token, String json) {
         try {
