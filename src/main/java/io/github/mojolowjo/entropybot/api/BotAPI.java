@@ -249,6 +249,17 @@ public final class BotAPI {
         }
     }
 
+    /** B6: reconnecting after a kick on or off: "ok: ..." (the mod's own setting; on by default each launch). */
+    public static String reconnect(String token, boolean on) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            core().reconnect.setOn(on);
+            return "ok: reconnecting after a kick is " + (on ? "on (after 1, 5, 15 min; 3 an hour at most)" : "off");
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
     // ---- B4: caves ----
 
     /** The caves known: {"next":n,"caves":{name:{dim,entrance,furthest,frontierLeft,explored,created,updated}}} */
