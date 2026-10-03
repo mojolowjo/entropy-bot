@@ -43,6 +43,11 @@ public final class Knowledge {
         files = f;
         StringBuilder sb = new StringBuilder();
         sb.append(loadOne(PLACES, places)).append("; ").append(loadOne(CHESTS, chests)).append("; ").append(loadRs());
+        int pruned = prune(null);
+        if (pruned > 0) {
+            sb.append("; dropped the ").append(pruned).append(" oldest notes (over the limit)");
+            if (dirtySince < 0) dirtySince = 0;
+        }
         version = 1;
         return sb.toString();
     }
@@ -122,8 +127,29 @@ public final class Knowledge {
     public synchronized long put(String json, long now) {
         JsonObject o = JsonParser.parseString(json).getAsJsonObject();
         boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | applyGrid(o, false);
-        if (changed) touch(now);
+        if (changed) {
+            prune(null);
+            touch(now);
+        }
         return version;
+    }
+
+    /**
+     * Package H: past {@link Limits#CHESTS} chest notes (or {@link Limits#RS_READINGS} readings) the oldest seen go
+     * (never an untrusted chest, never {@code keep}, the one just written); the grid "rs" uses stays. The bridge prunes
+     * memory.json the same way. Returns how many went.
+     */
+    private int prune(String keep) {
+        int n = 0;
+        for (String k : Limits.oldest(chests, Limits.CHESTS, keep)) {
+            chests.remove(k);
+            n++;
+        }
+        for (String k : Limits.oldest(rs, Limits.RS_READINGS, rsGrid)) {
+            rs.remove(k);
+            n++;
+        }
+        return n;
     }
 
     /** "rsGrid": "x y z" | null; onlyIfNone: a merge keeps the mod's own grid. */
@@ -184,7 +210,10 @@ public final class Knowledge {
             }
         }
         changed |= applyGrid(o, true);
-        if (changed) touch(now);
+        if (changed) {
+            prune(null);
+            touch(now);
+        }
         return version;
     }
 
@@ -196,6 +225,7 @@ public final class Knowledge {
     public synchronized void noteChest(String key, JsonObject note, long now) {
         if (note.equals(chests.get(key))) return;
         chests.put(key, note.deepCopy());
+        prune(key);
         touch(now);
     }
 
@@ -209,7 +239,10 @@ public final class Knowledge {
         boolean changed = !reading.equals(rs.get(key)) || !key.equals(rsGrid);
         rs.put(key, reading.deepCopy());
         rsGrid = key;
-        if (changed) touch(now);
+        if (changed) {
+            prune(null);
+            touch(now);
+        }
     }
 
     public synchronized Map<String, JsonObject> rs() { return copy(rs); }

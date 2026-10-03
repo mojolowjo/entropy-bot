@@ -97,6 +97,8 @@ public final class PoiScanner {
             scanned.clear();
         }
         int pcx = p.getBlockX() >> 4, pcz = p.getBlockZ() >> 4;
+        // package H: the scanned-chunk notes grew with every chunk of a session; drop the stale ones (as TerrainMap does)
+        if (scanned.size() > 8192) scanned.values().removeIf(at -> tick - at >= RESCAN);
         // the next chunk in the spiral that is loaded and not looked at lately
         for (int tries = 0; tries < spiral.length; tries++) {
             int[] o = spiral[cursor++ % spiral.length];

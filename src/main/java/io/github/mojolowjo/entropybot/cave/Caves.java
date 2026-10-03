@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.mojolowjo.entropybot.io.BotFiles;
+import io.github.mojolowjo.entropybot.memory.Limits;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -19,7 +20,8 @@ import java.util.Set;
  */
 public final class Caves {
     public static final String FILE = "caves.json";
-    public static final int MAX_VISITED = 40000, PICK_WITHIN = 64;
+    /** Package H: the cells of one cave, of all caves together, and the number of caves ({@code memory/Limits}). */
+    public static final int MAX_VISITED = Limits.CAVE_CELLS_EACH, MAX_CELLS = Limits.CAVE_CELLS, MAX_CAVES = Limits.CAVES, PICK_WITHIN = 64;
     static final long FLUSH_AFTER = 100;
 
     public static final class Cave {
@@ -85,7 +87,9 @@ public final class Caves {
                 if (c.has("visited")) for (JsonElement v : c.getAsJsonArray("visited")) cv.visited.add(v.getAsLong());
                 caves.put(cv.name, cv);
             }
-            return FILE + ": " + caves.size() + " caves";
+            int gone = prune(null);
+            if (gone > 0) touch(0);
+            return FILE + ": " + caves.size() + " caves" + (gone > 0 ? " (dropped the " + gone + " oldest, over the limit)" : "");
         } catch (RuntimeException e) {
             JsonObject aside = new JsonObject();
             aside.addProperty("text", text);
@@ -117,8 +121,31 @@ public final class Caves {
         c.created = nowMs;
         c.updated = nowMs;
         caves.put(n, c);
+        prune(c);
         touch(tick);
         return c;
+    }
+
+    /**
+     * Package H: past {@link #MAX_CAVES} caves or {@link #MAX_CELLS} cells in all, whole caves go: the oldest finished
+     * one (no frontier left) first, then the oldest; never {@code keep} (the cave being explored). How many went.
+     */
+    synchronized int prune(Cave keep) {
+        int gone = 0;
+        while (true) {
+            long cells = 0;
+            for (Cave c : caves.values()) cells += c.visited.size();
+            if (caves.size() <= MAX_CAVES && cells <= MAX_CELLS) return gone;
+            Cave drop = null;
+            for (Cave c : caves.values()) {
+                if (c == keep) continue;
+                if (drop == null || (drop.frontierLeft && !c.frontierLeft)
+                        || (drop.frontierLeft == c.frontierLeft && c.updated < drop.updated)) drop = c;
+            }
+            if (drop == null) return gone;
+            caves.remove(drop.name);
+            gone++;
+        }
     }
 
     /** The bot is at x y z inside the cave: the coarse cells within 4 blocks count as explored. */
@@ -131,7 +158,10 @@ public final class Caves {
         int d = (int) Math.round(Math.sqrt((double) (x - c.ex) * (x - c.ex) + (double) (y - c.ey) * (y - c.ey) + (double) (z - c.ez) * (z - c.ez)));
         if (d > c.furthest) c.furthest = d;
         c.updated = nowMs;
-        if (c.visited.size() != before) touch(tick);
+        if (c.visited.size() != before) {
+            prune(c);                                  // a sum over at most MAX_CAVES caves: cheap
+            touch(tick);
+        }
     }
 
     public synchronized void finish(Cave c, boolean frontierLeft, long nowMs, long tick) {
