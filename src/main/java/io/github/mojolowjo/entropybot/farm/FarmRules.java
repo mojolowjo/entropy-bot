@@ -23,7 +23,7 @@ public final class FarmRules {
     /** Squat Grow's "range" (pack/config/squatgrow-common.yaml): crops this close to the crouching player grow. */
     public static final int SQUAT_R = 3;
     /** How many spots a round twerks at (each up to FARM_GROW_S s) so Squat Grow reaches the whole farm (owner, 2026-10-03). */
-    public static final int FARM_SPOTS = 3;
+    public static final int FARM_SPOTS = 4;
     /** A round that ends with this many free bag slots or fewer puts things away at the base. */
     public static final int FARM_FREE = 4;
     /** How far the harvest right-click reaches (eye to the crop's center). */
@@ -101,7 +101,13 @@ public final class FarmRules {
      * isn't a crop's own cell (standing among them is fine, but the path there may cross the farm), then the nearest
      * to the bot. Null when no standable cell reaches any.
      */
-    public static Stand farmStandSpot(FarmWorld w, List<int[]> crops) {
+    public static Stand farmStandSpot(FarmWorld w, List<int[]> crops) { return farmStandSpot(w, crops, Set.of()); }
+
+    /**
+     * As above, never one of {@code skip} ("x y z": spots the bot couldn't get to this round). Any crop's cell counts
+     * as "on a crop" for the tie-break, not only the crops asked about (0.8.2).
+     */
+    public static Stand farmStandSpot(FarmWorld w, List<int[]> crops, Set<String> skip) {
         int[] me = w.here();
         int x1 = Integer.MAX_VALUE, x2 = Integer.MIN_VALUE, y1 = Integer.MAX_VALUE, y2 = Integer.MIN_VALUE, z1 = Integer.MAX_VALUE, z2 = Integer.MIN_VALUE;
         Set<String> cells = new HashSet<>();
@@ -119,8 +125,8 @@ public final class FarmRules {
                     int[] p = {x, y, z};
                     int n = squatReach(p, crops);
                     if (n == 0 || (best != null && n < best.n())) continue;
-                    if (!w.standable(x, y, z)) continue;
-                    int onCrop = cells.contains(x + " " + y + " " + z) ? 1 : 0;
+                    if (!w.standable(x, y, z) || skip.contains(x + " " + y + " " + z)) continue;
+                    int onCrop = cells.contains(x + " " + y + " " + z) || cropAt(w, x, y, z) != null ? 1 : 0;
                     long d = distSq(me, p);
                     if (best == null || n > best.n()
                             || (n == best.n() && (onCrop < best.onCrop() || (onCrop == best.onCrop() && d < best.d())))) {

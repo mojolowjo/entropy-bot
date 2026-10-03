@@ -28,6 +28,7 @@ public final class GuardMixinPlugin implements IMixinConfigPlugin {
             MixinFlags.astarTargetPresent = present;
             return present;
         }
+        if (mixinClassName.endsWith("FarmlandMixinPrecomputedData")) return resourceExists("baritone/pathing/precompute/PrecomputedData.class");
         return true;
     }
 
@@ -45,6 +46,7 @@ public final class GuardMixinPlugin implements IMixinConfigPlugin {
         if (mixinClassName.endsWith("GuardMixinCalculationContext")) MixinFlags.astarApplied = true;
         else if (mixinClassName.endsWith("GuardMixinGameMode")) MixinFlags.clickApplied = true;
         else if (mixinClassName.endsWith("GuardMixinBlockItem")) MixinFlags.placeApplied = true;
+        else if (mixinClassName.endsWith("FarmlandMixinPrecomputedData")) MixinFlags.farmlandApplied = true;
     }
 
     /** A resource lookup never loads the class, so the Mixin can still transform it. */

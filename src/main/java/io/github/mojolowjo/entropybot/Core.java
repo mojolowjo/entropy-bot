@@ -119,6 +119,7 @@ public final class Core {
         if (MixinFlags.clickApplied) a.add("guard:click");
         if (MixinFlags.placeApplied) a.add("guard:place");
         if (MixinFlags.astarApplied) a.add("guard:astar");
+        if (MixinFlags.farmlandApplied) a.add("baritone:farmland");
         if (ready) a.add("reflexes");
         if (ready) a.add("knowledge");
         if (ready) a.add("poi");

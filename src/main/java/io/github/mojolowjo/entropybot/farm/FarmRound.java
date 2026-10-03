@@ -69,6 +69,9 @@ public final class FarmRound {
     int spotsUsed = 1;
     /** Crops ("x y z") within Squat Grow's reach of a spot it twerked at this round. */
     final java.util.Set<String> covered = new java.util.HashSet<>();
+    /** Stand spots it walked to but didn't reach this round, and where the current walk goes. */
+    final java.util.Set<String> badSpots = new java.util.HashSet<>();
+    int[] standTarget;
     long walkStart, gatherRecheck;
     boolean outOfRange, gatherFull;
     FarmWorld.Drop gatherItem;
@@ -111,10 +114,11 @@ public final class FarmRound {
             // crouch where Squat Grow reaches every crop
             List<int[]> growing0 = FarmRules.positions(FarmRules.cropsNow(w, cropSpots, false));
             if (!growing0.isEmpty() && !FarmRules.inSquatRange(w.here(), growing0)) {
-                FarmRules.Stand spot = FarmRules.farmStandSpot(w, growing0);
+                FarmRules.Stand spot = FarmRules.farmStandSpot(w, growing0, badSpots);
                 if (spot != null && spot.n() > FarmRules.squatReach(w.here(), growing0)) {
                     stage = "tostand";
                     walkStart = elapsed;
+                    standTarget = spot.pos();
                     return new Tick("wait", List.of(new Walk(spot.x(), spot.y(), spot.z(), 0)), label + " - going to " + spot.fmt() + " to twerk", null);
                 }
             }
@@ -124,6 +128,9 @@ public final class FarmRound {
             fx.add(new CancelWalk());
             stage = "twerk";
             growStart = elapsed;
+            // didn't get there (Baritone found no path): never pick that spot again this round
+            if (standTarget != null && FarmRules.distSq(w.here(), standTarget) > 2) badSpots.add(standTarget[0] + " " + standTarget[1] + " " + standTarget[2]);
+            standTarget = null;
         }
         if (growStart == null) growStart = elapsed;
         int[] me = w.here();
@@ -138,12 +145,13 @@ public final class FarmRound {
         if (left == 0 || spotDone) {
             grewTicks += elapsed - growStart;
             if (!away.isEmpty() && spotsUsed < FarmRules.FARM_SPOTS) {
-                FarmRules.Stand next = FarmRules.farmStandSpot(w, away);
+                FarmRules.Stand next = FarmRules.farmStandSpot(w, away, badSpots);
                 if (next != null) {
                     spotsUsed++;
                     stage = "tostand";
                     walkStart = elapsed;
                     growStart = null;
+                    standTarget = next.pos();
                     fx.add(new Sneak(false));
                     fx.add(new Walk(next.x(), next.y(), next.z(), 0));
                     return new Tick("wait", fx, label + " - going to " + next.fmt() + " to twerk (" + left + " still growing)", null);

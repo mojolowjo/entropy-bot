@@ -5,6 +5,8 @@ public final class MixinFlags {
     /** The readable Baritone class exists on the classpath (the unoptimized jar, not the ProGuard "api" one). */
     public static volatile boolean astarTargetPresent;
     public static volatile boolean astarApplied;
+    /** Baritone walks on modded farmland (FarmlandMixinPrecomputedData, 0.8.2). */
+    public static volatile boolean farmlandApplied;
     public static volatile boolean clickApplied;
     public static volatile boolean placeApplied;
 
