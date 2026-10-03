@@ -367,6 +367,67 @@ public final class BotAPI {
         }
     }
 
+    // ---- B7a: the command core; the bridge becomes a worker for the verbs it still does ----
+
+    /** The bridge script (re)loaded: whatever it was doing for the mod is gone. "ok" or "error: ...". */
+    public static String bridgeHello(String token) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            core().commands.bridge.hello(core().tick());
+            return "ok";
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
+    /** The next request for the bridge as JSON {id, kind: pm|cmd|stop|endwalk, from, text, internal, cmd?}, or "". */
+    public static String bridgeNext(String token) {
+        try {
+            if (!core().token.equals(token)) return "";
+            return core().commands.bridge.next(core().tick());
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** The bridge's answer to a request; started = a job began that will report its end through bridgeDone. */
+    public static void bridgeReply(String token, long id, String reply, boolean started) {
+        try {
+            if (core().token.equals(token)) core().commands.bridge.reply(id, reply, started);
+        } catch (Throwable ignored) {}
+    }
+
+    /** The job a request started has ended with msg ("ok: ...", "stopped: ...", "error: ..."). */
+    public static void bridgeDone(String token, long id, String msg) {
+        try {
+            if (core().token.equals(token)) core().commands.bridge.done(id, msg);
+        } catch (Throwable ignored) {}
+    }
+
+    /** Once a second: the bridge's job and notes, {job:{type,status,done,requester,step,req}, memory, container, bagRoom, supplies, orePrefer, errors}. */
+    public static void bridgeReport(String token, String json) {
+        try {
+            if (core().token.equals(token)) core().commands.bridge.report(JsonParser.parseString(json).getAsJsonObject(), core().tick());
+        } catch (Throwable ignored) {}
+    }
+
+    /** A whisper from the bridge goes through the mod's rate-limited outbox. */
+    public static void whisper(String token, String to, String text) {
+        try {
+            if (core().token.equals(token)) core().commands.whisper(to, text);
+        } catch (Throwable ignored) {}
+    }
+
+    /** The owner's name (pm.json). */
+    public static String owner() {
+        try { return core().commands.owner(); } catch (Throwable t) { return "mojolowjo"; }
+    }
+
+    /** The policy as the mod keeps it (areas.json): {areas, protect, strict, corner1}. */
+    public static String policyFull() {
+        try { return core().commands.policyJson(); } catch (Throwable t) { return "{}"; }
+    }
+
     /** Where to retreat to: {"base":{x,y,z,dim},"home":{x,y,z,dim}} (the /home landing), from the bridge's notes. */
     public static String setPlaces(String token, String json) {
         try {

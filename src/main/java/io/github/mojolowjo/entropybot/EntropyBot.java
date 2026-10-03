@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
@@ -11,6 +12,11 @@ import net.neoforged.neoforge.common.NeoForge;
 public final class EntropyBot {
     public EntropyBot(IEventBus modBus) {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
+        NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
+    }
+
+    private static void onChat(ClientChatReceivedEvent event) {
+        Core.INSTANCE.commands.onChat(event);
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {

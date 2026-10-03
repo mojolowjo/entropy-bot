@@ -37,6 +37,7 @@ public final class Core {
     public final io.github.mojolowjo.entropybot.engine.Reconnect reconnect = new io.github.mojolowjo.entropybot.engine.Reconnect(events);
     public final PoiScanner poiScanner = new PoiScanner(pois, events);
     public final Reflexes reflexes = new Reflexes(events, engine, knowledge);
+    public final io.github.mojolowjo.entropybot.commands.Commands commands = new io.github.mojolowjo.entropybot.commands.Commands(this);
     public final String token = UUID.randomUUID().toString();
     private volatile BotFiles files;
     private long tick;
@@ -63,6 +64,7 @@ public final class Core {
             guard.core.tick(tick);
             Minecraft mc = Minecraft.getInstance();
             reconnect.tick(tick);                         // B6: also outside a world (the bridge doesn't tick there)
+            commands.tick(tick);                          // B7a: state.json says "not in a world" too
             if (mc.level == null) return;
             if (!ready) {
                 files = new BotFiles(mc.gameDirectory.toPath().resolve(MODID));
@@ -70,6 +72,7 @@ public final class Core {
                 LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
                 LOG.info("[entropybot] caves: {}", caves.load(files));
+                LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
@@ -109,6 +112,7 @@ public final class Core {
         if (ready) a.add("poi");
         if (ready) a.add("cave");
         a.add("reconnect");
+        if (commands.ready()) a.add("commands");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
         return a;
