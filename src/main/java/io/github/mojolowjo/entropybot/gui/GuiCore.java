@@ -274,13 +274,15 @@ public final class GuiCore {
         return out;
     }
 
-    /** Would any of the slots dst take id (the first stack of it the bot carries)? Full or not: only what it accepts. */
+    /** Would any of the slots dst take id (any stack of it the bot carries)? Full or not: only what they accept. */
     static boolean accepts(GuiMenu m, String id, List<Integer> dst) {
-        int src = -1;
-        for (int i = 0; i < m.size() && src < 0; i++) if (m.mine(i) && id.equals(m.id(i))) src = i;
-        if (src < 0) return true;
-        for (int d : dst) if (m.mayPlace(d, src)) return true;
-        return false;
+        boolean any = false;
+        for (int i = 0; i < m.size(); i++) {
+            if (!m.mine(i) || !id.equals(m.id(i))) continue;
+            any = true;
+            for (int d : dst) if (m.mayPlace(d, i)) return true;
+        }
+        return !any;
     }
 
     /**
@@ -334,6 +336,10 @@ public final class GuiCore {
         if (all ? sum(held) == 0 : !held.containsKey(id)) {
             String t = top(held, 4);
             return all ? "error: the container is empty" : "error: no " + name + " in this container (it holds: " + (t.isEmpty() ? "nothing" : t) + ")";
+        }
+        // package F: disks only come out counted - with no count and more than one (all in special slots), ask
+        if (!all && !explicit && held.get(id) > 1 && contents(m, TAKE_ROLES, roles).getOrDefault(id, 0) == 0) {
+            return "error: " + held.get(id) + " " + name + " in the drive - say how many: take " + name + " <n>";
         }
         Result res = take(m, id, want, names, roles);
         Map<String, Integer> d = diff(before, carried(m)).get(0);

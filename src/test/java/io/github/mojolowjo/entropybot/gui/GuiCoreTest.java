@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GuiCoreTest {
     /** A container menu with vanilla's click rules: container slots first, then 27 inventory and 9 hotbar slots. */
-    static final class Fake implements GuiMenu {
+    static class Fake implements GuiMenu {
         static final class S {
             String id;
             int n;
@@ -302,6 +302,51 @@ class GuiCoreTest {
         assertEquals(0, m.clicks, "not one click");
         // a named item the drive won't take is said so (not "the container is full")
         assertEquals("error: the container won't take dirt", GuiCore.transferVerb(m, "dirt", true, null));
+    }
+
+    @Test
+    void twoDisksOfOneKindNeedACount() {
+        Fake m = drive().set(0, DISK1, 1).set(2, DISK1, 1);
+        String ask = "error: 2 " + DISK1 + " in the drive - say how many: take " + DISK1 + " <n>";
+        assertEquals(ask, GuiCore.transferVerb(m, "1k_storage_disk", false, null));
+        assertEquals(ask, GuiCore.transferVerb(m, "1k_storage_disk all", false, null));
+        assertEquals(0, m.clicks, "nothing moved");
+        assertEquals("ok: took 1 " + DISK1 + " (1 left in the container)", GuiCore.transferVerb(m, "1k_storage_disk 1", false, null));
+        assertEquals(1, m.total(DISK1, true));
+        // one left: no count needed
+        assertEquals("ok: took 1 " + DISK1 + " (nothing left in the container)", GuiCore.transferVerb(m, "1k_storage_disk", false, null));
+        assertEquals(2, m.total(DISK1, true));
+    }
+
+    @Test
+    void aFullDriveNeverSwapsANetworkDiskOntoTheCursor() {
+        Fake m = drive();
+        for (int i = 0; i < 8; i++) m.set(i, DISK1, 1);
+        m.set(m.firstMine(), DISK1, 1).set(m.firstMine() + 1, DISK4, 1);
+        assertEquals("error: the container is full - I could not put any " + DISK1, GuiCore.transferVerb(m, "1k_storage_disk", true, null));
+        assertEquals("error: the container is full - I could not put any " + DISK4, GuiCore.transferVerb(m, "4k_storage_disk", true, null));
+        assertFalse(m.cursorHas());
+        for (int i = 0; i < 8; i++) assertEquals(DISK1, m.id(i), "disk slot " + i + " keeps the network's disk");
+        assertEquals(1, m.total(DISK1, true));
+        assertEquals(1, m.total(DISK4, true));
+        assertEquals(0, m.clicks, "not one click");
+    }
+
+    @Test
+    void acceptsLooksAtEveryCarriedStack() {
+        String[] k = new String[17];
+        java.util.Arrays.fill(k, 0, 8, "special");
+        java.util.Arrays.fill(k, 8, 17, "other");
+        // the disk slots refuse the first stack the bot carries (say, a disk with other data) but take the second
+        Fake m = new Fake(k) {
+            @Override public boolean mayPlace(int to, int from) { return from != firstMine() && super.mayPlace(to, from); }
+        };
+        List<Integer> disks = List.of(0, 1, 2, 3, 4, 5, 6, 7);
+        m.set(m.firstMine(), DISK1, 1);
+        assertFalse(GuiCore.accepts(m, DISK1, disks));
+        m.set(m.firstMine() + 1, DISK1, 1);
+        assertTrue(GuiCore.accepts(m, DISK1, disks));
+        assertTrue(GuiCore.accepts(m, DISK4, disks), "nothing carried: nothing to refuse");
     }
 
     @Test
