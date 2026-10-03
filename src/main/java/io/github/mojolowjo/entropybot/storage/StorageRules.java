@@ -2,6 +2,8 @@ package io.github.mojolowjo.entropybot.storage;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.mojolowjo.entropybot.clear.Tools;
+import io.github.mojolowjo.entropybot.engine.HotbarRules;
 import io.github.mojolowjo.entropybot.gui.GuiCore;
 
 import java.util.ArrayList;
@@ -33,15 +35,48 @@ public final class StorageRules {
         return STORAGE.matcher(id).find() && !NOT_STORAGE.matcher(id).find();
     }
 
-    /** One inventory slot: its item, how many, and whether it is food. */
-    public record Held(String id, int n, boolean food) {}
+    /** One inventory slot: its item, how many, whether it is food, and which slot (0-8 hotbar, 9-35 bag; -1 unknown). */
+    public record Held(String id, int n, boolean food, int slot) {
+        public Held(String id, int n, boolean food) { this(id, n, food, -1); }
+    }
+
+    /**
+     * Package B's keep rules (2026-10-03), on top of KEEP/KEEP_COUNT and for named deposits too: the supplies (keep up
+     * to their count), the hotbar layout (the stack each laid-out slot holds or will hold) and the pickaxes of the best
+     * tier the bot carries. Either map may be empty.
+     */
+    public record Keeps(Map<String, Integer> supplies, Map<Integer, String> hotbar) {
+        public static final Keeps NONE = new Keeps(Map.of(), Map.of());
+    }
+
+    /** What the keep rules hold back, {id: count}: the best-tier pickaxes, the supplies, the hotbar layout's stacks. */
+    public static Map<String, Integer> kept(List<Held> inv, Keeps keeps) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        int best = 0;
+        for (Held h : inv) if (h.id() != null && Tools.isPickaxe(h.id())) best = Math.max(best, Tools.toolTier(h.id()));
+        for (Held h : inv) if (h.id() != null && Tools.isPickaxe(h.id()) && Tools.toolTier(h.id()) == best) out.merge(h.id(), h.n(), Integer::sum);
+        if (keeps == null) return out;
+        if (keeps.supplies() != null) keeps.supplies().forEach((id, n) -> out.merge(id, n, Math::max));
+        if (keeps.hotbar() != null && !keeps.hotbar().isEmpty()) {
+            List<HotbarRules.Item> items = new ArrayList<>();
+            for (Held h : inv) if (h.id() != null && h.slot() >= 0) items.add(new HotbarRules.Item(h.slot(), h.id(), h.n(), h.food() ? 0 : -1));
+            HotbarRules.keeps(keeps.hotbar(), items).forEach((id, n) -> out.merge(id, n, Math::max));
+        }
+        return out;
+    }
 
     /**
      * What to put away: {id: keep} (keep = how many of it stay with the bot), in inventory order. text names items (or
      * "all", or nothing); keepValuables leaves VALUABLE items out; only (when not null) puts just those ids away.
      */
     public static Map<String, Integer> depositables(List<Held> inv, String text, boolean keepValuables, Pattern only) {
+        return depositables(inv, text, keepValuables, only, null);
+    }
+
+    /** {@link #depositables} with package B's keep rules ({@link #kept}); keeps null = the old rules only. */
+    public static Map<String, Integer> depositables(List<Held> inv, String text, boolean keepValuables, Pattern only, Keeps keeps) {
         Map<String, Integer> out = new LinkedHashMap<>(), counts = new LinkedHashMap<>();
+        Map<String, Integer> held = keeps == null ? Map.of() : kept(inv, keeps);
         List<java.util.function.Predicate<String>> want = namedItems(text);
         boolean named = !want.isEmpty();
         for (Held h : inv) {
@@ -49,11 +84,16 @@ public final class StorageRules {
             counts.merge(h.id(), h.n(), Integer::sum);
             if (named ? want.stream().noneMatch(w -> w.test(h.id())) : (KEEP.matcher(h.id()).find() || h.food())) continue;
             if ((keepValuables && VALUABLE.matcher(h.id()).find()) || (only != null && !only.matcher(h.id()).find())) continue;
-            out.put(h.id(), named ? 0 : KEEP_COUNT.getOrDefault(h.id(), 0));
+            out.put(h.id(), Math.max(named ? 0 : KEEP_COUNT.getOrDefault(h.id(), 0), held.getOrDefault(h.id(), 0)));
         }
         // nothing to do for items it only has the "keep" amount of
         out.entrySet().removeIf(e -> counts.getOrDefault(e.getKey(), 0) <= e.getValue());
         return out;
+    }
+
+    /** The reply when a named deposit found only things the keep rules hold back. */
+    public static String allKeptReply(String text) {
+        return "error: nothing to deposit matching " + text + " - I keep my best pickaxe, my supplies and what my hotbar layout names";
     }
 
     static final Pattern TOOLS = Pattern.compile("_(pickaxe|axe|shovel|hoe|sword)$"), ARMOR = Pattern.compile("_(helmet|chestplate|leggings|boots)$");

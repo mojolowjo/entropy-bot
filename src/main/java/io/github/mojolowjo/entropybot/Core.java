@@ -128,6 +128,7 @@ public final class Core {
         if (commands.ready()) a.add("commands");
         if (commands.ready()) a.add("jobs:walk");
         if (commands.ready()) a.add("jobs:storage");
+        if (commands.ready()) a.add("hotbar");        // package B: the layout keeper, BotAPI.toolPolicy
         if (terrain != null) a.add("terrain");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");

@@ -26,7 +26,7 @@ public final class Texts {
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
-            "deaths", "reconnect");
+            "deaths", "reconnect", "hotbar", "tools");
 
     /**
      * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
@@ -51,6 +51,8 @@ public final class Texts {
             "Making things: craft <item> [n] fetches what it needs from my chests and the RS network and uses a furnace when a step needs one; smelt <item> [n] (e.g. smelt iron_ingot 9), "
                     + "need <item> [n] (what it takes, what is missing), get <item> [n] (from storage), supplies set <item n, ...> | supplies | supplies clear, restock (top the supplies up)",
             "Items: inv, eat, wear, craft <item> [n] (planks = any wood; \"copper armor\", \"iron tools\"; comma lists), kit <material>, recipe <item>, drop <item|all> [n], mine <ore> [n] [dig] (ores, sand, gravel, clay, grass; inside the mapped area)",
+            "Tools and hotbar: hotbar set 1 pickaxe 2 sword 3 food 4 torch (slots 1-9; pickaxe, sword, axe, shovel, hoe, food, torch or an item; I put them there when idle), hotbar, hotbar clear <slot>|all, "
+                    + "tools, tools ores iron|cheapest (ores with the iron pickaxe, or the cheapest that does the job; stone pickaxes for stone)",
             "Chests: scan [radius] (learn the chests around me), scan base|<place>|x y z (go there and learn them), deposit [item...] (put loot away in the base chests), where <item>, open x y z|<place> (walks there), take/put <item|all> [n] (exact; \"only ...\" = fell short), close, untrust/trust x y z|<place> (keep me out of a chest), trust (list) | Places: mark <name>, setbase, places, forget <name>, mark food (next to a chest: I fetch food from it when I run out)",
             "Zone: zone corner1, zone corner2 (stand on them), zone, build <floor|walls|shell|fill> <block>, build clear (breaks everything in the zone, top down), dig x1 y1 z1 x2 y2 z2, place <block> x y z",
             "Mining: mark mine (stand at the start facing the way to dig), stripmine [branches] [length] (try \"repeat forever stripmine\"), stripmine status|reset, stripmine ores collect|list (mine ores inside the mapped area, or only list them), ores [name|clear]",

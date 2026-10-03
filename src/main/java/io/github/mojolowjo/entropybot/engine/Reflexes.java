@@ -315,7 +315,7 @@ public final class Reflexes {
         }
     }
 
-    /** The best sword (else axe) into the selected hotbar slot. */
+    /** The best sword (else axe) into the hand: its laid-out hotbar slot (package B), else the selected one. */
     private static void holdWeapon(Minecraft mc, LocalPlayer p) {
         var inv = p.getInventory();
         int best = -1, bestRank = 0;
@@ -325,8 +325,7 @@ public final class Reflexes {
             if (rank > bestRank) { bestRank = rank; best = i; }
         }
         if (best < 0 || best == inv.selected) return;
-        if (best < 9) inv.selected = best;
-        else if (p.containerMenu == p.inventoryMenu) mc.gameMode.handleInventoryMouseClick(p.inventoryMenu.containerId, best, inv.selected, ClickType.SWAP, p);
+        Hotbar.toHand(mc, p, best);
     }
 
     // ---- retreating ----
@@ -406,7 +405,7 @@ public final class Reflexes {
         return bestScore < 0 ? -1 : best;
     }
 
-    private static int foodScore(ItemStack s, float health) {
+    static int foodScore(ItemStack s, float health) {
         if (s.isEmpty()) return -1;
         FoodProperties f = s.get(DataComponents.FOOD);
         if (f == null) return -1;
@@ -417,16 +416,13 @@ public final class Reflexes {
         return ReflexRules.foodScore(BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), f.nutrition(), f.saturation(), harmful, health);
     }
 
-    /** Puts the best food in the selected slot; false when there is none. */
+    /** Puts the best food in the hand (its laid-out hotbar slot, package B, else the selected one); false when there is none. */
     private boolean holdFood(Minecraft mc, LocalPlayer p) {
         var inv = p.getInventory();
         int slot = bestFood(p);
         if (slot < 0) return false;
         if (slot == inv.selected) return true;
-        if (slot < 9) inv.selected = slot;
-        else if (p.containerMenu == p.inventoryMenu) mc.gameMode.handleInventoryMouseClick(p.inventoryMenu.containerId, slot, inv.selected, ClickType.SWAP, p);
-        else return false;
-        return true;
+        return Hotbar.toHand(mc, p, slot);
     }
 
     private void startEating(Minecraft mc, LocalPlayer p) {

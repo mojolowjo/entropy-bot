@@ -135,6 +135,15 @@ public final class McClearWorld implements ClearWorld {
         return out;
     }
 
+    private static ItemStack stonePick;
+
+    /** Package B: a stone pickaxe could break the block at x y z as well (it drops, and the pickaxe is a tool for it). */
+    public boolean stoneCanBreak(int x, int y, int z) {
+        BlockState st = at(x, y, z);
+        if (stonePick == null) stonePick = new ItemStack(net.minecraft.world.item.Items.STONE_PICKAXE);
+        return st.requiresCorrectToolForDrops() ? stonePick.isCorrectToolForDrops(st) : stonePick.getDestroySpeed(st) > 1;
+    }
+
     /** The block only drops with the right tool (stone, ores...). */
     public boolean needsCorrectTool(int x, int y, int z) {
         return at(x, y, z).requiresCorrectToolForDrops();
