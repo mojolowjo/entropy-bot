@@ -1168,9 +1168,27 @@ public final class Commands implements Chains.Env {
             b.addProperty("error", t.toString());
             s.add("baritone", b);
         }
+        // package C: the values the dashboard's settings page shows (SettingsBlock)
+        try {
+            s.add("settings", settingsJson());
+        } catch (RuntimeException e) {
+            errs.add("settings: " + e);
+        }
         if (rep != null && rep.has("errors") && rep.get("errors").isJsonArray()) for (JsonElement e : rep.getAsJsonArray("errors")) errs.add("bridge " + e.getAsString());
         String w = bridgeFiles.writeJson("state.json", s.toString());
         if (!w.startsWith("ok") && errors++ < 5) LOG.warn("[entropybot] state write failed: {}", w);
+    }
+
+    /** state.json's "settings" block (package C): commands.json and areas.json plus the live values. */
+    private JsonObject settingsJson() {
+        String mode = null;
+        try {
+            JsonElement m = core.guardStatus().get("mode");
+            if (m != null && !m.isJsonNull()) mode = m.getAsString();
+        } catch (RuntimeException ignored) {}
+        SettingsBlock.Live live = new SettingsBlock.Live(policy.strict(), mode, core.reflexes.defence(), core.reconnect.on(), orePrefer(),
+                chains.running() ? chains.name() : null, chains.running() ? chains.chainStatus() : null);
+        return SettingsBlock.build(brainStore.data(), areaStore.data(), live);
     }
 
     // ---- what the bridge reads (BotAPI) ----
