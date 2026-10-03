@@ -196,6 +196,14 @@ public final class GuardCore {
         return checkBoxes(dim, x, y, z, action);
     }
 
+    /**
+     * Wave 1 (item 3): the tail "guard check ... break" adds when the block is next to a liquid ("lava" / "water",
+     * Guard.liquidNextTo), "" for none: the guard only knows boxes, the digging never breaks such a block.
+     */
+    public static String liquidNote(String liquid) {
+        return liquid == null ? "" : " - but it is next to " + liquid + ", and I never break a block next to water or lava";
+    }
+
     public JsonObject status(int floorBlocks, boolean astarApplied, boolean clickApplied) {
         JsonObject o = new JsonObject();
         o.addProperty("mode", mode.name().toLowerCase());

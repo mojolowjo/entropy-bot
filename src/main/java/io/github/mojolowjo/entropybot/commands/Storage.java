@@ -382,9 +382,11 @@ public final class Storage {
         return new DepositSteps(steps, plan.label(), null);
     }
 
-    /** "deposit [items]". */
+    /** "deposit [items]" (wave 1, item 5: from far away the base chests too; the walk teleports home first). */
     String deposit(LocalPlayer p, String text) {
-        DepositSteps r = depositSteps(p, text, false, null);
+        JsonObject b = places().get("base");
+        boolean far = b != null && StorageRules.farFromBase(Jobs.pos(b), b.has("dim") ? Jobs.dimOf(b) : null, Jobs.here(p), dim());
+        DepositSteps r = depositSteps(p, text, far, null);
         if (r.err() != null) return r.err();
         return startSeq(r.label(), r.steps(), "always");
     }

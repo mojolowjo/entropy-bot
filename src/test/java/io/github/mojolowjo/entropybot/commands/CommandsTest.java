@@ -198,6 +198,8 @@ class CommandsTest {
         @Override public boolean inAreas(String dim, int x, int z) { return true; }
         @Override public String dim() { return "minecraft:overworld"; }
         @Override public void saved() {}
+        int[] pos;                                            // (wave 1) where the bot stands; null = unknown
+        @Override public int[] pos() { return pos; }
 
         /** The bridge takes the next request and answers; started = a job runs. */
         void bridgeTakes(String reply, boolean started) {

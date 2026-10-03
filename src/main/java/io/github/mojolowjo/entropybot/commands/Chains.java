@@ -75,6 +75,9 @@ public final class Chains {
         String dim();
 
         void saved();
+
+        /** Wave 1: where the bot stands {x, y, z}, or null (a retry after a fight walks back first). */
+        default int[] pos() { return null; }
     }
 
     /** A command's answer now (text, maybe null) or later (pending). */
@@ -89,7 +92,14 @@ public final class Chains {
         long rounds, round, roundStart, retryAt;
         boolean waiting, replyHandled;
         Request pending;
+        /** Wave 1: where the running step was while no fight was on; the walk back before a retry; it is running. */
+        int[] jobPos;
+        String detour;
+        boolean inDetour;
     }
+
+    /** Wave 1 (item 9): a retry after a fight walks back first when the bot ended up further away than this. */
+    static final int CHAIN_BACK_R = 16;
 
     private final Env env;
     private final JsonObject mem;
@@ -175,7 +185,7 @@ public final class Chains {
         if (forever(chain.rounds)) r.addProperty("rounds", "forever");
         else r.addProperty("rounds", chain.rounds);
         r.addProperty("round", chain.round);
-        r.addProperty("idx", chain.waiting || chain.pending != null ? chain.idx - 1 : chain.idx);
+        r.addProperty("idx", (chain.waiting || chain.pending != null) && !chain.inDetour ? chain.idx - 1 : chain.idx);
         r.addProperty("from", chain.from);
         r.addProperty("savedAt", env.now());
         mem.add("run", r);
@@ -225,9 +235,21 @@ public final class Chains {
         String st = null;
         if (c.pending != null) {
             Request p = c.pending;
+            // the step's spot while no fight is on (wave 1: a retry after a fight walks back there first)
+            if (!p.finished && !env.fighting() && !env.holding()) {
+                int[] here = env.pos();
+                if (here != null) c.jobPos = here;
+            }
             if (!p.replied && !p.finished) return;             // the bridge hasn't answered yet
             if (p.replied && !c.replyHandled) {
                 c.replyHandled = true;
+                if (c.inDetour && (Texts.stepFailed(p.reply) || !p.started)) {
+                    // the walk back was refused or instant: the step itself comes next anyway
+                    c.inDetour = false;
+                    c.pending = null;
+                    env.log("chain " + c.name + ": the walk back before the retry: " + p.reply);
+                    return;
+                }
                 if (Texts.stepFailed(p.reply)) {
                     c.pending = null;
                     endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + String.valueOf(p.reply).replaceFirst("^error: ", ""));
@@ -244,6 +266,13 @@ public final class Chains {
             if (!p.finished) return;                           // its job still runs
             c.pending = null;
             st = p.doneMsg == null ? "" : p.doneMsg;
+            if (c.inDetour) {
+                // back where the step was (or not: whatever the walk said, the step itself comes next)
+                c.inDetour = false;
+                c.waiting = false;
+                env.log("chain " + c.name + ": back for the retry: " + st);
+                return;
+            }
             if (BridgeLink.RELOADED.equals(st)) {
                 // the bridge script reloaded mid-step (an install): that step runs again
                 c.waiting = false;
@@ -264,7 +293,8 @@ public final class Chains {
                     c.retries++;
                     c.idx--;
                     c.retryAt = env.tick() + 200;
-                    env.log("chain " + c.name + ": will retry \"" + c.steps.get(c.idx) + "\" after: " + st);
+                    c.detour = detourFor(c.jobPos, env.pos());
+                    env.log("chain " + c.name + ": will retry \"" + c.steps.get(c.idx) + "\" after: " + st + (c.detour != null ? " (" + c.detour + " first)" : ""));
                     return;
                 }
                 endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + st);
@@ -291,7 +321,16 @@ public final class Chains {
             c.idx = 0;
             c.roundStart = env.tick();
         }
-        String step = c.steps.get(c.idx++);
+        String step;
+        if (c.detour != null) {
+            // wave 1: the walk back to where the step was, before its retry (the step's index stays)
+            step = c.detour;
+            c.detour = null;
+            c.inDetour = true;
+        } else {
+            step = c.steps.get(c.idx++);
+            c.jobPos = null;
+        }
         Reply r;
         try {
             r = env.dispatch(c.from, step, true, null);
@@ -305,11 +344,24 @@ public final class Chains {
             saveRun();
             return;
         }
+        if (c.inDetour) {
+            c.inDetour = false;                                // an instant answer (a refusal): the step comes next anyway
+            env.log("chain " + c.name + ": the walk back before the retry: " + r.text());
+            return;
+        }
         if (Texts.stepFailed(r.text())) {
             endChain("stopped at step " + c.idx + " (" + step + "): " + String.valueOf(r.text()).replaceFirst("^error: ", ""));
             return;
         }
         saveRun();                                             // where it is, for a resume after a restart
+    }
+
+    /** Wave 1 (item 9): "goto x y z" back to where the step was, when the bot is more than CHAIN_BACK_R from it; else null. */
+    static String detourFor(int[] was, int[] now) {
+        if (was == null || now == null) return null;
+        long dx = was[0] - now[0], dy = was[1] - now[1], dz = was[2] - now[2];
+        if (dx * dx + dy * dy + dz * dz <= (long) CHAIN_BACK_R * CHAIN_BACK_R) return null;
+        return "goto " + was[0] + " " + was[1] + " " + was[2];
     }
 
     public String chainStatus() {
@@ -357,9 +409,11 @@ public final class Chains {
         mem.add("deaths", kept);
         if (chain != null) {
             Chain c = chain;
-            c.idx = Math.max(c.waiting || c.pending != null ? c.idx - 1 : c.idx, 0);
+            c.idx = Math.max((c.waiting || c.pending != null) && !c.inDetour ? c.idx - 1 : c.idx, 0);
             c.waiting = false;
             c.pending = null;
+            c.inDetour = false;
+            c.detour = null;
             c.retryAt = 0;
             c.retries = 0;
             c.lastOk = null;
@@ -607,10 +661,23 @@ public final class Chains {
                     + "); \"why\" says what I decided" + (added.isEmpty() ? "" : "; I keep " + String.join(", ", added) + " in my supplies now") : "ok: autominer off";
         }
         boolean on = a != null && a.has("on") && a.get("on").getAsBoolean();
-        long paused = a == null ? 0 : num(a, "pausedUntil", 0);
+        long paused = a == null ? 0 : num(a, "pausedUntil", 0), held = a == null ? 0 : num(a, "heldUntil", 0);
         String last = autominerLastText();
         return "autominer is " + (on ? "on" : "off") + (paused > env.now() ? " (paused " + (long) Math.ceil((paused - env.now()) / 60000.0) + " min after two failures)" : "")
+                + (on && held > env.now() ? " (waiting " + (long) Math.ceil((held - env.now()) / 60000.0) + " min after a stop)" : "")
                 + (last != null ? " - last: " + last : "");
+    }
+
+    /** Wave 1 (item 4): how long a "stop" holds the autominer ("autominer on" lifts it). */
+    static final long AUTOMINER_HOLD_MS = 600000;
+
+    /** "stop": the autominer waits AUTOMINER_HOLD_MS before its next decision; the stop reply's tail ("" when it is off). */
+    public String holdAutominer() {
+        JsonObject a = autominer();
+        if (a == null || !a.has("on") || !a.get("on").getAsBoolean()) return "";
+        a.addProperty("heldUntil", env.now() + AUTOMINER_HOLD_MS);
+        env.saved();
+        return "; the autominer waits " + AUTOMINER_HOLD_MS / 60000 + " min (\"autominer on\" to go on now)";
     }
 
     static String decisionText(JsonObject e, long now) {
@@ -638,6 +705,7 @@ public final class Chains {
         JsonObject o = new JsonObject();
         o.addProperty("on", a.has("on") && a.get("on").getAsBoolean());
         o.addProperty("pausedUntil", num(a, "pausedUntil", 0));
+        o.addProperty("heldUntil", num(a, "heldUntil", 0));
         String last = autominerLastText();
         if (last != null) o.addProperty("last", last);
         return o;
@@ -703,6 +771,7 @@ public final class Chains {
         // (package A) after a death the chain it cut short carries on after the corpse trip: no new decision before that
         if (corpsePending || corpseRun) return;
         if (env.tick() - autominerLast < AUTOMINER_TICKS || num(a, "pausedUntil", 0) > env.now()) return;
+        if (num(a, "heldUntil", 0) > env.now()) return;               // a "stop" (wave 1, item 4)
         autominerLast = env.tick();
         if (!a.has("defaults") && !autominerDefaults().isEmpty()) env.saved();
         JsonArray log = a.has("log") && a.get("log").isJsonArray() ? a.getAsJsonArray("log") : new JsonArray();
