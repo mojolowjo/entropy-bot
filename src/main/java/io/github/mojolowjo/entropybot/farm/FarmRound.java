@@ -65,6 +65,10 @@ public final class FarmRound {
     final Map<String, Integer> clicks = new HashMap<>();
     final Map<String, Integer> gatherTries = new HashMap<>();
     Long growStart;
+    long grewTicks;
+    int spotsUsed = 1;
+    /** Crops ("x y z") within Squat Grow's reach of a spot it twerked at this round. */
+    final java.util.Set<String> covered = new java.util.HashSet<>();
     long walkStart, gatherRecheck;
     boolean outOfRange, gatherFull;
     FarmWorld.Drop gatherItem;
@@ -105,9 +109,10 @@ public final class FarmRound {
             if (cropSpots.isEmpty()) return Tick.of("no crops at the farm (" + farm.fmt() + ") - PM \"farm here\" next to them");
             stage = "twerk";
             // crouch where Squat Grow reaches every crop
-            if (!FarmRules.cropsNow(w, cropSpots, false).isEmpty() && !FarmRules.inSquatRange(w.here(), cropSpots)) {
-                FarmRules.Stand spot = FarmRules.farmStandSpot(w, cropSpots);
-                if (spot != null && spot.n() > FarmRules.squatReach(w.here(), cropSpots)) {
+            List<int[]> growing0 = FarmRules.positions(FarmRules.cropsNow(w, cropSpots, false));
+            if (!growing0.isEmpty() && !FarmRules.inSquatRange(w.here(), growing0)) {
+                FarmRules.Stand spot = FarmRules.farmStandSpot(w, growing0);
+                if (spot != null && spot.n() > FarmRules.squatReach(w.here(), growing0)) {
                     stage = "tostand";
                     walkStart = elapsed;
                     return new Tick("wait", List.of(new Walk(spot.x(), spot.y(), spot.z(), 0)), label + " - going to " + spot.fmt() + " to twerk", null);
@@ -121,12 +126,33 @@ public final class FarmRound {
             growStart = elapsed;
         }
         if (growStart == null) growStart = elapsed;
-        if (!FarmRules.inSquatRange(w.here(), cropSpots)) outOfRange = true;
-        int left = FarmRules.cropsNow(w, cropSpots, false).size();
-        if (left == 0 || elapsed - growStart >= FarmRules.FARM_GROW_S * 20L) {
+        int[] me = w.here();
+        List<int[]> growing = FarmRules.positions(FarmRules.cropsNow(w, cropSpots, false));
+        int left = growing.size();
+        // the owner (2026-10-03): one spot doesn't reach the whole farm, so twerk at up to FARM_SPOTS spots, each until
+        // the crops in its reach are ripe (or FARM_GROW_S s), the next one where the most still-growing crops are
+        List<int[]> away = new ArrayList<>();
+        for (int[] c : cropSpots) if (FarmRules.squatReach(me, List.of(c)) > 0) covered.add(c[0] + " " + c[1] + " " + c[2]);
+        for (int[] c : growing) if (!covered.contains(c[0] + " " + c[1] + " " + c[2])) away.add(c);
+        boolean spotDone = FarmRules.squatReach(me, growing) == 0 || elapsed - growStart >= FarmRules.FARM_GROW_S * 20L;
+        if (left == 0 || spotDone) {
+            grewTicks += elapsed - growStart;
+            if (!away.isEmpty() && spotsUsed < FarmRules.FARM_SPOTS) {
+                FarmRules.Stand next = FarmRules.farmStandSpot(w, away);
+                if (next != null) {
+                    spotsUsed++;
+                    stage = "tostand";
+                    walkStart = elapsed;
+                    growStart = null;
+                    fx.add(new Sneak(false));
+                    fx.add(new Walk(next.x(), next.y(), next.z(), 0));
+                    return new Tick("wait", fx, label + " - going to " + next.fmt() + " to twerk (" + left + " still growing)", null);
+                }
+            }
             fx.add(new Sneak(false));
-            grewS = (int) Math.round((elapsed - growStart) / 20.0);
+            grewS = (int) Math.round(grewTicks / 20.0);
             unripe = left;
+            if (!away.isEmpty()) outOfRange = true;          // still growing ones no spot reached
             return new Tick("next", fx, null, null);
         }
         fx.add(new Sneak(Math.floorDiv(tick, 4) % 2 == 0));

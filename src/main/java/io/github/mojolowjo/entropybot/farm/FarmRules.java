@@ -22,6 +22,8 @@ public final class FarmRules {
     public static final String FARM_PRUD = "mysticalagriculture:prudentium_essence";
     /** Squat Grow's "range" (pack/config/squatgrow-common.yaml): crops this close to the crouching player grow. */
     public static final int SQUAT_R = 3;
+    /** How many spots a round twerks at (each up to FARM_GROW_S s) so Squat Grow reaches the whole farm (owner, 2026-10-03). */
+    public static final int FARM_SPOTS = 3;
     /** A round that ends with this many free bag slots or fewer puts things away at the base. */
     public static final int FARM_FREE = 4;
     /** How far the harvest right-click reaches (eye to the crop's center). */

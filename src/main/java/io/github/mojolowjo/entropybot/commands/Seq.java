@@ -373,7 +373,8 @@ public final class Seq {
             int got = (gain ? d.get(0) : d.get(1)).getOrDefault((String) opWant[0], 0), want = (Integer) opWant[1];
             if (got < want) r = "the server only let " + (gain ? "me take " : "me put ") + got + " of " + want + " " + GuiCore.shortId((String) opWant[0]);
         }
-        if (r != null && !st.optional) return r;
+        // a "soft" op (the furnace's fuel) may find its slot taken: that slot already holds fuel, so carry on
+        if (r != null && !st.optional && !Boolean.TRUE.equals(st.ops.get(opI).get("soft"))) return r;
         opI++;
         stage = "op";
         return "wait";

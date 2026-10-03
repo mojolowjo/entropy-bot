@@ -212,7 +212,9 @@ final class Crafting {
             out.add(Step.open(furnace, "yes"));
             Step ops = new Step("ops");
             ops.pos = furnace;
-            ops.ops = List.of(op("put", s.input(), s.n(), List.of("input")), op("put", s.fuel(), s.fuelCount(), List.of("fuel")));
+            Map<String, Object> fuel = op("put", s.fuel(), s.fuelCount(), List.of("fuel"));
+            fuel.put("soft", true);           // a fuel slot holding another fuel already: the furnace burns that
+            ops.ops = List.of(op("put", s.input(), s.n(), List.of("input")), fuel);
             ops.expect = "Furnace";
             ops.expectName = "furnace";
             out.add(ops);

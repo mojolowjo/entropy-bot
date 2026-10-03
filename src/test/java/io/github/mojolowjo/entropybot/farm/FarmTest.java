@@ -362,6 +362,29 @@ class FarmTest {
     }
 
     @Test
+    void growTwerksAtASecondSpotForCropsOutOfReach() {
+        // the owner (2026-10-03): one spot doesn't reach the whole farm; crops 12 apart need two spots
+        FakeWorld w = new FakeWorld();
+        w.crop(0, 53, 0, 0);
+        w.crop(12, 53, 0, 0);
+        w.at(0.5, 53, 1.5);
+        FarmRound round = new FarmRound(new FarmSpot(6, 53, 0, null, "off"), "farming", w.inventory());
+        assertEquals("wait", round.step("farmgrow", w, 0, 0).result());          // twerks here first (reaches one)
+        FarmRound.Tick t = round.step("farmgrow", w, 1200, 1200);
+        assertEquals("wait", t.result());
+        FarmRound.Walk walk = (FarmRound.Walk) t.effects().stream().filter(e -> e instanceof FarmRound.Walk).findFirst().orElseThrow();
+        assertTrue(Math.abs(walk.x() - 12) <= FarmRules.SQUAT_R, "the second spot reaches the far crop: " + walk);
+        assertTrue(t.status().contains("2 still growing"), t.status());
+        w.at(walk.x() + 0.5, walk.y(), walk.z() + 0.5);
+        assertEquals("wait", round.step("farmgrow", w, 1220, 1220).result());   // arrived: twerks there
+        t = round.step("farmgrow", w, 2420, 2420);
+        assertEquals("next", t.result());
+        assertEquals(120, round.grewS);
+        assertEquals(2, round.unripe);
+        assertFalse(round.outOfRange, "both crops were in reach of a spot");
+    }
+
+    @Test
     void harvestWalksToFarCropsAndStopsAfterThreeClicks() {
         FakeWorld w = farmWorld();
         ripen(w);
