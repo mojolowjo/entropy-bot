@@ -13,8 +13,8 @@ import java.util.regex.Pattern;
 
 /** The open container menu for {@link GuiCore}: the game's slots, cursor and clicks (handleInventoryMouseClick). */
 public final class McMenu implements GuiMenu {
-    /** Upgrade, filter and ghost slots of modded storage: never read from, never written to (the bridge's GUI_SKIP_RE). */
-    public static final Pattern SKIP = Pattern.compile("upgrade|filter|ghost|fake|phantom|settings", Pattern.CASE_INSENSITIVE);
+    /** Upgrade, filter and ghost slots of modded storage, RS's ResourceSlot: never read from, never written to (the bridge's GUI_SKIP_RE). */
+    public static final Pattern SKIP = SlotRules.SKIP;
     private static ItemStack dirt, coal;
 
     private final AbstractContainerMenu menu;
@@ -58,11 +58,12 @@ public final class McMenu implements GuiMenu {
             coal = new ItemStack(Items.COAL);
         }
         // a slot the player can't take from is a display slot; only ask about one that holds something
-        // (Sophisticated Storage says no for every empty slot)
-        if (SKIP.matcher(s.getClass().getName()).find() || (s.hasItem() && !pickup(s))) return "other";
-        if (place(s, dirt)) return "plain";
-        if (place(s, coal)) return "fuel";
-        return "output";
+        // (Sophisticated Storage says no for every empty slot). The rules: SlotRules.classify
+        String cls = s.getClass().getName();
+        if (SlotRules.skip(cls)) return "other";
+        boolean holds = s.hasItem(), pickup = !holds || pickup(s);
+        boolean d = pickup && place(s, dirt), c = pickup && !d && place(s, coal);
+        return SlotRules.classify(menu.getClass().getName(), cls, holds, pickup, d, c);
     }
 
     private boolean pickup(Slot s) {

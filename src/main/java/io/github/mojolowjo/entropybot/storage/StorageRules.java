@@ -291,4 +291,38 @@ public final class StorageRules {
         for (int v : items.values()) total += v;
         return "the RS network at " + key + " holds " + total + " items of " + items.size() + " kinds" + (items.isEmpty() ? "" : ": " + GuiCore.top(items, 5));
     }
+
+    // ---- package F: Refined Storage disk drives ----
+
+    /**
+     * A disk's usage from its tooltip lines (the first line is its name): the lines with a number in them ("Stored:
+     * 120/1,000"), formatting codes dropped, at most two, at most 60 characters; "" when it says none.
+     */
+    public static String diskInfo(List<String> tooltip) {
+        List<String> out = new ArrayList<>();
+        for (int i = 1; tooltip != null && i < tooltip.size() && out.size() < 2; i++) {
+            String t = tooltip.get(i) == null ? "" : tooltip.get(i).replaceAll("§.", "").trim();
+            if (t.matches(".*\\d.*")) out.add(t);
+        }
+        String s = String.join(", ", out);
+        return s.length() > 60 ? s.substring(0, 57) + "..." : s;
+    }
+
+    /**
+     * "the disk drive at -23 53 170 holds 1k_storage_disk (Stored: 120/1,000), 4k_storage_disk; 6 of 8 slots free".
+     * disks: one entry per disk slot, {id, info} or null for an empty slot.
+     */
+    public static String diskReport(String at, List<String[]> disks) {
+        List<String> names = new ArrayList<>();
+        int free = 0;
+        for (String[] d : disks) {
+            if (d == null || d[0] == null) {
+                free++;
+                continue;
+            }
+            names.add(GuiCore.bareId(d[0]) + (d.length > 1 && d[1] != null && !d[1].isEmpty() ? " (" + d[1] + ")" : ""));
+        }
+        if (names.isEmpty()) return "the disk drive at " + at + " holds no disks (" + free + " slots free)";
+        return "the disk drive at " + at + " holds " + String.join(", ", names) + "; " + free + " of " + disks.size() + " slots free";
+    }
 }
