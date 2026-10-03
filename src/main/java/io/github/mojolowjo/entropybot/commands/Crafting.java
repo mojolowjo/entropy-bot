@@ -9,6 +9,7 @@ import io.github.mojolowjo.entropybot.craft.CraftPlanner;
 import io.github.mojolowjo.entropybot.craft.CraftTexts;
 import io.github.mojolowjo.entropybot.craft.Crafter;
 import io.github.mojolowjo.entropybot.craft.GridLayout;
+import io.github.mojolowjo.entropybot.craft.GridLoop;
 import io.github.mojolowjo.entropybot.craft.McRecipes;
 import io.github.mojolowjo.entropybot.craft.RecipeData;
 import io.github.mojolowjo.entropybot.farm.Compact;
@@ -612,7 +613,10 @@ final class Crafting {
 
     /** After a reflex held the job: a craft step looks at its menu again (a fight may have closed the table). */
     static void afterHold(Step st) {
-        if (st.state instanceof CraftRun c && !"opentable".equals(c.stage)) c.stage = null;
+        if (st.state instanceof CraftRun c && !"opentable".equals(c.stage)) {
+            c.stage = null;
+            c.loop = null;
+        }
         Minecraft.getInstance().options.keyShift.setDown(false);
     }
 
@@ -626,6 +630,8 @@ final class Crafting {
         int[] table;
         boolean triedTable;
         String lastError;
+        /** Package G: the batch loop of the current recipe (rebuilt after a fight or a menu change). */
+        GridLoop loop;
     }
 
     private static boolean craftingMenu(AbstractContainerMenu m) {
@@ -678,45 +684,11 @@ final class Crafting {
             }
             return now() - c.stageTick > 60 ? craftFail(s, st, CraftJob.TABLE_DID_NOT_OPEN) : "wait";
         }
-        if ("result".equals(c.stage)) {
-            int size = gridSize(p);
-            if (size == 0) {
-                c.stage = null;                   // a fight closed the table: open it again
-                return "wait";
-            }
-            McMenu m = new McMenu(p);
-            if (m.id(0) == null) {
-                if (now() - c.stageTick < CraftJob.RESULT_WAIT_TICKS) return "wait";
-                return craftFail(s, st, CraftJob.gridDidNotMake(c.ci, c.made, step.item()));
-            }
-            m.click(0, 0, "QUICK_MOVE");
-            c.made = CraftJob.madeAfterTake(c.made, recipe.outCount());
-            s.setStatus(CraftJob.progress(step.item(), c.made, step.want(), c.ci, st.crafts.size()));
-            c.stage = "settle";
-            c.stageTick = now();
-            if (CraftJob.stepDone(c.made, step.want())) {
-                c.ci++;
-                c.made = 0;
-                if (c.ci >= st.crafts.size()) {
-                    if (gridSize(p) == 3) Gui.close(p);
-                    if (st.direct) {
-                        jobs.finish(CraftJob.done(st.text));
-                        return "wait";
-                    }
-                    return "next";
-                }
-            }
-            return "wait";
-        }
-        if ("settle".equals(c.stage)) {
-            if (now() - c.stageTick < 4) return "wait";
-            c.stage = null;
-        }
-        if ("cleared".equals(c.stage) && now() - c.stageTick < 4) return "wait";
         // fill: the right grid first
         int size = gridSize(p);
         if (size == 0) {
-            Gui.close(p);                          // some other container is open
+            c.loop = null;                         // a fight closed the table (or something else is open): start over
+            Gui.close(p);
             return "wait";
         }
         if ((step.needsTable() || !recipe.fits(2)) && size == 2) {
@@ -736,27 +708,45 @@ final class Crafting {
             }
             return "wait";
         }
-        McMenu m = new McMenu(p);
-        if (!"cleared".equals(c.stage)) {
-            // Visual Workbench tables keep leftovers in their grid: start from empty, then let the inventory settle
-            clearGrid(m, size);
-            c.stage = "cleared";
-            c.stageTick = now();
+        // package G: a whole batch per fill, on ticks (GridLoop; Visual Workbench leftovers are cleared first)
+        if (c.loop == null || c.loop.size() != size) c.loop = new GridLoop(recipe, size, step.want(), c.made);
+        int madeBefore = c.made;
+        GridLoop.Out o = c.loop.tick(new McMenu(p), Crafting::maxStack, now());
+        c.made = c.loop.made();
+        if (c.made != madeBefore) s.setStatus(CraftJob.progress(step.item(), c.made, step.want(), c.ci, st.crafts.size()));
+        switch (o.state()) {
+            case WAIT:
+                return "wait";
+            case FAIL:
+                c.loop = null;
+                if (o.why() == GridLoop.Why.NO_RESULT) return craftFail(s, st, CraftJob.gridDidNotMake(c.ci, c.made, step.item()));
+                if (o.why() == GridLoop.Why.FULL) return craftFail(s, st, CraftJob.failPrefix(c.ci, c.made) + o.error() + " (made " + c.made + " of " + step.want() + " " + CraftPlanner.shortId(step.item()) + ")");
+                c.lastError = o.error();
+                return craftFail(s, st, CraftJob.couldNotCraft(c.ci, c.made, step.item(), c.lastError));
+            default:
+                break;
+        }
+        // this recipe is done: the next one, or the end
+        c.loop = null;
+        c.ci++;
+        c.made = 0;
+        if (c.ci < st.crafts.size()) return "wait";
+        if (gridSize(p) == 3) Gui.close(p);
+        if (st.direct) {
+            jobs.finish(CraftJob.done(st.text));
             return "wait";
         }
-        GridLayout.Layout lay = GridLayout.layout(recipe, size, Gui.inventory(p));
-        if (!lay.ok()) return craftFail(s, st, CraftJob.couldNotCraft(c.ci, c.made, step.item(), lay.error()));
-        for (Map.Entry<Integer, String> e : lay.slots().entrySet()) {
-            int to = GridLayout.menuSlot(e.getKey()), from = -1;
-            for (int i = 0; i < m.size(); i++) if (m.mine(i) && e.getValue().equals(m.id(i))) { from = i; break; }
-            if (from < 0 || GuiCore.move(m, from, to, 1) < 1) {
-                c.lastError = "couldn't put " + CraftPlanner.shortId(e.getValue()) + " in the grid";
-                clearGrid(m, size);
-                return craftFail(s, st, CraftJob.couldNotCraft(c.ci, c.made, step.item(), c.lastError));
-            }
+        return "next";
+    }
+
+    /** An item's stack size (64 when the id is unknown). */
+    static int maxStack(String id) {
+        try {
+            net.minecraft.world.item.Item it = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));
+            int n = new net.minecraft.world.item.ItemStack(it).getMaxStackSize();
+            return n > 0 ? n : 64;
+        } catch (RuntimeException e) {
+            return 64;
         }
-        c.stage = "result";
-        c.stageTick = now();
-        return "wait";
     }
 }

@@ -19,7 +19,7 @@ import static io.github.mojolowjo.entropybot.craft.CraftPlanner.shortId;
 public final class CraftJob {
     private CraftJob() {}
 
-    /** Crafts per grid fill: one, and the result is shift-clicked once. */
+    /** The bridge's crafts per grid fill: one. The mod's craft step fills a whole batch since package G ({@link GridLoop}). */
     public static final int CRAFTS_PER_FILL = 1;
     /** Ticks to wait for the result slot after a fill before giving up ("the grid did not make ..."). */
     public static final int RESULT_WAIT_TICKS = 30;

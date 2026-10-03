@@ -290,6 +290,8 @@ public final class Commands implements Chains.Env {
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);
+        // package G: the fast channel starts once bridge.ps1 has written entropybot/fast.json (the key's path)
+        fast = new io.github.mojolowjo.entropybot.fast.FastChannel(files.root(), new FastHandler(), m -> LOG.info("{}", m));
         ready = true;
         return sb.toString();
     }
@@ -311,6 +313,14 @@ public final class Commands implements Chains.Env {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (!ready) return;
+            // package G: the fast channel's requests run here, on the game thread (also outside a world: it says so)
+            if (fast != null) {
+                try {
+                    fast.tick(tick);
+                } catch (RuntimeException e) {
+                    if (errors++ < 5) LOG.warn("[entropybot] fast channel: {}", e.toString());
+                }
+            }
             if (mc.level == null || mc.player == null) {
                 worldTicks = 0;
                 if (tick % 20 == 0) writeState(mc, tick);
@@ -1058,6 +1068,11 @@ public final class Commands implements Chains.Env {
         // ids are send times in ms: never run a leftover command after a restart
         long sent = Chains.parseLong(id, 0);
         if (System.currentTimeMillis() - sent > 30000) return;
+        execCmd(mc, cmd, id);
+    }
+
+    /** One cmd.json command (from the file, or from the fast channel): run it, and its answer goes to cmdResult. */
+    private void execCmd(Minecraft mc, JsonObject cmd, String id) {
         String type = cmd.has("type") ? cmd.get("type").getAsString() : "";
         String text = cmd.has("text") && !cmd.get("text").isJsonNull() ? cmd.get("text").getAsString() : "";
         String from = cmd.has("from") && !cmd.get("from").isJsonNull() && !cmd.get("from").getAsString().isEmpty() ? cmd.get("from").getAsString() : null;
@@ -1076,7 +1091,61 @@ public final class Commands implements Chains.Env {
         lastCmdId = id;
         lastResult = result;
         LOG.info("[entropybot] cmd {} ({} {}) -> {}", id, type, text, result);
+        java.util.function.Consumer<String> fastReply = fastReplies.remove(id);
+        if (fastReply != null) fastReply.accept(result);
     }
+
+    // ---- package G: the fast channel (fast/FastServer: 127.0.0.1 only, the dashboard's key) ----
+
+    private io.github.mojolowjo.entropybot.fast.FastChannel fast;
+    /** The fast channel's callers waiting for a command's answer, by command id (the oldest go when it overflows). */
+    private final Map<String, java.util.function.Consumer<String>> fastReplies = new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, java.util.function.Consumer<String>> e) { return size() > 64; }
+    };
+
+    /** The game side of the fast channel; FastServer calls these on the game thread only. */
+    private final class FastHandler implements io.github.mojolowjo.entropybot.fast.FastServer.Handler {
+        @Override
+        public void command(JsonObject cmd, java.util.function.Consumer<String> reply) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) {
+                reply.accept("error: not in a world (title screen or disconnected)");
+                return;
+            }
+            String id = cmd.get("id").getAsString();
+            fastReplies.put(id, reply);
+            execCmd(mc, cmd, id);
+        }
+
+        @Override
+        public boolean idle(boolean withChain) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) return true;
+            long t = core.tick();
+            if (jobs.running() || bridge.waitingOnBridge() || bridge.jobRunning(t)) return false;
+            if (withChain && chains != null && chains.running()) return false;
+            baritone.api.IBaritone b = Jobs.baritone();
+            return b == null || Jobs.idle(b);
+        }
+
+        @Override
+        public JsonObject ping() {
+            Minecraft mc = Minecraft.getInstance();
+            JsonObject o = new JsonObject();
+            o.addProperty("version", core.version());
+            o.addProperty("inWorld", mc.level != null && mc.player != null);
+            return o;
+        }
+
+        @Override
+        public void beforeIdleAnswer() {
+            writeState(Minecraft.getInstance(), core.tick());
+        }
+    }
+
+    /** True while the fast channel's server runs (for Core.features: "fast"). */
+    public boolean fastRunning() { return fast != null && fast.running(); }
 
     private Reply runCommand(Minecraft mc, JsonObject cmd, String type, String text, String from, String notify, String id) {
         LocalPlayer player = mc.player;
