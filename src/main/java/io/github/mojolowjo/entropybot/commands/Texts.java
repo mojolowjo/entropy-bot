@@ -55,14 +55,14 @@ public final class Texts {
                     + "tools, tools ores iron|cheapest (ores with the iron pickaxe, or the cheapest that does the job; stone pickaxes for stone)",
             "Chests: scan [radius] (learn the chests around me), scan base|<place>|x y z (go there and learn them), deposit [item...] (put loot away in the base chests), where <item>, open x y z|<place> (walks there), take/put <item|all> [n] (exact; \"only ...\" = fell short), close, untrust/trust x y z|<place> (keep me out of a chest), trust (list) | Places: mark <name>, setbase, places, forget <name>, mark food (next to a chest: I fetch food from it when I run out)",
             "Zone: zone corner1, zone corner2 (stand on them), zone, build <floor|walls|shell|fill> <block>, build clear (breaks everything in the zone, top down), dig x1 y1 z1 x2 y2 z2, place <block> x y z",
-            "Mining: mark mine (stand at the start facing the way to dig), stripmine [branches] [length] (try \"repeat forever stripmine\"), stripmine status|reset, stripmine ores collect|list (mine ores inside the mapped area, or only list them), ores [name|clear]",
+            "Mining: mark mine (stand at the start facing the way to dig), stripmine [branches] [length] (try \"repeat forever stripmine\"), stripmine status|reset, stripmine ores collect|list (mine ores inside the mapped area, or only list them), stripmine turn left|right (a new mine from the corridor end; I turn by myself when the corridor is blocked), ores [name|clear]",
             "Mining for ores: mine strip <ores> [n] [at <mine>] (runs until n of them are mined), mine cave <ores> [n | <min>m] [at <cave>] (explores a cave, lights it, mines what it sees; remembers how far it got), "
                     + "ores: iron,diamond or iron_ore or any; ores prefer <ores> (the default list), caves (list), caves rename <old> <new>, explore [minutes] (walk unvisited land inside my areas, note what is there)",
             "Farm: farm (one round: twerk till ripe, harvest, pick up, essence into blocks; try \"repeat forever farm\"), farm here (the farm is by me), farm compact block|prudentium|off, "
                     + "compact <item> [here|<place>|x y z] (the chests within 6 of you or me: 9 into a block, blocks back into their chest) | rs [x y z] (read the Refined Storage grid; \"where\" lists it then), rs take <item> [n], rs put <item|all> [n] | pots [chests] (empty the botany pots at the base into the RS network, or the chests)",
             "Places of interest (I note them as I go): poi [n], poi <kind> (dungeon spawner, trial chamber, village, geode, mineshaft, lava lake, diamonds, loot chest...), poi show <id>, poi forget <id>, go poi <id>",
             "Other: status, defend on|off, find <block>, say <text>, twerk (on/off; twerk <s> for a set time), wait <s>, memory [status|fresh], restart ok|no (I may be closed for an update, 15 min) | Only for you: allow/deny <name>, allowed, b <baritone cmd>; allowed players get " + GUEST_HELP,
-            "On my own: rule every 30m do <cmds> | rule at 06:30 do ... | rule when full do ... | rule when idle 10m do ..., rules, rule delete <n>; autominer on|off, why (what it decided); "
+            "On my own: rule every 30m do <cmds> | rule at 06:30 do ... | rule when full do ... | rule when idle 10m do ..., rules, rule delete <n>; autominer on|off|status, why (what it decided); "
                     + "deaths, death policy on|off (fetch my corpse after a death; 5 deaths an hour park me), resume (after parking); reconnect on|off (after a kick); a running routine carries on after a reload or restart (12 h)",
             "Chains: cmd then cmd then cmd | routine save <name> <chain>, routines, routine show/delete <name>, <name> (runs it), repeat [n|forever] <name or chain>, queue, stop",
             "Guard (where I may go and dig): area list, area show <name>, area add <name> here <r> | x1 z1 x2 z2 [y1 y2], area corner1, area corner2 <name>, area grow <name> <n>, "
@@ -95,7 +95,7 @@ public final class Texts {
         if (splitChain(raw).size() > 1) return "sorry, only " + owner + " can start chains";
         if (GUEST_VERBS.contains(verb)) return null;
         if ((verb.equals("routine") || verb.equals("routines")) && (r.isEmpty() || r.matches("^show\\b.*"))) return null;
-        if (verb.equals("why") || verb.equals("rules") || (verb.equals("deaths") && r.isEmpty()) || (verb.equals("autominer") && r.isEmpty())) return null;
+        if (verb.equals("why") || verb.equals("rules") || (verb.equals("deaths") && r.isEmpty()) || (verb.equals("autominer") && (r.isEmpty() || r.equals("status")))) return null;
         if (verb.equals("ores") && !r.matches("^(clear|forget)\\b.*") && !r.matches("^prefer\\s+\\S.*")) return null;
         if (verb.equals("stripmine") && r.equals("status")) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return null;
@@ -115,15 +115,20 @@ public final class Texts {
         return null;
     }
 
-    /** A whisper split into pieces of at most 200 characters at spaces (a chat command maxes out at 256). */
+    /**
+     * A whisper split into pieces of at most 200 characters at spaces (a chat command maxes out at 256). Each line
+     * starts a piece of its own (package A: "why" puts the latest decision on a line by itself).
+     */
     public static List<String> whisperParts(String text) {
         List<String> out = new ArrayList<>();
-        String t = String.valueOf(text).replaceAll("\\s+", " ").trim();
-        while (!t.isEmpty()) {
-            int cut = t.length() <= 200 ? t.length() : t.lastIndexOf(' ', 200);
-            if (cut <= 0) cut = 200;
-            out.add(t.substring(0, cut));
-            t = t.substring(cut).trim();
+        for (String line : String.valueOf(text).split("\n")) {
+            String t = line.replaceAll("\\s+", " ").trim();
+            while (!t.isEmpty()) {
+                int cut = t.length() <= 200 ? t.length() : t.lastIndexOf(' ', 200);
+                if (cut <= 0) cut = 200;
+                out.add(t.substring(0, cut));
+                t = t.substring(cut).trim();
+            }
         }
         return out;
     }
