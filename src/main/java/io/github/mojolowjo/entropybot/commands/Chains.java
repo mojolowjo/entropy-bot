@@ -277,7 +277,8 @@ public final class Chains {
             if (env.tick() < c.retryAt || env.fighting() || env.health() < 14) return;
             c.retryAt = 0;
         }
-        String said = c.lastOk != null ? " - " + (c.lastOk.length() > 160 ? c.lastOk.substring(0, 160) + "..." : c.lastOk) : "";
+        // (the autominer's whole: "why" shows its last result uncut, package A)
+        String said = c.lastOk != null ? " - " + (c.lastOk.length() > 160 && !c.name.equals("autominer") ? c.lastOk.substring(0, 160) + "..." : c.lastOk) : "";
         if (c.idx >= c.steps.size()) {
             if (c.round >= c.rounds) {
                 endChain("done" + (c.rounds > 1 ? " (" + c.rounds + " rounds)" : "") + said);
@@ -563,7 +564,32 @@ public final class Chains {
 
     JsonObject autominer() { return obj(mem, "autominer"); }
 
-    /** "autominer on|off" (and the status). */
+    /**
+     * Package A: what the autominer keeps in its supplies by itself (added once; "supplies" changes it): a pickaxe
+     * for the ores a stone one can't break, so a deepslate redstone ore never stops the mine for a night.
+     */
+    static final Map<String, Integer> AUTOMINER_SUPPLIES = Map.of("minecraft:iron_pickaxe", 1);
+    static final long RESULT_MAX = 1000;
+
+    /** Adds the autominer's default supplies that are missing (commands.json "supplies"); what it added. */
+    List<String> autominerDefaults() {
+        List<String> added = new ArrayList<>();
+        JsonObject sup = obj(mem, "supplies");
+        if (sup == null) {
+            sup = new JsonObject();
+            mem.add("supplies", sup);
+        }
+        for (Map.Entry<String, Integer> e : AUTOMINER_SUPPLIES.entrySet()) {
+            if (sup.has(e.getKey())) continue;
+            sup.addProperty(e.getKey(), e.getValue());
+            added.add(e.getValue() + " " + Texts.shortId(e.getKey()));
+        }
+        JsonObject a = autominer();
+        if (a != null) a.addProperty("defaults", true);
+        return added;
+    }
+
+    /** "autominer on|off|status" (no word: the status too). */
     public String autominerCommand(String rest) {
         String t = rest == null ? "" : rest.trim().toLowerCase();
         JsonObject a = autominer();
@@ -574,28 +600,65 @@ public final class Chains {
             n.add("log", a != null && a.has("log") && a.get("log").isJsonArray() ? a.getAsJsonArray("log") : new JsonArray());
             n.addProperty("pausedUntil", 0);
             mem.add("autominer", n);
+            List<String> added = t.equals("on") ? autominerDefaults() : List.of();
             env.saved();
             String pref = env.orePrefer();
             return t.equals("on") ? "ok: autominer on - when I have nothing to do I put things away, restock and mine (" + (pref == null || pref.isEmpty() ? "any ores" : pref)
-                    + "); \"why\" says what I decided" : "ok: autominer off";
+                    + "); \"why\" says what I decided" + (added.isEmpty() ? "" : "; I keep " + String.join(", ", added) + " in my supplies now") : "ok: autominer off";
         }
         boolean on = a != null && a.has("on") && a.get("on").getAsBoolean();
         long paused = a == null ? 0 : num(a, "pausedUntil", 0);
-        return "autominer is " + (on ? "on" : "off") + (paused > env.now() ? " (paused " + (long) Math.ceil((paused - env.now()) / 60000.0) + " min after two failures)" : "");
+        String last = autominerLastText();
+        return "autominer is " + (on ? "on" : "off") + (paused > env.now() ? " (paused " + (long) Math.ceil((paused - env.now()) / 60000.0) + " min after two failures)" : "")
+                + (last != null ? " - last: " + last : "");
     }
 
+    static String decisionText(JsonObject e, long now) {
+        return Texts.ago(num(e, "at", 0), now) + ": " + str(e, "what", "") + " because " + str(e, "why", "")
+                + (e.has("result") && !e.get("result").isJsonNull() ? " -> " + str(e, "result", "") : "");
+    }
+
+    JsonArray autominerLog() {
+        JsonObject a = autominer();
+        return a != null && a.has("log") && a.get("log").isJsonArray() ? a.getAsJsonArray("log") : new JsonArray();
+    }
+
+    /** The last decision ("2m ago: mine strip any 32 because ... -> ..."), for "autominer status" and state.json; null with none. */
+    public String autominerLastText() {
+        JsonArray log = autominerLog();
+        if (log.isEmpty()) return null;
+        JsonObject e = log.get(log.size() - 1).getAsJsonObject();
+        return decisionText(e, env.now()) + (e.has("result") && !e.get("result").isJsonNull() ? "" : " (running)");
+    }
+
+    /** state.json's "autominer": {on, pausedUntil, last}, or null when it was never switched on. */
+    public JsonObject autominerState() {
+        JsonObject a = autominer();
+        if (a == null) return null;
+        JsonObject o = new JsonObject();
+        o.addProperty("on", a.has("on") && a.get("on").getAsBoolean());
+        o.addProperty("pausedUntil", num(a, "pausedUntil", 0));
+        String last = autominerLastText();
+        if (last != null) o.addProperty("last", last);
+        return o;
+    }
+
+    /** The last 5 decisions; the latest whole, on a line of its own (the whisper sends each line by itself). */
     public String whyCommand() {
         JsonObject a = autominer();
-        JsonArray log = a != null && a.has("log") && a.get("log").isJsonArray() ? a.getAsJsonArray("log") : new JsonArray();
+        JsonArray log = autominerLog();
         boolean on = a != null && a.has("on") && a.get("on").getAsBoolean();
         if (log.isEmpty()) return "no decisions yet" + (on ? "" : " (autominer is off)");
         List<String> out = new ArrayList<>();
-        for (int i = Math.max(0, log.size() - 5); i < log.size(); i++) {
-            JsonObject e = log.get(i).getAsJsonObject();
-            out.add(Texts.ago(num(e, "at", 0), env.now()) + ": " + str(e, "what", "") + " because " + str(e, "why", "")
-                    + (e.has("result") && !e.get("result").isJsonNull() ? " -> " + str(e, "result", "") : ""));
-        }
-        return String.join(" | ", out);
+        for (int i = Math.max(0, log.size() - 5); i < log.size() - 1; i++) out.add(decisionText(log.get(i).getAsJsonObject(), env.now()));
+        return (out.isEmpty() ? "" : String.join(" | ", out) + "\n") + "latest: " + decisionText(log.get(log.size() - 1).getAsJsonObject(), env.now());
+    }
+
+    /** A strip run that failed on something the mine couldn't get past (blocked with no way on, stuck, unreachable). */
+    static boolean stripGaveUp(JsonObject e) {
+        String r = str(e, "result", "");
+        return e != null && str(e, "what", "").startsWith("mine strip") && r.matches("(?s)^(stopped|error).*")
+                && r.matches("(?s).*(blocked:|stuck|couldn't reach the mine|no progress).*");
     }
 
     /** The next thing to do, {what, why}, or null. */
@@ -614,9 +677,22 @@ public final class Chains {
             }
         }
         String ores = env.orePrefer() == null || env.orePrefer().isEmpty() ? "any" : env.orePrefer();
+        // package A: a mine that just gave up (and couldn't turn) is left alone for 30 minutes: caving, not a pause
+        JsonArray log = autominerLog();
+        JsonObject gaveUp = null;
+        for (int i = log.size() - 1; i >= 0; i--) {
+            JsonObject e = log.get(i).getAsJsonObject();
+            if (!str(e, "what", "").startsWith("mine strip")) continue;
+            if (stripGaveUp(e) && env.now() - num(e, "at", 0) < 1800000) gaveUp = e;
+            break;
+        }
         JsonObject m = env.minePlace();
-        if (m != null && m.has("dir") && env.inAreas(str(m, "dim", "minecraft:overworld"), (int) num(m, "x", 0), (int) num(m, "z", 0))) {
+        if (gaveUp == null && m != null && m.has("dir") && env.inAreas(str(m, "dim", "minecraft:overworld"), (int) num(m, "x", 0), (int) num(m, "z", 0))) {
             return new String[]{"mine strip " + ores + " 32", "my mine at " + num(m, "x", 0) + " " + num(m, "y", 0) + " " + num(m, "z", 0) + " is ready"};
+        }
+        if (gaveUp != null) {
+            String why = str(gaveUp, "result", "").replaceFirst("^stopped at step \\d+ \\([^)]*\\): ", "");
+            return new String[]{"mine cave " + ores + " 32 20m", "my mine could not go on (" + (why.length() > 160 ? why.substring(0, 160) : why) + "), so I go caving"};
         }
         return new String[]{"mine cave " + ores + " 32 20m", "I have no mine marked, so I go caving"};
     }
@@ -624,17 +700,22 @@ public final class Chains {
     public void autominerTick() {
         JsonObject a = autominer();
         if (a == null || !a.has("on") || !a.get("on").getAsBoolean() || parked() || chain != null || env.busy() || env.holding()) return;
+        // (package A) after a death the chain it cut short carries on after the corpse trip: no new decision before that
+        if (corpsePending || corpseRun) return;
         if (env.tick() - autominerLast < AUTOMINER_TICKS || num(a, "pausedUntil", 0) > env.now()) return;
         autominerLast = env.tick();
+        if (!a.has("defaults") && !autominerDefaults().isEmpty()) env.saved();
         JsonArray log = a.has("log") && a.get("log").isJsonArray() ? a.getAsJsonArray("log") : new JsonArray();
         a.add("log", log);
         JsonObject last = log.isEmpty() ? null : log.get(log.size() - 1).getAsJsonObject();
         if (last != null && (!last.has("result") || last.get("result").isJsonNull())) {
+            // the whole result (package A: "why" shows it uncut)
             String res = lastChainEnd == null ? "done" : lastChainEnd;
-            last.addProperty("result", res.length() > 100 ? res.substring(0, 100) : res);
+            last.addProperty("result", res.length() > RESULT_MAX ? res.substring(0, (int) RESULT_MAX) : res);
         }
-        // the same decision failing twice in a row: a 30-minute pause, and the owner hears it
-        if (last != null && log.size() >= 2) {
+        // the same decision failing twice in a row: a 30-minute pause, and the owner hears it (a mine that gave up is
+        // handled in autominerDecide: caving instead)
+        if (last != null && log.size() >= 2 && !stripGaveUp(last)) {
             JsonObject prev = log.get(log.size() - 2).getAsJsonObject();
             if (str(prev, "what", "").equals(str(last, "what", "")) && failedResult(prev) && failedResult(last) && env.now() - num(prev, "at", 0) < 600000) {
                 a.addProperty("pausedUntil", env.now() + 1800000);

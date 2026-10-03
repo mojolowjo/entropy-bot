@@ -585,6 +585,9 @@ public final class Commands implements Chains.Env {
             if (name.equals("mine") || dirWord != null) {
                 Player who = from != null ? Jobs.findPlayer(from) : null;
                 dir = dirWord != null ? dirWord : dirFromYaw((who != null ? who : player).getYRot());
+                // package A: a mine starts where I can stand and may walk to (solid rock, given by coordinates, can't be reached)
+                String notHere = mineSpotReason(mc, pos);
+                if (notHere != null) return MineSpot.refusal(pos.x() + " " + pos.y() + " " + pos.z(), notHere);
             }
             // "mark food" standing next to a chest: the chest itself (the food run opens it)
             int[] snapped = null;
@@ -622,6 +625,25 @@ public final class Commands implements Chains.Env {
             return "ok: set my home at " + Jobs.fmt(me) + " (/sethome home) - \"home\" teleports me here, and long trips back teleport first";
         }
         return "unknown command \"" + verb + "\"";
+    }
+
+    /** Null when a mine may start at pos (a loaded spot I can stand in, inside the fence), else why not; unloaded: null (can't look). */
+    String mineSpotReason(Minecraft mc, PolicyCommands.Pos pos) {
+        if (mc.level == null || !pos.dim().equals(Guard.dimOf(mc.level))) return null;
+        BlockPos feet = new BlockPos(pos.x(), pos.y(), pos.z());
+        if (!mc.level.isLoaded(feet)) return null;
+        MineSpot.Cell[] c = new MineSpot.Cell[2];
+        for (int y = 0; y < 2; y++) {
+            BlockPos q = feet.above(y);
+            net.minecraft.world.level.block.state.BlockState st = mc.level.getBlockState(q);
+            net.minecraft.world.phys.shapes.VoxelShape shape = st.getCollisionShape(mc.level, q);
+            // a carpet or a rail is walked over, as in the bridge's thinBlock
+            boolean solid = !shape.isEmpty() && shape.max(net.minecraft.core.Direction.Axis.Y) > 0.1875;
+            c[y] = new MineSpot.Cell(MineSpot.blockName(st.getBlock().getDescriptionId()), solid, !st.getFluidState().isEmpty());
+        }
+        BlockPos below = feet.below();
+        String r = MineSpot.standReason(c[0], c[1], !mc.level.getBlockState(below).getCollisionShape(mc.level, below).isEmpty(), pos.x() + " " + pos.y() + " " + pos.z());
+        return r != null ? r : jobs.goalAllowed(pos.x(), pos.y(), pos.z());
     }
 
     void putPlace(String name, JsonObject o) {
@@ -1120,6 +1142,13 @@ public final class Commands implements Chains.Env {
         s.add("defence", def);
         s.addProperty("reflex", kind);
         s.add("chain", chains.running() ? new com.google.gson.JsonPrimitive(chains.chainStatus()) : JsonNull.INSTANCE);
+        // package A: the autominer's last decision, so one "status" shows what it decided and why
+        try {
+            JsonObject am = chains.autominerState();
+            if (am != null) s.add("autominer", am);
+        } catch (RuntimeException e) {
+            errs.add("autominer: " + e);
+        }
         JsonObject pm = new JsonObject();
         pm.addProperty("listening", true);
         pm.addProperty("owner", owner());
