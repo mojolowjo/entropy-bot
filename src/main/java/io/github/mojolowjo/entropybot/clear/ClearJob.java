@@ -78,6 +78,8 @@ public final class ClearJob {
     public boolean retried, memDirty;
     /** the pickaxe it was using (noTool crafts more of the same kind when stone fails) */
     public String lastPick;
+    /** package B: it tried once to make stone pickaxes rather than wear the iron one out on stone (Tools.stonePicksFirst) */
+    public boolean stoneTried;
 
     public final Map<String, String> skip = new LinkedHashMap<>();
     public final Map<String, Fail> fails = new LinkedHashMap<>();

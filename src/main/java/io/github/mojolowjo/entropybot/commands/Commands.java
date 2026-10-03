@@ -12,6 +12,7 @@ import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.commands.BridgeLink.Listener;
 import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
 import io.github.mojolowjo.entropybot.commands.Chains.Reply;
+import io.github.mojolowjo.entropybot.engine.HotbarRules;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
 import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.farm.FarmCommand;
@@ -103,6 +104,107 @@ public final class Commands implements Chains.Env {
         saved();
     }
 
+    // ---- package B (2026-10-03): the hotbar layout and the tool policy, commands.json "hotbar" {"1":"pickaxe",...} and "toolOres" ----
+
+    /** The layout {slot 1-9: kind or item id} (commands.json "hotbar"; the dashboard's settings page reads the same key). */
+    Map<Integer, String> hotbarLayout() {
+        Map<String, String> stored = new LinkedHashMap<>();
+        JsonObject b = brainStore.data();
+        if (b.has("hotbar") && b.get("hotbar").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : b.getAsJsonObject("hotbar").entrySet()) {
+                if (e.getValue().isJsonPrimitive()) stored.put(e.getKey(), e.getValue().getAsString());
+            }
+        }
+        return HotbarRules.fromStrings(stored);
+    }
+
+    /** "iron" (the default) or "cheapest" (commands.json "toolOres"). */
+    String toolOresSetting() {
+        JsonObject b = brainStore.data();
+        return HotbarRules.toolOres(b.has("toolOres") && b.get("toolOres").isJsonPrimitive() ? b.get("toolOres").getAsString() : null);
+    }
+
+    private void pushHotbar() {
+        io.github.mojolowjo.entropybot.engine.Hotbar.set(hotbarLayout(), toolOresSetting());
+    }
+
+    private void setHotbar(Map<Integer, String> layout) {
+        JsonObject o = new JsonObject();
+        HotbarRules.toStrings(layout).forEach(o::addProperty);
+        brainStore.data().add("hotbar", o);
+        saved();
+        pushHotbar();
+    }
+
+    /** An item name -> its id (any mod's namespace, minecraft's first), or null when no item is called that. */
+    private static String resolveItemName(String q) {
+        String exact = io.github.mojolowjo.entropybot.gui.GuiCore.normId(q);
+        if (Storage.itemExists(exact)) return exact;
+        List<String> ids = new ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation rl : net.minecraft.core.registries.BuiltInRegistries.ITEM.keySet()) ids.add(rl.toString());
+        String r = io.github.mojolowjo.entropybot.gui.GuiCore.resolve(q, ids);
+        return Storage.itemExists(r) ? r : null;
+    }
+
+    /** "hotbar" | "hotbar set 1 pickaxe 2 sword 3 food 4 torch" | "hotbar clear <slot ...>|all". */
+    String hotbarCommand(LocalPlayer p, String rest) {
+        String t = rest == null ? "" : rest.trim().toLowerCase();
+        Map<Integer, String> layout = new java.util.TreeMap<>(hotbarLayout());
+        if (t.isEmpty()) return HotbarRules.show(layout, io.github.mojolowjo.entropybot.engine.Hotbar.items(p));
+        if (t.equals("clear all")) {
+            setHotbar(Map.of());
+            return "ok: no hotbar layout any more - I leave the slots as they are";
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^clear\\s+([1-9](?:[\\s,]+[1-9])*)$").matcher(t);
+        if (m.find()) {
+            for (String n : m.group(1).split("[\\s,]+")) layout.remove(Integer.parseInt(n));
+            setHotbar(layout);
+            return layout.isEmpty() ? "ok: no hotbar layout any more - I leave the slots as they are" : "ok: hotbar " + HotbarRules.describe(layout);
+        }
+        if (t.startsWith("set ")) {
+            HotbarRules.Change c = HotbarRules.parseSet(t.substring(4), Commands::resolveItemName);
+            if (c.err() != null) return c.err();
+            layout.putAll(c.set());
+            setHotbar(layout);
+            return "ok: hotbar " + HotbarRules.describe(layout) + " - I put things in place when I'm idle";
+        }
+        return HotbarRules.USAGE;
+    }
+
+    /** "tools" | "tools ores iron|cheapest". */
+    String toolsCommand(String rest) {
+        String t = rest == null ? "" : rest.trim();
+        if (t.isEmpty()) return HotbarRules.toolsText(toolOresSetting());
+        String[] r = HotbarRules.toolsCommand(t);
+        if (r[0] == null) return r[1];
+        brainStore.data().addProperty("toolOres", r[0]);
+        saved();
+        pushHotbar();
+        return r[1];
+    }
+
+    /** For BotAPI.toolPolicy (the bridge's tool choice and deposit): {hotbar, toolOres, supplies}. */
+    public JsonObject toolPolicy() {
+        JsonObject o = new JsonObject(), h = new JsonObject(), s = new JsonObject();
+        HotbarRules.toStrings(hotbarLayout()).forEach(h::addProperty);
+        suppliesMap().forEach(s::addProperty);
+        o.add("hotbar", h);
+        o.addProperty("toolOres", toolOresSetting());
+        o.add("supplies", s);
+        return o;
+    }
+
+    /** The hotbar keeper holds still while a job other than a walk or a wait runs (the mod's or the bridge's) or a reflex does. */
+    private boolean hotbarBusy(long tick) {
+        if (core.reflexes.hold()) return true;
+        if (jobs.running() && !jobs.walking() && !"wait".equals(jobs.job.type)) return true;
+        if (bridge.jobRunning(tick)) {
+            String ty = BridgeLink.str(bridge.job(tick), "type");
+            return !("travel".equals(ty) || "wait".equals(ty));
+        }
+        return false;
+    }
+
     /** Where the bot last died: {x, y, z, dim, time}, or null. */
     JsonObject lastDeath() {
         JsonObject b = brainStore.data();
@@ -164,6 +266,25 @@ public final class Commands implements Chains.Env {
                 sb.append("; supplies from memory.json");
             }
         }
+        // package B: the hotbar layout and the ore-tool setting (the bridge's copies, moved over once)
+        if (!brainStore.data().has("hotbar") || !brainStore.data().has("toolOres")) {
+            if (memory == null) memory = readBridgeJson(mc, "memory.json");
+            boolean moved = false;
+            if (memory != null && !brainStore.data().has("hotbar") && memory.has("hotbar") && memory.get("hotbar").isJsonObject()) {
+                brainStore.data().add("hotbar", memory.get("hotbar").deepCopy());
+                moved = true;
+            }
+            if (memory != null && !brainStore.data().has("toolOres") && memory.has("toolOres") && memory.get("toolOres").isJsonPrimitive()) {
+                brainStore.data().addProperty("toolOres", HotbarRules.toolOres(memory.get("toolOres").getAsString()));
+                moved = true;
+            }
+            if (moved) {
+                brainStore.flush();
+                sb.append("; hotbar from memory.json");
+            }
+        }
+        pushHotbar();
+        sb.append("; hotbar ").append(HotbarRules.describe(hotbarLayout())).append(", ores with ").append(toolOresSetting());
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
         sb.append("; policy: ").append(policy.apply());
@@ -223,6 +344,14 @@ public final class Commands implements Chains.Env {
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] job: {}", e.toString());
                 jobs.finish("error: " + e);
+            }
+            if (tick % 10 == 7) {
+                try {
+                    String moved = io.github.mojolowjo.entropybot.engine.Hotbar.tick(mc, player, tick, hotbarBusy(tick));
+                    if (moved != null) LOG.info("[entropybot] hotbar: {}", moved);
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] hotbar: {}", e.toString());
+                }
             }
             if (tick % 20 == 10) {
                 try {
@@ -427,6 +556,9 @@ public final class Commands implements Chains.Env {
         if (verb.equals("need")) return Reply.now(crafting.need(player, rest));
         if (verb.equals("supplies")) return Reply.now(crafting.supplies(player, rest));
         if (verb.equals("recipe")) return Reply.now(crafting.recipe(player, rest));
+        // package B: the hotbar layout and the tool policy (settings: instant, never "busy")
+        if (verb.equals("hotbar")) return Reply.now(hotbarCommand(player, rest));
+        if (verb.equals("tools")) return Reply.now(toolsCommand(rest));
         if (verb.equals("say")) {
             if (rest.isEmpty()) return Reply.now("say what?");
             String no = Texts.sayRefusal(rest, baritonePrefix());
@@ -962,6 +1094,9 @@ public final class Commands implements Chains.Env {
             }
             case "poi", "pois" -> { return Reply.now(poiCommand(text, player, true)); }
             case "caves" -> { return Reply.now(cavesCommand(text)); }
+            // package B: the hotbar layout and the tool policy (settings, never busy)
+            case "hotbar" -> { return Reply.now(hotbarCommand(player, text)); }
+            case "tools" -> { return Reply.now(toolsCommand(text)); }
             // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
             case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)

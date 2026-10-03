@@ -52,6 +52,43 @@ public final class Tools {
         return best;
     }
 
+    /** The tier an ore pickaxe has to have under "tools ores iron": iron or better (unknown modded tools count as iron). */
+    public static final int ORE_TIER = 4;
+
+    /**
+     * The tool policy (package B, 2026-10-03): on an ore under {@code toolOres} "iron" (the default) the cheapest tool
+     * of iron tier or better that does the job, else (no such tool, "cheapest", or not an ore) {@link #choose}'s
+     * cheapest. So stone pickaxes wear out on stone and the iron one is kept for ores.
+     */
+    public static int choose(List<Slot> slots, boolean needsCorrectTool, boolean ore, String toolOres) {
+        if (ore && !"cheapest".equals(toolOres)) {
+            List<Slot> iron = new ArrayList<>();
+            for (Slot s : slots) if (toolTier(s.id()) >= ORE_TIER) iron.add(s);
+            int best = choose(iron, needsCorrectTool);
+            if (best >= 0) return best;
+        }
+        return choose(slots, needsCorrectTool);
+    }
+
+    /** What the clear crafts so it doesn't wear the ore pickaxe out on stone: three stone pickaxes. */
+    public static final String STONE_PICKS = "minecraft:stone_pickaxe 3";
+
+    /**
+     * Keep stone pickaxes stocked: true when the tool {@link #choose} picked is a pickaxe of iron tier or better, the
+     * block is no ore it is meant for ("tools ores iron"), a stone pickaxe could break it as well, and the job hasn't
+     * tried this yet. (A cheaper pickaxe would have been chosen if the bot had one.) The caller crafts {@link
+     * #STONE_PICKS} first, or, if that can't start, goes on with the pickaxe it has.
+     */
+    public static boolean stonePicksFirst(String chosenId, boolean ore, String toolOres, boolean stoneCanBreak, boolean triedAlready) {
+        if (triedAlready || chosenId == null || !isPickaxe(chosenId) || toolTier(chosenId) < ORE_TIER || !stoneCanBreak) return false;
+        return !(ore && !"cheapest".equals(toolOres));
+    }
+
+    /** The whisper while it makes them ({@code using}: the pickaxe it would have used). */
+    public static String stonePicksWhisper(String using) {
+        return "no stone pickaxes left - making 3 so the " + using.replaceFirst("^[^:]*:", "") + " is kept for ores, then back to it";
+    }
+
     /** holdBestTool's answer when {@link #choose} found nothing: fine for blocks that drop anyway. */
     public static boolean okWithout(boolean needsCorrectTool) {
         return !needsCorrectTool;

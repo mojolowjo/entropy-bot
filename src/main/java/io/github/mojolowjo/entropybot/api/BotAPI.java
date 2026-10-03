@@ -456,6 +456,14 @@ public final class BotAPI {
         }
     }
 
+    /**
+     * Package B: the tool policy for the bridge's tool choice and deposit, {hotbar:{"1":"pickaxe",...}, toolOres:
+     * "iron"|"cheapest", supplies:{id:n}} (commands.json), or "{}" before the commands are ready.
+     */
+    public static String toolPolicy() {
+        try { return core().commands.ready() ? core().commands.toolPolicy().toString() : "{}"; } catch (Throwable t) { return "{}"; }
+    }
+
     /** The policy as the mod keeps it (areas.json): {areas, protect, strict, corner1}. */
     public static String policyFull() {
         try { return core().commands.policyJson(); } catch (Throwable t) { return "{}"; }

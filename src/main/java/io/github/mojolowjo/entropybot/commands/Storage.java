@@ -349,16 +349,24 @@ public final class Storage {
         List<StorageRules.Held> out = new ArrayList<>();
         for (int i = 0; i < 36; i++) {
             ItemStack s = p.getInventory().getItem(i);
-            if (!s.isEmpty()) out.add(new StorageRules.Held(Gui.itemId(s), s.getCount(), Gui.isFood(s)));
+            if (!s.isEmpty()) out.add(new StorageRules.Held(Gui.itemId(s), s.getCount(), Gui.isFood(s), i));
         }
         return out;
+    }
+
+    /** Package B: what deposit never puts away besides the old rules (the supplies, the hotbar layout, the best pickaxe). */
+    StorageRules.Keeps keeps() {
+        return new StorageRules.Keeps(commands.suppliesMap(), io.github.mojolowjo.entropybot.engine.Hotbar.layout());
     }
 
     record DepositSteps(List<Step> steps, String label, String err) {}
 
     /** The walk/open/put/close steps that take what the bot carries (see depositables) to the base chests. */
     DepositSteps depositSteps(LocalPlayer p, String text, boolean atBase, Pattern only) {
-        Map<String, Integer> items = StorageRules.depositables(held(p), text, false, only);
+        List<StorageRules.Held> held = held(p);
+        Map<String, Integer> items = StorageRules.depositables(held, text, false, only, keeps());
+        if (items.isEmpty() && text != null && !text.trim().isEmpty() && !text.trim().equalsIgnoreCase("all")
+                && !StorageRules.depositables(held, text, false, only).isEmpty()) return new DepositSteps(null, null, StorageRules.allKeptReply(text));
         StorageRules.Plan plan = StorageRules.depositPlan(items, baseChests(p, atBase), Jobs.here(p), text);
         if (plan.err() != null) return new DepositSteps(null, null, plan.err());
         List<Step> steps = new ArrayList<>();
@@ -658,7 +666,7 @@ public final class Storage {
         Map<String, Integer> keep = null;
         Map<String, Integer> inv = Gui.inventory(p);
         if (op.equals("put") && w.get(0).equals("all")) {
-            keep = StorageRules.depositables(held(p), "", false, null);
+            keep = StorageRules.depositables(held(p), "", false, null, keeps());
             if (keep.isEmpty()) return "error: nothing to put away (I keep my tools, armor, food and torches)";
             id = "all";
         } else {

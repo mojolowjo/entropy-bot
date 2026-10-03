@@ -64,6 +64,30 @@ class ToolsGridTest {
         assertEquals("out of pickaxes - making 3 stone_pickaxe, then back to clearing", Tools.craftingWhisper("minecraft:stone_pickaxe 3"));
     }
 
+    @Test
+    void toolPolicyIronForOresStoneForStone() {
+        // package B: stone, iron and copper pickaxes; an ore under "iron" gets the iron one, stone the cheapest
+        List<Tools.Slot> inv = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", true, 4), new Tools.Slot(1, "minecraft:iron_pickaxe", true, 6),
+                new Tools.Slot(2, "leafscopperbackport:copper_pickaxe", true, 5), new Tools.Slot(3, "minecraft:diamond_pickaxe", true, 8));
+        assertEquals(1, Tools.choose(inv, true, true, "iron"), "coal ore: the iron pickaxe (not diamond, the cheapest of iron or better)");
+        assertEquals(0, Tools.choose(inv, true, true, "cheapest"));
+        assertEquals(0, Tools.choose(inv, true, false, "iron"), "stone: the stone pickaxe");
+        List<Tools.Slot> noIron = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", true, 4), new Tools.Slot(2, "leafscopperbackport:copper_pickaxe", true, 5));
+        assertEquals(0, Tools.choose(noIron, true, true, "iron"), "no iron pickaxe: the cheapest that does the job");
+        List<Tools.Slot> diamondOre = List.of(new Tools.Slot(0, "minecraft:stone_pickaxe", false, 4), new Tools.Slot(1, "minecraft:iron_pickaxe", true, 6));
+        assertEquals(1, Tools.choose(diamondOre, true, true, "cheapest"));
+        // keep stone pickaxes: only the iron one left and stone to break -> make 3 first, once
+        assertTrue(Tools.stonePicksFirst("minecraft:iron_pickaxe", false, "iron", true, false));
+        assertFalse(Tools.stonePicksFirst("minecraft:iron_pickaxe", false, "iron", true, true), "tried already");
+        assertFalse(Tools.stonePicksFirst("minecraft:iron_pickaxe", true, "iron", true, false), "an ore: the iron one on purpose");
+        assertTrue(Tools.stonePicksFirst("minecraft:iron_pickaxe", true, "cheapest", true, false));
+        assertFalse(Tools.stonePicksFirst("minecraft:iron_pickaxe", false, "iron", false, false), "a stone pickaxe couldn't break it");
+        assertFalse(Tools.stonePicksFirst("leafscopperbackport:copper_pickaxe", false, "iron", true, false), "copper is below iron: fine to wear out");
+        assertFalse(Tools.stonePicksFirst("minecraft:iron_shovel", false, "iron", true, false));
+        assertEquals("minecraft:stone_pickaxe 3", Tools.STONE_PICKS);
+        assertEquals("no stone pickaxes left - making 3 so the iron_pickaxe is kept for ores, then back to it", Tools.stonePicksWhisper("minecraft:iron_pickaxe"));
+    }
+
     // ---- the walking map ----
 
     /** A flat floor at y 52 (feet at 53) with a 1-high step, a 2-high wall and a 3-deep pit. */
