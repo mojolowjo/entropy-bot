@@ -249,6 +249,113 @@ public final class BotAPI {
         }
     }
 
+    // ---- B4: caves ----
+
+    /** The caves known: {"next":n,"caves":{name:{dim,entrance,furthest,frontierLeft,explored,created,updated}}} */
+    public static String caves() {
+        try { return core().caves.toJson(false).toString(); } catch (Throwable t) { return "{\"caves\":{},\"error\":\"" + t + "\"}"; }
+    }
+
+    /** The cave to explore from where the bot stands: the named one, the nearest unfinished one, or a new one. JSON or "error: ...". */
+    public static String caveStart(String token, String name) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.player == null || mc.level == null) return "error: not in a world";
+            var p = mc.player.blockPosition();
+            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.pick(name, io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level),
+                    p.getX(), p.getY(), p.getZ(), System.currentTimeMillis(), core().tick());
+            if (c == null) return "error: I know no cave called " + name + " (\"caves\" lists them)";
+            JsonObject o = c.toJsonPublic();
+            o.addProperty("name", c.name);
+            return o.toString();
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
+    /**
+     * One look around in the cave: marks where the bot is as explored, then searches. oresJson is an array of block
+     * ids to mine. {"frontier":{x,y,z,dist}|null,"ores":[{x,y,z,id,stand:[x,y,z],dist}],"reached":n,"dark":bool,
+     * "fromEntrance":n} or {"error":...}.
+     */
+    public static String caveStep(String token, String name, String oresJson, int maxFromEntrance) {
+        try {
+            if (!core().token.equals(token)) return "{\"error\":\"bad token\"}";
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.player == null || mc.level == null) return "{\"error\":\"not in a world\"}";
+            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.get(name);
+            if (c == null) return "{\"error\":\"no cave called " + name + "\"}";
+            java.util.Set<String> ids = new java.util.HashSet<>();
+            for (var e : JsonParser.parseString(oresJson).getAsJsonArray()) ids.add(e.getAsString());
+            var p = mc.player.blockPosition();
+            core().caves.visit(c, p.getX(), p.getY(), p.getZ(), System.currentTimeMillis(), core().tick());
+            var r = io.github.mojolowjo.entropybot.cave.CaveSearch.search(new io.github.mojolowjo.entropybot.cave.LevelWorld(mc.level),
+                    p.getX(), p.getY(), p.getZ(), c.visited, ids::contains, c.ex, c.ey, c.ez, maxFromEntrance);
+            JsonObject o = new JsonObject();
+            if (r.frontier() != null) {
+                JsonObject f = new JsonObject();
+                f.addProperty("x", r.frontier().x());
+                f.addProperty("y", r.frontier().y());
+                f.addProperty("z", r.frontier().z());
+                f.addProperty("dist", r.frontier().dist());
+                o.add("frontier", f);
+            }
+            com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+            for (var ore : r.ores()) {
+                JsonObject q = new JsonObject();
+                q.addProperty("x", ore.x());
+                q.addProperty("y", ore.y());
+                q.addProperty("z", ore.z());
+                q.addProperty("id", ore.id());
+                q.addProperty("dist", ore.dist());
+                a.add(q);
+            }
+            o.add("ores", a);
+            o.addProperty("reached", r.reached());
+            o.addProperty("dark", r.dark());
+            o.addProperty("fromEntrance", (int) Math.round(Math.sqrt(p.distSqr(new net.minecraft.core.BlockPos(c.ex, c.ey, c.ez)))));
+            return o.toString();
+        } catch (Throwable t) {
+            return "{\"error\":\"" + t.toString().replace("\"", "'") + "\"}";
+        }
+    }
+
+    /** Marks the spot as explored without a search (a frontier the bot couldn't reach). */
+    public static String caveVisit(String token, String name, int x, int y, int z) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.get(name);
+            if (c == null) return "error: no cave called " + name;
+            core().caves.visit(c, x, y, z, System.currentTimeMillis(), core().tick());
+            return "ok";
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
+    /** The run in this cave is over; frontierLeft false = the cave is finished. */
+    public static String caveEnd(String token, String name, boolean frontierLeft) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.get(name);
+            if (c == null) return "error: no cave called " + name;
+            core().caves.finish(c, frontierLeft, System.currentTimeMillis(), core().tick());
+            return "ok";
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
+    public static String caveRename(String token, String from, String to) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            return core().caves.rename(from, to, core().tick());
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
     /** Where to retreat to: {"base":{x,y,z,dim},"home":{x,y,z,dim}} (the /home landing), from the bridge's notes. */
     public static String setPlaces(String token, String json) {
         try {

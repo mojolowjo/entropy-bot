@@ -10,6 +10,7 @@ import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.io.BotFiles;
+import io.github.mojolowjo.entropybot.cave.Caves;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
 import io.github.mojolowjo.entropybot.poi.PoiScanner;
 import io.github.mojolowjo.entropybot.poi.Pois;
@@ -32,6 +33,7 @@ public final class Core {
     public final EngineProcess engine = new EngineProcess();
     public final Knowledge knowledge = new Knowledge();
     public final Pois pois = new Pois();
+    public final Caves caves = new Caves();
     public final PoiScanner poiScanner = new PoiScanner(pois, events);
     public final Reflexes reflexes = new Reflexes(events, engine, knowledge);
     public final String token = UUID.randomUUID().toString();
@@ -65,6 +67,7 @@ public final class Core {
                 guard.ensureProtectedBlocks();
                 LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
+                LOG.info("[entropybot] caves: {}", caves.load(files));
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
@@ -76,6 +79,7 @@ public final class Core {
             knowledge.flushIfDue(tick);
             poiScanner.tick(tick);
             pois.flushIfDue(tick);
+            caves.flushIfDue(tick);
             if (baritone.hooked() && tick % 20 == 0) {
                 List<String> turned = baritone.enforceSettings();
                 if (!turned.isEmpty()) {
@@ -101,6 +105,7 @@ public final class Core {
         if (ready) a.add("reflexes");
         if (ready) a.add("knowledge");
         if (ready) a.add("poi");
+        if (ready) a.add("cave");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
         return a;
