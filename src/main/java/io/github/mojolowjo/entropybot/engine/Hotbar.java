@@ -17,8 +17,9 @@ import java.util.TreeMap;
  * the bot has been idle for 2 seconds (no job but a walk or a wait, no reflex, no menu, no swing, nothing in use)
  * it makes one swap every half second until each laid-out slot holds its item. That covers "after a deposit, a
  * restock, a craft, a pickup": whatever changed the bag, the slots are put right when the bot is next idle.
- * Round 2 ({@link HotbarKeeper}): also in the first 10 seconds of a job, and mid-job for a laid-out slot that
- * emptied (a broken pickaxe, the last torch, the food eaten); never mid-swing or mid-break, never with a menu open.
+ * Round 2 ({@link HotbarKeeper}): also in the first 10 seconds of a job, and mid-job for a laid-out slot whose item
+ * was used up (a broken pickaxe, the last torch, the food eaten); never mid-swing or mid-break (except a broken tool's
+ * refill), never with a menu open, never swapping away an item a job put in the hand.
  */
 public final class Hotbar {
     private Hotbar() {}
@@ -79,11 +80,12 @@ public final class Hotbar {
             KEEPER.decide(l, new HotbarKeeper.Look(tick, busy, reflex, job, false, false, false, false, false, 0, List.of()));
             return null;
         }
-        List<HotbarRules.Item> inv = items(p);
         var gm = mc.gameMode;
         if (gm == null) return null;
-        HotbarKeeper.Look look = new HotbarKeeper.Look(tick, busy, reflex, job,
-                mc.screen != null || p.containerMenu != p.inventoryMenu, p.isUsingItem(), !p.inventoryMenu.getCarried().isEmpty(),
+        boolean menu = mc.screen != null || p.containerMenu != p.inventoryMenu, using = p.isUsingItem(), carried = !p.inventoryMenu.getCarried().isEmpty();
+        // blocked: nothing can move, so the bag isn't scanned (the keeper compares the next scan with the last one)
+        List<HotbarRules.Item> inv = menu || using || carried ? null : items(p);
+        HotbarKeeper.Look look = new HotbarKeeper.Look(tick, busy, reflex, job, menu, using, carried,
                 p.swinging, gm.isDestroying(), p.getInventory().selected, inv);
         HotbarKeeper.Move m = KEEPER.decide(l, look);
         if (m == null) return null;

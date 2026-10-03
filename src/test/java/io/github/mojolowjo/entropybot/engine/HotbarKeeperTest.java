@@ -54,9 +54,12 @@ class HotbarKeeperTest {
         }
     }
 
+    /** A bag to lay out; the bot holds hotbar slot 6 (empty). */
     static Bot kit() {
-        return new Bot().put(0, "minecraft:dirt", 64).put(1, "minecraft:cobblestone", 30).put(12, "minecraft:stone_pickaxe", 1)
+        Bot b = new Bot().put(0, "minecraft:dirt", 64).put(1, "minecraft:cobblestone", 30).put(12, "minecraft:stone_pickaxe", 1)
                 .put(13, "minecraft:iron_sword", 1).put(14, "minecraft:bread", 8).put(15, "minecraft:torch", 32);
+        b.selected = 5;
+        return b;
     }
 
     @Test
@@ -84,10 +87,11 @@ class HotbarKeeperTest {
         assertEquals(4, b.run(0, 60), "the whole layout in the job's first seconds, though the job is busy");
         assertEquals(List.of("0:job start", "10:job start", "20:job start", "30:job start"), b.moves);
         assertEquals("stone_pickaxe", b.at(0), "the mine starts with its pickaxe in the pickaxe slot");
+        assertEquals(0, b.run(61, HotbarKeeper.START_TICKS - 1), "the layout is in place");
         // later in the same job a wrong slot is left alone (no window, nothing emptied)
         b.slots.remove(1);
         b.put(1, "minecraft:gravel", 4).put(20, "minecraft:stone_sword", 1);
-        assertEquals(0, b.run(61, 400), "mid-job, only an emptied slot is refilled");
+        assertEquals(0, b.run(HotbarKeeper.START_TICKS, 400), "mid-job, only an emptied slot is refilled");
         // the next job opens a new window
         b.job = "bridge:mine#8";
         b.slots.remove(13);
@@ -187,9 +191,10 @@ class HotbarKeeperTest {
         c.job = "j";
         c.run(0, 300);
         c.put(16, "minecraft:stone_pickaxe", 1);
+        assertNull(c.look(301));
         c.slots.remove(0);
         c.menu = true;
-        assertEquals(0, c.run(301, 330));
+        assertEquals(0, c.run(302, 330));
         c.menu = false;
         assertNotNull(c.look(331));
 
@@ -201,9 +206,10 @@ class HotbarKeeperTest {
         d.run(0, 300);
         d.put(6, "minecraft:stone_pickaxe", 1);
         d.selected = 6;
+        assertNull(d.look(301));
         d.slots.remove(0);
         d.destroying = true;
-        assertEquals(0, d.run(301, 330), "the held pickaxe is not taken mid-break");
+        assertEquals(0, d.run(302, 330), "the held pickaxe is not taken mid-break");
         d.destroying = false;
         HotbarKeeper.Move m2 = d.look(331);
         assertEquals(new HotbarRules.Swap(6, 0), m2.swap());
@@ -217,8 +223,9 @@ class HotbarKeeperTest {
         b.job = "j";
         b.run(0, 300);
         b.put(18, "minecraft:bread", 5);
+        assertNull(b.look(301));
         b.slots.remove(2);
-        assertNotNull(b.look(301));
+        assertNotNull(b.look(302));
         assertEquals("bread", b.at(2));
         assertTrue(HotbarRules.isTool("pickaxe"));
         assertTrue(HotbarRules.isTool("minecraft:iron_pickaxe"));
@@ -226,5 +233,85 @@ class HotbarKeeperTest {
         assertFalse(HotbarRules.isTool("minecraft:cobblestone"));
         // a refill never raids a slot that holds its own item
         assertNull(HotbarRules.plan(Map.of(1, "pickaxe", 6, "pickaxe"), List.of(new HotbarRules.Item(5, "minecraft:stone_pickaxe", 1, -1)), List.of(1)));
+    }
+
+    @Test
+    void anItemMovedOutOfItsSlotIsNoRefill() {
+        // the farm's harmlessHand: the held sword goes into the bag for an empty hand, crop after crop
+        Bot b = kit();
+        b.busy = true;
+        b.job = "mod-farm";
+        b.run(0, 300);
+        b.put(20, "minecraft:stone_sword", 1);
+        assertNull(b.look(301));
+        b.selected = 1;
+        HotbarRules.Item sword = b.slots.remove(1);
+        b.slots.put(25, new HotbarRules.Item(25, sword.id(), 1, -1));
+        assertEquals(0, b.run(302, 400), "moved, not used up: the slot stays empty while the job runs");
+        assertTrue(b.keeper.refills().isEmpty());
+        // a real use-up from the slot (the iron sword breaks) is a refill
+        Bot c = kit();
+        c.busy = true;
+        c.job = "mod-farm";
+        c.run(0, 300);
+        c.put(20, "minecraft:stone_sword", 1);
+        assertNull(c.look(301));
+        c.slots.remove(1);                  // the iron sword broke
+        assertNotNull(c.look(302));
+        assertEquals("stone_sword", c.at(1));
+    }
+
+    @Test
+    void anItemTheJobPutInTheHandIsNotSwappedAway() {
+        // the job put cobblestone in the hand, in the (laid-out) pickaxe slot, for a hole fill
+        Bot b = kit();
+        b.slots.remove(0);
+        b.put(0, "minecraft:cobblestone", 10).put(20, "minecraft:dirt", 64);
+        b.selected = 0;
+        b.busy = true;
+        b.job = "bridge:stripmine#4";
+        assertEquals(3, b.run(0, 100), "the window fills the other slots");
+        assertEquals("cobblestone", b.at(0), "the held cobblestone stays in the hand");
+        assertEquals(0, b.selected);
+        // the hand moves on (the fill is done): the window, still open, brings the pickaxe
+        b.selected = 5;
+        assertNotNull(b.look(101));
+        assertEquals("stone_pickaxe", b.at(0));
+        // an emptied selected slot is refilled (the broken pickaxe case), but a laid-out slot the job filled with
+        // something else after it emptied is not
+        Bot c = kit();
+        c.busy = true;
+        c.job = "j";
+        c.run(0, 300);
+        c.put(16, "minecraft:stone_pickaxe", 1);
+        c.selected = 0;
+        assertNull(c.look(301));
+        c.reflex = true;                    // a fight holds the keeper
+        c.slots.remove(0);                  // the pickaxe broke
+        assertNull(c.look(302));
+        assertEquals(java.util.Set.of(1), c.keeper.refills());
+        c.reflex = false;
+        c.put(0, "minecraft:cobblestone", 5);       // then the job put a block there, in the hand
+        assertEquals(0, c.run(303, 340));
+        assertEquals("cobblestone", c.at(0));
+        c.selected = 5;
+        assertNotNull(c.look(341), "once the hand moved on, the pending refill comes");
+        assertEquals("stone_pickaxe", c.at(0));
+    }
+
+    @Test
+    void theStartWindowStaysOpenForItemsThatArriveLater() {
+        Bot b = new Bot().put(12, "minecraft:stone_pickaxe", 1);
+        b.selected = 5;
+        b.busy = true;
+        b.job = "mod-seq";
+        assertEquals(1, b.run(0, 50), "only the pickaxe at first");
+        b.put(20, "minecraft:torch", 16);         // fetched from a chest mid-job
+        assertEquals(1, b.run(51, 120));
+        assertEquals("torch", b.at(3), "brought while the window is open");
+        b.run(121, HotbarKeeper.START_TICKS - 1);
+        b.put(21, "minecraft:bread", 4);           // after the window: waits for idle
+        assertEquals(0, b.run(HotbarKeeper.START_TICKS, 400));
+        assertEquals("-", b.at(2));
     }
 }
