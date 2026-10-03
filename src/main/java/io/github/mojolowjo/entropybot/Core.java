@@ -41,7 +41,9 @@ public final class Core {
     public final String token = UUID.randomUUID().toString();
     private volatile BotFiles files;
     private long tick;
-    private boolean ready;
+    private boolean ready, inWorld;
+    /** B7b: the ground the bot has had loaded, painted into map tiles for the dashboard. */
+    private io.github.mojolowjo.entropybot.map.TerrainMap terrain;
     private int errors;
 
     private Core() {
@@ -65,7 +67,12 @@ public final class Core {
             Minecraft mc = Minecraft.getInstance();
             reconnect.tick(tick);                         // B6: also outside a world (the bridge doesn't tick there)
             commands.tick(tick);                          // B7a: state.json says "not in a world" too
-            if (mc.level == null) return;
+            if (mc.level == null) {
+                if (inWorld && terrain != null) terrain.flushAll();
+                inWorld = false;
+                return;
+            }
+            inWorld = true;
             if (!ready) {
                 files = new BotFiles(mc.gameDirectory.toPath().resolve(MODID));
                 guard.ensureProtectedBlocks();
@@ -73,6 +80,7 @@ public final class Core {
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
                 LOG.info("[entropybot] caves: {}", caves.load(files));
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
+                terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
@@ -83,6 +91,10 @@ public final class Core {
             reflexes.tick(tick);
             knowledge.flushIfDue(tick);
             poiScanner.tick(tick);
+            if (terrain != null) {
+                terrain.tick(tick);
+                if (tick % 12000 == 0) LOG.info("[entropybot] {}", terrain.status());
+            }
             pois.flushIfDue(tick);
             caves.flushIfDue(tick);
             if (baritone.hooked() && tick % 20 == 0) {
@@ -113,6 +125,8 @@ public final class Core {
         if (ready) a.add("cave");
         a.add("reconnect");
         if (commands.ready()) a.add("commands");
+        if (commands.ready()) a.add("jobs:walk");
+        if (terrain != null) a.add("terrain");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
         return a;

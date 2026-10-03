@@ -423,6 +423,29 @@ public final class BotAPI {
         try { return core().commands.owner(); } catch (Throwable t) { return "mojolowjo"; }
     }
 
+    /** B7b: where /home lands, {x,y,z,dim}, or "null". */
+    public static String home() {
+        try {
+            JsonObject h = core().commands.home();
+            return h == null ? "null" : h.toString();
+        } catch (Throwable t) {
+            return "null";
+        }
+    }
+
+    /** The bridge's teleport landed somewhere new: {x,y,z,dim}. */
+    public static String setHome(String token, String json) {
+        try {
+            if (!core().token.equals(token)) return "error: bad token";
+            JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+            core().commands.setHome(new int[]{o.get("x").getAsInt(), o.get("y").getAsInt(), o.get("z").getAsInt()},
+                    o.has("dim") ? o.get("dim").getAsString() : "minecraft:overworld");
+            return "ok";
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
     /** The policy as the mod keeps it (areas.json): {areas, protect, strict, corner1}. */
     public static String policyFull() {
         try { return core().commands.policyJson(); } catch (Throwable t) { return "{}"; }

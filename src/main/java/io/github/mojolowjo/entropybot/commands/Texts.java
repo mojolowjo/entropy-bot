@@ -32,10 +32,13 @@ public final class Texts {
      * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
      * later stage of B7 moves some of them into the mod.
      */
-    public static final Set<String> BRIDGE_VERBS = Set.of("memory", "ores", "stripmine", "mark", "setbase", "sethome", "forget", "places", "where",
-            "zone", "trust", "untrust", "need", "supplies", "twerk", "farm", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death",
-            "build", "b", "baritone", "mine", "craft", "recipe", "drop", "find", "use", "put", "take", "close", "scan", "wear", "equip", "kit",
-            "corpse", "deposit", "dig", "place", "open", "rs", "pots", "explore", "smelt", "get", "restock", "compact", "wait");
+    public static final Set<String> BRIDGE_VERBS = Set.of("memory", "ores", "stripmine", "where",
+            "zone", "trust", "untrust", "need", "supplies", "farm", "go", "death",
+            "build", "b", "baritone", "mine", "craft", "recipe", "drop", "use", "put", "take", "close", "scan", "wear", "equip", "kit",
+            "corpse", "deposit", "dig", "place", "open", "rs", "pots", "explore", "smelt", "get", "restock", "compact");
+
+    /** The jobs the mod runs itself since B7b part 1 ("go poi <id>" still goes to the bridge). */
+    public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find");
 
     public static final List<String> PM_HELP = List.of(
             "Moving: come, follow [name], goto x y z, go <place>, base, home (/home), sethome (my home = here), death (go back + empty my corpse), corpse (empty my corpse nearby), stop, spawn (use nearest bed)",

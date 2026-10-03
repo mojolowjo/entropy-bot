@@ -132,6 +132,25 @@ class CommandsTest {
         assertTrue(r.finished && r.doneMsg.startsWith("stopped: lost track of the job (going)"));
     }
 
+    @Test
+    void theModsOwnJobsIgnoreTheBridge() {
+        BridgeLink b = new BridgeLink();
+        Seen s = new Seen();
+        b.report(new JsonObject(), 0);
+        Request r = b.local("pm", "o", "goto 1 2 3", "ok: going to 1 2 3", s, 0);
+        assertTrue(r.replied && r.started && b.busy(1));
+        assertEquals("", b.next(1), "nothing for the bridge to do");
+        b.hello(5);
+        JsonObject other = JsonParser.parseString("{\"job\":{\"type\":\"farm\",\"status\":\"x\",\"done\":false,\"req\":9}}").getAsJsonObject();
+        b.report(other, 20);
+        b.report(other, 40);
+        b.tick(40 + BridgeLink.LOST_AFTER + BridgeLink.REPLY_TIMEOUT);
+        assertFalse(r.finished, "a reload, reports and silence leave it alone");
+        b.done(r.id, "ok: arrived");
+        assertEquals(List.of("done 1 ok: arrived"), s.log);
+        assertTrue(BridgeLink.quiet(BridgeLink.REPLACED) && !BridgeLink.quiet("ok: arrived"));
+    }
+
     // ---- chains, with a fake game ----
 
     static final class Fake implements Chains.Env {

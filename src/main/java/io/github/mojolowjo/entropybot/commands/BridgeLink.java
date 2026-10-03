@@ -44,6 +44,8 @@ public final class BridgeLink {
         public final JsonObject cmd;
         final Listener listener;
         public boolean sent, replied, started, finished;
+        /** The mod's own job (B7b): no bridge involved, so a bridge reload or report never ends it. */
+        public boolean local;
         public String reply, doneMsg;
         long sentAt, queuedAt;
         int missing;
@@ -84,6 +86,22 @@ public final class BridgeLink {
         Request r = new Request(nextId++, kind, from, text, internal, cmd, l, now);
         if (kind.equals("stop") || kind.equals("endwalk")) queue.addFirst(r);
         else queue.addLast(r);
+        return r;
+    }
+
+    /**
+     * A request for a job the mod runs itself: already answered (reply, started), open until {@link #done}. Its
+     * caller delivers the reply; the listener hears only the end.
+     */
+    public synchronized Request local(String kind, String from, String text, String reply, Listener l, long now) {
+        Request r = new Request(nextId++, kind, from, text, false, null, l, now);
+        r.local = true;
+        r.sent = true;
+        r.sentAt = now;
+        r.replied = true;
+        r.started = true;
+        r.reply = reply;
+        open.put(r.id, r);
         return r;
     }
 
@@ -130,8 +148,9 @@ public final class BridgeLink {
             lastHello = now;
             lastReport = now;
             helloCount++;
-            lost = new ArrayList<>(open.values());
-            open.clear();
+            lost = new ArrayList<>();
+            for (Request r : open.values()) if (!r.local) lost.add(r);
+            for (Request r : lost) open.remove(r.id);
             for (Request r : lost) {
                 r.finished = true;
                 r.doneMsg = RELOADED;
@@ -149,7 +168,7 @@ public final class BridgeLink {
             JsonObject job = o != null && o.has("job") && o.get("job").isJsonObject() ? o.getAsJsonObject("job") : null;
             long req = job != null && job.has("req") && !job.get("req").isJsonNull() ? job.get("req").getAsLong() : -1;
             for (Request r : open.values()) {
-                if (!r.started) continue;
+                if (!r.started || r.local) continue;
                 if (req == r.id) {
                     r.lastStatus = str(job, "status");
                     r.missing = 0;
@@ -184,6 +203,7 @@ public final class BridgeLink {
             }
             for (Iterator<Request> it = open.values().iterator(); it.hasNext(); ) {
                 Request r = it.next();
+                if (r.local) continue;
                 if (!r.replied && now - r.sentAt > REPLY_TIMEOUT) {
                     it.remove();
                     noReply.add(r);

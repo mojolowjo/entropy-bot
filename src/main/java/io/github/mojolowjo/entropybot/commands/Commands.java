@@ -20,6 +20,7 @@ import io.github.mojolowjo.entropybot.io.BotFiles;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
@@ -67,8 +68,12 @@ public final class Commands implements Chains.Env {
     private boolean wasDead;
     private int errors;
 
+    public final Jobs jobs;
+    private String placesSent;
+
     public Commands(Core core) {
         this.core = core;
+        this.jobs = new Jobs(core, this);
     }
 
     public boolean ready() { return ready; }
@@ -107,6 +112,15 @@ public final class Commands implements Chains.Env {
             for (String k : new String[]{"areas", "protect", "strict"}) if (p.has(k)) areaStore.data().add(k, p.get(k).deepCopy());
             areaStore.flush();
             sb.append("; areas.json from memory.json");
+        }
+        // B7b: where /home lands is the mod's too (the bridge reads it through BotAPI.home)
+        if (!brainStore.data().has("home")) {
+            if (memory == null) memory = readBridgeJson(mc, "memory.json");
+            if (memory != null && memory.has("home") && memory.get("home").isJsonObject()) {
+                brainStore.data().add("home", memory.get("home").deepCopy());
+                brainStore.flush();
+                sb.append("; home from memory.json");
+            }
         }
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
@@ -162,6 +176,13 @@ public final class Commands implements Chains.Env {
                 chains.autominerTick();
             }
             if (tick % 25 == 0) sendOutbox(player);
+            try {
+                jobs.tick(player);
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] job: {}", e.toString());
+                jobs.finish("error: " + e);
+            }
+            if (tick % 200 == 150) pushPlaces();
             if (tick % 20 == 0) writeState(mc, tick);
             brainStore.flushIfDue(tick);
             areaStore.flushIfDue(tick);
@@ -346,8 +367,9 @@ public final class Commands implements Chains.Env {
             if (chains.isRoutine(verb) && Texts.splitChain(raw).size() == 1) return Reply.now(chains.startChain(from, verb, verb, 1));
             return Reply.now(chains.startChain(from, "chain", raw, 1));
         }
-        // memory lookups and edits never interrupt a job (the bridge's notes until B7b)
-        if (verb.matches("^(mark|setbase|sethome|forget|places|where|zone|trust|untrust)$")) return forward(from, raw, internal, l);
+        // memory lookups and edits never interrupt a job (where, zone and trust are still the bridge's notes)
+        if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
+        if (verb.matches("^(where|zone|trust|untrust)$")) return forward(from, raw, internal, l);
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
         if (verb.equals("need") || verb.equals("supplies")) return forward(from, raw, internal, l);
@@ -366,8 +388,217 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if ((verb.equals("b") || verb.equals("baritone")) && !isOwner) return Reply.now("only " + owner() + " can send raw Baritone commands");
-        if (Texts.BRIDGE_VERBS.contains(verb)) return forward(from, raw, internal, l);
-        return Reply.now("unknown command \"" + verb + "\" - pm me: help");
+        boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.BRIDGE_VERBS.contains(verb);
+        if (!known) return Reply.now("unknown command \"" + verb + "\" - pm me: help");
+        // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
+        if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
+        if (verb.equals("farm") && rest.toLowerCase().matches("^(compact|here)\\b.*")) return forward(from, raw, internal, l);
+        // everything below may replace a running walk, but not a running task (find, recipe and close never interrupt)
+        boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
+        if (!quiet) {
+            if (jobs.running() && !jobs.walking()) return Reply.now("busy: " + jobs.job.status + " (pm \"stop\" first)");
+            JsonObject bj = bridge.job(tick);
+            if (bridge.jobRunning(tick) && Texts.MOD_JOB_VERBS.contains(verb)) {
+                if (!"travel".equals(BridgeLink.str(bj, "type"))) return Reply.now("busy: " + BridgeLink.str(bj, "status") + " (pm \"stop\" first)");
+                bridge.submit("endwalk", from, "", false, null, null, tick);
+            }
+            jobs.replaceWalk();
+        }
+        if (Texts.MOD_JOB_VERBS.contains(verb) && !(verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$"))) {
+            String r = modJob(verb, rest, from, player);
+            return new Reply(r, jobs.attach("pm", from, raw, r, l));
+        }
+        return forward(from, raw, internal, l);
+    }
+
+    /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, twerk, find. */
+    String modJob(String verb, String rest, String from, LocalPlayer player) {
+        switch (verb) {
+            case "come" -> {
+                Player target = Jobs.findPlayer(from);
+                if (target == null) return "I can't see you from here (I'm at " + Jobs.fmt(Jobs.here(player)) + "). PM me: goto x y z";
+                int[] t = Jobs.here(target);
+                String why = jobs.goalAllowed(t[0], t[1], t[2]);
+                if (why != null) {
+                    if (why.startsWith("next to a ")) return "you're " + why;
+                    return "you're outside my areas (" + t[0] + " " + t[2] + ") - area add <name> here 30";
+                }
+                return jobs.startTravel("goto " + Jobs.fmt(t), "coming to " + from, null, null, false);
+            }
+            case "follow" -> {
+                // the fence: the player has to be inside an area now, and the watch stops the follow when they leave
+                String name = rest.isEmpty() ? from : rest;
+                Player target = fenceOn() ? Jobs.findPlayer(name) : null;
+                if (target != null) {
+                    int[] t = Jobs.here(target);
+                    if (jobs.goalAllowed(t[0], t[1], t[2]) != null) return name + " is outside my areas (" + t[0] + " " + t[2] + ") - area add <name> here 30";
+                }
+                String r = jobs.startTravel("follow player " + name, "following " + name, null, null, false);
+                if (r.startsWith("ok") && fenceOn()) jobs.followWatch = new String[]{name, from};
+                if (jobs.job != null) jobs.job.done = true;        // a follow never "arrives"; nobody waits for it
+                return r;
+            }
+            case "goto" -> {
+                if (!rest.matches("^-?\\d+ -?\\d+ -?\\d+$") && !rest.matches("^-?\\d+ -?\\d+$")) return "usage: goto x y z  (or goto x z)";
+                return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false);
+            }
+            case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
+            case "home" -> { return jobs.startHome(player); }
+            case "go", "base" -> {
+                String name = verb.equals("go") ? rest.toLowerCase() : "base";
+                JsonObject pos = core.knowledge.places().get(name);
+                if (pos == null) return "I have no place called " + name + " (see \"places\")";
+                String dim = Jobs.dimOf(pos);
+                int[] p = Jobs.pos(pos);
+                if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
+                return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
+            }
+            case "wait" -> { return jobs.startWait(rest); }
+            case "twerk" -> { return jobs.startTwerk(rest); }
+            case "find" -> { return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest); }
+            default -> { return "unknown command \"" + verb + "\" - pm me: help"; }
+        }
+    }
+
+    // ---- places (B7b: the mod's knowledge store; the bridge mirrors it into memory.json) ----
+
+    static final java.util.Map<String, int[]> DIRS = java.util.Map.of("north", new int[]{0, -1}, "south", new int[]{0, 1}, "west", new int[]{-1, 0}, "east", new int[]{1, 0});
+
+    /** Minecraft yaw: 0 = south, 90 = west, 180 = north, 270 = east. */
+    static String dirFromYaw(float yaw) {
+        double y = ((yaw % 360) + 360) % 360;
+        return y >= 315 || y < 45 ? "south" : y < 135 ? "west" : y < 225 ? "north" : "east";
+    }
+
+    /** "x y z" -> those; else the sender when visible ("me" needs them visible: null), else the bot. */
+    PolicyCommands.Pos resolvePos(Minecraft mc, String arg, String from) {
+        String a = arg == null ? "" : arg.trim();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(-?\\d+) (-?\\d+) (-?\\d+)$").matcher(a);
+        if (m.find()) return new PolicyCommands.Pos(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)), Guard.dimOf(mc.level));
+        if (from != null) {
+            Player p = Jobs.findPlayer(from);
+            if (p != null) return posOf(mc, p);
+            if (a.equals("me")) return null;
+        }
+        return posOf(mc, mc.player);
+    }
+
+    String placeCommand(String verb, String rest, String from, LocalPlayer player) {
+        Minecraft mc = Minecraft.getInstance();
+        List<String> parts = Texts.words(rest);
+        java.util.Map<String, JsonObject> places = core.knowledge.places();
+        if (verb.equals("mark") || verb.equals("setbase")) {
+            String name = verb.equals("setbase") ? "base" : (parts.isEmpty() ? "" : parts.get(0).toLowerCase());
+            if (!name.matches("^[a-z0-9_-]{1,24}$")) return "usage: mark <name> [x y z]";
+            // a direction word makes any place a mine ("mark deepmine north": "mine strip ... at deepmine")
+            List<String> args = new ArrayList<>();
+            String dirWord = null;
+            for (String a : parts.subList(Math.min(1, parts.size()), parts.size())) {
+                if (DIRS.containsKey(a.toLowerCase())) dirWord = a.toLowerCase();
+                else args.add(a);
+            }
+            PolicyCommands.Pos pos = resolvePos(mc, verb.equals("setbase") ? rest : String.join(" ", args), from);
+            if (pos == null) return "I can't see you - come closer or give coordinates";
+            String dir = null;
+            if (name.equals("mine") || dirWord != null) {
+                Player who = from != null ? Jobs.findPlayer(from) : null;
+                dir = dirWord != null ? dirWord : dirFromYaw((who != null ? who : player).getYRot());
+            }
+            // "mark food" standing next to a chest: the chest itself (the food run opens it)
+            int[] snapped = null;
+            if (name.equals("food")) {
+                snapped = nearestContainer(mc, pos, 2);
+                if (snapped != null) pos = new PolicyCommands.Pos(snapped[0], snapped[1], snapped[2], pos.dim());
+            }
+            JsonObject o = new JsonObject();
+            o.addProperty("x", pos.x());
+            o.addProperty("y", pos.y());
+            o.addProperty("z", pos.z());
+            o.addProperty("dim", pos.dim());
+            if (dir != null) o.addProperty("dir", dir);
+            putPlace(name, o);
+            return "remembered " + name + " at " + pos.x() + " " + pos.y() + " " + pos.z()
+                    + (dir != null ? ", digging " + dir + (name.equals("mine") ? " (PM \"stripmine\" to start)" : " (\"mine strip <ores> at " + name + "\")") : "")
+                    + (name.equals("food") ? (snapped != null ? " (the chest there): when I run out of food I fetch some from it" : " - no chest within 2 blocks of that spot, stand right next to it") : "");
+        }
+        if (verb.equals("forget")) {
+            String name = rest.toLowerCase();
+            if (!places.containsKey(name)) return "I have no place called " + name;
+            putPlace(name, null);
+            return "forgot " + name;
+        }
+        if (verb.equals("places")) {
+            List<String> out = new ArrayList<>();
+            places.forEach((k, v) -> out.add(k + " " + Jobs.fmt(Jobs.pos(v))));
+            return out.isEmpty() ? "no places yet - PM \"mark base\" where you want my base" : String.join(" | ", out);
+        }
+        if (verb.equals("sethome")) {
+            // the server's homes: "/sethome home" sets it, "/home" teleports there
+            player.connection.sendCommand("sethome home");
+            int[] me = Jobs.here(player);
+            setHome(me, Guard.dimOf(player.level()));
+            return "ok: set my home at " + Jobs.fmt(me) + " (/sethome home) - \"home\" teleports me here, and long trips back teleport first";
+        }
+        return "unknown command \"" + verb + "\"";
+    }
+
+    private void putPlace(String name, JsonObject o) {
+        JsonObject ch = new JsonObject(), pl = new JsonObject();
+        pl.add(name, o == null ? JsonNull.INSTANCE : o);
+        ch.add("places", pl);
+        core.knowledge.put(ch.toString(), core.tick());
+    }
+
+    /** The nearest chest or barrel (not an ender chest) within r blocks (and 2 up or down) of pos, or null. */
+    static int[] nearestContainer(Minecraft mc, PolicyCommands.Pos pos, int r) {
+        int[] best = null;
+        long bestD = Long.MAX_VALUE;
+        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) for (int dy = -Math.min(r, 8); dy <= Math.min(r, 8); dy++) for (int dz = -r; dz <= r; dz++) {
+            q.set(pos.x() + dx, pos.y() + dy, pos.z() + dz);
+            String id = mc.level.getBlockState(q).getBlock().getDescriptionId();
+            if (id.contains("ender_chest") || (!id.contains("chest") && !id.contains("barrel"))) continue;
+            long d = (long) dx * dx + (long) dy * dy + (long) dz * dz;
+            if (d < bestD) {
+                bestD = d;
+                best = new int[]{pos.x() + dx, pos.y() + dy, pos.z() + dz};
+            }
+        }
+        return best;
+    }
+
+    // ---- home, the fence (for the jobs) ----
+
+    /** Where /home lands: {x,y,z,dim}, or null. */
+    public JsonObject home() {
+        JsonObject b = brainStore.data();
+        return b.has("home") && b.get("home").isJsonObject() ? b.getAsJsonObject("home") : null;
+    }
+
+    public void setHome(int[] p, String dim) {
+        JsonObject h = new JsonObject();
+        h.addProperty("x", p[0]);
+        h.addProperty("y", p[1]);
+        h.addProperty("z", p[2]);
+        h.addProperty("dim", dim);
+        brainStore.data().add("home", h);
+        saved();
+    }
+
+    /** The fence is on: strict mode and at least one area. */
+    public boolean fenceOn() {
+        return policy != null && policy.strict() && !policy.areas().isEmpty();
+    }
+
+    /** Cells between x y z and the nearest area in this dimension (0 = inside one); 999 with none. */
+    int areaGap(int x, int y, int z, String dim) {
+        int best = 999;
+        for (JsonElement e : policy.areas()) {
+            JsonObject a = e.getAsJsonObject();
+            if (!PolicyCommands.dimOf(a).equals(dim)) continue;
+            best = Math.min(best, PolicyCommands.boxGap(a, x, y, z));
+        }
+        return best;
     }
 
     /** Hands a command line to the bridge script; its answer comes later. */
@@ -383,7 +614,8 @@ public final class Commands implements Chains.Env {
         String s = (int) Math.floor(p.getX()) + " " + (int) Math.floor(p.getY()) + " " + (int) Math.floor(p.getZ())
                 + " | health " + Math.round(p.getHealth()) + "/20 | food " + p.getFoodData().getFoodLevel() + "/20";
         JsonObject job = bridge.job(tick);
-        if (bridge.jobRunning(tick)) s += " | " + BridgeLink.str(job, "status");
+        if (jobs.running()) s += " | " + jobs.job.status;
+        else if (bridge.jobRunning(tick)) s += " | " + BridgeLink.str(job, "status");
         JsonObject rep = bridge.report(tick);
         JsonObject mem = rep != null && rep.has("memory") && rep.get("memory").isJsonObject() ? rep.getAsJsonObject("memory") : null;
         if (mem != null && "readonly".equals(BridgeLink.str(mem, "state"))) s += " | notes READ-ONLY (PM memory)";
@@ -411,6 +643,10 @@ public final class Commands implements Chains.Env {
         long tick = core.tick();
         String routine = chains.clear();
         bridge.dropQueued();
+        jobs.followWatch = null;
+        if (jobs.running()) jobs.finish("stopped");
+        IBaritone mb = Jobs.baritone();
+        if (mb != null) Jobs.cancel(mb);
         if (bridge.present(tick)) {
             bridge.submit("stop", owner(), "stop", false, null, null, tick);
         } else {
@@ -560,6 +796,7 @@ public final class Commands implements Chains.Env {
 
     private void noteDeath(Minecraft mc, LocalPlayer p) {
         chains.noteDeath();
+        jobs.finish("stopped: the bot died");
         JsonObject d = new JsonObject();
         d.addProperty("x", (int) Math.floor(p.getX()));
         d.addProperty("y", (int) Math.floor(p.getY()));
@@ -595,7 +832,8 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
-        if (r.pending() == null) cmdResult(id, type, text, r.text());
+        // a bridge request answers later (its listener); the mod's own job answered already
+        if (r.pending() == null || r.pending().local) cmdResult(id, type, text, r.text());
     }
 
     private void cmdResult(String id, String type, String text, String result) {
@@ -642,20 +880,62 @@ public final class Commands implements Chains.Env {
             }
             case "poi", "pois" -> { return Reply.now(poiCommand(text, player, true)); }
             case "caves" -> { return Reply.now(cavesCommand(text)); }
-            default -> {
-                long tick = core.tick();
-                if (!bridge.present(tick)) return Reply.now("error: \"" + type + "\" still needs the bridge script (KubeJS), and it is not running");
-                return new Reply(null, bridge.submit("cmd", from != null ? from : owner(), text, false, cmd.deepCopy(), new Listener() {
-                    @Override
-                    public void replied(Request q) { cmdResult(id, type, text, q.reply); }
-
-                    @Override
-                    public void finished(Request q) {
-                        if (notify != null && !BridgeLink.quiet(q.doneMsg)) whisper(notify, q.doneMsg.replaceFirst("^ok: ", ""));
+            // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
+            case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
+            case "spawn", "home", "base", "twerk", "find", "go" -> {
+                if (type.equals("go") && text.trim().toLowerCase().matches("^poi\\s+\\d+$")) return forwardCmd(cmd, type, text, from, notify, id);
+                // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
+                if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
+                if (!type.equals("find")) {
+                    long tick = core.tick();
+                    JsonObject bj = bridge.job(tick);
+                    if (jobs.running() && !jobs.walking()) return Reply.now("error: busy with \"" + jobs.job.status + "\" - send stop first");
+                    if (bridge.jobRunning(tick)) {
+                        if (!"travel".equals(BridgeLink.str(bj, "type"))) return Reply.now("error: busy with \"" + BridgeLink.str(bj, "status") + "\" - send stop first");
+                        bridge.submit("endwalk", owner(), "", false, null, null, tick);
                     }
-                }, tick));
+                    jobs.replaceWalk();
+                }
+                String r = modJob(type, text, owner(), player);
+                Request q = jobs.attach("cmd", owner(), type + " " + text, r, notify == null ? null : new Listener() {
+                    @Override public void replied(Request x) {}
+
+                    @Override public void finished(Request x) {
+                        if (!BridgeLink.quiet(x.doneMsg)) whisper(notify, x.doneMsg.replaceFirst("^ok: ", ""));
+                    }
+                });
+                return new Reply(r, q);
             }
+            default -> { return forwardCmd(cmd, type, text, from, notify, id); }
         }
+    }
+
+    /** A cmd.json type the bridge still does: its runCommand answers. */
+    private Reply forwardCmd(JsonObject cmd, String type, String text, String from, String notify, String id) {
+        long tick = core.tick();
+        if (!bridge.present(tick)) return Reply.now("error: \"" + type + "\" still needs the bridge script (KubeJS), and it is not running");
+        return new Reply(null, bridge.submit("cmd", from != null ? from : owner(), text, false, cmd.deepCopy(), new Listener() {
+            @Override
+            public void replied(Request q) { cmdResult(id, type, text, q.reply); }
+
+            @Override
+            public void finished(Request q) {
+                if (notify != null && !BridgeLink.quiet(q.doneMsg)) whisper(notify, q.doneMsg.replaceFirst("^ok: ", ""));
+            }
+        }, tick));
+    }
+
+    /** Where the reflexes retreat to: the base and the /home landing (when they change). */
+    private void pushPlaces() {
+        JsonObject o = new JsonObject();
+        JsonObject base = core.knowledge.places().get("base");
+        o.add("base", base == null ? JsonNull.INSTANCE : base);
+        JsonObject h = home();
+        o.add("home", h == null ? JsonNull.INSTANCE : h);
+        String j = o.toString();
+        if (j.equals(placesSent)) return;
+        placesSent = j;
+        try { LOG.info("[entropybot] reflex places: {}", core.reflexes.setPlaces(j)); } catch (RuntimeException e) { LOG.warn("[entropybot] reflex places: {}", e.toString()); }
     }
 
     // ---- state.json (bridge.ps1 and the dashboard read it; the same fields the bridge wrote) ----
@@ -736,7 +1016,9 @@ public final class Commands implements Chains.Env {
         }
         s.add("screen", mc.screen == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(mc.screen.getClass().getSimpleName()));
         s.add("container", rep != null && rep.has("container") ? rep.get("container") : JsonNull.INSTANCE);
-        if (rep != null && rep.has("job")) s.add("job", rep.get("job"));
+        // the job: the mod's while it runs (or when the bridge has none to show), else the bridge's
+        if (jobs.job != null && (jobs.running() || !bridge.jobRunning(tick))) s.add("job", jobs.stateJson());
+        else if (rep != null && rep.has("job")) s.add("job", rep.get("job"));
         JsonObject rx = core.reflexes.status();
         JsonObject def = new JsonObject();
         def.addProperty("on", core.reflexes.defence());
