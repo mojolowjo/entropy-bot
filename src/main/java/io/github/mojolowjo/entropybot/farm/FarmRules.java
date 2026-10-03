@@ -128,8 +128,10 @@ public final class FarmRules {
                     if (!w.standable(x, y, z) || skip.contains(x + " " + y + " " + z)) continue;
                     int onCrop = cells.contains(x + " " + y + " " + z) || cropAt(w, x, y, z) != null ? 1 : 0;
                     long d = distSq(me, p);
+                    // 0.8.2: the nearest first, then off a crop: Baritone walks the crop rows now (modded farmland), and
+                    // cells past the field's edge proved unreachable (a wall, water) while tying on reach
                     if (best == null || n > best.n()
-                            || (n == best.n() && (onCrop < best.onCrop() || (onCrop == best.onCrop() && d < best.d())))) {
+                            || (n == best.n() && (d < best.d() || (d == best.d() && onCrop < best.onCrop())))) {
                         best = new Stand(x, y, z, n, onCrop, d);
                     }
                 }
