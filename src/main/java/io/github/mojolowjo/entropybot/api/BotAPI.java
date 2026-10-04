@@ -176,6 +176,19 @@ public final class BotAPI {
     }
 
     /**
+     * B7d (D3): a job of the mod's own turned Baritone's breaking on (the Baritone "mine"): the bridge's safety net
+     * (breaking on with no job of its own) leaves it alone.
+     */
+    public static boolean breakingOwned() {
+        try {
+            var j = core().commands.jobs.job;
+            return j != null && !j.done && j.ownsBreaking;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
      * The reflexes as JSON: {reflex: none|eating|fighting|fleeing|retreating, status, on, target?, dist?,
      * urgent (just hurt, or a monster within 5), noFood, deniedDim?, engine: none|hold|override|off}.
      */

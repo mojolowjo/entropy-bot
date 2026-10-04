@@ -34,6 +34,8 @@ public final class Core {
     public final Knowledge knowledge = new Knowledge();
     public final Pois pois = new Pois();
     public final Caves caves = new Caves();
+    /** B7d (D3): the listed ores and the explored chunks (ores.json, explored.json; moved over from memory.json once). */
+    public final io.github.mojolowjo.entropybot.cave.MineNotes mineNotes = new io.github.mojolowjo.entropybot.cave.MineNotes();
     public final io.github.mojolowjo.entropybot.engine.Reconnect reconnect = new io.github.mojolowjo.entropybot.engine.Reconnect(events);
     public final PoiScanner poiScanner = new PoiScanner(pois, events);
     public final Reflexes reflexes = new Reflexes(events, engine, knowledge);
@@ -79,6 +81,7 @@ public final class Core {
                 LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
                 LOG.info("[entropybot] caves: {}", caves.load(files));
+                LOG.info("[entropybot] mine notes: {}", mineNotes.load(files, new BotFiles(mc.gameDirectory.toPath().resolve("kubejs/bridge"))));
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 ready = true;
@@ -102,6 +105,9 @@ public final class Core {
             }
             pois.flushIfDue(tick);
             caves.flushIfDue(tick);
+            mineNotes.flushIfDue(tick);
+            pruned = mineNotes.takePruneNote();
+            if (pruned != null) LOG.info("[entropybot] mine notes: {}", pruned);
             if (baritone.hooked() && tick % 20 == 0) {
                 List<String> turned = baritone.enforceSettings();
                 if (!turned.isEmpty()) {
