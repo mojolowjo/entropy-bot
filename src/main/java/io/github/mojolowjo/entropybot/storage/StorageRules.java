@@ -152,6 +152,13 @@ public final class StorageRules {
         return Math.abs(base[0] - me[0]) > 64 || Math.abs(base[2] - me[2]) > 64;
     }
 
+    /** The "deposit" verb's choice (Storage.deposit): the "base" place's note {x, y, z, dim?} (or null) and the bot. */
+    public static boolean depositAtBase(JsonObject base, int[] me, String dim) {
+        if (base == null || !base.has("x") || !base.has("z")) return false;
+        int[] b = {base.get("x").getAsInt(), base.has("y") ? base.get("y").getAsInt() : 0, base.get("z").getAsInt()};
+        return farFromBase(b, base.has("dim") && !base.get("dim").isJsonNull() ? base.get("dim").getAsString() : null, me, dim);
+    }
+
     /**
      * Where each item goes: the chest that already holds the most of it, else the junk chest (the most cobblestone and
      * dirt, the nearest on a tie). Stops nearest first; the junk chest takes what doesn't fit elsewhere.

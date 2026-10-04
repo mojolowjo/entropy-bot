@@ -204,6 +204,29 @@ public final class GuardCore {
         return liquid == null ? "" : " - but it is next to " + liquid + ", and I never break a block next to water or lava";
     }
 
+    /** The liquid in one cell: "lava", "water" or null (none, or not loaded). */
+    public interface FluidAt {
+        String at(int x, int y, int z);
+    }
+
+    /** "lava" or "water" next to x y z (above and the four sides: the cells the digging looks at), lava first; else null. */
+    public static String liquidNextTo(FluidAt f, int x, int y, int z) {
+        int[][] sides = {{0, 1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+        boolean water = false;
+        for (int[] s : sides) {
+            String l = f.at(x + s[0], y + s[1], z + s[2]);
+            if ("lava".equals(l)) return "lava";
+            if (l != null) water = true;
+        }
+        return water ? "water" : null;
+    }
+
+    /** "guard check x y z <action>": the guard's answer, plus the liquid note for a break (not for an error). */
+    public static String checkReply(String answer, String action, String liquid) {
+        if (answer == null || !"break".equalsIgnoreCase(action) || answer.startsWith("error")) return answer;
+        return answer + liquidNote(liquid);
+    }
+
     public JsonObject status(int floorBlocks, boolean astarApplied, boolean clickApplied) {
         JsonObject o = new JsonObject();
         o.addProperty("mode", mode.name().toLowerCase());

@@ -1489,10 +1489,10 @@ public final class Commands implements Chains.Env {
         public String check(String dim, int x, int y, int z, String action) {
             String r = io.github.mojolowjo.entropybot.api.BotAPI.check(dim, x, y, z, action);
             // wave 1 (item 3): the guard only knows boxes; the digging never breaks a block next to water or lava
-            if (!"break".equalsIgnoreCase(action) || r.startsWith("error")) return r;
             Minecraft mc = Minecraft.getInstance();
-            if (mc.level == null || !dim.equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level))) return r;
-            return r + GuardCore.liquidNote(io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(mc.level, x, y, z));
+            String liquid = "break".equalsIgnoreCase(action) && mc.level != null && dim.equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level))
+                    ? io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(mc.level, x, y, z) : null;
+            return GuardCore.checkReply(r, action, liquid);
         }
     }
 

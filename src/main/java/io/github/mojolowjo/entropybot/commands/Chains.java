@@ -236,7 +236,7 @@ public final class Chains {
         if (c.pending != null) {
             Request p = c.pending;
             // the step's spot while no fight is on (wave 1: a retry after a fight walks back there first)
-            if (!p.finished && !env.fighting() && !env.holding()) {
+            if (!p.finished && !env.fighting() && !env.holding() && !c.inDetour) {
                 int[] here = env.pos();
                 if (here != null) c.jobPos = here;
             }
@@ -267,9 +267,21 @@ public final class Chains {
             c.pending = null;
             st = p.doneMsg == null ? "" : p.doneMsg;
             if (c.inDetour) {
-                // back where the step was (or not: whatever the walk said, the step itself comes next)
+                // back where the step was (or not: whatever the walk said, the step itself comes next) - unless a fight
+                // or low health cut the walk short too: another try, and the walk back again after the fight
                 c.inDetour = false;
                 c.waiting = false;
+                if (st.matches("^(stopped|interrupted): (attacked by|low health).*")) {
+                    if (c.retries >= 3) {
+                        endChain("stopped at step " + (c.idx + 1) + " (" + c.steps.get(c.idx) + "): the walk back was cut short too: " + st);
+                        return;
+                    }
+                    c.retries++;
+                    c.retryAt = env.tick() + 200;
+                    c.detour = detourFor(c.jobPos, env.pos());
+                    env.log("chain " + c.name + ": the walk back was cut short (" + st + ") - again after the fight");
+                    return;
+                }
                 env.log("chain " + c.name + ": back for the retry: " + st);
                 return;
             }

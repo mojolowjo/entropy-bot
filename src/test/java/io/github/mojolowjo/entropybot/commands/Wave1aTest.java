@@ -141,5 +141,69 @@ class Wave1aTest {
     void guardCheckSaysNextToLava() {
         assertEquals("", GuardCore.liquidNote(null));
         assertEquals(" - but it is next to lava, and I never break a block next to water or lava", GuardCore.liquidNote("lava"));
+        // the cells looked at: above and the four sides (not below), lava before water
+        java.util.Map<String, String> w = new java.util.HashMap<>();
+        GuardCore.FluidAt at = (x, y, z) -> w.get(x + " " + y + " " + z);
+        assertNull(GuardCore.liquidNextTo(at, 0, 0, 0));
+        w.put("0 -1 0", "lava");
+        assertNull(GuardCore.liquidNextTo(at, 0, 0, 0), "lava below is not next to it for the digging");
+        w.put("0 0 1", "water");
+        assertEquals("water", GuardCore.liquidNextTo(at, 0, 0, 0));
+        w.put("1 0 0", "lava");
+        assertEquals("lava", GuardCore.liquidNextTo(at, 0, 0, 0));
+        w.clear();
+        w.put("0 1 0", "lava");
+        assertEquals("lava", GuardCore.liquidNextTo(at, 0, 0, 0), "above counts");
+        // the reply "guard check" gives (Commands' GuardView)
+        assertEquals("would refuse: no lease here - but it is next to lava, and I never break a block next to water or lava",
+                GuardCore.checkReply("would refuse: no lease here", "break", "lava"));
+        assertEquals("ok", GuardCore.checkReply("ok", "break", null));
+        assertEquals("ok", GuardCore.checkReply("ok", "go", "lava"), "only a break gets the note");
+        assertEquals("error: action must be break, place or go", GuardCore.checkReply("error: action must be break, place or go", "break", "lava"));
+    }
+
+    @Test
+    void theDepositVerbChoosesTheBaseChestsFromFarAway() {
+        JsonObject base = JsonParser.parseString("{\"x\":-27,\"y\":53,\"z\":187,\"dim\":\"minecraft:overworld\"}").getAsJsonObject();
+        assertFalse(StorageRules.depositAtBase(base, new int[]{-20, 53, 190}, "minecraft:overworld"), "at the base");
+        assertTrue(StorageRules.depositAtBase(base, new int[]{-119, -54, 194}, "minecraft:overworld"), "at the mine, 92 across");
+        assertFalse(StorageRules.depositAtBase(base, new int[]{-119, -54, 194}, "minecraft:the_nether"));
+        assertTrue(StorageRules.depositAtBase(JsonParser.parseString("{\"x\":0,\"y\":60,\"z\":0}").getAsJsonObject(), new int[]{0, 60, 100}, "minecraft:overworld"));
+        assertFalse(StorageRules.depositAtBase(null, new int[]{500, 60, 500}, "minecraft:overworld"), "no base: as before");
+    }
+
+    @Test
+    void aWalkBackCutShortByLowHealthIsAnotherTry() {
+        CommandsTest.Fake f = CommandsTest.fake(new JsonObject());
+        List<Long> ids = new ArrayList<>();
+        f.pos = new int[]{100, 40, 100};
+        f.chains.startChain("owner", "chain", "mine coal_ore 40 dig", 1);
+        f.run(5);
+        take(f, ids);
+        f.run(20);
+        f.pos = new int[]{100, 53, 200};                      // a retreat to the base
+        f.link.done(ids.get(0), "stopped: low health, getting away from skeleton");
+        f.run(260);
+        assertEquals("goto 100 40 100", take(f, ids));
+        f.run(20);
+        f.pos = new int[]{100, 45, 160};                      // half way back, another fight
+        f.link.done(ids.get(1), "stopped: attacked by zombie");
+        f.run(260);
+        assertEquals("goto 100 40 100", take(f, ids), "the walk back again, not the step from half way");
+        f.run(20);
+        f.pos = new int[]{100, 40, 100};
+        f.link.done(ids.get(2), "ok: arrived near 100 40 100");
+        f.run(20);
+        assertEquals("mine coal_ore 40 dig", take(f, ids));
+        // the step cut short again, and its walk back too: 3 tries in a row are all, the chain ends saying why
+        f.run(20);
+        f.pos = new int[]{100, 53, 200};
+        f.link.done(ids.get(3), "stopped: low health, getting away from creeper");
+        f.run(260);
+        assertEquals("goto 100 40 100", take(f, ids));
+        f.link.done(ids.get(4), "stopped: low health, getting away from creeper");
+        f.run(20);
+        assertFalse(f.chains.running(), f.ran.toString());
+        assertTrue(f.whispers.get(f.whispers.size() - 1).contains("the walk back was cut short too"), f.whispers.toString());
     }
 }
