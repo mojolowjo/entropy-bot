@@ -62,6 +62,14 @@ public final class McClearWorld implements ClearWorld {
 
     @Override public boolean fluid(int x, int y, int z) { return !at(x, y, z).getFluidState().isEmpty(); }
 
+    @Override public String fluidKind(int x, int y, int z) {
+        var fs = at(x, y, z).getFluidState();
+        if (fs.isEmpty()) return null;
+        if (fs.is(net.minecraft.tags.FluidTags.LAVA)) return "lava";
+        if (fs.is(net.minecraft.tags.FluidTags.WATER)) return "water";
+        return BuiltInRegistries.FLUID.getKey(fs.getType()).toString();
+    }
+
     @Override public boolean blockEntity(int x, int y, int z) { return at(x, y, z).hasBlockEntity(); }
 
     @Override public boolean unbreakable(int x, int y, int z) {

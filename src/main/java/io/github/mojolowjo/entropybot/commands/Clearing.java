@@ -223,6 +223,7 @@ public final class Clearing {
         @Override public String name(int x, int y, int z) { return cur.name(x, y, z); }
         @Override public boolean air(int x, int y, int z) { return cur.air(x, y, z); }
         @Override public boolean fluid(int x, int y, int z) { return cur.fluid(x, y, z); }
+        @Override public String fluidKind(int x, int y, int z) { return cur.fluidKind(x, y, z); }
         @Override public boolean blockEntity(int x, int y, int z) { return cur.blockEntity(x, y, z); }
         @Override public boolean unbreakable(int x, int y, int z) { return cur.unbreakable(x, y, z); }
         @Override public boolean builtBlock(int x, int y, int z) { return cur.builtBlock(x, y, z); }

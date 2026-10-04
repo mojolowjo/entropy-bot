@@ -18,6 +18,15 @@ public interface ClearWorld {
     /** Any fluid in the cell: water, lava, a waterlogged block. */
     boolean fluid(int x, int y, int z);
 
+    /**
+     * Water plan (2026-10-04): which fluid fills the cell: "water", "lava" (or another fluid's id), null when none. The
+     * default goes by the block name; {@link McClearWorld} reads the fluid state.
+     */
+    default String fluidKind(int x, int y, int z) {
+        if (!fluid(x, y, z)) return null;
+        return name(x, y, z).contains("lava") ? "lava" : "water";
+    }
+
     /** Chests, barrels, beds, signs, machines... */
     boolean blockEntity(int x, int y, int z);
 

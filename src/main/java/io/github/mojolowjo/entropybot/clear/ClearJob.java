@@ -48,6 +48,13 @@ public final class ClearJob {
         public boolean floor;
         public String floorBlock;
 
+        /**
+         * Water plan item 1 (2026-10-04): blocks left because they touch water or lava end the clear as "blocked by water
+         * at x y z" (not ok), so a chain stops there. The dig verb sets it; strip branches and caves keep their old ending.
+         */
+        public boolean liquidBlocks;
+
+        public Options liquidBlocks(boolean l) { liquidBlocks = l; return this; }
         public Options junkDrop(boolean j) { junkDrop = j; return this; }
         public Options floor(boolean f, String block) { floor = f; floorBlock = block; return this; }
         public Options box(ClearBox b) { box = b; return this; }
@@ -80,6 +87,8 @@ public final class ClearJob {
     /** F: {@link Options#junkDrop}, {@link Options#floor} / {@link Options#floorBlock} */
     public final boolean junkDrop, floor;
     public final String floorBlock;
+    /** {@link Options#liquidBlocks} */
+    public final boolean liquidBlocks;
     /** F: where (feet x y z) and when (tick) "junk drop" threw junk; those drops are left alone a while ({@link JunkDrop#nearThrow}) */
     public final List<double[]> thrown = new ArrayList<>();
     /** true when no box or only list was given (the work zone) */
@@ -157,6 +166,7 @@ public final class ClearJob {
         this.junkDrop = o.junkDrop;
         this.floor = o.floor;
         this.floorBlock = o.floorBlock;
+        this.liquidBlocks = o.liquidBlocks;
     }
 
     /**
