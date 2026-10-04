@@ -143,7 +143,8 @@ public final class FastServer {
         if (keyFile.key() == null) return "error: no usable key in " + keyFile.path() + " (missing, unreadable or shorter than " + MIN_KEY + ")";
         HttpServer s = null;
         try {
-            s = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), wantPort), 16);
+            // 127.0.0.1 explicitly: getLoopbackAddress() is ::1 in the game's JVM (seen live, 0.10.0), which bridge.ps1 didn't reach
+            s = HttpServer.create(new InetSocketAddress(InetAddress.getByAddress(new byte[] {127, 0, 0, 1}), wantPort), 16);
             pool = Executors.newFixedThreadPool(THREADS, r -> {
                 Thread t = new Thread(r, "entropybot-fast");
                 t.setDaemon(true);
