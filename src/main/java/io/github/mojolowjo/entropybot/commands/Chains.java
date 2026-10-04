@@ -4,7 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
-import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
+import io.github.mojolowjo.entropybot.commands.JobRequests.Request;
 import io.github.mojolowjo.entropybot.memory.Limits;
 
 import java.time.Instant;
@@ -42,8 +42,8 @@ public final class Chains {
 
         void log(String line);
 
-        /** Runs one command line; a step the bridge does comes back pending. */
-        Reply dispatch(String from, String text, boolean internal, BridgeLink.Listener l);
+        /** Runs one command line; a step that starts a job comes back pending (its request). */
+        Reply dispatch(String from, String text, boolean internal, JobRequests.Listener l);
 
         boolean alive();
 
@@ -55,7 +55,7 @@ public final class Chains {
 
         float health();
 
-        /** A job runs or a request to the bridge is open. */
+        /** A job's request is open. */
         boolean busy();
 
         int freeSlots();
@@ -272,7 +272,6 @@ public final class Chains {
                 int[] here = env.pos();
                 if (here != null) c.jobPos = here;
             }
-            if (!p.replied && !p.finished) return;             // the bridge hasn't answered yet
             if (p.replied && !c.replyHandled) {
                 c.replyHandled = true;
                 if (c.inDetour && (Texts.stepFailed(p.reply) || !p.started)) {
@@ -322,14 +321,6 @@ public final class Chains {
                     return;
                 }
                 env.log("chain " + c.name + ": back for the retry: " + st);
-                return;
-            }
-            if (BridgeLink.RELOADED.equals(st)) {
-                // the bridge script reloaded mid-step (an install): that step runs again
-                c.waiting = false;
-                c.idx = Math.max(c.idx - 1, 0);
-                saveRun();
-                env.whisper(c.from, "carrying on with " + c.name + " (round " + c.round + ", step " + (c.idx + 1) + ": " + c.steps.get(c.idx) + ") after a reload");
                 return;
             }
             c.waiting = true;
@@ -540,16 +531,8 @@ public final class Chains {
             return;
         }
         corpseRun = true;
-        Reply r = env.dispatch(env.owner(), "death", false, new BridgeLink.Listener() {
-            @Override
-            public void replied(Request q) {
-                if (!String.valueOf(q.reply).startsWith("started")) env.whisper(env.owner(), "couldn't go for my corpse: " + q.reply);
-            }
-
-            @Override
-            public void finished(Request q) {
-                if (!BridgeLink.quiet(q.doneMsg)) env.whisper(env.owner(), q.doneMsg.replaceFirst("^ok: ", ""));
-            }
+        Reply r = env.dispatch(env.owner(), "death", false, q -> {
+            if (!JobRequests.quiet(q.doneMsg)) env.whisper(env.owner(), q.doneMsg.replaceFirst("^ok: ", ""));
         });
         if (r.pending() == null && (r.text() == null || !r.text().startsWith("started"))) env.whisper(env.owner(), "couldn't go for my corpse: " + r.text());
     }

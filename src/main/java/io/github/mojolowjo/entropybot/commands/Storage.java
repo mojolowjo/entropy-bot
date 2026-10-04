@@ -12,6 +12,7 @@ import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.gui.GuiCore;
 import io.github.mojolowjo.entropybot.gui.McMenu;
 import io.github.mojolowjo.entropybot.guard.Guard;
+import io.github.mojolowjo.entropybot.storage.RsCounts;
 import io.github.mojolowjo.entropybot.storage.StorageRules;
 import io.github.mojolowjo.entropybot.storage.StorageRules.Spot;
 import net.minecraft.client.Minecraft;
@@ -48,7 +49,7 @@ import java.util.regex.Pattern;
  * The storage verbs in the mod (B7b part 2, ported from the KubeJS bridge with the same behaviour and wording):
  * open / take / put / close / use / drop / wear, scan, deposit, where, trust, corpse and death, the Refined Storage
  * grid (rs, rs take, rs put), the botany pots and "go poi". The errands are {@link Seq} jobs in the mod's job slot;
- * chest notes and RS readings go into the knowledge files, which the bridge mirrors into memory.json.
+ * chest notes and RS readings go into the knowledge files.
  */
 public final class Storage {
     private static final Logger LOG = LogUtils.getLogger();
@@ -830,9 +831,9 @@ public final class Storage {
             if (st.op.equals("take")) {
                 Object[] ent = rsEntry(p, st.id);
                 if (ent == null || (long) ent[1] <= 0) return "the RS network has no " + GuiCore.bareId(st.id);
-                long amount = (long) ent[1];
-                s.rsWant = (int) (st.n != null ? Math.min(st.n, amount) : Math.min(amount, (int) ent[2]));
-                s.rsShort = st.n != null && amount < st.n ? (int) amount : null;
+                RsCounts.Take t = RsCounts.take(st.n, (long) ent[1], (int) ent[2]);
+                s.rsWant = t.want();
+                s.rsShort = t.had();
             }
         }
         if (now() - s.stageTick < 8) return "wait";
@@ -841,73 +842,46 @@ public final class Storage {
         List<Map<String, Integer>> d = GuiCore.diff(s.rsBefore, inv);
         if (st.op.equals("take")) {
             int gained = d.get(0).getOrDefault(st.id, 0), need = s.rsWant - gained;
-            if (need <= 0 || s.rsQuiet >= 3) {
-                s.note = (gained >= s.rsWant ? "took " + gained + " " + GuiCore.bareId(st.id) : "only took " + gained + " of " + s.rsWant + " " + GuiCore.bareId(st.id) + " (my inventory is full?)")
-                        + (s.rsShort != null ? " - the network had only " + s.rsShort : "");
+            if (RsCounts.takeDone(gained, s.rsWant, s.rsQuiet)) {
+                s.note = RsCounts.takeNote(gained, new RsCounts.Take(s.rsWant, s.rsShort), GuiCore.bareId(st.id));
                 return gained > 0 ? "next" : "couldn't take any " + GuiCore.bareId(st.id) + " from the network (my inventory is full?)";
             }
             s.rsQuiet = gained == s.rsLast ? s.rsQuiet + 1 : 0;
             s.rsLast = gained;
             Object[] ent = rsEntry(p, st.id);
             if (ent == null) {
-                s.rsQuiet = 3;
+                s.rsQuiet = RsCounts.QUIET_END;
                 return "wait";
             }
-            if (need >= (int) ent[2]) call(m, "onExtract", ent[0], rsEnum(m, "GridExtractMode", "ENTIRE_RESOURCE"), false);
-            else for (int i = 0; i < need && i < 16; i++) call(m, "onExtract", ent[0], rsEnum(m, "GridExtractMode", "SINGLE_RESOURCE"), false);
+            int singles = RsCounts.singles(need, (int) ent[2]);
+            if (singles == 0) call(m, "onExtract", ent[0], rsEnum(m, "GridExtractMode", "ENTIRE_RESOURCE"), false);
+            else for (int i = 0; i < singles; i++) call(m, "onExtract", ent[0], rsEnum(m, "GridExtractMode", "SINGLE_RESOURCE"), false);
             return "wait";
         }
         // put: what should still go in, per item (st.keep = {id: how many to keep} for "all")
-        Map<String, Integer> want = new LinkedHashMap<>();
-        if (st.keep != null) {
-            for (Map.Entry<String, Integer> e : st.keep.entrySet()) {
-                int w = s.rsBefore.getOrDefault(e.getKey(), 0) - e.getValue();
-                if (w > 0) want.put(e.getKey(), w);
-            }
-        } else {
-            int have = s.rsBefore.getOrDefault(st.id, 0);
-            want.put(st.id, st.n != null ? Math.min(st.n, have) : have);
-        }
-        int moved = 0;
-        Map<String, Integer> left = new LinkedHashMap<>();
-        for (Map.Entry<String, Integer> e : want.entrySet()) {
-            int lost = d.get(1).getOrDefault(e.getKey(), 0);
-            moved += Math.min(lost, e.getValue());
-            if (e.getValue() - lost > 0) left.put(e.getKey(), e.getValue() - lost);
-        }
-        if (left.isEmpty() || s.rsQuiet >= 3) {
-            int total = 0;
-            for (int v : want.values()) total += v;
-            s.note = (moved >= total ? "put " : "only put ") + moved + (moved >= total ? "" : " of " + total) + " " + (st.keep != null ? "items" : GuiCore.bareId(st.id))
-                    + " into the RS network" + (moved < total ? " (is it full?)" : st.n != null && st.n > total ? " (all I had)" : "");
+        Map<String, Integer> want = RsCounts.putWant(s.rsBefore, st.keep, st.id, st.n);
+        RsCounts.Progress pr = RsCounts.putProgress(want, d.get(1));
+        int moved = pr.moved();
+        if (pr.left().isEmpty() || s.rsQuiet >= RsCounts.QUIET_END) {
+            s.note = RsCounts.putNote(moved, RsCounts.total(want), st.keep != null, GuiCore.bareId(st.id), st.n);
             return moved > 0 ? "next" : "couldn't put anything into the network (is it full?)";
         }
         s.rsQuiet = moved == s.rsLast ? s.rsQuiet + 1 : 0;
         s.rsLast = moved;
         // whole stacks that fit in what is left go by a shift-click; one part stack by the cursor, single inserts
-        int[] part = null;
-        String partId = null;
+        List<RsCounts.Slot> mine = new ArrayList<>();
         for (int i = 0; i < m.slots.size(); i++) {
             Slot sl = m.getSlot(i);
             if (sl.container != p.getInventory() || !sl.hasItem()) continue;
-            String k = Gui.itemId(sl.getItem());
-            Integer l = left.get(k);
-            if (l == null || l <= 0) continue;
-            int cnt = sl.getItem().getCount();
-            if (cnt <= l) {
-                mc.gameMode.handleInventoryMouseClick(m.containerId, i, 0, ClickType.QUICK_MOVE, p);    // the whole stack into the network
-                left.put(k, l - cnt);
-            } else if (part == null) {
-                part = new int[]{i, l};
-                partId = k;
-                left.put(k, 0);
-            }
+            mine.add(new RsCounts.Slot(i, Gui.itemId(sl.getItem()), sl.getItem().getCount()));
         }
-        if (part != null) {
-            mc.gameMode.handleInventoryMouseClick(m.containerId, part[0], 0, ClickType.PICKUP, p);
+        RsCounts.Plan plan = RsCounts.putPlan(mine, pr.left());
+        for (int i : plan.quickMoves()) mc.gameMode.handleInventoryMouseClick(m.containerId, i, 0, ClickType.QUICK_MOVE, p);    // the whole stack into the network
+        if (plan.hasPart()) {
+            mc.gameMode.handleInventoryMouseClick(m.containerId, plan.partSlot(), 0, ClickType.PICKUP, p);
             Object single = rsEnum(m, "GridInsertMode", "SINGLE_RESOURCE");
-            for (int i = 0; i < part[1] && i < 64; i++) call(m, "onInsert", single, false);
-            mc.gameMode.handleInventoryMouseClick(m.containerId, part[0], 0, ClickType.PICKUP, p);    // the rest back where it was
+            for (int i = 0; i < plan.partCount() && i < RsCounts.INSERTS_PER_PART; i++) call(m, "onInsert", single, false);
+            mc.gameMode.handleInventoryMouseClick(m.containerId, plan.partSlot(), 0, ClickType.PICKUP, p);    // the rest back where it was
         }
         return "wait";
     }

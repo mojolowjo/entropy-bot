@@ -1,19 +1,14 @@
 package io.github.mojolowjo.entropybot.api;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.guard.Box;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
-import io.github.mojolowjo.entropybot.guard.Policy;
 import io.github.mojolowjo.entropybot.io.BotFiles;
 
 /**
- * What scripts call: strings and JSON in and out, nothing that can throw into a caller. A KubeJS
- * script reaches it with {@code Java.tryLoadClass('io.github.mojolowjo.entropybot.api.BotAPI')}.
- *
- * <p>Methods that change the guard take the token from {@link #token()}, so that a caller has to have
- * asked the mod first; the bridge fetches it once per script load.
+ * What scripts call: strings and JSON in and out, nothing that can throw into a caller. The optional KubeJS debug
+ * script ({@code tools/debug/claude_debug.js} in the bot repo) reaches it with
+ * {@code Java.tryLoadClass('io.github.mojolowjo.entropybot.api.BotAPI')}. B7e: read-only views plus the file helpers;
+ * the calls only the old KubeJS bridge made are gone.
  */
 public final class BotAPI {
     private BotAPI() {}
@@ -25,14 +20,9 @@ public final class BotAPI {
         try { return core().version(); } catch (Throwable t) { return "unknown"; }
     }
 
-    /** JSON array of what works right now: "token", "files", "events", "guard:strict|log", "guard:click", "guard:place", "guard:astar". */
+    /** JSON array of what works right now: "files", "events", "guard:strict|log", "guard:click", "guard:place", "guard:astar"... */
     public static String features() {
         try { return core().features().toString(); } catch (Throwable t) { return "[]"; }
-    }
-
-    /** The per-game-session token the guard calls want. */
-    public static String token() {
-        return core().token;
     }
 
     /** Events with seq greater than afterSeq, oldest first, at most max (0 = all), as a JSON array. */
@@ -72,87 +62,6 @@ public final class BotAPI {
         }
     }
 
-    /** Replaces the areas and protect boxes: {"areas":[{name,dim?,x1,z1,x2,z2,y1?,y2?}...],"protect":[...]}. */
-    public static String setPolicy(String json, String token) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            Policy p = Policy.parse(json);
-            String r = core().guard.core.setPolicy(p);
-            core().events.push("guard", "policy: " + r, null);
-            return r;
-        } catch (IllegalArgumentException e) {
-            return "error: " + e.getMessage();
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** The current areas and protect boxes as JSON. */
-    public static String policy() {
-        try { return core().guard.core.policy().toJson().toString(); } catch (Throwable t) { return "{}"; }
-    }
-
-    /** "strict" (vetoes) or "log" (area and lease rules only record). The floor is enforced either way. */
-    public static String mode(String mode, String token) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            GuardCore.Mode m = "log".equalsIgnoreCase(mode) ? GuardCore.Mode.LOG : "strict".equalsIgnoreCase(mode) ? GuardCore.Mode.STRICT : null;
-            if (m == null) return "error: mode must be strict or log";
-            String r = core().guard.core.setMode(m);
-            core().events.push("guard", r, null);
-            return r;
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** Takes a lease for a job: the lease id, or "error: ...". boxJson needs x1 y1 z1 x2 y2 z2 (dim optional). */
-    public static String lease(String token, String task, String boxJson, boolean place) {
-        return leaseImpl(token, task, boxJson, place, false);
-    }
-
-    /** The owner's {@code dig ... force}: may break building blocks (never block entities) in a box of at most 64. */
-    public static String forceLease(String token, String task, String boxJson) {
-        return leaseImpl(token, task, boxJson, false, true);
-    }
-
-    private static String leaseImpl(String token, String task, String boxJson, boolean place, boolean force) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            JsonObject o = JsonParser.parseString(boxJson).getAsJsonObject();
-            if (!o.has("y1") || !o.has("y2")) return "error: a lease box needs y1 and y2";
-            Box box = Box.fromJson(o, Policy.DEFAULT_DIM);
-            String r = core().guard.core.lease(token, task == null ? "job" : task, box, place, force);
-            if (!r.startsWith("error")) core().events.push("guard", "lease " + r + " for " + task + ": " + box.describe() + (place ? " (place)" : "") + (force ? " (force)" : ""), null);
-            return r;
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return "error: " + e.getMessage();
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    public static void release(String id) {
-        try { core().guard.core.release(id); } catch (Throwable ignored) {}
-    }
-
-    public static void releaseAll(String token) {
-        try { if (core().token.equals(token)) core().guard.core.releaseAll(token); } catch (Throwable ignored) {}
-    }
-
-    /** Renews every lease taken with this token; a lease without a heartbeat for 100 ticks dies. Returns the count. */
-    public static int heartbeat(String token) {
-        try { return core().guard.core.heartbeat(token); } catch (Throwable t) { return 0; }
-    }
-
-    /**
-     * B7d D1: a mod job runs Baritone's builder (build floor|walls|fill|shell, placing on): the bridge's safety net
-     * leaves allowPlace alone while this is true.
-     */
-    public static boolean placingOwned() {
-        try { return io.github.mojolowjo.entropybot.commands.Clearing.placingOwned(); } catch (Throwable t) { return false; }
-    }
-
     /** The last vetoes (and would-be vetoes in log mode), newest last, as a JSON array. */
     public static String vetoes(int max) {
         try { return core().guard.core.log().recent(max); } catch (Throwable t) { return "[]"; }
@@ -184,22 +93,6 @@ public final class BotAPI {
     }
 
     /**
-     * B7d (D3): a job of the mod's own turned Baritone's breaking on (the Baritone "mine"): the bridge's safety net
-     * (breaking on with no job of its own) leaves it alone. S1: only while Baritone's mine really runs (not during the
-     * job's pickaxe trip, a hold or a walk to new land, when breaking is off and anything that turned it on is not ours).
-     */
-    public static boolean breakingOwned() {
-        try {
-            var j = core().commands.jobs.job;
-            if (j == null || j.done || !j.ownsBreaking) return false;
-            baritone.api.IBaritone b = baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone();
-            return b != null && b.getMineProcess().isActive();
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /**
      * The reflexes as JSON: {reflex: none|eating|fighting|fleeing|retreating, status, on, target?, dist?,
      * urgent (just hurt, or a monster within 5), noFood, deniedDim?, engine: none|hold|override|off}.
      */
@@ -207,297 +100,11 @@ public final class BotAPI {
         try { return core().reflexes.status().toString(); } catch (Throwable t) { return "{\"reflex\":\"none\",\"error\":\"" + t + "\"}"; }
     }
 
-    /** The "eat" verb: eat now if hungry at all. "started: eating" or "error: ...". */
-    public static String eat(String token) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            return core().reflexes.eat();
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** "defend on|off": fighting, creepers and retreats (eating goes on either way). */
-    public static String defence(String token, boolean on) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            core().reflexes.setDefence(on);
-            return "ok: self-defence " + (on ? "on" : "off");
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** B7b part 2: the open menu's slots by role (the bridge's guiDescribe), for checking a modded chest in game. */
+    /** The open menu's slots by role, for checking a modded chest in game (the "debug gui" verb says the same). */
     public static String guiDescribe() {
         try {
             net.minecraft.client.player.LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;
             return p == null ? "not in a world" : io.github.mojolowjo.entropybot.gui.Gui.describe(p);
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** B3a: the knowledge files' version; it goes up with every change (the bridge pulls when it moved). */
-    public static long knowledgeVersion() {
-        try { return core().knowledge.version(); } catch (Throwable t) { return -1; }
-    }
-
-    /** {"version":n,"places":{name:{x,y,z,dim,...}},"chests":{"x y z":{dim,items,seen,trusted?}}} */
-    public static String knowledge() {
-        try { return core().knowledge.toJson().toString(); } catch (Throwable t) { return "{\"error\":\"" + t + "\"}"; }
-    }
-
-    /** Changes from the bridge: {"places":{name: obj|null}, "chests":{key: obj|null}} (null deletes). The new version, or -1. */
-    public static long knowledgePut(String token, String json) {
-        try {
-            if (!core().token.equals(token)) return -1;
-            return core().knowledge.put(json, core().tick());
-        } catch (Throwable t) {
-            return -1;
-        }
-    }
-
-    /** The bridge's whole notes at its load: its places win, a chest note seen later wins. The new version, or -1. */
-    public static long knowledgeMerge(String token, String json) {
-        try {
-            if (!core().token.equals(token)) return -1;
-            return core().knowledge.merge(json, core().tick());
-        } catch (Throwable t) {
-            return -1;
-        }
-    }
-
-    /** B3b: the points of interest: {"next":n,"pois":[{id,kind,x,y,z,dim,first,last}]} */
-    public static String pois() {
-        try { return core().pois.toJson().toString(); } catch (Throwable t) { return "{\"pois\":[],\"error\":\"" + t + "\"}"; }
-    }
-
-    /** Forgets one point of interest: "ok: ..." or "error: ...". */
-    public static String poiForget(String token, int id) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            return core().pois.forget(id, core().tick()) ? "ok: forgot poi " + id : "error: no poi " + id;
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** B6: reconnecting after a kick on or off: "ok: ..." (the mod's own setting; on by default each launch). */
-    public static String reconnect(String token, boolean on) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            core().reconnect.setOn(on);
-            return "ok: reconnecting after a kick is " + (on ? "on (after 1, 5, 15 min, then every 30 min for 24 h; 3 an hour at most)" : "off");
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    // ---- B4: caves ----
-
-    /** The caves known: {"next":n,"caves":{name:{dim,entrance,furthest,frontierLeft,explored,created,updated}}} */
-    public static String caves() {
-        try { return core().caves.toJson(false).toString(); } catch (Throwable t) { return "{\"caves\":{},\"error\":\"" + t + "\"}"; }
-    }
-
-    /** The cave to explore from where the bot stands: the named one, the nearest unfinished one, or a new one. JSON or "error: ...". */
-    public static String caveStart(String token, String name) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            var mc = net.minecraft.client.Minecraft.getInstance();
-            if (mc.player == null || mc.level == null) return "error: not in a world";
-            var p = mc.player.blockPosition();
-            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.pick(name, io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level),
-                    p.getX(), p.getY(), p.getZ(), System.currentTimeMillis(), core().tick());
-            if (c == null) return "error: I know no cave called " + name + " (\"caves\" lists them)";
-            JsonObject o = c.toJsonPublic();
-            o.addProperty("name", c.name);
-            return o.toString();
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /**
-     * One look around in the cave: marks where the bot is as explored, then searches. oresJson is an array of block
-     * ids to mine. {"frontier":{x,y,z,dist}|null,"ores":[{x,y,z,id,stand:[x,y,z],dist}],"reached":n,"dark":bool,
-     * "fromEntrance":n} or {"error":...}.
-     */
-    public static String caveStep(String token, String name, String oresJson, int maxFromEntrance) {
-        try {
-            if (!core().token.equals(token)) return "{\"error\":\"bad token\"}";
-            var mc = net.minecraft.client.Minecraft.getInstance();
-            if (mc.player == null || mc.level == null) return "{\"error\":\"not in a world\"}";
-            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.get(name);
-            if (c == null) return "{\"error\":\"no cave called " + name + "\"}";
-            java.util.Set<String> ids = new java.util.HashSet<>();
-            for (var e : JsonParser.parseString(oresJson).getAsJsonArray()) ids.add(e.getAsString());
-            var p = mc.player.blockPosition();
-            core().caves.visit(c, p.getX(), p.getY(), p.getZ(), System.currentTimeMillis(), core().tick());
-            var r = io.github.mojolowjo.entropybot.cave.CaveSearch.search(new io.github.mojolowjo.entropybot.cave.LevelWorld(mc.level),
-                    p.getX(), p.getY(), p.getZ(), c.visited, ids::contains, c.ex, c.ey, c.ez, maxFromEntrance);
-            JsonObject o = new JsonObject();
-            if (r.frontier() != null) {
-                JsonObject f = new JsonObject();
-                f.addProperty("x", r.frontier().x());
-                f.addProperty("y", r.frontier().y());
-                f.addProperty("z", r.frontier().z());
-                f.addProperty("dist", r.frontier().dist());
-                o.add("frontier", f);
-            }
-            com.google.gson.JsonArray a = new com.google.gson.JsonArray();
-            for (var ore : r.ores()) {
-                JsonObject q = new JsonObject();
-                q.addProperty("x", ore.x());
-                q.addProperty("y", ore.y());
-                q.addProperty("z", ore.z());
-                q.addProperty("id", ore.id());
-                q.addProperty("dist", ore.dist());
-                a.add(q);
-            }
-            o.add("ores", a);
-            o.addProperty("reached", r.reached());
-            o.addProperty("dark", r.dark());
-            o.addProperty("fromEntrance", (int) Math.round(Math.sqrt(p.distSqr(new net.minecraft.core.BlockPos(c.ex, c.ey, c.ez)))));
-            return o.toString();
-        } catch (Throwable t) {
-            return "{\"error\":\"" + t.toString().replace("\"", "'") + "\"}";
-        }
-    }
-
-    /** Marks the spot as explored without a search (a frontier the bot couldn't reach). */
-    public static String caveVisit(String token, String name, int x, int y, int z) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.get(name);
-            if (c == null) return "error: no cave called " + name;
-            core().caves.visit(c, x, y, z, System.currentTimeMillis(), core().tick());
-            return "ok";
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** The run in this cave is over; frontierLeft false = the cave is finished. */
-    public static String caveEnd(String token, String name, boolean frontierLeft) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            io.github.mojolowjo.entropybot.cave.Caves.Cave c = core().caves.get(name);
-            if (c == null) return "error: no cave called " + name;
-            core().caves.finish(c, frontierLeft, System.currentTimeMillis(), core().tick());
-            return "ok";
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    public static String caveRename(String token, String from, String to) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            return core().caves.rename(from, to, core().tick());
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    // ---- B7a: the command core; the bridge becomes a worker for the verbs it still does ----
-
-    /** The bridge script (re)loaded: whatever it was doing for the mod is gone. "ok" or "error: ...". */
-    public static String bridgeHello(String token) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            core().commands.bridge.hello(core().tick());
-            return "ok";
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /** The next request for the bridge as JSON {id, kind: pm|cmd|stop|endwalk, from, text, internal, cmd?}, or "". */
-    public static String bridgeNext(String token) {
-        try {
-            if (!core().token.equals(token)) return "";
-            return core().commands.bridge.next(core().tick());
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    /** The bridge's answer to a request; started = a job began that will report its end through bridgeDone. */
-    public static void bridgeReply(String token, long id, String reply, boolean started) {
-        try {
-            if (core().token.equals(token)) core().commands.bridge.reply(id, reply, started);
-        } catch (Throwable ignored) {}
-    }
-
-    /** The job a request started has ended with msg ("ok: ...", "stopped: ...", "error: ..."). */
-    public static void bridgeDone(String token, long id, String msg) {
-        try {
-            if (core().token.equals(token)) core().commands.bridge.done(id, msg);
-        } catch (Throwable ignored) {}
-    }
-
-    /** Once a second: the bridge's job and notes, {job:{type,status,done,requester,step,req}, memory, container, bagRoom, supplies, orePrefer, errors}. */
-    public static void bridgeReport(String token, String json) {
-        try {
-            if (core().token.equals(token)) core().commands.bridge.report(JsonParser.parseString(json).getAsJsonObject(), core().tick());
-        } catch (Throwable ignored) {}
-    }
-
-    /** A whisper from the bridge goes through the mod's rate-limited outbox. */
-    public static void whisper(String token, String to, String text) {
-        try {
-            if (core().token.equals(token)) core().commands.whisper(to, text);
-        } catch (Throwable ignored) {}
-    }
-
-    /** The owner's name (pm.json). */
-    public static String owner() {
-        try { return core().commands.owner(); } catch (Throwable t) { return "mojolowjo"; }
-    }
-
-    /** B7b: where /home lands, {x,y,z,dim}, or "null". */
-    public static String home() {
-        try {
-            JsonObject h = core().commands.home();
-            return h == null ? "null" : h.toString();
-        } catch (Throwable t) {
-            return "null";
-        }
-    }
-
-    /** The bridge's teleport landed somewhere new: {x,y,z,dim}. */
-    public static String setHome(String token, String json) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-            core().commands.setHome(new int[]{o.get("x").getAsInt(), o.get("y").getAsInt(), o.get("z").getAsInt()},
-                    o.has("dim") ? o.get("dim").getAsString() : "minecraft:overworld");
-            return "ok";
-        } catch (Throwable t) {
-            return "error: " + t;
-        }
-    }
-
-    /**
-     * Package B: the tool policy for the bridge's tool choice and deposit, {hotbar:{"1":"pickaxe",...}, toolOres:
-     * "iron"|"cheapest", supplies:{id:n}} (commands.json), or "{}" before the commands are ready.
-     */
-    public static String toolPolicy() {
-        try { return core().commands.ready() ? core().commands.toolPolicy().toString() : "{}"; } catch (Throwable t) { return "{}"; }
-    }
-
-    /** The policy as the mod keeps it (areas.json): {areas, protect, strict, corner1}. */
-    public static String policyFull() {
-        try { return core().commands.policyJson(); } catch (Throwable t) { return "{}"; }
-    }
-
-    /** Where to retreat to: {"base":{x,y,z,dim},"home":{x,y,z,dim}} (the /home landing), from the bridge's notes. */
-    public static String setPlaces(String token, String json) {
-        try {
-            if (!core().token.equals(token)) return "error: bad token";
-            return core().reflexes.setPlaces(json);
         } catch (Throwable t) {
             return "error: " + t;
         }

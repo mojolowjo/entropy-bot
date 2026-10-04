@@ -22,18 +22,11 @@ public final class Texts {
     /** Every command word; routine names can't use these. */
     public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
             "setbase", "sethome", "forget", "places", "where", "zone", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
-            "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
+            "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "recorder", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade");
-
-    /**
-     * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
-     * later stage of B7 moves some of them into the mod.
-     */
-    public static final Set<String> BRIDGE_VERBS = Set.of("memory",
-            "b", "baritone");             // B7d: zone, build, dig, place, mine, explore, ores, stripmine are the mod's
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -44,7 +37,7 @@ public final class Texts {
             "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
             "dig", "build", "place", "stripmine", "mine", "explore");
 
-    /** The instant GUI verbs the mod does since B7b part 2 (no job; they never wait for the bridge's job). */
+    /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
 
     public static final List<String> PM_HELP = List.of(
@@ -65,6 +58,7 @@ public final class Texts {
             "Other: status, defend on|off, find <block>, say <text>, twerk (on/off; twerk <s> for a set time), wait <s>, memory (how my note files are), restart ok|no (I may be closed for an update, 15 min) | Only for you: allow/deny <name>, allowed, b <baritone cmd>, mouse free|grab; allowed players get " + GUEST_HELP,
             "On my own: rule every 30m do <cmds> | rule at 06:30 do ... | rule when full do ... | rule when idle 10m do ..., rules, rule delete <n>; autominer on|off|status, why (what it decided); "
                     + "deaths, death policy on|off (fetch my corpse after a death; 5 deaths an hour park me), resume (after parking); reconnect on|off (after a kick); a running routine carries on after a reload or restart (12 h)",
+            "Recorder (owner): recorder (settings, disk, incidents), recorder off|light|normal|detailed|max [for 30m|2h], recorder range <chunks> | trail <ticks|Ns> | snapshot <blocks>|now | states on|off | keep <hours> | mark <note>",
             "Chains: cmd then cmd then cmd | routine save <name> <chain>, routines, routine show/delete <name>, <name> (runs it), repeat [n|forever] <name or chain>, queue, stop",
             "Guard (where I may go and dig): area list, area show <name>, area add <name> here <r> | x1 z1 x2 z2 [y1 y2], area corner1, area corner2 <name>, area grow <name> <n>, "
                     + "area remove <name> confirm, protect [<name> here <r> [down up] | <name> x1 y1 z1 x2 y2 z2], unprotect <name> confirm, guard, guard vetoes, guard check x y z break|place|go, "
@@ -105,6 +99,21 @@ public final class Texts {
         if (verb.equals("caves") && !r.matches("^rename\\b.*")) return null;
         if (verb.equals("ores") && r.matches("^prefer\\s+\\S.*")) return "sorry, only " + owner + " can set the preferred ores";
         return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + GUEST_HELP;
+    }
+
+    /** B7e: the answer to a cmd.json type the mod doesn't know (the KubeJS bridge used to take the rest). */
+    public static String unknownType(String type) {
+        return "error: unknown type " + type;
+    }
+
+    /** B7e: a "debug" answer (a 4096-cell slice is ~15 KB) goes into the log cut to this many characters and its length. */
+    public static final int DEBUG_LOG_CHARS = 200;
+
+    /** What the log line of a cmd.json answer shows: the answer, or for "debug" (a type or a pm) its start and length. */
+    public static String cmdLogged(String type, String text, String result) {
+        boolean debug = "debug".equals(type) || ("pm".equals(type) && verbAndRest(text)[0].equals("debug"));
+        if (!debug || result == null || result.length() <= DEBUG_LOG_CHARS) return result;
+        return result.substring(0, DEBUG_LOG_CHARS) + "... (" + result.length() + " chars)";
     }
 
     /** "say" only ever talks: a line starting with "/" or Baritone's prefix would be a command. */

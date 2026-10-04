@@ -192,7 +192,7 @@ public final class Caves {
         touch(tick);
     }
 
-    /** Renames a cave ("mark" in the bridge can call it something better). */
+    /** Renames a cave ("caves rename <old> <new>"). */
     public synchronized String rename(String from, String to, long tick) {
         Cave c = caves.get(from);
         if (c == null) return "error: no cave called " + from;

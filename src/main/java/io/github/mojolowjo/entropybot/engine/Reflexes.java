@@ -99,7 +99,7 @@ public final class Reflexes {
     private Place retreatTo;
     private int[] fleeTo;
     private double lastX, lastY, lastZ;
-    // places the bridge tells us about
+    // the base and the /home landing (Commands.pushPlaces)
     private volatile Place base, home;
     // death
     private int deadTicks;
@@ -674,7 +674,7 @@ public final class Reflexes {
         return n;
     }
 
-    /** What the open chest holds now goes into the notes (the bridge mirrors it into memory.json). */
+    /** What the open chest holds now goes into the notes (chests.json). */
     private void noteOpenChest(Minecraft mc, LocalPlayer p, FoodRun.Target t) {
         JsonObject items = new JsonObject();
         for (Slot s : p.containerMenu.slots) {

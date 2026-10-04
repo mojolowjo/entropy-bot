@@ -9,7 +9,8 @@
     "GuardMixinBlockItem",
     "GuardMixinCalculationContext",
     "FarmlandMixinPrecomputedData",
-    "ReconnectMixinQuickPlay"
+    "ReconnectMixinQuickPlay",
+    "RecorderMixinClientLevel"
   ],
   "injectors": {
     "defaultRequire": 1

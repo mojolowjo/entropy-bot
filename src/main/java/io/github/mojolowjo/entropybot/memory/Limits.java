@@ -16,7 +16,7 @@ import java.util.Map;
  *
  * <p>Over a cap the bot either drops the oldest (notes it can see again: chest notes, Refined Storage readings,
  * caves, points of interest) or refuses and says the limit (what the owner names: places, routines, rules, areas,
- * protect boxes, allowed players, supplies, chain steps). The bridge script keeps the same numbers ({@code LIMITS}).
+ * protect boxes, allowed players, supplies, chain steps).
  *
  * <p>Caps kept where they already were: points of interest {@code Pois.MAX} 500 (oldest dropped), the event ring
  * {@code EventRing.CAPACITY} 300, the guard's veto log {@code VetoLog.CAPACITY} 50, the autominer's log 20 decisions

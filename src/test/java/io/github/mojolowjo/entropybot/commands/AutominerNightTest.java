@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class AutominerNightTest {
 
-    /** The bridge, played by the test: every request starts at once and ends `dur` ticks later with outcome(text). */
+    /** The jobs, played by the test: every step starts at once and ends `dur` ticks later with outcome(text). */
     static final class Bridge {
         final CommandsTest.Fake f;
         final List<String> ran = new ArrayList<>();
@@ -30,13 +30,11 @@ class AutominerNightTest {
         }
 
         void tick(long dur) {
-            String j = f.link.next(f.tick);
-            if (!j.isEmpty()) {
-                JsonObject o = JsonParser.parseString(j).getAsJsonObject();
-                id = o.get("id").getAsLong();
-                text = o.get("text").getAsString();
+            if (f.taken < f.opened.size()) {
+                var r = f.takeNext();
+                id = r.id;
+                text = r.text;
                 ran.add(text);
-                f.link.reply(id, "started: " + text, true);
                 endAt = f.tick + dur;
             }
             if (id >= 0 && f.tick >= endAt) {
@@ -164,7 +162,7 @@ class AutominerNightTest {
         long idle = 0, maxIdle = 0;
         for (int i = 0; i < 40000 && autominerLog(mem) < 11; i++) {
             tick(f, b, 300);
-            // the second strip run: the bot dies half way (the chain is set aside, the bridge's job ends)
+            // the second strip run: the bot dies half way (the chain is set aside, the job ends)
             if (!died[0] && strips[0] == 1 && b.id >= 0 && b.text.startsWith("mine strip") && f.tick >= b.endAt - 150) {
                 died[0] = true;
                 f.inv.remove("minecraft:iron_pickaxe");

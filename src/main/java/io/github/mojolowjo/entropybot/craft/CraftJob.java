@@ -96,7 +96,7 @@ public final class CraftJob {
         return "walking to the crafting table at " + pos;
     }
 
-    /** The walk's refusal (the bridge wraps it with fenceError). */
+    /** The walk's refusal (callers wrap it with fenceError). */
     public static String tableUnreachable(String why, String pos) {
         return why + " (the crafting table at " + pos + ")";
     }

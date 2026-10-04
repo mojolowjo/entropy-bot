@@ -15,8 +15,10 @@ class FurnaceChainTest {
         JsonObject mem = new JsonObject();
         CommandsTest.Fake f = CommandsTest.fake(mem);
         assertTrue(f.chains.startChain("owner", "chain", "goto 1 2 3 then goto 4 5 6", 1).startsWith("started"));
+        f.replies.add("ok: going to 1 2 3");
+        f.replies.add("started: collecting 40 iron_ingot from 1 furnace");
+        f.replies.add("ok: going to 4 5 6");
         f.run(5);
-        f.bridgeTakes("ok: going to 1 2 3", true);
         f.furnaceDue = 1;                                  // the furnace's output is due while the first step walks
         f.run(10);
         assertEquals(List.of("goto 1 2 3"), f.ran, "never in the middle of a step");
@@ -24,12 +26,10 @@ class FurnaceChainTest {
         f.run(5);
         assertEquals(List.of("goto 1 2 3", Chains.PICKUP_STEP), f.ran, "the pickup comes before the next step");
         assertEquals(1, mem.getAsJsonObject("run").get("idx").getAsInt(), "a restart now carries on with step 2, not the pickup");
-        f.bridgeTakes("started: collecting 40 iron_ingot from 1 furnace", true);
         f.run(10);
         f.link.done(2, "ok: done collecting 40 iron_ingot from 1 furnace; got 40 iron_ingot from the furnace at -32 53 183");
         f.run(10);
         assertEquals(List.of("goto 1 2 3", Chains.PICKUP_STEP, "goto 4 5 6"), f.ran, "then the chain goes on where it was");
-        f.bridgeTakes("ok: going to 4 5 6", true);
         f.link.done(3, "ok: arrived");
         f.run(10);
         assertFalse(f.chains.running());

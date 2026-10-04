@@ -69,7 +69,7 @@ public final class Core {
             events.setTick(tick);
             guard.core.tick(tick);
             Minecraft mc = Minecraft.getInstance();
-            reconnect.tick(tick);                         // B6: also outside a world (the bridge doesn't tick there)
+            reconnect.tick(tick);                         // B6: also outside a world
             commands.tick(tick);                          // B7a: state.json says "not in a world" too
             if (mc.level == null) {
                 if (inWorld && terrain != null) terrain.flushAll();
@@ -91,6 +91,7 @@ public final class Core {
                 }, "entropybot-mine-notes"));
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
+                recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
@@ -135,7 +136,6 @@ public final class Core {
 
     public JsonArray features() {
         JsonArray a = new JsonArray();
-        a.add("token");
         a.add("files");
         if (baritone.hooked()) a.add("events");
         a.add("guard:" + guard.core.mode().name().toLowerCase());
@@ -149,10 +149,11 @@ public final class Core {
         if (ready) a.add("cave");
         a.add("reconnect");
         if (ready) a.add("safetynet");
+        if (ready && recorder.enabled()) a.add("recorder");
         if (commands.ready()) a.add("commands");
         if (commands.ready()) a.add("jobs:walk");
         if (commands.ready()) a.add("jobs:storage");
-        if (commands.ready()) a.add("hotbar");        // package B: the layout keeper, BotAPI.toolPolicy
+        if (commands.ready()) a.add("hotbar");        // package B: the layout keeper
         if (commands.ready()) a.add("furnaces");
         if (commands.ready()) a.add("mystical");     // package E: infuse, upgrade, crystal batching     // package D: remembered furnace jobs, smelt mode, the planner fixes
         if (commands.fastRunning()) a.add("fast");          // package G: the 127.0.0.1 fast channel is up

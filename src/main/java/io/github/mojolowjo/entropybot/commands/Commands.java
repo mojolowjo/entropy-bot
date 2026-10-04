@@ -9,9 +9,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.commands.BridgeLink.Listener;
-import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
 import io.github.mojolowjo.entropybot.commands.Chains.Reply;
+import io.github.mojolowjo.entropybot.commands.JobRequests.Listener;
+import io.github.mojolowjo.entropybot.commands.JobRequests.Request;
 import io.github.mojolowjo.entropybot.engine.HotbarRules;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -47,20 +47,21 @@ import java.util.UUID;
 /**
  * The command core (B7a, docs/BOT_PLAN.md 5.10 and 8): PMs in and whispers out, the owner's and guests'
  * permissions, the dispatcher, cmd.json (bridge.ps1 and the dashboard) and state.json, chains, routines, rules,
- * the autominer and the death policy. The verbs the KubeJS bridge still does are handed to it through
- * {@link BridgeLink}; the rest is answered here, with the bridge's wording. The bridge's own PM handler stays in
- * the script for a rolled-back mod, and holds still while the mod lists "commands".
+ * the autominer and the death policy. Every verb is the mod's (B7e: the KubeJS bridge script is gone); a job's end
+ * reaches its requester through {@link JobRequests}.
  */
 public final class Commands implements Chains.Env {
     private static final Logger LOG = LogUtils.getLogger();
+    /** Where state.json and cmd.json live (bridge.ps1 and the dashboard read and write them there); the folder keeps its old name. */
     static final String BRIDGE_DIR = "kubejs/bridge";
 
     private final Core core;
-    public final BridgeLink bridge = new BridgeLink();
+    public final JobRequests requests = new JobRequests();
     private final JsonStore pmStore = new JsonStore("pm.json"), brainStore = new JsonStore("commands.json"), areaStore = new JsonStore("areas.json");
     private Chains chains;
     private PolicyCommands policy;
-    private BotFiles bridgeFiles;
+    /** The kubejs/bridge folder: state.json out, cmd.json in. */
+    private BotFiles stateFiles;
     private boolean ready;
     private final ArrayDeque<ChatParse.Pm> pmQueue = new ArrayDeque<>();
     private final Outbox outbox = new Outbox();
@@ -135,7 +136,7 @@ public final class Commands implements Chains.Env {
             whisper(owner(), t);
         }
         if (fj.due(now, Storage.dim()).isEmpty() || pickupHeld(now)) return;
-        if (jobs.running() || bridge.busy(tick) || chains.running() || chains.parked() || core.reflexes.hold() || player.isDeadOrDying()) return;
+        if (jobs.running() || requests.busy() || chains.running() || chains.parked() || core.reflexes.hold() || player.isDeadOrDying()) return;
         if (!pickupFromHere(player, now)) return;
         Reply r = handle(owner(), Chains.PICKUP_STEP, false, pmListener(owner()));
         LOG.info("[entropybot] furnace pickup: {}", r.text());
@@ -245,40 +246,14 @@ public final class Commands implements Chains.Env {
         return r[1];
     }
 
-    /** For BotAPI.toolPolicy (the bridge's tool choice and deposit): {hotbar, toolOres, supplies}. */
-    public JsonObject toolPolicy() {
-        JsonObject o = new JsonObject(), h = new JsonObject(), s = new JsonObject();
-        HotbarRules.toStrings(hotbarLayout()).forEach(h::addProperty);
-        suppliesMap().forEach(s::addProperty);
-        o.add("hotbar", h);
-        o.addProperty("toolOres", toolOresSetting());
-        o.add("supplies", s);
-        return o;
+    /** The hotbar keeper holds still while a job other than a walk or a wait runs, or a reflex does. */
+    private boolean hotbarBusy() {
+        return core.reflexes.hold() || hotbarJob() != null;
     }
 
-    /** The hotbar keeper holds still while a job other than a walk or a wait runs (the mod's or the bridge's) or a reflex does. */
-    private boolean hotbarBusy(long tick) {
-        if (core.reflexes.hold()) return true;
-        if (jobs.running() && !jobs.walking() && !"wait".equals(jobs.job.type)) return true;
-        if (bridge.jobRunning(tick)) {
-            String ty = BridgeLink.str(bridge.job(tick), "type");
-            return !("travel".equals(ty) || "wait".equals(ty));
-        }
-        return false;
-    }
-
-    /**
-     * The running job's identity for the hotbar keeper's start window (round 2): the mod's job object, or the bridge's
-     * job as "bridge:<type>#<request>"; null when there is none, or it is a walk or a wait.
-     */
-    private Object hotbarJob(long tick) {
-        if (jobs.running() && !jobs.walking() && !"wait".equals(jobs.job.type)) return jobs.job;
-        if (bridge.jobRunning(tick)) {
-            JsonObject j = bridge.job(tick);
-            String ty = BridgeLink.str(j, "type");
-            if (!("travel".equals(ty) || "wait".equals(ty))) return "bridge:" + ty + "#" + BridgeLink.str(j, "req");
-        }
-        return null;
+    /** The running job for the hotbar keeper's start window (round 2); null when there is none, or it is a walk or a wait. */
+    private Object hotbarJob() {
+        return jobs.running() && !jobs.walking() && !"wait".equals(jobs.job.type) ? jobs.job : null;
     }
 
     /** Where the bot last died: {x, y, z, dim, time}, or null. */
@@ -293,7 +268,7 @@ public final class Commands implements Chains.Env {
 
     /** Once, at the first tick in a world: the files, the move of the notes from the bridge's memory.json. */
     public String init(Minecraft mc, BotFiles files) {
-        bridgeFiles = new BotFiles(mc.gameDirectory.toPath().resolve(BRIDGE_DIR));
+        stateFiles = new BotFiles(mc.gameDirectory.toPath().resolve(BRIDGE_DIR));
         StringBuilder sb = new StringBuilder();
         sb.append(pmStore.load(files)).append("; ").append(brainStore.load(files)).append("; ").append(areaStore.load(files));
         JsonObject memory = null;
@@ -324,7 +299,7 @@ public final class Commands implements Chains.Env {
             areaStore.flush();
             sb.append("; areas.json from memory.json");
         }
-        // B7b: where /home lands is the mod's too (the bridge reads it through BotAPI.home)
+        // B7b: where /home lands is the mod's too (one-time move from memory.json)
         if (!brainStore.data().has("home")) {
             if (memory == null) memory = readBridgeJson(mc, "memory.json");
             if (memory != null && memory.has("home") && memory.get("home").isJsonObject()) {
@@ -408,7 +383,6 @@ public final class Commands implements Chains.Env {
             }
             worldTicks++;
             LocalPlayer player = mc.player;
-            bridge.tick(tick);
             boolean dead = player.isDeadOrDying();
             if (dead && !wasDead) noteDeath(mc, player);
             wasDead = dead;
@@ -423,7 +397,7 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 5) chains.deathTick(dead);
-            if (!chains.resumeChecked() && worldTicks > 200 && (bridge.present(tick) || worldTicks > 600)) chains.resumeRun();
+            if (!chains.resumeChecked() && worldTicks > 200) chains.resumeRun();
             if (tick % 100 == 55 && worldTicks > 400) {
                 chains.rulesTick();
                 chains.autominerTick();
@@ -438,8 +412,8 @@ public final class Commands implements Chains.Env {
             {
                 // package B round 2: every tick, so a refill finds the gap between two breaks (HotbarKeeper spaces the swaps)
                 try {
-                    String moved = io.github.mojolowjo.entropybot.engine.Hotbar.tick(mc, player, tick, hotbarBusy(tick),
-                            core.reflexes.hold(), hotbarJob(tick));
+                    String moved = io.github.mojolowjo.entropybot.engine.Hotbar.tick(mc, player, tick, hotbarBusy(),
+                            core.reflexes.hold(), hotbarJob());
                     if (moved != null) LOG.info("[entropybot] hotbar: {}", moved);
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] hotbar: {}", e.toString());
@@ -526,18 +500,15 @@ public final class Commands implements Chains.Env {
         if (r.text() != null && !r.text().isEmpty()) whisper(pm.from(), r.text().replaceFirst("^ok: ", ""));
     }
 
-    /** A forwarded PM: the bridge's answer is whispered, and so is the end of the job it started (as the bridge did). */
+    /** A PM's job: its end is whispered to the sender (the answer itself was whispered when it started). */
     private Listener pmListener(String to) {
-        return new Listener() {
-            @Override
-            public void replied(Request r) {
-                if (r.reply != null && !r.reply.isEmpty()) whisper(to, r.reply.replaceFirst("^ok: ", ""));
-            }
+        return notifyListener(to);
+    }
 
-            @Override
-            public void finished(Request r) {
-                if (!BridgeLink.quiet(r.doneMsg)) whisper(to, r.doneMsg.replaceFirst("^ok: ", ""));
-            }
+    /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
+    private Listener notifyListener(String to) {
+        return r -> {
+            if (!JobRequests.quiet(r.doneMsg)) whisper(to, r.doneMsg.replaceFirst("^ok: ", ""));
         };
     }
 
@@ -597,7 +568,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
         if (verb.equals("debug")) return Reply.now(DebugVerbs.handle(core, rest, DebugRules.Source.PM, isOwner, owner()));
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
-        if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player, tick));
+        if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));
         if (verb.equals("stop")) return Reply.now(stopAll());
         if (verb.equals("defend") || verb.equals("defense") || verb.equals("defence")) return Reply.now(setDefence(rest));
@@ -616,15 +587,11 @@ public final class Commands implements Chains.Env {
         if (verb.equals("area") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
+        if (verb.equals("recorder")) return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, rest, isOwner, owner()));     // B7e E5
         // chains ("a then b"), routines by name, repeat and run (never from inside a chain)
         if (verb.equals("repeat") || verb.equals("run") || chains.isRoutine(verb) || Texts.splitChain(raw).size() > 1) {
             if (internal) return Reply.now("error: a routine step cannot start another chain (routine names inside a chain are fine)");
             if (chains.running()) return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
-            JsonObject job = bridge.job(tick);
-            if (bridge.jobRunning(tick)) {
-                if (!"travel".equals(BridgeLink.str(job, "type"))) return Reply.now("busy: " + BridgeLink.str(job, "status") + " (pm \"stop\" first)");
-                bridge.submit("endwalk", from, "", false, null, null, tick);
-            }
             if (verb.equals("repeat")) {
                 java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d+|forever)\\s+(.*)$", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(rest);
                 long rounds = Chains.FOREVER;
@@ -643,7 +610,7 @@ public final class Commands implements Chains.Env {
             if (chains.isRoutine(verb) && Texts.splitChain(raw).size() == 1) return Reply.now(chains.startChain(from, verb, verb, 1));
             return Reply.now(chains.startChain(from, "chain", raw, 1));
         }
-        // memory lookups and edits never interrupt a job (zone is still the bridge's)
+        // memory lookups and edits never interrupt a job
         if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
         if (verb.equals("where")) return Reply.now(storage.where(player, rest));
         if (verb.equals("trust") || verb.equals("untrust")) return Reply.now(storage.trust(verb, rest));
@@ -673,7 +640,7 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
-        boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb) || Texts.BRIDGE_VERBS.contains(verb);
+        boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb);
         if (!known) return Reply.now("unknown command \"" + verb + "\" - pm me: help");
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
         if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
@@ -682,18 +649,10 @@ public final class Commands implements Chains.Env {
         boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
         if (!quiet) {
             if (jobs.running() && !jobs.walking()) return Reply.now("busy: " + jobs.job.status + " (pm \"stop\" first)");
-            JsonObject bj = bridge.job(tick);
-            if (bridge.jobRunning(tick) && Texts.MOD_JOB_VERBS.contains(verb)) {
-                if (!"travel".equals(BridgeLink.str(bj, "type"))) return Reply.now("busy: " + BridgeLink.str(bj, "status") + " (pm \"stop\" first)");
-                bridge.submit("endwalk", from, "", false, null, null, tick);
-            }
             jobs.replaceWalk();
         }
-        if (Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb)) {
-            String r = modJob(verb, rest, from, player);
-            return new Reply(r, jobs.attach("pm", from, raw, r, l));
-        }
-        return forward(from, raw, internal, l);
+        String r = modJob(verb, rest, from, player);
+        return new Reply(r, jobs.attach("pm", from, raw, r, l));
     }
 
     /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, twerk, find. */
@@ -705,10 +664,7 @@ public final class Commands implements Chains.Env {
                 int[] t = target != null ? Jobs.here(target) : ownerFixPos(from);
                 if (t == null) return "I can't see you from here (I'm at " + Jobs.fmt(Jobs.here(player)) + "). PM me: goto x y z";
                 String why = jobs.goalAllowed(t[0], t[1], t[2]);
-                if (why != null) {
-                    if (why.startsWith("next to a ")) return "you're " + why;
-                    return "you're outside my areas (" + t[0] + " " + t[2] + ") - area add <name> here 30";
-                }
+                if (why != null) return FenceRules.comeRefusal(why, t[0], t[2]);
                 return jobs.startTravel("goto " + Jobs.fmt(t), "coming to " + from, null, null, false);
             }
             case "follow" -> {
@@ -723,7 +679,7 @@ public final class Commands implements Chains.Env {
                 Player target = fenceOn() ? Jobs.findPlayer(name) : null;
                 if (target != null) {
                     int[] t = Jobs.here(target);
-                    if (jobs.goalAllowed(t[0], t[1], t[2]) != null) return name + " is outside my areas (" + t[0] + " " + t[2] + ") - area add <name> here 30";
+                    if (jobs.goalAllowed(t[0], t[1], t[2]) != null) return FenceRules.followRefusal(name, t[0], t[2]);
                 }
                 String r = jobs.startTravel("follow player " + name, "following " + name, null, null, false);
                 if (r.startsWith("ok") && fenceOn()) jobs.followWatch = new String[]{name, from};
@@ -794,7 +750,7 @@ public final class Commands implements Chains.Env {
         }
     }
 
-    // ---- places (B7b: the mod's knowledge store; the bridge mirrors it into memory.json) ----
+    // ---- places (B7b: the mod's knowledge store, places.json) ----
 
     static final java.util.Map<String, int[]> DIRS = java.util.Map.of("north", new int[]{0, -1}, "south", new int[]{0, 1}, "west", new int[]{-1, 0}, "east", new int[]{1, 0});
 
@@ -958,34 +914,36 @@ public final class Commands implements Chains.Env {
 
     /** Cells between x y z and the nearest area in this dimension (0 = inside one); 999 with none. */
     int areaGap(int x, int y, int z, String dim) {
-        int best = 999;
-        for (JsonElement e : policy.areas()) {
-            JsonObject a = e.getAsJsonObject();
-            if (!PolicyCommands.dimOf(a).equals(dim)) continue;
-            best = Math.min(best, PolicyCommands.boxGap(a, x, y, z));
-        }
-        return best;
+        return FenceRules.areaGap(policy.areas(), x, y, z, dim);
     }
 
-    /** Hands a command line to the bridge script; its answer comes later. */
-    private Reply forward(String from, String raw, boolean internal, Listener l) {
-        long tick = core.tick();
-        if (!bridge.present(tick)) {
-            return Reply.now("error: \"" + Texts.verbAndRest(raw)[0] + "\" still needs the bridge script (KubeJS), and it is not running");
-        }
-        return new Reply(null, bridge.submit("pm", from, raw, internal, null, l, tick));
-    }
-
-    String statusLine(LocalPlayer p, long tick) {
+    String statusLine(LocalPlayer p) {
         String s = (int) Math.floor(p.getX()) + " " + (int) Math.floor(p.getY()) + " " + (int) Math.floor(p.getZ())
                 + " | health " + Math.round(p.getHealth()) + "/20 | food " + p.getFoodData().getFoodLevel() + "/20";
-        JsonObject job = bridge.job(tick);
         if (jobs.running()) s += " | " + jobs.job.status;
-        else if (bridge.jobRunning(tick)) s += " | " + BridgeLink.str(job, "status");
-        JsonObject rep = bridge.report(tick);
-        JsonObject mem = rep != null && rep.has("memory") && rep.get("memory").isJsonObject() ? rep.getAsJsonObject("memory") : null;
-        if (mem != null && "readonly".equals(BridgeLink.str(mem, "state"))) s += " | notes READ-ONLY (PM memory)";
+        JsonObject mem = memoryBlock();
+        if (mem.has("state") && "broken".equals(mem.get("state").getAsString())) s += " | a note file was broken at start (PM memory)";
         return s;
+    }
+
+    /** B7e: state.json's "memory" block (the stores' health), refreshed at most every 20 s (it reads ~14 files' times). */
+    private JsonObject memoryBlock;
+    private long memoryBlockAt = -1;
+    static final long MEMORY_BLOCK_MS = 20_000;
+
+    JsonObject memoryBlock() {
+        long now = System.currentTimeMillis();
+        if (memoryBlock == null || now - memoryBlockAt >= MEMORY_BLOCK_MS) {
+            try {
+                memoryBlock = MemoryCommand.stateBlock(core, this);
+            } catch (RuntimeException e) {
+                memoryBlock = new JsonObject();
+                memoryBlock.addProperty("state", "ok");
+                memoryBlock.addProperty("problem", "couldn't look: " + e);
+            }
+            memoryBlockAt = now;
+        }
+        return memoryBlock;
     }
 
     static String inventorySummary(LocalPlayer p) {
@@ -1006,25 +964,19 @@ public final class Commands implements Chains.Env {
     }
 
     String stopAll() {
-        long tick = core.tick();
         lastStop = System.currentTimeMillis();         // package D: no furnace pickup for a while after "stop"
         String routine = chains.clear();
-        bridge.dropQueued();
         jobs.followWatch = null;
         jobs.followFix = null;
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
-        if (mb != null) Jobs.cancel(mb);
+        if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);     // also ends a raw "b pause"
         io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore();
-        if (bridge.present(tick)) {
-            bridge.submit("stop", owner(), "stop", false, null, null, tick);
-        } else {
-            try {
-                IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
-                if (b != null) b.getPathingBehavior().cancelEverything();
-            } catch (Throwable ignored) {}
-            core.guard.core.releaseAll(core.token);
-        }
+        try {
+            IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
+            if (b != null) b.getPathingBehavior().cancelEverything();
+        } catch (Throwable ignored) {}
+        core.guard.core.releaseAll(core.token);
         Minecraft mc = Minecraft.getInstance();
         mc.options.keyUse.setDown(false);
         mc.options.keyShift.setDown(false);
@@ -1074,14 +1026,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("allow")) kept.add(rest);
         pmStore.data().add("allowed", kept);
         pmStore.changed(core.tick());
-        mirrorPmConfig();
         refused.remove(rest.toLowerCase());
         return verb.equals("allow") ? "ok, I now take orders from " + rest : "ok, I no longer take orders from " + rest;
-    }
-
-    /** The bridge's own pm.json follows (it reads the owner from it, and a rolled-back mod leaves it in charge). */
-    private void mirrorPmConfig() {
-        if (bridgeFiles != null) bridgeFiles.writeJson("pm.json", pmStore.data().toString());
     }
 
     String poiCommand(String rest, LocalPlayer player, boolean isOwner) {
@@ -1221,12 +1167,11 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
-        // a bridge request answers later (its listener); the mod's own job answered already
-        if (r.pending() == null || r.pending().local) cmdResult(id, type, text, r.text());
+        cmdResult(id, type, text, r.text());
     }
 
     private void cmdResult(String id, String type, String text, String result) {
-        LOG.info("[entropybot] cmd {} ({} {}) -> {}", id, type, text, result);
+        LOG.info("[entropybot] cmd {} ({} {}) -> {}", id, type, text, Texts.cmdLogged(type, text, result));
         // package G: a fast-channel command answers its caller only; state.json's lastCmdId/lastResult stay the
         // cmd.json file's (the dashboard polls them for its own command)
         java.util.function.Consumer<String> fastReply = fastReplies.remove(id);
@@ -1269,10 +1214,7 @@ public final class Commands implements Chains.Env {
         public String busy(boolean withChain) {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null || mc.player == null) return null;
-            long t = core.tick();
             if (jobs.running()) return "job " + jobs.job.status;
-            if (bridge.jobRunning(t)) return "job " + BridgeLink.str(bridge.job(t), "status");
-            if (bridge.waitingOnBridge()) return "a request to the bridge script";
             if (withChain && chains != null && chains.running()) return "chain " + chains.chainStatus();
             baritone.api.IBaritone b = Jobs.baritone();
             if (b == null || Jobs.idle(b)) return null;
@@ -1313,6 +1255,7 @@ public final class Commands implements Chains.Env {
             case "stop" -> { return Reply.now(stopAll()); }
             // B7e E1: answered by the mod itself
             case "noop" -> { return Reply.now("ok"); }
+            case "recorder" -> { return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, text, true, owner())); }
             case "baritone" -> { return Reply.now(BaritoneVerb.run(text, true, owner())); }
             case "mouse" -> { return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(text)); }
             case "debug" -> { return Reply.now(DebugVerbs.handle(core, text, DebugRules.Source.LOCAL, true, owner())); }
@@ -1320,16 +1263,8 @@ public final class Commands implements Chains.Env {
             case "pm" -> {
                 String[] dv = Texts.verbAndRest(text);
                 if (dv[0].equals("debug")) return Reply.now(DebugVerbs.handle(core, dv[1], DebugRules.Source.LOCAL, true, owner()));
-                Reply r = handle(owner(), text, false, new Listener() {
-                    @Override
-                    public void replied(Request q) { cmdResult(id, type, text, q.reply == null || q.reply.isEmpty() ? "ok" : q.reply); }
-
-                    @Override
-                    public void finished(Request q) {
-                        if (!BridgeLink.quiet(q.doneMsg)) whisper(owner(), q.doneMsg.replaceFirst("^ok: ", ""));
-                    }
-                });
-                return r.pending() != null ? r : Reply.now(r.text() == null ? "ok" : r.text());
+                Reply r = handle(owner(), text, false, notifyListener(owner()));
+                return new Reply(r.text() == null || r.text().isEmpty() ? "ok" : r.text(), r.pending());
             }
             case "restart" -> { return Reply.now(restartCommand(from != null ? from : owner(), text)); }
             case "reload" -> {
@@ -1362,42 +1297,15 @@ public final class Commands implements Chains.Env {
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
                 if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
                 if (!type.equals("find")) {
-                    long tick = core.tick();
-                    JsonObject bj = bridge.job(tick);
                     if (jobs.running() && !jobs.walking()) return Reply.now("error: busy with \"" + jobs.job.status + "\" - send stop first");
-                    if (bridge.jobRunning(tick)) {
-                        if (!"travel".equals(BridgeLink.str(bj, "type"))) return Reply.now("error: busy with \"" + BridgeLink.str(bj, "status") + "\" - send stop first");
-                        bridge.submit("endwalk", owner(), "", false, null, null, tick);
-                    }
                     jobs.replaceWalk();
                 }
                 String r = modJob(type, text, owner(), player);
-                Request q = jobs.attach("cmd", owner(), type + " " + text, r, notify == null ? null : new Listener() {
-                    @Override public void replied(Request x) {}
-
-                    @Override public void finished(Request x) {
-                        if (!BridgeLink.quiet(x.doneMsg)) whisper(notify, x.doneMsg.replaceFirst("^ok: ", ""));
-                    }
-                });
+                Request q = jobs.attach("cmd", owner(), type + " " + text, r, notify == null ? null : notifyListener(notify));
                 return new Reply(r, q);
             }
-            default -> { return forwardCmd(cmd, type, text, from, notify, id); }
+            default -> { return Reply.now(Texts.unknownType(type)); }
         }
-    }
-
-    /** A cmd.json type the bridge still does: its runCommand answers. */
-    private Reply forwardCmd(JsonObject cmd, String type, String text, String from, String notify, String id) {
-        long tick = core.tick();
-        if (!bridge.present(tick)) return Reply.now("error: \"" + type + "\" still needs the bridge script (KubeJS), and it is not running");
-        return new Reply(null, bridge.submit("cmd", from != null ? from : owner(), text, false, cmd.deepCopy(), new Listener() {
-            @Override
-            public void replied(Request q) { cmdResult(id, type, text, q.reply); }
-
-            @Override
-            public void finished(Request q) {
-                if (notify != null && !BridgeLink.quiet(q.doneMsg)) whisper(notify, q.doneMsg.replaceFirst("^ok: ", ""));
-            }
-        }, tick));
     }
 
     /** Where the reflexes retreat to: the base and the /home landing (when they change). */
@@ -1416,7 +1324,7 @@ public final class Commands implements Chains.Env {
     // ---- state.json (bridge.ps1 and the dashboard read it; the same fields the bridge wrote) ----
 
     private void writeState(Minecraft mc, long tick) {
-        if (bridgeFiles == null) return;
+        if (stateFiles == null) return;
         JsonObject s = new JsonObject();
         s.addProperty("time", System.currentTimeMillis());
         s.addProperty("lastCmdId", lastCmdId);
@@ -1425,14 +1333,18 @@ public final class Commands implements Chains.Env {
         if (p == null || mc.level == null) {
             s.addProperty("inWorld", false);
             s.addProperty("reconnect", core.reconnect.statusText());     // T4: "next try to ... at 07:38 (try 4)"
-            bridgeFiles.writeJson("state.json", s.toString());
+            stateFiles.writeJson("state.json", s.toString());
             return;
         }
         s.addProperty("inWorld", true);
         JsonArray errs = new JsonArray();
         s.add("errors", errs);
-        JsonObject rep = bridge.report(tick);
-        s.add("memory", rep != null && rep.has("memory") ? rep.get("memory") : JsonNull.INSTANCE);
+        // B7e: the mod's stores' health (state ok|backup|broken, problem, savedAt, backupAt), as the bridge's block was shaped
+        try {
+            s.add("memory", memoryBlock());
+        } catch (RuntimeException e) {
+            errs.add("memory: " + e);
+        }
         try {
             s.addProperty("name", p.getGameProfile().getName());
             s.addProperty("x", Math.round(p.getX() * 10) / 10.0);
@@ -1500,9 +1412,8 @@ public final class Commands implements Chains.Env {
             for (Map.Entry<String, Integer> e : open.entrySet()) held.addProperty(e.getKey(), e.getValue());
         }
         s.add("container", held == null ? JsonNull.INSTANCE : held);
-        // the job: the mod's while it runs (or when the bridge has none to show), else the bridge's
-        if (jobs.job != null && (jobs.running() || !bridge.jobRunning(tick))) s.add("job", jobs.stateJson());
-        else if (rep != null && rep.has("job")) s.add("job", rep.get("job"));
+        // the job: the mod's (the running one, else the last one, done)
+        if (jobs.job != null) s.add("job", jobs.stateJson());
         JsonObject rx = core.reflexes.status();
         JsonObject def = new JsonObject();
         def.addProperty("on", core.reflexes.defence());
@@ -1528,7 +1439,6 @@ public final class Commands implements Chains.Env {
             pm.addProperty("queued", pmQueue.size());
         }
         pm.addProperty("outbox", outbox.size());
-        pm.addProperty("bridge", bridge.present(tick));
         s.add("pm", pm);
         s.add("restartOk", restartOk == null ? JsonNull.INSTANCE : restartOk);
         JsonObject mod = new JsonObject();
@@ -1570,8 +1480,7 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             errs.add("settings: " + e);
         }
-        if (rep != null && rep.has("errors") && rep.get("errors").isJsonArray()) for (JsonElement e : rep.getAsJsonArray("errors")) errs.add("bridge " + e.getAsString());
-        String w = bridgeFiles.writeJson("state.json", s.toString());
+        String w = stateFiles.writeJson("state.json", s.toString());
         if (!w.startsWith("ok") && errors++ < 5) LOG.warn("[entropybot] state write failed: {}", w);
     }
 
@@ -1587,9 +1496,7 @@ public final class Commands implements Chains.Env {
         return SettingsBlock.build(brainStore.data(), areaStore.data(), live);
     }
 
-    // ---- what the bridge reads (BotAPI) ----
-
-    /** The policy as the bridge's policyOf() wants it: {areas, protect, strict, corner1}. */
+    /** The policy as areas.json holds it: {areas, protect, strict, corner1} (the miner's area checks read it). */
     public String policyJson() {
         return policy == null ? "{}" : areaStore.data().toString();
     }
@@ -1626,7 +1533,7 @@ public final class Commands implements Chains.Env {
         return p == null ? 0 : p.getHealth();
     }
 
-    @Override public boolean busy() { return bridge.busy(core.tick()); }
+    @Override public boolean busy() { return requests.busy(); }
 
     @Override public int freeSlots() {
         LocalPlayer p = Minecraft.getInstance().player;
@@ -1635,7 +1542,7 @@ public final class Commands implements Chains.Env {
         return n;
     }
 
-    /** B7e (E1): the mod's own count (free slots plus junk a deposit puts away), no longer the bridge's report. */
+    /** B7e (E1): the mod's own count (free slots plus junk a deposit puts away). */
     @Override public int bagRoom() {
         LocalPlayer p = Minecraft.getInstance().player;
         return p == null ? 0 : io.github.mojolowjo.entropybot.storage.BagRoom.count(Storage.slots(p), storage.keeps());
@@ -1656,12 +1563,8 @@ public final class Commands implements Chains.Env {
         return b.has("supplies") && b.get("supplies").isJsonObject() ? b.getAsJsonObject("supplies") : null;
     }
 
-    @Override public String orePrefer() {
-        String mine = StripMine.get().orePrefer();          // B7d D2: the mod keeps it (commands.json) since the move
-        if (mine != null) return mine;
-        JsonObject rep = bridge.report(core.tick());
-        return rep != null && rep.has("orePrefer") && !rep.get("orePrefer").isJsonNull() ? rep.get("orePrefer").getAsString() : null;
-    }
+    /** B7d D2: the mod keeps it (commands.json). */
+    @Override public String orePrefer() { return StripMine.get().orePrefer(); }
 
     @Override public JsonObject minePlace() { return core.knowledge.places().get("mine"); }
 
