@@ -351,8 +351,14 @@ public final class ClearEngine {
                 if (w.fluid(x, y, z)) return new Pos(x, y, z);
             }
         }
+        // TLL 30: water between the bot and the rest of the box (it never got next to any of it)
+        Pos lock = job.waterLock;
+        if (lock != null && w.fluid(lock.x(), lock.y(), lock.z())) return lock;
         return null;
     }
+
+    /** TLL 30: the words after "blocked by water at x y z" when the water cuts the bot off rather than touching a block. */
+    public static final String CUT_OFF = " (it cuts me off from the rest of the dig)";
 
     /**
      * finishClear's report: "ok: done label - broke N blocks", "ok: finished ...; M left, e.g. ...", or the prefix
@@ -382,7 +388,7 @@ public final class ClearEngine {
         // water plan item 1: blocks left because they touch water or lava end a dig as blocked, naming the spot
         if (prefix == null && job.liquidBlocks) {
             Pos lb = liquidBlock(w, job);
-            if (lb != null) prefix = BLOCKED_BY + w.fluidKind(lb.x(), lb.y(), lb.z()) + " at " + lb.key();
+            if (lb != null) prefix = BLOCKED_BY + w.fluidKind(lb.x(), lb.y(), lb.z()) + " at " + lb.key() + (lb.equals(job.waterLock) ? CUT_OFF : "");
         }
         // a strip mine's corridor has to go all the way, or every later branch is out of reach. Checks what's
         // really there (bedrock or a chest is never a target, so it doesn't count as "left", but it still blocks)

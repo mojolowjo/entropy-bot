@@ -82,11 +82,42 @@ class ClearDriver {
     /** The sim's Baritone GoalBlock: arrive when the spot is standable, else fail where it stands. */
     boolean walkTo(int gx, int gy, int gz) {
         walks++;
-        if (w.standable(gx, gy, gz)) {
+        if (w.standable(gx, gy, gz) && (!waterBlocksWalks || dryPath(gx, gy, gz))) {
             moveTo(gx + 0.5, gy, gz + 0.5);
             return true;
         }
         walkFails++;
+        return false;
+    }
+
+    /**
+     * TLL 30: Baritone doesn't path through flowing water. With this on, a walk arrives only when a path of dry stand
+     * spots (flat, one up or one down) joins the bot to the goal; else it fails where it stands, as in the live tunnel.
+     */
+    boolean waterBlocksWalks;
+
+    private boolean dryStand(int x, int y, int z) {
+        return w.standable(x, y, z) && !w.get(x, y + 1, z).equals("water");
+    }
+
+    boolean dryPath(int gx, int gy, int gz) {
+        int sx = (int) Math.floor(x), sy = (int) Math.floor(y + 0.01), sz = (int) Math.floor(z);
+        java.util.ArrayDeque<int[]> q = new java.util.ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        q.add(new int[] { sx, sy, sz });
+        seen.add(Pos.key(sx, sy, sz));
+        while (!q.isEmpty() && seen.size() < 20000) {
+            int[] c = q.poll();
+            if (c[0] == gx && c[1] == gy && c[2] == gz) return true;
+            for (int[] d : new int[][] { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) {
+                for (int dy = 1; dy >= -1; dy--) {
+                    int nx = c[0] + d[0], ny = c[1] + dy, nz = c[2] + d[1];
+                    if (!dryStand(nx, ny, nz) || !seen.add(Pos.key(nx, ny, nz))) continue;
+                    q.add(new int[] { nx, ny, nz });
+                    break;
+                }
+            }
+        }
         return false;
     }
 

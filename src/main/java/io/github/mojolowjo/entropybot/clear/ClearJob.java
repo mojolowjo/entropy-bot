@@ -161,6 +161,8 @@ public final class ClearJob {
     public final Map<String, String> skip = new LinkedHashMap<>();
     public final Map<String, Fail> fails = new LinkedHashMap<>();
     public final Set<String> noSpot = new LinkedHashSet<>();
+    /** TLL 30: the water cell that cut the bot off from the rest of the box ({@link ClearGrid#waterLock}), or null */
+    public Pos waterLock;
     public final Map<String, Integer> badSpots = new HashMap<>();
     public final Map<String, Integer> brokenKeys = new HashMap<>();
     public final Map<String, String> protectedLeft = new LinkedHashMap<>();

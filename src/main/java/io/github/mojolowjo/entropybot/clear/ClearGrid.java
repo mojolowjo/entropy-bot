@@ -94,16 +94,40 @@ public final class ClearGrid {
         return open(x, y, z) && open(x, y + 1, z) && solid(x, y - 1, z);
     }
 
+    /** Open and not water: a cell the bot's body may pass through on a walk. */
+    private boolean dry(int x, int y, int z, boolean throughWater) {
+        return open(x, y, z) && (throughWater || !wet(x, y, z));
+    }
+
+    /** {@link #stand} with feet and head out of water (unless {@code throughWater}). */
+    private boolean standOn(int x, int y, int z, boolean throughWater) {
+        return dry(x, y, z, throughWater) && dry(x, y + 1, z, throughWater) && solid(x, y - 1, z);
+    }
+
     /**
      * walkDistances: steps from the bot to every spot it can reach without breaking or placing (flat moves,
      * 1-block step-ups with head room, drops of up to 3), by grid index; -1 where it can't.
+     *
+     * <p>TLL 30 (2026-10-04): never through water. Baritone does not path through flowing water (assumed from its
+     * MovementHelper; seen live: the tunnel dig at 568 -46 853 had 8 walks to spots past a stream fail in 8 s, "stuck"),
+     * and the bot never stands in water (docs/WATER_PLAN.md). A spot behind water was "walkable" here, so the clear kept
+     * sending Baritone there; now such a spot is unreachable and {@link #waterLock} names the water.
      */
     public int[] walkDistances(Bot bot) {
+        return walk(bot, false, null);
+    }
+
+    /**
+     * The walk search. throughWater: water cells count as open (the old map: where it could go if the water weren't
+     * there). parent: when given, the grid index each reached cell was entered from (-1 for the start).
+     */
+    int[] walk(Bot bot, boolean throughWater, int[] parent) {
         int[] dist = new int[open.length];
         Arrays.fill(dist, -1);
         int sx = floor(bot.x()), sy = floor(bot.y() + 0.01), sz = floor(bot.z());
         int i = idx(sx, sy, sz);
         if (i < 0) return dist;
+        if (parent != null) Arrays.fill(parent, -1);
         int[][] dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
         int[] queue = new int[open.length * 3];
         int head = 0, tail = 0;
@@ -111,28 +135,91 @@ public final class ClearGrid {
         queue[tail++] = sx; queue[tail++] = sy; queue[tail++] = sz;
         while (head < tail) {
             int cx = queue[head++], cy = queue[head++], cz = queue[head++];
-            int d = dist[idx(cx, cy, cz)];
+            int ci = idx(cx, cy, cz);
+            int d = dist[ci];
             for (int[] dir : dirs) {
                 int nx = cx + dir[0], nz = cz + dir[1];
                 Integer ny = null;
-                if (stand(nx, cy, nz)) {
+                if (standOn(nx, cy, nz, throughWater)) {
                     ny = cy;
-                } else if (open(cx, cy + 2, cz) && stand(nx, cy + 1, nz)) {
+                } else if (dry(cx, cy + 2, cz, throughWater) && standOn(nx, cy + 1, nz, throughWater)) {
                     ny = cy + 1;
-                } else if (open(nx, cy, nz) && open(nx, cy + 1, nz)) {
+                } else if (dry(nx, cy, nz, throughWater) && dry(nx, cy + 1, nz, throughWater)) {
                     for (int dy = 1; dy <= 3 && ny == null; dy++) {
-                        if (!open(nx, cy - dy, nz)) break;
-                        if (stand(nx, cy - dy, nz)) ny = cy - dy;
+                        if (!dry(nx, cy - dy, nz, throughWater)) break;
+                        if (standOn(nx, cy - dy, nz, throughWater)) ny = cy - dy;
                     }
                 }
                 if (ny == null) continue;
                 int j = idx(nx, ny, nz);
                 if (j < 0 || dist[j] >= 0) continue;
                 dist[j] = d + 1;
+                if (parent != null) parent[j] = ci;
                 queue[tail++] = nx; queue[tail++] = ny; queue[tail++] = nz;
             }
         }
         return dist;
+    }
+
+    /** How many sight checks {@link #waterLock} may spend. */
+    public static final int LOCK_BUDGET = 600;
+
+    /**
+     * TLL 30: the water that cuts the bot off from the rest of the dig, or null. Null as soon as a spot it can walk to
+     * (dry) sees a block it still has to clear (then something else stopped it), when nothing is left, or when looking
+     * ran out of budget. Otherwise, when a spot it could walk to through water sees such a block: the first water cell
+     * on that walk, counted from the bot (the feet cell, else the head cell). That cell is where the water plan starts
+     * (water flowing across a tunnel the bot already dug: the plug case).
+     */
+    public static Pos waterLock(ClearWorld w, Bot bot, ClearJob job) {
+        ClearGrid g = build(w, job.box, bot, null);
+        int[] dry = g.walkDistances(bot);
+        int[] parent = new int[g.open.length];
+        int[] wet = g.walk(bot, true, parent);
+        double r = CLEAR_REACH - 0.3;
+        List<Pos> exposed = new ArrayList<>();
+        for (Pos t : g.targets) {
+            if (!job.wanted(t.key()) || job.skip.containsKey(t.key()) || !ClearEngine.clearable(w, job, t.x(), t.y(), t.z())
+                    || (job.keepOres && w.ore(t.x(), t.y(), t.z()))) continue;
+            for (int[] s : ClearEngine.SIDES6) {
+                if (!g.solid(t.x() + s[0], t.y() + s[1], t.z() + s[2])) {
+                    exposed.add(t);
+                    break;
+                }
+            }
+        }
+        if (exposed.isEmpty()) return null;
+        double bx = bot.x(), by = bot.y(), bz = bot.z();
+        exposed.sort(Comparator.comparingDouble(t -> sq(t.x() + 0.5 - bx) + sq(t.y() + 0.5 - by) + sq(t.z() + 0.5 - bz)));
+        int budget = LOCK_BUDGET, wetSpot = -1;
+        for (int k = 0; k < exposed.size() && k < 60 && budget > 0; k++) {
+            Pos t = exposed.get(k);
+            for (int x = t.x() - 5; x <= t.x() + 5 && budget > 0; x++) {
+                for (int z = t.z() - 5; z <= t.z() + 5 && budget > 0; z++) {
+                    for (int y = t.y() - 5; y <= t.y() + 3 && budget > 0; y++) {
+                        int i = g.idx(x, y, z);
+                        if (i < 0 || wet[i] < 0 || (dry[i] < 0 && wetSpot >= 0)) continue;
+                        if (g.wet[i] || g.wet(x, y + 1, z) || !job.standAllowed(x, y, z)) continue;
+                        if (x == t.x() && z == t.z() && y == t.y() + 1) continue;
+                        double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
+                        if (ClearEngine.eyeDistSq(ex, ey, ez, t.x(), t.y(), t.z()) > r * r) continue;
+                        budget--;
+                        if (ClearEngine.sightOf(w, ex, ey, ez, t.x(), t.y(), t.z()) == null) continue;
+                        if (dry[i] >= 0) return null;            // it can walk to work without crossing water
+                        wetSpot = i;
+                    }
+                }
+            }
+        }
+        if (wetSpot < 0 || budget <= 0) return null;
+        // back from the spot to the bot: the last water cell met is the first one on the way out
+        Pos first = null;
+        for (int i = wetSpot; i >= 0; i = parent[i]) {
+            int x = g.ax + i / (g.ny * g.nz), y = g.ay + (i / g.nz) % g.ny, z = g.az + i % g.nz;
+            if (g.wet[i]) first = new Pos(x, y, z);
+            else if (g.wet(x, y + 1, z)) first = new Pos(x, y + 1, z);
+        }
+        return first;
     }
 
     /** A spot to stand on, what getting there costs (steps; 1000+ for spots Baritone may reach some other way) and its eye. */

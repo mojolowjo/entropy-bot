@@ -393,6 +393,8 @@ public final class ClearRun {
         } else {
             // far away (a long tunnel, or back from a chest or table trip): walk over while each walk gets closer
             if (approachTries >= 5 || (approachDist != null && far > approachDist - 2)) {
+                // TLL 30: water across the way there is named (the water plan takes it), not "couldn't get there"
+                if (far <= 64 && cutOffByWater(bot)) return end(b, ClearEngine.finishMessage(w, job, null));
                 return end(b, ClearEngine.finishMessage(w, job, "stopped: couldn't get there (" + Math.round(far) + " blocks away)"));
             }
             approachTries++;
@@ -405,7 +407,12 @@ public final class ClearRun {
             b.status(job.status("walking to the zone"));
             return Out.RUN;
         }
-        if (job.consecFails >= ClearEngine.MAX_CONSEC_FAILS) return end(b, ClearEngine.finishMessage(w, job, ClearEngine.STUCK + stuckWhy(bot)));
+        if (job.consecFails >= ClearEngine.MAX_CONSEC_FAILS) {
+            // TLL 30: 8 walks failed because water lies between the bot and the work: say so (the water plan takes it)
+            if (cutOffByWater(bot)) return end(b, ClearEngine.finishMessage(w, job, null));
+            return end(b, ClearEngine.finishMessage(w, job, ClearEngine.STUCK + stuckWhy(bot)
+                    + (waterCheckError != null ? " (the water check failed: " + waterCheckError + ")" : "")));
+        }
         ClearGrid.Plan p = ClearGrid.planWalk(w, bot, job);
         if (p == null && ClearEngine.retryRound(job)) p = ClearGrid.planWalk(w, bot, job);
         if (p == null && now - (lastBreakTick == null ? -1000 : lastBreakTick) < 30) {
@@ -415,7 +422,10 @@ public final class ClearRun {
             b.status(job.status("checking the blocks stayed broken"));
             return Out.RUN;
         }
-        if (p == null) return end(b, ClearEngine.finishMessage(w, job, null));
+        if (p == null) {
+            cutOffByWater(bot);                         // TLL 30: "blocked by water at ..." rather than "ok: finished"
+            return end(b, ClearEngine.finishMessage(w, job, null));
+        }
         b.walkBlock(p.spot().x(), p.spot().y(), p.spot().z());
         target = p.target();
         spot = p.spot();
@@ -432,6 +442,29 @@ public final class ClearRun {
             return "";
         }
     }
+
+    /**
+     * TLL 30: for a dig that ends blocked by liquids ({@link ClearJob#liquidBlocks}), whether water cuts the bot off from
+     * the blocks left ({@link ClearGrid#waterLock}); notes the cell on the job, so the end message names it and the
+     * water plan starts there. False (and the old ending) when blocks are left for another reason, or on any trouble:
+     * then {@link #waterCheckError} holds what went wrong, for the end message.
+     */
+    private boolean cutOffByWater(Bot bot) {
+        if (!job.liquidBlocks || (job.lastScanLeft != null && job.lastScanLeft == 0)) return false;
+        if (ClearEngine.liquidBlock(w, job) != null) return false;    // already ends blocked by water (a skip next to it)
+        try {
+            Pos lock = ClearGrid.waterLock(w, bot, job);
+            if (lock == null) return false;
+            job.waterLock = lock;
+            return true;
+        } catch (RuntimeException e) {
+            waterCheckError = String.valueOf(e);
+            return false;
+        }
+    }
+
+    /** The water check's failure, when it threw (shown in the stuck message rather than lost). */
+    String waterCheckError;
 
     private void startWalk(Bot bot, long now) {
         phase = "walk";
