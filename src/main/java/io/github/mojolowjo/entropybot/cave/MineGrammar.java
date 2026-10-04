@@ -45,8 +45,8 @@ public final class MineGrammar {
         while (true) {
             Matcher q = NUM.matcher(rest);
             if (!q.find()) break;
-            if (!q.group(3).isEmpty()) minutes = Integer.parseInt(q.group(2));
-            else n = Integer.parseInt(q.group(2));
+            if (!q.group(3).isEmpty()) minutes = safeInt(q.group(2));
+            else n = safeInt(q.group(2));
             rest = rest.substring(0, q.start());
         }
         rest = rest.trim();
@@ -59,5 +59,10 @@ public final class MineGrammar {
             return new Parsed(Kind.STRIP, null, sp.spec(), n, 0, at != null ? at : "mine");
         }
         return new Parsed(Kind.CAVE, null, sp.spec(), n, minutes, at);
+    }
+
+    /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
+    static int safeInt(String s) {
+        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
     }
 }

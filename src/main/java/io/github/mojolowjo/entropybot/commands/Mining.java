@@ -763,6 +763,9 @@ final class Mining {
         jobs.startSeq(s, "always");
         hooks(jobs.job, r);
         begin(p, r);
+        // started while a fight or a meal already holds the bot: the hold hook only fires on a new hold, so apply it now
+        // (Baritone's mine stopped, breaking off); the held path in mineStep starts it again when the hold ends
+        if (core.reflexes.hold() && jobs.job.onHold != null) jobs.job.onHold.run();
         return "started: " + status;
     }
 

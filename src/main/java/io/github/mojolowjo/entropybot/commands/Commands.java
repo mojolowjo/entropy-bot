@@ -395,6 +395,10 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (mc.level == null || mc.player == null) {
+                // B7d review: a job other than a walk (the Baritone mine with breaking on, a clear holding leases, a
+                // craft with a menu open) ends on a disconnect, so it can't carry on by itself from wherever the bot
+                // respawns after the reconnect
+                if (worldTicks > 0 && jobs.running() && !jobs.walking()) jobs.finish("stopped: I was disconnected");
                 worldTicks = 0;
                 if (tick % 20 == 0) writeState(mc, tick);
                 return;

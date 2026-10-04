@@ -69,29 +69,49 @@ public final class StripMine {
     JsonObject data() {
         JsonObject b = commands().brainData();
         if (!imported && commands().ready()) {
+            if (b.has("minesMoved")) {
+                imported = true;
+                return b;
+            }
+            // memory.json, else its backup; an unreadable file (the bridge mid-write) is tried again on the next call,
+            // so the mine's progress is never marked moved without having been read. No file at all: nothing to move.
+            JsonObject mem = readMemoryJson("memory.json");
+            if (mem == null) mem = readMemoryJson("memory.bak.json");
+            if (mem == null && memoryJsonExists()) return b;
             imported = true;
-            if (!b.has("minesMoved")) {
-                JsonObject mem = readMemoryJson();
-                int n = 0;
-                if (mem != null) {
-                    for (String k : new String[]{"mine", "mines", "orePrefer"}) {
-                        if (!b.has(k) && mem.has(k) && !mem.get(k).isJsonNull()) {
-                            b.add(k, mem.get(k).deepCopy());
-                            n++;
-                        }
+            int n = 0;
+            if (mem != null) {
+                for (String k : new String[]{"mine", "mines", "orePrefer"}) {
+                    if (!b.has(k) && mem.has(k) && !mem.get(k).isJsonNull()) {
+                        b.add(k, mem.get(k).deepCopy());
+                        n++;
                     }
                 }
-                b.addProperty("minesMoved", true);
-                saved();
-                LOG.info("[entropybot] strip mine: {} notes moved over from memory.json (mine, mines, orePrefer)", n);
             }
+            b.addProperty("minesMoved", true);
+            saved();
+            commands().brainFlush();         // on disk at once: a crash before the debounced save would import again
+            LOG.info("[entropybot] strip mine: {} notes moved over from memory.json (mine, mines, orePrefer)", n);
         }
         return b;
     }
 
-    private static JsonObject readMemoryJson() {
+    private static Path bridgeFile(String name) {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve(Commands.BRIDGE_DIR).resolve(name);
+    }
+
+    private static boolean memoryJsonExists() {
         try {
-            Path p = Minecraft.getInstance().gameDirectory.toPath().resolve(Commands.BRIDGE_DIR).resolve("memory.json");
+            return Files.exists(bridgeFile("memory.json"));
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /** The file parsed, or null when it is missing or can't be read or parsed. */
+    private static JsonObject readMemoryJson(String name) {
+        try {
+            Path p = bridgeFile(name);
             if (!Files.exists(p)) return null;
             return JsonStore.parse(Files.readString(p, StandardCharsets.UTF_8));
         } catch (Exception e) {
@@ -230,7 +250,7 @@ public final class StripMine {
         }
         // a count, minutes ("10m"), or both, after the ores
         for (Matcher c = COUNT.matcher(rest); c.find(); c = COUNT.matcher(rest)) {
-            int v = Integer.parseInt(c.group(2));
+            int v = safeInt(c.group(2));
             if (!c.group(3).isEmpty()) minutes = v;
             else n = v;
             rest = rest.substring(0, c.start());
@@ -248,7 +268,7 @@ public final class StripMine {
         Matcher m = Pattern.compile("^[+-]?\\d+").matcher(w == null ? "" : w.trim());
         if (!m.find()) return def;
         try {
-            int v = Integer.parseInt(m.group());
+            int v = safeInt(m.group());
             return v == 0 ? def : v;
         } catch (NumberFormatException e) {
             return def;
@@ -271,6 +291,7 @@ public final class StripMine {
         boolean wantCollect = spec != null || MineBook.collect(note);
         switch (p0) {
             case "reset" -> {
+                if (commands().jobs.running()) return "error: busy with \"" + commands().jobs.job.status + "\" - send stop first";
                 book.reset(g.key());
                 saved();
                 return StripTexts.resetReply();
@@ -290,6 +311,7 @@ public final class StripMine {
             case "turn" -> {
                 // package A: a new mine at the end of the corridor, at a right angle
                 if (!p1.equals("left") && !p1.equals("right")) return StripTexts.TURN_USAGE;
+                if (commands().jobs.running()) return "error: busy with \"" + commands().jobs.job.status + "\" - send stop first";
                 TurnResult tr = turn(p, mineName, p1, "you asked", true);
                 return tr.err() != null ? "error: " + tr.err() : "ok: " + tr.ok();
             }
@@ -364,5 +386,10 @@ public final class StripMine {
         if (!quiet) commands().whisper(commands().owner(), said + (why != null ? " (" + why + ")" : ""));
         LOG.info("[entropybot] strip mine: {}", said + (why != null ? " (" + why + ")" : ""));
         return new TurnResult(StripTexts.turnOk(said), null);
+    }
+
+    /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
+    static int safeInt(String s) {
+        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
     }
 }

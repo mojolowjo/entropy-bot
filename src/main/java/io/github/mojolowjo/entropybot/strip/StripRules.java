@@ -312,6 +312,7 @@ public final class StripRules {
         for (int dx = -3; dx <= 3; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -3; dz <= 3; dz++) {
             int x = s.x() + dx, y = s.y() + dy, z = s.z() + dz;
             String id = w.id(x, y, z);
+            if (w.untrusted(x, y, z)) continue;                   // the owner's "untrust": never the mine's
             if (id.contains("crafting_table")) found.add(new Found(new Pos(x, y, z), true));
             else if (w.blockEntity(x, y, z) && StorageRules.isStorageId(id) && !id.contains("ender")) found.add(new Found(new Pos(x, y, z), false));
         }

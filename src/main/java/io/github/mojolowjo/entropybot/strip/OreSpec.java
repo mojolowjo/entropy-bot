@@ -50,7 +50,7 @@ public final class OreSpec {
                 for (String x : all) if (x.equals(id)) ids.add(x);
                 if (ids.isEmpty()) return new OreSpec(null, null, all, "I don't know an ore called " + w);
             } else {
-                Pattern re = Pattern.compile("(^|[:_])" + w.replaceFirst("s$", "").replaceAll("[^a-z0-9_]", "") + "_ore$");
+                Pattern re = Pattern.compile("(^|[:_])" + (w.equals("lapis") ? w : w.replaceFirst("s$", "")).replaceAll("[^a-z0-9_]", "") + "_ore$");
                 for (String x : all) if (re.matcher(x).find()) ids.add(x);
                 if (ids.isEmpty()) return new OreSpec(null, null, all, "no ore is called " + w
                         + " (try iron, coal, copper, gold, diamond, emerald, redstone, lapis, quartz, or an id)");

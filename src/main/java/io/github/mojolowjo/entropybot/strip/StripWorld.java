@@ -15,4 +15,7 @@ public interface StripWorld extends ClearWorld {
 
     /** Its chunk is loaded on the client. */
     boolean loaded(int x, int y, int z);
+
+    /** The owner said "untrust x y z" for this block: the mine never adopts it as its chest or table. */
+    default boolean untrusted(int x, int y, int z) { return false; }
 }

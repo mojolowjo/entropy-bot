@@ -34,6 +34,11 @@ public final class McStripWorld implements StripWorld {
 
     private BlockState at(int x, int y, int z) { return level.getBlockState(m.set(x, y, z)); }
 
+    @Override public boolean untrusted(int x, int y, int z) {
+        com.google.gson.JsonObject c = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.chests().get(x + " " + y + " " + z);
+        return c != null && c.has("trusted") && !c.get("trusted").getAsBoolean();
+    }
+
     @Override public String id(int x, int y, int z) { return w.id(x, y, z); }
     @Override public String name(int x, int y, int z) { return w.name(x, y, z); }
     @Override public boolean air(int x, int y, int z) { return w.air(x, y, z); }

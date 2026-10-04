@@ -34,7 +34,7 @@ public final class MineRules {
         String[] p = String.valueOf(text).trim().split("\\s+");
         String w = p[0].toLowerCase();
         String id = w.contains(":") ? w : "minecraft:" + w;
-        int count = p.length > 1 && p[1].matches("^\\d+$") ? Integer.parseInt(p[1]) : 1;
+        int count = p.length > 1 && p[1].matches("^\\d+$") ? safeInt(p[1]) : 1;
         boolean dig = false;
         for (String s : p) if (s.equals("dig")) dig = true;
         return new Args(id, p[0], count, dig);
@@ -319,4 +319,9 @@ public final class MineRules {
     public static String leftAreasText(String at) { return "I left my areas at " + at; }
 
     public static String timeUpText() { return "time is up (" + MAX_TICKS / 1200 + " min)"; }
+
+    /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
+    static int safeInt(String s) {
+        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
+    }
 }

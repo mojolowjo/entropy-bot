@@ -32,6 +32,8 @@ public final class MineNotes {
     private final Set<String> explored = new LinkedHashSet<>();
     private BotFiles files;
     private long oresDirty = -1, exploredDirty = -1, lastTick;
+    /** A file that couldn't be read (an IO error, not bad JSON): never written over this session, so nothing is lost. */
+    private boolean oresLocked, exploredLocked;
     private String pruneNote;
 
     /**
@@ -42,13 +44,18 @@ public final class MineNotes {
         files = f;
         ores.clear();
         explored.clear();
+        oresLocked = exploredLocked = false;
         JsonObject memory = null;
         StringBuilder sb = new StringBuilder();
         String o = f.readJson(ORES), e = f.readJson(EXPLORED);
         if ((o == null || e == null) && bridge != null) {
-            String m = bridge.readJson("memory.json");
-            if (m != null && !m.startsWith("error")) {
-                try { memory = JsonParser.parseString(m).getAsJsonObject(); } catch (RuntimeException ignored) {}
+            // memory.json, else its backup (the bridge writes memory.json in place: it may be mid-write)
+            for (String name : new String[]{"memory.json", "memory.bak.json"}) {
+                if (memory != null) break;
+                String m = bridge.readJson(name);
+                if (m != null && !m.startsWith("error")) {
+                    try { memory = JsonParser.parseString(m).getAsJsonObject(); } catch (RuntimeException ignored) {}
+                }
             }
         }
         if (o != null) sb.append(loadOres(o));
@@ -77,7 +84,10 @@ public final class MineNotes {
     }
 
     private String loadOres(String text) {
-        if (text.startsWith("error")) return ORES + ": " + text;
+        if (text.startsWith("error")) {
+            oresLocked = true;
+            return ORES + ": " + text + " (not written this session)";
+        }
         try {
             int n = putOres(JsonParser.parseString(text).getAsJsonObject());
             return ORES + ": " + n + " ores";
@@ -101,7 +111,10 @@ public final class MineNotes {
     }
 
     private String loadExplored(String text) {
-        if (text.startsWith("error")) return EXPLORED + ": " + text;
+        if (text.startsWith("error")) {
+            exploredLocked = true;
+            return EXPLORED + ": " + text + " (not written this session)";
+        }
         try {
             JsonObject o = JsonParser.parseString(text).getAsJsonObject();
             for (JsonElement k : o.getAsJsonArray("chunks")) explored.add(k.getAsString());
@@ -241,14 +254,14 @@ public final class MineNotes {
     public synchronized void flushIfDue(long tick) {
         lastTick = tick;
         if (files == null) return;
-        if (oresDirty >= 0 && tick - oresDirty >= FLUSH_AFTER && files.writeJson(ORES, oresJson().toString()).startsWith("ok")) oresDirty = -1;
-        if (exploredDirty >= 0 && tick - exploredDirty >= FLUSH_AFTER && files.writeJson(EXPLORED, exploredJson().toString()).startsWith("ok")) exploredDirty = -1;
+        if (oresDirty >= 0 && !oresLocked && tick - oresDirty >= FLUSH_AFTER && files.writeJson(ORES, oresJson().toString()).startsWith("ok")) oresDirty = -1;
+        if (exploredDirty >= 0 && !exploredLocked && tick - exploredDirty >= FLUSH_AFTER && files.writeJson(EXPLORED, exploredJson().toString()).startsWith("ok")) exploredDirty = -1;
     }
 
     /** Writes whatever is unsaved now. */
     public synchronized void flush() {
         if (files == null) return;
-        if (oresDirty >= 0 && files.writeJson(ORES, oresJson().toString()).startsWith("ok")) oresDirty = -1;
-        if (exploredDirty >= 0 && files.writeJson(EXPLORED, exploredJson().toString()).startsWith("ok")) exploredDirty = -1;
+        if (oresDirty >= 0 && !oresLocked && files.writeJson(ORES, oresJson().toString()).startsWith("ok")) oresDirty = -1;
+        if (exploredDirty >= 0 && !exploredLocked && files.writeJson(EXPLORED, exploredJson().toString()).startsWith("ok")) exploredDirty = -1;
     }
 }
