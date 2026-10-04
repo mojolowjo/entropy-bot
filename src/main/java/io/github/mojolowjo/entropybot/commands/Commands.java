@@ -604,8 +604,9 @@ public final class Commands implements Chains.Env {
         if (verb.equals("deaths") || (verb.equals("death") && rest.trim().toLowerCase().matches("^policy\\b.*"))) return Reply.now(chains.deathsCommand(rest));
         if (verb.equals("reconnect") && rest.trim().toLowerCase().matches("^(on|off)$")) return Reply.now(reconnectCommand(rest));
         if (verb.equals("queue")) return Reply.now(chains.chainStatus());
-        if (verb.equals("ores")) return forward(from, raw, internal, l);
-        if (verb.equals("stripmine") && rest.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return forward(from, raw, internal, l);
+        // B7d: the listed ores (D3) and the preferred ores (D2); the strip mine's status and ore mode never wait
+        if (verb.equals("ores")) return Reply.now(rest.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(rest) : Mining.get().ores(player, rest));
+        if (verb.equals("stripmine") && rest.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, rest));
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
         if (verb.equals("area") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
@@ -641,7 +642,7 @@ public final class Commands implements Chains.Env {
         if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
         if (verb.equals("where")) return Reply.now(storage.where(player, rest));
         if (verb.equals("trust") || verb.equals("untrust")) return Reply.now(storage.trust(verb, rest));
-        if (verb.equals("zone")) return forward(from, raw, internal, l);
+        if (verb.equals("zone")) return Reply.now(DigCommands.zone(this, player, rest, from));        // B7d D1
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
         // B7c: lookups and settings that never interrupt a job
@@ -768,6 +769,16 @@ public final class Commands implements Chains.Env {
             case "farm" -> { return crafting.farm(player, rest); }
             case "compact" -> { return crafting.compact(player, rest, from); }
             case "infuse" -> { return crafting.infuse(player, rest); }           // package E: the infusion altar
+            // B7d: digging and mining (D1 dig/build/place, D2 the strip mine, D3 mine/caves/explore)
+            case "dig" -> { return DigCommands.dig(this, player, rest, from); }
+            case "build" -> { return DigCommands.build(this, player, rest, from); }
+            case "place" -> { return DigCommands.place(this, player, rest, from); }
+            case "stripmine" -> { return StripMine.get().command(player, rest); }
+            case "mine" -> {
+                if (rest.trim().toLowerCase().matches("^strip\\b.*")) return StripMine.get().mineStrip(player, rest);
+                return Mining.get().mine(player, rest, s -> null);
+            }
+            case "explore" -> { return Mining.get().explore(player, rest); }
             case "upgrade" -> { return crafting.upgrade(player, rest); }         // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
@@ -1316,6 +1327,9 @@ public final class Commands implements Chains.Env {
             }
             case "poi", "pois" -> { return Reply.now(poiCommand(text, player, true)); }
             case "caves" -> { return Reply.now(cavesCommand(text)); }
+            // B7d: the listed/preferred ores and the zone never wait for a job
+            case "ores" -> { return Reply.now(text.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(text) : Mining.get().ores(player, text)); }
+            case "zone" -> { return Reply.now(DigCommands.zone(this, player, text, from)); }
             // package B: the hotbar layout and the tool policy (settings, never busy)
             case "hotbar" -> { return Reply.now(hotbarCommand(player, text)); }
             case "tools" -> { return Reply.now(toolsCommand(text)); }
@@ -1324,8 +1338,10 @@ public final class Commands implements Chains.Env {
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
             case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade" -> {
+                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade",
+                 "dig", "build", "place", "stripmine", "mine", "explore" -> {
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
+                if (type.equals("stripmine") && text.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, text));
                 if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
                 if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
@@ -1624,6 +1640,8 @@ public final class Commands implements Chains.Env {
     }
 
     @Override public String orePrefer() {
+        String mine = StripMine.get().orePrefer();          // B7d D2: the mod keeps it (commands.json) since the move
+        if (mine != null) return mine;
         JsonObject rep = bridge.report(core.tick());
         return rep != null && rep.has("orePrefer") && !rep.get("orePrefer").isJsonNull() ? rep.get("orePrefer").getAsString() : null;
     }

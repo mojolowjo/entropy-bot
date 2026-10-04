@@ -32,8 +32,8 @@ public final class Texts {
      * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
      * later stage of B7 moves some of them into the mod.
      */
-    public static final Set<String> BRIDGE_VERBS = Set.of("memory", "ores", "stripmine",
-            "zone", "build", "b", "baritone", "mine", "dig", "place", "explore");
+    public static final Set<String> BRIDGE_VERBS = Set.of("memory",
+            "b", "baritone");             // B7d: zone, build, dig, place, mine, explore, ores, stripmine are the mod's
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -41,7 +41,8 @@ public final class Texts {
      */
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade");
+            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
+            "dig", "build", "place", "stripmine", "mine", "explore");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job; they never wait for the bridge's job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
