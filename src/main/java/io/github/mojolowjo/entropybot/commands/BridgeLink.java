@@ -252,6 +252,16 @@ public final class BridgeLink {
         return jobRunning(now);
     }
 
+    /**
+     * A request waits for the bridge, or one it took has not ended yet (package G's /wait: between the bridge's
+     * "started" and its next report, the job shows nowhere else). The mod's own jobs ({@link Request#local}) don't count.
+     */
+    public synchronized boolean waitingOnBridge() {
+        if (!queue.isEmpty()) return true;
+        for (Request r : open.values()) if (!r.local) return true;
+        return false;
+    }
+
     /** The bridge's job is running (from its last fresh report). */
     public synchronized boolean jobRunning(long now) {
         JsonObject j = job(now);
