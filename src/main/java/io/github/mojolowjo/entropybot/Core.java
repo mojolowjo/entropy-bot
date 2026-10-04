@@ -74,6 +74,7 @@ public final class Core {
             if (mc.level == null) {
                 if (inWorld && terrain != null) terrain.flushAll();
                 if (inWorld && ready) mineNotes.flush();      // S1: the miner's notes are written when leaving the world
+                if (inWorld) io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.leftWorld();     // camera v1: the old cap back
                 inWorld = false;
                 return;
             }
@@ -128,6 +129,7 @@ public final class Core {
             }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
+            io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] tick error #{}: {}", errors, t.toString());
