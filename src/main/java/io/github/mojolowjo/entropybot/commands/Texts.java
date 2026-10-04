@@ -165,4 +165,10 @@ public final class Texts {
         for (String w : (s == null ? "" : s.trim()).split("\\s+")) if (!w.isEmpty()) out.add(w);
         return out;
     }
+
+    /** S1: "goto me" / "goto <the sender's own name>" means "come" (the owner typed it live, 2026-10-03). */
+    static boolean gotoMeansCome(String rest, String from) {
+        String r = rest == null ? "" : rest.trim();
+        return r.equalsIgnoreCase("me") || (from != null && !from.isEmpty() && r.equalsIgnoreCase(from));
+    }
 }

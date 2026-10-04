@@ -60,6 +60,18 @@ public final class CaveSearch {
      */
     public static Result search(World w, int sx, int sy, int sz, Set<Long> visited, Predicate<String> isWanted,
                                 int ex, int ey, int ez, int maxFromEntrance) {
+        return search(w, sx, sy, sz, visited, isWanted, ex, ey, ez, maxFromEntrance, null);
+    }
+
+    /** A cell the search may walk through but never offers as a target (S1: inside or near a protect box). */
+    @FunctionalInterface
+    public interface OffLimits {
+        boolean test(int x, int y, int z);
+    }
+
+    /** As above; off (may be null): ores and frontier cells it names are never returned (the walk may still pass them). */
+    public static Result search(World w, int sx, int sy, int sz, Set<Long> visited, Predicate<String> isWanted,
+                                int ex, int ey, int ez, int maxFromEntrance, OffLimits off) {
         Map<Long, Integer> dist = new HashMap<>();
         ArrayDeque<int[]> queue = new ArrayDeque<>();
         List<Ore> ores = new ArrayList<>();
@@ -82,7 +94,7 @@ public final class CaveSearch {
                         long ok = key(ox, oy, oz);
                         if (oreSeen.contains(ok) || !w.loaded(ox, oy, oz)) continue;
                         String id = w.block(ox, oy, oz);
-                        if (id == null || !isWanted.test(id)) continue;
+                        if (id == null || !isWanted.test(id) || (off != null && off.test(ox, oy, oz))) continue;
                         oreSeen.add(ok);
                         ores.add(new Ore(ox, oy, oz, id, x, y, z, d));
                     }
@@ -90,7 +102,7 @@ public final class CaveSearch {
             }
             // the frontier: dark, under ground, not visited, a few steps away, away from liquids
             if (frontier == null && d >= MIN_FRONTIER && !visited.contains(coarse(x, y, z)) && w.blockLight(x, y, z) == 0
-                    && w.skyLight(x, y, z) == 0 && !nearLiquid(w, x, y, z)) {
+                    && w.skyLight(x, y, z) == 0 && !nearLiquid(w, x, y, z) && (off == null || !off.test(x, y, z))) {
                 frontier = new Cell(x, y, z, d);
             }
             if (d >= MAX_REACH * 2) continue;

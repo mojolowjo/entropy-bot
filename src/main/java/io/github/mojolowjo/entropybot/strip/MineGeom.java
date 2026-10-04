@@ -74,6 +74,15 @@ public final class MineGeom {
         return t;
     }
 
+    /** How far along the corridor (cells from S) a block position lies; negative behind the entrance. */
+    public int along(int[] p) { return (p[0] - x) * fx + (p[2] - z) * fz; }
+
+    /** How far to the left of the corridor's line a block position lies (negative: to the right). */
+    public int side(int[] p) { return (p[0] - x) * lx + (p[2] - z) * lz; }
+
+    /** The corridor index of a leg's (or any corridor cell's) position. */
+    public int indexOf(Pos p) { return along(new int[]{p.x(), p.y(), p.z()}); }
+
     public static String dirOf(int dx, int dz) {
         for (Map.Entry<String, int[]> e : DIRS.entrySet()) if (e.getValue()[0] == dx && e.getValue()[1] == dz) return e.getKey();
         return null;

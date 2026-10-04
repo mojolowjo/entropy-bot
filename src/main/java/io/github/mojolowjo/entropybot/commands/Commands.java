@@ -726,6 +726,8 @@ public final class Commands implements Chains.Env {
                 return r;
             }
             case "goto" -> {
+                // S1: "goto me" (or the sender's own name) = "come" from that sender
+                if (Texts.gotoMeansCome(rest, from)) return modJob("come", "", from, player);
                 if (!rest.matches("^-?\\d+ -?\\d+ -?\\d+$") && !rest.matches("^-?\\d+ -?\\d+$")) return "usage: goto x y z  (or goto x z)";
                 return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false);
             }

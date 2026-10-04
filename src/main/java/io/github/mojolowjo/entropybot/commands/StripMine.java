@@ -180,9 +180,13 @@ public final class StripMine {
      */
     String areaRefusal(LocalPlayer p, ClearBox b, boolean torches) {
         GuardCore g = Guard.INSTANCE.core;
-        if (g.mode() != GuardCore.Mode.STRICT) return null;
         Policy pol = g.policy();
         String dim = dim(p);
+        // S1 (D2 review): a protect box refuses every break and placement in every mode: predicted here, the run turns
+        // the corridor or skips the branch instead of digging into the guard's refusals
+        String prot = StripRules.protectRefusal(pol.protect, dim, b, torches);
+        if (prot != null) return prot;
+        if (g.mode() != GuardCore.Mode.STRICT) return null;
         List<ClearBox> boxes = new ArrayList<>(List.of(b));
         if (torches) boxes.add(b.grow(1));
         for (ClearBox x : boxes) {

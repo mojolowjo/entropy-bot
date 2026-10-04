@@ -246,6 +246,17 @@ final class StripSteps {
                 d.run.notes.turned = true;
                 yield "next";
             }
+            case "stripput" -> {
+                // S1: the base trip after a turn: its items counted, and said in the turn's note
+                Run r = d.run;
+                int before = r.basePut;
+                if (r.putBefore >= 0) {
+                    r.basePut += Math.max(0, seq.putMoved - r.putBefore);
+                    r.putBefore = -1;
+                }
+                if (r.basePut > before) seq.note = StripTexts.withBasePut(seq.note, r.basePut);
+                yield "next";
+            }
             default -> "unknown step " + st.type;
         };
     }
@@ -260,6 +271,9 @@ final class StripSteps {
         if (seq.stage == null) {
             String fence = seq.jobs.goalAllowed(pos.x(), pos.y(), pos.z());
             if (fence != null) return Jobs.withAreaHint(fence + " (" + fmt + ")");
+            // S1: a corridor that runs over lava, water or a deep hole can't be walked: say so before trying
+            String bad = badCorridor(d.run, p, pos, false);
+            if (bad != null) return bad;
             // a long way back near home: /home first (once per step), as every seq walk does
             if (!d.tpDone && seq.jobs.tpWorth(p, target, null)) {
                 d.tpDone = true;
@@ -300,6 +314,14 @@ final class StripSteps {
             return "wait";
         }
         if (elapsed < 20) return "wait";
+        // S1: the seq walk's unstick (stuck on a block Baritone can't plan from, no path, no progress for 30 s)
+        if (seq.now() - j.startTick >= 40 && elapsed % 20 < 2) {
+            String ev = seq.jobs.travelEvents(j);
+            boolean stuck = ev == null && seq.jobs.travelStuck(p, j);
+            boolean early = ev == null && j.lastStepTick >= 0 && !Jobs.onFullBlock(p) && seq.now() - j.bestTick > Jobs.UNSTICK_EARLY;
+            if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < Jobs.UNSTICK_TRIES && seq.jobs.startUnstick(p, j)) return "wait";
+            if (stuck && b != null) Jobs.cancel(b);
+        }
         if (b != null && !Jobs.idle(b)) {
             if (elapsed > 20 * 90) {
                 Jobs.cancel(b);
@@ -320,7 +342,27 @@ final class StripSteps {
             seq.stepStart = seq.now();
             return "wait";
         }
+        // S1: what lies ahead may be known now that the bot got this far (lava, water, a deep hole)
+        String bad = badCorridor(d.run, p, d.leg.pos(), true);
+        if (bad != null) return bad;
         return "couldn't reach the mine: stuck at " + Jobs.fmt(Jobs.here(p)) + " on the way to " + d.leg.why();
+    }
+
+    /**
+     * S1: the first corridor cell between the bot and pos (a corridor cell) it can't walk, as the run's end text; null
+     * when none is known. Before a walk only lava counts (water can be swum, a hole may have a way round); after the walk
+     * failed, water and a deep hole are named too.
+     */
+    static String badCorridor(Run run, LocalPlayer p, Pos pos, boolean failed) {
+        StripMine sm = StripMine.get();
+        MineGeom g = MineBook.geom(sm.place(run.mineName));
+        if (g == null) return null;
+        int to = g.indexOf(pos);
+        if (to < 0 || Math.abs(g.side(new int[]{pos.x(), pos.y(), pos.z()})) > 0) return null;   // not on this mine's corridor (turned meanwhile)
+        StripRules.BadFloor bad = StripRules.badFloor(sm.world(p), g, StripRules.scanFrom(g, Jobs.here(p), to), to, !failed);
+        if (bad == null) return null;
+        LOG.info("[entropybot] strip mine: the corridor can't be walked: {} at {} (cell {})", bad.what(), bad.at().key(), bad.i());
+        return StripTexts.badFloorText(g, bad);
     }
 
     private static String setupStep(Seq seq, StripMine sm, Data d, LocalPlayer p) {
@@ -465,7 +507,12 @@ final class StripSteps {
                 Data note = new Data(run);
                 note.text = StripTexts.turnNote(why, tr.ok());
                 seq.steps.add(make("stripturned", note));
-                seq.steps.addAll(keep);
+                // S1 (D2 review): a base trip kept after the turn is counted ("took N items to base") by a "stripput"
+                // right after it (its deposit steps are spliced in between), as "stripdone" counts it on a normal run
+                for (Seq.Step k : keep) {
+                    seq.steps.add(k);
+                    if (k.type.equals("stripbase")) seq.steps.add(make("stripput", new Data(run)));
+                }
                 return "next";
             }
         }

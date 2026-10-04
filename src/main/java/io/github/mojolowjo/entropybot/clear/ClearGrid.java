@@ -230,4 +230,92 @@ public final class ClearGrid {
         }
         return best;
     }
+
+    /** How many sight checks {@link #entryProblem} may spend. */
+    public static final int ENTRY_BUDGET = 600;
+
+    /**
+     * S1: why a clear got stuck, in plain words, when the cause is that no spot the bot can walk to (without breaking or
+     * placing) sees any block it still has to clear: " - I can't get into the box: no spot I can walk to sees into it
+     * (a wall 2 high at -1 53 124?) - break one block for a step, or dig a box one wider". The guess in brackets is the
+     * column next to the walkable spot nearest the box, toward the box (a wall it can't step up, or a drop). "" when a
+     * walkable spot does see a block (then the cause is something else) or nothing is left.
+     */
+    public static String entryProblem(ClearWorld w, Bot bot, ClearJob job) {
+        ClearGrid g = build(w, job.box, bot, null);
+        int[] dist = g.walkDistances(bot);
+        double r = CLEAR_REACH - 0.3;
+        List<Pos> exposed = new ArrayList<>();
+        for (Pos t : g.targets) {
+            // the grid was built without the job (no notes): the job's own rules now
+            if (!job.wanted(t.key()) || job.skip.containsKey(t.key()) || !ClearEngine.clearable(w, job, t.x(), t.y(), t.z())
+                    || (job.keepOres && w.ore(t.x(), t.y(), t.z()))) continue;
+            for (int[] s : ClearEngine.SIDES6) {
+                if (!g.solid(t.x() + s[0], t.y() + s[1], t.z() + s[2])) {
+                    exposed.add(t);
+                    break;
+                }
+            }
+        }
+        if (exposed.isEmpty()) return "";
+        double bx = bot.x(), by = bot.y(), bz = bot.z();
+        exposed.sort(Comparator.comparingDouble(t -> sq(t.x() + 0.5 - bx) + sq(t.y() + 0.5 - by) + sq(t.z() + 0.5 - bz)));
+        int budget = ENTRY_BUDGET;
+        for (int k = 0; k < exposed.size() && k < 60 && budget > 0; k++) {
+            Pos t = exposed.get(k);
+            for (int x = t.x() - 5; x <= t.x() + 5 && budget > 0; x++) {
+                for (int z = t.z() - 5; z <= t.z() + 5 && budget > 0; z++) {
+                    for (int y = t.y() - 5; y <= t.y() + 3 && budget > 0; y++) {
+                        int i = g.idx(x, y, z);
+                        if (i < 0 || dist[i] < 0) continue;
+                        double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
+                        if (ClearEngine.eyeDistSq(ex, ey, ez, t.x(), t.y(), t.z()) > r * r) continue;
+                        budget--;
+                        if (ClearEngine.sightOf(w, ex, ey, ez, t.x(), t.y(), t.z()) != null) return "";
+                    }
+                }
+            }
+        }
+        if (budget <= 0) return "";                 // ran out of looking: no claim either way
+        // the walkable spot nearest the box, and what stands between it and the box
+        int bestI = -1, sx = 0, sy = 0, sz = 0;
+        double bestD = Double.MAX_VALUE;
+        for (int x = g.ax; x <= g.bx; x++) {
+            for (int y = g.ay; y <= g.by; y++) {
+                for (int z = g.az; z <= g.bz; z++) {
+                    int i = g.idx(x, y, z);
+                    if (dist[i] < 0) continue;
+                    double d = job.box.distTo(x + 0.5, y, z + 0.5);
+                    if (d < bestD || (d == bestD && dist[i] < dist[bestI])) {
+                        bestD = d;
+                        bestI = i;
+                        sx = x; sy = y; sz = z;
+                    }
+                }
+            }
+        }
+        String guess = "";
+        if (bestI >= 0) {
+            int[][] dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+            int nx = sx, nz = sz;
+            double nd = Double.MAX_VALUE;
+            for (int[] dir : dirs) {
+                double d = job.box.distTo(sx + dir[0] + 0.5, sy, sz + dir[1] + 0.5);
+                if (d < nd) { nd = d; nx = sx + dir[0]; nz = sz + dir[1]; }
+            }
+            int h = 0;
+            while (h < 6 && g.solid(nx, sy + h, nz)) h++;
+            if (h >= 2) guess = " (a wall " + h + " high at " + Pos.key(nx, sy, nz) + "?)";
+            else if (h == 0 && g.open(nx, sy, nz) && !g.solid(nx, sy - 1, nz)) {
+                int depth = 0;
+                while (depth < 6 && g.open(nx, sy - 1 - depth, nz)) depth++;
+                if (depth >= 2) guess = " (a drop " + depth + " deep at " + Pos.key(nx, sy - 1, nz) + "?)";
+            }
+        }
+        boolean only = job.only != null;
+        return " - I can't get " + (only ? "to the blocks" : "into the box") + ": no spot I can walk to sees "
+                + (only ? "them" : "into it") + guess + " - break one block for a step" + (only ? "" : ", or dig a box one wider");
+    }
+
+    private static double sq(double v) { return v * v; }
 }

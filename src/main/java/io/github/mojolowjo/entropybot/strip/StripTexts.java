@@ -101,4 +101,23 @@ public final class StripTexts {
     public static String turnNote(String why, String turnedOk) { return "the corridor was blocked (" + why + "): " + turnedOk; }
 
     public static String turnOk(String said) { return said + " - the next run digs there"; }
+
+    /** S1: a note with the base trip's count after it ("...; took 71 items to base"), an earlier count replaced. */
+    public static String withBasePut(String note, int put) {
+        String n = note == null ? "" : note.replaceFirst("; took \\d+ items to base$", "");
+        return (n.isEmpty() ? "" : n + "; ") + "took " + put + " items to base";
+    }
+
+    /**
+     * S1: the walk to the corridor end can't cross this ("couldn't reach the mine: ..." keeps the autominer's give-up
+     * match): "the corridor runs over lava from 58 -55 194 - mark a new mine ("mark mine" a few levels up, or "mark mine
+     * 57 -54 194 north")". The suggested spot is the last good cell before it, turned left.
+     */
+    public static String badFloorText(MineGeom g, StripRules.BadFloor b) {
+        Pos last = g.cell(Math.max(0, b.i() - 1), 0);
+        String head = b.what().equals("a drop") ? "the corridor has a drop at " + b.at().key() + " (a hole too deep to climb out of)"
+                : "the corridor runs over " + b.what() + " from " + b.at().key();
+        return "couldn't reach the mine: " + head + " - mark a new mine (\"mark mine\" a few levels up, or \"mark mine "
+                + last.key() + " " + g.leftDir() + "\")";
+    }
 }

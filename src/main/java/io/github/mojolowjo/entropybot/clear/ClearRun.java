@@ -387,7 +387,7 @@ public final class ClearRun {
             b.status(job.status("walking to the zone"));
             return Out.RUN;
         }
-        if (job.consecFails >= ClearEngine.MAX_CONSEC_FAILS) return end(b, ClearEngine.finishMessage(w, job, ClearEngine.STUCK));
+        if (job.consecFails >= ClearEngine.MAX_CONSEC_FAILS) return end(b, ClearEngine.finishMessage(w, job, ClearEngine.STUCK + stuckWhy(bot)));
         ClearGrid.Plan p = ClearGrid.planWalk(w, bot, job);
         if (p == null && ClearEngine.retryRound(job)) p = ClearGrid.planWalk(w, bot, job);
         if (p == null && now - (lastBreakTick == null ? -1000 : lastBreakTick) < 30) {
@@ -404,6 +404,15 @@ public final class ClearRun {
         startWalk(bot, now);
         b.status(job.status("walking to " + p.spot().key() + " to reach " + p.target().key()));
         return Out.RUN;
+    }
+
+    /** S1: the stuck end names the cause when it is that no walkable spot sees into the box ("" otherwise, or on any trouble). */
+    private String stuckWhy(Bot bot) {
+        try {
+            return ClearGrid.entryProblem(w, bot, job);
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 
     private void startWalk(Bot bot, long now) {

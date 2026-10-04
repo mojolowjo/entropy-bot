@@ -103,19 +103,18 @@ final class Mining {
 
     // ---- the policy as boxes ----
 
+    /** S1 (fail closed): the policy, or {@link MineRules.BadPolicy} when it can't be read; the callers refuse or stop. */
     private JsonObject policy() {
-        try { return JsonParser.parseString(commands.policyJson()).getAsJsonObject(); } catch (RuntimeException e) { return new JsonObject(); }
+        return MineRules.parsePolicy(commands.policyJson());
     }
 
+    /** S1 (fail closed): a malformed box throws {@link MineRules.BadPolicy} instead of being skipped. */
     private static List<Box> boxes(JsonObject pol, String key) {
-        List<Box> out = new ArrayList<>();
-        if (pol.has(key) && pol.get(key).isJsonArray()) {
-            for (JsonElement e : pol.getAsJsonArray(key)) {
-                try { out.add(Box.fromJson(e.getAsJsonObject(), PolicyCommands.DEFAULT_DIM)); } catch (RuntimeException ignored) {}
-            }
-        }
-        return out;
+        return MineRules.policyBoxes(pol, key, PolicyCommands.DEFAULT_DIM);
     }
+
+    /** S1: the protect boxes, for the cave's targets. */
+    private List<Box> protectBoxes() { return boxes(policy(), "protect"); }
 
     private static List<String> areaNames(JsonObject pol) {
         List<String> out = new ArrayList<>();
@@ -219,9 +218,21 @@ final class Mining {
             case GRAMMAR:
             case ERROR: return m.text();
             case STRIP: return strip != null ? strip.apply(m) : "error: the strip mine isn't in the mod yet";
-            case CAVE: return startCave(p, m);
-            default: return startMine(p, m.text());
+            default: break;
         }
+        // S1 (D3 review): a job of another kind runs: refuse before anything is set up (the hooks would land on that job)
+        String busy = busyText();
+        if (busy != null) return busy;
+        try {
+            return m.kind() == MineGrammar.Kind.CAVE ? startCave(p, m) : startMine(p, m.text());
+        } catch (MineRules.BadPolicy e) {
+            return "error: " + MineRules.badPolicyText(e);
+        }
+    }
+
+    /** S1: the cmd.json dispatcher's busy answer when a job (not a mere walk, which a new job replaces) runs; else null. */
+    private String busyText() {
+        return jobs.running() && !jobs.walking() ? "error: busy with \"" + jobs.job.status + "\" - send stop first" : null;
     }
 
     /** "ores [name]" / "ores clear" ("ores prefer ..." stays with the bridge until B7e: the dispatcher forwards it). */
@@ -271,7 +282,13 @@ final class Mining {
     /** "explore [minutes]": unvisited land inside the areas, then home; the report names the new points of interest. */
     String explore(LocalPlayer p, String rest) {
         int minutes = ExploreRules.minutes(rest);
-        if (boxes(policy(), "areas").isEmpty()) return ExploreRules.NO_AREAS + PolicyCommands.AREA_HINT;
+        String busy = busyText();
+        if (busy != null) return busy;
+        try {
+            if (boxes(policy(), "areas").isEmpty()) return ExploreRules.NO_AREAS + PolicyCommands.AREA_HINT;
+        } catch (MineRules.BadPolicy e) {
+            return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't explore");
+        }
         ExRun ex = new ExRun();
         ex.until = now() + minutes * 1200L;
         ex.start = now();
@@ -348,6 +365,7 @@ final class Mining {
 
     String startCave(LocalPlayer p, MineGrammar.Parsed m) {
         if (bagRoom(p) <= CaveRules.FREE) return "error: my bag is nearly full - \"deposit\" first";
+        protectBoxes();                           // S1: fail closed - a policy it can't read refuses here (BadPolicy, caught in mine())
         int[] me = Jobs.here(p);
         Caves.Cave c = core.caves.pick(m.at() == null ? "" : m.at(), dim(), me[0], me[1], me[2], System.currentTimeMillis(), now());
         if (c == null) return "error: I know no cave called " + m.at() + " (\"caves\" lists them)";
@@ -375,7 +393,18 @@ final class Mining {
 
     private boolean caveEmpty(CaveRun cv) { return cv.got() - cv.visitStart == 0; }
 
+    /** S1 (fail closed): a policy that can't be read mid-caving ends the caving the usual way (out, report, home). */
     private String caveStep(Seq s, Seq.Step st, LocalPlayer p, long elapsed) {
+        try {
+            return caveStepChecked(s, st, p, elapsed);
+        } catch (MineRules.BadPolicy e) {
+            CaveRun cv = runs.get(s) instanceof CaveRun x ? x : null;
+            if (cv == null || st.type.equals("caveend")) return MineRules.badPolicyText(e);
+            return caveFinish(s, cv, MineRules.badPolicyText(e), false, false);
+        }
+    }
+
+    private String caveStepChecked(Seq s, Seq.Step st, LocalPlayer p, long elapsed) {
         CaveRun cv = runs.get(s) instanceof CaveRun x ? x : null;
         if (cv == null) return "the cave run is gone";
         switch (st.type) {
@@ -426,7 +455,12 @@ final class Mining {
         // light the spot: monsters spawn at block light 0 (once per spot: a torch that won't go there is not tried again)
         Level level = p.level();
         BlockPos feet = bp(me);
-        if (CaveRules.needsTorch(level.getBrightness(LightLayer.BLOCK, feet), level.getBrightness(LightLayer.SKY, feet))) {
+        // S1: the protect boxes (the base): no target inside one or within the mine verb's margin; no torch inside one
+        String d = dim();
+        List<Box> prot = protectBoxes();
+        MineRules.Near feetNear = CaveRules.offLimits(prot, d, me[0], me[1], me[2]);
+        boolean feetInside = feetNear != null && feetNear.gap() == 0;
+        if (!feetInside && CaveRules.needsTorch(level.getBrightness(LightLayer.BLOCK, feet), level.getBrightness(LightLayer.SKY, feet))) {
             int torches = Gui.inventory(p).getOrDefault("minecraft:torch", 0);
             if (torches == 0) {
                 if (!cv.noTorchTried) {
@@ -452,10 +486,12 @@ final class Mining {
         Caves.Cave c = core.caves.get(cv.name);
         if (c == null) return "the cave search failed: no cave called " + cv.name;
         core.caves.visit(c, me[0], me[1], me[2], System.currentTimeMillis(), now());
-        CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE);
+        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null;
+        CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE, off);
         cv.steps++;
         // ores first: one vein at a time
-        List<CaveSearch.Ore> vein = CaveRules.pickVein(r.ores(), cv.tried, o -> jobs.goalAllowed(o.x(), o.y(), o.z()) != null,
+        List<CaveSearch.Ore> vein = CaveRules.pickVein(r.ores(), cv.tried,
+                o -> jobs.goalAllowed(o.x(), o.y(), o.z()) != null || off.test(o.x(), o.y(), o.z()),
                 o -> canMineAt(p, o.x(), o.y(), o.z()), cv.tooHard);
         if (!vein.isEmpty()) {
             List<Pos> cells = new ArrayList<>();
@@ -467,11 +503,14 @@ final class Mining {
             return "wait";
         }
         if (r.frontier() == null) {
+            // S1: a cave in (or by) a protect box with nothing outside it: no cave here, closed for good, move on
+            MineRules.Near en = CaveRules.offLimits(prot, d, c.ex, c.ey, c.ez);
+            if (caveEmpty(cv) && en != null) return caveMove(s, cv, p, CaveRules.protectedCaveText(cv.name, en), true);
             if (caveEmpty(cv)) return caveMove(s, cv, p, "no dark corner in reach");
             return caveFinish(s, cv, "no dark corner left in reach", true, false);
         }
         CaveSearch.Cell f = r.frontier();
-        if (jobs.goalAllowed(f.x(), f.y(), f.z()) != null) {
+        if (jobs.goalAllowed(f.x(), f.y(), f.z()) != null || off.test(f.x(), f.y(), f.z())) {
             visit(cv, f.x(), f.y(), f.z());
             return "wait";
         }
@@ -499,17 +538,22 @@ final class Mining {
      * Wave 1, item 2: no cave here (nothing on this visit, and no way on): the cave is closed for good when this job made
      * it, and the bot moves to the nearest known cave with frontier left, else to unexplored land; MOVES times.
      */
-    private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why) {
+    private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why) { return caveMove(s, cv, p, why, false); }
+
+    /** closeForGood (S1: a cave in a protect box): the cave is closed even when an earlier job made it. */
+    private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why, boolean closeForGood) {
         int[] me = Jobs.here(p);
         String d = dim();
+        List<Box> prot = protectBoxes();
         Caves.Cave c = core.caves.get(cv.name);
-        if (c != null) core.caves.finish(c, !cv.name.equals(cv.own), System.currentTimeMillis(), now());
+        if (c != null) core.caves.finish(c, !closeForGood && !cv.name.equals(cv.own), System.currentTimeMillis(), now());
         cv.noCaveAt.add(cv.name + " (" + Jobs.fmt(cv.entrance != null ? cv.entrance : me) + ")");
         cv.moves++;
         LOG.info("[entropybot] cave: no cave at {} ({}) - move {}", cv.name, why, cv.moves);
         if (cv.moves > CaveRules.MOVES) return caveFinish(s, cv, CaveRules.noCaveText(cv.noCaveAt, why), false, true);
+        // S1: never a known cave whose entrance lies in or by a protect box
         CaveRules.Known best = CaveRules.nearestKnown(knownCaves(), d, me[0], me[1], me[2], CaveRules.closedNames(cv.noCaveAt),
-                k -> jobs.goalAllowed(k.x(), k.y(), k.z()) != null);
+                k -> jobs.goalAllowed(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null);
         List<Seq.Step> steps = new ArrayList<>();
         ExploreRules.Target t = null;
         if (best != null) {
@@ -520,7 +564,13 @@ final class Mining {
             steps.add(rs);
         } else {
             cv.skip.addAll(ExploreRules.around(d, me[0], me[2]));       // the job's own set, not the explored notes
-            t = ExploreRules.target(d, me[0], me[1], me[2], land(d), cv.skip);
+            // S1: unexplored land in or by a protect box is passed over (that chunk goes in the job's skip set)
+            for (int n = 0; n < 12; n++) {
+                t = ExploreRules.target(d, me[0], me[1], me[2], land(d), cv.skip);
+                if (t == null || CaveRules.offLimits(prot, d, t.x(), me[1], t.z()) == null) break;
+                cv.skip.add(ExploreRules.key(d, t.x() >> 4, t.z() >> 4));
+                t = null;
+            }
             if (t == null) return caveFinish(s, cv, "there is no cave here (" + why + "), and no unexplored land is left in reach", false, true);
             Seq.Step xz = new Seq.Step("cavexz");
             xz.pos = new int[]{t.x(), me[1], t.z()};
@@ -825,8 +875,19 @@ final class Mining {
         return "wait";
     }
 
-    /** Every 2 ticks; acts every 20 like the bridge's stepMineJob. */
+    /** S1 (fail closed): a policy that can't be read mid-mine stops it (Baritone off, breaking off, leases gone). */
     private String mineStep(Seq s, Seq.Step st, LocalPlayer p) {
+        try {
+            return mineStepChecked(s, st, p);
+        } catch (MineRules.BadPolicy e) {
+            MineRun j = runs.get(s) instanceof MineRun x ? x : null;
+            if (j == null) return MineRules.badPolicyText(e);
+            return end(s, j, "stopped: " + MineRules.badPolicyText(e));
+        }
+    }
+
+    /** Every 2 ticks; acts every 20 like the bridge's stepMineJob. */
+    private String mineStepChecked(Seq s, Seq.Step st, LocalPlayer p) {
         MineRun j = runs.get(s) instanceof MineRun x ? x : null;
         if (j == null) return "the mine job is gone";
         if (!j.started) {

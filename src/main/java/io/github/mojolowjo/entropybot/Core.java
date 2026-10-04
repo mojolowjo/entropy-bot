@@ -71,6 +71,7 @@ public final class Core {
             commands.tick(tick);                          // B7a: state.json says "not in a world" too
             if (mc.level == null) {
                 if (inWorld && terrain != null) terrain.flushAll();
+                if (inWorld && ready) mineNotes.flush();      // S1: the miner's notes are written when leaving the world
                 inWorld = false;
                 return;
             }
@@ -82,6 +83,10 @@ public final class Core {
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
                 LOG.info("[entropybot] caves: {}", caves.load(files));
                 LOG.info("[entropybot] mine notes: {}", mineNotes.load(files, new BotFiles(mc.gameDirectory.toPath().resolve("kubejs/bridge"))));
+                // S1: and when the game quits from inside a world (no tick runs after that)
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    try { mineNotes.flush(); } catch (Throwable ignored) {}
+                }, "entropybot-mine-notes"));
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 ready = true;
@@ -108,6 +113,8 @@ public final class Core {
             mineNotes.flushIfDue(tick);
             pruned = mineNotes.takePruneNote();
             if (pruned != null) LOG.info("[entropybot] mine notes: {}", pruned);
+            pruned = mineNotes.takeWriteError();
+            if (pruned != null) LOG.warn("[entropybot] mine notes: couldn't write {}", pruned);
             if (baritone.hooked() && tick % 20 == 0) {
                 List<String> turned = baritone.enforceSettings();
                 if (!turned.isEmpty()) {

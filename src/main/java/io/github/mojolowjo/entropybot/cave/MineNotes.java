@@ -250,12 +250,55 @@ public final class MineNotes {
         return o;
     }
 
-    /** Once a tick: writes a file FLUSH_AFTER ticks after its first unsaved change. */
+    /** S1: after a failed write the next try waits FLUSH_AFTER, doubling per failure, at most RETRY_MAX ticks (5 min). */
+    static final long RETRY_MAX = 6000;
+    private long oresRetryAt, exploredRetryAt;
+    private int oresFails, exploredFails;
+    /** The last write error, once, for the log (null when none). */
+    private String writeError;
+
+    /** Once a tick: writes a file FLUSH_AFTER ticks after its first unsaved change (a failed write backs off, see RETRY_MAX). */
     public synchronized void flushIfDue(long tick) {
         lastTick = tick;
         if (files == null) return;
-        if (oresDirty >= 0 && !oresLocked && tick - oresDirty >= FLUSH_AFTER && files.writeJson(ORES, oresJson().toString()).startsWith("ok")) oresDirty = -1;
-        if (exploredDirty >= 0 && !exploredLocked && tick - exploredDirty >= FLUSH_AFTER && files.writeJson(EXPLORED, exploredJson().toString()).startsWith("ok")) exploredDirty = -1;
+        if (oresDirty >= 0 && !oresLocked && tick - oresDirty >= FLUSH_AFTER && tick >= oresRetryAt) {
+            String r = files.writeJson(ORES, oresJson().toString());
+            if (r.startsWith("ok")) {
+                oresDirty = -1;
+                oresFails = 0;
+                oresRetryAt = 0;
+            } else {
+                oresFails++;
+                oresRetryAt = tick + backoff(oresFails);
+                writeError = ORES + ": " + r + " (next try in " + backoff(oresFails) / 20 + " s)";
+            }
+        }
+        if (exploredDirty >= 0 && !exploredLocked && tick - exploredDirty >= FLUSH_AFTER && tick >= exploredRetryAt) {
+            String r = files.writeJson(EXPLORED, exploredJson().toString());
+            if (r.startsWith("ok")) {
+                exploredDirty = -1;
+                exploredFails = 0;
+                exploredRetryAt = 0;
+            } else {
+                exploredFails++;
+                exploredRetryAt = tick + backoff(exploredFails);
+                writeError = EXPLORED + ": " + r + " (next try in " + backoff(exploredFails) / 20 + " s)";
+            }
+        }
+    }
+
+    static long backoff(int fails) {
+        return Math.min(RETRY_MAX, FLUSH_AFTER << Math.min(Math.max(fails - 1, 0), 10));
+    }
+
+    /** The tick before which no write of ores.json is tried again (0: none pending). For the tests. */
+    synchronized long oresRetryAt() { return oresRetryAt; }
+
+    /** A failed write's note, once, or null (Core logs it). */
+    public synchronized String takeWriteError() {
+        String s = writeError;
+        writeError = null;
+        return s;
     }
 
     /** Writes whatever is unsaved now. */

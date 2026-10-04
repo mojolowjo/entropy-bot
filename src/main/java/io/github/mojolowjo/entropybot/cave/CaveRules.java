@@ -128,6 +128,21 @@ public final class CaveRules {
         return name + " at " + x + " " + y + " " + z + " (" + (frontierLeft ? "got " + furthest + " blocks in" : "finished") + ")";
     }
 
+    /**
+     * S1: a cave target (an ore, a dark spot, a cave entrance, a walk) inside a protect box or within the mine verb's
+     * margin of one: the nearest such box, else null. The cave never targets those (the guard would refuse the breaks).
+     */
+    public static MineRules.Near offLimits(List<io.github.mojolowjo.entropybot.guard.Box> protect, String dim, int x, int y, int z) {
+        return MineRules.protectNear(protect, dim, x, y, z, MineRules.PROTECT_MARGIN);
+    }
+
+    /** S1: why a cave is no place to cave ("cave_2 lies inside the protected base"). */
+    public static String protectedCaveText(String cave, MineRules.Near n) {
+        String name = n.box().name != null ? n.box().name : "box";
+        return n.gap() == 0 ? cave + " lies inside the protected " + name
+                : cave + " lies " + n.gap() + " blocks from the protected " + name + " (I keep " + MineRules.PROTECT_MARGIN + " away)";
+    }
+
     /** The names noted in noCaveAt ("cave_2 (x y z)") -> the cave names, for {@link #nearestKnown}'s closed set. */
     public static Set<String> closedNames(List<String> noCaveAt) {
         Set<String> out = new LinkedHashSet<>();

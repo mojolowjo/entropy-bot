@@ -15,6 +15,50 @@ import java.util.regex.Pattern;
 public final class MineRules {
     private MineRules() {}
 
+    // ---- S1: the guard policy, read fail-closed (a policy or box it can't read stops mining instead of ignoring it) ----
+
+    /** The policy (or one of its boxes) can't be read: the mine, caves and explore refuse with this message. */
+    public static final class BadPolicy extends RuntimeException {
+        public BadPolicy(String msg) { super(msg); }
+    }
+
+    /** The policy JSON as an object; BadPolicy when it isn't one. */
+    public static com.google.gson.JsonObject parsePolicy(String json) {
+        try {
+            com.google.gson.JsonElement e = com.google.gson.JsonParser.parseString(json == null ? "" : json);
+            if (!e.isJsonObject()) throw new BadPolicy("the guard policy can't be read (not a JSON object)");
+            return e.getAsJsonObject();
+        } catch (RuntimeException ex) {
+            if (ex instanceof BadPolicy b) throw b;
+            throw new BadPolicy("the guard policy can't be read (" + ex.getMessage() + ")");
+        }
+    }
+
+    /** The boxes under key ("areas", "protect"); none when the key is missing; BadPolicy for anything malformed. */
+    public static List<Box> policyBoxes(com.google.gson.JsonObject pol, String key, String defaultDim) {
+        List<Box> out = new ArrayList<>();
+        if (pol == null) throw new BadPolicy("the guard policy can't be read (none)");
+        if (!pol.has(key) || pol.get(key).isJsonNull()) return out;
+        if (!pol.get(key).isJsonArray()) throw new BadPolicy("the guard policy's " + key + " list is malformed (not a list)");
+        int i = 0;
+        for (com.google.gson.JsonElement e : pol.getAsJsonArray(key)) {
+            i++;
+            try {
+                out.add(Box.fromJson(e.getAsJsonObject(), defaultDim));
+            } catch (RuntimeException ex) {
+                String name = "";
+                try { if (e.isJsonObject() && e.getAsJsonObject().has("name")) name = " \"" + e.getAsJsonObject().get("name").getAsString() + "\""; } catch (RuntimeException ignored) {}
+                throw new BadPolicy("box " + i + name + " in the guard policy's " + key + " list is malformed (" + ex.getMessage() + ")");
+            }
+        }
+        return out;
+    }
+
+    /** The reply when the policy can't be read: refuse, never mine blind. */
+    public static String badPolicyText(BadPolicy e) {
+        return "I won't mine while " + e.getMessage() + " - check \"guard\", \"area list\" and \"protect\"";
+    }
+
     /** Plain "mine" takes ores (the c:ores tag) and these loose natural blocks only. */
     public static final Pattern EXTRA = Pattern.compile("^minecraft:(sand|red_sand|gravel|clay|short_grass|tall_grass|fern|large_fern)$");
     public static final Pattern BLOCK_ID = Pattern.compile("^[a-z0-9_.-]+:[a-z0-9_./-]+$");

@@ -210,7 +210,26 @@ final class Crafting {
         int[] me = Jobs.here(p), t = findBlockAround(me, "crafting_table", 12, 6);
         if (t != null) return t;
         int[] b = base();
-        return b != null ? findBlockAround(b, "crafting_table", 12, 6) : null;
+        int[] bt = b != null ? findBlockAround(b, "crafting_table", 12, 6) : null;
+        // S1 (D2 review): the strip mine's own table (commands.json's mine note) counts too, when it is still there
+        // (loaded and a crafting table) and nearer than the base's (the bridge's "a table near it, the mine's, or the base's")
+        int[] mt = mineTable();
+        if (mt != null && (bt == null || Jobs.distSq(me, mt) < Jobs.distSq(me, bt))) return mt;
+        return bt;
+    }
+
+    /** S1: the strip mine's table if its block is loaded and still a crafting table, else null. */
+    private static int[] mineTable() {
+        try {
+            int[] t = StripMine.get().mineTable();
+            if (t == null) return null;
+            Minecraft mc = Minecraft.getInstance();
+            BlockPos bp = new BlockPos(t[0], t[1], t[2]);
+            if (mc.level == null || !mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("crafting_table")) return null;
+            return t;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     static final String FURNACE = "block.minecraft.furnace";

@@ -185,12 +185,15 @@ public final class BotAPI {
 
     /**
      * B7d (D3): a job of the mod's own turned Baritone's breaking on (the Baritone "mine"): the bridge's safety net
-     * (breaking on with no job of its own) leaves it alone.
+     * (breaking on with no job of its own) leaves it alone. S1: only while Baritone's mine really runs (not during the
+     * job's pickaxe trip, a hold or a walk to new land, when breaking is off and anything that turned it on is not ours).
      */
     public static boolean breakingOwned() {
         try {
             var j = core().commands.jobs.job;
-            return j != null && !j.done && j.ownsBreaking;
+            if (j == null || j.done || !j.ownsBreaking) return false;
+            baritone.api.IBaritone b = baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone();
+            return b != null && b.getMineProcess().isActive();
         } catch (Throwable t) {
             return false;
         }

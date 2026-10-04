@@ -92,6 +92,63 @@ public final class StripRules {
         return dx * dx + dy * dy + dz * dz;
     }
 
+    // ---- a corridor the bot can't walk along (S1, live 2026-10-03: a corridor crossed a lava cave) ----
+
+    /** A corridor cell (index i) it can't walk: at = the block that is the trouble, what = "lava", "water" or "a drop". */
+    public record BadFloor(int i, Pos at, String what) {}
+
+    /**
+     * The first corridor cell from index from to to (inclusive) whose walk is broken: lava or water in its floor (or in
+     * the cell itself, for lava), or no floor over a hole 2 or more deep (the walk can't climb back without placing).
+     * Cells in unloaded chunks are passed over (unknown, not bad). lavaOnly: water and holes don't count. Null when every
+     * known cell is fine.
+     */
+    public static BadFloor badFloor(StripWorld w, MineGeom g, int from, int to, boolean lavaOnly) {
+        for (int i = Math.max(0, from); i <= to; i++) {
+            Pos c = g.cell(i, 0);
+            int x = c.x(), y = c.y(), z = c.z();
+            if (!w.loaded(x, y, z)) continue;
+            for (int dy = 0; dy < 2; dy++) {
+                if (isLava(w, x, y + dy, z)) return new BadFloor(i, new Pos(x, y + dy, z), "lava");
+            }
+            if (isLava(w, x, y - 1, z)) return new BadFloor(i, new Pos(x, y - 1, z), "lava");
+            boolean open = w.noCollision(x, y - 1, z);
+            if (open && isLava(w, x, y - 2, z)) return new BadFloor(i, new Pos(x, y - 2, z), "lava");
+            if (lavaOnly) continue;
+            if (w.fluid(x, y - 1, z)) return new BadFloor(i, new Pos(x, y - 1, z), "water");
+            if (open && w.fluid(x, y - 2, z)) return new BadFloor(i, new Pos(x, y - 2, z), "water");
+            if (open && w.noCollision(x, y - 2, z)) return new BadFloor(i, new Pos(x, y - 1, z), "a drop");
+        }
+        return null;
+    }
+
+    private static boolean isLava(StripWorld w, int x, int y, int z) {
+        return w.fluid(x, y, z) && w.id(x, y, z).endsWith(":lava");
+    }
+
+    /**
+     * Where to look for trouble on the way to corridor cell to: from the bot's own cell when it stands by the corridor
+     * (within 20 sideways and 10 levels: it is already past what lies behind it), else from the entrance.
+     */
+    public static int scanFrom(MineGeom g, int[] me, int to) {
+        if (me == null) return 0;
+        if (Math.abs(g.side(me)) > 20 || Math.abs(me[1] - g.y) > MineGeom.LEG_LEVELS) return 0;
+        return Math.max(0, Math.min(to, g.along(me)));
+    }
+
+    /**
+     * S1: a strip dig's box (and with torches its shell, where they go) reaching into a protect box: the reason ("it
+     * reaches into the protected base"), else null. The guard refuses every break and placement there, in every mode.
+     */
+    public static String protectRefusal(List<io.github.mojolowjo.entropybot.guard.Box> protect, String dim, ClearBox b, boolean torches) {
+        ClearBox shell = torches ? b.grow(1) : b;
+        io.github.mojolowjo.entropybot.guard.Box box = new io.github.mojolowjo.entropybot.guard.Box(null, dim, shell.x1(), shell.y1(), shell.z1(), shell.x2(), shell.y2(), shell.z2());
+        for (io.github.mojolowjo.entropybot.guard.Box pr : protect) {
+            if (pr.overlaps(box)) return "it reaches into the protected " + (pr.name != null ? pr.name : "box");
+        }
+        return null;
+    }
+
     // ---- where a mine may start ----
 
     private static boolean solid(StripWorld w, int x, int y, int z) {
