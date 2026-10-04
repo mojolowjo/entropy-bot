@@ -612,7 +612,13 @@ final class Mining {
         MineRules.Args a = MineRules.args(text);
         if (!MineRules.BLOCK_ID.matcher(a.id()).matches()) return MineRules.notABlock(a.word());
         ResourceLocation rl = ResourceLocation.tryParse(a.id());
-        if (rl == null || !BuiltInRegistries.BLOCK.containsKey(rl)) return "error: unknown block " + a.id();
+        if (rl == null || !BuiltInRegistries.BLOCK.containsKey(rl)) {
+            // "mine coal" (the owner's words): the family's ore block, coal -> coal_ore (deepslate_coal_ore is its own)
+            ResourceLocation ore = ResourceLocation.tryParse(a.id() + "_ore");
+            if (ore != null && BuiltInRegistries.BLOCK.containsKey(ore) && text != null && !text.trim().isEmpty())
+                return prepareMine(p, text.trim().replaceFirst("^(\\S+)", "$1_ore"));
+            return "error: unknown block " + a.id();
+        }
         Block block = BuiltInRegistries.BLOCK.get(rl);
         BlockState st = block.defaultBlockState();
         boolean ore = st.is(Tags.Blocks.ORES);
