@@ -37,9 +37,9 @@ public final class ClearEngine {
         return !w.avoided(x, y, z);
     }
 
-    /** clearable(x, y, z) during a clear job (its "force" counts). */
+    /** clearable(x, y, z) during a clear job (its "force" counts, and its exact id / armed gate: {@link ClearJob#allows}). */
     public static boolean clearable(ClearWorld w, ClearJob job, int x, int y, int z) {
-        return clearableState(w, x, y, z, job != null && job.force);
+        return clearableState(w, x, y, z, job != null && job.force) && (job == null || job.allows(w, x, y, z));
     }
 
     /**

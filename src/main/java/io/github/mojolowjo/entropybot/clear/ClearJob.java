@@ -37,8 +37,14 @@ public final class ClearJob {
         public List<Pos> torches;
         /** chests to empty the inventory into when full (null: the base chests) */
         public List<Pos> dump;
+        /** break only blocks whose id is exactly this (the bot's own crafting table pickup), on every attempt; null: any */
+        public String exactId;
+        /** while this says false the clear breaks nothing (the table pickup disarmed); null: always armed */
+        public java.util.function.BooleanSupplier armed;
 
         public Options box(ClearBox b) { box = b; return this; }
+        public Options exactId(String id) { exactId = id; return this; }
+        public Options armed(java.util.function.BooleanSupplier a) { armed = a; return this; }
         public Options only(List<Pos> o) { only = o; return this; }
         public Options label(String l) { label = l; return this; }
         public Options keepOres(boolean k) { keepOres = k; return this; }
@@ -69,6 +75,9 @@ public final class ClearJob {
     public final List<Pos> torches;
     public final List<Pos> dump;
     public final OreBook ores;
+    /** {@link Options#exactId}, {@link Options#armed} */
+    public final String exactId;
+    public final java.util.function.BooleanSupplier armed;
 
     public int broken, brokenAtScan, consecFails, sightBudget, oresMined, protectedCount, craftTries, torchesSkipped;
     /** ores newly listed during this job (the bridge's oresNoted - job.oreBase) */
@@ -104,6 +113,17 @@ public final class ClearJob {
         this.torches = o.torches == null ? new ArrayList<>() : new ArrayList<>(o.torches);
         this.dump = o.dump;
         this.ores = ores != null ? ores : new OreBook.Simple();
+        this.exactId = o.exactId;
+        this.armed = o.armed;
+    }
+
+    /**
+     * B7d review 4a: the block at x y z may be broken by this job at all: it is still armed and (with an exact id) the
+     * block is exactly that id. Checked on every break attempt (ClearEngine.clearable), not only when the job starts.
+     */
+    public boolean allows(ClearWorld w, int x, int y, int z) {
+        if (armed != null && !armed.getAsBoolean()) return false;
+        return exactId == null || exactId.equals(w.id(x, y, z));
     }
 
     /**

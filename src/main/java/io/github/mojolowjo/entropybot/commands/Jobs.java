@@ -170,7 +170,7 @@ public final class Jobs {
         Minecraft mc = Minecraft.getInstance();
         if (j.type.equals("twerk") || j.seq != null) mc.options.keyShift.setDown(false);      // twerk, a farm round's crouch
         if (j.unstickLeft > 0) endUnstick(j);
-        if (j.seq != null) Clearing.ended(j.seq, msg);           // B7d D1: a clear's leases end with the job, however it ends
+        if (j.seq != null) { try { String m = Clearing.ended(j.seq, msg); if (m != null && !m.equals(msg)) { msg = m; j.status = m; } } catch (RuntimeException e) { LOG.warn("[entropybot] clear end hook: {}", e.toString()); } }           // B7d D1: a clear's leases end with the job, however it ends (a table left is named); never keeps the request open
         if (j.seq != null) {
             LocalPlayer p = mc.player;
             boolean close = "always".equals(j.closeOnEnd) || ("fail".equals(j.closeOnEnd) && !msg.startsWith("ok"));
@@ -697,7 +697,11 @@ public final class Jobs {
             stopFollowFix("stopped: I lost track of you (no fresh position from your game, or you're in another dimension)");
             return;
         }
-        if (System.currentTimeMillis() - followFixAt < 1500 || distSq(t, followFixGoal) <= 25) return;
+        // re-aim only when the player moved a fair share of the way (5 blocks, or 1/8 of the distance when far): every
+        // new goal is a whole new Baritone search, and far away a few blocks change nothing about the way there
+        double far = Math.sqrt(distSq(t, here(p))) / 8;
+        long moved = (long) Math.max(5, far);
+        if (System.currentTimeMillis() - followFixAt < 1500 || distSq(t, followFixGoal) <= moved * moved) return;
         String r = followFixGo(name, from, t);
         if (!r.startsWith("ok")) stopFollowFix("stopped: " + r.replaceFirst("^error: ", ""));
     }

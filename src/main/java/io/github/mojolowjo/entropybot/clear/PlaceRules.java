@@ -144,6 +144,42 @@ public final class PlaceRules {
         return "picking up my crafting table at " + p.key();
     }
 
+    /** The only block the table pickup ever breaks. */
+    public static final String TABLE_ID = "minecraft:crafting_table";
+
+    /** placeAt's answer when the cell already holds the block (someone else's, as far as the bot knows). */
+    public static final String ALREADY_THERE = "ok: already there";
+
+    /**
+     * B7d review 4b: a placement counts as the bot's own only when the cell was free (replaceable) just before its click
+     * and the click really happened; "already there" never does.
+     */
+    public static boolean ourClick(boolean freeBefore, String placeResult) {
+        return freeBefore && placeResult != null && placeResult.startsWith("ok: ") && !placeResult.equals(ALREADY_THERE);
+    }
+
+    /** 4b: the pickup is armed only after our own click on a free cell, with a crafting table right there afterwards. */
+    public static boolean armsTable(boolean ourClick, String idAfter) {
+        return ourClick && TABLE_ID.equals(idAfter);
+    }
+
+    /** 4a: the pickup may break the cell only while it is armed and the block is exactly a crafting table. */
+    public static boolean pickupMayBreak(boolean armed, String id) {
+        return armed && TABLE_ID.equals(id);
+    }
+
+    /**
+     * B7d review 3: a trip step failed and the steps from it up to the clear go. {@code removed.get(0)} is the step that
+     * failed; the armed table pickups among the others stay (in order), so the bot still takes its table back.
+     */
+    public static <T> List<T> keptOnCatch(List<T> removed, java.util.function.Predicate<T> armedPickup) {
+        List<T> out = new ArrayList<>();
+        for (int i = 1; i < removed.size(); i++) {
+            if (armedPickup.test(removed.get(i))) out.add(removed.get(i));
+        }
+        return out;
+    }
+
     // ---- leases ----
 
     /** The most one lease may cover (GuardCore.MAX_LEASE_VOLUME), and a force lease (MAX_FORCE_VOLUME). */

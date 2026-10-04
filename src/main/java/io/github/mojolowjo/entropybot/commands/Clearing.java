@@ -179,6 +179,8 @@ public final class Clearing {
         long lastBeat = -1000;
         /** the job's label for the trips' whispers, the requester */
         String note;
+        /** table pickups a failed trip took out of the Seq (B7d review 3): the job's end names a table still there */
+        final List<Seq.Step> tablesLeft = new ArrayList<>();
     }
 
     /** A placeblock step's state. */
@@ -256,12 +258,34 @@ public final class Clearing {
         for (int j = seq.idx + 1; j < seq.steps.size(); j++) {
             Seq.Step c = seq.steps.get(j);
             if (!c.type.equals("clear") || !(c.state instanceof ClearState s) || !s.inTrip) continue;
+            List<Seq.Step> removed = new ArrayList<>(seq.steps.subList(seq.idx, j));
+            // B7d review 3: the armed table pickup stays (the bot takes its table back before the clear goes on)
+            List<Seq.Step> keep = PlaceRules.keptOnCatch(removed, Clearing::armedPickup);
             for (int k = seq.idx; k < j; k++) seq.steps.remove(seq.idx);
+            seq.steps.addAll(seq.idx, keep);
+            LocalPlayer p = Minecraft.getInstance().player;
+            for (Seq.Step g : removed) {
+                if (keep.contains(g)) continue;
+                // a removed armed pickup (the one that failed), or a table that went down after a failed placement's
+                // click: the job's end reports it when it is still there
+                if (armedPickup(g)) s.tablesLeft.add(g);
+                if (g.state instanceof PlaceState ps && ps.pickup != null && ps.clicked) s.tablesLeft.add(ps.pickup);
+                if (g.state instanceof ClearState gs && !gs.done) {
+                    gs.done = true;
+                    if (gs.run != null && p != null) {
+                        try { gs.run.stop(new McBody(seq, gs, p)); } catch (RuntimeException ignored) {}
+                    }
+                    gs.leases.releaseAll();
+                }
+            }
+            if (!keep.isEmpty()) LOG.info("[entropybot] clear: picking up my crafting table at {} first", Jobs.fmt(keep.get(0).pos));
+            // B7d review 6: a walk the failed trip left running stops before the clear breaks again
+            IBaritone b = Jobs.baritone();
+            if (b != null) Jobs.cancel(b);
             s.caught = r;
             s.caughtSet = true;
             seq.stage = null;
             seq.stepStart = seq.now();
-            LocalPlayer p = Minecraft.getInstance().player;
             if (p != null && (Gui.open(p) || Minecraft.getInstance().screen != null)) Gui.close(p);
             LOG.info("[entropybot] clear: the {} trip failed ({}), back to the clear", s.tripKind, r);
             return true;
@@ -269,9 +293,15 @@ public final class Clearing {
         return false;
     }
 
-    /** Jobs.finish: the job ended (any way): breaking stops, the leases go, the tally counts. */
-    static void ended(Seq seq, String msg) {
+    /**
+     * Jobs.finish: the job ended (any way): breaking stops, the leases go, the tally counts. A crafting table the bot put
+     * down and hasn't picked up yet (B7d review 3) is named in the end message: msg plus " - left my crafting table at x y
+     * z". It is never broken here: a table takes several ticks of hitting even with the best axe, and the job must not wait
+     * or walk once it has ended. Returns the end message.
+     */
+    static String ended(Seq seq, String msg) {
         LocalPlayer p = Minecraft.getInstance().player;
+        List<Seq.Step> tables = new ArrayList<>();
         for (Seq.Step st : seq.steps) {
             if (st.state instanceof ClearState s && !s.done) {
                 s.done = true;
@@ -282,10 +312,42 @@ public final class Clearing {
                 s.leases.releaseAll();
             } else if (st.state instanceof PlaceState ps) {
                 if (ps.leases != null) ps.leases.releaseAll();
+                // clicked on a free cell, then the job ended before the table showed up (or before the step saw it)
+                if (ps.pickup != null && ps.clicked) tables.add(ps.pickup);
             } else if (st.state instanceof BuildState bs && !bs.done) {
                 endBuild(bs);
             }
+            if (st.state instanceof ClearState s) tables.addAll(s.tablesLeft);
+            if (armedPickup(st)) tables.add(st);
         }
+        Set<String> left = new LinkedHashSet<>();
+        for (Seq.Step t : tables) {
+            if (t.pos == null) continue;
+            String id = blockId(t.pos);
+            t.got = null;                            // disarmed: nothing picks it up after the job
+            // gone (picked up, broken by someone) or something else now: not ours to mention
+            if (id != null && !PlaceRules.TABLE_ID.equals(id)) continue;
+            left.add(Jobs.fmt(t.pos));
+        }
+        if (left.isEmpty()) return msg;
+        String where = String.join(", ", left);
+        LOG.info("[entropybot] clear: the job ended ({}) and left my crafting table at {}", msg, where);
+        return msg + " - left my crafting table at " + where;
+    }
+
+    /** A table pickup step the place step armed (the bot's own table went down there). */
+    static boolean armedPickup(Seq.Step st) {
+        return KIND_TABLE.equals(st.kind) && KIND_PLACED_TABLE.equals(st.got);
+    }
+
+    /** The block id at pos ("minecraft:crafting_table"), or null when no world (or not that chunk) is loaded. */
+    static String blockId(int[] pos) {
+        var level = Minecraft.getInstance().level;
+        if (level == null || pos == null) return null;
+        BlockPos bp = new BlockPos(pos[0], pos[1], pos[2]);
+        if (!level.isLoaded(bp)) return null;
+        BlockState bs = level.getBlockState(bp);
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(bs.getBlock()).toString();
     }
 
     // ---- the steps ----
@@ -349,6 +411,15 @@ public final class Clearing {
         if (s.done) return "next";
         s.world.set(p);
         McBody body = new McBody(seq, s, p);
+        if (KIND_TABLE.equals(st.kind)) {
+            // B7d review 4a: every tick of the pickup (walks, holds and restarts included) it is still our table
+            String lost = pickupLost(st);
+            if (lost != null) {
+                LOG.info("[entropybot] clear: dropped the crafting table pickup: {}", lost);
+                st.got = null;
+                return finish(seq, st, s, body, "ok: " + lost);
+            }
+        }
         ClearRun.Out out;
         if (s.inTrip) {
             // back from a trip (the steps before this one ran)
@@ -401,6 +472,12 @@ public final class Clearing {
         boolean ok = msg.startsWith("ok");
         st.cleared = new Outcome(ok, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
         LOG.info("[entropybot] clear: {}", msg);
+        if (KIND_TABLE.equals(st.kind)) {
+            // picked up (or gone): disarmed; still standing there: stays armed, so the job's end names it
+            String id = blockId(st.pos);
+            if (id != null && !PlaceRules.TABLE_ID.equals(id)) st.got = null;
+            else if (armedPickup(st)) LOG.info("[entropybot] clear: couldn't pick up my crafting table at {}", Jobs.fmt(st.pos));
+        }
         if (KIND_FINISH.equals(st.kind)) {
             seq.jobs.finish(msg);
             return "wait";
@@ -471,7 +548,11 @@ public final class Clearing {
             out.add(mk);
         }
         int[] at = {spot.x(), spot.y(), spot.z()};
-        Seq.Step pickup = clearStep(new ClearJob.Options().only(List.of(spot)).force(true).soft(true).keepOres(false).label(PlaceRules.pickupLabel(spot)));
+        // force (a table is a built block), but only exactly a crafting table and only while armed, on every attempt
+        ClearJob.Options po = new ClearJob.Options().only(List.of(spot)).force(true).soft(true).keepOres(false)
+                .label(PlaceRules.pickupLabel(spot)).exactId(PlaceRules.TABLE_ID);
+        Seq.Step pickup = clearStep(po);
+        po.armed(() -> armedPickup(pickup));
         pickup.kind = KIND_TABLE;
         pickup.pos = at;
         Seq.Step place = placeStep(at, "minecraft:crafting_table", null, false);
@@ -487,9 +568,20 @@ public final class Clearing {
 
     /** The pickup only takes the table it put down (the place step armed it) and only while it is still a crafting table. */
     static boolean tablePickupWanted(Seq.Step st, LocalPlayer p) {
-        if (!KIND_PLACED_TABLE.equals(st.got) || st.pos == null) return false;
-        BlockState bs = Minecraft.getInstance().level.getBlockState(new BlockPos(st.pos[0], st.pos[1], st.pos[2]));
-        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(bs.getBlock()).toString().equals("minecraft:crafting_table");
+        return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos));
+    }
+
+    /**
+     * B7d review 4a, each tick of a running pickup: null while it may go on (armed, and the cell still our crafting table,
+     * or already open: it was broken and the drop is being picked up), else why it is dropped.
+     */
+    static String pickupLost(Seq.Step st) {
+        if (!armedPickup(st)) return "no crafting table of mine to pick up at " + Jobs.fmt(st.pos);
+        String id = blockId(st.pos);
+        if (id == null || PlaceRules.TABLE_ID.equals(id)) return null;
+        var level = Minecraft.getInstance().level;
+        if (level.getBlockState(new BlockPos(st.pos[0], st.pos[1], st.pos[2])).isAir()) return null;
+        return "the block at " + Jobs.fmt(st.pos) + " is " + id + " now, not my crafting table - left it alone";
     }
 
     /** The bag is full: the base chests (or the clear's dump chests), valuables kept when collecting. */
@@ -601,7 +693,7 @@ public final class Clearing {
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
         if (!target.canBeReplaced()) {
-            return target.getBlock().getDescriptionId().contains(GuiCore.bareId(id)) ? "ok: already there" : "error: something is in the way at " + x + " " + y + " " + z;
+            return target.getBlock().getDescriptionId().contains(GuiCore.bareId(id)) ? PlaceRules.ALREADY_THERE : "error: something is in the way at " + x + " " + y + " " + z;
         }
         String le = leases.placeLease(x, y, z, "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
         if (le != null) return le;
@@ -650,7 +742,15 @@ public final class Clearing {
         int[] pos = st.pos;
         long now = seq.now();
         if (isThere(pos, id)) {
-            if (ps.clicked && ps.pickup != null) ps.pickup.got = KIND_PLACED_TABLE;      // it went down: the pickup may take it
+            if (ps.pickup != null) {
+                // B7d review 4b: armed only after our own click on a free cell, with exactly a crafting table there now
+                if (PlaceRules.armsTable(ps.clicked, blockId(pos))) {
+                    ps.pickup.got = KIND_PLACED_TABLE;      // it went down: the pickup may take it
+                    LOG.info("[entropybot] place: my crafting table is down at {}", Jobs.fmt(pos));
+                } else {
+                    LOG.info("[entropybot] place: a table at {} I didn't just put down - I won't pick it up", Jobs.fmt(pos));
+                }
+            }
             return "next";
         }
         if (ps.stage == null) {
@@ -690,7 +790,10 @@ public final class Clearing {
             ps.stage = "place";
         }
         if (ps.stage.equals("place")) {
+            // 4b: only a click into a cell that was free just before it makes the block ours
+            boolean freeBefore = Minecraft.getInstance().level.getBlockState(new BlockPos(pos[0], pos[1], pos[2])).canBeReplaced();
             String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases);
+            ps.clicked = PlaceRules.ourClick(freeBefore, r);
             if (!r.startsWith("ok")) {
                 // a placement that fails 3 times ends the step and says why (it never stands there for good)
                 ps.tries++;
@@ -699,7 +802,6 @@ public final class Clearing {
                 ps.stageTick = now;
                 return "wait";
             }
-            ps.clicked = true;
             ps.stage = "check";
             ps.stageTick = now;
             return "wait";
@@ -720,6 +822,14 @@ public final class Clearing {
         if (bs.done) return "next";
         long now = seq.now();
         if (now % 20 == 0) bs.leases.beat();
+        // B7d review 7: a reflex hold longer than 100 ticks lets the guard drop the zone's place lease: take it again at
+        // once (as the clear step does), or every Baritone placement after the hold is vetoed
+        String le = bs.leases.ensure();
+        if (le != null) {
+            endBuild(bs);
+            seq.jobs.finish("stopped: " + bs.status + " - " + le.replaceFirst("^error: ", "") + "; placing off again");
+            return "wait";
+        }
         if (now - bs.start < 60 || now % 20 != 0) return "wait";
         IBaritone b = Jobs.baritone();
         if (b == null || Jobs.idle(b)) {
