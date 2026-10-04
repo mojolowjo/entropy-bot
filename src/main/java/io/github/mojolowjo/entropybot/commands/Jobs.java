@@ -39,6 +39,8 @@ public final class Jobs {
     public static final class Job {
         public String type, status, label, goal;
         public boolean done, reflex;
+        /** 28b: a walk whose goal the fence allowed (inside an area); the position watch leaves it be, so it can walk back in. */
+        boolean goalInside;
         Request req;
         long startTick, until, total, ticks;
         int[] dest;
@@ -229,6 +231,7 @@ public final class Jobs {
         j.goal = goal;
         j.dest = dest;
         j.reflex = reflex;
+        j.goalInside = !reflex && (dest != null || FenceRules.goalSpot(goal, 0) != null);
         if (dest != null && tpWorth(p, dest, destDim)) {
             // stand still for /home (in case the server has a warm-up), then walk the rest
             cancel(b);
@@ -630,6 +633,9 @@ public final class Jobs {
 
     /** T3: the tick the bot first stood 2+ blocks outside the areas during a dig (-1: it doesn't). */
     private long fenceOutSince = -1;
+    /** 28a: the last spot of this job that was inside an area, and when the walk back was last ordered. */
+    private int[] fenceLastInside;
+    private long fenceBackTick = -1000;
 
     /** T3: the mod's own break leases (a clear holds them while it digs; a walk or a craft trip holds none). */
     private boolean holdsDigLeases() {
@@ -644,17 +650,27 @@ public final class Jobs {
         if (!commands.fenceOn()) return;
         int[] me = here(p);
         String dim = Guard.dimOf(p.level());
-        if (FenceRules.watches(true, running(), running() && job.reflex)) {
+        if (FenceRules.watches(true, running(), running() && (job.reflex || job.goalInside))) {
             // T3: a clear pulled 2-4 blocks out (a drop, a cave) gets 15 s to come back; everything else as before
             int gap = commands.areaGap(me[0], me[1], me[2], dim);
             long now = core.tick();
             FenceGrace.Verdict v = FenceGrace.verdict(gap, gap > 1 && holdsDigLeases(), fenceOutSince, now);
             if (v == FenceGrace.Verdict.OK) {
                 fenceOutSince = -1;
+                if (gap == 0) fenceLastInside = me;
             } else if (v == FenceGrace.Verdict.GRACE) {
                 if (fenceOutSince < 0) {
                     fenceOutSince = now;
                     LOG.info("[entropybot] {} block(s) outside my areas at {} - 15 s to get back in", gap, fmt(me));
+                }
+                // 28a: Baritone's own path took it out (a cave beside the tunnel): when it stands idle out there, walk back
+                // to the last spot that was inside; the dig then goes on from there
+                IBaritone gb = baritone();
+                if (gb != null && fenceLastInside != null && idle(gb) && now - fenceOutSince >= 20 && now - fenceBackTick >= 100) {
+                    fenceBackTick = now;
+                    LOG.info("[entropybot] walking back inside to {}", fmt(fenceLastInside));
+                    safeSettings();
+                    gb.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(new BlockPos(fenceLastInside[0], fenceLastInside[1], fenceLastInside[2])));
                 }
             } else {
                 boolean afterGrace = fenceOutSince >= 0;

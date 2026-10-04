@@ -848,7 +848,8 @@ public final class Clearing {
             // 4b: only a click into a cell that was free just before it makes the block ours
             boolean freeBefore = Minecraft.getInstance().level.getBlockState(new BlockPos(pos[0], pos[1], pos[2])).canBeReplaced();
             String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases);
-            ps.clicked = PlaceRules.ourClick(freeBefore, r);
+            // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
+            ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
             if (!r.startsWith("ok")) {
                 // a placement that fails 3 times ends the step and says why (it never stands there for good)
                 ps.tries++;
