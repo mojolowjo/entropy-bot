@@ -88,6 +88,7 @@ public final class Caves {
                 caves.put(cv.name, cv);
             }
             int gone = prune(null);
+            pruneNote = null;                              // said in the load line
             if (gone > 0) touch(0);
             return FILE + ": " + caves.size() + " caves" + (gone > 0 ? " (dropped the " + gone + " oldest, over the limit)" : "");
         } catch (RuntimeException e) {
@@ -131,21 +132,39 @@ public final class Caves {
      * one (no frontier left) first, then the oldest; never {@code keep} (the cave being explored). How many went.
      */
     synchronized int prune(Cave keep) {
+        // at load (no cave being explored) the latest updated one stays: a cave bigger than the whole budget (a file from
+        // before the caps) is kept whole, never every cave dropped
+        if (keep == null) for (Cave c : caves.values()) if (keep == null || c.updated > keep.updated) keep = c;
         int gone = 0;
         while (true) {
             long cells = 0;
             for (Cave c : caves.values()) cells += c.visited.size();
-            if (caves.size() <= MAX_CAVES && cells <= MAX_CELLS) return gone;
+            if (caves.size() <= MAX_CAVES && cells <= MAX_CELLS) {
+                if (gone > 0) pruneNote = "dropped the " + gone + " oldest cave" + (gone == 1 ? "" : "s") + " (over the limit)";
+                return gone;
+            }
             Cave drop = null;
             for (Cave c : caves.values()) {
                 if (c == keep) continue;
                 if (drop == null || (drop.frontierLeft && !c.frontierLeft)
                         || (drop.frontierLeft == c.frontierLeft && c.updated < drop.updated)) drop = c;
             }
-            if (drop == null) return gone;
+            if (drop == null) {
+                if (gone > 0) pruneNote = "dropped the " + gone + " oldest cave" + (gone == 1 ? "" : "s") + " (over the limit)";
+                return gone;
+            }
             caves.remove(drop.name);
             gone++;
         }
+    }
+
+    private String pruneNote;
+
+    /** What the last pruning dropped, once (Core logs it), or null. */
+    public synchronized String takePruneNote() {
+        String s = pruneNote;
+        pruneNote = null;
+        return s;
     }
 
     /** The bot is at x y z inside the cave: the coarse cells within 4 blocks count as explored. */

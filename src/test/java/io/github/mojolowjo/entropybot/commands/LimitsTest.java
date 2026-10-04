@@ -51,6 +51,25 @@ class LimitsTest {
     }
 
     @Test
+    void chestNotesNearAMarkedPlaceAreKept() {
+        Knowledge k = new Knowledge();
+        k.load(new BotFiles(dir));
+        k.put("{\"places\":{\"base\":{\"x\":-27,\"y\":53,\"z\":187,\"dim\":\"" + OW + "\"}}}", 1);
+        JsonObject cs = new JsonObject();
+        cs.add("-20 54 190", note(1));                      // the oldest of all, but a base chest
+        cs.add("-60 54 190", note(2));                      // old and 33 blocks from the base: may go
+        for (int i = 0; i < Limits.CHESTS; i++) cs.add(i + " 0 1000", note(1000 + i));
+        JsonObject ch = new JsonObject();
+        ch.add("chests", cs);
+        k.put(ch.toString(), 2);
+        assertTrue(k.chests().containsKey("-20 54 190"), "a chest by the base stays");
+        assertFalse(k.chests().containsKey("-60 54 190"));
+        assertEquals(Limits.CHESTS, k.chests().size());
+        assertTrue(k.takePruneNote().startsWith("dropped the oldest 2 chest notes"), "the pruning is logged");
+        assertNull(k.takePruneNote(), "once");
+    }
+
+    @Test
     void aFileOverTheCapIsTrimmedAtLoad() throws Exception {
         JsonObject cs = new JsonObject();
         for (int i = 0; i < Limits.CHESTS + 20; i++) cs.add(i + " 0 0", note(i));
@@ -112,6 +131,94 @@ class LimitsTest {
         Caves.Cave big = made.get(5);
         for (int s = 0; s < 3000; s++) c.visit(big, s * 9, 0, 0, 99, 99);
         assertTrue(big.visited.size() <= Caves.MAX_VISITED + 27);
+    }
+
+    static JsonObject caveJson(long updated, int cells) {
+        JsonObject c = new JsonObject(), e = new JsonObject();
+        c.addProperty("dim", OW);
+        e.addProperty("x", 0);
+        e.addProperty("y", 0);
+        e.addProperty("z", 0);
+        c.add("entrance", e);
+        c.addProperty("updated", updated);
+        JsonArray v = new JsonArray();
+        for (long i = 0; i < cells; i++) v.add(i * 7 + updated);
+        c.add("visited", v);
+        return c;
+    }
+
+    @Test
+    void aCaveFromBeforeTheCapsBiggerThanTheBudgetIsKeptAtLoad() throws Exception {
+        // a cave of 25000 cells (the old per-cave cap was 40000), alone over the whole 20000 budget
+        JsonObject file = new JsonObject(), cs = new JsonObject();
+        cs.add("cave_1", caveJson(100, Caves.MAX_CELLS + 5000));
+        file.add("caves", cs);
+        Files.writeString(dir.resolve(Caves.FILE), file.toString());
+        Caves c = new Caves();
+        c.load(new BotFiles(dir));
+        assertNotNull(c.get("cave_1"), "never every cave dropped");
+        // with an older small cave next to it, the latest (the big one) stays and the older goes
+        cs.add("cave_2", caveJson(50, 100));
+        Files.writeString(dir.resolve(Caves.FILE), file.toString());
+        Caves d = new Caves();
+        String line = d.load(new BotFiles(dir));
+        assertNotNull(d.get("cave_1"));
+        assertNull(d.get("cave_2"));
+        assertTrue(line.contains("dropped the 1 oldest"), line);
+    }
+
+    @Test
+    void aRuleOrARunRefusedByTheStepCapSaysSo() {
+        JsonObject mem = new JsonObject();
+        CommandsTest.Fake f = CommandsTest.fake(mem);
+        f.chains.routineCommand("save low " + String.join(" then ", Collections.nCopies(10, "wait 1")));
+        f.chains.routineCommand("save mid " + String.join(" then ", Collections.nCopies(10, "low")));
+        assertTrue(f.chains.ruleCommand("every 1m do mid").startsWith("ok: rule #1"));
+        // the routine grows afterwards: the rule's chain is now 110 steps
+        assertTrue(f.chains.routineCommand("save low " + String.join(" then ", Collections.nCopies(11, "wait 1"))).startsWith("saved"));
+        f.chains.rules().get(0).getAsJsonObject().addProperty("last", 0);
+        f.chains.rulesTick();
+        assertFalse(f.chains.running());
+        assertEquals(1, f.whispers.size(), f.whispers.toString());
+        assertTrue(f.whispers.get(0).startsWith("rule #1 (every 1m) didn't start: that is 110 steps"), f.whispers.get(0));
+        f.chains.rules().get(0).getAsJsonObject().addProperty("last", 0);
+        f.chains.rulesTick();
+        assertEquals(1, f.whispers.size(), "said once");
+        // a saved run that is too long now: dropped, and said
+        JsonObject run = new JsonObject();
+        run.addProperty("name", "mid");
+        run.addProperty("text", "mid");
+        run.addProperty("rounds", "1");
+        run.addProperty("round", 1);
+        run.addProperty("idx", 3);
+        run.addProperty("from", "owner");
+        run.addProperty("savedAt", f.now - 60000);
+        mem.add("run", run);
+        f.chains.resumeRun();
+        assertFalse(f.chains.running());
+        assertTrue(mem.get("run").isJsonNull(), "the run record is cleared");
+        assertTrue(f.whispers.get(1).startsWith("I won't carry on with \"mid\" after the restart: that is 110 steps"), f.whispers.get(1));
+    }
+
+    @Test
+    void aFullOutboxStillTakesAOneLineMessageToTheOwnerAndSaysWhatItDropped() {
+        Outbox o = new Outbox();
+        String tenParts = "word ".repeat(400);                 // ~2000 characters: 10 whispers
+        for (int i = 0; i < Limits.OUTBOX / Limits.WHISPER_PARTS; i++) assertTrue(o.add("guest", tenParts, "owner").isEmpty());
+        assertEquals(Limits.OUTBOX, o.size());
+        List<String> lost = o.add("guest", tenParts, "owner");
+        assertEquals(Limits.WHISPER_PARTS, lost.size(), "a long answer past the cap is dropped");
+        assertEquals(1, o.add("guest", "hello", "owner").size(), "a line to someone else too");
+        assertTrue(o.add("owner", "I died at 1 2 3 - going back for my corpse", "owner").isEmpty(), "a one-line message to the owner gets in");
+        String[] first = o.poll();
+        assertEquals("owner", first[0]);
+        assertEquals("(11 whispers dropped: too many at once - the game log has them)", first[1], "the note is at the front");
+        String[] m, last = null;
+        while ((m = o.poll()) != null) last = m;
+        assertEquals("I died at 1 2 3 - going back for my corpse", last[1]);
+        // the next burst gets a fresh note
+        for (int i = 0; i < Limits.OUTBOX / Limits.WHISPER_PARTS + 1; i++) o.add("guest", tenParts, "owner");
+        assertEquals("(10 whispers dropped: too many at once - the game log has them)", o.poll()[1]);
     }
 
     @Test
@@ -194,7 +301,11 @@ class LimitsTest {
     void namedThingsPastTheirCapAreRefusedWithTheLimit() {
         assertNull(Limits.full(false, Limits.PLACES - 1, Limits.PLACES, "places", "forget one first"));
         assertNull(Limits.full(true, Limits.PLACES, Limits.PLACES, "places", "forget one first"), "a known name may move");
-        assertEquals("error: I keep at most 100 places - forget one first", Limits.full(false, Limits.PLACES, Limits.PLACES, "places", "forget one first"));
+        assertEquals("error: I keep at most " + Limits.PLACES + " places - forget one first", Limits.full(false, Limits.PLACES, Limits.PLACES, "places", "forget one first"));
+        // the "places" answer at the cap fits the whisper cap (name + "x y z" ~ 25 characters each)
+        List<String> pl = new ArrayList<>();
+        for (int i = 0; i < Limits.PLACES; i++) pl.add("place_" + i + " " + (-1000 + i) + " 64 " + (2000 - i));
+        assertTrue(Texts.whisperParts(String.join(" | ", pl)).size() < Limits.WHISPER_PARTS, Texts.whisperParts(String.join(" | ", pl)).size() + " parts");
         JsonArray areas = new JsonArray();
         for (int i = 0; i < Limits.AREAS; i++) areas.add(new JsonObject());
         assertTrue(PolicyCommands.areasFull(areas, -1).startsWith("error: I keep at most " + Limits.AREAS + " areas"));

@@ -46,6 +46,7 @@ public final class Knowledge {
         int pruned = prune(null);
         if (pruned > 0) {
             sb.append("; dropped the ").append(pruned).append(" oldest notes (over the limit)");
+            pruneNote = null;                         // said in the load line
             if (dirtySince < 0) dirtySince = 0;
         }
         version = 1;
@@ -140,16 +141,28 @@ public final class Knowledge {
      * memory.json the same way. Returns how many went.
      */
     private int prune(String keep) {
-        int n = 0;
-        for (String k : Limits.oldest(chests, Limits.CHESTS, keep)) {
+        int c = 0, r = 0;
+        // chest notes near a marked place (the base's, the mine's) stay too (Limits.NEAR_PLACE)
+        for (String k : Limits.oldest(chests, Limits.CHESTS, keep, places)) {
             chests.remove(k);
-            n++;
+            c++;
         }
         for (String k : Limits.oldest(rs, Limits.RS_READINGS, rsGrid)) {
             rs.remove(k);
-            n++;
+            r++;
         }
-        return n;
+        if (c + r > 0) pruneNote = "dropped the oldest " + (c > 0 ? c + " chest note" + (c == 1 ? "" : "s") : "")
+                + (c > 0 && r > 0 ? " and " : "") + (r > 0 ? r + " RS reading" + (r == 1 ? "" : "s") : "") + " (over the limit)";
+        return c + r;
+    }
+
+    private String pruneNote;
+
+    /** What the last pruning dropped, once (Core logs it), or null. */
+    public synchronized String takePruneNote() {
+        String s = pruneNote;
+        pruneNote = null;
+        return s;
     }
 
     /** "rsGrid": "x y z" | null; onlyIfNone: a merge keeps the mod's own grid. */

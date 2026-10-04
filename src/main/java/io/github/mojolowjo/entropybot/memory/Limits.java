@@ -25,10 +25,18 @@ import java.util.Map;
 public final class Limits {
     private Limits() {}
 
-    /** Named places ("mark"): a new name past this is refused (the "places" answer is ~3 whispers at 100). */
-    public static final int PLACES = 100;
-    /** Chest notes: past this the oldest-seen note goes (never an untrusted one). chests.json ~240 KB, its write ~9 ms at 500; 10-18 ms at 1000. */
+    /**
+     * Named places ("mark"): a new name past this is refused. The "places" answer is ~20 characters a place: 100 places
+     * were 2 KB = 10 whispers (cut at {@link #WHISPER_PARTS}); 60 are ~6.
+     */
+    public static final int PLACES = 60;
+    /**
+     * Chest notes: past this the oldest-seen note goes (never an untrusted one, never one within {@link #NEAR_PLACE} of
+     * a marked place: the base's and the mine's chests). chests.json ~240 KB, its write ~9 ms at 500; 10-18 ms at 1000.
+     */
     public static final int CHESTS = 500;
+    /** Blocks (each axis) around a marked place whose chest notes are never pruned. */
+    public static final int NEAR_PLACE = 16;
     /** Refined Storage readings (one per grid): past this the oldest goes. */
     public static final int RS_READINGS = 8;
     /** Caves: past this the oldest finished cave goes (then the oldest). */
@@ -88,11 +96,18 @@ public final class Limits {
      * (the owner's "untrust" must stick) nor {@code keep} (the note just written). Empty when nothing has to go.
      */
     public static List<String> oldest(Map<String, JsonObject> m, int max, String keep) {
+        return oldest(m, max, keep, null);
+    }
+
+    /** As above; {@code places} (name -> {x,y,z,dim}): notes within {@link #NEAR_PLACE} of one are kept too. */
+    public static List<String> oldest(Map<String, JsonObject> m, int max, String keep, Map<String, JsonObject> places) {
         List<String> out = new ArrayList<>();
         int over = m.size() - max;
         if (over <= 0) return out;
         List<Map.Entry<String, JsonObject>> c = new ArrayList<>();
-        for (Map.Entry<String, JsonObject> e : m.entrySet()) if (!e.getKey().equals(keep) && !untrusted(e.getValue())) c.add(e);
+        for (Map.Entry<String, JsonObject> e : m.entrySet()) {
+            if (!e.getKey().equals(keep) && !untrusted(e.getValue()) && !nearPlace(e.getKey(), e.getValue(), places)) c.add(e);
+        }
         c.sort((a, b) -> Long.compare(seen(a.getValue()), seen(b.getValue())));
         for (int i = 0; i < over && i < c.size(); i++) out.add(c.get(i).getKey());
         return out;
@@ -107,11 +122,43 @@ public final class Limits {
         return "error: I keep at most " + max + " " + what + " - " + free;
     }
 
+    /** A note at "x y z" (in its "dim") within NEAR_PLACE blocks, on every axis, of a marked place in the same dimension. */
+    static boolean nearPlace(String key, JsonObject note, Map<String, JsonObject> places) {
+        if (places == null || places.isEmpty()) return false;
+        String[] p = key.trim().split("\\s+");
+        if (p.length != 3) return false;
+        int x, y, z;
+        try {
+            x = Integer.parseInt(p[0]);
+            y = Integer.parseInt(p[1]);
+            z = Integer.parseInt(p[2]);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        String dim = str(note, "dim", "minecraft:overworld");
+        for (JsonObject pl : places.values()) {
+            try {
+                if (!str(pl, "dim", "minecraft:overworld").equals(dim)) continue;
+                if (Math.abs(pl.get("x").getAsInt() - x) <= NEAR_PLACE && Math.abs(pl.get("y").getAsInt() - y) <= NEAR_PLACE
+                        && Math.abs(pl.get("z").getAsInt() - z) <= NEAR_PLACE) return true;
+            } catch (RuntimeException ignored) {}
+        }
+        return false;
+    }
+
+    private static String str(JsonObject o, String k, String dflt) {
+        try {
+            return o != null && o.has(k) && o.get(k).isJsonPrimitive() ? o.get(k).getAsString() : dflt;
+        } catch (RuntimeException e) {
+            return dflt;
+        }
+    }
+
     /** At most {@code max} whisper parts: past it the last kept part says how many were cut. */
     public static List<String> capParts(List<String> parts, int max) {
         if (parts.size() <= max) return parts;
         List<String> out = new ArrayList<>(parts.subList(0, max - 1));
-        out.add("(+" + (parts.size() - max + 1) + " more lines cut - too long for chat; send it from the dashboard to see all of it)");
+        out.add("(+" + (parts.size() - max + 1) + " more lines cut - too long for chat)");
         return out;
     }
 

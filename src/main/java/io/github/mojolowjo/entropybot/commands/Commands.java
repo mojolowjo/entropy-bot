@@ -63,7 +63,7 @@ public final class Commands implements Chains.Env {
     private BotFiles bridgeFiles;
     private boolean ready;
     private final ArrayDeque<ChatParse.Pm> pmQueue = new ArrayDeque<>();
-    private final ArrayDeque<String[]> outbox = new ArrayDeque<>();
+    private final Outbox outbox = new Outbox();
     private final Set<String> refused = new HashSet<>();
     private String lastCmdId, lastResult, seenCmdId;
     private JsonObject restartOk;
@@ -443,31 +443,12 @@ public final class Commands implements Chains.Env {
     }
 
     public void whisper(String to, String text) {
-        synchronized (outbox) {
-            // package H: one answer takes at most Limits.WHISPER_PARTS whispers, the queue at most Limits.OUTBOX
-            for (String part : io.github.mojolowjo.entropybot.memory.Limits.capParts(Texts.whisperParts(text), io.github.mojolowjo.entropybot.memory.Limits.WHISPER_PARTS)) {
-                if (outbox.size() >= io.github.mojolowjo.entropybot.memory.Limits.OUTBOX) {
-                    droppedWhispers++;
-                    LOG.info("[entropybot] whisper dropped (outbox full) to {}: {}", to, part);
-                    continue;
-                }
-                outbox.add(new String[]{to, part});
-            }
-        }
+        // package H: the caps live in Outbox (one answer, the queue; one-line messages to the owner still get in)
+        for (String part : outbox.add(to, text, owner())) LOG.info("[entropybot] whisper dropped (outbox full) to {}: {}", to, part);
     }
 
-    private int droppedWhispers;
-
     private void sendOutbox(LocalPlayer player) {
-        String[] m;
-        synchronized (outbox) {
-            m = outbox.poll();
-            if (m == null && droppedWhispers > 0) {
-                m = new String[]{owner(), "(" + droppedWhispers + " whispers dropped: too many at once - the game log has them)"};
-                LOG.warn("[entropybot] dropped {} whispers (outbox full)", droppedWhispers);
-                droppedWhispers = 0;
-            }
-        }
+        String[] m = outbox.poll();
         if (m != null) player.connection.sendCommand("msg " + m[0] + " " + m[1]);
     }
 
@@ -1316,9 +1297,7 @@ public final class Commands implements Chains.Env {
         synchronized (pmQueue) {
             pm.addProperty("queued", pmQueue.size());
         }
-        synchronized (outbox) {
-            pm.addProperty("outbox", outbox.size());
-        }
+        pm.addProperty("outbox", outbox.size());
         pm.addProperty("bridge", bridge.present(tick));
         s.add("pm", pm);
         s.add("restartOk", restartOk == null ? JsonNull.INSTANCE : restartOk);

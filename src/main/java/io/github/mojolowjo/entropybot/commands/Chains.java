@@ -222,7 +222,12 @@ public final class Chains {
         String roundsText = r.has("rounds") ? r.get("rounds").getAsString() : "1";
         long rounds = "forever".equals(roundsText) ? FOREVER : Math.max(1, parseLong(roundsText, 1));
         String s = startChain(str(r, "from", env.owner()), name, str(r, "text", ""), rounds);
-        if (!s.startsWith("started") || chain == null) return;
+        if (!s.startsWith("started") || chain == null) {
+            // package H: a run the step cap refuses now (a routine in it grew) is dropped, and the owner hears why
+            env.whisper(str(r, "from", env.owner()), "I won't carry on with \"" + name + "\" after the restart: " + s.replaceFirst("^error: ", ""));
+            clearRun();
+            return;
+        }
         chain.round = Math.max(1, num(r, "round", 1));
         chain.idx = (int) Math.min(Math.max(num(r, "idx", 0), 0), chain.steps.size());
         saveRun();
@@ -578,7 +583,17 @@ public final class Chains {
             r.addProperty("last", now);
             env.saved();
             env.log("rule #" + (i + 1) + " (" + kind + " " + arg + ") -> " + str(r, "text", ""));
-            startChain(env.owner(), "rule #" + (i + 1), str(r, "text", ""), 1);
+            String s = startChain(env.owner(), "rule #" + (i + 1), str(r, "text", ""), 1);
+            // package H: a rule whose chain is refused (too many steps since a routine in it grew) says so, once
+            if (!s.startsWith("started")) {
+                env.log("rule #" + (i + 1) + " refused: " + s);
+                if (!s.equals(str(r, "refused", ""))) {
+                    r.addProperty("refused", s);
+                    env.whisper(env.owner(), "rule #" + (i + 1) + " (" + kind + " " + arg + ") didn't start: " + s.replaceFirst("^error: ", ""));
+                }
+            } else if (r.has("refused")) {
+                r.remove("refused");
+            }
             idleSince = -1;
             return;
         }

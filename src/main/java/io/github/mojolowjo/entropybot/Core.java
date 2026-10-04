@@ -90,6 +90,11 @@ public final class Core {
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
             reflexes.tick(tick);
             knowledge.flushIfDue(tick);
+            // package H: what the caps dropped, in the log
+            String pruned = knowledge.takePruneNote();
+            if (pruned != null) LOG.info("[entropybot] knowledge: {}", pruned);
+            pruned = caves.takePruneNote();
+            if (pruned != null) LOG.info("[entropybot] caves: {}", pruned);
             poiScanner.tick(tick);
             if (terrain != null) {
                 terrain.tick(tick);
