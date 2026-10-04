@@ -166,7 +166,13 @@ public final class Seq {
             stage = null;
             return;
         }
+        if (Clearing.caught(this, r)) return;            // B7d D1: a trip a clear spliced in failed: the clear hears it and goes on
         jobs.finish("error: " + r + " (while " + label + ")");
+    }
+
+    /** B7d D1: a clear step is stepped every tick (its break progress is per tick, like a player's). */
+    boolean everyTick() {
+        return idx < steps.size() && Clearing.everyTick(steps.get(idx));
     }
 
     /** After a reflex held the job: its clocks move on; a container the fight closed is opened again. */

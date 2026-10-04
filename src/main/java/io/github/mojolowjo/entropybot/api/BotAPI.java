@@ -145,6 +145,14 @@ public final class BotAPI {
         try { return core().guard.core.heartbeat(token); } catch (Throwable t) { return 0; }
     }
 
+    /**
+     * B7d D1: a mod job runs Baritone's builder (build floor|walls|fill|shell, placing on): the bridge's safety net
+     * leaves allowPlace alone while this is true.
+     */
+    public static boolean placingOwned() {
+        try { return io.github.mojolowjo.entropybot.commands.Clearing.placingOwned(); } catch (Throwable t) { return false; }
+    }
+
     /** The last vetoes (and would-be vetoes in log mode), newest last, as a JSON array. */
     public static String vetoes(int max) {
         try { return core().guard.core.log().recent(max); } catch (Throwable t) { return "[]"; }

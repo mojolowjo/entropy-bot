@@ -159,6 +159,7 @@ public final class Jobs {
         Minecraft mc = Minecraft.getInstance();
         if (j.type.equals("twerk") || j.seq != null) mc.options.keyShift.setDown(false);      // twerk, a farm round's crouch
         if (j.unstickLeft > 0) endUnstick(j);
+        if (j.seq != null) Clearing.ended(j.seq, msg);           // B7d D1: a clear's leases end with the job, however it ends
         if (j.seq != null) {
             LocalPlayer p = mc.player;
             boolean close = "always".equals(j.closeOnEnd) || ("fail".equals(j.closeOnEnd) && !msg.startsWith("ok"));
@@ -440,7 +441,7 @@ public final class Jobs {
             }
             case "wait" -> { if (now >= j.until) finish("ok: waited"); }
             case "travel", "spawn" -> { if (now % 20 == 0) stepWalk(p, j); }
-            case "seq" -> { if (now % 2 == 0) j.seq.tick(p); }
+            case "seq" -> { if (now % 2 == 0 || j.seq.everyTick()) j.seq.tick(p); }
             default -> {}
         }
     }

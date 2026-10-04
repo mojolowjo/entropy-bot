@@ -28,6 +28,13 @@ public final class BridgeLink {
         return doneMsg == null || RELOADED.equals(doneMsg) || REPLACED.equals(doneMsg);
     }
     static final long REPORT_FRESH = 100, REPLY_TIMEOUT = 200, LOST_AFTER = 600;
+    /** B7d D1: reports (one a second) a request waits while the bridge runs a job without a request (a trip of its job). */
+    static final int INNER_PATIENCE = 900;
+
+    /** The bridge reports a running job that carries no request id. */
+    static boolean innerJob(JsonObject job, long req) {
+        return job != null && req < 0 && !(job.has("done") && job.get("done").getAsBoolean());
+    }
 
     public interface Listener {
         /** The bridge's answer (r.reply, r.started). */
@@ -177,8 +184,11 @@ public final class BridgeLink {
                         r.doneMsg = r.lastStatus == null ? "ok: done" : r.lastStatus;
                         ended.add(r);
                     }
-                } else if (++r.missing >= 2) {
-                    // the job went away without a word (replaced by a walk, say): don't wait for it forever
+                } else if (++r.missing >= (innerJob(job, req) ? INNER_PATIENCE : 2)) {
+                    // the job went away without a word (replaced by a walk, say): don't wait for it forever. B7d D1
+                    // (TO-LOOK-AT-LATER 18b): a running job that carries no request is the request's job handing over
+                    // to a trip of its own (a clear's pickaxe craft or deposit, a meal; an older bridge reports the trip,
+                    // not the job that owns it): wait for its real end (bridgeDone) much longer before giving up
                     r.finished = true;
                     r.doneMsg = "stopped: lost track of the job" + (r.lastStatus == null ? "" : " (" + r.lastStatus + ")");
                     ended.add(r);

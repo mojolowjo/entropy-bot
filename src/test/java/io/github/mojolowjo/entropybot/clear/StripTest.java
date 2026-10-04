@@ -25,10 +25,15 @@ class StripTest {
         List<Veins.Fill> lastFills = List.of();
 
         StripRun(FakeWorld w, int ox, boolean collect) {
+            this(w, ox, collect, false);
+        }
+
+        /** loop: through the real tick loop (ClearRun, B7d D1) instead of ClearDriver's stand-in. */
+        StripRun(FakeWorld w, int ox, boolean collect, boolean loop) {
             this.w = w;
             this.m = new SimWorlds.Mine(ox, 40, 0);
             this.collect = collect;
-            this.d = new ClearDriver(w, Bot.at(ox + 0.5, 40, 0.5)).simInventory(100000);
+            this.d = (loop ? new RunDriver(w, Bot.at(ox + 0.5, 40, 0.5)) : new ClearDriver(w, Bot.at(ox + 0.5, 40, 0.5))).simInventory(100000);
             d.torches = 16;
             // the server takes back the break at the corridor head once (sim: flakyOnce)
             d.flakyOnce.add(Pos.key(ox, 41, -7));
