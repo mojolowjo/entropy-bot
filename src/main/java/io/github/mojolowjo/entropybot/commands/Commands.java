@@ -639,6 +639,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("need")) return Reply.now(crafting.need(player, rest));
         if (verb.equals("supplies")) return Reply.now(crafting.supplies(player, rest));
         if (verb.equals("recipe")) return Reply.now(crafting.recipe(player, rest));
+        if (verb.equals("smelt") && Crafting.smeltInstant(rest)) return Reply.now(crafting.smelt(player, rest));   // package D: smelt jobs|mode|forget never wait
         // package B: the hotbar layout and the tool policy (settings: instant, never "busy")
         if (verb.equals("hotbar")) return Reply.now(hotbarCommand(player, rest));
         if (verb.equals("tools")) return Reply.now(toolsCommand(rest));
@@ -1289,6 +1290,7 @@ public final class Commands implements Chains.Env {
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
                  "craft", "kit", "smelt", "get", "restock", "farm", "compact" -> {
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
+                if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
                 if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
                 if (!type.equals("find")) {
