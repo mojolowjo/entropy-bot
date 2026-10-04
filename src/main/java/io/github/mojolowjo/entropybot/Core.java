@@ -47,6 +47,8 @@ public final class Core {
     /** B7b: the ground the bot has had loaded, painted into map tiles for the dashboard. */
     private io.github.mojolowjo.entropybot.map.TerrainMap terrain;
     private int errors;
+    /** B7e (E5): the flight recorder; NONE until E5 installs its own in the ready block. Read by E1's debug verbs. */
+    public volatile io.github.mojolowjo.entropybot.recorder.Recorder recorder = io.github.mojolowjo.entropybot.recorder.Recorder.NONE;
 
     private Core() {
         guard.attachEvents(events);
@@ -104,6 +106,7 @@ public final class Core {
             pruned = caves.takePruneNote();
             if (pruned != null) LOG.info("[entropybot] caves: {}", pruned);
             poiScanner.tick(tick);
+            try { recorder.tick(tick); } catch (RuntimeException e) { if (errors++ <= 5) LOG.warn("[entropybot] recorder: {}", e.toString()); }
             if (terrain != null) {
                 terrain.tick(tick);
                 if (tick % 12000 == 0) LOG.info("[entropybot] {}", terrain.status());

@@ -179,6 +179,7 @@ public final class Jobs {
             if (b != null && !msg.startsWith("ok")) cancel(b);
         }
         LOG.info("[entropybot] job finished: {}", msg);
+        try { core.recorder.jobEnded(j.type, j.label, msg); } catch (RuntimeException e) { LOG.warn("[entropybot] recorder job end: {}", e.toString()); }
         if (j.req != null) commands.bridge.done(j.req.id, msg);
     }
 
