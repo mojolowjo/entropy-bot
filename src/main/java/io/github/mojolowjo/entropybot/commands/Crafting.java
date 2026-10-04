@@ -932,7 +932,7 @@ final class Crafting {
     /** smelttake's state: taken so far, the last time more came out, a take waiting for the server. */
     static final class TakeState {
         int took, before = -1, asked;
-        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100;
+        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;
     }
 
     /** The open furnace: take our output as it comes until the target is reached; wait, or say it is gone or stopped. */
@@ -940,7 +940,6 @@ final class Crafting {
         FurnaceJobs fj = furnaces();
         FurnaceJobs.Job j = fj.get(st.jobId);
         if (j == null) return "next";                        // collected in full meanwhile (another visit)
-        if (!Gui.open(p)) return "no container open";
         TakeState ts = st.state instanceof TakeState x ? x : new TakeState();
         st.state = ts;
         if (ts.before >= 0) {
@@ -961,6 +960,18 @@ final class Crafting {
                 return "my inventory is full (took " + ts.took + " of " + st.n + " " + CraftPlanner.shortId(j.item) + " from the furnace at " + j.where() + ")";
             }
         }
+        if (!Gui.open(p)) {
+            // waiting with the furnace closed (the bot can eat meanwhile): open it again when it is time to look
+            if (ts.reopenAt < 0) return "no container open";
+            if (now() < ts.reopenAt) {
+                s.setStatus(s.label + " - " + FurnaceJobs.waitStatus(j, nowMs()));
+                return "wait";
+            }
+            ts.reopenAt = -1;
+            s.splice(s.idx, List.of(Step.open(j.pos, "yes")));
+            s.stage = null;
+            return "wait";
+        }
         if (now() - ts.lookTick < 10) return "wait";            // look twice a second
         ts.lookTick = now();
         if (!furnaceMenu(p)) return "the block at " + j.where() + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
@@ -979,9 +990,17 @@ final class Crafting {
                 return "wait";
             }
             case WAIT:
+                // close it while waiting (an open menu blocks eating), look again in 5-30 s
                 s.setStatus(s.label + " - " + FurnaceJobs.waitStatus(j, nowMs()));
+                ts.reopenAt = now() + FurnaceJobs.lookAgainTicks(j.dueAt - nowMs());
+                Gui.close(p);
                 return "wait";
             case STALLED:
+                if (st.pickup) {
+                    // a pickup leaves it remembered and says so (tried again later)
+                    addNote(s, "the furnace at " + j.where() + ": " + c.why() + " - got " + ts.took + " " + CraftPlanner.shortId(j.item));
+                    return "next";
+                }
                 return "the furnace at " + j.where() + ": " + c.why() + " - got " + ts.took + " of " + st.n + " " + CraftPlanner.shortId(j.item);
             default:
                 return lost(s, st, p, j, "the furnace at " + j.where() + ": " + c.why());

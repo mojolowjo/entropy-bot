@@ -316,6 +316,12 @@ public final class FurnaceJobs {
         return new Collect(Next.GONE, 0, "my " + j.remaining() + " " + shortId(j.item) + " are gone (input and output empty)");
     }
 
+    /** Ticks to wait (furnace closed) before looking again: until it is due, at least 5 s, at most 30 s. */
+    public static int lookAgainTicks(long msUntilDue) {
+        long s = Math.max(5, Math.min(30, msUntilDue / 1000));
+        return (int) (s * 20);
+    }
+
     /** The collect status: "waiting for the furnace at x y z (iron_ingot 12/40, ready in 4m 40s)". */
     public static String waitStatus(Job j, long now) {
         return "waiting for the furnace at " + j.where() + " (" + shortId(j.item) + " " + j.collected + "/" + j.want

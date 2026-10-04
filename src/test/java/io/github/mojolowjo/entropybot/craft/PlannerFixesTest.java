@@ -200,10 +200,14 @@ class PlannerFixesTest {
             }
         }
         CraftPlanner p = new CraftPlanner(f);
+        // counts as big as the bag plus every chest and the RS network: 1000 kinds (each try copies them)
+        Map<String, Integer> big = new LinkedHashMap<>();
+        for (int i = 0; i < 1000; i++) big.put("y:item" + i, 64);
         long t0 = System.nanoTime();
-        Plan plan = p.plan("x:l0_0", 1, new LinkedHashMap<>());
+        Plan plan = p.plan("x:l0_0", 1, big);
         long ms = (System.nanoTime() - t0) / 1_000_000;
         assertEquals(CraftPlanner.tooDeep("x:l0_0"), plan.error());
+        System.out.println("[package D] a search with no end gave up after " + CraftPlanner.BUDGET + " tries in " + ms + " ms (1000 kinds counted)");
         assertTrue(ms < 3000, "gave up in " + ms + " ms");
     }
 }

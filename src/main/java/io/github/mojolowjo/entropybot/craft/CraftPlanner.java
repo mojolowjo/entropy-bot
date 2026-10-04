@@ -37,8 +37,11 @@ public final class CraftPlanner implements Crafter {
     public static final int WIDE_DEPTH = 2;
     /** Alternatives of a missing ingredient tried below {@link #WIDE_DEPTH} (keeps a deep search small). */
     public static final int DEEP_ALTS = 4;
-    /** Recipe tries for one target before the planner gives up ({@link #TOO_DEEP}). */
-    public static final int BUDGET = 5000;
+    /**
+     * Recipe tries for one target before the planner gives up ({@link #tooDeep}): a search with no end over 1000 counted
+     * kinds took ~355 ms at 5000 tries (each try copies the counts), so 1500 keeps it at ~100-180 ms on the client thread (the 16k disk chain needs far fewer).
+     */
+    public static final int BUDGET = 1500;
     /** How many alternatives of a missing crafting ingredient are tried. */
     public static final int CRAFT_ALTS = 40;
     /** How many alternatives of a missing furnace input are tried. */
