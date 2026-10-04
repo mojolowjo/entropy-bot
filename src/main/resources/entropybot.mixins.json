@@ -8,7 +8,8 @@
     "GuardMixinGameMode",
     "GuardMixinBlockItem",
     "GuardMixinCalculationContext",
-    "FarmlandMixinPrecomputedData"
+    "FarmlandMixinPrecomputedData",
+    "ReconnectMixinQuickPlay"
   ],
   "injectors": {
     "defaultRequire": 1
