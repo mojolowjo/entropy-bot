@@ -219,7 +219,7 @@ class GuiCoreTest {
         m.set(m.firstMine(), "minecraft:dirt", 10).set(m.firstMine() + 1, "minecraft:dirt", 64);
         assertEquals("ok: dropped 12 dirt", GuiCore.drop(m, "dirt 12"));
         assertEquals(62, m.total("minecraft:dirt", true));
-        assertEquals("error: no stone in inventory", GuiCore.drop(m, "stone"));
+        assertEquals("ok: nothing to drop - no stone in inventory", GuiCore.drop(m, "stone"));
     }
 
     @Test

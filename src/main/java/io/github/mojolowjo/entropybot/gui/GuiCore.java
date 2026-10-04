@@ -385,7 +385,8 @@ public final class GuiCore {
                 }
             }
         }
-        return dropped > 0 ? "ok: dropped " + dropped + " " + q : "error: no " + q + " in inventory";
+        // nothing to drop is not a failure: a chain's "dig ... then drop cobbled_deepslate" goes on (2026-10-04)
+        return dropped > 0 ? "ok: dropped " + dropped + " " + q : "ok: nothing to drop - no " + q + " in inventory";
     }
 
     /** One line about the open menu's slots by role: "storage 0-26 x27 (Slot) | other 63-65 x3 (UpgradeSlot)". */
