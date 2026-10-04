@@ -970,7 +970,7 @@ public final class Commands implements Chains.Env {
         jobs.followFix = null;
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
-        if (mb != null) Jobs.cancel(mb);
+        if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);     // also ends a raw "b pause"
         io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore();
         try {
             IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
