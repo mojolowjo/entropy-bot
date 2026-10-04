@@ -148,7 +148,7 @@ public final class Seq {
         if (idx >= steps.size()) return;
         Crafting.afterHold(steps.get(idx));
         String t = steps.get(idx).type;
-        if ((t.equals("ops") || t.equals("put") || t.equals("note") || t.equals("rsmove") || t.equals("rsread")) && !Gui.open(p)) {
+        if ((t.equals("ops") || t.equals("put") || t.equals("note") || t.equals("rsmove") || t.equals("rsread") || t.equals("rsdisks")) && !Gui.open(p)) {
             int back = idx;
             while (back > 0 && !steps.get(back).type.equals("open")) back--;
             if (back > 0 && steps.get(back - 1).type.equals("walk")) back--;
@@ -191,6 +191,8 @@ public final class Seq {
                 return "next";
             case "rsread": return rsReadStep(st, p, elapsed);
             case "rsmove": return storage.rsMoveStep(this, st, p, elapsed);
+            case "diskshere": return storage.disksHereStep(this, st, p);           // package F: the RS disk drives
+            case "rsdisks": return storage.rsDisksStep(this, st, p, elapsed);
             default: return storage.crafting.step(this, st, p, elapsed);       // B7c: craft, smelt, farm, compact
         }
     }

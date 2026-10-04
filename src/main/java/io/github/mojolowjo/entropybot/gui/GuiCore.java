@@ -19,19 +19,22 @@ public final class GuiCore {
 
     public static final List<String> TAKE_ROLES = List.of("storage", "input", "output");
     public static final List<String> PUT_ROLES = List.of("storage", "input");
-    public static final List<String> ALL_ROLES = List.of("storage", "input", "output", "fuel");
+    /** What a container shows (open's note): "special" too (an RS disk drive's disks), never "other". */
+    public static final List<String> ALL_ROLES = List.of("storage", "input", "output", "fuel", "special");
+    /** Package F: slots that take only certain items (SlotRules): a named item reaches them, "all" never does. */
+    public static final String SPECIAL = "special";
     public static final int ALL = Integer.MAX_VALUE;
 
-    /** The container-side slots by role: input, fuel, output, storage, other (slot indexes in order). */
+    /** The container-side slots by role: input, fuel, output, storage, special, other (slot indexes in order). */
     public static Map<String, List<Integer>> roles(GuiMenu m) {
         Map<String, List<Integer>> roles = new LinkedHashMap<>();
-        for (String r : List.of("input", "fuel", "output", "storage", "other")) roles.put(r, new ArrayList<>());
+        for (String r : List.of("input", "fuel", "output", "storage", SPECIAL, "other")) roles.put(r, new ArrayList<>());
         List<Integer> plain = new ArrayList<>();
         for (int i = 0; i < m.size(); i++) {
             if (m.mine(i) || m.armor(i)) continue;
             String p = m.probe(i);
             if (p.equals("plain")) plain.add(i);
-            else roles.get(p.equals("fuel") || p.equals("output") ? p : "other").add(i);
+            else roles.get(p.equals("fuel") || p.equals("output") || p.equals(SPECIAL) ? p : "other").add(i);
         }
         // nine or more slots that take dirt are storage, fewer are a machine's inputs
         if (plain.size() >= 9) roles.put("storage", plain);
@@ -192,7 +195,7 @@ public final class GuiCore {
     public static Result put(GuiMenu m, String id, int n, List<String> names, Map<String, List<Integer>> roles) {
         if (roles == null) roles = roles(m);
         boolean quick = names.contains("storage") && !roles.get("storage").isEmpty() && roles.get("fuel").isEmpty()
-                && roles.get("output").isEmpty() && roles.get("other").isEmpty();
+                && roles.get("output").isEmpty() && roles.get("other").isEmpty() && roles.getOrDefault(SPECIAL, List.of()).isEmpty();
         return transfer(m, id, n, mine(m), pick(roles, names), quick);
     }
 
@@ -263,6 +266,25 @@ public final class GuiCore {
 
     // ---- take / put with an open container (the PM verbs) ----
 
+    /** names plus "special" when add (a named item); the list itself otherwise. */
+    public static List<String> withSpecial(List<String> names, boolean add) {
+        if (!add || names.contains(SPECIAL)) return names;
+        List<String> out = new ArrayList<>(names);
+        out.add(SPECIAL);
+        return out;
+    }
+
+    /** Would any of the slots dst take id (any stack of it the bot carries)? Full or not: only what they accept. */
+    static boolean accepts(GuiMenu m, String id, List<Integer> dst) {
+        boolean any = false;
+        for (int i = 0; i < m.size(); i++) {
+            if (!m.mine(i) || !id.equals(m.id(i))) continue;
+            any = true;
+            for (int d : dst) if (m.mayPlace(d, i)) return true;
+        }
+        return !any;
+    }
+
     /**
      * "put <item|all> [count|all]" / "take ...": counts are exact; what really moved is measured, never assumed, and a
      * reply that doesn't start with "ok" means the request fell short (chains stop on it). bad: why this menu must be
@@ -283,15 +305,19 @@ public final class GuiCore {
         if (q.isEmpty() || !(want > 0)) return "error: usage " + verb + " <item|all> [count|all]";
         boolean explicit = parts.length > 1 && !parts[1].equals("all");
         Map<String, List<Integer>> roles = roles(m);
-        List<String> names = toContainer ? PUT_ROLES : TAKE_ROLES;
+        boolean all = q.equals("all");
+        // a named item also reaches the "special" slots (an RS disk drive's disks); "all" never does
+        List<String> names = withSpecial(toContainer ? PUT_ROLES : TAKE_ROLES, !all);
         Map<String, Integer> before = carried(m);
         // a name in any mod's namespace: what the bot carries (put) or the container holds (take)
-        String id = q.equals("all") ? "all" : resolve(q, toContainer ? before.keySet() : contents(m, names, roles).keySet());
-        boolean all = id.equals("all");
+        String id = all ? "all" : resolve(q, toContainer ? before.keySet() : contents(m, names, roles).keySet());
         String name = all ? "items" : shortId(id);
+        boolean special = !roles.getOrDefault(SPECIAL, List.of()).isEmpty();
         if (toContainer) {
             int have = all ? sum(before) : before.getOrDefault(id, 0);
             if (have == 0) return all ? "error: I carry nothing to put" : "error: I carry no " + name;
+            if (all && special && pick(roles, names).isEmpty()) return "error: \"put all\" never fills slots like a disk drive's - name the item: put <item> [count]";
+            if (!all && !accepts(m, id, pick(roles, names))) return "error: the container won't take " + name;
             Result res = put(m, id, want, names, roles);
             Map<String, Integer> d = diff(before, carried(m)).get(1);
             int got = all ? sum(d) : d.getOrDefault(id, 0);
@@ -303,9 +329,17 @@ public final class GuiCore {
             return "ok: put " + what + " (the container now " + (all ? "holds " + sum(held) + " items" : "has " + held.getOrDefault(id, 0)) + ")";
         }
         Map<String, Integer> held = contents(m, names, roles);
+        if (all && sum(held) == 0 && special) {
+            String t = top(contents(m, List.of(SPECIAL), roles), 4);
+            if (!t.isEmpty()) return "error: \"take all\" leaves slots like a disk drive's alone - name the item: take <item> (it holds: " + t + ")";
+        }
         if (all ? sum(held) == 0 : !held.containsKey(id)) {
             String t = top(held, 4);
             return all ? "error: the container is empty" : "error: no " + name + " in this container (it holds: " + (t.isEmpty() ? "nothing" : t) + ")";
+        }
+        // package F: disks only come out counted - with no count and more than one (all in special slots), ask
+        if (!all && !explicit && held.get(id) > 1 && contents(m, TAKE_ROLES, roles).getOrDefault(id, 0) == 0) {
+            return "error: " + held.get(id) + " " + name + " in the drive - say how many: take " + name + " <n>";
         }
         Result res = take(m, id, want, names, roles);
         Map<String, Integer> d = diff(before, carried(m)).get(0);
