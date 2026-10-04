@@ -616,6 +616,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("area") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
+        if (verb.equals("recorder")) return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, rest, isOwner, owner()));     // B7e E5
         // chains ("a then b"), routines by name, repeat and run (never from inside a chain)
         if (verb.equals("repeat") || verb.equals("run") || chains.isRoutine(verb) || Texts.splitChain(raw).size() > 1) {
             if (internal) return Reply.now("error: a routine step cannot start another chain (routine names inside a chain are fine)");
@@ -1313,6 +1314,7 @@ public final class Commands implements Chains.Env {
             case "stop" -> { return Reply.now(stopAll()); }
             // B7e E1: answered by the mod itself
             case "noop" -> { return Reply.now("ok"); }
+            case "recorder" -> { return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, text, true, owner())); }
             case "baritone" -> { return Reply.now(BaritoneVerb.run(text, true, owner())); }
             case "mouse" -> { return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(text)); }
             case "debug" -> { return Reply.now(DebugVerbs.handle(core, text, DebugRules.Source.LOCAL, true, owner())); }
