@@ -921,7 +921,7 @@ public final class Commands implements Chains.Env {
         Minecraft mc = Minecraft.getInstance();
         mc.options.keyUse.setDown(false);
         mc.options.keyShift.setDown(false);
-        return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off";
+        return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off" + chains.holdAutominer();
     }
 
     String setDefence(String text) {
@@ -1539,6 +1539,12 @@ public final class Commands implements Chains.Env {
 
     @Override public void saved() { brainStore.changed(core.tick()); }
 
+    /** Wave 1: where the bot stands (a chain's retry after a fight walks back to the step's spot). */
+    @Override public int[] pos() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null || p.isDeadOrDying() ? null : Jobs.here(p);
+    }
+
     /** The guard as the policy commands see it. */
     private final class GuardView implements PolicyCommands.Guard {
         @Override
@@ -1564,7 +1570,12 @@ public final class Commands implements Chains.Env {
 
         @Override
         public String check(String dim, int x, int y, int z, String action) {
-            return io.github.mojolowjo.entropybot.api.BotAPI.check(dim, x, y, z, action);
+            String r = io.github.mojolowjo.entropybot.api.BotAPI.check(dim, x, y, z, action);
+            // wave 1 (item 3): the guard only knows boxes; the digging never breaks a block next to water or lava
+            Minecraft mc = Minecraft.getInstance();
+            String liquid = "break".equalsIgnoreCase(action) && mc.level != null && dim.equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level))
+                    ? io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(mc.level, x, y, z) : null;
+            return GuardCore.checkReply(r, action, liquid);
         }
     }
 

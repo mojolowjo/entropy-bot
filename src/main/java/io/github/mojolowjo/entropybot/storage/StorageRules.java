@@ -143,6 +143,23 @@ public final class StorageRules {
     }
 
     /**
+     * Wave 1 (item 5): a deposit from out of the base's reach (more than 64 across, the work centre's radius) still
+     * goes to the base chests (the walk there teleports home first, as "base" does). False with no base, or a base
+     * in another dimension.
+     */
+    public static boolean farFromBase(int[] base, String baseDim, int[] me, String dim) {
+        if (base == null || me == null || (baseDim != null && !baseDim.equals(dim))) return false;
+        return Math.abs(base[0] - me[0]) > 64 || Math.abs(base[2] - me[2]) > 64;
+    }
+
+    /** The "deposit" verb's choice (Storage.deposit): the "base" place's note {x, y, z, dim?} (or null) and the bot. */
+    public static boolean depositAtBase(JsonObject base, int[] me, String dim) {
+        if (base == null || !base.has("x") || !base.has("z")) return false;
+        int[] b = {base.get("x").getAsInt(), base.has("y") ? base.get("y").getAsInt() : 0, base.get("z").getAsInt()};
+        return farFromBase(b, base.has("dim") && !base.get("dim").isJsonNull() ? base.get("dim").getAsString() : null, me, dim);
+    }
+
+    /**
      * Where each item goes: the chest that already holds the most of it, else the junk chest (the most cobblestone and
      * dirt, the nearest on a tie). Stops nearest first; the junk chest takes what doesn't fit elsewhere.
      */

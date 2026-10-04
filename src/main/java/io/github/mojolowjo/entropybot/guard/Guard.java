@@ -130,6 +130,20 @@ public final class Guard {
         return null;
     }
 
+    /**
+     * Wave 1 (item 3): "lava" or "water" in a cell next to x y z (above and the four sides, the cells the digging
+     * looks at: it never breaks such a block), lava first; null when there is none. Loaded chunks only.
+     */
+    public static String liquidNextTo(Level level, int x, int y, int z) {
+        return GuardCore.liquidNextTo((cx, cy, cz) -> {
+            BlockPos p = new BlockPos(cx, cy, cz);
+            if (!level.isLoaded(p)) return null;
+            var fluid = level.getFluidState(p);
+            if (fluid.isEmpty()) return null;
+            return fluid.is(net.minecraft.tags.FluidTags.LAVA) ? "lava" : "water";
+        }, x, y, z);
+    }
+
     // ---- entry points for the Mixins (client thread unless noted) ----
 
     /** Every block break this client starts or continues. True = refuse. */
