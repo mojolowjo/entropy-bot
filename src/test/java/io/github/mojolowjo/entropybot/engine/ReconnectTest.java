@@ -73,4 +73,17 @@ class ReconnectTest {
         assertNull(ReconnectRules.seed(null, null));
         assertNull(ReconnectRules.seed(null, "  "));
     }
+
+    @Test
+    void savedReconnectOffHoldsAFreshLaunch() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("rc");
+        java.nio.file.Path f = dir.resolve("commands.json");
+        assertTrue(ReconnectRules.savedFlag(f));                       // no file: on
+        java.nio.file.Files.writeString(f, "{\"reconnect\": false}");
+        assertFalse(ReconnectRules.savedFlag(f));
+        java.nio.file.Files.writeString(f, "{\"reconnect\": true, \"routines\": {}}");
+        assertTrue(ReconnectRules.savedFlag(f));
+        java.nio.file.Files.writeString(f, "{broken");
+        assertTrue(ReconnectRules.savedFlag(f));                       // unreadable: on (as before)
+    }
 }

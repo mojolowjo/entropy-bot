@@ -81,4 +81,17 @@ public final class ReconnectRules {
         if (current != null && !current.isBlank()) return current;
         return launched == null || launched.isBlank() ? null : launched.trim();
     }
+
+    /** The saved "reconnect" flag in commands.json: false only when the file says false (missing or unreadable = on). */
+    public static boolean savedFlag(java.nio.file.Path commandsJson) {
+        try {
+            if (!java.nio.file.Files.isRegularFile(commandsJson)) return true;
+            com.google.gson.JsonElement e = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(commandsJson));
+            if (!e.isJsonObject()) return true;
+            com.google.gson.JsonElement r = e.getAsJsonObject().get("reconnect");
+            return r == null || !r.isJsonPrimitive() || r.getAsBoolean();
+        } catch (Exception ex) {
+            return true;
+        }
+    }
 }

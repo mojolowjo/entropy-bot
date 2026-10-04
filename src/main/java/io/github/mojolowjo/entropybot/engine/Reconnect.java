@@ -35,7 +35,7 @@ public final class Reconnect {
     /** T4: wall clock when it first found itself out of a world this time (-1: in one); the 24 h count from here. */
     private long firstOutMs = -1;
     private int tries;
-    private boolean gaveUpLogged;
+    private boolean gaveUpLogged, savedFlagRead;
     private final ArrayDeque<Long> recent = new ArrayDeque<>();
     private volatile String statusText = "in a world";
 
@@ -65,6 +65,11 @@ public final class Reconnect {
                 gaveUpLogged = false;           // (recent stays: 3 tries in any hour, kicks in a row included)
                 statusText = "in a world";
                 return;
+            }
+            if (server == null && launchServer != null && !savedFlagRead) {
+                // the owner's `reconnect off` lives in commands.json, which Commands only reads inside a world
+                savedFlagRead = true;
+                if (!ReconnectRules.savedFlag(mc.gameDirectory.toPath().resolve("entropybot").resolve("commands.json"))) on = false;
             }
             server = ReconnectRules.seed(server, launchServer);
             long now = System.currentTimeMillis();
