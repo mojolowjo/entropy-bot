@@ -16,6 +16,7 @@ import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.clear.ClearBox;
 import io.github.mojolowjo.entropybot.clear.ClearJob;
+import io.github.mojolowjo.entropybot.clear.DigArgs;
 import io.github.mojolowjo.entropybot.clear.McClearWorld;
 import io.github.mojolowjo.entropybot.clear.PlaceRules;
 import io.github.mojolowjo.entropybot.craft.CraftPlanner;
@@ -40,7 +41,7 @@ final class DigCommands {
     private DigCommands() {}
 
     static final String NO_ZONE = "error: no work zone - PM \"zone corner1\" and \"zone corner2\" standing on opposite corners";
-    static final String DIG_USAGE = "error: usage dig x1 y1 z1 x2 y2 z2 [force] [ores]";
+    static final String DIG_USAGE = DigArgs.USAGE;
     static final String BUILD_USAGE = "error: usage build <floor|walls|fill|shell|clear> [block]";
     static final String PLACE_USAGE = "error: usage place <block item> x y z";
 
@@ -124,20 +125,22 @@ final class DigCommands {
 
     // ---- dig ----
 
-    /** "dig x1 y1 z1 x2 y2 z2 [force] [ores]": any box, the careful way (ores listed; "ores" mines them; "force" building blocks too). */
+    /**
+     * "dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop]": any box, the careful way (ores listed; "ores"
+     * mines them; "force" building blocks too; B7e F: "floor" fills the layer under it afterwards, "junk drop" throws
+     * plain junk away when the bag is full instead of a base trip).
+     */
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
-        List<String> w = new ArrayList<>(List.of(rest == null ? new String[0] : rest.trim().split("\\s+")));
-        boolean force = false, ores = false;
-        while (w.size() > 6 && w.get(w.size() - 1).matches("(?i)^(force|ores)$")) {
-            if (w.remove(w.size() - 1).equalsIgnoreCase("force")) force = true;
-            else ores = true;
-        }
-        if (w.size() != 6) return DIG_USAGE;
-        int[] n = new int[6];
-        try {
-            for (int i = 0; i < 6; i++) n[i] = Integer.parseInt(w.get(i));
-        } catch (NumberFormatException e) {
-            return DIG_USAGE;
+        DigArgs a = DigArgs.parse(rest);
+        if (a == null) return DIG_USAGE;
+        int[] n = a.n();
+        boolean force = a.force(), ores = a.ores();
+        String floorId = null;
+        if (a.floor() && a.floorBlock() != null) {
+            floorId = c.crafting.planner.resolveItem(a.floorBlock(), Gui.inventory(p));
+            if (floorId == null) floorId = GuiCore.normId(a.floorBlock());
+            String bad = FloorSteps.floorBlockProblem(floorId);
+            if (bad != null) return "error: I won't make a floor of " + GuiCore.shortId(floorId) + " - " + bad;
         }
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
         if (box.volume() > 20000) return "error: that box is too big (20000 blocks max)";
@@ -147,11 +150,14 @@ final class DigCommands {
         // a dig box has to lie inside an area: in strict mode the lease says so, in log mode this gate does
         if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
             List<String> names = new ArrayList<>();
-            for (var a : Core.INSTANCE.guard.core.policy().areas) names.add(a.name == null ? "?" : a.name);
+            for (var ar : Core.INSTANCE.guard.core.policy().areas) names.add(ar.name == null ? "?" : ar.name);
             return "error: that box is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
         }
-        String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "");
-        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label);
+        String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "")
+                + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "");
+        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop());
+        // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
+        if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
     }
 
@@ -181,12 +187,15 @@ final class DigCommands {
 
     /** startClear for a verb: the leases now (a refusal is the reply), the job in the mod's slot, "started: ...". */
     static String startClear(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before) {
-        Seq.Step st = Clearing.finishingClearStep(o);
+        // B7e F: a floor dig's clear hands its report to the fill after it, which ends the job
+        Seq.Step st = o.floor ? Clearing.clearStep(o) : Clearing.finishingClearStep(o);
         String err = Clearing.prepare(st, p, c);
         if (err != null) return err;
         Clearing.ClearState s = (Clearing.ClearState) st.state;
         List<Seq.Step> steps = new ArrayList<>();
         Seq seq = new Seq(c.jobs, c.storage, s.job.label, List.of(), "always");
+        // first back up onto the walkway when it stands in the cave (a restock trip or the clear can't start from there)
+        if (o.floor) steps.add(FloorSteps.floorStep(o, null, true));
         if (before != null && !before.isEmpty()) {
             List<Seq.Step> pre = new ArrayList<>(before);
             // the pickaxe craft wants a table: put one down here when the nearest is far (18a)
@@ -203,6 +212,7 @@ final class DigCommands {
             s.tripKind = "restock";
         }
         steps.add(st);
+        if (o.floor) steps.add(FloorSteps.floorStep(o, st, false));
         seq.splice(0, steps);
         c.jobs.startSeq(seq, "always");
         c.jobs.job.holdOnFight = true;              // the bridge never ended a clear for a fight: a reflex holds it

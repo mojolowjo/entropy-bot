@@ -327,8 +327,22 @@ public final class ClearRun {
             phase = "plan";
             return Out.RUN;
         }
+        ClearGrid dg = null;
+        int[] dd = null;
         for (Drop d : b.drops(job)) {
             if (triedDrops.contains(d.id())) continue;
+            if (job.standOk != null) {
+                // F: with the fence on, only drops it can walk to (a walk toward one it can't reach wanders off)
+                if (dg == null) {
+                    dg = ClearGrid.build(w, job.box, b.bot(), null);
+                    dd = dg.walkDistances(b.bot());
+                }
+                int i = dg.idx(d.x(), d.y(), d.z());
+                if (i < 0 || dd[i] < 0) {
+                    triedDrops.add(d.id());
+                    continue;
+                }
+            }
             if (!b.roomFor(d)) {
                 Out o = maybeDeposit(b);
                 if (o != null) return o;

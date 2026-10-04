@@ -163,6 +163,9 @@ public final class ClearGrid {
                     if (bad != null && job.broken - bad < 10) continue;      // failed to get there recently
                     double d;
                     if (dist[i] >= 0) d = dist[i];
+                    // F (2026-10-04): with the fence on, only spots it can walk to. Baritone's partial path toward a spot
+                    // it can't reach wandered down a cave 28 blocks out of the tunnel area (x 262 -48 854, the cave crossing)
+                    else if (job.standOk != null) continue;
                     else if (g.stand(x, y, z)) {
                         double dx = x - bot.x(), dy = y - bot.y(), dz = z - bot.z();
                         d = 1000 + Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -220,7 +223,8 @@ public final class ClearGrid {
         Arrays.sort(order, Comparator.comparingDouble(d2s::get));
         Plan best = null;
         for (int i = 0; i < order.length; i++) {
-            if ((best != null && i >= 40) || job.sightBudget <= 0) break;
+            // F: past the nearest 40 only while nothing (or only a spot it can't walk to) was found
+            if ((best != null && i >= 40 && best.spot().cost() < 1000) || job.sightBudget <= 0) break;
             Pos t = list.get(order[i]);
             if (ClearEngine.nextToLiquid(w, t.x(), t.y(), t.z())) {
                 job.skip.put(t.key(), ClearEngine.NEXT_TO_LIQUID);
