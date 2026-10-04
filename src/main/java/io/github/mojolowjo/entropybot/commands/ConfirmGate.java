@@ -54,6 +54,22 @@ public final class ConfirmGate {
      * for (the owner, from a PM, the dashboard or the laptop alike).
      */
     public synchronized Gate gate(String from, String line, boolean internal, long now) {
+        return gate(from, line, internal, now, null, null);
+    }
+
+    /** A dig box bigger than this is an error (DigCommands' own cap), said before any question. */
+    public static final long MAX_DIG = 20000;
+
+    /** Verbs whose lines only save, schedule or repeat: they never ask (their steps ask when they run, as chain steps: never). */
+    static boolean neverAsks(String verb) {
+        return verb.equals("routine") || verb.equals("routines") || verb.equals("rule") || verb.equals("rules") || verb.equals("repeat") || verb.equals("run");
+    }
+
+    /**
+     * As above, with the busy answers the caller would give anyway: chainBusy (a chain is running: any asked line) and
+     * jobBusy (a job is running: build clear, dig, stripmine reset). A busy line answers busy instead of asking.
+     */
+    public synchronized Gate gate(String from, String line, boolean internal, long now, String chainBusy, String jobBusy) {
         String key = from == null ? "" : from.toLowerCase(Locale.ROOT);
         String l = line == null ? "" : line.trim();
         String[] vr = Texts.verbAndRest(l);
@@ -65,19 +81,58 @@ public final class ConfirmGate {
             return Gate.run(p.line);
         }
         if (!internal) pending.remove(key);              // any other command cancels a question
+        if (neverAsks(vr[0])) return Gate.run(l);        // saving or scheduling a line never asks
         List<String> steps = Texts.splitChain(l);
         if (steps.size() > 1) {
             if (internal) return Gate.run(l);
-            for (String s : steps) {
+            boolean covered = endsWithConfirm(steps.get(steps.size() - 1));       // a trailing "confirm" covers the whole line
+            boolean anyBig = false, ask = false, changed = false;
+            Kind first = null;
+            String firstStep = null;
+            List<String> out = new java.util.ArrayList<>();
+            for (int i = 0; i < steps.size(); i++) {
+                String s = steps.get(i);
                 Kind k = kind(s);
-                if (k != null && !endsWithConfirm(s)) return ask(key, l, "this chain has a big step: " + summary(k, s), now);
+                boolean smallDig = k == null && Texts.verbAndRest(s)[0].equals("dig") && endsWithConfirm(s);      // (c): even a small dig
+                String own = endsWithConfirm(s) && (k != null || smallDig || i == steps.size() - 1) ? s.trim().replaceFirst("(?i)\\s+confirm$", "") : s;
+                if (smallDig) changed = true;
+                if (k != null) {
+                    if (k == Kind.DIG && digOver(s)) return Gate.say(tooBig(s));
+                    anyBig = true;
+                    if (!covered && !endsWithConfirm(s)) {
+                        ask = true;
+                        if (first == null) {
+                            first = k;
+                            firstStep = s;
+                        }
+                    }
+                    own = runLine(k, s);
+                }
+                out.add(own);
             }
-            return Gate.run(l);
+            if (!anyBig && !changed) return Gate.run(l);
+            String run = String.join(" then ", out);
+            if (!ask) return Gate.run(run);
+            if (chainBusy != null) return Gate.say(chainBusy);
+            return ask(key, run, "this chain has a big step: " + summary(first, firstStep), now);
         }
         Kind k = kind(l);
-        if (k == null) return Gate.run(l);
+        if (k == null) return Gate.run(vr[0].equals("dig") && endsWithConfirm(l) ? l.replaceFirst("(?i)\\s+confirm$", "") : l);
+        if (k == Kind.DIG && !internal && digOver(l)) return Gate.say(tooBig(l));
         if (internal || endsWithConfirm(l)) return Gate.run(runLine(k, l));
+        String busy = k == Kind.AREA_REMOVE ? null : chainBusy != null ? chainBusy : jobBusy;
+        if (busy != null) return Gate.say(busy);
         return ask(key, runLine(k, l), summary(k, l), now);
+    }
+
+    private static boolean digOver(String step) {
+        List<String> w = Texts.words(Texts.verbAndRest(step)[1].toLowerCase(Locale.ROOT));
+        if (!w.isEmpty() && w.get(w.size() - 1).equals("confirm")) w = w.subList(0, w.size() - 1);
+        return digVolume(w) > MAX_DIG;
+    }
+
+    private static String tooBig(String step) {
+        return "error: that box is too big (" + MAX_DIG + " blocks max)";
     }
 
     /** True while a question waits for this sender (and isn't stale). */

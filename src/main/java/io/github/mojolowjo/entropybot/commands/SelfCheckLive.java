@@ -53,14 +53,14 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
      */
     public void idleTick(LocalPlayer p, boolean idle, long now) {
         if (!idle || p == null || now - lastIdleCheck < IDLE_EVERY_MS) return;
+        if (!ownerOnline()) return;                       // nobody to tell: keep the keys, look again later
         lastIdleCheck = now;
         try {
             List<SelfCheck.Finding> f = SelfCheck.run(state(p));
             SelfCheck.Diff d = SelfCheck.diff(remembered(), f);
             if (d.empty()) return;
-            remember(SelfCheck.keys(f));
             LOG.info("[entropybot] self-check: {}", d.text().replace("\n", " | "));
-            c.whisper(c.owner(), d.text());
+            if (c.whisperSent(c.owner(), d.text())) remember(SelfCheck.keys(f));     // only what was really sent counts as told
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] self-check: {}", e.toString());
         }

@@ -45,6 +45,9 @@ public final class Chains {
         /** Runs one command line; a step that starts a job comes back pending (its request). */
         Reply dispatch(String from, String text, boolean internal, JobRequests.Listener l);
 
+        /** B7e N: a line the bot sends itself (the corpse fetch): like a typed one, but it never cancels the owner's pending confirm. */
+        default Reply dispatchAuto(String from, String text, JobRequests.Listener l) { return dispatch(from, text, false, l); }
+
         boolean alive();
 
         /** A reflex holds jobs still (eating, fighting...). */
@@ -531,7 +534,7 @@ public final class Chains {
             return;
         }
         corpseRun = true;
-        Reply r = env.dispatch(env.owner(), "death", false, q -> {
+        Reply r = env.dispatchAuto(env.owner(), "death", q -> {
             if (!JobRequests.quiet(q.doneMsg)) env.whisper(env.owner(), q.doneMsg.replaceFirst("^ok: ", ""));
         });
         if (r.pending() == null && (r.text() == null || !r.text().startsWith("started"))) env.whisper(env.owner(), "couldn't go for my corpse: " + r.text());

@@ -120,7 +120,7 @@ class ConfirmGateTest {
         asks(g);
         assertTrue(g.reply().contains("this chain has a big step"), g.reply());
         runs(c.gate(O, "confirm", false, 100), "build clear then deposit");
-        runs(c.gate(O, "build clear confirm then deposit", false, 0), "build clear confirm then deposit");
+        runs(c.gate(O, "build clear confirm then deposit", false, 0), "build clear then deposit");   // a step's own confirm is dropped
         runs(c.gate(O, "deposit then eat then base", false, 0), "deposit then eat then base");
         // routines by name and repeat pass (saved routines keep working)
         runs(c.gate(O, "night", false, 0), "night");
@@ -135,5 +135,68 @@ class ConfirmGateTest {
             runs(c.gate(O, s, false, 0), s);
         }
         assertTrue(c.gate(O, "confirm", false, 0).reply().startsWith("error: nothing to confirm"));
+    }
+
+    @Test
+    void savingAndSchedulingLinesNeverAsk() {
+        ConfirmGate c = gate();
+        for (String s : new String[]{"routine save night deposit then build clear", "rule every 30m do farm then build clear", "rules",
+                "repeat forever deposit then build clear", "run night", "repeat 3 build clear"}) {
+            runs(c.gate(O, s, false, 0), s);
+            assertFalse(c.waiting(O, 0), s);
+        }
+    }
+
+    @Test
+    void aBigStepThatIsNotFirstStillAsks() {
+        ConfirmGate c = gate();
+        ConfirmGate.Gate g = c.gate(O, "deposit then eat then build clear", false, 0);
+        asks(g);
+        assertTrue(g.reply().contains("build clear breaks"), g.reply());
+        runs(c.gate(O, "confirm", false, 10), "deposit then eat then build clear");
+    }
+
+    @Test
+    void aTrailingConfirmOnTheLastStepCoversTheWholeLine() {
+        ConfirmGate c = gate();
+        runs(c.gate(O, "build clear then deposit confirm", false, 0), "build clear then deposit");
+        runs(c.gate(O, "deposit then build clear confirm", false, 0), "deposit then build clear");
+        runs(c.gate(O, "build clear then dig 0 0 0 20 20 20 confirm", false, 0), "build clear then dig 0 0 0 20 20 20");
+        runs(c.gate(O, "dig 0 0 0 1 1 1 confirm then deposit", false, 0), "dig 0 0 0 1 1 1 then deposit");
+        runs(c.gate(O, "build clear then area remove base confirm", false, 0), "build clear then area remove base confirm");
+        assertFalse(c.waiting(O, 0));
+    }
+
+    @Test
+    void aSmallDigDropsItsConfirmWord() {
+        ConfirmGate c = gate();
+        runs(c.gate(O, "dig 0 0 0 1 1 1 confirm", false, 0), "dig 0 0 0 1 1 1");
+        runs(c.gate(O, "dig 0 0 0 1 1 1 ores confirm", false, 0), "dig 0 0 0 1 1 1 ores");
+        runs(c.gate(O, "dig 0 0 0 1 1 1", false, 0), "dig 0 0 0 1 1 1");
+    }
+
+    @Test
+    void aBusyBotAnswersBusyInsteadOfAsking() {
+        ConfirmGate c = gate();
+        ConfirmGate.Gate g = c.gate(O, "build clear", false, 0, null, "busy: digging (pm \"stop\" first)");
+        assertEquals("busy: digging (pm \"stop\" first)", g.reply());
+        assertFalse(c.waiting(O, 0));
+        assertEquals("busy: chain (pm \"stop\" first)", c.gate(O, "build clear then deposit", false, 0, "busy: chain (pm \"stop\" first)", null).reply());
+        assertFalse(c.waiting(O, 0));
+        // area remove is not a job: it still asks mid-job
+        asks(c.gate(O, "area remove base", false, 0, null, "busy: digging (pm \"stop\" first)"));
+        // not busy: asks as before
+        asks(c.gate(O, "build clear", false, 0, null, null));
+    }
+
+    @Test
+    void aDigOverTheCapErrorsBeforeAsking() {
+        ConfirmGate c = gate();
+        ConfirmGate.Gate g = c.gate(O, "dig 0 0 0 99 99 99", false, 0);                   // 1,000,000
+        assertEquals("error: that box is too big (20000 blocks max)", g.reply());
+        assertFalse(c.waiting(O, 0));
+        assertTrue(c.gate(O, "dig 0 0 0 99 99 99 confirm", false, 0).reply().startsWith("error: that box is too big"));
+        assertTrue(c.gate(O, "deposit then dig 0 0 0 99 99 99", false, 0).reply().startsWith("error: that box is too big"));
+        asks(c.gate(O, "dig 0 0 0 19 19 49", false, 0));                                    // 20000 exactly: asks
     }
 }

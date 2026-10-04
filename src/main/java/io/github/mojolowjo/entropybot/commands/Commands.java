@@ -77,6 +77,9 @@ public final class Commands implements Chains.Env {
     private final OwnerFix ownerFix = new OwnerFix(() -> Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root().resolve("owner.json"));
     /** B7b part 2: the storage verbs (open/take/put/scan/deposit/where/trust/corpse/death/drop/rs/pots/go poi). */
     public final Storage storage;
+    /** B7e N: the "check" self-test (and its idle check), and the confirm question for big verbs. */
+    final SelfCheckLive selfCheck = new SelfCheckLive(this);
+    final ConfirmGate confirmGate = new ConfirmGate(selfCheck);
     private String placesSent;
 
     public Commands(Core core) {
@@ -138,7 +141,7 @@ public final class Commands implements Chains.Env {
         if (fj.due(now, Storage.dim()).isEmpty() || pickupHeld(now)) return;
         if (jobs.running() || requests.busy() || chains.running() || chains.parked() || core.reflexes.hold() || player.isDeadOrDying()) return;
         if (!pickupFromHere(player, now)) return;
-        Reply r = handle(owner(), Chains.PICKUP_STEP, false, pmListener(owner()));
+        Reply r = handle(owner(), Chains.PICKUP_STEP, false, true, pmListener(owner()));     // auto: never cancels the owner's pending confirm
         LOG.info("[entropybot] furnace pickup: {}", r.text());
     }
 
@@ -402,6 +405,8 @@ public final class Commands implements Chains.Env {
                 chains.rulesTick();
                 chains.autominerTick();
             }
+            // B7e N: the idle self-check (whispers only what changed, at most every 30 min)
+            if (tick % 200 == 77 && worldTicks > 1200) selfCheck.idleTick(player, !jobs.running() && !chains.running() && !requests.busy(), System.currentTimeMillis());
             if (tick % 25 == 0) sendOutbox(player);
             try {
                 jobs.tick(player);
@@ -512,9 +517,17 @@ public final class Commands implements Chains.Env {
         };
     }
 
-    public void whisper(String to, String text) {
+    public void whisper(String to, String text) { whisperSent(to, text); }
+
+    /** Queues a whisper; false when the outbox dropped part of it (package H's caps). */
+    boolean whisperSent(String to, String text) {
         // package H: the caps live in Outbox (one answer, the queue; one-line messages to the owner still get in)
-        for (String part : outbox.add(to, text, owner())) LOG.info("[entropybot] whisper dropped (outbox full) to {}: {}", to, part);
+        boolean all = true;
+        for (String part : outbox.add(to, text, owner())) {
+            all = false;
+            LOG.info("[entropybot] whisper dropped (outbox full) to {}: {}", to, part);
+        }
+        return all;
     }
 
     private void sendOutbox(LocalPlayer player) {
@@ -548,7 +561,10 @@ public final class Commands implements Chains.Env {
     // ---- the dispatcher (the bridge's handlePm) ----
 
     /** Runs one command line. internal: a step of the running chain. */
-    public Reply handle(String from, String message, boolean internal, Listener l) {
+    public Reply handle(String from, String message, boolean internal, Listener l) { return handle(from, message, internal, false, l); }
+
+    /** auto: a line the bot sends itself (furnace pickup, corpse fetch): it skips the confirm gate, so it never cancels the owner's question. */
+    Reply handle(String from, String message, boolean internal, boolean auto, Listener l) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null) return Reply.now(null);
@@ -560,11 +576,19 @@ public final class Commands implements Chains.Env {
             String r = Texts.guestRefusal(verb, rest, raw, owner());
             if (r != null) return Reply.now(r);
         }
-        if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) {
-            if (!isOwner) return Reply.now("You can use: " + Texts.GUEST_HELP);
-            for (String line : Texts.PM_HELP) whisper(from, line);
-            return Reply.now(null);
+        // B7e N: big or destructive verbs ask first ("confirm" runs them; chain steps and a trailing "confirm" pass; a busy bot answers busy)
+        if (!auto) {
+            ConfirmGate.Gate gate = confirmGate.gate(from, raw, internal, System.currentTimeMillis(), chainBusyText(), jobBusyText());
+            if (gate.reply() != null) return Reply.now(gate.reply());
+            if (!gate.line().equals(raw)) {
+                vr = Texts.verbAndRest(gate.line());
+                verb = vr[0];
+                rest = vr[1];
+                raw = vr[2];
+            }
         }
+        if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
+        if (verb.equals("check")) return Reply.now(selfCheck.command(player));
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
         if (verb.equals("debug")) return Reply.now(DebugVerbs.handle(core, rest, DebugRules.Source.PM, isOwner, owner()));
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
@@ -641,7 +665,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
         boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb);
-        if (!known) return Reply.now("unknown command \"" + verb + "\" - pm me: help");
+        if (!known) return Reply.now(Hints.unknown(verb));
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
         if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
         if (verb.equals("farm") && FarmCommand.instant(rest)) return Reply.now(crafting.farm(player, rest));
@@ -654,6 +678,11 @@ public final class Commands implements Chains.Env {
         String r = modJob(verb, rest, from, player);
         return new Reply(r, jobs.attach("pm", from, raw, r, l));
     }
+
+    /** The busy answers handle gives a big verb (null: not busy), so the confirm gate answers busy instead of asking. */
+    private String chainBusyText() { return chains.running() ? "busy: " + chains.chainStatus() + " (pm \"stop\" first)" : null; }
+
+    private String jobBusyText() { return jobs.running() && !jobs.walking() ? "busy: " + jobs.job.status + " (pm \"stop\" first)" : null; }
 
     /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, twerk, find. */
     String modJob(String verb, String rest, String from, LocalPlayer player) {
@@ -698,7 +727,7 @@ public final class Commands implements Chains.Env {
                 if (verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$")) return storage.goPoi(player, Integer.parseInt(rest.trim().split("\\s+")[1]));
                 String name = verb.equals("go") ? rest.toLowerCase() : "base";
                 JsonObject pos = core.knowledge.places().get(name);
-                if (pos == null) return "I have no place called " + name + " (see \"places\")";
+                if (pos == null) return "I have no place called " + name + " - next: " + Hints.placeFix(name);
                 String dim = Jobs.dimOf(pos);
                 int[] p = Jobs.pos(pos);
                 if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
@@ -746,7 +775,7 @@ public final class Commands implements Chains.Env {
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
             case "supplies" -> { return crafting.supplies(player, rest); }
-            default -> { return "unknown command \"" + verb + "\" - pm me: help"; }
+            default -> { return Hints.unknown(verb); }
         }
     }
 
@@ -794,7 +823,7 @@ public final class Commands implements Chains.Env {
                 else args.add(a);
             }
             PolicyCommands.Pos pos = resolvePos(mc, verb.equals("setbase") ? rest : String.join(" ", args), from);
-            if (pos == null) return "I can't see you - come closer or give coordinates";
+            if (pos == null) return "I can't see you - come closer or give coordinates - next: mark " + name + " x y z";
             String dir = null;
             if (name.equals("mine") || dirWord != null) {
                 Player who = from != null ? Jobs.findPlayer(from) : null;
@@ -1241,6 +1270,17 @@ public final class Commands implements Chains.Env {
 
     private Reply runCommand(Minecraft mc, JsonObject cmd, String type, String text, String from, String notify, String id) {
         LocalPlayer player = mc.player;
+        // B7e N: the big verbs sent as their own cmd types ask first too (a trailing "confirm" runs them at once)
+        if ((type.equals("dig") || type.equals("build") || type.equals("stripmine") || type.equals("area")) && (cmd == null || !cmd.has("confirmed"))) {
+            ConfirmGate.Gate g = confirmGate.gate(owner(), type + " " + text, false, System.currentTimeMillis(), chainBusyText(), jobBusyText());
+            if (g.reply() != null) return Reply.now(g.reply());
+            String t = Texts.verbAndRest(g.line())[1];
+            if (!t.equals(text)) {
+                JsonObject c2 = cmd == null ? new JsonObject() : cmd.deepCopy();
+                c2.addProperty("confirmed", true);
+                return runCommand(mc, c2, type, t, from, notify, id);
+            }
+        }
         switch (type) {
             case "chat" -> {
                 String no = Texts.sayRefusal(text, baritonePrefix());
@@ -1515,6 +1555,8 @@ public final class Commands implements Chains.Env {
     }
 
     @Override public Reply dispatch(String from, String text, boolean internal, Listener l) { return handle(from, text, internal, l); }
+
+    @Override public Reply dispatchAuto(String from, String text, Listener l) { return handle(from, text, false, true, l); }
 
     @Override public boolean alive() {
         LocalPlayer p = Minecraft.getInstance().player;
