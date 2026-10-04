@@ -55,14 +55,11 @@ class Wave1aTest {
         assertEquals("", CommandsTest.fake(new JsonObject()).chains.holdAutominer(), "never on");
     }
 
-    /** One request at a time, answered by the test. */
+    /** The job the chain started last (its request id noted for the test to end it), by its text. */
     static String take(CommandsTest.Fake f, List<Long> ids) {
-        String j = f.link.next(f.tick);
-        assertFalse(j.isEmpty(), "a request is waiting");
-        JsonObject o = JsonParser.parseString(j).getAsJsonObject();
-        ids.add(o.get("id").getAsLong());
-        f.link.reply(o.get("id").getAsLong(), "started: " + o.get("text").getAsString(), true);
-        return o.get("text").getAsString();
+        var r = f.takeNext();
+        ids.add(r.id);
+        return r.text;
     }
 
     @Test

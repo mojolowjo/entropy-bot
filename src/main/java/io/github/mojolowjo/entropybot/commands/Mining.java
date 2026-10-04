@@ -217,7 +217,7 @@ final class Mining {
         return jobs.running() && !jobs.walking() ? "error: busy with \"" + jobs.job.status + "\" - send stop first" : null;
     }
 
-    /** "ores [name]" / "ores clear" ("ores prefer ..." stays with the bridge until B7e: the dispatcher forwards it). */
+    /** "ores [name]" / "ores clear" ("ores prefer ..." is StripMine's). */
     String ores(LocalPlayer p, String rest) {
         String t = rest == null ? "" : rest.trim().toLowerCase();
         if (t.equals("clear") || t.equals("forget")) {

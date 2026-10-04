@@ -9,7 +9,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
-import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
+import io.github.mojolowjo.entropybot.commands.JobRequests.Request;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import net.minecraft.client.Minecraft;
@@ -29,12 +29,12 @@ import org.slf4j.Logger;
  * twerk, ported from the bridge's startTravel / stepWalkJob / startHome / startSetSpawn / startWait / startTwerk with
  * the same wording. A walk listens to Baritone's path events (no path after 3 failed calculations, a stuck watchdog
  * for goals it can't reach), holds still while a reflex runs, stops for a retreat, an urgent fight (not a walk) or
- * the area fence, and reports through the request it carries (a chain waits on it like on a bridge job).
+ * the area fence, and reports through the request it carries (a chain waits on it).
  */
 public final class Jobs {
     private static final Logger LOG = LogUtils.getLogger();
     static final int TRAVEL_FAILS = 3;
-    static final long TRAVEL_STUCK_TICKS = 600, TP_WAIT = 200;
+    static final long TRAVEL_STUCK_TICKS = 600;
 
     public static final class Job {
         public String type, status, label, goal;
@@ -66,7 +66,7 @@ public final class Jobs {
          * B7d (D3): an urgent fight holds this job instead of ending it (the bridge's job.holdOnFight: explore, mine
          * cave, the Baritone mine); onHold runs when a reflex starts holding it (the Baritone mine stops and breaking
          * goes off), onEnd however it ends (finish, stop, a reflex, the fence): breaking off, leases released.
-         * ownsBreaking: the job turned Baritone's breaking on (BotAPI.breakingOwned: the bridge's safety net leaves it be).
+         * ownsBreaking: the job turned Baritone's breaking on (SafetyNet leaves it be while Baritone's mine runs).
          */
         public boolean holdOnFight, ownsBreaking;
         public Runnable onHold, onEnd;
@@ -152,9 +152,9 @@ public final class Jobs {
     // ---- the request a started job carries ----
 
     /** After a start: a job that runs gets a request (the caller hands it on), else null. */
-    Request attach(String kind, String from, String text, String reply, BridgeLink.Listener l) {
+    Request attach(String kind, String from, String text, String reply, JobRequests.Listener l) {
         if (!running() || job.req != null) return null;
-        job.req = commands.bridge.local(kind, from, text, reply, l, core.tick());
+        job.req = commands.requests.local(kind, from, text, reply, l);
         return job.req;
     }
 
@@ -180,31 +180,25 @@ public final class Jobs {
         }
         LOG.info("[entropybot] job finished: {}", msg);
         try { core.recorder.jobEnded(j.type, j.label, msg); } catch (RuntimeException e) { LOG.warn("[entropybot] recorder job end: {}", e.toString()); }
-        if (j.req != null) commands.bridge.done(j.req.id, msg);
+        if (j.req != null) commands.requests.done(j.req.id, msg);
     }
 
     /** A new command replaces a walk: it ends quietly (the bridge's "job.done = true"). */
     public void replaceWalk() {
-        if (walking()) finish(BridgeLink.REPLACED);
+        if (walking()) finish(JobRequests.REPLACED);
     }
 
     // ---- the fence ----
 
-    /** Null when the bot may walk to x y z, else the guard's reason (as the bridge's goalAllowed). */
+    /** Null when the bot may walk to x y z, else the guard's reason (FenceRules.goalAllowed). */
     String goalAllowed(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
-        String r = io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(mc.level), x, y, z, "go");
-        if (r.startsWith("would refuse: next to a ")) return r.replaceFirst("^would refuse: ", "");
-        if (!commands.fenceOn()) return null;
-        if (r.equals("ok") || r.startsWith("would refuse (log mode)")) return null;
-        return r.replaceFirst("^would refuse: ", "").replaceFirst("^error: ", "guard error: ");
+        return FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(mc.level), x, y, z, "go"), commands.fenceOn());
     }
 
-    static String withAreaHint(String reason) {
-        return reason.startsWith("next to a ") ? reason : reason + " - " + PolicyCommands.AREA_HINT;
-    }
+    static String withAreaHint(String reason) { return FenceRules.withAreaHint(reason); }
 
-    static String fenceError(String reason) { return "error: " + withAreaHint(reason); }
+    static String fenceError(String reason) { return FenceRules.gotoRefusal(reason); }
 
     // ---- walks ----
 
@@ -220,13 +214,9 @@ public final class Jobs {
         if (b == null) return "error: baritone not loaded";
         LocalPlayer p = Minecraft.getInstance().player;
         if (!reflex) {
-            String why = null;
-            java.util.regex.Matcher m3 = java.util.regex.Pattern.compile("^goto (-?\\d+) (-?\\d+) (-?\\d+)$").matcher(goal);
-            java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("^goto (-?\\d+) (-?\\d+)$").matcher(goal);
-            if (dest != null) why = goalAllowed(dest[0], dest[1], dest[2]);
-            else if (m3.find()) why = goalAllowed(Integer.parseInt(m3.group(1)), Integer.parseInt(m3.group(2)), Integer.parseInt(m3.group(3)));
-            else if (m2.find()) why = goalAllowed(Integer.parseInt(m2.group(1)), (int) Math.floor(p.getY()), Integer.parseInt(m2.group(2)));
-            if (why != null) return fenceError(why);
+            int[] spot = dest != null ? dest : FenceRules.goalSpot(goal, (int) Math.floor(p.getY()));
+            String why = spot == null ? null : goalAllowed(spot[0], spot[1], spot[2]);
+            if (why != null) return FenceRules.gotoRefusal(why);
             lastTravelAt = System.currentTimeMillis();     // package D: an errand (come, goto, go...) holds the furnace pickups
         }
         followWatch = null;
@@ -312,7 +302,7 @@ public final class Jobs {
             Request r = job.req;
             job.req = null;                          // one reply, not a whisper as well
             finish("ok: stopped twerking");
-            if (r != null) commands.bridge.done(r.id, BridgeLink.REPLACED);
+            if (r != null) commands.requests.done(r.id, JobRequests.REPLACED);
             return "ok: stopped twerking";
         }
         if (t.equals("off")) return "ok: not twerking";
@@ -335,13 +325,7 @@ public final class Jobs {
     /** Worth a /home on the way? Only if dest is near home and the bot is far from it (another dimension, 40+ across, 10+ up or down). */
     boolean tpWorth(Player p, int[] dest, String destDim) {
         JsonObject h = commands.home();
-        if (h == null || dest == null || core.tick() - tpFailedAt < 20 * 60) return false;
-        String hd = dimOf(h);
-        if (!(destDim == null ? hd : destDim).equals(hd) || distSq(dest, pos(h)) > 24 * 24) return false;
-        if (!Guard.dimOf(p.level()).equals(hd)) return true;
-        int[] me = here(p);
-        long dx = me[0] - dest[0], dz = me[2] - dest[2];
-        return dx * dx + dz * dz > 40 * 40 || Math.abs(me[1] - dest[1]) > 10;
+        return h != null && TpRules.worth(pos(h), dimOf(h), dest, destDim, here(p), Guard.dimOf(p.level()), core.tick(), tpFailedAt);
     }
 
     void sendHome(LocalPlayer p, Job j) {
@@ -351,16 +335,17 @@ public final class Jobs {
         p.connection.sendCommand("home");
     }
 
-    /** null while waiting; "ok" once the bot jumped (8+ blocks since the last check); "failed" after TP_WAIT ticks. */
+    /** null while waiting; "ok" once the bot jumped (8+ blocks since the last check); "failed" after TpRules.WAIT_TICKS. */
     String tpResult(LocalPlayer p, Job j) {
         int[] me = here(p);
         String dim = Guard.dimOf(p.level());
-        if (!dim.equals(j.tpDim) || distSq(me, j.tpLast) > 64) {
+        String r = TpRules.result(j.tpLast, j.tpDim, me, dim, j.tpTick, core.tick());
+        if ("ok".equals(r)) {
             commands.setHome(me, dim);
             return "ok";
         }
         j.tpLast = me;
-        if (core.tick() - j.tpTick < TP_WAIT) return null;
+        if (r == null) return null;
         tpFailedAt = core.tick();
         return "failed";
     }
@@ -629,8 +614,6 @@ public final class Jobs {
             java.util.List<String> say = notes.step(r.name(), st.has("target") ? st.get("target").getAsString() : null, p.getHealth(),
                     st.has("deniedDim") ? st.get("deniedDim").getAsString() : null,
                     st.has("noFood") && st.get("noFood").getAsBoolean(), p.getFoodData().getFoodLevel());
-            // while the bridge script still runs it whispers these itself (E2 drops this check with the bridge)
-            if (say.isEmpty() || commands.bridge.present(now)) return;
             for (String w : say) commands.whisper(commands.owner(), w);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] reflex notes: {}", e.toString());
@@ -659,7 +642,7 @@ public final class Jobs {
         if (!commands.fenceOn()) return;
         int[] me = here(p);
         String dim = Guard.dimOf(p.level());
-        if (running() && !job.reflex) {
+        if (FenceRules.watches(true, running(), running() && job.reflex)) {
             // T3: a clear pulled 2-4 blocks out (a drop, a cave) gets 15 s to come back; everything else as before
             int gap = commands.areaGap(me[0], me[1], me[2], dim);
             long now = core.tick();
@@ -690,7 +673,7 @@ public final class Jobs {
             if (why != null) {
                 IBaritone b = baritone();
                 if (b != null) cancel(b);
-                commands.whisper(followWatch[1], "stopped: " + followWatch[0] + " left my areas at " + fmt(tp));
+                commands.whisper(followWatch[1], FenceRules.followLeft(followWatch[0], tp));
                 LOG.info("[entropybot] follow stopped: {} left the areas at {} ({})", followWatch[0], fmt(tp), why);
                 followWatch = null;
             }

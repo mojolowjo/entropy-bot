@@ -69,7 +69,7 @@ public final class Core {
             events.setTick(tick);
             guard.core.tick(tick);
             Minecraft mc = Minecraft.getInstance();
-            reconnect.tick(tick);                         // B6: also outside a world (the bridge doesn't tick there)
+            reconnect.tick(tick);                         // B6: also outside a world
             commands.tick(tick);                          // B7a: state.json says "not in a world" too
             if (mc.level == null) {
                 if (inWorld && terrain != null) terrain.flushAll();
@@ -136,7 +136,6 @@ public final class Core {
 
     public JsonArray features() {
         JsonArray a = new JsonArray();
-        a.add("token");
         a.add("files");
         if (baritone.hooked()) a.add("events");
         a.add("guard:" + guard.core.mode().name().toLowerCase());
@@ -154,7 +153,7 @@ public final class Core {
         if (commands.ready()) a.add("commands");
         if (commands.ready()) a.add("jobs:walk");
         if (commands.ready()) a.add("jobs:storage");
-        if (commands.ready()) a.add("hotbar");        // package B: the layout keeper, BotAPI.toolPolicy
+        if (commands.ready()) a.add("hotbar");        // package B: the layout keeper
         if (commands.ready()) a.add("furnaces");
         if (commands.ready()) a.add("mystical");     // package E: infuse, upgrade, crystal batching     // package D: remembered furnace jobs, smelt mode, the planner fixes
         if (commands.fastRunning()) a.add("fast");          // package G: the 127.0.0.1 fast channel is up

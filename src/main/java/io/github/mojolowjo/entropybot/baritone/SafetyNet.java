@@ -139,7 +139,7 @@ public final class SafetyNet {
         });
     }
 
-    // ---- who owns breaking and placing (the checks BotAPI.breakingOwned/placingOwned gave the bridge) ----
+    // ---- who owns breaking and placing ----
 
     /** A mod job turned Baritone's breaking on and Baritone's mine really runs (S1: not during its walks or holds). */
     static boolean breakingOwned(IBaritone b) {
