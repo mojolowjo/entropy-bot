@@ -34,10 +34,15 @@ public final class ClearGrid {
      * it leaves (keepOres) and the built blocks; {@code job} may be null (no "only" list, nothing noted).
      */
     public static ClearGrid build(ClearWorld w, ClearBox box, Bot bot, ClearJob job) {
+        return build(w, box, bot, job, 5, 3);
+    }
+
+    /** B7e F: as above with a smaller margin (sideways, up/down): the floor fill's maps, built often on the game thread. */
+    public static ClearGrid build(ClearWorld w, ClearBox box, Bot bot, ClearJob job, int side, int vert) {
         int px = floor(bot.x()), py = floor(bot.y()), pz = floor(bot.z());
-        ClearGrid g = new ClearGrid(Math.min(box.x1() - 5, px - 2), Math.max(box.x2() + 5, px + 2),
-                Math.min(box.y1() - 3, py - 3), Math.max(box.y2() + 3, py + 3),
-                Math.min(box.z1() - 5, pz - 2), Math.max(box.z2() + 5, pz + 2));
+        ClearGrid g = new ClearGrid(Math.min(box.x1() - side, px - 2), Math.max(box.x2() + side, px + 2),
+                Math.min(box.y1() - vert, py - 3), Math.max(box.y2() + vert, py + 3),
+                Math.min(box.z1() - side, pz - 2), Math.max(box.z2() + side, pz + 2));
         int i = 0;
         for (int x = g.ax; x <= g.bx; x++) {
             for (int y = g.ay; y <= g.by; y++) {
@@ -163,6 +168,9 @@ public final class ClearGrid {
                     if (bad != null && job.broken - bad < 10) continue;      // failed to get there recently
                     double d;
                     if (dist[i] >= 0) d = dist[i];
+                    // F (2026-10-04): with the fence on, only spots it can walk to. Baritone's partial path toward a spot
+                    // it can't reach wandered down a cave 28 blocks out of the tunnel area (x 262 -48 854, the cave crossing)
+                    else if (job.standOk != null) continue;
                     else if (g.stand(x, y, z)) {
                         double dx = x - bot.x(), dy = y - bot.y(), dz = z - bot.z();
                         d = 1000 + Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -220,7 +228,8 @@ public final class ClearGrid {
         Arrays.sort(order, Comparator.comparingDouble(d2s::get));
         Plan best = null;
         for (int i = 0; i < order.length; i++) {
-            if ((best != null && i >= 40) || job.sightBudget <= 0) break;
+            // F: past the nearest 40 only while nothing (or only a spot it can't walk to) was found
+            if ((best != null && i >= 40 && best.spot().cost() < 1000) || job.sightBudget <= 0) break;
             Pos t = list.get(order[i]);
             if (ClearEngine.nextToLiquid(w, t.x(), t.y(), t.z())) {
                 job.skip.put(t.key(), ClearEngine.NEXT_TO_LIQUID);

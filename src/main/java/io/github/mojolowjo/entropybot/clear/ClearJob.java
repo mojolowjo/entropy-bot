@@ -42,6 +42,14 @@ public final class ClearJob {
         /** while this says false the clear breaks nothing (the table pickup disarmed); null: always armed */
         public java.util.function.BooleanSupplier armed;
 
+        /** F: "dig ... junk drop": a full bag throws plain junk blocks away instead of a trip to the base chests */
+        public boolean junkDrop;
+        /** F: "dig ... floor [block]": the layer under the box is filled afterwards (block null: {@link FloorFill#FALLBACK}) */
+        public boolean floor;
+        public String floorBlock;
+
+        public Options junkDrop(boolean j) { junkDrop = j; return this; }
+        public Options floor(boolean f, String block) { floor = f; floorBlock = block; return this; }
         public Options box(ClearBox b) { box = b; return this; }
         public Options exactId(String id) { exactId = id; return this; }
         public Options armed(java.util.function.BooleanSupplier a) { armed = a; return this; }
@@ -69,6 +77,11 @@ public final class ClearJob {
     public final Set<String> only;
     public final String label;
     public final boolean keepOres, collect, soft, mustFinish, force;
+    /** F: {@link Options#junkDrop}, {@link Options#floor} / {@link Options#floorBlock} */
+    public final boolean junkDrop, floor;
+    public final String floorBlock;
+    /** F: where (feet x y z) and when (tick) "junk drop" threw junk; those drops are left alone a while ({@link JunkDrop#nearThrow}) */
+    public final List<double[]> thrown = new ArrayList<>();
     /** true when no box or only list was given (the work zone) */
     public final boolean zone;
     public Integer minStandY;
@@ -141,6 +154,9 @@ public final class ClearJob {
         this.ores = ores != null ? ores : new OreBook.Simple();
         this.exactId = o.exactId;
         this.armed = o.armed;
+        this.junkDrop = o.junkDrop;
+        this.floor = o.floor;
+        this.floorBlock = o.floorBlock;
     }
 
     /**

@@ -181,6 +181,8 @@ public final class Clearing {
         String note;
         /** table pickups a failed trip took out of the Seq (B7d review 3): the job's end names a table still there */
         final List<Seq.Step> tablesLeft = new ArrayList<>();
+        /** B7e F: where the bot stood (x, z) when the clear began: "junk drop" throws toward it (the dug side) */
+        double[] start;
     }
 
     /** A placeblock step's state. */
@@ -316,6 +318,8 @@ public final class Clearing {
                 if (ps.pickup != null && ps.clicked) tables.add(ps.pickup);
             } else if (st.state instanceof BuildState bs && !bs.done) {
                 endBuild(bs);
+            } else if (st.state instanceof FloorSteps.FloorState fs) {
+                FloorSteps.ended(fs);                   // B7e F: the fill's place leases
             }
             if (st.state instanceof ClearState s) tables.addAll(s.tablesLeft);
             if (armedPickup(st)) tables.add(st);
@@ -356,6 +360,8 @@ public final class Clearing {
     static String step(Seq seq, Seq.Step st, LocalPlayer p, long elapsed) {
         if (st.type.equals("placeblock")) return placeRun(seq, st, p, elapsed);
         if (KIND_BUILD.equals(st.kind)) return buildRun(seq, st, p, elapsed);
+        if (FloorSteps.KIND_FLOOR.equals(st.kind)) return FloorSteps.floorRun(seq, st, p);       // B7e F
+        if (FloorSteps.KIND_JUNK.equals(st.kind)) return FloorSteps.junkRun(seq, st, p);
         return clearRun(seq, st, p);
     }
 
@@ -379,6 +385,7 @@ public final class Clearing {
         }
         ClearState s = st.state instanceof ClearState cs ? cs : new ClearState();
         s.world.set(p);
+        if (s.start == null) s.start = new double[]{p.getX(), p.getZ()};
         s.ores = new KnowledgeOres();
         s.job = ClearJob.start(opts, zone, s.ores);
         s.job.standOk = standCheck(c);
@@ -585,6 +592,16 @@ public final class Clearing {
         return GuardCore.cellLeasable(g.policy(), dim, c.x(), c.y(), c.z());
     }
 
+    /**
+     * B7e F: a floor cell or a cave step the fill may place: inside an area and outside protect boxes in every guard mode
+     * (log mode only records, so this is the fill's own fence).
+     */
+    static boolean floorCellAllowed(Pos c) {
+        GuardCore g = Core.INSTANCE.guard.core;
+        String dim = Minecraft.getInstance().level != null ? Storage.dim() : "minecraft:overworld";
+        return GuardCore.cellLeasable(g.policy(), dim, c.x(), c.y(), c.z());
+    }
+
     /** The pickup only takes the table it put down (the place step armed it) and only while it is still a crafting table. */
     static boolean tablePickupWanted(Seq.Step st, LocalPlayer p) {
         return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos));
@@ -605,6 +622,13 @@ public final class Clearing {
 
     /** The bag is full: the base chests (or the clear's dump chests), valuables kept when collecting. */
     private static String depositTrip(Seq seq, Seq.Step st, ClearState s, McBody body, LocalPlayer p, ClearRun.Out out) {
+        if (s.job.junkDrop) {
+            // B7e F: far from the base: throw the plain junk away here and dig on (no /home trip)
+            splice(seq, s, List.of(FloorSteps.junkStep(s.job, s.start)), "deposit");
+            s.run.tripStarted(ClearRun.Kind.DEPOSIT);
+            LOG.info("[entropybot] clear: inventory full, throwing junk blocks away");
+            return "wait";
+        }
         List<Seq.Step> steps = depositSteps(seq.storage, p, s.job);
         if (steps == null) {
             s.run.depositNotStarted();
@@ -999,11 +1023,20 @@ public final class Clearing {
                 int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
                 // near the box, not down a hole under the walkway, and (T3) never outside the areas with the fence on
                 if (!job.dropWanted(x, y, z)) continue;
+                // B7e F: with "junk drop", junk drops stay where they lie (but the floor's block while it has few)
+                if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv(), x, y, z, seq.now())) continue;
                 double d = e.distanceTo(p);
                 if (d > 1.2 && d < 8) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
             }
             out.sort((a, b) -> Double.compare(a.d(), b.d()));
             return out;
+        }
+
+        private Map<String, Integer> invCache;
+
+        private Map<String, Integer> inv() {
+            if (invCache == null) invCache = Gui.inventory(p);
+            return invCache;
         }
 
         private ItemEntity drop(ClearRun.Drop d) {

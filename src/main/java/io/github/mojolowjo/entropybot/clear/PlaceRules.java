@@ -25,8 +25,11 @@ public final class PlaceRules {
     /** A neighbour may be clicked: a full block, no block entity, nothing that opens on a click (tables, benches). */
     public static boolean clickable(ClearWorld w, int x, int y, int z) {
         if (!w.fullBlock(x, y, z) || w.blockEntity(x, y, z)) return false;
-        return !w.name(x, y, z).matches(".*(crafting|table|bench).*");
+        return !OPENS_ON_CLICK.matcher(w.name(x, y, z)).find();
     }
+
+    /** B7e F: compiled once (the floor fill asks this thousands of times per decision). */
+    private static final java.util.regex.Pattern OPENS_ON_CLICK = java.util.regex.Pattern.compile("crafting|table|bench");
 
     /** The cell takes a block: air, or something without collision that isn't a fluid source we'd care about (grass). */
     public static boolean free(ClearWorld w, int x, int y, int z) {
