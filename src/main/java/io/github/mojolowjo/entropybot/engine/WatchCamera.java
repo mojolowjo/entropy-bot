@@ -40,6 +40,11 @@ public final class WatchCamera {
 
     public float distance() { return distance; }
 
+    private final java.util.concurrent.atomic.AtomicLong angleEdits = new java.util.concurrent.atomic.AtomicLong();
+
+    /** The yaw hook changed an angle (only while watching): proof the rotation hook, not just the setup hook, is in. */
+    public void angleEdited() { angleEdits.incrementAndGet(); }
+
     /** The mixin calls this on every camera setup (also while off, so "the hook is in" can be told apart from "it is not"). */
     public void hookCalled() {
         hookCalls.incrementAndGet();
@@ -100,7 +105,7 @@ public final class WatchCamera {
         if (t.equals("status")) {
             String h = hookLine();
             try { Thread.sleep(0); } catch (InterruptedException ignored) {}
-            return "watch camera: " + (on ? "on (behind the bot, " + distance + " blocks, following its walking direction)" : "off") + " | " + h;
+            return "watch camera: " + (on ? "on (behind the bot, " + distance + " blocks, following its walking direction)" : "off") + " | " + h + " | angle edits so far: " + angleEdits.get() + (on && angleEdits.get() == 0 ? " (NONE: the rotation hook is not working)" : "") + " | yaw " + Math.round(yaw);
         }
         if (t.startsWith("distance")) {
             float d = parseDistance(t.substring(8));

@@ -32,7 +32,9 @@ public abstract class WatchMixinCamera {
 
     @ModifyVariable(method = "setRotation(FF)V", at = @At("HEAD"), argsOnly = true, index = 1, require = 0)
     private float entropybot$yaw(float yRot) {
-        return WatchCamera.INSTANCE.on() ? WatchCamera.INSTANCE.yaw() : yRot;
+        if (!WatchCamera.INSTANCE.on()) return yRot;
+        WatchCamera.INSTANCE.angleEdited();
+        return WatchCamera.INSTANCE.yaw();
     }
 
     @ModifyVariable(method = "setRotation(FF)V", at = @At("HEAD"), argsOnly = true, index = 2, require = 0)
