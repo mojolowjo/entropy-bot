@@ -1,0 +1,25 @@
+### Gradle ###
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+### IDEs ###
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.run/
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+### Minecraft modding ###
+run/
+runs/
+repo/
+
+### Scratch ###
+.scratch/
