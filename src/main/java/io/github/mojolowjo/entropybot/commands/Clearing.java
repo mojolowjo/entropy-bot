@@ -136,32 +136,14 @@ public final class Clearing {
     }
 
     /**
-     * Where a clear lists the ores it leaves and forgets the ones it mines. D1's default: the knowledge files
-     * (Knowledge ores.json, mirrored into the bridge's memory.ores). At the merge with D3 this becomes D3's book in one
-     * line: {@code Clearing.ORE_BOOK = () -> Mining.get().oreBook();} (and then D1's Knowledge ores go, see docs/b7d-d1.md).
+     * Where a clear lists the ores it leaves and forgets the ones it mines: D3's book (cave/MineNotes, ores.json, the
+     * PM "ores" list) - the one owner of ores.json since the B7d merge (D1's Knowledge copy was dropped there).
      */
-    public static volatile java.util.function.Supplier<OreBook> ORE_BOOK = Clearing::knowledgeBook;
+    public static volatile java.util.function.Supplier<OreBook> ORE_BOOK = () -> Mining.get().oreBook();
 
     /** The ores left in place for players (whichever book {@link #ORE_BOOK} names). */
     public static OreBook oreBook() {
         return ORE_BOOK.get();
-    }
-
-    static OreBook knowledgeBook() {
-        return new OreBook() {
-            @Override public boolean note(int x, int y, int z, String name) {
-                Core core = Core.INSTANCE;
-                JsonObject o = new JsonObject();
-                o.addProperty("id", name);
-                o.addProperty("dim", Storage.dim());
-                o.addProperty("seen", System.currentTimeMillis());
-                return core.knowledge.noteOre(Pos.key(x, y, z), o, core.tick());
-            }
-
-            @Override public boolean forget(String key) {
-                return Core.INSTANCE.knowledge.forgetOre(key, Core.INSTANCE.tick());
-            }
-        };
     }
 
     /** The book, plus the ores this clear listed (Outcome.ores). */
@@ -756,6 +738,12 @@ public final class Clearing {
             try { b.getCommandManager().execute("sel clear"); } catch (Throwable ignored) {}
         }
         Jobs.safeSettings();
+        // B7d review: the build's own settings back too (the bridge's restoreSafeSettings reset all four)
+        try {
+            baritone.api.Settings s = BaritoneAPI.getSettings();
+            s.allowInventory.value = false;
+            s.buildIgnoreExisting.value = false;
+        } catch (Throwable ignored) {}
         bs.leases.releaseAll();
     }
 

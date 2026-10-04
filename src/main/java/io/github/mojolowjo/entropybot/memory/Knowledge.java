@@ -19,7 +19,7 @@ import java.util.TreeMap;
  * its backup is loaded instead. Plain Java: JUnit drives it with a temp folder.
  */
 public final class Knowledge {
-    public static final String PLACES = "places.json", CHESTS = "chests.json", RS = "rs.json", ORES = "ores.json";
+    public static final String PLACES = "places.json", CHESTS = "chests.json", RS = "rs.json";
     static final long FLUSH_AFTER = 40, BACKUP_EVERY = 6000;
 
     private final Map<String, JsonObject> places = new TreeMap<>();
@@ -27,8 +27,6 @@ public final class Knowledge {
     /** B7b: the Refined Storage readings ("x y z" of the grid -> {dim, items, seen}) and the grid "rs" goes to. */
     private final Map<String, JsonObject> rs = new TreeMap<>();
     private String rsGrid;
-    /** B7d D1: the ores left in place for players ("x y z" -> {id, dim, seen}; the bridge's memory.ores, PM "ores"). */
-    private final Map<String, JsonObject> ores = new TreeMap<>();
     private long version;
     private long dirtySince = -1, lastBackup = -1;
     private BotFiles files;
@@ -44,8 +42,7 @@ public final class Knowledge {
     public synchronized String load(BotFiles f) {
         files = f;
         StringBuilder sb = new StringBuilder();
-        sb.append(loadOne(PLACES, places)).append("; ").append(loadOne(CHESTS, chests)).append("; ").append(loadRs())
-          .append("; ").append(loadOne(ORES, ores));
+        sb.append(loadOne(PLACES, places)).append("; ").append(loadOne(CHESTS, chests)).append("; ").append(loadRs());
         int pruned = prune(null);
         if (pruned > 0) {
             sb.append("; dropped the ").append(pruned).append(" oldest notes (over the limit)");
@@ -130,7 +127,7 @@ public final class Knowledge {
      */
     public synchronized long put(String json, long now) {
         JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-        boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | apply(o, "ores", ores) | applyGrid(o, false);
+        boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | applyGrid(o, false);
         if (changed) {
             prune(null);
             touch(now);
@@ -154,7 +151,6 @@ public final class Knowledge {
             rs.remove(k);
             r++;
         }
-        for (String k : Limits.oldest(ores, Limits.ORES, keep)) ores.remove(k);      // B7d D1: the listed ores, quietly (as the bridge)
         if (c + r > 0) pruneNote = "dropped the oldest " + (c > 0 ? c + " chest note" + (c == 1 ? "" : "s") : "")
                 + (c > 0 && r > 0 ? " and " : "") + (r > 0 ? r + " RS reading" + (r == 1 ? "" : "s") : "") + " (over the limit)";
         return c + r;
@@ -226,16 +222,6 @@ public final class Knowledge {
                 changed = true;
             }
         }
-        // B7d D1: the listed ores (what only one side has is kept; the later note wins)
-        if (o.has("ores") && o.get("ores").isJsonObject()) {
-            for (Map.Entry<String, JsonElement> en : o.getAsJsonObject("ores").entrySet()) {
-                if (!en.getValue().isJsonObject()) continue;
-                JsonObject theirs = en.getValue().getAsJsonObject(), mine = ores.get(en.getKey());
-                if (mine != null && (mine.equals(theirs) || seen(mine) > seen(theirs))) continue;
-                ores.put(en.getKey(), theirs.deepCopy());
-                changed = true;
-            }
-        }
         changed |= applyGrid(o, true);
         if (changed) {
             prune(null);
@@ -274,24 +260,6 @@ public final class Knowledge {
 
     public synchronized Map<String, JsonObject> rs() { return copy(rs); }
 
-    /** B7d D1: lists an ore left in place ("x y z" -> {id, dim, seen}); false when it was listed already. */
-    public synchronized boolean noteOre(String key, JsonObject note, long now) {
-        if (ores.containsKey(key)) return false;
-        ores.put(key, note.deepCopy());
-        prune(key);
-        touch(now);
-        return true;
-    }
-
-    /** B7d D1: an ore was mined: off the list; true when it was listed. */
-    public synchronized boolean forgetOre(String key, long now) {
-        if (ores.remove(key) == null) return false;
-        touch(now);
-        return true;
-    }
-
-    public synchronized Map<String, JsonObject> ores() { return copy(ores); }
-
     public synchronized String rsGrid() { return rsGrid; }
 
     private void touch(long now) {
@@ -305,7 +273,6 @@ public final class Knowledge {
         o.add("places", mapJson(places));
         o.add("chests", mapJson(chests));
         o.add("rs", mapJson(rs));
-        o.add("ores", mapJson(ores));
         if (rsGrid != null) o.addProperty("rsGrid", rsGrid);
         return o;
     }
@@ -336,7 +303,6 @@ public final class Knowledge {
             if (!places.isEmpty()) files.writeJson(bakName(PLACES), mapJson(places).toString());
             if (!chests.isEmpty()) files.writeJson(bakName(CHESTS), mapJson(chests).toString());
             if (!rs.isEmpty()) files.writeJson(bakName(RS), rsJson().toString());
-            if (!ores.isEmpty()) files.writeJson(bakName(ORES), mapJson(ores).toString());
         }
     }
 
@@ -346,8 +312,6 @@ public final class Knowledge {
         String a = files.writeJson(PLACES, mapJson(places).toString());
         String b = files.writeJson(CHESTS, mapJson(chests).toString());
         String c = files.writeJson(RS, rsJson().toString());
-        String d = files.writeJson(ORES, mapJson(ores).toString());
-        if (!d.startsWith("ok") && c.startsWith("ok")) c = d;
         if (a.startsWith("ok") && b.startsWith("ok") && c.startsWith("ok")) {
             dirtySince = -1;
             return "ok";

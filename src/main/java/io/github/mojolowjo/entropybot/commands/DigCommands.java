@@ -205,6 +205,7 @@ final class DigCommands {
         steps.add(st);
         seq.splice(0, steps);
         c.jobs.startSeq(seq, "always");
+        c.jobs.job.holdOnFight = true;              // the bridge never ended a clear for a fight: a reflex holds it
         seq.setStatus(s.job.status("starting"));
         JsonObject z = o.box == null && o.only == null ? zone(c) : null;
         return s.job.startedMessage(zoneText(z));
@@ -254,6 +255,7 @@ final class DigCommands {
         st.state = bs;
         Clearing.placingOwned = true;
         c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
+        c.jobs.job.holdOnFight = true;
         return "started: " + bs.status + " (" + zoneText(z) + ")";
     }
 

@@ -65,26 +65,6 @@ class B7dD1Test {
     }
 
     @Test
-    void theOresListedForPlayers() {
-        Knowledge k = new Knowledge();
-        JsonObject o = new JsonObject();
-        o.addProperty("id", "iron_ore");
-        o.addProperty("dim", "minecraft:overworld");
-        o.addProperty("seen", 1000L);
-        assertTrue(k.noteOre("-15 55 150", o, 1));
-        assertFalse(k.noteOre("-15 55 150", o, 2), "listed once");
-        assertEquals("iron_ore", k.ores().get("-15 55 150").get("id").getAsString());
-        assertTrue(k.toJson().getAsJsonObject("ores").has("-15 55 150"), "the bridge pulls them (memory.ores)");
-        assertTrue(k.forgetOre("-15 55 150", 3));
-        assertFalse(k.forgetOre("-15 55 150", 4));
-        // the bridge's notes come in at its first sync and with every push (null deletes)
-        k.merge("{\"ores\":{\"1 2 3\":{\"id\":\"coal_ore\",\"dim\":\"minecraft:overworld\",\"seen\":5}}}", 5);
-        assertEquals(List.of("1 2 3"), List.copyOf(k.ores().keySet()));
-        k.put("{\"ores\":{\"1 2 3\":null}}", 6);
-        assertTrue(k.ores().isEmpty());
-    }
-
-    @Test
     void theOreTally() {
         io.github.mojolowjo.entropybot.clear.OreTally.add(java.util.Map.of("minecraft:iron_ore", 2));
         var start = io.github.mojolowjo.entropybot.clear.OreTally.copy();
