@@ -19,7 +19,7 @@ class SettingsBlockTest {
     void emptyFilesGiveTheDefaults() {
         JsonObject s = SettingsBlock.build(new JsonObject(), new JsonObject(), IDLE);
         assertEquals(List.of("guard", "areas", "protect", "supplies", "torches", "autominer", "deathPolicy", "parked", "reconnect",
-                "defend", "routines", "chain", "hotbar", "toolOres", "recorder"), List.copyOf(s.keySet()), "the shape, in order");
+                "defend", "creepers", "routines", "chain", "hotbar", "toolOres", "recorder"), List.copyOf(s.keySet()), "the shape, in order");
         assertFalse(s.getAsJsonObject("guard").get("strict").getAsBoolean());
         assertEquals("log", s.getAsJsonObject("guard").get("mode").getAsString(), "no live mode: from strict");
         assertEquals(0, s.getAsJsonArray("areas").size());

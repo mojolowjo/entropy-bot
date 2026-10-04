@@ -341,6 +341,7 @@ public final class Commands implements Chains.Env {
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);
+        core.reflexes.setCreeperMode(io.github.mojolowjo.entropybot.engine.CreeperSetting.load(b));     // B7e C
         // package G: the fast channel starts once bridge.ps1 has written entropybot/fast.json (the key's path)
         fast = new io.github.mojolowjo.entropybot.fast.FastChannel(files.root(), new FastHandler(), m -> LOG.info("{}", m));
         ready = true;
@@ -985,6 +986,7 @@ public final class Commands implements Chains.Env {
 
     String setDefence(String text) {
         String a = text == null ? "" : text.trim().toLowerCase();
+        if (a.matches("creepers?(\\s.*)?")) return io.github.mojolowjo.entropybot.engine.CreeperSetting.command(a.replaceFirst("^creepers?", ""), brainStore.data(), () -> brainStore.changed(core.tick()), core.reflexes::creeperMode, core.reflexes::setCreeperMode);     // B7e C
         if (a.equals("on") || a.equals("off")) core.reflexes.setDefence(a.equals("on"));
         return "self-defence is " + (core.reflexes.defence() ? "ON (fights monsters, avoids creepers, retreats under 6 health)" : "OFF");
     }

@@ -89,6 +89,9 @@ public final class CreeperDuel {
         banned.values().removeIf(until -> until <= now);
         CreeperRules.Situation s = situation(mc, p, c, hurt, true, now);
         String why = CreeperRules.refusal(s);
+        // review: no sprint at food 6 or less (the back-off is too slow for the fuse); never with a menu open (a job's chest)
+        if (why == null && p.getFoodData().getFoodLevel() <= 6) why = "food " + p.getFoodData().getFoodLevel() + " is too low to sprint";
+        if (why == null && (mc.screen != null || p.containerMenu != p.inventoryMenu)) why = "a menu is open";
         if (why != null) {
             if (c.getId() != refusedId || !why.equals(refusedWhy)) {
                 events.push("reflex", "not fighting the creeper " + CreeperRules.fmt(p.distanceTo(c)) + " away: " + why, null);

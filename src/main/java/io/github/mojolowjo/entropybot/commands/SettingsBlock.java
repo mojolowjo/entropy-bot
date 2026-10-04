@@ -62,6 +62,7 @@ public final class SettingsBlock {
         out.add("parked", parked == null ? JsonNull.INSTANCE : parked.deepCopy());
         out.addProperty("reconnect", live.reconnect());
         out.addProperty("defend", live.defend());
+        out.addProperty("creepers", io.github.mojolowjo.entropybot.engine.CreeperSetting.load(b).word());   // B7e C: flee|melee|bow
 
         JsonArray rs = new JsonArray();
         JsonObject routines = obj(b, "routines");

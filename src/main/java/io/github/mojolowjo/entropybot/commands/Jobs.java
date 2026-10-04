@@ -614,6 +614,8 @@ public final class Jobs {
             java.util.List<String> say = notes.step(r.name(), st.has("target") ? st.get("target").getAsString() : null, p.getHealth(),
                     st.has("deniedDim") ? st.get("deniedDim").getAsString() : null,
                     st.has("noFood") && st.get("noFood").getAsBoolean(), p.getFoodData().getFoodLevel());
+            say = new java.util.ArrayList<>(say);
+            say.addAll(core.reflexes.takeWhispers());       // B7e C: a creeper explosion near the bot
             for (String w : say) commands.whisper(commands.owner(), w);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] reflex notes: {}", e.toString());
