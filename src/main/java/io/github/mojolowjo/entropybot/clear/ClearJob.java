@@ -55,6 +55,24 @@ public final class ClearJob {
         public boolean liquidBlocks;
 
         public Options liquidBlocks(boolean l) { liquidBlocks = l; return this; }
+
+        /**
+         * Water plan: "dig ... water": water that stops the dig is sealed off ({@link WaterPlan}) and the dig goes on;
+         * waterLarge ("water large"): a large body of water too. waterTally: the rounds so far (shared by the re-runs of
+         * the same dig); line: the dig's own command, for the confirm question.
+         */
+        public boolean water, waterLarge;
+        public WaterPlan.Tally waterTally;
+        public String line;
+
+        public Options water(boolean w, boolean large) {
+            water = w || large;
+            waterLarge = large;
+            if (water && waterTally == null) waterTally = new WaterPlan.Tally();
+            return this;
+        }
+
+        public Options line(String l) { line = l; return this; }
         public Options junkDrop(boolean j) { junkDrop = j; return this; }
         public Options floor(boolean f, String block) { floor = f; floorBlock = block; return this; }
         public Options box(ClearBox b) { box = b; return this; }
@@ -89,6 +107,8 @@ public final class ClearJob {
     public final String floorBlock;
     /** {@link Options#liquidBlocks} */
     public final boolean liquidBlocks;
+    /** {@link Options#water}: keep a reserve of junk blocks for sealing ("junk drop" throws the rest) */
+    public final boolean water;
     /** F: where (feet x y z) and when (tick) "junk drop" threw junk; those drops are left alone a while ({@link JunkDrop#nearThrow}) */
     public final List<double[]> thrown = new ArrayList<>();
     /** true when no box or only list was given (the work zone) */
@@ -167,6 +187,7 @@ public final class ClearJob {
         this.floor = o.floor;
         this.floorBlock = o.floorBlock;
         this.liquidBlocks = o.liquidBlocks;
+        this.water = o.water;
     }
 
     /**

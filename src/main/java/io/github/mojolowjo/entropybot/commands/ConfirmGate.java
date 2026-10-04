@@ -141,6 +141,15 @@ public final class ConfirmGate {
         return p != null && now <= p.until;
     }
 
+    /**
+     * Water plan: a job that stopped asks its requester first ("a large body of water: confirm and I seal it"). The
+     * question waits like any other: "confirm" from {@code from} within 30 s runs {@code runLine}, anything else cancels.
+     * Returns the question to whisper.
+     */
+    public synchronized String offer(String from, String runLine, String summary, long now) {
+        return ask(from == null ? "" : from.toLowerCase(Locale.ROOT), runLine, summary, now).reply();
+    }
+
     private Gate ask(String key, String runLine, String summary, long now) {
         pending.put(key, new Pending(runLine, Texts.verbAndRest(runLine)[2].replaceFirst("(?i)\\s+confirm$", ""), now + WINDOW_MS));
         return Gate.say("confirm? " + summary + " - say \"confirm\" within " + WINDOW_MS / 1000 + " s (anything else cancels)");

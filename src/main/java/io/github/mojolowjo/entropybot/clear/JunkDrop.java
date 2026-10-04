@@ -98,6 +98,8 @@ public final class JunkDrop {
      */
     public static boolean chase(String id, ClearJob job, Map<String, Integer> inv) {
         if (!job.junkDrop || !isJunk(id)) return true;
+        // water plan: a "water" dig picks junk up again while it has less than twice the sealing reserve
+        if (job.water && FloorFill.FALLBACK.contains(ClearRules.fullId(id)) && WaterPlan.available(inv) < 2 * WaterPlan.RESERVE) return true;
         if (!job.floor) return false;
         String full = ClearRules.fullId(id);
         String fb = FloorFill.chooseBlock(job.floorBlock, inv);

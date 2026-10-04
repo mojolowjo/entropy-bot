@@ -154,9 +154,11 @@ final class DigCommands {
             return "error: that box is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
         }
         String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "")
-                + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "");
+                + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "")
+                + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
         ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop())
-                .liquidBlocks(true);          // water plan item 1: water or lava in the way ends it as "blocked by ..."
+                .liquidBlocks(true)           // water plan item 1: water or lava in the way ends it as "blocked by ..."
+                .water(a.water(), a.large()).line("dig " + rest.trim());
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));

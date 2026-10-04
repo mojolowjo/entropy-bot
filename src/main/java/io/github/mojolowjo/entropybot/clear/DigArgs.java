@@ -3,14 +3,15 @@ package io.github.mojolowjo.entropybot.clear;
 import java.util.List;
 
 /**
- * B7e F (2026-10-04): the words of {@code dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop]}, in any
- * order after the six numbers. {@code floor} may be followed by a block name (any word that isn't one of the other
- * words). Game-free; the block is resolved and checked by the verb.
+ * B7e F (2026-10-04): the words of {@code dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop] [water [large]]},
+ * in any order after the six numbers. {@code floor} may be followed by a block name (any word that isn't one of the other
+ * words). Water plan: {@code water} seals water that stops the dig and digs on; {@code large} (after it) also takes on a
+ * large body of water (what the confirm question runs). Game-free; the block is resolved and checked by the verb.
  */
-public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop) {
-    public static final String USAGE = "error: usage dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop]";
+public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large) {
+    public static final String USAGE = "error: usage dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop] [water [large]]";
 
-    private static final List<String> WORDS = List.of("force", "ores", "floor", "junk", "drop");
+    private static final List<String> WORDS = List.of("force", "ores", "floor", "junk", "drop", "water", "large");
 
     /** The parsed words, or null for a line that isn't a dig (the verb answers {@link #USAGE}). */
     public static DigArgs parse(String rest) {
@@ -22,7 +23,7 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
         } catch (NumberFormatException e) {
             return null;
         }
-        boolean force = false, ores = false, floor = false, junk = false;
+        boolean force = false, ores = false, floor = false, junk = false, water = false, large = false;
         String block = null;
         for (int i = 6; i < w.length; i++) {
             String t = w[i].toLowerCase();
@@ -40,9 +41,11 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
                     i++;
                 }
                 case "junkdrop" -> junk = true;
+                case "water" -> water = true;
+                case "large" -> large = true;          // "water large" (or "large" anywhere: water too)
                 default -> { return null; }
             }
         }
-        return new DigArgs(n, force, ores, floor, block, junk);
+        return new DigArgs(n, force, ores, floor, block, junk, water || large, large);
     }
 }

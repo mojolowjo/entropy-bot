@@ -232,6 +232,8 @@ final class FloorSteps {
             Map<String, Integer> dep = StorageRules.depositables(Storage.held(p), "", false, null, seq.storage.keeps());
             String keep = js.job.floor ? FloorFill.chooseBlock(js.job.floorBlock, inv) : null;
             js.plan = JunkDrop.plan(dep, inv, keep, keep != null ? JunkDrop.FLOOR_KEEP : 0);
+            // water plan: a "water" dig keeps a reserve of junk blocks to seal water with
+            if (js.job.water) js.plan = io.github.mojolowjo.entropybot.clear.WaterPlan.keepReserve(js.plan, inv, io.github.mojolowjo.entropybot.clear.WaterPlan.RESERVE);
             if (js.plan.isEmpty()) return "no plain junk blocks to throw away";
             // the rotation reaches the server with the next movement packets, before the throw clicks
             float yaw = JunkDrop.throwYaw(js.start, p.getX(), p.getZ(), js.job.box);

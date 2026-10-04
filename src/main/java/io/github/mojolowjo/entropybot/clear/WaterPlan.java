@@ -312,11 +312,53 @@ public final class WaterPlan {
         return out;
     }
 
+    // ---- the dig's side: when to give up, the end messages ----
+
+    /** Rounds in a row whose clear broke nothing after it before the dig gives up on the water. */
+    public static final int MAX_STUCK = 3;
+
+    /**
+     * Before a round: the clear that just stopped broke {@code broken} blocks. Why the dig gives up on the water now
+     * (too many rounds, or {@link #MAX_STUCK} in a row that got nowhere), else null.
+     */
+    public static String giveUp(Tally t, int broken) {
+        t.stuck = t.rounds > 0 && broken == 0 ? t.stuck + 1 : 0;
+        if (t.rounds >= MAX_ROUNDS) return "gave up on the water after " + t.rounds + " rounds";
+        if (t.stuck >= MAX_STUCK) return "sealing got me no further (" + t.stuck + " rounds in a row)";
+        return null;
+    }
+
+    /**
+     * The end message of a dig whose water it could not deal with: the clear's report ("blocked by water at x y z -
+     * broke ..."), then what the water is and why not ("- 3 source blocks inside the dig - couldn't seal it: ..."), or the
+     * question for a large body.
+     */
+    public static String blockedMessage(String clearMsg, String what, String why, String question) {
+        if (question != null) return clearMsg + " - " + what + " - " + question;
+        return clearMsg + " - " + what + " - couldn't seal it: " + why;
+    }
+
+    /** The dig's report with the totals over its rounds: "broke N blocks" counts every clear, plus what it sealed. */
+    public static String endMessage(String clearMsg, Tally t, int lastBroken, boolean countAll) {
+        if (t == null) return clearMsg;
+        String m = clearMsg;
+        if (countAll && t.broken > 0) m = m.replaceFirst(" - broke \\d+ blocks", " - broke " + (t.broken + lastBroken) + " blocks");
+        String s = t.text();
+        return s.isEmpty() ? m : m + "; " + s;
+    }
+
+    /** The confirm question's run line: the dig's own line with "large" added. */
+    public static String largeLine(String digLine) {
+        return digLine == null ? null : digLine.matches("(?i).*\\blarge\\b.*") ? digLine : digLine + " large";
+    }
+
     // ---- the report ----
 
     /** What the water rounds of one dig did, for its end message. */
     public static final class Tally {
         public int rounds, water, sources, placed;
+        /** blocks the dig's earlier clears broke (each round runs the clear again); rounds in a row that got nowhere */
+        public int broken, stuck;
         public Integer lo, hi;
         public String axis = "x";
 
