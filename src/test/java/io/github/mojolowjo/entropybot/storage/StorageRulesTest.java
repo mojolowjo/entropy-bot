@@ -95,4 +95,22 @@ class StorageRulesTest {
         assertFalse(StorageRules.isStorageId("block.refinedstorage.grid"));
         assertFalse(StorageRules.isStorageId("block.minecraft.furnace"));
     }
+
+    @Test
+    void diskDriveReport() {
+        // a disk's tooltip: its name first, then RS's usage lines (some with formatting codes), a hint without numbers
+        assertEquals("Stored: 120/1,000, 12% full", StorageRules.diskInfo(List.of("1k Storage Disk", "§7Stored: 120/1,000", "Hold SHIFT for more", "12% full", "Id 3")));
+        assertEquals("", StorageRules.diskInfo(List.of("1k Storage Disk")));
+        assertEquals("", StorageRules.diskInfo(List.of()));
+        java.util.ArrayList<String[]> disks = new java.util.ArrayList<>();
+        disks.add(new String[]{"refinedstorage:1k_storage_disk", "Stored: 120/1,000"});
+        disks.add(null);
+        disks.add(new String[]{"refinedstorage:4k_storage_disk", ""});
+        for (int i = 0; i < 5; i++) disks.add(null);
+        assertEquals("the disk drive at -23 53 170 holds 1k_storage_disk (Stored: 120/1,000), 4k_storage_disk; 6 of 8 slots free",
+                StorageRules.diskReport("-23 53 170", disks));
+        java.util.ArrayList<String[]> none = new java.util.ArrayList<>();
+        for (int i = 0; i < 8; i++) none.add(null);
+        assertEquals("the disk drive at 1 2 3 holds no disks (8 slots free)", StorageRules.diskReport("1 2 3", none));
+    }
 }

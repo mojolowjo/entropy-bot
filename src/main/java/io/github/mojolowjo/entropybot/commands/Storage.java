@@ -605,6 +605,8 @@ public final class Storage {
         String t = text == null ? "" : text.trim();
         java.util.regex.Matcher mv = Pattern.compile("^(take|put)\\b\\s*(.*)$", Pattern.CASE_INSENSITIVE).matcher(t);
         if (mv.find()) return rsMove(p, mv.group(1).toLowerCase(), mv.group(2));
+        java.util.regex.Matcher dk = Pattern.compile("^disks?\\b\\s*(.*)$", Pattern.CASE_INSENSITIVE).matcher(t);
+        if (dk.find()) return rsDisks(p, dk.group(1));
         String grid = core.knowledge.rsGrid();
         if (t.isEmpty()) {
             // a grid is open already: read it now
@@ -626,6 +628,117 @@ public final class Storage {
         Step read = new Step("rsread");
         read.key = spot.fmt();
         return startSeq("reading the RS network at " + spot.label(), List.of(Step.walk(spot.pos(), false), Step.open(spot.pos(), "yes"), read, Step.close()), "always");
+    }
+
+    // ---- Refined Storage disk drives (package F): which disks, and how full when the disk's tooltip says ----
+
+    static final int DRIVE_R = 16, DRIVES_MAX = 4;
+
+    /** "rs disks [x y z|place]": that drive, else every disk drive within 16 of the grid (or of the bot). */
+    String rsDisks(LocalPlayer p, String where) {
+        String w = where == null ? "" : where.trim();
+        if (!w.isEmpty()) {
+            Spot spot = StorageRules.resolveSpot(w, places(), dim());
+            if (spot.err() != null) return spot.err().replace("open", "rs disks");
+            return startSeq("reading the disk drive at " + spot.label(), driveSteps(p, spot.pos()), "always");
+        }
+        int[] me = Jobs.here(p), center = me;
+        String label = "me";
+        String grid = core.knowledge.rsGrid();
+        if (grid != null) {
+            Spot g = StorageRules.resolveSpot(grid, places(), dim());
+            if (g.err() == null) {
+                center = g.pos();
+                label = "the grid at " + g.fmt();
+            }
+        }
+        Step here = new Step("diskshere");
+        here.pos = center;
+        here.why = label;
+        List<Step> steps = new ArrayList<>();
+        // far from the grid: get there first, so the drives' chunks are loaded when it looks for them
+        if (Jobs.distSq(center, me) > DRIVE_R * DRIVE_R) steps.add(Step.walk(center, true));
+        steps.add(here);
+        return startSeq("reading the disk drives near " + label, steps, "always");
+    }
+
+    /** Walk (when out of reach), open as a machine (never noted as a chest), read, close. */
+    static List<Step> driveSteps(LocalPlayer p, int[] pos) {
+        List<Step> steps = new ArrayList<>();
+        if (p == null || p.getEyePosition().distanceTo(new Vec3(pos[0] + 0.5, pos[1] + 0.5, pos[2] + 0.5)) > 4.4) steps.add(Step.walk(pos, false));
+        steps.add(Step.open(pos, "yes"));
+        Step read = new Step("rsdisks");
+        read.pos = pos;
+        steps.add(read);
+        steps.add(Step.close());
+        return steps;
+    }
+
+    /** Disk drives (block ids with "disk_drive") within r (8 up or down) of c, nearest to c first. */
+    static List<int[]> findDrives(int[] c, int r) {
+        Minecraft mc = Minecraft.getInstance();
+        List<int[]> out = new ArrayList<>();
+        BlockPos.MutableBlockPos bp = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -8; dy <= 8; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    bp.set(c[0] + dx, c[1] + dy, c[2] + dz);
+                    if (!mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("disk_drive")) continue;
+                    out.add(new int[]{c[0] + dx, c[1] + dy, c[2] + dz});
+                }
+            }
+        }
+        out.sort((a, b) -> Long.compare(Jobs.distSq(a, c), Jobs.distSq(b, c)));
+        return out;
+    }
+
+    /** Seq step "diskshere": arrived near the grid; find the drives now and read each next. */
+    String disksHereStep(Seq s, Step st, LocalPlayer p) {
+        List<int[]> drives = findDrives(st.pos, DRIVE_R);
+        if (drives.isEmpty()) return "no disk drive within " + DRIVE_R + " blocks of " + st.why + " - rs disks x y z";
+        List<Step> add = new ArrayList<>();
+        for (int i = 0; i < drives.size() && i < DRIVES_MAX; i++) add.addAll(driveSteps(null, drives.get(i)));
+        s.splice(s.idx + 1, add);
+        s.label = "reading " + Math.min(drives.size(), DRIVES_MAX) + " disk drive" + (drives.size() > 1 ? "s" : "") + " near " + st.why;
+        return "next";
+    }
+
+    /** Seq step "rsdisks": the open drive's disk slots ("special"), each disk's tooltip asked once, read 20 ticks later. */
+    String rsDisksStep(Seq s, Step st, LocalPlayer p, long elapsed) {
+        String at = Jobs.fmt(st.pos);
+        if (!Gui.open(p)) return elapsed > 60 ? "the disk drive at " + at + " did not open" : "wait";
+        McMenu m = new McMenu(p);
+        Map<String, List<Integer>> roles = GuiCore.roles(m);
+        List<Integer> slots = roles.get(GuiCore.SPECIAL);
+        if (slots.isEmpty()) {
+            return "the block at " + at + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a disk drive (" + GuiCore.describe(roles, m::slotClass) + ")";
+        }
+        if (s.stage == null) {
+            // RS asks the server for a disk's usage when its tooltip is built; the answer is there a moment later
+            for (int i : slots) if (m.id(i) != null) tooltip(p, i);
+            s.stage = "asked";
+            s.stageTick = now();
+            return "wait";
+        }
+        if (now() - s.stageTick < 20) return "wait";
+        List<String[]> disks = new ArrayList<>();
+        for (int i : slots) disks.add(m.id(i) == null ? null : new String[]{m.id(i), StorageRules.diskInfo(tooltip(p, i))});
+        String r = StorageRules.diskReport(at, disks);
+        s.note = s.note == null ? r : s.note + "; " + r;
+        return "next";
+    }
+
+    /** The tooltip lines of the open menu's slot (plain text), or none. */
+    static List<String> tooltip(LocalPlayer p, int slot) {
+        List<String> out = new ArrayList<>();
+        try {
+            ItemStack st = p.containerMenu.getSlot(slot).getItem();
+            for (net.minecraft.network.chat.Component c : st.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(p.level()), p,
+                    net.minecraft.world.item.TooltipFlag.Default.NORMAL)) out.add(c.getString());
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] tooltip of slot {}: {}", slot, e.toString());
+        }
+        return out;
     }
 
     /** An item id from a name: an exact id, minecraft:<name>, its singular, else an id whose path ends with it (the carried one first). */
