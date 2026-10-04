@@ -52,6 +52,10 @@ public final class Seq {
         public boolean exact;
         Object state;
 
+        /** B7d: a "clear" step's options, and what it did once it ended (see {@link Clearing}). */
+        public io.github.mojolowjo.entropybot.clear.ClearJob.Options clear;
+        public Clearing.Outcome cleared;
+
         public Step(String type) { this.type = type; }
 
         static Step walk(int[] pos, boolean near) {
@@ -225,7 +229,13 @@ public final class Seq {
             case "rsmove": return storage.rsMoveStep(this, st, p, elapsed);
             case "diskshere": return storage.disksHereStep(this, st, p);           // package F: the RS disk drives
             case "rsdisks": return storage.rsDisksStep(this, st, p, elapsed);
-            default: return storage.crafting.step(this, st, p, elapsed);       // B7c: craft, smelt, farm, compact
+            case "clear":
+            case "placeblock": return Clearing.step(this, st, p, elapsed);       // B7d D1: dig, build, place
+            default:
+                if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2
+                if (st.type.startsWith("cave") || st.type.startsWith("explore") || st.type.startsWith("mineore"))
+                    return CaveSteps.step(this, st, p, elapsed);                                            // B7d D3
+                return storage.crafting.step(this, st, p, elapsed);       // B7c: craft, smelt, farm, compact
         }
     }
 
