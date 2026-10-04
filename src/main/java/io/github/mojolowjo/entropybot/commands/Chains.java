@@ -449,13 +449,13 @@ public final class Chains {
             return "saved routine " + name + ": " + Limits.stepsText(Texts.splitChain(body)) + " (PM \"" + name + "\" to run it)";
         }
         if (sub.equals("delete") || sub.equals("remove") || sub.equals("forget")) {
-            if (!routines.has(name)) return "I have no routine called " + name;
+            if (!routines.has(name)) return "I have no routine called " + name + " - next: routines";
             routines.remove(name);
             env.saved();
             return "deleted routine " + name;
         }
         if (sub.equals("show")) {
-            return routines.has(name) ? name + ": " + String.join(" > ", Texts.splitChain(routines.get(name).getAsString())) : "I have no routine called " + name;
+            return routines.has(name) ? name + ": " + String.join(" > ", Texts.splitChain(routines.get(name).getAsString())) : "I have no routine called " + name + " - next: routines";
         }
         List<String> list = new ArrayList<>(routines.keySet());
         return list.isEmpty() ? "no routines yet - routine save <name> <command> then <command> ..." : "routines: " + String.join(", ", list) + " (routine show <name>)";

@@ -76,7 +76,7 @@ class StripRulesTest {
         assertEquals(StripRules.Action.FAIL, StripRules.recover("tool", "corridor", 2), "it had the pickaxe, and the block still stopped it");
         assertEquals("fetched an iron pickaxe for the deepslate_redstone_ore at 100 40 -5", StripTexts.toolNote("fetched", "iron", b.text()));
         assertEquals("the mine corridor is blocked - blocked:tool deepslate_redstone_ore at 100 40 -5 needs iron - I have no iron pickaxe, none in my chests "
-                + "and I couldn't make one (no recipe)", StripTexts.noTool(b.text(), "iron", "error: no recipe"));
+                + "and I couldn't make one (no recipe) - next: get iron_pickaxe 1 (or craft iron_pickaxe)", StripTexts.noTool(b.text(), "iron", "error: no recipe"));
     }
 
     @Test

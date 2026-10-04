@@ -838,7 +838,7 @@ final class Mining {
         Object o = prepareMine(p, st.text);
         if (o instanceof String e) return e.replaceFirst("^error: ", "");
         MineRun r = (MineRun) o;
-        if (r.need != null && pickSlot(p, r) < 0) return "I have no pickaxe that can mine " + sid(r);
+        if (r.need != null && pickSlot(p, r) < 0) return Hints.next("I have no pickaxe that can mine " + sid(r), Hints.pickaxeFix(r.need));
         int[] me = Jobs.here(p);
         r.toolNote = old.toolNote;
         r.anchor = me;

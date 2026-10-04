@@ -1081,7 +1081,8 @@ final class Crafting {
                     addNote(s, "my inventory is full - left " + j.remaining() + " " + CraftPlanner.shortId(j.item) + " in the furnace at " + j.where());
                     return "next";
                 }
-                return "my inventory is full (took " + ts.took + " of " + st.n + " " + CraftPlanner.shortId(j.item) + " from the furnace at " + j.where() + ")";
+                return Hints.next("my inventory is full (took " + ts.took + " of " + st.n + " " + CraftPlanner.shortId(j.item) + " from the furnace at " + j.where() + ")",
+                        "deposit, then smelt collect");
             }
         }
         if (!Gui.open(p)) {

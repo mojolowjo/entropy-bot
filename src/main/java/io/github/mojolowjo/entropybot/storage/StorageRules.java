@@ -168,7 +168,7 @@ public final class StorageRules {
         for (String id : items.keySet()) labels.add(GuiCore.shortId(id));
         if (labels.isEmpty()) return new Plan(null, null, "error: nothing to deposit" + (text != null && !text.isEmpty() ? " matching " + text : ""));
         String label = "putting away " + String.join(", ", labels.subList(0, Math.min(5, labels.size()))) + (labels.size() > 5 ? " and " + (labels.size() - 5) + " more" : "");
-        if (chests.isEmpty()) return new Plan(null, null, "error: I don't know any chests near the base - PM \"scan\" there first");
+        if (chests.isEmpty()) return new Plan(null, null, "error: I don't know any chests near the base - next: scan base");
         Chest junk = null;
         int junkN = -1;
         for (Chest c : chests) {
@@ -216,7 +216,7 @@ public final class StorageRules {
         if (m.find()) return new Spot(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)), dim, null, null);
         if (!a.matches("^[a-z0-9_-]{1,24}$")) return err("usage: open x y z | open <place name>");
         JsonObject p = places.get(a);
-        if (p == null) return err("error: I have no place called " + a + " (see \"places\")");
+        if (p == null) return err("error: I have no place called " + a + " - next: " + io.github.mojolowjo.entropybot.commands.Hints.placeFix(a));
         String pd = p.has("dim") && !p.get("dim").isJsonNull() ? p.get("dim").getAsString() : null;
         if (pd != null && !pd.equals(dim)) return err("error: " + a + " is in " + pd);
         return new Spot(p.get("x").getAsInt(), p.get("y").getAsInt(), p.get("z").getAsInt(), dim, a, null);

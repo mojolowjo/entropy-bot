@@ -53,7 +53,7 @@ class StorageRulesTest {
         assertEquals("1 0 0", p.stops().get(0).chest().key(), "nearest first");
         assertArrayEquals(new int[]{5, 0, 0}, p.stops().get(0).fallback(), "a full chest spills into the junk chest");
         assertNull(p.stops().get(1).fallback(), "the junk chest has no fallback");
-        assertEquals("error: I don't know any chests near the base - PM \"scan\" there first", StorageRules.depositPlan(items, List.of(), new int[3], "").err());
+        assertEquals("error: I don't know any chests near the base - next: scan base", StorageRules.depositPlan(items, List.of(), new int[3], "").err());
         assertEquals("error: nothing to deposit matching gold", StorageRules.depositPlan(Map.of(), List.of(junk), new int[3], "gold").err());
     }
 
@@ -65,7 +65,7 @@ class StorageRulesTest {
         assertEquals("1 2 3", StorageRules.resolveSpot("bulk", places, "minecraft:overworld").fmt());
         assertEquals("bulk", StorageRules.resolveSpot("bulk", places, "minecraft:overworld").label());
         assertEquals("-4 60 7", StorageRules.resolveSpot("-4 60 7", places, "minecraft:overworld").label());
-        assertEquals("error: I have no place called nope (see \"places\")", StorageRules.resolveSpot("nope", places, "minecraft:overworld").err());
+        assertEquals("error: I have no place called nope - next: places", StorageRules.resolveSpot("nope", places, "minecraft:overworld").err());
         assertEquals("error: hell is in minecraft:the_nether", StorageRules.resolveSpot("hell", places, "minecraft:overworld").err());
         assertEquals("usage: open x y z | open <place name>", StorageRules.resolveSpot("1 2", places, "minecraft:overworld").err());
         assertArrayEquals(new String[]{"", "12"}, StorageRules.scanArgs("12"));

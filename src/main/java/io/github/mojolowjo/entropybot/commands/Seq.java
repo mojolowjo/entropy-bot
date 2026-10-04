@@ -378,7 +378,7 @@ public final class Seq {
             if (held < n) return where + " had only " + held + " of " + GuiCore.shortId(id) + " (my notes were out of date - PM scan)";
             GuiCore.Result r = GuiCore.take(m, id, n, names, roles);
             opWant = new Object[]{id, n, true};
-            if (r.moved() < n) return r.stuck() ? "my inventory is full (took " + r.moved() + " of " + n + " " + GuiCore.shortId(id) + ")" : "couldn't take " + n + " " + GuiCore.shortId(id) + " from " + where;
+            if (r.moved() < n) return r.stuck() ? Hints.next("my inventory is full (took " + r.moved() + " of " + n + " " + GuiCore.shortId(id) + ")", Hints.DEPOSIT) : "couldn't take " + n + " " + GuiCore.shortId(id) + " from " + where;
             return null;
         }
         if (kind.equals("put") || kind.equals("topup")) {

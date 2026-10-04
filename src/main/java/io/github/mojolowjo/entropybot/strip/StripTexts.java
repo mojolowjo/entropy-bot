@@ -94,7 +94,8 @@ public final class StripTexts {
     /** toolcheck: no pickaxe to be had. */
     public static String noTool(String why, String need, String craftErr) {
         return "the mine corridor is blocked - " + why + " - I have no " + need + " pickaxe, none in my chests and I couldn't make one"
-                + (craftErr != null ? " (" + craftErr.replaceFirst("^error: ", "") + ")" : "");
+                + (craftErr != null ? " (" + craftErr.replaceFirst("^error: ", "") + ")" : "")
+                + " - next: " + io.github.mojolowjo.entropybot.commands.Hints.pickaxeFix(need);
     }
 
     /** A turn the run made itself, as the run's note ("the corridor was blocked (...): mine turned west at ... - the next run digs there"). */
