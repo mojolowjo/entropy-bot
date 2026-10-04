@@ -40,6 +40,19 @@ public final class GuardCore {
         boolean hasBlockEntity();
         boolean isProtectedBlock();
 
+        /** Water plan: the cell holds only air or water (what a seal lease may fill); true when not known. */
+        default boolean airOrWater() { return true; }
+
+        /** For a placement: the cell holds only air or water, or not. */
+        static BlockInfo placing(boolean airOrWater) {
+            return new BlockInfo() {
+                public boolean known() { return true; }
+                public boolean hasBlockEntity() { return false; }
+                public boolean isProtectedBlock() { return false; }
+                public boolean airOrWater() { return airOrWater; }
+            };
+        }
+
         BlockInfo UNKNOWN = of(false, false, false);
         BlockInfo PLAIN = of(true, false, false);
 
@@ -120,6 +133,43 @@ public final class GuardCore {
         return id;
     }
 
+    /**
+     * Water plan: a seal lease for one cell just outside the areas (a dig sealing water off at its edge: the ring around a
+     * tunnel exactly as wide as its area). Granted only within one block of a break lease this owner holds (which lies
+     * inside an area), never in a protect box or a denied dimension. A placement it covers may only fill water or air
+     * ({@link #checkUnlogged} with {@link BlockInfo#airOrWater}). Returns the id, or "error: ...".
+     */
+    public synchronized String sealLease(String owner, String task, Box cell) {
+        if (owner == null || owner.isEmpty()) return "error: no token";
+        if (DENIED_DIMS.contains(cell.dim)) return "error: no placing in " + cell.dim;
+        if (cell.volume() != 1) return "error: a seal lease is one block";
+        int x = cell.x1, y = cell.y1, z = cell.z1;
+        if (policy.protectAt(cell.dim, x, y, z) != null) return "error: " + x + " " + y + " " + z + " is in a protect box";
+        boolean next = false;
+        for (Lease l : leases.values()) {
+            if (!l.owner.equals(owner) || l.place || l.seal || !l.box.dim.equals(cell.dim)) continue;
+            Box b = l.box;
+            if (x >= b.x1 - 1 && x <= b.x2 + 1 && y >= b.y1 - 1 && y <= b.y2 + 1 && z >= b.z1 - 1 && z <= b.z2 + 1) {
+                next = true;
+                break;
+            }
+        }
+        if (!next) return "error: " + x + " " + y + " " + z + " is not within a block of my dig";
+        String id = "L" + (nextId++);
+        Map<String, Lease> m = new LinkedHashMap<>(leases);
+        m.put(id, new Lease(id, owner, task, cell, true, false, tick, true));
+        leases = Collections.unmodifiableMap(m);
+        return id;
+    }
+
+    /** A placement at x y z is allowed only by a seal lease (it lies outside every area): it may only fill water or air. */
+    public boolean sealOnly(String dim, int x, int y, int z) {
+        Policy p = policy;
+        if (p.areaAt(dim, x, y, z) != null) return false;
+        for (Lease l : leases.values()) if (l.seal && l.box.contains(dim, x, y, z)) return true;
+        return false;
+    }
+
     public synchronized void release(String id) {
         if (id == null || !leases.containsKey(id)) return;
         Map<String, Lease> m = new LinkedHashMap<>(leases);
@@ -175,7 +225,11 @@ public final class GuardCore {
             if (pr != null) return Verdict.floor("protected (" + (pr.name == null ? "box" : pr.name) + ")");
         }
         if (p.areas.isEmpty()) return Verdict.rule("no areas set", m);
-        if (p.areaAt(dim, x, y, z) == null) return Verdict.rule("outside every area", m);
+        if (p.areaAt(dim, x, y, z) == null) {
+            // water plan: a seal lease lets a block in just outside the areas (the floor above still holds)
+            if (place && sealOnly(dim, x, y, z)) return Verdict.OK;
+            return Verdict.rule("outside every area", m);
+        }
         if (go) return Verdict.OK;
         Lease l = leaseAt(dim, x, y, z, place);
         if (l == null) return Verdict.rule(place ? "no place lease here" : "no lease here", m);
@@ -198,6 +252,9 @@ public final class GuardCore {
                 Lease f = leaseAt(dim, x, y, z, false);
                 if (f == null || !f.force) return Verdict.floor("built block");
             }
+        }
+        if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {
+            return Verdict.floor("a seal only fills water or air");
         }
         return checkBoxes(dim, x, y, z, action);
     }

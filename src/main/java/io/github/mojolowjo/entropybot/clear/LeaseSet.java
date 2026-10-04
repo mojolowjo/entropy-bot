@@ -81,6 +81,40 @@ public final class LeaseSet {
         return r;
     }
 
+    /**
+     * Water plan: the place lease for one block that seals water off at the dig's edge. Inside an area it is the plain cell
+     * lease; just outside (the ring around a tunnel as wide as its area) a seal lease ({@link GuardCore#sealLease}), next
+     * to a break lease of the part of {@code dig} beside the cell (taken here, so it holds while the placement runs). A
+     * seal only fills water or air (the guard checks at the click). Null when fine, else the error.
+     */
+    public String sealLease(int x, int y, int z, ClearBox dig, String task) {
+        ClearBox cell = new ClearBox(x, y, z, x, y, z);
+        String key = cell.toString();
+        if (placeKeys.contains(key)) return null;
+        String r = takeQuiet(task, cell, true, false);
+        if (r == null) {
+            placeKeys.add(key);
+            return null;
+        }
+        ClearBox g = dig.grow(1);
+        if (!g.contains(x, y, z)) return r;
+        ClearBox near = new ClearBox(Math.max(dig.x1(), x - 1), Math.max(dig.y1(), y - 1), Math.max(dig.z1(), z - 1),
+                Math.min(dig.x2(), x + 1), Math.min(dig.y2(), y + 1), Math.min(dig.z2(), z + 1));
+        String b = take(task + " (next to the seal)", near, false, false);
+        if (b != null) return b;
+        String id = core.sealLease(owner, task, box(task, cell));
+        if (id.startsWith("error")) {
+            String why = id.replaceFirst("^error: ", "");
+            if (core.mode() == GuardCore.Mode.STRICT) return "error: the guard refused: " + why;
+            log.accept("seal lease refused (log mode): " + why + " (" + task + ")");
+            return null;
+        }
+        ids.add(id);
+        placeKeys.add(key);
+        log.accept("lease " + id + " for " + task + ": " + cell + " (seal)");
+        return null;
+    }
+
     /** Every lease still held (true with none taken, or refused in log mode). */
     public boolean alive() {
         return core.leases().keySet().containsAll(ids);

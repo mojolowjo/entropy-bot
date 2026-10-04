@@ -14,9 +14,19 @@ public final class Lease {
     public final boolean place;
     public final boolean force;
     public final long createdTick;
+    /**
+     * Water plan: a one-cell place lease just outside the areas, within one block of a break lease of the same owner
+     * (a dig sealing water off at its edge). It lets a block go only into water or air ({@link GuardCore#sealLease}).
+     */
+    public final boolean seal;
     volatile long lastHeartbeat;
 
     Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick) {
+        this(id, owner, task, box, place, force, tick, false);
+    }
+
+    Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick, boolean seal) {
+        this.seal = seal;
         this.id = id;
         this.owner = owner;
         this.task = task;
@@ -34,6 +44,7 @@ public final class Lease {
         o.add("box", box.toJson());
         o.addProperty("place", place);
         if (force) o.addProperty("force", true);
+        if (seal) o.addProperty("seal", true);
         o.addProperty("since", createdTick);
         return o;
     }
