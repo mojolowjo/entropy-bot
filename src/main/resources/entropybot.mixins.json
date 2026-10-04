@@ -8,7 +8,8 @@
     "GuardMixinGameMode",
     "GuardMixinBlockItem",
     "GuardMixinCalculationContext",
-    "FarmlandMixinPrecomputedData"
+    "FarmlandMixinPrecomputedData",
+    "RecorderMixinClientLevel"
   ],
   "injectors": {
     "defaultRequire": 1

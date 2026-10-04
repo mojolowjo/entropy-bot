@@ -91,6 +91,7 @@ public final class Core {
                 }, "entropybot-mine-notes"));
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
+                recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
