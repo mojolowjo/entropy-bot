@@ -161,6 +161,11 @@ public final class CraftTexts {
         }
         Map<String, Integer> s = new LinkedHashMap<>();
         for (Target t : targets.list()) s.put(t.id(), t.want());
+        // package H: each supply is checked at every restock and autominer decision
+        if (s.size() > io.github.mojolowjo.entropybot.memory.Limits.SUPPLIES) {
+            err[0] = "error: that is " + s.size() + " items, I keep at most " + io.github.mojolowjo.entropybot.memory.Limits.SUPPLIES + " supplies";
+            return null;
+        }
         return s;
     }
 

@@ -43,6 +43,12 @@ public final class Knowledge {
         files = f;
         StringBuilder sb = new StringBuilder();
         sb.append(loadOne(PLACES, places)).append("; ").append(loadOne(CHESTS, chests)).append("; ").append(loadRs());
+        int pruned = prune(null);
+        if (pruned > 0) {
+            sb.append("; dropped the ").append(pruned).append(" oldest notes (over the limit)");
+            pruneNote = null;                         // said in the load line
+            if (dirtySince < 0) dirtySince = 0;
+        }
         version = 1;
         return sb.toString();
     }
@@ -122,8 +128,41 @@ public final class Knowledge {
     public synchronized long put(String json, long now) {
         JsonObject o = JsonParser.parseString(json).getAsJsonObject();
         boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | applyGrid(o, false);
-        if (changed) touch(now);
+        if (changed) {
+            prune(null);
+            touch(now);
+        }
         return version;
+    }
+
+    /**
+     * Package H: past {@link Limits#CHESTS} chest notes (or {@link Limits#RS_READINGS} readings) the oldest seen go
+     * (never an untrusted chest, never {@code keep}, the one just written); the grid "rs" uses stays. The bridge prunes
+     * memory.json the same way. Returns how many went.
+     */
+    private int prune(String keep) {
+        int c = 0, r = 0;
+        // chest notes near a marked place (the base's, the mine's) stay too (Limits.NEAR_PLACE)
+        for (String k : Limits.oldest(chests, Limits.CHESTS, keep, places)) {
+            chests.remove(k);
+            c++;
+        }
+        for (String k : Limits.oldest(rs, Limits.RS_READINGS, rsGrid)) {
+            rs.remove(k);
+            r++;
+        }
+        if (c + r > 0) pruneNote = "dropped the oldest " + (c > 0 ? c + " chest note" + (c == 1 ? "" : "s") : "")
+                + (c > 0 && r > 0 ? " and " : "") + (r > 0 ? r + " RS reading" + (r == 1 ? "" : "s") : "") + " (over the limit)";
+        return c + r;
+    }
+
+    private String pruneNote;
+
+    /** What the last pruning dropped, once (Core logs it), or null. */
+    public synchronized String takePruneNote() {
+        String s = pruneNote;
+        pruneNote = null;
+        return s;
     }
 
     /** "rsGrid": "x y z" | null; onlyIfNone: a merge keeps the mod's own grid. */
@@ -184,7 +223,10 @@ public final class Knowledge {
             }
         }
         changed |= applyGrid(o, true);
-        if (changed) touch(now);
+        if (changed) {
+            prune(null);
+            touch(now);
+        }
         return version;
     }
 
@@ -196,6 +238,7 @@ public final class Knowledge {
     public synchronized void noteChest(String key, JsonObject note, long now) {
         if (note.equals(chests.get(key))) return;
         chests.put(key, note.deepCopy());
+        prune(key);
         touch(now);
     }
 
@@ -209,7 +252,10 @@ public final class Knowledge {
         boolean changed = !reading.equals(rs.get(key)) || !key.equals(rsGrid);
         rs.put(key, reading.deepCopy());
         rsGrid = key;
-        if (changed) touch(now);
+        if (changed) {
+            prune(null);
+            touch(now);
+        }
     }
 
     public synchronized Map<String, JsonObject> rs() { return copy(rs); }

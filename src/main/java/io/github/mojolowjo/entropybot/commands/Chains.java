@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
+import io.github.mojolowjo.entropybot.memory.Limits;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -135,6 +136,8 @@ public final class Chains {
     public String startChain(String from, String name, String text, long rounds) {
         List<String> steps = expandSteps(Texts.splitChain(text), 0);
         if (steps.isEmpty()) return "error: nothing to do";
+        String tooLong = stepsRefusal(steps.size());
+        if (tooLong != null) return tooLong;
         Chain c = new Chain();
         c.name = name;
         c.text = text;
@@ -145,8 +148,21 @@ public final class Chains {
         c.roundStart = env.tick();
         chain = c;
         saveRun();
-        return "started: " + name + " - " + String.join(" > ", steps)
+        return "started: " + name + " - " + Limits.stepsText(steps)
                 + (rounds > 1 ? (forever(rounds) ? " (repeating until \"stop\")" : " (" + rounds + " times)") : "");
+    }
+
+    /** Package H: a chain (routines expanded) of more than {@link Limits#CHAIN_STEPS} steps is refused. */
+    static String stepsRefusal(int steps) {
+        return steps <= Limits.CHAIN_STEPS ? null
+                : "error: that is " + steps + " steps with the routines in it, the most I run in one chain is " + Limits.CHAIN_STEPS
+                + " - make it shorter (\"repeat <n> <routine>\" repeats one without the copies)";
+    }
+
+    /** Package H: a routine or rule body longer than {@link Limits#ROUTINE_TEXT} characters, or too many steps, is refused. */
+    String bodyRefusal(String body) {
+        if (body.length() > Limits.ROUTINE_TEXT) return "error: that is " + body.length() + " characters, the most I keep for one is " + Limits.ROUTINE_TEXT;
+        return stepsRefusal(expandSteps(Texts.splitChain(body), 0).size());
     }
 
     void endChain(String msg) {
@@ -206,7 +222,12 @@ public final class Chains {
         String roundsText = r.has("rounds") ? r.get("rounds").getAsString() : "1";
         long rounds = "forever".equals(roundsText) ? FOREVER : Math.max(1, parseLong(roundsText, 1));
         String s = startChain(str(r, "from", env.owner()), name, str(r, "text", ""), rounds);
-        if (!s.startsWith("started") || chain == null) return;
+        if (!s.startsWith("started") || chain == null) {
+            // package H: a run the step cap refuses now (a routine in it grew) is dropped, and the owner hears why
+            env.whisper(str(r, "from", env.owner()), "I won't carry on with \"" + name + "\" after the restart: " + s.replaceFirst("^error: ", ""));
+            clearRun();
+            return;
+        }
         chain.round = Math.max(1, num(r, "round", 1));
         chain.idx = (int) Math.min(Math.max(num(r, "idx", 0), 0), chain.steps.size());
         saveRun();
@@ -330,9 +351,13 @@ public final class Chains {
             if (Texts.isBuiltin(name)) return "error: \"" + name + "\" is already a command - pick another name";
             String body = String.join(" ", p.subList(Math.min(2, p.size()), p.size()));
             if (Texts.splitChain(body).isEmpty()) return "usage: routine save " + name + " <command> then <command> ...";
+            // package H: at most Limits.ROUTINES routines, each at most ROUTINE_TEXT characters and CHAIN_STEPS steps
+            String refused = Limits.full(routines.has(name), routines.size(), Limits.ROUTINES, "routines", "delete one first (routine delete <name>; \"routines\" lists them)");
+            if (refused == null) refused = bodyRefusal(body);
+            if (refused != null) return refused;
             routines.addProperty(name, body);
             env.saved();
-            return "saved routine " + name + ": " + String.join(" > ", Texts.splitChain(body)) + " (PM \"" + name + "\" to run it)";
+            return "saved routine " + name + ": " + Limits.stepsText(Texts.splitChain(body)) + " (PM \"" + name + "\" to run it)";
         }
         if (sub.equals("delete") || sub.equals("remove") || sub.equals("forget")) {
             if (!routines.has(name)) return "I have no routine called " + name;
@@ -506,6 +531,10 @@ public final class Chains {
         if (m == null) return "usage: rule every <n>m|h do <commands> | rule at HH:MM do ... | rule when full do ... | rule when idle <n>m do ... | rules | rule delete <n>";
         String kind = m.group(1).toLowerCase(), arg, text = m.group(4);
         if (expandSteps(Texts.splitChain(text), 0).isEmpty()) return "error: nothing to do";
+        // package H: at most Limits.RULES rules ("rules" lists each one whole)
+        String refused = Limits.full(false, list.size(), Limits.RULES, "rules", "delete one first (rule delete <n>; \"rules\" lists them)");
+        if (refused == null) refused = bodyRefusal(text);
+        if (refused != null) return refused;
         if (kind.equals("every")) arg = m.group(2) + m.group(3).toLowerCase();
         else if (kind.equals("at")) arg = ("0" + m.group(2)).substring(("0" + m.group(2)).length() - 2) + ":" + m.group(3);
         else arg = t.toLowerCase().contains("idle") ? "idle " + m.group(2) + "m" : "full";
@@ -554,7 +583,17 @@ public final class Chains {
             r.addProperty("last", now);
             env.saved();
             env.log("rule #" + (i + 1) + " (" + kind + " " + arg + ") -> " + str(r, "text", ""));
-            startChain(env.owner(), "rule #" + (i + 1), str(r, "text", ""), 1);
+            String s = startChain(env.owner(), "rule #" + (i + 1), str(r, "text", ""), 1);
+            // package H: a rule whose chain is refused (too many steps since a routine in it grew) says so, once
+            if (!s.startsWith("started")) {
+                env.log("rule #" + (i + 1) + " refused: " + s);
+                if (!s.equals(str(r, "refused", ""))) {
+                    r.addProperty("refused", s);
+                    env.whisper(env.owner(), "rule #" + (i + 1) + " (" + kind + " " + arg + ") didn't start: " + s.replaceFirst("^error: ", ""));
+                }
+            } else if (r.has("refused")) {
+                r.remove("refused");
+            }
             idleSince = -1;
             return;
         }
@@ -650,7 +689,11 @@ public final class Chains {
         boolean on = a != null && a.has("on") && a.get("on").getAsBoolean();
         if (log.isEmpty()) return "no decisions yet" + (on ? "" : " (autominer is off)");
         List<String> out = new ArrayList<>();
-        for (int i = Math.max(0, log.size() - 5); i < log.size() - 1; i++) out.add(decisionText(log.get(i).getAsJsonObject(), env.now()));
+        // package H: the older decisions shortened (a 1000-character result each made "why" 30 whispers); the latest whole
+        for (int i = Math.max(0, log.size() - 5); i < log.size() - 1; i++) {
+            String d = decisionText(log.get(i).getAsJsonObject(), env.now());
+            out.add(d.length() > Limits.WHY_OLDER ? d.substring(0, Limits.WHY_OLDER) + "..." : d);
+        }
         return (out.isEmpty() ? "" : String.join(" | ", out) + "\n") + "latest: " + decisionText(log.get(log.size() - 1).getAsJsonObject(), env.now());
     }
 

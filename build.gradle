@@ -116,7 +116,10 @@ dependencies {
 }
 
 tasks.named('test', Test) {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // package H: the limit measurements (LimitsStressTest, seconds each) run only with -Pstress
+        if (!project.hasProperty('stress')) excludeTags 'stress'
+    }
     testLogging {
         events 'passed', 'skipped', 'failed'
         exceptionFormat 'full'

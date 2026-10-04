@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import io.github.mojolowjo.entropybot.memory.Limits;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -153,6 +154,11 @@ public final class PolicyCommands {
      * @param here  the owner's spot when the bot can see them, else the bot's ("here", as "mark" does)
      * @param me    the bot's spot
      */
+    /** Package H: a new area past {@link Limits#AREAS} is refused (i = the index of the one replaced, or -1). */
+    static String areasFull(JsonArray areas, int i) {
+        return Limits.full(i >= 0, areas.size(), Limits.AREAS, "areas", "remove one first (area remove <name> confirm) or grow one (area grow <name> <n>)");
+    }
+
     public String command(String verb, String rest, boolean isOwner, String owner, Pos here, Pos me) {
         List<String> parts = Texts.words(rest);
         String sub = parts.isEmpty() ? "" : parts.get(0).toLowerCase();
@@ -190,6 +196,8 @@ public final class PolicyCommands {
                     return usage;
                 }
                 int i = findBox(areas, name);
+                String full = areasFull(areas, i);
+                if (full != null) return full;
                 if (i >= 0) areas.set(i, b);
                 else areas.add(b);
                 return changed("ok: area " + name + (i >= 0 ? " replaced" : " added") + " (" + boxText(b) + ")", false);
@@ -211,6 +219,8 @@ public final class PolicyCommands {
                 if (c.has("dim") && !c.get("dim").getAsString().equals(here.dim())) return "corner 1 is in " + c.get("dim").getAsString() + " - PM \"area corner1\" again here";
                 JsonObject b = makeBox(name, here.dim(), n(c, "x"), n(c, "z"), here.x(), here.z(), null, null);
                 int i = findBox(areas, name);
+                String full = areasFull(areas, i);
+                if (full != null) return full;
                 if (i >= 0) areas.set(i, b);
                 else areas.add(b);
                 p.add("corner1", JsonNull.INSTANCE);
@@ -261,6 +271,9 @@ public final class PolicyCommands {
                 return "usage: protect <name> here <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2";
             }
             int i = findBox(protect, name);
+            // package H: Baritone asks the guard about every protect box for every path node
+            String full = Limits.full(i >= 0, protect.size(), Limits.PROTECT, "protect boxes", "unprotect one first (unprotect <name> confirm)");
+            if (full != null) return full;
             if (i >= 0) protect.set(i, b);
             else protect.add(b);
             return changed("ok: protect " + name + (i >= 0 ? " replaced" : " added") + " (" + boxText(b) + ")", false);

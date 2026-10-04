@@ -63,7 +63,7 @@ public final class Commands implements Chains.Env {
     private BotFiles bridgeFiles;
     private boolean ready;
     private final ArrayDeque<ChatParse.Pm> pmQueue = new ArrayDeque<>();
-    private final ArrayDeque<String[]> outbox = new ArrayDeque<>();
+    private final Outbox outbox = new Outbox();
     private final Set<String> refused = new HashSet<>();
     private String lastCmdId, lastResult, seenCmdId;
     private JsonObject restartOk;
@@ -469,16 +469,12 @@ public final class Commands implements Chains.Env {
     }
 
     public void whisper(String to, String text) {
-        synchronized (outbox) {
-            for (String part : Texts.whisperParts(text)) outbox.add(new String[]{to, part});
-        }
+        // package H: the caps live in Outbox (one answer, the queue; one-line messages to the owner still get in)
+        for (String part : outbox.add(to, text, owner())) LOG.info("[entropybot] whisper dropped (outbox full) to {}: {}", to, part);
     }
 
     private void sendOutbox(LocalPlayer player) {
-        String[] m;
-        synchronized (outbox) {
-            m = outbox.poll();
-        }
+        String[] m = outbox.poll();
         if (m != null) player.connection.sendCommand("msg " + m[0] + " " + m[1]);
     }
 
@@ -730,6 +726,10 @@ public final class Commands implements Chains.Env {
         if (verb.equals("mark") || verb.equals("setbase")) {
             String name = verb.equals("setbase") ? "base" : (parts.isEmpty() ? "" : parts.get(0).toLowerCase());
             if (!name.matches("^[a-z0-9_-]{1,24}$")) return "usage: mark <name> [x y z]";
+            // package H: at most Limits.PLACES named places (a known name may always move)
+            String full = io.github.mojolowjo.entropybot.memory.Limits.full(places.containsKey(name), places.size(), io.github.mojolowjo.entropybot.memory.Limits.PLACES,
+                    "places", "forget one first (forget <name>; \"places\" lists them)");
+            if (full != null) return full;
             // a direction word makes any place a mine ("mark deepmine north": "mine strip ... at deepmine")
             List<String> args = new ArrayList<>();
             String dirWord = null;
@@ -960,6 +960,10 @@ public final class Commands implements Chains.Env {
         if (!rest.matches("^\\w{3,16}$")) return "usage: " + verb + " <player name>";
         JsonArray kept = new JsonArray();
         for (String a : list) if (!a.equalsIgnoreCase(rest)) kept.add(a);
+        // package H: the allow list holds at most Limits.ALLOWED players
+        String full = verb.equals("allow") ? io.github.mojolowjo.entropybot.memory.Limits.full(kept.size() < list.size(), kept.size(),
+                io.github.mojolowjo.entropybot.memory.Limits.ALLOWED, "players on my allow list", "deny one first (\"allowed\" lists them)") : null;
+        if (full != null) return full;
         if (verb.equals("allow")) kept.add(rest);
         pmStore.data().add("allowed", kept);
         pmStore.changed(core.tick());
@@ -1390,9 +1394,7 @@ public final class Commands implements Chains.Env {
         synchronized (pmQueue) {
             pm.addProperty("queued", pmQueue.size());
         }
-        synchronized (outbox) {
-            pm.addProperty("outbox", outbox.size());
-        }
+        pm.addProperty("outbox", outbox.size());
         pm.addProperty("bridge", bridge.present(tick));
         s.add("pm", pm);
         s.add("restartOk", restartOk == null ? JsonNull.INSTANCE : restartOk);
