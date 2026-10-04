@@ -106,11 +106,32 @@ public final class Reflexes {
     // dimension
     private String lastDim, deniedDim;
     private long deniedAt;
+    // the creeper duel (B7e C): kill a lone creeper with hit and back off instead of running
+    private final CreeperDuel duel;
+    private long forceFleeUntil;
+    private final List<String> whispers = new java.util.ArrayList<>();
 
     public Reflexes(EventRing events, EngineProcess engine, Knowledge knowledge) {
         this.events = events;
         this.engine = engine;
         this.knowledge = knowledge;
+        this.duel = new CreeperDuel(events);
+    }
+
+    /** "defend creepers flee|melee|bow" (commands.json "creepers"). */
+    public void setCreeperMode(CreeperRules.Mode m) {
+        duel.setMode(m);
+        if (m == CreeperRules.Mode.FLEE && duel.active() && reflex == Reflex.FIGHTING) settle("creepers: flee");
+    }
+
+    public CreeperRules.Mode creeperMode() { return duel.mode(); }
+
+    /** What the reflexes want whispered to the owner (an explosion near the bot), taken once. */
+    public synchronized List<String> takeWhispers() {
+        if (whispers.isEmpty()) return List.of();
+        List<String> out = List.copyOf(whispers);
+        whispers.clear();
+        return out;
     }
 
     public boolean hold() { return reflex != Reflex.NONE; }
@@ -162,6 +183,8 @@ public final class Reflexes {
             o.addProperty("dist", Math.round(targetDist * 10) / 10.0);
         }
         o.addProperty("urgent", urgent);
+        o.addProperty("creepers", duel.mode().word());
+        if (duel.active()) o.addProperty("duel", duel.describe());
         o.addProperty("noFood", noFood);
         if (deniedDim != null) o.addProperty("deniedDim", deniedDim);
         o.addProperty("engine", engine.disabled() ? "off" : engine.mode().name().toLowerCase());
@@ -172,7 +195,7 @@ public final class Reflexes {
         return switch (reflex) {
             case NONE -> "none";
             case EATING -> "eating";
-            case FIGHTING -> "fighting " + target;
+            case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
             case FLEEING -> "avoiding a " + target;
             case RETREATING -> "retreating from " + target + " (health " + Math.round(lastHealth) + ")";
             case FETCHING -> "fetching food" + (fetchTargets != null && fetchIdx < fetchTargets.size() ? " from " + fetchTargets.get(fetchIdx).key() : "");
@@ -213,8 +236,41 @@ public final class Reflexes {
             retreat(mc, p, hurt);
             return;
         }
+        if (duel.active()) {
+            CreeperDuel.End end = duel.tick(mc, p, now, hurt);
+            if (end == null) {
+                target = "creeper";
+                targetDist = duel.dist();
+                urgent = false;         // the job is held, not stopped: it carries on after the duel
+                return;
+            }
+            duelEnded(end);
+            if (!end.flee()) {
+                settle(end.text());
+                return;
+            }
+            forceFleeUntil = now + 60;  // run as before, even from beyond CREEPER_RUN
+            fleeUntil = 0;
+        }
         Threat t = defence ? nearestThreat(mc, p, hurt) : null;
-        if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && !hurt) t = null;   // keep an eye on it, no more
+        // a lone creeper and a sword: take it on (CreeperDuel), else run as before
+        if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil && duel.mode() != CreeperRules.Mode.FLEE
+                && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
+            if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
+            if (reflex == Reflex.FETCHING) {
+                fetchCooldownUntil = now + 200;
+                settle("interrupted by a creeper");
+            }
+            duel.start(mc, p, (Creeper) t.e, now);
+            reflex = Reflex.FIGHTING;
+            mc.options.keyShift.setDown(false);
+            target = "creeper";
+            targetDist = t.d;
+            urgent = false;
+            engine.hold();              // the duel drives the keys; Baritone stands by with its goal
+            return;
+        }
+        if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
         if (t != null) {
             if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id);
             if (reflex == Reflex.FETCHING) {
@@ -247,6 +303,7 @@ public final class Reflexes {
     /** Every reflex ends here: keys up, Baritone back to whatever it was doing. */
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();
+        duel.abort(why);
         if (reflex == Reflex.EATING) mc.options.keyUse.setDown(false);
         if (reflex == Reflex.FETCHING && mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) mc.player.closeContainer();
         if (reflex != Reflex.NONE) events.push("reflex", "done " + reflex.name().toLowerCase() + ": " + why, null);
@@ -299,7 +356,7 @@ public final class Reflexes {
     private void creeper(Minecraft mc, LocalPlayer p, Threat t) {
         begin(Reflex.FLEEING, mc, "avoiding a " + t.id);
         // one escape spot for 3 seconds: picking a new one every tick makes Baritone re-plan non-stop
-        if (t.d < ReflexRules.CREEPER_RUN && now >= fleeUntil) {
+        if ((t.d < ReflexRules.CREEPER_RUN || now < forceFleeUntil) && now >= fleeUntil) {
             int[] a = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), ReflexRules.CREEPER_RUN_TO);
             fleeGoal = new GoalXZ(a[0], a[1]);
             engine.override(fleeGoal);
@@ -312,6 +369,19 @@ public final class Reflexes {
             holdWeapon(mc, p);
             mc.gameMode.attack(p, t.e);
             p.swing(InteractionHand.MAIN_HAND);
+        }
+    }
+
+    /** A duel's end: an explosion is whispered to the owner and made an incident in the flight recorder; the rest is logged only. */
+    private void duelEnded(CreeperDuel.End end) {
+        if (!end.exploded()) return;
+        synchronized (this) {
+            whispers.add("A creeper exploded at " + end.x() + " " + end.y() + " " + end.z() + " while I fought it.");
+        }
+        try {
+            io.github.mojolowjo.entropybot.Core.INSTANCE.recorder.jobEnded("reflex", "creeper duel at " + end.x() + " " + end.y() + " " + end.z(), end.text());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] recorder (creeper duel): {}", e.toString());
         }
     }
 
