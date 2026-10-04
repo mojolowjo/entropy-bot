@@ -218,11 +218,14 @@ final class Crafting {
         return bt;
     }
 
-    /** S1: the strip mine's table if its block is loaded and still a crafting table, else null. */
-    private static int[] mineTable() {
+    /** S1: the strip mine's table if it is in this dimension, not untrusted, loaded and still a crafting table, else null. */
+    private int[] mineTable() {
         try {
             int[] t = StripMine.get().mineTable();
-            if (t == null) return null;
+            if (t == null || untrusted(t)) return null;
+            JsonObject mine = core.knowledge.places().get("mine");
+            String mdim = mine != null && mine.has("dim") ? mine.get("dim").getAsString() : null;
+            if (mdim != null && !mdim.equals(Storage.dim())) return null;
             Minecraft mc = Minecraft.getInstance();
             BlockPos bp = new BlockPos(t[0], t[1], t[2]);
             if (mc.level == null || !mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("crafting_table")) return null;
