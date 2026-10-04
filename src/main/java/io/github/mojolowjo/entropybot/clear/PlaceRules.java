@@ -56,6 +56,11 @@ public final class PlaceRules {
      * others (Baritone may find a way). Null when there is none within 5 blocks.
      */
     public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot) {
+        return standFor(w, cell, bot, null);
+    }
+
+    /** T3: as above, only spots {@code ok} accepts (the owner's areas while the fence is on; null: any). */
+    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot, ClearJob.StandCheck ok) {
         ClearBox box = new ClearBox(cell.x(), cell.y(), cell.z(), cell.x(), cell.y(), cell.z());
         ClearGrid g = ClearGrid.build(w, box, bot, null);
         int[] dist = g.walkDistances(bot);
@@ -64,6 +69,7 @@ public final class PlaceRules {
             for (int z = cell.z() - 4; z <= cell.z() + 4; z++) {
                 for (int y = cell.y() - 4; y <= cell.y() + 3; y++) {
                     if (bodyIn(x, y, z, cell)) continue;
+                    if (ok != null && !ok.ok(x, y, z)) continue;
                     int i = g.idx(x, y, z);
                     if (i < 0) continue;
                     double cost;
@@ -120,23 +126,43 @@ public final class PlaceRules {
      * outside {@code avoid} (the box being cleared) when there is such a cell, else inside it. Null when none fits.
      */
     public static Pos tableSpot(ClearWorld w, Bot bot, ClearBox avoid) {
+        return tableSpot(w, bot, avoid, null);
+    }
+
+    /**
+     * T2 (2026-10-04): as above, and only cells {@code allowed} accepts (the owner's areas while the fence is on; null:
+     * any), and among the fitting cells the one at the side of the walkway: a cell against a wall (more solid sides at
+     * its own level) keeps the corridor open even if the table can't be taken back. Outside {@code avoid} still comes
+     * first; ties go by the order above.
+     */
+    public static Pos tableSpot(ClearWorld w, Bot bot, ClearBox avoid, java.util.function.Predicate<Pos> allowed) {
         int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());
         int[][] offs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 },
                 { 2, 0 }, { -2, 0 }, { 0, 2 }, { 0, -2 } };
-        List<Pos> inside = new ArrayList<>();
+        Pos best = null;
+        int bestScore = Integer.MAX_VALUE;
         for (int[] o : offs) {
             int x = bx + o[0], z = bz + o[1];
             // the bot's own body: its feet cell may overlap a neighbour when it stands near an edge
             if (Math.abs(x + 0.5 - bot.x()) < 0.8 && Math.abs(z + 0.5 - bot.z()) < 0.8) continue;
             if (!free(w, x, by, z) || !clickable(w, x, by - 1, z) || ClearEngine.nextToLiquid(w, x, by, z)) continue;
             Pos p = new Pos(x, by, z);
-            if (avoid != null && avoid.contains(x, by, z)) {
-                inside.add(p);
-                continue;
+            if (allowed != null && !allowed.test(p)) continue;
+            int score = (avoid != null && avoid.contains(x, by, z) ? 10 : 0) + (3 - Math.min(3, wallSides(w, x, by, z)));
+            if (score < bestScore) {
+                bestScore = score;
+                best = p;
             }
-            return p;
         }
-        return inside.isEmpty() ? null : inside.get(0);
+        return best;
+    }
+
+    /** T2: how many of the 4 sides of x y z hold something solid at the same level (a wall it stands against). */
+    public static int wallSides(ClearWorld w, int x, int y, int z) {
+        int n = 0;
+        int[][] sides = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+        for (int[] s : sides) if (!free(w, x + s[0], y, z + s[1])) n++;
+        return n;
     }
 
     /** The label of the clear that takes the table back. */
@@ -216,9 +242,24 @@ public final class PlaceRules {
         slice(c, max, out);
     }
 
-    /** The place lease around one cell (the guard checks the clicked block and the cell): the 3x3x3 box. */
+    /**
+     * T1 (2026-10-04): the place lease for one placement is only what the guard checks. A block item goes through
+     * BlockItem.place, which checks the cell alone (Guard.vetoPlace on the context's clicked position, already the cell
+     * the block goes into); a bucket, fire or egg goes through useItemOn, which checks the cell and the clicked block
+     * (Guard.vetoUseOn). The old 3x3x3 never fit a 3-wide area (the tunnel x -110..8591, z 853..855, y -46..-44).
+     *
+     * @param side the neighbour that gets clicked (null: not known yet, the cell alone)
+     * @param blockItem the item in hand is a BlockItem
+     */
+    public static ClearBox placeLeaseBox(int x, int y, int z, Side side, boolean blockItem) {
+        if (blockItem || side == null) return new ClearBox(x, y, z, x, y, z);
+        int cx = x + side.dx(), cy = y + side.dy(), cz = z + side.dz();
+        return new ClearBox(Math.min(x, cx), Math.min(y, cy), Math.min(z, cz), Math.max(x, cx), Math.max(y, cy), Math.max(z, cz));
+    }
+
+    /** The place lease of a block item: the cell alone. */
     public static ClearBox placeLeaseBox(int x, int y, int z) {
-        return new ClearBox(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
+        return placeLeaseBox(x, y, z, null, true);
     }
 
     // ---- 18c: pickaxes before a big dig ----

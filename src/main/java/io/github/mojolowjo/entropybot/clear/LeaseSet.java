@@ -67,11 +67,16 @@ public final class LeaseSet {
 
     public static final String AREA_HINT = "area add <name> here <r>";
 
-    /** placeLease: the 3x3x3 around a cell, once per cell while this set lives. */
+    /** placeLease for a block item: the cell alone (T1), once per cell while this set lives. */
     public String placeLease(int x, int y, int z, String task) {
-        String key = Pos.key(x, y, z);
+        return placeLease(PlaceRules.placeLeaseBox(x, y, z), task);
+    }
+
+    /** placeLease over the box {@link PlaceRules#placeLeaseBox} gave (the cell, or the cell and the clicked block), once per box. */
+    public String placeLease(ClearBox b, String task) {
+        String key = b.toString();
         if (placeKeys.contains(key)) return null;
-        String r = takeQuiet(task, PlaceRules.placeLeaseBox(x, y, z), true, false);
+        String r = takeQuiet(task, b, true, false);
         if (r == null) placeKeys.add(key);
         return r;
     }

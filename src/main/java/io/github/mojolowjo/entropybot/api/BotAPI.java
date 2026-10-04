@@ -288,7 +288,7 @@ public final class BotAPI {
         try {
             if (!core().token.equals(token)) return "error: bad token";
             core().reconnect.setOn(on);
-            return "ok: reconnecting after a kick is " + (on ? "on (after 1, 5, 15 min; 3 an hour at most)" : "off");
+            return "ok: reconnecting after a kick is " + (on ? "on (after 1, 5, 15 min, then every 30 min for 24 h; 3 an hour at most)" : "off");
         } catch (Throwable t) {
             return "error: " + t;
         }

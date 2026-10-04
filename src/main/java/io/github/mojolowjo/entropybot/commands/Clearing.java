@@ -381,6 +381,7 @@ public final class Clearing {
         s.world.set(p);
         s.ores = new KnowledgeOres();
         s.job = ClearJob.start(opts, zone, s.ores);
+        s.job.standOk = standCheck(c);
         s.run = new ClearRun(s.world, s.job);
         s.leases.releaseAll();
         s.leases = newLeases();
@@ -536,7 +537,9 @@ public final class Clearing {
         for (String id : inv.keySet()) wood |= PlaceRules.wood(id);
         PlaceRules.TableChoice choice = PlaceRules.tableChoice(dist, carries, wood);
         if (choice == PlaceRules.TableChoice.USE_NEAR || choice == PlaceRules.TableChoice.WALK_FAR) return null;
-        Pos spot = PlaceRules.tableSpot(s.world, McClearWorld.botOf(p), s.job.box);
+        // T2: only where the guard lets it place (inside an area, outside protect boxes, with the fence on) and at the
+        // side of the walkway; the pickup below takes it back after the craft
+        Pos spot = PlaceRules.tableSpot(s.world, McClearWorld.botOf(p), s.job.box, Clearing::placeCellAllowed);
         if (spot == null) {
             LOG.info("[entropybot] clear: no spot next to me for a crafting table, the craft walks to one");
             return null;
@@ -564,6 +567,22 @@ public final class Clearing {
         out.add(pickup);
         LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.TABLE_NEAR, spot.key(), choice);
         return out;
+    }
+
+    /** T3: with the fence on, stand spots and drops only inside an area of this dimension (the guard's policy, read live); else null. */
+    static ClearJob.StandCheck standCheck(Commands c) {
+        if (!c.fenceOn()) return null;
+        String dim = Minecraft.getInstance().level != null ? Storage.dim() : "minecraft:overworld";
+        GuardCore g = Core.INSTANCE.guard.core;
+        return (x, y, z) -> g.policy().areaAt(dim, x, y, z) != null;
+    }
+
+    /** T2: the guard's box rules would let a place lease cover this cell (strict mode; log mode: always). */
+    static boolean placeCellAllowed(Pos c) {
+        GuardCore g = Core.INSTANCE.guard.core;
+        if (g.mode() != GuardCore.Mode.STRICT) return true;
+        String dim = Minecraft.getInstance().level != null ? Storage.dim() : "minecraft:overworld";
+        return GuardCore.cellLeasable(g.policy(), dim, c.x(), c.y(), c.z());
     }
 
     /** The pickup only takes the table it put down (the place step armed it) and only while it is still a crafting table. */
@@ -683,10 +702,21 @@ public final class Clearing {
         return false;
     }
 
+    /** T1: the item goes down through BlockItem.place (the guard checks the cell alone); false for a bucket, an egg... */
+    static boolean isBlockItem(String id) {
+        try {
+            net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(id);
+            if (rl == null) return true;
+            return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl) instanceof net.minecraft.world.item.BlockItem;
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
     /**
      * placeAt: puts block item {@code id} into the empty cell x y z by clicking a solid neighbour (the floor first,
-     * then the walls, then the ceiling), never a chest or a table. A place lease for the 3x3x3 around the cell goes
-     * into {@code leases} (once per cell). "ok: ..." or "error: ...".
+     * then the walls, then the ceiling), never a chest or a table. The place lease covers what the guard checks (T1:
+     * the cell; for a bucket also the clicked block) and goes into {@code leases} (once per box). "ok: ..." or "error: ...".
      */
     public static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases) {
         Minecraft mc = Minecraft.getInstance();
@@ -695,12 +725,13 @@ public final class Clearing {
         if (!target.canBeReplaced()) {
             return target.getBlock().getDescriptionId().contains(GuiCore.bareId(id)) ? PlaceRules.ALREADY_THERE : "error: something is in the way at " + x + " " + y + " " + z;
         }
-        String le = leases.placeLease(x, y, z, "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
-        if (le != null) return le;
         LiveWorld w = new LiveWorld();
         w.set(p);
         PlaceRules.Side s = PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ());
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
+        // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
+        String le = leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
+        if (le != null) return le;
         if (!holdItem(p, id)) return "error: I have no " + GuiCore.shortId(id);
         Vec3 hit = new Vec3(x + 0.5 + s.dx() * 0.5, y + 0.5 + s.dy() * 0.5, z + 0.5 + s.dz() * 0.5);
         try { p.lookAt(EntityAnchorArgument.Anchor.EYES, hit); } catch (RuntimeException ignored) {}
@@ -762,7 +793,7 @@ public final class Clearing {
                 LiveWorld w = new LiveWorld();
                 w.set(p);
                 if (PlaceRules.placeSide(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ()) == null) {
-                    var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p));
+                    var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p), standCheck(seq.jobs.core().commands));
                     if (spot == null) return ps.optional ? "next" : "nowhere to stand within reach of " + Jobs.fmt(pos) + " to place the " + sid;
                     stand = new int[]{spot.x(), spot.y(), spot.z()};
                 }
@@ -962,14 +993,12 @@ public final class Clearing {
         }
 
         @Override public List<ClearRun.Drop> drops(ClearJob job) {
-            ClearBox box = job.box;
             List<ClearRun.Drop> out = new ArrayList<>();
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (!(e instanceof ItemEntity) || !e.isAlive()) continue;
                 int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
-                if (x < box.x1() - 2 || x > box.x2() + 2 || y < box.y1() - 2 || y > box.y2() + 2 || z < box.z1() - 2 || z > box.z2() + 2) continue;
-                // a drop down a hole under the walkway: filling the hole pushes it back up
-                if (job.minStandY != null && y < job.minStandY) continue;
+                // near the box, not down a hole under the walkway, and (T3) never outside the areas with the fence on
+                if (!job.dropWanted(x, y, z)) continue;
                 double d = e.distanceTo(p);
                 if (d > 1.2 && d < 8) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
             }

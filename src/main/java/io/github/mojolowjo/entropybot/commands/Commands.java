@@ -1036,7 +1036,7 @@ public final class Commands implements Chains.Env {
         brainStore.data().addProperty("reconnect", on);
         saved();
         core.reconnect.setOn(on);
-        return "ok: reconnecting after a kick is " + (on ? "on (after 1, 5, 15 min; 3 an hour at most)" : "off");
+        return "ok: reconnecting after a kick is " + (on ? "on (after 1, 5, 15 min, then every 30 min for 24 h; 3 an hour at most)" : "off");
     }
 
     String restartCommand(String from, String rest) {
@@ -1410,6 +1410,7 @@ public final class Commands implements Chains.Env {
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) {
             s.addProperty("inWorld", false);
+            s.addProperty("reconnect", core.reconnect.statusText());     // T4: "next try to ... at 07:38 (try 4)"
             bridgeFiles.writeJson("state.json", s.toString());
             return;
         }
