@@ -17,16 +17,17 @@ import java.util.TreeMap;
  * the bot has been idle for 2 seconds (no job but a walk or a wait, no reflex, no menu, no swing, nothing in use)
  * it makes one swap every half second until each laid-out slot holds its item. That covers "after a deposit, a
  * restock, a craft, a pickup": whatever changed the bag, the slots are put right when the bot is next idle.
+ * Round 2 ({@link HotbarKeeper}): also in the first 10 seconds of a job, and mid-job for a laid-out slot whose item
+ * was used up (a broken pickaxe, the last torch, the food eaten); never mid-swing or mid-break (except a broken tool's
+ * refill), never with a menu open, never swapping away an item a job put in the hand.
  */
 public final class Hotbar {
     private Hotbar() {}
 
     private static volatile Map<Integer, String> layout = Map.of();
     private static volatile String toolOres = "iron";
-    private static long quietSince;
-
-    /** IDLE_TICKS of quiet before the first swap. */
-    public static final int IDLE_TICKS = 40;
+    /** Ticks of quiet before the first idle swap (HotbarKeeper's). */
+    public static final int IDLE_TICKS = HotbarKeeper.IDLE_TICKS;
 
     public static void set(Map<Integer, String> l, String ores) {
         layout = java.util.Collections.unmodifiableMap(new TreeMap<>(l));
@@ -69,26 +70,33 @@ public final class Hotbar {
     }
 
     /**
-     * Every 10 ticks from the commands: busy = a job other than a walk or a wait, or a reflex. Returns what it moved
-     * (for the log), or null.
+     * Every tick from the commands (round 2: {@link HotbarKeeper} decides when: idle, at a job's start, or a refill of a
+     * slot that emptied mid-job). busy: a job other than a walk or a wait, or a reflex; reflex: a reflex holds the bot;
+     * job: the running job's identity (null = none, or a walk or a wait). Returns what it moved (for the log), or null.
      */
-    public static String tick(Minecraft mc, LocalPlayer p, long tick, boolean busy) {
-        if (layout.isEmpty()) return null;
-        boolean active = busy || mc.screen != null || p.containerMenu != p.inventoryMenu || p.isUsingItem() || p.swinging
-                || (mc.gameMode != null && mc.gameMode.isDestroying()) || !p.inventoryMenu.getCarried().isEmpty();
-        if (active) {
-            quietSince = tick;
+    public static String tick(Minecraft mc, LocalPlayer p, long tick, boolean busy, boolean reflex, Object job) {
+        Map<Integer, String> l = layout;
+        if (l.isEmpty()) {
+            KEEPER.decide(l, new HotbarKeeper.Look(tick, busy, reflex, job, false, false, false, false, false, 0, List.of()));
             return null;
         }
-        if (tick - quietSince < IDLE_TICKS) return null;
-        List<HotbarRules.Item> inv = items(p);
-        HotbarRules.Swap s = HotbarRules.plan(layout, inv);
-        if (s == null) return null;
+        var gm = mc.gameMode;
+        if (gm == null) return null;
+        boolean menu = mc.screen != null || p.containerMenu != p.inventoryMenu, using = p.isUsingItem(), carried = !p.inventoryMenu.getCarried().isEmpty();
+        // blocked: nothing can move, so the bag isn't scanned (the keeper compares the next scan with the last one)
+        List<HotbarRules.Item> inv = menu || using || carried ? null : items(p);
+        HotbarKeeper.Look look = new HotbarKeeper.Look(tick, busy, reflex, job, menu, using, carried,
+                p.swinging, gm.isDestroying(), p.getInventory().selected, inv);
+        HotbarKeeper.Move m = KEEPER.decide(l, look);
+        if (m == null) return null;
+        HotbarRules.Swap s = m.swap();
         String id = "";
         for (HotbarRules.Item it : inv) if (it.slot() == s.from()) id = it.id();
-        int selected = p.getInventory().selected;
-        mc.gameMode.handleInventoryMouseClick(p.inventoryMenu.containerId, menuSlot(s.from()), s.to(), ClickType.SWAP, p);
-        p.getInventory().selected = selected;
-        return "moved " + id.replaceFirst("^minecraft:", "") + " from slot " + (s.from() < 9 ? "hotbar " + (s.from() + 1) : s.from()) + " to hotbar slot " + (s.to() + 1);
+        gm.handleInventoryMouseClick(p.inventoryMenu.containerId, menuSlot(s.from()), s.to(), ClickType.SWAP, p);
+        p.getInventory().selected = m.select();
+        return "moved " + id.replaceFirst("^minecraft:", "") + " from slot " + (s.from() < 9 ? "hotbar " + (s.from() + 1) : s.from())
+                + " to hotbar slot " + (s.to() + 1) + " (" + m.why() + ")";
     }
+
+    private static final HotbarKeeper KEEPER = new HotbarKeeper();
 }

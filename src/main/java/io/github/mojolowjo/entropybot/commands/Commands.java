@@ -205,6 +205,20 @@ public final class Commands implements Chains.Env {
         return false;
     }
 
+    /**
+     * The running job's identity for the hotbar keeper's start window (round 2): the mod's job object, or the bridge's
+     * job as "bridge:<type>#<request>"; null when there is none, or it is a walk or a wait.
+     */
+    private Object hotbarJob(long tick) {
+        if (jobs.running() && !jobs.walking() && !"wait".equals(jobs.job.type)) return jobs.job;
+        if (bridge.jobRunning(tick)) {
+            JsonObject j = bridge.job(tick);
+            String ty = BridgeLink.str(j, "type");
+            if (!("travel".equals(ty) || "wait".equals(ty))) return "bridge:" + ty + "#" + BridgeLink.str(j, "req");
+        }
+        return null;
+    }
+
     /** Where the bot last died: {x, y, z, dim, time}, or null. */
     JsonObject lastDeath() {
         JsonObject b = brainStore.data();
@@ -345,9 +359,11 @@ public final class Commands implements Chains.Env {
                 LOG.warn("[entropybot] job: {}", e.toString());
                 jobs.finish("error: " + e);
             }
-            if (tick % 10 == 7) {
+            {
+                // package B round 2: every tick, so a refill finds the gap between two breaks (HotbarKeeper spaces the swaps)
                 try {
-                    String moved = io.github.mojolowjo.entropybot.engine.Hotbar.tick(mc, player, tick, hotbarBusy(tick));
+                    String moved = io.github.mojolowjo.entropybot.engine.Hotbar.tick(mc, player, tick, hotbarBusy(tick),
+                            core.reflexes.hold(), hotbarJob(tick));
                     if (moved != null) LOG.info("[entropybot] hotbar: {}", moved);
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] hotbar: {}", e.toString());

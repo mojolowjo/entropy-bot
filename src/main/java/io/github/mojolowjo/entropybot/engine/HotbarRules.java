@@ -46,6 +46,16 @@ public final class HotbarRules {
 
     public static boolean isKind(String spec) { return KINDS.contains(spec); }
 
+    /** A slot laid out for a tool (a kind or an item id): one that empties because the tool broke while it was used. */
+    public static boolean isTool(String spec) {
+        if (spec == null) return false;
+        return switch (spec) {
+            case "pickaxe", "sword", "axe", "shovel", "hoe" -> true;
+            case "food", "torch" -> false;
+            default -> spec.matches(".*_(pickaxe|sword|axe|shovel|hoe)$");
+        };
+    }
+
     static String path(String id) { return id.substring(id.indexOf(':') + 1); }
 
     /** Does an item belong in a slot laid out for spec? food: its food score (-1 = not something to eat). */
@@ -156,10 +166,18 @@ public final class HotbarRules {
      * bot doesn't carry leaves its slot alone). Never takes an item out of a slot that already holds what it should.
      */
     public static Swap plan(Map<Integer, String> layout, List<Item> inv) {
+        return plan(layout, inv, null);
+    }
+
+    /**
+     * {@link #plan(Map, List)} for only some laid-out slots (1-9; null = all): the keeper's refill of a slot that emptied
+     * mid-job. The other laid-out slots still count, so a slot holding its own item is never raided for these.
+     */
+    public static Swap plan(Map<Integer, String> layout, List<Item> inv, java.util.Collection<Integer> only) {
         if (layout.isEmpty()) return null;
         boolean[] ok = satisfied(layout, inv);
         for (int k : order(layout)) {
-            if (ok[k - 1]) continue;
+            if (ok[k - 1] || (only != null && !only.contains(k))) continue;
             String spec = layout.get(k);
             Item best = null;
             for (Item it : inv) {
