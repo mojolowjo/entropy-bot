@@ -47,6 +47,7 @@ public final class GuardMixinPlugin implements IMixinConfigPlugin {
         else if (mixinClassName.endsWith("GuardMixinGameMode")) MixinFlags.clickApplied = true;
         else if (mixinClassName.endsWith("GuardMixinBlockItem")) MixinFlags.placeApplied = true;
         else if (mixinClassName.endsWith("FarmlandMixinPrecomputedData")) MixinFlags.farmlandApplied = true;
+        else if (mixinClassName.endsWith("WatchMixinCamera")) MixinFlags.watchApplied = true;
     }
 
     /** A resource lookup never loads the class, so the Mixin can still transform it. */

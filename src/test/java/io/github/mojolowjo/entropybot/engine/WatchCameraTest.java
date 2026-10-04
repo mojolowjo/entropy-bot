@@ -43,4 +43,20 @@ class WatchCameraTest {
         float next = WatchCamera.follow(yaw, 0, -0.2);               // north = +-180
         assertEquals(true, next > 170f && next < 190f);
     }
+
+    @Test
+    void hookReportTellsAttachedFromNot() {
+        assertEquals(true, WatchCamera.hookReport(false, true, 0, -1, 5000).contains("NOT in"));
+        assertEquals(true, WatchCamera.hookReport(true, true, 0, 4000, 5000).contains("NOT running"));
+        assertEquals(true, WatchCamera.hookReport(true, true, 59, 10, 5000).contains("active (59 calls/s)"));
+        assertEquals(true, WatchCamera.hookReport(true, false, -1, 99999, 0).startsWith("hook: active"), "off: a quiet hook is not an error");
+    }
+
+    @Test
+    void distanceIsFourToEight() {
+        assertEquals(6f, WatchCamera.parseDistance(" 6 "));
+        assertEquals(-1f, WatchCamera.parseDistance("3"));
+        assertEquals(-1f, WatchCamera.parseDistance("9"));
+        assertEquals(-1f, WatchCamera.parseDistance("x"));
+    }
 }

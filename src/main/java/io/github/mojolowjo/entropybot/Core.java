@@ -94,9 +94,9 @@ public final class Core {
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
-                LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} (target present={}); folder {}",
+                LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} watch={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
-                        MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.astarTargetPresent, files.root());
+                        MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.watchApplied, MixinFlags.astarTargetPresent, files.root());
                 events.push("job", "mod ready " + version(), null);
             }
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
@@ -142,6 +142,7 @@ public final class Core {
         if (baritone.hooked()) a.add("events");
         a.add("guard:" + guard.core.mode().name().toLowerCase());
         if (MixinFlags.clickApplied) a.add("guard:click");
+        if (MixinFlags.watchApplied) a.add("camera:watch");
         if (MixinFlags.placeApplied) a.add("guard:place");
         if (MixinFlags.astarApplied) a.add("guard:astar");
         if (MixinFlags.farmlandApplied) a.add("baritone:farmland");

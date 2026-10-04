@@ -9,6 +9,8 @@ public final class MixinFlags {
     public static volatile boolean farmlandApplied;
     public static volatile boolean clickApplied;
     public static volatile boolean placeApplied;
+    /** Watch camera v1: the render camera's angle hook (WatchMixinCamera) went in. */
+    public static volatile boolean watchApplied;
 
     private MixinFlags() {}
 }
