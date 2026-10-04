@@ -60,6 +60,9 @@ public final class RecStore {
     static final int MEM_CHANGES = 50_000, MEM_TRAIL = 50_000, PENDING = 50_000, BASE_CACHE = 24;
     static final int MAX_READ = 500_000;                         // lines a single read collects at most
     static final long SEEN_SLACK_MS = 5_000;
+    /** Day-file bytes one read may go through: on the game thread (the debug verbs run there) and elsewhere. */
+    static final long QUICK_BYTES = 4L << 20, FULL_BYTES = 64L << 20;
+    static final String TOO_OLD = "older changes not read (too old for a quick read)";
 
     private final Path root;
     private final LongSupplier clock;
@@ -77,6 +80,10 @@ public final class RecStore {
     private volatile boolean capped;
     private volatile String lastError;
     private volatile int baseFiles = -1, incidentsOnDisk = -1;
+    private final Object flushLock = new Object();
+    /** True on the thread whose reads must stay quick (the game thread); FlightRecorder sets it. */
+    private volatile java.util.function.BooleanSupplier quick = () -> false;
+    volatile long quickBytes = QUICK_BYTES;
 
     /** dim|cx|cz -> {covered since (ms), last seen loaded (ms)}: when the recorder knew the chunk exactly. */
     private final Map<String, long[]> coverage = new ConcurrentHashMap<>();
@@ -97,6 +104,9 @@ public final class RecStore {
     public long cap() { return cap; }
 
     public void keepHours(int h) { keepMs = Math.max(1, h) * 3_600_000L; }
+
+    /** Reads on a thread where this is true read at most QUICK_BYTES of day files (the newest ones). */
+    public void quickReadsWhen(java.util.function.BooleanSupplier q) { quick = q == null ? () -> false : q; }
 
     public long diskBytes() { return diskBytes; }
 
@@ -173,6 +183,12 @@ public final class RecStore {
 
     /** Appends what is queued to the day files. Background thread (or a test). Returns the lines written. */
     public int flush() {
+        synchronized (flushLock) {
+            return flushLocked();
+        }
+    }
+
+    private int flushLocked() {
         List<Object> batch = new ArrayList<>();
         pending.drainTo(batch);
         if (batch.isEmpty()) return 0;
@@ -316,6 +332,11 @@ public final class RecStore {
 
     /** The changes inside the box with afterMs < atMs <= untilMs, oldest first. */
     public List<Change> changesIn(String dim, int x1, int y1, int z1, int x2, int y2, int z2, long afterMs, long untilMs) {
+        return changesIn(dim, x1, y1, z1, x2, y2, z2, afterMs, untilMs, new boolean[1]);
+    }
+
+    /** As above; cut[0] turns true when older day files were left out (see readDays). */
+    private List<Change> changesIn(String dim, int x1, int y1, int z1, int x2, int y2, int z2, long afterMs, long untilMs, boolean[] cut) {
         List<Change> out = new ArrayList<>();
         long memSince;
         List<Change> recent = new ArrayList<>();
@@ -326,7 +347,7 @@ public final class RecStore {
             }
         }
         if (afterMs < memSince) {
-            readDays("changes-", afterMs, Math.min(memSince, untilMs + 1), line -> {
+            cut[0] = readDays("changes-", afterMs, Math.min(memSince, untilMs + 1), line -> {
                 Change c = parseChange(line);
                 if (c != null && c.atMs() > afterMs && c.atMs() <= untilMs && c.atMs() < memSince && inBox(c, dim, x1, y1, z1, x2, y2, z2)) out.add(c);
             });
@@ -371,9 +392,13 @@ public final class RecStore {
         return out;
     }
 
-    /** Calls each line of the day files (prefix-YYYY-MM-DD.log) whose day lies between the two times (local days). */
-    private void readDays(String prefix, long fromMs, long toMs, java.util.function.Consumer<String> each) {
-        if (!Files.isDirectory(root)) return;
+    /**
+     * Calls each line of the day files (prefix-YYYY-MM-DD.log) whose day lies between the two times (local days), oldest
+     * file first. At most QUICK_BYTES of files on a quick thread (FULL_BYTES elsewhere): the newest that fit. True when
+     * older files were left out (or MAX_READ lines reached).
+     */
+    private boolean readDays(String prefix, long fromMs, long toMs, java.util.function.Consumer<String> each) {
+        if (!Files.isDirectory(root)) return false;
         String from = fromMs <= 0 ? "0000-00-00" : day(fromMs), to = day(Math.max(fromMs, toMs));
         List<Path> days = new ArrayList<>();
         try (Stream<Path> s = Files.list(root)) {
@@ -384,18 +409,36 @@ public final class RecStore {
                 if (d.compareTo(from) >= 0 && d.compareTo(to) <= 0) days.add(p);
             });
         } catch (IOException e) {
-            return;
+            return false;
         }
         days.sort(Comparator.comparing(p -> p.getFileName().toString()));
-        int[] n = {0};
-        for (Path p : days) {
+        long budget = quick.getAsBoolean() ? quickBytes : FULL_BYTES, used = 0;
+        boolean cut = false;
+        int first = days.size();
+        for (int i = days.size() - 1; i >= 0; i--) {
+            long size;
+            try {
+                size = Files.size(days.get(i));
+            } catch (IOException e) {
+                size = 0;
+            }
+            if (used + size > budget) {
+                cut = true;
+                break;
+            }
+            used += size;
+            first = i;
+        }
+        int n = 0;
+        for (Path p : days.subList(first, days.size())) {
             try (BufferedReader r = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
                 for (String line; (line = r.readLine()) != null; ) {
-                    if (++n[0] > MAX_READ) return;
+                    if (++n > MAX_READ) return true;
                     each.accept(line);
                 }
             } catch (IOException | RuntimeException ignored) {}
         }
+        return cut;
     }
 
     // ---- baselines ----
@@ -485,6 +528,15 @@ public final class RecStore {
 
     public void forgetCoverage(String dim, int cx, int cz) { coverage.remove(key(dim, cx, cz)); }
 
+    /** Nothing is known exactly any more (recording went off, the range changed, the level went away). */
+    public void clearCoverage() { coverage.clear(); }
+
+    /** For tests: the coverage interval of a chunk, or null. */
+    long[] coverage(String dim, int cx, int cz) {
+        long[] c = coverage.get(key(dim, cx, cz));
+        return c == null ? null : c.clone();
+    }
+
     /**
      * The box as it was at atMs: each chunk's baseline, moved forward (changes after it, up to atMs) or back (changes
      * between atMs and it, undone) with the changes heard. Null when nothing is known or the box is over 4096 cells.
@@ -502,7 +554,9 @@ public final class RecStore {
             for (int cz = az >> 4; cz <= bz >> 4; cz++) {
                 ChunkBase b = base(dim, cx, cz);
                 long[] cov = coverage.get(key(dim, cx, cz));
-                if (cov == null || atMs < cov[0] || atMs > cov[1] + SEEN_SLACK_MS || b == null) exact = false;
+                // exact only while watched, and only with the baseline taken during that watch
+                if (cov == null || b == null || atMs < cov[0] || atMs > cov[1] + SEEN_SLACK_MS
+                        || b.takenMs < cov[0] || b.takenMs > cov[1] + SEEN_SLACK_MS) exact = false;
                 if (b == null) { noBase = true; continue; }
                 bases.put(((long) cx << 32) ^ (cz & 0xffffffffL), b);
                 minBase = Math.min(minBase, b.takenMs);
@@ -515,7 +569,9 @@ public final class RecStore {
             if (b != null) ids[(int) (((y - ay) * dz + (z - az)) * dx + (x - ax))] = b.id(x, y, z);
         }
         long after = noBase ? -1 : Math.min(atMs, minBase), until = Math.max(atMs, maxBase == Long.MIN_VALUE ? atMs : maxBase);
-        List<Change> cs = changesIn(dim, ax, ay, az, bx, by, bz, after, until);
+        boolean[] cut = new boolean[1];
+        List<Change> cs = changesIn(dim, ax, ay, az, bx, by, bz, after, until, cut);
+        if (cut[0]) exact = false;
         // forward: chunks whose baseline is older than atMs (or none), changes after the baseline up to atMs
         for (Change c : cs) {
             ChunkBase b = bases.get(((long) (c.x() >> 4) << 32) ^ ((c.z() >> 4) & 0xffffffffL));
@@ -543,6 +599,7 @@ public final class RecStore {
                 n.append("; anything changed while the bot was away is unknown");
             } else n.append("no baseline, only the changes heard");
             if (unknown > 0) n.append("; ").append(unknown).append(" cells unknown");
+            if (cut[0]) n.append("; ").append(TOO_OLD);
             note = n.toString();
         }
         return new Slice(ax, ay, az, bx, by, bz, ids, note);
@@ -581,7 +638,13 @@ public final class RecStore {
             try (GZIPOutputStream gz = new GZIPOutputStream(bytes)) {
                 gz.write(text.getBytes(StandardCharsets.UTF_8));
             }
-            Files.write(target, bytes.toByteArray());
+            Path tmp = dir.resolve(name + ".tmp");
+            Files.write(tmp, bytes.toByteArray());
+            try {
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, target);
+            }
             incidentReasons.put(name, reason == null ? "" : reason);
             return name;
         } catch (IOException e) {

@@ -20,13 +20,11 @@ import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.slf4j.Logger;
 
-import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,7 +64,9 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     private final ScheduledExecutorService io;
     private final AtomicInteger tasks = new AtomicInteger();
     private final int[][] spiral;
-    private final Map<Long, Tracked> tracked = new HashMap<>();
+    private final ChunkWatch watch;
+    /** 8 changes per block per 10 s, 2000 a second in all: a flapping machine or a flood can't fill the ring. */
+    private final ChangeFilter.Limiter limiter = new ChangeFilter.Limiter(8, 10_000L, 2000);
     private final Map<Block, String> blockIds = new ConcurrentHashMap<>();
     private final Map<BlockState, String> stateIds = new ConcurrentHashMap<>();
     private final IncidentText.GuardStreak guardStreak = new IncidentText.GuardStreak(5, 60_000L, 5 * 60_000L);
@@ -82,24 +82,18 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     private int[] lastTrail;
     private String lastTrailDim;
     private long lastTrailMs, lastAutoIncident = Long.MIN_VALUE / 2, guardSeq = -1;
-    private boolean wasDead;
+    private boolean wasDead, recording;
+    private int watchedRange = -1;
+    private volatile boolean offMaintained;
+    static final int TRIES_PER_STEP = 8;
     private int errors;
     private volatile int incidentCount;
     private volatile String lastIncident;
 
-    private static final class Tracked {
-        final WeakReference<LevelChunk> ref;
-        final long takenMs, since;
-
-        Tracked(LevelChunk c, long takenMs, long since) {
-            this.ref = new WeakReference<>(c);
-            this.takenMs = takenMs;
-            this.since = since;
-        }
-    }
-
     public FlightRecorder(Path dir, EventRing events) {
         this.store = new RecStore(dir, System::currentTimeMillis, RecStore.DEFAULT_CAP);
+        this.store.quickReadsWhen(() -> Minecraft.getInstance().isSameThread());    // the debug verbs read on the game thread
+        this.watch = new ChunkWatch(store);
         this.events = events;
         this.settings = RecorderSettings.fromJson(store.readSettings());
         String ended = settings.tick(System.currentTimeMillis());
@@ -139,6 +133,11 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
 
     private void maintainQuietly() {
         try {
+            // while off nothing new is written: one upkeep after turning off, then none
+            if (!on) {
+                if (offMaintained) return;
+                offMaintained = true;
+            } else offMaintained = false;
             store.maintain();
             refreshIncidents();
         } catch (Throwable t) {
@@ -179,7 +178,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     public void tick(long tick) {
         try {
             step(tick);
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {
             if (++errors <= 5 || errors % 1200 == 0) LOG.warn("[entropybot] recorder tick error #{}: {}", errors, e.toString());
         }
     }
@@ -189,12 +188,20 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         LocalPlayer p = mc.player;
         ClientLevel level = mc.level;
         depth = 0;                                   // no setBlock is in progress here: a lost RETURN can't pile up
-        if (p == null || level == null) return;
+        if (p == null || level == null) {
+            if (lastLevel != null) {                 // left the world: let the level go, nothing is watched any more
+                lastLevel = null;
+                watch.reset();
+                recording = false;
+            }
+            return;
+        }
         long now = System.currentTimeMillis();
         if (level != lastLevel) {
             lastLevel = level;
             lastDim = Guard.dimOf(level);
-            tracked.clear();
+            watch.dim(lastDim);
+            watch.reset();
         }
         String dim = lastDim;
         if (tick % 20 == 0) {
@@ -209,7 +216,16 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
                 note(p, dim, now, "recorder: " + ended);
             }
         }
-        if (!on) return;
+        if (!on) {
+            if (recording) watch.reset();            // the off time is not watched: every chunk starts over when on again
+            recording = false;
+            return;
+        }
+        recording = true;
+        if (effRange != watchedRange) {              // a smaller range dropped changes, a larger one adds unwatched chunks
+            if (watchedRange >= 0) watch.reset();
+            watchedRange = effRange;
+        }
         int[] me = {p.getBlockX(), p.getBlockY(), p.getBlockZ()};
         // a death (with or without a job running)
         boolean dead = p.isDeadOrDying();
@@ -236,7 +252,8 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         if (tick % 20 == 10) guardScan(now);
         // baselines
         if (tick % 2 == 0) baselineStep(level, dim, p, now);
-        if (tick % 20 == 5) watchLoaded(level, dim, p, now);
+        if (tick % 20 == 5) watch.watch(p.getBlockX() >> 4, p.getBlockZ() >> 4, effRange,
+                k -> level.getChunkSource().getChunk(ChunkWatch.cx(k), ChunkWatch.cz(k), ChunkStatus.FULL, false), now);
     }
 
     private Object currentJob() {
@@ -364,8 +381,16 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         if (p == null || p.level() != level) return;
         boolean st = states;
         // a state-only flip (furnace lit, crop age, power) only with states on; only within the range
-        if (!ChangeFilter.keep(from == to, from.getBlock() == to.getBlock(), st, p.getBlockX() >> 4, p.getBlockZ() >> 4,
-                pos.getX() >> 4, pos.getZ() >> 4, effRange)) return;
+        int bcx = p.getBlockX() >> 4, bcz = p.getBlockZ() >> 4, cx = pos.getX() >> 4, cz = pos.getZ() >> 4;
+        if (!ChangeFilter.keep(from == to, from.getBlock() == to.getBlock(), st, bcx, bcz, cx, cz, effRange)) {
+            // a real change we don't record (outside the range): that chunk is no longer known exactly
+            if (from != to && (from.getBlock() != to.getBlock() || st) && level == lastLevel) watch.missed(cx, cz);
+            return;
+        }
+        if (!limiter.allow(pos.asLong(), System.currentTimeMillis())) {
+            if (level == lastLevel) watch.missed(cx, cz);
+            return;
+        }
         String dim = level == lastLevel ? lastDim : Guard.dimOf(level);
         store.addChange(new Change(System.currentTimeMillis(), dim, pos.getX(), pos.getY(), pos.getZ(),
                 st ? stateId(from) : blockId(from), st ? stateId(to) : blockId(to), byBot));
@@ -400,50 +425,31 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         return (2 * r + 1) * (2 * r + 1);
     }
 
-    private static long chunkKey(int cx, int cz) { return ((long) cx << 32) ^ (cz & 0xffffffffL); }
+    private static long chunkKey(int cx, int cz) { return ChunkWatch.key(cx, cz); }
 
+    /** Every 2 ticks: up to TRIES_PER_STEP chunks of the spiral (a cursor goes round), at most one baseline. */
     private void baselineStep(ClientLevel level, String dim, LocalPlayer p, long now) {
         if (tasks.get() >= MAX_TASKS / 2) return;
         int n = spiralCount(), pcx = p.getBlockX() >> 4, pcz = p.getBlockZ() >> 4;
         long rebase;
         synchronized (settings) { rebase = Math.min(REBASE_MS, settings.keepHours * 3_600_000L / 2); }
-        for (int tries = 0; tries < n; tries++) {
-            int[] o = spiral[cursor++ % n];
-            if (cursor >= n * 1000) cursor = 0;
+        for (int tries = 0; tries < Math.min(n, TRIES_PER_STEP); tries++) {
+            if (cursor >= n) cursor = 0;
+            int[] o = spiral[cursor++];
             int cx = pcx + o[0], cz = pcz + o[1];
             LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
             if (chunk == null || chunk.isEmpty()) continue;
-            long k = chunkKey(cx, cz);
-            Tracked t = tracked.get(k);
-            boolean fresh = t == null || t.ref.get() != chunk;
-            if (!fresh && now - t.takenMs < rebase) continue;
-            long since = fresh ? now : t.since;
+            if (!watch.needsBaseline(cx, cz, chunk, now, rebase)) continue;
             Grab g = Grab.chunk(level, chunk, cx, cz);
             int minY = level.getMinBuildHeight();
             if (!submit(() -> {
                 store.writeBase(g.toBase(this, dim, minY, now));
-                store.covered(dim, cx, cz, since, System.currentTimeMillis());
+                watch.written(dim, cx, cz, now);
             })) return;
-            tracked.put(k, new Tracked(chunk, now, since));
+            watch.taking(cx, cz, chunk, now);
             return;
         }
     }
-
-    /** Once a second: chunks still loaded are "seen" (exact until now); unloaded ones are forgotten. */
-    private void watchLoaded(ClientLevel level, String dim, LocalPlayer p, long now) {
-        int pcx = p.getBlockX() >> 4, pcz = p.getBlockZ() >> 4, r = effRange + 2;
-        for (Iterator<Map.Entry<Long, Tracked>> it = tracked.entrySet().iterator(); it.hasNext(); ) {
-            Map.Entry<Long, Tracked> e = it.next();
-            int cx = (int) (e.getKey() >> 32), cz = (int) (long) e.getKey();
-            LevelChunk now0 = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
-            if (now0 == null || now0 != e.getValue().ref.get() || Math.abs(cx - pcx) > r || Math.abs(cz - pcz) > r) {
-                it.remove();
-                continue;
-            }
-            store.seen(dim, cx, cz, now);
-        }
-    }
-
     /** Copies of block sections (taken on the game thread), turned into ids on the background thread. */
     static final class Grab {
         final int x1, y1, z1, x2, y2, z2;
@@ -645,6 +651,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         b.append("; since the game started ").append(mem[0]).append(" changes, ").append(mem[1]).append(" trail points");
         if (!hooked) b.append(" (no block change heard yet: is the ClientLevel hook in?)");
         if (store.dropped() > 0) b.append("; ").append(store.dropped()).append(" dropped (queue full)");
+        if (limiter.dropped() > 0) b.append("; ").append(limiter.dropped()).append(" held back (a flapping block or a flood)");
         if (store.capped()) b.append("; over the disk cap: recording to memory only");
         if (store.lastError() != null) b.append("; last error: ").append(store.lastError());
         List<Incident> inc = store.incidents(3);

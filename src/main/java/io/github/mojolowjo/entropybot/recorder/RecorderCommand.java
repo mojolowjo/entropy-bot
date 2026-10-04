@@ -24,14 +24,19 @@ public final class RecorderCommand {
         String run(Cmd cmd);
     }
 
-    private static final Pattern BOOST = Pattern.compile("^(off|light|normal|detailed|max)\\s+for\\s+(\\d+)\\s*(m|min|mins|minutes?|h|hours?)$");
-    private static final Pattern TRAIL = Pattern.compile("^(\\d+(?:\\.\\d+)?)\\s*(t|ticks?|s|secs?|seconds?)?$");
-    private static final Pattern HOURS = Pattern.compile("^(\\d+)\\s*(h|hours?|d|days?)?$");
+    private static final Pattern BOOST = Pattern.compile("^(off|light|normal|detailed|max)\\s+for\\s+(\\d{1,6})\\s*(m|min|mins|minutes?|h|hours?)$");
+    private static final Pattern TRAIL = Pattern.compile("^(\\d{1,6}(?:\\.\\d{1,3})?)\\s*(t|ticks?|s|secs?|seconds?)?$");
+    private static final Pattern HOURS = Pattern.compile("^(\\d{1,6})\\s*(h|hours?|d|days?)?$");
 
     public static String handle(Recorder r, String rest, boolean isOwner, String owner) {
         if (!isOwner) return "only " + owner + " can use the recorder";
         if (!(r instanceof Controls c)) return r == null ? Recorder.NONE.summary() : r.summary();
-        Cmd cmd = parse(rest);
+        Cmd cmd;
+        try {
+            cmd = parse(rest);
+        } catch (RuntimeException e) {
+            return "error: " + USAGE;
+        }
         if (cmd.kind() == Kind.ERROR) return "error: " + cmd.word();
         try {
             return c.run(cmd);
