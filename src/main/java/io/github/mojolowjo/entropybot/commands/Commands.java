@@ -72,6 +72,8 @@ public final class Commands implements Chains.Env {
     private int errors;
 
     public final Jobs jobs;
+    /** The owner's position from the companion mod's owner.json, for when the bot cannot see them (see OwnerFix). */
+    private final OwnerFix ownerFix = new OwnerFix(() -> Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root().resolve("owner.json"));
     /** B7b part 2: the storage verbs (open/take/put/scan/deposit/where/trust/corpse/death/drop/rs/pots/go poi). */
     public final Storage storage;
     private String placesSent;
@@ -689,8 +691,9 @@ public final class Commands implements Chains.Env {
         switch (verb) {
             case "come" -> {
                 Player target = Jobs.findPlayer(from);
-                if (target == null) return "I can't see you from here (I'm at " + Jobs.fmt(Jobs.here(player)) + "). PM me: goto x y z";
-                int[] t = Jobs.here(target);
+                // in view, else the position the owner's companion mod sent in the last 10 s (same dimension), else ask
+                int[] t = target != null ? Jobs.here(target) : ownerFixPos(from);
+                if (t == null) return "I can't see you from here (I'm at " + Jobs.fmt(Jobs.here(player)) + "). PM me: goto x y z";
                 String why = jobs.goalAllowed(t[0], t[1], t[2]);
                 if (why != null) {
                     if (why.startsWith("next to a ")) return "you're " + why;
@@ -701,6 +704,12 @@ public final class Commands implements Chains.Env {
             case "follow" -> {
                 // the fence: the player has to be inside an area now, and the watch stops the follow when they leave
                 String name = rest.isEmpty() ? from : rest;
+                // not in view but the owner's companion mod sends a fresh position: walk to it, again as it moves
+                // (only for the sender themselves: another player can't make the bot walk to the owner)
+                if (name.equalsIgnoreCase(from) && Jobs.findPlayer(name) == null) {
+                    int[] fix = ownerFixPos(name);
+                    if (fix != null) return jobs.startFollowFix(name, from, fix);
+                }
                 Player target = fenceOn() ? Jobs.findPlayer(name) : null;
                 if (target != null) {
                     int[] t = Jobs.here(target);
@@ -781,6 +790,8 @@ public final class Commands implements Chains.Env {
         if (from != null) {
             Player p = Jobs.findPlayer(from);
             if (p != null) return posOf(mc, p);
+            int[] fix = ownerFixPos(from);
+            if (fix != null) return new PolicyCommands.Pos(fix[0], fix[1], fix[2], Guard.dimOf(mc.level));
             if (a.equals("me")) return null;
         }
         return posOf(mc, mc.player);
@@ -809,6 +820,10 @@ public final class Commands implements Chains.Env {
             String dir = null;
             if (name.equals("mine") || dirWord != null) {
                 Player who = from != null ? Jobs.findPlayer(from) : null;
+                // the position came from the companion mod, which doesn't know which way they face: they must say it
+                if (dirWord == null && who == null && from != null && ownerFixPos(from) != null
+                        && !String.join(" ", args).trim().matches("^-?\\d+ -?\\d+ -?\\d+$"))
+                    return "error: I can't see which way you're facing - say it: mark " + name + " north|south|east|west";
                 dir = dirWord != null ? dirWord : dirFromYaw((who != null ? who : player).getYRot());
                 // package A: a mine starts where I can stand and may walk to (solid rock, given by coordinates, can't be reached)
                 String notHere = mineSpotReason(mc, pos);
@@ -974,6 +989,7 @@ public final class Commands implements Chains.Env {
         String routine = chains.clear();
         bridge.dropQueued();
         jobs.followWatch = null;
+        jobs.followFix = null;
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
         if (mb != null) Jobs.cancel(mb);
@@ -1114,8 +1130,19 @@ public final class Commands implements Chains.Env {
             for (Player p : mc.level.players()) {
                 if (p.getGameProfile().getName().equalsIgnoreCase(from)) return posOf(mc, p);
             }
+            int[] fix = ownerFixPos(from);         // out of view: the position their companion mod sent
+            if (fix != null) return new PolicyCommands.Pos(fix[0], fix[1], fix[2], Guard.dimOf(mc.level));
         }
         return posOf(mc, mc.player);
+    }
+
+    /**
+     * The block position the companion mod last sent for {@code who} (the owner), or null: not that player, older than
+     * 10 s, another dimension than the bot's, or no owner.json. Never moves the bot on its own: callers check the fence.
+     */
+    int[] ownerFixPos(String who) {
+        Minecraft mc = Minecraft.getInstance();
+        return who == null || mc.level == null ? null : ownerFix.pos(who, Guard.dimOf(mc.level));
     }
 
     static PolicyCommands.Pos posOf(Minecraft mc, Player p) {
