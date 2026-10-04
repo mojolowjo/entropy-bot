@@ -62,6 +62,14 @@ public final class Jobs {
         Seq seq;
         baritone.api.pathing.goals.Goal goalObj;
         String closeOnEnd;
+        /**
+         * B7d (D3): an urgent fight holds this job instead of ending it (the bridge's job.holdOnFight: explore, mine
+         * cave, the Baritone mine); onHold runs when a reflex starts holding it (the Baritone mine stops and breaking
+         * goes off), onEnd however it ends (finish, stop, a reflex, the fence): breaking off, leases released.
+         * ownsBreaking: the job turned Baritone's breaking on (BotAPI.breakingOwned: the bridge's safety net leaves it be).
+         */
+        public boolean holdOnFight, ownsBreaking;
+        public Runnable onHold, onEnd;
     }
 
     static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 12;
@@ -156,6 +164,9 @@ public final class Jobs {
         if (j == null || j.done) return;
         j.done = true;
         j.status = msg;
+        if (j.onEnd != null) {
+            try { j.onEnd.run(); } catch (RuntimeException e) { LOG.warn("[entropybot] job end hook: {}", e.toString()); }
+        }
         Minecraft mc = Minecraft.getInstance();
         if (j.type.equals("twerk") || j.seq != null) mc.options.keyShift.setDown(false);      // twerk, a farm round's crouch
         if (j.unstickLeft > 0) endUnstick(j);
@@ -575,7 +586,12 @@ public final class Jobs {
         Reflexes.Reflex r = core.reflexes.reflex(), prev = reflexWas;
         reflexWas = r;
         long now = core.tick();
-        if (r != Reflexes.Reflex.NONE && prev == Reflexes.Reflex.NONE) holdStart = now;
+        if (r != Reflexes.Reflex.NONE && prev == Reflexes.Reflex.NONE) {
+            holdStart = now;
+            if (running() && job.onHold != null) {
+                try { job.onHold.run(); } catch (RuntimeException e) { LOG.warn("[entropybot] job hold hook: {}", e.toString()); }
+            }
+        }
         if (r == Reflexes.Reflex.NONE && prev != Reflexes.Reflex.NONE && holdStart >= 0) {
             long held = now - holdStart;
             holdStart = -1;
@@ -595,7 +611,7 @@ public final class Jobs {
         if (r == Reflexes.Reflex.RETREATING && prev != Reflexes.Reflex.RETREATING) {
             stopForReflex("stopped: low health, getting away from " + target);
         } else if ((r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) && st.has("urgent") && st.get("urgent").getAsBoolean()
-                && !job.type.equals("travel")) {
+                && !job.type.equals("travel") && !job.holdOnFight) {
             stopForReflex("stopped: attacked by " + target);
         } else if (st.has("deniedDim")) {
             stopForReflex("stopped: I am in " + st.get("deniedDim").getAsString() + ", which is off limits");
