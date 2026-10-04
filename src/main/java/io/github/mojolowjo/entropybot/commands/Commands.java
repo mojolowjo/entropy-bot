@@ -102,6 +102,9 @@ public final class Commands implements Chains.Env {
     /** The commands store's object (commands.json): supplies, routines, rules, run, and package D's furnace jobs and smelt mode. */
     JsonObject brainData() { return brainStore.data(); }
 
+    /** B7e (E1): the three stores, for "memory". */
+    JsonStore[] stores() { return new JsonStore[]{pmStore, brainStore, areaStore}; }
+
     /** Package E: commands.json written now (the altar notes made right before a click). */
     void brainFlush() { brainStore.flush(); }
 
@@ -1621,10 +1624,10 @@ public final class Commands implements Chains.Env {
         return n;
     }
 
+    /** B7e (E1): the mod's own count (free slots plus junk a deposit puts away), no longer the bridge's report. */
     @Override public int bagRoom() {
-        JsonObject rep = bridge.report(core.tick());
-        if (rep != null && rep.has("bagRoom")) return rep.get("bagRoom").getAsInt();
-        return freeSlots();
+        LocalPlayer p = Minecraft.getInstance().player;
+        return p == null ? 0 : io.github.mojolowjo.entropybot.storage.BagRoom.count(Storage.slots(p), storage.keeps());
     }
 
     @Override public Map<String, Integer> inventory() {

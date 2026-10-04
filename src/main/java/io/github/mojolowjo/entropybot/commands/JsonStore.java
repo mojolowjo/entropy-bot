@@ -30,8 +30,20 @@ public final class JsonStore {
 
     public synchronized String problem() { return problem; }
 
+    /** B7e: the file's name and the load line ("pm.json: broken, loaded the backup"), for "memory". */
+    public String name() { return name; }
+
+    public synchronized String loadNote() { return loadNote; }
+
+    private String loadNote;
+
     /** Loads the file (or its backup). A line for the log. */
     public synchronized String load(BotFiles f) {
+        loadNote = load0(f);
+        return loadNote;
+    }
+
+    private String load0(BotFiles f) {
         files = f;
         String text = f.readJson(name);
         if (text == null) {

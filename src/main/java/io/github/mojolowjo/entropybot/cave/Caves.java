@@ -102,6 +102,9 @@ public final class Caves {
 
     public synchronized Cave get(String name) { return caves.get(name); }
 
+    /** B7e: how many caves it remembers (for "memory"). */
+    public synchronized int size() { return caves.size(); }
+
     /**
      * The cave for a "mine cave" starting at x y z: the named one, else the nearest one in this dimension with frontier
      * left whose entrance is within PICK_WITHIN, else a new one with its entrance here. Null for an unknown name.

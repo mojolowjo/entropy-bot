@@ -157,25 +157,7 @@ final class Mining {
 
     /** Slots that are free or hold only junk a dump would put away (the bridge's bagRoom). */
     int bagRoom(LocalPlayer p) {
-        Map<String, Integer> junk = StorageRules.depositables(Storage.held(p), "", true, null, storage.keeps());
-        Map<String, Integer> kept = new HashMap<>();
-        int n = 0;
-        for (int i = 0; i < 36; i++) {
-            ItemStack s = p.getInventory().getItem(i);
-            if (s.isEmpty()) {
-                n++;
-                continue;
-            }
-            String id = Gui.itemId(s);
-            Integer keep = junk.get(id);
-            if (keep == null) continue;
-            if (keep > 0 && kept.getOrDefault(id, 0) < keep) {
-                kept.merge(id, s.getCount(), Integer::sum);
-                continue;
-            }
-            n++;
-        }
-        return n;
+        return io.github.mojolowjo.entropybot.storage.BagRoom.count(Storage.slots(p), storage.keeps());   // B7e: one count for all
     }
 
     /** Does the bot carry a pickaxe that gets the block's drops? (A stone one can't mine deepslate diamond.) */

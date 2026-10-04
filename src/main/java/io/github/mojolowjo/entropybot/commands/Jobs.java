@@ -587,6 +587,7 @@ public final class Jobs {
         Reflexes.Reflex r = core.reflexes.reflex(), prev = reflexWas;
         reflexWas = r;
         long now = core.tick();
+        reflexNotes(p, r, now);
         if (r != Reflexes.Reflex.NONE && prev == Reflexes.Reflex.NONE) {
             holdStart = now;
             if (running() && job.onHold != null) {
@@ -616,6 +617,23 @@ public final class Jobs {
             stopForReflex("stopped: attacked by " + target);
         } else if (st.has("deniedDim")) {
             stopForReflex("stopped: I am in " + st.get("deniedDim").getAsString() + ", which is off limits");
+        }
+    }
+
+    /** B7e (E1): the reflex whispers (the bridge's syncReflexes texts), once per transition. */
+    private final io.github.mojolowjo.entropybot.engine.ReflexNotes notes = new io.github.mojolowjo.entropybot.engine.ReflexNotes();
+
+    private void reflexNotes(LocalPlayer p, Reflexes.Reflex r, long now) {
+        try {
+            JsonObject st = core.reflexes.status();
+            java.util.List<String> say = notes.step(r.name(), st.has("target") ? st.get("target").getAsString() : null, p.getHealth(),
+                    st.has("deniedDim") ? st.get("deniedDim").getAsString() : null,
+                    st.has("noFood") && st.get("noFood").getAsBoolean(), p.getFoodData().getFoodLevel());
+            // while the bridge script still runs it whispers these itself (E2 drops this check with the bridge)
+            if (say.isEmpty() || commands.bridge.present(now)) return;
+            for (String w : say) commands.whisper(commands.owner(), w);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] reflex notes: {}", e.toString());
         }
     }
 

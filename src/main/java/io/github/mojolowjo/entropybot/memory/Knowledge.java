@@ -50,8 +50,14 @@ public final class Knowledge {
             if (dirtySince < 0) dirtySince = 0;
         }
         version = 1;
-        return sb.toString();
+        loadNote = sb.toString();
+        return loadNote;
     }
+
+    private String loadNote;
+
+    /** B7e: the load line ("chests.json: broken, loaded the backup (12 entries); ..."), for "memory". */
+    public synchronized String loadNote() { return loadNote; }
 
     private String loadOne(String name, Map<String, JsonObject> into) {
         into.clear();

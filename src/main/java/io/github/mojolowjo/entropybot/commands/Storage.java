@@ -354,6 +354,16 @@ public final class Storage {
         return out;
     }
 
+    /** B7e: the 36 inventory slots in order, null for an empty one (for BagRoom). */
+    static List<StorageRules.Held> slots(LocalPlayer p) {
+        List<StorageRules.Held> out = new ArrayList<>();
+        for (int i = 0; i < 36; i++) {
+            ItemStack s = p.getInventory().getItem(i);
+            out.add(s.isEmpty() ? null : new StorageRules.Held(Gui.itemId(s), s.getCount(), Gui.isFood(s), i));
+        }
+        return out;
+    }
+
     /** Package B: what deposit never puts away besides the old rules (the supplies, the hotbar layout, the best pickaxe). */
     StorageRules.Keeps keeps() {
         return new StorageRules.Keeps(commands.suppliesMap(), io.github.mojolowjo.entropybot.engine.Hotbar.layout());
