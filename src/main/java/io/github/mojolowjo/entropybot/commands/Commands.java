@@ -97,6 +97,41 @@ public final class Commands implements Chains.Env {
         return out;
     }
 
+    /** The commands store's object (commands.json): supplies, routines, rules, run, and package D's furnace jobs and smelt mode. */
+    JsonObject brainData() { return brainStore.data(); }
+
+    // ---- package D: furnace pickups ----
+
+    /** A "stop" holds the pickups this long (like the autominer's hold). */
+    static final long PICKUP_HOLD_MS = 10 * 60_000L;
+    private long lastStop = -1;
+
+    private boolean pickupHeld(long now) { return lastStop > 0 && now - lastStop < PICKUP_HOLD_MS; }
+
+    /** A chain step boundary may detour for a pickup (Chains.Env). */
+    @Override public boolean furnaceDue() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || !ready) return false;
+        long now = System.currentTimeMillis();
+        return !pickupHeld(now) && !crafting.furnaces().due(now, Storage.dim()).isEmpty();
+    }
+
+    /** Every second: forget furnace jobs long past due (the owner hears it), and pick up due output while the bot is idle. */
+    private void furnaceTick(LocalPlayer player, long tick) {
+        io.github.mojolowjo.entropybot.craft.FurnaceJobs fj = crafting.furnaces();
+        if (fj.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        for (io.github.mojolowjo.entropybot.craft.FurnaceJobs.Job j : fj.expire(now, crafting.sessionStart)) {
+            String t = io.github.mojolowjo.entropybot.craft.FurnaceJobs.forgotten(j);
+            LOG.info("[entropybot] {}", t);
+            whisper(owner(), t);
+        }
+        if (fj.due(now, Storage.dim()).isEmpty() || pickupHeld(now)) return;
+        if (jobs.running() || bridge.busy(tick) || chains.running() || chains.parked() || core.reflexes.hold() || player.isDeadOrDying()) return;
+        Reply r = handle(owner(), "smelt collect", false, pmListener(owner()));
+        LOG.info("[entropybot] furnace pickup: {}", r.text());
+    }
+
     void setSupplies(Map<String, Integer> s) {
         JsonObject o = new JsonObject();
         s.forEach(o::addProperty);
@@ -384,6 +419,13 @@ public final class Commands implements Chains.Env {
                     storage.tick(player);
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] container notes: {}", e.toString());
+                }
+            }
+            if (tick % 20 == 15 && worldTicks > 400) {
+                try {
+                    furnaceTick(player, tick);
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] furnace pickup: {}", e.toString());
                 }
             }
             if (tick % 200 == 150) pushPlaces();
@@ -903,6 +945,7 @@ public final class Commands implements Chains.Env {
 
     String stopAll() {
         long tick = core.tick();
+        lastStop = System.currentTimeMillis();         // package D: no furnace pickup for a while after "stop"
         String routine = chains.clear();
         bridge.dropQueued();
         jobs.followWatch = null;

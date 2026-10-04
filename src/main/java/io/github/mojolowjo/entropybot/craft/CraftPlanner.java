@@ -1,21 +1,44 @@
 package io.github.mojolowjo.entropybot.craft;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The crafting planner over a {@link RecipeSource}: a faithful port of the bridge's planCraft / planSmelt / pickFuel /
+ * The crafting planner over a {@link RecipeSource}: a port of the bridge's planCraft / planSmelt / pickFuel /
  * recipeNeeds / available / consume / craftingRecipes / smeltingRecipes, plus the name handling around them
  * (resolveItem, craftScore, expandSet, parseCraftTargets, planAll, describeSteps, recipeInfo). No Minecraft types.
+ *
+ * <p>Package D (TO-LOOK-AT-LATER 15 and the DEVNOTES "planner quirk"), on top of the bridge's planner:
+ * <ul>
+ *   <li><b>No circles:</b> the item being made and every item on the path to it are never its ingredients (the
+ *   essence tiers go both ways: 4 tertium + crystal -> imperium, imperium -> 4 tertium).</li>
+ *   <li><b>Up before down:</b> a breakdown recipe ({@link #isBreakdown}: one ingredient that is itself made from the
+ *   output, more out than in, e.g. supremium -> 4 imperium, an iron block -> 9 ingots, or an id with "uncraft") is
+ *   tried only after every recipe that builds up, and never while any of the lower tier (an up recipe's ingredient)
+ *   is in stock.</li>
+ *   <li><b>Catalysts</b> ({@link RecipeSource#catalyst}, the infusion crystal): one is needed in the bag, it is not
+ *   used up; {@link AllPlan#catalysts()} names them so a fetch from storage takes one along.</li>
+ *   <li><b>Deep chains</b> (the RS disks): up to {@link #MAX_DEPTH} levels of intermediates, planned bottom-up (every
+ *   step's ingredients come before it), with a budget of {@link #BUDGET} recipe tries per target.</li>
+ * </ul>
  */
 public final class CraftPlanner implements Crafter {
-    /** How deep missing ingredients are crafted or smelted first (logs -> planks -> sticks -> torch). */
-    public static final int MAX_DEPTH = 2;
+    /** How deep missing ingredients are crafted or smelted first (16k disk <- 16k part <- 4k part <- 1k part <- processor <- raw processor <- silicon). */
+    public static final int MAX_DEPTH = 8;
+    /** Down to this depth every alternative (up to {@link #CRAFT_ALTS}) of a missing ingredient is tried; deeper only {@link #DEEP_ALTS}. */
+    public static final int WIDE_DEPTH = 2;
+    /** Alternatives of a missing ingredient tried below {@link #WIDE_DEPTH} (keeps a deep search small). */
+    public static final int DEEP_ALTS = 4;
+    /** Recipe tries for one target before the planner gives up ({@link #TOO_DEEP}). */
+    public static final int BUDGET = 5000;
     /** How many alternatives of a missing crafting ingredient are tried. */
     public static final int CRAFT_ALTS = 40;
     /** How many alternatives of a missing furnace input are tried. */
@@ -49,8 +72,15 @@ public final class CraftPlanner implements Crafter {
         }
     }
 
-    /** planAll's answer: the steps for every target and the counts left, or the error ("&lt;short id&gt;: &lt;why&gt;"). */
-    public record AllPlan(List<Step> steps, Map<String, Integer> counts, String error) {
+    /**
+     * planAll's answer: the steps for every target and the counts left, or the error ("&lt;short id&gt;: &lt;why&gt;").
+     * {@code catalysts}: the catalysts the steps need in the bag (one each, not used up, so not in counts' difference).
+     */
+    public record AllPlan(List<Step> steps, Map<String, Integer> counts, String error, Set<String> catalysts) {
+        public AllPlan(List<Step> steps, Map<String, Integer> counts, String error) {
+            this(steps, counts, error, Set.of());
+        }
+
         public boolean ok() {
             return error == null;
         }
@@ -165,10 +195,28 @@ public final class CraftPlanner implements Crafter {
     // the planner
     // ------------------------------------------------------------------------------------------------------------
 
+    /** The planner's answer when a target has more ways to try than {@link #BUDGET}. */
+    public static String tooDeep(String id) {
+        return "too many ways to try for " + shortId(id) + " - craft one of its parts first";
+    }
+
+    /** One plan's bookkeeping: the items on the current path (never their own ingredients), the catalysts used, the tries. */
+    static final class Ctx {
+        final Set<String> path = new HashSet<>();
+        final Set<String> catalysts = new LinkedHashSet<>();
+        int tries;
+        boolean outOfBudget;
+    }
+
     @Override
     public Plan plan(String item, int n, Map<String, Integer> counts) {
+        return plan(item, n, counts, new Ctx());
+    }
+
+    private Plan plan(String item, int n, Map<String, Integer> counts, Ctx ctx) {
         List<Step> steps = new ArrayList<>();
-        String err = planCraft(item, Math.min(n, MAX_WANT), counts, 0, steps);
+        String err = planCraft(item, Math.min(n, MAX_WANT), counts, 0, steps, ctx);
+        if (err != null && ctx.outOfBudget) err = tooDeep(item);
         return err == null ? new Plan(List.copyOf(steps), null) : Plan.fail(err);
     }
 
@@ -179,61 +227,152 @@ public final class CraftPlanner implements Crafter {
      */
     public Plan planSmelt(String item, int n, Map<String, Integer> counts) {
         List<Step> steps = new ArrayList<>();
-        String err = planSmelt(item, Math.min(n, MAX_WANT), counts, 0, steps);
+        Ctx ctx = new Ctx();
+        ctx.path.add(item);
+        String err = planSmelt(item, Math.min(n, MAX_WANT), counts, 0, steps, ctx);
+        if (err != null && ctx.outOfBudget) err = tooDeep(item);
         return err == null ? new Plan(List.copyOf(steps), null) : Plan.fail(err);
     }
 
+    /** Are all of {@code alts} catalysts (the infusion crystal, or a tag of them)? */
+    public boolean catalyst(List<String> alts) {
+        if (alts.isEmpty()) return false;
+        for (String a : alts) if (!src.catalyst(a)) return false;
+        return true;
+    }
+
+    /** A recipe's ingredients that are used up (catalysts left out). */
+    public List<Need> usedNeeds(RecipeData r) {
+        List<Need> out = new ArrayList<>();
+        for (Need n : r.needs()) if (!catalyst(n.alts())) out.add(n);
+        return out;
+    }
+
+    /**
+     * Package D: a breakdown takes an item apart into a lower tier: one used-up ingredient, more out than in, and that
+     * ingredient is crafted from the output (supremium -> 4 imperium, an iron block -> 9 ingots), or an id with
+     * "uncraft" in it (Mystical Agriculture's). Its opposite, the recipe that builds up, is not one.
+     */
+    public boolean isBreakdown(RecipeData r) {
+        if (!r.crafting()) return false;
+        if (r.id().contains("uncraft")) return true;
+        List<Need> needs = usedNeeds(r);
+        if (needs.size() != 1 || r.outCount() <= needs.get(0).amount()) return false;
+        for (String x : needs.get(0).alts()) {
+            for (RecipeData back : src.recipesFor(x)) if (back.crafting() && x.equals(back.output()) && back.uses(r.output())) return true;
+        }
+        return false;
+    }
+
+    /** An up recipe's used-up ingredient the counts hold some of (the lower tier in stock), or null. */
+    String lowerTierInStock(List<RecipeData> up, Map<String, Integer> counts) {
+        for (RecipeData r : up) for (Need n : usedNeeds(r)) for (String a : n.alts()) if (get(counts, a) > 0) return a;
+        return null;
+    }
+
+    /** The alternatives that are not on the current path (an item is never made from itself or what it goes into). */
+    private static List<String> offPath(List<String> alts, Set<String> path) {
+        List<String> out = new ArrayList<>(alts.size());
+        for (String a : alts) if (!path.contains(a)) out.add(a);
+        return out;
+    }
+
+    private static String firstHeld(List<String> alts, Map<String, Integer> counts) {
+        for (String a : alts) if (get(counts, a) > 0) return a;
+        return alts.get(0);
+    }
+
     // planCraft: null when planned (steps appended, counts updated), else why not
-    private String planCraft(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps) {
+    private String planCraft(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps, Ctx ctx) {
+        if (++ctx.tries > BUDGET) {
+            ctx.outOfBudget = true;
+            return tooDeep(id);
+        }
+        boolean added = ctx.path.add(id);
+        try {
+            return planCraftOn(id, want, counts, depth, steps, ctx);
+        } finally {
+            if (added) ctx.path.remove(id);
+        }
+    }
+
+    private String planCraftOn(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps, Ctx ctx) {
         List<RecipeData> recipes = craftingRecipes(id);
         if (recipes.isEmpty()) {
             // no crafting recipe: maybe a furnace makes it (an ingot from raw ore, glass, a processor...)
-            String sm = planSmelt(id, want, counts, depth, steps);
+            String sm = planSmelt(id, want, counts, depth, steps, ctx);
             return sm == null ? null : (sm.equals(NO_SMELTING) ? "there is no crafting recipe for " + shortId(id) : sm);
         }
-        String lastErr = null;
-        for (RecipeData r : recipes) {
-            int out = r.outCount();
-            int crafts = ceilDiv(want, out);
-            Map<String, Integer> trial = copy(counts);
-            List<Step> subSteps = new ArrayList<>();
-            boolean ok = true;
-            List<Need> needs = r.needs();
-            for (int k = 0; k < needs.size() && ok; k++) {
-                Need n = needs.get(k);
-                int missing = n.amount() * crafts - available(n.alts(), trial);
-                if (missing > 0) {
-                    boolean found = false;
-                    if (depth < MAX_DEPTH) {
-                        for (int j = 0; j < n.alts().size() && j < CRAFT_ALTS && !found; j++) {
-                            Map<String, Integer> trial2 = copy(trial);
-                            List<Step> steps2 = new ArrayList<>();
-                            if (planCraft(n.alts().get(j), missing, trial2, depth + 1, steps2) == null) {
-                                trial = trial2;
-                                subSteps.addAll(steps2);
-                                found = true;
-                            }
-                        }
-                    }
-                    if (!found) {
-                        ok = false;
-                        lastErr = "missing " + missing + " " + shortId(n.alts().get(0)) + (n.alts().size() > 1 ? " (or similar)" : "");
-                    }
-                }
-                if (ok) consume(n.alts(), n.amount() * crafts, trial);
+        List<RecipeData> up = new ArrayList<>(), down = new ArrayList<>();
+        for (RecipeData r : recipes) (isBreakdown(r) ? down : up).add(r);
+        String upErr = null;
+        for (RecipeData r : up) {
+            String e = tryRecipe(r, id, want, counts, depth, steps, ctx);
+            if (e == null) return null;
+            if (upErr == null || !e.contains(" itself")) upErr = e;
+        }
+        // a breakdown only when none of the lower tier is in stock (the owner's rule: never take supremium apart for
+        // tertium while there is prudentium)
+        String downErr = null, refused = null;
+        String lower = down.isEmpty() ? null : lowerTierInStock(up, counts);
+        for (RecipeData r : down) {
+            List<Need> used = usedNeeds(r);
+            String from = used.isEmpty() ? "?" : shortId(used.get(0).alts().get(0));
+            if (lower != null) {
+                refused = "not breaking down " + from + " for it: I have " + shortId(lower) + ", the lower tier";
+                continue;
             }
-            if (ok) {
-                trial.put(id, get(trial, id) + crafts * out);
-                replace(counts, trial);
-                steps.addAll(subSteps);
-                steps.add(new Craft(r.id(), id, want, crafts, r.needsTable()));
-                return null;
-            }
+            String e = tryRecipe(r, id, want, counts, depth, steps, ctx);
+            if (e == null) return null;
+            downErr = e;
         }
         // none of the crafting recipes works: a furnace may still make it
-        String sm = planSmelt(id, want, counts, depth, steps);
+        String sm = planSmelt(id, want, counts, depth, steps, ctx);
         if (sm == null) return null;
-        return lastErr != null ? lastErr : "cannot craft " + shortId(id);
+        // the most useful reason: a furnace that has its input but no fuel says so; else what building up lacks
+        boolean smeltReal = !sm.equals(NO_SMELTING) && !sm.startsWith("missing ");
+        String why = smeltReal ? sm : upErr != null ? upErr : !sm.equals(NO_SMELTING) ? sm : downErr != null ? downErr : refused;
+        if (why == null) why = "cannot craft " + shortId(id);
+        if (refused != null && !why.equals(refused)) why += " (" + refused + ")";
+        return why;
+    }
+
+    /** One crafting recipe for {@code want} of {@code id}: null when planned (counts and steps updated), else why not. */
+    private String tryRecipe(RecipeData r, String id, int want, Map<String, Integer> counts, int depth, List<Step> steps, Ctx ctx) {
+        int out = r.outCount();
+        int crafts = ceilDiv(want, out);
+        Map<String, Integer> trial = copy(counts);
+        List<Step> subSteps = new ArrayList<>();
+        Set<String> cats = new LinkedHashSet<>();
+        for (Need n : r.needs()) {
+            List<String> alts = offPath(n.alts(), ctx.path);
+            if (alts.isEmpty()) return "making " + shortId(id) + " that way needs " + shortId(n.alts().get(0)) + " itself";
+            boolean cat = catalyst(alts);
+            int need = cat ? n.amount() : n.amount() * crafts;
+            int missing = need - available(alts, trial);
+            if (missing > 0) {
+                boolean found = false;
+                int maxAlts = depth < WIDE_DEPTH ? CRAFT_ALTS : DEEP_ALTS;
+                for (int j = 0; j < alts.size() && j < maxAlts && depth < MAX_DEPTH && !found && !ctx.outOfBudget; j++) {
+                    Map<String, Integer> trial2 = copy(trial);
+                    List<Step> steps2 = new ArrayList<>();
+                    if (planCraft(alts.get(j), missing, trial2, depth + 1, steps2, ctx) == null) {
+                        trial = trial2;
+                        subSteps.addAll(steps2);
+                        found = true;
+                    }
+                }
+                if (!found) return "missing " + missing + " " + shortId(alts.get(0)) + (alts.size() > 1 ? " (or similar)" : "");
+            }
+            if (cat) cats.add(firstHeld(alts, trial));      // needed in the bag, handed back by the grid
+            else consume(alts, need, trial);
+        }
+        trial.put(id, get(trial, id) + crafts * out);
+        replace(counts, trial);
+        steps.addAll(subSteps);
+        steps.add(new Craft(r.id(), id, want, crafts, r.needsTable()));
+        ctx.catalysts.addAll(cats);
+        return null;
     }
 
     /** Fuel for {@code n} items from the counts (coal or charcoal first, then a coal block, then planks), or null. */
@@ -250,23 +389,25 @@ public final class CraftPlanner implements Crafter {
     }
 
     // planSmelt: null when planned, NO_SMELTING without a furnace recipe, else why not
-    private String planSmelt(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps) {
+    private String planSmelt(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps, Ctx ctx) {
         String lastErr = NO_SMELTING;
         for (RecipeData r : smeltingRecipes(id)) {
             int out = Math.max(1, r.outCount());
             int n = ceilDiv(want, out);
             List<Need> needs = r.needs();
             if (needs.size() != 1) continue;
-            List<String> alts = needs.get(0).alts();
+            List<String> alts = offPath(needs.get(0).alts(), ctx.path);
+            if (alts.isEmpty()) continue;
             Map<String, Integer> trial = copy(counts);
             List<Step> sub = new ArrayList<>();
             int missing = n - available(alts, trial);
             if (missing > 0) {
                 boolean found = false;
-                for (int j = 0; j < alts.size() && j < SMELT_ALTS && depth < MAX_DEPTH && !found; j++) {
+                int maxAlts = Math.min(SMELT_ALTS, depth < WIDE_DEPTH ? SMELT_ALTS : DEEP_ALTS);
+                for (int j = 0; j < alts.size() && j < maxAlts && depth < MAX_DEPTH && !found && !ctx.outOfBudget; j++) {
                     Map<String, Integer> trial2 = copy(trial);
                     List<Step> s2 = new ArrayList<>();
-                    if (planCraft(alts.get(j), missing, trial2, depth + 1, s2) == null) {
+                    if (planCraft(alts.get(j), missing, trial2, depth + 1, s2, ctx) == null) {
                         trial = trial2;
                         sub = s2;
                         found = true;
@@ -407,12 +548,15 @@ public final class CraftPlanner implements Crafter {
      */
     public AllPlan planAll(List<Target> targets, Map<String, Integer> counts) {
         List<Step> steps = new ArrayList<>();
+        Set<String> catalysts = new LinkedHashSet<>();
         for (Target t : targets) {
-            Plan p = plan(t.id(), t.want(), counts);
+            Ctx ctx = new Ctx();
+            Plan p = plan(t.id(), t.want(), counts, ctx);
             if (!p.ok()) return new AllPlan(List.of(), counts, shortId(t.id()) + ": " + p.error());
             steps.addAll(p.steps());
+            catalysts.addAll(ctx.catalysts);
         }
-        return new AllPlan(List.copyOf(steps), counts, null);
+        return new AllPlan(List.copyOf(steps), counts, null, java.util.Collections.unmodifiableSet(catalysts));
     }
 
     /** "2 oak_planks -> 1 stick -> 4 torch". */

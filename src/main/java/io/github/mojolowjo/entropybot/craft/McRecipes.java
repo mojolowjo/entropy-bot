@@ -150,6 +150,25 @@ public final class McRecipes implements RecipeSource {
         return rl != null && BuiltInRegistries.ITEM.containsKey(rl);
     }
 
+    private final Map<String, Boolean> catalysts = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Package D: the item's crafting remainder is itself (the infusion crystal): it comes back from the grid. */
+    @Override
+    public boolean catalyst(String item) {
+        return catalysts.computeIfAbsent(item, id -> {
+            try {
+                ResourceLocation rl = ResourceLocation.tryParse(id);
+                if (rl == null || !BuiltInRegistries.ITEM.containsKey(rl)) return false;
+                ItemStack st = new ItemStack(BuiltInRegistries.ITEM.get(rl));
+                if (st.isEmpty() || !st.hasCraftingRemainingItem()) return false;
+                ItemStack rem = st.getCraftingRemainingItem();
+                return rem != null && !rem.isEmpty() && rem.getItem() == st.getItem();
+            } catch (RuntimeException e) {
+                return false;
+            }
+        });
+    }
+
     @Override
     public synchronized List<String> allItemIds() {
         if (allIds == null) {

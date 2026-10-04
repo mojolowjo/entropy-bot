@@ -185,15 +185,19 @@ class CraftPlannerTest {
         assertEquals(List.of(new Smelt("minecraft:iron_ingot_from_smelting_raw_iron", m("iron_ingot"), 8, m("raw_iron"), 8, m("coal"), 1)),
                 p.plan(m("iron_ingot"), 8, c).steps(), "coal does 8");
         assertEquals(counts("raw_iron", 0, "coal", 0, "iron_ingot", 8), c);
-        // the bridge's quirk, kept: crafting recipes come first, so 9 ingots with 9 raw iron go via a block
-        assertEquals("9 iron_ingot -> 1 iron_block -> 9 iron_ingot",
+        // the bridge's quirk (9 ingots -> a block -> 9 ingots) is gone since package D: an item is never its own ingredient
+        assertEquals("9 iron_ingot",
                 CraftPlanner.describeSteps(p.plan(m("iron_ingot"), 9, counts("raw_iron", 9, "coal_block", 1)).steps()));
+        assertInstanceOf(Smelt.class, p.plan(m("iron_ingot"), 9, counts("raw_iron", 9, "coal_block", 1)).steps().get(0));
+        assertEquals(List.of(new Craft("minecraft:iron_ingot_from_iron_block", m("iron_ingot"), 9, 1, false)),
+                p.plan(m("iron_ingot"), 9, counts("iron_block", 1, "raw_iron", 9, "coal_block", 1)).steps(),
+                "a block in stock is unpacked (no lower tier in stock), before the furnace");
         assertEquals(new CraftPlanner.Fuel(m("coal"), 1), CraftPlanner.pickFuel(counts("oak_planks", 64, "coal", 1), 8), "coal first, 8 a piece");
         assertEquals(new CraftPlanner.Fuel(m("charcoal"), 2), CraftPlanner.pickFuel(counts("charcoal", 2), 9));
         assertEquals(new CraftPlanner.Fuel(m("spruce_planks"), 9), CraftPlanner.pickFuel(counts("coal", 1, "spruce_planks", 9), 9));
         assertNull(CraftPlanner.pickFuel(counts("coal", 1, "oak_planks", 8), 9));
-        // no fuel for an item that has crafting recipes too: the crafting error wins (the bridge's lastErr)
-        assertEquals("missing 1 iron_block", p.plan(m("iron_ingot"), 3, counts("raw_iron", 3)).error());
+        // no fuel for an item whose only crafting recipe is a breakdown: the furnace's reason is the useful one (package D)
+        assertEquals("no fuel (coal or charcoal) to smelt 3 raw_iron", p.plan(m("iron_ingot"), 3, counts("raw_iron", 3)).error());
     }
 
     @Test
@@ -209,13 +213,14 @@ class CraftPlannerTest {
     }
 
     @Test
-    void twoLevelsDeepAndNoDeeper() {
+    void deeperThanTwoLevels() {
         FakeRecipes f = world();
         f.shapeless("oak_log_from_seed", "oak_log", 1, alts("log_seed"));
         CraftPlanner deep = new CraftPlanner(f);
         assertTrue(deep.plan(m("torch"), 4, counts("oak_log", 1, "coal", 1)).ok(), "torch <- stick <- planks <- logs on hand");
-        assertEquals("missing 1 stick", deep.plan(m("torch"), 4, counts("log_seed", 1, "coal", 1)).error(), "logs would be a third level");
-        assertTrue(deep.plan(m("stick"), 4, counts("log_seed", 1)).ok(), "one level up, the seed is in reach");
+        Plan plan = deep.plan(m("torch"), 4, counts("log_seed", 1, "coal", 1));
+        assertTrue(plan.ok(), "package D: a third level (the seed) is in reach now: " + plan.error());
+        assertEquals("1 oak_log -> 2 oak_planks -> 1 stick -> 4 torch", CraftPlanner.describeSteps(plan.steps()), "bottom-up");
     }
 
     @Test

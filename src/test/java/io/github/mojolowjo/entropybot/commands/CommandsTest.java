@@ -200,6 +200,8 @@ class CommandsTest {
         @Override public void saved() {}
         int[] pos;                                            // (wave 1) where the bot stands; null = unknown
         @Override public int[] pos() { return pos; }
+        int furnaceDue;                                       // (package D) how many step boundaries see a furnace due
+        @Override public boolean furnaceDue() { return furnaceDue > 0 && furnaceDue-- > 0; }
 
         /** The bridge takes the next request and answers; started = a job runs. */
         void bridgeTakes(String reply, boolean started) {

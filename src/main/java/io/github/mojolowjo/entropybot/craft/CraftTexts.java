@@ -43,6 +43,20 @@ public final class CraftTexts {
         return out;
     }
 
+    /**
+     * Package D: {@link #fromStorage} plus one of each catalyst the plan needs (the infusion crystal) that the bag
+     * lacks: a catalyst is not used up, so the plan's counts don't show it as taken.
+     */
+    public static Map<String, Integer> fromStorage(Map<String, Integer> combined, Map<String, Integer> left, Map<String, Integer> inv, Set<String> catalysts) {
+        Map<String, Integer> out = fromStorage(combined, left, inv);
+        if (catalysts != null) {
+            for (String c : catalysts) {
+                if (CraftPlanner.get(inv, c) <= 0 && CraftPlanner.get(combined, c) > 0 && CraftPlanner.get(out, c) <= 0) out.put(c, 1);
+            }
+        }
+        return out;
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // need <item> [n]
     // ---------------------------------------------------------------------------------------------------------------
@@ -61,7 +75,9 @@ public final class CraftTexts {
         r = p.planAll(targets.list(), new LinkedHashMap<>(combined));
         if (!r.ok()) return "missing: " + r.error() + " (counting my chests" + (rsKnown ? " and the RS network" : "") + ")";
         List<String> used = new ArrayList<>();
-        for (Map.Entry<String, Integer> e : fromStorage(combined, r.counts(), inv).entrySet()) used.add(e.getValue() + " " + shortId(e.getKey()));
+        for (Map.Entry<String, Integer> e : fromStorage(combined, r.counts(), inv, r.catalysts()).entrySet()) {
+            used.add(e.getValue() + " " + shortId(e.getKey()) + (r.catalysts().contains(e.getKey()) ? " (kept, not used up)" : ""));
+        }
         return "I can make it: " + CraftPlanner.describeSteps(r.steps()) + "; from storage: " + String.join(", ", used);
     }
 
