@@ -160,7 +160,14 @@ public final class Guard {
     public boolean vetoPlace(Level level, BlockPos pos) {
         if (level == null) level = Minecraft.getInstance().level;
         if (level == null) return false;
-        return refuse(level, pos, "place", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", GuardCore.BlockInfo.PLAIN));
+        // water plan: a seal lease (just outside the areas) only fills air or water
+        GuardCore.BlockInfo info = GuardCore.BlockInfo.PLAIN;
+        if (level.isLoaded(pos)) {
+            var st = level.getBlockState(pos);
+            boolean airOrWater = st.isAir() || (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.canBeReplaced());
+            info = GuardCore.BlockInfo.placing(airOrWater);
+        }
+        return refuse(level, pos, "place", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", info));
     }
 
     private boolean refuse(Level level, BlockPos pos, String action, GuardCore.Verdict v) {

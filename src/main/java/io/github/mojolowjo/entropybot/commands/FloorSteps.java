@@ -7,6 +7,7 @@ import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalBlock;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.clear.Bot;
+import io.github.mojolowjo.entropybot.clear.ClearEngine;
 import io.github.mojolowjo.entropybot.clear.ClearJob;
 import io.github.mojolowjo.entropybot.clear.FloorFill;
 import io.github.mojolowjo.entropybot.clear.JunkDrop;
@@ -99,7 +100,8 @@ final class FloorSteps {
         if (!fs.climbOnly && fs.run == null) {
             // a clear that didn't end ok (stopped, stuck, the guard): no fill and no more rounds, its report ends the job
             Clearing.Outcome o = fs.clearStep != null ? fs.clearStep.cleared : null;
-            if (o == null || !o.ok()) {
+            // water plan item 1: a clear blocked by water still gets the floor of what it dug (no more rounds), then ends blocked
+            if (o == null || (!o.ok() && !ClearEngine.blockedByLiquid(o.message()))) {
                 fs.done = true;
                 String m = o != null ? o.message() : "stopped: the clear left no report (while " + seq.label + ")";
                 if (fs.prev != null) m = FloorFill.endMessage(m, fs.brokenBefore + (o != null ? o.broken() : 0), fs.prev.report());
@@ -134,7 +136,7 @@ final class FloorSteps {
         }
         Clearing.Outcome o = fs.clearStep != null ? fs.clearStep.cleared : null;
         int broken = fs.brokenBefore + (o != null ? o.broken() : 0);
-        if (o != null && o.left() > 0 && fs.run.filled() > 0 && fs.round < MAX_ROUNDS) {
+        if (o != null && o.ok() && o.left() > 0 && fs.run.filled() > 0 && fs.round < MAX_ROUNDS) {
             // the new floor reaches what the clear couldn't: once more from it
             Seq.Step again = Clearing.clearStep(fs.opts);
             Seq.Step fill = floorStep(fs.opts, again, false);
@@ -230,6 +232,8 @@ final class FloorSteps {
             Map<String, Integer> dep = StorageRules.depositables(Storage.held(p), "", false, null, seq.storage.keeps());
             String keep = js.job.floor ? FloorFill.chooseBlock(js.job.floorBlock, inv) : null;
             js.plan = JunkDrop.plan(dep, inv, keep, keep != null ? JunkDrop.FLOOR_KEEP : 0);
+            // water plan: a "water" dig keeps a reserve of junk blocks to seal water with
+            if (js.job.water) js.plan = io.github.mojolowjo.entropybot.clear.WaterPlan.keepReserve(js.plan, inv, io.github.mojolowjo.entropybot.clear.WaterPlan.RESERVE);
             if (js.plan.isEmpty()) return "no plain junk blocks to throw away";
             // the rotation reaches the server with the next movement packets, before the throw clicks
             float yaw = JunkDrop.throwYaw(js.start, p.getX(), p.getZ(), js.job.box);

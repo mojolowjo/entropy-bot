@@ -195,6 +195,8 @@ public final class Clearing {
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
+        /** water plan: a block sealing water off at the edge of this dig box (a seal lease when the cell is outside the areas) */
+        ClearBox seal;
     }
 
     /** A Baritone build step's state (build floor|walls|fill|shell). */
@@ -223,6 +225,9 @@ public final class Clearing {
         @Override public String name(int x, int y, int z) { return cur.name(x, y, z); }
         @Override public boolean air(int x, int y, int z) { return cur.air(x, y, z); }
         @Override public boolean fluid(int x, int y, int z) { return cur.fluid(x, y, z); }
+        @Override public String fluidKind(int x, int y, int z) { return cur.fluidKind(x, y, z); }
+        @Override public FluidCell fluidCell(int x, int y, int z) { return cur.fluidCell(x, y, z); }
+        @Override public boolean replaceable(int x, int y, int z) { return cur.replaceable(x, y, z); }
         @Override public boolean blockEntity(int x, int y, int z) { return cur.blockEntity(x, y, z); }
         @Override public boolean unbreakable(int x, int y, int z) { return cur.unbreakable(x, y, z); }
         @Override public boolean builtBlock(int x, int y, int z) { return cur.builtBlock(x, y, z); }
@@ -362,6 +367,8 @@ public final class Clearing {
         if (KIND_BUILD.equals(st.kind)) return buildRun(seq, st, p, elapsed);
         if (FloorSteps.KIND_FLOOR.equals(st.kind)) return FloorSteps.floorRun(seq, st, p);       // B7e F
         if (FloorSteps.KIND_JUNK.equals(st.kind)) return FloorSteps.junkRun(seq, st, p);
+        if (WaterSteps.KIND_WATER.equals(st.kind)) return WaterSteps.waterRun(seq, st, p);          // water plan
+        if (WaterSteps.KIND_DRAIN.equals(st.kind)) return WaterSteps.drainRun(seq, st, p);
         return clearRun(seq, st, p);
     }
 
@@ -477,6 +484,14 @@ public final class Clearing {
         s.leases.releaseAll();
         addTally(s.job.oreTally);
         int left = s.job.lastScanLeft != null ? s.job.lastScanLeft : 0;
+        // water plan: "dig ... water" stopped by water: a water round comes next (it ends the job itself when it can't)
+        if (WaterSteps.wants(st, msg)) {
+            st.cleared = new Outcome(false, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
+            LOG.info("[entropybot] clear: {} - looking at the water", msg);
+            seq.splice(seq.idx + 1, List.of(WaterSteps.step(st, s.job)));
+            return "next";
+        }
+        msg = WaterSteps.endText(st, s.job, msg);
         boolean ok = msg.startsWith("ok");
         st.cleared = new Outcome(ok, s.job.broken, left, new LinkedHashMap<>(s.job.oreTally), new ArrayList<>(s.ores.noted), msg);
         LOG.info("[entropybot] clear: {}", msg);
@@ -743,6 +758,11 @@ public final class Clearing {
      * the cell; for a bucket also the clicked block) and goes into {@code leases} (once per box). "ok: ..." or "error: ...".
      */
     public static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases) {
+        return placeAt(p, id, x, y, z, leases, null);
+    }
+
+    /** As above; seal: the dig box a water seal belongs to (its lease may lie just outside the areas, LeaseSet.sealLease). */
+    static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal) {
         Minecraft mc = Minecraft.getInstance();
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
@@ -754,7 +774,9 @@ public final class Clearing {
         PlaceRules.Side s = PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ());
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
         // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
-        String le = leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
+        String le = seal != null && isBlockItem(id)
+                ? leases.sealLease(x, y, z, seal, "sealing water with " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
+                : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
         if (le != null) return le;
         if (!holdItem(p, id)) return "error: I have no " + GuiCore.shortId(id);
         Vec3 hit = new Vec3(x + 0.5 + s.dx() * 0.5, y + 0.5 + s.dy() * 0.5, z + 0.5 + s.dz() * 0.5);
@@ -847,7 +869,7 @@ public final class Clearing {
         if (ps.stage.equals("place")) {
             // 4b: only a click into a cell that was free just before it makes the block ours
             boolean freeBefore = Minecraft.getInstance().level.getBlockState(new BlockPos(pos[0], pos[1], pos[2])).canBeReplaced();
-            String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases);
+            String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases, ps.seal);
             // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
             ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
             if (!r.startsWith("ok")) {

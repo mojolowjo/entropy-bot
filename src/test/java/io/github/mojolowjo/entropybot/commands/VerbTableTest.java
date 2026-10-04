@@ -23,7 +23,8 @@ class VerbTableTest {
     void coversEveryBuiltinVerb() {
         for (String v : Texts.BUILTIN_VERBS) assertNotNull(VerbTable.of(v), "not in the verb table: " + v);
         for (String v : List.of("recorder", "debug", "mouse", "check", "confirm")) assertNotNull(VerbTable.of(v), v);
-        assertTrue(VerbTable.of("dig").usage().contains("[floor]"), "dig's floor option");
+        assertTrue(VerbTable.of("dig").usage().contains("[floor [block]]"), "dig's floor option");
+        assertTrue(VerbTable.of("dig").usage().contains("[water [large]]"), "dig's water option (water plan)");
         assertEquals("help", VerbTable.of("?").name());
         assertEquals("routine", VerbTable.of("ROUTINES").name());
     }

@@ -327,6 +327,33 @@ public final class ClearEngine {
         return null;
     }
 
+    /** The start of a clear's end message when water or lava stopped it ({@link ClearJob#liquidBlocks}). */
+    public static final String BLOCKED_BY = "blocked by ";
+
+    /** The end message says water or lava stopped the clear ("blocked by water at 377 -45 854 - broke ..."). */
+    public static boolean blockedByLiquid(String msg) {
+        return msg != null && msg.startsWith(BLOCKED_BY);
+    }
+
+    /**
+     * Water plan item 1: the liquid cell that stopped the clear, or null. A block skipped as "next to water/lava" that
+     * is still there and still touches a liquid (above or beside, as {@link #nextToLiquid}): the liquid cell next to the
+     * first such block (the order the clear met them in).
+     */
+    public static Pos liquidBlock(ClearWorld w, ClearJob job) {
+        int[][] sides = { { 0, 1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+        for (Map.Entry<String, String> e : job.skip.entrySet()) {
+            if (!NEXT_TO_LIQUID.equals(e.getValue())) continue;
+            Pos p = Pos.parse(e.getKey());
+            if (!clearable(w, job, p.x(), p.y(), p.z())) continue;
+            for (int[] s : sides) {
+                int x = p.x() + s[0], y = p.y() + s[1], z = p.z() + s[2];
+                if (w.fluid(x, y, z)) return new Pos(x, y, z);
+            }
+        }
+        return null;
+    }
+
     /**
      * finishClear's report: "ok: done label - broke N blocks", "ok: finished ...; M left, e.g. ...", or the prefix
      * given ("stopped: ..."), plus ores mined, ores left in place and built blocks left alone. A corridor that has
@@ -352,6 +379,11 @@ public final class ClearEngine {
             }
         }
         int left = job.lastScanLeft != null ? job.lastScanLeft : 0;
+        // water plan item 1: blocks left because they touch water or lava end a dig as blocked, naming the spot
+        if (prefix == null && job.liquidBlocks) {
+            Pos lb = liquidBlock(w, job);
+            if (lb != null) prefix = BLOCKED_BY + w.fluidKind(lb.x(), lb.y(), lb.z()) + " at " + lb.key();
+        }
         // a strip mine's corridor has to go all the way, or every later branch is out of reach. Checks what's
         // really there (bedrock or a chest is never a target, so it doesn't count as "left", but it still blocks)
         if (prefix == null && job.mustFinish) {

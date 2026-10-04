@@ -26,6 +26,20 @@ final class FakeWorld implements ClearWorld {
     final Map<Long, String> blocks = new HashMap<>();
     final Set<String> avoid = new HashSet<>();
     final Set<Long> lit = new HashSet<>();
+    /** Water plan: the fluid state of a "water"/"lava" cell that isn't a source (none: a source). */
+    final Map<Long, FluidCell> flows = new HashMap<>();
+
+    @Override public FluidCell fluidCell(int x, int y, int z) {
+        if (!fluid(x, y, z)) return null;
+        FluidCell f = flows.get(k(x, y, z));
+        return f != null ? f : FluidCell.SOURCE;
+    }
+
+    /** A flowing water cell (amount 1..7) or a falling one. */
+    void flow(int x, int y, int z, int amount, boolean falling) {
+        set(x, y, z, "water");
+        flows.put(k(x, y, z), new FluidCell(false, falling ? 8 : amount, falling));
+    }
 
     static long k(int x, int y, int z) {
         return ((long) (x & 0x3ffffff) << 38) | ((long) (z & 0x3ffffff) << 12) | (y & 0xfff);
@@ -39,7 +53,10 @@ final class FakeWorld implements ClearWorld {
 
     String get(Pos p) { return get(p.x(), p.y(), p.z()); }
 
-    void set(int x, int y, int z, String name) { blocks.put(k(x, y, z), name); }
+    void set(int x, int y, int z, String name) {
+        blocks.put(k(x, y, z), name);
+        flows.remove(k(x, y, z));
+    }
 
     void set(Pos p, String name) { set(p.x(), p.y(), p.z(), name); }
 
