@@ -289,7 +289,7 @@ class ClearEngineTest {
         Bot bot = Bot.at(0.5, 53, 0.5);
         Pos far = new Pos(9, 53, 0), lit = new Pos(1, 53, 0), notDug = new Pos(0, 52, 2), ok = new Pos(-2, 53, 0);
         ClearJob j = ClearJob.start(new ClearJob.Options().box(ClearBox.of(-3, 52, -3, 9, 54, 3)).torches(List.of(far, notDug, lit, ok)), null, null);
-        assertEquals(ClearBox.of(-4, 51, -4, 10, 55, 4), j.torchLeaseBox());
+        assertEquals(ClearBox.of(-3, 52, -3, 9, 54, 3), j.torchLeaseBox(), "T1: the box itself, no shell");
         w.lit.add(FakeWorld.k(1, 53, 0));
         assertNull(ClearEngine.nextTorch(w, bot, j, true), "the lit spot gets none");
         assertEquals(1, j.torchesSkipped);

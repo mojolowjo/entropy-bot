@@ -79,6 +79,32 @@ public final class ClearJob {
     public final String exactId;
     public final java.util.function.BooleanSupplier armed;
 
+    /** T3: where the bot may stand (feet cell): the owner's areas while the fence is on. */
+    public interface StandCheck {
+        boolean ok(int x, int y, int z);
+    }
+
+    /**
+     * T3 (2026-10-04): set by the wiring while the fence is on, null otherwise. Stand spots and the drops it walks to
+     * must pass it: the tunnel night's bot chased a drop 2 below the floor and 1 out (260 -48 852), outside the area.
+     */
+    public StandCheck standOk;
+
+    /** T3: a stand spot (feet cell) this job may use. */
+    public boolean standAllowed(int x, int y, int z) {
+        return standOk == null || standOk.ok(x, y, z);
+    }
+
+    /**
+     * The drops it goes after: within 2 of the box, not below {@link #minStandY} (filling the hole pushes those back
+     * up), and (T3) only where it may stand.
+     */
+    public boolean dropWanted(int x, int y, int z) {
+        if (x < box.x1() - 2 || x > box.x2() + 2 || y < box.y1() - 2 || y > box.y2() + 2 || z < box.z1() - 2 || z > box.z2() + 2) return false;
+        if (minStandY != null && y < minStandY) return false;
+        return standAllowed(x, y, z);
+    }
+
     public int broken, brokenAtScan, consecFails, sightBudget, oresMined, protectedCount, craftTries, torchesSkipped;
     /** ores newly listed during this job (the bridge's oresNoted - job.oreBase) */
     public int oresNoted;
@@ -162,9 +188,13 @@ public final class ClearJob {
         return box;
     }
 
-    /** The box its place lease covers when it places torches (the box plus a 1-block shell), else null. */
+    /**
+     * The box its place lease covers when it places torches, else null. T1: the box itself (the torches go on dug-out
+     * cells inside it, and each placement takes its own cell lease too); the old 1-block shell never fit an area
+     * exactly as wide as the corridor.
+     */
     public ClearBox torchLeaseBox() {
-        return torches.isEmpty() ? null : box.grow(1);
+        return torches.isEmpty() ? null : box;
     }
 
     public String torchLeaseTask() {

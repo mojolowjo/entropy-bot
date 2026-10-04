@@ -153,6 +153,8 @@ public final class ClearGrid {
                     if (x == t.x() && z == t.z() && (y == t.y() + 1 || (fallAbove && y < t.y()))) continue;
                     // a vein clear stays on the walkway: from a hole 2 deep the bot can't climb back out
                     if (job.minStandY != null && y < job.minStandY) continue;
+                    // T3: with the fence on, only inside the owner's areas (a cave next to a tunnel area is not)
+                    if (!job.standAllowed(x, y, z)) continue;
                     double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
                     if (ClearEngine.eyeDistSq(ex, ey, ez, t.x(), t.y(), t.z()) > r * r) continue;
                     int i = g.idx(x, y, z);

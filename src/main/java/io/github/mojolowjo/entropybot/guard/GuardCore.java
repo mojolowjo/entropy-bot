@@ -97,6 +97,12 @@ public final class GuardCore {
         return "ok: guard mode " + m.name().toLowerCase();
     }
 
+    /** T2: a one-cell lease at x y z would be granted and a placement there not refused by the floor (no lease taken). */
+    public static boolean cellLeasable(Policy p, String dim, int x, int y, int z) {
+        if (DENIED_DIMS.contains(dim) || p.protectAt(dim, x, y, z) != null) return false;
+        return p.areaCovers(new Box(null, dim, x, y, z, x, y, z));
+    }
+
     /** Takes a lease. Returns the id, or "error: ...". */
     public synchronized String lease(String owner, String task, Box box, boolean place, boolean force) {
         if (owner == null || owner.isEmpty()) return "error: no token";

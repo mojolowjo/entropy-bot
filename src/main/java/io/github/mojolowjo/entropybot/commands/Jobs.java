@@ -625,16 +625,44 @@ public final class Jobs {
         if (b != null) cancel(b);
     }
 
+    /** T3: the tick the bot first stood 2+ blocks outside the areas during a dig (-1: it doesn't). */
+    private long fenceOutSince = -1;
+
+    /** T3: the mod's own break leases (a clear holds them while it digs; a walk or a craft trip holds none). */
+    private boolean holdsDigLeases() {
+        for (io.github.mojolowjo.entropybot.guard.Lease l : core.guard.core.leases().values()) {
+            if (!l.place && core.token.equals(l.owner)) return true;
+        }
+        return false;
+    }
+
     /** Every 20 ticks with the fence on: a job outside every area stops; a follow ends when its player leaves the areas. */
     private void fenceWatch(LocalPlayer p) {
         if (!commands.fenceOn()) return;
         int[] me = here(p);
         String dim = Guard.dimOf(p.level());
-        if (running() && !job.reflex && commands.areaGap(me[0], me[1], me[2], dim) > 1) {
-            IBaritone b = baritone();
-            if (b != null) cancel(b);
-            finish("stopped: I am outside my areas at " + fmt(me) + " - " + PolicyCommands.AREA_HINT);
-            return;
+        if (running() && !job.reflex) {
+            // T3: a clear pulled 2-4 blocks out (a drop, a cave) gets 15 s to come back; everything else as before
+            int gap = commands.areaGap(me[0], me[1], me[2], dim);
+            long now = core.tick();
+            FenceGrace.Verdict v = FenceGrace.verdict(gap, gap > 1 && holdsDigLeases(), fenceOutSince, now);
+            if (v == FenceGrace.Verdict.OK) {
+                fenceOutSince = -1;
+            } else if (v == FenceGrace.Verdict.GRACE) {
+                if (fenceOutSince < 0) {
+                    fenceOutSince = now;
+                    LOG.info("[entropybot] {} block(s) outside my areas at {} - 15 s to get back in", gap, fmt(me));
+                }
+            } else {
+                boolean afterGrace = fenceOutSince >= 0;
+                fenceOutSince = -1;
+                IBaritone b = baritone();
+                if (b != null) cancel(b);
+                finish(FenceGrace.stopMessage(fmt(me), afterGrace));
+                return;
+            }
+        } else {
+            fenceOutSince = -1;
         }
         if (followWatch != null) {
             Player t = findPlayer(followWatch[0]);
