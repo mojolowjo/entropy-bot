@@ -74,6 +74,14 @@ public final class Jobs {
     private Reflexes.Reflex reflexWas = Reflexes.Reflex.NONE;
     /** A follow the fence keeps an eye on: {name, from}. */
     String[] followWatch;
+    /**
+     * A follow of a player the bot cannot see, led by the position their companion mod sends (OwnerFix): {name, from}.
+     * The walk is a plain "goto" to that spot, issued again when they move; Baritone's own follow takes over when they
+     * come into view. Any other job or a stop clears it.
+     */
+    String[] followFix;
+    private int[] followFixGoal;
+    private long followFixAt;
 
     Jobs(Core core, Commands commands) {
         this.core = core;
@@ -87,6 +95,7 @@ public final class Jobs {
     /** A job made of steps (open, scan, deposit, corpse, rs, pots...): "started: <label>". */
     String startSeq(Seq s, String closeOnEnd) {
         followWatch = null;
+        followFix = null;
         Job j = new Job();
         j.type = "seq";
         j.startTick = core.tick();
@@ -208,6 +217,7 @@ public final class Jobs {
             lastTravelAt = System.currentTimeMillis();     // package D: an errand (come, goto, go...) holds the furnace pickups
         }
         followWatch = null;
+        followFix = null;
         safeSettings();
         Job j = new Job();
         j.type = "travel";
@@ -411,6 +421,7 @@ public final class Jobs {
         long now = core.tick();
         reflexWatch(p);
         if (now % 20 == 10) fenceWatch(p);
+        if (now % 20 == 15) followFixTick(p);
         if (!running()) return;
         if (core.reflexes.hold()) {                      // a reflex holds the job still
             if (job.unstickLeft > 0) endUnstick(job);
@@ -620,6 +631,58 @@ public final class Jobs {
                 followWatch = null;
             }
         }
+    }
+
+    // ---- following a player the bot cannot see (the owner's companion mod) ----
+
+    /** "follow <name>" with the player out of view but a fresh position t: walk there and keep walking as it changes. */
+    String startFollowFix(String name, String from, int[] t) {
+        String r = followFixGo(name, from, t);
+        return r.startsWith("ok") ? r + " (by the position your game sends, until you're in view)" : r;
+    }
+
+    /** One walk to t, then the follow state again (startTravel clears it); like a follow, the job itself never "arrives". */
+    private String followFixGo(String name, String from, int[] t) {
+        String r = startTravel("goto " + fmt(t), "following " + name, null, null, false);
+        if (!r.startsWith("ok")) return r;
+        if (job != null) job.done = true;
+        followFix = new String[]{name, from};
+        followFixGoal = t;
+        followFixAt = System.currentTimeMillis();
+        return r;
+    }
+
+    private void stopFollowFix(String why) {
+        String from = followFix[1];
+        followFix = null;
+        IBaritone b = baritone();
+        if (b != null) cancel(b);
+        commands.whisper(from, why);
+        LOG.info("[entropybot] follow (companion position) ended: {}", why);
+    }
+
+    /** Once a second: hand over when the player is in view, stop when the position is stale, walk again when they moved 5+ blocks. */
+    private void followFixTick(LocalPlayer p) {
+        if (followFix == null) return;
+        if (running()) {                         // another job took over
+            followFix = null;
+            return;
+        }
+        if (core.reflexes.hold()) return;        // a fight or a meal: not now
+        String name = followFix[0], from = followFix[1];
+        if (findPlayer(name) != null) {          // in view: Baritone's own follow does it better
+            followFix = null;
+            commands.modJob("follow", name, from, p);
+            return;
+        }
+        int[] t = commands.ownerFixPos(name);
+        if (t == null) {
+            stopFollowFix("stopped: I lost track of you (no fresh position from your game, or you're in another dimension)");
+            return;
+        }
+        if (System.currentTimeMillis() - followFixAt < 1500 || distSq(t, followFixGoal) <= 25) return;
+        String r = followFixGo(name, from, t);
+        if (!r.startsWith("ok")) stopFollowFix("stopped: " + r.replaceFirst("^error: ", ""));
     }
 
     // ---- blocks ----
