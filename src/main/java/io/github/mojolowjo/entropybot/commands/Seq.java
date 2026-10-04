@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.commands;
 
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.Goal;
+import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.pathing.goals.GoalNear;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -47,6 +48,8 @@ public final class Seq {
         public io.github.mojolowjo.entropybot.craft.Crafter.Smelt smelt;
         public int smeltKey = -1, jobId = -1;
         public boolean all, pickup, redo;
+        /** Package E: a walk onto exactly this block (the spot by the altar that reaches all 8 pedestals). */
+        public boolean exact;
         Object state;
 
         public Step(String type) { this.type = type; }
@@ -235,7 +238,7 @@ public final class Seq {
             if (why != null) return Jobs.withAreaHint(why + " (" + fmt + ")");
             // near: just get close (e.g. where it died), no need to touch the block
             BlockPos bp = new BlockPos(st.pos[0], st.pos[1], st.pos[2]);
-            Goal goal = st.near ? new GoalNear(bp, 2) : new GoalGetToBlock(bp);
+            Goal goal = st.near ? new GoalNear(bp, 2) : st.exact ? new GoalBlock(bp) : new GoalGetToBlock(bp);
             Jobs.safeSettings();
             b.getCustomGoalProcess().setGoalAndPath(goal);
             j.goalObj = goal;
@@ -275,6 +278,11 @@ public final class Seq {
             return "wait";
         }
         if (st.near) return "next";
+        if (st.exact) {
+            int[] h = Jobs.here(p);
+            if (h[0] != st.pos[0] || h[2] != st.pos[2] || Math.abs(h[1] - st.pos[1]) > 1) return "couldn't get onto " + fmt + " (I'm at " + Jobs.fmt(h) + ")";
+            return "next";
+        }
         Vec3 center = new Vec3(st.pos[0] + 0.5, st.pos[1] + 0.5, st.pos[2] + 0.5);
         if (p.getEyePosition().distanceTo(center) > 4.5) return "couldn't get close to " + fmt;
         return "next";

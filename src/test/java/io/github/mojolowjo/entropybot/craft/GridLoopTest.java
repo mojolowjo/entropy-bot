@@ -27,6 +27,9 @@ class GridLoopTest {
         long now;
         long resultAt = -1, craftAt = -1;
         boolean serverMakesNothing;
+        /** Package E: a catalyst the server hands back into its cell (the infusion crystal) and its uses left. */
+        String keeps;
+        int keepUses = Integer.MAX_VALUE, crafted;
 
         Table(int size, RecipeData r, int lag) {
             this.size = size;
@@ -56,7 +59,7 @@ class GridLoopTest {
             return this;
         }
 
-        static int max(String item) { return item.endsWith("ender_pearl") ? 16 : 64; }
+        static int max(String item) { return item.endsWith("ender_pearl") ? 16 : item.endsWith("_crystal") ? 1 : 64; }
 
         int has(String item) {
             int t = 0;
@@ -101,8 +104,16 @@ class GridLoopTest {
             if (craftAt >= 0 && now >= craftAt) {
                 craftAt = -1;
                 while (matches() && room(r.output()) >= r.outCount() && !serverMakesNothing) {
-                    for (int i = 1; i <= size * size; i++) if (n[i] > 0 && --n[i] == 0) id[i] = null;
+                    for (int i = 1; i <= size * size; i++) {
+                        if (n[i] > 0 && id[i].equals(keeps)) {
+                            // package E: the crystal comes back into its cell, one use worn off (gone when used up)
+                            if (--keepUses <= 0) { n[i] = 0; id[i] = null; }
+                            continue;
+                        }
+                        if (n[i] > 0 && --n[i] == 0) id[i] = null;
+                    }
                     add(r.output(), r.outCount());
+                    crafted++;
                 }
                 gridChanged();
             }
@@ -403,5 +414,92 @@ class GridLoopTest {
         assertEquals(GridLoop.State.DONE, o[0].state());
         assertEquals(64, t.has(BLOCK));
         assertEquals(1, loop.batches());
+    }
+
+    // ---- package E: the infusion crystal batches (one in its cell, handed back by every craft) ----
+
+    static final String CRYSTAL = "mysticalagriculture:infusion_crystal", PRUD = "mysticalagriculture:prudentium_essence";
+    /** MA's tier-up: 4 essence in cells 2, 4, 6, 8 and the crystal in cell 5. */
+    static final RecipeData TIER_UP = RecipeData.shaped("ma:essence/prudentium", PRUD, 1, 3, 3,
+            List.of(List.of(), List.of(ESS), List.of(), List.of(ESS), List.of(CRYSTAL), List.of(ESS), List.of(), List.of(ESS), List.of()));
+
+    /** The crystal has a crafting remainder (itself, worn by one): a catalyst. */
+    static GridLoop.Items crystalItems(boolean catalystRule) {
+        return new GridLoop.Items() {
+            @Override public int maxStack(String id) { return Table.max(id); }
+            @Override public boolean remainder(String id) { return id.endsWith("_crystal"); }
+            @Override public boolean catalyst(String id) { return catalystRule && id.endsWith("_crystal"); }
+        };
+    }
+
+    static long run(GridLoop loop, Table t, int maxTicks, GridLoop.Out[] last, GridLoop.Items items) {
+        for (long tick = 1; tick <= maxTicks; tick++) {
+            t.now = tick;
+            t.serverTick();
+            if (tick % 2 != 0) continue;
+            GridLoop.Out o = loop.tick(t, items, tick);
+            if (o.state() != GridLoop.State.WAIT) {
+                last[0] = o;
+                return tick;
+            }
+        }
+        last[0] = null;
+        return maxTicks;
+    }
+
+    @Test
+    void theCrystalBatchesSixtyFourCraftsInOneFill() {
+        // TO-LOOK-AT-LATER 15: "n = 16 gave 16 crafts at once" - 64 a cell and the crystal in the middle: 64 crafts, one click
+        Table t = new Table(3, TIER_UP, 3).give(ESS, 256).give(CRYSTAL, 1);
+        t.keeps = CRYSTAL;
+        GridLoop loop = new GridLoop(TIER_UP, 3, 64, 0);
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        long ticks = run(loop, t, 2000, o, crystalItems(true));
+        assertEquals(GridLoop.State.DONE, o[0].state());
+        assertEquals(64, t.has(PRUD));
+        assertEquals(0, t.has(ESS));
+        assertEquals(1, t.has(CRYSTAL), "the crystal is back in the bag, kept");
+        assertEquals(1, loop.batches(), "one fill, one shift-click for 64 crafts");
+        assertEquals(64, t.crafted);
+        assertEquals(0, t.inGrid());
+        assertTrue(ticks < 40, "took " + ticks + " ticks");
+    }
+
+    @Test
+    void moreThanAStackIsAFewFillsNotOneACraft() {
+        // 1024 inferium -> 256 prudentium: 4 fills (it was 256 fills: the crystal limited every batch to 1)
+        Table t = new Table(3, TIER_UP, 2).give(ESS, 1024).give(CRYSTAL, 1);
+        t.keeps = CRYSTAL;
+        GridLoop loop = new GridLoop(TIER_UP, 3, 256, 0);
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        run(loop, t, 4000, o, crystalItems(true));
+        assertEquals(GridLoop.State.DONE, o[0].state());
+        assertEquals(256, t.has(PRUD));
+        assertEquals(4, loop.batches());
+        // the old rule (a remainder = one craft a fill) for comparison
+        Table old = new Table(3, TIER_UP, 2).give(ESS, 32).give(CRYSTAL, 1);
+        old.keeps = CRYSTAL;
+        GridLoop slow = new GridLoop(TIER_UP, 3, 8, 0);
+        run(slow, old, 4000, o, crystalItems(false));
+        assertEquals(GridLoop.State.DONE, o[0].state());
+        assertEquals(8, slow.batches(), "without the catalyst rule: one craft a fill");
+    }
+
+    @Test
+    void aWornOutCrystalEndsTheBatchAndSaysSo() {
+        // 10 uses left: the batch of 64 stops at 10, the rest of the essence goes back into the bag
+        Table t = new Table(3, TIER_UP, 2).give(ESS, 256).give(CRYSTAL, 1);
+        t.keeps = CRYSTAL;
+        t.keepUses = 10;
+        GridLoop loop = new GridLoop(TIER_UP, 3, 64, 0);
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        run(loop, t, 4000, o, crystalItems(true));
+        assertEquals(GridLoop.State.FAIL, o[0].state());
+        assertEquals(GridLoop.Why.NO_LAYOUT, o[0].why());
+        assertTrue(o[0].error().contains("infusion_crystal"), o[0].error());
+        assertEquals(10, loop.made(), "counted from the bag");
+        assertEquals(10, t.has(PRUD));
+        assertEquals(256 - 40, t.has(ESS), "nothing lost");
+        assertEquals(0, t.inGrid());
     }
 }

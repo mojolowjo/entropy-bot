@@ -81,6 +81,13 @@ public final class GridLoop {
 
         /** A bucket, a bottle...: the item leaves a remainder in its cell, so a batch is one craft. */
         default boolean remainder(String id) { return false; }
+
+        /**
+         * Package E: a catalyst (the infusion crystal) comes back from every craft as itself, into the cell it was in, so
+         * the grid still matches and one shift-click goes on crafting (TO-LOOK-AT-LATER 15: 16 essence a cell and the
+         * crystal gave 16 crafts at once). It goes in its cell once and never limits the batch.
+         */
+        default boolean catalyst(String id) { return false; }
     }
 
     /** One step with the loop's own grid open. */
@@ -164,6 +171,8 @@ public final class GridLoop {
         for (String id : lay.slots().values()) per.merge(id, 1, Integer::sum);
         int k = MAX_PER_CELL;
         for (Map.Entry<String, Integer> e : per.entrySet()) {
+            // package E: one catalyst in its cell serves the whole batch (the layout found one per cell in the bag)
+            if (items.catalyst(e.getKey())) continue;
             k = Math.min(k, have.getOrDefault(e.getKey(), 0) / e.getValue());
             int max = items.maxStack(e.getKey());
             if (max > 0) k = Math.min(k, max);
@@ -178,15 +187,16 @@ public final class GridLoop {
         int got = Integer.MAX_VALUE;
         for (Map.Entry<Integer, String> e : lay.slots().entrySet()) {
             int cell = GridLayout.menuSlot(e.getKey());
-            int n = put(m, e.getValue(), cell, k);
+            boolean cat = items.catalyst(e.getValue());
+            int n = put(m, e.getValue(), cell, cat ? 1 : k);
             if (n < 1) {
                 clear(m, size);
                 stage = null;
                 return Out.fail(Why.FILL, "couldn't put " + shortId(e.getValue()) + " in the grid");
             }
-            got = Math.min(got, n);
+            if (!cat) got = Math.min(got, n);
         }
-        batch = got;
+        batch = got == Integer.MAX_VALUE ? 1 : got;
         batches++;
         stage = "result";
         stageTick = now;
