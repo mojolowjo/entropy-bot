@@ -22,7 +22,7 @@ public final class Texts {
     /** Every command word; routine names can't use these. */
     public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
             "setbase", "sethome", "forget", "places", "where", "zone", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
-            "open", "allow", "deny", "allowed", "b", "baritone", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
+            "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
@@ -62,7 +62,7 @@ public final class Texts {
             "Farm: farm (one round: twerk till ripe, harvest, pick up, essence into blocks; try \"repeat forever farm\"), farm here (the farm is by me), farm compact block|prudentium|off, "
                     + "compact <item> [here|<place>|x y z] (the chests within 6 of you or me: 9 into a block, blocks back into their chest) | rs [x y z] (read the Refined Storage grid; \"where\" lists it then), rs take <item> [n], rs put <item|all> [n], rs disks [x y z] (which disks the drive holds, and how full) | pots [chests] (empty the botany pots at the base into the RS network, or the chests)",
             "Places of interest (I note them as I go): poi [n], poi <kind> (dungeon spawner, trial chamber, village, geode, mineshaft, lava lake, diamonds, loot chest...), poi show <id>, poi forget <id>, go poi <id>",
-            "Other: status, defend on|off, find <block>, say <text>, twerk (on/off; twerk <s> for a set time), wait <s>, memory [status|fresh], restart ok|no (I may be closed for an update, 15 min) | Only for you: allow/deny <name>, allowed, b <baritone cmd>; allowed players get " + GUEST_HELP,
+            "Other: status, defend on|off, find <block>, say <text>, twerk (on/off; twerk <s> for a set time), wait <s>, memory (how my note files are), restart ok|no (I may be closed for an update, 15 min) | Only for you: allow/deny <name>, allowed, b <baritone cmd>, mouse free|grab; allowed players get " + GUEST_HELP,
             "On my own: rule every 30m do <cmds> | rule at 06:30 do ... | rule when full do ... | rule when idle 10m do ..., rules, rule delete <n>; autominer on|off|status, why (what it decided); "
                     + "deaths, death policy on|off (fetch my corpse after a death; 5 deaths an hour park me), resume (after parking); reconnect on|off (after a kick); a running routine carries on after a reload or restart (12 h)",
             "Chains: cmd then cmd then cmd | routine save <name> <chain>, routines, routine show/delete <name>, <name> (runs it), repeat [n|forever] <name or chain>, queue, stop",

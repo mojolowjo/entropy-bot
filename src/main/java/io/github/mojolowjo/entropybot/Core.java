@@ -125,6 +125,8 @@ public final class Core {
                     events.push("job", "settings turned off again: " + String.join(", ", turned), null);
                 }
             }
+            io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
+            io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] tick error #{}: {}", errors, t.toString());
@@ -146,6 +148,7 @@ public final class Core {
         if (ready) a.add("poi");
         if (ready) a.add("cave");
         a.add("reconnect");
+        if (ready) a.add("safetynet");
         if (commands.ready()) a.add("commands");
         if (commands.ready()) a.add("jobs:walk");
         if (commands.ready()) a.add("jobs:storage");

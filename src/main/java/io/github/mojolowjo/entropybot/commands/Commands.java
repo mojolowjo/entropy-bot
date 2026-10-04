@@ -594,7 +594,9 @@ public final class Commands implements Chains.Env {
             for (String line : Texts.PM_HELP) whisper(from, line);
             return Reply.now(null);
         }
-        if (verb.equals("memory")) return forward(from, raw, internal, l);
+        if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
+        if (verb.equals("debug")) return Reply.now(DebugVerbs.handle(core, rest, DebugRules.Source.PM, isOwner, owner()));
+        if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player, tick));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));
         if (verb.equals("stop")) return Reply.now(stopAll());
@@ -670,7 +672,7 @@ public final class Commands implements Chains.Env {
             return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
         }
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
-        if ((verb.equals("b") || verb.equals("baritone")) && !isOwner) return Reply.now("only " + owner() + " can send raw Baritone commands");
+        if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
         boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb) || Texts.BRIDGE_VERBS.contains(verb);
         if (!known) return Reply.now("unknown command \"" + verb + "\" - pm me: help");
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
@@ -1013,6 +1015,7 @@ public final class Commands implements Chains.Env {
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
         if (mb != null) Jobs.cancel(mb);
+        io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore();
         if (bridge.present(tick)) {
             bridge.submit("stop", owner(), "stop", false, null, null, tick);
         } else {
@@ -1308,7 +1311,15 @@ public final class Commands implements Chains.Env {
                 return Reply.now("ok");
             }
             case "stop" -> { return Reply.now(stopAll()); }
+            // B7e E1: answered by the mod itself
+            case "noop" -> { return Reply.now("ok"); }
+            case "baritone" -> { return Reply.now(BaritoneVerb.run(text, true, owner())); }
+            case "mouse" -> { return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(text)); }
+            case "debug" -> { return Reply.now(DebugVerbs.handle(core, text, DebugRules.Source.LOCAL, true, owner())); }
+            case "memory" -> { return Reply.now(MemoryCommand.command(core, this, text)); }
             case "pm" -> {
+                String[] dv = Texts.verbAndRest(text);
+                if (dv[0].equals("debug")) return Reply.now(DebugVerbs.handle(core, dv[1], DebugRules.Source.LOCAL, true, owner()));
                 Reply r = handle(owner(), text, false, new Listener() {
                     @Override
                     public void replied(Request q) { cmdResult(id, type, text, q.reply == null || q.reply.isEmpty() ? "ok" : q.reply); }

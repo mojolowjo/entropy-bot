@@ -88,7 +88,12 @@ public final class DebugRules {
 
         public int dz() { return z2 - z1 + 1; }
 
-        public long cells() { return (long) dx() * dy() * dz(); }
+        /** Counted in long from the corners (an int dx overflows for a box across the whole int range). */
+        public long cells() {
+            long a = (long) x2 - x1 + 1, b = (long) y2 - y1 + 1, c = (long) z2 - z1 + 1;
+            if (a > MAX_CELLS || b > MAX_CELLS || c > MAX_CELLS) return Long.MAX_VALUE;
+            return a * b * c;
+        }
 
         /** The index of x y z in a slice: ((y - y1) * dz + (z - z1)) * dx + (x - x1) (the Recorder.Slice order). */
         public int index(int x, int y, int z) { return ((y - y1) * dz() + (z - z1)) * dx() + (x - x1); }
