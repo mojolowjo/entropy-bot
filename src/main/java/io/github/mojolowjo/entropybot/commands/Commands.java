@@ -1088,17 +1088,26 @@ public final class Commands implements Chains.Env {
     }
 
     private void cmdResult(String id, String type, String text, String result) {
+        LOG.info("[entropybot] cmd {} ({} {}) -> {}", id, type, text, result);
+        // package G: a fast-channel command answers its caller only; state.json's lastCmdId/lastResult stay the
+        // cmd.json file's (the dashboard polls them for its own command)
+        java.util.function.Consumer<String> fastReply = fastReplies.remove(id);
+        if (fastReply != null) {
+            fastReply.accept(result);
+            return;
+        }
         lastCmdId = id;
         lastResult = result;
-        LOG.info("[entropybot] cmd {} ({} {}) -> {}", id, type, text, result);
-        java.util.function.Consumer<String> fastReply = fastReplies.remove(id);
-        if (fastReply != null) fastReply.accept(result);
     }
 
     // ---- package G: the fast channel (fast/FastServer: 127.0.0.1 only, the dashboard's key) ----
 
     private io.github.mojolowjo.entropybot.fast.FastChannel fast;
-    /** The fast channel's callers waiting for a command's answer, by command id (the oldest go when it overflows). */
+    private long fastSeq;
+    /**
+     * The fast channel's callers waiting for a command's answer, by a token the mod makes per request ("fast#N", never
+     * the caller's id, so no caller collides with another or with a cmd.json id); the oldest go when it overflows.
+     */
     private final Map<String, java.util.function.Consumer<String>> fastReplies = new LinkedHashMap<>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, java.util.function.Consumer<String>> e) { return size() > 64; }
@@ -1113,20 +1122,23 @@ public final class Commands implements Chains.Env {
                 reply.accept("error: not in a world (title screen or disconnected)");
                 return;
             }
-            String id = cmd.get("id").getAsString();
-            fastReplies.put(id, reply);
-            execCmd(mc, cmd, id);
+            String token = "fast#" + (++fastSeq);
+            fastReplies.put(token, reply);
+            execCmd(mc, cmd, token);
         }
 
         @Override
-        public boolean idle(boolean withChain) {
+        public String busy(boolean withChain) {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.level == null || mc.player == null) return true;
+            if (mc.level == null || mc.player == null) return null;
             long t = core.tick();
-            if (jobs.running() || bridge.waitingOnBridge() || bridge.jobRunning(t)) return false;
-            if (withChain && chains != null && chains.running()) return false;
+            if (jobs.running()) return "job " + jobs.job.status;
+            if (bridge.jobRunning(t)) return "job " + BridgeLink.str(bridge.job(t), "status");
+            if (bridge.waitingOnBridge()) return "a request to the bridge script";
+            if (withChain && chains != null && chains.running()) return "chain " + chains.chainStatus();
             baritone.api.IBaritone b = Jobs.baritone();
-            return b == null || Jobs.idle(b);
+            if (b == null || Jobs.idle(b)) return null;
+            return "baritone " + b.getPathingControlManager().mostRecentInControl().map(pr -> pr.displayName()).orElse("pathing");
         }
 
         @Override

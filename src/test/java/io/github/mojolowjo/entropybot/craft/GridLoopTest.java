@@ -302,6 +302,97 @@ class GridLoopTest {
         assertEquals(1, t.has("minecraft:stick"));
     }
 
+    /** Ticks (every 2, as Seq) until the loop has shift-clicked a batch and is counting it. */
+    static long untilSettling(GridLoop loop, Table t, long from) {
+        for (long tick = from; tick < from + 500; tick++) {
+            t.now = tick;
+            t.serverTick();
+            if (tick % 2 != 0) continue;
+            loop.tick(t, Table::max, tick);
+            if (loop.settling()) return tick;
+        }
+        throw new AssertionError("never settled");
+    }
+
+    @Test
+    void aHoldDuringSettleNeverChangesWhatIsMade() {
+        // a fight closes the table right after the shift-click; the server's batch lands while no grid is open
+        Table t = new Table(3, COMPACT, 6).give(ESS, 300);
+        GridLoop loop = new GridLoop(COMPACT, 3, 10, 0);
+        long tick = untilSettling(loop, t, 1);
+        loop.interrupted();
+        for (long k = tick + 1; k < tick + 60; k++) {
+            t.now = k;
+            t.serverTick();
+            if (k % 2 == 0) {
+                GridLoop.Out o = loop.tick(t, 0, Table::max, k);       // no grid open: it only counts
+                if (o.state() == GridLoop.State.DONE) break;
+                assertNotEquals(GridLoop.State.FAIL, o.state());
+            }
+        }
+        assertEquals(10, loop.made(), "the batch is booked although the table closed");
+        assertTrue(loop.done());
+        assertEquals(10, t.has(BLOCK));
+        assertEquals(300 - 90, t.has(ESS), "nothing crafted twice from the bot's own stock");
+    }
+
+    @Test
+    void aHoldBeforeTheClickStartsTheRoundOver() {
+        Table t = new Table(3, COMPACT, 4).give(ESS, 300);
+        GridLoop loop = new GridLoop(COMPACT, 3, 20, 0);
+        // the fill, then a meal before the result shows: the round starts over (the grid is cleared first)
+        for (long tick = 1; tick <= 2; tick++) {
+            t.now = tick;
+            t.serverTick();
+            if (tick % 2 == 0) loop.tick(t, Table::max, tick);
+        }
+        assertFalse(loop.settling());
+        assertTrue(t.inGrid() > 0, "filled");
+        loop.interrupted();
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        run(loop, t, 2000, o);
+        assertEquals(GridLoop.State.DONE, o[0].state());
+        assertEquals(20, t.has(BLOCK));
+        assertEquals(300 - 180, t.has(ESS));
+    }
+
+    @Test
+    void aRemainderMeansOneCraftAFill() {
+        RecipeData sweet = RecipeData.shapeless("x:sweet", "x:sweet", 1, List.of(List.of("minecraft:milk_bucket"), List.of("minecraft:sugar")));
+        Table t = new Table(3, sweet, 2).give("minecraft:milk_bucket", 4).give("minecraft:sugar", 4);
+        GridLoop loop = new GridLoop(sweet, 3, 3, 0);
+        GridLoop.Items items = new GridLoop.Items() {
+            @Override public int maxStack(String id) { return Table.max(id); }
+            @Override public boolean remainder(String id) { return id.endsWith("_bucket"); }
+        };
+        GridLoop.Out o = null;
+        for (long tick = 1; tick < 2000; tick++) {
+            t.now = tick;
+            t.serverTick();
+            if (tick % 2 != 0) continue;
+            o = loop.tick(t, items, tick);
+            if (o.state() != GridLoop.State.WAIT) break;
+        }
+        assertEquals(GridLoop.State.DONE, o.state());
+        assertEquals(3, loop.batches(), "one craft per fill");
+        assertEquals(3, t.has("x:sweet"));
+    }
+
+    @Test
+    void aGridThatWontEmptyIsNeverFilledOnTop() {
+        // a full bag: the stick left in the grid can't go back, so the loop stops instead of filling around it
+        Table t = new Table(3, COMPACT, 2).give(ESS, 81).fillBag("minecraft:cobblestone");
+        t.id[9] = "minecraft:stick";
+        t.n[9] = 1;
+        GridLoop loop = new GridLoop(COMPACT, 3, 9, 0);
+        GridLoop.Out[] o = new GridLoop.Out[1];
+        run(loop, t, 200, o);
+        assertEquals(GridLoop.State.FAIL, o[0].state());
+        assertEquals(GridLoop.Why.FULL, o[0].why());
+        assertEquals(1, t.inGrid(), "only the stick: nothing was put in on top of it");
+        assertEquals(81, t.has(ESS));
+    }
+
     @Test
     void aSlowServerIsWaitedFor() {
         // the batch shows up 12 ticks after the click: the loop waits for it instead of counting too few

@@ -5,7 +5,6 @@ import io.github.mojolowjo.entropybot.gui.GuiMenu;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.function.ToIntFunction;
 
 import static io.github.mojolowjo.entropybot.craft.CraftPlanner.shortId;
 
@@ -17,7 +16,7 @@ import static io.github.mojolowjo.entropybot.craft.CraftPlanner.shortId;
  * until the bag shows the batch and count what really arrived. Before this, every craft was its own fill, clear and
  * settle (~15 ticks per craft; 64 inferium blocks took ~50 s); now a batch of up to 64 takes ~10 ticks.
  *
- * <p>Game-free ({@link GuiMenu} is the open menu: slot 0 the result, 1..n*n the grid; {@code maxStack} names an item's
+ * <p>Game-free ({@link GuiMenu} is the open menu: slot 0 the result, 1..n*n the grid; {@link Items} names an item's
  * stack size), so JUnit drives it with a fake menu and package E's {@code upgrade} can reuse it as is: build one per
  * recipe and call {@link #tick} every step until it says DONE or FAIL.
  */
@@ -64,9 +63,40 @@ public final class GridLoop {
 
     public boolean done() { return made >= want; }
 
-    /** One step; call it every tick or two with the menu as it is now. */
-    public Out tick(GuiMenu m, ToIntFunction<String> maxStack, long now) {
+    /** The batch is crafted and not yet counted: keep ticking it (with any menu open) until this turns false. */
+    public boolean settling() { return "settle".equals(stage); }
+
+    /**
+     * A reflex (a fight, a meal) held the job. A batch being counted keeps being counted (the bag is the bag whatever
+     * menu is open, so nothing it made is lost or made twice); any other round starts over, clearing the grid first.
+     */
+    public void interrupted() {
+        if (!settling()) stage = null;
+    }
+
+    /** What the loop needs to know about items: the stack size, and whether crafting leaves something in the grid. */
+    @FunctionalInterface
+    public interface Items {
+        int maxStack(String id);
+
+        /** A bucket, a bottle...: the item leaves a remainder in its cell, so a batch is one craft. */
+        default boolean remainder(String id) { return false; }
+    }
+
+    /** One step with the loop's own grid open. */
+    public Out tick(GuiMenu m, Items items, long now) { return tick(m, size, items, now); }
+
+    /**
+     * One step; call it every tick or two with the menu as it is now. {@code openGrid} = the open menu's grid size
+     * (0 = no crafting grid). Away from its grid the loop only finishes counting a batch, never clicks, and waits.
+     */
+    public Out tick(GuiMenu m, int openGrid, Items items, long now) {
+        if (settling()) return settle(m, openGrid == size, items, now);
         if (done()) return Out.DONE;
+        if (openGrid != size) {
+            stage = null;                    // the caller opens the grid again; the round starts over
+            return Out.WAIT;
+        }
         if (stage == null) {
             if (clear(m, size)) {
                 stage = "cleared";
@@ -77,9 +107,14 @@ public final class GridLoop {
         }
         if (stage.equals("cleared")) {
             if (now - stageTick < CLEAR_TICKS) return Out.WAIT;
+            // what the clear couldn't move back is still in the grid: the bag is full (never fill on top of it)
+            if (!gridEmpty(m, size)) {
+                stage = null;
+                return Out.fail(Why.FULL, "my inventory is full (the crafting grid won't empty)");
+            }
             stage = "fill";
         }
-        if (stage.equals("fill")) return fill(m, maxStack, now);
+        if (stage.equals("fill")) return fill(m, items, now);
         if (stage.equals("result")) {
             if (m.id(0) == null) {
                 if (now - stageTick < CraftJob.RESULT_WAIT_TICKS) return Out.WAIT;
@@ -93,26 +128,35 @@ public final class GridLoop {
             stageTick = now;
             return Out.WAIT;
         }
-        // settle: the server crafts the whole batch; the client sees it when the bag's slots are synced
+        return Out.WAIT;
+    }
+
+    /** The server crafts the whole batch; the client sees it when the bag's slots are synced. Counted from the bag. */
+    private Out settle(GuiMenu m, boolean ours, Items items, long now) {
         int gained = bag(m).getOrDefault(recipe.output(), 0) - before;
         long in = now - stageTick;
         if (in < SETTLE_MIN || (gained < batch * recipe.outCount() && in < SETTLE_MAX)) return Out.WAIT;
         stage = null;
         if (gained <= 0) {
-            clear(m, size);
-            return room(m, maxStack) < recipe.outCount()
+            if (ours) clear(m, size);
+            return room(m, items) < recipe.outCount()
                     ? Out.fail(Why.FULL, "my inventory is full")
                     : Out.fail(Why.NO_RESULT, "the grid did not make " + shortId(recipe.output()));
         }
         made += gained;
         if (done()) {
-            clear(m, size);                  // a short batch leaves the rest in the grid: back into the bag
+            if (ours) clear(m, size);        // a short batch leaves the rest in the grid: back into the bag
             return Out.DONE;
         }
         return Out.WAIT;
     }
 
-    private Out fill(GuiMenu m, ToIntFunction<String> maxStack, long now) {
+    static boolean gridEmpty(GuiMenu m, int size) {
+        for (int i = 1; i <= size * size; i++) if (m.id(i) != null) return false;
+        return true;
+    }
+
+    private Out fill(GuiMenu m, Items items, long now) {
         Map<String, Integer> have = bag(m);
         GridLayout.Layout lay = GridLayout.layout(recipe, size, have);
         if (!lay.ok()) return Out.fail(Why.NO_LAYOUT, lay.error() + (lay.missing() != null ? " (" + lay.missing() + ")" : ""));
@@ -121,12 +165,13 @@ public final class GridLoop {
         int k = MAX_PER_CELL;
         for (Map.Entry<String, Integer> e : per.entrySet()) {
             k = Math.min(k, have.getOrDefault(e.getKey(), 0) / e.getValue());
-            int max = maxStack.applyAsInt(e.getKey());
+            int max = items.maxStack(e.getKey());
             if (max > 0) k = Math.min(k, max);
+            if (items.remainder(e.getKey())) k = Math.min(k, 1);     // the remainder stays in the cell: one craft a fill
         }
         int out = Math.max(1, recipe.outCount());
         k = Math.min(k, (want - made + out - 1) / out);
-        int room = room(m, maxStack);
+        int room = room(m, items);
         if (room < out) return Out.fail(Why.FULL, "my inventory is full");
         k = Math.min(k, room / out);
         if (k < 1) return Out.fail(Why.NO_LAYOUT, GridLayout.RAN_OUT);
@@ -178,9 +223,9 @@ public final class GridLoop {
     }
 
     /** How many more of the recipe's output the bag takes: empty slots and room on its own stacks. */
-    int room(GuiMenu m, ToIntFunction<String> maxStack) {
+    int room(GuiMenu m, Items items) {
         String id = recipe.output();
-        int max = Math.max(1, maxStack.applyAsInt(id));
+        int max = Math.max(1, items.maxStack(id));
         long room = 0;
         for (int i = 0; i < m.size(); i++) {
             if (!m.mine(i)) continue;

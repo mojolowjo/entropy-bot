@@ -40,10 +40,11 @@ import java.util.function.Consumer;
  *   <li>{@code GET /ping}: answered on the game thread at its next tick: {ok, tick, inWorld, version}.</li>
  *   <li>{@code POST /cmd[?timeout=ms]}, body = a cmd.json object {id, type, text, from?, notify?}: run at the next
  *       tick exactly as a cmd.json command; answers {id, result} when the command answers (a long job answers
- *       "started: ..." at once, as today), or {id, result: null, timeout: true}.</li>
+ *       "started: ..." at once, as today), or {id, result: null, timeout: true} (plus notRun: true when the game
+ *       never took it: it is dropped then and will not run later).</li>
  *   <li>{@code GET /wait[?timeout=ms][&chain=0|1]}: a long poll that answers {idle: true, waitedMs} once the bot has
  *       been idle (no job, no bridge request, no chain unless chain=0, Baritone idle) for {@link #SETTLE_TICKS}
- *       ticks in a row, or {idle: false, timeout: true} when the time runs out.</li>
+ *       ticks in a row, or {idle: false, timeout: true, busy: "chain night"} when the time runs out.</li>
  * </ul>
  * Every request needs the header {@code X-Bot-Key: <key>} (401 without), and a Host header naming 127.0.0.1 or
  * localhost (403 otherwise: a web page can't reach it through DNS rebinding). Game state is touched only from
@@ -65,8 +66,11 @@ public final class FastServer {
         /** Runs a cmd.json command; {@code reply} gets its answer once (now or on a later tick). */
         void command(JsonObject cmd, Consumer<String> reply);
 
-        /** No job, no bridge request, Baritone idle (and no chain when {@code withChain}); true outside a world. */
-        boolean idle(boolean withChain);
+        /**
+         * What keeps the bot busy ("job ...", "chain ...", "baritone ..."), or null when idle: no job, no bridge request,
+         * Baritone idle (and no chain when {@code withChain}). Outside a world: null.
+         */
+        String busy(boolean withChain);
 
         /** Fields for /ping besides ok and tick (version, inWorld). */
         JsonObject ping();
@@ -119,6 +123,8 @@ public final class FastServer {
         final boolean chain;
         final long startMs = System.currentTimeMillis();
         long idleSince = -1;
+        /** What kept the bot busy at the last check (for a timed-out answer). */
+        volatile String busy;
         final CompletableFuture<Boolean> done = new CompletableFuture<>();
 
         Waiter(boolean chain) { this.chain = chain; }
@@ -135,8 +141,9 @@ public final class FastServer {
     public synchronized String start() {
         if (http != null) return "ok: already on 127.0.0.1:" + port();
         if (keyFile.key() == null) return "error: no usable key in " + keyFile.path() + " (missing, unreadable or shorter than " + MIN_KEY + ")";
+        HttpServer s = null;
         try {
-            HttpServer s = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), wantPort), 16);
+            s = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), wantPort), 16);
             pool = Executors.newFixedThreadPool(THREADS, r -> {
                 Thread t = new Thread(r, "entropybot-fast");
                 t.setDaemon(true);
@@ -153,6 +160,11 @@ public final class FastServer {
             open = true;
             return "ok: fast channel on 127.0.0.1:" + port();
         } catch (IOException | InterruptedException | RuntimeException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            // the starter may have started it already: never leave a listening socket behind
+            if (s != null) {
+                try { s.stop(0); } catch (RuntimeException ignored) {}
+            }
             if (pool != null) pool.shutdownNow();
             pool = null;
             return "error: fast channel: " + e;
@@ -197,21 +209,25 @@ public final class FastServer {
         List<Waiter> due = new ArrayList<>();
         synchronized (waiters) {
             if (waiters.isEmpty()) return;
-            Boolean idleChain = null, idleJob = null;
+            String[] busy = new String[2];
+            boolean[] asked = new boolean[2];
             for (Iterator<Waiter> it = waiters.iterator(); it.hasNext(); ) {
                 Waiter w = it.next();
                 if (w.done.isDone()) {
                     it.remove();
                     continue;
                 }
-                boolean idle;
-                try {
-                    if (w.chain) idle = idleChain != null ? idleChain : (idleChain = handler.idle(true));
-                    else idle = idleJob != null ? idleJob : (idleJob = handler.idle(false));
-                } catch (RuntimeException e) {
-                    idle = false;
+                int i = w.chain ? 1 : 0;
+                if (!asked[i]) {
+                    asked[i] = true;
+                    try {
+                        busy[i] = handler.busy(w.chain);
+                    } catch (RuntimeException e) {
+                        busy[i] = "unknown (" + e + ")";
+                    }
                 }
-                if (!idle) {
+                if (busy[i] != null) {
+                    w.busy = busy[i];
                     w.idleSince = -1;
                     continue;
                 }
@@ -307,7 +323,11 @@ public final class FastServer {
         String id = cmd.get("id").getAsString();
         long timeout = clamp(q.get("timeout"), CMD_TIMEOUT_MS, CMD_TIMEOUT_MAX);
         CompletableFuture<String> f = new CompletableFuture<>();
-        tasks.add(() -> handler.command(cmd, f::complete));
+        // 0 = queued, 1 = the game thread took it (it runs), 2 = given up before it ran (it never will)
+        AtomicInteger claim = new AtomicInteger();
+        tasks.add(() -> {
+            if (claim.compareAndSet(0, 1)) handler.command(cmd, f::complete);
+        });
         JsonObject r = new JsonObject();
         r.addProperty("id", id);
         try {
@@ -315,6 +335,8 @@ public final class FastServer {
         } catch (TimeoutException e) {
             r.add("result", com.google.gson.JsonNull.INSTANCE);
             r.addProperty("timeout", true);
+            // the game never got to it (frozen, or not ticking): it is dropped, so the caller may send it another way
+            if (claim.compareAndSet(0, 2)) r.addProperty("notRun", true);
         } catch (Exception e) {
             r.addProperty("result", "error: " + e);
         }
@@ -346,7 +368,10 @@ public final class FastServer {
             JsonObject r = new JsonObject();
             r.addProperty("idle", idle);
             r.addProperty("waitedMs", System.currentTimeMillis() - w.startMs);
-            if (!idle) r.addProperty("timeout", true);
+            if (!idle) {
+                r.addProperty("timeout", true);
+                if (w.busy != null) r.addProperty("busy", w.busy);
+            }
             send(ex, 200, r);
         } finally {
             waiting.decrementAndGet();

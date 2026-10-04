@@ -34,6 +34,8 @@ class FastServerTest {
     FastServer server;
     Thread ticker;
     final AtomicBoolean ticking = new AtomicBoolean(true);
+    /** The game thread stops ticking (a frozen game, a long load). */
+    volatile boolean frozen;
     final Fake game = new Fake();
     final List<String> logs = Collections.synchronizedList(new ArrayList<>());
 
@@ -63,7 +65,7 @@ class FastServerTest {
             }
         }
 
-        @Override public boolean idle(boolean withChain) { return idle; }
+        @Override public String busy(boolean withChain) { return idle ? null : "chain night"; }
 
         @Override public JsonObject ping() {
             JsonObject o = new JsonObject();
@@ -90,8 +92,10 @@ class FastServerTest {
         ticker = new Thread(() -> {
             game.gameThread = Thread.currentThread();
             while (ticking.get()) {
-                server.tick();
-                game.tickLater();
+                if (!frozen) {
+                    server.tick();
+                    game.tickLater();
+                }
                 try { Thread.sleep(50); } catch (InterruptedException e) { return; }
             }
         }, "fake-game");
@@ -213,7 +217,22 @@ class FastServerTest {
         JsonObject o = r.json();
         assertTrue(o.get("result").isJsonNull());
         assertTrue(o.get("timeout").getAsBoolean());
+        assertFalse(o.has("notRun"), "it ran (the game took it), so it must not be sent again");
         assertTrue(r.ms() >= 250 && r.ms() < 3000, "took " + r.ms() + " ms");
+    }
+
+    @Test
+    void aCommandTheGameNeverTookNeverRunsLater() throws Exception {
+        frozen = true;
+        Resp r = call("POST", "/cmd?timeout=300", cmd("eval", "late"));
+        JsonObject o = r.json();
+        assertTrue(o.get("timeout").getAsBoolean());
+        assertTrue(o.get("notRun").getAsBoolean(), "dropped, so the caller may use cmd.json");
+        frozen = false;
+        Thread.sleep(400);                         // the game ticks again: the dropped command stays dropped
+        assertEquals(0, game.commands.get());
+        assertEquals("ok: eval next", call("POST", "/cmd", cmd("eval", "next")).json().get("result").getAsString());
+        assertEquals(1, game.commands.get());
     }
 
     @Test
@@ -232,6 +251,7 @@ class FastServerTest {
         assertFalse(o.get("idle").getAsBoolean());
         assertTrue(o.get("timeout").getAsBoolean());
         assertTrue(r.ms() >= 350 && r.ms() < 3000, "took " + r.ms() + " ms");
+        assertEquals("chain night", o.get("busy").getAsString(), "says what keeps it busy");
         assertEquals(0, game.beforeIdle.get());
     }
 
