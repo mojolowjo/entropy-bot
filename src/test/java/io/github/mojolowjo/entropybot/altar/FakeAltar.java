@@ -86,7 +86,12 @@ final class FakeAltar implements AltarWorld {
         return false;
     }
 
+    /** Where the bot stands (feet, block centre); a click beyond the reach (eye to the block's box) is refused, as in game. */
+    double[] at = {-21.5, 53, 157.5};
+
     @Override public String use(int[] pos, String item) {
+        double d = AltarPlan.toBox(at[0], at[1] + AltarPlan.EYE, at[2], pos);
+        if (d > AltarPlan.REACH) return "it is out of my reach (" + Math.round(d * 10) / 10.0 + " blocks)";
         clicks.add(k(pos) + " " + (item == null ? "-" : item.substring(item.indexOf(':') + 1)));
         if (item != null && bag(item) < 1) return "couldn't get " + item + " into my hand";
         pending.add(new Object[]{now + lag, pos, item});

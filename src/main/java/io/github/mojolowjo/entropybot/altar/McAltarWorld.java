@@ -100,9 +100,23 @@ public final class McAltarWorld implements AltarWorld {
 
     @Override
     public boolean ready() {
+        // a crouching click would place a block item instead of using the pedestal: stand up first, click a tick later
+        if (p.isShiftKeyDown() || mc.options.keyShift.isDown()) {
+            mc.options.keyShift.setDown(false);
+            return false;
+        }
         if (mc.screen == null && !Gui.open(p)) return true;
         Gui.close(p);
         return false;
+    }
+
+    /** The player's block interaction range (4.5 in survival). */
+    private double reach() {
+        try {
+            return p.blockInteractionRange();
+        } catch (RuntimeException e) {
+            return AltarPlan.REACH;
+        }
     }
 
     private static String id(ItemStack s) { return s.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(s.getItem()).toString(); }
@@ -138,8 +152,10 @@ public final class McAltarWorld implements AltarWorld {
     public String use(int[] pos, String item) {
         if (mc.gameMode == null) return "not in a world";
         Vec3 center = new Vec3(pos[0] + 0.5, pos[1] + 0.5, pos[2] + 0.5);
-        double dist = p.getEyePosition().distanceTo(center);
-        if (dist > AltarPlan.REACH) return "it is out of my reach (" + Math.round(dist * 10) / 10.0 + " blocks)";
+        // as the server's canInteractWithBlock: the eye to the block's box, within the player's interaction range
+        Vec3 eye = p.getEyePosition();
+        double dist = AltarPlan.toBox(eye.x, eye.y, eye.z, pos), range = reach();
+        if (dist > range) return "it is out of my reach (" + Math.round(dist * 10) / 10.0 + " of " + range + " blocks)";
         String h = hold(item);
         if (h != null) return h;
         p.lookAt(EntityAnchorArgument.Anchor.EYES, center);

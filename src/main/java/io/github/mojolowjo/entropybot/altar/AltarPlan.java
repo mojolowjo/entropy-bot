@@ -23,8 +23,13 @@ public final class AltarPlan {
 
     /** The pedestals around an altar (dx, dz), in the order the hand run filled them (x, then z). */
     public static final int[][] PEDESTALS = {{-3, 0}, {-2, -2}, {-2, 2}, {0, -3}, {0, 3}, {2, -2}, {2, 2}, {3, 0}};
-    /** Jobs.useBlock's reach: eye to the block's center. */
+    /**
+     * The survival block interaction range, measured as the server's canInteractWithBlock does: eye to the block's box
+     * (the server even allows 1 more). In game the player's own {@code blockInteractionRange()} is used for a click.
+     */
     public static final double REACH = 4.5;
+    /** A stand spot must reach every block with this much to spare (the bot may stand that far off the block's centre). */
+    public static final double SLACK = 0.5;
     public static final double EYE = 1.62;
     /** Seeds in one "infuse". */
     public static final int MAX_N = 64;
@@ -36,9 +41,11 @@ public final class AltarPlan {
     public static final String USAGE = "usage: infuse <seed> [n] - e.g. infuse silicon 2 (on the infusion altar near me or the base: I fetch the ingredients "
             + "from my chests and the RS network, put them on the altar and pedestals, press the button and take the seed)";
 
-    /** An infusion recipe (Mystical Agriculture's altar), by its type id. */
+    /** An infusion recipe of Mystical Agriculture's altar, by its type id ("mysticalagriculture:infusion"). */
     public static boolean infusion(RecipeData r) {
-        return r != null && r.type().toLowerCase(Locale.ROOT).contains("infusion");
+        if (r == null) return false;
+        String t = r.type().toLowerCase(Locale.ROOT);
+        return t.startsWith("mysticalagriculture:") && t.contains("infusion");
     }
 
     // ---- the recipe: what goes on the altar, what on the pedestals ----
@@ -134,10 +141,21 @@ public final class AltarPlan {
 
     public static String fmt(int[] p) { return p[0] + " " + p[1] + " " + p[2]; }
 
-    /** Eye (standing at {@code stand}) to the block's center, within {@link #REACH}. */
+    /** From a point (the eye) to the block's box (0 inside it), as the server's canInteractWithBlock measures. */
+    public static double toBox(double ex, double ey, double ez, int[] b) {
+        double dx = Math.max(0, Math.max(b[0] - ex, ex - (b[0] + 1))), dy = Math.max(0, Math.max(b[1] - ey, ey - (b[1] + 1))),
+                dz = Math.max(0, Math.max(b[2] - ez, ez - (b[2] + 1)));
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /** The eye of a bot standing in the middle of block {@code stand}, to the target's box. */
+    public static double fromStand(int[] stand, int[] target) {
+        return toBox(stand[0] + 0.5, stand[1] + EYE, stand[2] + 0.5, target);
+    }
+
+    /** Standing anywhere on {@code stand} (up to {@link #SLACK} off its centre) the block is within {@link #REACH}. */
     public static boolean reaches(int[] stand, int[] target) {
-        double dx = stand[0] + 0.5 - (target[0] + 0.5), dy = stand[1] + EYE - (target[1] + 0.5), dz = stand[2] + 0.5 - (target[2] + 0.5);
-        return Math.sqrt(dx * dx + dy * dy + dz * dz) <= REACH;
+        return fromStand(stand, target) <= REACH - SLACK;
     }
 
     /**
@@ -231,20 +249,29 @@ public final class AltarPlan {
         List<int[]> retrieve = new ArrayList<>(), ready = new ArrayList<>();
         Map<Integer, AltarWorld.Stack> alt = w.items(l.altar());
         if (alt == null) return new Survey("I can't read what is on the altar at " + fmt(l.altar()), retrieve, ready, false, null);
-        AltarWorld.Stack out = alt.get(1);
+        List<int[]> all = new ArrayList<>();
+        all.add(l.altar());
+        all.addAll(l.pedestals());
+        List<Map<Integer, AltarWorld.Stack>> seen = new ArrayList<>();
+        for (int[] pos : all) {
+            Map<Integer, AltarWorld.Stack> items = pos == l.altar() ? alt : w.items(pos);
+            if (items == null) return new Survey("I can't read what is on the pedestal at " + fmt(pos), retrieve, ready, false, null);
+            seen.add(items);
+            // review fix: a note never outlives one look - an empty slot is nobody's, whatever goes there later is not the bot's
+            if (items.get(0) == null && mem.placed(pos) != null) mem.forget(pos);
+        }
+        AltarWorld.Stack out = alt.get(1), in = alt.get(0);
+        // "pressed" only means something while the bot's input is still on the altar or its output is there
+        if (out == null && mem.pressed() != null && (in == null || !in.id().equals(mem.placed(l.altar())))) mem.pressed(null);
         boolean ownOutput = false;
         if (out != null) {
             if (out.id().equals(mem.pressed())) ownOutput = true;
             else return new Survey(notMine("the infusion altar at " + fmt(l.altar()) + " has " + out.count() + " " + shortId(out.id()) + " in its output"), retrieve, ready, false, out.id());
         }
-        List<int[]> all = new ArrayList<>();
-        all.add(l.altar());
-        all.addAll(l.pedestals());
-        for (int[] pos : all) {
+        for (int i = 0; i < all.size(); i++) {
+            int[] pos = all.get(i);
             boolean isAltar = pos == l.altar();
-            Map<Integer, AltarWorld.Stack> items = isAltar ? alt : w.items(pos);
-            if (items == null) return new Survey("I can't read what is on the pedestal at " + fmt(pos), retrieve, ready, ownOutput, null);
-            AltarWorld.Stack s = items.get(0);
+            AltarWorld.Stack s = seen.get(i).get(0);
             if (s == null) continue;
             String mine = mem.placed(pos);
             String where = (isAltar ? "the infusion altar at " : "the pedestal at ") + fmt(pos);

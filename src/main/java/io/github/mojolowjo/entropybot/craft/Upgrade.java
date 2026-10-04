@@ -159,26 +159,88 @@ public final class Upgrade {
         return null;
     }
 
+    /** The tier of an essence or an essence block ("prudentium_block" -> 1), else -1. */
+    public static int tierOfAny(String id) {
+        if (id == null) return -1;
+        String path = id.substring(id.indexOf(':') + 1);
+        for (String suf : new String[]{"_essence", "_block"}) {
+            if (path.endsWith(suf)) return TIERS.indexOf(path.substring(0, path.length() - suf.length()));
+        }
+        return -1;
+    }
+
     /**
-     * {@link #roundSlots} for a round of {@code k}: planned from the bag first, else from the bag and storage
-     * ({@code combined}) with what it fetches; {@link Integer#MAX_VALUE} when k can't be planned at all.
+     * Why the plan is not a climb up to {@code target}, or null: a step that takes a higher tier apart (the planner
+     * allows that when no lower tier is anywhere, which is "craft"'s business), or one that uses up the target's tier or
+     * higher - e.g. unpacking the target's own block, which would count as "made".
+     */
+    public static String notUp(CraftPlanner planner, List<Crafter.Step> steps, String target) {
+        int tt = tierOf(target);
+        Crafter.Craft down = breakdownIn(planner, steps);
+        if (down != null) return "it would take a higher tier apart for " + down.want() + " " + shortId(down.item());
+        for (Crafter.Step s : steps) {
+            if (!(s instanceof Crafter.Craft c)) continue;
+            RecipeData r = planner.recipe(c.recipeId());
+            if (r == null) continue;
+            for (Crafter.Need n : planner.usedNeeds(r)) {
+                for (String a : n.alts()) {
+                    int t = tierOfAny(a);
+                    if (tt >= 0 && t >= tt) return "making " + shortId(c.item()) + " would use up " + shortId(a) + " (the same tier or higher)";
+                }
+            }
+        }
+        return null;
+    }
+
+    /** A round's plan: from the bag first, else from the bag and storage with what it fetches. */
+    public record RoundPlan(CraftPlanner.AllPlan plan, Map<String, Integer> fetched) {}
+
+    /** The plan for a round of {@code k}, or null when it can't be planned. */
+    public static RoundPlan roundPlan(CraftPlanner planner, String id, int k, Map<String, Integer> inv, Map<String, Integer> combined) {
+        List<CraftPlanner.Target> t = List.of(new CraftPlanner.Target(id, k));
+        CraftPlanner.AllPlan r = planner.planAll(t, new java.util.LinkedHashMap<>(inv), combined);
+        if (r.ok()) return new RoundPlan(r, Map.of());
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>(combined);
+        r = planner.planAll(t, counts, combined);
+        return r.ok() ? new RoundPlan(r, CraftTexts.fromStorage(combined, counts, inv, r.catalysts())) : null;
+    }
+
+    /**
+     * {@link #roundSlots} for a round of {@code k}; {@link Integer#MAX_VALUE} when k can't be planned or the plan is not
+     * a climb up ({@link #notUp}), so the rounds stay at what can be built up.
      */
     public static int slotsFor(CraftPlanner planner, String id, int k, Map<String, Integer> inv, Map<String, Integer> combined) {
-        List<CraftPlanner.Target> t = List.of(new CraftPlanner.Target(id, k));
-        Map<String, Integer> fetched = Map.of();
-        CraftPlanner.AllPlan r = planner.planAll(t, new java.util.LinkedHashMap<>(inv), combined);
-        if (!r.ok()) {
-            Map<String, Integer> counts = new java.util.LinkedHashMap<>(combined);
-            r = planner.planAll(t, counts, combined);
-            if (!r.ok()) return Integer.MAX_VALUE;
-            fetched = CraftTexts.fromStorage(combined, counts, inv, r.catalysts());
-        }
+        RoundPlan rp = roundPlan(planner, id, k, inv, combined);
+        if (rp == null || notUp(planner, rp.plan().steps(), id) != null) return Integer.MAX_VALUE;
         List<Integer> outs = new java.util.ArrayList<>();
-        for (Crafter.Step s : r.steps()) outs.add(s.want());
-        return roundSlots(fetched, outs);
+        for (Crafter.Step s : rp.plan().steps()) outs.add(s.want());
+        return roundSlots(rp.fetched(), outs);
+    }
+
+    /**
+     * The bag slot (in menu order: inventory rows, then the hotbar) whose crystal the grid will use: {@link GridLayout}
+     * picks the alternative the bag has most of (the first on a tie), {@link GridLoop} the first stack of it. -1: none.
+     */
+    public static int crystalSlot(List<String> menuOrder, List<String> alts) {
+        String pick = null;
+        int best = 0;
+        for (String a : alts) {
+            int have = 0;
+            for (String id : menuOrder) if (a.equals(id)) have++;
+            if (have > best) {
+                best = have;
+                pick = a;
+            }
+        }
+        return pick == null ? -1 : menuOrder.indexOf(pick);
     }
 
     // ---- texts ----
+
+    public static String notUpRefusal(int n, String id, String why) {
+        return "error: I can't upgrade to " + n + " " + shortId(id) + " by building up: " + why
+                + " - upgrade only climbs from the lower tiers (none of them is in my bag, chests or the RS network?)";
+    }
 
     public static String noRecipe(String id) {
         return "error: I know no recipe that makes " + shortId(id) + " from the tier below with an infusion crystal";
@@ -195,11 +257,6 @@ public final class Upgrade {
     public static String crystalWorn(String crystal, int usesLeft, long crafts) {
         return "error: my " + shortId(crystal) + " has " + usesLeft + " uses left and this takes about " + crafts
                 + " crafts - put it away and fetch a fresh one (or the master infusion crystal, which doesn't wear)";
-    }
-
-    public static String breaksDown(int n, String id, Crafter.Craft c) {
-        return "error: I can't upgrade to " + n + " " + shortId(id) + " without taking a higher tier apart (" + c.want() + " " + shortId(c.item())
-                + " from a higher tier) - upgrade only builds up; none of the lower tiers is in my bag, chests or the RS network";
     }
 
     public static String cantPlan(int n, String id, String why) {

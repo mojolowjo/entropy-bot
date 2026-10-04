@@ -100,6 +100,9 @@ public final class Commands implements Chains.Env {
     /** The commands store's object (commands.json): supplies, routines, rules, run, and package D's furnace jobs and smelt mode. */
     JsonObject brainData() { return brainStore.data(); }
 
+    /** Package E: commands.json written now (the altar notes made right before a click). */
+    void brainFlush() { brainStore.flush(); }
+
     // ---- package D: furnace pickups ----
 
     /** A "stop" holds the pickups this long (like the autominer's hold). */

@@ -73,11 +73,45 @@ class UpgradeTest {
         // the planner may take a supremium apart when no lower tier is anywhere: upgrade refuses that plan
         AllPlan apart = ma.planAll(List.of(new Target(ess("imperium"), 4)), counts(ess("supremium"), 1, CRYSTAL, 1));
         assertTrue(apart.ok(), apart.error());
-        Crafter.Craft down = Upgrade.breakdownIn(ma, apart.steps());
-        assertNotNull(down);
-        assertTrue(Upgrade.breaksDown(4, ess("imperium"), down).startsWith("error: I can't upgrade to 4 mysticalagriculture:imperium_essence without taking a higher tier apart"));
+        assertNotNull(Upgrade.breakdownIn(ma, apart.steps()));
+        String why = Upgrade.notUp(ma, apart.steps(), ess("imperium"));
+        assertEquals("it would take a higher tier apart for 4 mysticalagriculture:imperium_essence", why);
+        assertTrue(Upgrade.notUpRefusal(4, ess("imperium"), why).startsWith("error: I can't upgrade to 4 mysticalagriculture:imperium_essence by building up: it would take"));
         AllPlan up2 = ma.planAll(List.of(new Target(ess("imperium"), 1)), counts(ess("inferium"), 64, CRYSTAL, 1));
         assertNull(Upgrade.breakdownIn(ma, up2.steps()), "building up is fine");
+        assertNull(Upgrade.notUp(ma, up2.steps(), ess("imperium")));
+    }
+
+    @Test
+    void unpackingTheTargetsOwnBlockIsNotAnUpgrade() {
+        // prudentium blocks in storage, no inferium: the planner would unpack a block - that is not "made"
+        FakeRecipes g = PlannerFixesTest.essences();
+        String block = MA + "prudentium_block";
+        g.shaped(MA + "prudentium_block", block, 1, new String[]{"ppp", "ppp", "ppp"}, 'p', List.of(ess("prudentium")));
+        g.shapeless(MA + "prudentium_essence_from_block", ess("prudentium"), 9, List.of(block));
+        CraftPlanner pl = new CraftPlanner(g);
+        Map<String, Integer> inv = new LinkedHashMap<>(), combined = counts(block, 10, CRYSTAL, 1);
+        Upgrade.RoundPlan rp = Upgrade.roundPlan(pl, ess("prudentium"), 9, inv, combined);
+        assertNotNull(rp);
+        assertEquals("making mysticalagriculture:prudentium_essence would use up mysticalagriculture:prudentium_block (the same tier or higher)",
+                Upgrade.notUp(pl, rp.plan().steps(), ess("prudentium")));
+        assertEquals(Integer.MAX_VALUE, Upgrade.slotsFor(pl, ess("prudentium"), 9, inv, combined), "a round never sizes such a plan");
+        assertEquals(0, Upgrade.roundSize(9, 30, k -> Upgrade.slotsFor(pl, ess("prudentium"), k, inv, combined)));
+        // the lower tier's block is fine: tertium from prudentium blocks
+        Upgrade.RoundPlan rp2 = Upgrade.roundPlan(pl, ess("tertium"), 2, inv, combined);
+        assertNotNull(rp2);
+        assertNull(Upgrade.notUp(pl, rp2.plan().steps(), ess("tertium")));
+        assertEquals(1, Upgrade.tierOfAny(block));
+    }
+
+    @Test
+    void theWornCheckLooksAtTheCrystalTheGridTakes() {
+        String master = MA + "master_infusion_crystal";
+        // menu order: inventory rows, then the hotbar; GridLayout takes the alternative there is most of, GridLoop its first stack
+        assertEquals(1, Upgrade.crystalSlot(List.of("", CRYSTAL, master, CRYSTAL), List.of(CRYSTAL, master)));
+        assertEquals(2, Upgrade.crystalSlot(List.of("", CRYSTAL, master, master), List.of(CRYSTAL, master)));
+        assertEquals(1, Upgrade.crystalSlot(List.of("", CRYSTAL, master), List.of(CRYSTAL, master)), "a tie: the first alternative");
+        assertEquals(-1, Upgrade.crystalSlot(List.of("", "minecraft:dirt"), List.of(CRYSTAL)));
     }
 
     @Test

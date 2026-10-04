@@ -9,7 +9,6 @@ import io.github.mojolowjo.entropybot.altar.McAltarWorld;
 import io.github.mojolowjo.entropybot.commands.Seq.Step;
 import io.github.mojolowjo.entropybot.craft.CraftPlanner;
 import io.github.mojolowjo.entropybot.craft.CraftTexts;
-import io.github.mojolowjo.entropybot.craft.Crafter;
 import io.github.mojolowjo.entropybot.craft.RecipeData;
 import io.github.mojolowjo.entropybot.craft.Upgrade;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -54,7 +53,7 @@ final class Mystical {
         return jobs.startSeq(new Seq(jobs, storage, label, steps, "always"), "always");
     }
 
-    private AltarMemory memory() { return new AltarMemory(commands.brainData(), commands::saved); }
+    private AltarMemory memory() { return new AltarMemory(commands.brainData(), commands::saved, commands::brainFlush); }
 
     private static int bag(LocalPlayer p, String id) { return Gui.inventory(p).getOrDefault(id, 0); }
 
@@ -71,18 +70,21 @@ final class Mystical {
 
     // ---- upgrade ----
 
-    /** The crystal in the bag with the most uses left: {id, usesLeft} (-1 = it doesn't wear), or null. */
+    /**
+     * The crystal the grid will use (review fix: the same one GridLayout + GridLoop pick, {@link Upgrade#crystalSlot}):
+     * {id, usesLeft} (-1 = it doesn't wear), or null when the bag has none.
+     */
     private static Object[] crystalInBag(LocalPlayer p, List<String> crystals) {
-        Object[] best = null;
-        for (int i = 0; i < 36; i++) {
-            ItemStack s = p.getInventory().getItem(i);
-            if (s.isEmpty()) continue;
-            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).toString();
-            if (!crystals.contains(id)) continue;
-            int left = s.isDamageableItem() ? s.getMaxDamage() - s.getDamageValue() : -1;
-            if (best == null || left == -1 || ((Integer) best[1] != -1 && left > (Integer) best[1])) best = new Object[]{id, left};
-        }
-        return best;
+        // menu order of a crafting grid: the inventory rows (9..35), then the hotbar (0..8)
+        List<ItemStack> order = new ArrayList<>();
+        for (int i = 9; i < 36; i++) order.add(p.getInventory().getItem(i));
+        for (int i = 0; i < 9; i++) order.add(p.getInventory().getItem(i));
+        List<String> ids = new ArrayList<>();
+        for (ItemStack s : order) ids.add(s.isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(s.getItem()).toString());
+        int at = Upgrade.crystalSlot(ids, crystals);
+        if (at < 0) return null;
+        ItemStack s = order.get(at);
+        return new Object[]{ids.get(at), s.isDamageableItem() ? s.getMaxDamage() - s.getDamageValue() : -1};
     }
 
     /** Upgrade's bookkeeping across its rounds. */
@@ -108,8 +110,8 @@ final class Mystical {
             String why = all.error(), pre = CraftPlanner.shortId(u.id()) + ": ";
             return Upgrade.cantPlan(u.n(), u.id(), why.startsWith(pre) ? why.substring(pre.length()) : why);
         }
-        Crafter.Craft down = Upgrade.breakdownIn(planner(), all.steps());
-        if (down != null) return Upgrade.breaksDown(u.n(), u.id(), down);
+        String notUp = Upgrade.notUp(planner(), all.steps(), u.id());
+        if (notUp != null) return Upgrade.notUpRefusal(u.n(), u.id(), notUp);
         // a worn crystal in the bag would break halfway (the planner doesn't know durability)
         long crafts = Upgrade.crystalCrafts(planner(), all.steps());
         Object[] cb = crystalInBag(p, crystals);
@@ -132,14 +134,22 @@ final class Mystical {
         if (made >= st.want) {
             Object[] cb = crystalInBag(p, us.crystals);
             s.label = Upgrade.label(st.want, st.id, 0, 0);          // "ok: done upgrading to 4 ...; made 4 ... in 1 round"
-            s.note =Upgrade.done(made, st.id, us.rounds, cb == null ? null : (String) cb[0], cb == null ? -1 : (Integer) cb[1]);
+            s.note = Upgrade.done(made, st.id, us.rounds, cb == null ? null : (String) cb[0], cb == null ? -1 : (Integer) cb[1]);
             return "next";
         }
         if (us.rounds > 0 && made <= us.lastMade) return Upgrade.noProgress(made, st.want, st.id);
         Map<String, Integer> inv = Gui.inventory(p);
         Map<String, Integer> combined = CraftTexts.combine(inv, Crafting.totals(crafting.sources(p)));
+        // review fix: every round is planned here first (the craftitem below plans the same way from the same stock) and
+        // only a climb up is sized: a plan that takes a higher tier apart or unpacks the target's own block is refused
         int k = Upgrade.roundSize(st.want - made, freeSlots(p), kk -> Upgrade.slotsFor(planner(), st.id, kk, inv, combined));
-        if (k < 1) return Upgrade.bagFull(made, st.want, st.id);
+        if (k < 1) {
+            Upgrade.RoundPlan one = Upgrade.roundPlan(planner(), st.id, 1, inv, combined);
+            if (one == null) return "I can't plan another " + CraftPlanner.shortId(st.id) + " from what is left (" + made + " of " + st.want + " made)";
+            String why = Upgrade.notUp(planner(), one.plan().steps(), st.id);
+            if (why != null) return Upgrade.notUpRefusal(st.want - made, st.id, why).replaceFirst("^error: ", "") + " (" + made + " of " + st.want + " made)";
+            return Upgrade.bagFull(made, st.want, st.id);
+        }
         us.rounds++;
         us.lastMade = made;
         s.label = Upgrade.label(st.want, st.id, us.rounds, made);
@@ -155,8 +165,11 @@ final class Mystical {
 
     // ---- infuse ----
 
-    /** What the altar steps need: the seed, how many, the item per slot. */
-    record InfuseSpec(String seed, int n, AltarPlan.Pick pick) {}
+    /** What the altar steps need: the seed, how many, the item per slot, the altar checked when the verb was given (or null). */
+    record InfuseSpec(String seed, int n, AltarPlan.Pick pick, int[] altar) {}
+
+    /** Mystical Agriculture's altar block (description id). */
+    static final String ALTAR_BLOCK = "block.mysticalagriculture." + AltarPlan.ALTAR;
 
     /** The seed's infusion recipe ("silicon" -> silicon_seeds), or null. */
     private RecipeData infusionRecipe(String id) {
@@ -165,12 +178,33 @@ final class Mystical {
         return null;
     }
 
-    /** The nearest infusion altar within 16 of the bot, else within 24 of the base (loaded chunks only), or null. */
+    /**
+     * An infusion altar within 16 of the bot or 24 of the base (loaded chunks only), or null: one inside the bot's areas
+     * first (the fence would refuse the walk to any other), then the nearest to the bot.
+     */
     private int[] findAltar(LocalPlayer p) {
-        int[] a = Crafting.findBlockAround(Jobs.here(p), AltarPlan.ALTAR, 16, 6);
-        if (a != null) return a;
-        int[] b = base();
-        return b != null ? Crafting.findBlockAround(b, AltarPlan.ALTAR, 24, 6) : null;
+        int[] me = Jobs.here(p), b = base();
+        List<int[]> all = new ArrayList<>(Crafting.findBlocksAround(me, ALTAR_BLOCK, 16, 6));
+        if (b != null) {
+            for (int[] a : Crafting.findBlocksAround(b, ALTAR_BLOCK, 24, 6)) {
+                boolean dup = false;
+                for (int[] o : all) dup |= AltarPlan.same(o, a);
+                if (!dup) all.add(a);
+            }
+        }
+        int[] best = null;
+        boolean bestIn = false;
+        long bestD = Long.MAX_VALUE;
+        for (int[] a : all) {
+            boolean in = jobs.goalAllowed(a[0], a[1], a[2]) == null;
+            long d = Jobs.distSq(a, me);
+            if (best == null || (in && !bestIn) || (in == bestIn && d < bestD)) {
+                best = a;
+                bestIn = in;
+                bestD = d;
+            }
+        }
+        return best;
     }
 
     String infuse(LocalPlayer p, String text) {
@@ -244,7 +278,7 @@ final class Mystical {
         }
         if (altar == null) steps.add(Step.walk(base(), true));       // far away: the base first, then look for it
         Step find = new Step("altarfind");
-        find.state = new InfuseSpec(id, n, pick);
+        find.state = new InfuseSpec(id, n, pick, altar);
         steps.add(find);
         String label = AltarPlan.label(n, id) + (split.guessed() ? " (" + AltarPlan.guessedNote(pick.center()) + ")" : "");
         return start(label, steps);
@@ -262,7 +296,8 @@ final class Mystical {
     /** "altarfind": the altar near the bot or the base; the walk to the spot by it, then the altar run. */
     String altarFind(Seq s, Step st, LocalPlayer p) {
         InfuseSpec spec = (InfuseSpec) st.state;
-        int[] altar = findAltar(p);
+        // review fix: the altar checked when the verb was given is the one used (never another found after the trips)
+        int[] altar = spec.altar() != null ? spec.altar() : findAltar(p);
         if (altar == null) return AltarPlan.noAltar(base() != null).replaceFirst("^error: ", "");
         McAltarWorld w = new McAltarWorld(p);
         AltarPlan.Layout l = AltarPlan.layout(altar, w, w::standable, spec.pick().pedestals().size());

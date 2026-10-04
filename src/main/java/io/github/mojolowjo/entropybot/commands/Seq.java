@@ -69,6 +69,15 @@ public final class Seq {
         }
 
         static Step close() { return new Step("close"); }
+
+        /** Package E: for a step done from an exact spot (the altar run after its exact walk), that walk's index; else idx. */
+        static int walkBackTo(List<Step> steps, int idx) {
+            if (idx > 0 && idx < steps.size() && steps.get(idx).type.equals("infuse")) {
+                Step prev = steps.get(idx - 1);
+                if (prev.type.equals("walk") && prev.exact) return idx - 1;
+            }
+            return idx;
+        }
     }
 
     final Jobs jobs;
@@ -173,6 +182,13 @@ public final class Seq {
             stepStart = now();
         }
         if (t.equals("walk") && "walking".equals(stage)) stage = null;     // plan the walk again
+        // package E: a fight may have moved the bot off the altar's spot: walk back onto it (the altar run keeps its state)
+        int back = Step.walkBackTo(steps, idx);
+        if (back != idx) {
+            idx = back;
+            stage = null;
+            stepStart = now();
+        }
     }
 
     void splice(int at, List<Step> add) { steps.addAll(at, add); }

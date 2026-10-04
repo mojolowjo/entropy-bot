@@ -59,6 +59,7 @@ class AltarPlanTest {
         for (int i = 0; i < 10; i++) ten.add(List.of(SILICON));
         assertFalse(AltarPlan.split(new RecipeData("x", MA + "infusion", SEEDS, 1, 0, 0, true, ten), id -> true).ok());
         assertFalse(AltarPlan.infusion(RecipeData.shapeless("x", SEEDS, 1, List.of(List.of(SILICON)))), "a crafting recipe is not an infusion");
+        assertFalse(AltarPlan.infusion(new RecipeData("x", "othermod:infusion", SEEDS, 1, 0, 0, true, silicon().cells())), "only Mystical Agriculture's altar");
     }
 
     @Test
