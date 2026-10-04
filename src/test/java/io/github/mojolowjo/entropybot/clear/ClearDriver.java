@@ -13,7 +13,7 @@ import java.util.function.Function;
  * pickaxe crafting of noTool, torches, and a break the server takes back once ("flaky") are modelled like the sim.
  * Drops, inventory trips, fights and Baritone's own pathing are not.
  */
-final class ClearDriver {
+class ClearDriver {
     static final Set<String> NEEDS_TOOL = Set.of("stone", "iron_ore");
 
     static final class Item {

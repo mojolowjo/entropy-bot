@@ -73,6 +73,9 @@ public final class Limits {
      */
     public static final int FURNACE_JOBS = 16;
 
+    /** B7d D1: ores listed for players (the bridge's LIMITS.ores); the oldest seen go past it. */
+    public static final int ORES = 1000;
+
     /** A chest note's "seen" (0 when missing or odd). */
     static long seen(JsonObject note) {
         try {
