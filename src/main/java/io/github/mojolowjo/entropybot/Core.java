@@ -134,7 +134,8 @@ public final class Core {
         if (commands.ready()) a.add("jobs:walk");
         if (commands.ready()) a.add("jobs:storage");
         if (commands.ready()) a.add("hotbar");        // package B: the layout keeper, BotAPI.toolPolicy
-        if (commands.ready()) a.add("furnaces");     // package D: remembered furnace jobs, smelt mode, the planner fixes
+        if (commands.ready()) a.add("furnaces");
+        if (commands.ready()) a.add("mystical");     // package E: infuse, upgrade, crystal batching     // package D: remembered furnace jobs, smelt mode, the planner fixes
         if (commands.fastRunning()) a.add("fast");          // package G: the 127.0.0.1 fast channel is up
         if (terrain != null) a.add("terrain");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");

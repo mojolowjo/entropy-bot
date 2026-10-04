@@ -754,6 +754,8 @@ public final class Commands implements Chains.Env {
             case "restock" -> { return crafting.restock(player); }
             case "farm" -> { return crafting.farm(player, rest); }
             case "compact" -> { return crafting.compact(player, rest, from); }
+            case "infuse" -> { return crafting.infuse(player, rest); }           // package E: the infusion altar
+            case "upgrade" -> { return crafting.upgrade(player, rest); }         // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
             case "supplies" -> { return crafting.supplies(player, rest); }
@@ -1291,7 +1293,7 @@ public final class Commands implements Chains.Env {
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
             case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-                 "craft", "kit", "smelt", "get", "restock", "farm", "compact" -> {
+                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade" -> {
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
                 if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
                 // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)

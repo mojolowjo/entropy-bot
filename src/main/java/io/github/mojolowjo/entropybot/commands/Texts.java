@@ -26,7 +26,7 @@ public final class Texts {
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
-            "deaths", "reconnect", "hotbar", "tools");
+            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade");
 
     /**
      * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
@@ -41,7 +41,7 @@ public final class Texts {
      */
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies");
+            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job; they never wait for the bridge's job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
@@ -49,7 +49,7 @@ public final class Texts {
     public static final List<String> PM_HELP = List.of(
             "Moving: come, follow [name], goto x y z, go <place>, base, home (/home), sethome (my home = here), death (go back + empty my corpse), corpse (empty my corpse nearby), stop, spawn (use nearest bed)",
             "Making things: craft <item> [n] fetches what it needs from my chests and the RS network and uses a furnace when a step needs one; smelt <item> [n] (e.g. smelt iron_ingot 9; I go on with other things and pick it up when it is done), smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>, "
-                    + "need <item> [n] (what it takes, what is missing), get <item> [n] (from storage), supplies set <item n, ...> | supplies | supplies clear, restock (top the supplies up)",
+                    + "need <item> [n] (what it takes, what is missing), get <item> [n] (from storage), supplies set <item n, ...> | supplies | supplies clear, restock (top the supplies up), infuse <seed> [n] (on the infusion altar: I fetch the ingredients, fill the altar and pedestals, press the button; I never touch what isn't mine), upgrade <essence> [n] (e.g. upgrade imperium 4: the tiers climbed with the infusion crystal kept, in rounds my bag holds)",
             "Items: inv, eat, wear, craft <item> [n] (planks = any wood; \"copper armor\", \"iron tools\"; comma lists), kit <material>, recipe <item>, drop <item|all> [n], mine <ore> [n] [dig] (ores, sand, gravel, clay, grass; inside my areas, 16+ from protect boxes; fetches a pickaxe first)",
             "Tools and hotbar: hotbar set 1 pickaxe 2 sword 3 food 4 torch (slots 1-9; pickaxe, sword, axe, shovel, hoe, food, torch or an item; I put them there when idle), hotbar, hotbar clear <slot>|all, "
                     + "tools, tools ores iron|cheapest (ores with the iron pickaxe, or the cheapest that does the job; stone pickaxes for stone)",
