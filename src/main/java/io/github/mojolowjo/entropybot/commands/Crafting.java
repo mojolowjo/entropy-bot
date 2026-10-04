@@ -49,13 +49,22 @@ final class Crafting {
     private final Storage storage;
     final McRecipes recipes = new McRecipes();
     final CraftPlanner planner = new CraftPlanner(recipes);
+    /** Package E: infuse and upgrade (Mystical Agriculture). */
+    final Mystical mystical;
 
     Crafting(Core core, Commands commands, Jobs jobs, Storage storage) {
         this.core = core;
         this.commands = commands;
         this.jobs = jobs;
         this.storage = storage;
+        this.mystical = new Mystical(this, core, commands, jobs, storage);
     }
+
+    /** Package E: "infuse &lt;seed&gt; [n]" on the infusion altar. */
+    String infuse(LocalPlayer p, String text) { return mystical.infuse(p, text); }
+
+    /** Package E: "upgrade &lt;essence&gt; [n]", the essence tiers in bag-sized rounds. */
+    String upgrade(LocalPlayer p, String text) { return mystical.upgrade(p, text); }
 
     private long now() { return core.tick(); }
 
@@ -795,6 +804,10 @@ final class Crafting {
             case "compacthere":
             case "compactchest":
             case "compactdone": return compactStep(s, st, p);
+            // package E: Mystical Agriculture
+            case "upgraderound": return mystical.upgradeRound(s, st, p);
+            case "altarfind": return mystical.altarFind(s, st, p);
+            case "infuse": return mystical.infuseStep(s, st, p);
             default:
                 if (st.type.startsWith("farm") && s.farm != null) return farmStep(s, st, p, elapsed);
                 return "unknown step " + st.type;
@@ -1210,6 +1223,8 @@ final class Crafting {
             c.stage = null;
             if (c.loop != null) c.loop.interrupted();      // a batch in flight is still counted (never dropped)
         }
+        // package E: the altar looks again (what it placed is found again), unless it is crafting or taking the seed
+        if (st.state instanceof io.github.mojolowjo.entropybot.altar.AltarRun r) r.interrupted();
         Minecraft.getInstance().options.keyShift.setDown(false);
     }
 
@@ -1360,6 +1375,19 @@ final class Crafting {
         public boolean remainder(String id) {
             try {
                 return stackOf(id).hasCraftingRemainingItem();
+            } catch (RuntimeException e) {
+                return false;
+            }
+        }
+
+        /** Package E: the crafting remainder is the item itself (the infusion crystal): one in its cell serves a whole batch. */
+        @Override
+        public boolean catalyst(String id) {
+            try {
+                ItemStack st = stackOf(id);
+                if (st.isEmpty() || !st.hasCraftingRemainingItem()) return false;
+                ItemStack rem = st.getCraftingRemainingItem();
+                return rem != null && !rem.isEmpty() && rem.getItem() == st.getItem();
             } catch (RuntimeException e) {
                 return false;
             }
