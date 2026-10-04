@@ -45,6 +45,9 @@ public final class Chains {
         /** Runs one command line; a step that starts a job comes back pending (its request). */
         Reply dispatch(String from, String text, boolean internal, JobRequests.Listener l);
 
+        /** B7e N: a line the bot sends itself (the corpse fetch): like a typed one, but it never cancels the owner's pending confirm. */
+        default Reply dispatchAuto(String from, String text, JobRequests.Listener l) { return dispatch(from, text, false, l); }
+
         boolean alive();
 
         /** A reflex holds jobs still (eating, fighting...). */
@@ -440,13 +443,13 @@ public final class Chains {
             return "saved routine " + name + ": " + Limits.stepsText(Texts.splitChain(body)) + " (PM \"" + name + "\" to run it)";
         }
         if (sub.equals("delete") || sub.equals("remove") || sub.equals("forget")) {
-            if (!routines.has(name)) return "I have no routine called " + name;
+            if (!routines.has(name)) return "I have no routine called " + name + " - next: routines";
             routines.remove(name);
             env.saved();
             return "deleted routine " + name;
         }
         if (sub.equals("show")) {
-            return routines.has(name) ? name + ": " + String.join(" > ", Texts.splitChain(routines.get(name).getAsString())) : "I have no routine called " + name;
+            return routines.has(name) ? name + ": " + String.join(" > ", Texts.splitChain(routines.get(name).getAsString())) : "I have no routine called " + name + " - next: routines";
         }
         List<String> list = new ArrayList<>(routines.keySet());
         return list.isEmpty() ? "no routines yet - routine save <name> <command> then <command> ..." : "routines: " + String.join(", ", list) + " (routine show <name>)";
@@ -531,7 +534,7 @@ public final class Chains {
             return;
         }
         corpseRun = true;
-        Reply r = env.dispatch(env.owner(), "death", false, q -> {
+        Reply r = env.dispatchAuto(env.owner(), "death", q -> {
             if (!JobRequests.quiet(q.doneMsg)) env.whisper(env.owner(), q.doneMsg.replaceFirst("^ok: ", ""));
         });
         if (r.pending() == null && (r.text() == null || !r.text().startsWith("started"))) env.whisper(env.owner(), "couldn't go for my corpse: " + r.text());

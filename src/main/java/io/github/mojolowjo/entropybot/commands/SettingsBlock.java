@@ -89,7 +89,8 @@ public final class SettingsBlock {
         out.add("hotbar", hb);
         JsonElement to = b.get("toolOres");
         out.addProperty("toolOres", to != null && to.isJsonPrimitive() && to.getAsString().equals("cheapest") ? "cheapest" : "iron");
-        out.add("recorder", io.github.mojolowjo.entropybot.recorder.RecorderStatus.json());      // B7e E5
+        out.add("rules", RulesBlock.build(b, System.currentTimeMillis(), java.time.ZoneId.systemDefault()));     // B7e N: the rules card
+        out.add("recorder",io.github.mojolowjo.entropybot.recorder.RecorderStatus.json());      // B7e E5
         return out;
     }
 

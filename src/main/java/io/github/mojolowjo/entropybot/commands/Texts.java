@@ -26,7 +26,7 @@ public final class Texts {
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
-            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade");
+            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -98,7 +98,7 @@ public final class Texts {
         if ((verb.equals("poi") || verb.equals("pois")) && !r.matches("^forget\\b.*")) return null;
         if (verb.equals("caves") && !r.matches("^rename\\b.*")) return null;
         if (verb.equals("ores") && r.matches("^prefer\\s+\\S.*")) return "sorry, only " + owner + " can set the preferred ores";
-        return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + GUEST_HELP;
+        return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + HelpCommand.guestList();
     }
 
     /** B7e: the answer to a cmd.json type the mod doesn't know (the KubeJS bridge used to take the rest). */

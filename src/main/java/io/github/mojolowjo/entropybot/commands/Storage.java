@@ -294,7 +294,8 @@ public final class Storage {
         }
         if (spot == null || Jobs.distSq(spot.pos(), me) <= 64) {
             ScanPlan r = scanSteps(spot != null ? spot.pos() : me, radius, me);
-            if (r.found() == 0) return "error: no chests or barrels within " + radius + " blocks of " + (spot != null ? spot.label() : "me");
+            if (r.found() == 0) return Hints.next("error: no chests or barrels within " + radius + " blocks of " + (spot != null ? spot.label() : "me"),
+                    radius < 24 ? "scan " + (spot != null ? spot.label() + " " : "") + "24" : spot == null && places().containsKey("base") ? "scan base" : null);
             return startSeq("scanning " + Math.min(r.found(), 30) + " containers" + (spot != null ? " at " + spot.label() : " around me"), r.steps(), "always");
         }
         Step here = new Step("scanhere");

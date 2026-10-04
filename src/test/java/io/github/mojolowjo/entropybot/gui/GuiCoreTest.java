@@ -172,7 +172,7 @@ class GuiCoreTest {
         for (int i = 0; i < 36; i++) m.set(first + i, "minecraft:dirt", 64);
         m.set(first, "minecraft:charcoal", 24);         // room for 40 charcoal in the inventory
         String r = GuiCore.transferVerb(m, "charcoal 200", false, null);
-        assertEquals("error: my inventory is full - took 40 of 200 charcoal", r);
+        assertEquals("error: my inventory is full - took 40 of 200 charcoal - next: deposit (then take again)", r);
         assertEquals(64, m.total("minecraft:charcoal", true));
     }
 

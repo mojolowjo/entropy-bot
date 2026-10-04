@@ -63,7 +63,7 @@ public final class Compact {
     // ---- the command ----
 
     public static final String USAGE = "error: usage compact <item> [here | <place> | x y z] (e.g. compact inferium_essence)";
-    public static final String NO_TABLE = "error: there is no crafting table near me, the chests or the base";
+    public static final String NO_TABLE = "error: there is no crafting table near me, the chests or the base - next: craft crafting_table, then place crafting_table x y z by the chests";
 
     public static String unknownItem(String word) { return "error: I don't know an item called " + word; }
 

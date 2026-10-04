@@ -100,7 +100,7 @@ final class DigCommands {
         if (n.equals("corner1") || n.equals("corner2") || n.equals("pos1") || n.equals("pos2")) {
             String arg = String.join(" ", java.util.Arrays.copyOfRange(parts, 1, parts.length));
             PolicyCommands.Pos pos = c.resolvePos(Minecraft.getInstance(), arg, from);
-            if (pos == null) return "I can't see you - come closer or give coordinates";
+            if (pos == null) return "I can't see you - come closer or give coordinates - next: zone " + n + " x y z";
             JsonObject z = zone(c);
             if (z == null || !zoneDim(z).equals(pos.dim())) {
                 z = new JsonObject();
@@ -237,7 +237,7 @@ final class DigCommands {
         Map<String, Integer> counts = Gui.inventory(p);
         String id = c.crafting.planner.resolveItem(parts[1], counts);
         if (id == null) return "error: I don't know a block called " + parts[1];
-        if (counts.getOrDefault(id, 0) <= 0) return "error: I have no " + CraftPlanner.shortId(id) + " - give me some first";
+        if (counts.getOrDefault(id, 0) <= 0) return "error: I have no " + CraftPlanner.shortId(id) + " - next: get " + CraftPlanner.shortId(id) + " 64 (or give me some)";
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
         ClearBox box = zoneBox(c);

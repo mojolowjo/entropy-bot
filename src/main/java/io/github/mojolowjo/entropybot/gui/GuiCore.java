@@ -17,6 +17,9 @@ import java.util.TreeMap;
 public final class GuiCore {
     private GuiCore() {}
 
+    /** B7e N: the fix a full bag's refusal names. */
+    static final String FULL_NEXT = " - next: deposit (then take again)";
+
     public static final List<String> TAKE_ROLES = List.of("storage", "input", "output");
     public static final List<String> PUT_ROLES = List.of("storage", "input");
     /** What a container shows (open's note): "special" too (an RS disk drive's disks), never "other". */
@@ -350,9 +353,9 @@ public final class GuiCore {
         int tailN = all ? sum(left) : left.getOrDefault(id, 0);
         String tail = tailN > 0 ? tailN + (all ? " items" : "") + " left in the container" : "nothing left in the container";
         boolean full = res.stuck() && (all || room(m, id) <= 0);          // really no room (not just a slot that won't give it up)
-        if (got == 0) return "error: " + (full ? "my inventory is full - took " + (explicit ? "0 of " + req + " " + name : "nothing") : "the container would not give up any " + name);
+        if (got == 0) return "error: " + (full ? "my inventory is full - took " + (explicit ? "0 of " + req + " " + name : "nothing") + FULL_NEXT : "the container would not give up any " + name);
         if (got < req) {
-            if (full) return explicit ? "error: my inventory is full - took " + got + " of " + req + " " + name : "ok: took " + what + " (my inventory is full)";
+            if (full) return explicit ? "error: my inventory is full - took " + got + " of " + req + " " + name + FULL_NEXT : "ok: took " + what + " (my inventory is full)";
             return "only took " + got + " of " + req + " " + name + (res.stuck() ? " - the container would not give up the rest" : " - the container had no more");
         }
         return "ok: took " + what + " (" + tail + ")";
