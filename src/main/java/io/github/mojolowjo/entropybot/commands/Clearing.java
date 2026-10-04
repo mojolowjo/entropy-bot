@@ -592,6 +592,16 @@ public final class Clearing {
         return GuardCore.cellLeasable(g.policy(), dim, c.x(), c.y(), c.z());
     }
 
+    /**
+     * B7e F: a floor cell or a cave step the fill may place: inside an area and outside protect boxes in every guard mode
+     * (log mode only records, so this is the fill's own fence).
+     */
+    static boolean floorCellAllowed(Pos c) {
+        GuardCore g = Core.INSTANCE.guard.core;
+        String dim = Minecraft.getInstance().level != null ? Storage.dim() : "minecraft:overworld";
+        return GuardCore.cellLeasable(g.policy(), dim, c.x(), c.y(), c.z());
+    }
+
     /** The pickup only takes the table it put down (the place step armed it) and only while it is still a crafting table. */
     static boolean tablePickupWanted(Seq.Step st, LocalPlayer p) {
         return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos));
@@ -1014,7 +1024,7 @@ public final class Clearing {
                 // near the box, not down a hole under the walkway, and (T3) never outside the areas with the fence on
                 if (!job.dropWanted(x, y, z)) continue;
                 // B7e F: with "junk drop", junk drops stay where they lie (but the floor's block while it has few)
-                if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv())) continue;
+                if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv(), x, y, z, seq.now())) continue;
                 double d = e.distanceTo(p);
                 if (d > 1.2 && d < 8) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
             }

@@ -34,10 +34,15 @@ public final class ClearGrid {
      * it leaves (keepOres) and the built blocks; {@code job} may be null (no "only" list, nothing noted).
      */
     public static ClearGrid build(ClearWorld w, ClearBox box, Bot bot, ClearJob job) {
+        return build(w, box, bot, job, 5, 3);
+    }
+
+    /** B7e F: as above with a smaller margin (sideways, up/down): the floor fill's maps, built often on the game thread. */
+    public static ClearGrid build(ClearWorld w, ClearBox box, Bot bot, ClearJob job, int side, int vert) {
         int px = floor(bot.x()), py = floor(bot.y()), pz = floor(bot.z());
-        ClearGrid g = new ClearGrid(Math.min(box.x1() - 5, px - 2), Math.max(box.x2() + 5, px + 2),
-                Math.min(box.y1() - 3, py - 3), Math.max(box.y2() + 3, py + 3),
-                Math.min(box.z1() - 5, pz - 2), Math.max(box.z2() + 5, pz + 2));
+        ClearGrid g = new ClearGrid(Math.min(box.x1() - side, px - 2), Math.max(box.x2() + side, px + 2),
+                Math.min(box.y1() - vert, py - 3), Math.max(box.y2() + vert, py + 3),
+                Math.min(box.z1() - side, pz - 2), Math.max(box.z2() + side, pz + 2));
         int i = 0;
         for (int x = g.ax; x <= g.bx; x++) {
             for (int y = g.ay; y <= g.by; y++) {

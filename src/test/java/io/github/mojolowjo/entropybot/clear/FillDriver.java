@@ -15,6 +15,10 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
     final Map<String, Integer> bag = new HashMap<>();
     final List<Pos> placedCells = new ArrayList<>();
     int wildWalks;
+    /** review 2: time each fill tick (the decision, without the driver's walk physics) */
+    boolean timed;
+    long worstTickNanos, walkNanos;
+    String worstWhat;
     double maxZ = -Double.MAX_VALUE, minZ = Double.MAX_VALUE;
 
     FillDriver(FakeWorld w, Bot start) {
@@ -36,6 +40,15 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
 
     /** A walk arrives only when the bot can walk there without breaking or placing. */
     @Override public void walkBlock(int gx, int gy, int gz) {
+        long t0 = System.nanoTime();
+        try {
+            walkPhysics(gx, gy, gz);
+        } finally {
+            walkNanos += System.nanoTime() - t0;
+        }
+    }
+
+    private void walkPhysics(int gx, int gy, int gz) {
         walks++;
         Bot b = bot();
         ClearBox around = ClearBox.of((int) Math.floor(b.x()), (int) Math.floor(b.y()), (int) Math.floor(b.z()), gx, gy, gz);
@@ -67,7 +80,17 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
     FloorFill.Run fill(FloorFill.Run r) {
         for (int n = 0; n < 400_000; n++, tick++) {
             fall();
-            if (r.tick(this)) return r;
+            walkNanos = 0;
+            String before = r.phase() + " at " + bot();
+            long t0 = timed ? System.nanoTime() : 0;
+            boolean end = r.tick(this);
+            // the decision alone: the driver's own walk physics (its path check) doesn't count
+            long dt = System.nanoTime() - t0 - walkNanos;
+            if (timed && dt > worstTickNanos) {
+                worstTickNanos = dt;
+                worstWhat = before + " -> " + r.phase();
+            }
+            if (end) return r;
         }
         throw new IllegalStateException("the fill never ended: " + lastStatus + " / " + r.phase());
     }

@@ -96,11 +96,24 @@ final class FloorSteps {
         if (!(st.state instanceof FloorState fs)) return "the floor fill was not set up";
         if (fs.done) return "next";
         Commands c = seq.jobs.core().commands;
+        if (!fs.climbOnly && fs.run == null) {
+            // a clear that didn't end ok (stopped, stuck, the guard): no fill and no more rounds, its report ends the job
+            Clearing.Outcome o = fs.clearStep != null ? fs.clearStep.cleared : null;
+            if (o == null || !o.ok()) {
+                fs.done = true;
+                String m = o != null ? o.message() : "stopped: the clear left no report (while " + seq.label + ")";
+                if (fs.prev != null) m = FloorFill.endMessage(m, fs.brokenBefore + (o != null ? o.broken() : 0), fs.prev.report());
+                LOG.info("[entropybot] floor: the clear didn't end ok, no fill: {}", m);
+                seq.jobs.finish(m);
+                return "wait";
+            }
+        }
         fs.world.set(p);
         if (fs.leases == null) fs.leases = Clearing.newLeases();
         if (fs.run == null) {
             Jobs.safeSettings();                // Baritone only walks; the fill's clicks are its own
-            fs.run = new FloorFill.Run(fs.world, fs.opts.box, fs.opts.floorBlock, Clearing::placeCellAllowed, Clearing.standCheck(c),
+            // the floor layer and the cave steps lie inside the areas in every guard mode (log mode included)
+            fs.run = new FloorFill.Run(fs.world, fs.opts.box, fs.opts.floorBlock, Clearing::floorCellAllowed, Clearing.standCheck(c),
                     fs.climbOnly).carry(fs.prev);
         }
         long now = seq.now();
@@ -233,6 +246,7 @@ final class FloorSteps {
             String r = GuiCore.drop(new McMenu(p), e.getKey() + " " + e.getValue());
             if (!r.startsWith("ok")) LOG.info("[entropybot] clear: junk drop {}: {}", e.getKey(), r);
         }
+        JunkDrop.noteThrow(js.job, p.getX(), p.getY(), p.getZ(), now);       // those drops are not picked up again
         LOG.info("[entropybot] clear: bag full - {} (junk drop)", JunkDrop.summary(js.plan));
         return "next";
     }

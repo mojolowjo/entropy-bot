@@ -80,6 +80,8 @@ public final class ClearJob {
     /** F: {@link Options#junkDrop}, {@link Options#floor} / {@link Options#floorBlock} */
     public final boolean junkDrop, floor;
     public final String floorBlock;
+    /** F: where (feet x y z) and when (tick) "junk drop" threw junk; those drops are left alone a while ({@link JunkDrop#nearThrow}) */
+    public final List<double[]> thrown = new ArrayList<>();
     /** true when no box or only list was given (the work zone) */
     public final boolean zone;
     public Integer minStandY;

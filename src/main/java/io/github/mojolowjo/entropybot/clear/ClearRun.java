@@ -334,14 +334,18 @@ public final class ClearRun {
             if (job.standOk != null) {
                 // F: with the fence on, only drops it can walk to (a walk toward one it can't reach wanders off)
                 if (dg == null) {
-                    dg = ClearGrid.build(w, job.box, b.bot(), null);
-                    dd = dg.walkDistances(b.bot());
+                    // only the part of the box near the bot (drops lie within 8 of it): a long box is never mapped whole
+                    Bot bot = b.bot();
+                    int bx = (int) Math.floor(bot.x()), bz = (int) Math.floor(bot.z());
+                    ClearBox jb = job.box;
+                    int x1 = Math.max(jb.x1(), bx - 10), x2 = Math.min(jb.x2(), bx + 10), z1 = Math.max(jb.z1(), bz - 10), z2 = Math.min(jb.z2(), bz + 10);
+                    ClearBox near = x1 <= x2 && z1 <= z2 ? new ClearBox(x1, jb.y1(), z1, x2, jb.y2(), z2) : ClearBox.of(bx, jb.y1(), bz, bx, jb.y2(), bz);
+                    dg = ClearGrid.build(w, near, bot, null);
+                    dd = dg.walkDistances(bot);
                 }
                 int i = dg.idx(d.x(), d.y(), d.z());
-                if (i < 0 || dd[i] < 0) {
-                    triedDrops.add(d.id());
-                    continue;
-                }
+                // not marked tried: one still falling may land where it can walk
+                if (i < 0 || dd[i] < 0) continue;
             }
             if (!b.roomFor(d)) {
                 Out o = maybeDeposit(b);

@@ -90,6 +90,7 @@ class LiveCaveTest {
         FakeWorld w = live();
         FillDriver d = new FillDriver(w, Bot.at(243.5, -46, 854.5)).simInventory(100000);
         d.bag.put(CD, 64);
+        d.bag.put(CD, 128);                                  // 64 stay for stone pickaxes
         ClearJob.Options o = new ClearJob.Options().box(BOX).label("digging").floor(true, null).minStandY(BOX.y1());
         FloorFill.Run prev = null;
         int broken = 0, rounds = 0;

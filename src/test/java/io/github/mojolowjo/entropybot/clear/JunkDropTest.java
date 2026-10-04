@@ -62,10 +62,10 @@ class JunkDropTest {
         assertEquals(CD, block);
         Map<String, Integer> t = JunkDrop.plan(dep, inv, block, JunkDrop.FLOOR_KEEP);
         assertEquals(232 - 64, t.get(CD));
-        // a named cobblestone floor: 64 of it stay (deposit keeps 64 anyway), the deepslate goes
+        // a named cobblestone floor: 64 for the floor and 64 pickaxe material together stay (cobblestone kept first)
         Map<String, Integer> t2 = JunkDrop.plan(dep, inv, "cobblestone", JunkDrop.FLOOR_KEEP);
-        assertEquals(30, t2.get("minecraft:cobblestone"));
-        assertEquals(232, t2.get(CD));
+        assertNull(t2.get("minecraft:cobblestone"));
+        assertEquals(232 - 34, t2.get(CD));
         // a supplies entry keeps more
         Map<String, Integer> dep3 = StorageRules.depositables(held, "", false, null, new StorageRules.Keeps(Map.of("minecraft:tuff", 48), Map.of()));
         assertEquals(2, JunkDrop.plan(dep3, inv, null, 0).get("minecraft:tuff"));
@@ -77,7 +77,7 @@ class JunkDropTest {
         ClearJob plain = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 0, 0, 1, 1, 1)), null, null);
         ClearJob junk = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 0, 0, 1, 1, 1)).junkDrop(true), null, null);
         ClearJob floor = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 0, 0, 1, 1, 1)).junkDrop(true).floor(true, null), null, null);
-        Map<String, Integer> few = Map.of(CD, 10), many = Map.of(CD, 200);
+        Map<String, Integer> few = Map.of(CD, 80), many = Map.of(CD, 200);
         assertTrue(JunkDrop.chase(CD, plain, few), "without junk drop every drop is picked up");
         assertFalse(JunkDrop.chase(CD, junk, few));
         assertTrue(JunkDrop.chase("minecraft:raw_iron", junk, few), "never valuables");
@@ -85,6 +85,25 @@ class JunkDropTest {
         assertFalse(JunkDrop.chase(CD, floor, many));
         assertFalse(JunkDrop.chase("minecraft:tuff", floor, few), "not another junk block");
         assertTrue(JunkDrop.chase("minecraft:tuff", floor, Map.of()), "none at all yet: any block of the list");
+        // review 6: never what it just threw (near the throw spot, for 2 minutes)
+        JunkDrop.noteThrow(floor, 260.5, -46, 854.5, 1000);
+        assertFalse(JunkDrop.chase(CD, floor, few, 258, -46, 854, 1100), "its own throw");
+        assertTrue(JunkDrop.chase(CD, floor, few, 270, -46, 854, 1100), "farther than 6 blocks");
+        assertTrue(JunkDrop.chase(CD, floor, few, 258, -46, 854, 1000 + JunkDrop.THROWN_TICKS + 1), "2 minutes later");
+        assertTrue(JunkDrop.chase("minecraft:raw_iron", floor, few, 258, -46, 854, 1100), "never a valuable");
+    }
+
+    @Test
+    void theLastSixtyFourStonePickaxeMaterialStay() {
+        // only cobbled deepslate and nothing kept by deposit: 64 of it stay for stone pickaxes
+        List<Held> held = List.of(h(CD, 64), h(CD, 36));
+        Map<String, Integer> dep = StorageRules.depositables(held, "", false, null, StorageRules.Keeps.NONE);
+        assertEquals(36, JunkDrop.plan(dep, counts(held), null, 0).get(CD));
+        // blackstone counts toward the 64 (and is never thrown)
+        List<Held> held2 = List.of(h(CD, 100), h("minecraft:blackstone", 40));
+        Map<String, Integer> dep2 = StorageRules.depositables(held2, "", false, null, StorageRules.Keeps.NONE);
+        assertEquals(76, JunkDrop.plan(dep2, counts(held2), null, 0).get(CD));
+        assertNull(JunkDrop.plan(dep2, counts(held2), null, 0).get("minecraft:blackstone"));
     }
 
     @Test

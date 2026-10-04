@@ -33,9 +33,22 @@ public final class FloorFill {
     private FloorFill() {}
 
     /** Without a named block: the first of these it carries (plain stone-like junk, nothing that falls or opens). */
-    public static final List<String> FALLBACK = List.of("minecraft:cobbled_deepslate", "minecraft:cobblestone",
-            "minecraft:deepslate", "minecraft:tuff", "minecraft:stone", "minecraft:andesite", "minecraft:diorite",
-            "minecraft:granite", "minecraft:dirt");
+    public static final List<String> FALLBACK = List.of("minecraft:cobbled_deepslate", "minecraft:deepslate", "minecraft:tuff",
+            "minecraft:stone", "minecraft:andesite", "minecraft:diorite", "minecraft:granite", "minecraft:cobblestone",
+            "minecraft:dirt");
+
+    /** Stone pickaxe material (vanilla's stone_tool_materials): together the last {@link #STONE_KEEP} are never used up. */
+    public static final List<String> STONE_MATERIAL = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:blackstone");
+    public static final int STONE_KEEP = 64;
+
+    /** How many of id the fill (or a junk throw) may use: all, but stone pickaxe material only above 64 of all three together. */
+    public static int usable(String id, Map<String, Integer> inv) {
+        int n = inv.getOrDefault(id, 0);
+        if (!STONE_MATERIAL.contains(id)) return Math.max(0, n);
+        int all = 0;
+        for (String m : STONE_MATERIAL) all += inv.getOrDefault(m, 0);
+        return Math.max(0, Math.min(n, all - STONE_KEEP));
+    }
 
     public static final String LIQUID = "next to water/lava";
     public static final String FENCED = "outside my areas or in a protect box";
@@ -141,10 +154,13 @@ public final class FloorFill {
 
     // ---- the block ----
 
-    /** The block to place: the named one while it has any (nothing else then), else the first of {@link #FALLBACK} it carries; null: none. */
+    /**
+     * The block to place: the named one while it has any (nothing else then), else the first of {@link #FALLBACK} it
+     * carries; never the last {@link #STONE_KEEP} stone pickaxe material ({@link #usable}). Null: none.
+     */
     public static String chooseBlock(String named, Map<String, Integer> inv) {
-        if (named != null) return inv.getOrDefault(named, 0) > 0 ? named : null;
-        for (String id : FALLBACK) if (inv.getOrDefault(id, 0) > 0) return id;
+        if (named != null) return usable(named, inv) > 0 ? named : null;
+        for (String id : FALLBACK) if (usable(id, inv) > 0) return id;
         return null;
     }
 
@@ -154,12 +170,22 @@ public final class FloorFill {
             "(chest|barrel|furnace|smoker|shulker_box|_bed$|_sign$|hopper|spawner|crafting_table|dispenser|dropper|beacon|lectern|"
                     + "jukebox|enchanting_table|brewing_stand|campfire|_banner$|_skull$|_head$|crafter|vault|trial_spawner)");
 
-    /** Why a named block may not become the floor (by id; the game adds BlockItem, full block, block entity), or null. */
+    /** Blocks that make a bad walkway: they explode, burn, melt, slide, bounce, stick, trigger, or are not ours to use. */
+    private static final java.util.regex.Pattern UNSAFE = java.util.regex.Pattern.compile(
+            ":(tnt|magma_block|(packed_|blue_|frosted_)?ice|slime_block|honey_block|soul_sand|soul_soil|powder_snow|mud|"
+                    + "(wet_)?sponge|sculk|sculk_sensor|calibrated_sculk_sensor|sculk_shrieker|sculk_catalyst|sculk_vein|piston|sticky_piston|"
+                    + "observer|redstone_block|redstone_lamp|redstone_ore|target|note_block|bell|bedrock|barrier|light|"
+                    + "(chain_|repeating_)?command_block|structure_block|structure_void|jigsaw|respawn_anchor|lodestone|budding_amethyst|"
+                    + "reinforced_deepslate|spawner|end_portal_frame|cactus|dragon_egg|turtle_egg|sniffer_egg|frogspawn|scaffolding)$"
+                    + "|:infested_|:suspicious_|_leaves$|_coral_block$|_shulker_box$");
+
+    /** Why a named block may not become the floor (by id; the game adds BlockItem, full block, block entity, falling), or null. */
     public static String namedProblem(String id) {
         String full = ClearRules.fullId(id);
         if (StorageRules.VALUABLE.matcher(full).find() || VALUABLE_BLOCK.matcher(full).find()) return "it's valuable";
         if (ClearRules.falling(ClearRules.blockName(full))) return "it falls";
         if (OPENS.matcher(full).find()) return "it's a container or machine";
+        if (UNSAFE.matcher(full).find()) return "it's not a safe floor block";
         return null;
     }
 
@@ -249,6 +275,7 @@ public final class FloorFill {
                 Selection s = select(w, box, allowed);
                 todo.addAll(s.todo());
                 failed.putAll(s.skipped());
+                rank = ranks(w, s.todo());          // a preference only: what is clickable now is checked live
             }
         }
 
@@ -331,14 +358,17 @@ public final class FloorFill {
 
         // ---- pick ----
 
+        /** Cells within this many blocks (sideways) of the bot are looked at each pick; a long box's far cells wait. */
+        static final int NEAR = 16;
+
         private boolean pick(Body b, long now) {
             Bot bot = b.bot();
-            tidy();
             double far = box.distTo(bot.x(), bot.y(), bot.z());
             if (far > 24) {
                 for (Pos c : new ArrayList<>(todo)) fail(c, "too far away (" + Math.round(far) + " blocks)");
                 return end();
             }
+            List<Pos> near = tidy(bot);
             if (feet(bot) <= fy) return climb(b, bot, now);
             if (climbOnly || todo.isEmpty()) return end();
             String id = chooseBlock(named, b.inventory());
@@ -347,10 +377,23 @@ public final class FloorFill {
                 return end();
             }
             List<Pos> sup = new ArrayList<>();
-            for (Pos c : todo) if (supported(w, c)) sup.add(c);
+            for (Pos c : near) if (supported(w, c)) sup.add(c);
             if (sup.isEmpty()) {
-                for (Pos c : new ArrayList<>(todo)) fail(c, NO_SUPPORT);
-                return end();
+                // nothing near to place: the nearest supported cell anywhere (one pass), else nothing has a face left
+                Pos nearest = null;
+                double nd = Double.MAX_VALUE;
+                for (Pos c : todo) {
+                    double d = sq(c.x() + 0.5 - bot.x()) + sq(c.z() + 0.5 - bot.z());
+                    if (d < nd && supported(w, c)) {
+                        nd = d;
+                        nearest = c;
+                    }
+                }
+                if (nearest == null) {
+                    for (Pos c : new ArrayList<>(todo)) fail(c, NO_SUPPORT);
+                    return end();
+                }
+                sup.add(nearest);
             }
             // from where it stands: the lowest rank, then the nearest
             Pos best = null;
@@ -367,25 +410,32 @@ public final class FloorFill {
                 }
             }
             if (best != null) return placeNow(b, best, id, false, now);
-            // walk: the cheapest stand spot on the walkway among the nearest supported cells
-            sup.sort(Comparator.<Pos>comparingInt(c -> rank.getOrDefault(c, Integer.MAX_VALUE))
-                    .thenComparingDouble(c -> sq(c.x() + 0.5 - bot.x()) + sq(c.z() + 0.5 - bot.z())));
-            ClearGrid g = grid(bot);
-            int[] dist = g.walkDistances(bot);
+            // walk: the cheapest stand spot on the walkway among the nearest supported cells (a map around the nearest)
+            sup.sort(Comparator.<Pos>comparingDouble(c -> sq(c.x() + 0.5 - bot.x()) + sq(c.z() + 0.5 - bot.z()))
+                    .thenComparingInt(c -> rank.getOrDefault(c, Integer.MAX_VALUE)));
+            Pos focus = sup.get(0);
+            boolean reach = Math.hypot(focus.x() + 0.5 - bot.x(), focus.z() + 0.5 - bot.z()) <= 2 * NEAR;
+            // far along a long box: a map around the cell alone, every spot priced as "Baritone finds the way"
+            Bot from = reach ? bot : Bot.at(focus.x() + 0.5, fy + 1, focus.z() + 0.5);
+            ClearGrid g = grid(from, focus);
+            int[] dist = reach ? g.walkDistances(bot) : unreachable(g);
             ClearGrid.Spot bestSpot = null;
             Pos forCell = null;
+            List<Pos> tried = new ArrayList<>();
             for (int i = 0; i < sup.size() && i < 16; i++) {
-                ClearGrid.Spot s = standFor(g, dist, sup.get(i), bot);
+                Pos c = sup.get(i);
+                if (Math.abs(c.x() - focus.x()) > MAP_R - 4 || Math.abs(c.z() - focus.z()) > MAP_R - 4) continue;
+                tried.add(c);
+                ClearGrid.Spot s = standFor(g, dist, c, bot);
                 if (s != null && (bestSpot == null || s.cost() < bestSpot.cost())) {
                     bestSpot = s;
-                    forCell = sup.get(i);
+                    forCell = c;
                 }
             }
             if (bestSpot == null) {
-                // nowhere to stand for any cell it could place now: the rest has nothing to be placed against either
-                for (Pos c : sup) fail(c, NO_STAND);
-                for (Pos c : new ArrayList<>(todo)) fail(c, NO_SUPPORT);
-                return end();
+                // nowhere to stand for these: they are given up, the next pick looks at the others
+                for (Pos c : tried) fail(c, NO_STAND);
+                return false;
             }
             target = forCell;
             targetStep = false;
@@ -395,18 +445,37 @@ public final class FloorFill {
             return false;
         }
 
-        /** Drops cells that are solid now (counting the ones it clicked) and cells liquid reached since. */
-        private void tidy() {
+        private static int[] unreachable(ClearGrid g) {
+            int[] d = new int[(g.bx - g.ax + 1) * g.ny * g.nz];
+            java.util.Arrays.fill(d, -1);
+            return d;
+        }
+
+        /**
+         * The cells near the bot (within {@link #NEAR} sideways), after dropping the ones that are solid now (counting the
+         * ones it clicked, also far ones) and the ones liquid reached since.
+         */
+        private List<Pos> tidy(Bot bot) {
+            for (Pos c : new ArrayList<>(clicked)) {
+                if (todo.contains(c) && !fillable(w, c.x(), c.y(), c.z()) && !w.fluid(c.x(), c.y(), c.z())) {
+                    todo.remove(c);
+                    filled++;
+                    mapPlaced(c);
+                }
+            }
+            List<Pos> near = new ArrayList<>();
             for (Pos c : new ArrayList<>(todo)) {
+                if (Math.abs(c.x() + 0.5 - bot.x()) > NEAR || Math.abs(c.z() + 0.5 - bot.z()) > NEAR) continue;
                 if (!fillable(w, c.x(), c.y(), c.z())) {
                     todo.remove(c);
                     if (w.fluid(c.x(), c.y(), c.z())) failed.put(c, LIQUID);
-                    else if (clicked.contains(c)) filled++;
                 } else if (liquidAround(w, c.x(), c.y(), c.z())) {
                     fail(c, LIQUID);
+                } else {
+                    near.add(c);
                 }
             }
-            if (rank.isEmpty() || rank.size() != todo.size()) rank = ranks(w, new ArrayList<>(todo));
+            return near;
         }
 
         private boolean placeNow(Body b, Pos c, String id, boolean step, long now) {
@@ -451,6 +520,7 @@ public final class FloorFill {
             phase = "pick";
             if (c == null) return false;
             if (!fillable(w, c.x(), c.y(), c.z())) {
+                mapPlaced(c);
                 if (targetStep) {
                     steps++;
                     b.log("put a step at " + c.key() + " to climb out of the cave");
@@ -536,7 +606,7 @@ public final class FloorFill {
          * {@link #MAX_STEPS}. Nothing helps: it says where it is stuck and ends.
          */
         private boolean climb(Body b, Bot bot, long now) {
-            ClearGrid g = grid(bot);
+            ClearGrid g = grid(bot, null);
             int[] dist = g.walkDistances(bot);
             ClearGrid.Spot up = climbable(g, dist);
             if (up != null && climbWalkFails < 2) {
@@ -573,8 +643,8 @@ public final class FloorFill {
         /** The nearest walkway spot (feet on the floor layer inside the footprint, or higher in the box) a walk reaches. */
         private ClearGrid.Spot climbable(ClearGrid g, int[] dist) {
             ClearGrid.Spot best = null;
-            for (int x = box.x1(); x <= box.x2(); x++) {
-                for (int z = box.z1(); z <= box.z2(); z++) {
+            for (int x = Math.max(box.x1(), g.ax); x <= Math.min(box.x2(), g.bx); x++) {
+                for (int z = Math.max(box.z1(), g.az); z <= Math.min(box.z2(), g.bz); z++) {
                     for (int y = fy + 1; y <= box.y2(); y++) {
                         int i = g.idx(x, y, z);
                         if (i < 0 || dist[i] < 0 || !g.stand(x, y, z) || g.wet(x, y, z)) continue;
@@ -590,32 +660,37 @@ public final class FloorFill {
         /** A step: the cell, and the spot to place it from (null: from where it stands). */
         record Step(Pos cell, ClearGrid.Spot from) {}
 
+        /** A step candidate before its what-if: the cell, where it is placed from, the walk there, a guess of its worth. */
+        private record Cand(Pos cell, ClearGrid.Spot from, double ox, double oy, double oz, int cost, int guess) {}
+
+        /** The most step candidates tried as a what-if per decision. */
+        static final int MAX_SIM = 24;
+
         /**
-         * The step block: a free cell at the feet level of a spot it can walk to (beside it), at or below the floor layer,
-         * that it may place (lease, no liquid), placeable from where it stands or from that spot. Each is tried on a copy
-         * of the world with the block in: the best gets it onto the walkway, else highest, then the shortest walk. Null
-         * when none raises it.
+         * The step block: a free cell at the feet level of a spot it can walk to (beside it, at most 8 steps away), at or
+         * below the floor layer, with room to stand on it, that it may place (lease, no liquid), placeable from where it
+         * stands or from that spot. The likeliest {@link #MAX_SIM} (highest, next to a ledge one up) are tried on the
+         * walking map itself (the cell made solid, the flood fill again, the cell back): the best gets it onto the walkway,
+         * else highest, then the shortest walk. Null when none raises it.
          */
         Step chooseStep(ClearGrid g, int[] dist, Bot bot) {
-            int curMax = maxFeet(g, dist);
+            int curMax = maxFeetIn(g, dist);
             int[][] dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
-            Step best = null;
-            boolean bestUp = false;
-            int bestMax = curMax, bestCost = Integer.MAX_VALUE;
+            List<Cand> cands = new ArrayList<>();
             Set<Pos> seen = new HashSet<>();
             for (int x = g.ax; x <= g.bx; x++) {
                 for (int y = g.ay; y <= Math.min(g.by, fy); y++) {
                     for (int z = g.az; z <= g.bz; z++) {
                         int i = g.idx(x, y, z);
-                        if (dist[i] < 0 || dist[i] > 16) continue;
+                        if (dist[i] < 0 || dist[i] > 8) continue;
                         if (standOk != null && !standOk.ok(x, y, z)) continue;
                         for (int[] d : dirs) {
                             Pos c = new Pos(x + d[0], y, z + d[1]);
-                            if (!seen.add(c) || badSteps.contains(c) || c.y() > fy) continue;
-                            if (!fillable(w, c.x(), c.y(), c.z()) || liquidAround(w, c.x(), c.y(), c.z())) continue;
+                            if (!seen.add(c) || badSteps.contains(c) || c.y() > fy || g.idx(c.x(), c.y(), c.z()) < 0) continue;
+                            if (!fillable(w, c.x(), c.y(), c.z()) || !fillable(w, c.x(), c.y() + 1, c.z()) || !fillable(w, c.x(), c.y() + 2, c.z())) continue;
+                            if (liquidAround(w, c.x(), c.y(), c.z())) continue;
                             if (allowed != null && !allowed.test(c)) continue;
                             if (!supported(w, c)) continue;
-                            // from here, else from the spot beside it
                             ClearGrid.Spot from = null;
                             double ox = bot.x(), oy = bot.y(), oz = bot.z();
                             int cost = 0;
@@ -627,32 +702,43 @@ public final class FloorFill {
                                 oz = z + 0.5;
                                 cost = dist[i];
                             }
-                            Overlay o = new Overlay(w, c);
-                            Bot after = Bot.at(ox, oy, oz);
-                            ClearGrid g2 = ClearGrid.build(o, around(after), after, null);
-                            int[] d2 = g2.walkDistances(after);
-                            boolean up = new Run(o, box, named, allowed, standOk, true).climbableIn(g2, d2);
-                            int mx2 = maxFeetIn(g2, d2);
-                            if (!up && mx2 <= curMax) continue;
-                            boolean better = best == null || (up && !bestUp) || (up == bestUp && (mx2 > bestMax || (mx2 == bestMax && cost < bestCost)));
-                            if (!better) continue;
-                            best = new Step(c, from);
-                            bestUp = up;
-                            bestMax = mx2;
-                            bestCost = cost;
+                            // a ledge one above the step's top: standing on it, the bot steps up there
+                            boolean ledge = false;
+                            for (int[] e : dirs) ledge |= g.stand(c.x() + e[0], c.y() + 2, c.z() + e[1]);
+                            cands.add(new Cand(c, from, ox, oy, oz, cost, c.y() * 100 + (ledge ? 50 : 0) - cost));
                         }
                     }
                 }
             }
+            cands.sort(Comparator.comparingInt(Cand::guess).reversed());
+            Step best = null;
+            boolean bestUp = false;
+            int bestMax = curMax, bestCost = Integer.MAX_VALUE;
+            for (int k = 0; k < cands.size() && k < MAX_SIM; k++) {
+                Cand c = cands.get(k);
+                int i = g.idx(c.cell().x(), c.cell().y(), c.cell().z());
+                boolean o0 = g.open[i], s0 = g.solid[i];
+                g.open[i] = false;
+                g.solid[i] = true;
+                int[] d2;
+                try {
+                    d2 = g.walkDistances(Bot.at(c.ox(), c.oy(), c.oz()));
+                } finally {
+                    g.open[i] = o0;
+                    g.solid[i] = s0;
+                }
+                boolean up = climbable(g, d2) != null;
+                int mx2 = maxFeetIn(g, d2);
+                if (!up && mx2 <= curMax) continue;
+                boolean better = best == null || (up && !bestUp) || (up == bestUp && (mx2 > bestMax || (mx2 == bestMax && c.cost() < bestCost)));
+                if (!better) continue;
+                best = new Step(c.cell(), c.from());
+                bestUp = up;
+                bestMax = mx2;
+                bestCost = c.cost();
+                if (up && c.cost() == 0) break;            // onto the walkway from where it stands: nothing beats it
+            }
             return best;
-        }
-
-        private boolean climbableIn(ClearGrid g, int[] dist) {
-            return climbable(g, dist) != null;
-        }
-
-        private int maxFeet(ClearGrid g, int[] dist) {
-            return maxFeetIn(g, dist);
         }
 
         private int maxFeetIn(ClearGrid g, int[] dist) {
@@ -678,37 +764,63 @@ public final class FloorFill {
 
         /** The stand spot for a floor cell: on the walkway (feet above the layer), the fence's, not in water, cheapest walk. */
         ClearGrid.Spot standFor(ClearGrid g, int[] dist, Pos c, Bot bot) {
-            ClearGrid.Spot best = null;
+            // the cheap tests first (the map, the eye's distance), the reach test only in cost order until one passes
+            List<ClearGrid.Spot> cands = new ArrayList<>();
+            double cx = c.x() + 0.5, cy = c.y() + 0.5, cz = c.z() + 0.5, far = PlaceRules.PLACE_REACH + 0.9;
             for (int x = c.x() - 4; x <= c.x() + 4; x++) {
                 for (int z = c.z() - 4; z <= c.z() + 4; z++) {
                     for (int y = fy + 1; y <= fy + 3; y++) {
+                        double ey = y + Bot.EYE;
+                        if (sq(x + 0.5 - cx) + sq(ey - cy) + sq(z + 0.5 - cz) > far * far) continue;
                         int i = g.idx(x, y, z);
                         if (i < 0 || !g.stand(x, y, z) || g.wet(x, y, z) || g.wet(x, y + 1, z)) continue;
                         if (standOk != null && !standOk.ok(x, y, z)) continue;
                         if (badSpots.contains(Pos.key(x, y, z))) continue;
                         double cost = dist[i] >= 0 ? dist[i] : 1000 + Math.sqrt(sq(x - bot.x()) + sq(y - bot.y()) + sq(z - bot.z()));
-                        if (best != null && cost >= best.cost()) continue;
-                        if (!placeableFrom(x + 0.5, y, z + 0.5, y + Bot.EYE, c)) continue;
-                        best = new ClearGrid.Spot(x, y, z, cost, x + 0.5, y + Bot.EYE, z + 0.5);
+                        cands.add(new ClearGrid.Spot(x, y, z, cost, x + 0.5, ey, z + 0.5));
                     }
                 }
             }
-            return best;
+            cands.sort(Comparator.comparingDouble(ClearGrid.Spot::cost));
+            for (ClearGrid.Spot s : cands) if (placeableFrom(s.eyeX(), s.y(), s.eyeZ(), s.eyeY(), c)) return s;
+            return null;
         }
 
-        /** The walking map: the floor layer and the box, plus ClearGrid's margin and the bot. */
-        private ClearGrid grid(Bot bot) {
-            return ClearGrid.build(w, new ClearBox(box.x1(), fy, box.z1(), box.x2(), box.y2(), box.z2()), bot, null);
+        /** How far (sideways) from its focus the walking map reaches. */
+        static final int MAP_R = 9;
+
+        private ClearGrid cached;
+        private ClearBox cachedRegion;
+        private long cachedAt = Long.MIN_VALUE;
+
+        /**
+         * The walking map: the floor layer and the box, but only within {@link #MAP_R} of the focus (the cell it goes for;
+         * null: the bot), a 2-block margin and the bot. A 2000-long box is never mapped whole. The map is kept for the
+         * next decisions over the same part (its own placements are written into it) for up to 10 s, while the bot is on it.
+         */
+        private ClearGrid grid(Bot bot, Pos focus) {
+            int fx = focus != null ? focus.x() : floor(bot.x()), fz = focus != null ? focus.z() : floor(bot.z());
+            int x1 = Math.max(box.x1(), fx - MAP_R), x2 = Math.min(box.x2(), fx + MAP_R);
+            if (x1 > x2) { x1 = Math.min(Math.max(fx, box.x1()), box.x2()); x2 = x1; }
+            int z1 = Math.max(box.z1(), fz - MAP_R), z2 = Math.min(box.z2(), fz + MAP_R);
+            if (z1 > z2) { z1 = Math.min(Math.max(fz, box.z1()), box.z2()); z2 = z1; }
+            ClearBox region = new ClearBox(x1, fy, z1, x2, box.y2(), z2);
+            int bx = floor(bot.x()), by = feet(bot), bz = floor(bot.z());
+            boolean onIt = cached != null && cached.idx(bx - 2, by - 3, bz - 2) >= 0 && cached.idx(bx + 2, by + 3, bz + 2) >= 0;
+            if (onIt && region.equals(cachedRegion) && lastTick - cachedAt <= 200) return cached;
+            cached = ClearGrid.build(w, region, bot, null, 2, 2);
+            cachedRegion = region;
+            cachedAt = lastTick;
+            return cached;
         }
 
-        /** A small map around a spot (the step's what-if). */
-        private ClearBox around(Bot b) {
-            int x = floor(b.x()), y = floor(b.y()), z = floor(b.z());
-            int x1 = Math.max(box.x1(), x - 12), x2 = Math.min(box.x2(), x + 12);
-            if (x1 > x2) { x1 = x; x2 = x; }
-            int z1 = Math.max(box.z1(), z - 12), z2 = Math.min(box.z2(), z + 12);
-            if (z1 > z2) { z1 = z; z2 = z; }
-            return new ClearBox(x1, Math.min(fy, y), z1, x2, Math.max(box.y2(), y), z2);
+        /** Its own placement went in: the kept map has it too. */
+        private void mapPlaced(Pos c) {
+            if (cached == null) return;
+            int i = cached.idx(c.x(), c.y(), c.z());
+            if (i < 0) return;
+            cached.open[i] = false;
+            cached.solid[i] = true;
         }
 
         private static int feet(Bot b) {
@@ -729,33 +841,5 @@ public final class FloorFill {
 
     private static double sq(double v) {
         return v * v;
-    }
-
-    /** The world with one more solid block (a what-if for the climb). */
-    static final class Overlay implements ClearWorld {
-        final ClearWorld w;
-        final Pos c;
-
-        Overlay(ClearWorld w, Pos c) {
-            this.w = w;
-            this.c = c;
-        }
-
-        private boolean at(int x, int y, int z) { return x == c.x() && y == c.y() && z == c.z(); }
-
-        @Override public String id(int x, int y, int z) { return at(x, y, z) ? "minecraft:cobbled_deepslate" : w.id(x, y, z); }
-        @Override public String name(int x, int y, int z) { return at(x, y, z) ? "cobbled_deepslate" : w.name(x, y, z); }
-        @Override public boolean air(int x, int y, int z) { return !at(x, y, z) && w.air(x, y, z); }
-        @Override public boolean fluid(int x, int y, int z) { return !at(x, y, z) && w.fluid(x, y, z); }
-        @Override public boolean blockEntity(int x, int y, int z) { return !at(x, y, z) && w.blockEntity(x, y, z); }
-        @Override public boolean unbreakable(int x, int y, int z) { return !at(x, y, z) && w.unbreakable(x, y, z); }
-        @Override public boolean builtBlock(int x, int y, int z) { return !at(x, y, z) && w.builtBlock(x, y, z); }
-        @Override public boolean avoided(int x, int y, int z) { return !at(x, y, z) && w.avoided(x, y, z); }
-        @Override public boolean ore(int x, int y, int z) { return !at(x, y, z) && w.ore(x, y, z); }
-        @Override public boolean noCollision(int x, int y, int z) { return !at(x, y, z) && w.noCollision(x, y, z); }
-        @Override public boolean fullBlock(int x, int y, int z) { return at(x, y, z) || w.fullBlock(x, y, z); }
-        @Override public double collisionHeight(int x, int y, int z) { return at(x, y, z) ? 1 : w.collisionHeight(x, y, z); }
-        @Override public int blockLight(int x, int y, int z) { return w.blockLight(x, y, z); }
-        @Override public Hit clip(double fx, double fy, double fz, double tx, double ty, double tz) { return w.clip(fx, fy, fz, tx, ty, tz); }
     }
 }

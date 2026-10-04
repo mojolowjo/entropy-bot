@@ -107,7 +107,13 @@ class FloorFillTest {
     @Test
     void blockChoiceNamedElseTheJunkList() {
         assertEquals(CD, FloorFill.chooseBlock(null, Map.of(CD, 3, "minecraft:cobblestone", 64)));
-        assertEquals("minecraft:cobblestone", FloorFill.chooseBlock(null, Map.of("minecraft:cobblestone", 64, "minecraft:dirt", 9)));
+        // the last 64 stone pickaxe material (cobblestone, cobbled_deepslate, blackstone together) stay
+        assertEquals("minecraft:dirt", FloorFill.chooseBlock(null, Map.of("minecraft:cobblestone", 64, "minecraft:dirt", 9)));
+        assertEquals("minecraft:cobblestone", FloorFill.chooseBlock(null, Map.of("minecraft:cobblestone", 65, "minecraft:dirt", 9)));
+        assertNull(FloorFill.chooseBlock(null, Map.of("minecraft:cobblestone", 30, CD, 34)));
+        assertEquals(6, FloorFill.usable(CD, Map.of("minecraft:cobblestone", 30, CD, 30, "minecraft:blackstone", 10)));
+        assertEquals("minecraft:tuff", FloorFill.chooseBlock(null, Map.of("minecraft:cobblestone", 200, "minecraft:tuff", 1)), "stone-likes before cobblestone");
+        assertNull(FloorFill.chooseBlock("minecraft:cobblestone", Map.of("minecraft:cobblestone", 64)), "named too");
         assertEquals("minecraft:tuff", FloorFill.chooseBlock(null, Map.of("minecraft:tuff", 1, "minecraft:diamond", 5)));
         assertNull(FloorFill.chooseBlock(null, Map.of("minecraft:diamond", 5, "minecraft:raw_iron", 9, "minecraft:oak_planks", 9)));
         assertEquals("minecraft:stone", FloorFill.chooseBlock("minecraft:stone", Map.of("minecraft:stone", 1, CD, 64)), "the named one first");
@@ -122,6 +128,13 @@ class FloorFillTest {
         assertEquals("it falls", FloorFill.namedProblem("sand"));
         assertEquals("it's a container or machine", FloorFill.namedProblem("minecraft:chest"));
         assertEquals("it's a container or machine", FloorFill.namedProblem("minecraft:furnace"));
+        for (String bad : List.of("tnt", "magma_block", "ice", "packed_ice", "blue_ice", "slime_block", "honey_block", "sculk_sensor",
+                "minecraft:calibrated_sculk_sensor", "soul_soil","infested_stone", "oak_leaves", "observer", "target")) {
+            assertEquals("it's not a safe floor block", FloorFill.namedProblem(bad), bad);
+        }
+        assertNull(FloorFill.namedProblem("minecraft:deepslate_bricks"));
+        assertNull(FloorFill.namedProblem("minecraft:mud_bricks"), "mud bricks are fine, mud isn't");
+        assertNotNull(FloorFill.namedProblem("minecraft:mud"));
     }
 
     // ---- parsing ----
@@ -217,14 +230,55 @@ class FloorFillTest {
     void runsOutOfBlocksAndSaysHowManyAreLeft() {
         FakeWorld w = cave();
         FillDriver d = new FillDriver(w, Bot.at(258.5, -46, 854.5));
-        d.bag.put("minecraft:cobblestone", 7);
+        d.bag.put("minecraft:cobblestone", 71);
         FloorFill.Run r = d.fill(new FloorFill.Run(w, BOX, null, AREA_ONLY, IN_AREA, false));
-        assertEquals(7, r.filledTotal());
+        assertEquals(7, r.filledTotal(), "64 cobblestone stay for stone pickaxes");
+        assertEquals(64, d.bag.get("minecraft:cobblestone"));
         assertTrue(r.report().contains("ran out of blocks - 23 floor cells left"), r.report());
         FillDriver d2 = new FillDriver(cave(), Bot.at(258.5, -46, 854.5));
         d2.bag.put(CD, 64);
         FloorFill.Run r2 = d2.fill(new FloorFill.Run(d2.w, BOX, "minecraft:stone", AREA_ONLY, IN_AREA, false));
         assertTrue(r2.report().contains("ran out of stone - 30 floor cells left"), r2.report());
+    }
+
+    /**
+     * Review 2: one decision on the game thread stays cheap: the walking map covers only the part of the box near the
+     * focus, and a step's what-if reuses that map. Measured on the 64-long tunnel box over the cave, from the cave
+     * bottom (the costliest: climb, step choice) and from the walkway; after a warm-up (the JIT).
+     */
+    @Test
+    void oneDecisionTakesUnderFiveMilliseconds() {
+        long worst = 0;
+        String what = null;
+        for (int round = 0; round < 6; round++) {
+            for (Bot start : List.of(Bot.at(265.5, -49, 854.5), Bot.at(258.5, -46, 854.5))) {
+                FakeWorld w = cave();
+                FillDriver d = new FillDriver(w, start);
+                d.bag.put(CD, 200);
+                d.timed = true;
+                d.fill(new FloorFill.Run(w, BOX, null, AREA_ONLY, IN_AREA, false));
+                if (round >= 3) {
+                    if (d.worstTickNanos > worst) what = d.worstWhat;
+                    worst = Math.max(worst, d.worstTickNanos);
+                }
+            }
+        }
+        System.out.println("[FloorFillTest] worst fill decision after warm-up: " + worst / 1000 + " us (" + what + ")");
+        assertTrue(worst < 5_000_000L, "worst decision " + worst / 1000 + " us");
+    }
+
+    @Test
+    void aLongBoxIsNeverMappedWhole() {
+        // a 2000-long tunnel with the same hole near its start: the fill still finds and fills it
+        FakeWorld w = cave();
+        w.fill(311, 2246, -46, -44, 853, 855, "air");
+        ClearBox longBox = ClearBox.of(247, -46, 853, 2246, -44, 855);
+        FillDriver d = new FillDriver(w, Bot.at(258.5, -46, 854.5));
+        d.bag.put(CD, 200);
+        d.timed = true;
+        FloorFill.Run r = d.fill(new FloorFill.Run(w, longBox, null, AREA_ONLY, IN_AREA, false));
+        assertEquals("filled 30 floor cells with cobbled_deepslate", r.report());
+        assertTrue(d.worstTickNanos < 50_000_000L, "no decision maps the whole box: " + d.worstTickNanos / 1000 + " us");
     }
 
     @Test
