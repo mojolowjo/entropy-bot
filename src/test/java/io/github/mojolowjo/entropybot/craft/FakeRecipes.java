@@ -80,4 +80,19 @@ final class FakeRecipes implements RecipeSource {
     @Override public List<String> allItemIds() {
         return List.copyOf(items);
     }
+
+    /** Package D: items the grid hands back (the infusion crystal). */
+    final Set<String> catalysts = new LinkedHashSet<>();
+
+    FakeRecipes withCatalysts(String... ids) {
+        for (String id : ids) {
+            catalysts.add(m(id));
+            items.add(m(id));
+        }
+        return this;
+    }
+
+    @Override public boolean catalyst(String item) {
+        return catalysts.contains(item);
+    }
 }

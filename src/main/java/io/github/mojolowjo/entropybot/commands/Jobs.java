@@ -190,6 +190,9 @@ public final class Jobs {
      * goal: a Baritone command ("goto x y z", "goto x z", "follow player NAME"); dest: where it ends up (a /home
      * first when that is near home and far off), or null; reflex: no fence check.
      */
+    /** Package D: when the last errand walk (come, goto, follow, go, base) started (ms; 0 = none yet). */
+    long lastTravelAt;
+
     public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex) {
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
@@ -202,6 +205,7 @@ public final class Jobs {
             else if (m3.find()) why = goalAllowed(Integer.parseInt(m3.group(1)), Integer.parseInt(m3.group(2)), Integer.parseInt(m3.group(3)));
             else if (m2.find()) why = goalAllowed(Integer.parseInt(m2.group(1)), (int) Math.floor(p.getY()), Integer.parseInt(m2.group(2)));
             if (why != null) return fenceError(why);
+            lastTravelAt = System.currentTimeMillis();     // package D: an errand (come, goto, go...) holds the furnace pickups
         }
         followWatch = null;
         safeSettings();

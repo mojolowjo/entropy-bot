@@ -21,4 +21,13 @@ public interface RecipeSource {
 
     /** Every registered item id, in a stable order (the registry's key set, as the bridge's allItemIds; ties in resolveItem go to the first). */
     List<String> allItemIds();
+
+    /**
+     * Package D: a catalyst is an ingredient the crafting grid hands back as itself (its crafting remainder is the same
+     * item, like Mystical Agriculture's infusion crystal, which only loses durability). A recipe needs one in the bag
+     * but does not use it up.
+     */
+    default boolean catalyst(String item) {
+        return false;
+    }
 }

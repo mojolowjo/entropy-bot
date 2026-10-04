@@ -79,7 +79,15 @@ public final class Chains {
 
         /** Wave 1: where the bot stands {x, y, z}, or null (a retry after a fight walks back first). */
         default int[] pos() { return null; }
+
+        /** Package D: a furnace job's output is due (the chain picks it up between two steps: "smelt collect"). */
+        default boolean furnaceDue() { return false; }
     }
+
+    /** Package D: the step a chain runs between two of its steps when a furnace's output is due. */
+    static final String PICKUP_STEP = "smelt collect due";
+    /** Ticks after a pickup detour before the next one (a refused or instant pickup must not fire again at every step). */
+    static final long PICKUP_COOLDOWN = 6000;
 
     /** A command's answer now (text, maybe null) or later (pending). */
     public record Reply(String text, Request pending) {
@@ -97,6 +105,9 @@ public final class Chains {
         int[] jobPos;
         String detour;
         boolean inDetour;
+        /** Package D: the detour running is a furnace pickup (not the walk back before a retry); no new one before this tick. */
+        boolean pickup;
+        long pickupAfter;
     }
 
     /** Wave 1 (item 9): a retry after a fight walks back first when the bot ended up further away than this. */
@@ -265,10 +276,11 @@ public final class Chains {
             if (p.replied && !c.replyHandled) {
                 c.replyHandled = true;
                 if (c.inDetour && (Texts.stepFailed(p.reply) || !p.started)) {
-                    // the walk back was refused or instant: the step itself comes next anyway
+                    // the walk back (or a furnace pickup) was refused or instant: the step itself comes next anyway
                     c.inDetour = false;
                     c.pending = null;
-                    env.log("chain " + c.name + ": the walk back before the retry: " + p.reply);
+                    env.log("chain " + c.name + ": " + (c.pickup ? "the furnace pickup: " : "the walk back before the retry: ") + p.reply);
+                    c.pickup = false;
                     return;
                 }
                 if (Texts.stepFailed(p.reply)) {
@@ -292,6 +304,12 @@ public final class Chains {
                 // or low health cut the walk short too: another try, and the walk back again after the fight
                 c.inDetour = false;
                 c.waiting = false;
+                if (c.pickup) {
+                    // package D: the pickup ended (whatever it said, the chain goes on; a cut-short pickup is tried later)
+                    c.pickup = false;
+                    env.log("chain " + c.name + ": furnace pickup: " + st);
+                    return;
+                }
                 if (st.matches("^(stopped|interrupted): (attacked by|low health).*")) {
                     if (c.retries >= 3) {
                         endChain("stopped at step " + (c.idx + 1) + " (" + c.steps.get(c.idx) + "): the walk back was cut short too: " + st);
@@ -354,6 +372,12 @@ public final class Chains {
             c.idx = 0;
             c.roundStart = env.tick();
         }
+        // package D: a furnace's output is due - pick it up between two steps, then the chain goes on where it was
+        if (c.detour == null && !c.inDetour && env.tick() >= c.pickupAfter && env.furnaceDue()) {
+            c.detour = PICKUP_STEP;
+            c.pickup = true;
+            c.pickupAfter = env.tick() + PICKUP_COOLDOWN;
+        }
         String step;
         if (c.detour != null) {
             // wave 1: the walk back to where the step was, before its retry (the step's index stays)
@@ -379,7 +403,8 @@ public final class Chains {
         }
         if (c.inDetour) {
             c.inDetour = false;                                // an instant answer (a refusal): the step comes next anyway
-            env.log("chain " + c.name + ": the walk back before the retry: " + r.text());
+            env.log("chain " + c.name + ": " + (c.pickup ? "the furnace pickup: " : "the walk back before the retry: ") + r.text());
+            c.pickup = false;
             return;
         }
         if (Texts.stepFailed(r.text())) {

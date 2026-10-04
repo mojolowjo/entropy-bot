@@ -8,6 +8,8 @@ import io.github.mojolowjo.entropybot.craft.CraftJob;
 import io.github.mojolowjo.entropybot.craft.CraftPlanner;
 import io.github.mojolowjo.entropybot.craft.CraftTexts;
 import io.github.mojolowjo.entropybot.craft.Crafter;
+import io.github.mojolowjo.entropybot.craft.FurnaceJobs;
+import io.github.mojolowjo.entropybot.craft.FurnacePlan;
 import io.github.mojolowjo.entropybot.craft.GridLayout;
 import io.github.mojolowjo.entropybot.craft.GridLoop;
 import io.github.mojolowjo.entropybot.craft.McRecipes;
@@ -63,10 +65,27 @@ final class Crafting {
 
     // ---- storage the craft trips take from (the bridge's storageSources / takeTripSteps) ----
 
-    record Source(boolean rs, int[] pos, Map<String, Integer> items) {}
+    /** A place to take from: a chest, the RS network, or (package D) a remembered furnace job's output still to collect. */
+    record Source(boolean rs, int[] pos, Map<String, Integer> items, FurnaceJobs.Job furnace) {
+        Source(boolean rs, int[] pos, Map<String, Integer> items) {
+            this(rs, pos, items, null);
+        }
+    }
+
+    /** The chests and the RS network, then the furnaces' output still to collect (package D: after a restart a craft takes it from there). */
+    List<Source> sources(LocalPlayer p) {
+        List<Source> out = storageSources(p);
+        for (FurnaceJobs.Job j : furnaces().all()) {
+            if (!j.dim.equals(Storage.dim()) || j.remaining() <= 0) continue;
+            Map<String, Integer> items = new LinkedHashMap<>();
+            items.put(j.item, j.remaining());
+            out.add(new Source(false, j.pos, items, j));
+        }
+        return out;
+    }
 
     /** The trusted chests near the base (or the bot), then the RS network as its last reading has it. */
-    List<Source> sources(LocalPlayer p) {
+    List<Source> storageSources(LocalPlayer p) {
         List<Source> out = new ArrayList<>();
         for (StorageRules.Chest c : storage.baseChests(p, false)) out.add(new Source(false, c.pos(), c.items()));
         String grid = core.knowledge.rsGrid();
@@ -113,6 +132,16 @@ final class Crafting {
             }
             if (take.isEmpty()) continue;
             used++;
+            if (s.furnace() != null) {
+                // package D: a furnace job's output - the collect step walks there, waits for it if needed, takes it
+                for (Map<String, Object> t : take) {
+                    Step c = new Step("smeltcollect");
+                    c.jobId = s.furnace().id;
+                    c.n = (Integer) t.get("n");
+                    steps.add(c);
+                }
+                continue;
+            }
             steps.add(Step.walk(s.pos(), false));
             if (s.rs()) {
                 steps.add(Step.open(s.pos(), "yes"));
@@ -175,12 +204,113 @@ final class Crafting {
         return b != null ? findBlockAround(b, "crafting_table", 12, 6) : null;
     }
 
+    static final String FURNACE = "block.minecraft.furnace";
+
     /** The nearest furnace: near the bot, else near the base. */
     int[] findFurnace(LocalPlayer p) {
-        int[] t = findBlockAround(Jobs.here(p), "block.minecraft.furnace", 12, 6);
+        int[] t = findBlockAround(Jobs.here(p), FURNACE, 12, 6);
         if (t != null) return t;
         int[] b = base();
-        return b != null ? findBlockAround(b, "block.minecraft.furnace", 16, 6) : null;
+        return b != null ? findBlockAround(b, FURNACE, 16, 6) : null;
+    }
+
+    /**
+     * Package D: every furnace within 12 of the bot and 16 of the base (loaded chunks), nearest to the bot first; never
+     * one the owner untrusted. {@code baseOnly}: only those within 16 of the base (a job left running is left there).
+     */
+    List<int[]> findFurnaces(LocalPlayer p, boolean baseOnly) {
+        int[] me = Jobs.here(p);
+        int[] b = base();
+        List<int[]> out = new ArrayList<>();
+        for (int[] f : findBlocksAround(me, FURNACE, 12, 6)) if (!baseOnly || (b != null && nearBase(f, b))) out.add(f);
+        if (b != null) {
+            for (int[] f : findBlocksAround(b, FURNACE, 16, 6)) {
+                boolean dup = false;
+                for (int[] o : out) dup |= o[0] == f[0] && o[1] == f[1] && o[2] == f[2];
+                if (!dup) out.add(f);
+            }
+        }
+        out.removeIf(f -> untrusted(f));
+        out.sort(java.util.Comparator.comparingLong(f -> dist2(f, me)));
+        return out;
+    }
+
+    /** Within 16 of the base on each axis (the base's furnaces). */
+    static boolean nearBase(int[] f, int[] b) {
+        return Math.abs(f[0] - b[0]) <= 16 && Math.abs(f[1] - b[1]) <= 16 && Math.abs(f[2] - b[2]) <= 16;
+    }
+
+    /** The owner said "untrust x y z" for this block: the bot never uses it. */
+    private boolean untrusted(int[] f) {
+        JsonObject c = core.knowledge.chests().get(Jobs.fmt(f));
+        return c != null && c.has("trusted") && !c.get("trusted").getAsBoolean();
+    }
+
+    private static long dist2(int[] a, int[] b) {
+        long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    /** Every block whose description id contains needle within radius (dyMax up or down) of center. */
+    static List<int[]> findBlocksAround(int[] c, String needle, int radius, int dyMax) {
+        Minecraft mc = Minecraft.getInstance();
+        List<int[]> out = new ArrayList<>();
+        BlockPos.MutableBlockPos bp = new BlockPos.MutableBlockPos();
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -dyMax; dy <= dyMax; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    bp.set(c[0] + dx, c[1] + dy, c[2] + dz);
+                    if (!mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().equals(needle)) continue;
+                    out.add(new int[]{c[0] + dx, c[1] + dy, c[2] + dz});
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Is there (still) a furnace at pos? null = can't tell (the chunk isn't loaded). */
+    static Boolean furnaceAt(int[] pos) {
+        Minecraft mc = Minecraft.getInstance();
+        BlockPos bp = new BlockPos(pos[0], pos[1], pos[2]);
+        if (mc.level == null || !mc.level.isLoaded(bp)) return null;
+        return mc.level.getBlockState(bp).getBlock().getDescriptionId().equals(FURNACE);
+    }
+
+    // ---- package D: the remembered furnace jobs ----
+
+    private FurnaceJobs furnaceJobs;
+    private JsonObject furnaceRoot;
+    /** When this session's commands were loaded (a job's 30 minutes past due count from here at the earliest). */
+    final long sessionStart = System.currentTimeMillis();
+
+    /** The furnace jobs, kept in commands.json ("furnaces"). */
+    FurnaceJobs furnaces() {
+        JsonObject root = commands.brainData();
+        if (furnaceJobs == null || root != furnaceRoot) {
+            furnaceRoot = root;
+            furnaceJobs = new FurnaceJobs(root, commands::saved);
+        }
+        return furnaceJobs;
+    }
+
+    static final String MODE_EFFICIENT = "efficient", MODE_WAIT = "wait";
+
+    /** "efficient" (the default: furnaces run while the bot does other things) or "wait" (the old way). */
+    String smeltMode() {
+        JsonObject b = commands.brainData();
+        return b.has("smeltMode") && MODE_WAIT.equals(b.get("smeltMode").getAsString()) ? MODE_WAIT : MODE_EFFICIENT;
+    }
+
+    private static long nowMs() { return System.currentTimeMillis(); }
+
+    private static void issue(Seq s, String text) {
+        s.furnaceIssue = s.furnaceIssue == null ? text : s.furnaceIssue + "; " + text;
+        addNote(s, text);
+    }
+
+    private static void addNote(Seq s, String text) {
+        if (text == null || text.isEmpty()) return;
+        s.note = s.note == null || s.note.isEmpty() ? text : s.note + "; " + text;
     }
 
     // ---- craft ----
@@ -192,47 +322,52 @@ final class Crafting {
 
     /** The bridge's craftPlanSteps: runs of crafts become one "craft" step, a smelting step the furnace's steps. */
     String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out) {
-        int[] furnace = null;
+        return planSteps(p, plan, label, out, true, FurnaceJobs.CRAFT, MODE_EFFICIENT.equals(smeltMode()));
+    }
+
+    /**
+     * Package D: the plan as Seq steps in {@link FurnacePlan}'s order. A furnace step is "smeltpick" (a free furnace,
+     * never a busy one: walk, open, check, put, remember the job) and "smeltcollect" before the step that uses its
+     * output (efficient) or right after it (wait). {@code collectTargets}: the asked-for furnace output is collected
+     * at the end (a craft); else the job ends once the furnace runs and the pickup collects it when due (the smelt verb).
+     */
+    String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient) {
+        // a job is only ever left running in a furnace at the base: no base marked -> stand by the furnace (wait mode)
+        if (efficient && base() == null) {
+            efficient = false;
+            collectTargets = true;
+        }
         boolean smelts = false;
-        for (CraftJob.Segment seg : CraftJob.segments(plan)) {
-            if (!seg.isSmelt()) {
+        for (Crafter.Step s : plan) {
+            if (s instanceof Crafter.Smelt sm) {
+                smelts = true;
+                if (efficient ? findFurnaces(p, true).isEmpty() : findFurnace(p) == null) return CraftJob.noFurnace(sm.item());
+            }
+        }
+        for (FurnacePlan.Action a : FurnacePlan.order(plan, planner::recipe, efficient, collectTargets)) {
+            if (a instanceof FurnacePlan.CraftRun r) {
                 Step c = new Step("craft");
-                c.crafts = seg.crafts();
+                c.crafts = r.crafts();
                 c.text = label;
                 out.add(c);
-                continue;
+            } else if (a instanceof FurnacePlan.Start st) {
+                Step s = new Step("smeltpick");
+                s.smelt = st.smelt();
+                s.smeltKey = st.key();
+                s.kind = kind;
+                s.text = label;
+                s.near = efficient;                 // only a furnace at the base
+                out.add(s);
+            } else if (a instanceof FurnacePlan.Collect c) {
+                Step s = new Step("smeltcollect");
+                s.smelt = c.smelt();
+                s.smeltKey = c.key();
+                s.want = c.need();
+                s.all = c.all();
+                out.add(s);
             }
-            Crafter.Smelt s = seg.smelt();
-            if (furnace == null) furnace = findFurnace(p);
-            if (furnace == null) return CraftJob.noFurnace(s.item());
-            smelts = true;
-            Step start = new Step("smeltstart");
-            start.id = s.item();
-            out.add(start);
-            out.add(Step.walk(furnace, false));
-            out.add(Step.open(furnace, "yes"));
-            Step ops = new Step("ops");
-            ops.pos = furnace;
-            Map<String, Object> fuel = op("put", s.fuel(), s.fuelCount(), List.of("fuel"));
-            fuel.put("soft", true);           // a fuel slot holding another fuel already: the furnace burns that
-            ops.ops = List.of(op("put", s.input(), s.n(), List.of("input")), fuel);
-            ops.expect = "Furnace";
-            ops.expectName = "furnace";
-            out.add(ops);
-            out.add(Step.close());
-            Step wait = new Step("smeltwait");
-            wait.ticks = CraftJob.smeltWaitTicks(s.n());
-            wait.id = s.item();
-            out.add(wait);
-            out.addAll(collectSteps(furnace, s.item()));
-            Step check = new Step("smeltcheck");
-            check.id = s.item();
-            check.want = s.want();
-            check.pos = furnace;
-            check.tries = 1;
-            out.add(check);
         }
-        if (smelts) {
+        if (smelts && collectTargets) {
             Step note = new Step("smeltnote");
             note.text = label;
             out.add(note);
@@ -256,6 +391,11 @@ final class Crafting {
         return List.of(Step.walk(furnace, false), Step.open(furnace, "yes"), ops, Step.close());
     }
 
+    /** What the bag holds of {@code item} (the plan's counts were made from it). */
+    private static int bag(LocalPlayer p, String item) {
+        return Gui.inventory(p).getOrDefault(item, 0);
+    }
+
     /** startCraft: counts are items wanted, not crafts; short in the bag: a trip to the chests and the network first. */
     Prepared prepareCraft(LocalPlayer p, String text, List<Step> extra) {
         Map<String, Integer> inv = Gui.inventory(p);
@@ -265,7 +405,10 @@ final class Crafting {
         String label = CraftPlanner.label(targets.list());
         List<Step> steps = new ArrayList<>();
         int used = 0;
-        CraftPlanner.AllPlan r = planner.planAll(targets.list(), new LinkedHashMap<>(inv));
+        // package D: the lower-tier check sees the chests and the RS network on the bag-only pass too
+        List<Source> src = sources(p);
+        Map<String, Integer> combined = CraftTexts.combine(inv, totals(src));
+        CraftPlanner.AllPlan r = planner.planAll(targets.list(), new LinkedHashMap<>(inv), combined);
         if (r.ok()) {
             if ((extra == null || extra.isEmpty()) && !r.anySmelt()) {
                 Step c = new Step("craft");
@@ -277,12 +420,10 @@ final class Crafting {
             String err = planSteps(p, r.steps(), label, steps);
             if (err != null) return Prepared.fail("error: can't craft " + label + " - " + err);
         } else {
-            List<Source> src = sources(p);
             if (src.isEmpty()) return Prepared.fail(CraftTexts.craftNoStorage(label, r.error()));
-            Map<String, Integer> combined = CraftTexts.combine(inv, totals(src));
-            CraftPlanner.AllPlan r2 = planner.planAll(targets.list(), new LinkedHashMap<>(combined));
+            CraftPlanner.AllPlan r2 = planner.planAll(targets.list(), new LinkedHashMap<>(combined), combined);
             if (!r2.ok()) return Prepared.fail(CraftTexts.craftEvenWithStorage(label, r2.error(), rsKnown()));
-            Trips trips = takeTrips(src, CraftTexts.fromStorage(combined, r2.counts(), inv));
+            Trips trips = takeTrips(src, CraftTexts.fromStorage(combined, r2.counts(), inv, r2.catalysts()));
             used = trips.used();
             steps.addAll(trips.steps());
             String err = planSteps(p, r2.steps(), label, steps);
@@ -313,7 +454,18 @@ final class Crafting {
 
     // ---- smelt / get ----
 
+    /** The "smelt" sub-verbs that answer at once (package D): jobs, mode, forget. */
+    static boolean smeltInstant(String rest) {
+        return SmeltTexts.instant(rest);
+    }
+
     String smelt(LocalPlayer p, String text) {
+        String t = text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT);
+        // package D: the remembered furnace jobs
+        if (t.equals("jobs") || t.equals("status") || t.equals("list")) return furnaces().list(nowMs());
+        if (t.equals("mode") || t.startsWith("mode ")) return smeltModeCommand(t.substring(4).trim());
+        if (t.startsWith("forget")) return SmeltTexts.forget(furnaces(), t.substring(6).trim());
+        if (t.equals("collect") || t.startsWith("collect ")) return collect(p, t.substring(7).trim());
         CraftTexts.NameCount nc = CraftTexts.parseNameCount(text, 1);
         if (nc == null) return CraftTexts.SMELT_USAGE;
         Map<String, Integer> inv = Gui.inventory(p);
@@ -321,19 +473,82 @@ final class Crafting {
         if (id == null) return CraftTexts.unknownItem(nc.words());
         if (planner.smeltingRecipes(id).isEmpty()) return CraftTexts.noFurnaceRecipe(id);
         String label = nc.n() + " " + CraftPlanner.shortId(id);
-        Crafter.Plan plan = planner.planSmelt(id, nc.n(), new LinkedHashMap<>(inv));
+        List<Source> src = storageSources(p);
+        Map<String, Integer> combined = CraftTexts.combine(inv, totals(src));
+        Crafter.Plan plan = planner.planSmelt(id, nc.n(), new LinkedHashMap<>(inv), combined);
         Trips trips = new Trips(List.of(), 0);
         if (!plan.ok()) {
-            List<Source> src = sources(p);
-            Map<String, Integer> combined = CraftTexts.combine(inv, totals(src)), counts = new LinkedHashMap<>(combined);
-            plan = planner.planSmelt(id, nc.n(), counts);
+            Map<String, Integer> counts = new LinkedHashMap<>(combined);
+            plan = planner.planSmelt(id, nc.n(), counts, combined);
             if (!plan.ok()) return CraftTexts.cantSmelt(label, plan.error());
             trips = takeTrips(src, CraftTexts.fromStorage(combined, counts, inv));
         }
         List<Step> steps = new ArrayList<>(trips.steps());
-        String err = planSteps(p, plan.steps(), label, steps);
+        // efficient (the default): the job ends once the furnace runs, the pickup collects it when it is due
+        boolean efficient = MODE_EFFICIENT.equals(smeltMode());
+        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient);
         if (err != null) return "error: " + err;
-        return startSeq(CraftTexts.smeltSeqLabel(trips.used() > 0, label), steps, "always");
+        // a job left running (efficient, a base marked) ends "ok: done starting the furnace for ...", not "done smelting"
+        String seqLabel = efficient && base() != null ? SmeltTexts.startLabel(trips.used() > 0, label) : CraftTexts.smeltSeqLabel(trips.used() > 0, label);
+        return startSeq(seqLabel, steps, "always");
+    }
+
+    /** "smelt mode [efficient|wait]". */
+    String smeltModeCommand(String arg) {
+        if (arg.isEmpty()) return SmeltTexts.modeReply(smeltMode());
+        String m = arg.startsWith("eff") || arg.equals("on") ? MODE_EFFICIENT : arg.startsWith("wait") || arg.equals("off") ? MODE_WAIT : null;
+        if (m == null) return SmeltTexts.MODE_USAGE;
+        commands.brainData().addProperty("smeltMode", m);
+        commands.saved();
+        return "ok: " + SmeltTexts.modeReply(m);
+    }
+
+    /** "smelt collect [all]": walks to the furnaces whose output is due (all: every one, waiting where needed) and takes it. */
+    String collect(LocalPlayer p, String arg) {
+        FurnaceJobs fj = furnaces();
+        long now = nowMs();
+        boolean all = arg.equals("all"), auto = arg.equals(SmeltTexts.AUTO);
+        List<FurnaceJobs.Job> js = new ArrayList<>();
+        List<String> fenced = new ArrayList<>();
+        // the automatic pickup (idle, between a chain's steps) only takes what is due and not stalled; by hand stalled
+        // jobs are tried again
+        for (FurnaceJobs.Job j : auto ? fj.due(now, Storage.dim()) : fj.all()) {
+            if (!j.dim.equals(Storage.dim()) || !(all || j.due(now))) continue;
+            // the fence before any walk or /home
+            String why = jobs.goalAllowed(j.pos[0], j.pos[1], j.pos[2]);
+            if (why != null) {
+                fenced.add(j.where() + ": " + why);
+                continue;
+            }
+            js.add(j);
+        }
+        if (js.isEmpty()) {
+            if (!fenced.isEmpty()) {
+                fj.later(fj.due(now, Storage.dim()), now);
+                return "error: I can't go to " + String.join("; ", fenced);
+            }
+            return "ok: nothing to collect yet - " + fj.list(now);
+        }
+        if (!auto) fj.unstall(js);
+        fj.later(js, now);                 // a pickup that fails is not tried again at once
+        List<Step> steps = new ArrayList<>();
+        List<String> what = new ArrayList<>();
+        for (FurnaceJobs.Job j : js) {
+            Step c = new Step("smeltcollect");
+            c.jobId = j.id;
+            c.all = true;
+            c.pickup = true;
+            steps.add(c);
+            what.add(j.remaining() + " " + CraftPlanner.shortId(j.item));
+            if (FurnaceJobs.CRAFT.equals(j.kind)) {
+                // a craft's leftover nobody waits for any more: put away after the pickup
+                Step store = new Step("smeltstore");
+                store.id = j.item;
+                store.jobId = j.id;
+                steps.add(store);
+            }
+        }
+        return startSeq("collecting " + String.join(", ", what) + " from " + js.size() + " furnace" + (js.size() > 1 ? "s" : ""), steps, "always");
     }
 
     String get(LocalPlayer p, String text) {
@@ -514,11 +729,39 @@ final class Crafting {
                 s.note = "supplies now: " + String.join(", ", parts);
                 return "next";
             }
+            case "smeltpick": return smeltPick(s, st, p);
+            case "smeltput": return smeltPut(s, st, p);
+            case "smeltreg": return smeltReg(s, st);
+            case "smeltcollect": return smeltCollect(s, st, p);
+            case "smeltopen": return smeltOpen(s, st, p);
+            case "smelttake": return smeltTake(s, st, p);
+            case "smeltstore": {
+                // only what this pickup took, never the bot's own stock of the item
+                int got = s.pickupTook.getOrDefault(st.jobId, 0);
+                if (got <= 0 || bag(p, st.id) <= 0) return "next";
+                Storage.DepositSteps dep = storage.depositSteps(p, st.id, true, null);
+                if (dep.err() != null) {
+                    addNote(s, "kept the " + CraftPlanner.shortId(st.id) + " (" + dep.err().replaceFirst("^error: ", "") + ")");
+                    return "next";
+                }
+                int keep = Math.max(0, bag(p, st.id) - got);
+                for (Step d : dep.steps()) {
+                    if (!d.type.equals("put") || d.items == null) continue;
+                    Map<String, Integer> only = new LinkedHashMap<>();
+                    only.put(st.id, keep);
+                    d.items = only;
+                }
+                s.splice(s.idx + 1, dep.steps());
+                return "next";
+            }
+            case "smeltcleared":
+                furnaces().clearLeftover(st.pos, Storage.dim());
+                return "next";
             case "smeltstart":
                 s.smeltBase = Gui.inventory(p);
                 return "next";
             case "smeltnote":
-                s.note = CraftJob.smeltNote(st.text);
+                s.note = CraftJob.smeltNote(st.text) + (s.furnaceIssue != null ? "; " + s.furnaceIssue : "");
                 return "next";
             case "smeltwait":
                 s.setStatus(CraftJob.smeltWaitStatus(s.label, st.id, st.ticks, (int) elapsed));
@@ -556,6 +799,356 @@ final class Crafting {
                 if (st.type.startsWith("farm") && s.farm != null) return farmStep(s, st, p, elapsed);
                 return "unknown step " + st.type;
         }
+    }
+
+    // ---- package D: the furnace steps (never a busy furnace; the job remembered; collected when it is needed) ----
+
+    /** smeltpick's state: furnaces tried this round and why they were busy, the busy rounds, the wait. */
+    static final class PickState {
+        final java.util.Set<String> tried = new java.util.LinkedHashSet<>();
+        final List<String> busy = new ArrayList<>();
+        /** Furnaces whose job of ours was collected to free them (never again in this pick: a stalled one would loop). */
+        final java.util.Set<String> freed = new java.util.HashSet<>();
+        int rounds;
+        long waitUntil = -1;
+    }
+
+    /** A free furnace for the smelt: the nearest one with no job of ours that the bot hasn't found busy; splices walk/open/smeltput. */
+    private String smeltPick(Seq s, Step st, LocalPlayer p) {
+        PickState ps = st.state instanceof PickState x ? x : new PickState();
+        st.state = ps;
+        if (ps.waitUntil >= 0) {
+            if (now() < ps.waitUntil) {
+                s.setStatus(s.label + " - every furnace is busy, looking again in " + Math.max(1, (ps.waitUntil - now()) / 20) + " s");
+                return "wait";
+            }
+            ps.waitUntil = -1;
+            ps.tried.clear();
+        }
+        FurnaceJobs fj = furnaces();
+        if (fj.full()) return FurnaceJobs.fullRefusal();
+        List<int[]> cands = findFurnaces(p, st.near);
+        if (cands.isEmpty()) return CraftJob.noFurnace(st.smelt.item());
+        int[] pick = null;
+        for (int[] f : cands) {
+            if (!ps.tried.contains(Jobs.fmt(f)) && fj.at(f, Storage.dim()) == null) {
+                pick = f;
+                break;
+            }
+        }
+        if (pick == null) {
+            // one of ours is in the way (this job's, or one that is done): collect it, then that furnace is free again
+            for (int[] f : cands) {
+                FurnaceJobs.Job mine = fj.at(f, Storage.dim());
+                if (mine == null || mine.stalled || ps.freed.contains(Jobs.fmt(f)) || !(s.smeltJobs.containsValue(mine.id) || mine.due(nowMs()))) continue;
+                ps.freed.add(Jobs.fmt(f));
+                Step c = new Step("smeltcollect");
+                c.jobId = mine.id;
+                c.all = true;
+                c.pickup = !s.smeltJobs.containsValue(mine.id);
+                ps.tried.clear();
+                s.splice(s.idx, List.of(c));
+                s.stage = null;
+                return "wait";
+            }
+            if (++ps.rounds > FurnaceJobs.BUSY_ROUNDS) return SmeltTexts.allBusy(cands.size(), ps.busy);
+            ps.waitUntil = now() + FurnaceJobs.BUSY_WAIT_TICKS;
+            commands.log("furnaces busy (" + String.join("; ", ps.busy) + "): looking again in a minute");
+            return "wait";
+        }
+        ps.tried.add(Jobs.fmt(pick));
+        Step walk = Step.walk(pick, false);
+        walk.why = "the furnace at " + Jobs.fmt(pick);
+        Step put = new Step("smeltput");
+        put.pos = pick;
+        put.smelt = st.smelt;
+        put.smeltKey = st.smeltKey;
+        put.kind = st.kind;
+        put.text = st.text;
+        put.redo = st.redo;
+        put.state = st;                    // the pick step, to try again with its tried list
+        s.splice(s.idx + 1, List.of(walk, Step.open(pick, "yes"), put));
+        return "next";
+    }
+
+    /** The furnace's three slots in the open menu. */
+    static FurnaceJobs.Slots furnaceSlots(LocalPlayer p) {
+        McMenu m = new McMenu(p);
+        Map<String, List<Integer>> roles = GuiCore.roles(m);
+        String[] in = firstStack(m, roles.get("input")), fu = firstStack(m, roles.get("fuel")), out = firstStack(m, roles.get("output"));
+        return new FurnaceJobs.Slots(in[0], Integer.parseInt(in[1]), fu[0], Integer.parseInt(fu[1]), out[0], Integer.parseInt(out[1]));
+    }
+
+    private static String[] firstStack(McMenu m, List<Integer> slots) {
+        if (slots != null) for (int i : slots) if (m.id(i) != null) return new String[]{m.id(i), String.valueOf(m.count(i))};
+        return new String[]{null, "0"};
+    }
+
+    private static boolean furnaceMenu(LocalPlayer p) {
+        return java.util.regex.Pattern.compile("Furnace", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(Gui.menuName(p)).find();
+    }
+
+    /** At the open furnace: busy (someone's smelting, or output nobody took) -> close it and pick another; else put input and fuel in. */
+    private String smeltPut(Seq s, Step st, LocalPlayer p) {
+        if (!Gui.open(p)) return "no container open";
+        if (now() - s.stepStart < 4) return "wait";            // let its slots arrive
+        String bad = Gui.wrongScreen(p);
+        if (bad != null) return bad;
+        if (!furnaceMenu(p)) return "the block at " + Jobs.fmt(st.pos) + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
+        FurnaceJobs.Leftover lo = furnaces().leftover(st.pos, Storage.dim());
+        FurnaceJobs.PutCheck chk = FurnaceJobs.check(furnaceSlots(p), st.smelt.fuel(), lo);
+        String busy = chk.put() == FurnaceJobs.Put.BUSY ? chk.why() : null;
+        Step pick = (Step) st.state;
+        if (chk.put() == FurnaceJobs.Put.CLEAR_FIRST) {
+            // our own leftover from an earlier job: take it out, then look again
+            Step clear = new Step("ops");
+            clear.pos = st.pos;
+            clear.ops = List.of(op("collect", lo.item(), 0, null));
+            Step cleared = new Step("smeltcleared");
+            cleared.pos = st.pos;
+            addNote(s, "took my old " + CraftPlanner.shortId(lo.item()) + " out of the furnace at " + Jobs.fmt(st.pos));
+            s.splice(s.idx + 1, List.of(clear, cleared, st));
+            return "next";
+        }
+        if (busy != null) {
+            // never cleared, never added to: someone else's (or a forgotten) smelt
+            if (pick.state instanceof PickState ps) ps.busy.add(Jobs.fmt(st.pos) + ": " + busy);
+            commands.log("the furnace at " + Jobs.fmt(st.pos) + " is busy (" + busy + "), trying another");
+            s.splice(s.idx + 1, List.of(Step.close(), pick));
+            return "next";
+        }
+        if (furnaces().full()) return FurnaceJobs.fullRefusal();
+        Step ops = new Step("ops");
+        ops.pos = st.pos;
+        // the fuel slot is empty or holds our fuel (else it was busy): top it up to the plan's count
+        Map<String, Object> fuel = op("topup", st.smelt.fuel(), 0, List.of("fuel"));
+        fuel.put("to", st.smelt.fuelCount());
+        ops.ops = List.of(op("put", st.smelt.input(), st.smelt.n(), List.of("input")), fuel);
+        ops.expect = "Furnace";
+        ops.expectName = "furnace";
+        Step reg = new Step("smeltreg");
+        reg.pos = st.pos;
+        reg.smelt = st.smelt;
+        reg.smeltKey = st.smeltKey;
+        reg.kind = st.kind;
+        reg.text = st.text;
+        reg.redo = st.redo;
+        s.splice(s.idx + 1, List.of(ops, reg, Step.close()));
+        return "next";
+    }
+
+    /** The input is in: remember the job (persisted), so a collect, a pickup or a craft after a restart finds it. */
+    private String smeltReg(Seq s, Step st) {
+        FurnaceJobs.Job j = furnaces().add(st.pos, Storage.dim(), st.smelt, st.kind, st.text, nowMs());
+        if (j == null) return "I put " + st.smelt.n() + " " + CraftPlanner.shortId(st.smelt.input()) + " in the furnace at " + Jobs.fmt(st.pos)
+                + " but couldn't remember it (" + FurnaceJobs.fullRefusal() + ")";
+        if (st.redo) {
+            j.redone = true;
+            commands.saved();
+        }
+        s.smeltJobs.put(st.smeltKey, j.id);
+        commands.log("furnace job #" + j.id + ": " + FurnaceJobs.startedNote(j, nowMs()));
+        addNote(s, FurnaceJobs.startedNote(j, nowMs()));
+        return "next";
+    }
+
+    /** smeltcollect's job: by id (a trip, a pickup) or by the plan's key. */
+    private FurnaceJobs.Job jobOf(Seq s, Step st) {
+        int id = st.jobId > 0 ? st.jobId : s.smeltJobs.getOrDefault(st.smeltKey, -1);
+        return id > 0 ? furnaces().get(id) : null;
+    }
+
+    /** How many to collect now: everything left (all), a trip's amount, or what the next step needs beyond the bag. */
+    private static int collectTarget(Step st, FurnaceJobs.Job j, int bagHas) {
+        if (st.all) return j.remaining();
+        if (st.n != null) return Math.min(st.n, j.remaining());
+        return Math.min(j.remaining(), Math.max(0, st.want - bagHas));
+    }
+
+    /** Collect a furnace job's output: nothing to do when the bag already has what the next step needs, else walk there. */
+    private String smeltCollect(Seq s, Step st, LocalPlayer p) {
+        FurnaceJobs.Job j = jobOf(s, st);
+        String item = j != null ? j.item : st.smelt != null ? st.smelt.item() : null;
+        if (j == null) {
+            int id = st.jobId > 0 ? st.jobId : s.smeltJobs.getOrDefault(st.smeltKey, -1);
+            if (s.doneJobs.contains(id)) return "next";       // this job collected it all already (to free the furnace)
+            if (item != null && !st.all && st.n == null && bag(p, item) >= st.want) return "next";
+            return lost(s, st, p, null, "I no longer remember that furnace job (\"smelt forget\", or 30 min past due)");
+        }
+        int target = collectTarget(st, j, bag(p, j.item));
+        if (target <= 0) return "next";                   // early: the bag has enough, the rest keeps smelting
+        Step walk = Step.walk(j.pos, false);
+        walk.why = "the furnace at " + j.where();
+        Step open = new Step("smeltopen");
+        open.jobId = j.id;
+        open.n = target;
+        open.pickup = st.pickup;
+        open.want = st.want;
+        open.all = st.all;
+        open.smelt = st.smelt;
+        s.splice(s.idx + 1, List.of(walk, open));
+        if (!j.due(nowMs())) s.setStatus(s.label + " - " + FurnaceJobs.waitStatus(j, nowMs()));
+        return "next";
+    }
+
+    /** Next to the furnace: still there? Then open it and take as it comes. */
+    private String smeltOpen(Seq s, Step st, LocalPlayer p) {
+        FurnaceJobs.Job j = furnaces().get(st.jobId);
+        if (j == null) return lost(s, st, p, null, "I no longer remember that furnace job");
+        if (Boolean.FALSE.equals(furnaceAt(j.pos))) return lost(s, st, p, j, "the furnace at " + j.where() + " is gone");
+        Step take = new Step("smelttake");
+        take.jobId = j.id;
+        take.n = st.n;
+        take.pickup = st.pickup;
+        take.smelt = st.smelt;
+        take.want = st.want;
+        take.pos = j.pos;
+        s.splice(s.idx + 1, List.of(Step.open(j.pos, "yes"), take, Step.close()));
+        return "next";
+    }
+
+    /** smelttake's state: taken so far, the last time more came out, a take waiting for the server. */
+    static final class TakeState {
+        int took, before = -1, asked, lastInput = -1;
+        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;
+    }
+
+    /** The open furnace: take our output as it comes until the target is reached; wait, or say it is gone or stopped. */
+    private String smeltTake(Seq s, Step st, LocalPlayer p) {
+        FurnaceJobs fj = furnaces();
+        FurnaceJobs.Job j = fj.get(st.jobId);
+        if (j == null) {
+            if (s.doneJobs.contains(st.jobId) || st.pickup) return "next";      // collected in full (this or another visit)
+            // "smelt forget" while waiting here: the owner took it off my list, so the step that needs it can't go on
+            return "furnace job #" + st.jobId + " was forgotten (smelt forget) while I waited for it at the furnace";
+        }
+        TakeState ts = st.state instanceof TakeState x ? x : new TakeState();
+        st.state = ts;
+        if (ts.before >= 0) {
+            // a take is on its way: count what really arrived
+            if (now() - ts.settleTick < Storage.GUI_SETTLE) return "wait";
+            int got = Math.max(0, bag(p, j.item) - ts.before);
+            ts.before = -1;
+            if (got > 0) {
+                if (st.pickup) s.pickupTook.merge(j.id, got, Integer::sum);
+                ts.took += got;
+                ts.lastProgress = nowMs();
+                fj.collected(j, got);
+                if (fj.get(j.id) == null) {
+                    s.doneJobs.add(j.id);
+                    if (st.pickup) addNote(s, "got " + j.want + " " + CraftPlanner.shortId(j.item) + " from the furnace at " + j.where());
+                    return "next";
+                }
+            } else if (ts.asked > 0) {
+                if (st.pickup) {
+                    // a full bag: say so once, try again in half an hour (not every 5 minutes)
+                    fj.later(List.of(j), nowMs(), 30 * 60_000L);
+                    addNote(s, "my inventory is full - left " + j.remaining() + " " + CraftPlanner.shortId(j.item) + " in the furnace at " + j.where());
+                    return "next";
+                }
+                return "my inventory is full (took " + ts.took + " of " + st.n + " " + CraftPlanner.shortId(j.item) + " from the furnace at " + j.where() + ")";
+            }
+        }
+        if (!Gui.open(p)) {
+            // waiting with the furnace closed (the bot can eat meanwhile): open it again when it is time to look
+            if (ts.reopenAt < 0) return "no container open";
+            if (now() < ts.reopenAt) {
+                s.setStatus(s.label + " - " + FurnaceJobs.waitStatus(j, nowMs()));
+                return "wait";
+            }
+            ts.reopenAt = -1;
+            s.splice(s.idx, List.of(Step.open(j.pos, "yes")));
+            s.stage = null;
+            return "wait";
+        }
+        if (now() - ts.lookTick < 10) return "wait";            // look twice a second
+        ts.lookTick = now();
+        if (!furnaceMenu(p)) return "the block at " + j.where() + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
+        FurnaceJobs.Slots sl = furnaceSlots(p);
+        FurnaceJobs.Collect c = FurnaceJobs.collect(sl, j, ts.took, st.n == null ? j.remaining() : st.n, nowMs(), ts.lastProgress, ts.lastInput);
+        ts.lastInput = sl.input() != null && sl.input().equals(j.input) ? sl.inputN() : 0;
+        switch (c.next()) {
+            case DONE:
+                if (st.pickup || ts.took > 0) addNote(s, "got " + ts.took + " " + CraftPlanner.shortId(j.item) + " from the furnace at " + j.where()
+                        + (j.remaining() > 0 && fj.get(j.id) != null ? " (" + j.remaining() + " still smelting)" : ""));
+                return "next";
+            case TAKE: {
+                McMenu m = new McMenu(p);
+                ts.before = bag(p, j.item);
+                ts.asked = c.take();
+                ts.settleTick = now();
+                GuiCore.take(m, j.item, c.take(), List.of("output"), GuiCore.roles(m));
+                return "wait";
+            }
+            case WAIT:
+                // close it while waiting (an open menu blocks eating), look again in 5-30 s
+                s.setStatus(s.label + " - " + FurnaceJobs.waitStatus(j, nowMs()));
+                ts.reopenAt = now() + FurnaceJobs.lookAgainTicks(j.dueAt - nowMs());
+                Gui.close(p);
+                return "wait";
+            case STALLED:
+                fj.markStalled(j);                                // never retried by itself (a manual "smelt collect" does)
+                if (st.pickup) {
+                    // a pickup leaves it remembered and says so (tried again later)
+                    addNote(s, "the furnace at " + j.where() + ": " + c.why() + " - got " + ts.took + " " + CraftPlanner.shortId(j.item));
+                    return "next";
+                }
+                return "the furnace at " + j.where() + ": " + c.why() + " - got " + ts.took + " of " + st.n + " " + CraftPlanner.shortId(j.item);
+            default:
+                return lost(s, st, p, j, "the furnace at " + j.where() + ": " + c.why());
+        }
+    }
+
+    /**
+     * The output is gone (taken, the furnace broken or replaced, the job forgotten). A pickup just says so. A plan
+     * looks in the chests and the RS network (someone may have put the items away) and takes them from there, else
+     * smelts them again once (from what it carries or storage holds), else ends with why.
+     */
+    private String lost(Seq s, Step st, LocalPlayer p, FurnaceJobs.Job j, String why) {
+        String item = j != null ? j.item : st.smelt != null ? st.smelt.item() : null;
+        int left = j != null ? Math.min(j.remaining(), st.n != null ? st.n : j.remaining()) : st.smelt != null ? st.smelt.want() : 0;
+        if (j != null) furnaces().remove(j);
+        commands.log("furnace: " + why);
+        if (st.pickup || item == null || left <= 0) {
+            addNote(s, why + (item != null ? SmeltTexts.storageHint(item, totals(storageSources(p))) : ""));
+            return "next";
+        }
+        if (!st.all && st.n == null) left = Math.max(0, st.want - bag(p, item));
+        if (left <= 0) return "next";
+        List<Source> src = storageSources(p);
+        int have = totals(src).getOrDefault(item, 0);
+        List<Step> add = new ArrayList<>();
+        if (Gui.open(p)) add.add(Step.close());
+        if (have >= left) {
+            Map<String, Integer> need = new LinkedHashMap<>();
+            need.put(item, left);
+            add.addAll(takeTrips(src, need).steps());
+            issue(s, why + " - took " + left + " " + CraftPlanner.shortId(item) + " from storage instead (someone put them away?)");
+            s.splice(s.idx + 1, add);
+            return "next";
+        }
+        if (j == null || !j.redone) {
+            Map<String, Integer> inv = Gui.inventory(p);
+            Map<String, Integer> combined = CraftTexts.combine(inv, totals(src)), counts = new LinkedHashMap<>(combined);
+            Crafter.Plan again = planner.planSmelt(item, left, counts);
+            if (again.ok()) {
+                add.addAll(takeTrips(src, CraftTexts.fromStorage(combined, counts, inv)).steps());
+                List<Step> redo = new ArrayList<>();
+                String err = planSteps(p, again.steps(), CraftPlanner.shortId(item), redo, true, FurnaceJobs.CRAFT, false);
+                if (err == null) {
+                    for (Step r : redo) {
+                        if (r.type.equals("smeltpick")) r.redo = true;
+                        if (r.smeltKey >= 0) r.smeltKey += 1000 * (s.idx + 1);      // its own keys, apart from the plan's
+                    }
+                    redo.removeIf(r -> r.type.equals("smeltnote"));
+                    add.addAll(redo);
+                    issue(s, why + " - smelting " + left + " " + CraftPlanner.shortId(item) + " again");
+                    s.splice(s.idx + 1, add);
+                    return "next";
+                }
+            }
+        }
+        return why + " - and " + left + " " + CraftPlanner.shortId(item) + " are neither in my chests nor can I smelt them again";
     }
 
     private String farmStep(Seq s, Step st, LocalPlayer p, long elapsed) {
