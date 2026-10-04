@@ -74,6 +74,9 @@ public final class Guard {
 
     public int floorSize() { Set<Block> s = protectedBlocks; return s == null ? 0 : s.size(); }
 
+    /** B7e (E1): the protected blocks (immutable; null until built), for Baritone's blocksToDisallowBreaking. */
+    public Set<Block> protectedBlocks() { return protectedBlocks; }
+
     public String floorInfo() {
         return floorReady() ? floorSize() + " blocks (" + blockEntityCount + " with a block entity, " + namedCount + " building blocks)" : "not built yet";
     }
