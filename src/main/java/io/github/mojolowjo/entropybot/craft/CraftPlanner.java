@@ -209,11 +209,24 @@ public final class CraftPlanner implements Crafter {
         final Set<String> catalysts = new LinkedHashSet<>();
         int tries;
         boolean outOfBudget;
+        /** What the bag, the chests and the RS network hold (read only; null = the counts alone): the lower-tier check looks here too. */
+        Map<String, Integer> stock;
     }
 
     @Override
     public Plan plan(String item, int n, Map<String, Integer> counts) {
         return plan(item, n, counts, new Ctx());
+    }
+
+    /**
+     * Package D: as {@link #plan}, planning from {@code counts} (e.g. the bag) while the lower-tier check also sees
+     * {@code stock} (the bag plus the chests and the RS network): a supremium in the bag is never taken apart while
+     * prudentium waits in storage.
+     */
+    public Plan plan(String item, int n, Map<String, Integer> counts, Map<String, Integer> stock) {
+        Ctx ctx = new Ctx();
+        ctx.stock = stock;
+        return plan(item, n, counts, ctx);
     }
 
     private Plan plan(String item, int n, Map<String, Integer> counts, Ctx ctx) {
@@ -229,8 +242,14 @@ public final class CraftPlanner implements Crafter {
      * Counts as in {@link #plan}.
      */
     public Plan planSmelt(String item, int n, Map<String, Integer> counts) {
+        return planSmelt(item, n, counts, null);
+    }
+
+    /** {@link #planSmelt} with the lower-tier check seeing {@code stock} too (see {@link #plan(String, int, Map, Map)}). */
+    public Plan planSmelt(String item, int n, Map<String, Integer> counts, Map<String, Integer> stock) {
         List<Step> steps = new ArrayList<>();
         Ctx ctx = new Ctx();
+        ctx.stock = stock;
         ctx.path.add(item);
         String err = planSmelt(item, Math.min(n, MAX_WANT), counts, 0, steps, ctx);
         if (err != null && ctx.outOfBudget) err = tooDeep(item);
@@ -267,9 +286,29 @@ public final class CraftPlanner implements Crafter {
         return false;
     }
 
-    /** An up recipe's used-up ingredient the counts hold some of (the lower tier in stock), or null. */
-    String lowerTierInStock(List<RecipeData> up, Map<String, Integer> counts) {
-        for (RecipeData r : up) for (Need n : usedNeeds(r)) for (String a : n.alts()) if (get(counts, a) > 0) return a;
+    /**
+     * A breakdown across tiers, which the lower-tier rule applies to: an id with "uncraft", or the recipe it undoes
+     * needs more than the output (a catalyst like the infusion crystal, or another ingredient). Unpacking a plain
+     * storage block (an iron block -> 9 ingots, a bone block -> 9 bone meal) is not one: it is only tried after the
+     * recipes that build up, a nugget in stock doesn't stop it.
+     */
+    public boolean isTierBreakdown(RecipeData r) {
+        if (!isBreakdown(r)) return false;
+        if (r.id().contains("uncraft")) return true;
+        for (String x : usedNeeds(r).get(0).alts()) {
+            for (RecipeData back : src.recipesFor(x)) {
+                if (!back.crafting() || !x.equals(back.output()) || !back.uses(r.output())) continue;
+                for (Need bn : back.needs()) if (catalyst(bn.alts()) || !bn.alts().contains(r.output())) return true;
+            }
+        }
+        return false;
+    }
+
+    /** An up recipe's used-up ingredient the counts or the stock hold some of (the lower tier in stock), or null. */
+    String lowerTierInStock(List<RecipeData> up, Map<String, Integer> counts, Map<String, Integer> stock) {
+        for (RecipeData r : up) {
+            for (Need n : usedNeeds(r)) for (String a : n.alts()) if (get(counts, a) > 0 || (stock != null && get(stock, a) > 0)) return a;
+        }
         return null;
     }
 
@@ -317,11 +356,11 @@ public final class CraftPlanner implements Crafter {
         // a breakdown only when none of the lower tier is in stock (the owner's rule: never take supremium apart for
         // tertium while there is prudentium)
         String downErr = null, refused = null;
-        String lower = down.isEmpty() ? null : lowerTierInStock(up, counts);
+        String lower = down.isEmpty() ? null : lowerTierInStock(up, counts, ctx.stock);
         for (RecipeData r : down) {
             List<Need> used = usedNeeds(r);
             String from = used.isEmpty() ? "?" : shortId(used.get(0).alts().get(0));
-            if (lower != null) {
+            if (lower != null && isTierBreakdown(r)) {
                 refused = "not breaking down " + from + " for it: I have " + shortId(lower) + ", the lower tier";
                 continue;
             }
@@ -550,10 +589,16 @@ public final class CraftPlanner implements Crafter {
      * targets before a failing one: pass a copy). The error is "&lt;short id&gt;: &lt;why&gt;".
      */
     public AllPlan planAll(List<Target> targets, Map<String, Integer> counts) {
+        return planAll(targets, counts, null);
+    }
+
+    /** {@link #planAll} with the lower-tier check seeing {@code stock} too (the bag plus storage; read only). */
+    public AllPlan planAll(List<Target> targets, Map<String, Integer> counts, Map<String, Integer> stock) {
         List<Step> steps = new ArrayList<>();
         Set<String> catalysts = new LinkedHashSet<>();
         for (Target t : targets) {
             Ctx ctx = new Ctx();
+            ctx.stock = stock;
             Plan p = plan(t.id(), t.want(), counts, ctx);
             if (!p.ok()) return new AllPlan(List.of(), counts, shortId(t.id()) + ": " + p.error());
             steps.addAll(p.steps());

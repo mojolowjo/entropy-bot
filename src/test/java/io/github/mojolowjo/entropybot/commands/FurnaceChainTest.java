@@ -37,6 +37,24 @@ class FurnaceChainTest {
     }
 
     @Test
+    void aRefusedPickupDoesNotFireAgainAtEveryStep() {
+        // the review's finding 7: a pickup refused before it runs (the furnace stays "due") must not re-fire every 5 ticks
+        JsonObject mem = new JsonObject();
+        CommandsTest.Fake f = CommandsTest.fake(mem);
+        f.instant.put("smelt", "busy: something");
+        f.furnaceDue = 1000;                                 // due at every boundary
+        f.chains.startChain("owner", "chain", "places then places then places then places", 1);
+        f.run(200);
+        assertEquals(List.of(Chains.PICKUP_STEP, "places", "places", "places", "places"), f.ran, "one pickup, then the cooldown");
+        assertFalse(f.chains.running());
+        // a new chain starts without the old one's cooldown
+        f.ran.clear();
+        f.chains.startChain("owner", "chain", "places", 1);
+        f.run(20);
+        assertEquals(List.of(Chains.PICKUP_STEP, "places"), f.ran);
+    }
+
+    @Test
     void aPickupWithNothingDueOrRefusedDoesNotStopTheChain() {
         JsonObject mem = new JsonObject();
         CommandsTest.Fake f = CommandsTest.fake(mem);

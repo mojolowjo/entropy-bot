@@ -13,6 +13,14 @@ final class SmeltTexts {
 
     static final String MODE_USAGE = "usage: smelt mode efficient|wait";
 
+    /** "smelt collect due": the automatic pickup (idle, or between a chain's steps): due jobs only, never a stalled one. */
+    static final String AUTO = "due";
+
+    /** The smelt verb's label when the job ends once the furnace runs: "ok: done starting the furnace for 40 iron_ingot; ...". */
+    static String startLabel(boolean fetches, String label) {
+        return (fetches ? "getting materials, then " : "") + "starting the furnace for " + label;
+    }
+
     /** The sub-verbs that answer at once and never start a job (the dispatcher may run them mid-job). */
     static boolean instant(String rest) {
         String t = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
@@ -31,7 +39,7 @@ final class SmeltTexts {
         if (a.isEmpty()) return "usage: smelt forget <job number>|all (\"smelt jobs\" lists them)";
         if (a.equals("all")) {
             int n = fj.all().size();
-            for (FurnaceJobs.Job j : fj.all()) fj.remove(j);
+            for (FurnaceJobs.Job j : fj.all()) fj.forget(j);
             return "ok: forgot " + n + " furnace job" + (n == 1 ? "" : "s") + " (whatever is in the furnaces stays there)";
         }
         int id;
@@ -42,7 +50,7 @@ final class SmeltTexts {
         }
         FurnaceJobs.Job j = fj.get(id);
         if (j == null) return "error: I have no furnace job #" + id + " - " + fj.list(System.currentTimeMillis());
-        fj.remove(j);
+        fj.forget(j);
         return "ok: forgot furnace job #" + id + " (" + j.remaining() + " " + CraftPlanner.shortId(j.item) + " at " + j.where() + " stay in the furnace)";
     }
 

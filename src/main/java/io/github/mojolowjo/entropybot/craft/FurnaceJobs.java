@@ -44,6 +44,8 @@ public final class FurnaceJobs {
         public int n, want, collected, fuelCount;
         public long startedAt, dueAt, nextTry;
         public boolean redone;
+        /** Past due, input left, nothing new: no idle pickup tries it again (a manual "smelt collect" does). */
+        public boolean stalled;
 
         public int remaining() { return Math.max(0, want - collected); }
 
@@ -71,6 +73,7 @@ public final class FurnaceJobs {
             if (why != null) o.addProperty("why", why);
             o.addProperty("kind", kind);
             if (redone) o.addProperty("redone", true);
+            if (stalled) o.addProperty("stalled", true);
             return o;
         }
 
@@ -94,6 +97,7 @@ public final class FurnaceJobs {
                 j.why = str(o, "why", null);
                 j.kind = str(o, "kind", SMELT);
                 j.redone = o.has("redone") && o.get("redone").getAsBoolean();
+                j.stalled = o.has("stalled") && o.get("stalled").getAsBoolean();
                 return j;
             } catch (RuntimeException e) {
                 return null;
@@ -114,7 +118,25 @@ public final class FurnaceJobs {
     private final JsonObject root;
     private final Runnable saved;
     private final List<Job> jobs = new ArrayList<>();
+    private final List<Leftover> leftovers = new ArrayList<>();
     private int next = 1;
+
+    /**
+     * What a job the bot stopped tracking (expired, "smelt forget") may have left in a furnace: that much of that item
+     * in its output is the bot's to clear, so the furnace doesn't look busy forever.
+     */
+    public record Leftover(int[] pos, String dim, String item, int count) {
+        JsonObject toJson() {
+            JsonObject o = new JsonObject();
+            JsonArray p = new JsonArray();
+            for (int v : pos) p.add(v);
+            o.add("pos", p);
+            o.addProperty("dim", dim);
+            o.addProperty("item", item);
+            o.addProperty("count", count);
+            return o;
+        }
+    }
 
     /** Reads {@code root.furnaces} (a broken entry is skipped); {@code saved} is called after every change. */
     public FurnaceJobs(JsonObject root, Runnable saved) {
@@ -125,6 +147,16 @@ public final class FurnaceJobs {
             JsonObject o = f.getAsJsonObject();
             if (o.has("next")) next = Math.max(1, o.get("next").getAsInt());
             if (o.has("jobs") && o.get("jobs").isJsonArray()) {
+                for (JsonElement e : o.has("leftovers") && o.get("leftovers").isJsonArray() ? o.getAsJsonArray("leftovers") : new JsonArray()) {
+                    try {
+                        JsonObject l = e.getAsJsonObject();
+                        JsonArray p = l.getAsJsonArray("pos");
+                        leftovers.add(new Leftover(new int[]{p.get(0).getAsInt(), p.get(1).getAsInt(), p.get(2).getAsInt()}, str(l, "dim", "minecraft:overworld"),
+                                l.get("item").getAsString(), num(l, "count")));
+                    } catch (RuntimeException ignored) {
+                        // a broken entry: skipped
+                    }
+                }
                 for (JsonElement e : o.getAsJsonArray("jobs")) {
                     Job j = e.isJsonObject() ? Job.fromJson(e.getAsJsonObject()) : null;
                     if (j != null && jobs.size() < Limits.FURNACE_JOBS) {
@@ -142,6 +174,9 @@ public final class FurnaceJobs {
         JsonArray a = new JsonArray();
         for (Job j : jobs) a.add(j.toJson());
         o.add("jobs", a);
+        JsonArray l = new JsonArray();
+        for (Leftover x : leftovers) l.add(x.toJson());
+        o.add("leftovers", l);
         root.add("furnaces", o);
         saved.run();
     }
@@ -207,16 +242,68 @@ public final class FurnaceJobs {
         if (jobs.remove(j)) save();
     }
 
+    /** Stops tracking a job whose items may still be in the furnace: they are remembered as a {@link Leftover}. */
+    public void forget(Job j) {
+        if (!jobs.remove(j)) return;
+        noteLeftover(j);
+        save();
+    }
+
+    private void noteLeftover(Job j) {
+        if (j.remaining() <= 0) return;
+        leftovers.removeIf(l -> same(l.pos(), j.pos) && l.dim().equals(j.dim));
+        leftovers.add(new Leftover(j.pos.clone(), j.dim, j.item, j.remaining()));
+        while (leftovers.size() > Limits.FURNACE_JOBS) leftovers.remove(0);
+    }
+
+    private static boolean same(int[] a, int[] b) {
+        return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
+    }
+
+    /** A job's leftover in the furnace at pos, or null. */
+    public Leftover leftover(int[] pos, String dim) {
+        for (Leftover l : leftovers) if (same(l.pos(), pos) && l.dim().equals(dim)) return l;
+        return null;
+    }
+
+    /** The leftover was cleared out (or is gone): forget it. */
+    public void clearLeftover(int[] pos, String dim) {
+        if (leftovers.removeIf(l -> same(l.pos(), pos) && l.dim().equals(dim))) save();
+    }
+
+    /** The job stopped (past due, input left, nothing new): no idle pickup tries it again. */
+    public void markStalled(Job j) {
+        j.stalled = true;
+        save();
+    }
+
+    /** A manual "smelt collect" tries stalled jobs again. */
+    public void unstall(List<Job> js) {
+        boolean any = false;
+        for (Job j : js) {
+            if (j.stalled) {
+                j.stalled = false;
+                any = true;
+            }
+        }
+        if (any) save();
+    }
+
     /** A pickup for these jobs didn't happen now: not again before {@link #RETRY_MS}. */
     public void later(List<Job> js, long now) {
-        for (Job j : js) j.nextTry = now + RETRY_MS;
+        later(js, now, RETRY_MS);
+    }
+
+    /** Not again before {@code now + ms} (a bag that was full: half an hour). */
+    public void later(List<Job> js, long now, long ms) {
+        for (Job j : js) j.nextTry = now + ms;
         if (!js.isEmpty()) save();
     }
 
     /** Jobs in {@code dim} whose output is due and that may be picked up now. */
     public List<Job> due(long now, String dim) {
         List<Job> out = new ArrayList<>();
-        for (Job j : jobs) if (j.dim.equals(dim) && j.due(now) && j.nextTry <= now) out.add(j);
+        for (Job j : jobs) if (j.dim.equals(dim) && j.due(now) && j.nextTry <= now && !j.stalled) out.add(j);
         return out;
     }
 
@@ -229,6 +316,7 @@ public final class FurnaceJobs {
         for (Job j : jobs) if (now > Math.max(j.dueAt, sessionStart) + EXPIRE_MS) gone.add(j);
         if (!gone.isEmpty()) {
             jobs.removeAll(gone);
+            for (Job j : gone) noteLeftover(j);
             save();
         }
         return gone;
@@ -274,14 +362,35 @@ public final class FurnaceJobs {
         public static final Slots EMPTY = new Slots(null, 0, null, 0, null, 0);
     }
 
+    /** Before putting anything in: free, our own leftover to take out first, or busy. */
+    public enum Put { FREE, CLEAR_FIRST, BUSY }
+
+    public record PutCheck(Put put, String why) {}
+
     /**
-     * Before putting anything in: why this furnace is busy (someone else's smelting, or output nobody took), or null
-     * when it is free. Its fuel slot doesn't count (a burning furnace with nothing in it is free; the fuel op is soft).
+     * Before putting anything in, with {@code fuel} the fuel the plan brings and {@code lo} our leftover in this furnace
+     * (or null): BUSY when someone else's input is in it, its output holds something that isn't our leftover, or its
+     * fuel slot holds another fuel (never burned for us, never a plank or a bucket stalling our smelt); CLEAR_FIRST when
+     * the output is only our own leftover; else FREE (a fuel slot with our fuel is topped up to the plan's count).
      */
-    public static String busy(Slots s) {
-        if (s.input() != null && s.inputN() > 0) return "it is smelting " + s.inputN() + " " + shortId(s.input());
-        if (s.output() != null && s.outputN() > 0) return s.outputN() + " " + shortId(s.output()) + " wait in its output";
-        return null;
+    public static PutCheck check(Slots s, String fuel, Leftover lo) {
+        if (s.input() != null && s.inputN() > 0) return new PutCheck(Put.BUSY, "it is smelting " + s.inputN() + " " + shortId(s.input()));
+        if (s.fuel() != null && s.fuelN() > 0 && !s.fuel().equals(fuel)) {
+            return new PutCheck(Put.BUSY, "its fuel slot holds " + s.fuelN() + " " + shortId(s.fuel()) + ", not my " + (fuel == null ? "fuel" : shortId(fuel)));
+        }
+        if (s.output() != null && s.outputN() > 0) {
+            if (lo != null && lo.item().equals(s.output()) && s.outputN() <= lo.count()) {
+                return new PutCheck(Put.CLEAR_FIRST, "my " + s.outputN() + " " + shortId(s.output()) + " from an earlier job wait in its output");
+            }
+            return new PutCheck(Put.BUSY, s.outputN() + " " + shortId(s.output()) + " wait in its output");
+        }
+        return new PutCheck(Put.FREE, null);
+    }
+
+    /** Why the furnace is busy for a smelt bringing {@code fuel} (no leftover of ours counted), or null. */
+    public static String busy(Slots s, String fuel) {
+        PutCheck c = check(s, fuel, null);
+        return c.put() == Put.BUSY ? c.why() : c.put() == Put.CLEAR_FIRST ? c.why() : null;
     }
 
     /** What to do at a furnace the bot came back to. */
@@ -297,13 +406,31 @@ public final class FurnaceJobs {
      * took them, or another smelt replaced them); STALLED: input left, past due and nothing new for {@link #STALL_MS}.
      */
     public static Collect collect(Slots s, Job j, int took, int target, long now, long lastProgressAt) {
+        return collect(s, j, took, target, now, lastProgressAt, -1);
+    }
+
+    /**
+     * As above, with {@code prevInput} the job's input count at the last look (-1: no look yet). At a shared furnace
+     * the bot takes nothing that may not be its own: the input went up since the last look (someone added the same
+     * ore), or input + output + what it already took is more than it put in, or another item is in the output -> GONE.
+     * A TAKE takes only what the step still needs ({@code target - took}); the rest keeps smelting or waits.
+     */
+    public static Collect collect(Slots s, Job j, int took, int target, long now, long lastProgressAt, int prevInput) {
         if (j.remaining() <= 0 || took >= target) return new Collect(Next.DONE, 0, null);
-        boolean ourOut = s.output() != null && s.output().equals(j.item) && s.outputN() > 0;
-        if (ourOut) return new Collect(Next.TAKE, Math.min(s.outputN(), j.remaining()), null);
-        if (s.output() != null && s.outputN() > 0) {
+        int perItem = j.n > 0 ? Math.max(1, j.want / j.n) : 1;
+        int inN = s.input() != null && s.input().equals(j.input) ? s.inputN() : 0;
+        int outN = s.output() != null && s.output().equals(j.item) ? s.outputN() : 0;
+        if (s.output() != null && s.outputN() > 0 && outN == 0) {
             return new Collect(Next.GONE, 0, "its output holds " + s.outputN() + " " + shortId(s.output()) + ", not my " + shortId(j.item));
         }
-        boolean ourIn = s.input() != null && s.input().equals(j.input) && s.inputN() > 0;
+        if (prevInput >= 0 && inN > prevInput) {
+            return new Collect(Next.GONE, 0, "someone added " + (inN - prevInput) + " " + shortId(j.input) + " to it - I take nothing from a shared smelt");
+        }
+        if ((long) inN * perItem + outN + j.collected > j.want) {
+            return new Collect(Next.GONE, 0, "it holds more " + shortId(j.input) + "/" + shortId(j.item) + " than I put in - someone else's is mixed in, I take nothing");
+        }
+        if (outN > 0) return new Collect(Next.TAKE, Math.min(outN, Math.min(j.remaining(), target - took)), null);
+        boolean ourIn = inN > 0;
         if (ourIn) {
             if (now > j.dueAt + STALL_MS && now - lastProgressAt > STALL_MS) {
                 return new Collect(Next.STALLED, 0, "it stopped with " + s.inputN() + " " + shortId(j.input) + " left to smelt (out of fuel?)");

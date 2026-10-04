@@ -69,10 +69,12 @@ public final class CraftTexts {
         Targets targets = p.parseCraftTargets(text, inv);
         if (!targets.ok()) return "error: " + targets.error();
         if (targets.list().isEmpty()) return "usage: need <item> [n]";
-        AllPlan r = p.planAll(targets.list(), new LinkedHashMap<>(inv));
-        if (r.ok()) return "I can make that from what I carry: " + CraftPlanner.describeSteps(r.steps()) + (r.anySmelt() ? " (with the furnace)" : "");
+        // package D: the lower-tier check sees storage on the bag-only pass too (never a supremium in the bag taken
+        // apart while prudentium waits in a chest)
         Map<String, Integer> combined = combine(inv, storage);
-        r = p.planAll(targets.list(), new LinkedHashMap<>(combined));
+        AllPlan r = p.planAll(targets.list(), new LinkedHashMap<>(inv), combined);
+        if (r.ok()) return "I can make that from what I carry: " + CraftPlanner.describeSteps(r.steps()) + (r.anySmelt() ? " (with the furnace)" : "");
+        r = p.planAll(targets.list(), new LinkedHashMap<>(combined), combined);
         if (!r.ok()) return "missing: " + r.error() + " (counting my chests" + (rsKnown ? " and the RS network" : "") + ")";
         List<String> used = new ArrayList<>();
         for (Map.Entry<String, Integer> e : fromStorage(combined, r.counts(), inv, r.catalysts()).entrySet()) {

@@ -85,7 +85,9 @@ public final class Chains {
     }
 
     /** Package D: the step a chain runs between two of its steps when a furnace's output is due. */
-    static final String PICKUP_STEP = "smelt collect";
+    static final String PICKUP_STEP = "smelt collect due";
+    /** Ticks after a pickup detour before the next one (a refused or instant pickup must not fire again at every step). */
+    static final long PICKUP_COOLDOWN = 6000;
 
     /** A command's answer now (text, maybe null) or later (pending). */
     public record Reply(String text, Request pending) {
@@ -103,8 +105,9 @@ public final class Chains {
         int[] jobPos;
         String detour;
         boolean inDetour;
-        /** Package D: the detour running is a furnace pickup (not the walk back before a retry). */
+        /** Package D: the detour running is a furnace pickup (not the walk back before a retry); no new one before this tick. */
         boolean pickup;
+        long pickupAfter;
     }
 
     /** Wave 1 (item 9): a retry after a fight walks back first when the bot ended up further away than this. */
@@ -370,9 +373,10 @@ public final class Chains {
             c.roundStart = env.tick();
         }
         // package D: a furnace's output is due - pick it up between two steps, then the chain goes on where it was
-        if (c.detour == null && !c.inDetour && env.furnaceDue()) {
+        if (c.detour == null && !c.inDetour && env.tick() >= c.pickupAfter && env.furnaceDue()) {
             c.detour = PICKUP_STEP;
             c.pickup = true;
+            c.pickupAfter = env.tick() + PICKUP_COOLDOWN;
         }
         String step;
         if (c.detour != null) {

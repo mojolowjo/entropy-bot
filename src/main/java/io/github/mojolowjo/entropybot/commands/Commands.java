@@ -113,7 +113,7 @@ public final class Commands implements Chains.Env {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || !ready) return false;
         long now = System.currentTimeMillis();
-        return !pickupHeld(now) && !crafting.furnaces().due(now, Storage.dim()).isEmpty();
+        return !pickupHeld(now) && mc.player != null && !crafting.furnaces().due(now, Storage.dim()).isEmpty() && pickupFromHere(mc.player, now);
     }
 
     /** Every second: forget furnace jobs long past due (the owner hears it), and pick up due output while the bot is idle. */
@@ -128,8 +128,27 @@ public final class Commands implements Chains.Env {
         }
         if (fj.due(now, Storage.dim()).isEmpty() || pickupHeld(now)) return;
         if (jobs.running() || bridge.busy(tick) || chains.running() || chains.parked() || core.reflexes.hold() || player.isDeadOrDying()) return;
-        Reply r = handle(owner(), "smelt collect", false, pmListener(owner()));
+        if (!pickupFromHere(player, now)) return;
+        Reply r = handle(owner(), Chains.PICKUP_STEP, false, pmListener(owner()));
         LOG.info("[entropybot] furnace pickup: {}", r.text());
+    }
+
+    /** Blocks from the base within which the bot picks furnace output up by itself. */
+    static final int PICKUP_NEAR_BASE = 48;
+
+    /**
+     * An idle pickup only when the bot is near the base or inside its areas, and wasn't sent somewhere (come, goto,
+     * follow, go) in the last 10 minutes: the owner's errand comes first.
+     */
+    private boolean pickupFromHere(LocalPlayer player, long now) {
+        if (jobs.lastTravelAt > 0 && now - jobs.lastTravelAt < PICKUP_HOLD_MS) return false;
+        int[] me = Jobs.here(player);
+        JsonObject b = core.knowledge.places().get("base");
+        if (b != null && Jobs.dimOf(b).equals(Storage.dim())) {
+            int[] bp = Jobs.pos(b);
+            if (Math.abs(me[0] - bp[0]) <= PICKUP_NEAR_BASE && Math.abs(me[2] - bp[2]) <= PICKUP_NEAR_BASE && Math.abs(me[1] - bp[1]) <= 24) return true;
+        }
+        return fenceOn() && inAreas(Storage.dim(), me[0], me[2]);
     }
 
     void setSupplies(Map<String, Integer> s) {

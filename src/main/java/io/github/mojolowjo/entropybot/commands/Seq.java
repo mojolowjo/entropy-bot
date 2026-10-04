@@ -110,6 +110,8 @@ public final class Seq {
     String furnaceIssue;
     /** Package D: furnace jobs this job collected in full (a later collect for them has nothing left to do). */
     final java.util.Set<Integer> doneJobs = new java.util.HashSet<>();
+    /** Package D: what this job's pickups took per furnace job id (smeltstore puts away only that). */
+    final Map<Integer, Integer> pickupTook = new java.util.HashMap<>();
 
     Seq(Jobs jobs, Storage storage, String label, List<Step> steps, String closeOnEnd) {
         this.jobs = jobs;
@@ -215,6 +217,9 @@ public final class Seq {
         String fmt = Jobs.fmt(st.pos);
         IBaritone b = Jobs.baritone();
         if (stage == null) {
+            // the fence first (package D review: never a /home for a walk the guard would refuse anyway)
+            String fence = jobs.goalAllowed(st.pos[0], st.pos[1], st.pos[2]);
+            if (fence != null) return Jobs.withAreaHint(fence + " (" + fmt + ")");
             // a long way back to base: /home first (once per step), then walk the rest
             if (tpStep != idx && jobs.tpWorth(p, st.pos, null)) {
                 tpStep = idx;

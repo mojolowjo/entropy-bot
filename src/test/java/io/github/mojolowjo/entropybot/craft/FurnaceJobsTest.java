@@ -52,10 +52,10 @@ class FurnaceJobsTest {
 
     @Test
     void aBusyFurnaceIsNeverClearedOrAddedTo() {
-        assertEquals("it is smelting 12 raw_gold", FurnaceJobs.busy(new Slots("minecraft:raw_gold", 12, "minecraft:coal", 3, null, 0)), "another player's smelting");
-        assertEquals("5 iron_ingot wait in its output", FurnaceJobs.busy(new Slots(null, 0, null, 0, "minecraft:iron_ingot", 5)), "output nobody took (an earlier job's)");
-        assertNull(FurnaceJobs.busy(new Slots(null, 0, "minecraft:coal", 6, null, 0)), "only fuel in it: free (the fuel put is soft)");
-        assertNull(FurnaceJobs.busy(Slots.EMPTY));
+        assertEquals("it is smelting 12 raw_gold", FurnaceJobs.busy(new Slots("minecraft:raw_gold", 12, "minecraft:coal", 3, null, 0), "minecraft:coal"), "another player's smelting");
+        assertEquals("5 iron_ingot wait in its output", FurnaceJobs.busy(new Slots(null, 0, null, 0, "minecraft:iron_ingot", 5), "minecraft:coal"), "output nobody took (an earlier job's)");
+        assertNull(FurnaceJobs.busy(new Slots(null, 0, "minecraft:coal", 6, null, 0), "minecraft:coal"), "only our kind of fuel in it: free (topped up)");
+        assertNull(FurnaceJobs.busy(Slots.EMPTY, "minecraft:coal"));
         // one job per furnace: an earlier job of ours there makes it busy for a new one
         FurnaceJobs fj = new FurnaceJobs(new JsonObject(), null);
         assertNotNull(fj.add(F1, OW, IRON, FurnaceJobs.SMELT, null, T0));
