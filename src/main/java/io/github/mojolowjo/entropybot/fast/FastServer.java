@@ -43,7 +43,7 @@ import java.util.function.Consumer;
  *       "started: ..." at once, as today), or {id, result: null, timeout: true} (plus notRun: true when the game
  *       never took it: it is dropped then and will not run later).</li>
  *   <li>{@code GET /wait[?timeout=ms][&chain=0|1]}: a long poll that answers {idle: true, waitedMs} once the bot has
- *       been idle (no job, no bridge request, no chain unless chain=0, Baritone idle) for {@link #SETTLE_TICKS}
+ *       been idle (no job, no chain unless chain=0, Baritone idle) for {@link #SETTLE_TICKS}
  *       ticks in a row, or {idle: false, timeout: true, busy: "chain night"} when the time runs out.</li>
  * </ul>
  * Every request needs the header {@code X-Bot-Key: <key>} (401 without), and a Host header naming 127.0.0.1 or
@@ -67,7 +67,7 @@ public final class FastServer {
         void command(JsonObject cmd, Consumer<String> reply);
 
         /**
-         * What keeps the bot busy ("job ...", "chain ...", "baritone ..."), or null when idle: no job, no bridge request,
+         * What keeps the bot busy ("job ...", "chain ...", "baritone ..."), or null when idle: no job,
          * Baritone idle (and no chain when {@code withChain}). Outside a world: null.
          */
         String busy(boolean withChain);

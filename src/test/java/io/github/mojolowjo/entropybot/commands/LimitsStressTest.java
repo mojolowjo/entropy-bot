@@ -71,8 +71,7 @@ class LimitsStressTest {
     @Test
     void knowledgePlacesAndChests() {
         // Knowledge keeps at most Limits.CHESTS notes now, so the raw cost is measured on the same JSON it writes:
-        // chests.json + places.json (n of each) as flush() writes them, and the whole set as BotAPI.knowledge() hands it
-        // to the bridge (which then parses it in Rhino and rewrites memory.json)
+        // chests.json + places.json (n of each) as flush() writes them, and the whole set as one JSON text
         BotFiles f = new BotFiles(dir);
         for (int n : new int[]{100, 500, 1000, 2000, 5000, 10000}) {
             JsonObject pl = new JsonObject(), cs = new JsonObject();
@@ -92,7 +91,7 @@ class LimitsStressTest {
                 f.writeJson("places.json", pl.toString());
                 f.writeJson("chests.json", cs.toString());
             }));
-            row("chests", n, "toJson (BotAPI.knowledge, a pull)", ms(7, all::toString));
+            row("chests", n, "toJson (the whole set)", ms(7, all::toString));
             rowKb("chests", n, "chests.json + places.json size", all.toString().length());
         }
         // and the store itself at its cap: a put past it prunes the oldest
@@ -249,7 +248,7 @@ class LimitsStressTest {
     void ringsAndLogs() {
         EventRing ring = new EventRing();
         for (int i = 0; i < 10_000; i++) ring.push("job", "an event with some text " + i, null);
-        row("events", EventRing.CAPACITY, "since(0, all) (bridge poll)", ms(15, () -> ring.since(0, 0)));
+        row("events", EventRing.CAPACITY, "since(0, all) (a full read)", ms(15, () -> ring.since(0, 0)));
         rowKb("events", EventRing.CAPACITY, "since(0, all) size", ring.since(0, 0).length());
         // the autominer log: 20 decisions with a 1000-char result each, in commands.json
         JsonObject mem = new JsonObject();

@@ -11,8 +11,7 @@ import java.util.TreeMap;
 /**
  * The bot's knowledge files (B3a, docs/BOT_PLAN.md 5.9): {@code places.json} (name -> {x,y,z,dim,dir?})
  * and {@code chests.json} ("x y z" -> {dim, items:{id:n}, seen: ms, trusted?}), the same shapes the
- * bridge keeps in memory.json. Every change bumps {@link #version()}; the bridge pulls a new version
- * and mirrors it into memory.json (the rollback copy), and pushes its own changes here.
+ * old KubeJS bridge kept in memory.json. Every change bumps {@link #version()}.
  *
  * <p>Written atomically a little after the last change ({@link #flushIfDue}), backed up to
  * {@code *.bak.json} every few minutes. A file that won't parse is set aside (never overwritten) and
@@ -133,7 +132,7 @@ public final class Knowledge {
      */
     public synchronized long put(String json, long now) {
         JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-        boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | applyGrid(o, false);
+        boolean changed = apply(o, "places", places) | apply(o, "chests", chests) | apply(o, "rs", rs) | applyGrid(o);
         if (changed) {
             prune(null);
             touch(now);
@@ -143,8 +142,8 @@ public final class Knowledge {
 
     /**
      * Package H: past {@link Limits#CHESTS} chest notes (or {@link Limits#RS_READINGS} readings) the oldest seen go
-     * (never an untrusted chest, never {@code keep}, the one just written); the grid "rs" uses stays. The bridge prunes
-     * memory.json the same way. Returns how many went.
+     * (never an untrusted chest, never {@code keep}, the one just written); the grid "rs" uses stays. Returns how many
+     * went.
      */
     private int prune(String keep) {
         int c = 0, r = 0;
@@ -171,11 +170,10 @@ public final class Knowledge {
         return s;
     }
 
-    /** "rsGrid": "x y z" | null; onlyIfNone: a merge keeps the mod's own grid. */
-    private boolean applyGrid(JsonObject o, boolean onlyIfNone) {
+    /** "rsGrid": "x y z" | null. */
+    private boolean applyGrid(JsonObject o) {
         if (!o.has("rsGrid")) return false;
         String g = o.get("rsGrid").isJsonNull() ? null : o.get("rsGrid").getAsString();
-        if (onlyIfNone && (rsGrid != null || g == null)) return false;
         if (java.util.Objects.equals(g, rsGrid)) return false;
         rsGrid = g;
         return true;
@@ -194,50 +192,6 @@ public final class Knowledge {
             }
         }
         return changed;
-    }
-
-    /**
-     * The bridge's notes at its load: places it has win (it is where "mark" happens), a chest note wins
-     * when it was seen later; what only one side has is kept. Returns the new version.
-     */
-    public synchronized long merge(String json, long now) {
-        JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-        boolean changed = false;
-        if (o.has("places") && o.get("places").isJsonObject()) {
-            for (Map.Entry<String, JsonElement> en : o.getAsJsonObject("places").entrySet()) {
-                if (!en.getValue().isJsonObject() || en.getValue().equals(places.get(en.getKey()))) continue;
-                places.put(en.getKey(), en.getValue().getAsJsonObject().deepCopy());
-                changed = true;
-            }
-        }
-        if (o.has("chests") && o.get("chests").isJsonObject()) {
-            for (Map.Entry<String, JsonElement> en : o.getAsJsonObject("chests").entrySet()) {
-                if (!en.getValue().isJsonObject()) continue;
-                JsonObject theirs = en.getValue().getAsJsonObject(), mine = chests.get(en.getKey());
-                if (mine != null && (mine.equals(theirs) || seen(mine) > seen(theirs))) continue;
-                chests.put(en.getKey(), theirs.deepCopy());
-                changed = true;
-            }
-        }
-        if (o.has("rs") && o.get("rs").isJsonObject()) {
-            for (Map.Entry<String, JsonElement> en : o.getAsJsonObject("rs").entrySet()) {
-                if (!en.getValue().isJsonObject()) continue;
-                JsonObject theirs = en.getValue().getAsJsonObject(), mine = rs.get(en.getKey());
-                if (mine != null && (mine.equals(theirs) || seen(mine) > seen(theirs))) continue;
-                rs.put(en.getKey(), theirs.deepCopy());
-                changed = true;
-            }
-        }
-        changed |= applyGrid(o, true);
-        if (changed) {
-            prune(null);
-            touch(now);
-        }
-        return version;
-    }
-
-    static long seen(JsonObject chest) {
-        try { return chest.has("seen") ? chest.get("seen").getAsLong() : 0; } catch (RuntimeException e) { return 0; }
     }
 
     /** A chest's note from the mod itself (the food run opened it). */

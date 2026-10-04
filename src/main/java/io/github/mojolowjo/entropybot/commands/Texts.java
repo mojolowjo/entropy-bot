@@ -29,13 +29,6 @@ public final class Texts {
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade");
 
     /**
-     * The verbs the bridge script still does (B7a): they are handed to it through {@code BotAPI.bridgeNext}. Each
-     * later stage of B7 moves some of them into the mod.
-     */
-    public static final Set<String> BRIDGE_VERBS = Set.of("memory",
-            "b", "baritone");             // B7d: zone, build, dig, place, mine, explore, ores, stripmine are the mod's
-
-    /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
      * the furnace, get/restock, the farm and compact since B7c (need/supplies/recipe are instant there).
      */
@@ -44,7 +37,7 @@ public final class Texts {
             "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
             "dig", "build", "place", "stripmine", "mine", "explore");
 
-    /** The instant GUI verbs the mod does since B7b part 2 (no job; they never wait for the bridge's job). */
+    /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
 
     public static final List<String> PM_HELP = List.of(
@@ -105,6 +98,21 @@ public final class Texts {
         if (verb.equals("caves") && !r.matches("^rename\\b.*")) return null;
         if (verb.equals("ores") && r.matches("^prefer\\s+\\S.*")) return "sorry, only " + owner + " can set the preferred ores";
         return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + GUEST_HELP;
+    }
+
+    /** B7e: the answer to a cmd.json type the mod doesn't know (the KubeJS bridge used to take the rest). */
+    public static String unknownType(String type) {
+        return "error: unknown type " + type;
+    }
+
+    /** B7e: a "debug" answer (a 4096-cell slice is ~15 KB) goes into the log cut to this many characters and its length. */
+    public static final int DEBUG_LOG_CHARS = 200;
+
+    /** What the log line of a cmd.json answer shows: the answer, or for "debug" (a type or a pm) its start and length. */
+    public static String cmdLogged(String type, String text, String result) {
+        boolean debug = "debug".equals(type) || ("pm".equals(type) && verbAndRest(text)[0].equals("debug"));
+        if (!debug || result == null || result.length() <= DEBUG_LOG_CHARS) return result;
+        return result.substring(0, DEBUG_LOG_CHARS) + "... (" + result.length() + " chars)";
     }
 
     /** "say" only ever talks: a line starting with "/" or Baritone's prefix would be a command. */

@@ -3,7 +3,7 @@ package io.github.mojolowjo.entropybot.commands;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import io.github.mojolowjo.entropybot.commands.BridgeLink.Request;
+import io.github.mojolowjo.entropybot.commands.JobRequests.Request;
 import io.github.mojolowjo.entropybot.commands.Chains.Reply;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +15,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** B7a: the PM texts, chat parsing, the bridge link, chains, rules, the autominer, the death policy, the policy verbs. */
+/** B7a: the PM texts, chat parsing, the job requests, chains, rules, the autominer, the death policy, the policy verbs. */
 class CommandsTest {
 
     // ---- texts and chat ----
@@ -69,94 +69,72 @@ class CommandsTest {
         assertEquals("[mojolowjo -> me] goto 1 2 3".replaceAll(".*\\] ", ""), ChatParse.parse("[mojolowjo -> me] goto 1 2 3", null, null, null, "bot", "").body());
     }
 
-    // ---- the bridge link ----
+    // ---- the job requests (B7e: what is left of the bridge link) ----
 
-    static final class Seen implements BridgeLink.Listener {
+    static final class Seen implements JobRequests.Listener {
         final List<String> log = new ArrayList<>();
-
-        @Override public void replied(Request r) { log.add("reply " + r.id + " " + r.reply + (r.started ? " [job]" : "")); }
 
         @Override public void finished(Request r) { log.add("done " + r.id + " " + r.doneMsg); }
     }
 
     @Test
-    void requestsGoOutAnswerAndEnd() {
-        BridgeLink b = new BridgeLink();
+    void aJobsRequestIsAnsweredAtOnceAndHeardAtItsEnd() {
+        JobRequests q = new JobRequests();
         Seen s = new Seen();
-        b.report(new JsonObject(), 0);
-        Request r = b.submit("pm", "o", "goto 1 2 3", false, null, s, 0);
-        JsonObject out = JsonParser.parseString(b.next(1)).getAsJsonObject();
-        assertEquals(r.id, out.get("id").getAsLong());
-        assertEquals("", b.next(1));
-        b.reply(r.id, "ok: going", true);
-        assertTrue(b.busy(2));
-        b.done(r.id, "ok: arrived");
-        assertEquals(List.of("reply 1 ok: going [job]", "done 1 ok: arrived"), s.log);
-        Request stop = b.submit("pm", "o", "farm", false, null, s, 3);
-        b.submit("stop", "o", "stop", false, null, null, 3);
-        assertEquals("stop", JsonParser.parseString(b.next(4)).getAsJsonObject().get("kind").getAsString(), "stop jumps the queue");
-        b.dropQueued();
-        assertTrue(stop.replied && "ok: stopped".equals(stop.reply));
+        assertFalse(q.busy());
+        Request r = q.local("pm", "o", "goto 1 2 3", "ok: going to 1 2 3", s);
+        assertTrue(r.replied && r.started && r.open() && !r.finished, "a job's request starts answered");
+        assertEquals("ok: going to 1 2 3", r.reply);
+        assertTrue(q.busy());
+        assertEquals(1, q.open());
+        q.done(r.id, "ok: arrived");
+        assertFalse(q.busy());
+        assertTrue(r.finished && !r.open() && "ok: arrived".equals(r.doneMsg));
+        q.done(r.id, "stopped: twice");
+        assertEquals(List.of("done 1 ok: arrived"), s.log, "an end is heard once");
+        q.done(42, "ok");
+        assertEquals(1, s.log.size(), "an unknown id is ignored");
     }
 
     @Test
-    void aReloadEndsWhatTheBridgeHadAndSilenceTimesOut() {
-        BridgeLink b = new BridgeLink();
-        Seen s = new Seen();
-        b.report(new JsonObject(), 0);
-        Request r = b.submit("pm", "o", "farm", false, null, s, 0);
-        b.next(1);
-        b.reply(r.id, "started: farming", true);
-        b.hello(10);
-        assertEquals("done 1 " + BridgeLink.RELOADED, s.log.get(1));
-        Request q = b.submit("pm", "o", "places", false, null, s, 20);
-        b.next(20);
-        b.tick(20 + BridgeLink.REPLY_TIMEOUT + 1);
-        assertTrue(q.replied && q.reply.startsWith("error: no answer"));
+    void requestsCountUpAndAQuietEndIsSilent() {
+        JobRequests q = new JobRequests();
+        Request a = q.local("pm", "o", "goto 1 2 3", "ok", null);
+        Request b = q.local("cmd", "o", "farm ", "started: farming", null);
+        assertEquals(a.id + 1, b.id);
+        assertEquals(2, q.open());
+        q.done(a.id, JobRequests.REPLACED);                    // no listener: fine
+        assertTrue(a.finished);
+        assertTrue(JobRequests.quiet(JobRequests.REPLACED) && JobRequests.quiet(null) && !JobRequests.quiet("ok: arrived"));
+        assertEquals(1, q.open());
     }
 
     @Test
-    void aJobThatVanishesIsLetGoAfterTwoReports() {
-        BridgeLink b = new BridgeLink();
-        Seen s = new Seen();
-        b.report(new JsonObject(), 0);
-        Request r = b.submit("pm", "o", "goto 1 2 3", false, null, s, 0);
-        b.next(0);
-        b.reply(r.id, "ok", true);
-        JsonObject rep = JsonParser.parseString("{\"job\":{\"type\":\"travel\",\"status\":\"going\",\"done\":false,\"req\":1}}").getAsJsonObject();
-        b.report(rep, 20);
-        assertFalse(r.finished);
-        JsonObject other = JsonParser.parseString("{\"job\":{\"type\":\"travel\",\"status\":\"x\",\"done\":false,\"req\":9}}").getAsJsonObject();
-        b.report(other, 40);
-        b.report(other, 60);
-        assertTrue(r.finished && r.doneMsg.startsWith("stopped: lost track of the job (going)"));
-    }
-
-    @Test
-    void theModsOwnJobsIgnoreTheBridge() {
-        BridgeLink b = new BridgeLink();
-        Seen s = new Seen();
-        b.report(new JsonObject(), 0);
-        Request r = b.local("pm", "o", "goto 1 2 3", "ok: going to 1 2 3", s, 0);
-        assertTrue(r.replied && r.started && b.busy(1));
-        assertEquals("", b.next(1), "nothing for the bridge to do");
-        b.hello(5);
-        JsonObject other = JsonParser.parseString("{\"job\":{\"type\":\"farm\",\"status\":\"x\",\"done\":false,\"req\":9}}").getAsJsonObject();
-        b.report(other, 20);
-        b.report(other, 40);
-        b.tick(40 + BridgeLink.LOST_AFTER + BridgeLink.REPLY_TIMEOUT);
-        assertFalse(r.finished, "a reload, reports and silence leave it alone");
-        b.done(r.id, "ok: arrived");
-        assertEquals(List.of("done 1 ok: arrived"), s.log);
-        assertTrue(BridgeLink.quiet(BridgeLink.REPLACED) && !BridgeLink.quiet("ok: arrived"));
+    void unknownCmdTypesAndTheDebugLogCut() {
+        assertEquals("error: unknown type eval", Texts.unknownType("eval"));
+        String big = "x".repeat(5000);
+        assertEquals("x".repeat(200) + "... (5000 chars)", Texts.cmdLogged("debug", "blocks 0 0 0 15 15 15", big));
+        assertEquals("x".repeat(200) + "... (5000 chars)", Texts.cmdLogged("pm", "debug inv", big), "debug through pm too");
+        assertEquals(big, Texts.cmdLogged("pm", "status", big), "other answers whole");
+        assertEquals("short", Texts.cmdLogged("debug", "", "short"));
+        assertNull(Texts.cmdLogged("debug", "", null));
     }
 
     // ---- chains, with a fake game ----
 
+    /**
+     * The command core played by the test: an instant verb answers now; any other starts a job whose request the
+     * test ends ({@code link.done}). The next start's answer comes from {@code replies} (default "started: <text>");
+     * an answer that fails ("error: ...") starts nothing.
+     */
     static final class Fake implements Chains.Env {
         long tick, now = 1_000_000_000L;
         final List<String> whispers = new ArrayList<>(), ran = new ArrayList<>();
-        final BridgeLink link = new BridgeLink();
+        final JobRequests link = new JobRequests();
+        final java.util.ArrayDeque<String> replies = new java.util.ArrayDeque<>();
+        /** Every job request made, in order; {@link #taken} of them have been looked at by {@link #takeNext}. */
+        final List<Request> opened = new ArrayList<>();
+        int taken;
         final Map<String, String> instant = new HashMap<>();
         float health = 20;
         boolean fighting, holding;
@@ -173,7 +151,7 @@ class CommandsTest {
         @Override public void log(String line) {}
 
         @Override
-        public Reply dispatch(String from, String text, boolean internal, BridgeLink.Listener l) {
+        public Reply dispatch(String from, String text, boolean internal, JobRequests.Listener l) {
             ran.add(text);
             String v = Texts.verbAndRest(text)[0];
             if (v.equals("stop")) {
@@ -181,14 +159,24 @@ class CommandsTest {
                 return Reply.now("ok: stopped everything");
             }
             if (instant.containsKey(v)) return Reply.now(instant.get(v));
-            return new Reply(null, link.submit("pm", from, text, internal, null, l, tick));
+            String reply = replies.isEmpty() ? "started: " + text : replies.poll();
+            if (Texts.stepFailed(reply)) return Reply.now(reply);
+            Request r = link.local("pm", from, text, reply, l);
+            opened.add(r);
+            return new Reply(reply, r);
+        }
+
+        /** The next job started since the last look (its request), or a failure when none. */
+        Request takeNext() {
+            assertTrue(taken < opened.size(), "a job was started");
+            return opened.get(taken++);
         }
 
         @Override public boolean alive() { return true; }
         @Override public boolean holding() { return holding; }
         @Override public boolean fighting() { return fighting; }
         @Override public float health() { return health; }
-        @Override public boolean busy() { return link.busy(tick); }
+        @Override public boolean busy() { return link.busy(); }
         @Override public int freeSlots() { return free; }
         @Override public int bagRoom() { return free; }
         @Override public Map<String, Integer> inventory() { return inv; }
@@ -202,13 +190,6 @@ class CommandsTest {
         @Override public int[] pos() { return pos; }
         int furnaceDue;                                       // (package D) how many step boundaries see a furnace due
         @Override public boolean furnaceDue() { return furnaceDue > 0 && furnaceDue-- > 0; }
-
-        /** The bridge takes the next request and answers; started = a job runs. */
-        void bridgeTakes(String reply, boolean started) {
-            String j = link.next(tick);
-            assertFalse(j.isEmpty(), "a request is waiting");
-            link.reply(JsonParser.parseString(j).getAsJsonObject().get("id").getAsLong(), reply, started);
-        }
 
         void run(int ticks) {
             for (int i = 0; i < ticks; i++) {
@@ -226,21 +207,25 @@ class CommandsTest {
     }
 
     @Test
-    void aChainRunsItsStepsThroughTheBridgeAndReports() {
+    void aChainRunsItsStepsAsLocalJobsAndReports() {
         JsonObject mem = new JsonObject();
         Fake f = fake(mem);
         assertEquals("started: chain - goto 1 2 3 > places > wait 2", f.chains.startChain("owner", "chain", "goto 1 2 3 then places then wait 2", 1));
+        f.replies.add("ok: going to 1 2 3");
+        f.replies.add("started: waiting 2s");
         f.run(5);
-        f.bridgeTakes("ok: going to 1 2 3", true);
+        assertEquals("goto 1 2 3", f.takeNext().text);
         f.run(10);
         assertTrue(mem.getAsJsonObject("run").get("idx").getAsInt() == 0, "the running step is what a restart runs again");
+        assertTrue(f.busy(), "a job's request is open");
         f.link.done(1, "ok: arrived");
         f.run(10);
         assertEquals(List.of("goto 1 2 3", "places", "wait 2"), f.ran);
-        f.bridgeTakes("started: waiting 2s", true);
+        assertEquals("wait 2", f.takeNext().text);
         f.link.done(2, "ok: waited");
         f.run(10);
         assertFalse(f.chains.running());
+        assertFalse(f.busy());
         assertEquals("chain: done - waited", f.whispers.get(f.whispers.size() - 1));
         assertTrue(mem.get("run").isJsonNull());
     }
@@ -249,34 +234,34 @@ class CommandsTest {
     void aFailedStepEndsTheChainAndAFightIsRetried() {
         Fake f = fake(new JsonObject());
         f.chains.startChain("owner", "chain", "goto 1 2 3 then places", 1);
+        f.replies.add("ok: going");
         f.run(5);
-        f.bridgeTakes("ok: going", true);
-        f.link.done(1, "stopped: attacked by zombie");
+        f.link.done(f.takeNext().id, "stopped: attacked by zombie");
         f.run(5);
         assertTrue(f.chains.running(), "a fight is retried");
         f.fighting = true;
         f.run(400);
         assertEquals(1, f.ran.size(), "not while fighting");
+        f.replies.add("error: no path to 1 2 3");
         f.fighting = false;
         f.run(10);
         assertEquals(2, f.ran.size(), "then the same step again");
-        f.bridgeTakes("error: no path to 1 2 3", false);
         f.run(10);
         assertFalse(f.chains.running());
         assertEquals("chain: stopped at step 1 (goto 1 2 3): no path to 1 2 3", f.whispers.get(f.whispers.size() - 1));
     }
 
     @Test
-    void aReloadOfTheBridgeRunsTheStepAgain() {
+    void aStepCutShortByTheDisconnectEndsTheChainWithTheReason() {
+        // B7e: with the bridge gone a job ends only through its own finish (no "the bridge script reloaded" re-run)
         Fake f = fake(new JsonObject());
         f.chains.startChain("owner", "repeat", "farm", Chains.FOREVER);
         f.run(5);
-        f.bridgeTakes("started: farming", true);
-        f.link.hello(f.tick);
+        f.link.done(f.takeNext().id, "stopped: I was disconnected");
         f.run(5);
-        assertTrue(f.whispers.get(0).startsWith("carrying on with repeat (round 1, step 1: farm) after a reload"), f.whispers.toString());
-        f.run(5);
-        assertEquals(2, f.ran.size());
+        assertFalse(f.chains.running());
+        assertEquals("repeat: stopped at step 1 (farm): stopped: I was disconnected", f.whispers.get(f.whispers.size() - 1), f.whispers.toString());
+        assertEquals(1, f.ran.size());
     }
 
     @Test
@@ -320,15 +305,16 @@ class CommandsTest {
         mem.add("lastDeath", JsonParser.parseString("{\"x\":1,\"y\":60,\"z\":1,\"dim\":\"minecraft:overworld\"}"));
         f.chains.startChain("owner", "repeat", "farm", Chains.FOREVER);
         f.run(5);
-        f.bridgeTakes("started: farming", true);
+        f.takeNext();
         f.chains.noteDeath();
         assertFalse(f.chains.running());
         f.link.done(1, "stopped: the bot died");
         f.chains.deathTick(false);
         f.tick += 100;
+        f.replies.add("started: going back");
         f.chains.deathTick(false);
         assertEquals("death", f.ran.get(f.ran.size() - 1), "it goes for the corpse");
-        f.bridgeTakes("started: going back", true);
+        assertEquals("death", f.takeNext().text);
         f.link.done(2, "ok: got my things back");
         f.chains.deathTick(false);
         assertTrue(f.chains.running());

@@ -34,19 +34,6 @@ class KnowledgeTest {
     }
 
     @Test
-    void mergeKeepsTheNewerChestNoteAndTheBridgesPlaces() {
-        Knowledge k = fresh();
-        k.put("{\"chests\":{\"1 2 3\":{\"dim\":\"o\",\"items\":{\"a\":1},\"seen\":500}},\"places\":{\"food\":{\"x\":0,\"y\":0,\"z\":0}}}", 1);
-        k.merge("{\"chests\":{\"1 2 3\":{\"dim\":\"o\",\"items\":{\"a\":9},\"seen\":400},\"4 5 6\":{\"dim\":\"o\",\"items\":{},\"seen\":1}}," +
-                "\"places\":{\"food\":{\"x\":7,\"y\":7,\"z\":7}}}", 2);
-        assertEquals(1, k.chests().get("1 2 3").getAsJsonObject("items").get("a").getAsInt(), "the mod's note was seen later");
-        assertTrue(k.chests().containsKey("4 5 6"));
-        assertEquals(7, k.places().get("food").get("x").getAsInt(), "the bridge's place wins");
-        k.merge("{\"chests\":{\"1 2 3\":{\"dim\":\"o\",\"items\":{\"a\":5},\"seen\":900}}}", 3);
-        assertEquals(5, k.chests().get("1 2 3").getAsJsonObject("items").get("a").getAsInt(), "a newer bridge note wins");
-    }
-
-    @Test
     void writesAfterADelayAndLoadsBack() throws Exception {
         Knowledge k = fresh();
         k.put("{\"places\":{\"mine\":{\"x\":-45,\"y\":16,\"z\":194,\"dir\":\"south\"}}}", 100);
@@ -82,18 +69,15 @@ class KnowledgeTest {
     @Test
     void rsReadingsAndTheGridTravelAndSurviveAReload() {
         Knowledge k = fresh();
-        // the bridge's notes at its load: its grid is taken while the mod has none, the later reading wins
-        k.merge("{\"rs\":{\"-24 53 181\":{\"dim\":\"o\",\"items\":{\"minecraft:dirt\":5},\"seen\":100}},\"rsGrid\":\"-24 53 181\"}", 1);
-        assertEquals("-24 53 181", k.rsGrid());
+        assertNull(k.rsGrid());
         long v = k.version();
         k.noteRs("-24 53 181", JsonParser.parseString("{\"dim\":\"o\",\"items\":{\"minecraft:dirt\":7},\"seen\":200}").getAsJsonObject(), 2);
         assertTrue(k.version() > v);
-        k.merge("{\"rs\":{\"-24 53 181\":{\"dim\":\"o\",\"items\":{\"minecraft:dirt\":5},\"seen\":100}},\"rsGrid\":\"9 9 9\"}", 3);
-        assertEquals(7, k.rs().get("-24 53 181").getAsJsonObject("items").get("minecraft:dirt").getAsInt(), "the newer reading stays");
-        assertEquals("-24 53 181", k.rsGrid(), "a merge keeps the mod's grid");
+        assertEquals("-24 53 181", k.rsGrid(), "a reading makes its grid the one rs take/put use");
+        assertEquals(7, k.rs().get("-24 53 181").getAsJsonObject("items").get("minecraft:dirt").getAsInt());
         assertEquals("-24 53 181", k.toJson().get("rsGrid").getAsString());
         k.put("{\"rsGrid\":\"1 2 3\"}", 4);
-        assertEquals("1 2 3", k.rsGrid(), "a put from the bridge sets it");
+        assertEquals("1 2 3", k.rsGrid(), "a put sets it");
         assertEquals("ok", k.flush());
         Knowledge again = fresh();
         assertEquals("1 2 3", again.rsGrid());
