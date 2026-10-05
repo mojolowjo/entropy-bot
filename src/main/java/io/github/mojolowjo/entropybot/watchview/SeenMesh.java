@@ -44,8 +44,22 @@ public final class SeenMesh {
         };
     }
 
+    /** 0.17.1: leave out a seen face (true) because the surface scan draws it ({@code surface}: it came from the rays' surface store). */
+    public interface Skip {
+        boolean skip(int x, int y, int z, int side, boolean surface);
+    }
+
     public static Result union(List<Shell.Face> shell, boolean shellCapped, List<SeenFaces.Entry> seen, List<SeenFaces.Entry> surface,
                                SeenRays.Cells w, int cx, int cy, int cz, int maxFaces) {
+        return union(shell, shellCapped, seen, surface, w, cx, cy, cz, maxFaces, null);
+    }
+
+    /**
+     * 0.17.1: as above, with the faces the surface scan already draws left out ({@code skip} may be null): the scan's
+     * per-chunk meshes draw them, so the main mesh does not hold them twice.
+     */
+    public static Result union(List<Shell.Face> shell, boolean shellCapped, List<SeenFaces.Entry> seen, List<SeenFaces.Entry> surface,
+                               SeenRays.Cells w, int cx, int cy, int cz, int maxFaces, Skip skip) {
         List<MeshFace> all = new ArrayList<>(shell.size() + seen.size() * 2 + surface.size() * 2);
         long[] shellKeys = new long[shell.size()];
         int i = 0;
@@ -55,14 +69,14 @@ public final class SeenMesh {
         }
         Arrays.sort(shellKeys);
         int seenStart = all.size();
-        add(all, seen, w, shellKeys, null, false);
+        add(all, seen, w, shellKeys, null, false, skip);
         long[] seenKeys = new long[all.size() - seenStart];
         for (int j = seenStart; j < all.size(); j++) {
             MeshFace f = all.get(j);
             seenKeys[j - seenStart] = faceKey(f.x(), f.y(), f.z(), f.side());
         }
         Arrays.sort(seenKeys);
-        add(all, surface, w, shellKeys, seenKeys, true);
+        add(all, surface, w, shellKeys, seenKeys, true, skip);
         boolean capped = shellCapped;
         // nearest first without boxing: distance squared in the high bits, the index in the low 32
         long[] order = new long[all.size()];
@@ -81,12 +95,13 @@ public final class SeenMesh {
         return new Result(out, capped, out.size() - seenN - surfN, seenN, surfN);
     }
 
-    private static void add(List<MeshFace> all, List<SeenFaces.Entry> entries, SeenRays.Cells w, long[] skip1, long[] skip2, boolean surface) {
+    private static void add(List<MeshFace> all, List<SeenFaces.Entry> entries, SeenRays.Cells w, long[] skip1, long[] skip2, boolean surface, Skip skip) {
         for (SeenFaces.Entry e : entries) {
             int x = CellKey.x(e.key()), y = CellKey.y(e.key()), z = CellKey.z(e.key());
             int k = -1;
             for (int s = 0; s < 6; s++) {
                 if ((e.mask() & (1 << s)) == 0) continue;
+                if (skip != null && skip.skip(x, y, z, s, surface)) continue;
                 long fk = faceKey(x, y, z, s);
                 if (Arrays.binarySearch(skip1, fk) >= 0) continue;
                 if (skip2 != null && Arrays.binarySearch(skip2, fk) >= 0) continue;

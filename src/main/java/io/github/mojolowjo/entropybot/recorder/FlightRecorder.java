@@ -355,7 +355,9 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
 
     /** The routing listener, or null. While set, the hook reads the old state even with the recorder off. */
     public static volatile BlockListener routeListener;
-    private static int listenerErrors;
+    /** 0.17.1: the tunnel view's surface scan (SkyScanner), the same way as routing: a listener, no second mixin. Or null. */
+    public static volatile BlockListener watchListener;
+    private static int listenerErrors, watchListenerErrors;
 
     /**
      * The mixin's HEAD: remembers the old state at pos (only while a recorder is installed and on; game thread only, as
@@ -364,7 +366,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     public static void pushOld(net.minecraft.world.level.Level level, BlockPos pos) {
         if (!Minecraft.getInstance().isSameThread()) return;
         FlightRecorder r = active;
-        if (depth < OLD.length) OLD[depth] = (r != null && r.on) || routeListener != null ? level.getBlockState(pos) : null;
+        if (depth < OLD.length) OLD[depth] = (r != null && r.on) || routeListener != null || watchListener != null ? level.getBlockState(pos) : null;
         depth++;
     }
 
@@ -386,6 +388,14 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
                 l.changed(level, pos, from, to);
             } catch (Throwable t) {
                 if (++listenerErrors <= 5) LOG.warn("[entropybot] route block listener: {}", t.toString());
+            }
+        }
+        BlockListener w = watchListener;
+        if (w != null && from != to) {
+            try {
+                w.changed(level, pos, from, to);
+            } catch (Throwable t) {
+                if (++watchListenerErrors <= 5 || watchListenerErrors % 100 == 0) LOG.warn("[entropybot] watch tunnel block listener ({}): {}", watchListenerErrors, t.toString());
             }
         }
         FlightRecorder r = active;

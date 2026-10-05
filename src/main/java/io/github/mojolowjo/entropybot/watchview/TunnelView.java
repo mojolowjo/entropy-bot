@@ -153,7 +153,20 @@ public final class TunnelView {
         if (!cut) return "off (watch tunnel cut on)";
         String problem = CutShaders.problem();
         if (problem != null) return "on but NOT working: " + problem + " - the faces are drawn without it (see check)";
-        return "on (radius " + cutRadius + ": nothing between the camera and the bot is drawn; " + cutFrames.get() + " frames cut)";
+        return "on (radius " + cutRadius + ": faces that cover the bot on the screen and are nearer than it are not drawn, "
+                + "with a margin of " + cutRadius + " blocks round its box and a dithered rim; " + cutFrames.get() + " frames cut)";
+    }
+
+    /** The graphics setting the faces were last drawn for ("fast" / "fancy"), for status. */
+    private volatile String graphicsWord = "-";
+
+    /** The status words for the graphics setting (0.17.1). */
+    static String graphicsReport(String word) {
+        return switch (word) {
+            case "fast" -> "fast (leaves drawn as solid cubes, faces between leaves skipped; other textures cut out)";
+            case "fancy" -> "fancy or fabulous (leaves cut out: the canopy shows gaps, faces between leaves drawn)";
+            default -> "not drawn yet";
+        };
     }
 
     /** The status words for the face drawing mode. */
@@ -200,6 +213,7 @@ public final class TunnelView {
         statusMs = 0;
         guard.resetRun();
         skipAtStart = skippedLayers.get();
+        SkyScanner.INSTANCE.reset();                       // 0.17.1: a scan stopped by errors gets another try
         on = true;
         Minecraft.getInstance().execute(this::seedFromTrail);
     }
@@ -461,10 +475,14 @@ public final class TunnelView {
             long now = System.currentTimeMillis();
             long version = known.version();
             SeenFaces seen = SeenSampler.INSTANCE.store(), surface = SeenSampler.INSTANCE.surface();
-            long seenVersion = seen.version() + surface.version();         // both only grow: the sum moves when either does
+            SkyStore sky = SkyScanner.INSTANCE.store();
+            // both stores only grow and the scan's version moves with every chunk: the sum moves when any does
+            long seenVersion = seen.version() + surface.version() + sky.version();
             boolean tint = SeenSampler.INSTANCE.on();
+            boolean fancy = SkyScanner.fancyNow(mc);
+            graphicsWord = fancy ? "fancy" : "fast";
             double mx = c.getX() - mesh.ox, my = c.getY() - mesh.oy, mz = c.getZ() - mesh.oz;
-            if (MeshRule.due(mesh.built, version, mesh.builtVersion, seenVersion, mesh.builtSeenVersion, tint, mesh.builtTint, now, mesh.builtMs,
+            if ((mesh.built && mesh.builtFancy != fancy) || MeshRule.due(mesh.built, version, mesh.builtVersion, seenVersion, mesh.builtSeenVersion, tint, mesh.builtTint, now, mesh.builtMs,
                     mx * mx + my * my + mz * mz)) {
                 long t0 = System.nanoTime();
                 String dim = Guard.dimOf(level);
@@ -477,21 +495,25 @@ public final class TunnelView {
                 // 0.16.1: and the surface store (faces under open sky, within the render distance)
                 BlockPos.MutableBlockPos m2 = new BlockPos.MutableBlockPos();
                 SeenRays.Cells rc = (x, y, z) -> SeenSampler.cell(level, m2.set(x, y, z));
+                // 0.17.1: faces the surface scan draws (its per-chunk meshes) are left out here
                 SeenMesh.Result u = SeenMesh.union(r.faces(), r.capped(), seen.near(dim, c.getX(), c.getY(), c.getZ(), radius),
-                        surface.near(dim, c.getX(), c.getY(), c.getZ(), radius), rc, c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
-                mesh.rebuild(u.faces(), level, c.getX(), c.getY(), c.getZ(), version, seenVersion, tint, u.capped());
+                        surface.near(dim, c.getX(), c.getY(), c.getZ(), radius), rc, c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES, sky::drawsInstead);
+                mesh.rebuild(u.faces(), level, c.getX(), c.getY(), c.getZ(), version, seenVersion, tint, u.capped(), fancy);
                 mesh.noteRebuild((System.nanoTime() - t0) / 1_000_000);
             }
+            mesh.syncChunks(sky, level, c.getX(), c.getZ(), fancy);   // 0.17.1: the surface, one mesh per scanned chunk
             Vec3 cam = e.getCamera().getPosition();
             float partial = e.getPartialTick().getGameTimeDeltaPartialTick(false);
             Vec3 at = p.getPosition(partial);
-            double[] cutArgs = cut ? new double[]{cam.x, cam.y, cam.z, at.x, at.y + p.getBbHeight() / 2.0, at.z, cutRadius} : null;
+            net.minecraft.world.phys.AABB box = p.getBoundingBox().move(at.subtract(p.position()));
+            // 0.17.1: the bot's box and the margin; the shader cuts only what covers the bot on the screen and is nearer
+            double[] cutArgs = cut ? new double[]{box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, cutRadius} : null;
             boolean cutDone = mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, dollhouse, cutArgs);
             if (cut) {
                 if (cutDone) cutFrames.incrementAndGet();
                 else if (cutMissLogs++ < 1) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch tunnel: the cutaway is on but its shader is not available ({}); drawing without it", CutShaders.problem());
             }
-            mesh.drawMarker(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, p.getBoundingBox().move(at.subtract(p.position())));
+            mesh.drawMarker(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, box);
             frames.incrementAndGet();
             lastDrawMs = now;
         } catch (Throwable t) {
@@ -549,7 +571,13 @@ public final class TunnelView {
         sb.append(" | entities drawn ").append(lastEntities).append(" (the bot, mobs and players within ").append((int) WorldVeil.ENTITY_RADIUS).append(')');
         sb.append(" | faces: ").append(drawMode(dollhouse));
         sb.append(" | cutaway: ").append(cutReport());
-        sb.append(" | faces drawn ").append(mesh.faces());
+        sb.append(" | graphics: ").append(graphicsReport(graphicsWord));
+        sb.append(" | surface meshes: ").append(mesh.chunkMeshes()).append(" chunks, ").append(mesh.chunkFacesDrawn).append(" faces drawn");
+        if (mesh.chunkWaiting > 0) sb.append(", ").append(mesh.chunkWaiting).append(" waiting to be built");
+        if (mesh.chunkBuilds > 0) sb.append(String.format(java.util.Locale.ROOT, ", %.1f ms per chunk mesh (max %.1f, %d built)",
+                mesh.chunkBuildNanos / 1e6 / mesh.chunkBuilds, mesh.chunkMaxNanos / 1e6, mesh.chunkBuilds));
+        sb.append(" | ").append(SkyScanner.INSTANCE.status());
+        sb.append(" | other faces drawn ").append(mesh.faces());
         sb.append(" (").append(mesh.seenDrawn).append(" seen underground, ").append(mesh.surfaceDrawn).append(" seen under open sky")
                 .append(SeenSampler.INSTANCE.on() ? ", both cyan" : "").append(", ").append(mesh.shapedDrawn).append(" on non-opaque blocks)");
         if (mesh.flatFaces > 0) sb.append(" (").append(mesh.flatFaces).append(" flat-coloured: no sprite)");
@@ -572,6 +600,7 @@ public final class TunnelView {
                 lastDrawMs == 0 ? -1 : now - lastDrawMs, on ? now - onSinceMs : 0, lastFrameMs == 0 ? -1 : now - lastFrameMs, offByError));
         out.addAll(WatchChecks.veilFindings(guard.misses(), MixinFlags.terrainSkipApplied, on, on ? now - onSinceMs : 0, skippedLayers.get() - skipAtStart));
         out.addAll(SeenSampler.INSTANCE.findings());                // 0.16.0: watch seen (seensampler)
+        out.addAll(SkyScanner.INSTANCE.findings());                 // 0.17.1: the surface scan (skyscan)
         String cutProblem = WatchChecks.cutProblem(cut, CutShaders.problem());   // 0.16.1: the cutaway shader (tunnelcut)
         if (cutProblem != null) out.add(new SelfCheck.Finding("tunnelcut", cutProblem,
                 "the game log has [entropybot] watch tunnel cutaway shader lines; F3+T reloads the shaders; watch tunnel cut off hides this"));

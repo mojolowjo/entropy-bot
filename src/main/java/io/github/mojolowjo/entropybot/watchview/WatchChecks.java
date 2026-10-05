@@ -68,6 +68,15 @@ public final class WatchChecks {
     }
 
     /**
+     * 0.17.1 check {@code skyscan}: the surface scan is on, chunks are waiting (queued or one under way), it has been on
+     * for longer than stallMs, and no column was scanned for stallMs (-1 = never).
+     */
+    public static boolean scanStalled(boolean on, boolean waiting, long onForMs, long msSinceColumn, long stallMs) {
+        if (!on || !waiting || onForMs <= stallMs) return false;
+        return msSinceColumn < 0 || msSinceColumn > stallMs;
+    }
+
+    /**
      * 0.16.1 check {@code tunnelcut}: the cutaway is on (the default) but its shader is not available (failed to load,
      * compile or link, broke while drawing, or was never registered). The view then draws every face without the cut.
      * Null when there is nothing to report (cut off, or the shader is fine).

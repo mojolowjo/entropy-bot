@@ -48,6 +48,15 @@ public final class FaceGeometry {
     private static double clamp01(double v) { return Math.max(0, Math.min(1, v)); }
 
     /**
+     * 0.17.1, corner shading: the vertex to start a quad with. A quad is drawn as the triangles 0-1-2 and 2-3-0, so the
+     * colours are blended along the diagonal 0-2; when corners 0 and 2 are the brighter pair, starting at vertex 1 puts the
+     * split on the diagonal 1-3 instead (the usual fix for ambient-occlusion streaks). A cyclic start keeps the winding.
+     */
+    public static int aoStart(float[] ao) {
+        return ao[0] + ao[2] > ao[1] + ao[3] ? 1 : 0;
+    }
+
+    /**
      * The quad's front-face normal from its winding (OpenGL's default: counter-clockwise seen from the front, the side
      * vanilla's back-face culling keeps): (v1 - v0) x (v2 - v0), rounded to -1/0/1. For every side it points into the air
      * cell ({@link Shell#OFF}[side]), which is what the dollhouse view relies on (JUnit checks it).

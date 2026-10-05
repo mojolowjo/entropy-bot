@@ -334,7 +334,10 @@ public final class SeenSampler {
     private boolean keep(ClientLevel level, String dim, BlockPos.MutableBlockPos air, int x, int y, int z, int side, double dist) {
         int[] o = Shell.OFF[side];
         air.set(x + o[0], y + o[1], z + o[2]);
-        boolean sky = level.canSeeSky(air);
+        // 0.17.1: a face whose air side is a sky cell by the surface scan (a column open to the sky through air, plants,
+        // glass or leaves: the ground under a tree crown too, where canSeeSky says no) is a surface face, kept out of the
+        // saved file; the scan draws it, the rays' copy only fills in where the scan has not been yet
+        boolean sky = level.canSeeSky(air) || SkyScanner.INSTANCE.store().skyCell(air.getX(), air.getY(), air.getZ());
         int light = level.getRawBrightness(air, 0);
         switch (SeenRule.where(sky, light, dist)) {
             case SeenRule.SURFACE -> {
@@ -399,6 +402,7 @@ public final class SeenSampler {
                 .append(" dropped as out of range");
         if (surface.evicted() > 0) sb.append(", ").append(surface.evicted()).append(" oldest dropped at the cap of ").append(SURFACE_MAX);
         sb.append(", last prune ").append(String.format(java.util.Locale.ROOT, "%.2f", pruneNanos / 1e6)).append(" ms");
+        sb.append(" | ").append(SkyScanner.INSTANCE.status());       // 0.17.1: the surface now comes from the chunk scan
         if (errs.total() > 0) sb.append(" | errors ").append(errs.total()).append(", last ").append(lastError);
         return sb.toString();
     }

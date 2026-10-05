@@ -134,7 +134,7 @@ public final class WatchCamera {
         return on && !TunnelView.INSTANCE.on() ? distance : -1f;
     }
 
-    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|radius 1-6]] | watch dollhouse [on|off] | watch cut [on|off|radius 1-6] | watch steer [on|off|status] | watch seen [on|off|status] | watch shot";
+    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|radius 0-3]] | watch dollhouse [on|off] | watch cut [on|off|radius 0-3] | watch steer [on|off|status] | watch seen [on|off|status] | watch shot";
 
     /** Pure: "dollhouse", "dollhouse on|off" -> true/false for the new state given the old one, or null when not understood. */
     public static Boolean parseDollhouse(String a, boolean now) {
@@ -225,9 +225,9 @@ public final class WatchCamera {
             if (a.startsWith("dollhouse")) return "error: watch tunnel dollhouse [on|off] (now " + (tv.dollhouse() ? "on" : "off") + ")";
             if (a.startsWith("cut radius")) {
                 double r = io.github.mojolowjo.entropybot.watchview.Cutaway.parseRadius(a.substring(10));
-                if (r < 0) return "error: watch tunnel cut radius 1-6 (now " + tv.cutRadius() + ")";
+                if (r < 0) return "error: watch tunnel cut radius 0-3 (now " + tv.cutRadius() + ")";
                 tv.setCutRadius(r);
-                return "ok: the cutaway is " + r + " blocks wide round the line from the camera to the bot" + (tv.cut() ? "" : " (the cut is off: watch tunnel cut on)")
+                return "ok: the cutaway hides what covers the bot on the screen, with a margin of " + r + " blocks round its box" + (tv.cut() ? "" : " (the cut is off: watch tunnel cut on)")
                         + "; kept until the game restarts";
             }
             Boolean ct = io.github.mojolowjo.entropybot.watchview.Cutaway.parseCut(a, tv.cut());
@@ -235,12 +235,12 @@ public final class WatchCamera {
                 tv.setCut(ct);
                 return "ok: cutaway " + tv.cutReport() + (tv.on() ? "" : " (applies when watch tunnel is on)") + "; kept until the game restarts";
             }
-            if (a.startsWith("cut")) return "error: watch tunnel cut [on|off|radius 1-6] (now " + (tv.cut() ? "on, radius " + tv.cutRadius() : "off") + ")";
+            if (a.startsWith("cut")) return "error: watch tunnel cut [on|off|radius 0-3] (now " + (tv.cut() ? "on, radius " + tv.cutRadius() : "off") + ")";
             if (a.equals("turn left") || a.equals("turn right")) {
                 tv.setYaw(TunnelPose.quarter(tv.yaw(), a.endsWith("left")));
                 return "ok: the tunnel camera looks " + compass(tv.yaw()) + " now";
             }
-            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right | watch tunnel dollhouse [on|off] | watch tunnel cut [on|off|radius 1-6]";
+            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right | watch tunnel dollhouse [on|off] | watch tunnel cut [on|off|radius 0-3]";
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.player == null) return "error: not in a world";
             if (!io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied)
@@ -253,7 +253,7 @@ public final class WatchCamera {
             }
             return "ok: tunnel view on: the camera floats above and behind the bot looking " + compass(tv.yaw())
                     + " and passes through blocks; the real world is hidden, only what the bot's own view saw (the tunnels and caves it opened, the ground and trees round it out to the render distance), the bot and mobs are drawn; cutaway "
-                    + (tv.cut() ? "on (nothing between the camera and the bot)" : "off") + "; "
+                    + (tv.cut() ? "on (nothing that covers the bot is drawn)" : "off") + "; "
                     + WATCH_FPS + " FPS while on. watch tunnel turn left|right, watch tunnel height 1-40, watch tunnel cut on|off, watch tunnel off.";
         } catch (Throwable e) {
             return "error: " + e;
