@@ -14,6 +14,7 @@ public final class EntropyBot {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
         io.github.mojolowjo.entropybot.engine.WatchEvents.register();     // watch camera v1/v2 + the render-stage probe
+        io.github.mojolowjo.entropybot.engine.WatchSteer.register();      // watch steer: camera-relative keys in the watch views
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.init();  // camera v2: known air from every clear
         // 0.16.1: the tunnel view's cutaway shaders (mod bus; the listener catches every failure, the view then draws without the cut)
         modBus.addListener(net.neoforged.neoforge.client.event.RegisterShadersEvent.class,
