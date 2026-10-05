@@ -153,21 +153,34 @@ public final class TunnelView {
 
     public void setCutRadius(double r) { cutRadius = r; }
 
-    /** 0.19.0 {@code watch cut mode cone|outline}: cone (the default) cuts whole blocks; each mode keeps its own radius. */
-    private volatile boolean cutCone = true;
+    /** 0.19.0/0.19.1 {@code watch cut mode shadow|cone|outline}: shadow (the default) and cone cut whole blocks; each mode keeps its own radius. */
+    private volatile String cutMode = Cutaway.SHADOW;
     private volatile double coneRadius = Cutaway.DEFAULT_CONE_RADIUS;
+    private volatile double shadowMargin = Cutaway.DEFAULT_SHADOW_MARGIN;
 
-    public boolean cutCone() { return cutCone; }
+    public String cutMode() { return cutMode; }
 
-    public void setCutCone(boolean cone) { cutCone = cone; }
+    public void setCutMode(String m) {
+        if (Cutaway.SHADOW.equals(m) || Cutaway.CONE.equals(m) || Cutaway.OUTLINE.equals(m)) cutMode = m;
+    }
+
+    public boolean cutCone() { return Cutaway.CONE.equals(cutMode); }
 
     public double coneRadius() { return coneRadius; }
 
     public void setConeRadius(double r) { coneRadius = r; }
 
-    /** "mode cone, radius 2.5" / "mode outline, margin 0.6". */
+    public double shadowMargin() { return shadowMargin; }
+
+    public void setShadowMargin(double m) { shadowMargin = m; }
+
+    /** "mode shadow, margin 0.5" / "mode cone, radius 2.5" / "mode outline, margin 0.6". */
     public String cutModeWords() {
-        return cutCone ? "mode cone, radius " + coneRadius : "mode outline, margin " + cutRadius;
+        return switch (cutMode) {
+            case Cutaway.SHADOW -> "mode shadow, margin " + shadowMargin;
+            case Cutaway.CONE -> "mode cone, radius " + coneRadius;
+            default -> "mode outline, margin " + cutRadius;
+        };
     }
 
     /** The status words for the cutaway. */
@@ -175,7 +188,9 @@ public final class TunnelView {
         if (!cut) return "off (watch tunnel cut on)";
         String problem = CutShaders.problem();
         if (problem != null) return "on but NOT working: " + problem + " - the faces are drawn without it (see check)";
-        if (cutCone) return "on (" + cutModeWords() + ": whole blocks in a cone from the camera to the bot, " + coneRadius
+        if (Cutaway.SHADOW.equals(cutMode)) return "on (" + cutModeWords() + ": whole blocks in the way, whose centre the camera sees the bot's box (grown by "
+                + shadowMargin + ") through and at least half a block nearer, are not drawn; never beside or past the bot or at/below its feet; " + cutFrames.get() + " frames cut)";
+        if (cutCone()) return "on (" + cutModeWords() + ": whole blocks in a cone from the camera to the bot, " + coneRadius
                 + " blocks round the axis at the bot, are not drawn; never past the bot or at/below its feet; " + cutFrames.get() + " frames cut)";
         return "on (" + cutModeWords() + ": faces that cover the bot on the screen and are nearer than it are not drawn, "
                 + "with a margin of " + cutRadius + " blocks round its box and a dithered rim; " + cutFrames.get() + " frames cut)";
@@ -531,7 +546,8 @@ public final class TunnelView {
             Vec3 at = p.getPosition(partial);
             net.minecraft.world.phys.AABB box = p.getBoundingBox().move(at.subtract(p.position()));
             // 0.17.1: the bot's box and the margin; the shader cuts only what covers the bot on the screen and is nearer
-            double[] cutArgs = cut ? new double[]{box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, cutRadius, cutCone ? coneRadius : 0} : null;
+            double[] cutArgs = cut ? new double[]{box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, cutRadius, cutCone() ? coneRadius : 0,
+                    Cutaway.SHADOW.equals(cutMode) ? shadowMargin : -1} : null;
             boolean cutDone = mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, dollhouse, cutArgs);
             if (cut) {
                 if (cutDone) cutFrames.incrementAndGet();

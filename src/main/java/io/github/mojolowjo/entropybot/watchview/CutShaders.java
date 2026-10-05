@@ -12,7 +12,8 @@ import java.util.function.Consumer;
 /**
  * The cutaway's two core shaders ({@code assets/entropybot/shaders/core/watch_cut_tex} and {@code watch_cut_flat}, 0.16.1):
  * vanilla's position_tex_color / position_color plus three uniforms (CutA, CutB, CutRadius) that drop the fragments
- * between the camera and the bot ({@link Cutaway}). Used only for the tunnel view's own two vertex buffers, so Sodium's
+ * between the camera and the bot ({@link Cutaway}). (Since 0.19.1 the uniforms are CutCam, CutMin, CutMax, CutMargin,
+ * CutCone (> 0 = cone mode, its radius) and CutShadow (>= 0 = shadow mode, its margin; wins over CutCone).) Used only for the tunnel view's own two vertex buffers, so Sodium's
  * terrain shaders are never touched. Registered through NeoForge's {@code RegisterShadersEvent} (mod bus; posted from
  * {@code GameRenderer.reloadShaders} at start and on every resource reload). Every failure is caught here: a shader
  * that fails to load, compile or link is left null with the reason, the view then draws without the cut and says so

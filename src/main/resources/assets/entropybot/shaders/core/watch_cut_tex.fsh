@@ -10,6 +10,7 @@ uniform vec3 CutMin;
 uniform vec3 CutMax;
 uniform vec2 CutMargin;
 uniform float CutCone;
+uniform float CutShadow;
 
 in vec3 meshPos;
 
@@ -56,8 +57,30 @@ bool cutCone() {
     return length(q - a * t) < max(0.3, CutCone * t / len);
 }
 
+// 0.19.1 shadow mode (CutShadow >= 0, the margin m round the bot's box; < 0: not this mode; wins over CutCone). "In the
+// way", not "near the line": the cell the camera ray enters here, cell = floor(P + dir * 0.01), centre Q, is cut when
+// the ray camera -> Q goes on to enter the bot's box grown by m (sides and top; bottom = feet + 0.1) at distance enter
+// and |Q - CutCam| < enter - 0.5. Cells whose top is at or below the feet + 0.1 stay. Hard edges, no dither.
+// Same maths as io.github.mojolowjo.entropybot.watchview.Cutaway.shadowCuts.
+bool cutShadow() {
+    vec3 v = meshPos - CutCam;
+    float dist = length(v);
+    if (dist < 1e-4) return false;
+    vec3 dir = v / dist;
+    vec3 cell = floor(meshPos + dir * 0.01);
+    if (cell.y + 1.0 <= CutMin.y + 0.1) return false;
+    vec3 q = cell + vec3(0.5) - CutCam;
+    float qd = length(q);
+    if (qd < 1e-4) return false;
+    float m = CutShadow;
+    float enter = cutEnter(CutCam, q / qd, vec3(CutMin.x - m, CutMin.y + 0.1, CutMin.z - m), CutMax + vec3(m));
+    if (enter < 0.0) return false;
+    return qd < enter - 0.5;
+}
+
 bool cutHere() {
     if (CutMargin.y < 0.0) return false;
+    if (CutShadow >= 0.0) return cutShadow();
     if (CutCone > 0.0) return cutCone();
     vec3 v = meshPos - CutCam;
     float dist = length(v);

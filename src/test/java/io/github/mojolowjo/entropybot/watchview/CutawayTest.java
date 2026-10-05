@@ -256,10 +256,11 @@ class CutawayTest {
         assertNull(Cutaway.parseMode("cut mode cylinder"));
         var ws = io.github.mojolowjo.entropybot.engine.WatchSettings.class;
         var d = io.github.mojolowjo.entropybot.engine.WatchSettings.Values.DEFAULTS;
-        assertTrue(d.cutCone());
+        assertEquals("shadow", d.cutMode(), "0.19.1: shadow is the default");
+        assertFalse(d.cutCone());
         assertEquals(2.5, d.coneRadius());
         assertEquals(0.6, d.outlineMargin());
-        var v = new io.github.mojolowjo.entropybot.engine.WatchSettings.Values(4f, 4, true, true, true, 45f, false, 4.0, 1.5);
+        var v = new io.github.mojolowjo.entropybot.engine.WatchSettings.Values(4f, 4, true, true, true, 45f, "outline", 4.0, 1.5, 1.0);
         var back = io.github.mojolowjo.entropybot.engine.WatchSettings.parse(io.github.mojolowjo.entropybot.engine.WatchSettings.toJson(v));
         assertEquals(v, back.values());
         assertNull(back.note());
@@ -287,5 +288,104 @@ class CutawayTest {
         }
         assertEquals(0.01, Cutaway.CELL_STEP, 1e-12);
         assertEquals(0.3, Cutaway.CONE_MIN_RADIUS, 1e-12);
+    }
+
+    // ---- 0.19.1 shadow mode ----------------------------------------------------------------------------------------
+
+    static final double M = Cutaway.DEFAULT_SHADOW_MARGIN;
+
+    static boolean shadow(int x, int y, int z, double[] cam, double[] b) {
+        return Cutaway.shadowCell(x, y, z, cam[0], cam[1], cam[2], b[0], b[1], b[2], b[3], b[4], b[5], M);
+    }
+
+    /** A block straight between the camera (4 back, 4 up) and the bot is cut; a fragment on its near face too. */
+    @Test
+    void shadowCutsWhatIsInTheWay() {
+        double[] b = box(0.5, 64, 0.5), cam = {0.5, 68, -3.5};
+        assertTrue(shadow(0, 66, -2, cam, b));
+        assertTrue(Cutaway.shadowCuts(0.5, 67, -1.5, cam[0], cam[1], cam[2], b[0], b[1], b[2], b[3], b[4], b[5], M), "its top face");
+        assertFalse(Cutaway.shadowCell(0, 66, -2, cam[0], cam[1], cam[2], b[0], b[1], b[2], b[3], b[4], b[5], -1), "m < 0 = no shadow cut");
+    }
+
+    /** The live trunk: a spruce trunk beside the bot, slightly nearer than its middle, is kept; the cone cut it (why 0.19.1). */
+    @Test
+    void shadowKeepsTheTrunkBesideTheBot() {
+        double[] b = box(0.5, 64, 0.5), cam = {0.5, 68, -3.5};
+        for (int y = 64; y <= 66; y++) {
+            assertFalse(shadow(1, y, -1, cam, b), "trunk beside, nearer, y " + y);
+            assertFalse(shadow(1, y, 0, cam, b), "trunk beside, same depth, y " + y);
+            assertFalse(shadow(-1, y, 0, cam, b), "trunk on the other side, y " + y);
+        }
+        assertTrue(cone(1, 65, -1, cam, b), "the cone cuts the same trunk cell: it is near the line, not in the way");
+    }
+
+    /** A cell beside the camera-bot line whose centre ray misses the bot's box is kept. */
+    @Test
+    void shadowKeepsWhatTheRayMisses() {
+        double[] b = box(0.5, 64, 0.5), cam = {0.5, 68, -3.5};
+        assertFalse(shadow(2, 66, -2, cam, b));
+        assertFalse(shadow(-2, 66, -2, cam, b));
+        assertFalse(shadow(0, 69, -2, cam, b), "above the line");
+    }
+
+    /** The floor is never cut (13x13, steep and shallow cameras), nor the bot's own cells or anything past it. */
+    @Test
+    void shadowNeverCutsFloorOrPastTheBot() {
+        double[] b = box(0.5, 64, 0.5);
+        double[][] cams = {{0.5, 74, 4.5}, {8.5, 66, 0.5}, {4.5, 65.2, 4.5}, {-6.5, 68, -3.5}, {0.5, 68, -3.5}};
+        for (double[] cam : cams)
+            for (int x = -6; x <= 6; x++)
+                for (int z = -6; z <= 6; z++)
+                    for (int y = 58; y <= 63; y++)
+                        assertFalse(shadow(x, y, z, cam, b), "floor cell " + x + " " + y + " " + z + " from " + java.util.Arrays.toString(cam));
+        double[] cam = {0.5, 68, -3.5};
+        assertFalse(shadow(0, 64, 0, cam, b), "the bot's feet cell");
+        assertFalse(shadow(0, 65, 0, cam, b), "the bot's head cell");
+        for (int x = -1; x <= 1; x++) for (int y = 64; y <= 68; y++) for (int z = 1; z <= 5; z++)
+            assertFalse(shadow(x, y, z, cam, b), "past the bot " + x + " " + y + " " + z);
+    }
+
+    /** A leaf two blocks above the bot's head, on the line from a steep camera, is cut. */
+    @Test
+    void shadowCutsTheLeafAboveOnTheLine() {
+        double[] b = box(0.5, 64, 0.5), cam = {0.5, 72, -1.5};
+        assertTrue(shadow(0, 67, 0, cam, b));
+    }
+
+    /** cut mode words for all three modes, shadow margin range and watch.json; the shaders carry the shadow rule. */
+    @Test
+    void shadowWordsAndShaders() throws Exception {
+        assertEquals("shadow", Cutaway.parseModeName("cut mode shadow"));
+        assertEquals("cone", Cutaway.parseModeName("cut mode cone"));
+        assertEquals("outline", Cutaway.parseModeName(" cut mode outline "));
+        assertNull(Cutaway.parseModeName("cut mode cylinder"));
+        assertNull(Cutaway.parseMode("cut mode shadow"));
+        assertEquals(0.5, Cutaway.parseRadius("0.5", "shadow"));
+        assertEquals(0.0, Cutaway.parseRadius("0", "shadow"));
+        assertEquals(2.0, Cutaway.parseRadius("2", "shadow"));
+        assertEquals(-1, Cutaway.parseRadius("2.5", "shadow"));
+        assertEquals(2.5, Cutaway.parseRadius("2.5", "cone"));
+        assertEquals(-1, Cutaway.parseRadius("4", "outline"));
+        var WS = io.github.mojolowjo.entropybot.engine.WatchSettings.class;
+        assertNotNull(WS);
+        var old = io.github.mojolowjo.entropybot.engine.WatchSettings.parse("{\"cutMode\":\"cone\",\"coneRadius\":3}");
+        assertEquals("cone", old.values().cutMode(), "an old watch.json saying cone keeps cone");
+        assertEquals(0.5, old.values().shadowMargin());
+        var bad = io.github.mojolowjo.entropybot.engine.WatchSettings.parse("{\"shadowMargin\":3}");
+        assertEquals(0.5, bad.values().shadowMargin());
+        assertNotNull(bad.note());
+        assertEquals(0.5, Cutaway.SHADOW_DEPTH, 1e-12);
+        for (String name : new String[]{CutShaders.TEX, CutShaders.FLAT}) {
+            String base = "/assets/entropybot/shaders/core/" + name;
+            try (var in = CutawayTest.class.getResourceAsStream(base + ".json")) {
+                assertTrue(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).contains("\"CutShadow\""), base);
+            }
+            try (var in = CutawayTest.class.getResourceAsStream(base + ".fsh")) {
+                String s = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                assertTrue(s.contains("uniform float CutShadow;") && s.contains("if (CutShadow >= 0.0) return cutShadow();"), base);
+                assertTrue(s.contains("return qd < enter - 0.5;"), "depth matches Cutaway.SHADOW_DEPTH");
+                assertTrue(s.contains("CutMin.y + 0.1, CutMin.z - m"), "feet lift matches");
+            }
+        }
     }
 }
