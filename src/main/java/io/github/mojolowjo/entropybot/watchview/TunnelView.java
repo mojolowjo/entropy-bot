@@ -35,19 +35,21 @@ import java.util.concurrent.atomic.AtomicLong;
  *       stands in underground (sampled each tick, its own trail; the recorder's trail seeds it when the view starts),
  *       and the open cells it sees from there underground ({@link Sight}: radius 6 inside a cave's visited cells,
  *       2 elsewhere). Collected while the view is off too, so it has history; saved to {@code knownair.bin}.</li>
- *   <li>the camera: above and behind the bot at a fixed yaw ({@link TunnelPose}), never in rock and never in air the
- *       bot doesn't know; angles in {@code ComputeCameraAngles}, the position in {@code ComputeFov} through the
- *       {@link WatchMixinCameraAccess} invoker.</li>
- *   <li>the faces ({@link Shell} into {@link TunnelMesh}) at {@code RenderLevelStageEvent.Stage.AFTER_PARTICLES}:
- *       posted by vanilla {@code LevelRenderer.renderLevel} itself (not from the section renderer Sodium replaces),
- *       after the translucent blocks, so water never paints over the faces.</li>
+ *   <li>the camera (0.15.4: noclip): above and behind the bot along the view's yaw ({@link TunnelPose}), through rock
+ *       and trees like the spectator camera; angles in {@code ComputeCameraAngles}, the position in {@code ComputeFov}
+ *       through the {@link WatchMixinCameraAccess} invoker.</li>
+ *   <li>the real world hidden ({@link WorldVeil}, {@link TunnelScene}): at {@code RenderLevelStageEvent.Stage.AFTER_LEVEL}
+ *       the frame is cleared and only the view's own things are drawn: the bot and nearby mobs, the faces ({@link Shell}
+ *       into {@link TunnelMesh}) and the bot's outline. A frame guard on {@code RenderFrameEvent.Pre/Post} clears any
+ *       frame the veil missed and turns the view off after 3 in a row. While on, the terrain layers are skipped
+ *       ({@code WatchMixinLevelRenderer}, a frame-time saving only).</li>
  * </ul>
  * Any exception is counted, logged rate-limited, and turns the view off; the frame loop never sees it.
  */
 public final class TunnelView {
     public static final TunnelView INSTANCE = new TunnelView();
     public static final String FILE = "knownair.bin";
-    static final int SIGHT_CAVE = 6, SIGHT_ELSEWHERE = 2, SIGHT_MAX = 400, MAX_CLIMB = 48;
+    static final int SIGHT_CAVE = 6, SIGHT_ELSEWHERE = 2, SIGHT_MAX = 400;
     static final double DEFAULT_HEIGHT = 12;
     static final long SAVE_EVERY_TICKS = 6000;
 
@@ -69,7 +71,12 @@ public final class TunnelView {
     private int errors;
     private volatile String offByError, lastError;
     private boolean warnedNoDraw;
-    private long statusFrames, statusPositions, statusMs;
+    private long statusFrames, statusPositions, statusMs, statusSkips;
+    private final WorldVeil.Guard guard = new WorldVeil.Guard();
+    private final AtomicLong skippedLayers = new AtomicLong();
+    private volatile long lastFrameMs, skipAtStart;
+    private volatile int lastEntities;
+    private int missLogs;
 
     private TunnelView() {}
 
@@ -139,6 +146,8 @@ public final class TunnelView {
         onSinceMs = System.currentTimeMillis();
         lastDrawMs = 0;
         statusMs = 0;
+        guard.resetRun();
+        skipAtStart = skippedLayers.get();
         on = true;
         Minecraft.getInstance().execute(this::seedFromTrail);
     }
@@ -229,10 +238,11 @@ public final class TunnelView {
             }
             if (on) {
                 long now = System.currentTimeMillis();
-                if (now - onSinceMs > 1500 && now - lastDrawMs > 1000) {
+                // only when frames ARE being rendered: a game that stalls for a second (a hitch) is not the view's fault
+                if (WatchChecks.notDrawing(true, now - onSinceMs, lastDrawMs == 0 ? -1 : now - lastDrawMs, lastFrameMs == 0 ? -1 : now - lastFrameMs)) {
                     if (!warnedNoDraw) {
                         warnedNoDraw = true;
-                        com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch tunnel: on, but no frame drew its faces in the last second");
+                        com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch tunnel: on, frames are rendered, but none ran the tunnel view's drawing in the last second");
                     }
                 } else warnedNoDraw = false;
             }
@@ -287,31 +297,23 @@ public final class TunnelView {
         return s.isSolidRender(level, pos) ? Shell.SOLID : Shell.OPEN;
     }
 
-    /** The camera may sit in this cell: open, no fluid, and lit by the sky or known air. */
-    private boolean cameraOk(ClientLevel level, String dim, BlockPos.MutableBlockPos m, int x, int y, int z) {
-        m.set(x, y, z);
-        if (!level.isLoaded(m)) return false;
-        BlockState s = level.getBlockState(m);
-        if (s.isSolidRender(level, m) || !s.getFluidState().isEmpty()) return false;
-        return level.canSeeSky(m) || known.contains(dim, x, y, z);
-    }
-
     // ---- camera ---------------------------------------------------------------------------------------------------
 
-    /** ComputeCameraAngles: this frame's pose; the angles now, the position in {@link #onFov}. True when it set them. */
+    /**
+     * ComputeCameraAngles: this frame's pose; the angles now, the position in {@link #onFov}. True when it set them.
+     * Only in a frame the guard armed (the view was on at RenderFrameEvent.Pre), so every frame with a moved camera is
+     * checked for the veil at RenderFrameEvent.Post.
+     */
     public boolean onAngles(ViewportEvent.ComputeCameraAngles e) {
-        if (!on) return false;
+        if (!on || !guard.armed()) return false;
         try {
             Camera cam = e.getCamera();
             Entity ent = cam.getEntity();
             ClientLevel level = Minecraft.getInstance().level;
             if (ent == null || level == null) return false;
-            String dim = Guard.dimOf(level);
             Vec3 eye = ent.getEyePosition((float) e.getPartialTick());
-            BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-            TunnelPose.CellOk ok = (x, y, z) -> cameraOk(level, dim, m, x, y, z);
-            TunnelPose.Pose want = TunnelPose.place(eye.x, eye.y, eye.z, yaw, height, WatchCamera.INSTANCE.distance(), MAX_CLIMB, ok);
-            pose = TunnelPose.follow(pose, want, 0.15, eye.x, eye.y, eye.z, ok);
+            TunnelPose.Pose want = TunnelPose.place(eye.x, eye.y, eye.z, yaw, height, WatchCamera.INSTANCE.distance());
+            pose = TunnelPose.follow(pose, want, 0.15, eye.x, eye.y, eye.z);
             e.setYaw(pose.yaw());
             e.setPitch(pose.pitch());
             e.setRoll(0f);
@@ -327,10 +329,11 @@ public final class TunnelView {
     /** ComputeFov (the level render's call, after Camera.setup): move the camera to this frame's pose. */
     public void onFov(ViewportEvent.ComputeFov e) {
         TunnelPose.Pose p = pending;
-        if (!on || p == null || !e.usedConfiguredFov()) return;
+        if (!on || p == null || !e.usedConfiguredFov() || !guard.armed()) return;
         pending = null;
         try {
             if ((Object) e.getCamera() instanceof WatchMixinCameraAccess a) {
+                guard.placed();                       // before the move: a frame with a moved camera is always checked
                 a.entropybot$setPosition(new Vec3(p.x(), p.y(), p.z()));
                 positions.incrementAndGet();
             } else {
@@ -343,14 +346,65 @@ public final class TunnelView {
 
     // ---- faces ----------------------------------------------------------------------------------------------------
 
-    /** RenderLevelStageEvent: at AFTER_PARTICLES, rebuild the mesh if due and draw it. */
+    /**
+     * The terrain-skip hook (WatchMixinLevelRenderer, render thread) asks: skip this section layer? Yes while the view is
+     * on (the veil clears the frame anyway); counted, so status can tell a hook that fires from one that doesn't.
+     */
+    public boolean skipTerrain() {
+        if (!on) return false;
+        skippedLayers.incrementAndGet();
+        return true;
+    }
+
+    /** RenderFrameEvent.Pre (render thread): arm the guard for this frame when the view is on. */
+    public void onFramePre() {
+        try {
+            guard.pre(on && Minecraft.getInstance().level != null);
+        } catch (Throwable t) {
+            fail("frame start", t, true);
+        }
+    }
+
+    /**
+     * RenderFrameEvent.Post (render thread), before the frame is shown: a frame that was rendered with the view on (or
+     * with the camera moved) but without the veil is cleared now, so it never shows the world; 3 in a row turn the view
+     * off (the camera goes back to the bot).
+     */
+    public void onFramePost() {
+        WorldVeil.Verdict v;
+        try {
+            lastFrameMs = System.currentTimeMillis();
+            v = guard.post(Minecraft.getInstance().level != null, on);
+        } catch (Throwable t) {
+            v = WorldVeil.Verdict.CLEAR_AND_STOP;
+        }
+        if (v == WorldVeil.Verdict.NOTHING) return;
+        try {
+            TunnelScene.clearWorld();
+        } catch (Throwable t) {
+            fail("emergency clear", t, true);
+        } finally {
+            TunnelScene.restoreState();
+        }
+        if (on && missLogs++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch tunnel: a frame was rendered without the world-hiding step; cleared it ({} so far)", guard.misses());
+        if (v == WorldVeil.Verdict.CLEAR_AND_STOP)
+            fail("world hiding", new IllegalStateException(WorldVeil.MISSES_TO_STOP + " frames in a row rendered without the world-hiding step (AFTER_LEVEL); turned the view off"), true);
+    }
+
+    /**
+     * RenderLevelStageEvent at AFTER_LEVEL (GameRenderer.renderLevel, after the whole level render): the veil. Clear the
+     * frame, then draw the bot and mobs, the faces (rebuilt if due) and the bot's outline; restore the render state.
+     */
     public void onStage(RenderLevelStageEvent e) {
-        if (!on || e.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
+        if (!on || !guard.armed() || e.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) return;
         try {
             Minecraft mc = Minecraft.getInstance();
             ClientLevel level = mc.level;
             LocalPlayer p = mc.player;
             if (level == null || p == null) return;
+            TunnelScene.clearWorld();
+            guard.veiled();                                   // the world is gone from this frame
+            lastEntities = TunnelScene.drawEntities(e.getModelViewMatrix(), e.getCamera(), e.getPartialTick(), p, level);
             BlockPos c = p.blockPosition();
             long now = System.currentTimeMillis();
             long version = known.version();
@@ -372,6 +426,8 @@ public final class TunnelView {
             lastDrawMs = now;
         } catch (Throwable t) {
             fail("draw", t, true);
+        } finally {
+            TunnelScene.restoreState();                       // whatever happened above: the rest of the frame gets vanilla's state
         }
     }
 
@@ -397,23 +453,30 @@ public final class TunnelView {
 
     public String status() {
         long now = System.currentTimeMillis();
-        long f = frames.get(), ps = positions.get();
-        long fps = -1, pps = -1;
+        long f = frames.get(), ps = positions.get(), sk = skippedLayers.get();
+        long fps = -1, pps = -1, sps = -1;
         if (statusMs > 0 && now > statusMs) {
             fps = (f - statusFrames) * 1000 / (now - statusMs);
             pps = (ps - statusPositions) * 1000 / (now - statusMs);
+            sps = (sk - statusSkips) * 1000 / (now - statusMs);
         }
         statusFrames = f;
         statusPositions = ps;
+        statusSkips = sk;
         statusMs = now;
         StringBuilder sb = new StringBuilder("tunnel view: ");
         if (on) {
-            sb.append("on (camera ").append(how).append(", ").append(height).append(" up, ").append(WatchCamera.INSTANCE.distance())
+            sb.append("on (camera ").append(how).append(" through blocks, ").append(height).append(" up, ").append(WatchCamera.INSTANCE.distance())
                     .append(" back, looking ").append(WatchCamera.compass(yaw)).append(')');
-            boolean drawing = now - onSinceMs <= 1500 || now - lastDrawMs <= 1000;
-            if (!drawing) sb.append(" WARNING: no frame drew its faces in the last second");
+            if (WatchChecks.notDrawing(true, now - onSinceMs, lastDrawMs == 0 ? -1 : now - lastDrawMs, lastFrameMs == 0 ? -1 : now - lastFrameMs))
+                sb.append(" WARNING: frames are rendered but none ran the tunnel view's drawing in the last second");
         } else sb.append("off");
         if (offByError != null) sb.append(" (turned itself off after an error: ").append(offByError).append(')');
+        sb.append(" | world hidden: ").append(on ? "yes" : "n/a (off)").append(" (frame cleared after the level render, ")
+                .append(guard.veiledFrames()).append(" frames hidden, ").append(guard.misses()).append(" missed and cleared late")
+                .append(guard.misses() > 0 ? " - see check" : "").append(')');
+        sb.append(" | terrain draw: ").append(WatchChecks.skipReport(MixinFlags.terrainSkipApplied, on, sps, sk));
+        sb.append(" | entities drawn ").append(lastEntities).append(" (the bot, mobs and players within ").append((int) WorldVeil.ENTITY_RADIUS).append(')');
         sb.append(" | faces drawn ").append(mesh.faces());
         if (mesh.flatFaces > 0) sb.append(" (").append(mesh.flatFaces).append(" flat-coloured: no sprite)");
         if (mesh.built) sb.append(", last rebuild ").append((now - mesh.builtMs) / 1000).append(" s ago in ").append(mesh.buildMs).append(" ms")
@@ -430,8 +493,10 @@ public final class TunnelView {
     /** For check. */
     public List<SelfCheck.Finding> findings() {
         long now = System.currentTimeMillis();
-        return WatchChecks.findings(MixinFlags.watchApplied, positionHookIn(), on, lastDrawMs == 0 ? -1 : now - lastDrawMs,
-                on ? now - onSinceMs : 0, offByError);
+        List<SelfCheck.Finding> out = new java.util.ArrayList<>(WatchChecks.findings(MixinFlags.watchApplied, positionHookIn(), on,
+                lastDrawMs == 0 ? -1 : now - lastDrawMs, on ? now - onSinceMs : 0, lastFrameMs == 0 ? -1 : now - lastFrameMs, offByError));
+        out.addAll(WatchChecks.veilFindings(guard.misses(), MixinFlags.terrainSkipApplied, on, on ? now - onSinceMs : 0, skippedLayers.get() - skipAtStart));
+        return out;
     }
 
     /** The bot left the world: save, and forget the sampling spot. */

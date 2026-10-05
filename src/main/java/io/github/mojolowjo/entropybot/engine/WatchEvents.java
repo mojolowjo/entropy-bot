@@ -4,6 +4,7 @@ import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.watchview.TunnelView;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.client.event.CalculateDetachedCameraDistanceEvent;
+import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -20,7 +21,11 @@ import net.neoforged.neoforge.common.NeoForge;
  *   <li>{@code ViewportEvent.ComputeFov} (posted in {@code GameRenderer.renderLevel} after {@code Camera.setup}, before
  *       the frustum and the level render read the camera position): v2 places the camera through the
  *       {@code WatchMixinCameraAccess} invoker.</li>
- *   <li>{@code RenderLevelStageEvent}: the probe, and v2's faces at {@code AFTER_PARTICLES}.</li>
+ *   <li>{@code RenderLevelStageEvent}: the probe, and v2's veil at {@code AFTER_LEVEL} (0.15.4: the frame cleared, then
+ *       the bot, mobs, faces and outline drawn).</li>
+ *   <li>{@code RenderFrameEvent.Pre/Post} (posted by {@code Minecraft.runTick} around {@code GameRenderer.render}; Post
+ *       comes before the frame is blitted to the screen): v2's frame guard (a frame the veil missed is cleared there),
+ *       and {@code watch shot}, taken from a finished frame.</li>
  * </ul>
  * Every listener catches everything: a failure is counted and logged, never let into the frame loop.
  */
@@ -34,7 +39,22 @@ public final class WatchEvents {
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, CalculateDetachedCameraDistanceEvent.class, WatchEvents::distance);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, ViewportEvent.ComputeFov.class, WatchEvents::fov);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, RenderLevelStageEvent.class, WatchEvents::stage);
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, false, RenderFrameEvent.Pre.class, WatchEvents::framePre);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, RenderFrameEvent.Post.class, WatchEvents::framePost);
         MixinFlags.watchApplied = true;          // "the watch hook is in": the listeners, since 0.15.2
+    }
+
+    private static void framePre(RenderFrameEvent.Pre e) {
+        TunnelView.INSTANCE.onFramePre();        // catches its own errors
+    }
+
+    private static void framePost(RenderFrameEvent.Post e) {
+        TunnelView.INSTANCE.onFramePost();       // catches its own errors; may clear the frame before the shot below
+        try {
+            WatchCamera.INSTANCE.onFramePost();
+        } catch (Throwable t) {
+            fail("shot", t);
+        }
     }
 
     private static void angles(ViewportEvent.ComputeCameraAngles e) {

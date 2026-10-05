@@ -17,6 +17,11 @@ public final class MixinFlags {
     /** Watch camera v2: the Camera.setPosition invoker (WatchMixinCameraAccess) went in. */
     public static volatile boolean cameraPosApplied;
     /**
+     * Watch camera v2 (0.15.4): the terrain-skip hook (WatchMixinLevelRenderer, require = 0) went in. Only a frame-time
+     * saving: the tunnel view hides the world by clearing the frame whether or not it applied.
+     */
+    public static volatile boolean terrainSkipApplied;
+    /**
      * The ClientLevel block-change hook (RecorderMixinClientLevel, require = 0) went in: the recorder's ears and the
      * route map's staleness (routing R2).
      */

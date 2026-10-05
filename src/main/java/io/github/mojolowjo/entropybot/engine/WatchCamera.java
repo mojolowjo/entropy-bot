@@ -195,7 +195,7 @@ public final class WatchCamera {
                 double h = parseHeight(a.substring(6));
                 if (h < 0) return "error: watch tunnel height 4-40 (now " + tv.height() + ")";
                 tv.setHeight(h);
-                return "ok: the tunnel camera sits " + h + " blocks above the bot (higher when that spot is in rock)";
+                return "ok: the tunnel camera sits " + h + " blocks above the bot (through rock: only what the bot opened is drawn)";
             }
             if (a.equals("turn left") || a.equals("turn right")) {
                 tv.setYaw(TunnelPose.quarter(tv.yaw(), a.endsWith("left")));
@@ -204,14 +204,16 @@ public final class WatchCamera {
             if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 4-40 | watch tunnel turn left|right";
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.player == null) return "error: not in a world";
+            if (!io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied)
+                return "error: the watch camera's render listeners are not registered (see check): the tunnel view can't hide the world, so it stays off";
             if (!tv.positionHookIn()) return "error: the camera position hook is not in (WatchMixinCameraAccess; see check and the game log): the tunnel view can't place its camera";
             if (!tv.on()) {
                 startView(mc);
                 float start = on ? yaw : mc.player.getYRot();
                 tv.start(TunnelPose.snap45(start));
             }
-            return "ok: tunnel view on: the camera sits above and behind the bot looking " + compass(tv.yaw())
-                    + ", the walls of the tunnels and caves it opened show through the rock (nothing it never opened); "
+            return "ok: tunnel view on: the camera floats above and behind the bot looking " + compass(tv.yaw())
+                    + " and passes through blocks; the real world is hidden, only the walls of the tunnels and caves it opened, the bot and mobs are drawn; "
                     + WATCH_FPS + " FPS while on. watch tunnel turn left|right, watch tunnel height 4-40, watch tunnel off.";
         } catch (Throwable e) {
             return "error: " + e;
@@ -253,17 +255,45 @@ public final class WatchCamera {
         net.minecraft.client.Minecraft.getInstance().execute(this::endViewIfIdle);
     }
 
-    /** {@code watch shot}: saves a screenshot of the game window to screenshots\ (so a session can look at the picture). */
+    private volatile String shotName;
+    private volatile long shotAskedMs;
+
+    /**
+     * {@code watch shot}: saves a screenshot of the game window to screenshots\ (so a session can look at the picture).
+     * Since 0.15.4 it is taken at the end of the next rendered frame ({@code RenderFrameEvent.Post}, after the tunnel
+     * view's drawing and its frame guard, before the frame goes to the screen), so it always shows a finished frame;
+     * if no frame is rendered within 2 s the tick takes it from the last finished one, as before.
+     */
     private String shot() {
         try {
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.player == null) return "error: not in a world";
             String name = "watch-" + System.currentTimeMillis() + ".png";
-            mc.execute(() -> net.minecraft.client.Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), msg -> {}));
+            shotAskedMs = System.currentTimeMillis();
+            shotName = name;
             return "ok: screenshot saved as screenshots\\" + name + " in a moment";
         } catch (Throwable e) {
             return "error: " + e;
         }
+    }
+
+    /** RenderFrameEvent.Post (render thread): take a pending {@code watch shot}. */
+    public void onFramePost() {
+        String name = shotName;
+        if (name == null) return;
+        shotName = null;
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        net.minecraft.client.Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), msg -> {});
+    }
+
+    /** No frame rendered since the shot was asked for (a stalled or minimised window): take it from the last frame. */
+    private void shotFallback() {
+        String name = shotName;
+        if (name == null || System.currentTimeMillis() - shotAskedMs < 2000) return;
+        shotName = null;
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        mc.execute(() -> net.minecraft.client.Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), msg -> {}));
+        com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch shot: no frame was rendered for 2 s; took {} from the last finished frame", name);
     }
 
     /** {@code watch off}: both views off, the normal view and frame cap back. */
@@ -289,6 +319,11 @@ public final class WatchCamera {
     /** Once a client tick, in a world: the yaw eases towards the walking direction. Never throws. */
     public void tick() {
         TunnelView.INSTANCE.tickYaw();     // v2: the view turns slowly with the bot's walking direction
+        try {
+            shotFallback();
+        } catch (Throwable e) {
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch shot: {}", e.toString());
+        }
         if (!on) return;
         try {
             net.minecraft.client.player.LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;

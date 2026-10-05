@@ -48,6 +48,7 @@ public final class GuardMixinPlugin implements IMixinConfigPlugin {
         else if (mixinClassName.endsWith("GuardMixinBlockItem")) MixinFlags.placeApplied = true;
         else if (mixinClassName.endsWith("FarmlandMixinPrecomputedData")) MixinFlags.farmlandApplied = true;
         else if (mixinClassName.endsWith("WatchMixinCameraAccess")) MixinFlags.cameraPosApplied = true;
+        else if (mixinClassName.endsWith("WatchMixinLevelRenderer")) MixinFlags.terrainSkipApplied = true;
         else if (mixinClassName.endsWith("RecorderMixinClientLevel")) MixinFlags.levelHookApplied = true;
     }
 

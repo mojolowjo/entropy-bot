@@ -2,85 +2,46 @@ package io.github.mojolowjo.entropybot.watchview;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.HashSet;
 import java.util.Random;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Camera v2's camera: above and behind the bot, never inside rock, never in air the bot doesn't know. */
+/** Camera v2's camera since 0.15.4: a noclip camera above and behind the bot, through rock, ground and trees. */
 class TunnelPoseTest {
-    /** ok = open and (sky-lit or known), like TunnelView.cameraOk. */
-    static TunnelPose.CellOk ok(GridWorld w, Set<Long> known) {
-        return (x, y, z) -> w.kind(x, y, z) == Shell.OPEN && (w.sky(x, y, z) || known.contains(CellKey.of(x, y, z)));
-    }
-
     @Test
-    void inTheOpenItSitsWhereWanted() {
-        GridWorld w = new GridWorld();
-        w.skyY = 64;
-        TunnelPose.Pose p = TunnelPose.place(0.5, 65.6, 0.5, 0f, 12, 6, 48, ok(w, Set.of()));
-        assertEquals("above", p.how());
+    void itSitsWhereWantedWhateverIsThere() {
+        TunnelPose.Pose p = TunnelPose.place(0.5, 65.6, 0.5, 0f, 12, 6);
+        assertEquals("free", p.how());
         assertEquals(77.6, p.y(), 1e-9);
         assertEquals(0.5 - 6, p.z(), 1e-9, "behind = north of a bot looking south (yaw 0)");
+        assertEquals(0.5, p.x(), 1e-9);
         assertEquals(0f, p.yaw(), 0.01f, "looking south at the bot");
         assertTrue(p.pitch() > 60f && p.pitch() < 65f, "looking down: " + p.pitch());
     }
 
+    /** The old guard climbed out of rock or pulled in to the bot: 120 blocks underground the camera ended in the tunnel. */
     @Test
-    void underGroundItClimbsOutIntoTheSky() {
-        GridWorld w = new GridWorld().openBox(0, 10, 0, 4, 11, 0);
-        w.skyY = 40;
-        Set<Long> known = new HashSet<>(w.open);
-        TunnelPose.Pose p = TunnelPose.place(0.5, 11.6, 0.5, 0f, 12, 6, 48, ok(w, known));
-        assertTrue(p.how().startsWith("raised"), p.how());
-        assertTrue(p.y() - TunnelPose.NEAR >= 40, "the whole box in the sky: " + p.y());
-        assertTrue(TunnelPose.boxOk(p.x(), p.y(), p.z(), ok(w, known)));
+    void deepUndergroundItDoesNotPullIn() {
+        TunnelPose.Pose p = TunnelPose.place(313.5, -44.4, 20.5, 90f, 12, 5);   // walking west, deep down
+        assertEquals(-32.4, p.y(), 1e-9, "12 up, in the rock, no climbing and no pulling in");
+        assertEquals(313.5 + 5, p.x(), 1e-9, "5 behind = east of a bot looking west");
+        assertEquals(20.5, p.z(), 1e-9);
     }
 
     @Test
-    void tooDeepItPullsInAlongTheLineLikeVanilla() {
-        GridWorld w = new GridWorld().openBox(-1, 10, -8, 1, 13, 1);   // a known room round the bot
-        w.skyY = 200;
-        Set<Long> known = new HashSet<>(w.open);
-        TunnelPose.Pose p = TunnelPose.place(0.5, 11.6, 0.5, 0f, 12, 6, 48, ok(w, known));
-        assertEquals("pulled in", p.how());
-        assertTrue(TunnelPose.boxOk(p.x(), p.y(), p.z(), ok(w, known)));
-        assertTrue(p.y() > 11.6 && p.y() + TunnelPose.NEAR < 14.0, "stopped under the ceiling (rock from y 14): " + p.y());
-    }
-
-    @Test
-    void anUnknownCaveIsNoPlaceForTheCamera() {
-        GridWorld w = new GridWorld().openBox(0, 10, 0, 0, 11, 0);      // the bot's cell
-        w.openBox(-3, 20, -9, 3, 26, -3);                               // a cave right where the camera wants to be
-        w.skyY = 300;
-        Set<Long> known = new HashSet<>();
-        known.add(CellKey.of(0, 10, 0));
-        known.add(CellKey.of(0, 11, 0));
-        TunnelPose.Pose p = TunnelPose.place(0.5, 11.6, 0.5, 0f, 12, 6, 48, ok(w, known));
-        int cx = (int) Math.floor(p.x()), cy = (int) Math.floor(p.y()), cz = (int) Math.floor(p.z());
-        assertFalse(cy >= 20 && cy <= 26 && cz <= -3, "not in the unknown cave: " + p);
-        assertTrue(TunnelPose.boxOk(p.x(), p.y(), p.z(), ok(w, known)));
-    }
-
-    @Test
-    void randomWorldsNeverPutTheCameraInRock() {
+    void anyYawKeepsTheDistanceAndLooksAtTheBot() {
         Random rnd = new Random(11);
-        for (int round = 0; round < 200; round++) {
-            GridWorld w = new GridWorld();
-            w.skyY = 20 + rnd.nextInt(40);
-            for (int i = 0; i < 400; i++) w.open(rnd.nextInt(20) - 10, rnd.nextInt(30), rnd.nextInt(20) - 10);
-            w.openBox(0, 10, 0, 0, 11, 0);
-            Set<Long> known = new HashSet<>();
-            for (long k : w.open) if (rnd.nextInt(3) == 0) known.add(k);
-            known.add(CellKey.of(0, 10, 0));
-            known.add(CellKey.of(0, 11, 0));
-            TunnelPose.CellOk ok = ok(w, known);
-            float yaw = rnd.nextInt(8) * 45f;
-            TunnelPose.Pose p = TunnelPose.place(0.5, 11.62, 0.5, yaw, 4 + rnd.nextInt(20), 4 + rnd.nextInt(5), 48, ok);
-            assertTrue(TunnelPose.boxOk(p.x(), p.y(), p.z(), ok), "round " + round + ": " + p);
-            TunnelPose.Pose q = TunnelPose.follow(p, TunnelPose.place(0.5, 11.62, 0.5, yaw, 10, 6, 48, ok), 0.15, 0.5, 11.62, 0.5, ok);
-            assertTrue(TunnelPose.boxOk(q.x(), q.y(), q.z(), ok), "smoothing too: " + q);
+        for (int i = 0; i < 500; i++) {
+            float yaw = rnd.nextFloat() * 360f - 180f;
+            double h = 4 + rnd.nextInt(37), back = 4 + rnd.nextInt(5);
+            double tx = rnd.nextGaussian() * 100, ty = rnd.nextInt(380) - 64, tz = rnd.nextGaussian() * 100;
+            TunnelPose.Pose p = TunnelPose.place(tx, ty, tz, yaw, h, back);
+            assertEquals(h, p.y() - ty, 1e-9);
+            assertEquals(back, Math.hypot(p.x() - tx, p.z() - tz), 1e-9);
+            float[] a = TunnelPose.lookAt(p.x(), p.y(), p.z(), tx, ty, tz);
+            assertEquals(a[0], p.yaw(), 1e-4f);
+            assertEquals(a[1], p.pitch(), 1e-4f);
+            assertEquals(0f, io.github.mojolowjo.entropybot.engine.WatchCamera.turn(yaw, p.yaw()), 0.01f, "the camera looks the way of the view's yaw");
         }
     }
 
@@ -97,14 +58,26 @@ class TunnelPoseTest {
     }
 
     @Test
-    void followJumpsOnATeleport() {
-        TunnelPose.CellOk any = (x, y, z) -> true;
-        TunnelPose.Pose a = new TunnelPose.Pose(0, 0, 0, 0, 0, "above");
-        TunnelPose.Pose b = new TunnelPose.Pose(100, 0, 0, 0, 0, "above");
-        assertEquals(100, TunnelPose.follow(a, b, 0.15, 100, -5, 0, any).x(), 1e-9);
-        TunnelPose.Pose c = new TunnelPose.Pose(10, 0, 0, 0, 0, "above");
-        assertEquals(1.5, TunnelPose.follow(a, c, 0.15, 10, -5, 0, any).x(), 1e-9);
-        assertSame(c, TunnelPose.follow(null, c, 0.15, 0, 0, 0, any));
+    void followSmoothsAndJumpsOnATeleport() {
+        TunnelPose.Pose a = new TunnelPose.Pose(0, 0, 0, 0, 0, "free");
+        TunnelPose.Pose b = new TunnelPose.Pose(100, 0, 0, 0, 0, "free");
+        assertEquals(100, TunnelPose.follow(a, b, 0.15, 100, -5, 0).x(), 1e-9);
+        TunnelPose.Pose c = new TunnelPose.Pose(10, 0, 0, 0, 0, "free");
+        TunnelPose.Pose s = TunnelPose.follow(a, c, 0.15, 10, -5, 0);
+        assertEquals(1.5, s.x(), 1e-9);
+        float[] look = TunnelPose.lookAt(1.5, 0, 0, 10, -5, 0);
+        assertEquals(look[1], s.pitch(), 1e-4f, "re-aimed at the bot");
+        assertSame(c, TunnelPose.follow(null, c, 0.15, 0, 0, 0));
+    }
+
+    @Test
+    void smoothingSettlesOnTheWantedSpot() {
+        TunnelPose.Pose want = TunnelPose.place(0.5, 11.6, 0.5, 45f, 12, 6);
+        TunnelPose.Pose p = new TunnelPose.Pose(want.x() + 8, want.y() - 5, want.z(), 0, 0, "free");
+        for (int i = 0; i < 120; i++) p = TunnelPose.follow(p, want, 0.15, 0.5, 11.6, 0.5);
+        assertEquals(want.x(), p.x(), 1e-6);
+        assertEquals(want.y(), p.y(), 1e-6);
+        assertEquals(want.z(), p.z(), 1e-6);
     }
 
     @Test
@@ -118,7 +91,7 @@ class TunnelPoseTest {
         assertEquals(0f, TunnelPose.snap45(-10f), 0f);
     }
 
-    @org.junit.jupiter.api.Test
+    @Test
     void followWalkTurnsSlowlyTowardsTheWalkingDirectionAndStaysWhenStanding() {
         float yaw = 0f;                                   // facing south
         assertEquals(0f, TunnelPose.followWalk(yaw, 0.0, 0.0), 1e-6);          // standing: unchanged

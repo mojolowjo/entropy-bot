@@ -51,6 +51,22 @@ class MixinConfigTest {
         assertTrue(mixin.contains("org/spongepowered/asm/mixin/gen/Invoker"));
     }
 
+    /** Camera 0.15.4: the terrain-skip hook is listed, recognised, after Sodium (priority above 1000) and on the right method. */
+    @Test
+    void theTerrainSkipHookIsListedAndLandsAfterSodium() throws IOException {
+        String cfg = resource("entropybot.mixins.json");
+        assertTrue(cfg.contains("\"WatchMixinLevelRenderer\""), "listed");
+        String plugin = resource("io/github/mojolowjo/entropybot/mixin/GuardMixinPlugin.class");
+        assertTrue(plugin.contains("WatchMixinLevelRenderer"));
+        assertTrue(plugin.contains("terrainSkipApplied"));
+        String mixin = resource("io/github/mojolowjo/entropybot/mixin/WatchMixinLevelRenderer.class");
+        assertTrue(mixin.contains("net/minecraft/client/renderer/LevelRenderer"), "targets LevelRenderer");
+        assertTrue(mixin.contains("renderSectionLayer(Lnet/minecraft/client/renderer/RenderType;DDDLorg/joml/Matrix4f;Lorg/joml/Matrix4f;)V"),
+                "the full descriptor of the method Sodium overwrites");
+        assertTrue(mixin.contains("priority"), "a priority is set (1500: applied after Sodium's @Overwrite at 1000)");
+        assertTrue(mixin.contains("skipTerrain"), "asks TunnelView");
+    }
+
     @Test
     void theBlockHookTargetsTheTwoClientLevelMethods() throws IOException {
         String mixin = resource("io/github/mojolowjo/entropybot/mixin/RecorderMixinClientLevel.class");

@@ -66,16 +66,24 @@ public final class WatchProbe {
             if (mc.player == null) return;
             Vec3 cam = event.getCamera().getPosition();
             Vec3 p = mc.player.position();
-            PoseStack ps = event.getPoseStack();
+            // AFTER_LEVEL (GameRenderer's dispatch) passes no PoseStack: use our own. Never leave the level's stack
+            // unbalanced (LevelRenderer.checkPoseStack would throw on the next frame): pop in finally.
+            PoseStack ps = event.getPoseStack() != null ? event.getPoseStack() : new PoseStack();
             ps.pushPose();
-            ps.translate(-cam.x, -cam.y, -cam.z);
-            MultiBufferSource.BufferSource buf = mc.renderBuffers().bufferSource();
-            VertexConsumer vc = buf.getBuffer(RenderType.lines());
-            LevelRenderer.renderLineBox(ps, vc, new AABB(p.x - size / 2, p.y, p.z - size / 2, p.x + size / 2, p.y + 1.8 + size / 4, p.z + size / 2), r, g, b, 1f);
-            RenderSystem.disableDepthTest();
-            buf.endBatch(RenderType.lines());
-            RenderSystem.enableDepthTest();
-            ps.popPose();
+            try {
+                ps.translate(-cam.x, -cam.y, -cam.z);
+                MultiBufferSource.BufferSource buf = mc.renderBuffers().bufferSource();
+                VertexConsumer vc = buf.getBuffer(RenderType.lines());
+                LevelRenderer.renderLineBox(ps, vc, new AABB(p.x - size / 2, p.y, p.z - size / 2, p.x + size / 2, p.y + 1.8 + size / 4, p.z + size / 2), r, g, b, 1f);
+                RenderSystem.disableDepthTest();
+                try {
+                    buf.endBatch(RenderType.lines());
+                } finally {
+                    RenderSystem.enableDepthTest();
+                }
+            } finally {
+                ps.popPose();
+            }
         } catch (Throwable e) {
             if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch probe: {}", e.toString());
         }
