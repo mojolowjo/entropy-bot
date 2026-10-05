@@ -121,12 +121,29 @@ class RouteEngineTest {
         RouteEngine e = engine();
         AreaBoxes areas = new AreaBoxes(List.of(new int[]{0, 0, 0, 47, 47, -64, 319}), -64, 319);   // sx, sz 0..2
         store.put(RouteFakes.record(new SectionKey(0, 2, 4, 1), SectionRecord.Quality.LIVE));  // built: skipped
-        int n = e.requestBuildAlong(0, new Cell(20, 70, 20), new Cell(30, 70, 30), areas);
+        int n = e.queueMissingAlong(0, new Cell(20, 70, 20), new Cell(30, 70, 30), areas);
         // k1 = (1,4,1) and its sideways neighbours (0,4,1) (2,4,1) (1,4,0) (1,4,2); (2,4,1) is built
         assertEquals(4, n);
         assertEquals(Priority.NOW, queue.where(k1));
         assertEquals(Priority.NOW, queue.where(new SectionKey(0, 0, 4, 1)));
         assertNull(queue.where(new SectionKey(0, 2, 4, 1)));
+        assertFalse(store.isStale(new SectionKey(0, 2, 4, 1)), "nothing marked stale");
+    }
+
+    @Test
+    void rebuildAlongMarksTheStretchStaleAndQueuesIt() {
+        RouteEngine e = engine();
+        AreaBoxes areas = new AreaBoxes(List.of(new int[]{0, 0, 0, 47, 47, -64, 319}), -64, 319);
+        store.put(RouteFakes.record(k1, SectionRecord.Quality.LIVE));
+        assertEquals(1, e.rebuildAlong(0, new Cell(20, 70, 20), new Cell(30, 70, 30), areas));
+        assertTrue(store.isStale(k1), "the failed stretch is stale");
+        assertEquals(Priority.NOW, queue.where(k1));
+        // a == b: the box and its 6 face neighbours (inside the areas)
+        RouteFakes.Queue q2 = queue;
+        int n = e.rebuildAlong(0, new Cell(20, 70, 20), new Cell(20, 70, 20), areas);
+        assertEquals(6, n, "k1 is queued already; its 6 neighbours are inside the area");
+        assertEquals(Priority.NOW, q2.where(new SectionKey(0, 1, 5, 1)));
+        assertEquals(Priority.NOW, q2.where(new SectionKey(0, 1, 4, 0)));
     }
 
     static RouteRequest req() {

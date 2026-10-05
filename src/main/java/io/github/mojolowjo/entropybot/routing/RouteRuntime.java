@@ -166,7 +166,7 @@ public final class RouteRuntime implements RoutePlanner {
             if (why != null) return f;
             return f.thenApply(p -> {
                 if (p.status() == RoutePlan.Status.NO_GOAL_BOX || p.status() == RoutePlan.Status.NO_START_BOX)
-                    e.requestBuildAlong(dim, start, goal, areas);
+                    e.queueMissingAlong(dim, start, goal, areas);
                 return p;
             });
         } catch (Throwable t) {
@@ -208,7 +208,7 @@ public final class RouteRuntime implements RoutePlanner {
         try {
             RouteEngine e = engine;
             if (e == null || dim != OVERWORLD || a == null || b == null) return;
-            e.requestBuildAlong(dim, a, b, areas);
+            e.rebuildAlong(dim, a, b, areas);
         } catch (Throwable t) {
             LOG.warn("[entropybot] route build-along: {}", t.toString());
         }
@@ -353,6 +353,8 @@ public final class RouteRuntime implements RoutePlanner {
             }
         });
         FlightRecorder.routeListener = this::onLevelBlock;
+        // MERGE WITH route-r3: RoutePlannerHolder.set(this); RoutePlannerHolder.setDumper(this::dump);
+        // (and RoutePlannerHolder.set(null) in stop(); the dumper may stay set: dump works without the engine)
         if (!chunkListener) {
             NeoForge.EVENT_BUS.addListener(RouteRuntime::onChunkLoad);
             chunkListener = true;
@@ -502,6 +504,25 @@ public final class RouteRuntime implements RoutePlanner {
      * "ok: wrote ..." or "error: ...".
      */
     public CompletableFuture<String> dump(int x, int y, int z) {
+        return dumpTo(x, y, z, null);
+    }
+
+    /**
+     * R3's {@code RouteDumper} shape ({@code RoutePlannerHolder.setDumper(RouteRuntime.INSTANCE::dump)} once merged):
+     * true when the dump was started (the result line goes to the log), false when it can't be done.
+     */
+    public boolean dump(int dim, int x, int y, int z, Path outDir) {
+        if (dim != OVERWORLD) return false;
+        CompletableFuture<String> f = dumpTo(x, y, z, outDir);
+        f.thenAccept(s -> {
+            if (s.startsWith("ok")) LOG.info("[entropybot] route dump: {}", s);
+            else LOG.warn("[entropybot] route dump: {}", s);
+        });
+        return !f.isDone() || f.getNow("error").startsWith("ok");
+    }
+
+    /** {@link #dump(int, int, int)} into {@code outDir} (null = {@code entropybot\routes\dumps}). */
+    public CompletableFuture<String> dumpTo(int x, int y, int z, Path outDir) {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (!mc.isSameThread()) return CompletableFuture.completedFuture("error: route dump must start on the game thread");
@@ -520,7 +541,7 @@ public final class RouteRuntime implements RoutePlanner {
                     + (m.walkingOnly() ? "" : "; NOT walking-only: breaking or placing was on")
                     + (m.sprintAsSettings(setting("allowSprint", true)) ? "" : "; the bot could not sprint (hungry)");
             Path root = Core.INSTANCE.files() == null ? mc.gameDirectory.toPath().resolve(Core.MODID) : Core.INSTANCE.files().root();
-            Path file = root.resolve("routes").resolve("dumps")
+            Path file = (outDir != null ? outDir : root.resolve("routes").resolve("dumps"))
                     .resolve(DumpFixture.fileName(k, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))));
             return CompletableFuture.supplyAsync(() -> {
                 try {

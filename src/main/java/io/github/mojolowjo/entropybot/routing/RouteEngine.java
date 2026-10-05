@@ -114,10 +114,42 @@ public final class RouteEngine {
     }
 
     /**
-     * Puts the boxes along a to b, plus their 4 sideways neighbours (a 3-box corridor), on the now queue when they are
-     * inside the areas and not built yet (or stale). Returns how many were queued.
+     * {@code RoutePlanner.requestBuildAlong} (a walk failed where the map said possible): the built boxes on the straight
+     * stretch a to b are marked stale, and every box of it inside the areas goes on the now queue; with a == b, the box
+     * of a and its 6 face neighbours. Returns how many were queued.
      */
-    public int requestBuildAlong(int dim, Cell a, Cell b, AreaBoxes areas) {
+    public int rebuildAlong(int dim, Cell a, Cell b, AreaBoxes areas) {
+        alongRequests.incrementAndGet();
+        int n = 0;
+        try {
+            Set<SectionKey> keys = new LinkedHashSet<>();
+            if (a.equals(b)) {
+                SectionKey k = SectionKey.of(dim, a.x(), a.y(), a.z());
+                keys.add(k);
+                for (int face = 0; face < 6; face++) keys.add(k.neighbour(face));
+            } else {
+                keys.addAll(alongBoxes.boxes(dim, a, b));
+            }
+            for (SectionKey k : keys) {
+                if (!areas.wanted(k)) continue;
+                if (store.get(k) != null && !store.isStale(k)) {
+                    store.markStale(k);
+                    staleMarks.incrementAndGet();
+                }
+                if (queue.offer(k, BuildQueue.Priority.NOW)) n++;
+            }
+        } catch (Throwable t) {
+            counters.workerException("rebuild along " + a + " -> " + b, t, log);
+        }
+        return n;
+    }
+
+    /**
+     * After a plan found its start or goal box missing: the boxes along a to b, plus their 4 sideways neighbours (a
+     * 3-box corridor), go on the now queue when they are inside the areas and not built yet (or stale). Nothing is
+     * marked stale. Returns how many were queued.
+     */
+    public int queueMissingAlong(int dim, Cell a, Cell b, AreaBoxes areas) {
         alongRequests.incrementAndGet();
         int n = 0;
         try {
