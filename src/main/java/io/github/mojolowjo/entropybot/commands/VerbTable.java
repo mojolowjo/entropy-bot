@@ -139,6 +139,9 @@ public final class VerbTable {
         v("reconnect", "", "safety", O, "reconnect on|off", "rejoin after a kick (1, 5, 15 min; 3 an hour)", "reconnect on", "status");
         v("restart", "", "safety", G, "restart ok|no", "I may be closed for an update in the next 15 minutes (or not)", "restart ok", "status");
         v("check", "", "safety", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
+        v("restore", "", "safety", O, "restore [status] | restore now [r] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off",
+                "blocks I broke on the way (mine ... dig tunnels, digging out of a stuck spot) and put back; build hints to protect",
+                "restore status|restore now|restore ignore 10 64 -20", "status");
         v("confirm", "", "safety", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
         // ---- automation
         v("routine", "routines", "automation", P, "routines | routine save <name> <chain> | routine show <name> | routine delete <name>", "saved chains; say the name to run one",

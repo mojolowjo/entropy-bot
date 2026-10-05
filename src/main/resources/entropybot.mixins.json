@@ -12,7 +12,8 @@
     "ReconnectMixinQuickPlay",
     "RecorderMixinClientLevel",
     "WatchMixinCameraAccess",
-    "WatchMixinLevelRenderer"
+    "WatchMixinLevelRenderer",
+    "RestoreMixinGameMode"
   ],
   "injectors": {
     "defaultRequire": 1

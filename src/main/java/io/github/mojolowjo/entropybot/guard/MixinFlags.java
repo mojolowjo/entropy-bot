@@ -26,6 +26,8 @@ public final class MixinFlags {
      * route map's staleness (routing R2).
      */
     public static volatile boolean levelHookApplied;
+    /** P1 (0.19.6): the restore ledger's break hook (RestoreMixinGameMode, require = 1) went in. */
+    public static volatile boolean restoreApplied;
 
     private MixinFlags() {}
 }

@@ -162,6 +162,24 @@ public final class GuardCore {
         return id;
     }
 
+    /**
+     * P1 (survival plan): the place lease for putting back one block the bot itself broke (the restore ledger). Granted
+     * in every mode, inside the areas or not, but never in a protect box or a denied dimension. It is a seal-kind lease:
+     * the guard lets it fill only air or water. Returns the id, or "error: ...".
+     */
+    public synchronized String restoreLease(String owner, String task, Box cell) {
+        if (owner == null || owner.isEmpty()) return "error: no token";
+        if (DENIED_DIMS.contains(cell.dim)) return "error: no placing in " + cell.dim;
+        if (cell.volume() != 1) return "error: a restore lease is one block";
+        Box pr = policy.protectAt(cell.dim, cell.x1, cell.y1, cell.z1);
+        if (pr != null) return "error: " + cell.x1 + " " + cell.y1 + " " + cell.z1 + " is in a protect box (" + (pr.name == null ? "box" : pr.name) + ")";
+        String id = "L" + (nextId++);
+        Map<String, Lease> m = new LinkedHashMap<>(leases);
+        m.put(id, new Lease(id, owner, task, cell, true, false, tick, true));
+        leases = Collections.unmodifiableMap(m);
+        return id;
+    }
+
     /** A placement at x y z is allowed only by a seal lease (it lies outside every area): it may only fill water or air. */
     public boolean sealOnly(String dim, int x, int y, int z) {
         Policy p = policy;
@@ -206,6 +224,7 @@ public final class GuardCore {
 
     private Lease leaseAt(String dim, int x, int y, int z, boolean place) {
         for (Lease l : leases.values()) {
+            if (!place && l.seal) continue;               // P1: a seal or restore lease only ever places
             if ((!place || l.place) && l.box.contains(dim, x, y, z)) return l;
         }
         return null;

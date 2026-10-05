@@ -50,6 +50,7 @@ public final class GuardMixinPlugin implements IMixinConfigPlugin {
         else if (mixinClassName.endsWith("WatchMixinCameraAccess")) MixinFlags.cameraPosApplied = true;
         else if (mixinClassName.endsWith("WatchMixinLevelRenderer")) MixinFlags.terrainSkipApplied = true;
         else if (mixinClassName.endsWith("RecorderMixinClientLevel")) MixinFlags.levelHookApplied = true;
+        else if (mixinClassName.endsWith("RestoreMixinGameMode")) MixinFlags.restoreApplied = true;
     }
 
     /** A resource lookup never loads the class, so the Mixin can still transform it. */

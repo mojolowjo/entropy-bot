@@ -763,6 +763,11 @@ public final class Clearing {
 
     /** As above; seal: the dig box a water seal belongs to (its lease may lie just outside the areas, LeaseSet.sealLease). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal) {
+        return placeAt(p, id, x, y, z, leases, seal, false);
+    }
+
+    /** restore (P1): the cell is one the bot broke itself; its lease is LeaseSet.restoreLease (any mode, never a protect box). */
+    static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore) {
         Minecraft mc = Minecraft.getInstance();
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
@@ -774,7 +779,8 @@ public final class Clearing {
         PlaceRules.Side s = PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ());
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
         // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
-        String le = seal != null && isBlockItem(id)
+        String le = restore ? leases.restoreLease(x, y, z, "putting back " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
+                : seal != null && isBlockItem(id)
                 ? leases.sealLease(x, y, z, seal, "sealing water with " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
                 : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
         if (le != null) return le;

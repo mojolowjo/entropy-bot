@@ -365,6 +365,7 @@ final class Mining {
         runs.put(s, cv);
         String r = jobs.startSeq(s, "always");
         jobs.job.holdOnFight = true;              // monsters live in caves: a fight holds the caving, it doesn't end it
+        RestoreLive.INSTANCE.scanBuilds(p, Jobs.here(p));     // P1: someone's build near here? (a whisper, never a box)
         return r;
     }
 
@@ -757,6 +758,8 @@ final class Mining {
     private void hooks(Jobs.Job job, MineRun j) {
         job.holdOnFight = true;
         job.ownsBreaking = true;
+        // P1: with dig, every block but the target that Baritone breaks is a path break the restore ledger puts back
+        if (j.dig) RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
         job.onHold = () -> {
             j.held = true;
             j.heldBy = core.reflexes.reflex().name().toLowerCase();
@@ -800,6 +803,7 @@ final class Mining {
         runs.put(s, r);
         jobs.startSeq(s, "always");
         hooks(jobs.job, r);
+        RestoreLive.INSTANCE.scanBuilds(p, me);          // P1: someone's build near here? (a whisper, never a box)
         begin(p, r);
         // started while a fight or a meal already holds the bot: the hold hook only fires on a new hold, so apply it now
         // (Baritone's mine stopped, breaking off); the held path in mineStep starts it again when the hold ends

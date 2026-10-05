@@ -26,7 +26,7 @@ public final class Texts {
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
-            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface");
+            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -35,7 +35,7 @@ public final class Texts {
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
             "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "route");
+            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
@@ -55,7 +55,7 @@ public final class Texts {
             "Farm: farm (one round: twerk till ripe, harvest, pick up, essence into blocks; try \"repeat forever farm\"), farm here (the farm is by me), farm compact block|prudentium|off, "
                     + "compact <item> [here|<place>|x y z] (the chests within 6 of you or me: 9 into a block, blocks back into their chest) | rs [x y z] (read the Refined Storage grid; \"where\" lists it then), rs take <item> [n], rs put <item|all> [n], rs disks [x y z] (which disks the drive holds, and how full) | pots [chests] (empty the botany pots at the base into the RS network, or the chests)",
             "Places of interest (I note them as I go): poi [n], poi <kind> (dungeon spawner, trial chamber, village, geode, mineshaft, lava lake, diamonds, loot chest...), poi show <id>, poi forget <id>, go poi <id>",
-            "Other: status, defend on|off, defend creepers flee|melee|bow, defend hostile list|add|remove <id>, find <block>, say <text>, twerk (on/off; twerk <s> for a set time), wait <s>, memory (how my note files are), restart ok|no (I may be closed for an update, 15 min) | Only for you: allow/deny <name>, allowed, b <baritone cmd>, mouse free|grab, route status|on|off|mode goal|legs|build|dump|test (the travel map for long walks); allowed players get " + GUEST_HELP,
+            "Other: status, defend on|off, defend creepers flee|melee|bow, defend hostile list|add|remove <id>, find <block>, say <text>, twerk (on/off; twerk <s> for a set time), wait <s>, memory (how my note files are), restart ok|no (I may be closed for an update, 15 min), restore [status] | restore now [r] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off (blocks I broke on the way, put back) | Only for you: allow/deny <name>, allowed, b <baritone cmd>, mouse free|grab, route status|on|off|mode goal|legs|build|dump|test (the travel map for long walks); allowed players get " + GUEST_HELP,
             "On my own: rule every 30m do <cmds> | rule at 06:30 do ... | rule when full do ... | rule when idle 10m do ..., rules, rule delete <n>; autominer on|off|status, why (what it decided); "
                     + "deaths, death policy on|off (fetch my corpse after a death; 5 deaths an hour park me), resume (after parking); reconnect on|off (after a kick); a running routine carries on after a reload or restart (12 h)",
             "Recorder (owner): recorder (settings, disk, incidents), recorder off|light|normal|detailed|max [for 30m|2h], recorder range <chunks> | trail <ticks|Ns> | snapshot <blocks>|now | states on|off | keep <hours> | mark <note>",

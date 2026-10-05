@@ -12,6 +12,8 @@ import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.commands.JobRequests.Request;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
 import io.github.mojolowjo.entropybot.guard.Guard;
+import io.github.mojolowjo.entropybot.restore.EscapePlan;
+import io.github.mojolowjo.entropybot.restore.RestoreRules;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
@@ -80,7 +82,26 @@ public final class Jobs {
         io.github.mojolowjo.entropybot.routewalk.RouteWalk route;
         baritone.api.pathing.goals.Goal plainGoal;
         int[] legDest;
+        /** P1: unique across restarts (the restore ledger's entries name their job by it). */
+        public final long id = NEXT_ID.incrementAndGet();
+        /** P1: the restore that runs before the job's end line (restoreMsg: that line), or mid-walk after an escape (restoreResume). */
+        RestoreRun restoreRun;
+        String restoreMsg;
+        boolean restoreDone, restoreResume;
+        /** P1: the escape dig-out: cells to break (highest first), the one at, the step out, its lease, the clock. */
+        java.util.List<int[]> escapeBreaks;
+        int escapeIdx, escapes, escapeDug, escapeRestored;
+        int[] escapeTo, escapeAt, escapeHit;
+        String escapeLease;
+        long escapeTick;
+        /** A travel dug out and has not put those blocks back yet (done once it is 3+ blocks away). */
+        boolean escapeWaiting;
     }
+
+    static final java.util.concurrent.atomic.AtomicLong NEXT_ID = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
+    /** P1: escapes per job (each one step out). */
+    static final int ESCAPE_MAX = 3;
+    static final long ESCAPE_BLOCK_TICKS = 200;
 
     static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 12;
     static final long UNSTICK_EARLY = 100;
@@ -174,6 +195,8 @@ public final class Jobs {
     public void finish(String msg) {
         Job j = job;
         if (j == null || j.done) return;
+        msg = restoreGate(j, msg);
+        if (msg == null) return;                          // P1: the job's blocks are put back first; finish comes again then
         j.done = true;
         j.status = msg;
         if (j.onEnd != null) {
@@ -193,6 +216,126 @@ public final class Jobs {
         LOG.info("[entropybot] job finished: {}", msg);
         try { core.recorder.jobEnded(j.type, j.label, msg); } catch (RuntimeException e) { LOG.warn("[entropybot] recorder job end: {}", e.toString()); }
         if (j.req != null) commands.requests.done(j.req.id, msg);
+    }
+
+    // ---- P1: the restore before the end line ----
+
+    /** End messages after which nothing is put back now (the owner said stop, the bot is fleeing or gone): the entries wait. */
+    static boolean noRestoreAfter(String msg) {
+        return msg.equals("stopped") || msg.startsWith("stopped: low health") || msg.startsWith("stopped: I was disconnected")
+                || msg.startsWith("stopped: I am in ");
+    }
+
+    /**
+     * The job is about to end with msg. Null when a restore of the blocks it broke on the way starts now instead (the
+     * job's own end hook runs first: breaking off, leases released); finish is called again with the full line when it
+     * is done. Otherwise the line to end with (the escape report and the restore summary or "N blocks to put back" added).
+     */
+    private String restoreGate(Job j, String msg) {
+        try {
+            if (j.escapeBreaks != null) endEscape(j);
+            if (j.restoreRun != null) {
+                // the restore itself was cut short (a stop, a fight, the fence), or a walk ended while putting back its escape
+                RestoreRun r = j.restoreRun;
+                j.restoreRun = null;
+                j.restoreDone = true;
+                boolean resume = j.restoreResume;
+                j.restoreResume = false;
+                r.stopRest(msg.startsWith("stopped") ? "stopped" : "the job ended");
+                r.end();
+                if (resume) {
+                    j.escapeRestored += r.placedEscape;
+                    return RestoreLive.INSTANCE.endText(msg, j, r);
+                }
+                String base = j.restoreMsg != null ? j.restoreMsg : msg;
+                String text = RestoreLive.INSTANCE.endText(base, j, r);
+                return j.restoreMsg != null ? text + " (restore " + msg.replaceFirst("^error: ", "") + ")" : text;
+            }
+            if (j.restoreDone || JobRequests.quiet(msg)) return msg;
+            j.restoreDone = true;
+            LocalPlayer p = Minecraft.getInstance().player;
+            RestoreRun r = noRestoreAfter(msg) || p == null ? null : RestoreLive.INSTANCE.afterJob(j, here(p), Guard.dimOf(p.level()));
+            if (r == null || r.empty()) {
+                if (r != null) r.end();
+                String text = RestoreLive.INSTANCE.endText(msg, j, r);
+                if (r == null) {
+                    String w = RestoreLive.INSTANCE.waitingNote(j);
+                    if (w != null) text += "; " + w;
+                }
+                return text;
+            }
+            if (j.onEnd != null) {
+                try { j.onEnd.run(); } catch (RuntimeException e) { LOG.warn("[entropybot] job end hook: {}", e.toString()); }
+                j.onEnd = null;
+            }
+            if (j.unstickLeft > 0) endUnstick(j);
+            IBaritone b = baritone();
+            if (b != null) cancel(b);
+            safeSettings();
+            j.restoreMsg = msg;
+            j.restoreRun = r;
+            j.status = "putting back " + r.total() + (r.total() == 1 ? " block" : " blocks") + " I broke on the way";
+            LOG.info("[entropybot] {} (then: {})", j.status, msg);
+            return null;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] restore at the job's end: {}", e.toString());
+            return msg + "; couldn't put back what I broke on the way (" + e + ") - restore status";
+        }
+    }
+
+    /** "restore now": a job that only puts blocks back. */
+    String startRestore(RestoreRun run, String label) {
+        followWatch = null;
+        followFix = null;
+        safeSettings();
+        Job j = new Job();
+        j.type = "restore";
+        j.startTick = core.tick();
+        j.label = label;
+        j.status = label;
+        j.restoreRun = run;
+        j.restoreDone = true;
+        job = j;
+        return "started: " + label;
+    }
+
+    private void restoreTick(LocalPlayer p, Job j) {
+        RestoreRun r = j.restoreRun;
+        boolean done;
+        try {
+            done = r.step(p, core.tick());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] restore: {}", e.toString());
+            r.stopRest("error: " + e);
+            done = true;
+        }
+        if (!done) {
+            if (!j.restoreResume) j.status = "putting back blocks I broke on the way (" + r.placed + " of " + r.total() + ")";
+            return;
+        }
+        r.end();
+        j.restoreRun = null;
+        if (j.restoreResume) {
+            // the escape's blocks are back: walk on
+            j.restoreResume = false;
+            j.escapeRestored += r.placedEscape;
+            if (!r.left.isEmpty()) LOG.info("[entropybot] escape: {}", r.summary());
+            IBaritone b = baritone();
+            if (b != null && j.goalObj != null) b.getCustomGoalProcess().setGoalAndPath(j.goalObj);
+            else if (b != null && j.goal != null) b.getCommandManager().execute(j.goal);
+            j.status = j.label;
+            j.startTick = core.tick();
+            j.lastStepTick = -1;
+            watch(j);
+            return;
+        }
+        String text;
+        if (j.restoreMsg != null) text = RestoreLive.INSTANCE.endText(j.restoreMsg, j, r);
+        else {
+            String sum = r.summary();
+            text = (r.placed == 0 && !r.left.isEmpty() ? "error: " : "ok: ") + (sum == null ? "nothing to put back" : sum);
+        }
+        finish(text);
     }
 
     /** A new command replaces a walk: it ends quietly (the bridge's "job.done = true"). */
@@ -509,9 +652,29 @@ public final class Jobs {
             return;
         }
         Job j = job;
+        if (j.restoreRun != null) {                     // P1: putting back what it broke on the way
+            restoreTick(p, j);
+            return;
+        }
+        if (j.escapeBreaks != null) {                   // P1: digging out of a boxed-in spot
+            escapeStep(p, j);
+            return;
+        }
         if (j.unstickLeft > 0) {
             unstickStep(p, j);
             return;
+        }
+        if (j.escapeWaiting && j.type.equals("travel") && now % 20 == 7 && RestoreLive.INSTANCE.outOfEscape(j, here(p))) {
+            // P1: out of the spot it dug itself out of (3+ blocks away): those blocks go back, then the walk goes on
+            j.escapeWaiting = false;
+            RestoreRun r = RestoreLive.INSTANCE.escapeRun(j, here(p), Guard.dimOf(p.level()));
+            if (r != null && !r.empty()) {
+                IBaritone b = baritone();
+                if (b != null) cancel(b);
+                j.restoreRun = r;
+                j.restoreResume = true;
+                return;
+            }
         }
         switch (j.type) {
             case "twerk" -> {
@@ -628,7 +791,7 @@ public final class Jobs {
                 }
             }
         }
-        if (best == null) return false;
+        if (best == null) return startEscape(p, j);          // P1: boxed in: dig out (underground, inside the areas only)
         IBaritone b = baritone();
         if (b != null) cancel(b);
         j.unstickTries++;
@@ -654,6 +817,154 @@ public final class Jobs {
         j.startTick = core.tick();
         j.lastStepTick = -1;
         watch(j);
+    }
+
+    // ---- P1: the escape dig-out ----
+
+    /** What the escape planner sees at x y z (loaded chunks only; anything doubtful is never broken). */
+    private EscapePlan.Kind escapeKind(net.minecraft.world.level.Level level, io.github.mojolowjo.entropybot.guard.Policy pol, String dim, int x, int y, int z) {
+        BlockPos bp = new BlockPos(x, y, z);
+        if (!level.isLoaded(bp)) return EscapePlan.Kind.BLOCKED;
+        net.minecraft.world.level.block.state.BlockState st = level.getBlockState(bp);
+        if (!st.getFluidState().isEmpty()) return EscapePlan.Kind.BLOCKED;
+        if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
+        if (!st.isCollisionShapeFullBlock(level, bp)) return EscapePlan.Kind.BLOCKED;
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+        boolean ok = RestoreRules.natural(id) && !st.hasBlockEntity() && !core.guard.isProtectedBlock(st.getBlock())
+                && !st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && st.getDestroySpeed(level, bp) >= 0
+                && Guard.liquidNextTo(level, x, y, z) == null
+                && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z)
+                && !(level.getBlockState(bp.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
+        return ok ? EscapePlan.Kind.BREAKABLE : EscapePlan.Kind.FLOOR_ONLY;
+    }
+
+    /**
+     * No free step next to the bot: when it is underground (no sky, 3+ under the surface) and inside the areas, break
+     * the fewest natural blocks that open one step out (EscapePlan), each recorded in the restore ledger as "escape", then
+     * step there. False (and a log line saying why) when it may not or can't.
+     */
+    boolean startEscape(LocalPlayer p, Job j) {
+        if (j.escapes >= ESCAPE_MAX || j.reflex) return false;
+        Minecraft mc = Minecraft.getInstance();
+        net.minecraft.world.level.Level level = mc.level;
+        int[] me = here(p);
+        String dim = Guard.dimOf(level);
+        boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2]));
+        int surface = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
+        if (!RestoreRules.underground(sky, surface, me[1])) {
+            LOG.info("[entropybot] stuck at {} with no free step, on the surface: no dig-out there (owner's rule)", fmt(me));
+            return false;
+        }
+        if (!commands.inAreas(dim, me[0], me[2])) {
+            LOG.info("[entropybot] stuck at {} with no free step, outside my areas: no dig-out", fmt(me));
+            return false;
+        }
+        io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
+        EscapePlan.Escape e = EscapePlan.plan((x, y, z) -> escapeKind(level, pol, dim, x, y, z), me, travelDest(j));
+        if (e == null) {
+            LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}", fmt(me), EscapePlan.MAX_BREAKS);
+            core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);
+            return false;
+        }
+        IBaritone b = baritone();
+        if (b != null) cancel(b);
+        j.escapes++;
+        if (e.breaks().isEmpty()) {
+            j.unstickLeft = UNSTICK_TICKS;
+            j.unstickTo = new double[]{e.feet()[0] + 0.5, e.feet()[1], e.feet()[2] + 0.5};
+            return true;
+        }
+        int x1 = Integer.MAX_VALUE, y1 = Integer.MAX_VALUE, z1 = Integer.MAX_VALUE, x2 = Integer.MIN_VALUE, y2 = Integer.MIN_VALUE, z2 = Integer.MIN_VALUE;
+        for (int[] c : e.breaks()) {
+            x1 = Math.min(x1, c[0]); y1 = Math.min(y1, c[1]); z1 = Math.min(z1, c[2]);
+            x2 = Math.max(x2, c[0]); y2 = Math.max(y2, c[1]); z2 = Math.max(z2, c[2]);
+        }
+        String le = core.guard.core.lease(core.token, "escape dig-out", new io.github.mojolowjo.entropybot.guard.Box("escape", dim, x1, y1, z1, x2, y2, z2), false, false);
+        if (le.startsWith("error")) {
+            if (core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT) {
+                LOG.info("[entropybot] stuck at {}: the guard refused the dig-out ({})", fmt(me), le);
+                return false;
+            }
+            le = null;
+        }
+        j.escapeLease = le;
+        j.escapeBreaks = e.breaks();
+        j.escapeIdx = 0;
+        j.escapeHit = null;
+        j.escapeTo = e.feet();
+        j.escapeTick = core.tick();
+        if (j.escapeAt == null) j.escapeAt = me;
+        RestoreLive.INSTANCE.expectEscape(j.id, e.breaks(), dim);
+        holdPickaxe(mc, p);
+        StringBuilder cells = new StringBuilder();
+        for (int[] c : e.breaks()) cells.append(fmt(c)).append("; ");
+        LOG.info("[entropybot] stuck at {} underground with no free step: digging out {} block(s) ({}) to {}", fmt(me), e.breaks().size(), cells.toString().replaceAll("; $", ""), fmt(e.feet()));
+        core.events.push("job", "escape: digging out " + e.breaks().size() + " block(s) at " + fmt(me), null);
+        return true;
+    }
+
+    private static void holdPickaxe(Minecraft mc, LocalPlayer p) {
+        String[] tiers = {"netherite_pickaxe", "diamond_pickaxe", "iron_pickaxe", "stone_pickaxe", "golden_pickaxe", "wooden_pickaxe"};
+        for (String t : tiers) {
+            for (int i = 0; i < 36; i++) {
+                net.minecraft.world.item.ItemStack s = p.getInventory().getItem(i);
+                if (!s.isEmpty() && io.github.mojolowjo.entropybot.gui.Gui.itemId(s).endsWith(t)) {
+                    io.github.mojolowjo.entropybot.engine.Hotbar.toHand(mc, p, i);
+                    return;
+                }
+            }
+        }
+    }
+
+    /** One tick of the dig-out: the current cell hit until it is open, then the next; all open: step out. */
+    private void escapeStep(LocalPlayer p, Job j) {
+        Minecraft mc = Minecraft.getInstance();
+        long now = core.tick();
+        if (now % 20 == 0) core.guard.core.heartbeat(core.token);
+        int[] c = j.escapeBreaks.get(j.escapeIdx);
+        BlockPos bp = new BlockPos(c[0], c[1], c[2]);
+        var st = mc.level.getBlockState(bp);
+        if (st.getCollisionShape(mc.level, bp).isEmpty()) {
+            j.escapeIdx++;
+            j.escapeHit = null;
+            j.escapeTick = now;
+            if (j.escapeIdx < j.escapeBreaks.size()) return;
+            j.escapeDug += j.escapeBreaks.size();
+            endEscape(j);
+            j.escapeWaiting = true;
+            j.unstickLeft = UNSTICK_TICKS;
+            j.unstickTo = new double[]{j.escapeTo[0] + 0.5, j.escapeTo[1], j.escapeTo[2] + 0.5};
+            LOG.info("[entropybot] escape: dug out, stepping to {}", fmt(j.escapeTo));
+            return;
+        }
+        if (now - j.escapeTick > ESCAPE_BLOCK_TICKS) {
+            String what = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+            endEscape(j);
+            mc.options.keyAttack.setDown(false);
+            finish("error: stuck at " + fmt(here(p)) + " and couldn't dig out: the " + what + " at " + fmt(c) + " didn't break in 10 s");
+            return;
+        }
+        Vec3 center = Vec3.atCenterOf(bp);
+        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
+        Vec3 eye = p.getEyePosition();
+        Direction face = Direction.getNearest((float) (eye.x - center.x), (float) (eye.y - center.y), (float) (eye.z - center.z));
+        if (j.escapeHit == null || j.escapeHit[0] != c[0] || j.escapeHit[1] != c[1] || j.escapeHit[2] != c[2]) {
+            mc.gameMode.startDestroyBlock(bp, face);
+            j.escapeHit = c;
+        } else {
+            mc.gameMode.continueDestroyBlock(bp, face);
+        }
+        p.swing(InteractionHand.MAIN_HAND);
+    }
+
+    /** The dig-out's lease goes, its expected cells are forgotten. */
+    private void endEscape(Job j) {
+        if (j.escapeLease != null) core.guard.core.release(j.escapeLease);
+        j.escapeLease = null;
+        j.escapeBreaks = null;
+        j.escapeHit = null;
+        RestoreLive.INSTANCE.expectEscape(j.id, java.util.List.of(), "");
+        try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
     }
 
     static void endUnstick(Job j) {

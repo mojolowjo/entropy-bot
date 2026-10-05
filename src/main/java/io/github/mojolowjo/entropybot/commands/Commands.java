@@ -301,6 +301,7 @@ public final class Commands implements Chains.Env {
         stateFiles = new BotFiles(mc.gameDirectory.toPath().resolve(BRIDGE_DIR));
         StringBuilder sb = new StringBuilder();
         sb.append(pmStore.load(files)).append("; ").append(brainStore.load(files)).append("; ").append(areaStore.load(files));
+        sb.append("; ").append(RestoreLive.INSTANCE.load(this, files));          // P1: the restore ledger
         RouteCommand.syncRuntime(this);     // routing review M1: a stored "route off" keeps the map builder off too
         JsonObject memory = null;
         if (!pmStore.existed() || !brainStore.existed() || !areaStore.existed()) memory = readBridgeJson(mc, "memory.json");
@@ -442,6 +443,11 @@ public final class Commands implements Chains.Env {
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] job: {}", e.toString());
                 jobs.finish("error: " + e);
+            }
+            try {
+                RestoreLive.INSTANCE.tick(player, tick);       // P1: pending breaks settled, restore.json written
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] restore: {}", e.toString());
             }
             {
                 // package B round 2: every tick, so a refill finds the gap between two breaks (HotbarKeeper spaces the swaps)
@@ -682,6 +688,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("tools")) return Reply.now(toolsCommand(rest));
         // routing stage 1: route status|on|off|mode|build|dump are instant settings; "route test" is a job (below)
         if (verb.equals("route") && !RouteRules.isTest(rest)) return Reply.now(RouteCommand.instant(this, player, rest));
+        // P1: restore status|forget|ignore|mode are instant; "restore now" is a job (below)
+        if (verb.equals("restore") && !io.github.mojolowjo.entropybot.restore.RestoreArgs.isJob(rest)) return Reply.now(RestoreLive.INSTANCE.command(player, rest));
         if (verb.equals("say")) {
             if (rest.isEmpty()) return Reply.now("say what?");
             String no = Texts.sayRefusal(rest, baritonePrefix());
@@ -767,6 +775,7 @@ public final class Commands implements Chains.Env {
                 return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
             }
             case "route" -> { return RouteTestRun.start(this, jobs, storage, player, rest); }       // routing stage 1: route test
+            case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
             case "wait" -> { return jobs.startWait(rest); }
             case "twerk" -> { return jobs.startTwerk(rest); }
             case "find" -> { return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest); }

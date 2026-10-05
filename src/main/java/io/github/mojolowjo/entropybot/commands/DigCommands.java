@@ -265,7 +265,11 @@ final class DigCommands {
         if (o.floor) steps.add(FloorSteps.floorStep(o, st, false));
         seq.splice(0, steps);
         c.jobs.startSeq(seq, "always");
-        c.jobs.job.holdOnFight = true;              // the bridge never ended a clear for a fight: a reflex holds it
+        try {                                       // P1: someone's build next to the dig? (a whisper, never a box)
+            io.github.mojolowjo.entropybot.clear.ClearBox bb = s.job.breakLeaseBox();
+            RestoreLive.INSTANCE.scanBuilds(p, new int[]{(bb.x1() + bb.x2()) / 2, (bb.y1() + bb.y2()) / 2, (bb.z1() + bb.z2()) / 2});
+        } catch (RuntimeException ignored) {}
+        c.jobs.job.holdOnFight = true;             // the bridge never ended a clear for a fight: a reflex holds it
         seq.setStatus(s.job.status("starting"));
         JsonObject z = o.box == null && o.only == null ? zone(c) : null;
         return s.job.startedMessage(zoneText(z));

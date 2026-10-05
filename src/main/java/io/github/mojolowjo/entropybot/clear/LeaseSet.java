@@ -115,6 +115,27 @@ public final class LeaseSet {
         return null;
     }
 
+    /**
+     * P1: the lease for putting back one block the bot broke ({@link GuardCore#restoreLease}: any mode, never in a
+     * protect box; it only fills air or water). Null when fine, else the error.
+     */
+    public String restoreLease(int x, int y, int z, String task) {
+        ClearBox cell = new ClearBox(x, y, z, x, y, z);
+        String key = cell.toString();
+        if (placeKeys.contains(key)) return null;
+        String id = core.restoreLease(owner, task, box(task, cell));
+        if (id.startsWith("error")) {
+            String why = id.replaceFirst("^error: ", "");
+            if (core.mode() == GuardCore.Mode.STRICT || why.contains("protect box")) return "error: the guard refused: " + why;
+            log.accept("restore lease refused (log mode): " + why + " (" + task + ")");
+            return null;
+        }
+        ids.add(id);
+        placeKeys.add(key);
+        log.accept("lease " + id + " for " + task + ": " + cell + " (restore)");
+        return null;
+    }
+
     /** Every lease still held (true with none taken, or refused in log mode). */
     public boolean alive() {
         return core.leases().keySet().containsAll(ids);

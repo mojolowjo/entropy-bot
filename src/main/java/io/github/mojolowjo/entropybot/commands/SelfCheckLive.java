@@ -71,6 +71,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("hostilecheck", "couldn't check the hostile list: " + e, "defend hostile list"));
         }
+        try {
+            f.addAll(RestoreLive.INSTANCE.findings());      // P1: the restore hook, restore.json, blocks waiting, build hints
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("restorehook", "couldn't check the restore ledger: " + e, "restore status"));
+        }
         return f;
     }
 
