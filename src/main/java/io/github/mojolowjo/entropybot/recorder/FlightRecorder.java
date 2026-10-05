@@ -345,13 +345,26 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     public static volatile boolean hooked;
 
     /**
+     * Routing (R2, review R7): a second listener on this same ClientLevel hook instead of a second mixin on the same
+     * methods. Called on the game thread for every real change (old state != new state), before the recorder and
+     * whether the recorder is on or not; its exceptions are caught here (first 5 logged).
+     */
+    public interface BlockListener {
+        void changed(ClientLevel level, BlockPos pos, BlockState from, BlockState to);
+    }
+
+    /** The routing listener, or null. While set, the hook reads the old state even with the recorder off. */
+    public static volatile BlockListener routeListener;
+    private static int listenerErrors;
+
+    /**
      * The mixin's HEAD: remembers the old state at pos (only while a recorder is installed and on; game thread only, as
      * every client block change is). Each call is matched by one {@link #popOld} at RETURN on the same thread.
      */
     public static void pushOld(net.minecraft.world.level.Level level, BlockPos pos) {
         if (!Minecraft.getInstance().isSameThread()) return;
         FlightRecorder r = active;
-        if (depth < OLD.length) OLD[depth] = r != null && r.on ? level.getBlockState(pos) : null;
+        if (depth < OLD.length) OLD[depth] = (r != null && r.on) || routeListener != null ? level.getBlockState(pos) : null;
         depth++;
     }
 
@@ -367,6 +380,14 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
 
     /** The mixin's entry: a block the client set changed from {@code from} to {@code to}. Never throws. */
     public static void blockChanged(ClientLevel level, BlockPos pos, BlockState from, BlockState to, boolean byBot) {
+        BlockListener l = routeListener;
+        if (l != null && from != to) {
+            try {
+                l.changed(level, pos, from, to);
+            } catch (Throwable t) {
+                if (++listenerErrors <= 5) LOG.warn("[entropybot] route block listener: {}", t.toString());
+            }
+        }
         FlightRecorder r = active;
         if (r == null || !r.on || from == to) return;
         try {
