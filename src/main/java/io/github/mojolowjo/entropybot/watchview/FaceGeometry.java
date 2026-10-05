@@ -28,4 +28,33 @@ public final class FaceGeometry {
         for (int i = 0; i < 4; i++) for (int j = 0; j < 5; j++) out[i][j] = (float) c[i][j];
         return out;
     }
+
+    /**
+     * The quad's front-face normal from its winding (OpenGL's default: counter-clockwise seen from the front, the side
+     * vanilla's back-face culling keeps): (v1 - v0) x (v2 - v0), rounded to -1/0/1. For every side it points into the air
+     * cell ({@link Shell#OFF}[side]), which is what the dollhouse view relies on (JUnit checks it).
+     */
+    public static int[] frontNormal(float[][] c) {
+        double ax = c[1][0] - c[0][0], ay = c[1][1] - c[0][1], az = c[1][2] - c[0][2];
+        double bx = c[2][0] - c[0][0], by = c[2][1] - c[0][1], bz = c[2][2] - c[0][2];
+        double nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+        return new int[]{(int) Math.signum(Math.round(nx * 1000)), (int) Math.signum(Math.round(ny * 1000)), (int) Math.signum(Math.round(nz * 1000))};
+    }
+
+    /**
+     * Dollhouse rule (back-face culling): the face {@code side} of the block at bx by bz is drawn only when the camera is
+     * on its air side of the face's plane. So from a camera above and beside a tunnel, the floor and the far wall show,
+     * the ceiling and the near wall drop out. Pure.
+     */
+    public static boolean facesCamera(int bx, int by, int bz, int side, double camX, double camY, double camZ) {
+        return switch (side) {
+            case 0 -> camY < by;
+            case 1 -> camY > by + 1;
+            case 2 -> camZ < bz;
+            case 3 -> camZ > bz + 1;
+            case 4 -> camX < bx;
+            case 5 -> camX > bx + 1;
+            default -> throw new IllegalArgumentException("side " + side);
+        };
+    }
 }

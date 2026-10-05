@@ -76,6 +76,7 @@ public final class Core {
                 if (inWorld && ready) mineNotes.flush();      // S1: the miner's notes are written when leaving the world
                 if (inWorld) io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.leftWorld();     // camera v1/v2: the old view and cap back
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.leftWorld();   // camera v2: known air saved
+                if (inWorld) io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.leftWorld();  // watch seen: seen faces saved
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
                 inWorld = false;
                 return;
@@ -92,9 +93,12 @@ public final class Core {
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try { mineNotes.flush(); } catch (Throwable ignored) {}
                     try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
+                    try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable ignored) {}
                 }, "entropybot-mine-notes"));
                 io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(files.root());
                 LOG.info("[entropybot] watch tunnel: {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote());
+                io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(files.root());
+                LOG.info("[entropybot] watch seen: {}", io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
@@ -136,6 +140,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
             io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.tick(tick);      // camera v2: known air (never throws)
+            io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.tick(tick);     // watch seen: the visible-faces sampler (never throws)
             io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.tick(tick);     // routing R2: the map builder (never throws)
         } catch (Throwable t) {
             errors++;

@@ -61,6 +61,12 @@ public final class WatchChecks {
         return out;
     }
 
+    /** watch seen (0.16.0): on, in a world, on for over 2 s, and nothing sampled for 2 s (-1 = never). */
+    public static boolean seenStalled(boolean on, boolean inWorld, long onForMs, long msSinceSample) {
+        if (!on || !inWorld || onForMs <= 2000) return false;
+        return msSinceSample < 0 || msSinceSample > 2000;
+    }
+
     /** The status words for the terrain-skip hook. perSec -1 = not measured yet. */
     public static String skipReport(boolean applied, boolean tunnelOn, long perSec, long total) {
         if (!applied) return "drawn, then cleared (skip hook NOT applied: costs frame time, hides nothing less)";

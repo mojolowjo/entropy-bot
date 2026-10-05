@@ -110,6 +110,19 @@ public final class TunnelView {
 
     public double height() { return height; }
 
+    /** 0.16.0 {@code watch tunnel dollhouse}: back-face culling and the depth test for the faces (see TunnelMesh.draw). Per session. */
+    private volatile boolean dollhouse;
+
+    public boolean dollhouse() { return dollhouse; }
+
+    public void setDollhouse(boolean on) { dollhouse = on; }
+
+    /** The status words for the face drawing mode. */
+    public static String drawMode(boolean dollhouse) {
+        return dollhouse ? "dollhouse (back-face culling and depth test on, opaque: only floors and far walls facing the camera)"
+                : "see-through (every face blended at alpha " + TunnelMesh.ALPHA + "/255, depth test and culling off)";
+    }
+
     public void setHeight(double h) {
         height = h;
         pose = null;
@@ -408,17 +421,25 @@ public final class TunnelView {
             BlockPos c = p.blockPosition();
             long now = System.currentTimeMillis();
             long version = known.version();
+            SeenFaces seen = SeenSampler.INSTANCE.store();
+            long seenVersion = seen.version();
+            boolean tint = SeenSampler.INSTANCE.on();
             double mx = c.getX() - mesh.ox, my = c.getY() - mesh.oy, mz = c.getZ() - mesh.oz;
-            if (MeshRule.due(mesh.built, version, mesh.builtVersion, now, mesh.builtMs, mx * mx + my * my + mz * mz)) {
+            if (MeshRule.due(mesh.built, version, mesh.builtVersion, seenVersion, mesh.builtSeenVersion, tint, mesh.builtTint, now, mesh.builtMs,
+                    mx * mx + my * my + mz * mz)) {
                 String dim = Guard.dimOf(level);
                 int radius = MeshRule.radius(mc.options.getEffectiveRenderDistance());
                 long[] cells = known.near(dim, c.getX(), c.getY(), c.getZ(), radius);
                 BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-                Shell.Result r = Shell.build(cells, (x, y, z) -> kind(level, m.set(x, y, z)), c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
-                mesh.rebuild(r.faces(), level, c.getX(), c.getY(), c.getZ(), version, r.capped());
+                Shell.World w = (x, y, z) -> kind(level, m.set(x, y, z));
+                Shell.Result r = Shell.build(cells, w, c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
+                // 0.16.0: the faces the bot's own view saw (watch seen), with the dug-tunnel shell, under the same cap
+                SeenMesh.Result u = SeenMesh.union(r.faces(), r.capped(), seen.near(dim, c.getX(), c.getY(), c.getZ(), radius), w,
+                        c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
+                mesh.rebuild(u.faces(), level, c.getX(), c.getY(), c.getZ(), version, seenVersion, tint, u.capped());
             }
             Vec3 cam = e.getCamera().getPosition();
-            mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam);
+            mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, dollhouse);
             float partial = e.getPartialTick().getGameTimeDeltaPartialTick(false);
             Vec3 at = p.getPosition(partial);
             mesh.drawMarker(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, p.getBoundingBox().move(at.subtract(p.position())));
@@ -477,7 +498,10 @@ public final class TunnelView {
                 .append(guard.misses() > 0 ? " - see check" : "").append(')');
         sb.append(" | terrain draw: ").append(WatchChecks.skipReport(MixinFlags.terrainSkipApplied, on, sps, sk));
         sb.append(" | entities drawn ").append(lastEntities).append(" (the bot, mobs and players within ").append((int) WorldVeil.ENTITY_RADIUS).append(')');
+        sb.append(" | faces: ").append(drawMode(dollhouse));
         sb.append(" | faces drawn ").append(mesh.faces());
+        if (mesh.seenDrawn > 0 || SeenSampler.INSTANCE.on())
+            sb.append(" (").append(mesh.seenDrawn).append(" from watch seen").append(SeenSampler.INSTANCE.on() ? ", cyan" : "").append(')');
         if (mesh.flatFaces > 0) sb.append(" (").append(mesh.flatFaces).append(" flat-coloured: no sprite)");
         if (mesh.built) sb.append(", last rebuild ").append((now - mesh.builtMs) / 1000).append(" s ago in ").append(mesh.buildMs).append(" ms")
                 .append(mesh.capped ? " (capped at " + MeshRule.MAX_FACES + " faces, nearest first)" : "");
@@ -496,6 +520,7 @@ public final class TunnelView {
         List<SelfCheck.Finding> out = new java.util.ArrayList<>(WatchChecks.findings(MixinFlags.watchApplied, positionHookIn(), on,
                 lastDrawMs == 0 ? -1 : now - lastDrawMs, on ? now - onSinceMs : 0, lastFrameMs == 0 ? -1 : now - lastFrameMs, offByError));
         out.addAll(WatchChecks.veilFindings(guard.misses(), MixinFlags.terrainSkipApplied, on, on ? now - onSinceMs : 0, skippedLayers.get() - skipAtStart));
+        out.addAll(SeenSampler.INSTANCE.findings());                // 0.16.0: watch seen (seensampler)
         return out;
     }
 

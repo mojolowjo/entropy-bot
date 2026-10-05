@@ -130,7 +130,16 @@ public final class WatchCamera {
         return on && !TunnelView.INSTANCE.on() ? distance : -1f;
     }
 
-    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right] | watch shot";
+    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]] | watch dollhouse [on|off] | watch seen [on|off|status] | watch shot";
+
+    /** Pure: "dollhouse", "dollhouse on|off" -> true/false for the new state given the old one, or null when not understood. */
+    public static Boolean parseDollhouse(String a, boolean now) {
+        String t = a == null ? "" : a.trim();
+        if (t.equals("dollhouse")) return !now;          // a bare word toggles
+        if (t.equals("dollhouse on")) return true;
+        if (t.equals("dollhouse off")) return false;
+        return null;
+    }
 
     /** "watch" | "watch off" | "watch status" | "watch tunnel ..." (PM, owner): the answer. */
     public String command(String text) {
@@ -141,9 +150,11 @@ public final class WatchCamera {
             String h = hookLine();
             return "watch camera: " + (on ? "on (behind the bot, " + distance + " blocks, following its walking direction)" : "off") + " | " + h
                     + " | angle edits so far: " + angleEdits.get() + (on && angleEdits.get() == 0 ? " (NONE: the angle listener is not working)" : "")
-                    + " | yaw " + Math.round(yaw) + " | " + TunnelView.INSTANCE.status();
+                    + " | yaw " + Math.round(yaw) + " | " + TunnelView.INSTANCE.status() + " | " + io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.status();
         }
         if (t.equals("tunnel") || t.startsWith("tunnel ")) return tunnel(t.substring(6).trim());
+        if (t.equals("dollhouse") || t.startsWith("dollhouse ")) return tunnel(t);          // alias of watch tunnel dollhouse
+        if (t.equals("seen") || t.startsWith("seen ")) return seen(t.substring(4).trim());
         if (t.equals("probe") || t.equals("probe on")) {
             WatchProbe.INSTANCE.setOn(true);
             return "ok: render-stage probe on (red/green/blue boxes around the bot at three stages); watch probe status | watch probe off | watch shot";
@@ -197,11 +208,18 @@ public final class WatchCamera {
                 tv.setHeight(h);
                 return "ok: the tunnel camera sits " + h + " blocks above the bot (through rock: only what the bot opened is drawn)";
             }
+            Boolean dh = parseDollhouse(a, tv.dollhouse());
+            if (dh != null) {
+                tv.setDollhouse(dh);
+                return "ok: tunnel view faces: " + TunnelView.drawMode(dh) + (tv.on() ? "" : " (applies when watch tunnel is on)")
+                        + "; kept until the game restarts";
+            }
+            if (a.startsWith("dollhouse")) return "error: watch tunnel dollhouse [on|off] (now " + (tv.dollhouse() ? "on" : "off") + ")";
             if (a.equals("turn left") || a.equals("turn right")) {
                 tv.setYaw(TunnelPose.quarter(tv.yaw(), a.endsWith("left")));
                 return "ok: the tunnel camera looks " + compass(tv.yaw()) + " now";
             }
-            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right";
+            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right | watch tunnel dollhouse [on|off]";
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.player == null) return "error: not in a world";
             if (!io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied)
@@ -215,6 +233,22 @@ public final class WatchCamera {
             return "ok: tunnel view on: the camera floats above and behind the bot looking " + compass(tv.yaw())
                     + " and passes through blocks; the real world is hidden, only the walls of the tunnels and caves it opened, the bot and mobs are drawn; "
                     + WATCH_FPS + " FPS while on. watch tunnel turn left|right, watch tunnel height 1-40, watch tunnel off.";
+        } catch (Throwable e) {
+            return "error: " + e;
+        }
+    }
+
+    /** {@code watch seen [on|off|status]}: the visible-faces sampler (0.16.0). */
+    private String seen(String a) {
+        io.github.mojolowjo.entropybot.watchview.SeenSampler s = io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE;
+        try {
+            if (a.equals("status")) return s.status();
+            if (a.equals("off") || a.equals("stop")) return s.setOn(false);
+            if (a.isEmpty() || a.equals("on")) {
+                if (net.minecraft.client.Minecraft.getInstance().player == null) return "error: not in a world";
+                return s.setOn(true);
+            }
+            return "error: watch seen [on|off|status]";
         } catch (Throwable e) {
             return "error: " + e;
         }
@@ -302,7 +336,8 @@ public final class WatchCamera {
         on = false;
         TunnelView.INSTANCE.stop();
         endViewIfIdle();
-        return was ? "ok: the normal view is back" : "ok: the watch camera was off";
+        String seen = io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.on() ? " (watch seen is still recording: watch seen off stops it)" : "";
+        return (was ? "ok: the normal view is back" : "ok: the watch camera was off") + seen;
     }
 
     /** The bot left the world (or the game is going): put the old view and cap back. Never throws. */

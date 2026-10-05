@@ -37,32 +37,39 @@ final class TunnelMesh {
     static final double INSET = 0.004;
 
     private VertexBuffer tex, flat;
-    int texFaces, flatFaces, ox, oy, oz;
-    boolean built, capped;
-    long builtVersion, builtMs, buildMs;
+    int texFaces, flatFaces, ox, oy, oz, seenDrawn;
+    boolean built, capped, builtTint;
+    long builtVersion, builtSeenVersion, builtMs, buildMs;
     int spriteFallbacks;
     private final Map<BlockState, TextureAtlasSprite[]> sprites = new HashMap<>();
     private final RandomSource random = RandomSource.create(42L);
 
     int faces() { return texFaces + flatFaces; }
 
-    /** Rebuilds both buffers from the faces, around origin ox oy oz (keeps the floats small). */
-    void rebuild(List<Shell.Face> faces, ClientLevel level, int ox, int oy, int oz, long version, boolean capped) {
+    /**
+     * Rebuilds both buffers from the faces, around origin ox oy oz (keeps the floats small). Seen faces (0.16.0) are
+     * dimmed by the light they were seen at ({@link SeenRule#dim}) and tinted cyan when {@code tint} (watch seen on).
+     */
+    void rebuild(List<SeenMesh.MeshFace> faces, ClientLevel level, int ox, int oy, int oz, long version, long seenVersion, boolean tintSeen, boolean capped) {
         long t0 = System.nanoTime();
         this.ox = ox;
         this.oy = oy;
         this.oz = oz;
         Minecraft mc = Minecraft.getInstance();
-        int texN = 0, flatN = 0;
+        int texN = 0, flatN = 0, seenN = 0;
         try (ByteBufferBuilder tb = new ByteBufferBuilder(Math.max(256, faces.size() * 4 * 24));
              ByteBufferBuilder fb = new ByteBufferBuilder(256)) {
             BufferBuilder tbuf = new BufferBuilder(tb, VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
             BufferBuilder fbuf = new BufferBuilder(fb, VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
             BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-            for (Shell.Face f : faces) {
+            for (SeenMesh.MeshFace f : faces) {
                 pos.set(f.x(), f.y(), f.z());
                 BlockState state = level.getBlockState(pos);
                 float shade = FaceGeometry.SHADE[f.side()];
+                if (f.seen()) {
+                    shade *= SeenRule.dim(f.light());
+                    seenN++;
+                }
                 float[][] c = FaceGeometry.corners(f.x(), f.y(), f.z(), f.side(), INSET, ox, oy, oz);
                 TextureAtlasSprite sprite = null;
                 int tint = -1;
@@ -84,6 +91,12 @@ final class TunnelMesh {
                     r = tint >> 16 & 255;
                     g = tint >> 8 & 255;
                     b = tint & 255;
+                }
+                if (f.seen() && tintSeen) {
+                    int[] t = SeenRule.tint(r, g, b);
+                    r = t[0];
+                    g = t[1];
+                    b = t[2];
                 }
                 if (sprite != null) {
                     float u0 = sprite.getU0(), u1 = sprite.getU1(), v0 = sprite.getV0(), v1 = sprite.getV1();
@@ -110,9 +123,12 @@ final class TunnelMesh {
         }
         texFaces = texN;
         flatFaces = flatN;
+        seenDrawn = seenN;
         built = true;
         this.capped = capped;
         builtVersion = version;
+        builtSeenVersion = seenVersion;
+        builtTint = tintSeen;
         builtMs = System.currentTimeMillis();
         buildMs = (System.nanoTime() - t0) / 1_000_000;
     }
@@ -152,15 +168,30 @@ final class TunnelMesh {
         return vb;
     }
 
-    /** Draws the cached faces for this frame's camera. */
-    void draw(Matrix4f modelView, Matrix4f projection, Vec3 cam) {
+    /**
+     * Draws the cached faces for this frame's camera. Normal: half transparent, blended, depth test and culling off (every
+     * layer shows through every other). Dollhouse (0.16.0, {@code watch tunnel dollhouse}): opaque (no blending), back-face
+     * culling and the depth test on with depth writes, so each face shows only from its air side (its winding's front,
+     * checked by FaceGeometry.frontNormal in JUnit): from a camera outside the rock the floor and the far walls show and the
+     * ceiling and near walls drop out, and nearer faces hide farther ones. The veil cleared the depth buffer before (0.15.4),
+     * so only the view's own entities and faces take part. The state is restored in {@code finally} either way.
+     */
+    void draw(Matrix4f modelView, Matrix4f projection, Vec3 cam, boolean dollhouse) {
         if (tex == null && flat == null) return;
         Matrix4f mv = new Matrix4f(modelView).translate((float) (ox - cam.x), (float) (oy - cam.y), (float) (oz - cam.z));
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
+        if (dollhouse) {
+            RenderSystem.disableBlend();
+            RenderSystem.enableCull();
+            RenderSystem.enableDepthTest();
+            RenderSystem.depthFunc(org.lwjgl.opengl.GL11.GL_LEQUAL);
+            RenderSystem.depthMask(true);
+        } else {
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableCull();
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+        }
         try {
             if (tex != null) {
                 RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
@@ -229,6 +260,7 @@ final class TunnelMesh {
         built = false;
         texFaces = 0;
         flatFaces = 0;
+        seenDrawn = 0;
         sprites.clear();
     }
 }

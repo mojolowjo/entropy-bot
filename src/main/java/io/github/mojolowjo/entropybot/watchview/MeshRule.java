@@ -22,6 +22,21 @@ public final class MeshRule {
         return nowMs - builtMs >= REFRESH_MS;
     }
 
+    /** Seen faces stream in while the bot looks around a cave: a rebuild for them alone waits at least this long. */
+    public static final long SEEN_GAP_MS = 2000;
+
+    /**
+     * 0.16.0: also rebuild when the seen-face store changed (at most every {@link #SEEN_GAP_MS}) or the cyan tint was
+     * switched (watch seen on/off), besides {@link #due}'s reasons.
+     */
+    public static boolean due(boolean built, long version, long builtVersion, long seenVersion, long builtSeenVersion, boolean tint, boolean builtTint,
+                              long nowMs, long builtMs, double movedSq) {
+        if (due(built, version, builtVersion, nowMs, builtMs, movedSq)) return true;
+        if (nowMs - builtMs < MIN_GAP_MS) return false;
+        if (tint != builtTint) return true;
+        return seenVersion != builtSeenVersion && nowMs - builtMs >= SEEN_GAP_MS;
+    }
+
     /** The radius of known cells drawn, from the render distance in chunks: the render distance, 32 to 128 blocks. */
     public static int radius(int renderChunks) {
         return Math.max(32, Math.min(128, renderChunks * 16));
