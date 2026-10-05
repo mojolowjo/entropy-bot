@@ -79,11 +79,55 @@ public final class DebugVerbs {
                         + String.join(" | ", out) + (liquid != null ? " | next to " + liquid : "");
             }
             case "changes" -> { return changes(level, rec, w, now, zone); }
+            case "mobs" -> { return mobs(level, p, w); }
             default -> { return "unknown debug verb \"" + verb + "\". " + DebugRules.LIST; }
         }
     }
 
     // ---- the game ----
+
+    /**
+     * {@code debug mobs [radius]}: every living entity within the radius (default 24, at most 64), nearest first (20 rows):
+     * registry id, java class and its superclasses up to Mob, health, distance, line of sight, whether it is an
+     * {@code Enemy} / {@code NeutralMob}, and what the fight code (Reflexes.nearestThreat) makes of it right now, with the
+     * reason when it does not count. Read-only; it answers "why does the bot not fight that mob".
+     */
+    static String mobs(ClientLevel level, LocalPlayer p, List<String> w) {
+        int radius = DebugRules.optInt(w, 1, 24, 1, 64, "usage: debug mobs [radius]");
+        record Row(double d, String text) {}
+        List<Row> rows = new ArrayList<>();
+        for (net.minecraft.world.entity.Entity e : level.entitiesForRendering()) {
+            if (e == p || !(e instanceof net.minecraft.world.entity.LivingEntity le)) continue;
+            double d = p.distanceTo(e);
+            if (d > radius) continue;
+            boolean enemy = e instanceof net.minecraft.world.entity.monster.Enemy;
+            boolean neutral = e instanceof net.minecraft.world.entity.NeutralMob;
+            boolean los = false;
+            try { los = p.hasLineOfSight(e); } catch (RuntimeException ignored) {}
+            String verdict;
+            if (!le.isAlive()) verdict = "dead";
+            else if (!enemy) verdict = "NOT counted: not an Enemy (a hostile-type check; modded mobs on another base class fail it)";
+            else if (neutral) verdict = "NOT counted: NeutralMob (ignored unless something just hit the bot)";
+            else if (d > io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(false)) verdict = "NOT counted: too far (look radius " + io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(false) + ", " + io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(true) + " when just hit)";
+            else if (!io.github.mojolowjo.entropybot.engine.ReflexRules.counts(d, false, los)) verdict = "NOT counted: no line of sight (only within 2.5 blocks without one)";
+            else verdict = "counted as a threat";
+            StringBuilder cls = new StringBuilder();
+            Class<?> c = e.getClass();
+            for (int i = 0; c != null && i < 5; i++, c = c.getSuperclass()) {
+                if (i > 0) cls.append(" < ");
+                cls.append(c.getSimpleName().isEmpty() ? c.getName() : c.getName().substring(c.getName().lastIndexOf('.') + 1));
+                if (c == net.minecraft.world.entity.Mob.class || c == net.minecraft.world.entity.LivingEntity.class) break;
+            }
+            String id = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+            rows.add(new Row(d, String.format("%s \"%s\" %.1f blocks, hp %.1f/%.1f, los %s, Enemy %s, Neutral %s | %s | %s",
+                    id, e.getName().getString(), d, le.getHealth(), le.getMaxHealth(), los, enemy, neutral, cls, verdict)));
+        }
+        rows.sort(java.util.Comparator.comparingDouble(Row::d));
+        if (rows.isEmpty()) return "no living entities within " + radius + " blocks";
+        StringBuilder sb = new StringBuilder("mobs within " + radius + " (" + rows.size() + (rows.size() > 20 ? ", nearest 20" : "") + "):");
+        for (int i = 0; i < Math.min(20, rows.size()); i++) sb.append("\n").append(rows.get(i).text());
+        return sb.toString();
+    }
 
     /** JSON: [{slot, id, n, dur?, max?, ench?: {id: level}}] for every filled slot (0-8 hotbar, 9-35 bag, 36-39 armor, 40 offhand). */
     static String inv(LocalPlayer p) {
