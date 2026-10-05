@@ -36,6 +36,16 @@ public final class EscapePlan {
 
     /** The cheapest step out from feet, or null when every step needs a forbidden block or more than MAX_BREAKS. */
     public static Escape plan(Grid g, int[] feet, int[] dest) {
+        return plan(g, feet, dest, false);
+    }
+
+    /**
+     * towardGoal (0.19.7, a walk that ended short): only steps clearly closer to dest count (never back into the
+     * pocket it came from), nearest to dest first, then the fewest breaks; so a sealed pit is climbed toward the goal.
+     */
+    public static Escape plan(Grid g, int[] feet, int[] dest, boolean towardGoal) {
+        boolean toward = towardGoal && dest != null;
+        double here = dest == null ? 0 : Math.sqrt(sq(feet[0] - dest[0]) + sq(feet[1] - dest[1]) + sq(feet[2] - dest[2]));
         Escape best = null;
         double bestDist = Double.MAX_VALUE;
         for (int dy : new int[]{0, 1, -1}) {
@@ -63,6 +73,14 @@ public final class EscapePlan {
                 }
                 if (!ok || breaks.size() > MAX_BREAKS) continue;
                 double d = dest == null ? 0 : Math.sqrt(sq(tx - dest[0]) + sq(ty - dest[1]) + sq(tz - dest[2]));
+                if (toward) {
+                    if (d >= here - 0.5) continue;
+                    if (best == null || d < bestDist - 1e-9 || (Math.abs(d - bestDist) < 1e-9 && breaks.size() < best.breaks().size())) {
+                        best = new Escape(new int[]{tx, ty, tz}, breaks);
+                        bestDist = d;
+                    }
+                    continue;
+                }
                 if (best == null || breaks.size() < best.breaks().size() || (breaks.size() == best.breaks().size() && d < bestDist - 1e-9)) {
                     best = new Escape(new int[]{tx, ty, tz}, breaks);
                     bestDist = d;

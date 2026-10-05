@@ -60,6 +60,14 @@ public final class RestoreRules {
         return natural(blockId) ? null : "not terrain";
     }
 
+    /**
+     * 0.19.7: nothing solid over the bot's head (surfaceY: the first free cell over the column's top non-leaf block,
+     * the MOTION_BLOCKING_NO_LEAVES heightmap): an open pit under a tree crown counts as sky.
+     */
+    public static boolean openAbove(int surfaceY, int feetY) {
+        return surfaceY <= feetY + 1;
+    }
+
     /** P1 answer 3: underground = no sky over the bot and at least 3 blocks under the surface there. */
     public static boolean underground(boolean skyVisible, int surfaceY, int feetY) {
         return !skyVisible && feetY <= surfaceY - 3;

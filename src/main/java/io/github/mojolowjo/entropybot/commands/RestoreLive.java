@@ -362,6 +362,7 @@ public final class RestoreLive {
         }
         List<Box> protect = protectBoxes();
         List<int[]> built = new ArrayList<>();
+        java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();   // 0.19.7: what the count is made of, in the log
         int r = BuildSpotter.RADIUS;
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) {
@@ -375,7 +376,10 @@ public final class RestoreLive {
                     if (BuildSpotter.ownKind(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) continue;
                     boolean covered = false;
                     for (Box b : protect) if (b.contains(dim, x, y, z)) { covered = true; break; }
-                    if (!covered) built.add(new int[]{x, y, z});
+                    if (!covered) {
+                        built.add(new int[]{x, y, z});
+                        kinds.merge(BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath(), 1, Integer::sum);
+                    }
                 }
             }
         }
@@ -384,7 +388,7 @@ public final class RestoreLive {
         RestoreBook.BuildHint added = book.addHint(h, dim, System.currentTimeMillis());
         if (added == null) return;                            // this spot was mentioned before
         changed();
-        LOG.info("[entropybot] restore: {} built blocks near {} - suggested {}", h.count(), Jobs.fmt(h.center()), h.command());
+        LOG.info("[entropybot] restore: {} built blocks near {} - suggested {} (kinds in the scan: {})", h.count(), Jobs.fmt(h.center()), h.command(), kinds);
         if (warnedHints.add(h.key())) c.whisper(c.owner(), h.whisper());
     }
 

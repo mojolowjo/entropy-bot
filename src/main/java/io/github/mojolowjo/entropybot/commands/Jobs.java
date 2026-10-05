@@ -60,6 +60,8 @@ public final class Jobs {
         long bestTick, lastStepTick = -1;
         // stepping off a block Baritone can't plan from (a modded altar, a pedestal): ticks left, tries made
         int unstickLeft, unstickTries;
+        /** P1 fix: how often a walk that Baritone ended short of its goal tried again (WalkEnd). */
+        int shortTries;
         double[] unstickTo;
         // B7b part 2: a job made of steps, the goal object of its walk (unsticking plans it again), and whether the
         // open menu is closed when it ends ("always", or "fail" = unless it ended ok)
@@ -100,7 +102,7 @@ public final class Jobs {
 
     static final java.util.concurrent.atomic.AtomicLong NEXT_ID = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
     /** P1: escapes per job (each one step out). */
-    static final int ESCAPE_MAX = 3;
+    static final int ESCAPE_MAX = 5;
     static final long ESCAPE_BLOCK_TICKS = 200;
 
     static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 12;
@@ -745,6 +747,21 @@ public final class Jobs {
         if ("nopath".equals(ev)) {
             finish(noPathResult(p, j));
         } else if (j.type.equals("travel")) {
+            // P1 fix: Baritone goes idle without a no-path event when the goal can't be reached (it walks to the
+            // closest spot, or plans nothing from a sealed pit): the end position decides
+            int[] d = travelDest(j), me = here(p);
+            boolean moving = j.label != null && j.label.startsWith("following");
+            if (!j.reflex && !moving && d != null && !WalkEnd.arrived(me, d)) {
+                if (WalkEnd.retryShort(j.shortTries)) {
+                    j.shortTries++;
+                    LOG.info("[entropybot] walk ended short at {} ({} from {}): stepping off or digging out, then again", fmt(me),
+                            Math.round(Math.sqrt(distSq(me, d))), fmt(d));
+                    // a free step: step there and plan again; none: the escape dig-out (underground, inside the areas)
+                    if (recoverShort(p, j)) return;
+                }
+                finish(WalkEnd.shortResult(me, d));
+                return;
+            }
             finish("ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
         } else {
             String r = useBlock(p, j.bed);
@@ -773,8 +790,28 @@ public final class Jobs {
 
     /** Picks the free spot next to the bot nearest the destination and starts walking onto it; false when there is none. */
     boolean startUnstick(LocalPlayer p, Job j) {
-        Minecraft mc = Minecraft.getInstance();
+        BlockPos best = bestFreeStep(p, travelDest(j));
+        if (best == null) return startEscape(p, j);          // P1: boxed in: dig out (underground, inside the areas only)
+        return stepTo(p, j, best);
+    }
+
+    /**
+     * P1 fix (0.19.7): a walk that Baritone ended short of its goal. A free step that brings the bot closer: step there
+     * and plan again; none (a sealed pit, or a pocket whose only free cell leads back): the escape dig-out.
+     */
+    boolean recoverShort(LocalPlayer p, Job j) {
         int[] me = here(p), d = travelDest(j);
+        BlockPos best = bestFreeStep(p, d);
+        double hereDist = d == null ? 0 : Math.sqrt(distSq(me, d));
+        double stepDist = best == null || d == null ? Double.MAX_VALUE : Math.sqrt(distSq(new int[]{best.getX(), best.getY(), best.getZ()}, d));
+        if (WalkEnd.stepHelps(stepDist, hereDist)) return j.unstickTries < UNSTICK_TRIES && stepTo(p, j, best);
+        return startEscape(p, j, true);
+    }
+
+    /** The free spot next to the bot nearest the destination, or null. */
+    private static BlockPos bestFreeStep(LocalPlayer p, int[] d) {
+        Minecraft mc = Minecraft.getInstance();
+        int[] me = here(p);
         BlockPos best = null;
         double bestScore = Double.MAX_VALUE;
         for (int dy = 1; dy >= -1; dy--) {
@@ -791,7 +828,12 @@ public final class Jobs {
                 }
             }
         }
-        if (best == null) return startEscape(p, j);          // P1: boxed in: dig out (underground, inside the areas only)
+        return best;
+    }
+
+    private boolean stepTo(LocalPlayer p, Job j, BlockPos best) {
+        Minecraft mc = Minecraft.getInstance();
+        int[] me = here(p);
         IBaritone b = baritone();
         if (b != null) cancel(b);
         j.unstickTries++;
@@ -844,14 +886,24 @@ public final class Jobs {
      * step there. False (and a log line saying why) when it may not or can't.
      */
     boolean startEscape(LocalPlayer p, Job j) {
+        return startEscape(p, j, false);
+    }
+
+    /** towardGoal: a walk that ended short (only steps closer to the goal; EscapePlan). */
+    boolean startEscape(LocalPlayer p, Job j, boolean towardGoal) {
         if (j.escapes >= ESCAPE_MAX || j.reflex) return false;
         Minecraft mc = Minecraft.getInstance();
         net.minecraft.world.level.Level level = mc.level;
         int[] me = here(p);
         String dim = Guard.dimOf(level);
-        boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2]));
-        int surface = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
-        if (!RestoreRules.underground(sky, surface, me[1])) {
+        // 0.19.7: a tree crown over an open pit is no roof (live: canSeeSky said no under birch leaves 10 up), so the
+        // surface ignores leaves and "sky" is also true when nothing but leaves is over the head
+        int surface = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, me[0], me[2]);
+        boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
+        // 0.19.7: a climb out this job's own dig-out started may go on near the surface (live: the first step out of a
+        // sealed pit left the bot in a 2-deep hole of its own, open to the sky, that it can't jump out of)
+        boolean ownClimb = towardGoal && j.escapeAt != null && Math.abs(me[1] - j.escapeAt[1]) <= 4;
+        if (!RestoreRules.underground(sky, surface, me[1]) && !ownClimb) {
             LOG.info("[entropybot] stuck at {} with no free step, on the surface: no dig-out there (owner's rule)", fmt(me));
             return false;
         }
@@ -860,7 +912,7 @@ public final class Jobs {
             return false;
         }
         io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
-        EscapePlan.Escape e = EscapePlan.plan((x, y, z) -> escapeKind(level, pol, dim, x, y, z), me, travelDest(j));
+        EscapePlan.Escape e = EscapePlan.plan((x, y, z) -> escapeKind(level, pol, dim, x, y, z), me, travelDest(j), towardGoal);
         if (e == null) {
             LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}", fmt(me), EscapePlan.MAX_BREAKS);
             core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);

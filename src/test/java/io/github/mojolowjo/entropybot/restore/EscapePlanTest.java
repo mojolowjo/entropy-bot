@@ -54,6 +54,21 @@ class EscapePlanTest {
     }
 
     @Test
+    void towardGoalNeverStepsBackAndClimbsToAGoalAbove() {
+        // live 0.19.7: dug out from 0 to 1; the pocket's old cell (0) is open and was picked again, back and forth
+        World w = new World().set(0, 10, 0, EscapePlan.Kind.OPEN).set(0, 11, 0, EscapePlan.Kind.OPEN)
+                .set(1, 10, 0, EscapePlan.Kind.OPEN).set(1, 11, 0, EscapePlan.Kind.OPEN);
+        int[] goal = {10, 14, 0};
+        assertArrayEquals(new int[]{0, 10, 0}, EscapePlan.plan(w, new int[]{1, 10, 0}, goal).feet(), "plain mode: the free cell back");
+        EscapePlan.Escape e = EscapePlan.plan(w, new int[]{1, 10, 0}, goal, true);
+        assertNotNull(e);
+        assertArrayEquals(new int[]{2, 11, 0}, e.feet(), "up and on, toward the goal above");
+        // nothing closer is possible: null
+        w.fill = EscapePlan.Kind.FLOOR_ONLY;
+        assertNull(EscapePlan.plan(w, new int[]{1, 10, 0}, goal, true));
+    }
+
+    @Test
     void protectedFluidOrBuiltCellsAreNeverBroken() {
         World w = new World().set(0, 10, 0, EscapePlan.Kind.OPEN).set(0, 11, 0, EscapePlan.Kind.OPEN);
         w.fill = EscapePlan.Kind.FLOOR_ONLY;                       // everything around is built / by water / in a protect box

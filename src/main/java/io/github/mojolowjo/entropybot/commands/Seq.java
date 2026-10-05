@@ -304,6 +304,7 @@ public final class Seq {
             j.goal = null;
             j.dest = st.pos;
             j.unstickTries = 0;
+            j.shortTries = 0;
             j.plainGoal = goal;
             j.legDest = null;
             // routing stage 1: ask the router (a plan within 300 ms, else plain); exact spots (the altar) stay plain
@@ -389,7 +390,14 @@ public final class Seq {
             return "next";
         }
         Vec3 center = new Vec3(st.pos[0] + 0.5, st.pos[1] + 0.5, st.pos[2] + 0.5);
-        if (p.getEyePosition().distanceTo(center) > 4.5) return "couldn't get close to " + fmt;
+        if (p.getEyePosition().distanceTo(center) > 4.5) {
+            // P1 fix: ended short: step off, or dig out when enclosed underground inside the areas, then walk again
+            if (WalkEnd.retryShort(j.shortTries)) {
+                j.shortTries++;
+                if (jobs.recoverShort(p, j)) return "wait";
+            }
+            return "couldn't get close to " + fmt;
+        }
         return "next";
     }
 
