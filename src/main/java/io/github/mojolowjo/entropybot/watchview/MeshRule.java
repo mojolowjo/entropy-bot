@@ -37,8 +37,11 @@ public final class MeshRule {
         return seenVersion != builtSeenVersion && nowMs - builtMs >= SEEN_GAP_MS;
     }
 
-    /** The radius of known cells drawn, from the render distance in chunks: the render distance, 32 to 128 blocks. */
+    /**
+     * The radius of faces drawn, from the render distance option in chunks: the render distance (0.16.1: up to 32 chunks
+     * = 512 blocks, as far as the rays reach; was capped at 128), at least 32 blocks. The face cap keeps the nearest.
+     */
     public static int radius(int renderChunks) {
-        return Math.max(32, Math.min(128, renderChunks * 16));
+        return Math.max(32, Math.min(512, renderChunks * 16));
     }
 }

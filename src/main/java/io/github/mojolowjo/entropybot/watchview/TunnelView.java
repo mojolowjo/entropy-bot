@@ -117,6 +117,35 @@ public final class TunnelView {
 
     public void setDollhouse(boolean on) { dollhouse = on; }
 
+    /**
+     * 0.16.1 {@code watch tunnel cut}: hide the faces between the camera and the bot (a cylinder of {@link #cutRadius()}
+     * along that line, {@link Cutaway}; drawn by the {@link CutShaders}). On by default: the owner asked for it
+     * (2026-10-04). Per session, like the dollhouse switch.
+     */
+    private volatile boolean cut = true;
+    private volatile double cutRadius = Cutaway.DEFAULT_RADIUS;
+    private final AtomicLong cutFrames = new AtomicLong();
+    private int cutMissLogs;
+
+    public boolean cut() { return cut; }
+
+    public void setCut(boolean on) {
+        cut = on;
+        cutMissLogs = 0;
+    }
+
+    public double cutRadius() { return cutRadius; }
+
+    public void setCutRadius(double r) { cutRadius = r; }
+
+    /** The status words for the cutaway. */
+    public String cutReport() {
+        if (!cut) return "off (watch tunnel cut on)";
+        String problem = CutShaders.problem();
+        if (problem != null) return "on but NOT working: " + problem + " - the faces are drawn without it (see check)";
+        return "on (radius " + cutRadius + ": nothing between the camera and the bot is drawn; " + cutFrames.get() + " frames cut)";
+    }
+
     /** The status words for the face drawing mode. */
     public static String drawMode(boolean dollhouse) {
         return dollhouse ? "dollhouse (back-face culling and depth test on, opaque: only floors and far walls facing the camera)"
@@ -421,27 +450,37 @@ public final class TunnelView {
             BlockPos c = p.blockPosition();
             long now = System.currentTimeMillis();
             long version = known.version();
-            SeenFaces seen = SeenSampler.INSTANCE.store();
-            long seenVersion = seen.version();
+            SeenFaces seen = SeenSampler.INSTANCE.store(), surface = SeenSampler.INSTANCE.surface();
+            long seenVersion = seen.version() + surface.version();         // both only grow: the sum moves when either does
             boolean tint = SeenSampler.INSTANCE.on();
             double mx = c.getX() - mesh.ox, my = c.getY() - mesh.oy, mz = c.getZ() - mesh.oz;
             if (MeshRule.due(mesh.built, version, mesh.builtVersion, seenVersion, mesh.builtSeenVersion, tint, mesh.builtTint, now, mesh.builtMs,
                     mx * mx + my * my + mz * mz)) {
+                long t0 = System.nanoTime();
                 String dim = Guard.dimOf(level);
-                int radius = MeshRule.radius(mc.options.getEffectiveRenderDistance());
+                int radius = MeshRule.radius(mc.options.renderDistance().get());   // 0.16.1: the option, as the rays' range
                 long[] cells = known.near(dim, c.getX(), c.getY(), c.getZ(), radius);
                 BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
                 Shell.World w = (x, y, z) -> kind(level, m.set(x, y, z));
                 Shell.Result r = Shell.build(cells, w, c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
-                // 0.16.0: the faces the bot's own view saw (watch seen), with the dug-tunnel shell, under the same cap
-                SeenMesh.Result u = SeenMesh.union(r.faces(), r.capped(), seen.near(dim, c.getX(), c.getY(), c.getZ(), radius), w,
-                        c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
+                // 0.16.0: the faces the bot's own view saw (watch seen), with the dug-tunnel shell, under the same cap;
+                // 0.16.1: and the surface store (faces under open sky, within the render distance)
+                BlockPos.MutableBlockPos m2 = new BlockPos.MutableBlockPos();
+                SeenRays.Cells rc = (x, y, z) -> SeenSampler.cell(level, m2.set(x, y, z));
+                SeenMesh.Result u = SeenMesh.union(r.faces(), r.capped(), seen.near(dim, c.getX(), c.getY(), c.getZ(), radius),
+                        surface.near(dim, c.getX(), c.getY(), c.getZ(), radius), rc, c.getX(), c.getY(), c.getZ(), MeshRule.MAX_FACES);
                 mesh.rebuild(u.faces(), level, c.getX(), c.getY(), c.getZ(), version, seenVersion, tint, u.capped());
+                mesh.noteRebuild((System.nanoTime() - t0) / 1_000_000);
             }
             Vec3 cam = e.getCamera().getPosition();
-            mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, dollhouse);
             float partial = e.getPartialTick().getGameTimeDeltaPartialTick(false);
             Vec3 at = p.getPosition(partial);
+            double[] cutArgs = cut ? new double[]{cam.x, cam.y, cam.z, at.x, at.y + p.getBbHeight() / 2.0, at.z, cutRadius} : null;
+            boolean cutDone = mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, dollhouse, cutArgs);
+            if (cut) {
+                if (cutDone) cutFrames.incrementAndGet();
+                else if (cutMissLogs++ < 1) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch tunnel: the cutaway is on but its shader is not available ({}); drawing without it", CutShaders.problem());
+            }
             mesh.drawMarker(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, p.getBoundingBox().move(at.subtract(p.position())));
             frames.incrementAndGet();
             lastDrawMs = now;
@@ -499,11 +538,13 @@ public final class TunnelView {
         sb.append(" | terrain draw: ").append(WatchChecks.skipReport(MixinFlags.terrainSkipApplied, on, sps, sk));
         sb.append(" | entities drawn ").append(lastEntities).append(" (the bot, mobs and players within ").append((int) WorldVeil.ENTITY_RADIUS).append(')');
         sb.append(" | faces: ").append(drawMode(dollhouse));
+        sb.append(" | cutaway: ").append(cutReport());
         sb.append(" | faces drawn ").append(mesh.faces());
-        if (mesh.seenDrawn > 0 || SeenSampler.INSTANCE.on())
-            sb.append(" (").append(mesh.seenDrawn).append(" from watch seen").append(SeenSampler.INSTANCE.on() ? ", cyan" : "").append(')');
+        sb.append(" (").append(mesh.seenDrawn).append(" seen underground, ").append(mesh.surfaceDrawn).append(" seen under open sky")
+                .append(SeenSampler.INSTANCE.on() ? ", both cyan" : "").append(", ").append(mesh.shapedDrawn).append(" on non-opaque blocks)");
         if (mesh.flatFaces > 0) sb.append(" (").append(mesh.flatFaces).append(" flat-coloured: no sprite)");
-        if (mesh.built) sb.append(", last rebuild ").append((now - mesh.builtMs) / 1000).append(" s ago in ").append(mesh.buildMs).append(" ms")
+        if (mesh.built) sb.append(", last rebuild ").append((now - mesh.builtMs) / 1000).append(" s ago in ").append(mesh.buildMs).append(" ms (max ")
+                .append(mesh.maxBuildMs).append(" ms over ").append(mesh.builds).append(" rebuilds)")
                 .append(mesh.capped ? " (capped at " + MeshRule.MAX_FACES + " faces, nearest first)" : "");
         if (fps >= 0) sb.append(" | ").append(fps).append(" frames/s drawn, camera placed ").append(pps).append("/s");
         sb.append(" | known air ").append(known.size()).append(" cells");
@@ -521,6 +562,9 @@ public final class TunnelView {
                 lastDrawMs == 0 ? -1 : now - lastDrawMs, on ? now - onSinceMs : 0, lastFrameMs == 0 ? -1 : now - lastFrameMs, offByError));
         out.addAll(WatchChecks.veilFindings(guard.misses(), MixinFlags.terrainSkipApplied, on, on ? now - onSinceMs : 0, skippedLayers.get() - skipAtStart));
         out.addAll(SeenSampler.INSTANCE.findings());                // 0.16.0: watch seen (seensampler)
+        String cutProblem = WatchChecks.cutProblem(cut, CutShaders.problem());   // 0.16.1: the cutaway shader (tunnelcut)
+        if (cutProblem != null) out.add(new SelfCheck.Finding("tunnelcut", cutProblem,
+                "the game log has [entropybot] watch tunnel cutaway shader lines; F3+T reloads the shaders; watch tunnel cut off hides this"));
         return out;
     }
 

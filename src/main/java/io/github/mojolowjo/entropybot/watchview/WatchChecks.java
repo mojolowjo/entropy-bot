@@ -67,6 +67,17 @@ public final class WatchChecks {
         return msSinceSample < 0 || msSinceSample > 2000;
     }
 
+    /**
+     * 0.16.1 check {@code tunnelcut}: the cutaway is on (the default) but its shader is not available (failed to load,
+     * compile or link, broke while drawing, or was never registered). The view then draws every face without the cut.
+     * Null when there is nothing to report (cut off, or the shader is fine).
+     */
+    public static String cutProblem(boolean cutOn, String shaderProblem) {
+        if (!cutOn || shaderProblem == null) return null;
+        return "watch tunnel cut is on, but the cutaway shader is not available (" + shaderProblem
+                + "): the tunnel view draws every face, also those between the camera and the bot";
+    }
+
     /** The status words for the terrain-skip hook. perSec -1 = not measured yet. */
     public static String skipReport(boolean applied, boolean tunnelOn, long perSec, long total) {
         if (!applied) return "drawn, then cleared (skip hook NOT applied: costs frame time, hides nothing less)";

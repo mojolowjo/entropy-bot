@@ -37,14 +37,39 @@ final class TunnelMesh {
     static final double INSET = 0.004;
 
     private VertexBuffer tex, flat;
-    int texFaces, flatFaces, ox, oy, oz, seenDrawn;
+    int texFaces, flatFaces, ox, oy, oz, seenDrawn, surfaceDrawn, shapedDrawn;
     boolean built, capped, builtTint;
-    long builtVersion, builtSeenVersion, builtMs, buildMs;
+    long builtVersion, builtSeenVersion, builtMs, buildMs, maxBuildMs, builds;
     int spriteFallbacks;
-    private final Map<BlockState, TextureAtlasSprite[]> sprites = new HashMap<>();
+    /** Per block state: the sprite and the tint index of each side, looked up once (0.16.1: the tint index was read every face). */
+    private static final class Look {
+        final TextureAtlasSprite[] sprite = new TextureAtlasSprite[6];
+        final int[] tint = {UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN};
+    }
+
+    private static final int UNKNOWN = -2;
+    private final Map<BlockState, Look> looks = new HashMap<>();
     private final RandomSource random = RandomSource.create(42L);
 
     int faces() { return texFaces + flatFaces; }
+
+    /**
+     * 0.16.1: the box a face is drawn on. Full opaque blocks: the whole cell. Water and lava: the cell up to the fluid's
+     * height. Other blocks: the bounds of their outline shape (a bottom slab's top face at half height, a path's at 15/16,
+     * a fence post's sides at the post): exact for boxes, the bounding box for stairs, fences with arms and other
+     * composite shapes (cheap: no per-part quads).
+     */
+    static double[] box(BlockState state, ClientLevel level, BlockPos pos) {
+        if (state.isSolidRender(level, pos)) return FaceGeometry.UNIT;
+        if (state.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock) {
+            float h = state.getFluidState().getHeight(level, pos);
+            return h > 0.05f && h < 1f ? new double[]{0, 0, 0, 1, h, 1} : FaceGeometry.UNIT;
+        }
+        net.minecraft.world.phys.shapes.VoxelShape sh = state.getShape(level, pos);
+        if (sh.isEmpty()) return FaceGeometry.UNIT;
+        net.minecraft.world.phys.AABB b = sh.bounds();
+        return new double[]{b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ};
+    }
 
     /**
      * Rebuilds both buffers from the faces, around origin ox oy oz (keeps the floats small). Seen faces (0.16.0) are
@@ -56,7 +81,7 @@ final class TunnelMesh {
         this.oy = oy;
         this.oz = oz;
         Minecraft mc = Minecraft.getInstance();
-        int texN = 0, flatN = 0, seenN = 0;
+        int texN = 0, flatN = 0, seenN = 0, surfN = 0, shapedN = 0;
         try (ByteBufferBuilder tb = new ByteBufferBuilder(Math.max(256, faces.size() * 4 * 24));
              ByteBufferBuilder fb = new ByteBufferBuilder(256)) {
             BufferBuilder tbuf = new BufferBuilder(tb, VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
@@ -68,20 +93,32 @@ final class TunnelMesh {
                 float shade = FaceGeometry.SHADE[f.side()];
                 if (f.seen()) {
                     shade *= SeenRule.dim(f.light());
-                    seenN++;
+                    if (f.surface()) surfN++;
+                    else seenN++;
                 }
-                float[][] c = FaceGeometry.corners(f.x(), f.y(), f.z(), f.side(), INSET, ox, oy, oz);
+                double[] bx = FaceGeometry.UNIT;
+                try {
+                    bx = box(state, level, pos);
+                } catch (RuntimeException e) {
+                    bx = FaceGeometry.UNIT;
+                }
+                if (bx != FaceGeometry.UNIT) shapedN++;
+                float[][] c = FaceGeometry.corners(f.x(), f.y(), f.z(), f.side(), INSET, ox, oy, oz, bx);
                 TextureAtlasSprite sprite = null;
                 int tint = -1;
                 try {
                     Direction side = Direction.from3DDataValue(f.side());
-                    TextureAtlasSprite[] s = sprites.computeIfAbsent(state, st -> new TextureAtlasSprite[6]);
-                    sprite = s[f.side()];
+                    Look look = looks.computeIfAbsent(state, st -> new Look());
+                    sprite = look.sprite[f.side()];
                     if (sprite == null) {
                         sprite = lookup(mc, state, side);
-                        s[f.side()] = sprite;
+                        look.sprite[f.side()] = sprite;
                     }
-                    int ti = tintIndex(mc, state, side);
+                    int ti = look.tint[f.side()];
+                    if (ti == UNKNOWN) {
+                        ti = tintIndex(mc, state, side);
+                        look.tint[f.side()] = ti;
+                    }
                     if (ti >= 0) tint = mc.getBlockColors().getColor(state, level, pos, ti);
                 } catch (RuntimeException e) {
                     sprite = null;
@@ -124,6 +161,8 @@ final class TunnelMesh {
         texFaces = texN;
         flatFaces = flatN;
         seenDrawn = seenN;
+        surfaceDrawn = surfN;
+        shapedDrawn = shapedN;
         built = true;
         this.capped = capped;
         builtVersion = version;
@@ -131,6 +170,13 @@ final class TunnelMesh {
         builtTint = tintSeen;
         builtMs = System.currentTimeMillis();
         buildMs = (System.nanoTime() - t0) / 1_000_000;
+        builds++;
+    }
+
+    /** The rebuild's whole time (gathering the faces plus building the buffers), measured by the caller; kept as the max too. */
+    void noteRebuild(long totalMs) {
+        buildMs = totalMs;
+        if (totalMs > maxBuildMs) maxBuildMs = totalMs;
     }
 
     /**
@@ -148,12 +194,20 @@ final class TunnelMesh {
         return model.getParticleIcon(net.neoforged.neoforge.client.model.data.ModelData.EMPTY);
     }
 
-    /** The tint index of the side's first quad (grass, leaves...), or -1. */
+    /**
+     * The tint index of the side's first quad (grass, leaves...), or -1. Water has no quads (a fluid renderer draws it):
+     * index 0, which BlockColors maps to the biome's water colour. Looked up once per state and side (see {@link Look}).
+     */
     private int tintIndex(Minecraft mc, BlockState state, Direction side) {
         random.setSeed(42L);
-        List<BakedQuad> quads = mc.getBlockRenderer().getBlockModel(state).getQuads(state, side, random,
-                net.neoforged.neoforge.client.model.data.ModelData.EMPTY, null);
-        return !quads.isEmpty() && quads.get(0).isTinted() ? quads.get(0).getTintIndex() : -1;
+        BakedModel model = mc.getBlockRenderer().getBlockModel(state);
+        List<BakedQuad> quads = model.getQuads(state, side, random, net.neoforged.neoforge.client.model.data.ModelData.EMPTY, null);
+        if (!quads.isEmpty()) return quads.get(0).isTinted() ? quads.get(0).getTintIndex() : -1;
+        random.setSeed(42L);
+        for (BakedQuad q : model.getQuads(state, null, random, net.neoforged.neoforge.client.model.data.ModelData.EMPTY, null))
+            if (q.getDirection() == side) return q.isTinted() ? q.getTintIndex() : -1;
+        if (state.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock && state.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) return 0;
+        return -1;
     }
 
     private static VertexBuffer upload(VertexBuffer vb, MeshData data) {
@@ -176,8 +230,35 @@ final class TunnelMesh {
      * ceiling and near walls drop out, and nearer faces hide farther ones. The veil cleared the depth buffer before (0.15.4),
      * so only the view's own entities and faces take part. The state is restored in {@code finally} either way.
      */
-    void draw(Matrix4f modelView, Matrix4f projection, Vec3 cam, boolean dollhouse) {
-        if (tex == null && flat == null) return;
+    /**
+     * Draws the faces; with {@code cut} (0.16.1, {@code watch tunnel cut}: camera x y z, bot centre x y z, radius, world
+     * coordinates) through the cutaway shaders ({@link CutShaders}), which drop what lies between the camera and the bot.
+     * Returns true when the cut was applied. When the cut shaders are not loaded, or a draw with them throws, the faces
+     * are drawn with vanilla's shaders (no cut) and the caller reports it; the frame never breaks for it.
+     */
+    boolean draw(Matrix4f modelView, Matrix4f projection, Vec3 cam, boolean dollhouse, double[] cut) {
+        if (tex == null && flat == null) return false;
+        if (cut != null && CutShaders.ready()) {
+            try {
+                drawWith(modelView, projection, cam, dollhouse, CutShaders.tex(), CutShaders.flat(), cut);
+                return true;
+            } catch (RuntimeException e) {
+                CutShaders.broken(e.toString());             // fall through: this frame and the next draw without the cut
+            }
+        }
+        drawWith(modelView, projection, cam, dollhouse, GameRenderer.getPositionTexColorShader(), GameRenderer.getPositionColorShader(), null);
+        return false;
+    }
+
+    private void drawWith(Matrix4f modelView, Matrix4f projection, Vec3 cam, boolean dollhouse,
+                          net.minecraft.client.renderer.ShaderInstance texShader, net.minecraft.client.renderer.ShaderInstance flatShader, double[] cut) {
+        if (cut != null) {
+            for (net.minecraft.client.renderer.ShaderInstance s : new net.minecraft.client.renderer.ShaderInstance[]{texShader, flatShader}) {
+                s.safeGetUniform("CutA").set((float) (cut[0] - ox), (float) (cut[1] - oy), (float) (cut[2] - oz));
+                s.safeGetUniform("CutB").set((float) (cut[3] - ox), (float) (cut[4] - oy), (float) (cut[5] - oz));
+                s.safeGetUniform("CutRadius").set((float) cut[6]);
+            }
+        }
         Matrix4f mv = new Matrix4f(modelView).translate((float) (ox - cam.x), (float) (oy - cam.y), (float) (oz - cam.z));
         if (dollhouse) {
             RenderSystem.disableBlend();
@@ -196,11 +277,11 @@ final class TunnelMesh {
             if (tex != null) {
                 RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
                 tex.bind();
-                tex.drawWithShader(mv, projection, GameRenderer.getPositionTexColorShader());
+                tex.drawWithShader(mv, projection, texShader);
             }
             if (flat != null) {
                 flat.bind();
-                flat.drawWithShader(mv, projection, GameRenderer.getPositionColorShader());
+                flat.drawWithShader(mv, projection, flatShader);
             }
         } finally {
             VertexBuffer.unbind();
@@ -261,6 +342,8 @@ final class TunnelMesh {
         texFaces = 0;
         flatFaces = 0;
         seenDrawn = 0;
-        sprites.clear();
+        surfaceDrawn = 0;
+        shapedDrawn = 0;
+        looks.clear();
     }
 }

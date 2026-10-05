@@ -16,10 +16,23 @@ public final class SeenRule {
 
     private SeenRule() {}
 
-    /** Record this face? airSky: the cell in front of it (its air side) can see the sky (the surface floods the store). */
+    /** Record this face in the saved store? airSky: the cell in front of it (its air side) can see the sky (the surface floods the store). */
     public static boolean record(boolean airSky, int light, double dist) {
         if (airSky) return false;
         return light > 0 || dist <= DARK_RANGE;
+    }
+
+    /** Where a seen face goes (0.16.1): nowhere, the saved store, or the in-memory surface store. */
+    public static final int NONE = 0, SAVED = 1, SURFACE = 2;
+
+    /**
+     * 0.16.1 (owner, 2026-10-04: "on the surface show faces"): a face whose air side sees the sky goes to the surface
+     * store (in memory only, kept within the render distance of the eye, never saved, so it can never push tunnel faces
+     * out of {@code seenfaces.bin}); every other face follows {@link #record}. The dark rule holds for both.
+     */
+    public static int where(boolean airSky, int light, double dist) {
+        if (!(light > 0 || dist <= DARK_RANGE)) return NONE;
+        return airSky ? SURFACE : SAVED;
     }
 
     /** Brightness factor for a seen face drawn in the view: 0.35 at light 0, 1.0 at light 15. */

@@ -13,21 +13,39 @@ public final class FaceGeometry {
 
     /** Rows of x, y, z, u, v for the face {@code side} of the block at bx by bz, relative to the origin ox oy oz. */
     public static float[][] corners(int bx, int by, int bz, int side, double inset, int ox, int oy, int oz) {
-        double x0 = bx - ox, y0 = by - oy, z0 = bz - oz, x1 = x0 + 1, y1 = y0 + 1, z1 = z0 + 1;
+        return corners(bx, by, bz, side, inset, ox, oy, oz, UNIT);
+    }
+
+    /** The whole block: min x y z, max x y z as fractions of the cell. */
+    public static final double[] UNIT = {0, 0, 0, 1, 1, 1};
+
+    /**
+     * 0.16.1: the face of a box inside the cell ({@code box} = min x y z, max x y z, fractions 0..1, e.g. a bottom slab
+     * 0 0 0 1 0.5 1, a path 0 0 0 1 0.9375 1): the quad lies on the box's side, the texture coordinates are the box's
+     * fractions as vanilla's default face UVs (u along x or z, v from the top on vertical faces), so a slab's side shows
+     * the lower half of the texture. Same winding as the full face (JUnit). A null or bad box is the whole cell.
+     */
+    public static float[][] corners(int bx, int by, int bz, int side, double inset, int ox, int oy, int oz, double[] box) {
+        double[] b = box == null || box.length < 6 || !(box[0] < box[3] && box[1] < box[4] && box[2] < box[5]) ? UNIT : box;
+        double fx0 = clamp01(b[0]), fy0 = clamp01(b[1]), fz0 = clamp01(b[2]), fx1 = clamp01(b[3]), fy1 = clamp01(b[4]), fz1 = clamp01(b[5]);
+        double x0 = bx - ox + fx0, y0 = by - oy + fy0, z0 = bz - oz + fz0, x1 = bx - ox + fx1, y1 = by - oy + fy1, z1 = bz - oz + fz1;
+        double vt = 1 - fy1, vb = 1 - fy0;                  // vertical faces: v = 0 at the cell's top
         double[][] c;
         switch (side) {
-            case 0 -> { double y = y0 - inset; c = new double[][]{{x0, y, z0, 0, 0}, {x1, y, z0, 1, 0}, {x1, y, z1, 1, 1}, {x0, y, z1, 0, 1}}; }
-            case 1 -> { double y = y1 + inset; c = new double[][]{{x0, y, z0, 0, 0}, {x0, y, z1, 0, 1}, {x1, y, z1, 1, 1}, {x1, y, z0, 1, 0}}; }
-            case 2 -> { double z = z0 - inset; c = new double[][]{{x0, y0, z, 0, 1}, {x0, y1, z, 0, 0}, {x1, y1, z, 1, 0}, {x1, y0, z, 1, 1}}; }
-            case 3 -> { double z = z1 + inset; c = new double[][]{{x0, y0, z, 0, 1}, {x1, y0, z, 1, 1}, {x1, y1, z, 1, 0}, {x0, y1, z, 0, 0}}; }
-            case 4 -> { double x = x0 - inset; c = new double[][]{{x, y0, z0, 0, 1}, {x, y0, z1, 1, 1}, {x, y1, z1, 1, 0}, {x, y1, z0, 0, 0}}; }
-            case 5 -> { double x = x1 + inset; c = new double[][]{{x, y0, z0, 0, 1}, {x, y1, z0, 0, 0}, {x, y1, z1, 1, 0}, {x, y0, z1, 1, 1}}; }
+            case 0 -> { double y = y0 - inset; c = new double[][]{{x0, y, z0, fx0, fz0}, {x1, y, z0, fx1, fz0}, {x1, y, z1, fx1, fz1}, {x0, y, z1, fx0, fz1}}; }
+            case 1 -> { double y = y1 + inset; c = new double[][]{{x0, y, z0, fx0, fz0}, {x0, y, z1, fx0, fz1}, {x1, y, z1, fx1, fz1}, {x1, y, z0, fx1, fz0}}; }
+            case 2 -> { double z = z0 - inset; c = new double[][]{{x0, y0, z, fx0, vb}, {x0, y1, z, fx0, vt}, {x1, y1, z, fx1, vt}, {x1, y0, z, fx1, vb}}; }
+            case 3 -> { double z = z1 + inset; c = new double[][]{{x0, y0, z, fx0, vb}, {x1, y0, z, fx1, vb}, {x1, y1, z, fx1, vt}, {x0, y1, z, fx0, vt}}; }
+            case 4 -> { double x = x0 - inset; c = new double[][]{{x, y0, z0, fz0, vb}, {x, y0, z1, fz1, vb}, {x, y1, z1, fz1, vt}, {x, y1, z0, fz0, vt}}; }
+            case 5 -> { double x = x1 + inset; c = new double[][]{{x, y0, z0, fz0, vb}, {x, y1, z0, fz0, vt}, {x, y1, z1, fz1, vt}, {x, y0, z1, fz1, vb}}; }
             default -> throw new IllegalArgumentException("side " + side);
         }
         float[][] out = new float[4][5];
         for (int i = 0; i < 4; i++) for (int j = 0; j < 5; j++) out[i][j] = (float) c[i][j];
         return out;
     }
+
+    private static double clamp01(double v) { return Math.max(0, Math.min(1, v)); }
 
     /**
      * The quad's front-face normal from its winding (OpenGL's default: counter-clockwise seen from the front, the side

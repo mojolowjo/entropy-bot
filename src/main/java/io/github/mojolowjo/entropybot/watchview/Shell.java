@@ -43,19 +43,17 @@ public final class Shell {
      * neighbours towards it are drawn (the fill is a wall now).
      */
     public static Result build(long[] cells, World w, int cx, int cy, int cz, int maxFaces) {
-        long[] sorted = cells.clone();
-        long[] dist = new long[sorted.length];
-        Integer[] idx = new Integer[sorted.length];
-        for (int i = 0; i < sorted.length; i++) {
-            long dx = CellKey.x(sorted[i]) - cx, dy = CellKey.y(sorted[i]) - cy, dz = CellKey.z(sorted[i]) - cz;
-            dist[i] = dx * dx + dy * dy + dz * dz;
-            idx[i] = i;
+        // nearest first without boxing (0.16.1): distance squared in the high bits, the index in the low 32
+        long[] order = new long[cells.length];
+        for (int i = 0; i < cells.length; i++) {
+            long dx = CellKey.x(cells[i]) - cx, dy = CellKey.y(cells[i]) - cy, dz = CellKey.z(cells[i]) - cz;
+            order[i] = Math.min(Integer.MAX_VALUE, dx * dx + dy * dy + dz * dz) << 32 | i;
         }
-        Arrays.sort(idx, (a, b) -> Long.compare(dist[a], dist[b]));
+        Arrays.sort(order);
         List<Face> out = new ArrayList<>();
         int used = 0;
-        for (Integer i : idx) {
-            long k = sorted[i];
+        for (long o : order) {
+            long k = cells[(int) (o & 0xFFFFFFFFL)];
             int x = CellKey.x(k), y = CellKey.y(k), z = CellKey.z(k);
             if (w.kind(x, y, z) != OPEN) continue;
             used++;

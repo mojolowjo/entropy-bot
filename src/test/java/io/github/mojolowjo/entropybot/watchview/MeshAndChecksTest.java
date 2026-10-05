@@ -20,7 +20,8 @@ class MeshAndChecksTest {
         assertTrue(MeshRule.due(true, 5, 5, 900 + MeshRule.REFRESH_MS, 900, 0), "the slow refresh");
         assertEquals(32, MeshRule.radius(1));
         assertEquals(80, MeshRule.radius(5));
-        assertEquals(128, MeshRule.radius(32));
+        assertEquals(512, MeshRule.radius(32), "0.16.1: the render distance, up to 32 chunks");
+        assertEquals(512, MeshRule.radius(64));
     }
 
     @Test

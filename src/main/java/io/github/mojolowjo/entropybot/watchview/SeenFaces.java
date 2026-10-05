@@ -130,6 +130,71 @@ public final class SeenFaces {
         return out;
     }
 
+    /**
+     * A chunk is within the render distance of the eye's chunk (vanilla's round view, one chunk of slack like
+     * {@code ChunkTrackingView.isWithinDistance} with the outer ring): dx, dz less one chunk each, squared, below r squared.
+     */
+    public static boolean chunkWithin(int chunkX, int chunkZ, int eyeChunkX, int eyeChunkZ, int radiusChunks) {
+        long dx = Math.max(0, Math.abs((long) chunkX - eyeChunkX) - 1), dz = Math.max(0, Math.abs((long) chunkZ - eyeChunkZ) - 1);
+        long r = Math.max(1, radiusChunks);
+        return dx * dx + dz * dz < r * r;
+    }
+
+    /**
+     * The surface store's eviction (0.16.1): drops every block of another dimension, and every block whose chunk is not
+     * within radiusChunks of the eye's chunk ({@link #chunkWithin}). A region (256 x 256) wholly outside is dropped at once.
+     * Returns the blocks dropped (counted in {@link #pruned()}, not in {@link #evicted()}).
+     */
+    public synchronized int pruneOutside(String keepDim, int eyeChunkX, int eyeChunkZ, int radiusChunks) {
+        int removed = 0;
+        Iterator<Map.Entry<String, Map<Long, LinkedHashMap<Long, Long>>>> dit = dims.entrySet().iterator();
+        while (dit.hasNext()) {
+            Map.Entry<String, Map<Long, LinkedHashMap<Long, Long>>> d = dit.next();
+            boolean other = !d.getKey().equals(keepDim);
+            Iterator<LinkedHashMap<Long, Long>> rit = d.getValue().values().iterator();
+            while (rit.hasNext()) {
+                LinkedHashMap<Long, Long> cells = rit.next();
+                if (cells.isEmpty()) {
+                    rit.remove();
+                    continue;
+                }
+                long anyKey = cells.keySet().iterator().next();
+                int rx = CellKey.x(anyKey) >> KnownAir.REGION_SHIFT, rz = CellKey.z(anyKey) >> KnownAir.REGION_SHIFT;
+                int per = 1 << (KnownAir.REGION_SHIFT - 4);            // chunks per region side (16)
+                int nearX = Math.max(rx * per, Math.min(rx * per + per - 1, eyeChunkX)), nearZ = Math.max(rz * per, Math.min(rz * per + per - 1, eyeChunkZ));
+                if (other || !chunkWithin(nearX, nearZ, eyeChunkX, eyeChunkZ, radiusChunks)) {
+                    for (long v : cells.values()) faces -= Integer.bitCount((int) (v & 63));
+                    removed += cells.size();
+                    total -= cells.size();
+                    rit.remove();
+                    continue;
+                }
+                Iterator<Map.Entry<Long, Long>> it = cells.entrySet().iterator();
+                while (it.hasNext()) {
+                    Map.Entry<Long, Long> c = it.next();
+                    long k = c.getKey();
+                    if (chunkWithin(CellKey.x(k) >> 4, CellKey.z(k) >> 4, eyeChunkX, eyeChunkZ, radiusChunks)) continue;
+                    faces -= Integer.bitCount((int) (c.getValue() & 63));
+                    total--;
+                    removed++;
+                    it.remove();
+                }
+                if (cells.isEmpty()) rit.remove();
+            }
+            if (d.getValue().isEmpty()) dit.remove();
+        }
+        if (removed > 0) {
+            version++;
+            pruned += removed;
+        }
+        return removed;
+    }
+
+    private long pruned;
+
+    /** Blocks dropped by {@link #pruneOutside} so far. */
+    public synchronized long pruned() { return pruned; }
+
     public synchronized long version() { return version; }
 
     /** Blocks stored. */
