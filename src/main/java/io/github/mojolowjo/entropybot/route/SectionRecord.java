@@ -7,9 +7,10 @@ import java.util.List;
  *
  * <p><b>How crossings are measured (review R3, box plus margin):</b> one Dijkstra per enterable door over the standable
  * cells of the box <i>plus a one-cell margin</i> on every side (so a path may hug a wall outside the box for a step),
- * starting at the cells the door's entry moves land on (cost 0); the cost to door j is the cheapest
- * {@code dist(source) + exit move} over j's exit moves. Doors stay on the box's faces; the margin is only walked
- * through. The exit move's cost is included, the entry move's is not (it was counted as the neighbour's exit).
+ * starting at the door's entry point (the entry cell nearest its middle, cost 0); the cost to door j is
+ * {@code dist(exit point of j) + its exit move} (HPA*-style door points, see {@link BoxBuilder}). Doors stay on the
+ * box's faces; the margin is only walked through. The exit move's cost is included, the entry move's is not (it was
+ * counted as the neighbour's exit).
  *
  * <p>Costs are held as uint16 quarter-ticks like the file: {@link #IMPOSSIBLE} = no way, capped at 16383 ticks.
  * Immutable once made (shared with Baritone's path thread through {@link CostToGo}).

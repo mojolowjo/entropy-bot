@@ -26,7 +26,9 @@ public record RoutePlan(Status status, double ticks, List<Step> path, CostToGo t
         /** Both are known but no door path joins them in the map. Walk plain (the map may be wrong). */
         UNREACHABLE,
         /** Start and goal in different dims, or another bad request. */
-        BAD_REQUEST
+        BAD_REQUEST,
+        /** The planner threw (counted in {@link RouteCounters}, logged); walk plain. */
+        ERROR
     }
 
     /** One door to leave through: its box, index in that box, and its representative cell (a legs-mode waypoint). */

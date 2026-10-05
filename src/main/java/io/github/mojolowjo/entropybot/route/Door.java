@@ -1,14 +1,17 @@
 package io.github.mojolowjo.entropybot.route;
 
 /**
- * An opening on one face of a box: a connected run of crossing moves into (or out of) one face neighbour.
+ * An opening on one face of a box: a connected run of crossing moves into (or out of) one face neighbour, cut into
+ * pieces of at most 4x4 face cells ({@link BoxBuilder#PIECE}; a flat box has 4 doors a side).
  *
  * <p><b>Faces:</b> 0 = -X (west), 1 = +X (east), 2 = -Y (down), 3 = +Y (up), 4 = -Z (north), 5 = +Z (south).
  *
  * <p><b>Mask:</b> 256 bits over the face plane, bit {@code u + 16 * v}, with (u, v) = (z, y) on the X faces,
- * (x, z) on the Y faces and (x, y) on the Z faces, all local 0..15. Each crossing move marks both its ends
- * (projected onto the plane, clamped), so the two boxes sharing a face mark the same bits for the same opening
- * and the graph matches doors by overlapping masks.
+ * (x, z) on the Y faces and (x, y) on the Z faces, all local 0..15: the door's box-side cells projected onto the
+ * plane. A straight crossing has the same plane point on both sides, so the router links two doors when their masks
+ * share a bit; a door with no such partner (a fall or a step lands on another point, or one box is stale) links only
+ * to the nearest enterable door of the neighbour, at straight-line cost. (Marking both ends of diagonal moves made
+ * neighbouring pieces match and let routes slide along a face for free.)
  *
  * <p><b>Diagonals (review R2):</b> only moves that end in a <i>face</i> neighbour are doors. A diagonal that ends in an
  * edge- or corner-adjacent box is not a door (a small overestimate, safe): the box's crossings may still step
