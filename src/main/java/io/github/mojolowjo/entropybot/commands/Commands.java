@@ -1297,6 +1297,11 @@ public final class Commands implements Chains.Env {
         }
 
         @Override
+        public JsonObject state() {
+            return stateJson(Minecraft.getInstance());
+        }
+
+        @Override
         public void beforeIdleAnswer() {
             writeState(Minecraft.getInstance(), core.tick());
         }
@@ -1400,8 +1405,54 @@ public final class Commands implements Chains.Env {
 
     // ---- state.json (bridge.ps1 and the dashboard read it; the same fields the bridge wrote) ----
 
+    /** state.json "mobs": radius, cap. */
+    static final double MOBS_RADIUS = 32;
+    static final int MOBS_CAP = 48;
+
+    /**
+     * state.json's {@code mobs} (0.19.5): hostile mobs only, as the defence judges them ({@link
+     * io.github.mojolowjo.entropybot.engine.Hostility#kind}: tamed/owned never count), within {@link #MOBS_RADIUS} of
+     * the bot, nearest first, at most {@link #MOBS_CAP}: {@code {id, name, x, y, z, distance, target}} (one decimal;
+     * target = the mob's current target is the bot).
+     */
+    private JsonArray mobsJson(Minecraft mc, LocalPlayer p) {
+        io.github.mojolowjo.entropybot.engine.Hostility h = io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE;
+        boolean hurt = core.reflexes.recentlyHurt();
+        List<net.minecraft.world.entity.Mob> found = mc.level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+                p.getBoundingBox().inflate(MOBS_RADIUS),
+                m -> m.isAlive() && m.distanceToSqr(p) <= MOBS_RADIUS * MOBS_RADIUS && h.kind(m, hurt).counts());
+        // RTS later: passive mobs (animals) in their own array, not live yet:
+        // List<Mob> passive = mc.level.getEntitiesOfClass(Mob.class, box, m -> m.isAlive() && !h.kind(m, hurt).counts());
+        found.sort(java.util.Comparator.comparingDouble(m -> m.distanceToSqr(p)));
+        JsonArray a = new JsonArray();
+        for (net.minecraft.world.entity.Mob m : found) {
+            if (a.size() >= MOBS_CAP) break;
+            JsonObject o = new JsonObject();
+            o.addProperty("id", net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(m.getType()).toString());
+            o.addProperty("name", m.getName().getString());
+            o.addProperty("x", Math.round(m.getX() * 10) / 10.0);
+            o.addProperty("y", Math.round(m.getY() * 10) / 10.0);
+            o.addProperty("z", Math.round(m.getZ() * 10) / 10.0);
+            o.addProperty("distance", Math.round(Math.sqrt(m.distanceToSqr(p)) * 10) / 10.0);
+            o.addProperty("target", m.getTarget() == p);
+            a.add(o);
+        }
+        return a;
+    }
+
+    /**
+     * Builds the state object (state.json, and GET /state on the fast channel). Fields: time, lastCmdId, lastResult,
+     * inWorld, errors, memory, name, x/y/z, health, food, dead, dimension, selectedSlot, inventory, players,
+     * mobs (hostile only, see {@link #mobsJson}), lookingAt, screen, container, job, defence, reflex, chain,
+     * autominer, pm, restartOk, mod, guard, baritone, settings.
+     */
     private void writeState(Minecraft mc, long tick) {
         if (stateFiles == null) return;
+        String w = stateFiles.writeJson("state.json", stateJson(mc).toString());
+        if (!w.startsWith("ok") && errors++ < 5) LOG.warn("[entropybot] state write failed: {}", w);
+    }
+
+    JsonObject stateJson(Minecraft mc) {
         JsonObject s = new JsonObject();
         s.addProperty("time", System.currentTimeMillis());
         s.addProperty("lastCmdId", lastCmdId);
@@ -1410,8 +1461,7 @@ public final class Commands implements Chains.Env {
         if (p == null || mc.level == null) {
             s.addProperty("inWorld", false);
             s.addProperty("reconnect", core.reconnect.statusText());     // T4: "next try to ... at 07:38 (try 4)"
-            stateFiles.writeJson("state.json", s.toString());
-            return;
+            return s;
         }
         s.addProperty("inWorld", true);
         JsonArray errs = new JsonArray();
@@ -1466,6 +1516,14 @@ public final class Commands implements Chains.Env {
             errs.add("players: " + e);
         }
         s.add("players", players);
+        // RTS later: players with exact x/y/z (one decimal) for the 3D page, not live yet:
+        // q.addProperty("fx", Math.round(o.getX() * 10) / 10.0); ... (same for y, z)
+        try {
+            s.add("mobs", mobsJson(mc, p));
+        } catch (RuntimeException e) {
+            errs.add("mobs: " + e);
+            s.add("mobs", new JsonArray());
+        }
         try {
             HitResult hit = mc.hitResult;
             if (hit instanceof BlockHitResult bh && hit.getType() == HitResult.Type.BLOCK) {
@@ -1557,8 +1615,7 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             errs.add("settings: " + e);
         }
-        String w = stateFiles.writeJson("state.json", s.toString());
-        if (!w.startsWith("ok") && errors++ < 5) LOG.warn("[entropybot] state write failed: {}", w);
+        return s;
     }
 
     /** state.json's "settings" block (package C): commands.json and areas.json plus the live values. */

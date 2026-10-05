@@ -38,6 +38,8 @@ import java.util.function.Consumer;
  *
  * <ul>
  *   <li>{@code GET /ping}: answered on the game thread at its next tick: {ok, tick, inWorld, version}.</li>
+ *   <li>{@code GET /state}: state.json's object, built at the next tick (at most once a tick, shared by the calls
+ *       waiting for it; 504 when the game does not tick for 5 s).</li>
  *   <li>{@code POST /cmd[?timeout=ms]}, body = a cmd.json object {id, type, text, from?, notify?}: run at the next
  *       tick exactly as a cmd.json command; answers {id, result} when the command answers (a long job answers
  *       "started: ..." at once, as today), or {id, result: null, timeout: true} (plus notRun: true when the game
@@ -74,6 +76,9 @@ public final class FastServer {
 
         /** Fields for /ping besides ok and tick (version, inWorld). */
         JsonObject ping();
+
+        /** GET /state: the same object state.json holds (built by the state.json writer). */
+        default JsonObject state() { return new JsonObject(); }
 
         /** Just before a /wait answers idle: write state.json now, so the caller's next read is fresh. */
         default void beforeIdleAnswer() {}
@@ -270,6 +275,13 @@ public final class FastServer {
             String path = u.getPath(), method = ex.getRequestMethod();
             switch (path) {
                 case "/ping" -> ping(ex);
+                case "/state" -> {
+                    if (!method.equals("GET")) {
+                        send(ex, 405, err("GET only"));
+                        return;
+                    }
+                    state(ex);
+                }
                 case "/cmd" -> {
                     if (!method.equals("POST")) {
                         send(ex, 405, err("POST only"));
@@ -294,6 +306,53 @@ public final class FastServer {
             r.addProperty("tick", ticks);
             f.complete(r);
         });
+        try {
+            send(ex, 200, f.get(5, TimeUnit.SECONDS));
+        } catch (TimeoutException e) {
+            send(ex, 504, err("the game did not tick for 5 s"));
+        } catch (Exception e) {
+            send(ex, 500, err(String.valueOf(e)));
+        }
+    }
+
+    // /state: one build per tick, shared by every /state call waiting for that tick
+    private final Object stateLock = new Object();
+    private CompletableFuture<JsonObject> statePending;
+    private long stateTick = -1;
+    private JsonObject stateCached;
+    /** How many times /state built the state (tests). */
+    final AtomicInteger stateBuilds = new AtomicInteger();
+
+    private void state(HttpExchange ex) throws IOException {
+        CompletableFuture<JsonObject> f;
+        synchronized (stateLock) {
+            if (statePending == null) {
+                CompletableFuture<JsonObject> mine = new CompletableFuture<>();
+                statePending = mine;
+                tasks.add(() -> {
+                    JsonObject r;
+                    synchronized (stateLock) {
+                        if (statePending == mine) statePending = null;
+                        r = stateTick == ticks ? stateCached : null;
+                    }
+                    try {
+                        if (r == null) {
+                            JsonObject o = handler.state();
+                            r = o == null ? new JsonObject() : o;
+                            stateBuilds.incrementAndGet();
+                            synchronized (stateLock) {
+                                stateTick = ticks;
+                                stateCached = r;
+                            }
+                        }
+                        mine.complete(r);
+                    } catch (RuntimeException e) {
+                        mine.completeExceptionally(e);
+                    }
+                });
+            }
+            f = statePending;
+        }
         try {
             send(ex, 200, f.get(5, TimeUnit.SECONDS));
         } catch (TimeoutException e) {

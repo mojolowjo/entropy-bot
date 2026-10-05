@@ -295,7 +295,8 @@ public final class SurfaceExport {
         };
     }
 
-    static int kindOf(ClientLevel level, BlockPos pos) {
+    /** The column kind of one block (also the surface dig's rule, DigCommands). */
+    public static int kindOf(ClientLevel level, BlockPos pos) {
         BlockState s = level.getBlockState(pos);
         if (s.isAir()) return SurfaceColumns.AIR;
         Block b = s.getBlock();

@@ -114,10 +114,11 @@ public final class VerbTable {
         v("explore", "", "mining", O, "explore [minutes]", "walk unvisited land inside my areas, then home", "explore 5", "poi");
         v("ores", "", "mining", P, "ores [name] | ores clear | ores prefer <ores>", "ores I left in place, nearest first; the preferred ore list", "ores iron|ores prefer diamond,iron",
                 "mine <ore> [n]", "ores [name], ores prefer (just looking)");
-        v("dig", "", "mining", O, "dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]]",
+        v("dig", "", "mining", O, "dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 down|up N [same words, no floor]",
                 "clear a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
-                        + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too)",
-                "dig 10 60 10 20 64 20 ores|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
+                        + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
+                        + "any coordinate may be ~ or ~N (from my feet); down N: each column's surface block and N-1 below, up N: the N blocks above the surface (N 1-64)",
+                "dig 10 60 10 20 64 20 ores|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 up 10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
         v("zone", "", "mining", O, "zone corner1|corner2 [x y z] | zone | zone clear", "the work zone for build (stand on opposite corners)", "zone corner1|zone corner2", "build floor <block>");
         v("build", "", "mining", O, "build floor|walls|shell|fill <block> | build clear", "build inside the zone (never breaks); clear breaks the whole zone (asks to confirm)",
                 "build floor cobblestone|build clear", "status");

@@ -19,6 +19,7 @@ import io.github.mojolowjo.entropybot.clear.ClearJob;
 import io.github.mojolowjo.entropybot.clear.DigArgs;
 import io.github.mojolowjo.entropybot.clear.McClearWorld;
 import io.github.mojolowjo.entropybot.clear.PlaceRules;
+import io.github.mojolowjo.entropybot.clear.SurfaceDig;
 import io.github.mojolowjo.entropybot.craft.CraftPlanner;
 import io.github.mojolowjo.entropybot.craft.CraftTexts;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -131,8 +132,10 @@ final class DigCommands {
      * plain junk away when the bag is full instead of a base trip).
      */
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
-        DigArgs a = DigArgs.parse(rest);
+        int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
+        DigArgs a = DigArgs.parse(rest, feet);
         if (a == null) return DIG_USAGE;
+        if (a.surfaceForm()) return digSurface(c, p, a, rest, from);
         int[] n = a.n();
         boolean force = a.force(), ores = a.ores();
         String floorId = null;
@@ -162,6 +165,50 @@ final class DigCommands {
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
+    }
+
+    /**
+     * 0.19.5: "dig x1 z1 x2 z2 down|up N [words]": the per-column list from the surface ({@link SurfaceDig}), built once
+     * from the client level, then the same careful clear as a box (Options.only: reach, sight, never containers or
+     * protected blocks, never next to water or lava, the ores rule, the areas and leases, base trips).
+     */
+    static String digSurface(Commands c, LocalPlayer p, DigArgs a, String rest, String from) {
+        if (a.floor()) return "error: floor works with a box dig only (dig x1 y1 z1 x2 y2 z2 floor)";
+        boolean force = a.force(), ores = a.ores(), up = a.surface().equals("up");
+        int[] n = a.n();
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) return "error: not in a world";
+        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        int max = level.getMaxBuildHeight() - 1;
+        SurfaceDig.Source src = new SurfaceDig.Source() {
+            @Override public int kind(int x, int y, int z) { return io.github.mojolowjo.entropybot.surface.SurfaceExport.kindOf(level, m.set(x, y, z)); }
+            @Override public boolean liquid(int x, int y, int z) { return level.getBlockState(m.set(x, y, z)).getBlock() instanceof net.minecraft.world.level.block.LiquidBlock; }
+            @Override public int top(int x, int z) { return Math.min(level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z), max); }
+        };
+        SurfaceDig.Plan plan;
+        try {
+            plan = SurfaceDig.build(src, n[0], n[1], n[2], n[3], up, a.depth(), level.getMinBuildHeight(), max);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] dig surface: {}", e.toString());
+            return "error: couldn't read the columns: " + e;
+        }
+        if (plan.error() != null) return plan.error();
+        if (plan.blocks().isEmpty()) return "ok: nothing to dig there (" + plan.columns() + " columns" + (plan.noSurface() > 0 ? ", " + plan.noSurface() + " not loaded or empty" : "") + ")";
+        ClearBox box = SurfaceDig.bounds(plan.blocks());
+        if (force && plan.blocks().size() > 64) return "error: dig ... force is for small digs (64 blocks max)";
+        if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
+        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
+            List<String> names = new ArrayList<>();
+            for (var ar : Core.INSTANCE.guard.core.policy().areas) names.add(ar.name == null ? "?" : ar.name);
+            return "error: that rectangle is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
+        }
+        String label = "digging " + n[0] + " " + n[1] + " to " + n[2] + " " + n[3] + ", " + plan.blocks().size() + " blocks"
+                + " (from the surface, " + a.surface() + " " + a.depth() + ", " + plan.columns() + " columns)"
+                + (force ? " (force)" : "") + (ores ? " (ores too)" : "") + (a.junkDrop() ? " (junk drop)" : "")
+                + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
+        ClearJob.Options o = new ClearJob.Options().only(plan.blocks()).force(force).collect(ores).label(label).junkDrop(a.junkDrop())
+                .liquidBlocks(true).water(a.water(), a.large()).line("dig " + rest.trim());
+        return startClear(c, p, o, restockSteps(c, p, plan.blocks().size()));
     }
 
     /**

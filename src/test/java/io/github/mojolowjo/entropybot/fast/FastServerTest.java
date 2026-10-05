@@ -74,6 +74,15 @@ class FastServerTest {
             return o;
         }
 
+        final AtomicInteger states = new AtomicInteger();
+
+        @Override public JsonObject state() {
+            JsonObject o = new JsonObject();
+            o.addProperty("inWorld", true);
+            o.addProperty("n", states.incrementAndGet());
+            return o;
+        }
+
         @Override public void beforeIdleAnswer() { beforeIdle.incrementAndGet(); }
 
         void tickLater() {
@@ -340,5 +349,49 @@ class FastServerTest {
         } finally {
             ch.stop();
         }
+    }
+
+    // ---- GET /state (0.19.5) ----
+
+    @Test
+    void stateAnswersTheHandlersJson() throws Exception {
+        Resp r = call("GET", "/state", KEY, "127.0.0.1", null);
+        assertEquals(200, r.code());
+        assertTrue(r.json().get("inWorld").getAsBoolean());
+        assertEquals(405, call("POST", "/state", KEY, "127.0.0.1", "").code());
+    }
+
+    @Test
+    void stateTwoCallsInOneTickBuildOnce() throws Exception {
+        frozen = true;
+        Resp[] got = new Resp[2];
+        Thread[] th = new Thread[2];
+        for (int i = 0; i < 2; i++) {
+            int k = i;
+            th[i] = new Thread(() -> {
+                try { got[k] = call("GET", "/state", KEY, "127.0.0.1", null); } catch (IOException e) { throw new RuntimeException(e); }
+            });
+            th[i].start();
+        }
+        Thread.sleep(400);
+        frozen = false;
+        for (Thread t : th) t.join(5000);
+        assertEquals(200, got[0].code());
+        assertEquals(200, got[1].code());
+        assertEquals(1, game.states.get(), "built once");
+        assertEquals(got[0].json().get("n"), got[1].json().get("n"));
+    }
+
+    @Test
+    void stateNeedsTheKey() throws Exception {
+        assertEquals(401, call("GET", "/state", null, "127.0.0.1", null).code());
+        assertEquals(0, game.states.get());
+    }
+
+    @Test
+    void stateTimesOutWhenTheGameNeverTicks() throws Exception {
+        frozen = true;
+        Resp r = call("GET", "/state", KEY, "127.0.0.1", null);
+        assertEquals(504, r.code());
     }
 }

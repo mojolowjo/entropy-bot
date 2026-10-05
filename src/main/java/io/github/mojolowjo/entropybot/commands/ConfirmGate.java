@@ -172,11 +172,25 @@ public final class ConfirmGate {
     /** The box's block count of "dig x1 y1 z1 x2 y2 z2 [words]", or -1 when it isn't one. */
     static long digVolume(List<String> w) {
         if (w.size() < 6) return -1;
+        // 0.19.5: "dig x1 z1 x2 z2 down|up N": at most columns x N blocks (the verb counts the real ones)
+        if (w.get(4).equals("down") || w.get(4).equals("up")) {
+            Integer a = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(0), 0), b = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(1), 0),
+                    c = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(2), 0), d = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(3), 0);
+            if (a == null || b == null || c == null || d == null) return -1;
+            int depth;
+            try {
+                depth = io.github.mojolowjo.entropybot.clear.SurfaceDig.clampN(Integer.parseInt(w.get(5)));
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+            return (Math.abs((long) c - a) + 1) * (Math.abs((long) d - b) + 1) * depth;
+        }
         long[] n = new long[6];
-        try {
-            for (int i = 0; i < 6; i++) n[i] = Long.parseLong(w.get(i));
-        } catch (NumberFormatException e) {
-            return -1;
+        for (int i = 0; i < 6; i++) {
+            // ~ forms count from 0: right when both ends of an axis are ~ (or both plain)
+            Integer v = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(i), 0);
+            if (v == null) return -1;
+            n[i] = v;
         }
         return (Math.abs(n[3] - n[0]) + 1) * (Math.abs(n[4] - n[1]) + 1) * (Math.abs(n[5] - n[2]) + 1);
     }
@@ -200,6 +214,9 @@ public final class ConfirmGate {
                 return "build clear breaks every block in the " + (z != null ? z : "work zone") + ", top down (chests, built blocks and ores next to water or lava stay)";
             }
             case DIG -> {
+                if (w.get(4).equalsIgnoreCase("down") || w.get(4).equalsIgnoreCase("up"))
+                    return "dig breaks up to " + digVolume(Texts.words(String.join(" ", w).toLowerCase(Locale.ROOT))) + " blocks (" + String.join(" ", w.subList(0, 2)) + " to "
+                            + String.join(" ", w.subList(2, 4)) + ", from the surface " + w.get(4) + " " + w.get(5) + ")";
                 return "dig breaks up to " + digVolume(w) + " blocks (" + String.join(" ", w.subList(0, 3)) + " to " + String.join(" ", w.subList(3, 6)) + ")";
             }
             case AREA_REMOVE -> {
