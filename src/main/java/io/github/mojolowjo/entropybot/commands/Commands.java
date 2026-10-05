@@ -621,6 +621,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
         if (verb.equals("debug")) return Reply.now(DebugVerbs.handle(core, rest, DebugRules.Source.PM, isOwner, owner()));
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
+        if (verb.equals("surface")) return Reply.now(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.command(rest));     // 0.19.3: never busy
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));

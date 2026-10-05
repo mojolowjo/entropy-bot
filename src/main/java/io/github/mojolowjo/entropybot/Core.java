@@ -78,6 +78,7 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.leftWorld();   // camera v2: known air saved
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.leftWorld();  // watch seen: seen faces saved
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.leftWorld();   // 0.17.1: the surface scan forgotten
+                if (inWorld) io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.leftWorld();   // 0.19.3: the surface export's files wiped
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
                 inWorld = false;
                 return;
@@ -143,6 +144,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.tick(tick);      // camera v2: known air (never throws)
             io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.tick(tick);     // watch seen: the visible-faces sampler (never throws)
             io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.tick(tick);      // 0.17.1: the tunnel view's surface scan (never throws)
+            io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.tick();      // 0.19.3: the surface export for the dashboard (never throws)
             io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.tick(tick);     // routing R2: the map builder (never throws)
         } catch (Throwable t) {
             errors++;

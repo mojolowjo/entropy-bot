@@ -57,6 +57,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("watchcheck", "couldn't check the watch camera: " + e, "watch status"));
         }
         try {
+            f.addAll(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.findings());      // 0.19.3: surface export
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("surface", "couldn't check the surface export: " + e, "surface status"));
+        }
+        try {
             f.addAll(io.github.mojolowjo.entropybot.engine.WatchSteer.INSTANCE.findings());      // watch steer (TLL 32b)
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("steercheck", "couldn't check watch steer: " + e, "watch steer status"));
