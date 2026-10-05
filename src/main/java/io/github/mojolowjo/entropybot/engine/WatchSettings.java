@@ -18,14 +18,17 @@ public final class WatchSettings {
 
     /** The values; the defaults are distance 4, tunnel height 4, dollhouse on, steer on, turn on at 45 degrees a second. */
     public record Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate,
-                         boolean cutCone, double coneRadius, double outlineMargin) {
+                         String cutMode, double coneRadius, double outlineMargin, double shadowMargin) {
         public static final Values DEFAULTS = new Values(4f, 4, true, true, true, SteerRules.TURN_RATE_DEFAULT);
 
-        /** The values before the cone cut (0.19.0): the cut at its defaults (cone, radius 2.5, outline margin 0.6). */
+        /** The values before the cut modes (0.19.0): the cut at its defaults (shadow, margin 0.5; cone radius 2.5; outline margin 0.6). */
         public Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate) {
-            this(distance, height, dollhouse, steer, turn, turnRate, true,
-                    io.github.mojolowjo.entropybot.watchview.Cutaway.DEFAULT_CONE_RADIUS, io.github.mojolowjo.entropybot.watchview.Cutaway.DEFAULT_RADIUS);
+            this(distance, height, dollhouse, steer, turn, turnRate, Cutaway.SHADOW,
+                    Cutaway.DEFAULT_CONE_RADIUS, Cutaway.DEFAULT_RADIUS, Cutaway.DEFAULT_SHADOW_MARGIN);
         }
+
+        /** True in cone mode (0.19.0 callers). */
+        public boolean cutCone() { return Cutaway.CONE.equals(cutMode); }
 
         /** The values before watch turn (2026-10-05): the turn at its defaults. */
         public Values(float distance, double height, boolean dollhouse, boolean steer) {
@@ -101,14 +104,13 @@ public final class WatchSettings {
         } catch (RuntimeException e) {
             bad.append(" turnRate");
         }
-        boolean cutCone = d.cutCone();
-        double coneRadius = d.coneRadius(), outlineMargin = d.outlineMargin();
+        String cutMode = d.cutMode();
+        double coneRadius = d.coneRadius(), outlineMargin = d.outlineMargin(), shadowMargin = d.shadowMargin();
         try {
             if (o.has("cutMode")) {
                 String m = o.get("cutMode").getAsString();
-                if (m.equals("cone")) cutCone = true;
-                else if (m.equals("outline")) cutCone = false;
-                else bad.append(" cutMode ").append(m).append(" (cone|outline)");
+                if (m.equals(Cutaway.SHADOW) || m.equals(Cutaway.CONE) || m.equals(Cutaway.OUTLINE)) cutMode = m;
+                else bad.append(" cutMode ").append(m).append(" (shadow|cone|outline)");
             }
         } catch (RuntimeException e) {
             bad.append(" cutMode");
@@ -131,7 +133,16 @@ public final class WatchSettings {
         } catch (RuntimeException e) {
             bad.append(" outlineMargin");
         }
-        Values v = new Values(distance, height, dollhouse, steer, turn, turnRate, cutCone, coneRadius, outlineMargin);
+        try {
+            if (o.has("shadowMargin")) {
+                double v = o.get("shadowMargin").getAsDouble();
+                if (v >= Cutaway.MIN_SHADOW_MARGIN && v <= Cutaway.MAX_SHADOW_MARGIN) shadowMargin = v;
+                else bad.append(" shadowMargin ").append(v).append(" (0-2)");
+            }
+        } catch (RuntimeException e) {
+            bad.append(" shadowMargin");
+        }
+        Values v = new Values(distance, height, dollhouse, steer, turn, turnRate, cutMode, coneRadius, outlineMargin, shadowMargin);
         return new Parsed(v, bad.length() == 0 ? null : "ignored bad values:" + bad + " (defaults used for them)");
     }
 
@@ -149,9 +160,10 @@ public final class WatchSettings {
         o.addProperty("steer", v.steer());
         o.addProperty("turn", v.turn());
         o.addProperty("turnRate", v.turnRate());
-        o.addProperty("cutMode", v.cutCone() ? "cone" : "outline");
+        o.addProperty("cutMode", v.cutMode());
         o.addProperty("coneRadius", v.coneRadius());
         o.addProperty("outlineMargin", v.outlineMargin());
+        o.addProperty("shadowMargin", v.shadowMargin());
         return o.toString();
     }
 
@@ -185,9 +197,10 @@ public final class WatchSettings {
         WatchSteer.INSTANCE.setMaster(v.steer());
         WatchSteer.INSTANCE.setTurnOn(v.turn());
         WatchSteer.INSTANCE.setTurnRate(v.turnRate());
-        io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setCutCone(v.cutCone());
+        io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setCutMode(v.cutMode());
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setConeRadius(v.coneRadius());
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setCutRadius(v.outlineMargin());
+        io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setShadowMargin(v.shadowMargin());
     }
 
     /** The values in use now. */
@@ -195,8 +208,8 @@ public final class WatchSettings {
         return new Values(WatchCamera.INSTANCE.distance(), io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.height(),
                 io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.dollhouse(), WatchSteer.INSTANCE.master(),
                 WatchSteer.INSTANCE.turnOn(), WatchSteer.INSTANCE.turnRate(),
-                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.cutCone(), io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.coneRadius(),
-                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.cutRadius());
+                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.cutMode(), io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.coneRadius(),
+                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.cutRadius(), io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.shadowMargin());
     }
 
     /** After a change: write the file (atomic, a few bytes, on the client thread). "" when saved, else " (not saved: ...)" for the answer. Never throws. */
@@ -225,6 +238,6 @@ public final class WatchSettings {
         Values v = current();
         return "settings: distance " + v.distance() + ", tunnel height " + v.height() + ", dollhouse " + (v.dollhouse() ? "on" : "off")
                 + ", steer " + (v.steer() ? "on" : "off") + ", turn " + (v.turn() ? "on" : "off") + " at " + v.turnRate() + " deg/s, cut mode "
-                + (v.cutCone() ? "cone, radius " + v.coneRadius() : "outline, margin " + v.outlineMargin()) + " (" + note + ")";
+                + (Cutaway.SHADOW.equals(v.cutMode()) ? "shadow, margin " + v.shadowMargin() : v.cutCone() ? "cone, radius " + v.coneRadius() : "outline, margin " + v.outlineMargin()) + " (" + note + ")";
     }
 }

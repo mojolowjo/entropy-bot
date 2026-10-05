@@ -156,7 +156,7 @@ public final class WatchCamera {
         return on && !TunnelView.INSTANCE.on() ? distance : -1f;
     }
 
-    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|status|mode cone|outline|radius N]] | watch dollhouse [on|off] | watch cut [on|off|status|mode cone|outline|radius N] | watch steer [on|off|status] | watch turn [on|off|status|rate 5-180] | watch seen [on|off|status] | watch shot";
+    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|status|mode shadow|cone|outline|radius N]] | watch dollhouse [on|off] | watch cut [on|off|status|mode shadow|cone|outline|radius N] | watch steer [on|off|status] | watch turn [on|off|status|rate 5-180] | watch seen [on|off|status] | watch shot";
 
     /** Pure: "dollhouse", "dollhouse on|off" -> true/false for the new state given the old one, or null when not understood. */
     public static Boolean parseDollhouse(String a, boolean now) {
@@ -248,16 +248,24 @@ public final class WatchCamera {
             if (a.startsWith("dollhouse")) return "error: watch tunnel dollhouse [on|off] (now " + (tv.dollhouse() ? "on" : "off") + ")";
             if (a.equals("cut status")) return "cutaway: " + tv.cutReport();
             if (a.startsWith("cut radius")) {
-                boolean cone = tv.cutCone();
-                double r = io.github.mojolowjo.entropybot.watchview.Cutaway.parseRadius(a.substring(10), cone);
-                if (r < 0) return "error: watch cut radius " + (cone ? "1-6 in cone mode (now " + tv.coneRadius() : "0-3 in outline mode (now " + tv.cutRadius()) + ")";
-                if (cone) tv.setConeRadius(r); else tv.setCutRadius(r);
+                String mode = tv.cutMode();
+                double r = io.github.mojolowjo.entropybot.watchview.Cutaway.parseRadius(a.substring(10), mode);
+                if (r < 0) return "error: watch cut radius " + switch (mode) {
+                    case io.github.mojolowjo.entropybot.watchview.Cutaway.SHADOW -> "0-2 in shadow mode (now " + tv.shadowMargin();
+                    case io.github.mojolowjo.entropybot.watchview.Cutaway.CONE -> "1-6 in cone mode (now " + tv.coneRadius();
+                    default -> "0-3 in outline mode (now " + tv.cutRadius();
+                } + ")";
+                switch (mode) {
+                    case io.github.mojolowjo.entropybot.watchview.Cutaway.SHADOW -> tv.setShadowMargin(r);
+                    case io.github.mojolowjo.entropybot.watchview.Cutaway.CONE -> tv.setConeRadius(r);
+                    default -> tv.setCutRadius(r);
+                }
                 return "ok: cutaway " + tv.cutReport() + (tv.cut() ? "" : " (the cut is off: watch tunnel cut on)") + "; kept across restarts" + WatchSettings.INSTANCE.save();
             }
             if (a.startsWith("cut mode")) {
-                Boolean m = io.github.mojolowjo.entropybot.watchview.Cutaway.parseMode(a);
-                if (m == null) return "error: watch cut mode cone|outline (now " + (tv.cutCone() ? "cone" : "outline") + ")";
-                tv.setCutCone(m);
+                String m = io.github.mojolowjo.entropybot.watchview.Cutaway.parseModeName(a);
+                if (m == null) return "error: watch cut mode shadow|cone|outline (now " + tv.cutMode() + ")";
+                tv.setCutMode(m);
                 return "ok: cutaway " + tv.cutReport() + (tv.cut() ? "" : " (the cut is off: watch tunnel cut on)") + "; kept across restarts" + WatchSettings.INSTANCE.save();
             }
             Boolean ct = io.github.mojolowjo.entropybot.watchview.Cutaway.parseCut(a, tv.cut());
@@ -265,12 +273,12 @@ public final class WatchCamera {
                 tv.setCut(ct);
                 return "ok: cutaway " + tv.cutReport() + (tv.on() ? "" : " (applies when watch tunnel is on)") + "; kept until the game restarts";
             }
-            if (a.startsWith("cut")) return "error: watch tunnel cut [on|off|status|mode cone|outline|radius N] (now " + (tv.cut() ? "on, " + tv.cutModeWords() : "off") + ")";
+            if (a.startsWith("cut")) return "error: watch tunnel cut [on|off|status|mode shadow|cone|outline|radius N] (now " + (tv.cut() ? "on, " + tv.cutModeWords() : "off") + ")";
             if (a.equals("turn left") || a.equals("turn right")) {
                 tv.setYaw(TunnelPose.quarter(tv.yaw(), a.endsWith("left")));
                 return "ok: the tunnel camera looks " + compass(tv.yaw()) + " now";
             }
-            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right | watch tunnel dollhouse [on|off] | watch tunnel cut [on|off|status|mode cone|outline|radius N]";
+            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right | watch tunnel dollhouse [on|off] | watch tunnel cut [on|off|status|mode shadow|cone|outline|radius N]";
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.player == null) return "error: not in a world";
             if (!io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied)

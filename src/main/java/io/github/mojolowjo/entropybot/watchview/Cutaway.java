@@ -146,12 +146,65 @@ public final class Cutaway {
         }
     }
 
-    /** "cut mode cone|outline" -> true (cone) / false (outline), null when not understood. */
+    /** "cut mode cone|outline" -> true (cone) / false (outline), null when not understood (0.19.0 words; shadow -> null). */
     public static Boolean parseMode(String a) {
+        String m = parseModeName(a);
+        return m == null || m.equals(SHADOW) ? null : m.equals(CONE);
+    }
+
+    // ---- 0.19.1: the shadow cut (watch cut mode shadow, the new default) ---------------------------------------------
+    //
+    // The cone measured "near the camera-bot line", so a spruce trunk standing beside the bot, slightly nearer than its
+    // middle, was cut although it never covers the bot. Shadow asks "in the way": the ray from the camera through the
+    // cell's centre must go on to hit the bot's box (grown by the margin m at the sides and top), and the cell must be at
+    // least half a block nearer than where that ray enters the grown box. Block-granular like the cone, hard edges.
+
+    public static final String SHADOW = "shadow", CONE = "cone", OUTLINE = "outline";
+    /** The shadow mode's margin round the bot's box ({@code watch cut radius N} in shadow mode). */
+    public static final double DEFAULT_SHADOW_MARGIN = 0.5, MIN_SHADOW_MARGIN = 0.0, MAX_SHADOW_MARGIN = 2.0;
+    /** A cell is cut only when its centre is at least this much nearer than where its ray enters the grown box. */
+    public static final double SHADOW_DEPTH = 0.5;
+
+    /**
+     * Is the cell at x y z cut by the shadow rule? Q = its centre; the ray camera -> Q must enter the box grown by m
+     * (sides and top; bottom = feet + 0.1) at a distance enter with |Q - cam| < enter - 0.5; cells whose top is at or
+     * below the feet + 0.1 are never cut. m < 0: no cut. The shaders' cutShadow() (CutShadow = m).
+     */
+    public static boolean shadowCell(int x, int y, int z, double cx, double cy, double cz,
+                                     double minX, double minY, double minZ, double maxX, double maxY, double maxZ, double m) {
+        if (m < 0) return false;
+        if (y + 1.0 <= minY + FEET_LIFT) return false;
+        double qx = x + 0.5 - cx, qy = y + 0.5 - cy, qz = z + 0.5 - cz;
+        double dist = Math.sqrt(qx * qx + qy * qy + qz * qz);
+        if (dist < 1e-4) return false;
+        double e = enter(cx, cy, cz, qx / dist, qy / dist, qz / dist, minX - m, minY + FEET_LIFT, minZ - m, maxX + m, maxY + m, maxZ + m);
+        if (e < 0) return false;
+        return dist < e - SHADOW_DEPTH;
+    }
+
+    /** The shadow rule for the fragment at P: the cell its ray enters there, then {@link #shadowCell}. */
+    public static boolean shadowCuts(double px, double py, double pz, double cx, double cy, double cz,
+                                     double minX, double minY, double minZ, double maxX, double maxY, double maxZ, double m) {
+        int[] c = cellEntered(px, py, pz, cx, cy, cz);
+        return c != null && shadowCell(c[0], c[1], c[2], cx, cy, cz, minX, minY, minZ, maxX, maxY, maxZ, m);
+    }
+
+    /** "cut mode shadow|cone|outline" -> the mode's name, null when not understood. */
+    public static String parseModeName(String a) {
         String t = a == null ? "" : a.trim();
-        if (t.equals("cut mode cone")) return true;
-        if (t.equals("cut mode outline")) return false;
+        for (String m : new String[]{SHADOW, CONE, OUTLINE}) if (t.equals("cut mode " + m)) return m;
         return null;
+    }
+
+    /** {@code watch cut radius N} for a mode by name: shadow 0-2, cone 1-6, outline 0-3; -1 when not. */
+    public static double parseRadius(String s, String mode) {
+        if (!SHADOW.equals(mode)) return parseRadius(s, CONE.equals(mode));
+        try {
+            double d = Double.parseDouble(s == null ? "" : s.trim());
+            return d >= MIN_SHADOW_MARGIN && d <= MAX_SHADOW_MARGIN ? d : -1;
+        } catch (RuntimeException e) {
+            return -1;
+        }
     }
 
     /** "cut", "cut on", "cut off" ->the new state given the old one (a bare word toggles), or null when not understood. */

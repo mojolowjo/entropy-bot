@@ -10,6 +10,7 @@
         { "name": "CutMin", "type": "float", "count": 3, "values": [ 0.0, 0.0, 0.0 ] },
         { "name": "CutMax", "type": "float", "count": 3, "values": [ 0.0, 0.0, 0.0 ] },
         { "name": "CutMargin", "type": "float", "count": 2, "values": [ -1.0, -1.0 ] },
-        { "name": "CutCone", "type": "float", "count": 1, "values": [ 0.0 ] }
+        { "name": "CutCone", "type": "float", "count": 1, "values": [ 0.0 ] },
+        { "name": "CutShadow", "type": "float", "count": 1, "values": [ -1.0 ] }
     ]
 }
