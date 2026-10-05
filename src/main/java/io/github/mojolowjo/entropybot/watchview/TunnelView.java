@@ -112,6 +112,11 @@ public final class TunnelView {
         pose = null;
     }
 
+    /** watch turn (2026-10-05): a smooth turn of the view's yaw (the pose eases after it; no jump, unlike setYaw). */
+    public void turnBy(float degrees) {
+        yaw = io.github.mojolowjo.entropybot.engine.SteerRules.wrap(yaw + degrees);
+    }
+
     public double height() { return height; }
 
     /** 0.16.0 {@code watch tunnel dollhouse}: back-face culling and the depth test for the faces (see TunnelMesh.draw). The default since TLL 32; kept in watch.json (WatchSettings). */

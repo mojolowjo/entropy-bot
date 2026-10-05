@@ -28,6 +28,8 @@ public final class WatchCamera {
     private volatile boolean on;
     private volatile float yaw;
     private boolean haveYaw;
+    private volatile float prevYaw;
+    private float tickEndYaw;
     private double lastX, lastZ;
     private float lastPlayerYaw;
     private boolean haveLast;
@@ -125,8 +127,28 @@ public final class WatchCamera {
 
     /** v1's angles for this frame, or null to leave the camera alone (off, or first person). */
     public float[] v1Angles(boolean detached) {
+        return v1Angles(detached, 1f);
+    }
+
+    /**
+     * v1's angles for a frame partial ticks after the last tick: the yaw drawn between the last two ticks' yaws, the
+     * same way the bot itself is drawn between its last two positions (watch turn, 2026-10-05: a 45 deg/s turn moves
+     * 2.25 degrees a tick, a visible step at 60 FPS otherwise).
+     */
+    public float[] v1Angles(boolean detached, float partial) {
         if (!on || !detached) return null;
-        return new float[]{yaw, PITCH, 0f};
+        return new float[]{haveYaw ? drawnYaw(prevYaw, yaw, partial) : yaw, PITCH, 0f};
+    }
+
+    /** Pure: the yaw between the last tick's (from) and this tick's (to), partial 0..1 of the way, by the shorter way round. */
+    public static float drawnYaw(float from, float to, float partial) {
+        float t = partial < 0f || Float.isNaN(partial) ? 0f : Math.min(partial, 1f);
+        return from + turn(from, to) * t;
+    }
+
+    /** watch turn: the input listener turns v1's yaw (before tick() in the same client tick). */
+    public void turnBy(float degrees) {
+        if (haveYaw) yaw = SteerRules.wrap(yaw + degrees);
     }
 
     /** v1's camera distance, or -1 to leave it alone. */
@@ -134,7 +156,7 @@ public final class WatchCamera {
         return on && !TunnelView.INSTANCE.on() ? distance : -1f;
     }
 
-    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|radius 0-3]] | watch dollhouse [on|off] | watch cut [on|off|radius 0-3] | watch steer [on|off|status] | watch seen [on|off|status] | watch shot";
+    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|radius 0-3]] | watch dollhouse [on|off] | watch cut [on|off|radius 0-3] | watch steer [on|off|status] | watch turn [on|off|status|rate 5-180] | watch seen [on|off|status] | watch shot";
 
     /** Pure: "dollhouse", "dollhouse on|off" -> true/false for the new state given the old one, or null when not understood. */
     public static Boolean parseDollhouse(String a, boolean now) {
@@ -152,6 +174,7 @@ public final class WatchCamera {
         WatchSettings.INSTANCE.ensureLoaded();          // TLL 32: the saved settings first, so a change below is never overwritten by them
         if (t.equals("off") || t.equals("stop")) return allOff();
         if (t.equals("steer") || t.startsWith("steer ")) return WatchSteer.INSTANCE.command(t.substring(5));
+        if (t.equals("turn") || t.startsWith("turn ")) return WatchSteer.INSTANCE.turnCommand(t.substring(4));   // watch turn (2026-10-05)
         if (t.equals("status")) {
             String h = hookLine();
             return "watch camera: " + (on ? "on (behind the bot, " + distance + " blocks, following its walking direction)" : "off") + " | " + h
@@ -389,8 +412,10 @@ public final class WatchCamera {
             double x = p.getX(), z = p.getZ();
             if (!haveYaw) {
                 yaw = p.getYRot();
+                tickEndYaw = yaw;
                 haveYaw = true;
             }
+            prevYaw = tickEndYaw;       // frames are drawn from the last tick's yaw to this tick's (v1Angles)
             float py = p.getYRot();
             // watch steer: while the human drives, hold the yaw (turning only with the player's own turn), else follow the walk
             if (haveLast) yaw = SteerRules.nextYaw(WatchSteer.INSTANCE.humanDriving(), yaw, follow(yaw, x - lastX, z - lastZ), turn(lastPlayerYaw, py));
@@ -398,6 +423,7 @@ public final class WatchCamera {
             lastX = x;
             lastZ = z;
             haveLast = true;
+            tickEndYaw = yaw;
         } catch (Throwable e) {
             if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: {}", e.toString());
         }

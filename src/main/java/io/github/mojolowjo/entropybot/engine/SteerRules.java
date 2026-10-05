@@ -81,10 +81,91 @@ public final class SteerRules {
      * The view's next yaw. While the human drives, the walk-following must stop: it would turn the camera towards the
      * walking direction, which turns the keys with it (D would walk a circle, S would swing the camera round). So the
      * camera holds its yaw and only turns with the player's own turn (the mouse, when it is grabbed). Otherwise the
-     * view's own follow result.
+     * view's own follow result. {@code watch turn} (2026-10-05) turns the held yaw from the input listener itself
+     * (A/D and the turn keys, {@link #steerTick}), before this runs in the same tick, so the hold keeps that turn.
      */
     public static float nextYaw(boolean humanDriving, float cameraYaw, float followedYaw, float playerTurn) {
         return humanDriving ? cameraYaw + playerTurn : followedYaw;
+    }
+
+    // ---- watch turn (owner, 2026-10-05: "Roblox style": A/D strafe AND turn the camera; the arrow keys only turn) ----
+
+    /** Degrees per second: the default and the range of {@code watch turn rate N}. */
+    public static final float TURN_RATE_DEFAULT = 45f, TURN_RATE_MIN = 5f, TURN_RATE_MAX = 180f;
+    /** One client tick in seconds. The turn is stepped per tick, like the movement, so a held D walks the same circle at any frame rate. */
+    public static final float TICK_SECONDS = 0.05f;
+
+    /** Pure: the rate asked for, or -1 when the text is not a number in 5-180. */
+    public static float parseTurnRate(String s) {
+        try {
+            float r = Float.parseFloat(s.trim());
+            return r >= TURN_RATE_MIN && r <= TURN_RATE_MAX ? r : -1f;
+        } catch (RuntimeException e) {
+            return -1f;
+        }
+    }
+
+    /**
+     * Pure: which way the keys turn the camera: -1 left, +1 right, 0 none. A (strafe left) and the turn-left key count
+     * left, D and turn-right count right; opposite keys cancel, two keys the same way do not turn faster.
+     */
+    public static int turnDirection(boolean strafeLeft, boolean strafeRight, boolean turnLeft, boolean turnRight) {
+        int d = (strafeLeft ? -1 : 0) + (strafeRight ? 1 : 0) + (turnLeft ? -1 : 0) + (turnRight ? 1 : 0);
+        return Integer.signum(d);
+    }
+
+    /** Pure: a yaw wrapped into [-180, 180), so a long turn never grows the number (float precision). */
+    public static float wrap(float yaw) {
+        float y = (yaw + 180f) % 360f;
+        if (y < 0f) y += 360f;
+        return y - 180f;
+    }
+
+    /**
+     * Pure: the camera's turn for one step, in degrees (Minecraft's yaw grows turning right: south 0, west 90). rate is
+     * degrees per second, dt the step in seconds. 0 when no turn key is held or the values make no sense.
+     */
+    public static float turnDelta(boolean strafeLeft, boolean strafeRight, boolean turnLeft, boolean turnRight, float rate, float dt) {
+        int d = turnDirection(strafeLeft, strafeRight, turnLeft, turnRight);
+        if (d == 0 || !(rate > 0f) || !(dt > 0f) || Float.isInfinite(rate) || Float.isInfinite(dt)) return 0f;
+        return d * rate * dt;
+    }
+
+    /** Pure: the new yaw after one step (wrapped). */
+    public static float turnYaw(boolean strafeLeft, boolean strafeRight, boolean turnLeft, boolean turnRight, float rate, float dt, float yaw) {
+        float d = turnDelta(strafeLeft, strafeRight, turnLeft, turnRight, rate, dt);
+        return d == 0f ? yaw : wrap(yaw + d);
+    }
+
+    /**
+     * Pure: one tick of steer with the turn, in the order the game must do it: first the camera turns (A/D only when
+     * {@code turnOn}; the turn keys too), then the movement keys are remapped with the yaw AFTER that turn, so the
+     * remap and the camera use the same yaw in the same tick (no one-tick lag: the bot's step and the view's turn are
+     * the same tick's). Returns {turn in degrees, forward, left}. Not active or not a human: {0, forward, left}.
+     *
+     * @param cameraYaw the yaw the remap would use before the turn (the drawn yaw of that view)
+     */
+    public static float[] steerTick(State state, boolean human, boolean turnOn, boolean strafeLeftKey, boolean strafeRightKey,
+                                    boolean turnLeftKey, boolean turnRightKey, float rate, float dt,
+                                    float forward, float left, float cameraYaw, float playerYaw) {
+        if (state == null || !state.active() || !human) return new float[]{0f, forward, left};
+        float turn = turnOn ? turnDelta(strafeLeftKey, strafeRightKey, turnLeftKey, turnRightKey, rate, dt) : 0f;
+        float[] r = remap(state, true, forward, left, cameraYaw + turn, playerYaw);
+        return new float[]{turn, r[0], r[1]};
+    }
+
+    /** The check findings for the turn: the turn needs the input listener; the arrow keys need their key mappings. */
+    public static java.util.List<io.github.mojolowjo.entropybot.commands.SelfCheck.Finding> turnFindings(boolean turnOn, boolean steerOn,
+                                                                                                         boolean listenerRegistered, boolean keysRegistered) {
+        java.util.List<io.github.mojolowjo.entropybot.commands.SelfCheck.Finding> out = new java.util.ArrayList<>();
+        if (!turnOn || !steerOn) return out;
+        if (!listenerRegistered) out.add(new io.github.mojolowjo.entropybot.commands.SelfCheck.Finding("turnhook",
+                "watch turn is on, but the movement-input listener that turns the camera (MovementInputUpdateEvent) is not registered: neither A/D nor the arrow keys turn the watch views",
+                "look for [entropybot] errors at the start of the game log"));
+        else if (!keysRegistered) out.add(new io.github.mojolowjo.entropybot.commands.SelfCheck.Finding("turnkeys",
+                "watch turn is on, but its turn keys (RegisterKeyMappingsEvent, the arrow keys by default) are not registered: only A/D turn the camera",
+                "look for [entropybot] errors at the start of the game log"));
+        return out;
     }
 
     /** The check findings: the input listener not registered while the setting is on, or steer off after errors. */

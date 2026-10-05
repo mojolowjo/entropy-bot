@@ -14,7 +14,7 @@ public final class EntropyBot {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
         io.github.mojolowjo.entropybot.engine.WatchEvents.register();     // watch camera v1/v2 + the render-stage probe
-        io.github.mojolowjo.entropybot.engine.WatchSteer.register();      // watch steer: camera-relative keys in the watch views
+        io.github.mojolowjo.entropybot.engine.WatchSteer.register(modBus);      // watch steer: camera-relative keys in the watch views (+ watch turn's keys)
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.init();  // camera v2: known air from every clear
         // 0.17.1: the tunnel view's surface scan hears chunk loads/unloads (NeoForge) and block changes (the mod's ClientLevel hook)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.level.ChunkEvent.Load.class, EntropyBot::onChunkLoad);
