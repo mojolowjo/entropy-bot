@@ -238,6 +238,12 @@ public final class ClearEngine {
     public static final String COULD_NOT_REACH = "couldn't reach it";
 
     /**
+     * Camera v2 (docs/CAMERA_PLAN.md): told about every block a clear broke, the tunnel view's known air (the broken
+     * cells only, never the whole box: review C6). Set by {@code watchview.TunnelView}; null in tests.
+     */
+    public static volatile java.util.function.Consumer<Pos> brokenSink;
+
+    /**
      * clearBreak's bookkeeping when the block is gone: counts it (and the ore, when collecting), takes a mined
      * ore off the list, and skips a block the server keeps putting back (3 times; not sand or gravel refilling
      * the spot). True every 250 blocks (the bridge whispers the requester "clearing: N blocks broken so far").
@@ -246,6 +252,10 @@ public final class ClearEngine {
      * @param oreId   the ore's block id when collecting an ore (beginBreak's t.oreId), else null
      */
     public static boolean onBroken(ClearJob job, Pos t, boolean falling, String oreId) {
+        java.util.function.Consumer<Pos> sink = brokenSink;
+        if (sink != null) {
+            try { sink.accept(t); } catch (RuntimeException ignored) {}   // camera v2's known air: never stops a dig
+        }
         String key = t.key();
         job.broken++;
         job.consecFails = 0;

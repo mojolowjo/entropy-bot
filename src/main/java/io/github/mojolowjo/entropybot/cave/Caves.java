@@ -102,6 +102,13 @@ public final class Caves {
 
     public synchronized Cave get(String name) { return caves.get(name); }
 
+    /** Camera v2: x y z lies in a coarse cell some cave of this dimension has been through. */
+    public synchronized boolean visitedAt(String dim, int x, int y, int z) {
+        long c = CaveSearch.coarse(x, y, z);
+        for (Cave cv : caves.values()) if (cv.dim.equals(dim) && cv.visited.contains(c)) return true;
+        return false;
+    }
+
     /** B7e: how many caves it remembers (for "memory"). */
     public synchronized int size() { return caves.size(); }
 

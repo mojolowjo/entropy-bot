@@ -56,9 +56,11 @@ public final class WatchProbe {
             String name = String.valueOf(event.getStage());
             counts.computeIfAbsent(name, k -> new AtomicLong()).incrementAndGet();
             float r = 0, g = 0, b = 0, size = 0;
-            if (name.contains("AFTER_TRANSLUCENT_BLOCKS")) { r = 1; size = 0.9f; }
-            else if (name.contains("AFTER_PARTICLES")) { g = 1; size = 1.3f; }
-            else if (name.contains("AFTER_LEVEL")) { b = 1; size = 1.7f; }
+            // compare the Stage objects: the names are lower case ("minecraft:after_particles"), so 0.15.1's upper-case test never drew
+            RenderLevelStageEvent.Stage st = event.getStage();
+            if (st == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) { r = 1; size = 0.9f; }
+            else if (st == RenderLevelStageEvent.Stage.AFTER_PARTICLES) { g = 1; size = 1.3f; }
+            else if (st == RenderLevelStageEvent.Stage.AFTER_LEVEL) { b = 1; size = 1.7f; }
             else return;
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) return;

@@ -34,6 +34,23 @@ class MixinConfigTest {
         assertTrue(plugin.contains("levelHookApplied"), "and still sets the flag check reads");
     }
 
+    /** Camera 0.15.2: v1 runs on events (no Camera.setup mixin); v2's position invoker is listed and recognised. */
+    @Test
+    void theCameraPositionInvokerIsListedAndTheOldSetupMixinIsGone() throws IOException {
+        String cfg = resource("entropybot.mixins.json");
+        assertTrue(cfg.contains("\"WatchMixinCameraAccess\""), "listed");
+        assertFalse(cfg.contains("\"WatchMixinCamera\""), "the old Camera.setup TAIL mixin is gone (review C3)");
+        assertNull(MixinConfigTest.class.getClassLoader().getResource("io/github/mojolowjo/entropybot/mixin/WatchMixinCamera.class"));
+        String plugin = resource("io/github/mojolowjo/entropybot/mixin/GuardMixinPlugin.class");
+        assertTrue(plugin.contains("WatchMixinCameraAccess"));
+        assertTrue(plugin.contains("cameraPosApplied"));
+        String mixin = resource("io/github/mojolowjo/entropybot/mixin/WatchMixinCameraAccess.class");
+        assertTrue(mixin.contains("net/minecraft/client/Camera"), "targets Camera");
+        assertTrue(mixin.contains("setPosition"), "invokes setPosition");
+        assertTrue(mixin.contains("(Lnet/minecraft/world/phys/Vec3;)V"), "the Vec3 overload");
+        assertTrue(mixin.contains("org/spongepowered/asm/mixin/gen/Invoker"));
+    }
+
     @Test
     void theBlockHookTargetsTheTwoClientLevelMethods() throws IOException {
         String mixin = resource("io/github/mojolowjo/entropybot/mixin/RecorderMixinClientLevel.class");

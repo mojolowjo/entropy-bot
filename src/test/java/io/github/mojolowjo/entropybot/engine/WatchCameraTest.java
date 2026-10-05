@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.engine;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class WatchCameraTest {
     @Test
@@ -58,5 +59,24 @@ class WatchCameraTest {
         assertEquals(-1f, WatchCamera.parseDistance("3"));
         assertEquals(-1f, WatchCamera.parseDistance("9"));
         assertEquals(-1f, WatchCamera.parseDistance("x"));
+    }
+
+    @Test
+    void tunnelHeightAndCompass() {
+        assertEquals(12.0, WatchCamera.parseHeight("12"));
+        assertEquals(-1.0, WatchCamera.parseHeight("3"));
+        assertEquals(-1.0, WatchCamera.parseHeight("41"));
+        assertEquals(-1.0, WatchCamera.parseHeight(""));
+        assertEquals("south", WatchCamera.compass(0f));
+        assertEquals("west", WatchCamera.compass(90f));
+        assertEquals("north", WatchCamera.compass(180f));
+        assertEquals("north", WatchCamera.compass(-180f));
+        assertEquals("east", WatchCamera.compass(-90f));
+        assertEquals("south-east", WatchCamera.compass(-45f));
+    }
+
+    @Test
+    void v1AnglesOnlyWhileOnAndDetached() {
+        assertNull(WatchCamera.INSTANCE.v1Angles(true), "off by default");
     }
 }

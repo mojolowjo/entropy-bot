@@ -74,7 +74,8 @@ public final class Core {
             if (mc.level == null) {
                 if (inWorld && terrain != null) terrain.flushAll();
                 if (inWorld && ready) mineNotes.flush();      // S1: the miner's notes are written when leaving the world
-                if (inWorld) io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.leftWorld();     // camera v1: the old cap back
+                if (inWorld) io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.leftWorld();     // camera v1/v2: the old view and cap back
+                if (inWorld) io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.leftWorld();   // camera v2: known air saved
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
                 inWorld = false;
                 return;
@@ -90,14 +91,17 @@ public final class Core {
                 // S1: and when the game quits from inside a world (no tick runs after that)
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try { mineNotes.flush(); } catch (Throwable ignored) {}
+                    try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
                 }, "entropybot-mine-notes"));
+                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(files.root());
+                LOG.info("[entropybot] watch tunnel: {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote());
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
-                LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} watch={} (target present={}); folder {}",
+                LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} watch={} camerapos={} (target present={}); folder {}",
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
-                        MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.watchApplied, MixinFlags.astarTargetPresent, files.root());
+                        MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.watchApplied, MixinFlags.cameraPosApplied, MixinFlags.astarTargetPresent, files.root());
                 events.push("job", "mod ready " + version(), null);
             }
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
@@ -131,6 +135,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
+            io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.tick(tick);      // camera v2: known air (never throws)
             io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.tick(tick);     // routing R2: the map builder (never throws)
         } catch (Throwable t) {
             errors++;
@@ -145,6 +150,7 @@ public final class Core {
         a.add("guard:" + guard.core.mode().name().toLowerCase());
         if (MixinFlags.clickApplied) a.add("guard:click");
         if (MixinFlags.watchApplied) a.add("camera:watch");
+        if (MixinFlags.cameraPosApplied) a.add("camera:tunnel");
         if (MixinFlags.placeApplied) a.add("guard:place");
         if (MixinFlags.astarApplied) a.add("guard:astar");
         if (MixinFlags.farmlandApplied) a.add("baritone:farmland");

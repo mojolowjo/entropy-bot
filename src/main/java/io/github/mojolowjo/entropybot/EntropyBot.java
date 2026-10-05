@@ -13,11 +13,8 @@ public final class EntropyBot {
     public EntropyBot(IEventBus modBus) {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
-        NeoForge.EVENT_BUS.addListener(EntropyBot::onRenderStage);     // camera v2 probe: which stages fire with Sodium
-    }
-
-    private static void onRenderStage(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
-        io.github.mojolowjo.entropybot.engine.WatchProbe.INSTANCE.onStage(event);
+        io.github.mojolowjo.entropybot.engine.WatchEvents.register();     // watch camera v1/v2 + the render-stage probe
+        io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.init();  // camera v2: known air from every clear
     }
 
     private static void onChat(ClientChatReceivedEvent event) {

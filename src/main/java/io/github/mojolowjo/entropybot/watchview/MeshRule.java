@@ -1,0 +1,29 @@
+package io.github.mojolowjo.entropybot.watchview;
+
+/**
+ * Camera v2: when the shell mesh is rebuilt. Only when something changed: the known-air set (a dig step, a new cave
+ * cell), the bot moved far from where the mesh was centred, or a slow refresh for blocks that changed in the world
+ * (someone filled a tunnel). Never more often than every {@link #MIN_GAP_MS}. Cells within {@link #radius} of the bot.
+ * Pure (JUnit: MeshRuleTest).
+ */
+public final class MeshRule {
+    public static final long MIN_GAP_MS = 400, REFRESH_MS = 10_000;
+    public static final int MOVED_BLOCKS = 12;
+    public static final int MAX_FACES = 60_000;
+
+    private MeshRule() {}
+
+    /** A rebuild is due now. */
+    public static boolean due(boolean built, long version, long builtVersion, long nowMs, long builtMs, double movedSq) {
+        if (!built) return true;
+        if (nowMs - builtMs < MIN_GAP_MS) return false;
+        if (version != builtVersion) return true;
+        if (movedSq > (double) MOVED_BLOCKS * MOVED_BLOCKS) return true;
+        return nowMs - builtMs >= REFRESH_MS;
+    }
+
+    /** The radius of known cells drawn, from the render distance in chunks: the render distance, 32 to 128 blocks. */
+    public static int radius(int renderChunks) {
+        return Math.max(32, Math.min(128, renderChunks * 16));
+    }
+}

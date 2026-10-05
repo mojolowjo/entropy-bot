@@ -11,7 +11,7 @@
     "FarmlandMixinPrecomputedData",
     "ReconnectMixinQuickPlay",
     "RecorderMixinClientLevel",
-    "WatchMixinCamera"
+    "WatchMixinCameraAccess"
   ],
   "injectors": {
     "defaultRequire": 1

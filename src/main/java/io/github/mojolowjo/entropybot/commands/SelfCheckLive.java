@@ -51,6 +51,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     private List<SelfCheck.Finding> findings(LocalPlayer p) {
         List<SelfCheck.Finding> f = new java.util.ArrayList<>(SelfCheck.run(state(p)));
         f.addAll(RouteCommand.findings(c));
+        try {
+            f.addAll(io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.findings());   // camera hooks (0.15.2)
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("watchcheck", "couldn't check the watch camera: " + e, "watch status"));
+        }
         return f;
     }
 

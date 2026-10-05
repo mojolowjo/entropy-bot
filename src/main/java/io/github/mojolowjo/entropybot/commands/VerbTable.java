@@ -164,7 +164,9 @@ public final class VerbTable {
         v("b", "baritone", "other", O, "b <baritone command>", "a raw Baritone command (careful: never goto <block name>)", "b set allowSprint true", "status");
         v("debug", "", "other", O, "debug | debug gui|inv|baritone | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n]",
                 "read-only looks inside the game (from the laptop or the dashboard, not by PM)", "debug inv|debug incident", "debug");
-        v("watch", "", "other", O, "watch | watch off | watch status | watch distance 4-8 | watch shot | watch probe [off|status]", "a third-person camera behind the bot that follows its walking direction (render only, 60 FPS while on)", "watch", "watch off");
+        v("watch", "", "other", O, "watch | watch off | watch status | watch distance 4-8 | watch tunnel [off|status|height 4-40|turn left|right] | watch shot | watch probe [off|status]",
+                "watch: a camera behind the bot that follows its walking direction; watch tunnel: a camera above it, the walls of the tunnels and caves it opened drawn through the rock (no x-ray); render only, 60 FPS while on, watch off for the normal view",
+                "watch|watch tunnel", "watch off");
     v("mouse", "", "other", O, "mouse free|grab", "let the bot's window keep (grab) or release (free) the mouse", "mouse free", "status");
         v("recorder", "", "other", O, "recorder | recorder off|light|normal|detailed|max | recorder <preset> for <N>m|<N>h | recorder range <chunks> | recorder trail <ticks> | recorder snapshot <blocks>|now | recorder states on|off | recorder keep <hours> | recorder mark <note>",
                 "the flight recorder: what the bot saw and did, kept for a while", "recorder|recorder detailed for 30m", "debug incident");
