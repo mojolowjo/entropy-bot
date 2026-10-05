@@ -50,7 +50,7 @@ public final class TunnelView {
     public static final TunnelView INSTANCE = new TunnelView();
     public static final String FILE = "knownair.bin";
     static final int SIGHT_CAVE = 6, SIGHT_ELSEWHERE = 2, SIGHT_MAX = 400;
-    static final double DEFAULT_HEIGHT = 12;
+    static final double DEFAULT_HEIGHT = 4;
     static final long SAVE_EVERY_TICKS = 6000;
 
     private final KnownAir known = new KnownAir();

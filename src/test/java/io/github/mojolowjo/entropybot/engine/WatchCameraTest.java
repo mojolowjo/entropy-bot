@@ -56,7 +56,8 @@ class WatchCameraTest {
     @Test
     void distanceIsFourToEight() {
         assertEquals(6f, WatchCamera.parseDistance(" 6 "));
-        assertEquals(-1f, WatchCamera.parseDistance("3"));
+        assertEquals(1f, WatchCamera.parseDistance("1"));
+        assertEquals(-1f, WatchCamera.parseDistance("0.5"));
         assertEquals(-1f, WatchCamera.parseDistance("9"));
         assertEquals(-1f, WatchCamera.parseDistance("x"));
     }
@@ -64,7 +65,8 @@ class WatchCameraTest {
     @Test
     void tunnelHeightAndCompass() {
         assertEquals(12.0, WatchCamera.parseHeight("12"));
-        assertEquals(-1.0, WatchCamera.parseHeight("3"));
+        assertEquals(1.0, WatchCamera.parseHeight("1"));
+        assertEquals(-1.0, WatchCamera.parseHeight("0.5"));
         assertEquals(-1.0, WatchCamera.parseHeight("41"));
         assertEquals(-1.0, WatchCamera.parseHeight(""));
         assertEquals("south", WatchCamera.compass(0f));

@@ -33,8 +33,8 @@ public final class WatchCamera {
     private Object savedCamera;      // the camera type before (net.minecraft.client.CameraType)
     private volatile boolean viewSaved;
     private int errors;
-    /** Camera distance in blocks (watch distance 4-8) and the hook's own call count, so a hook that never attached shows. */
-    private volatile float distance = 5f;
+    /** Camera distance in blocks (watch distance 1-8) and the hook's own call count, so a hook that never attached shows. */
+    private volatile float distance = 4f;
     private final java.util.concurrent.atomic.AtomicLong hookCalls = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong distanceCalls = new java.util.concurrent.atomic.AtomicLong();
     private volatile long lastHookMs, onSinceMs;
@@ -69,21 +69,21 @@ public final class WatchCamera {
         return "hook: active" + (callsPerSec >= 0 ? " (" + callsPerSec + " calls/s)" : "");
     }
 
-    /** Pure: the clamped distance asked for, or -1 when the text is not a number in 4-8. */
+    /** Pure: the clamped distance asked for, or -1 when the text is not a number in 1-8. */
     public static float parseDistance(String s) {
         try {
             float d = Float.parseFloat(s.trim());
-            return d >= 4f && d <= 8f ? d : -1f;
+            return d >= 1f && d <= 8f ? d : -1f;
         } catch (RuntimeException e) {
             return -1f;
         }
     }
 
-    /** Pure: the tunnel camera's height asked for, or -1 when the text is not a number in 4-40. */
+    /** Pure: the tunnel camera's height asked for, or -1 when the text is not a number in 1-40. */
     public static double parseHeight(String s) {
         try {
             double d = Double.parseDouble(s.trim());
-            return d >= 4 && d <= 40 ? d : -1;
+            return d >= 1 && d <= 40 ? d : -1;
         } catch (RuntimeException e) {
             return -1;
         }
@@ -130,7 +130,7 @@ public final class WatchCamera {
         return on && !TunnelView.INSTANCE.on() ? distance : -1f;
     }
 
-    static final String USAGE = "watch | watch off | watch status | watch distance 4-8 | watch tunnel [off|status|height 4-40|turn left|right] | watch shot";
+    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right] | watch shot";
 
     /** "watch" | "watch off" | "watch status" | "watch tunnel ..." (PM, owner): the answer. */
     public String command(String text) {
@@ -156,7 +156,7 @@ public final class WatchCamera {
         if (t.equals("shot")) return shot();
         if (t.startsWith("distance")) {
             float d = parseDistance(t.substring(8));
-            if (d < 0) return "error: watch distance 4-8 (now " + distance + ")";
+            if (d < 0) return "error: watch distance 1-8 (now " + distance + ")";
             distance = d;
             return "ok: the camera sits " + d + " blocks behind";
         }
@@ -193,7 +193,7 @@ public final class WatchCamera {
             if (a.equals("status")) return tv.status();
             if (a.startsWith("height")) {
                 double h = parseHeight(a.substring(6));
-                if (h < 0) return "error: watch tunnel height 4-40 (now " + tv.height() + ")";
+                if (h < 0) return "error: watch tunnel height 1-40 (now " + tv.height() + ")";
                 tv.setHeight(h);
                 return "ok: the tunnel camera sits " + h + " blocks above the bot (through rock: only what the bot opened is drawn)";
             }
@@ -201,7 +201,7 @@ public final class WatchCamera {
                 tv.setYaw(TunnelPose.quarter(tv.yaw(), a.endsWith("left")));
                 return "ok: the tunnel camera looks " + compass(tv.yaw()) + " now";
             }
-            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 4-40 | watch tunnel turn left|right";
+            if (!a.isEmpty() && !a.equals("on")) return "error: watch tunnel | watch tunnel off | watch tunnel status | watch tunnel height 1-40 | watch tunnel turn left|right";
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.player == null) return "error: not in a world";
             if (!io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied)
@@ -214,7 +214,7 @@ public final class WatchCamera {
             }
             return "ok: tunnel view on: the camera floats above and behind the bot looking " + compass(tv.yaw())
                     + " and passes through blocks; the real world is hidden, only the walls of the tunnels and caves it opened, the bot and mobs are drawn; "
-                    + WATCH_FPS + " FPS while on. watch tunnel turn left|right, watch tunnel height 4-40, watch tunnel off.";
+                    + WATCH_FPS + " FPS while on. watch tunnel turn left|right, watch tunnel height 1-40, watch tunnel off.";
         } catch (Throwable e) {
             return "error: " + e;
         }
