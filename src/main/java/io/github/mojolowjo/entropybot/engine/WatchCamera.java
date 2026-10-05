@@ -29,6 +29,7 @@ public final class WatchCamera {
     private volatile float yaw;
     private boolean haveYaw;
     private double lastX, lastZ;
+    private float lastPlayerYaw;
     private boolean haveLast;
     private Object savedCamera;      // the camera type before (net.minecraft.client.CameraType)
     private volatile boolean viewSaved;
@@ -48,6 +49,9 @@ public final class WatchCamera {
     public float yaw() { return yaw; }
 
     public float distance() { return distance; }
+
+    /** From the settings file (WatchSettings); the value is checked there. */
+    public void setDistance(float d) { distance = d; }
 
     private final java.util.concurrent.atomic.AtomicLong angleEdits = new java.util.concurrent.atomic.AtomicLong();
 
@@ -130,7 +134,7 @@ public final class WatchCamera {
         return on && !TunnelView.INSTANCE.on() ? distance : -1f;
     }
 
-    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]] | watch dollhouse [on|off] | watch seen [on|off|status] | watch shot";
+    static final String USAGE = "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]] | watch dollhouse [on|off] | watch steer [on|off|status] | watch seen [on|off|status] | watch shot";
 
     /** Pure: "dollhouse", "dollhouse on|off" -> true/false for the new state given the old one, or null when not understood. */
     public static Boolean parseDollhouse(String a, boolean now) {
@@ -145,12 +149,15 @@ public final class WatchCamera {
     public String command(String text) {
         String t = text == null ? "" : text.trim().toLowerCase();
         if (t.startsWith("watch")) t = t.substring(5).trim();
+        WatchSettings.INSTANCE.ensureLoaded();          // TLL 32: the saved settings first, so a change below is never overwritten by them
         if (t.equals("off") || t.equals("stop")) return allOff();
+        if (t.equals("steer") || t.startsWith("steer ")) return WatchSteer.INSTANCE.command(t.substring(5));
         if (t.equals("status")) {
             String h = hookLine();
             return "watch camera: " + (on ? "on (behind the bot, " + distance + " blocks, following its walking direction)" : "off") + " | " + h
                     + " | angle edits so far: " + angleEdits.get() + (on && angleEdits.get() == 0 ? " (NONE: the angle listener is not working)" : "")
-                    + " | yaw " + Math.round(yaw) + " | " + TunnelView.INSTANCE.status() + " | " + io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.status();
+                    + " | yaw " + Math.round(yaw) + " | " + WatchSteer.INSTANCE.status() + " | " + WatchSettings.INSTANCE.status()
+                    + " | " + TunnelView.INSTANCE.status() + " | " + io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.status();
         }
         if (t.equals("tunnel") || t.startsWith("tunnel ")) return tunnel(t.substring(6).trim());
         if (t.equals("dollhouse") || t.startsWith("dollhouse ")) return tunnel(t);          // alias of watch tunnel dollhouse
@@ -169,7 +176,7 @@ public final class WatchCamera {
             float d = parseDistance(t.substring(8));
             if (d < 0) return "error: watch distance 1-8 (now " + distance + ")";
             distance = d;
-            return "ok: the camera sits " + d + " blocks behind";
+            return "ok: the camera sits " + d + " blocks behind" + WatchSettings.INSTANCE.save();
         }
         if (!t.isEmpty() && !t.equals("on")) return "error: " + USAGE;
         try {
@@ -206,13 +213,13 @@ public final class WatchCamera {
                 double h = parseHeight(a.substring(6));
                 if (h < 0) return "error: watch tunnel height 1-40 (now " + tv.height() + ")";
                 tv.setHeight(h);
-                return "ok: the tunnel camera sits " + h + " blocks above the bot (through rock: only what the bot opened is drawn)";
+                return "ok: the tunnel camera sits " + h + " blocks above the bot (through rock: only what the bot opened is drawn)" + WatchSettings.INSTANCE.save();
             }
             Boolean dh = parseDollhouse(a, tv.dollhouse());
             if (dh != null) {
                 tv.setDollhouse(dh);
                 return "ok: tunnel view faces: " + TunnelView.drawMode(dh) + (tv.on() ? "" : " (applies when watch tunnel is on)")
-                        + "; kept until the game restarts";
+                        + "; kept across restarts" + WatchSettings.INSTANCE.save();
             }
             if (a.startsWith("dollhouse")) return "error: watch tunnel dollhouse [on|off] (now " + (tv.dollhouse() ? "on" : "off") + ")";
             if (a.equals("turn left") || a.equals("turn right")) {
@@ -353,6 +360,7 @@ public final class WatchCamera {
 
     /** Once a client tick, in a world: the yaw eases towards the walking direction. Never throws. */
     public void tick() {
+        WatchSettings.INSTANCE.ensureLoaded();      // TLL 32: once, at the first tick in a world (never throws)
         TunnelView.INSTANCE.tickYaw();     // v2: the view turns slowly with the bot's walking direction
         try {
             shotFallback();
@@ -368,7 +376,10 @@ public final class WatchCamera {
                 yaw = p.getYRot();
                 haveYaw = true;
             }
-            if (haveLast) yaw = follow(yaw, x - lastX, z - lastZ);
+            float py = p.getYRot();
+            // watch steer: while the human drives, hold the yaw (turning only with the player's own turn), else follow the walk
+            if (haveLast) yaw = SteerRules.nextYaw(WatchSteer.INSTANCE.humanDriving(), yaw, follow(yaw, x - lastX, z - lastZ), turn(lastPlayerYaw, py));
+            lastPlayerYaw = py;
             lastX = x;
             lastZ = z;
             haveLast = true;

@@ -83,6 +83,7 @@ public final class TunnelView {
     public boolean on() { return on; }
 
     private double walkLastX, walkLastZ;
+    private float walkLastPlayerYaw;
     private boolean walkHaveLast;
 
     /** Once a client tick (from WatchCamera.tick): the view turns slowly to match the way the bot is moving. Never throws. */
@@ -92,7 +93,10 @@ public final class TunnelView {
             net.minecraft.client.player.LocalPlayer p = Minecraft.getInstance().player;
             if (p == null) return;
             double x = p.getX(), z = p.getZ();
-            if (walkHaveLast) yaw = TunnelPose.followWalk(yaw, x - walkLastX, z - walkLastZ);
+            float py = p.getYRot();       // watch steer: the human drives = hold the yaw, turning only with the player's own turn
+            if (walkHaveLast) yaw = io.github.mojolowjo.entropybot.engine.SteerRules.nextYaw(io.github.mojolowjo.entropybot.engine.WatchSteer.INSTANCE.humanDriving(),
+                    yaw, TunnelPose.followWalk(yaw, x - walkLastX, z - walkLastZ), WatchCamera.turn(walkLastPlayerYaw, py));
+            walkLastPlayerYaw = py;
             walkLastX = x;
             walkLastZ = z;
             walkHaveLast = true;
@@ -110,8 +114,14 @@ public final class TunnelView {
 
     public double height() { return height; }
 
-    /** 0.16.0 {@code watch tunnel dollhouse}: back-face culling and the depth test for the faces (see TunnelMesh.draw). Per session. */
-    private volatile boolean dollhouse;
+    /** 0.16.0 {@code watch tunnel dollhouse}: back-face culling and the depth test for the faces (see TunnelMesh.draw). The default since TLL 32; kept in watch.json (WatchSettings). */
+    private volatile boolean dollhouse = true;
+
+    /** The yaw the camera was last drawn with (the eased look-at yaw of the pose), else the view's yaw. For watch steer. */
+    public float renderedYaw() {
+        TunnelPose.Pose p = pose;
+        return p != null ? p.yaw() : yaw;
+    }
 
     public boolean dollhouse() { return dollhouse; }
 
