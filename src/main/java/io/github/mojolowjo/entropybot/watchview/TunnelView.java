@@ -75,6 +75,25 @@ public final class TunnelView {
 
     public boolean on() { return on; }
 
+    private double walkLastX, walkLastZ;
+    private boolean walkHaveLast;
+
+    /** Once a client tick (from WatchCamera.tick): the view turns slowly to match the way the bot is moving. Never throws. */
+    public void tickYaw() {
+        if (!on) { walkHaveLast = false; return; }
+        try {
+            net.minecraft.client.player.LocalPlayer p = Minecraft.getInstance().player;
+            if (p == null) return;
+            double x = p.getX(), z = p.getZ();
+            if (walkHaveLast) yaw = TunnelPose.followWalk(yaw, x - walkLastX, z - walkLastZ);
+            walkLastX = x;
+            walkLastZ = z;
+            walkHaveLast = true;
+        } catch (Throwable t) {
+            fail("tunnel yaw", t, false);
+        }
+    }
+
     public float yaw() { return yaw; }
 
     public void setYaw(float y) {

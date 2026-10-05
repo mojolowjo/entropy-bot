@@ -117,4 +117,15 @@ class TunnelPoseTest {
         assertEquals(180f, TunnelPose.snap45(-170f));
         assertEquals(0f, TunnelPose.snap45(-10f), 0f);
     }
+
+    @org.junit.jupiter.api.Test
+    void followWalkTurnsSlowlyTowardsTheWalkingDirectionAndStaysWhenStanding() {
+        float yaw = 0f;                                   // facing south
+        assertEquals(0f, TunnelPose.followWalk(yaw, 0.0, 0.0), 1e-6);          // standing: unchanged
+        float west = TunnelPose.followWalk(yaw, -0.2, 0.0);                    // walking west (yaw 90)
+        assertTrue(west > 0f && west < 10f, "a small step towards 90, not a jump: " + west);
+        float y = yaw;
+        for (int i = 0; i < 150; i++) y = TunnelPose.followWalk(y, -0.2, 0.0);
+        assertEquals(90f, y, 1f);                                              // it settles on the walking direction
+    }
 }

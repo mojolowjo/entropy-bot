@@ -116,4 +116,15 @@ public final class TunnelPose {
         if (y <= -180f) y += 360f;
         return y;
     }
+
+    /** Share of the way to the walking direction covered per client tick: slower than v1's 0.12 (about 2 s to settle). */
+    public static final float TURN_EASE = 0.04f;
+    /** Horizontal speed (blocks per tick) below which the bot counts as standing: the yaw stays. */
+    public static final double MOVING = 0.03;
+
+    /** Pure: the next tunnel-view yaw, easing slowly towards the walking direction while the bot moves, staying while it stands. */
+    public static float followWalk(float yaw, double dx, double dz) {
+        if (Math.hypot(dx, dz) < MOVING) return yaw;
+        return yaw + TURN_EASE * io.github.mojolowjo.entropybot.engine.WatchCamera.turn(yaw, io.github.mojolowjo.entropybot.engine.WatchCamera.walkYaw(dx, dz));
+    }
 }

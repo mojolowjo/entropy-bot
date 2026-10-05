@@ -288,6 +288,7 @@ public final class WatchCamera {
 
     /** Once a client tick, in a world: the yaw eases towards the walking direction. Never throws. */
     public void tick() {
+        TunnelView.INSTANCE.tickYaw();     // v2: the view turns slowly with the bot's walking direction
         if (!on) return;
         try {
             net.minecraft.client.player.LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;
