@@ -140,11 +140,92 @@ class SurfaceTest {
         assertEquals(SurfaceFamily.WATER, s.f[7]);
     }
 
+    /** One column type for the whole chunk: kind by y, family by y. */
+    private static SurfaceColumns column(java.util.function.IntUnaryOperator kind, java.util.function.IntUnaryOperator family) {
+        int[] calls = {0};
+        SurfaceColumns.Source src = new SurfaceColumns.Source() {
+            public int kind(int x, int y, int z) { calls[0]++; return kind.applyAsInt(y); }
+
+            public int family(int x, int y, int z) { return family.applyAsInt(y); }
+
+            public int top(int x, int z) { return 120; }
+        };
+        SurfaceColumns s = SurfaceColumns.scan(src, 0, 0, -64, null);
+        assertTrue(calls[0] <= 256 * (120 + 64 + 2), "one walk per column at most: " + calls[0]);
+        return s;
+    }
+
+    @Test
+    void v2PlainColumnRunsToTheBottom() {
+        SurfaceColumns s = column(y -> y <= 64 ? SurfaceColumns.GROUND : SurfaceColumns.AIR, y -> SurfaceFamily.STONE);
+        assertEquals(64, s.g[5]);
+        assertEquals(-64, s.u[5], "underside = the world's min build height");
+        assertEquals(-1, s.g2[5]);
+        assertEquals(-1, s.u2[5]);
+    }
+
+    @Test
+    void v2FloatingIsland() {
+        // island 80..84 (grass on top), air 65..79 (10+ blocks over the ground), ground 64 down to the bottom
+        SurfaceColumns s = column(y -> (y >= 80 && y <= 84) || y <= 64 ? SurfaceColumns.GROUND : SurfaceColumns.AIR,
+                y -> y == 84 ? SurfaceFamily.GRASS : y == 64 ? SurfaceFamily.DIRT : SurfaceFamily.STONE);
+        assertEquals(84, s.g[0]);
+        assertEquals(SurfaceFamily.GRASS, s.f[0]);
+        assertEquals(80, s.u[0]);
+        assertEquals(64, s.g2[0]);
+        assertEquals(SurfaceFamily.DIRT, s.f2[0]);
+        assertEquals(-64, s.u2[0]);
+    }
+
+    @Test
+    void v2OverhangOverACaveFloor() {
+        // overhang 70..75, open 66..69, a ledge 60..65, then a cave 50..59 (ignored: two runs only)
+        SurfaceColumns s = column(y -> (y >= 70 && y <= 75) || (y >= 60 && y <= 65) || y < 50 ? SurfaceColumns.GROUND : SurfaceColumns.AIR,
+                y -> SurfaceFamily.STONE);
+        assertEquals(75, s.g[3]);
+        assertEquals(70, s.u[3]);
+        assertEquals(65, s.g2[3]);
+        assertEquals(60, s.u2[3]);
+    }
+
+    @Test
+    void v2LakeOverStoneIsOneRun() {
+        SurfaceColumns s = column(y -> y <= 62 ? SurfaceColumns.GROUND : SurfaceColumns.AIR,
+                y -> y >= 55 ? SurfaceFamily.WATER : SurfaceFamily.STONE);
+        assertEquals(62, s.g[9]);
+        assertEquals(SurfaceFamily.WATER, s.f[9]);
+        assertEquals(-64, s.u[9]);
+        assertEquals(-1, s.g2[9]);
+    }
+
+    @Test
+    void v2LeavesAndPlantsBetweenTheRunsAreSkipped() {
+        // island 90..92, leaves 85..88 and a vine 80 under it, ground 70 down
+        SurfaceColumns s = column(y -> y >= 90 && y <= 92 ? SurfaceColumns.GROUND : y >= 85 && y <= 88 ? SurfaceColumns.LEAVES
+                : y == 80 ? SurfaceColumns.PLANT : y <= 70 ? SurfaceColumns.GROUND : SurfaceColumns.AIR, y -> SurfaceFamily.STONE);
+        assertEquals(92, s.g[1]);
+        assertEquals(90, s.u[1]);
+        assertEquals(70, s.g2[1]);
+        assertEquals(-64, s.u2[1]);
+        assertEquals(-1, s.c[1], "leaves under the ground are not a canopy");
+    }
+
+    @Test
+    void v2UnknownColumn() {
+        SurfaceColumns s = column(y -> SurfaceColumns.AIR, y -> 0);
+        assertEquals(-1, s.g[0]);
+        assertEquals(-1, s.u[0]);
+        assertEquals(-1, s.g2[0]);
+    }
+
     @Test
     void json() {
         SurfaceColumns s = SurfaceColumns.scan(new Fake(), -2, 5, -64, null);
         JsonObject o = JsonParser.parseString(s.toJson("minecraft:overworld", -2, 5, 1790000000000L)).getAsJsonObject();
-        assertEquals(1, o.get("v").getAsInt());
+        assertEquals(2, o.get("v").getAsInt());
+        for (String k : List.of("u", "g2", "f2", "u2")) assertEquals(256, o.getAsJsonArray(k).size(), k);
+        assertEquals(-64, o.getAsJsonArray("u").get(0).getAsInt());
+        assertEquals(-1, o.getAsJsonArray("g2").get(0).getAsInt());
         assertEquals("minecraft:overworld", o.get("dim").getAsString());
         assertEquals(-2, o.get("cx").getAsInt());
         assertEquals(5, o.get("cz").getAsInt());
