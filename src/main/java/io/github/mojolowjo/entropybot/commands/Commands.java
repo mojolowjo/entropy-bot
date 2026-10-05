@@ -267,6 +267,11 @@ public final class Commands implements Chains.Env {
 
     public boolean ready() { return ready; }
 
+    /** Routing (R2): nothing runs (no job, chain or open request), so the route map may do its idle work. */
+    public boolean idleForRoutes() {
+        return ready && !jobs.running() && !requests.busy() && (chains == null || !chains.running());
+    }
+
     // ---- start ----
 
     /** Once, at the first tick in a world: the files, the move of the notes from the bridge's memory.json. */

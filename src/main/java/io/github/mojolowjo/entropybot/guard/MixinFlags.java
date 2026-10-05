@@ -11,6 +11,11 @@ public final class MixinFlags {
     public static volatile boolean placeApplied;
     /** Watch camera v1: the render camera's angle hook (WatchMixinCamera) went in. */
     public static volatile boolean watchApplied;
+    /**
+     * The ClientLevel block-change hook (RecorderMixinClientLevel, require = 0) went in: the recorder's ears and the
+     * route map's staleness (routing R2).
+     */
+    public static volatile boolean levelHookApplied;
 
     private MixinFlags() {}
 }
