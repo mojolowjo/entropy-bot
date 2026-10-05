@@ -13,6 +13,11 @@ public final class EntropyBot {
     public EntropyBot(IEventBus modBus) {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
+        NeoForge.EVENT_BUS.addListener(EntropyBot::onRenderStage);     // camera v2 probe: which stages fire with Sodium
+    }
+
+    private static void onRenderStage(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
+        io.github.mojolowjo.entropybot.engine.WatchProbe.INSTANCE.onStage(event);
     }
 
     private static void onChat(ClientChatReceivedEvent event) {

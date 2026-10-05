@@ -107,6 +107,16 @@ public final class WatchCamera {
             try { Thread.sleep(0); } catch (InterruptedException ignored) {}
             return "watch camera: " + (on ? "on (behind the bot, " + distance + " blocks, following its walking direction)" : "off") + " | " + h + " | angle edits so far: " + angleEdits.get() + (on && angleEdits.get() == 0 ? " (NONE: the rotation hook is not working)" : "") + " | yaw " + Math.round(yaw);
         }
+        if (t.equals("probe") || t.equals("probe on")) {
+            WatchProbe.INSTANCE.setOn(true);
+            return "ok: render-stage probe on (red/green/blue boxes around the bot at three stages); watch probe status | watch probe off | watch shot";
+        }
+        if (t.equals("probe off")) {
+            WatchProbe.INSTANCE.setOn(false);
+            return "ok: render-stage probe off";
+        }
+        if (t.equals("probe status")) return "probe: " + (WatchProbe.INSTANCE.on() ? "on" : "off") + " | stages seen: " + WatchProbe.INSTANCE.report();
+        if (t.equals("shot")) return shot();
         if (t.startsWith("distance")) {
             float d = parseDistance(t.substring(8));
             if (d < 0) return "error: watch distance 4-8 (now " + distance + ")";
@@ -130,6 +140,19 @@ public final class WatchCamera {
             }
             String warn = io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied ? "" : " WARNING: the camera hook is not in (see watch status): plain third person only.";
             return "ok: watching from behind (" + WATCH_FPS + " FPS while it is on); watch off puts the normal view back." + warn;
+        } catch (Throwable e) {
+            return "error: " + e;
+        }
+    }
+
+    /** {@code watch shot}: saves a screenshot of the game window to screenshots\ (so a session can look at the picture). */
+    private String shot() {
+        try {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.player == null) return "error: not in a world";
+            String name = "watch-" + System.currentTimeMillis() + ".png";
+            mc.execute(() -> net.minecraft.client.Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), msg -> {}));
+            return "ok: screenshot saved as screenshots\\" + name + " in a moment";
         } catch (Throwable e) {
             return "error: " + e;
         }
