@@ -15,6 +15,20 @@ public final class RouteDecision {
     public record Result(boolean use, String why) {
     }
 
+    /** The stuck watchdog's window for a routed goal-mode walk (review S1): 90 s at 20 ticks a second. */
+    public static final long ROUTED_GOAL_STUCK_TICKS = 1800;
+
+    /**
+     * The stuck watchdog's window (review S1). A routed walk in goal mode follows RouteGoal's detour, which can lead away
+     * from the real goal in a straight line for a while (around a lake, a ravine): it gets {@link #ROUTED_GOAL_STUCK_TICKS}.
+     * Everything else (plain walks, legs mode, which measures to the current leg's end) keeps {@code plainTicks}.
+     *
+     * @param routedGoalMode the walk is routed, in goal mode, and measured against the real goal (no leg end).
+     */
+    public static long stuckTicks(boolean routedGoalMode, long plainTicks) {
+        return routedGoalMode ? Math.max(plainTicks, ROUTED_GOAL_STUCK_TICKS) : plainTicks;
+    }
+
     /**
      * @param enabled          the feature is on ({@code route on}), or a test trip asks for a routed mode.
      * @param plannerAvailable {@code RoutePlanner.available()}.

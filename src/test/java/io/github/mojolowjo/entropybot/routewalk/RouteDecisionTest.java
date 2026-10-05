@@ -12,6 +12,13 @@ class RouteDecisionTest {
     }
 
     @Test
+    void aRoutedGoalWalkGetsALongerStuckWindow() {
+        assertEquals(1800, RouteDecision.stuckTicks(true, 600), "review S1: 90 s for a RouteGoal detour");
+        assertEquals(600, RouteDecision.stuckTicks(false, 600), "plain walks and legs keep today's 30 s");
+        assertEquals(2400, RouteDecision.stuckTicks(true, 2400), "never shorter than the plain window");
+    }
+
+    @Test
     void allConditionsMetUsesTheRouter() {
         RouteDecision.Result r = ok();
         assertTrue(r.use());

@@ -112,9 +112,19 @@ public final class RouteWalk {
         }
         if (nowMs - startMs >= WAIT_CAP_MS) {
             if (counters != null) counters.planningTimeout();
+            future.cancel(false);      // review note: the planner thread skips a plan nobody waits for any more
             return plain(nowMs, "planning took over " + WAIT_CAP_MS + " ms");
         }
         return phase;
+    }
+
+    /** The walk ended before its plan came: cancels the plan's future (the planner thread skips it). Never throws. */
+    public void cancel() {
+        try {
+            if (future != null && !future.isDone()) future.cancel(false);
+        } catch (RuntimeException ignored) {
+            // a cancel that throws changes nothing for the walk
+        }
     }
 
     private Phase take(RoutePlan p, long nowMs) {

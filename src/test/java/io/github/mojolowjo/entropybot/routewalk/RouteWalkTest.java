@@ -63,6 +63,22 @@ class RouteWalkTest {
     }
 
     @Test
+    void aTimeoutOrAnEndedWalkCancelsThePlan() {
+        CompletableFuture<RoutePlan> f = new CompletableFuture<>();
+        RouteWalk w = walk(RouteWalk.Mode.GOAL, f);
+        w.poll(1300, new RouteCounters(), null);
+        assertTrue(f.isCancelled(), "the planner thread skips it");
+        CompletableFuture<RoutePlan> g = new CompletableFuture<>();
+        RouteWalk v = walk(RouteWalk.Mode.LEGS, g);
+        v.cancel();
+        assertTrue(g.isCancelled());
+        CompletableFuture<RoutePlan> done = CompletableFuture.completedFuture(okPlan());
+        walk(RouteWalk.Mode.GOAL, done).cancel();
+        assertFalse(done.isCancelled(), "a plan that came is left alone");
+        walk(RouteWalk.Mode.GOAL, null).cancel();      // no plan asked: nothing to do, no throw
+    }
+
+    @Test
     void goalModeWithATable() {
         RouteWalk w = walk(RouteWalk.Mode.GOAL, CompletableFuture.completedFuture(okPlan()));
         assertEquals(RouteWalk.Phase.ROUTED, w.poll(1040, new RouteCounters(), null));

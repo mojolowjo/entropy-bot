@@ -489,7 +489,10 @@ public final class Jobs {
             j.bestDist = dist;
             j.bestTick = now;
         }
-        return now - j.bestTick > TRAVEL_STUCK_TICKS;
+        // review S1: a routed goal-mode walk may detour away from the goal in a straight line: a 90 s window
+        boolean routedGoal = j.legDest == null && j.route != null && j.route.routed()
+                && j.route.mode() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Mode.GOAL;
+        return now - j.bestTick > io.github.mojolowjo.entropybot.routewalk.RouteDecision.stuckTicks(routedGoal, TRAVEL_STUCK_TICKS);
     }
 
     // ---- the tick ----

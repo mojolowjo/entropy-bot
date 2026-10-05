@@ -68,7 +68,10 @@ public final class RouteTiles {
     private final RouteLog log;
     /** Tiles that failed to save, tried again with the next save. Only the io thread touches it. */
     private final Set<List<Integer>> retry = new LinkedHashSet<>();
-    private int saved, failed;
+    /** Read by line() from the game thread without the save lock (review S4): atomics and a volatile size. */
+    private final java.util.concurrent.atomic.AtomicInteger saved = new java.util.concurrent.atomic.AtomicInteger(),
+            failed = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile int retryWaiting;
 
     public RouteTiles(Path routesDir, IntFunction<String> dimFolder, TileIo io, RouteCounters counters, RouteLog log) {
         this.routesDir = routesDir;
@@ -115,13 +118,14 @@ public final class RouteTiles {
                 Files.createDirectories(file.getParent());
                 io.save(file, header, recs.get(t), stale.getOrDefault(t, Set.of()));
                 n++;
-                saved++;
+                saved.incrementAndGet();
             } catch (Throwable e) {
-                failed++;
+                failed.incrementAndGet();
                 retry.add(t);
                 counters.workerException("route save " + file.getFileName(), e, log);
             }
         }
+        retryWaiting = retry.size();
         return n;
     }
 
@@ -155,7 +159,12 @@ public final class RouteTiles {
         return new LoadSummary(files, boxes, ignored, settings, areas);
     }
 
-    public synchronized String line() {
-        return "tiles saved " + saved + (failed > 0 ? ", save failures " + failed + " (retried: " + retry.size() + " waiting)" : "");
+    /**
+     * Never takes the save lock (review S4: the game thread calls it for route status while the io thread may hold the
+     * lock across all gzip writes).
+     */
+    public String line() {
+        int f = failed.get();
+        return "tiles saved " + saved.get() + (f > 0 ? ", save failures " + f + " (retried: " + retryWaiting + " waiting)" : "");
     }
 }

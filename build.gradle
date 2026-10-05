@@ -74,6 +74,10 @@ neoForge {
     runs {
         client {
             client()
+            // routing review M2 (docs/PLANNING.md section 5): our injectors are require = 0 so a broken hook never stops
+            // the real game; in the dev client Mixin's strict injector check fails any injector that matched nothing
+            // (expect = 1), so an unapplied hook (e.g. RecorderMixinClientLevel after a Minecraft update) fails here.
+            systemProperty 'mixin.debug.countInjections', 'true'
         }
 
         configureEach {

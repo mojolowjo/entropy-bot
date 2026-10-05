@@ -38,10 +38,19 @@
  * </table>
  *
  * <h2>Error catching</h2>
- * {@code RouteRuntime.statusLine()} (for {@code route status} and {@code check}): availability with the reason, the
- * core counters ({@code RouteStats}), the builder's counters (paused and why, contexts, skips, idle breaks, requeues,
- * rehashes), tile saves and failures, and the hooks (block hook in or not, calls seen, chunk loads, Baritone events).
- * Worker, planner, save and load exceptions are counted and logged through {@code RouteLog}: the first 5 in full, then
- * one line a minute. Nothing here adds a mixin.
+ * {@code RouteRuntime.statusLine()} is the {@code map:} line of {@code route status} (commands' {@code RouteCommand}):
+ * availability with the reason, the core counters ({@code RouteStats}), the builder's counters (paused and why,
+ * contexts, skips, idle breaks, requeues, rehashes, coarse neighbours, the box cap), tile saves and failures, and the
+ * hooks (block hook in or not, calls seen, chunk loads, Baritone events). {@code check} reads
+ * {@code levelCalls()}, {@code baritoneEvents()} and {@code expectedRunning()} (review M2: hook not applied, hook in but
+ * silent, and "planner not running" only when it should run). {@code route on|off} calls {@code setEnabled} (review
+ * M1). Worker, planner, save and load exceptions are counted and logged through {@code RouteLog}: the first 5 in full,
+ * then one line a minute. Nothing here adds a mixin.
+ *
+ * <h2>Threads (review S4)</h2>
+ * Status lines never take the tile-save lock. Stopping (route off, a dimension change) joins the workers and saves on
+ * the io thread without blocking the game thread; only leaving the world waits (up to 5 s), since the game may quit
+ * right after and the io thread is a daemon. The idle refill ({@code RouteScheduler.refillIdle}) still runs on the game
+ * thread, bounded by {@code AreaBoxes.MAX_BOXES}.
  */
 package io.github.mojolowjo.entropybot.routing;

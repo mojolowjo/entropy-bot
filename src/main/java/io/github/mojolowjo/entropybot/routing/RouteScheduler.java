@@ -119,11 +119,12 @@ public final class RouteScheduler {
 
     private volatile boolean idleFlag;
     private volatile String pause = "not started";
+    private volatile String boxCap;
 
     final AtomicLong contexts = new AtomicLong(), contextFailures = new AtomicLong(), batches = new AtomicLong(),
             notWanted = new AtomicLong(), unknownTerrain = new AtomicLong(), alreadyGood = new AtomicLong(),
             idleBreaks = new AtomicLong(), requeued = new AtomicLong(), rehashes = new AtomicLong(),
-            lagSkips = new AtomicLong(), columns = new AtomicLong();
+            lagSkips = new AtomicLong(), columns = new AtomicLong(), neighbourCoarse = new AtomicLong();
 
     public RouteScheduler(RouteStore store, BuildQueue queue, RouteCounters counters, RouteLog log, RoutePool pool,
                           BoxWork work, LongSupplier clock) {
@@ -199,7 +200,12 @@ public final class RouteScheduler {
             gate.take(now);
             contexts.incrementAndGet();
             final WorkerMoves moves = wm;
-            if (!pool.submit(() -> runBatch(items, moves))) {
+            // review S3: the build's stamp is taken with its context (the terrain it sees); a change after it keeps the box stale
+            final long[] stamps = new long[items.size()];
+            for (int i = 0; i < items.size(); i++)
+                if (items.get(i).kind() == Kind.BUILD) stamps[i] = store.beginBuild(items.get(i).key());
+            if (!pool.submit(() -> runBatch(items, moves, stamps))) {
+                endBuilds(items, stamps, 0);
                 requeue(items, 0);
                 break;
             }
@@ -245,16 +251,23 @@ public final class RouteScheduler {
         out.add(new Item(k, q, now, Kind.BUILD));
     }
 
-    /** On a worker. */
+    /** On a worker (stamps all 0: no change tracking, as in older tests). */
     void runBatch(List<Item> items, WorkerMoves wm) {
+        runBatch(items, wm, new long[items.size()]);
+    }
+
+    /** On a worker. stamps[i]: {@link RouteStore#beginBuild}'s stamp of a BUILD item. */
+    void runBatch(List<Item> items, WorkerMoves wm, long[] stamps) {
         for (int i = 0; i < items.size(); i++) {
             Item it = items.get(i);
             if (pool.stopping()) {
+                endBuilds(items, stamps, i);
                 requeue(items, i);
                 return;
             }
             if (!it.now() && !idleFlag) {
                 idleBreaks.incrementAndGet();
+                endBuilds(items, stamps, i);
                 requeue(items, i);
                 return;
             }
@@ -265,12 +278,57 @@ public final class RouteScheduler {
                     if (work.rehash(store, it.key(), h)) queue.offer(it.key(), BuildQueue.Priority.STALE);
                 } else {
                     work.build(new BuildInput(it.key(), wm.moves(), it.quality(), !wm.walkingOnly(), System.currentTimeMillis()),
-                            store, counters, log);
+                            stamps[i] == 0 ? store : new StampedStore(store, stamps[i]), counters, log);
                 }
             } catch (Throwable t) {
                 counters.workerException((it.kind() == Kind.REHASH ? "rehash " : "build ") + it.key(), t, log);
+            } finally {
+                // a stored build already ended its stamp (put); a refused or failed one ends it here (no-op otherwise)
+                if (it.kind() == Kind.BUILD && stamps[i] != 0) store.endBuild(it.key(), stamps[i]);
             }
         }
+    }
+
+    private void endBuilds(List<Item> items, long[] stamps, int from) {
+        for (int i = from; i < items.size(); i++)
+            if (items.get(i).kind() == Kind.BUILD && stamps[i] != 0) store.endBuild(items.get(i).key(), stamps[i]);
+    }
+
+    /** The store as one build sees it: its put carries the build's stamp (review S3). */
+    static final class StampedStore implements RouteStore {
+        private final RouteStore base;
+        private final long stamp;
+
+        StampedStore(RouteStore base, long stamp) {
+            this.base = base;
+            this.stamp = stamp;
+        }
+
+        @Override public SectionRecord get(SectionKey key) { return base.get(key); }
+
+        @Override public void put(SectionRecord rec) { base.put(rec, stamp); }
+
+        @Override public void put(SectionRecord rec, long s) { base.put(rec, s); }
+
+        @Override public void markStale(SectionKey key) { base.markStale(key); }
+
+        @Override public boolean isStale(SectionKey key) { return base.isStale(key); }
+
+        @Override public void markAllStale() { base.markAllStale(); }
+
+        @Override public java.util.Collection<SectionKey> staleKeys() { return base.staleKeys(); }
+
+        @Override public void forEach(java.util.function.Consumer<SectionRecord> c) { base.forEach(c); }
+
+        @Override public int size() { return base.size(); }
+
+        @Override public java.util.Collection<int[]> takeDirtyTiles() { return base.takeDirtyTiles(); }
+
+        @Override public long beginBuild(SectionKey key) { return base.beginBuild(key); }
+
+        @Override public void endBuild(SectionKey key, long s) { base.endBuild(key, s); }
+
+        @Override public boolean noteChangeWhileBuilding(SectionKey key) { return base.noteChangeWhileBuilding(key); }
     }
 
     /** Puts items[from..] back: now keys on the now queue, idle keys as stale or rest, re-hashes as columns. */
@@ -329,6 +387,17 @@ public final class RouteScheduler {
                     rehashDue.add(new Item(k, SectionRecord.Quality.LIVE, false, Kind.REHASH));
                 }
             }
+            // review S7: a box's quality needs its 8 neighbour columns loaded too, so a neighbour built coarse while this
+            // column was missing may be live now: queue the neighbours' coarse boxes (consider() rebuilds them when live)
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dz == 0) continue;
+                    for (SectionKey k : areas.column(c.dim(), c.cx() + dx, c.cz() + dz)) {
+                        SectionRecord rec = store.get(k);
+                        if (rec != null && rec.quality() == SectionRecord.Quality.COARSE)
+                            if (queue.offer(k, BuildQueue.Priority.STALE)) neighbourCoarse.incrementAndGet();
+                    }
+                }
         }
     }
 
@@ -348,7 +417,21 @@ public final class RouteScheduler {
             if (k.dim() == dim && areas.wanted(k)) n += queue.offer(k, BuildQueue.Priority.STALE) ? 1 : 0;
         for (SectionKey k : areas.all(dim))
             if (store.get(k) == null) n += queue.offer(k, BuildQueue.Priority.REST) ? 1 : 0;
+        long total = areas.count(dim);
+        if (total > AreaBoxes.MAX_BOXES) {
+            String m = "the areas cover about " + total + " boxes; only the first " + AreaBoxes.MAX_BOXES
+                    + " are queued for idle building (the rest only when a walk or a chunk load needs them)";
+            if (!m.equals(boxCap)) log.warn("route map: " + m);
+            boxCap = m;
+        } else {
+            boxCap = null;
+        }
         return n;
+    }
+
+    /** Null, or what the box cap left out (review S5), for route status. */
+    public String boxCap() {
+        return boxCap;
     }
 
     /** The adapter's own counters, one line (for {@code route status}). */
@@ -361,7 +444,8 @@ public final class RouteScheduler {
                 p == null ? "running" : "paused (" + p + ")", idleFlag ? ", idle work on" : "",
                 pool.busy(), pool.size(), contexts.get(), contextFailures.get(), batches.get(), notWanted.get(),
                 unknownTerrain.get(), alreadyGood.get(), idleBreaks.get(), requeued.get(), columns.get(),
-                pendingColumns(), rehashes.get(), lagSkips.get());
+                pendingColumns(), rehashes.get(), lagSkips.get()) + ", coarse neighbours queued " + neighbourCoarse.get()
+                + (boxCap == null ? "" : "; CAPPED: " + boxCap);
     }
 
     /** The counters as a map (tests, JSON status). */
@@ -371,6 +455,6 @@ public final class RouteScheduler {
                 Map.entry("unknownTerrain", unknownTerrain.get()), Map.entry("alreadyGood", alreadyGood.get()),
                 Map.entry("idleBreaks", idleBreaks.get()), Map.entry("requeued", requeued.get()),
                 Map.entry("rehashes", rehashes.get()), Map.entry("lagSkips", lagSkips.get()),
-                Map.entry("columns", columns.get()));
+                Map.entry("columns", columns.get()), Map.entry("neighbourCoarse", neighbourCoarse.get()));
     }
 }

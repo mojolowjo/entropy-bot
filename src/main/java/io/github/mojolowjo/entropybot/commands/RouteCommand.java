@@ -3,11 +3,13 @@ package io.github.mojolowjo.entropybot.commands;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.guard.Guard;
+import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.route.Cell;
 import io.github.mojolowjo.entropybot.route.RoutePlanner;
 import io.github.mojolowjo.entropybot.route.RoutePlannerHolder;
 import io.github.mojolowjo.entropybot.route.RouteStats;
 import io.github.mojolowjo.entropybot.routewalk.RouteWalk;
+import io.github.mojolowjo.entropybot.routing.RouteRuntime;
 import net.minecraft.client.player.LocalPlayer;
 
 import java.nio.file.Path;
@@ -29,6 +31,35 @@ final class RouteCommand {
         }
     }
 
+    /**
+     * Review M1: the stored {@code route on|off} switches the map builder too ({@link RouteRuntime#setEnabled}): off stops
+     * the engine (saving) at the next tick, {@code available()} turns false and walks are plain. Called at load and on
+     * every change of the route settings. Never throws.
+     */
+    static void syncRuntime(Commands c) {
+        try {
+            RouteRuntime.INSTANCE.setEnabled(RouteWalker.on(c));
+        } catch (Throwable t) {
+            RouteWalker.RLOG.error("route on/off", t);
+        }
+    }
+
+    /** The map's own line (pause reason, hooks, builder counters, tile saves). Never throws. */
+    static String runtimeLine() {
+        try {
+            return RouteRuntime.INSTANCE.statusLine();
+        } catch (Throwable t) {
+            return "status failed: " + t;
+        }
+    }
+
+    /** The map's health for check (review M2). */
+    static RouteRules.MapHealth health() {
+        RouteRuntime r = RouteRuntime.INSTANCE;
+        return new RouteRules.MapHealth(MixinFlags.levelHookApplied, r.levelCalls(), r.baritoneEvents(), r.expectedRunning(),
+                r.unavailableReason());
+    }
+
     static boolean available() {
         try {
             return RoutePlannerHolder.get().available();
@@ -40,7 +71,8 @@ final class RouteCommand {
     /** check's routing findings. */
     static List<SelfCheck.Finding> findings(Commands c) {
         try {
-            return RouteRules.check(RouteWalker.on(c), available(), RoutePlannerHolder.counters().snapshot(System.currentTimeMillis(), 0, 0), plannerStats());
+            return RouteRules.check(RouteWalker.on(c), available(), RoutePlannerHolder.counters().snapshot(System.currentTimeMillis(), 0, 0),
+                    plannerStats(), health());
         } catch (RuntimeException e) {
             return List.of(new SelfCheck.Finding("routecheck", "couldn't check routing: " + e, "route status"));
         }
@@ -53,13 +85,14 @@ final class RouteCommand {
             case "", "status" -> {
                 return RouteRules.status(RouteWalker.on(c), RouteWalker.mode(c).word(), available(), RouteWalker.ASKED.get(),
                         RouteWalker.PLAIN.get(), RouteWalker.last, RoutePlannerHolder.counters().snapshot(System.currentTimeMillis(), 0, 0),
-                        plannerStats());
+                        plannerStats()) + "\nmap: " + runtimeLine();
             }
             case "on", "off" -> {
                 JsonObject r = c.routeSettings().deepCopy();
                 r.addProperty("on", sub.equals("on"));
-                c.setRouteSettings(r);
-                return "ok: routing " + sub + (sub.equals("on") && !available() ? " (the planner isn't running yet, so walks stay plain)" : "");
+                c.setRouteSettings(r);     // also switches the map builder (syncRuntime)
+                if (sub.equals("off")) return "ok: routing off - walks are plain and the map builder stops (it saves the map first)";
+                return "ok: routing on" + (!available() ? " - the map builder starts within a second; walks stay plain until it runs (route status)" : "");
             }
             case "mode" -> {
                 RouteWalk.Mode m = RouteWalk.Mode.parse(arg);
@@ -95,6 +128,8 @@ final class RouteCommand {
                 what = "from me to " + arg + " (" + Jobs.fmt(to) + ")";
             }
         }
+        String far = RouteRules.buildTooFar(me, to, io.github.mojolowjo.entropybot.routing.RouteEngine.MAX_ALONG_BLOCKS);
+        if (far != null) return far;
         RoutePlanner pl = RoutePlannerHolder.get();
         if (!available()) return "error: the route planner isn't running";
         try {

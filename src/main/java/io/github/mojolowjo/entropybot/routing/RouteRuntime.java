@@ -117,7 +117,7 @@ public final class RouteRuntime implements RoutePlanner {
     private Future<?> saveFuture;
     private boolean chunkListener, shutdownHook;
     private IBaritone listenedBaritone;
-    private RouteStats lastStats;
+    private volatile RouteStats lastStats;
     private final Env env = new Env();
     final AtomicLong levelCalls = new AtomicLong(), chunkLoads = new AtomicLong(), baritoneChanges = new AtomicLong(),
             baritoneFallbackMarks = new AtomicLong();
@@ -165,11 +165,17 @@ public final class RouteRuntime implements RoutePlanner {
             }
             CompletableFuture<RoutePlan> f = e.plan(new RouteRequest(dim, start, goal, goalRadius, moves, costHeuristic), why);
             if (why != null) return f;
-            return f.thenApply(p -> {
+            CompletableFuture<RoutePlan> out = f.thenApply(p -> {
                 if (p.status() == RoutePlan.Status.NO_GOAL_BOX || p.status() == RoutePlan.Status.NO_START_BOX)
                     e.queueMissingAlong(dim, start, goal, areas);
                 return p;
             });
+            // a walk's cancel (wait cap passed) reaches the planning thread's future, which then skips the plan
+            // (the boxes it would have found missing are queued all the same, so the next walk there finds them)
+            out.whenComplete((p, x) -> {
+                if (out.isCancelled() && f.cancel(false)) e.queueMissingAlong(dim, start, goal, areas);
+            });
+            return out;
         } catch (Throwable t) {
             RouteEngine e = engine;
             if (e != null) e.counters.workerException("plan", t, log);
@@ -226,6 +232,32 @@ public final class RouteRuntime implements RoutePlanner {
         return enabled;
     }
 
+    /** The ClientLevel hook's calls while the map ran (check: "hook in but silent"). */
+    public long levelCalls() {
+        return levelCalls.get();
+    }
+
+    /** Baritone's block events while the map ran. */
+    public long baritoneEvents() {
+        return baritoneChanges.get();
+    }
+
+    /**
+     * For check (review M2): the map should be running now: on, in the overworld, breaking and placing off (no mine or
+     * dig job), Baritone ready, the map files loaded. False on any doubt, so check never reports a normal pause.
+     */
+    public boolean expectedRunning() {
+        try {
+            if (!enabled || loading) return false;
+            Level lvl = level;
+            if (lvl == null || !OVERWORLD_ID.equals(Guard.dimOf(lvl))) return false;
+            if (breakingOn()) return false;
+            return SafetyNet.primary() != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** The planner R3 uses (this). */
     public static RoutePlanner planner() {
         return INSTANCE;
@@ -272,7 +304,7 @@ public final class RouteRuntime implements RoutePlanner {
         Minecraft mc = Minecraft.getInstance();
         Level lvl = mc.level;
         if (lvl != level) {
-            if (engine != null) stop("the world changed");
+            if (engine != null) stop("the world changed", lvl == null);
             level = lvl;
         }
         if (lvl == null) return;
@@ -373,15 +405,26 @@ public final class RouteRuntime implements RoutePlanner {
     /** Leaving the world (Core, the level became null): stop and save. */
     public void leftWorld() {
         try {
-            if (engine != null) stop("left the world");
+            if (engine != null) stop("left the world", true);
             level = null;
         } catch (Throwable t) {
             LOG.warn("[entropybot] route stop: {}", t.toString());
         }
     }
 
-    /** Stops the engine: workers joined (2 s), a last save on the io thread (waited up to 3 s). */
+    /** Stops the engine without blocking the game thread (review S4): see {@link #stop(String, boolean)}. */
     private void stop(String why) {
+        stop(why, false);
+    }
+
+    /**
+     * Stops the engine: workers joined (2 s), then a last save. {@code wait} false (route off, a dimension change, a new
+     * world while still connected): both run on the io thread and the game thread goes on at once; the io thread is
+     * single, so a map started again right after loads only once this save is written. {@code wait} true (leaving the
+     * world, {@link #leftWorld}): the game thread waits up to 2 s for the workers and 3 s for the save, because the
+     * game may quit right after and the io thread is a daemon; a short stall on a disconnect screen is acceptable.
+     */
+    private void stop(String why, boolean wait) {
         RouteEngine e = engine;
         RouteTiles t = tiles;
         RouteFileHeader h = header;
@@ -390,16 +433,25 @@ public final class RouteRuntime implements RoutePlanner {
         RoutePlannerHolder.set(null);
         unavailable = why;
         if (e == null) return;
-        boolean clean = e.stop(2000);
         lastStats = e.stats();
-        if (t != null && h != null) {
-            try {
-                io.submit(() -> t.saveDirty(e.store, h)).get(3, TimeUnit.SECONDS);
-            } catch (Throwable x) {
-                e.counters.workerException("route save on stop", x, log);
+        Runnable finish = () -> {
+            boolean clean = e.stop(2000);
+            lastStats = e.stats();
+            if (t != null && h != null) {
+                try {
+                    t.saveDirty(e.store, h);
+                } catch (Throwable x) {
+                    e.counters.workerException("route save on stop", x, log);
+                }
             }
+            log.info("route map stopped (" + why + ")" + (clean ? "" : ", a worker did not end in 2 s") + ": " + lastStats.line());
+        };
+        try {
+            Future<?> f = io.submit(finish);
+            if (wait) f.get(5, TimeUnit.SECONDS);
+        } catch (Throwable x) {
+            e.counters.workerException("route stop", x, log);
         }
-        log.info("route map stopped (" + why + ")" + (clean ? "" : ", a worker did not end in 2 s") + ": " + lastStats.line());
     }
 
     private void saveOnQuit() {

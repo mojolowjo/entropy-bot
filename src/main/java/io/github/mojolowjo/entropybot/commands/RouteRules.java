@@ -53,6 +53,18 @@ public final class RouteRules {
         return new TestArgs(w[0], w[1], n, null);
     }
 
+    /**
+     * route build's distance cap (review S5): null when the stretch from me to to is at most max blocks (straight line),
+     * else the refusal.
+     */
+    public static String buildTooFar(int[] me, int[] to, int max) {
+        double dx = to[0] - me[0], dy = to[1] - me[1], dz = to[2] - me[2];
+        double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d <= max) return null;
+        return "error: that is " + Math.round(d) + " blocks away; route build covers at most " + max
+                + " blocks at once - build a nearer place first, or walk part of the way";
+    }
+
     /** "x y z" -> {x, y, z}, else null. */
     static int[] coords(String s) {
         String t = s == null ? "" : s.trim();
@@ -79,12 +91,47 @@ public final class RouteRules {
         return b.toString();
     }
 
+    /** Baritone block events with no ClientLevel hook call after which check says the hook is in but silent. */
+    public static final long SILENT_HOOK_EVENTS = 50;
+
+    /**
+     * The route map's health for check (review M2), read from RouteRuntime. hookApplied: the ClientLevel mixin applied
+     * ({@code MixinFlags.levelHookApplied}); levelCalls / baritoneEvents: the hook's calls and Baritone's block events
+     * while the map ran; expectedRunning: the map should be running now (routing on, in the overworld, breaking and
+     * placing off, Baritone ready, the files loaded); why: the runtime's reason it isn't (null when it is).
+     */
+    public record MapHealth(boolean hookApplied, long levelCalls, long baritoneEvents, boolean expectedRunning, String why) {
+        /** The old 4-argument check: hook fine, the map expected to run. */
+        static final MapHealth ASSUMED = new MapHealth(true, 0, 0, true, null);
+    }
+
     /** check's findings about routing (none when it is off or all is well). */
     public static List<SelfCheck.Finding> check(boolean on, boolean available, RouteStats walk, RouteStats planner) {
+        return check(on, available, walk, planner, MapHealth.ASSUMED);
+    }
+
+    /**
+     * check's findings about routing. The block hook is reported whether routing is on or not (the flight recorder uses
+     * it too); "the planner isn't running" only when it should be running (not in the Nether, not during a mine or dig
+     * job, not while the map files load), so a normal pause is never a finding.
+     */
+    public static List<SelfCheck.Finding> check(boolean on, boolean available, RouteStats walk, RouteStats planner, MapHealth h) {
         List<SelfCheck.Finding> out = new ArrayList<>();
+        if (h == null) h = MapHealth.ASSUMED;
+        if (!h.hookApplied()) {
+            out.add(new SelfCheck.Finding("routehook", "the block-change hook (RecorderMixinClientLevel) is not applied: the route map"
+                    + " only hears Baritone's block events, and the flight recorder misses block changes",
+                    "check the game log for a mixin error after the next restart, then route status"));
+        } else if (on && available && h.levelCalls() == 0 && h.baritoneEvents() >= SILENT_HOOK_EVENTS) {
+            out.add(new SelfCheck.Finding("routehooksilent", "the block-change hook is in but silent: " + h.baritoneEvents()
+                    + " Baritone block events and no hook call (the route map uses Baritone's events instead)",
+                    "route status; report it with the game log"));
+        }
         if (!on) return out;
         if (!available) {
-            out.add(new SelfCheck.Finding("route", "routing is on but the route planner isn't running: walks are plain Baritone walks", "route status"));
+            if (h.expectedRunning())
+                out.add(new SelfCheck.Finding("route", "routing is on but the route planner isn't running"
+                        + (h.why() == null ? "" : " (" + h.why() + ")") + ": walks are plain Baritone walks", "route status"));
             return out;
         }
         long errors = (planner == null ? 0 : planner.workerExceptions()) + (walk == null ? 0 : walk.workerExceptions());

@@ -78,6 +78,35 @@ class RouteRulesTest {
     }
 
     @Test
+    void checkReportsTheHookAndOnlyRealOutages() {
+        RouteStats z = stats(0, 0, 0, 0, "");
+        // review M2 (a): the hook not applied, said even with routing off
+        List<SelfCheck.Finding> f = RouteRules.check(false, false, z, null, new RouteRules.MapHealth(false, 0, 0, false, "the route map is off"));
+        assertEquals(1, f.size());
+        assertEquals("routehook", f.get(0).key());
+        // (b): in but silent after enough Baritone events
+        f = RouteRules.check(true, true, z, z, new RouteRules.MapHealth(true, 0, RouteRules.SILENT_HOOK_EVENTS, true, null));
+        assertEquals(1, f.size());
+        assertEquals("routehooksilent", f.get(0).key());
+        assertTrue(RouteRules.check(true, true, z, z, new RouteRules.MapHealth(true, 0, RouteRules.SILENT_HOOK_EVENTS - 1, true, null)).isEmpty(),
+                "too few events to tell");
+        assertTrue(RouteRules.check(true, true, z, z, new RouteRules.MapHealth(true, 3, 500, true, null)).isEmpty(), "the hook speaks");
+        // the false positive: not running in the Nether, during a mine job, while loading = no finding
+        assertTrue(RouteRules.check(true, false, z, null, new RouteRules.MapHealth(true, 0, 0, false, "breaking or placing is on")).isEmpty());
+        f = RouteRules.check(true, false, z, null, new RouteRules.MapHealth(true, 0, 0, true, "route core not built: x"));
+        assertEquals(1, f.size());
+        assertEquals("route", f.get(0).key());
+        assertTrue(f.get(0).text().contains("(route core not built: x)"), f.get(0).text());
+    }
+
+    @Test
+    void routeBuildIsCappedAt2000Blocks() {
+        assertNull(RouteRules.buildTooFar(new int[]{0, 64, 0}, new int[]{1999, 64, 0}, 2000));
+        String s = RouteRules.buildTooFar(new int[]{0, 64, 0}, new int[]{3000, 64, 4000}, 2000);
+        assertTrue(s.startsWith("error: that is 5000 blocks away; route build covers at most 2000"), s);
+    }
+
+    @Test
     void verbIsDocumented() {
         VerbTable.Verb v = VerbTable.of("route");
         assertTrue(v != null && v.who() == VerbTable.Who.OWNER);

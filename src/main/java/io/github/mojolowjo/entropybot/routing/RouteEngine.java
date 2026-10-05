@@ -52,7 +52,7 @@ public final class RouteEngine {
     private final ExecutorService planner;
     private final LongSupplier clock;
     final AtomicLong blockChanges = new AtomicLong(), walkChanges = new AtomicLong(), staleMarks = new AtomicLong(),
-            alongRequests = new AtomicLong();
+            alongRequests = new AtomicLong(), skippedPlans = new AtomicLong(), alongCapped = new AtomicLong();
 
     public RouteEngine(RouteStore store, BuildQueue queue, Router router, RouteCounters counters, RouteLog log,
                        int workers, RouteScheduler.BoxWork work, ChangeBoxes changeBoxes, AlongBoxes alongBoxes,
@@ -98,19 +98,55 @@ public final class RouteEngine {
         if (notAvailable != null) return CompletableFuture.completedFuture(refused("route map not available: " + notAvailable));
         if (req == null || req.start() == null || req.goal() == null)
             return CompletableFuture.completedFuture(refused("bad request: no start or goal"));
+        CompletableFuture<RoutePlan> f = new CompletableFuture<>();
         try {
-            return CompletableFuture.supplyAsync(() -> {
+            planner.execute(() -> {
+                // review note: a walk that gave up waiting cancelled the future; don't plan for nobody
+                if (f.isDone()) {
+                    skippedPlans.incrementAndGet();
+                    return;
+                }
+                RoutePlan p;
                 try {
-                    RoutePlan p = router.plan(req);
-                    return p == null ? refused("error: the router gave no answer") : p;
+                    p = router.plan(req);
+                    if (p == null) p = refused("error: the router gave no answer");
                 } catch (Throwable t) {
                     counters.workerException("plan " + req.start() + " -> " + req.goal(), t, log);
-                    return refused("error: " + t);
+                    p = refused("error: " + t);
                 }
-            }, planner);
+                f.complete(p);
+            });
         } catch (RejectedExecutionException e) {
             return CompletableFuture.completedFuture(refused("route map not available: stopping"));
         }
+        return f;
+    }
+
+    /** Plans dropped unplanned because their walk had already cancelled them. */
+    public long skippedPlans() {
+        return skippedPlans.get();
+    }
+
+    /**
+     * The longest straight stretch one build-along request covers (review S5): a farther b is cut to the point this far
+     * from a, counted in {@link #line()}. {@code route build} refuses longer stretches with a message before this.
+     */
+    public static final int MAX_ALONG_BLOCKS = 2000;
+
+    /** b, or the point {@link #MAX_ALONG_BLOCKS} from a toward b when b is farther (straight-line, 3D). */
+    Cell capped(Cell a, Cell b) {
+        Cell c = capAlong(a, b, MAX_ALONG_BLOCKS);
+        if (c != b) alongCapped.incrementAndGet();
+        return c;
+    }
+
+    /** Pure: b itself when within {@code max} blocks of a, else the cell {@code max} blocks from a toward b. */
+    public static Cell capAlong(Cell a, Cell b, int max) {
+        double dx = b.x() - a.x(), dy = b.y() - a.y(), dz = b.z() - a.z();
+        double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d <= max) return b;
+        double f = max / d;
+        return new Cell(a.x() + (int) Math.round(dx * f), a.y() + (int) Math.round(dy * f), a.z() + (int) Math.round(dz * f));
     }
 
     /**
@@ -128,13 +164,14 @@ public final class RouteEngine {
                 keys.add(k);
                 for (int face = 0; face < 6; face++) keys.add(k.neighbour(face));
             } else {
-                keys.addAll(alongBoxes.boxes(dim, a, b));
+                keys.addAll(alongBoxes.boxes(dim, a, capped(a, b)));
             }
             for (SectionKey k : keys) {
                 if (!areas.wanted(k)) continue;
-                if (store.get(k) != null && !store.isStale(k)) {
-                    store.markStale(k);
-                    staleMarks.incrementAndGet();
+                if (store.get(k) != null) {
+                    boolean was = store.isStale(k);
+                    store.markStale(k);         // always: a build in flight notes it (review S3)
+                    if (!was) staleMarks.incrementAndGet();
                 }
                 if (queue.offer(k, BuildQueue.Priority.NOW)) n++;
             }
@@ -154,7 +191,7 @@ public final class RouteEngine {
         int n = 0;
         try {
             Set<SectionKey> keys = new LinkedHashSet<>();
-            for (SectionKey k : alongBoxes.boxes(dim, a, b)) {
+            for (SectionKey k : alongBoxes.boxes(dim, a, capped(a, b))) {
                 keys.add(k);
                 for (int face : new int[]{0, 1, 4, 5}) keys.add(k.neighbour(face));
             }
@@ -185,9 +222,17 @@ public final class RouteEngine {
         int n = 0;
         try {
             for (SectionKey k : changeBoxes.boxes(dim, x, y, z)) {
-                if (store.get(k) == null) continue;
-                if (!store.isStale(k)) {
-                    store.markStale(k);
+                if (store.get(k) == null) {
+                    // review S3: its first build is running: that build's result is stale, queue it again
+                    if (store.noteChangeWhileBuilding(k)) {
+                        staleMarks.incrementAndGet();
+                        queue.offer(k, BuildQueue.Priority.STALE);
+                    }
+                    continue;
+                }
+                boolean was = store.isStale(k);
+                store.markStale(k);     // always: a rebuild of a stale box in flight notes the change too (review S3)
+                if (!was) {
                     staleMarks.incrementAndGet();
                     n++;
                 }
@@ -206,7 +251,9 @@ public final class RouteEngine {
     /** One line of the adapter's own counters. */
     public String line() {
         return scheduler.line() + "; block changes " + blockChanges.get() + " (walkability " + walkChanges.get()
-                + "), stale marks " + staleMarks.get() + ", build-along requests " + alongRequests.get();
+                + "), stale marks " + staleMarks.get() + ", build-along requests " + alongRequests.get()
+                + (alongCapped.get() > 0 ? " (" + alongCapped.get() + " cut at " + MAX_ALONG_BLOCKS + " blocks)" : "")
+                + ", cancelled plans skipped " + skippedPlans.get();
     }
 
     /** Stops the workers and the planning thread (waits up to {@code waitMs}); true when every thread ended. */

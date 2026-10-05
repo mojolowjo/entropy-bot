@@ -268,6 +268,7 @@ public final class Commands implements Chains.Env {
     void setRouteSettings(JsonObject r) {
         brainStore.data().add("route", r);
         saved();
+        RouteCommand.syncRuntime(this);
     }
 
     /** The hotbar keeper holds still while a job other than a walk or a wait runs, or a reflex does. */
@@ -300,6 +301,7 @@ public final class Commands implements Chains.Env {
         stateFiles = new BotFiles(mc.gameDirectory.toPath().resolve(BRIDGE_DIR));
         StringBuilder sb = new StringBuilder();
         sb.append(pmStore.load(files)).append("; ").append(brainStore.load(files)).append("; ").append(areaStore.load(files));
+        RouteCommand.syncRuntime(this);     // routing review M1: a stored "route off" keeps the map builder off too
         JsonObject memory = null;
         if (!pmStore.existed() || !brainStore.existed() || !areaStore.existed()) memory = readBridgeJson(mc, "memory.json");
         if (!pmStore.existed()) {

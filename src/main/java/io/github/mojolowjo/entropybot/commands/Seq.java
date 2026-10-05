@@ -213,7 +213,11 @@ public final class Seq {
     private String step(Step st, LocalPlayer p) {
         long elapsed = now() - stepStart;
         switch (st.type) {
-            case "walk": return walkStep(st, p, elapsed);
+            case "walk": {
+                String r = walkStep(st, p, elapsed);
+                if (!"wait".equals(r)) endWalkRoute(!"next".equals(r));
+                return r;
+            }
             case "open": return openStep(st, p, elapsed);
             case "ops": return opsStep(st, p);
             case "note":
@@ -255,6 +259,22 @@ public final class Seq {
     }
 
     // ---- walk ----
+
+    /**
+     * Review note: a walk step ended. The leg end goes (the stuck watchdog of a later step measures to its own goal);
+     * a plan still being made when the step failed is cancelled (the planner thread skips it) and the route dropped.
+     * A finished route stays on the job for the route test's trip note ({@code RouteTestRun.record}); the next walk step
+     * replaces it.
+     */
+    private void endWalkRoute(boolean failed) {
+        Jobs.Job j = job();
+        if (j == null) return;
+        j.legDest = null;
+        if (failed && j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) {
+            j.route.cancel();
+            j.route = null;
+        }
+    }
 
     private String walkStep(Step st, LocalPlayer p, long elapsed) {
         Jobs.Job j = job();

@@ -54,17 +54,42 @@ public final class AreaBoxes {
         return false;
     }
 
-    /** Every wanted box of {@code dim}, area by area (no duplicates). Thousands for the owner's map area. */
+    /**
+     * The most boxes {@link #all(int)} lists (review S5): a huge area (a typo'd corner, a whole world) would otherwise
+     * fill memory and the idle queue. The rest is built as walks and chunk loads ask for it; route status says so.
+     */
+    public static final int MAX_BOXES = 200_000;
+
+    /** Every wanted box of {@code dim}, area by area (no duplicates), at most {@link #MAX_BOXES}. */
     public List<SectionKey> all(int dim) {
+        return all(dim, MAX_BOXES);
+    }
+
+    /** Every wanted box of {@code dim}, area by area (no duplicates), at most {@code max}. */
+    public List<SectionKey> all(int dim, int max) {
         Set<SectionKey> out = new LinkedHashSet<>();
         for (int[] a : areas) {
             if (a[0] != dim) continue;
             int sy1 = Math.max(a[5], minY) >> 4, sy2 = Math.min(a[6], maxY) >> 4;
             for (int sx = a[1] >> 4; sx <= a[3] >> 4; sx++)
                 for (int sz = a[2] >> 4; sz <= a[4] >> 4; sz++)
-                    for (int sy = sy1; sy <= sy2; sy++) out.add(new SectionKey(dim, sx, sy, sz));
+                    for (int sy = sy1; sy <= sy2; sy++) {
+                        if (out.size() >= max) return new ArrayList<>(out);
+                        out.add(new SectionKey(dim, sx, sy, sz));
+                    }
         }
         return new ArrayList<>(out);
+    }
+
+    /** How many boxes the areas of {@code dim} cover, without listing them (overlaps counted twice: an upper bound). */
+    public long count(int dim) {
+        long n = 0;
+        for (int[] a : areas) {
+            if (a[0] != dim) continue;
+            long sy = Math.max(0, (Math.min(a[6], maxY) >> 4) - (Math.max(a[5], minY) >> 4) + 1);
+            n += ((long) (a[3] >> 4) - (a[1] >> 4) + 1) * ((long) (a[4] >> 4) - (a[2] >> 4) + 1) * sy;
+        }
+        return n;
     }
 
     /** The wanted boxes of one chunk column (for a chunk load). */
