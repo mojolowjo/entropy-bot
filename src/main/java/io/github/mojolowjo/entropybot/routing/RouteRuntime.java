@@ -17,6 +17,7 @@ import io.github.mojolowjo.entropybot.guard.Box;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.recorder.FlightRecorder;
+import io.github.mojolowjo.entropybot.route.RoutePlannerHolder;
 import io.github.mojolowjo.entropybot.route.Cell;
 import io.github.mojolowjo.entropybot.route.RouteCounters;
 import io.github.mojolowjo.entropybot.route.RouteFileHeader;
@@ -353,8 +354,9 @@ public final class RouteRuntime implements RoutePlanner {
             }
         });
         FlightRecorder.routeListener = this::onLevelBlock;
-        // MERGE WITH route-r3: RoutePlannerHolder.set(this); RoutePlannerHolder.setDumper(this::dump);
-        // (and RoutePlannerHolder.set(null) in stop(); the dumper may stay set: dump works without the engine)
+        RoutePlannerHolder.set(this);
+        RoutePlannerHolder.setDumper(this::dump);
+        // stop() clears the planner (RoutePlannerHolder.set(null)); the dumper stays set: dump works without the engine
         if (!chunkListener) {
             NeoForge.EVENT_BUS.addListener(RouteRuntime::onChunkLoad);
             chunkListener = true;
@@ -385,6 +387,7 @@ public final class RouteRuntime implements RoutePlanner {
         RouteFileHeader h = header;
         engine = null;
         FlightRecorder.routeListener = null;
+        RoutePlannerHolder.set(null);
         unavailable = why;
         if (e == null) return;
         boolean clean = e.stop(2000);
