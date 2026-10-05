@@ -6,6 +6,7 @@ uniform vec3 CutCam;
 uniform vec3 CutMin;
 uniform vec3 CutMax;
 uniform vec2 CutMargin;
+uniform float CutCone;
 
 in vec3 meshPos;
 
@@ -30,8 +31,31 @@ float cutEnter(vec3 o, vec3 d, vec3 lo, vec3 hi) {
     return tn;
 }
 
+// 0.19.0 cone mode (CutCone > 0, the cone's radius at the bot; <= 0: the outline rule below). Block-granular, hard
+// edges: the cell the camera ray enters at this fragment, cell = floor(P + dir * 0.01), is cut when its centre Q lies
+// between the camera and the bot (0 < t < L - 0.5 along the axis camera -> bot middle), within max(0.3, R * t / L) of
+// that axis (a cone with its apex at the camera), and its top is above the bot's feet (cell.y + 1 > CutMin.y + 0.1).
+// Same maths as io.github.mojolowjo.entropybot.watchview.Cutaway.coneCuts.
+bool cutCone() {
+    vec3 v = meshPos - CutCam;
+    float dist = length(v);
+    if (dist < 1e-4) return false;
+    vec3 dir = v / dist;
+    vec3 cell = floor(meshPos + dir * 0.01);
+    if (cell.y + 1.0 <= CutMin.y + 0.1) return false;
+    vec3 axis = (CutMin + CutMax) * 0.5 - CutCam;
+    float len = length(axis);
+    if (len < 1e-4) return false;
+    vec3 a = axis / len;
+    vec3 q = cell + vec3(0.5) - CutCam;
+    float t = dot(q, a);
+    if (t <= 0.0 || t >= len - 0.5) return false;
+    return length(q - a * t) < max(0.3, CutCone * t / len);
+}
+
 bool cutHere() {
     if (CutMargin.y < 0.0) return false;
+    if (CutCone > 0.0) return cutCone();
     vec3 v = meshPos - CutCam;
     float dist = length(v);
     if (dist < 1e-4) return false;

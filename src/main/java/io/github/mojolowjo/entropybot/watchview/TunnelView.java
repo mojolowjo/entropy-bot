@@ -153,12 +153,31 @@ public final class TunnelView {
 
     public void setCutRadius(double r) { cutRadius = r; }
 
+    /** 0.19.0 {@code watch cut mode cone|outline}: cone (the default) cuts whole blocks; each mode keeps its own radius. */
+    private volatile boolean cutCone = true;
+    private volatile double coneRadius = Cutaway.DEFAULT_CONE_RADIUS;
+
+    public boolean cutCone() { return cutCone; }
+
+    public void setCutCone(boolean cone) { cutCone = cone; }
+
+    public double coneRadius() { return coneRadius; }
+
+    public void setConeRadius(double r) { coneRadius = r; }
+
+    /** "mode cone, radius 2.5" / "mode outline, margin 0.6". */
+    public String cutModeWords() {
+        return cutCone ? "mode cone, radius " + coneRadius : "mode outline, margin " + cutRadius;
+    }
+
     /** The status words for the cutaway. */
     public String cutReport() {
         if (!cut) return "off (watch tunnel cut on)";
         String problem = CutShaders.problem();
         if (problem != null) return "on but NOT working: " + problem + " - the faces are drawn without it (see check)";
-        return "on (radius " + cutRadius + ": faces that cover the bot on the screen and are nearer than it are not drawn, "
+        if (cutCone) return "on (" + cutModeWords() + ": whole blocks in a cone from the camera to the bot, " + coneRadius
+                + " blocks round the axis at the bot, are not drawn; never past the bot or at/below its feet; " + cutFrames.get() + " frames cut)";
+        return "on (" + cutModeWords() + ": faces that cover the bot on the screen and are nearer than it are not drawn, "
                 + "with a margin of " + cutRadius + " blocks round its box and a dithered rim; " + cutFrames.get() + " frames cut)";
     }
 
@@ -512,7 +531,7 @@ public final class TunnelView {
             Vec3 at = p.getPosition(partial);
             net.minecraft.world.phys.AABB box = p.getBoundingBox().move(at.subtract(p.position()));
             // 0.17.1: the bot's box and the margin; the shader cuts only what covers the bot on the screen and is nearer
-            double[] cutArgs = cut ? new double[]{box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, cutRadius} : null;
+            double[] cutArgs = cut ? new double[]{box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, cutRadius, cutCone ? coneRadius : 0} : null;
             boolean cutDone = mesh.draw(e.getModelViewMatrix(), e.getProjectionMatrix(), cam, dollhouse, cutArgs);
             if (cut) {
                 if (cutDone) cutFrames.incrementAndGet();

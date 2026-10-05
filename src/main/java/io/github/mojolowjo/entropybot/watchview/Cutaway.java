@@ -90,7 +90,71 @@ public final class Cutaway {
         }
     }
 
-    /** "cut", "cut on", "cut off" -> the new state given the old one (a bare word toggles), or null when not understood. */
+    // ---- 0.19.0: the cone cut (watch cut mode cone, the default) -----------------------------------------------------
+
+    /** The cone's radius at the bot ({@code watch cut radius N} in cone mode). */
+    public static final double DEFAULT_CONE_RADIUS = 2.5, MIN_CONE_RADIUS = 1.0, MAX_CONE_RADIUS = 6.0;
+    /** The cone is never thinner than this (near the camera, t near 0). */
+    public static final double CONE_MIN_RADIUS = 0.3;
+    /** The step past the fragment along the ray that picks the cell the ray enters there. */
+    public static final double CELL_STEP = 0.01;
+
+    /** The cell (block) the camera ray enters at P: floor(P + dir * 0.01); null when P is at the camera. */
+    public static int[] cellEntered(double px, double py, double pz, double cx, double cy, double cz) {
+        double vx = px - cx, vy = py - cy, vz = pz - cz;
+        double dist = Math.sqrt(vx * vx + vy * vy + vz * vz);
+        if (dist < 1e-4) return null;
+        return new int[]{(int) Math.floor(px + vx / dist * CELL_STEP), (int) Math.floor(py + vy / dist * CELL_STEP),
+                (int) Math.floor(pz + vz / dist * CELL_STEP)};
+    }
+
+    /**
+     * Is the cell at x y z cut by the cone? Its centre Q, t = its distance along the axis camera -> the bot's middle
+     * (length L): cut when 0 < t < L - 0.5, Q within max(0.3, R t / L) of the axis, and the cell's top above the bot's
+     * feet (y + 1 > minY + 0.1). The shaders' cutCone() (CutCone = R).
+     */
+    public static boolean coneCell(int x, int y, int z, double cx, double cy, double cz,
+                                   double minX, double minY, double minZ, double maxX, double maxY, double maxZ, double r) {
+        if (r <= 0) return false;
+        if (y + 1.0 <= minY + FEET_LIFT) return false;
+        double ax = (minX + maxX) * 0.5 - cx, ay = (minY + maxY) * 0.5 - cy, az = (minZ + maxZ) * 0.5 - cz;
+        double len = Math.sqrt(ax * ax + ay * ay + az * az);
+        if (len < 1e-4) return false;
+        ax /= len; ay /= len; az /= len;
+        double qx = x + 0.5 - cx, qy = y + 0.5 - cy, qz = z + 0.5 - cz;
+        double t = qx * ax + qy * ay + qz * az;
+        if (t <= 0 || t >= len - 0.5) return false;
+        double rx = qx - ax * t, ry = qy - ay * t, rz = qz - az * t;
+        return Math.sqrt(rx * rx + ry * ry + rz * rz) < Math.max(CONE_MIN_RADIUS, r * t / len);
+    }
+
+    /** The cone rule for the fragment at P: the cell its ray enters there, then {@link #coneCell}. */
+    public static boolean coneCuts(double px, double py, double pz, double cx, double cy, double cz,
+                                   double minX, double minY, double minZ, double maxX, double maxY, double maxZ, double r) {
+        int[] c = cellEntered(px, py, pz, cx, cy, cz);
+        return c != null && coneCell(c[0], c[1], c[2], cx, cy, cz, minX, minY, minZ, maxX, maxY, maxZ, r);
+    }
+
+    /** {@code watch cut radius N} for a mode: cone 1-6, outline 0-3; -1 when out of range or not a number. */
+    public static double parseRadius(String s, boolean cone) {
+        try {
+            double d = Double.parseDouble(s == null ? "" : s.trim());
+            double lo = cone ? MIN_CONE_RADIUS : MIN_RADIUS, hi = cone ? MAX_CONE_RADIUS : MAX_RADIUS;
+            return d >= lo && d <= hi ? d : -1;
+        } catch (RuntimeException e) {
+            return -1;
+        }
+    }
+
+    /** "cut mode cone|outline" -> true (cone) / false (outline), null when not understood. */
+    public static Boolean parseMode(String a) {
+        String t = a == null ? "" : a.trim();
+        if (t.equals("cut mode cone")) return true;
+        if (t.equals("cut mode outline")) return false;
+        return null;
+    }
+
+    /** "cut", "cut on", "cut off" ->the new state given the old one (a bare word toggles), or null when not understood. */
     public static Boolean parseCut(String a, boolean now) {
         String t = a == null ? "" : a.trim();
         if (t.equals("cut")) return !now;

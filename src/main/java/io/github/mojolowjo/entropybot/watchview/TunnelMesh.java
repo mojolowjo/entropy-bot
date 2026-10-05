@@ -416,6 +416,7 @@ final class TunnelMesh {
         s.safeGetUniform("CutMin").set((float) (cut[0] - mx), (float) (cut[1] - my), (float) (cut[2] - mz));
         s.safeGetUniform("CutMax").set((float) (cut[3] - mx), (float) (cut[4] - my), (float) (cut[5] - mz));
         s.safeGetUniform("CutMargin").set((float) (cut[6] * Cutaway.INNER_SHARE), (float) cut[6]);
+        s.safeGetUniform("CutCone").set(cut.length > 7 ? (float) cut[7] : 0f);   // 0.19.0: > 0 = cone mode with that radius
     }
 
     private void drawWith(Matrix4f modelView, Matrix4f projection, Vec3 cam, boolean dollhouse, ShaderInstance texShader, ShaderInstance flatShader,

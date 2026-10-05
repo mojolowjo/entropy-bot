@@ -181,4 +181,111 @@ class CutawayTest {
         assertEquals(1, TunnelMesh.ALPHA_SOLID % 2, "solid faces carry an odd alpha");
         assertEquals(0, TunnelMesh.ALPHA % 2, "cut-out faces an even one");
     }
+
+    // ---- 0.19.0 cone mode ------------------------------------------------------------------------------------------
+
+    static final double R = Cutaway.DEFAULT_CONE_RADIUS;
+
+    static boolean cone(int x, int y, int z, double[] cam, double[] b) {
+        return Cutaway.coneCell(x, y, z, cam[0], cam[1], cam[2], b[0], b[1], b[2], b[3], b[4], b[5], R);
+    }
+
+    /** The ray enters the block behind the face it hits (axis-aligned rays, both ways, and vertical). */
+    @Test
+    void coneCellEnteredIsBehindTheFace() {
+        assertArrayEquals(new int[]{2, 64, 0}, Cutaway.cellEntered(3, 64.5, 0.5, 10, 64.5, 0.5));
+        assertArrayEquals(new int[]{3, 64, 0}, Cutaway.cellEntered(3, 64.5, 0.5, -5, 64.5, 0.5));
+        assertArrayEquals(new int[]{0, 64, 0}, Cutaway.cellEntered(0.5, 65, 0.5, 0.5, 80, 0.5));
+        assertArrayEquals(new int[]{0, 65, 0}, Cutaway.cellEntered(0.5, 65, 0.5, 0.5, 50, 0.5));
+        assertArrayEquals(new int[]{0, 64, -4}, Cutaway.cellEntered(0.5, 64.5, -3, 0.5, 64.5, 5));
+        assertNull(Cutaway.cellEntered(1, 2, 3, 1, 2, 3));
+    }
+
+    /** A block on the axis half way is cut; so is a fragment on its near face. */
+    @Test
+    void coneCutsTheAxisHalfWay() {
+        double[] b = box(0.5, 64, 0.5), cam = {8.5, 70, 0.5};
+        assertTrue(cone(4, 67, 0, cam, b));
+        assertTrue(Cutaway.coneCuts(5, 67.5, 0.5, cam[0], cam[1], cam[2], b[0], b[1], b[2], b[3], b[4], b[5], R), "its +x face, seen from the camera");
+        assertFalse(Cutaway.coneCell(4, 67, 0, cam[0], cam[1], cam[2], b[0], b[1], b[2], b[3], b[4], b[5], 0), "radius 0 = no cone");
+    }
+
+    /** The floor (cells whose top is at or below the bot's feet) is never cut, from steep and shallow cameras. */
+    @Test
+    void coneNeverCutsTheFloor() {
+        double[] b = box(0.5, 64, 0.5);
+        double[][] cams = {{0.5, 74, 4.5}, {8.5, 66, 0.5}, {4.5, 65.2, 4.5}, {-6.5, 68, -3.5}};
+        for (double[] cam : cams)
+            for (int x = -6; x <= 6; x++)
+                for (int z = -6; z <= 6; z++)
+                    for (int y = 58; y <= 63; y++)
+                        assertFalse(cone(x, y, z, cam, b), "floor cell " + x + " " + y + " " + z + " from " + java.util.Arrays.toString(cam));
+    }
+
+    /** The bot's own cell and everything past the bot stay. */
+    @Test
+    void coneKeepsWhatIsPastTheBot() {
+        double[] b = box(0.5, 64, 0.5), cam = {8.5, 70, 0.5};
+        assertFalse(cone(0, 65, 0, cam, b), "the bot's head cell");
+        assertFalse(cone(0, 64, 0, cam, b), "the bot's feet cell");
+        for (int x = -6; x <= -1; x++) for (int y = 64; y <= 68; y++) assertFalse(cone(x, y, 0, cam, b), "behind the bot " + x + " " + y);
+    }
+
+    /** Near the camera the cone is thin: a trunk one block beside the camera is not bitten. */
+    @Test
+    void coneIsThinNearTheCamera() {
+        double[] b = box(0.5, 64, 0.5), cam = {8.5, 70, 0.5};
+        assertFalse(cone(7, 69, 1, cam, b));
+        assertFalse(cone(8, 69, 1, cam, b));
+        assertFalse(cone(8, 70, 1, cam, b));
+        assertFalse(cone(9, 69, 0, cam, b), "behind the camera");
+    }
+
+    /** cut radius ranges per mode, cut mode words, and watch.json keeps both. */
+    @Test
+    void coneWords() {
+        assertEquals(2.5, Cutaway.parseRadius("2.5", true));
+        assertEquals(6.0, Cutaway.parseRadius(" 6", true));
+        assertEquals(-1, Cutaway.parseRadius("0.5", true));
+        assertEquals(-1, Cutaway.parseRadius("7", true));
+        assertEquals(0.5, Cutaway.parseRadius("0.5", false));
+        assertEquals(-1, Cutaway.parseRadius("4", false));
+        assertEquals(-1, Cutaway.parseRadius("x", true));
+        assertEquals(Boolean.TRUE, Cutaway.parseMode("cut mode cone"));
+        assertEquals(Boolean.FALSE, Cutaway.parseMode("cut mode outline"));
+        assertNull(Cutaway.parseMode("cut mode cylinder"));
+        var ws = io.github.mojolowjo.entropybot.engine.WatchSettings.class;
+        var d = io.github.mojolowjo.entropybot.engine.WatchSettings.Values.DEFAULTS;
+        assertTrue(d.cutCone());
+        assertEquals(2.5, d.coneRadius());
+        assertEquals(0.6, d.outlineMargin());
+        var v = new io.github.mojolowjo.entropybot.engine.WatchSettings.Values(4f, 4, true, true, true, 45f, false, 4.0, 1.5);
+        var back = io.github.mojolowjo.entropybot.engine.WatchSettings.parse(io.github.mojolowjo.entropybot.engine.WatchSettings.toJson(v));
+        assertEquals(v, back.values());
+        assertNull(back.note());
+        var bad = io.github.mojolowjo.entropybot.engine.WatchSettings.parse("{\"cutMode\":\"x\",\"coneRadius\":9,\"outlineMargin\":5}");
+        assertEquals(d, bad.values());
+        assertNotNull(bad.note());
+        assertNotNull(ws);
+    }
+
+    /** The shaders carry the cone uniform and the same cell step and feet lift as the Java rule. */
+    @Test
+    void coneShaderFiles() throws Exception {
+        for (String name : new String[]{CutShaders.TEX, CutShaders.FLAT}) {
+            String base = "/assets/entropybot/shaders/core/" + name;
+            try (var in = CutawayTest.class.getResourceAsStream(base + ".json")) {
+                assertTrue(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).contains("\"CutCone\""), base);
+            }
+            try (var in = CutawayTest.class.getResourceAsStream(base + ".fsh")) {
+                String s = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                assertTrue(s.contains("uniform float CutCone;") && s.contains("cutCone()") && s.contains("if (CutCone > 0.0) return cutCone();"), base);
+                assertTrue(s.contains("floor(meshPos + dir * 0.01)"), "cell step matches Cutaway.CELL_STEP");
+                assertTrue(s.contains("cell.y + 1.0 <= CutMin.y + 0.1"), "feet lift matches");
+                assertTrue(s.contains("max(0.3, CutCone * t / len)"), "min radius matches");
+            }
+        }
+        assertEquals(0.01, Cutaway.CELL_STEP, 1e-12);
+        assertEquals(0.3, Cutaway.CONE_MIN_RADIUS, 1e-12);
+    }
 }
