@@ -34,9 +34,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectCategory;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.monster.Creeper;
-import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.AxeItem;
@@ -66,7 +64,8 @@ public final class Reflexes {
         }
     }
 
-    private record Threat(Entity e, double d, String id, boolean creeper) {}
+    /** kind: why it counts (HostileRules); strong: a retaliation target too strong to fight (retreat instead). */
+    private record Threat(Entity e, double d, String id, boolean creeper, HostileRules.Kind kind, boolean strong) {}
 
     private final EventRing events;
     private final EngineProcess engine;
@@ -227,8 +226,10 @@ public final class Reflexes {
         }
         deadTicks = 0;
         dimensionWatch(mc, p);
+        Hostility.INSTANCE.ensureLoaded();             // 0.19.1: defence.json, once (never throws)
         float hp = p.getHealth();
         if (hp < lastHealth - 0.5f) hurtTick = now;
+        if (Hostility.INSTANCE.observe(p, now)) hurtTick = now;    // a hit by a mob, even one absorption took
         lastHealth = hp;
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
 
@@ -280,7 +281,7 @@ public final class Reflexes {
             target = t.id;
             targetDist = t.d;
             urgent = hurt || t.d < ReflexRules.URGENT;
-            if (hp <= ReflexRules.RETREAT_AT) startRetreat(mc, p, t);
+            if (hp <= ReflexRules.RETREAT_AT || t.strong) startRetreat(mc, p, t);
             else if (t.creeper) creeper(mc, p, t);
             else fight(mc, p, t);
             return;
@@ -315,17 +316,28 @@ public final class Reflexes {
 
     // ---- fighting ----
 
+    /** Whether the bot was hit in the last {@link ReflexRules#HURT_TICKS} (for debug mobs). */
+    public boolean recentlyHurt() {
+        return now - hurtTick < ReflexRules.HURT_TICKS;
+    }
+
+    /**
+     * The nearest mob that counts (0.19.1, {@link Hostility}): an Enemy (a NeutralMob only right after a hit), a mob on
+     * the owner's hostile list, or whatever hit the bot in the last 5 s; never a player or a tamed/owned mob.
+     */
     private Threat nearestThreat(Minecraft mc, LocalPlayer p, boolean hurt) {
         Threat best = null;
+        Hostility h = Hostility.INSTANCE;
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive() || !(e instanceof Enemy)) continue;
-            // endermen, zombified piglins...: left alone unless something just hit the bot
-            if (e instanceof NeutralMob && !hurt) continue;
+            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
             double d = p.distanceTo(e);
             if (d > ReflexRules.lookRadius(hurt) || (best != null && d >= best.d)) continue;
+            HostileRules.Kind k = h.kind(e, hurt);
+            if (!k.counts()) continue;
             boolean seen = hurt || d <= 2.5 || p.hasLineOfSight(e);
             if (!ReflexRules.counts(d, hurt, seen)) continue;
-            best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper);
+            boolean strong = k == HostileRules.Kind.RETALIATION && Hostility.strong(p, le);
+            best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
         }
         return best;
     }
@@ -343,7 +355,7 @@ public final class Reflexes {
         try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
         if (t.d <= ReflexRules.REACH) {
             engine.hold();
-            if (p.getAttackStrengthScale(0f) >= 0.9f) {
+            if (p.getAttackStrengthScale(0f) >= 0.9f && Hostility.mayAttack(t.e)) {     // never a player or a pet (0.19.1)
                 mc.gameMode.attack(p, t.e);
                 p.swing(InteractionHand.MAIN_HAND);
             }
@@ -365,7 +377,7 @@ public final class Reflexes {
             engine.override(fleeGoal);      // a Baritone cancel (the bridge stopping a job) dropped it
         }
         // one that is already right here gets knocked back
-        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f) {
+        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && Hostility.mayAttack(t.e)) {
             holdWeapon(mc, p);
             mc.gameMode.attack(p, t.e);
             p.swing(InteractionHand.MAIN_HAND);
@@ -428,7 +440,9 @@ public final class Reflexes {
         lastX = p.getX();
         lastY = p.getY();
         lastZ = p.getZ();
-        events.push("reflex", "retreating from " + t.id + " (health " + Math.round(p.getHealth()) + ")" +
+        String why = t.strong && p.getHealth() > ReflexRules.RETREAT_AT && t.e instanceof LivingEntity le
+                ? ", too strong to fight (max health " + Math.round(le.getMaxHealth()) + ")" : "";
+        events.push("reflex", "retreating from " + t.id + " (health " + Math.round(p.getHealth()) + why + ")" +
                 (retreatTo != null ? " to the base" : " away from it") + (tp ? ", sent /home" : ""), null);
     }
 

@@ -61,6 +61,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("steercheck", "couldn't check watch steer: " + e, "watch steer status"));
         }
+        try {
+            f.addAll(io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.findings());   // defence.json (0.19.1)
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("hostilecheck", "couldn't check the hostile list: " + e, "defend hostile list"));
+        }
         return f;
     }
 

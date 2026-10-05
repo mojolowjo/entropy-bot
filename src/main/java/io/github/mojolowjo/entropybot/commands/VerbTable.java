@@ -130,7 +130,9 @@ public final class VerbTable {
         v("unprotect", "", "safety", O, "unprotect <name> confirm", "remove a protect box", "unprotect base confirm", "protect");
         v("guard", "", "safety", P, "guard | guard vetoes | guard check x y z break|place|go | guard mode strict | guard mode log confirm", "the fence: its mode, what it refused, dry runs",
                 "guard|guard check 10 64 20 break", "area list", "guard, guard vetoes");
-        v("defend", "defense|defence", "safety", O, "defend on|off", "self-defence (fights monsters, avoids creepers, retreats under 6 health)", "defend on", "status");
+        v("defend", "defense|defence", "safety", O, "defend on|off | defend creepers flee|melee|bow | defend hostile [list|add <id>...|remove <id>...]",
+                "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets or players, avoids creepers, retreats under 6 health)",
+                "defend on|defend hostile add arphex:spider_jump", "debug mobs");
         v("deaths", "", "safety", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "resume", "deaths");
         v("resume", "", "safety", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "autominer status");
         v("reconnect", "", "safety", O, "reconnect on|off", "rejoin after a kick (1, 5, 15 min; 3 an hour)", "reconnect on", "status");

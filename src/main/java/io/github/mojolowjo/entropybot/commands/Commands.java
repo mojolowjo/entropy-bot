@@ -1048,8 +1048,10 @@ public final class Commands implements Chains.Env {
     String setDefence(String text) {
         String a = text == null ? "" : text.trim().toLowerCase();
         if (a.matches("creepers?(\\s.*)?")) return io.github.mojolowjo.entropybot.engine.CreeperSetting.command(a.replaceFirst("^creepers?", ""), brainStore.data(), () -> brainStore.changed(core.tick()), core.reflexes::creeperMode, core.reflexes::setCreeperMode);     // B7e C
+        if (a.matches("hostile(\\s.*)?")) return io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.command(a.replaceFirst("^hostile", ""));    // 0.19.1
         if (a.equals("on") || a.equals("off")) core.reflexes.setDefence(a.equals("on"));
-        return "self-defence is " + (core.reflexes.defence() ? "ON (fights monsters, avoids creepers, retreats under 6 health)" : "OFF");
+        return "self-defence is " + (core.reflexes.defence() ? "ON (fights monsters and the " + io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.ids().size()
+                + " mobs on the hostile list, hits back at whatever hits me, never pets or players, avoids creepers, retreats under 6 health)" : "OFF");
     }
 
     String reconnectCommand(String rest) {

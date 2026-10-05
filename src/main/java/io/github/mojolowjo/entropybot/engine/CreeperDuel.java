@@ -14,9 +14,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.monster.Creeper;
-import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
@@ -130,14 +128,14 @@ public final class CreeperDuel {
         int creepers = 0;
         boolean others = false;
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive() || !(e instanceof Enemy)) continue;
+            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
             double d = p.distanceTo(e);
             if (e instanceof Creeper) {
                 if (d <= CreeperRules.LOOK) creepers++;
                 continue;
             }
-            if (e instanceof NeutralMob && !hurt) continue;
-            if (d > ReflexRules.lookRadius(hurt)) continue;
+            // the same verdict as the fight code (0.19.1): Enemy, hostile list, retaliation; never pets or players
+            if (d > ReflexRules.lookRadius(hurt) || !Hostility.INSTANCE.kind(e, hurt).counts()) continue;
             if (ReflexRules.counts(d, hurt, hurt || d <= 2.5 || p.hasLineOfSight(e))) others = true;
         }
         String dim = Guard.dimOf(lv);
@@ -231,7 +229,7 @@ public final class CreeperDuel {
             }
             case HIT -> {
                 face(p, c);
-                mc.gameMode.attack(p, c);
+                if (Hostility.mayAttack(c)) mc.gameMode.attack(p, c);     // never a player or a pet (0.19.1)
                 p.swing(InteractionHand.MAIN_HAND);
                 moveKeys(mc, false, false);
                 startBack(p, c, now);

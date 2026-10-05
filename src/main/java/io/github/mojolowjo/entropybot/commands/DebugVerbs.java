@@ -96,6 +96,10 @@ public final class DebugVerbs {
         int radius = DebugRules.optInt(w, 1, 24, 1, 64, "usage: debug mobs [radius]");
         record Row(double d, String text) {}
         List<Row> rows = new ArrayList<>();
+        // 0.19.1: the same verdict as the fight code (engine.Hostility), with the bot's current "just hit" state
+        boolean hurt = io.github.mojolowjo.entropybot.Core.INSTANCE.reflexes.recentlyHurt();
+        var host = io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE;
+        int look = io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(hurt);
         for (net.minecraft.world.entity.Entity e : level.entitiesForRendering()) {
             if (e == p || !(e instanceof net.minecraft.world.entity.LivingEntity le)) continue;
             double d = p.distanceTo(e);
@@ -105,12 +109,13 @@ public final class DebugVerbs {
             boolean los = false;
             try { los = p.hasLineOfSight(e); } catch (RuntimeException ignored) {}
             String verdict;
+            var kind = host.kind(e, hurt);
             if (!le.isAlive()) verdict = "dead";
-            else if (!enemy) verdict = "NOT counted: not an Enemy (a hostile-type check; modded mobs on another base class fail it)";
-            else if (neutral) verdict = "NOT counted: NeutralMob (ignored unless something just hit the bot)";
-            else if (d > io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(false)) verdict = "NOT counted: too far (look radius " + io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(false) + ", " + io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(true) + " when just hit)";
-            else if (!io.github.mojolowjo.entropybot.engine.ReflexRules.counts(d, false, los)) verdict = "NOT counted: no line of sight (only within 2.5 blocks without one)";
-            else verdict = "counted as a threat";
+            else if (!kind.counts()) verdict = kind.text() + (host.onList(e) && kind == io.github.mojolowjo.entropybot.engine.HostileRules.Kind.PROTECTED ? " - on the hostile list, but tamed" : "");
+            else if (d > look) verdict = kind.text() + ", but too far now (look radius " + io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(false) + ", " + io.github.mojolowjo.entropybot.engine.ReflexRules.lookRadius(true) + " when just hit)";
+            else if (!io.github.mojolowjo.entropybot.engine.ReflexRules.counts(d, hurt, los)) verdict = kind.text() + ", but no line of sight now (only within 2.5 blocks without one)";
+            else verdict = kind.text() + " - a threat now"
+                    + (kind == io.github.mojolowjo.entropybot.engine.HostileRules.Kind.RETALIATION && io.github.mojolowjo.entropybot.engine.Hostility.strong(p, le) ? " (too strong: I retreat)" : "");
             StringBuilder cls = new StringBuilder();
             Class<?> c = e.getClass();
             for (int i = 0; c != null && i < 5; i++, c = c.getSuperclass()) {
@@ -124,7 +129,8 @@ public final class DebugVerbs {
         }
         rows.sort(java.util.Comparator.comparingDouble(Row::d));
         if (rows.isEmpty()) return "no living entities within " + radius + " blocks";
-        StringBuilder sb = new StringBuilder("mobs within " + radius + " (" + rows.size() + (rows.size() > 20 ? ", nearest 20" : "") + "):");
+        StringBuilder sb = new StringBuilder("mobs within " + radius + " (" + rows.size() + (rows.size() > 20 ? ", nearest 20" : "") + ")"
+                + (hurt ? ", I was just hit" + (host.lastAttacker() != null ? " (last by " + host.lastAttacker() + ")" : "") : "") + ":");
         for (int i = 0; i < Math.min(20, rows.size()); i++) sb.append("\n").append(rows.get(i).text());
         return sb.toString();
     }
