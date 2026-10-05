@@ -72,6 +72,14 @@ public final class Jobs {
          */
         public boolean holdOnFight, ownsBreaking;
         public Runnable onHold, onEnd;
+        /**
+         * Routing stage 1 (R3): this walk's use of the router (null = a plain walk, as before), the goal the router
+         * wraps (a travel's "goto x y z" as a GoalBlock, a Seq walk's own goal), and the current leg's end in legs mode
+         * (the stuck watchdog measures progress to it).
+         */
+        io.github.mojolowjo.entropybot.routewalk.RouteWalk route;
+        baritone.api.pathing.goals.Goal plainGoal;
+        int[] legDest;
     }
 
     static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 12;
@@ -101,6 +109,8 @@ public final class Jobs {
     public boolean running() { return job != null && !job.done; }
 
     Core core() { return core; }
+
+    Commands commands() { return commands; }
 
     /** A job made of steps (open, scan, deposit, corpse, rs, pots...): "started: <label>". */
     String startSeq(Seq s, String closeOnEnd) {
@@ -240,11 +250,78 @@ public final class Jobs {
             job = j;
             return "ok: " + j.status;
         }
-        b.getCommandManager().execute(goal);
-        j.status = label;
         job = j;
-        watch(j);
+        launchTravel(p, j, b);
         return "ok: " + label;
+    }
+
+    /**
+     * Starts a travel's walk: through the router when it decides so (routing stage 1; the job then waits for the plan
+     * at most 300 ms in {@link #tick}, status "(planning)"), else exactly as before (the Baritone command). Reflex walks
+     * (a retreat) and walks to a moving player (follow, the companion's follow) are never routed.
+     */
+    private void launchTravel(LocalPlayer p, Job j, IBaritone b) {
+        j.route = null;
+        j.legDest = null;
+        int[] d = travelDest(j);
+        boolean fixed = !j.reflex && d != null && j.goal != null && j.goal.startsWith("goto ")
+                && (j.label == null || !j.label.startsWith("following"));
+        if (fixed) {
+            j.plainGoal = new baritone.api.pathing.goals.GoalBlock(d[0], d[1], d[2]);
+            j.route = RouteWalker.begin(commands, p, d, null, 0, true, null);
+        }
+        if (j.route != null) {
+            j.status = j.label + " (planning)";
+            return;
+        }
+        b.getCommandManager().execute(j.goal);
+        j.status = j.label;
+        watch(j);
+    }
+
+    /** A travel waiting for its plan: once it is there (or 300 ms passed), the walk starts with the goal it gives. */
+    private void routeTravelPoll(Job j) {
+        if (RouteWalker.poll(j.route) == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) return;
+        IBaritone b = baritone();
+        if (b == null) {
+            finish("error: baritone not loaded");
+            return;
+        }
+        j.status = j.label;
+        j.startTick = core.tick();
+        j.lastStepTick = -1;
+        if (!j.route.routed()) {
+            j.route = null;
+            b.getCommandManager().execute(j.goal);
+        } else {
+            walkGoal(b, j, RouteWalker.goalFor(j.route, j.plainGoal));
+            j.legDest = RouteWalker.legDest(j.route);
+        }
+        watch(j);
+    }
+
+    /** Sets a routed goal (or a leg) and remembers it, so unsticking plans it again. */
+    static void walkGoal(IBaritone b, Job j, baritone.api.pathing.goals.Goal g) {
+        safeSettings();
+        b.getCustomGoalProcess().setGoalAndPath(g);
+        j.goalObj = g;
+    }
+
+    /**
+     * A routed travel got "no path" or the stuck watchdog fired: the plain walk from here, once (the stretch is
+     * rebuilt by the planner). False when the walk wasn't routed (do today's thing).
+     */
+    private boolean routeFallback(LocalPlayer p, Job j, IBaritone b, String why) {
+        if (j.route == null || b == null || !RouteWalker.fallBack(j.route, why, p)) return false;
+        cancel(b);
+        j.legDest = null;
+        j.goalObj = null;
+        safeSettings();
+        b.getCommandManager().execute(j.goal);
+        j.startTick = core.tick();
+        j.lastStepTick = -1;
+        watch(j);
+        return true;
     }
 
     /** "home": /home right away. */
@@ -399,7 +476,7 @@ public final class Jobs {
     /** No block of progress toward the destination for 30 s: Baritone re-plans a goal it can't reach forever. */
     boolean travelStuck(Player p, Job j) {
         if (j.evSeq < 0) return false;
-        int[] d = travelDest(j);
+        int[] d = j.legDest != null ? j.legDest : travelDest(j);       // legs mode: progress to the current leg's end
         if (d == null) return false;
         double dist = Math.sqrt(distSq(here(p), d));
         long now = core.tick();
@@ -440,7 +517,10 @@ public final class Jobs {
                 if (j.ticks >= j.total) finish("ok: twerked");
             }
             case "wait" -> { if (now >= j.until) finish("ok: waited"); }
-            case "travel", "spawn" -> { if (now % 20 == 0) stepWalk(p, j); }
+            case "travel", "spawn" -> {
+                if (j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) routeTravelPoll(j);
+                else if (now % 20 == 0) stepWalk(p, j);
+            }
             case "seq" -> { if (now % 2 == 0 || j.seq.everyTick()) j.seq.tick(p); }
             default -> {}
         }
@@ -462,14 +542,18 @@ public final class Jobs {
                 finish("error: /home didn't move me - is my home set? Stand me at the base and PM sethome");
                 return;
             }
-            if (b != null) b.getCommandManager().execute(j.goal);
             j.startTick = core.tick();
-            j.status = j.label;
-            watch(j);
+            if (b != null) launchTravel(p, j, b);
+            else {
+                j.status = j.label;
+                watch(j);
+            }
             return;
         }
         String ev = travelEvents(j);
         boolean stuck = j.type.equals("travel") && ev == null && travelStuck(p, j);
+        // routing stage 1: a routed walk that found no path or got stuck walks the plain goal once before anything else
+        if ((stuck || "nopath".equals(ev)) && routeFallback(p, j, b, stuck ? "stuck" : "no path")) return;
         // Baritone plans nothing from a block it doesn't understand (a modded altar or pedestal, seen live
         // 2026-10-02): step off it by hand first, sooner when the bot isn't standing on a full block
         boolean early = j.type.equals("travel") && ev == null && travelDest(j) != null && j.lastStepTick >= 0
@@ -482,6 +566,16 @@ public final class Jobs {
         }
         if (ev == null && core.tick() - j.startTick < 40) return;
         if (b != null && !idle(b)) return;
+        if (!"nopath".equals(ev) && b != null && j.route != null && j.route.hasNextLeg()) {
+            // legs mode: this leg is done, on to the next (the last one is the real goal)
+            j.route.nextLeg();
+            walkGoal(b, j, RouteWalker.goalFor(j.route, j.plainGoal));
+            j.legDest = RouteWalker.legDest(j.route);
+            j.startTick = core.tick();
+            j.lastStepTick = -1;
+            watch(j);
+            return;
+        }
         if ("nopath".equals(ev)) {
             finish(noPathResult(p, j));
         } else if (j.type.equals("travel")) {

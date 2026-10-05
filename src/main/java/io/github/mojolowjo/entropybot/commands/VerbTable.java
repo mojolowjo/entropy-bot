@@ -55,6 +55,9 @@ public final class VerbTable {
         v("base", "", "moving", O, "base", "walk to the base (far: /home first)", "base", "deposit");
         v("home", "", "moving", O, "home", "teleport home with the server's /home", "home", "sethome");
         v("sethome", "", "moving", O, "sethome", "my home = where I stand (/sethome home)", "sethome", "home");
+        v("route", "", "moving", O, "route status | route on|off | route mode goal|legs | route build [place|x y z] | route dump x y z | route test <placeA> <placeB> [trips]",
+                "the travel map for long walks: its status, on/off, how walks use it, build it toward a place, dump a box, measure trips (to routes/trips.csv)",
+                "route status|route test base farm 6", "route status");
         v("mark", "", "moving", O, "mark <name> [x y z] [north|south|east|west]", "remember a spot (where you stand, or the coordinates); mark mine and mark food are special",
                 "mark farm|mark mine north", "places");
         v("setbase", "", "moving", O, "setbase [x y z]", "mark base", "setbase", "scan base");

@@ -41,10 +41,17 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
 
     /** "check": every finding with its fix (and the idle check starts from these). */
     public String command(LocalPlayer p) {
-        List<SelfCheck.Finding> f = SelfCheck.run(state(p));
+        List<SelfCheck.Finding> f = findings(p);
         remember(SelfCheck.keys(f));
         lastIdleCheck = System.currentTimeMillis();
         return SelfCheck.report(f);
+    }
+
+    /** The rules' findings plus routing's (routing stage 1: planner not running, its errors, many fallbacks). */
+    private List<SelfCheck.Finding> findings(LocalPlayer p) {
+        List<SelfCheck.Finding> f = new java.util.ArrayList<>(SelfCheck.run(state(p)));
+        f.addAll(RouteCommand.findings(c));
+        return f;
     }
 
     /**
@@ -56,7 +63,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         if (!ownerOnline()) return;                       // nobody to tell: keep the keys, look again later
         lastIdleCheck = now;
         try {
-            List<SelfCheck.Finding> f = SelfCheck.run(state(p));
+            List<SelfCheck.Finding> f = findings(p);
             SelfCheck.Diff d = SelfCheck.diff(remembered(), f);
             if (d.empty()) return;
             LOG.info("[entropybot] self-check: {}", d.text().replace("\n", " | "));
