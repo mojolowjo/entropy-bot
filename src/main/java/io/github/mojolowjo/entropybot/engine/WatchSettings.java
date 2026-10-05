@@ -15,9 +15,14 @@ public final class WatchSettings {
     public static final String FILE = "watch.json";
     public static final WatchSettings INSTANCE = new WatchSettings();
 
-    /** The values; the defaults are distance 4, tunnel height 4, dollhouse on, steer on. */
-    public record Values(float distance, double height, boolean dollhouse, boolean steer) {
-        public static final Values DEFAULTS = new Values(4f, 4, true, true);
+    /** The values; the defaults are distance 4, tunnel height 4, dollhouse on, steer on, turn on at 45 degrees a second. */
+    public record Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate) {
+        public static final Values DEFAULTS = new Values(4f, 4, true, true, true, SteerRules.TURN_RATE_DEFAULT);
+
+        /** The values before watch turn (2026-10-05): the turn at its defaults. */
+        public Values(float distance, double height, boolean dollhouse, boolean steer) {
+            this(distance, height, dollhouse, steer, true, SteerRules.TURN_RATE_DEFAULT);
+        }
     }
 
     /** What a read gave: the values, and a note for the log/status (null when all was fine). */
@@ -72,7 +77,23 @@ public final class WatchSettings {
         } catch (RuntimeException e) {
             bad.append(" steer");
         }
-        Values v = new Values(distance, height, dollhouse, steer);
+        boolean turn = d.turn();
+        float turnRate = d.turnRate();
+        try {
+            if (o.has("turn")) turn = bool(o.get("turn"));
+        } catch (RuntimeException e) {
+            bad.append(" turn");
+        }
+        try {
+            if (o.has("turnRate")) {
+                float v = o.get("turnRate").getAsFloat();
+                if (v >= SteerRules.TURN_RATE_MIN && v <= SteerRules.TURN_RATE_MAX) turnRate = v;
+                else bad.append(" turnRate ").append(v).append(" (5-180)");
+            }
+        } catch (RuntimeException e) {
+            bad.append(" turnRate");
+        }
+        Values v = new Values(distance, height, dollhouse, steer, turn, turnRate);
         return new Parsed(v, bad.length() == 0 ? null : "ignored bad values:" + bad + " (defaults used for them)");
     }
 
@@ -88,6 +109,8 @@ public final class WatchSettings {
         o.addProperty("tunnelHeight", v.height());
         o.addProperty("dollhouse", v.dollhouse());
         o.addProperty("steer", v.steer());
+        o.addProperty("turn", v.turn());
+        o.addProperty("turnRate", v.turnRate());
         return o.toString();
     }
 
@@ -119,12 +142,15 @@ public final class WatchSettings {
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setHeight(v.height());
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.setDollhouse(v.dollhouse());
         WatchSteer.INSTANCE.setMaster(v.steer());
+        WatchSteer.INSTANCE.setTurnOn(v.turn());
+        WatchSteer.INSTANCE.setTurnRate(v.turnRate());
     }
 
     /** The values in use now. */
     public static Values current() {
         return new Values(WatchCamera.INSTANCE.distance(), io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.height(),
-                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.dollhouse(), WatchSteer.INSTANCE.master());
+                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.dollhouse(), WatchSteer.INSTANCE.master(),
+                WatchSteer.INSTANCE.turnOn(), WatchSteer.INSTANCE.turnRate());
     }
 
     /** After a change: write the file (atomic, a few bytes, on the client thread). "" when saved, else " (not saved: ...)" for the answer. Never throws. */
@@ -152,6 +178,6 @@ public final class WatchSettings {
     public String status() {
         Values v = current();
         return "settings: distance " + v.distance() + ", tunnel height " + v.height() + ", dollhouse " + (v.dollhouse() ? "on" : "off")
-                + ", steer " + (v.steer() ? "on" : "off") + " (" + note + ")";
+                + ", steer " + (v.steer() ? "on" : "off") + ", turn " + (v.turn() ? "on" : "off") + " at " + v.turnRate() + " deg/s (" + note + ")";
     }
 }

@@ -65,7 +65,7 @@ public final class WatchEvents {
                 if (TunnelView.INSTANCE.onAngles(e)) w.angleEdited();
                 return;
             }
-            float[] a = w.v1Angles(e.getCamera().isDetached());
+            float[] a = w.v1Angles(e.getCamera().isDetached(), (float) e.getPartialTick());
             if (a == null) return;
             e.setYaw(a[0]);
             e.setPitch(a[1]);
