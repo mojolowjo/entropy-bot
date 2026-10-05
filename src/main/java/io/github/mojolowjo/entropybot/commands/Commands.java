@@ -249,6 +249,27 @@ public final class Commands implements Chains.Env {
         return r[1];
     }
 
+    /**
+     * Routing stage 1 (R3): the route settings in commands.json, {"on": true, "mode": "goal"} until changed with
+     * {@code route on|off} and {@code route mode goal|legs}. Never null.
+     */
+    JsonObject routeSettings() {
+        JsonObject b = brainStore.data();
+        if (!b.has("route") || !b.get("route").isJsonObject()) {
+            JsonObject r = new JsonObject();
+            r.addProperty("on", true);
+            r.addProperty("mode", "goal");
+            return r;          // not stored until changed
+        }
+        return b.getAsJsonObject("route");
+    }
+
+    /** Stores the route settings (route on|off, route mode). */
+    void setRouteSettings(JsonObject r) {
+        brainStore.data().add("route", r);
+        saved();
+    }
+
     /** The hotbar keeper holds still while a job other than a walk or a wait runs, or a reflex does. */
     private boolean hotbarBusy() {
         return core.reflexes.hold() || hotbarJob() != null;
@@ -651,6 +672,8 @@ public final class Commands implements Chains.Env {
         // package B: the hotbar layout and the tool policy (settings: instant, never "busy")
         if (verb.equals("hotbar")) return Reply.now(hotbarCommand(player, rest));
         if (verb.equals("tools")) return Reply.now(toolsCommand(rest));
+        // routing stage 1: route status|on|off|mode|build|dump are instant settings; "route test" is a job (below)
+        if (verb.equals("route") && !RouteRules.isTest(rest)) return Reply.now(RouteCommand.instant(this, player, rest));
         if (verb.equals("say")) {
             if (rest.isEmpty()) return Reply.now("say what?");
             String no = Texts.sayRefusal(rest, baritonePrefix());
@@ -735,6 +758,7 @@ public final class Commands implements Chains.Env {
                 if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
                 return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
             }
+            case "route" -> { return RouteTestRun.start(this, jobs, storage, player, rest); }       // routing stage 1: route test
             case "wait" -> { return jobs.startWait(rest); }
             case "twerk" -> { return jobs.startTwerk(rest); }
             case "find" -> { return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest); }
