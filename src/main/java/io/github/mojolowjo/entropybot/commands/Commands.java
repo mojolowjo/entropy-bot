@@ -96,6 +96,10 @@ public final class Commands implements Chains.Env {
 
     /** B7c: craft/smelt/get/need/recipe/kit/supplies/restock, farm and compact. */
     final Crafting crafting;
+    /** C4 + C5 (0.20.1): bootstrap, light, stock, junk, tool care. */
+    final CampCommands camp = new CampCommands(this);
+
+    Chains chainsRef() { return chains; }
 
     /** What "restock" tops the bag up to: {id: n} (commands.json "supplies", moved over from memory.json once). */
     Map<String, Integer> suppliesMap() {
@@ -244,7 +248,7 @@ public final class Commands implements Chains.Env {
     /** "tools" | "tools ores iron|cheapest". */
     String toolsCommand(String rest) {
         String t = rest == null ? "" : rest.trim();
-        if (t.isEmpty()) return HotbarRules.toolsText(toolOresSetting());
+        if (t.isEmpty()) return HotbarRules.toolsText(toolOresSetting()) + "\n" + camp.toolsText(Minecraft.getInstance().player);
         String[] r = HotbarRules.toolsCommand(t);
         if (r[0] == null) return r[1];
         brainStore.data().addProperty("toolOres", r[0]);
@@ -447,6 +451,16 @@ public final class Commands implements Chains.Env {
                 chains.rulesTick();
                 chains.autominerTick();
             }
+            if (tick % 40 == 21) {
+                try { camp.junkTick(player); } catch (RuntimeException e) { LOG.warn("[entropybot] junk: {}", e.toString()); }      // C5
+            }
+            if (tick % 100 == 65 && worldTicks > 600) {
+                try {
+                    camp.toolCareTick(player, !jobs.running() && !chains.running() && !requests.busy() && !core.reflexes.hold() && !gathering.running());
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] tool care: {}", e.toString());
+                }
+            }
             // B7e N: the idle self-check (whispers only what changed, at most every 30 min)
             if (tick % 200 == 77 && worldTicks > 1200) selfCheck.idleTick(player, !jobs.running() && !chains.running() && !requests.busy(), System.currentTimeMillis());
             if (tick % 25 == 0) sendOutbox(player);
@@ -501,6 +515,7 @@ public final class Commands implements Chains.Env {
     /** From the chat event: a PM from an allowed player is queued; anyone else hears no once. */
     public void onChat(ClientChatReceivedEvent event) {
         try {
+            if (event instanceof ClientChatReceivedEvent.System) SleepJob.noteChat(event.getMessage(), core.tick());      // C4: a bed's answer
             if (!ready) return;
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) return;
@@ -683,6 +698,19 @@ public final class Commands implements Chains.Env {
             if (chains.isRoutine(verb) && Texts.splitChain(raw).size() == 1) return Reply.now(chains.startChain(from, verb, verb, 1));
             return Reply.now(chains.startChain(from, "chain", raw, 1));
         }
+        // C4 + C5: settings and the verbs that start chains of their own
+        if (verb.equals("junk")) return Reply.now(camp.junk(rest));
+        if (verb.equals("stock")) return Reply.now(camp.stock(player, rest));
+        if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
+        if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
+        if (verb.equals("bootstrap")) return Reply.now(camp.bootstrap(player, from, internal, rest));
+        if (verb.equals("gather") && io.github.mojolowjo.entropybot.camp.StockRules.toBase(rest) != null) {
+            String g = io.github.mojolowjo.entropybot.camp.StockRules.toBase(rest);
+            if (internal) return Reply.now("error: \"gather ... to base\" is a chain of its own - in a chain write: gather " + g + " then deposit <item>");
+            if (chains.running()) return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
+            String item = Texts.words(g).isEmpty() ? "" : Texts.words(g).get(0);
+            return Reply.now(chains.startChain(from, "gather to base", "gather " + g + " then deposit " + item, 1));
+        }
         // memory lookups and edits never interrupt a job
         if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
         if (verb.equals("where")) return Reply.now(storage.where(player, rest));
@@ -717,6 +745,10 @@ public final class Commands implements Chains.Env {
         }
         // P2: gather (its status and sources answer at once; a running gather owns the bot between its steps too)
         if (verb.equals("gather")) return gathering.command(from, rest, raw, l, player);
+        if (verb.equals("light")) {                                                  // C4: torches on a grid
+            if (!internal && gathering.running()) return Reply.now("busy: " + gathering.statusText() + " (pm \"stop\" first)");
+            return camp.light(player, rest, from, internal, raw, l);
+        }
         if (!internal && gathering.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
             return Reply.now("busy: " + gathering.statusText() + " (pm \"stop\" first)");
         }
@@ -781,6 +813,7 @@ public final class Commands implements Chains.Env {
                 return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false);
             }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
+            case "sleep" -> { return SleepJob.start(this, player, rest); }              // C4: in bed until morning
             case "home" -> { return jobs.startHome(player); }
             case "go", "base" -> {
                 if (verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$")) return storage.goPoi(player, Integer.parseInt(rest.trim().split("\\s+")[1]));
@@ -1811,6 +1844,11 @@ public final class Commands implements Chains.Env {
     @Override public JsonObject minePlace() { return core.knowledge.places().get("mine"); }
 
     @Override public boolean inAreas(String dim, int x, int z) { return policy.inAreas(dim, x, z); }
+
+    @Override public long dayTime() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.level == null ? -1 : mc.level.getDayTime();
+    }
 
     @Override public String dim() {
         Minecraft mc = Minecraft.getInstance();

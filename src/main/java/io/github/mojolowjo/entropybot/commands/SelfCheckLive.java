@@ -50,6 +50,9 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     /** The rules' findings plus routing's (routing stage 1: planner not running, its errors, many fallbacks). */
     private List<SelfCheck.Finding> findings(LocalPlayer p) {
         List<SelfCheck.Finding> f = new java.util.ArrayList<>(SelfCheck.run(state(p)));
+        // C5 tool care: a worn or broken tool that nothing could replace
+        for (String id : c.camp.careFindings()) f.add(new SelfCheck.Finding("toolcare:" + id, "my " + id + " is nearly broken or gone, and nothing can replace it (none in the chests, nothing to craft one from)",
+                "put a " + id + " (or its materials) in the base chests"));
         f.addAll(RouteCommand.findings(c));
         try {
             f.addAll(io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.findings());   // camera hooks (0.15.2)
