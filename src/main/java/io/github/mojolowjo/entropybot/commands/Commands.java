@@ -796,7 +796,21 @@ public final class Commands implements Chains.Env {
             case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
             case "wait" -> { return jobs.startWait(rest); }
             case "twerk" -> { return jobs.startTwerk(rest); }
-            case "find" -> { return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest); }
+            case "find" -> {
+                if (rest.trim().toLowerCase().matches("^nearest(\\s.*)?$")) return Mining.get().findNearest(player, rest.trim().substring(7));   // C8
+                return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest);
+            }
+            case "scout" -> {                                                       // C8: look ahead and report
+                int[] ownerAt = null;
+                Minecraft mc = Minecraft.getInstance();
+                PolicyCommands.Pos h = hereOf(mc, from == null ? owner() : from);
+                if (mc.player != null && h != null) {
+                    PolicyCommands.Pos bot = posOf(mc, mc.player);
+                    boolean isBot = h.x() == bot.x() && h.y() == bot.y() && h.z() == bot.z();
+                    if (!isBot) ownerAt = new int[]{h.x(), h.y(), h.z()};
+                }
+                return Mining.get().scout(player, rest, ownerAt);
+            }
             // B7b part 2: the GUI toolkit and the storage errands
             case "open" -> { return storage.open(player, rest); }
             case "scan" -> { return storage.scan(player, rest); }
@@ -1476,7 +1490,8 @@ public final class Commands implements Chains.Env {
             case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
                  "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade",
-                 "dig", "build", "place", "stripmine", "mine", "explore", "chop" -> {
+                 "dig", "build", "place", "stripmine", "mine", "explore", "chop", "scout" -> {
+                if (type.equals("scout") && text.trim().equalsIgnoreCase("status")) return Reply.now(Mining.get().scout(player, text, null));
                 if (type.equals("chop") && Chopping.instant(text)) return Reply.now(Chopping.get().command(player, text));
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
                 if (type.equals("stripmine") && text.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, text));

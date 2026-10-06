@@ -120,6 +120,7 @@ public final class VerbTable {
                         + "chopped or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
                 "gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch|gather source oritech:raw_nickel mine strip nickel {n}", "deposit");
         v("explore", "", "mining", O, "explore [minutes]", "walk unvisited land inside my areas, then home", "explore 5", "poi");
+        v("scout", "", "mining", G, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status", "walk up to n blocks (64, max 256) that way inside my areas, come back and report places, ores and mobs seen", "scout north 64|scout 120 -40", "find nearest <poi kind|ore>");
         v("ores", "", "mining", P, "ores [name] | ores clear | ores prefer <ores>", "ores I left in place, nearest first; the preferred ore list", "ores iron|ores prefer diamond,iron",
                 "mine <ore> [n]", "ores [name], ores prefer (just looking)");
         v("dig", "", "mining", O, "dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 down|up N [same words, no floor]",
