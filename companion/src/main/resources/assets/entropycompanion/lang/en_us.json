@@ -1,0 +1,12 @@
+{
+  "key.categories.entropycompanion": "Entropy Companion",
+  "key.entropycompanion.point": "Point: send the bot to what I look at",
+  "key.entropycompanion.menu": "Bot quick menu",
+  "key.entropycompanion.come": "Bot: come",
+  "key.entropycompanion.follow": "Bot: follow / stop",
+  "key.entropycompanion.stop": "Bot: stop",
+  "key.entropycompanion.hold": "Bot: hold this",
+  "key.entropycompanion.corner1": "Area corner 1",
+  "key.entropycompanion.corner2": "Area corner 2",
+  "key.entropycompanion.boxes": "Box view on/off"
+}

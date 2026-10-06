@@ -27,7 +27,7 @@ public final class Texts {
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume", "escort",
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook",
-            "bootstrap", "sleep", "light", "junk", "hold", "give", "carry", "unload", "fetch");
+            "bootstrap", "sleep", "light", "junk", "hold", "give", "carry", "unload", "fetch", "attack");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,

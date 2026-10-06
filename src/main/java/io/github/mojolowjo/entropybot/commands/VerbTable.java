@@ -164,6 +164,8 @@ public final class VerbTable {
         v("escort", "", "safety", P, "escort me [radius] | escort <player> [radius] | escort off | escort status",
                 "follow a player and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry, warn of creepers and skeletons",
                 "escort me|escort me 10|escort off", "escort status", "escort me [radius], escort off, escort status");
+        v("attack", "", "safety", O, "attack <entityId> | attack nearest", "fight one monster (the companion's point key): ends when it dies, leaves 24 blocks or after 30 s; never players or pets",
+                "attack nearest", "defend");
         v("deaths", "", "safety", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "resume", "deaths");
         v("resume", "", "safety", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "autominer status");
         v("reconnect", "", "safety", O, "reconnect on|off", "rejoin after a kick (1, 5, 15 min; 3 an hour)", "reconnect on", "status");

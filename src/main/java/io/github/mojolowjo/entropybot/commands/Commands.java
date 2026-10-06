@@ -677,6 +677,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("stop")) return Reply.now(stopAll());
         if (verb.equals("defend") || verb.equals("defense") || verb.equals("defence")) return Reply.now(setDefence(rest));
         if (verb.equals("escort")) return Reply.now(escortCommand(from, rest, player));          // C7
+        if (verb.equals("attack")) return Reply.now(core.reflexes.attack(rest));     // C1 (0.20.5): the companion's point key on a monster
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
         if (verb.equals("autominer")) return Reply.now(chains.autominerCommand(rest));
@@ -1675,7 +1676,14 @@ public final class Commands implements Chains.Env {
             o.addProperty("y", Math.round(m.getY() * 10) / 10.0);
             o.addProperty("z", Math.round(m.getZ() * 10) / 10.0);
             o.addProperty("distance", Math.round(Math.sqrt(m.distanceToSqr(p)) * 10) / 10.0);
-            o.addProperty("target", m.getTarget() == p);
+            // C1 (0.20.5): Mob.target is not synced to a client, so getTarget() is null on a server; the aggressive
+            // flag is (DATA_MOB_FLAGS_ID). target = aggressive and the head turned to the bot (within 45 degrees).
+            boolean aggressive = m.isAggressive();
+            double dx = p.getX() - m.getX(), dz = p.getZ() - m.getZ();
+            float toBot = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+            boolean facing = Math.abs(net.minecraft.util.Mth.wrapDegrees(toBot - m.getYHeadRot())) <= 45f;
+            o.addProperty("aggressive", aggressive);
+            o.addProperty("target", m.getTarget() == p || (aggressive && facing));
             a.add(o);
         }
         return a;
