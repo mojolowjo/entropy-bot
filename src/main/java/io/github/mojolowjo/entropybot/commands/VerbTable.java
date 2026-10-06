@@ -142,6 +142,8 @@ public final class VerbTable {
         v("defend", "defense|defence", "safety", O, "defend on|off | defend creepers flee|melee|bow | defend hostile [list|add <id>...|remove <id>...]",
                 "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets or players, avoids creepers, retreats under 6 health)",
                 "defend on|defend hostile add arphex:spider_jump", "debug mobs");
+        v("attack", "", "safety", O, "attack <entityId> | attack nearest", "fight one monster (the companion's point key): ends when it dies, leaves 24 blocks or after 30 s; never players or pets",
+                "attack nearest", "defend");
         v("deaths", "", "safety", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "resume", "deaths");
         v("resume", "", "safety", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "autominer status");
         v("reconnect", "", "safety", O, "reconnect on|off", "rejoin after a kick (1, 5, 15 min; 3 an hour)", "reconnect on", "status");

@@ -125,6 +125,73 @@ public final class Reflexes {
 
     public CreeperRules.Mode creeperMode() { return duel.mode(); }
 
+    // ---- attack <entityId> | nearest (C1, 0.20.5): one forced fight through the same reflex loop ----
+    static final double FORCED_RANGE = 24;
+    static final long FORCED_TICKS = 600;           // 30 s
+    private int forcedId = -1;
+    private long forcedUntil;
+    private String forcedName;
+
+    /**
+     * The owner points the bot at one mob (the companion's point key on a monster). Same rules as the defence:
+     * {@link Hostility#mayAttack} and a counted kind, never a player or a pet. The fight ends when it dies, moves out of
+     * {@link #FORCED_RANGE} or 30 s pass; the end is whispered.
+     */
+    public String attack(String arg) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null) return "error: not in a world";
+        String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
+        Entity e = null;
+        if (a.isEmpty() || a.equals("nearest")) {
+            double best = Double.MAX_VALUE;
+            for (Entity c : mc.level.entitiesForRendering()) {
+                if (c == p || !(c instanceof LivingEntity le) || !le.isAlive() || !Hostility.mayAttack(c)) continue;
+                if (!Hostility.INSTANCE.kind(c, true).counts()) continue;
+                double d = p.distanceTo(c);
+                if (d <= FORCED_RANGE && d < best) { best = d; e = c; }
+            }
+            if (e == null) return "no monster within " + (int) FORCED_RANGE + " blocks";
+        } else {
+            int id;
+            try { id = Integer.parseInt(a); } catch (NumberFormatException ex) { return "usage: attack <entityId> | nearest"; }
+            e = mc.level.getEntity(id);
+            if (e == null) return "error: I can't see entity " + id + " (too far for me, or gone)";
+        }
+        String name = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+        if (e instanceof net.minecraft.world.entity.player.Player) return "error: I never attack players";
+        if (!(e instanceof LivingEntity le) || !le.isAlive()) return "error: that " + name + " isn't alive";
+        if (!Hostility.mayAttack(e) || !Hostility.INSTANCE.kind(e, true).counts())
+            return "error: I won't attack a " + name + " (not a monster, or tamed/owned)";
+        double d = p.distanceTo(e);
+        if (d > FORCED_RANGE) return "error: the " + name + " is " + Math.round(d) + " blocks away (" + (int) FORCED_RANGE + " at most)";
+        forcedId = e.getId();
+        forcedName = name;
+        forcedUntil = now + FORCED_TICKS;
+        events.push("reflex", "attack " + name + " #" + forcedId, null);
+        return "attacking the " + name + " (" + Math.round(d) + " blocks away)";
+    }
+
+    /** The forced target as a threat, or null (none, or it just ended: then the end is whispered). */
+    private Threat forcedThreat(LocalPlayer p, Minecraft mc) {
+        if (forcedId < 0) return null;
+        Entity e = mc.level.getEntity(forcedId);
+        String end = null;
+        if (e == null) end = "lost the " + forcedName + " (gone from view)";
+        else if (!e.isAlive()) end = "killed a " + forcedName;
+        else if (p.distanceTo(e) > FORCED_RANGE) end = "lost the " + forcedName + " (out of range)";
+        else if (now > forcedUntil) end = "gave up on the " + forcedName + " (30 s)";
+        else if (!Hostility.mayAttack(e)) end = "stopped: the " + forcedName + " may not be attacked";
+        if (end != null) {
+            forcedId = -1;
+            whisper(end);
+            return null;
+        }
+        return new Threat(e, p.distanceTo(e), forcedName, e instanceof Creeper, HostileRules.Kind.ENEMY, false);
+    }
+
+    private synchronized void whisper(String s) { whispers.add(s); }
+
     /** What the reflexes want whispered to the owner (an explosion near the bot), taken once. */
     public synchronized List<String> takeWhispers() {
         if (whispers.isEmpty()) return List.of();
@@ -253,7 +320,8 @@ public final class Reflexes {
             forceFleeUntil = now + 60;  // run as before, even from beyond CREEPER_RUN
             fleeUntil = 0;
         }
-        Threat t = defence ? nearestThreat(mc, p, hurt) : null;
+        Threat ft = forcedThreat(p, mc);
+        Threat t = ft != null ? ft : defence ? nearestThreat(mc, p, hurt) : null;
         // a lone creeper and a sword: take it on (CreeperDuel), else run as before
         if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil && duel.mode() != CreeperRules.Mode.FLEE
                 && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {

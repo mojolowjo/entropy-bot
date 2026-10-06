@@ -38,10 +38,10 @@ class CompanionTest {
 
     @Test void activeNeedsEnabledUrlAndKey() throws IOException {
         Path f = tmp.resolve("c.json");
-        Files.writeString(f, "{\"enabled\":true,\"url\":\"http://10.0.0.181:8765/\",\"key\":\"abc\",\"intervalSeconds\":2}");
+        Files.writeString(f, "{\"enabled\":true,\"url\":\"http://192.168.1.20:8765/\",\"key\":\"abc\",\"intervalSeconds\":2}");
         CompanionConfig c = CompanionConfig.load(f);
         assertTrue(c.active());
-        assertEquals(URI.create("http://10.0.0.181:8765/api/owner"), c.endpoint());
+        assertEquals(URI.create("http://192.168.1.20:8765/api/owner"), c.endpoint());
         Files.writeString(f, "{\"enabled\":false,\"url\":\"http://h:1\",\"key\":\"abc\"}");
         assertFalse(CompanionConfig.load(f).active());
         Files.writeString(f, "{\"enabled\":true,\"url\":\"\",\"key\":\"abc\"}");
@@ -132,7 +132,7 @@ class CompanionTest {
     static CompanionConfig cfg(String key) {
         CompanionConfig c = new CompanionConfig();
         c.key = key;
-        c.url = "http://10.0.0.181:8765";
+        c.url = "http://192.168.1.20:8765";
         return c.normalised();
     }
 
