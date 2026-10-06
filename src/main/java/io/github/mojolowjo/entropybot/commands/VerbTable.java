@@ -152,11 +152,13 @@ public final class VerbTable {
                 "bootstrap|bootstrap status", "places");
         v("place", "", "mining", O, "place <block> x y z", "place one block (walks into reach)", "place cobblestone 10 64 20", "status");
         // ---- safety and areas
-        v("area", "", "safety", P, "area list | area show <name> | area add <name> here <r> | area add <name> x1 z1 x2 z2 [y1 y2] | area corner1 | area corner2 <name> | area grow <name> <n> | area remove <name>",
-                "where I may walk and dig (remove asks to confirm)", "area add base here 60|area list", "guard", "area list, area show <name>");
-        v("protect", "", "safety", O, "protect | protect <name> here <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2", "a box I never dig (default 8 below, 16 above)",
-                "protect base here 16", "protect");
-        v("unprotect", "", "safety", O, "unprotect <name> confirm", "remove a protect box", "unprotect base confirm", "protect");
+        v("area", "", "safety", P, "area <name> <r> | area protect <name> <r> [down up] | area near [<r>|on|off|status] | area list | area show <name> | area add <name> x1 z1 x2 z2 [y1 y2] "
+                        + "| area corner1 | area corner2 <name> | area grow <name> <n> | area remove <name> | area unprotect <name> confirm",
+                "where I may walk and dig: a work area r blocks around you, a never-touch box, and the near-me zone (16 blocks around you, on by default; protect boxes always win; remove asks to confirm)",
+                "area base 60|area protect house 8|area near 24|area list", "guard", "area list, area show <name>, area near");
+        v("protect", "", "safety", O, "protect | protect <name> here <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2", "a box I never dig (default 8 below, 16 above); same as area protect",
+                "area protect base 16|protect base here 16", "protect");
+        v("unprotect", "", "safety", O, "unprotect <name> confirm", "remove a protect box (same as area unprotect)", "area unprotect base confirm", "protect");
         v("guard", "", "safety", P, "guard | guard vetoes | guard check x y z break|place|go | guard mode strict | guard mode log confirm", "the fence: its mode, what it refused, dry runs",
                 "guard|guard check 10 64 20 break", "area list", "guard, guard vetoes");
         v("defend", "defense|defence", "safety", O, "defend on|off | defend creepers flee|melee|bow | defend hostile [list|add <id>...|remove <id>...]",

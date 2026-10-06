@@ -551,7 +551,7 @@ final class Chopping {
         if (r.skippedBuilt > 0) notes.add(r.skippedBuilt + " skipped: " + r.firstBuilt.replaceFirst("^the tree at \\S+ \\S+ \\S+ is ", "")
                 + (r.skippedBuilt > 1 ? " and more" : ""));
         notes.addAll(r.notes.size() > 4 ? r.notes.subList(0, 4) : r.notes);
-        String next = r.trees == 0 ? (r.skippedBuilt > 0 ? "\"protect\" that build, or \"area add\" one with trees away from builds" : "\"area add <name> here <r>\" where trees grow") : null;
+        String next = r.trees == 0 ? (r.skippedBuilt > 0 ? "\"protect\" that build, or \"area add\" one with trees away from builds" : "\"area <name> <r>\" where trees grow") : null;
         String text = ChopRules.endText(r.trees, r.got, r.replanted, why, notes, next);
         treesTotal += r.trees;
         logsTotal += ChopRules.total(r.got);

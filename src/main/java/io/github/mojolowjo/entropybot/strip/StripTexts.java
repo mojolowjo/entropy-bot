@@ -12,7 +12,7 @@ public final class StripTexts {
 
     public static final String NO_MINE = "error: no mine marked - stand where it should start, face the way to dig, and PM \"mark mine\"";
     public static final String TURN_USAGE = "usage: stripmine turn left|right";
-    public static final String AREA_HINT = "area add <name> here <r>";
+    public static final String AREA_HINT = "area <name> <r>";
 
     public static String noMine(String name) {
         return name.equals("mine") ? NO_MINE
@@ -43,7 +43,7 @@ public final class StripTexts {
                 : "left in place and listed (PM \"stripmine ores collect\" to mine them inside the mapped area)");
     }
 
-    /** mapAreaText with the mod: "my areas (a, b)" or "my areas (none set - area add <name> here <r>)". */
+    /** mapAreaText with the mod: "my areas (a, b)" or "my areas (none set - area <name> <r>)". */
     public static String areaText(List<String> names) {
         return "my areas (" + (names.isEmpty() ? "none set - " + AREA_HINT : String.join(", ", names)) + ")";
     }

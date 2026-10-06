@@ -422,6 +422,7 @@ public final class Commands implements Chains.Env {
                 // respawns after the reconnect
                 if (worldTicks > 0 && jobs.running() && !jobs.walking()) jobs.finish("stopped: I was disconnected");
                 worldTicks = 0;
+                if (core.guard.core.nearBox() != null) core.guard.core.setNearZone(null);     // 0.21.2: no world, no owner spot
                 if (tick % 20 == 0) writeState(mc, tick);
                 return;
             }
@@ -508,6 +509,7 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] furnace pickup: {}", e.toString());
                 }
             }
+            if (tick % 20 == 7) nearTick(mc, player);         // 0.21.2: the near-me zone follows the owner
             if (tick % 20 == 12) {
                 try {
                     escortTick();
@@ -1081,9 +1083,41 @@ public final class Commands implements Chains.Env {
         return policy != null && policy.strict() && !policy.areas().isEmpty();
     }
 
-    /** Cells between x y z and the nearest area in this dimension (0 = inside one); 999 with none. */
+    /** Cells between x y z and the nearest area in this dimension (0 = inside one, the near-me zone counts); 999 with none. */
     int areaGap(int x, int y, int z, String dim) {
-        return FenceRules.areaGap(policy.areas(), x, y, z, dim);
+        return FenceRules.areaGap(policy.effectiveAreas(), x, y, z, dim);
+    }
+
+    private long nearErrors;
+
+    /**
+     * 0.21.2: once a second, the owner's spot for the near-me zone: in view first, else the companion's position (at most
+     * 10 s old, the bot's dimension); neither = no zone right now. The guard gets the new box only when it changed.
+     */
+    private void nearTick(Minecraft mc, LocalPlayer me) {
+        GuardCore g = core.guard.core;
+        try {
+            String o = owner(), dim = Guard.dimOf(mc.level);
+            int[] pos = null;
+            String src = null;
+            for (Player pl : mc.level.players()) {
+                if (pl != me && pl.getGameProfile().getName().equalsIgnoreCase(o)) {
+                    pos = new int[]{(int) Math.floor(pl.getX()), (int) Math.floor(pl.getY()), (int) Math.floor(pl.getZ())};
+                    src = "view";
+                    break;
+                }
+            }
+            if (pos == null) {
+                pos = ownerFixPos(o);
+                if (pos != null) src = "companion";
+            }
+            io.github.mojolowjo.entropybot.guard.Box b = g.near.update(dim, pos, src, System.currentTimeMillis()), cur = g.nearBox();
+            if (!String.valueOf(b).equals(String.valueOf(cur))) g.setNearZone(b);
+        } catch (RuntimeException e) {
+            g.near.error(e.toString());
+            g.setNearZone(null);
+            if (nearErrors++ < 5 || nearErrors % 600 == 0) LOG.warn("[entropybot] near-me zone #{}: {}", nearErrors, e.toString());
+        }
     }
 
     String statusLine(LocalPlayer p) {
@@ -1858,6 +1892,8 @@ public final class Commands implements Chains.Env {
             gs.addProperty("leases", g.getAsJsonArray("leases").size());
             gs.add("vetoes", g.get("vetoes"));
             gs.add("wouldVetoes", g.get("wouldVetoes"));
+            if (g.has("near")) gs.add("near", g.get("near"));          // 0.21.2: {on, r, box?, errors}
+            gs.addProperty("nearText", core.guard.core.near.describe(System.currentTimeMillis()));
             s.add("guard", gs);
         } catch (RuntimeException e) {
             errs.add("guard: " + e);
@@ -1898,7 +1934,11 @@ public final class Commands implements Chains.Env {
 
     /** The policy as areas.json holds it: {areas, protect, strict, corner1} (the miner's area checks read it). */
     public String policyJson() {
-        return policy == null ? "{}" : areaStore.data().toString();
+        if (policy == null) return "{}";
+        // 0.21.2: the miner, chopper and gatherer read the areas from here: the near-me zone counts as one
+        JsonObject o = areaStore.data().deepCopy();
+        o.add("areas", policy.effectiveAreas().deepCopy());
+        return o.toString();
     }
 
     // ---- Chains.Env ----
@@ -2009,6 +2049,27 @@ public final class Commands implements Chains.Env {
 
         @Override
         public JsonObject status() { return core.guardStatus(); }
+
+        @Override
+        public JsonObject nearArea() {
+            io.github.mojolowjo.entropybot.guard.Box b = core.guard.core.nearBox();
+            return b == null ? null : b.toJson();
+        }
+
+        @Override
+        public void setNear(boolean on, int r) {
+            GuardCore g = core.guard.core;
+            g.near.set(on, r);
+            if (!on) g.setNearZone(null);
+            else {
+                // a new radius: the next update (within a second) builds the box anew; drop the old size now
+                io.github.mojolowjo.entropybot.guard.Box b = g.nearBox();
+                if (b != null && b.x2 - b.x1 != 2 * r) g.setNearZone(null);
+            }
+        }
+
+        @Override
+        public String nearStatus() { return core.guard.core.near.describe(System.currentTimeMillis()); }
 
         @Override
         public String vetoes(int max) { return core.guard.core.log().recent(max); }

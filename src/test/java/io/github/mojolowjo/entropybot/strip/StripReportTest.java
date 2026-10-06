@@ -111,10 +111,10 @@ class StripReportTest {
         assertEquals("ok: I'll leave ores in place and list them (PM \"ores\") - from the next run on", StripTexts.oresSet(false, "x"));
         assertTrue(StripTexts.oresMode(true).startsWith("ores: mined inside the mapped area"));
         assertTrue(StripTexts.oresMode(false).startsWith("ores: left in place"));
-        assertEquals("my areas (none set - area add <name> here <r>)", StripTexts.areaText(List.of()));
+        assertEquals("my areas (none set - area <name> <r>)", StripTexts.areaText(List.of()));
         assertEquals(StripTexts.NO_MINE, StripTexts.noMine("mine"));
         assertTrue(StripTexts.noMine("deepmine").contains("deepmine is no mine"));
-        assertEquals("error: the mine mine (300 40 0) is outside my areas (map), where I mine no ores - area add <name> here <r>",
+        assertEquals("error: the mine mine (300 40 0) is outside my areas (map), where I mine no ores - area <name> <r>",
                 StripTexts.outsideAreas("mine", new Pos(300, 40, 0), "my areas (map)"));
         assertEquals("ok: when a \"mine\" names no ores I go for iron,coal, in that order", StripTexts.preferSet("iron,coal"));
         assertEquals("I go for iron,coal when a \"mine\" names no ores", StripTexts.preferShow("iron,coal"));

@@ -65,7 +65,7 @@ public final class LeaseSet {
         return null;
     }
 
-    public static final String AREA_HINT = "area add <name> here <r>";
+    public static final String AREA_HINT = "area <name> <r>";
 
     /** placeLease for a block item: the cell alone (T1), once per cell while this set lives. */
     public String placeLease(int x, int y, int z, String task) {

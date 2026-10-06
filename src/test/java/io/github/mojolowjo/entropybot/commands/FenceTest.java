@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class FenceTest {
     static final String OW = "minecraft:overworld";
-    static final String HINT = "area add <name> here <r>";
+    static final String HINT = "area <name> <r>";
     /** The sim's area "zone": -40 125 to 12 180, any height. */
     static final JsonArray AREAS = JsonParser.parseString("[{\"name\":\"zone\",\"dim\":\"minecraft:overworld\",\"x1\":-40,\"z1\":125,\"x2\":12,\"z2\":180},"
             + "{\"name\":\"deep\",\"x1\":100,\"z1\":100,\"x2\":110,\"z2\":110,\"y1\":-60,\"y2\":20},"
@@ -49,8 +49,8 @@ class FenceTest {
 
     @Test
     void comeAndFollowRefusals() {
-        assertEquals("you're outside my areas (60 150) - area add <name> here 30", FenceRules.comeRefusal("outside every area", 60, 150));
-        assertEquals("mojolowjo is outside my areas (60 150) - area add <name> here 30", FenceRules.followRefusal("mojolowjo", 60, 150));
+        assertEquals("you're outside my areas (60 150) - area <name> 30", FenceRules.comeRefusal("outside every area", 60, 150));
+        assertEquals("mojolowjo is outside my areas (60 150) - area <name> 30", FenceRules.followRefusal("mojolowjo", 60, 150));
         assertEquals("stopped: mojolowjo left my areas at 60 53 150", FenceRules.followLeft("mojolowjo", new int[]{60, 53, 150}));
     }
 

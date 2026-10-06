@@ -42,7 +42,7 @@ public final class SelfCheck {
     /** Every problem in the state, most basic first. */
     public static List<Finding> run(State s) {
         List<Finding> out = new ArrayList<>();
-        if (s.areas() <= 0) out.add(new Finding("areas", "no work areas: I may not walk or dig anywhere", "area add <name> here 60"));
+        if (s.areas() <= 0) out.add(new Finding("areas", "no work areas: with the fence on I dig and build only near you (area near)","area <name> 60"));
         else if (!s.strict()) out.add(new Finding("logmode", "the fence is in log mode (the guard only notes what it would refuse)", "guard mode strict"));
         if (!s.baseMarked()) out.add(new Finding("base", "no base marked", "setbase (standing at the base)"));
         else if (s.baseChests() <= 0) out.add(new Finding("basechests", "no base chests scanned: deposit and crafting can't use them", "scan base"));
@@ -97,6 +97,63 @@ public final class SelfCheck {
             if (!gone.isEmpty()) lines.add("self-check: fixed now: " + String.join(", ", gone));
             return String.join("\n", lines);
         }
+    }
+
+    /** 0.21.2: the near-me zone's findings for "check" (never whispered: not {@link #idleWorthy}). */
+    public static List<Finding> nearFindings(long unknownMs, long errors, boolean ownerOnline) {
+        List<Finding> out = new ArrayList<>();
+        if (ownerOnline && unknownMs >= io.github.mojolowjo.entropybot.guard.NearZone.UNKNOWN_NOTE_MS) {
+            out.add(new Finding("nearzone", "the near-me zone hasn't known where you are for " + unknownMs / 60000 + " min though you are online (out of view, no fresh companion position)",
+                    "come into view, run the companion (docs/companion.md), or area near off"));
+        }
+        if (errors > 0) out.add(new Finding("nearzoneerr", "the near-me zone had " + errors + " errors (the game log has them)", "area near status"));
+        return out;
+    }
+
+    // ---- 0.21.2: the quiet idle check ----
+
+    /** Free bag slots at or below this: the idle check may whisper "bag" (check lists it from {@link #BAG_LOW}). */
+    public static final int BAG_FULL = 2;
+    /** At most one self-check whisper this often, across restarts (commands.json selfCheck.lastWhisper). */
+    public static final long WHISPER_EVERY_MS = 30 * 60_000L;
+
+    /**
+     * What the idle check may whisper at all: the bag (when full), no base, no food chest; and gear (a worn tool, tool
+     * care) only for an item the supplies list names (the owner's gear targets - "supplies set", or the autominer's own
+     * defaults once it was switched on). Everything else (areas, mode, home, the mine, the iron pickaxe advice, hooks,
+     * routing, the companion, the near-me zone) is for {@code check} only.
+     */
+    public static boolean idleWorthy(Finding f, Set<String> supplyIds) {
+        String k = f.key();
+        if (k.equals("bag") || k.equals("base") || k.equals("food")) return true;
+        String id = k.startsWith("tool:") ? k.substring(5) : k.startsWith("toolcare:") ? k.substring(9) : null;
+        return id != null && supplyIds != null && supplyIds.contains(Texts.shortId(id));
+    }
+
+    /** The idle check's outcome: the one line to whisper (null: none), and the causes told so far (to keep). */
+    public record Idle(String whisper, Set<String> told) {}
+
+    /**
+     * The idle check (pure). told: the causes already whispered (kept across restarts); a cause that cleared is
+     * forgotten silently (no "fixed now" line), so it may be told again only after it came back. Findings are keyed by
+     * cause (a changing count or uses-left never makes a new key). At most ONE line per call, and none within
+     * {@link #WHISPER_EVERY_MS} of the last whisper (lastWhisperMs, -1 = never); the rest wait for a later call.
+     */
+    public static Idle idle(Set<String> told, List<Finding> now, Set<String> supplyIds, int freeSlots, long nowMs, long lastWhisperMs) {
+        Set<String> keysNow = keys(now);
+        Set<String> kept = new LinkedHashSet<>();
+        for (String k : told == null ? Set.<String>of() : told) if (keysNow.contains(k)) kept.add(k);
+        List<Finding> waiting = new ArrayList<>();
+        for (Finding f : now) {
+            if (!idleWorthy(f, supplyIds) || kept.contains(f.key())) continue;
+            if (f.key().equals("bag") && freeSlots > BAG_FULL) continue;      // listed by check from 4, whispered from 2
+            waiting.add(f);
+        }
+        if (waiting.isEmpty() || (lastWhisperMs >= 0 && nowMs - lastWhisperMs < WHISPER_EVERY_MS)) return new Idle(null, kept);
+        Finding first = waiting.get(0);
+        kept.add(first.key());
+        String more = waiting.size() > 1 ? " (+" + (waiting.size() - 1) + " more: PM check)" : "";
+        return new Idle("self-check: " + first.line() + more, kept);
     }
 
     public static Diff diff(Set<String> before, List<Finding> now) {

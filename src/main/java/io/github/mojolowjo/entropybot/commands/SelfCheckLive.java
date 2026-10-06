@@ -25,8 +25,9 @@ import java.util.Set;
 
 /**
  * B7e package N (items 3 and 8): the game side of {@link SelfCheck} (the {@code check} verb and the idle check every
- * 30 minutes) and the facts {@link ConfirmGate}'s summaries use. The idle check whispers the owner only what changed
- * since the last check (the keys are kept in commands.json "selfCheck", so a restart doesn't repeat them).
+ * 30 minutes) and the facts {@link ConfirmGate}'s summaries use. 0.21.2: the idle check whispers one line at most every
+ * 30 minutes (also across restarts), only bag full / no base / no food chest (gear only for items in the supplies), each
+ * cause once ({@link SelfCheck#idle}; the causes told and the last whisper's time are in commands.json "selfCheck").
  */
 public final class SelfCheckLive implements ConfirmGate.Facts {
     private static final Logger LOG = LoggerFactory.getLogger("entropybot");
@@ -79,6 +80,12 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("restorehook", "couldn't check the restore ledger: " + e, "restore status"));
         }
+        try {
+            var z = Core.INSTANCE.guard.core.near;          // 0.21.2 (check only: never whispered)
+            f.addAll(SelfCheck.nearFindings(z.unknownForMs(System.currentTimeMillis()), z.errors(), ownerOnline()));
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("nearzone", "couldn't check the near-me zone: " + e, "area near status"));
+        }
         return f;
     }
 
@@ -87,18 +94,45 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
      * the findings that are new and the ones that went away. idle: no job, no chain, nothing the bridge runs.
      */
     public void idleTick(LocalPlayer p, boolean idle, long now) {
-        if (!idle || p == null || now - lastIdleCheck < IDLE_EVERY_MS) return;
+        // 0.21.2: look once a minute; the whisper itself is rate-limited to one per 30 min across restarts
+        // (SelfCheck.idle and commands.json selfCheck.lastWhisper), one line, once per cause
+        if (!idle || p == null || now - lastIdleCheck < IDLE_LOOK_MS) return;
         if (!ownerOnline()) return;                       // nobody to tell: keep the keys, look again later
         lastIdleCheck = now;
         try {
             List<SelfCheck.Finding> f = findings(p);
-            SelfCheck.Diff d = SelfCheck.diff(remembered(), f);
-            if (d.empty()) return;
-            LOG.info("[entropybot] self-check: {}", d.text().replace("\n", " | "));
-            if (c.whisperSent(c.owner(), d.text())) remember(SelfCheck.keys(f));     // only what was really sent counts as told
+            Set<String> supplyIds = new LinkedHashSet<>();
+            for (String id : c.suppliesMap().keySet()) supplyIds.add(Texts.shortId(id));
+            int free = 0;
+            for (int i = 0; i < 36; i++) if (p.getInventory().getItem(i).isEmpty()) free++;
+            Set<String> before = remembered();
+            SelfCheck.Idle r = SelfCheck.idle(before, f, supplyIds, free, now, lastWhisper());
+            if (r.whisper() == null) {
+                if (!r.told().equals(before)) remember(r.told(), lastWhisper());      // a cause cleared: forget it silently
+                return;
+            }
+            LOG.info("[entropybot] {}", r.whisper());
+            idleWhispers++;
+            if (c.whisperSent(c.owner(), r.whisper())) remember(r.told(), now);     // only what was really sent counts as told
+            else remember(before, now);                   // dropped by a full outbox: try that cause again, but not before 30 min
         } catch (RuntimeException e) {
-            LOG.warn("[entropybot] self-check: {}", e.toString());
+            idleErrors++;
+            if (idleErrors <= 5 || idleErrors % 100 == 0) LOG.warn("[entropybot] self-check #{}: {}", idleErrors, e.toString());
         }
+    }
+
+    /** 0.21.2: the idle check looks this often (it whispers at most every {@link SelfCheck#WHISPER_EVERY_MS}). */
+    public static final long IDLE_LOOK_MS = 60_000L;
+    private long idleWhispers, idleErrors;
+
+    /** When the last self-check whisper went out (commands.json selfCheck.lastWhisper), -1 = never. */
+    private long lastWhisper() {
+        JsonObject b = c.brainData();
+        try {
+            if (b.has("selfCheck") && b.get("selfCheck").isJsonObject() && b.getAsJsonObject("selfCheck").has("lastWhisper"))
+                return b.getAsJsonObject("selfCheck").get("lastWhisper").getAsLong();
+        } catch (RuntimeException ignored) {}
+        return -1;
     }
 
     private Set<String> remembered() {
@@ -111,13 +145,17 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         return out;
     }
 
-    private void remember(Set<String> keys) {
-        if (keys.equals(remembered()) && c.brainData().has("selfCheck")) return;
+    private void remember(Set<String> keys) { remember(keys, lastWhisper()); }
+
+    /** keys: the causes told (or seen by "check"); lastWhisperMs: when the last idle whisper went out (-1 = never). */
+    private void remember(Set<String> keys, long lastWhisperMs) {
+        if (keys.equals(remembered()) && c.brainData().has("selfCheck") && lastWhisperMs == lastWhisper()) return;
         JsonObject s = new JsonObject();
         JsonArray a = new JsonArray();
         keys.forEach(a::add);
         s.add("keys", a);
         s.addProperty("at", System.currentTimeMillis());
+        if (lastWhisperMs >= 0) s.addProperty("lastWhisper", lastWhisperMs);
         c.brainData().add("selfCheck", s);
         c.saved();
     }
@@ -126,7 +164,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     public SelfCheck.State state(LocalPlayer p) {
         Core core = Core.INSTANCE;
         GuardCore g = core.guard.core;
-        Policy pol = g.policy();
+        Policy pol = g.basePolicy();          // the owner's areas, not the near-me zone
         int areas = pol == null || pol.areas == null ? 0 : pol.areas.size();
         Map<String, JsonObject> places = core.knowledge.places();
         JsonObject base = places.get("base");
@@ -224,7 +262,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
 
     @Override
     public String area(String name) {
-        Policy pol = Core.INSTANCE.guard.core.policy();
+        Policy pol = Core.INSTANCE.guard.core.basePolicy();
         if (pol == null || pol.areas == null) return null;
         for (Box b : pol.areas) {
             if (b.name != null && b.name.equalsIgnoreCase(name)) {

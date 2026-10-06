@@ -17,7 +17,7 @@ public final class Texts {
             "recipe", "come", "follow", "goto", "stop", "restart", "hold", "scout");
 
     public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
-            + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, poi, poi show <id>, scout <dir> [n], find nearest <thing>";
+            + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, area near, poi, poi show <id>, scout <dir> [n], find nearest <thing>";
 
     /** Every command word; routine names can't use these. */
     public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
@@ -66,8 +66,9 @@ public final class Texts {
                     + "deaths, death policy on|off (fetch my corpse after a death; 5 deaths an hour park me), resume (after parking); reconnect on|off (after a kick); a running routine carries on after a reload or restart (12 h)",
             "Recorder (owner): recorder (settings, disk, incidents), recorder off|light|normal|detailed|max [for 30m|2h], recorder range <chunks> | trail <ticks|Ns> | snapshot <blocks>|now | states on|off | keep <hours> | mark <note>",
             "Chains: cmd then cmd then cmd | routine save <name> <chain>, routines, routine show/delete <name>, <name> (runs it), repeat [n|forever] <name or chain>, queue, stop",
-            "Guard (where I may go and dig): area list, area show <name>, area add <name> here <r> | x1 z1 x2 z2 [y1 y2], area corner1, area corner2 <name>, area grow <name> <n>, "
-                    + "area remove <name> confirm, protect [<name> here <r> [down up] | <name> x1 y1 z1 x2 y2 z2], unprotect <name> confirm, guard, guard vetoes, guard check x y z break|place|go, "
+            "Guard (where I may go and dig): area <name> <r> (a work area r blocks around you), area protect <name> <r> [down up] (never dig there), area near [<r>|on|off] (I may work within 16 blocks of you anywhere), "
+                    + "area list, area show <name>, area add <name> x1 z1 x2 z2 [y1 y2], area corner1, area corner2 <name>, area grow <name> <n>, "
+                    + "area remove <name> confirm, area unprotect <name> confirm, protect <name> x1 y1 z1 x2 y2 z2, guard, guard vetoes, guard check x y z break|place|go, "
                     + "guard mode strict | log confirm");
 
     private static final Pattern CHAIN_SPLIT = Pattern.compile("\\s*;\\s*|\\s+then\\s+", Pattern.CASE_INSENSITIVE);
@@ -108,7 +109,7 @@ public final class Texts {
         if (verb.equals("stripmine") && r.equals("status")) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return null;
         if (verb.equals("escort") && r.matches("^(|status|off|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
-        if (verb.equals("area") && (r.equals("list") || r.matches("^show\\b.*"))) return null;
+        if (verb.equals("area") && (r.equals("list") || r.matches("^show\\b.*") || r.matches("^near(\\s+status)?$"))) return null;
         if ((verb.equals("poi") || verb.equals("pois")) && !r.matches("^forget\\b.*")) return null;
         if (verb.equals("caves") && !r.matches("^rename\\b.*")) return null;
         if (verb.equals("ores") && r.matches("^prefer\\s+\\S.*")) return "sorry, only " + owner + " can set the preferred ores";

@@ -405,7 +405,7 @@ class CommandsTest {
         FakeGuard g = new FakeGuard();
         PolicyCommands pc = new PolicyCommands(p, g, () -> {});
         PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
-        assertEquals("no areas set - area add <name> here <r>", pc.command("area", "list", true, "owner", here, here));
+        assertEquals("no areas set - area <name> <r>", pc.command("area", "list", true, "owner", here, here));
         assertEquals("ok: area home added (-20 -10 to 40 50) | mod: ok: 1 areas", pc.command("area", "add home here 30", true, "owner", here, here));
         assertTrue(pc.inAreas("minecraft:overworld", 0, 0));
         assertFalse(pc.inAreas("minecraft:overworld", 100, 0));
@@ -419,5 +419,87 @@ class CommandsTest {
         assertTrue(pc.command("area", "remove home confirm", true, "owner", here, here).startsWith("ok: area home removed"));
         assertEquals(new JsonArray(), g.last.getAsJsonArray("areas"));
         assertTrue(pc.command("guard", "", true, "owner", here, here).startsWith("guard: mod not loaded"));
+    }
+
+    /** A fake guard that also takes the near-me settings and hands out a zone box. */
+    static final class NearGuard implements PolicyCommands.Guard {
+        JsonObject last, near;
+        boolean on = true;
+        int r = 16;
+        @Override public String[] apply(JsonObject policy, boolean s) { last = policy; return new String[]{"ok", "ok: guard mode " + (s ? "strict" : "log")}; }
+        @Override public JsonObject status() { return null; }
+        @Override public String vetoes(int max) { return "[]"; }
+        @Override public String check(String dim, int x, int y, int z, String action) { return "ok"; }
+        @Override public JsonObject nearArea() { return near; }
+        @Override public void setNear(boolean on, int r) { this.on = on; this.r = r; }
+        @Override public String nearStatus() { return "near me: " + r + " blocks (" + (on ? "on" : "off") + ")"; }
+    }
+
+    @Test
+    void shortAreaFormsAndAliases() {
+        JsonObject p = new JsonObject();
+        NearGuard g = new NearGuard();
+        PolicyCommands pc = new PolicyCommands(p, g, () -> {});
+        PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
+        // area <name> <r> = area add <name> here <r>
+        assertEquals("ok: area base added (-6 4 to 26 36) | mod: ok", pc.command("area", "base 16", true, "owner", here, here));
+        assertEquals("ok: area base replaced (-10 0 to 30 40) | mod: ok", pc.command("area", "base here 20", true, "owner", here, here));
+        assertEquals("ok: area two added (0 10 to 20 30) | mod: ok", pc.command("area", "add two here 10", true, "owner", here, here), "the old form still works");
+        assertEquals("ok: area c added (1 2 to 3 4) | mod: ok", pc.command("area", "add c 1 2 3 4", true, "owner", here, here), "the companion's coordinate form");
+        assertEquals("only owner can change where I may go and dig", pc.command("area", "x 5", false, "owner", here, here));
+        // area protect <name> <r> [down up] = protect <name> here <r> [down up]
+        assertEquals("ok: protect keep added (2 12 to 18 28, y 56..80) | mod: ok", pc.command("area", "protect keep 8", true, "owner", here, here));
+        assertEquals("ok: protect keep replaced (2 12 to 18 28, y 60..66) | mod: ok", pc.command("area", "protect keep 8 4 2", true, "owner", here, here));
+        assertEquals("ok: protect box added (1 3 to 4 6, y 2..5) | mod: ok", pc.command("area", "protect box 1 2 3 4 5 6", true, "owner", here, here));
+        assertEquals("ok: protect old added (0 10 to 20 30, y 56..80) | mod: ok", pc.command("protect", "old here 10", true, "owner", here, here), "the old verb");
+        assertTrue(pc.command("area", "protect", true, "owner", here, here).startsWith("protect: keep"));
+        assertEquals("say \"area unprotect box confirm\" to remove it", pc.command("area", "unprotect box", true, "owner", here, here));
+        assertTrue(pc.command("area", "unprotect box confirm", true, "owner", here, here).startsWith("ok: protect box box removed"));
+        assertTrue(pc.command("unprotect", "old confirm", true, "owner", here, here).startsWith("ok: protect box old removed"), "the old verb");
+        // a name that is one of the words
+        assertTrue(pc.command("area", "add near here 5", true, "owner", here, here).startsWith("error: \"near\" is one of my area words"));
+        assertTrue(pc.command("area", "list 16", true, "owner", here, here).startsWith("error: \"list\" is one of my area words"));
+        assertTrue(pc.command("area", "corner2 show", true, "owner", here, here).startsWith("error: \"show\" is one of my area words"));
+        assertTrue(pc.command("area", "base", true, "owner", here, here).startsWith("usage: area <name> <r>"));
+        assertTrue(pc.command("area", "Bad! 5", true, "owner", here, here).startsWith("usage: area <name> <r>"));
+        // the list names the near-me zone
+        assertTrue(pc.command("area", "list", false, "owner", here, here).endsWith("| near me: 16 blocks (on)"), pc.command("area", "list", false, "owner", here, here));
+    }
+
+    @Test
+    void areaNearSettingsAndTheEffectiveAreas() {
+        JsonObject p = new JsonObject();
+        NearGuard g = new NearGuard();
+        int[] saves = {0};
+        PolicyCommands pc = new PolicyCommands(p, g, () -> saves[0]++);
+        PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
+        assertTrue(pc.nearOn());
+        assertEquals(16, pc.nearR());
+        assertEquals("near me: 16 blocks (on)", pc.command("area", "near", false, "owner", here, here), "status for guests too");
+        assertEquals("only owner can change where I may go and dig", pc.command("area", "near 24", false, "owner", here, here));
+        assertTrue(pc.command("area", "near 24", true, "owner", here, here).startsWith("ok: near me 24 blocks (on)"));
+        assertEquals(24, g.r);
+        assertEquals(24, p.getAsJsonObject("near").get("r").getAsInt());
+        assertEquals("error: the near-me radius is 4..64 blocks", pc.command("area", "near 3", true, "owner", here, here));
+        assertEquals("error: the near-me radius is 4..64 blocks", pc.command("area", "near 65", true, "owner", here, here));
+        assertTrue(pc.command("area", "near off", true, "owner", here, here).startsWith("ok: near me off"));
+        assertFalse(g.on);
+        assertFalse(pc.nearOn());
+        assertTrue(pc.command("area", "near on", true, "owner", here, here).startsWith("ok: near me on"));
+        assertTrue(g.on);
+        assertTrue(saves[0] >= 3, "every change saves areas.json");
+        assertTrue(pc.command("area", "near sideways", true, "owner", here, here).startsWith("usage: area near"));
+        // the zone counts in inAreas and effectiveAreas, never in areas() (areas.json)
+        assertFalse(pc.inAreas("minecraft:overworld", 100, 100));
+        g.near = PolicyCommands.makeBox("near-me", "minecraft:overworld", 84, 84, 116, 116, 48, 80);
+        assertTrue(pc.inAreas("minecraft:overworld", 100, 100));
+        assertEquals(1, pc.effectiveAreas().size());
+        assertEquals(0, pc.areas().size());
+        assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 100, 64, 100, "minecraft:overworld"));
+        assertEquals(17, FenceRules.areaGap(pc.effectiveAreas(), 100, 97, 100, "minecraft:overworld"), "the zone's height counts");
+        // a broken near entry falls back to the defaults
+        p.add("near", new com.google.gson.JsonPrimitive("x"));
+        assertTrue(pc.nearOn());
+        assertEquals(16, pc.nearR());
     }
 }

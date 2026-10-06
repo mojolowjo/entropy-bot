@@ -52,6 +52,14 @@ public final class Policy {
         return o;
     }
 
+    /** 0.21.2: this policy plus one more area (the near-me zone); this one itself when {@code extra} is null. */
+    public Policy withArea(Box extra) {
+        if (extra == null) return this;
+        List<Box> a = new ArrayList<>(areas);
+        a.add(extra);
+        return new Policy(a, protect);
+    }
+
     public Box areaAt(String dim, int x, int y, int z) {
         for (Box b : areas) if (b.contains(dim, x, y, z)) return b;
         return null;

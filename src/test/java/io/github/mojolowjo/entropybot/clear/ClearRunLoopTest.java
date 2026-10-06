@@ -256,7 +256,7 @@ class ClearRunLoopTest {
     @Test
     void strictRefusalIsTheErrorLogModeGoesOn() {
         LeaseSet strict = new LeaseSet(guard(true), "tok", "minecraft:overworld", null);
-        assertEquals("error: the guard refused: that box is not inside one of my areas - area add <name> here <r>",
+        assertEquals("error: the guard refused: that box is not inside one of my areas - area <name> <r>",
                 strict.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
         assertTrue(strict.ids.isEmpty());
         List<String> logged = new ArrayList<>();

@@ -57,7 +57,7 @@ class SelfCheckTest {
     void eachRuleWithItsFix() {
         SelfCheck.Finding f = only(with(good(), "areas", 0));
         assertEquals("areas", f.key());
-        assertEquals("area add <name> here 60", f.fix());
+        assertEquals("area <name> 60", f.fix());
         f = only(with(good(), "strict", false));
         assertEquals("logmode", f.key());
         assertEquals("guard mode strict", f.fix());
@@ -133,5 +133,97 @@ class SelfCheckTest {
         assertEquals(List.of("home"), d.added().stream().map(SelfCheck.Finding::key).toList());
         assertEquals(List.of("food"), d.gone());
         assertTrue(d.text().contains("self-check: fixed now: food"), d.text());
+    }
+
+    // ---- 0.21.2: the quiet idle check ----
+
+    static final long MIN = 60_000L;
+
+    /** A fresh start: no base, no food chest, a worn bow and tools, no iron pickaxe supply, a full bag, no areas, no home. */
+    static SelfCheck.State fresh(int free) {
+        return new SelfCheck.State(false, 0, false, 0, false, false, null, null, null, sup(), free,
+                List.of(new SelfCheck.Tool("minecraft:bow", 3, 384), new SelfCheck.Tool("minecraft:iron_pickaxe", 5, 250)), true, -1);
+    }
+
+    @Test
+    void idleWhispersOneLineAndNoGearWithoutSupplies() {
+        List<SelfCheck.Finding> f = SelfCheck.run(fresh(0));
+        assertTrue(SelfCheck.keys(f).containsAll(Set.of("areas", "base", "food", "home", "ironpick", "bag", "tool:bow", "tool:iron_pickaxe")), "check still lists everything");
+        SelfCheck.Idle r = SelfCheck.idle(Set.of(), f, Set.of(), 0, 100 * MIN, -1);
+        assertNotNull(r.whisper());
+        assertFalse(r.whisper().contains("\n"), "one line");
+        assertTrue(r.whisper().startsWith("self-check: no base marked"), r.whisper());
+        assertTrue(r.whisper().endsWith("(+2 more: PM check)"), "base, food, bag - no gear: " + r.whisper());
+        assertEquals(Set.of("base"), r.told());
+        // a minute later: the 30-minute rate holds
+        SelfCheck.Idle r2 = SelfCheck.idle(r.told(), f, Set.of(), 0, 101 * MIN, 100 * MIN);
+        assertNull(r2.whisper());
+        // 30 minutes later: the next cause, not base again
+        SelfCheck.Idle r3 = SelfCheck.idle(r2.told(), f, Set.of(), 0, 130 * MIN, 100 * MIN);
+        assertTrue(r3.whisper().startsWith("self-check: no food chest marked"), r3.whisper());
+        SelfCheck.Idle r4 = SelfCheck.idle(r3.told(), f, Set.of(), 0, 160 * MIN, 130 * MIN);
+        assertTrue(r4.whisper().startsWith("self-check: my bag is nearly full"), r4.whisper());
+        assertFalse(r4.whisper().contains("more"), r4.whisper());
+        // then silence: gear, areas, home, iron pickaxe never go out by themselves
+        SelfCheck.Idle r5 = SelfCheck.idle(r4.told(), f, Set.of(), 0, 999 * MIN, 160 * MIN);
+        assertNull(r5.whisper());
+        assertEquals(Set.of("base", "food", "bag"), r5.told());
+    }
+
+    @Test
+    void changingCountsDoNotReWhisperAndClearedCausesGoSilently() {
+        Set<String> told = Set.of("bag", "base");
+        // the bag's free-slot count changes: the same cause, nothing new
+        for (int free : new int[]{0, 1, 2, 3, 4}) {
+            SelfCheck.Idle r = SelfCheck.idle(told, SelfCheck.run(with(fresh(free), "foodChest", true)), Set.of(), free, 999 * MIN, -1);
+            assertNull(r.whisper(), "free " + free);
+            assertTrue(r.told().contains("bag"));
+        }
+        // the bag clears (5 free): forgotten without a "fixed now" line
+        SelfCheck.Idle cleared = SelfCheck.idle(told, SelfCheck.run(with(fresh(5), "foodChest", true)), Set.of(), 5, 999 * MIN, -1);
+        assertNull(cleared.whisper());
+        assertEquals(Set.of("base"), cleared.told());
+        // 3 free again: listed by check, but no whisper until it is really full (2)
+        List<SelfCheck.Finding> three = SelfCheck.run(with(fresh(3), "foodChest", true));
+        assertTrue(SelfCheck.keys(three).contains("bag"));
+        assertNull(SelfCheck.idle(cleared.told(), three, Set.of(), 3, 999 * MIN, -1).whisper());
+        SelfCheck.Idle full = SelfCheck.idle(cleared.told(), SelfCheck.run(with(fresh(2), "foodChest", true)), Set.of(), 2, 999 * MIN, -1);
+        assertTrue(full.whisper().startsWith("self-check: my bag is nearly full (2 free slots)"), full.whisper());
+        // a bow's uses-left changing keeps one key
+        List<SelfCheck.Finding> a = SelfCheck.run(with(good(), "tools", List.of(new SelfCheck.Tool("minecraft:bow", 30, 384))));
+        List<SelfCheck.Finding> b = SelfCheck.run(with(good(), "tools", List.of(new SelfCheck.Tool("minecraft:bow", 2, 384))));
+        assertEquals(SelfCheck.keys(a), SelfCheck.keys(b));
+    }
+
+    @Test
+    void gearOnlyForItemsInTheSupplies() {
+        List<SelfCheck.Finding> f = SelfCheck.run(with(good(), "tools", List.of(new SelfCheck.Tool("minecraft:bow", 3, 384), new SelfCheck.Tool("minecraft:iron_pickaxe", 5, 250))));
+        assertNull(SelfCheck.idle(Set.of(), f, Set.of(), 20, 999 * MIN, -1).whisper(), "no supplies: gear is never judged by itself");
+        SelfCheck.Idle r = SelfCheck.idle(Set.of(), f, Set.of("iron_pickaxe"), 20, 999 * MIN, -1);
+        assertTrue(r.whisper().startsWith("self-check: my iron_pickaxe is nearly broken"), r.whisper());
+        assertFalse(r.whisper().contains("bow"));
+        assertTrue(SelfCheck.idleWorthy(new SelfCheck.Finding("toolcare:minecraft:iron_pickaxe", "x", null), Set.of("iron_pickaxe")));
+        assertFalse(SelfCheck.idleWorthy(new SelfCheck.Finding("ironpick", "x", null), Set.of("iron_pickaxe")), "the iron pickaxe advice is check-only");
+        assertFalse(SelfCheck.idleWorthy(new SelfCheck.Finding("areas", "x", null), Set.of()));
+        assertFalse(SelfCheck.idleWorthy(new SelfCheck.Finding("nearzone", "x", null), Set.of()));
+    }
+
+    @Test
+    void restartKeepsTheRateAndTheCauses() {
+        // the told causes and lastWhisper live in commands.json: a restart 1 minute after a whisper says nothing
+        List<SelfCheck.Finding> f = SelfCheck.run(fresh(0));
+        assertNull(SelfCheck.idle(Set.of("base"), f, Set.of(), 0, 101 * MIN, 100 * MIN).whisper());
+        // old saved keys (from 0.21.1) count as told
+        assertNull(SelfCheck.idle(Set.of("areas", "base", "food", "bag", "ironpick"), f, Set.of(), 0, 999 * MIN, -1).whisper());
+    }
+
+    @Test
+    void nearZoneFindingsAreCheckOnly() {
+        assertTrue(SelfCheck.nearFindings(5 * MIN, 0, true).isEmpty());
+        List<SelfCheck.Finding> f = SelfCheck.nearFindings(11 * MIN, 0, true);
+        assertEquals("nearzone", f.get(0).key());
+        assertTrue(f.get(0).text().contains("11 min"));
+        assertTrue(SelfCheck.nearFindings(60 * MIN, 0, false).isEmpty(), "the owner offline: nothing to say");
+        assertEquals("nearzoneerr", SelfCheck.nearFindings(0, 3, false).get(0).key());
     }
 }

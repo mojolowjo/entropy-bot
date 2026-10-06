@@ -7,7 +7,7 @@ package io.github.mojolowjo.entropybot.commands;
 public final class Hints {
     private Hints() {}
 
-    public static final String AREA_HERE = "area add <name> here 30";
+    public static final String AREA_HERE = "area <name> 30";
     public static final String SCAN_BASE = "scan base";
     public static final String DEPOSIT = "deposit";
 

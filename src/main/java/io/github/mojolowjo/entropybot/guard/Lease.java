@@ -19,6 +19,11 @@ public final class Lease {
      * (a dig sealing water off at its edge). It lets a block go only into water or air ({@link GuardCore#sealLease}).
      */
     public final boolean seal;
+    /**
+     * 0.21.2: granted because the near-me zone covered the box (no area of the owner's does). It stays good inside its
+     * box when the owner walks off (a dig started next to them finishes); it never reaches past its box.
+     */
+    public final boolean near;
     volatile long lastHeartbeat;
 
     Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick) {
@@ -26,6 +31,11 @@ public final class Lease {
     }
 
     Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick, boolean seal) {
+        this(id, owner, task, box, place, force, tick, seal, false);
+    }
+
+    Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick, boolean seal, boolean near) {
+        this.near = near;
         this.seal = seal;
         this.id = id;
         this.owner = owner;
@@ -45,6 +55,7 @@ public final class Lease {
         o.addProperty("place", place);
         if (force) o.addProperty("force", true);
         if (seal) o.addProperty("seal", true);
+        if (near) o.addProperty("near", true);
         o.addProperty("since", createdTick);
         return o;
     }

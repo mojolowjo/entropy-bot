@@ -77,14 +77,41 @@ public final class GuardCore {
     /** The mode the guard starts in. B0 (0.1.x): LOG, while the bridge takes no leases yet; B1 flips it to STRICT. */
     public static final Mode DEFAULT_MODE = Mode.LOG;
 
+    /**
+     * 0.21.2: the policy every check reads = the owner's areas plus the near-me zone ({@link NearZone}) when it is up.
+     * This is the ONE place the zone joins the guard: areaAt, areaCovers, cellLeasable, the walk check ("go") and the
+     * lease grant all read this snapshot, so the zone counts exactly like an area (protect boxes, the floor and leases
+     * still apply). {@link #basePolicy} is the owner's areas alone (what "area list" and areas.json hold).
+     */
     private volatile Policy policy = Policy.EMPTY;
+    private volatile Policy basePolicy = Policy.EMPTY;
+    private volatile Box nearBox;
+    /** The near-me zone's settings and state (the commands feed it the owner's spot once a second). */
+    public final NearZone near = new NearZone();
     private volatile Mode mode = DEFAULT_MODE;
     private volatile Map<String, Lease> leases = Collections.emptyMap();
     private final VetoLog log = new VetoLog();
     private volatile long tick;
     private int nextId = 1;
 
+    /** The effective policy: the owner's areas plus the near-me zone when it is up. */
     public Policy policy() { return policy; }
+
+    /** The owner's areas and protect boxes alone (without the near-me zone). */
+    public Policy basePolicy() { return basePolicy; }
+
+    /** The near-me zone the guard uses now, or null. */
+    public Box nearBox() { return nearBox; }
+
+    /**
+     * 0.21.2: the near-me zone moved (or went away: null). Leases are not ended here: one granted inside the zone
+     * ({@link Lease#near}) stays good inside its own box until its job releases it or it times out.
+     */
+    public synchronized void setNearZone(Box b) {
+        if (b != null && DENIED_DIMS.contains(b.dim)) b = null;
+        nearBox = b;
+        policy = basePolicy.withArea(b);
+    }
 
     public Mode mode() { return mode; }
 
@@ -94,12 +121,13 @@ public final class GuardCore {
 
     /** Replaces the policy. Every lease that no longer lies inside an area ends; the count is reported. */
     public synchronized String setPolicy(Policy p) {
-        policy = p;
+        basePolicy = p;
+        policy = p.withArea(nearBox);
         int ended = 0;
         Map<String, Lease> m = new LinkedHashMap<>(leases);
         for (var it = m.values().iterator(); it.hasNext(); ) {
             Lease l = it.next();
-            if (!p.areaCovers(l.box)) { it.remove(); ended++; }
+            if (!l.near && !policy.areaCovers(l.box)) { it.remove(); ended++; }
         }
         leases = Collections.unmodifiableMap(m);
         return "ok: " + p.areas.size() + " areas, " + p.protect.size() + " protect boxes" + (ended > 0 ? ", ended " + ended + " leases now outside" : "");
@@ -124,11 +152,13 @@ public final class GuardCore {
         long max = force ? MAX_FORCE_VOLUME : MAX_LEASE_VOLUME;
         if (box.volume() > max) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + max;
         if (!policy.areaCovers(box)) {
-            return policy.areas.isEmpty() ? "error: no areas set" : "error: that box is not inside one of my areas";
+            if (policy.areas.isEmpty()) return "error: no areas set" + (near.on() ? " and I can't see where you are (near me: " + near.radius() + " blocks)" : "");
+            return "error: that box is not inside one of my areas" + (nearBox != null ? " or within " + near.radius() + " blocks of you" : "");
         }
+        boolean viaNear = !basePolicy.areaCovers(box);
         String id = "L" + (nextId++);
         Map<String, Lease> m = new LinkedHashMap<>(leases);
-        m.put(id, new Lease(id, owner, task, box, place, force, tick));
+        m.put(id, new Lease(id, owner, task, box, place, force, tick, false, viaNear));
         leases = Collections.unmodifiableMap(m);
         return id;
     }
@@ -243,11 +273,16 @@ public final class GuardCore {
             Box pr = p.protectAt(dim, x, y, z);
             if (pr != null) return Verdict.floor("protected (" + (pr.name == null ? "box" : pr.name) + ")");
         }
-        if (p.areas.isEmpty()) return Verdict.rule("no areas set", m);
         if (p.areaAt(dim, x, y, z) == null) {
+            // 0.21.2: a lease granted inside the near-me zone stays good in its box after the owner walked off
+            if (!go) {
+                Lease nl = leaseAt(dim, x, y, z, place);
+                if (nl != null && nl.near) return Verdict.OK;
+            }
+            if (p.areas.isEmpty()) return Verdict.rule("no areas set", m);
             // water plan: a seal lease lets a block in just outside the areas (the floor above still holds)
             if (place && sealOnly(dim, x, y, z)) return Verdict.OK;
-            return Verdict.rule("outside every area", m);
+            return Verdict.rule("outside every area" + (nearBox != null ? " and more than " + near.radius() + " blocks from you" : ""), m);
         }
         if (go) return Verdict.OK;
         Lease l = leaseAt(dim, x, y, z, place);
@@ -314,8 +349,15 @@ public final class GuardCore {
         o.addProperty("mode", mode.name().toLowerCase());
         o.addProperty("floorBlocks", floorBlocks);
         o.add("deniedDims", toArray(DENIED_DIMS));
-        o.add("areas", policy.toJson().getAsJsonArray("areas"));
-        o.add("protect", policy.toJson().getAsJsonArray("protect"));
+        o.add("areas", basePolicy.toJson().getAsJsonArray("areas"));
+        o.add("protect", basePolicy.toJson().getAsJsonArray("protect"));
+        JsonObject n = new JsonObject();          // 0.21.2: the near-me zone (on, radius, the box now or none)
+        n.addProperty("on", near.on());
+        n.addProperty("r", near.radius());
+        Box nb = nearBox;
+        if (nb != null) n.add("box", nb.toJson());
+        n.addProperty("errors", near.errors());
+        o.add("near", n);
         JsonArray ls = new JsonArray();
         for (Lease l : leases.values()) ls.add(l.toJson());
         o.add("leases", ls);

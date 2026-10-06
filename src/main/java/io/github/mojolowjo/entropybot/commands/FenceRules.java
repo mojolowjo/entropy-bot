@@ -45,7 +45,7 @@ public final class FenceRules {
         return "error: " + withAreaHint(why);
     }
 
-    /** The reason plus "area add <name> here <r>" (not for "next to a portal": no area helps there). */
+    /** The reason plus "area <name> <r>" (not for "next to a portal": no area helps there). */
     public static String withAreaHint(String reason) {
         return reason.startsWith("next to a ") ? reason : reason + " - " + PolicyCommands.AREA_HINT;
     }
@@ -53,12 +53,12 @@ public final class FenceRules {
     /** "come" to an owner the fence won't let the bot reach. */
     public static String comeRefusal(String why, int x, int z) {
         if (why.startsWith("next to a ")) return "you're " + why;
-        return "you're outside my areas (" + x + " " + z + ") - area add <name> here 30";
+        return "you're outside my areas (" + x + " " + z + ") - area <name> 30";
     }
 
     /** "follow" a player standing outside the areas. */
     public static String followRefusal(String name, int x, int z) {
-        return name + " is outside my areas (" + x + " " + z + ") - area add <name> here 30";
+        return name + " is outside my areas (" + x + " " + z + ") - area <name> 30";
     }
 
     /** The whisper when a followed player leaves the areas (the follow ends, Baritone is cancelled). */
