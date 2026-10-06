@@ -718,7 +718,7 @@ public final class Commands implements Chains.Env {
         }
         // C4 + C5: settings and the verbs that start chains of their own
         if (verb.equals("junk")) return Reply.now(camp.junk(rest));
-        if (verb.equals("stock")) return Reply.now(camp.stock(player, rest));
+        if (verb.equals("stock") && Texts.isStockTargetsForm(rest)) return Reply.now(camp.stock(player, rest));   // C4; else C2's view below
         if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
         if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
         if (verb.equals("bootstrap")) return Reply.now(camp.bootstrap(player, from, internal, rest));
@@ -885,7 +885,7 @@ public final class Commands implements Chains.Env {
             case "wear", "equip" -> { return Gui.wearArmor(player); }
             case "where" -> { return storage.where(player, rest); }
             case "have" -> { return storage.have(player, rest); }
-            case "stock" -> { return storage.stockList(player, rest); }
+            case "stock" -> { return Texts.isStockTargetsForm(rest) ? camp.stock(player, rest) : storage.stockList(player, rest); }
             case "trust", "untrust" -> { return storage.trust(verb, rest); }
             // B7c: crafting, the furnace, fetching, the farm round and compact
             case "craft" -> { return crafting.craft(player, rest, null); }

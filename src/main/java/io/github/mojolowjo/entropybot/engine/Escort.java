@@ -204,12 +204,11 @@ public final class Escort {
         long nowMs = System.currentTimeMillis();
         int n = Math.min(EscortRules.feed(food, carried, nowMs, lastFedMs), bestCount);
         if (n <= 0 || bestSlot < 0) return;
-        if (bestSlot != inv.selected && !Hotbar.toHand(mc, p, bestSlot)) return;
-        if (Reflexes.foodScore(inv.getSelected(), 20f) < 0) return;     // the swap lands next tick: try again then
-        String item = BuiltInRegistries.ITEM.getKey(inv.getSelected().getItem()).getPath();
+        String id = BuiltInRegistries.ITEM.getKey(inv.getItem(bestSlot).getItem()).toString();
+        String item = BuiltInRegistries.ITEM.getKey(inv.getItem(bestSlot).getItem()).getPath();
         p.lookAt(EntityAnchorArgument.Anchor.EYES, g.getEyePosition());
-        int thrown = 0;
-        for (int k = 0; k < n && !inv.getSelected().isEmpty(); k++) if (p.drop(false)) thrown++;
+        // 0.21.0: the same THROW click as give/carry/fetch (one helper, Mule.throwItems)
+        int thrown = io.github.mojolowjo.entropybot.commands.Mule.throwItems(p, id, n);
         if (thrown == 0) return;
         lastFedMs = nowMs;
         say("You're hungry (food " + food + "): threw you " + thrown + " " + item.replace('_', ' ') + ".");

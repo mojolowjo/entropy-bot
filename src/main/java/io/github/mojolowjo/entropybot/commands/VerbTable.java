@@ -77,14 +77,14 @@ public final class VerbTable {
         v("scan", "", "chests", O, "scan [radius] | scan base|<place>|x y z [radius]", "open the chests around (there) and remember them", "scan base|scan 8", "where <item>");
         v("where", "", "chests", G, "where <item>", "which chest has it (and the RS network, and your bag with the companion)", "where iron", "open <place>");
         v("have", "", "chests", G, "have [item]", "what we have as a group: my bag, the chests, the RS network, your bag", "have iron_ingot", "stock iron");
-        v("stock", "", "chests", G, "stock [filter]", "the group's totals, biggest first, and how fresh each source is", "stock ingot", "scan base");
+        v("stock", "", "chests", G, "stock [filter] | stock targets | stock set <item> <n> | stock clear <item>|all",
+                "the group's totals, biggest first, and how fresh each source is; targets/set/clear (owner): how much the BASE chests should hold (restock base fills them)",
+                "stock ingot|stock set torch 64|stock targets", "restock base");
         v("find", "", "chests", G, "find <block>", "the nearest block of that kind", "find chest|find crafting_table", "goto x y z");
         v("trust", "", "chests", O, "trust | trust x y z|<place>", "list the chests I keep out of, or let me use one again", "trust", "untrust x y z");
         v("untrust", "", "chests", O, "untrust x y z|<place>", "keep me out of a chest (craft trips, deposits, the food run)", "untrust -20 53 180", "trust");
         v("junk", "", "chests", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
                 "what I throw away when my bag is nearly full mid-job (or put in the chest marked junk)", "junk list|junk add tuff|junk mode chest", "junk list");
-        v("stock", "", "chests", O, "stock targets | stock set <item> <n> | stock clear <item>|all", "how much the BASE chests should hold (restock base fills them)",
-                "stock set torch 64|stock targets", "restock base");
         v("drop", "", "chests", O, "drop <item|all> [n]", "throw items on the ground", "drop dirt 64", "inv");
         // C6 mule and fetch
         v("hold", "", "chests", G, "hold this", "pick up the items you throw me in the next 15 s (within 4 blocks)", "hold this", "inv");

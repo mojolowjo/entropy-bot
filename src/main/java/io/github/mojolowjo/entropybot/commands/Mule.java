@@ -39,7 +39,7 @@ import java.util.Set;
  * of the inventory menu (GuiCore.drop through McMenu: the server throws in the look direction); Baritone API goals.
  * No NeoForge event or registry.
  */
-final class Mule {
+public final class Mule {
     private static final Logger LOG = LogUtils.getLogger();
 
     private final Core core;
@@ -324,10 +324,25 @@ final class Mule {
             return;
         }
         int k = r.throwsLeft.remove(0);
-        String res = GuiCore.drop(new McMenu(p), r.item + " " + k);
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^ok: dropped (\\d+)").matcher(res);
-        if (m.find()) r.given += Integer.parseInt(m.group(1));
+        int thrown = throwItems(p, r.item, k);
+        if (thrown > 0) r.given += thrown;
         else r.throwsLeft.clear();
+    }
+
+    private static final java.util.regex.Pattern DROPPED = java.util.regex.Pattern.compile("^ok: dropped (\\d+)");
+
+    /**
+     * 0.21.0: the one throw helper (give/carry/fetch here, the escort's food in {@code engine.Escort.feed}): throws up to
+     * {@code n} of {@code item} (full id) with the inventory menu's THROW click, in the bot's look direction (face the
+     * target first). Returns how many went; 0 when none could (logged).
+     */
+    public static int throwItems(LocalPlayer p, String item, int n) {
+        if (n <= 0) return 0;
+        String res = GuiCore.drop(new McMenu(p), item + " " + n);
+        java.util.regex.Matcher m = DROPPED.matcher(res == null ? "" : res);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        LOG.info("[entropybot] throw {} {}: {}", n, item, res);
+        return 0;
     }
 
     private String fetchTail(Run r) {

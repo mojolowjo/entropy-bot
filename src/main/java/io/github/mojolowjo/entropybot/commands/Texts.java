@@ -91,9 +91,16 @@ public final class Texts {
     }
 
     /** Null when an allowed player who isn't the owner may run this, else the refusal. */
+    /** 0.21.0: "stock targets|set|clear ..." is C4's base-chest targets; "stock" alone or "stock <filter>" is C2's shared view. */
+    public static boolean isStockTargetsForm(String rest) {
+        String r = rest == null ? "" : rest.trim().toLowerCase();
+        return r.matches("^(targets|set|clear)(\\s.*)?$");
+    }
+
     public static String guestRefusal(String verb, String rest, String raw, String owner) {
         String r = rest == null ? "" : rest.trim().toLowerCase();
         if (splitChain(raw).size() > 1) return "sorry, only " + owner + " can start chains";
+        if (verb.equals("stock") && isStockTargetsForm(r)) return "sorry, stock targets|set|clear are " + owner + "'s - you can use stock [filter]";
         if (GUEST_VERBS.contains(verb)) return null;
         if ((verb.equals("routine") || verb.equals("routines")) && (r.isEmpty() || r.matches("^show\\b.*"))) return null;
         if (verb.equals("why") || verb.equals("rules") || (verb.equals("deaths") && r.isEmpty()) || (verb.equals("autominer") && (r.isEmpty() || r.equals("status")))) return null;
