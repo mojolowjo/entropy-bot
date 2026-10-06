@@ -83,6 +83,9 @@ public final class Chains {
         /** Wave 1: where the bot stands {x, y, z}, or null (a retry after a fight walks back first). */
         default int[] pos() { return null; }
 
+        /** C4: the level's day time (ticks; % 24000 = time of day), -1 when unknown ("rule when night|day"). */
+        default long dayTime() { return -1; }
+
         /** Package D: a furnace job's output is due (the chain picks it up between two steps: "smelt collect"). */
         default boolean furnaceDue() { return false; }
     }
@@ -570,6 +573,8 @@ public final class Chains {
     private static final Pattern RULE_AT = Pattern.compile("^(at)\\s+(\\d{1,2}):(\\d{2})\\s+do\\s+(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern RULE_FULL = Pattern.compile("^(when)\\s+(full)()\\s+do\\s+(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern RULE_IDLE = Pattern.compile("^(when)\\s+idle\\s+(\\d+)(m)\\s+do\\s+(.+)$", Pattern.CASE_INSENSITIVE);
+    /** C4: "rule when night do sleep", "rule when day do ...": once per night (or day). */
+    private static final Pattern RULE_DAYNIGHT = Pattern.compile("^(when)\\s+(night|day)()\\s+do\\s+(.+)$", Pattern.CASE_INSENSITIVE);
 
     JsonArray rules() {
         if (!mem.has("rules") || !mem.get("rules").isJsonArray()) mem.add("rules", new JsonArray());
@@ -598,14 +603,14 @@ public final class Chains {
             return "deleted rule: " + str(r, "kind", "") + " " + str(r, "arg", "") + " do " + str(r, "text", "");
         }
         Matcher m = null;
-        for (Pattern p : new Pattern[]{RULE_EVERY, RULE_AT, RULE_FULL, RULE_IDLE}) {
+        for (Pattern p : new Pattern[]{RULE_EVERY, RULE_AT, RULE_FULL, RULE_IDLE, RULE_DAYNIGHT}) {
             Matcher x = p.matcher(t);
             if (x.find()) {
                 m = x;
                 break;
             }
         }
-        if (m == null) return "usage: rule every <n>m|h do <commands> | rule at HH:MM do ... | rule when full do ... | rule when idle <n>m do ... | rules | rule delete <n>";
+        if (m == null) return "usage: rule every <n>m|h do <commands> | rule at HH:MM do ... | rule when full do ... | rule when idle <n>m do ... | rule when night|day do ... | rules | rule delete <n>";
         String kind = m.group(1).toLowerCase(), arg, text = m.group(4);
         if (expandSteps(Texts.splitChain(text), 0).isEmpty()) return "error: nothing to do";
         // package H: at most Limits.RULES rules ("rules" lists each one whole)
@@ -614,6 +619,7 @@ public final class Chains {
         if (refused != null) return refused;
         if (kind.equals("every")) arg = m.group(2) + m.group(3).toLowerCase();
         else if (kind.equals("at")) arg = ("0" + m.group(2)).substring(("0" + m.group(2)).length() - 2) + ":" + m.group(3);
+        else if (m.pattern() == RULE_DAYNIGHT) arg = m.group(2).toLowerCase();
         else arg = t.toLowerCase().contains("idle") ? "idle " + m.group(2) + "m" : "full";
         JsonObject r = new JsonObject();
         r.addProperty("kind", kind);
@@ -650,6 +656,9 @@ public final class Chains {
                     long at = d.toInstant().toEpochMilli();
                     due = now >= at && last < at;
                 } catch (RuntimeException ignored) {}
+            } else if (arg.equals("night") || arg.equals("day")) {
+                due = io.github.mojolowjo.entropybot.camp.DayNight.due(arg, env.dayTime(), str(r, "fired", ""));
+                if (due) r.addProperty("fired", io.github.mojolowjo.entropybot.camp.DayNight.key(env.dayTime()));
             } else if (arg.equals("full")) {
                 due = env.bagRoom() <= 4 && now - last > 120000;
             } else if (arg.startsWith("idle")) {

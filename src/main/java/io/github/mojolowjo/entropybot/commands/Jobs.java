@@ -75,6 +75,8 @@ public final class Jobs {
          * ownsBreaking: the job turned Baritone's breaking on (SafetyNet leaves it be while Baritone's mine runs).
          */
         public boolean holdOnFight, ownsBreaking;
+        /** C5: junk thrown away while this job ran (its end line says "dropped N junk"). */
+        public int junkDropped;
         public Runnable onHold, onEnd;
         /**
          * Routing stage 1 (R3): this walk's use of the router (null = a plain walk, as before), the goal the router
@@ -199,6 +201,7 @@ public final class Jobs {
         if (j == null || j.done) return;
         msg = restoreGate(j, msg);
         if (msg == null) return;                          // P1: the job's blocks are put back first; finish comes again then
+        if (j.junkDropped > 0) msg = msg + "; dropped " + j.junkDropped + " junk";        // C5
         j.done = true;
         j.status = msg;
         if (j.onEnd != null) {

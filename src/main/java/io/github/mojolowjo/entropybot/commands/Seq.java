@@ -250,7 +250,9 @@ public final class Seq {
             case "routetrip": return routeTest == null ? "next" : routeTest.begin(this, st, p);          // routing stage 1: route test
             case "routetripend": return routeTest == null ? "next" : routeTest.end(this, st, p);
             case "clear":
-            case "placeblock": return Clearing.step(this, st, p, elapsed);       // B7d D1: dig, build, place
+            case "placeblock": return Clearing.step(this, st, p, elapsed);
+            case "sleep": return SleepJob.step(this, st, p);                    // C4: in bed until morning
+            case "lightnote": return CampCommands.lightNote(this, st);          // C4: the light job's end line       // B7d D1: dig, build, place
             default:
                 if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2
                 if (st.type.startsWith("chop")) return Chopping.get().step(this, st, p, elapsed);          // P3

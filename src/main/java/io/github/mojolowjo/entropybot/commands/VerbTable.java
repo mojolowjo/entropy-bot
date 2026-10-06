@@ -64,6 +64,7 @@ public final class VerbTable {
         v("forget", "", "moving", O, "forget <name>", "forget a place", "forget farm", "places");
         v("places", "", "moving", G, "places", "the places I know", "places", "go <place>");
         v("spawn", "bed", "moving", O, "spawn", "walk to the nearest bed and set my respawn point there", "spawn", "status");
+        v("sleep", "", "moving", O, "sleep | sleep status", "go to the nearest bed (or put mine down at night) and sleep until morning or stop", "sleep|sleep status", "rule when night do sleep");
         v("stop", "", "moving", G, "stop", "cancel everything, breaking off (the autominer waits 10 min)", "stop", "autominer on");
         v("death", "", "moving", O, "death | death policy on|off", "walk back to where I died and empty my corpse", "death", "deaths");
         v("corpse", "", "moving", O, "corpse", "empty my own corpse when it is near", "corpse", "inv");
@@ -78,6 +79,10 @@ public final class VerbTable {
         v("find", "", "chests", G, "find <block>", "the nearest block of that kind", "find chest|find crafting_table", "goto x y z");
         v("trust", "", "chests", O, "trust | trust x y z|<place>", "list the chests I keep out of, or let me use one again", "trust", "untrust x y z");
         v("untrust", "", "chests", O, "untrust x y z|<place>", "keep me out of a chest (craft trips, deposits, the food run)", "untrust -20 53 180", "trust");
+        v("junk", "", "chests", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
+                "what I throw away when my bag is nearly full mid-job (or put in the chest marked junk)", "junk list|junk add tuff|junk mode chest", "junk list");
+        v("stock", "", "chests", O, "stock targets | stock set <item> <n> | stock clear <item>|all", "how much the BASE chests should hold (restock base fills them)",
+                "stock set torch 64|stock targets", "restock base");
         v("drop", "", "chests", O, "drop <item|all> [n]", "throw items on the ground", "drop dirt 64", "inv");
         v("use", "", "chests", O, "use x y z", "right-click a block", "use -23 53 156", "close");
         v("wear", "equip", "chests", O, "wear", "put on armor from my bag", "wear", "inv");
@@ -130,6 +135,10 @@ public final class VerbTable {
         v("zone", "", "mining", O, "zone corner1|corner2 [x y z] | zone | zone clear", "the work zone for build (stand on opposite corners)", "zone corner1|zone corner2", "build floor <block>");
         v("build", "", "mining", O, "build floor|walls|shell|fill <block> | build clear", "build inside the zone (never breaks); clear breaks the whole zone (asks to confirm)",
                 "build floor cobblestone|build clear", "status");
+        v("light", "", "mining", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks, inside my areas (fetches or crafts torches first)",
+                "light here 8|light 0 0 30 30", "status");
+        v("bootstrap", "", "mining", O, "bootstrap | bootstrap status", "a camp from nothing: chop, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp marked",
+                "bootstrap|bootstrap status", "places");
         v("place", "", "mining", O, "place <block> x y z", "place one block (walks into reach)", "place cobblestone 10 64 20", "status");
         // ---- safety and areas
         v("area", "", "safety", P, "area list | area show <name> | area add <name> here <r> | area add <name> x1 z1 x2 z2 [y1 y2] | area corner1 | area corner2 <name> | area grow <name> <n> | area remove <name>",
@@ -158,7 +167,7 @@ public final class VerbTable {
         v("run", "", "automation", O, "run <routine>", "run a saved routine", "run night", "queue");
         v("wait", "", "automation", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
         v("queue", "", "automation", G, "queue", "where the running chain is", "queue", "stop");
-        v("rule", "rules", "automation", P, "rules | rule every <n>m|h do <cmds> | rule at HH:MM do <cmds> | rule when full do <cmds> | rule when idle <n>m do <cmds> | rule delete <n>",
+        v("rule", "rules", "automation", P, "rules | rule every <n>m|h do <cmds> | rule at HH:MM do <cmds> | rule when full do <cmds> | rule when idle <n>m do <cmds> | rule when night|day do <cmds> | rule delete <n>",
                 "things I do by myself when idle", "rule every 30m do farm then deposit|rule when full do deposit", "rules", "rules");
         v("autominer", "", "automation", P, "autominer on|off|status", "mine on my own when idle (deposit, restock, strip mine, else caves)", "autominer on", "why", "autominer status");
         v("why", "", "automation", G, "why", "what the autominer decided and why", "why", "autominer status");

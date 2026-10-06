@@ -38,11 +38,22 @@ public final class PlaceRules {
 
     /** placeAt's choice: the first neighbour (in SIDES order) to click from an eye at ex ey ez, or null (nothing in reach). */
     public static Side placeSide(ClearWorld w, int x, int y, int z, double ex, double ey, double ez) {
+        return placeSide(w, x, y, z, ex, ey, ez, PLACE_REACH);
+    }
+
+    /**
+     * 0.20.1 (C4 live test): a stand spot is chosen with this shorter reach, because Baritone ends a walk anywhere on the
+     * goal block (seen live: 0.2 off the centre), and a spot right at 4.5 then failed "nothing in reach" after the walk.
+     */
+    public static final double STAND_REACH = 4.0;
+
+    /** placeSide with the given reach. */
+    public static Side placeSide(ClearWorld w, int x, int y, int z, double ex, double ey, double ez, double reach) {
         for (Side s : SIDES) {
             if (!clickable(w, x + s.dx(), y + s.dy(), z + s.dz())) continue;
             double hx = x + 0.5 + s.dx() * 0.5, hy = y + 0.5 + s.dy() * 0.5, hz = z + 0.5 + s.dz() * 0.5;
             double dx = hx - ex, dy = hy - ey, dz = hz - ez;
-            if (dx * dx + dy * dy + dz * dz > PLACE_REACH * PLACE_REACH) continue;
+            if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
             return s;
         }
         return null;
@@ -81,7 +92,7 @@ public final class PlaceRules {
                     else continue;
                     if (best != null && cost >= best.cost()) continue;
                     double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
-                    if (placeSide(w, cell.x(), cell.y(), cell.z(), ex, ey, ez) == null) continue;
+                    if (placeSide(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH) == null) continue;
                     best = new ClearGrid.Spot(x, y, z, cost, ex, ey, ez);
                 }
             }

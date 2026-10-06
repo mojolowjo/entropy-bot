@@ -145,6 +145,8 @@ class CommandsTest {
 
         @Override public long tick() { return tick; }
         @Override public long now() { return now; }
+        long dayTime = -1;
+        @Override public long dayTime() { return dayTime; }
         @Override public ZoneId zone() { return ZoneId.of("UTC"); }
         @Override public String owner() { return "owner"; }
         @Override public void whisper(String to, String text) { whispers.add(text); }
@@ -341,6 +343,25 @@ class CommandsTest {
         assertTrue(f.chains.ruleCommand("list").startsWith("#1 every 30m do places then wait 1 | #2 at 06:30"));
         assertTrue(f.chains.ruleCommand("delete 2").startsWith("deleted rule: at 06:30"));
         assertTrue(f.chains.ruleCommand("sometimes do x").startsWith("usage:"));
+    }
+
+    @Test
+    void nightAndDayRulesFireOncePerNight() {
+        JsonObject mem = new JsonObject();
+        Fake f = fake(mem);
+        assertEquals("ok: rule #1: when night do places", f.chains.ruleCommand("when night do places"));
+        assertEquals("ok: rule #2: when day do status", f.chains.ruleCommand("when day do status"));
+        assertTrue(f.chains.ruleCommand("list").contains("#1 when night do places"));
+        f.dayTime = 13000;
+        f.chains.rulesTick();
+        assertEquals("rule #1", f.chains.name());
+        f.chains.clear();
+        f.dayTime = 15000;
+        f.chains.rulesTick();
+        assertFalse(f.chains.running(), "the same night: once");
+        f.dayTime = 24000 + 1000;
+        f.chains.rulesTick();
+        assertEquals("rule #2", f.chains.name());
     }
 
     @Test

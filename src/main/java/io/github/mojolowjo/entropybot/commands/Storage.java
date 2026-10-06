@@ -379,9 +379,26 @@ public final class Storage {
         Map<String, Integer> items = StorageRules.depositables(held, text, false, only, keeps());
         if (items.isEmpty() && text != null && !text.trim().isEmpty() && !text.trim().equalsIgnoreCase("all")
                 && !StorageRules.depositables(held, text, false, only).isEmpty()) return new DepositSteps(null, null, StorageRules.allKeptReply(text));
+        // C5 junk mode chest: the junk goes into the chest marked "junk" first (the rest as before)
+        List<Step> steps = new ArrayList<>();
+        int[] jc = commands.camp.junkChest();
+        if (jc != null && (text == null || text.trim().isEmpty() || text.trim().equalsIgnoreCase("all"))) {
+            java.util.Set<String> jl = commands.camp.junkList();
+            Map<String, Integer> junk = new LinkedHashMap<>();
+            for (Map.Entry<String, Integer> e : items.entrySet()) if (jl.contains(e.getKey())) junk.put(e.getKey(), e.getValue());
+            if (!junk.isEmpty()) {
+                junk.keySet().forEach(items::remove);
+                steps.add(Step.walk(jc, false));
+                steps.add(Step.open(jc, "no"));
+                Step put = new Step("put");
+                put.items = junk;
+                steps.add(put);
+                steps.add(Step.close());
+                if (items.isEmpty()) return new DepositSteps(steps, "putting junk in the junk chest", null);
+            }
+        }
         StorageRules.Plan plan = StorageRules.depositPlan(items, baseChests(p, atBase), Jobs.here(p), text);
         if (plan.err() != null) return new DepositSteps(null, null, plan.err());
-        List<Step> steps = new ArrayList<>();
         for (StorageRules.Stop s : plan.stops()) {
             steps.add(Step.walk(s.chest().pos(), false));
             steps.add(Step.open(s.chest().pos(), "no"));
