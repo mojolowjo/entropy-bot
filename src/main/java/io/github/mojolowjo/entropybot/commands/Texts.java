@@ -14,9 +14,9 @@ public final class Texts {
 
     /** What allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
     public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "find",
-            "recipe", "come", "follow", "goto", "stop", "restart");
+            "recipe", "come", "follow", "goto", "stop", "restart", "hold");
 
-    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, find <block>, recipe <item>, come, follow [name], goto x y z, stop, "
+    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
             + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, poi, poi show <id>";
 
     /** Every command word; routine names can't use these. */
@@ -26,7 +26,8 @@ public final class Texts {
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
-            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook");
+            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook",
+            "hold", "give", "carry", "unload", "fetch");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -41,7 +42,9 @@ public final class Texts {
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");
 
     public static final List<String> PM_HELP = List.of(
-            "Moving: come, follow [name], goto x y z, go <place>, base, home (/home), sethome (my home = here), death (go back + empty my corpse), corpse (empty my corpse nearby), stop, spawn (use nearest bed)",
+            "Moving: come, follow [name], goto x y z, go <place>, base, home (/home), sethome (my home = here), death (go back + empty my corpse), corpse (empty my corpse nearby), stop, spawn (use nearest bed) | "
+                    + "Mule: hold this (throw me items within 15 s), give me <item> [n] | give <player> <item> [n] (never my tools, armor, last 8 food, 16 torches, supplies), "
+                    + "carry <item...> | carry off | carry list (follow you, pick up those drops near you), unload (home, deposit, back to you), fetch <item> [n] (storage, else gather, then give me)",
             "Making things: craft <item> [n] fetches what it needs from my chests and the RS network and uses a furnace when a step needs one; smelt <item> [n] (e.g. smelt iron_ingot 9; I go on with other things and pick it up when it is done), smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>, "
                     + "need <item> [n] (what it takes, what is missing), get <item> [n] (from storage), supplies set <item n, ...> | supplies | supplies clear, restock (top the supplies up), infuse <seed> [n] (on the infusion altar: I fetch the ingredients, fill the altar and pedestals, press the button; I never touch what isn't mine), upgrade <essence> [n] (e.g. upgrade imperium 4: the tiers climbed with the infusion crystal kept, in rounds my bag holds)",
             "Items: inv, eat, wear, craft <item> [n] (planks = any wood; \"copper armor\", \"iron tools\"; comma lists), kit <material>, recipe <item>, drop <item|all> [n], mine <ore> [n] [dig] (ores, sand, gravel, clay, grass; inside my areas, 16+ from protect boxes; fetches a pickaxe first)",

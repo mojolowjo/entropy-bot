@@ -79,6 +79,14 @@ public final class VerbTable {
         v("trust", "", "chests", O, "trust | trust x y z|<place>", "list the chests I keep out of, or let me use one again", "trust", "untrust x y z");
         v("untrust", "", "chests", O, "untrust x y z|<place>", "keep me out of a chest (craft trips, deposits, the food run)", "untrust -20 53 180", "trust");
         v("drop", "", "chests", O, "drop <item|all> [n]", "throw items on the ground", "drop dirt 64", "inv");
+        // C6 mule and fetch
+        v("hold", "", "chests", G, "hold this", "pick up the items you throw me in the next 15 s (within 4 blocks)", "hold this", "inv");
+        v("give", "", "chests", O, "give me <item> [n] | give <player> <item> [n]", "walk to you (or them) and throw the items (never my tools, armor, last 8 food, 16 torches or supplies)",
+                "give me cobblestone 32|give Steve bread 4", "inv");
+        v("carry", "", "chests", O, "carry <item> [item ...] | carry off | carry list", "follow you and pick up those drops within 6 blocks of you; off = plain follow",
+                "carry oak_log cobblestone|carry off", "unload");
+        v("unload", "", "chests", O, "unload", "go home, deposit (keeping tools, food, torches, supplies), then come back to you", "unload", "carry list");
+        v("fetch", "", "chests", O, "fetch <item> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32", "inv");
         v("use", "", "chests", O, "use x y z", "right-click a block", "use -23 53 156", "close");
         v("wear", "equip", "chests", O, "wear", "put on armor from my bag", "wear", "inv");
         v("rs", "", "chests", O, "rs [x y z] | rs take <item> [n] | rs put <item|all> [n] | rs disks [x y z]", "the Refined Storage network: read it, take, put, the disks",
