@@ -23,7 +23,34 @@ public final class OwnerFix {
     static final long FUTURE_SLACK_MS = 2_000;
 
     /** One parsed owner.json. */
-    public record Fix(String name, double x, double y, double z, String dim, long received) {}
+    public record Fix(String name, double x, double y, double z, String dim, long received, int food, int health) {
+        /** A fix without vitals (an old companion): food and health unknown (-1). */
+        public Fix(String name, double x, double y, double z, String dim, long received) { this(name, x, y, z, dim, received, -1, -1); }
+    }
+
+    /**
+     * C7: the player's {food, health} from companion v2 (fields "food", "health"; -1 each when missing), or null
+     * unless the fix is for that player and fresh (any dimension: hunger does not depend on where they are).
+     */
+    public static int[] vitals(Fix f, String player, long nowMs) {
+        if (f == null || player == null || !f.name().equalsIgnoreCase(player)) return null;
+        long age = nowMs - f.received();
+        if (age > MAX_AGE_MS || age < -FUTURE_SLACK_MS) return null;
+        return new int[]{f.food(), f.health()};
+    }
+
+    public int[] vitals(String player) { return vitals(current(), player, System.currentTimeMillis()); }
+
+    /** A whole number 0..1000 (health may come as 19.5: rounded), else -1. */
+    static int intOr(JsonObject o, String k) {
+        try {
+            if (!o.has(k) || !o.get(k).isJsonPrimitive()) return -1;
+            double d = o.get(k).getAsDouble();
+            return Double.isFinite(d) && d >= 0 && d <= 1000 ? (int) Math.round(d) : -1;
+        } catch (RuntimeException e) {
+            return -1;
+        }
+    }
 
     private final Supplier<Path> file;
     private long mtime = Long.MIN_VALUE, size = -1;
@@ -56,7 +83,7 @@ public final class OwnerFix {
             double x = o.get("x").getAsDouble(), y = o.get("y").getAsDouble(), z = o.get("z").getAsDouble();
             long received = o.get("received").getAsLong();
             if (name.isEmpty() || dim.isEmpty() || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return null;
-            return new Fix(name, x, y, z, dim, received);
+            return new Fix(name, x, y, z, dim, received, intOr(o, "food"), intOr(o, "health"));
         } catch (RuntimeException e) {
             return null;
         }

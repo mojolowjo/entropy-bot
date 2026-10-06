@@ -25,7 +25,7 @@ public final class Texts {
             "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "watch", "recorder", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
-            "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
+            "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume", "escort",
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook");
 
     /**
@@ -97,6 +97,7 @@ public final class Texts {
         if (verb.equals("ores") && !r.matches("^(clear|forget)\\b.*") && !r.matches("^prefer\\s+\\S.*")) return null;
         if (verb.equals("stripmine") && r.equals("status")) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return null;
+        if (verb.equals("escort") && r.matches("^(|status|off|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
         if (verb.equals("area") && (r.equals("list") || r.matches("^show\\b.*"))) return null;
         if ((verb.equals("poi") || verb.equals("pois")) && !r.matches("^forget\\b.*")) return null;
         if (verb.equals("caves") && !r.matches("^rename\\b.*")) return null;
