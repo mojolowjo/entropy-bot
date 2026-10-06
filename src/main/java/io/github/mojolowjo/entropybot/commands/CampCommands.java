@@ -51,6 +51,7 @@ final class CampCommands {
     final Map<String, String> careStuck = new LinkedHashMap<>();
     static final long CARE_RETRY_MS = 10 * 60_000L;
 
+    private String lastRun;
     CampCommands(Commands c) { this.c = c; }
 
     private JsonObject brain() { return c.brainData(); }
@@ -84,6 +85,7 @@ final class CampCommands {
         if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", plan.steps());
         LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", plan.steps()));
         String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", plan.steps()), 1);
+        lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
         return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
     }
 

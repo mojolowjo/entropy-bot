@@ -39,6 +39,21 @@ public final class BootstrapPlan {
     /** The chain (commands, in order) and a one-line summary; err: why it can't start (with the next command). */
     public record Plan(List<String> steps, String summary, String err) {}
 
+    /** `bootstrap status`: a read-only report of what the camp has. Never plans, places or starts anything. */
+    public static String statusText(Map<String, Integer> inv, boolean table, boolean furnace, boolean chest, boolean campMarked,
+                                    String running, String lastRun) {
+        StringBuilder b = new StringBuilder("bootstrap: ");
+        b.append("table ").append(table ? "yes" : "no").append(", furnace ").append(furnace ? "yes" : "no")
+                .append(", chest ").append(chest ? "yes" : "no").append(" within ").append(NEAR);
+        b.append("; tools");
+        for (String k : KINDS) b.append(' ').append(k).append(' ').append(best(inv, k) > 0 ? "yes" : "no");
+        int torches = inv.getOrDefault("minecraft:torch", 0);
+        b.append("; torches ").append(torches).append("; camp mark ").append(campMarked ? "set" : "not set");
+        if (running != null) b.append("; running: ").append(running);
+        b.append("; last run: ").append(lastRun == null ? "none this session" : lastRun);
+        return b.toString();
+    }
+
     static final String[] KINDS = {"pickaxe", "axe", "shovel", "sword"};
 
     /** Material for one tool of that kind (stone): pickaxe 3, axe 3, shovel 1, sword 2. */
