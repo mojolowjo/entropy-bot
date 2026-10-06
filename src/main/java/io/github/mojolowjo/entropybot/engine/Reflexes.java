@@ -109,6 +109,9 @@ public final class Reflexes {
     private final CreeperDuel duel;
     private long forceFleeUntil;
     private final List<String> whispers = new java.util.ArrayList<>();
+    /** C7: escort me|<player> (Commands starts the follow; this fights for them). */
+    public final Escort escort = new Escort();
+    private boolean escortFighting;
 
     public Reflexes(EventRing events, EngineProcess engine, Knowledge knowledge) {
         this.events = events;
@@ -185,6 +188,7 @@ public final class Reflexes {
         o.addProperty("creepers", duel.mode().word());
         if (duel.active()) o.addProperty("duel", duel.describe());
         o.addProperty("noFood", noFood);
+        o.add("escort", escort.status());
         if (deniedDim != null) o.addProperty("deniedDim", deniedDim);
         o.addProperty("engine", engine.disabled() ? "off" : engine.mode().name().toLowerCase());
         return o;
@@ -254,21 +258,18 @@ public final class Reflexes {
             fleeUntil = 0;
         }
         Threat t = defence ? nearestThreat(mc, p, hurt) : null;
+        // C7 escort: what threatens the guarded player comes first, unless something is at the bot's own throat
+        if (escort.active()) escort.watch(mc);
+        Entity ge = defence && escort.active() ? escort.threat(mc, p) : null;
+        if (ge != null && (t == null || t.d > ReflexRules.REACH || t.e == ge)) {
+            escortFight(mc, p, threatOf(p, ge, hurt), hurt, hp);
+            return;
+        }
+        if (reflex != Reflex.FIGHTING) escortFighting = false;
         // a lone creeper and a sword: take it on (CreeperDuel), else run as before
         if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil && duel.mode() != CreeperRules.Mode.FLEE
                 && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
-            if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
-            if (reflex == Reflex.FETCHING) {
-                fetchCooldownUntil = now + 200;
-                settle("interrupted by a creeper");
-            }
-            duel.start(mc, p, (Creeper) t.e, now);
-            reflex = Reflex.FIGHTING;
-            mc.options.keyShift.setDown(false);
-            target = "creeper";
-            targetDist = t.d;
-            urgent = false;
-            engine.hold();              // the duel drives the keys; Baritone stands by with its goal
+            startDuel(mc, p, t);
             return;
         }
         if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
@@ -295,6 +296,7 @@ public final class Reflexes {
             fetchStep(mc, p);
             return;
         }
+        if (escort.active()) escort.idle(mc, p, engine, now);
         if (now >= eatCooldownUntil && mc.screen == null && p.containerMenu == p.inventoryMenu &&
                 ((eatRequested && p.getFoodData().needsFood()) || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), hp))) {
             startEating(mc, p);
@@ -340,6 +342,70 @@ public final class Reflexes {
             best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
         }
         return best;
+    }
+
+    private Threat threatOf(LocalPlayer p, Entity e, boolean hurt) {
+        HostileRules.Kind k = Hostility.INSTANCE.kind(e, hurt);
+        boolean strong = k == HostileRules.Kind.RETALIATION && e instanceof LivingEntity le && Hostility.strong(p, le);
+        return new Threat(e, p.distanceTo(e), BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
+    }
+
+    private void startDuel(Minecraft mc, LocalPlayer p, Threat t) {
+        if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
+        if (reflex == Reflex.FETCHING) {
+            fetchCooldownUntil = now + 200;
+            settle("interrupted by a creeper");
+        }
+        duel.start(mc, p, (Creeper) t.e, now);
+        reflex = Reflex.FIGHTING;
+        mc.options.keyShift.setDown(false);
+        target = "creeper";
+        targetDist = t.d;
+        urgent = false;
+        engine.hold();              // the duel drives the keys; Baritone stands by with its goal
+    }
+
+    /**
+     * C7: a fight for the escorted player. The retreat under 6 health stays; a creeper gets the bow duel when
+     * "defend creepers bow" (and the duel's own checks agree), else the bot stands between it and the player and
+     * knocks it back; anything else is the ordinary fight.
+     */
+    private void escortFight(Minecraft mc, LocalPlayer p, Threat t, boolean hurt, float hp) {
+        escort.interrupted();
+        if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id + " near " + escort.name());
+        if (reflex == Reflex.FETCHING) {
+            fetchCooldownUntil = now + 200;
+            settle("interrupted by a " + t.id + " near " + escort.name());
+        }
+        if (!escortFighting) {
+            escortFighting = true;
+            escort.countFight();
+        }
+        target = t.id;
+        targetDist = t.d;
+        urgent = hurt || t.d < ReflexRules.URGENT;
+        if (hp <= ReflexRules.RETREAT_AT || t.strong) {
+            escortFighting = false;
+            startRetreat(mc, p, t);
+            return;
+        }
+        if (t.creeper) {
+            if (duel.mode() == CreeperRules.Mode.BOW && now >= forceFleeUntil && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
+                startDuel(mc, p, t);
+                return;
+            }
+            begin(Reflex.FIGHTING, mc, "guarding " + escort.name() + " from a creeper");
+            holdWeapon(mc, p);
+            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+            BlockPos ip = escort.interpose(mc, t.e);
+            if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));
+            if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && Hostility.mayAttack(t.e)) {
+                mc.gameMode.attack(p, t.e);         // the knockback sends it away from the bot, which stands between
+                p.swing(InteractionHand.MAIN_HAND);
+            }
+            return;
+        }
+        fight(mc, p, t);
     }
 
     private void begin(Reflex r, Minecraft mc, String line) {

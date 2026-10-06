@@ -508,6 +508,13 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] furnace pickup: {}", e.toString());
                 }
             }
+            if (tick % 20 == 12) {
+                try {
+                    escortTick();
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] escort: {}", e.toString());
+                }
+            }
             if (tick % 200 == 150) pushPlaces();
             if (tick % 20 == 0) writeState(mc, tick);
             brainStore.flushIfDue(tick);
@@ -669,6 +676,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));
         if (verb.equals("stop")) return Reply.now(stopAll());
         if (verb.equals("defend") || verb.equals("defense") || verb.equals("defence")) return Reply.now(setDefence(rest));
+        if (verb.equals("escort")) return Reply.now(escortCommand(from, rest, player));          // C7
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
         if (verb.equals("autominer")) return Reply.now(chains.autominerCommand(rest));
@@ -1120,6 +1128,7 @@ public final class Commands implements Chains.Env {
         if (routine == null && muled != null) routine = muled;
         jobs.followWatch = null;
         jobs.followFix = null;
+        core.reflexes.escort.stop("stopped by \"stop\"");     // C7
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
         if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);     // also ends a raw "b pause"
@@ -1133,6 +1142,76 @@ public final class Commands implements Chains.Env {
         mc.options.keyUse.setDown(false);
         mc.options.keyShift.setDown(false);
         return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off" + chains.holdAutominer();
+    }
+
+    // ---- C7: escort me|<player> (follow + fight for them; Reflexes/Escort do the fighting) ----
+
+    /** "escort me [r]" (the sender), "escort <player> [r]" (owner), "escort off", "escort status". */
+    String escortCommand(String from, String rest, LocalPlayer player) {
+        io.github.mojolowjo.entropybot.engine.Escort e = core.reflexes.escort;
+        io.github.mojolowjo.entropybot.engine.EscortRules.Cmd c = io.github.mojolowjo.entropybot.engine.EscortRules.parse(rest);
+        boolean isOwner = from.equalsIgnoreCase(owner());
+        switch (c.word()) {
+            case "status" -> { return e.statusText(); }
+            case "error" -> { return c.error(); }
+            case "off" -> {
+                if (!e.active()) return "ok: not escorting anyone";
+                if (!isOwner && !from.equalsIgnoreCase(e.name())) return "sorry, only " + owner() + " or " + e.name() + " can end this escort";
+                String t = e.stop("stopped by " + from);
+                endEscortFollow();
+                return "ok: " + t;
+            }
+            default -> {
+                String name = c.word().equals("me") ? from : c.name();
+                if (!isOwner && !name.equalsIgnoreCase(from)) return "sorry, only " + owner() + " can have me escort someone else (escort me works)";
+                if (name.equalsIgnoreCase(player.getGameProfile().getName())) return "error: I can't escort myself";
+                if (!core.reflexes.defence()) return Hints.next("error: self-defence is off, so I couldn't fight for you", "defend on");
+                if (e.active() && !isOwner && !from.equalsIgnoreCase(e.name())) return "busy: I'm escorting " + e.name() + " (only " + owner() + " can change that)";
+                String busy = chainBusyText() != null ? chainBusyText() : jobBusyText();
+                if (busy != null) return busy;
+                String r = modJob("follow", name, from, player);
+                if (!r.startsWith("ok")) return r;
+                e.setVitals(n -> ownerFix.vitals(n));
+                e.start(name, from, c.radius());
+                return "ok: escorting " + name + ": I follow and fight monsters within " + c.radius() + " blocks of " + (name.equalsIgnoreCase(from) ? "you" : name)
+                        + " (escort off or stop ends it)";
+            }
+        }
+    }
+
+    /** Ends the follow the escort started (only that one). */
+    private void endEscortFollow() {
+        // a follow job is "done" at once (it never arrives); Baritone's follow process (or the companion walk) carries it
+        if (jobs.job == null || jobs.job.label == null || !jobs.job.label.startsWith("following") || (jobs.running() && !jobs.walking())) return;
+        jobs.followWatch = null;
+        jobs.followFix = null;
+        if (jobs.running()) jobs.finish("stopped: escort off");
+        IBaritone mb = Jobs.baritone();
+        if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);
+    }
+
+    /** Baritone's follow is still on, or the companion-position walk is. */
+    private boolean stillFollowing() {
+        if (jobs.followFix != null) return true;
+        IBaritone mb = Jobs.baritone();
+        try {
+            return mb != null && mb.getFollowProcess().isActive();
+        } catch (RuntimeException e) {
+            return true;        // can't tell: keep the escort rather than drop it on a hiccup
+        }
+    }
+
+    /** Every second: the escort ends with its follow (a retreat, another job, the fence); its whispers go out. */
+    private void escortTick() {
+        io.github.mojolowjo.entropybot.engine.Escort e = core.reflexes.escort;
+        for (io.github.mojolowjo.entropybot.engine.Escort.Whisper w : e.takeWhispers()) whisper(w.to(), w.text());
+        if (!e.active() || core.reflexes.hold()) return;
+        Jobs.Job j = jobs.job;
+        boolean mine = j != null && j.label != null && j.label.equalsIgnoreCase("following " + e.name());
+        if (mine && stillFollowing()) return;
+        String who = e.name();
+        String t = e.stop("the follow ended");
+        if (t != null) whisper(who, t);
     }
 
     String setDefence(String text) {
@@ -1515,6 +1594,7 @@ public final class Commands implements Chains.Env {
             }
             case "eat" -> { return Reply.now(core.reflexes.eat()); }
             case "defend" -> { return Reply.now(setDefence(text)); }
+            case "escort" -> { return Reply.now(escortCommand(owner(), text, player)); }
             case "area", "protect", "unprotect", "guard" -> {
                 return Reply.now(policy.command(type, text, true, owner(), hereOf(mc, from), posOf(mc, player)));
             }

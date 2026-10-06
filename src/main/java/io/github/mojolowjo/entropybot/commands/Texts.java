@@ -13,17 +13,10 @@ public final class Texts {
     private Texts() {}
 
     /** What allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
-<<<<<<< HEAD
     public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "have", "stock", "find",
-            "recipe", "come", "follow", "goto", "stop", "restart");
-
-    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, "
-=======
-    public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "find",
             "recipe", "come", "follow", "goto", "stop", "restart", "hold");
 
-    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
->>>>>>> comp-c6
+    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
             + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, poi, poi show <id>";
 
     /** Every command word; routine names can't use these. */
@@ -32,13 +25,9 @@ public final class Texts {
             "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "watch", "recorder", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
-            "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
+            "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume", "escort",
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook",
-<<<<<<< HEAD
-            "bootstrap", "sleep", "light", "stock", "junk");
-=======
-            "hold", "give", "carry", "unload", "fetch");
->>>>>>> comp-c6
+            "bootstrap", "sleep", "light", "junk", "hold", "give", "carry", "unload", "fetch");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -111,6 +100,7 @@ public final class Texts {
         if (verb.equals("ores") && !r.matches("^(clear|forget)\\b.*") && !r.matches("^prefer\\s+\\S.*")) return null;
         if (verb.equals("stripmine") && r.equals("status")) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return null;
+        if (verb.equals("escort") && r.matches("^(|status|off|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
         if (verb.equals("area") && (r.equals("list") || r.matches("^show\\b.*"))) return null;
         if ((verb.equals("poi") || verb.equals("pois")) && !r.matches("^forget\\b.*")) return null;
         if (verb.equals("caves") && !r.matches("^rename\\b.*")) return null;
