@@ -89,10 +89,13 @@ public final class Commands implements Chains.Env {
         this.crafting = new Crafting(core, this, jobs, storage);
         storage.crafting = crafting;
         this.gathering = new Gathering(core, this);
+        this.mule = new Mule(core, this);
     }
 
     /** P2: "gather &lt;item&gt; [n]" - runs other verbs as its steps. */
     final Gathering gathering;
+    /** C6: hold this, give, carry, unload, fetch. */
+    final Mule mule;
 
     /** B7c: craft/smelt/get/need/recipe/kit/supplies/restock, farm and compact. */
     final Crafting crafting;
@@ -444,6 +447,12 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] gather: {}", e.toString());
                     gathering.stop("error: " + e);
                 }
+                try {
+                    mule.tick(player);                         // C6: hold this, give, carry, unload, fetch
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] mule: {}", e.toString());
+                    mule.stop("error: " + e);
+                }
             }
             if (tick % 20 == 5) chains.deathTick(dead);
             if (!chains.resumeChecked() && worldTicks > 200) chains.resumeRun();
@@ -754,6 +763,11 @@ public final class Commands implements Chains.Env {
         if (!internal && gathering.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
             return Reply.now("busy: " + gathering.statusText() + " (pm \"stop\" first)");
         }
+        // C6: the mule verbs (carry list/off answer at once; a running mule owns the bot between its steps too)
+        if (verb.matches("^(hold|give|carry|unload|fetch)$")) return mule.command(verb, from, rest, raw, l, player);
+        if (!internal && mule.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
+            return Reply.now("busy: " + mule.statusText() + " (pm \"stop\" first)");
+        }
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
         boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb);
@@ -1054,6 +1068,7 @@ public final class Commands implements Chains.Env {
                 + " | health " + Math.round(p.getHealth()) + "/20 | food " + p.getFoodData().getFoodLevel() + "/20";
         if (jobs.running()) s += " | " + jobs.job.status;
         if (gathering.running()) s += " | " + gathering.statusText();
+        if (mule.running()) s += " | " + mule.statusText();
         JsonObject mem = memoryBlock();
         if (mem.has("state") && "broken".equals(mem.get("state").getAsString())) s += " | a note file was broken at start (PM memory)";
         return s;
@@ -1101,6 +1116,8 @@ public final class Commands implements Chains.Env {
         String routine = chains.clear();
         String gathered = gathering.stop("stopped by \"stop\"");
         if (routine == null && gathered != null) routine = "gather " + gathered;
+        String muled = mule.stop("stopped by \"stop\"");
+        if (routine == null && muled != null) routine = muled;
         jobs.followWatch = null;
         jobs.followFix = null;
         if (jobs.running()) jobs.finish("stopped");
@@ -1265,6 +1282,7 @@ public final class Commands implements Chains.Env {
     private void noteDeath(Minecraft mc, LocalPlayer p) {
         chains.noteDeath();
         jobs.finish("stopped: the bot died");
+        mule.stop("the bot died");
         gathering.stop("the bot died");                    // P2: a chain set aside by the death runs the gather again after the corpse
         JsonObject d = new JsonObject();
         d.addProperty("x", (int) Math.floor(p.getX()));
@@ -1356,6 +1374,7 @@ public final class Commands implements Chains.Env {
             if (jobs.running()) return "job " + jobs.job.status;
             if (withChain && chains != null && chains.running()) return "chain " + chains.chainStatus();
             if (withChain && gathering.running()) return "chain " + gathering.statusText();
+            if (withChain && mule.running()) return "chain " + mule.statusText();
             baritone.api.IBaritone b = Jobs.baritone();
             if (b == null || Jobs.idle(b)) return null;
             return "baritone " + b.getPathingControlManager().mostRecentInControl().map(pr -> pr.displayName()).orElse("pathing");
@@ -1699,7 +1718,8 @@ public final class Commands implements Chains.Env {
         s.add("defence", def);
         s.addProperty("reflex", kind);
         s.add("chain", chains.running() ? new com.google.gson.JsonPrimitive(chains.chainStatus())
-                : gathering.running() ? new com.google.gson.JsonPrimitive(gathering.statusText()) : JsonNull.INSTANCE);
+                : gathering.running() ? new com.google.gson.JsonPrimitive(gathering.statusText())
+                : mule.running() ? new com.google.gson.JsonPrimitive(mule.statusText()) : JsonNull.INSTANCE);
         // package A: the autominer's last decision, so one "status" shows what it decided and why
         try {
             JsonObject am = chains.autominerState();
