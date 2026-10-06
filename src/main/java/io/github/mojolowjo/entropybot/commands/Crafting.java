@@ -181,6 +181,24 @@ final class Crafting {
 
     /** The nearest block whose description id contains needle within radius (dyMax up or down) of center, or null. */
     static int[] findBlockAround(int[] c, String needle, int radius, int dyMax) {
+        return findBlockAround(c, needle, radius, dyMax, null);
+    }
+
+    /**
+     * P2: crafting tables that answered a click without opening (in a Visual Workbench pack a plain
+     * {@code minecraft:crafting_table} set by a command has no block entity and never opens; the real ones are
+     * {@code visualworkbench:...}). Key: "x y z|block id", so a re-placed table counts again. Session memory.
+     */
+    static final java.util.Set<String> DEAD_TABLES = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    static String tableKey(int[] t) {
+        Minecraft mc = Minecraft.getInstance();
+        String id = mc.level == null ? "?" : String.valueOf(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
+                mc.level.getBlockState(new BlockPos(t[0], t[1], t[2])).getBlock()));
+        return Jobs.fmt(t) + "|" + id;
+    }
+
+    static int[] findBlockAround(int[] c, String needle, int radius, int dyMax, java.util.function.Predicate<int[]> skip) {
         Minecraft mc = Minecraft.getInstance();
         int[] best = null;
         long bestD = Long.MAX_VALUE;
@@ -192,8 +210,10 @@ final class Crafting {
                     if (d >= bestD) continue;
                     bp.set(c[0] + dx, c[1] + dy, c[2] + dz);
                     if (!mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains(needle)) continue;
+                    int[] at = new int[]{c[0] + dx, c[1] + dy, c[2] + dz};
+                    if (skip != null && skip.test(at)) continue;
                     bestD = d;
-                    best = new int[]{c[0] + dx, c[1] + dy, c[2] + dz};
+                    best = at;
                 }
             }
         }
@@ -207,10 +227,11 @@ final class Crafting {
 
     /** A crafting table within 12 of the bot, else one near the base (the bridge's findTable; height counts double). */
     int[] findTable(LocalPlayer p) {
-        int[] me = Jobs.here(p), t = findBlockAround(me, "crafting_table", 12, 6);
+        java.util.function.Predicate<int[]> dead = at -> !DEAD_TABLES.isEmpty() && DEAD_TABLES.contains(tableKey(at));
+        int[] me = Jobs.here(p), t = findBlockAround(me, "crafting_table", 12, 6, dead);
         if (t != null) return t;
         int[] b = base();
-        int[] bt = b != null ? findBlockAround(b, "crafting_table", 12, 6) : null;
+        int[] bt = b != null ? findBlockAround(b, "crafting_table", 12, 6, dead) : null;
         // S1 (D2 review): the strip mine's own table (commands.json's mine note) counts too, when it is still there
         // (loaded and a crafting table) and nearer than the base's (the bridge's "a table near it, the mine's, or the base's")
         int[] mt = mineTable();
@@ -222,7 +243,7 @@ final class Crafting {
     private int[] mineTable() {
         try {
             int[] t = StripMine.get().mineTable();
-            if (t == null || untrusted(t)) return null;
+            if (t == null || untrusted(t) || DEAD_TABLES.contains(tableKey(t))) return null;
             JsonObject mine = core.knowledge.places().get("mine");
             String mdim = mine != null && mine.has("dim") ? mine.get("dim").getAsString() : null;
             if (mdim != null && !mdim.equals(Storage.dim())) return null;
@@ -1259,7 +1280,7 @@ final class Crafting {
         String stage;
         long stageTick;
         int[] table;
-        boolean triedTable;
+        boolean triedTable, deadRetried;
         String lastError;
         /** Package G: the batch loop of the current recipe (kept through a fight; replaced for another grid once it is idle). */
         GridLoop loop;
@@ -1313,7 +1334,22 @@ final class Crafting {
                 c.stage = null;
                 return "wait";
             }
-            return now() - c.stageTick > 60 ? craftFail(s, st, CraftJob.TABLE_DID_NOT_OPEN) : "wait";
+            if (now() - c.stageTick <= 60) return "wait";
+            // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try another once
+            DEAD_TABLES.add(tableKey(c.table));
+            int[] other = c.deadRetried ? null : findTable(p);
+            if (other == null) return craftFail(s, st, CraftJob.tableDidNotOpen(Jobs.fmt(c.table), tableKey(c.table)));
+            c.deadRetried = true;
+            c.table = other;
+            c.stageTick = -1;
+            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(other[0] + 0.5, other[1] + 0.5, other[2] + 0.5)) > 4.4) {
+                Step walk = Step.walk(other, false);
+                walk.why = "the crafting table at " + Jobs.fmt(other);
+                s.splice(s.idx, List.of(walk));
+                s.stage = null;
+                s.stepStart = now();
+            }
+            return "wait";
         }
         int size = gridSize(p);
         // package G: a batch that was crafted is counted to the end, whatever menu a fight or a meal left open

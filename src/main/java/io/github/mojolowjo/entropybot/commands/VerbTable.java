@@ -114,6 +114,10 @@ public final class VerbTable {
         v("chop", "", "mining", O, "chop <logs> [log type] | chop trees <n> [log type] | chop status",
                 "fell trees in my areas (never next to builds or in protect boxes), pick up the logs, replant a sapling; leaves are left; 20 min at most",
                 "chop 16|chop trees 3 birch|chop status", "deposit");
+        v("gather", "", "mining", O, "gather <item> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
+                "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave), "
+                        + "chopped or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
+                "gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch|gather source oritech:raw_nickel mine strip nickel {n}", "deposit");
         v("explore", "", "mining", O, "explore [minutes]", "walk unvisited land inside my areas, then home", "explore 5", "poi");
         v("ores", "", "mining", P, "ores [name] | ores clear | ores prefer <ores>", "ores I left in place, nearest first; the preferred ore list", "ores iron|ores prefer diamond,iron",
                 "mine <ore> [n]", "ores [name], ores prefer (just looking)");

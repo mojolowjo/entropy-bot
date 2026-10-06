@@ -26,7 +26,7 @@ public final class Texts {
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume",
-            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop");
+            "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -52,7 +52,9 @@ public final class Texts {
             "Mining: mark mine (stand at the start facing the way to dig), stripmine [branches] [length] (try \"repeat forever stripmine\"), stripmine status|reset, stripmine ores collect|list (mine ores inside the mapped area, or only list them), stripmine turn left|right (a new mine from the corridor end; I turn by myself when the corridor is blocked), ores [name|clear]",
             "Mining for ores: mine strip <ores> [n] [at <mine>] (runs until n of them are mined), mine cave <ores> [n | <min>m] [at <cave>] (explores a cave, lights it, mines what it sees; remembers how far it got), "
                     + "ores: iron,diamond or iron_ore or any; ores prefer <ores> (the default list), caves (list), caves rename <old> <new>, explore [minutes] (walk unvisited land inside my areas, note what is there) | "
-                    + "Wood: chop <logs> [log type] | chop trees <n> [log type] (fell trees in my areas, pick up, replant; never next to builds), chop status",
+                    + "Wood: chop <logs> [log type] | chop trees <n> [log type] (fell trees in my areas, pick up, replant; never next to builds), chop status | "
+                    + "Gathering: gather <item> [n] [<min>m] (n into my bag: from storage, crafted or smelted, the raw items mined, chopped or farmed; 60 min at most), "
+                    + "gather status, gather sources [item], gather source <item> <command with {n}> | clear",
             "Farm: farm (one round: twerk till ripe, harvest, pick up, essence into blocks; try \"repeat forever farm\"), farm here (the farm is by me), farm compact block|prudentium|off, "
                     + "compact <item> [here|<place>|x y z] (the chests within 6 of you or me: 9 into a block, blocks back into their chest) | rs [x y z] (read the Refined Storage grid; \"where\" lists it then), rs take <item> [n], rs put <item|all> [n], rs disks [x y z] (which disks the drive holds, and how full) | pots [chests] (empty the botany pots at the base into the RS network, or the chests)",
             "Places of interest (I note them as I go): poi [n], poi <kind> (dungeon spawner, trial chamber, village, geode, mineshaft, lava lake, diamonds, loot chest...), poi show <id>, poi forget <id>, go poi <id>",

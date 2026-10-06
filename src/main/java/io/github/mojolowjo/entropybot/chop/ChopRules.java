@@ -168,6 +168,25 @@ public final class ChopRules {
     }
 
     /** What a status line says about the tree mods. */
+    /**
+     * P2: the index of the "chopaxecheck" step that closes the axe phase the failing step {@code idx} belongs to, or
+     * -1 (the failing step is not part of an axe fetch/craft: a "chopstep" comes first, or there is no check).
+     */
+    public static int axeCheckAfter(java.util.List<String> types, int idx) {
+        for (int j = Math.max(0, idx); j < types.size(); j++) {
+            String t = types.get(j);
+            if (t.equals("chopaxecheck")) return j > idx || !t.equals(types.get(idx)) ? j : -1;
+            if (t.equals("chopstep")) return -1;
+        }
+        return -1;
+    }
+
+    /** P2: the end note when fetching or crafting the axe failed and the chop went on by hand. */
+    public static String axeFailedNote(String what, String why) {
+        String w = why == null ? "" : why.replaceFirst("^(error|partial): ", "");
+        return "no axe (" + ("fetched".equals(what) ? "fetching" : "making") + " one failed: " + w + ") - chopped by hand";
+    }
+
     public static String modsLine(boolean fallingTrees, boolean treeChop) {
         return "fallingtrees: " + (fallingTrees ? "yes" : "no") + ", treechop: " + (treeChop ? "yes" : "no");
     }

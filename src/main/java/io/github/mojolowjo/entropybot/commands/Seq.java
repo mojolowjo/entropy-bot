@@ -174,6 +174,7 @@ public final class Seq {
         }
         if (Clearing.caught(this, r)) return;            // B7d D1: a trip a clear spliced in failed: the clear hears it and goes on
         if (routeTest != null && routeTest.caught(this, r, p)) return;      // a failed test trip is recorded, the next one goes on
+        if (Chopping.caught(this, r, p)) return;          // P2: a failed axe fetch/craft in a chop goes on by hand
         jobs.finish("error: " + r + " (while " + label + ")");
     }
 

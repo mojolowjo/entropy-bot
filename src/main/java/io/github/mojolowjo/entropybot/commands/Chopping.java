@@ -506,7 +506,34 @@ final class Chopping {
         return "next";
     }
 
+    /**
+     * P2: a step of the axe phase (the fetch or craft spliced between "chopaxe" and its "chopaxecheck") failed: clean up
+     * (close a menu, put the craft's grid back) and go on by hand from the check step, with the reason in the end note.
+     */
+    static boolean caught(Seq s, String why, LocalPlayer p) {
+        Chopping c = instance;
+        if (c == null || !c.runs.containsKey(s)) return false;
+        int j = ChopRules.axeCheckAfter(s.steps.stream().map(x -> x.type).toList(), s.idx);
+        if (j < 0) return false;
+        Seq.Step check = s.steps.get(j);
+        check.why = why;
+        try {
+            if (p != null && Gui.open(p)) Gui.close(p);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] chop: closing the menu after the axe failed: {}", e.toString());
+        }
+        LOG.info("[entropybot] chop: the axe step failed ({}) - going on by hand", why);
+        s.idx = j;
+        s.stepStart = c.now();
+        s.stage = null;
+        return true;
+    }
+
     private String axeCheck(Seq s, Seq.Step st, Run r, LocalPlayer p) {
+        if (st.why != null) {
+            r.axeNote = ChopRules.axeFailedNote(st.text, st.why);
+            if (axeSlot(p) < 0) return "next";
+        }
         int i = axeSlot(p);
         if (i >= 0) {
             r.axeNote = st.text + " a " + ChopRules.shortId(Gui.itemId(p.getInventory().getItem(i)));

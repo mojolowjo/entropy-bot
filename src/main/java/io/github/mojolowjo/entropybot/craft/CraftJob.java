@@ -106,6 +106,18 @@ public final class CraftJob {
     }
 
     public static final String TABLE_DID_NOT_OPEN = "error: the crafting table did not open";
+
+    /**
+     * P2: the table at pos answered the click but no menu came (in a Visual Workbench pack a plain
+     * minecraft:crafting_table set by a command never opens). key = "x y z|block id".
+     */
+    public static String tableDidNotOpen(String pos, String key) {
+        String id = key == null || key.indexOf('|') < 0 ? "" : key.substring(key.indexOf('|') + 1);
+        String hint = id.equals("minecraft:crafting_table")
+                ? " - it is a plain minecraft:crafting_table (one set by a command?); break it and place a crafting table by hand, or put another near me"
+                : " - next: put another crafting table near me";
+        return TABLE_DID_NOT_OPEN + " at " + pos + hint;
+    }
     public static final String SCREEN_CLOSED = "error: crafting screen was closed";
 
     // ---------------------------------------------------------------------------------------------------------------
