@@ -274,6 +274,9 @@ public final class SurfaceExport {
 
     // ---- the world as the scan sees it ---------------------------------------------------------------------------------
 
+    /** P3 (chop): the export's column source on the live level (client thread only), for tree candidates. */
+    public static SurfaceColumns.Source liveSource(ClientLevel level) { return INSTANCE.source(level); }
+
     private SurfaceColumns.Source source(ClientLevel level) {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         int max = level.getMaxBuildHeight() - 1;

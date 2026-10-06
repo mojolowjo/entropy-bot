@@ -111,6 +111,9 @@ public final class VerbTable {
         v("stripmine", "", "mining", P, "stripmine [branches] [length] | stripmine status | stripmine reset | stripmine ores collect|list | stripmine turn left|right",
                 "dig more branches at the marked mine (reset asks to confirm)", "stripmine 3 16|repeat forever stripmine", "stripmine status", "stripmine status");
         v("caves", "", "mining", P, "caves | caves rename <old> <new>", "the caves I know", "caves", "mine cave any 20 10m", "caves");
+        v("chop", "", "mining", O, "chop <logs> [log type] | chop trees <n> [log type] | chop status",
+                "fell trees in my areas (never next to builds or in protect boxes), pick up the logs, replant a sapling; leaves are left; 20 min at most",
+                "chop 16|chop trees 3 birch|chop status", "deposit");
         v("explore", "", "mining", O, "explore [minutes]", "walk unvisited land inside my areas, then home", "explore 5", "poi");
         v("ores", "", "mining", P, "ores [name] | ores clear | ores prefer <ores>", "ores I left in place, nearest first; the preferred ore list", "ores iron|ores prefer diamond,iron",
                 "mine <ore> [n]", "ores [name], ores prefer (just looking)");

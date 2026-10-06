@@ -90,6 +90,7 @@ public final class Guard {
             try {
                 BlockState st = b.defaultBlockState();
                 if (st.is(Tags.Blocks.ORES)) continue;
+                if (io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(b).toString())) continue;    // P3: a tree's log
                 if (st.hasBlockEntity()) { set.add(b); be++; }
                 else if (PROTECT_RE.matcher(BuiltInRegistries.BLOCK.getKey(b).toString()).find()) { set.add(b); named++; }
             } catch (RuntimeException ignored) {}
@@ -109,7 +110,8 @@ public final class Guard {
         Set<Block> s = protectedBlocks;
         if (s == null || level == null) return GuardCore.BlockInfo.UNKNOWN;
         BlockState st = level.getBlockState(pos);
-        return GuardCore.BlockInfo.of(true, st.hasBlockEntity(), s.contains(st.getBlock()));
+        boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());
+        return GuardCore.BlockInfo.of(true, be, s.contains(st.getBlock()));
     }
 
     public static String dimOf(Level level) {

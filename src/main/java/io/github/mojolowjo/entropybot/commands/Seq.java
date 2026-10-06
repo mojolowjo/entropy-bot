@@ -252,6 +252,7 @@ public final class Seq {
             case "placeblock": return Clearing.step(this, st, p, elapsed);       // B7d D1: dig, build, place
             default:
                 if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2
+                if (st.type.startsWith("chop")) return Chopping.get().step(this, st, p, elapsed);          // P3
                 if (st.type.startsWith("cave") || st.type.startsWith("explore") || st.type.startsWith("mineore"))
                     return CaveSteps.step(this, st, p, elapsed);                                            // B7d D3
                 return storage.crafting.step(this, st, p, elapsed);       // B7c: craft, smelt, farm, compact

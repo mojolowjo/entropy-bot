@@ -52,6 +52,14 @@ public final class ClearRules {
         return id.indexOf(':') >= 0 ? id : "minecraft:" + id;
     }
 
+    /**
+     * P3 (chop): TreeChop's partly chopped log ("treechop:chopped_log") has a block entity (its chop count) but is a tree's
+     * log, not someone's machine: the guard's floor, the protected list and the clear engine treat it as a plain log.
+     */
+    public static boolean choppedLog(String id) {
+        return id != null && id.endsWith(":chopped_log");
+    }
+
     /** A building block by id (PROTECT_RE); the registry walk adds every block entity and skips ores. */
     public static boolean builtId(String id) {
         return PROTECT_RE.matcher(fullId(id)).find();

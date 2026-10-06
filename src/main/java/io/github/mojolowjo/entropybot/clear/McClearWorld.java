@@ -80,7 +80,10 @@ public final class McClearWorld implements ClearWorld {
 
     @Override public boolean replaceable(int x, int y, int z) { return at(x, y, z).canBeReplaced(); }
 
-    @Override public boolean blockEntity(int x, int y, int z) { return at(x, y, z).hasBlockEntity(); }
+    @Override public boolean blockEntity(int x, int y, int z) {
+        BlockState st = at(x, y, z);
+        return st.hasBlockEntity() && !ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());     // P3: TreeChop's log
+    }
 
     @Override public boolean unbreakable(int x, int y, int z) {
         BlockState st = at(x, y, z);

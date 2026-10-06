@@ -710,6 +710,7 @@ public final class Commands implements Chains.Env {
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
         if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
         if (verb.equals("farm") && FarmCommand.instant(rest)) return Reply.now(crafting.farm(player, rest));
+        if (verb.equals("chop") && Chopping.instant(rest)) return Reply.now(Chopping.get().command(player, rest));    // P3: chop status
         // everything below may replace a running walk, but not a running task (find, recipe and close never interrupt)
         boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
         if (!quiet) {
@@ -814,6 +815,7 @@ public final class Commands implements Chains.Env {
                 return Mining.get().mine(player, rest, s -> null);
             }
             case "explore" -> { return Mining.get().explore(player, rest); }
+            case "chop" -> { return Chopping.get().command(player, rest); }             // P3: fell trees, pick up, replant
             case "upgrade" -> { return crafting.upgrade(player, rest); }         // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
@@ -1381,7 +1383,8 @@ public final class Commands implements Chains.Env {
             case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
                  "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade",
-                 "dig", "build", "place", "stripmine", "mine", "explore" -> {
+                 "dig", "build", "place", "stripmine", "mine", "explore", "chop" -> {
+                if (type.equals("chop") && Chopping.instant(text)) return Reply.now(Chopping.get().command(player, text));
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
                 if (type.equals("stripmine") && text.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, text));
                 if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
