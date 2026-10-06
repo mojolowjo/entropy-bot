@@ -101,8 +101,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         lastIdleCheck = now;
         try {
             List<SelfCheck.Finding> f = findings(p);
-            Set<String> supplyIds = new LinkedHashSet<>();
-            for (String id : c.suppliesMap().keySet()) supplyIds.add(Texts.shortId(id));
+            Set<String> supplyIds = c.ownerSupplyIds();      // the owner's gear targets only, never the autominer's defaults
             int free = 0;
             for (int i = 0; i < 36; i++) if (p.getInventory().getItem(i).isEmpty()) free++;
             Set<String> before = remembered();

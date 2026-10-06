@@ -735,7 +735,7 @@ public final class RouteRuntime implements RoutePlanner {
     static AreaBoxes readAreas(Level lvl) {
         List<int[]> out = new ArrayList<>();
         try {
-            for (Box a : Guard.INSTANCE.core.policy().areas) {
+            for (Box a : Guard.INSTANCE.core.basePolicy().areas) {     // 0.21.2: not the moving near-me zone
                 if (!OVERWORLD_ID.equals(a.dim)) continue;
                 out.add(new int[]{OVERWORLD, a.x1, a.z1, a.x2, a.z2, a.y1, a.y2});
             }

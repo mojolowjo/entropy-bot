@@ -158,13 +158,13 @@ public final class StripMine {
 
     /** inMapArea with the mod: one area's x/z range holds x z (y is ignored here). */
     boolean inArea(String dim, int x, int z) {
-        for (Box a : policy().areas) if (a.dim.equals(dim) && x >= a.x1 && x <= a.x2 && z >= a.z1 && z <= a.z2) return true;
+        for (Box a : policy().areas) if (a.dim.equals(dim) && a.columnIn(x, z)) return true;
         return false;
     }
 
     /** boxInMapArea: one area's x/z range holds the whole box. */
     boolean boxInArea(String dim, ClearBox b) {
-        for (Box a : policy().areas) if (a.dim.equals(dim) && b.x1() >= a.x1 && b.x2() <= a.x2 && b.z1() >= a.z1 && b.z2() <= a.z2) return true;
+        for (Box a : policy().areas) if (a.dim.equals(dim) && a.columnsInside(b.x1(), b.z1(), b.x2(), b.z2())) return true;
         return false;
     }
 

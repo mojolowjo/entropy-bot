@@ -3,8 +3,8 @@ package io.github.mojolowjo.entropybot.guard;
 /**
  * 0.21.2 (the owner, 2026-10-06: "anywhere near me should be fine for the bot to work near, like a radius of 16 blocks"):
  * the moving work zone around the owner. While it is on and the owner's spot is known (in view, else the companion's
- * fresh position in the bot's dimension), the box {@code r} blocks each way around them (a square, like
- * {@code area add <name> here <r>}) and {@link #Y_HALF} blocks below and above their feet counts as one more area for the
+ * fresh position in the bot's dimension), the CIRCLE of radius {@code r} around their feet column (horizontal distance
+ * at most r; a round {@link Box}) and {@link #Y_HALF} blocks below and above their feet counts as one more area for the
  * guard ({@link GuardCore#setNearZone}) and the commands' area checks. It only ADDS permission: protect boxes, the
  * floor (block entities, built blocks, the Nether and the End) and the lease rules are checked exactly as for any area,
  * and log/strict mode stays as it is. Owner unknown = no zone at that moment (no guessing).
@@ -45,10 +45,13 @@ public final class NearZone {
         if (!on) box = null;
     }
 
-    /** The zone around a spot: r each way, {@link #Y_HALF} down and up; null in a denied dimension (no work there). */
+    /**
+     * The zone around a spot: the circle of radius r around the column (x, z) (horizontal distance at most r), and
+     * {@link #Y_HALF} down and up; null in a denied dimension (no work there).
+     */
     public static Box boxAt(String dim, int x, int y, int z, int r) {
         if (dim == null || GuardCore.DENIED_DIMS.contains(dim)) return null;
-        return new Box(NAME, dim, x - r, y - Y_HALF, z - r, x + r, y + Y_HALF, z + r);
+        return Box.round(NAME, dim, x, z, r, y - Y_HALF, y + Y_HALF);
     }
 
     /** True when the spot lies in the zone around the owner (null owner = unknown = false). */
@@ -96,18 +99,18 @@ public final class NearZone {
         return !on || s < 0 ? 0 : Math.max(0, nowMs - s);
     }
 
-    /** "near me: 16 blocks (on, around you at 10 64 20 via view)" and the like. */
+    /** "near me: a circle of 16 blocks (on, around you at 10 64 20 via view)" and the like. */
     public String describe(long nowMs) {
-        if (!on) return "near me: off (radius " + r + " when on)";
+        if (!on) return "near me: off (a circle of " + r + " blocks when on)";
         Box b = box;
         String where;
         if (b != null) {
-            where = "around you at " + (b.x1 + r) + " " + (b.y1 + Y_HALF) + " " + (b.z1 + r) + (lastSource == null ? "" : " via " + lastSource);
+            where = "around you at " + b.cx + " " + (b.y1 + Y_HALF) + " " + b.cz + (lastSource == null ? "" : " via " + lastSource);
         } else {
             long u = unknownForMs(nowMs);
             where = "I don't know where you are" + (u > 0 ? " (" + u / 1000 + " s)" : "") + " - the zone is off until I see you or your companion";
         }
-        return "near me: " + r + " blocks (on, " + where + ")" + (errors > 0 ? " [" + errors + " errors, last: " + lastError + "]" : "");
+        return "near me: a circle of " + r + " blocks (on, " + where + ")" + (errors > 0 ? " [" + errors + " errors, last: " + lastError + "]" : "");
     }
 
     public long updates() { return updates; }

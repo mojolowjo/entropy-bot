@@ -121,7 +121,10 @@ public final class PolicyCommands {
     public boolean inAreas(String dim, int x, int z) {
         for (JsonElement e : effectiveAreas()) {
             JsonObject a = e.getAsJsonObject();
-            if (dimOf(a).equals(dim) && x >= n(a, "x1") && x <= n(a, "x2") && z >= n(a, "z1") && z <= n(a, "z2")) return true;
+            if (!dimOf(a).equals(dim)) continue;
+            if (a.has("round")) {                                            // 0.21.2: the near-me circle (Box knows the shape)
+                if (io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)) return true;
+            } else if (x >= n(a, "x1") && x <= n(a, "x2") && z >= n(a, "z1") && z <= n(a, "z2")) return true;
         }
         return false;
     }
@@ -136,6 +139,10 @@ public final class PolicyCommands {
 
     /** "-272 -64 to 223 431" (plus ", y 10..60" when the box has a height). */
     static String boxText(JsonObject b) {
+        if (b.has("round") && b.get("round").isJsonObject()) {
+            JsonObject rd = b.getAsJsonObject("round");
+            return "a circle of " + n(rd, "r") + " around " + n(rd, "cx") + " " + n(rd, "cz") + (hasY(b) ? ", y " + n(b, "y1") + ".." + n(b, "y2") : "");
+        }
         return n(b, "x1") + " " + n(b, "z1") + " to " + n(b, "x2") + " " + n(b, "z2") + (hasY(b) ? ", y " + n(b, "y1") + ".." + n(b, "y2") : "");
     }
 
@@ -163,6 +170,7 @@ public final class PolicyCommands {
     }
 
     static int boxGap(JsonObject b, int x, int y, int z) {
+        if (b.has("round")) return io.github.mojolowjo.entropybot.guard.Box.fromJson(b, DEFAULT_DIM).gap(x, y, z);     // 0.21.2: the circle
         int g = Math.max(Math.max(n(b, "x1") - x, 0), Math.max(x - n(b, "x2"), Math.max(n(b, "z1") - z, z - n(b, "z2"))));
         if (hasY(b)) g = Math.max(g, Math.max(n(b, "y1") - y, y - n(b, "y2")));
         return g;
@@ -240,7 +248,7 @@ public final class PolicyCommands {
                     p.getAsJsonObject("near").addProperty("on", arg.equals("on"));
                     guard.setNear(nearOn(), nearR());
                     saved.run();
-                    return "ok: near me " + arg + (arg.equals("on") ? " - I may work within " + nearR() + " blocks of you, wherever you are (protect boxes and the safety rules still hold)"
+                    return "ok: near me " + arg + (arg.equals("on") ? " - I may work in a circle of " + nearR() + " blocks around you, wherever you are (protect boxes and the safety rules still hold)"
                             : " - only my areas count now");
                 }
                 Integer r = arg.matches("^\\d{1,4}$") ? Integer.valueOf(arg) : null;
@@ -251,7 +259,7 @@ public final class PolicyCommands {
                 n.addProperty("on", true);
                 guard.setNear(true, r);
                 saved.run();
-                return "ok: near me " + r + " blocks (on) - I may work within " + r + " blocks of you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down)";
+                return "ok: near me " + r + " blocks (on) - I may work in a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down)";
             }
             // 0.21.2: "area protect ..." = protect, "area unprotect ..." = unprotect (the old words stay)
             if (sub.equals("protect")) {

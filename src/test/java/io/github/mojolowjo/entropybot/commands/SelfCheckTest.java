@@ -209,6 +209,25 @@ class SelfCheckTest {
     }
 
     @Test
+    void onlyTheOwnersSuppliesAreGearTargets() {
+        Set<String> defaults = Set.of("minecraft:iron_pickaxe");
+        // the autominer added its iron pickaxe; the owner never ran "supplies set": no gear targets
+        assertEquals(Set.of(), SelfCheck.ownerSupplyIds(Set.of("minecraft:iron_pickaxe"), null, defaults));
+        // set before 0.21.2 (no mark): everything but the autominer's default
+        assertEquals(Set.of("stone_pickaxe"), SelfCheck.ownerSupplyIds(Set.of("minecraft:stone_pickaxe", "minecraft:iron_pickaxe"), null, defaults));
+        // "supplies set" marked these: exactly those (the iron pickaxe too, when the owner named it)
+        assertEquals(Set.of("iron_pickaxe", "torch"), SelfCheck.ownerSupplyIds(Set.of("minecraft:iron_pickaxe", "minecraft:torch"), List.of("minecraft:iron_pickaxe", "minecraft:torch"), defaults));
+        // marked torch only, then the autominer added its pickaxe: the pickaxe is not the owner's
+        assertEquals(Set.of("torch"), SelfCheck.ownerSupplyIds(Set.of("minecraft:torch", "minecraft:iron_pickaxe"), List.of("minecraft:torch"), defaults));
+        // "supplies clear" marks nothing
+        assertEquals(Set.of(), SelfCheck.ownerSupplyIds(Set.of("minecraft:iron_pickaxe"), List.of(), defaults));
+        // so a worn iron pickaxe is never whispered for the autominer's default alone
+        List<SelfCheck.Finding> f = SelfCheck.run(with(good(), "tools", List.of(new SelfCheck.Tool("minecraft:iron_pickaxe", 5, 250))));
+        assertNull(SelfCheck.idle(Set.of(), f, SelfCheck.ownerSupplyIds(Set.of("minecraft:iron_pickaxe"), null, defaults), 20, 999 * MIN, -1).whisper());
+        assertTrue(SelfCheck.report(f).contains("iron_pickaxe is nearly broken"), "check still lists it");
+    }
+
+    @Test
     void restartKeepsTheRateAndTheCauses() {
         // the told causes and lastWhisper live in commands.json: a restart 1 minute after a whisper says nothing
         List<SelfCheck.Finding> f = SelfCheck.run(fresh(0));

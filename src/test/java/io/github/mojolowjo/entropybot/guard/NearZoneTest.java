@@ -22,8 +22,15 @@ class NearZoneTest {
     @Test
     void pointInZoneRadiusAndHeight() {
         int[] owner = {100, 64, 200};
-        assertTrue(NearZone.inZone(owner, OW, 16, OW, 116, 64, 184), "the corner of the square");
-        assertFalse(NearZone.inZone(owner, OW, 16, OW, 117, 64, 200), "17 blocks east");
+        assertTrue(NearZone.inZone(owner, OW, 16, OW, 116, 64, 200), "16 east: on the edge (r)");
+        assertTrue(NearZone.inZone(owner, OW, 16, OW, 100, 64, 184), "16 north: on the edge");
+        assertFalse(NearZone.inZone(owner, OW, 16, OW, 117, 64, 200), "17 east (r + 1)");
+        assertFalse(NearZone.inZone(owner, OW, 16, OW, 116, 64, 184), "the old square's corner is outside the circle");
+        assertFalse(NearZone.inZone(owner, OW, 16, OW, 114, 64, 214), "diagonal at r * 1.2 (about 19.2) is outside");
+        assertFalse(NearZone.inZone(owner, OW, 16, OW, 112, 64, 212), "diagonal at about 17 is outside");
+        assertTrue(NearZone.inZone(owner, OW, 16, OW, 111, 64, 211), "diagonal at about 15.6 is inside");
+        assertTrue(NearZone.inZone(owner, OW, 16, OW, 108, 64, 208), "diagonal at r * 0.7 (about 11.3) is inside");
+        assertTrue(NearZone.inZone(owner, OW, 16, OW, 89, 64, 200), "r * 0.7 west is inside");
         assertTrue(NearZone.inZone(owner, OW, 16, OW, 100, 48, 200), "16 down");
         assertFalse(NearZone.inZone(owner, OW, 16, OW, 100, 47, 200), "17 down");
         assertFalse(NearZone.inZone(owner, OW, 16, OW, 100, 81, 200), "17 up");
@@ -31,6 +38,60 @@ class NearZoneTest {
         assertFalse(NearZone.inZone(owner, OW, 16, "minecraft:the_nether", 100, 64, 200), "another dimension");
         assertNull(NearZone.boxAt("minecraft:the_nether", 0, 64, 0, 16), "no zone in the Nether");
         assertNull(NearZone.boxAt("minecraft:the_end", 0, 64, 0, 16), "no zone in the End");
+    }
+
+    @Test
+    void boxesInTheCircleGoByTheirCorners() {
+        Box c = NearZone.boxAt(OW, 0, 64, 0, 16);
+        assertTrue(c.round);
+        assertTrue(new Box("t", OW, -11, 60, -11, 11, 70, 11).inside(c), "corners at about 15.6");
+        assertFalse(new Box("t", OW, -12, 60, -12, 12, 70, 12).inside(c), "fits the square, not the circle (corners at about 17)");
+        assertFalse(new Box("t", OW, 10, 60, 0, 16, 70, 13).inside(c), "one corner out");
+        assertTrue(new Box("t", OW, 0, 60, 0, 16, 70, 0).inside(c), "a strip to the edge");
+        assertFalse(new Box("t", OW, 0, 60, -2, 16, 70, 0).inside(c), "(16, -2) is just outside");
+        assertFalse(new Box("t", OW, -2, 40, -2, 2, 70, 2).inside(c), "y range below the zone");
+        assertFalse(new Box("t", OW, -2, 60, -2, 2, 81, 2).inside(c), "y range above the zone");
+        // the gap the walking fence uses
+        assertEquals(0, c.gap(16, 64, 0));
+        assertEquals(1, c.gap(17, 64, 0));
+        assertEquals(1, c.gap(12, 64, 12), "about 16.97 away: ceil(distance - r) = 1");
+        assertEquals(4, c.gap(14, 64, 14), "about 19.8 away: 4");
+        assertEquals(3, c.gap(0, 83, 0), "3 above the top");
+        // JSON round trip keeps the shape
+        Box j = Box.fromJson(c.toJson(), OW);
+        assertTrue(j.round);
+        assertEquals(16, j.r);
+        assertFalse(j.contains(OW, 16, 64, 16));
+        assertTrue(j.contains(OW, 16, 64, 0));
+        // the miner's clipping: strips that each lie inside the circle and cover exactly its columns
+        java.util.List<int[]> strips = c.clip(new int[]{-40, 60, -40, 40, 70, 40});
+        int cols = 0;
+        for (int[] s : strips) {
+            assertTrue(new Box("s", OW, s[0], s[1], s[2], s[3], s[4], s[5]).inside(c), java.util.Arrays.toString(s));
+            cols += (s[3] - s[0] + 1) * (s[5] - s[2] + 1);
+        }
+        int expect = 0;
+        for (int x = -16; x <= 16; x++) for (int z = -16; z <= 16; z++) if (x * x + z * z <= 256) expect++;
+        assertEquals(expect, cols, "every column of the circle, none outside");
+        assertTrue(c.clip(new int[]{17, 60, 17, 30, 70, 30}).isEmpty());
+        // an ordinary rectangle is unchanged
+        Box rect = new Box("a", OW, 0, -64, 0, 10, 300, 10);
+        assertEquals(1, rect.clip(new int[]{-5, 60, -5, 5, 70, 5}).size());
+        assertTrue(new Box("t", OW, 0, 60, 0, 10, 70, 10).inside(rect));
+        assertTrue(rect.columnsInside(0, 0, 10, 10));
+    }
+
+    @Test
+    void roundZoneThroughTheGuard() {
+        GuardCore g = strict(List.of(), List.of());
+        g.setNearZone(NearZone.boxAt(OW, 0, 64, 0, 16));
+        assertTrue(g.checkBoxes(OW, 16, 64, 0, "go").allowed(), "r");
+        assertFalse(g.checkBoxes(OW, 17, 64, 0, "go").allowed(), "r + 1");
+        assertFalse(g.checkBoxes(OW, 14, 64, 14, "go").allowed(), "diagonal outside");
+        assertTrue(g.lease("j", "t", new Box("t", OW, -11, 63, -11, 11, 65, 11), false, false).startsWith("L"));
+        assertTrue(g.lease("j", "t", new Box("t", OW, -12, 63, -12, 12, 65, 12), false, false).startsWith("error"), "no gap at the square's corners");
+        assertFalse(GuardCore.cellLeasable(g.policy(), OW, 13, 64, 13));
+        assertTrue(GuardCore.cellLeasable(g.policy(), OW, 11, 64, 11));
     }
 
     @Test

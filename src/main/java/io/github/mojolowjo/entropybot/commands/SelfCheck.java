@@ -119,15 +119,35 @@ public final class SelfCheck {
 
     /**
      * What the idle check may whisper at all: the bag (when full), no base, no food chest; and gear (a worn tool, tool
-     * care) only for an item the supplies list names (the owner's gear targets - "supplies set", or the autominer's own
-     * defaults once it was switched on). Everything else (areas, mode, home, the mine, the iron pickaxe advice, hooks,
-     * routing, the companion, the near-me zone) is for {@code check} only.
+     * care) only for an item the OWNER put in the supplies ({@link #ownerSupplyIds}; never the autominer's own defaults).
+     * Everything else (areas, mode, home, the mine, the iron pickaxe advice, hooks, routing, the companion, the near-me
+     * zone) is for {@code check} only.
      */
     public static boolean idleWorthy(Finding f, Set<String> supplyIds) {
         String k = f.key();
         if (k.equals("bag") || k.equals("base") || k.equals("food")) return true;
         String id = k.startsWith("tool:") ? k.substring(5) : k.startsWith("toolcare:") ? k.substring(9) : null;
         return id != null && supplyIds != null && supplyIds.contains(Texts.shortId(id));
+    }
+
+    /**
+     * 0.21.2: the supplies the owner set, as short ids. marked: commands.json "suppliesOwner" (the ids "supplies set"
+     * wrote; null when it was never written - supplies set before 0.21.2): then every supply but the autominer's own
+     * defaults counts as the owner's. Only ids still in the supplies count.
+     */
+    public static Set<String> ownerSupplyIds(Set<String> supplies, List<String> marked, Set<String> autominerDefaults) {
+        Set<String> out = new LinkedHashSet<>();
+        Set<String> m = null, defaults = new java.util.HashSet<>();
+        if (marked != null) {
+            m = new java.util.HashSet<>();
+            for (String s : marked) m.add(Texts.shortId(s));
+        }
+        if (autominerDefaults != null) for (String s : autominerDefaults) defaults.add(Texts.shortId(s));
+        for (String id : supplies == null ? Set.<String>of() : supplies) {
+            String s = Texts.shortId(id);
+            if (m != null ? m.contains(s) : !defaults.contains(s)) out.add(s);
+        }
+        return out;
     }
 
     /** The idle check's outcome: the one line to whisper (null: none), and the causes told so far (to keep). */

@@ -497,6 +497,14 @@ class CommandsTest {
         assertEquals(0, pc.areas().size());
         assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 100, 64, 100, "minecraft:overworld"));
         assertEquals(17, FenceRules.areaGap(pc.effectiveAreas(), 100, 97, 100, "minecraft:overworld"), "the zone's height counts");
+        // the real zone is a circle: the JSON checks use it too
+        g.near = io.github.mojolowjo.entropybot.guard.NearZone.boxAt("minecraft:overworld", 100, 64, 100, 16).toJson();
+        assertTrue(pc.inAreas("minecraft:overworld", 116, 100), "r");
+        assertFalse(pc.inAreas("minecraft:overworld", 117, 100), "r + 1");
+        assertFalse(pc.inAreas("minecraft:overworld", 114, 114), "the square's corner area");
+        assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 111, 64, 111, "minecraft:overworld"));
+        assertEquals(4, FenceRules.areaGap(pc.effectiveAreas(), 114, 64, 114, "minecraft:overworld"));
+        assertEquals("a circle of 16 around 100 100, y 48..80", PolicyCommands.boxText(g.near));
         // a broken near entry falls back to the defaults
         p.add("near", new com.google.gson.JsonPrimitive("x"));
         assertTrue(pc.nearOn());

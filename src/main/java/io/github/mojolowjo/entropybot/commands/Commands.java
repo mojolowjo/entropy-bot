@@ -174,11 +174,30 @@ public final class Commands implements Chains.Env {
         return fenceOn() && inAreas(Storage.dim(), me[0], me[2]);
     }
 
+    /** Only the owner's "supplies set|clear" (PM, dashboard, bridge) calls this: it also notes the ids as the owner's. */
     void setSupplies(Map<String, Integer> s) {
         JsonObject o = new JsonObject();
         s.forEach(o::addProperty);
         brainStore.data().add("supplies", o);
+        JsonArray own = new JsonArray();             // 0.21.2: the owner's gear targets (the autominer's defaults never land here)
+        s.keySet().forEach(own::add);
+        brainStore.data().add("suppliesOwner", own);
         saved();
+    }
+
+    /**
+     * 0.21.2: the supplies the OWNER set (their gear targets), short ids. commands.json "suppliesOwner" (written by
+     * "supplies set"); without it (set before 0.21.2) every supply except the autominer's own default
+     * ({@link Chains#AUTOMINER_SUPPLIES}) counts as the owner's.
+     */
+    java.util.Set<String> ownerSupplyIds() {
+        List<String> marked = null;
+        JsonObject b = brainStore.data();
+        if (b.has("suppliesOwner") && b.get("suppliesOwner").isJsonArray()) {
+            marked = new ArrayList<>();
+            for (JsonElement e : b.getAsJsonArray("suppliesOwner")) if (e.isJsonPrimitive()) marked.add(e.getAsString());
+        }
+        return SelfCheck.ownerSupplyIds(suppliesMap().keySet(), marked, Chains.AUTOMINER_SUPPLIES.keySet());
     }
 
     // ---- package B (2026-10-03): the hotbar layout and the tool policy, commands.json "hotbar" {"1":"pickaxe",...} and "toolOres" ----

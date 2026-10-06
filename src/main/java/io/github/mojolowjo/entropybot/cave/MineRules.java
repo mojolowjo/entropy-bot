@@ -189,15 +189,10 @@ public final class MineRules {
         boolean any = false;
         for (Box a : areas) {
             if (!a.dim.equals(dim)) continue;
-            int[] c = {Math.max(b[0], a.x1), b[1], Math.max(b[2], a.z1), Math.min(b[3], a.x2), b[4], Math.min(b[5], a.z2)};
-            if (!a.allY()) {
-                c[1] = Math.max(c[1], a.y1);
-                c[4] = Math.min(c[4], a.y2);
-            }
-            if (c[0] > c[3] || c[1] > c[4] || c[2] > c[5]) continue;
+            // 0.21.2: Box.clip knows the shape (a round near-me zone gives strips that each lie inside its circle)
+            List<int[]> parts = new ArrayList<>(a.clip(b));
+            if (parts.isEmpty()) continue;
             any = true;
-            List<int[]> parts = new ArrayList<>();
-            parts.add(c);
             for (Box p : protect) {
                 if (!p.dim.equals(dim)) continue;
                 List<int[]> q = new ArrayList<>();

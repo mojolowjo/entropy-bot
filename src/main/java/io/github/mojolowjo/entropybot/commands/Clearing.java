@@ -1117,7 +1117,7 @@ public final class Clearing {
         var pol = Core.INSTANCE.guard.core.policy();
         String dim = Storage.dim();
         for (var a : pol.areas) {
-            if (a.dim.equals(dim) && b.x1() >= a.x1 && b.x2() <= a.x2 && b.z1() >= a.z1 && b.z2() <= a.z2) return true;
+            if (a.dim.equals(dim) && a.columnsInside(b.x1(), b.z1(), b.x2(), b.z2())) return true;     // a round area: its circle
         }
         return false;
     }
