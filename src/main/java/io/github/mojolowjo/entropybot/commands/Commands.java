@@ -714,6 +714,8 @@ public final class Commands implements Chains.Env {
         // memory lookups and edits never interrupt a job
         if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
         if (verb.equals("where")) return Reply.now(storage.where(player, rest));
+        if (verb.equals("have")) return Reply.now(storage.have(player, rest));                 // C2 shared stock
+        if (verb.equals("stock")) return Reply.now(storage.stockList(player, rest));
         if (verb.equals("trust") || verb.equals("untrust")) return Reply.now(storage.trust(verb, rest));
         if (verb.equals("zone")) return Reply.now(DigCommands.zone(this, player, rest, from));        // B7d D1
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
@@ -845,6 +847,8 @@ public final class Commands implements Chains.Env {
             case "use" -> { return storage.use(player, rest); }
             case "wear", "equip" -> { return Gui.wearArmor(player); }
             case "where" -> { return storage.where(player, rest); }
+            case "have" -> { return storage.have(player, rest); }
+            case "stock" -> { return storage.stockList(player, rest); }
             case "trust", "untrust" -> { return storage.trust(verb, rest); }
             // B7c: crafting, the furnace, fetching, the farm round and compact
             case "craft" -> { return crafting.craft(player, rest, null); }
@@ -1506,7 +1510,7 @@ public final class Commands implements Chains.Env {
             // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
             case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
-            case "take", "put", "close", "drop", "use", "wear", "equip", "where", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
+            case "take", "put", "close", "drop", "use", "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
                  "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade",
                  "dig", "build", "place", "stripmine", "mine", "explore", "chop" -> {

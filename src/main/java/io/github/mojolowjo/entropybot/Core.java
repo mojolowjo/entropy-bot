@@ -60,6 +60,32 @@ public final class Core {
 
     public BotFiles files() { return files; }
 
+    /** C2: writes entropybot/stock.json (see {@link io.github.mojolowjo.entropybot.storage.Stock}) on change, at most every 5 s. */
+    private final io.github.mojolowjo.entropybot.storage.Stock.Writer stockWriter = new io.github.mojolowjo.entropybot.storage.Stock.Writer(5000);
+    private int stockErrors;
+
+    private void writeStock() {
+        try {
+            if (files == null) return;
+            net.minecraft.client.player.LocalPlayer p = Minecraft.getInstance().player;
+            if (p == null) return;
+            String inv = null;
+            java.nio.file.Path f = files.root().resolve("owner-inv.json");
+            if (java.nio.file.Files.exists(f)) inv = java.nio.file.Files.readString(f, java.nio.charset.StandardCharsets.UTF_8);
+            io.github.mojolowjo.entropybot.storage.Stock s = io.github.mojolowjo.entropybot.storage.Stock.build(
+                    io.github.mojolowjo.entropybot.gui.Gui.inventory(p), knowledge.chests(), knowledge.places(), knowledge.rs(), inv, System.currentTimeMillis());
+            String json = stockWriter.due(s, System.currentTimeMillis());
+            if (json == null) return;
+            String r = files.writeJson("stock.json", json);
+            if (!r.startsWith("ok")) {
+                stockWriter.failed();
+                if (stockErrors++ < 5) LOG.warn("[entropybot] stock.json: {}", r);
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            if (stockErrors++ < 5) LOG.warn("[entropybot] stock.json: {}", e.toString());
+        }
+    }
+
     public long tick() { return tick; }
 
     /** Once per client tick, from the mod's event listener. Never lets an exception out. */
@@ -114,6 +140,7 @@ public final class Core {
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
             reflexes.tick(tick);
             knowledge.flushIfDue(tick);
+            if (tick % 20 == 0) writeStock();                                   // C2: stock.json for the dashboard
             // package H: what the caps dropped, in the log
             String pruned = knowledge.takePruneNote();
             if (pruned != null) LOG.info("[entropybot] knowledge: {}", pruned);

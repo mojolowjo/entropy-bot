@@ -13,6 +13,7 @@ import io.github.mojolowjo.entropybot.gui.GuiCore;
 import io.github.mojolowjo.entropybot.gui.McMenu;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.storage.RsCounts;
+import io.github.mojolowjo.entropybot.storage.Stock;
 import io.github.mojolowjo.entropybot.storage.StorageRules;
 import io.github.mojolowjo.entropybot.storage.StorageRules.Spot;
 import net.minecraft.client.Minecraft;
@@ -449,8 +450,40 @@ public final class Storage {
 
     /** "where <item>". */
     String where(LocalPlayer p, String text) {
-        return StorageRules.where(text, Gui.inventory(p), core.knowledge.rs(), core.knowledge.chests(), places(), System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        String base = StorageRules.where(text, Gui.inventory(p), core.knowledge.rs(), core.knowledge.chests(), places(), now);
+        // C2: the owner's own bag (owner-inv.json from the companion), when there is data
+        Stock s = stock(p);
+        String q = (text == null ? "" : text).toLowerCase().replaceFirst("^minecraft:", "").trim();
+        if (q.isEmpty() || !s.ownerData()) return base;
+        java.util.List<String> mine = new java.util.ArrayList<>();
+        for (Map.Entry<String, Integer> e : s.ownerMatching(q).entrySet()) mine.add("you carry " + e.getValue() + " " + e.getKey() + " (" + Texts.ago(s.ownerSeen(), now) + ")");
+        if (mine.isEmpty()) return base;
+        String own = String.join(" | ", mine.subList(0, Math.min(3, mine.size())));
+        return base.startsWith("no ") ? own : base + " | " + own;
     }
+
+    /** C2: the shared stock now (the bag, the chest notes, the RS readings, the owner's bag). */
+    Stock stock(LocalPlayer p) {
+        return Stock.build(p == null ? null : Gui.inventory(p), core.knowledge.chests(), places(), core.knowledge.rs(), ownerInv(core), System.currentTimeMillis());
+    }
+
+    /** owner-inv.json's text (the dashboard writes it from the companion), or null. */
+    public static String ownerInv(Core core) {
+        try {
+            if (core.files() == null) return null;
+            java.nio.file.Path f = core.files().root().resolve("owner-inv.json");
+            return java.nio.file.Files.exists(f) ? java.nio.file.Files.readString(f, java.nio.charset.StandardCharsets.UTF_8) : null;
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** C2: "have [item]". */
+    String have(LocalPlayer p, String text) { return stock(p).have(text); }
+
+    /** C2: "stock [filter]". */
+    String stockList(LocalPlayer p, String text) { return stock(p).list(text); }
 
     // ---- corpses (the server runs the Corpse mod) ----
 
