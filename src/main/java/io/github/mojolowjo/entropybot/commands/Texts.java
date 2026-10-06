@@ -14,10 +14,10 @@ public final class Texts {
 
     /** What allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
     public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "have", "stock", "find",
-            "recipe", "come", "follow", "goto", "stop", "restart", "hold");
+            "recipe", "come", "follow", "goto", "stop", "restart", "hold", "scout");
 
     public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
-            + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, poi, poi show <id>";
+            + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, poi, poi show <id>, scout <dir> [n], find nearest <thing>";
 
     /** Every command word; routine names can't use these. */
     public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
@@ -27,7 +27,7 @@ public final class Texts {
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume", "escort",
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook",
-            "bootstrap", "sleep", "light", "junk", "hold", "give", "carry", "unload", "fetch", "attack");
+            "bootstrap", "sleep", "light", "junk", "hold", "give", "carry", "unload", "fetch", "attack", "scout");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -36,7 +36,7 @@ public final class Texts {
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
             "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep");
+            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "scout");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");

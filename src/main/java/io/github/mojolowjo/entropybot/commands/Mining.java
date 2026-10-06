@@ -24,6 +24,7 @@ import io.github.mojolowjo.entropybot.clear.Pos;
 import io.github.mojolowjo.entropybot.engine.Hotbar;
 import io.github.mojolowjo.entropybot.guard.Box;
 import io.github.mojolowjo.entropybot.gui.Gui;
+import io.github.mojolowjo.entropybot.scout.ScoutRules;
 import io.github.mojolowjo.entropybot.storage.StorageRules;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -245,6 +246,7 @@ final class Mining {
             case "cavexz":
             case "caverestart": return caveStep(s, st, p, elapsed);
             case "explore": return exploreStep(s, p);
+            case "explorescout": return scoutStep(s, p);
             case "mineore": return mineStep(s, st, p);
             case "mineoretool": return toolGetStep(s, st, p);
             case "mineorecheck": return toolCheckStep(s, st, p);
@@ -323,6 +325,142 @@ final class Mining {
         }
         ex.targetAt = now();
         return "wait";
+    }
+
+    // ==== C8 scout ====
+
+    static final class ScRun {
+        ScoutRules.Plan plan;
+        int[] start, reached;
+        int leg = -1;
+        long until, legAt;
+        String blocked;
+        final Map<Integer, String> mobs = new HashMap<>();
+    }
+
+    private String lastScout = "no scouting yet";
+
+    /** "scout <dir|x z> [n] [<min>m] [from me]" / "scout status": walk out in legs inside the areas, note, come back. */
+    String scout(LocalPlayer p, String rest, int[] ownerAt) {
+        ScoutRules.Parsed m = ScoutRules.parse(rest);
+        if (m.kind() == ScoutRules.Kind.ERROR) return m.error();
+        if (m.kind() == ScoutRules.Kind.STATUS) {
+            for (Map.Entry<Seq, Object> e : runs.entrySet()) if (e.getValue() instanceof ScRun && jobs.running()) return "scouting: " + jobs.job.status;
+            return "last scout: " + lastScout;
+        }
+        String busy = busyText();
+        if (busy != null) return busy;
+        String d = dim();
+        try {
+            if (boxes(policy(), "areas").isEmpty()) return "error: I scout only inside my areas, and there are none - " + PolicyCommands.AREA_HINT;
+        } catch (MineRules.BadPolicy e) {
+            return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't scout");
+        }
+        int[] start = Jobs.here(p);
+        if (m.fromMe()) {
+            if (ownerAt == null) return "error: I can't see you (and no companion position) - say it without \"from me\"";
+            start = ownerAt;
+        }
+        if (!commands.inAreas(d, start[0], start[2])) return "error: " + start[0] + " " + start[2] + " is outside my areas - " + PolicyCommands.AREA_HINT;
+        final int y = start[1];
+        ScoutRules.Plan plan = ScoutRules.legs(start[0], start[2], m, (x, z) -> commands.inAreas(d, x, z) && jobs.goalAllowed(x, y, z) == null);
+        if (plan.legs().isEmpty()) {
+            if (plan.cutAt() != null) return "error: " + plan.dirText() + " leaves my areas at once (" + plan.cutAt()[0] + " " + plan.cutAt()[1] + ") - " + PolicyCommands.AREA_HINT;
+            return "error: that is where I start - name a direction or a farther point";
+        }
+        ScRun sc = new ScRun();
+        sc.plan = plan;
+        sc.start = start;
+        sc.reached = new int[]{start[0], start[2]};
+        sc.until = now() + m.minutes() * 1200L;
+        List<Seq.Step> steps = new ArrayList<>();
+        if (m.fromMe()) steps.add(Seq.Step.walk(start, true));
+        steps.add(new Seq.Step("explorescout"));
+        Seq s = new Seq(jobs, storage, "scouting " + plan.blocks() + " " + plan.dirText(), steps, "always");
+        runs.put(s, sc);
+        String r = jobs.startSeq(s, "always");
+        jobs.job.holdOnFight = true;              // a fight (and a meal) holds the walk, it doesn't end it
+        return r;
+    }
+
+    private String scoutStep(Seq s, LocalPlayer p) {
+        ScRun sc = runs.get(s) instanceof ScRun x ? x : null;
+        if (sc == null) return "the scout run is gone";
+        IBaritone b = Jobs.baritone();
+        int[] me = Jobs.here(p);
+        if (now() % 10 == 0) noteMobs(p, sc);
+        if (now() % 20 == 0) notes().markExplored(ExploreRules.around(dim(), me[0], me[2]));
+        String why = now() > sc.until ? "the time is up" : null;
+        if (why == null && sc.leg >= 0) {
+            int[] t = sc.plan.legs().get(sc.leg);
+            boolean there = Math.abs(me[0] - t[0]) + Math.abs(me[2] - t[1]) <= 4;
+            if (there) {
+                sc.reached = new int[]{me[0], me[2]};
+            } else if (now() - sc.legAt < 20 || (b != null && !Jobs.idle(b) && now() - sc.legAt < ExploreRules.WALK_TICKS)) {
+                s.setStatus(s.label + " - leg " + (sc.leg + 1) + "/" + sc.plan.legs().size() + " to " + t[0] + " " + t[1]);
+                return "wait";
+            } else {
+                sc.reached = new int[]{me[0], me[2]};
+                sc.blocked = t[0] + " " + t[1] + " (" + (p.isInWater() ? "water" : p.isInLava() ? "lava" : "no way found") + ")";
+            }
+        }
+        if (why == null && sc.blocked == null && sc.leg + 1 < sc.plan.legs().size()) {
+            sc.leg++;
+            int[] t = sc.plan.legs().get(sc.leg);
+            if (b != null) {
+                Jobs.safeSettings();
+                b.getCustomGoalProcess().setGoalAndPath(new GoalXZ(t[0], t[1]));
+            }
+            sc.legAt = now();
+            return "wait";
+        }
+        Map<String, Integer> mobs = new java.util.TreeMap<>();
+        for (String k : sc.mobs.values()) mobs.merge(k, 1, Integer::sum);
+        String text = ScoutRules.report(sc.plan, sc.start, sc.reached, spotsPois(), spotsOres(), mobs, sc.blocked, why) + "; back to the start";
+        lastScout = text;
+        s.note = text;
+        s.splice(s.idx + 1, List.of(Seq.Step.walk(sc.start, true)));
+        notes().flush();
+        return "next";
+    }
+
+    /** Hostile mobs within 32 (as the defence judges them), by entity id, so one mob counts once. */
+    private void noteMobs(LocalPlayer p, ScRun sc) {
+        try {
+            var h = io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE;
+            for (net.minecraft.world.entity.Mob mob : p.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class, p.getBoundingBox().inflate(32),
+                    mob -> mob.isAlive() && h.kind(mob, false).counts())) {
+                if (sc.mobs.size() < 500) sc.mobs.putIfAbsent(mob.getId(), BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath());
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] scout: mob scan failed: {}", e.toString());
+        }
+    }
+
+    private List<ScoutRules.Spot> spotsPois() {
+        List<ScoutRules.Spot> out = new ArrayList<>();
+        for (ExploreRules.Poi q : pois()) out.add(new ScoutRules.Spot(q.kind(), q.x(), q.y(), q.z(), q.id()));
+        return out;
+    }
+
+    private List<ScoutRules.Spot> spotsOres() {
+        List<ScoutRules.Spot> out = new ArrayList<>();
+        String d = dim();
+        for (Map.Entry<String, JsonObject> e : notes().ores().entrySet()) {
+            try {
+                JsonObject o = e.getValue();
+                if (!(o.has("dim") ? o.get("dim").getAsString() : "minecraft:overworld").equals(d)) continue;
+                String[] k = e.getKey().trim().split("\\s+");
+                String id = o.get("id").getAsString();
+                out.add(new ScoutRules.Spot(id.startsWith("minecraft:") ? id.substring(10) : id, Integer.parseInt(k[0]), Integer.parseInt(k[1]), Integer.parseInt(k[2]), -1));
+            } catch (RuntimeException ignored) {}
+        }
+        return out;
+    }
+
+    /** "find nearest <poi kind|ore>". */
+    String findNearest(LocalPlayer p, String what) {
+        return ScoutRules.nearest(what, spotsPois(), spotsOres(), Jobs.here(p));
     }
 
     // ==== mine cave ====
