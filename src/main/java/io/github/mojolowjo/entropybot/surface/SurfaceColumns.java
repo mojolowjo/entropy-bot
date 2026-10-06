@@ -79,6 +79,27 @@ public final class SurfaceColumns {
     }
 
     /**
+     * P4 (0.19.10, the fast channel's GET /column): one column by the same rule as {@link #scan}: {ground y, family,
+     * canopy y}; ground and canopy -1 when there is none. A throwing source gives {-1, 0, -1}.
+     */
+    public static int[] column(Source src, int x, int z, int minY) {
+        int canopy = -1;
+        try {
+            for (int y = src.top(x, z); y >= minY; y--) {
+                int k = src.kind(x, y, z);
+                if (k == LEAVES) {
+                    if (canopy < 0) canopy = y;
+                } else if (k == GROUND) {
+                    return new int[] {y, src.family(x, y, z), canopy};
+                }
+            }
+            return new int[] {-1, 0, canopy};
+        } catch (RuntimeException e) {
+            return new int[] {-1, 0, -1};
+        }
+    }
+
+    /**
      * v2: from the top ground block gy, walks down the GROUND run to its underside u (water and the solid under it are one
      * run), then across AIR, PLANT and LEAVES to the next GROUND block (g2, f2) and down its run to u2. A run that reaches
      * minY (the world's min build height) has its underside AT minY: the page draws it from the floor. One walk of the

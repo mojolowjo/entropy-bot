@@ -55,6 +55,7 @@ public final class GatherSources {
     static final Pattern LOG = Pattern.compile("^minecraft:(?:stripped_)?([a-z_]+?)_(log|wood)$");
     static final Pattern NETHER_WOOD = Pattern.compile("^(crimson|warped)$");
     static final Pattern CROP = Pattern.compile("^minecraft:(wheat|wheat_seeds|carrot|potato|beetroot|beetroot_seeds)$|^mysticalagriculture:(?!(prudentium|tertium|imperium|supremium|insanium)_)[a-z_]+_essence$");
+    static final Pattern MEAT = Pattern.compile("^minecraft:(beef|porkchop|chicken|mutton|rabbit|cod|salmon|tropical_fish|leather|rabbit_hide|feather)$");
     /** Blocks the "mine" verb may take (MineRules.EXTRA): the item, the block, items per block. */
     static final Map<String, Object[]> BLOCKS = Map.of(
             "minecraft:sand", new Object[]{"sand", 1},
@@ -83,6 +84,10 @@ public final class GatherSources {
         if (lm.find()) {
             if (NETHER_WOOD.matcher(lm.group(1)).find()) return Source.none(item, "it comes from the Nether, where I don't go - put some in the base chests");
             return new Source(Kind.LOG, item, null, null, 1, lm.group(1), null, null);
+        }
+        // P5: raw meat and fish come from animals; there is no hunting (breeding and hunting: later, the owner 2026-10-05)
+        if (MEAT.matcher(item).find()) {
+            return Source.none(item, "it comes from animals and hunting is off - put some " + shortId(item) + " in the base chests (then gather cooks it)");
         }
         if (CROP.matcher(item).find()) return new Source(Kind.CROP, item, null, null, 1, null, null, null);
         if (BLOCKS.containsKey(item)) {

@@ -254,6 +254,7 @@ public final class Seq {
             default:
                 if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2
                 if (st.type.startsWith("chop")) return Chopping.get().step(this, st, p, elapsed);          // P3
+                if (st.type.startsWith("plant")) return FarmPlanting.get().step(this, st, p, elapsed);     // P5: farm plant
                 if (st.type.startsWith("cave") || st.type.startsWith("explore") || st.type.startsWith("mineore"))
                     return CaveSteps.step(this, st, p, elapsed);                                            // B7d D3
                 return storage.crafting.step(this, st, p, elapsed);       // B7c: craft, smelt, farm, compact

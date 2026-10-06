@@ -313,6 +313,9 @@ public final class SurfaceExport {
         return noCollision ? SurfaceColumns.PLANT : SurfaceColumns.GROUND;
     }
 
+    /** P4: the family index of a block state (the export's cached rule; client thread). */
+    public static int familyOfState(BlockState s) { return INSTANCE.familyOf(s); }
+
     private int familyOf(BlockState s) {
         Block b = s.getBlock();
         Integer f = familyCache.get(b);

@@ -85,6 +85,38 @@ class FastServerTest {
 
         @Override public void beforeIdleAnswer() { beforeIdle.incrementAndGet(); }
 
+        volatile boolean inWorld = true;
+
+        @Override public JsonObject block(int x, int y, int z) {
+            assertSame(gameThread, Thread.currentThread(), "blocks are read on the game thread");
+            if (!inWorld) return null;
+            JsonObject o = new JsonObject();
+            boolean loaded = Math.abs(x) < 1000;
+            o.addProperty("x", x);
+            o.addProperty("y", y);
+            o.addProperty("z", z);
+            o.addProperty("loaded", loaded);
+            if (loaded) o.addProperty("id", "minecraft:iron_ore");
+            else o.add("id", com.google.gson.JsonNull.INSTANCE);
+            o.addProperty("container", false);
+            o.addProperty("protected", false);
+            o.addProperty("family", loaded ? "ore" : null);
+            return o;
+        }
+
+        @Override public JsonObject column(int x, int z) {
+            assertSame(gameThread, Thread.currentThread(), "columns are read on the game thread");
+            if (!inWorld) return null;
+            JsonObject o = new JsonObject();
+            o.addProperty("x", x);
+            o.addProperty("z", z);
+            o.addProperty("ground", 63);
+            o.addProperty("id", "minecraft:grass_block");
+            o.addProperty("family", "grass");
+            o.addProperty("canopy", -1);
+            return o;
+        }
+
         void tickLater() {
             List<Runnable> now = new ArrayList<>(later);
             later.clear();
@@ -386,6 +418,64 @@ class FastServerTest {
     void stateNeedsTheKey() throws Exception {
         assertEquals(401, call("GET", "/state", null, "127.0.0.1", null).code());
         assertEquals(0, game.states.get());
+    }
+
+    // ---- P4 (0.19.10): /block and /column ----
+
+    @Test
+    void blockIsReadOnTheGameThread() throws IOException {
+        Resp r = call("GET", "/block?x=10&y=-5&z=-3", null);
+        assertEquals(200, r.code(), r.body());
+        JsonObject o = r.json();
+        assertEquals("minecraft:iron_ore", o.get("id").getAsString());
+        assertEquals(-5, o.get("y").getAsInt());
+        assertTrue(o.get("loaded").getAsBoolean());
+        assertEquals("ore", o.get("family").getAsString());
+        assertFalse(o.get("protected").getAsBoolean());
+    }
+
+    @Test
+    void blockInAnUnloadedChunkHasNoId() throws IOException {
+        JsonObject o = call("GET", "/block?x=5000&y=64&z=0", null).json();
+        assertFalse(o.get("loaded").getAsBoolean());
+        assertTrue(o.get("id").isJsonNull());
+    }
+
+    @Test
+    void blockAndColumnNeedWholeNumbers() throws IOException {
+        assertEquals(400, call("GET", "/block?x=1&y=2", null).code());
+        assertEquals(400, call("GET", "/block?x=1&y=two&z=3", null).code());
+        assertEquals(400, call("GET", "/column?x=1.5&z=3", null).code());
+        assertEquals(405, call("POST", "/block?x=1&y=2&z=3", "{}").code());
+    }
+
+    @Test
+    void blockAndColumnNeedTheKey() throws IOException {
+        assertEquals(401, call("GET", "/block?x=1&y=2&z=3", null, "127.0.0.1:" + server.port(), null).code());
+        assertEquals(403, call("GET", "/column?x=1&z=3", KEY, "evil.example", null).code());
+    }
+
+    @Test
+    void columnAnswers() throws IOException {
+        Resp r = call("GET", "/column?x=-7&z=12", null);
+        assertEquals(200, r.code(), r.body());
+        JsonObject o = r.json();
+        assertEquals(63, o.get("ground").getAsInt());
+        assertEquals("grass", o.get("family").getAsString());
+        assertEquals(-1, o.get("canopy").getAsInt());
+    }
+
+    @Test
+    void blockOutsideAWorldIs503() throws IOException {
+        game.inWorld = false;
+        assertEquals(503, call("GET", "/block?x=1&y=2&z=3", null).code());
+        assertEquals(503, call("GET", "/column?x=1&z=3", null).code());
+    }
+
+    @Test
+    void blockTimesOutWhenTheGameNeverTicks() throws Exception {
+        frozen = true;
+        assertEquals(504, call("GET", "/block?x=1&y=2&z=3", KEY, "127.0.0.1", null).code());
     }
 
     @Test

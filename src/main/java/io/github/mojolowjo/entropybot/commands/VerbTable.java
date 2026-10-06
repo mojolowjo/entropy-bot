@@ -97,8 +97,9 @@ public final class VerbTable {
         v("smelt", "", "crafting", O, "smelt <item> [n] | smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>",
                 "smelt at a base furnace and go on with other things", "smelt iron_ingot 9|smelt jobs", "smelt collect");
         v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "where <item>");
-        v("farm", "", "crafting", O, "farm | farm here | farm compact block|prudentium|off", "one farm round: twerk till ripe, harvest, pick up, make blocks",
-                "farm|repeat forever farm", "deposit");
+        v("cook", "", "crafting", O, "cook <food> [n]", "cook raw food at a furnace (smelt cooked_<food>)", "cook beef 8", "smelt jobs");
+        v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
+                "one farm round (harvest, replant or let Harvest with Ease replant, pick up); plant a new field", "farm|farm plant wheat here 4|farm status", "deposit");
         v("infuse", "", "crafting", O, "infuse <seed> [n]", "make seeds on the infusion altar (never touches what isn't mine)", "infuse silicon 2", "inv");
         v("upgrade", "", "crafting", O, "upgrade <essence> [n]", "climb the essence tiers with the infusion crystal", "upgrade imperium 4", "inv");
         v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "mark food");

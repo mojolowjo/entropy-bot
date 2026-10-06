@@ -43,6 +43,7 @@ import java.util.Map;
  * with exact cursor clicks from the client's recipes (no EMI); the jobs are {@link Seq} jobs.
  */
 final class Crafting {
+    private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
     private final Core core;
     private final Commands commands;
     private final Jobs jobs;
@@ -679,9 +680,70 @@ final class Crafting {
         return f == null ? null : FarmSpot.fromJson(f);
     }
 
-    /** "farm [here | compact block|prudentium|off]". */
-    String farm(LocalPlayer p, String text) {
-        FarmCommand.Reply r = FarmCommand.handle(text, farmSpot(), new McFarmWorld(p));
+    /** P5: the farm settings (commands.json "farm"; absent = auto, auto). */
+    io.github.mojolowjo.entropybot.farm.FarmSettings farmSettings() {
+        JsonObject b = commands.brainData();
+        return io.github.mojolowjo.entropybot.farm.FarmSettings.fromJson(b.has("farm") && b.get("farm").isJsonObject() ? b.getAsJsonObject("farm") : null);
+    }
+
+    /** P5: whether Harvest with Ease and Squat Grow are loaded (false when the mod list can't be read, logged). */
+    static boolean modLoaded(String id) {
+        try {
+            return net.neoforged.fml.ModList.get().isLoaded(id);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] farm: can't read the mod list: {}", e.toString());
+            return false;
+        }
+    }
+
+    io.github.mojolowjo.entropybot.farm.FarmSettings.Effective farmEffective() {
+        return farmSettings().resolve(modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.HWE), modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.SQUAT));
+    }
+
+    /** "farm status": the mode and grow in effect and why, the farm, its crops by type and ripeness. */
+    String farmStatus(LocalPlayer p) {
+        var fs = farmSettings();
+        var eff = farmEffective();
+        StringBuilder sb = new StringBuilder(fs.statusText(eff));
+        FarmSpot f = farmSpot();
+        if (f == null) return sb.append("; no farm yet (farm here, or farm plant <crop> here <r>)").toString();
+        sb.append("; farm at ").append(f.fmt()).append(" (compact ").append(f.mode()).append(")");
+        Map<String, int[]> byType = new java.util.TreeMap<>();
+        McFarmWorld w = new McFarmWorld(p);
+        for (io.github.mojolowjo.entropybot.farm.FarmRules.Crop c : io.github.mojolowjo.entropybot.farm.FarmRules.farmCrops(w, f.pos())) {
+            int[] n = byType.computeIfAbsent(CraftPlanner.shortId(w.blockId(c.x(), c.y(), c.z())), k -> new int[2]);
+            n[0]++;
+            if (c.ripe()) n[1]++;
+        }
+        if (byType.isEmpty()) sb.append(", no crops in view");
+        else {
+            List<String> parts = new ArrayList<>();
+            byType.forEach((k, v) -> parts.add(k + " " + v[0] + " (" + v[1] + " ripe)"));
+            sb.append(", crops: ").append(String.join(", ", parts));
+        }
+        if (lastFarmNote != null) sb.append("; last round: ").append(lastFarmNote);
+        return sb.toString();
+    }
+
+    String lastFarmNote;
+
+    String farm(LocalPlayer p, String text) { return farm(p, text, null); }
+
+    /** "farm [here | compact ... | mode ... | grow ... | status | plant ...]". */
+    String farm(LocalPlayer p, String text, String from) {
+        String t = text == null ? "" : text.trim();
+        String lt = t.toLowerCase(java.util.Locale.ROOT);
+        if (lt.equals("plant") || lt.startsWith("plant ")) return FarmPlanting.get().command(p, t.substring(5).trim(), from);
+        if (lt.equals("status")) return farmStatus(p);
+        var ch = farmSettings().command(t);
+        if (ch.reply() != null) {
+            if (ch.set() == null) return ch.reply();
+            commands.brainData().add("farm", ch.set().toJson());
+            commands.saved();
+            var eff = farmEffective();
+            return ch.reply() + " - in effect: " + eff.modeWord() + ", " + eff.growWord();
+        }
+        FarmCommand.Reply r = FarmCommand.handle(text, farmSpot(), new McFarmWorld(p), farmEffective());
         if (r.save() != null) commands.putPlace("farm", r.save().toJson());
         if (r.start() == null) return r.text();
         FarmCommand.Start st = r.start();
@@ -1211,8 +1273,40 @@ final class Crafting {
     private String farmStep(Seq s, Step st, LocalPlayer p, long elapsed) {
         McFarmWorld w = new McFarmWorld(p);
         FarmRound.Tick t = s.farm.step(st.type, w, elapsed, now());
+        io.github.mojolowjo.entropybot.clear.LeaseSet leases = farmLeases.get(s);
+        if (leases != null) leases.beat();
         for (FarmRound.Effect fx : t.effects()) {
-            if (fx instanceof FarmRound.Craft c) {
+            if (fx instanceof FarmRound.Break br) {
+                // P5 vanilla: crops are on the guard's built-block list (the floor), so each ripe crop gets a one-cell
+                // force lease for its one click (the break is checked at once, in startDestroyBlock) and loses it after
+                io.github.mojolowjo.entropybot.clear.LeaseSet one = Clearing.newLeases();
+                try {
+                    String le = one.take("farm harvest " + br.x() + " " + br.y() + " " + br.z(),
+                            new io.github.mojolowjo.entropybot.clear.ClearBox(br.x(), br.y(), br.z(), br.x(), br.y(), br.z()), false, true);
+                    if (le != null) return le.replaceFirst("^error: ", "");
+                    w.apply(fx);
+                } finally {
+                    one.releaseAll();
+                }
+            } else if (fx instanceof FarmRound.Plant) {
+                // P5 vanilla: a place lease over the farm's box (FARM_R + 1 around the spot, 3 up and down) for the seeds
+                if (leases == null) {
+                    leases = Clearing.newLeases();
+                    int r = io.github.mojolowjo.entropybot.farm.FarmRules.FARM_R + 1;
+                    FarmSpot f = s.farm.farm;
+                    io.github.mojolowjo.entropybot.clear.ClearBox b = new io.github.mojolowjo.entropybot.clear.ClearBox(f.x() - r, f.y() - 3, f.z() - r, f.x() + r, f.y() + 3, f.z() + r);
+                    String le = leases.take("farm replant " + f.fmt(), b, true, false);
+                    if (le != null) {
+                        leases.releaseAll();
+                        return le.replaceFirst("^error: ", "");
+                    }
+                    farmLeases.put(s, leases);
+                }
+                String le = leases.ensure();
+                if (le != null) return le.replaceFirst("^error: ", "");
+                FarmRound.Plant pl = (FarmRound.Plant) fx;
+                if (Clearing.holdItem(p, pl.item())) w.use(pl.x(), pl.y(), pl.z());
+            } else if (fx instanceof FarmRound.Craft c) {
                 Step cs = new Step("craftitem");
                 cs.text = c.item() + " " + c.n();
                 cs.optional = c.optional();
@@ -1232,10 +1326,21 @@ final class Crafting {
             }
         }
         if (t.status() != null) s.setStatus(t.status());
-        if (t.note() != null) s.note = t.note();
+        if (t.note() != null) {
+            s.note = t.note();
+            lastFarmNote = t.note();
+        }
         if (!t.result().equals("wait")) Minecraft.getInstance().options.keyShift.setDown(false);
+        // the vanilla round's leases end after the replant (or when the round fails)
+        if (leases != null && ((!t.result().equals("wait") && !t.result().equals("next")) || (st.type.equals(FarmRound.REPLANT) && t.result().equals("next")))) {
+            leases.releaseAll();
+            farmLeases.remove(s);
+        }
         return t.result();
     }
+
+    /** P5: the vanilla farm round's leases, per job. */
+    private final Map<Seq, io.github.mojolowjo.entropybot.clear.LeaseSet> farmLeases = new java.util.WeakHashMap<>();
 
     private String compactStep(Seq s, Step st, LocalPlayer p) {
         Compact.Result r;

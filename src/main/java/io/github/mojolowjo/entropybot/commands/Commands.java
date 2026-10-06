@@ -817,9 +817,13 @@ public final class Commands implements Chains.Env {
             case "craft" -> { return crafting.craft(player, rest, null); }
             case "kit" -> { return crafting.kit(player, rest); }
             case "smelt" -> { return crafting.smelt(player, rest); }
+            case "cook" -> {                                                       // P5: cook beef 8 = smelt cooked_beef 8
+                String t = io.github.mojolowjo.entropybot.farm.Cooking.smeltText(rest);
+                return t == null ? io.github.mojolowjo.entropybot.farm.Cooking.USAGE : crafting.smelt(player, t);
+            }
             case "get" -> { return crafting.get(player, rest); }
             case "restock" -> { return crafting.restock(player); }
-            case "farm" -> { return crafting.farm(player, rest); }
+            case "farm" -> { return crafting.farm(player, rest, from); }
             case "compact" -> { return crafting.compact(player, rest, from); }
             case "infuse" -> { return crafting.infuse(player, rest); }           // package E: the infusion altar
             // B7d: digging and mining (D1 dig/build/place, D2 the strip mine, D3 mine/caves/explore)
@@ -1338,6 +1342,73 @@ public final class Commands implements Chains.Env {
         public void beforeIdleAnswer() {
             writeState(Minecraft.getInstance(), core.tick());
         }
+
+        @Override
+        public JsonObject block(int x, int y, int z) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) return null;
+            return blockJson(mc.level, x, y, z);
+        }
+
+        @Override
+        public JsonObject column(int x, int z) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) return null;
+            var level = mc.level;
+            JsonObject o = new JsonObject();
+            o.addProperty("x", x);
+            o.addProperty("z", z);
+            net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(x, level.getMinBuildHeight(), z);
+            if (!level.isLoaded(at)) {
+                o.addProperty("loaded", false);
+                o.addProperty("ground", -1);
+                o.add("id", com.google.gson.JsonNull.INSTANCE);
+                o.add("family", com.google.gson.JsonNull.INSTANCE);
+                o.addProperty("canopy", -1);
+                return o;
+            }
+            int[] c = io.github.mojolowjo.entropybot.surface.SurfaceColumns.column(
+                    io.github.mojolowjo.entropybot.surface.SurfaceExport.liveSource(level), x, z, level.getMinBuildHeight());
+            o.addProperty("loaded", true);
+            o.addProperty("ground", c[0]);
+            if (c[0] >= level.getMinBuildHeight()) {
+                o.addProperty("id", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(level.getBlockState(new net.minecraft.core.BlockPos(x, c[0], z)).getBlock()).toString());
+                o.addProperty("family", io.github.mojolowjo.entropybot.surface.SurfaceFamily.FAMILIES.get(c[1]));
+            } else {
+                o.add("id", com.google.gson.JsonNull.INSTANCE);
+                o.add("family", com.google.gson.JsonNull.INSTANCE);
+            }
+            o.addProperty("canopy", c[2]);
+            return o;
+        }
+    }
+
+    /** P4: GET /block's object (client thread). */
+    static JsonObject blockJson(net.minecraft.client.multiplayer.ClientLevel level, int x, int y, int z) {
+        JsonObject o = new JsonObject();
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        boolean loaded = level.isLoaded(pos) && y >= level.getMinBuildHeight() && y < level.getMaxBuildHeight();
+        o.addProperty("x", x);
+        o.addProperty("y", y);
+        o.addProperty("z", z);
+        o.addProperty("loaded", loaded);
+        if (!loaded) {
+            o.add("id", com.google.gson.JsonNull.INSTANCE);
+            o.add("family", com.google.gson.JsonNull.INSTANCE);
+            o.addProperty("container", false);
+            o.addProperty("protected", false);
+            return o;
+        }
+        var st = level.getBlockState(pos);
+        o.addProperty("id", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());
+        o.addProperty("container", level.getBlockEntity(pos) instanceof net.minecraft.world.Container);
+        io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
+        boolean prot = g.isProtectedBlock(st.getBlock())
+                || g.core.policy().protectAt(io.github.mojolowjo.entropybot.guard.Guard.dimOf(level), x, y, z) != null;
+        o.addProperty("protected", prot);
+        o.addProperty("family", io.github.mojolowjo.entropybot.surface.SurfaceFamily.FAMILIES.get(
+                io.github.mojolowjo.entropybot.surface.SurfaceExport.familyOfState(st)));
+        return o;
     }
 
     /** True while the fast channel's server runs (for Core.features: "fast"). */

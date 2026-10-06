@@ -23,7 +23,16 @@ public final class FarmRound {
     public static final List<String> STEPS = List.of("farmgrow", "farmharvest", "farmgather", "farmcompact", "farmdone", "farmdeposit");
 
     /** Something the step engine does for the round before it acts on the result. */
-    public sealed interface Effect permits Walk, CancelWalk, Sneak, Use, Craft, Deposit {}
+    public sealed interface Effect permits Walk, CancelWalk, Sneak, Use, Craft, Deposit, Break, Plant {}
+
+    /** P5 vanilla mode: break the ripe crop at x y z (one click: crops break at once). Needs a break lease. */
+    public record Break(int x, int y, int z) implements Effect {}
+
+    /** P5 vanilla mode: hold {@code item} (a seed) and right-click the top of the farmland at x y z. Needs a place lease. */
+    public record Plant(int x, int y, int z, String item) implements Effect {}
+
+    /** The vanilla round's extra step, after "farmgather": the broken crops get a seed again. */
+    public static final String REPLANT = "farmreplant";
 
     /** Path there with Baritone: range 0 = onto that block (GoalBlock), else within range of it (GoalNear). */
     public record Walk(int x, int y, int z, int range) implements Effect {}
@@ -78,16 +87,43 @@ public final class FarmRound {
     long gatherT;
     String stage, lastType, farmNote;
 
+    /** P5: right-click harvest (modded) or break and replant (vanilla); crouch to grow or not. */
+    public final boolean rightClick, twerk;
+    /** Vanilla: the crops broken this round ("x y z" -> {x, y, z}) and the seed each one takes back. */
+    final Map<String, int[]> broken = new java.util.LinkedHashMap<>();
+    final Map<String, String> seeds = new HashMap<>();
+    final java.util.Set<String> settled = new java.util.HashSet<>();
+    final Map<String, Integer> plantTries = new HashMap<>();
+    final Map<String, Long> plantAt = new HashMap<>();
+    int replanted, noSeed, replantFailed;
+    final java.util.Set<String> missingSeeds = new java.util.TreeSet<>();
+
     /** {@code have}: what the bot carries as the round starts (for the "+N inferium essence" count). */
     public FarmRound(FarmSpot farm, String label, Map<String, Integer> have) {
+        this(farm, label, have, true, true);
+    }
+
+    public FarmRound(FarmSpot farm, String label, Map<String, Integer> have, boolean rightClick, boolean twerk) {
         this.farm = farm;
         this.label = label;
+        this.rightClick = rightClick;
+        this.twerk = twerk;
         essBefore = have.getOrDefault(FarmRules.FARM_ESS, 0);
         blocksBefore = have.getOrDefault(FarmRules.FARM_BLOCK, 0);
         prudBefore = have.getOrDefault(FarmRules.FARM_PRUD, 0);
     }
 
+    /** The round's steps after the walk: STEPS, and in vanilla mode the replant after the gathering. */
+    public List<String> steps() {
+        if (rightClick) return STEPS;
+        List<String> out = new ArrayList<>(STEPS);
+        out.add(out.indexOf("farmgather") + 1, REPLANT);
+        return out;
+    }
+
     public int harvested() { return harvested; }
+
+    public int replanted() { return replanted; }
 
     public Tick step(String type, FarmWorld w, long elapsed, long tick) {
         if (!type.equals(lastType)) {
@@ -98,6 +134,7 @@ public final class FarmRound {
             case "farmgrow" -> grow(w, elapsed, tick);
             case "farmharvest" -> harvest(w, elapsed, tick);
             case "farmgather" -> gather(w, elapsed);
+            case REPLANT -> replant(w, elapsed, tick);
             case "farmcompact" -> compact(w);
             case "farmdone" -> done(w);
             case "farmdeposit" -> deposit(w);
@@ -110,6 +147,11 @@ public final class FarmRound {
         if (stage == null) {
             cropSpots = FarmRules.positions(FarmRules.farmCrops(w, farm.pos()));
             if (cropSpots.isEmpty()) return Tick.of("no crops at the farm (" + farm.fmt() + ") - PM \"farm here\" next to them");
+            if (!twerk) {
+                // P5 grow off (or vanilla auto): no crouching, the ripe ones are harvested and the rest left to grow
+                unripe = FarmRules.cropsNow(w, cropSpots, false).size();
+                return Tick.of("next");
+            }
             stage = "twerk";
             // crouch where Squat Grow reaches every crop
             List<int[]> growing0 = FarmRules.positions(FarmRules.cropsNow(w, cropSpots, false));
@@ -177,7 +219,17 @@ public final class FarmRound {
         }
         List<FarmRules.Crop> ripe = new ArrayList<>();
         for (FarmRules.Crop c : FarmRules.cropsNow(w, cropSpots, true)) if (clicks.getOrDefault(c.key(), 0) < 3) ripe.add(c);
-        if (ripe.isEmpty() || elapsed > 20 * 60) return new Tick("next", fx, null, null);
+        if (ripe.isEmpty() || elapsed > 20 * 60) {
+            if (!rightClick) {
+                // vanilla: only the crops that are really gone count (a refused or missed break leaves a ripe crop)
+                broken.entrySet().removeIf(e -> {
+                    FarmRules.Crop c = FarmRules.cropAt(w, e.getValue()[0], e.getValue()[1], e.getValue()[2]);
+                    return c != null && c.ripe();
+                });
+                harvested = broken.size();
+            }
+            return new Tick("next", fx, null, null);
+        }
         double[] eye = w.eye();
         FarmRules.Crop near = null;
         double nearD = 0;
@@ -188,6 +240,17 @@ public final class FarmRound {
             if (clicks.getOrDefault(key, 0) >= 3) continue;         // still ripe after 3 clicks: not harvestable
             double dx = c.x() + 0.5 - eye[0], dy = c.y() + 0.5 - eye[1], dz = c.z() + 0.5 - eye[2];
             double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d <= FarmRules.REACH && !rightClick) {
+                // P5 vanilla: break it; the seed to put back is noted before the block is gone
+                broken.put(key, c.pos());
+                String seed = w.seedOf(c.x(), c.y(), c.z());
+                if (seed != null) seeds.put(key, seed);
+                fx.add(new Break(c.x(), c.y(), c.z()));
+                if (at == null) harvested++;
+                clicked.put(key, tick);
+                clicks.merge(key, 1, Integer::sum);
+                return new Tick("wait", fx, label + " - harvesting (" + harvested + ")", null);
+            }
             if (d <= FarmRules.REACH) {
                 FarmRules.Hand hand = FarmRules.harmlessHand(w.slots(), w.selected());
                 if (hand == null) return new Tick("I can't free my hand for the harvest (no sword, no empty slot) - give me a sword", fx, null, null);
@@ -247,6 +310,83 @@ public final class FarmRound {
         return new Tick("wait", List.of(walk), label + " - picking up the drops", null);
     }
 
+    /**
+     * P5 vanilla: a seed back on each crop it broke (the drops were picked up in "farmgather"). A cell is settled when a
+     * crop stands there again, its farmland is gone, it took 3 clicks, or the bot has no such seed. At most 60 s.
+     */
+    private Tick replant(FarmWorld w, long elapsed, long tick) {
+        List<Effect> fx = new ArrayList<>();
+        if ("walking".equals(stage)) {
+            if (elapsed - walkStart < 15 || (w.pathing() && elapsed - walkStart < 200)) return Tick.of("wait");
+            stage = null;
+        }
+        if (elapsed > 20 * 60) return Tick.of("next");
+        Map<String, Integer> inv = w.inventory();
+        double[] eye = w.eye();
+        int[] near = null;
+        double nearD = 0;
+        boolean waiting = false;
+        for (Map.Entry<String, int[]> e : broken.entrySet()) {
+            String key = e.getKey();
+            if (settled.contains(key)) continue;
+            int[] c = e.getValue();
+            boolean clickedOnce = plantTries.containsKey(key);
+            if (FarmRules.cropAt(w, c[0], c[1], c[2]) != null) {
+                settled.add(key);
+                if (clickedOnce) replanted++;
+                continue;
+            }
+            if (!String.valueOf(w.blockId(c[0], c[1] - 1, c[2])).contains("farmland") || !w.isAir(c[0], c[1], c[2])) {
+                settled.add(key);
+                replantFailed++;
+                continue;
+            }
+            Long at = plantAt.get(key);
+            if (at != null && tick - at < 20) {
+                waiting = true;           // the server hasn't answered yet
+                continue;
+            }
+            if (plantTries.getOrDefault(key, 0) >= 3) {
+                settled.add(key);
+                replantFailed++;
+                continue;
+            }
+            String seed = seeds.get(key);
+            if (seed == null || inv.getOrDefault(seed, 0) <= 0) {
+                settled.add(key);
+                noSeed++;
+                missingSeeds.add(seed == null ? "seed" : FarmPlant.cropName(seed) + " seeds");
+                continue;
+            }
+            double dx = c[0] + 0.5 - eye[0], dy = c[1] - 0.5 - eye[1], dz = c[2] + 0.5 - eye[2];
+            double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d <= FarmRules.REACH) {
+                fx.add(new Plant(c[0], c[1] - 1, c[2], seed));
+                plantTries.merge(key, 1, Integer::sum);
+                plantAt.put(key, tick);
+                return new Tick("wait", fx, label + " - replanting", null);
+            }
+            if (near == null || d < nearD) {
+                near = c;
+                nearD = d;
+            }
+        }
+        if (near != null) {
+            fx.add(new Walk(near[0], near[1], near[2], 1));
+            stage = "walking";
+            walkStart = elapsed;
+            return new Tick("wait", fx, null, null);
+        }
+        return waiting ? Tick.of("wait") : Tick.of("next");
+    }
+
+    /** The vanilla round's words after the report: "; replanted 8" and what it lacked. */
+    String replantNote() {
+        if (rightClick) return "";
+        return "; replanted " + replanted + (noSeed > 0 ? ", " + noSeed + " not (no " + String.join(", ", missingSeeds) + ")" : "")
+                + (replantFailed > 0 ? ", " + replantFailed + " couldn't be replanted" : "");
+    }
+
     private Tick compact(FarmWorld w) {
         String mode = farm.mode();
         int ess = w.inventory().getOrDefault(FarmRules.FARM_ESS, 0), n = 0;
@@ -266,7 +406,7 @@ public final class FarmRound {
         int blocks = have.getOrDefault(FarmRules.FARM_BLOCK, 0) - blocksBefore;
         int prud = have.getOrDefault(FarmRules.FARM_PRUD, 0) - prudBefore;
         int gained = have.getOrDefault(FarmRules.FARM_ESS, 0) + 9 * blocks + 4 * prud - essBefore;
-        farmNote = report(harvested, grewS, unripe, outOfRange, gained, blocks, prud, gatherFull, dropsLeft);
+        farmNote = report(harvested, grewS, unripe, outOfRange, gained, blocks, prud, gatherFull, dropsLeft) + replantNote();
         return new Tick("next", List.of(), null, farmNote);
     }
 

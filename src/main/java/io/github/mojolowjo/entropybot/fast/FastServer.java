@@ -44,6 +44,9 @@ import java.util.function.Consumer;
  *       tick exactly as a cmd.json command; answers {id, result} when the command answers (a long job answers
  *       "started: ..." at once, as today), or {id, result: null, timeout: true} (plus notRun: true when the game
  *       never took it: it is dropped then and will not run later).</li>
+ *   <li>{@code GET /block?x=&y=&z=} and {@code GET /column?x=&z=} (P4, 0.19.10): one block or one surface column for the
+ *       dashboard's map menu, answered on the game thread at the next tick (400 for bad numbers, 503 outside a world,
+ *       504 after 5 s).</li>
  *   <li>{@code GET /wait[?timeout=ms][&chain=0|1]}: a long poll that answers {idle: true, waitedMs} once the bot has
  *       been idle (no job, no chain unless chain=0, Baritone idle) for {@link #SETTLE_TICKS}
  *       ticks in a row, or {idle: false, timeout: true, busy: "chain night"} when the time runs out.</li>
@@ -82,6 +85,15 @@ public final class FastServer {
 
         /** Just before a /wait answers idle: write state.json now, so the caller's next read is fresh. */
         default void beforeIdleAnswer() {}
+
+        /**
+         * P4 (0.19.10) GET /block: {id, x, y, z, loaded, container, protected, family} of the block at x y z (an unloaded
+         * chunk: loaded false, id null). Null when not in a world (503).
+         */
+        default JsonObject block(int x, int y, int z) { return null; }
+
+        /** P4 GET /column: {x, z, ground, id, family, canopy} by the surface export's rule (ground/canopy -1 = none). Null: not in a world. */
+        default JsonObject column(int x, int z) { return null; }
     }
 
     /** Where the key lives: re-read when the file changes, so a new dashboard key works without a restart. */
@@ -290,6 +302,19 @@ public final class FastServer {
                     cmd(ex, q);
                 }
                 case "/wait" -> waitIdle(ex, q);
+                case "/block", "/column" -> {
+                    if (!method.equals("GET")) {
+                        send(ex, 405, err("GET only"));
+                        return;
+                    }
+                    boolean col = path.equals("/column");
+                    int[] v = ints(q, col ? new String[] {"x", "z"} : new String[] {"x", "y", "z"});
+                    if (v == null) {
+                        send(ex, 400, err(col ? "x and z must be whole numbers" : "x, y and z must be whole numbers"));
+                        return;
+                    }
+                    onGame(ex, () -> col ? handler.column(v[0], v[1]) : handler.block(v[0], v[1], v[2]));
+                }
                 default -> send(ex, 404, err("unknown path " + path));
             }
         } catch (RuntimeException e) {
@@ -435,6 +460,42 @@ public final class FastServer {
             send(ex, 200, r);
         } finally {
             waiting.decrementAndGet();
+        }
+    }
+
+    /** The named query values as ints, or null when one is missing or not a whole number. */
+    static int[] ints(Map<String, String> q, String[] names) {
+        int[] out = new int[names.length];
+        for (int i = 0; i < names.length; i++) {
+            String v = q.get(names[i]);
+            if (v == null) return null;
+            try {
+                out[i] = Integer.parseInt(v.trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return out;
+    }
+
+    /** Runs a read on the game thread at its next tick: 200 with its object, 503 when not in a world (null), 504 after 5 s. */
+    private void onGame(HttpExchange ex, java.util.function.Supplier<JsonObject> read) throws IOException {
+        CompletableFuture<JsonObject> f = new CompletableFuture<>();
+        tasks.add(() -> {
+            try {
+                f.complete(read.get());
+            } catch (RuntimeException e) {
+                f.completeExceptionally(e);
+            }
+        });
+        try {
+            JsonObject o = f.get(5, TimeUnit.SECONDS);
+            if (o == null) send(ex, 503, err("not in a world"));
+            else send(ex, 200, o);
+        } catch (TimeoutException e) {
+            send(ex, 504, err("the game did not tick for 5 s"));
+        } catch (Exception e) {
+            send(ex, 500, err(String.valueOf(e.getCause() != null ? e.getCause() : e)));
         }
     }
 

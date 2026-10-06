@@ -61,6 +61,9 @@ public interface FarmWorld {
     /** Is Baritone still pathing (not idle)? */
     boolean pathing();
 
+    /** P5: the seed a crop block at x y z is replanted with (vanilla mode), or null. */
+    default String seedOf(int x, int y, int z) { return FarmPlant.replantSeed(blockId(x, y, z)); }
+
     /** The block the bot's feet are in (the bridge's here()). */
     default int[] here() {
         double[] p = pos();

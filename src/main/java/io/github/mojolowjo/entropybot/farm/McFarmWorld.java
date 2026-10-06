@@ -57,6 +57,19 @@ public final class McFarmWorld implements FarmWorld {
         return null;
     }
 
+    /** P5: the vanilla table first, else the crop block's own item (a CropBlock's seed: Item.BY_BLOCK). */
+    @Override public String seedOf(int x, int y, int z) {
+        String s = FarmPlant.replantSeed(blockId(x, y, z));
+        if (s != null) return s;
+        try {
+            var item = at(x, y, z).getBlock().asItem();
+            if (item == null || item == net.minecraft.world.item.Items.AIR) return null;
+            return BuiltInRegistries.ITEM.getKey(item).toString();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     @Override public boolean standable(int x, int y, int z) {
         BlockPos feet = new BlockPos(x, y, z), head = feet.above(), below = feet.below();
         BlockState f = level.getBlockState(feet), h = level.getBlockState(head), b = level.getBlockState(below);
@@ -153,7 +166,15 @@ public final class McFarmWorld implements FarmWorld {
             hold(u.hand());
             // never right-click the farm with a block, seeds or bone meal in hand
             if (FarmRules.harmless(slots().get(selected()))) use(u.x(), u.y(), u.z());
-        }
+        } else if (fx instanceof FarmRound.Break b) breakBlock(b.x(), b.y(), b.z());
+    }
+
+    /** P5: one left-click on the block (a crop breaks at once; the guard's break check runs in startDestroyBlock). */
+    public void breakBlock(int x, int y, int z) {
+        BlockPos pos = new BlockPos(x, y, z);
+        p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(x + 0.5, y + 0.5, z + 0.5));
+        mc.gameMode.startDestroyBlock(pos, Direction.UP);
+        p.swing(InteractionHand.MAIN_HAND);
     }
 
     public void walk(FarmRound.Walk w) {
