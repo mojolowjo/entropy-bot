@@ -13,15 +13,15 @@ public final class Texts {
     private Texts() {}
 
     /** What allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
-    public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "find",
+    public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "have", "stock", "find",
             "recipe", "come", "follow", "goto", "stop", "restart");
 
-    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, find <block>, recipe <item>, come, follow [name], goto x y z, stop, "
+    public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, "
             + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, poi, poi show <id>";
 
     /** Every command word; routine names can't use these. */
     public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
-            "setbase", "sethome", "forget", "places", "where", "zone", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
+            "setbase", "sethome", "forget", "places", "where", "have", "stock", "zone", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
             "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "watch", "recorder", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
             "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",

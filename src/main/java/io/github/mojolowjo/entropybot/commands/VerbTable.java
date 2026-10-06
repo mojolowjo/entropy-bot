@@ -74,7 +74,9 @@ public final class VerbTable {
         v("close", "", "chests", O, "close", "close the open chest", "close", "inv");
         v("deposit", "", "chests", O, "deposit [item ...]", "put loot away in the base chests (keeps tools, armor, food, supplies)", "deposit|deposit cobblestone dirt", "inv");
         v("scan", "", "chests", O, "scan [radius] | scan base|<place>|x y z [radius]", "open the chests around (there) and remember them", "scan base|scan 8", "where <item>");
-        v("where", "", "chests", G, "where <item>", "which chest has it (and the RS network)", "where iron", "open <place>");
+        v("where", "", "chests", G, "where <item>", "which chest has it (and the RS network, and your bag with the companion)", "where iron", "open <place>");
+        v("have", "", "chests", G, "have [item]", "what we have as a group: my bag, the chests, the RS network, your bag", "have iron_ingot", "stock iron");
+        v("stock", "", "chests", G, "stock [filter]", "the group's totals, biggest first, and how fresh each source is", "stock ingot", "scan base");
         v("find", "", "chests", G, "find <block>", "the nearest block of that kind", "find chest|find crafting_table", "goto x y z");
         v("trust", "", "chests", O, "trust | trust x y z|<place>", "list the chests I keep out of, or let me use one again", "trust", "untrust x y z");
         v("untrust", "", "chests", O, "untrust x y z|<place>", "keep me out of a chest (craft trips, deposits, the food run)", "untrust -20 53 180", "trust");
