@@ -63,4 +63,39 @@ public final class RouteRules {
         if (loaded3x3[4] || centreCached) return io.github.mojolowjo.entropybot.route.SectionRecord.Quality.COARSE;
         return null;
     }
+
+    /**
+     * chunks-0.23.5: as {@link #quality(boolean[], boolean)}, with the companion's surface chunk as a source. Order: live
+     * (all 9 loaded), coarse when the centre column is loaded (the bot's own blocks, now), then the companion's surface
+     * (the owner saw it recently) before Baritone's cache (the bot's own old visit), else none.
+     *
+     * @param surfaceCovers the companion's chunk for this column is known and its ground band crosses the box.
+     */
+    public static io.github.mojolowjo.entropybot.route.SectionRecord.Quality quality(boolean[] loaded3x3, boolean centreCached,
+                                                                                   boolean surfaceCovers) {
+        boolean all = true;
+        for (boolean b : loaded3x3) all &= b;
+        if (all) return io.github.mojolowjo.entropybot.route.SectionRecord.Quality.LIVE;
+        if (loaded3x3[4]) return io.github.mojolowjo.entropybot.route.SectionRecord.Quality.COARSE;
+        if (surfaceCovers) return io.github.mojolowjo.entropybot.route.SectionRecord.Quality.SURFACE;
+        if (centreCached) return io.github.mojolowjo.entropybot.route.SectionRecord.Quality.COARSE;
+        return null;
+    }
+
+    /**
+     * chunks-0.23.5, the merge rule: should a box held as {@code old} (built at {@code oldBuiltAt}) be built again from
+     * terrain of quality {@code now}? A stale box always; live data replaces anything not live; coarse data (the
+     * centre column loaded) replaces a surface box; surface data (the companion's chunk scanned at {@code surfaceT})
+     * replaces any box only when it is newer than the box: newer wins.
+     */
+    public static boolean rebuild(io.github.mojolowjo.entropybot.route.SectionRecord.Quality old, long oldBuiltAt, boolean stale,
+                                  io.github.mojolowjo.entropybot.route.SectionRecord.Quality now, long surfaceT) {
+        if (old == null || stale) return true;
+        if (now == null) return false;
+        return switch (now) {
+            case LIVE -> old != io.github.mojolowjo.entropybot.route.SectionRecord.Quality.LIVE;
+            case COARSE -> old == io.github.mojolowjo.entropybot.route.SectionRecord.Quality.SURFACE;
+            case SURFACE -> surfaceT > oldBuiltAt;
+        };
+    }
 }

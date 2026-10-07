@@ -61,6 +61,16 @@ public final class RouteScheduler {
 
         /** A fresh CellMoves for one worker, or null when it can't be made now. */
         WorkerMoves newMoves();
+
+        /** chunks-0.23.5: when the companion's surface chunk under box k was scanned (epoch ms), 0 when none. */
+        default long surfaceTime(SectionKey k) {
+            return 0;
+        }
+
+        /** chunks-0.23.5: the moves for SURFACE boxes (thread-safe, shared by the workers), or null when there are none. */
+        default CellMoves surfaceMoves() {
+            return null;
+        }
     }
 
     /**
@@ -124,7 +134,8 @@ public final class RouteScheduler {
     final AtomicLong contexts = new AtomicLong(), contextFailures = new AtomicLong(), batches = new AtomicLong(),
             notWanted = new AtomicLong(), unknownTerrain = new AtomicLong(), alreadyGood = new AtomicLong(),
             idleBreaks = new AtomicLong(), requeued = new AtomicLong(), rehashes = new AtomicLong(),
-            lagSkips = new AtomicLong(), columns = new AtomicLong(), neighbourCoarse = new AtomicLong();
+            lagSkips = new AtomicLong(), columns = new AtomicLong(), neighbourCoarse = new AtomicLong(),
+            surfaceChunks = new AtomicLong(), surfaceQueued = new AtomicLong(), surfaceBuilt = new AtomicLong();
 
     public RouteScheduler(RouteStore store, BuildQueue queue, RouteCounters counters, RouteLog log, RoutePool pool,
                           BoxWork work, LongSupplier clock) {
@@ -200,11 +211,18 @@ public final class RouteScheduler {
             gate.take(now);
             contexts.incrementAndGet();
             final WorkerMoves moves = wm;
+            CellMoves sm0;
+            try {
+                sm0 = env.surfaceMoves();
+            } catch (Throwable t) {
+                sm0 = null;
+            }
+            final CellMoves surface = sm0;
             // review S3: the build's stamp is taken with its context (the terrain it sees); a change after it keeps the box stale
             final long[] stamps = new long[items.size()];
             for (int i = 0; i < items.size(); i++)
                 if (items.get(i).kind() == Kind.BUILD) stamps[i] = store.beginBuild(items.get(i).key());
-            if (!pool.submit(() -> runBatch(items, moves, stamps))) {
+            if (!pool.submit(() -> runBatch(items, moves, stamps, surface))) {
                 endBuilds(items, stamps, 0);
                 requeue(items, 0);
                 break;
@@ -244,7 +262,9 @@ public final class RouteScheduler {
             return;
         }
         SectionRecord old = store.get(k);
-        if (old != null && !store.isStale(k) && !(old.quality() == SectionRecord.Quality.COARSE && q == SectionRecord.Quality.LIVE)) {
+        // chunks-0.23.5: RouteRules.rebuild is the merge rule (live beats coarse and surface; surface data only when newer)
+        if (old != null && !RouteRules.rebuild(old.quality(), old.builtAt(), store.isStale(k), q,
+                q == SectionRecord.Quality.SURFACE ? env.surfaceTime(k) : 0)) {
             alreadyGood.incrementAndGet();
             return;
         }
@@ -258,6 +278,11 @@ public final class RouteScheduler {
 
     /** On a worker. stamps[i]: {@link RouteStore#beginBuild}'s stamp of a BUILD item. */
     void runBatch(List<Item> items, WorkerMoves wm, long[] stamps) {
+        runBatch(items, wm, stamps, null);
+    }
+
+    /** On a worker; surface: the moves for SURFACE items (null: such an item is skipped, the next arrival queues it again). */
+    void runBatch(List<Item> items, WorkerMoves wm, long[] stamps, CellMoves surface) {
         for (int i = 0; i < items.size(); i++) {
             Item it = items.get(i);
             if (pool.stopping()) {
@@ -276,6 +301,10 @@ public final class RouteScheduler {
                     long h = work.walkHash(it.key(), wm.moves());
                     rehashes.incrementAndGet();
                     if (work.rehash(store, it.key(), h)) queue.offer(it.key(), BuildQueue.Priority.STALE);
+                } else if (it.quality() == SectionRecord.Quality.SURFACE) {
+                    // the companion's estimate: no Baritone context behind it, walking-only by construction
+                    if (surface != null && work.build(new BuildInput(it.key(), surface, it.quality(), false, System.currentTimeMillis()),
+                            stamps[i] == 0 ? store : new StampedStore(store, stamps[i]), counters, log)) surfaceBuilt.incrementAndGet();
                 } else {
                     work.build(new BuildInput(it.key(), wm.moves(), it.quality(), !wm.walkingOnly(), System.currentTimeMillis()),
                             stamps[i] == 0 ? store : new StampedStore(store, stamps[i]), counters, log);
@@ -381,7 +410,7 @@ public final class RouteScheduler {
                 SectionRecord rec = store.get(k);
                 if (rec == null) {
                     queue.offer(k, BuildQueue.Priority.REST);
-                } else if (rec.quality() == SectionRecord.Quality.COARSE || store.isStale(k)) {
+                } else if (rec.quality() != SectionRecord.Quality.LIVE || store.isStale(k)) {
                     queue.offer(k, BuildQueue.Priority.STALE);
                 } else if (env.terrain(k) == SectionRecord.Quality.LIVE) {
                     rehashDue.add(new Item(k, SectionRecord.Quality.LIVE, false, Kind.REHASH));
@@ -394,11 +423,33 @@ public final class RouteScheduler {
                     if (dx == 0 && dz == 0) continue;
                     for (SectionKey k : areas.column(c.dim(), c.cx() + dx, c.cz() + dz)) {
                         SectionRecord rec = store.get(k);
-                        if (rec != null && rec.quality() == SectionRecord.Quality.COARSE)
+                        if (rec != null && rec.quality() != SectionRecord.Quality.LIVE)
                             if (queue.offer(k, BuildQueue.Priority.STALE)) neighbourCoarse.incrementAndGet();
                     }
                 }
         }
+    }
+
+    /**
+     * chunks-0.23.5: a companion surface chunk arrived (or got newer data), game thread. Its column's boxes whose terrain
+     * is SURFACE now (not loaded by the bot, inside the chunk's ground band, inside the areas) go on the idle queue: a
+     * missing box as REST, a held one as STALE when {@link RouteRules#rebuild} says the newer scan wins. consider()
+     * checks again when the box comes up. Returns the number queued.
+     */
+    public int surfaceArrived(BuildEnv env, int dim, int cx, int cz, long t) {
+        surfaceChunks.incrementAndGet();
+        int n = 0;
+        for (SectionKey k : env.areas().column(dim, cx, cz)) {
+            if (env.terrain(k) != SectionRecord.Quality.SURFACE) continue;
+            SectionRecord rec = store.get(k);
+            if (rec == null) {
+                if (queue.offer(k, BuildQueue.Priority.REST)) n++;
+            } else if (RouteRules.rebuild(rec.quality(), rec.builtAt(), store.isStale(k), SectionRecord.Quality.SURFACE, t)) {
+                if (queue.offer(k, BuildQueue.Priority.STALE)) n++;
+            }
+        }
+        surfaceQueued.addAndGet(n);
+        return n;
     }
 
     /**
@@ -445,6 +496,7 @@ public final class RouteScheduler {
                 pool.busy(), pool.size(), contexts.get(), contextFailures.get(), batches.get(), notWanted.get(),
                 unknownTerrain.get(), alreadyGood.get(), idleBreaks.get(), requeued.get(), columns.get(),
                 pendingColumns(), rehashes.get(), lagSkips.get()) + ", coarse neighbours queued " + neighbourCoarse.get()
+                + ", companion chunks " + surfaceChunks.get() + " (boxes queued " + surfaceQueued.get() + ", built " + surfaceBuilt.get() + ")"
                 + (boxCap == null ? "" : "; CAPPED: " + boxCap);
     }
 
@@ -455,6 +507,8 @@ public final class RouteScheduler {
                 Map.entry("unknownTerrain", unknownTerrain.get()), Map.entry("alreadyGood", alreadyGood.get()),
                 Map.entry("idleBreaks", idleBreaks.get()), Map.entry("requeued", requeued.get()),
                 Map.entry("rehashes", rehashes.get()), Map.entry("lagSkips", lagSkips.get()),
-                Map.entry("columns", columns.get()), Map.entry("neighbourCoarse", neighbourCoarse.get()));
+                Map.entry("columns", columns.get()), Map.entry("neighbourCoarse", neighbourCoarse.get()),
+                Map.entry("surfaceChunks", surfaceChunks.get()), Map.entry("surfaceQueued", surfaceQueued.get()),
+                Map.entry("surfaceBuilt", surfaceBuilt.get()));
     }
 }
