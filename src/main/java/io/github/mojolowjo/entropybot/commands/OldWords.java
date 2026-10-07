@@ -169,7 +169,7 @@ public final class OldWords {
             case "bed" -> { return "that is now spawn"; }
             case "pois" -> { return "removed in 0.22; use debug poi" + sp; }
             case "baritone" -> { return "removed in 0.22; use debug b" + sp; }
-            case "allowed" -> { return "that is now allow"; }
+            case "allowed" -> { return "that is now allow (allow with no name lists who I take orders from)"; }
             case "run" -> { return "that is now " + (r.isEmpty() ? "<routine name>" : r) + " (say the routine's name)"; }
             case "where" -> { return "that is now have" + (r.isEmpty() ? " <item>" : sp); }
             default -> { return null; }
