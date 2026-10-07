@@ -586,7 +586,9 @@ final class Mining {
             // V1b: the nearest never-seen chunk (that way, with a direction), inside or outside the areas; never a refused spot
             final int y = me[1];
             int[] c = io.github.mojolowjo.entropybot.vocab.ExploreWords.next(me[0] >> 4, me[2] >> 4, ex.sx, ex.sz, ex.dir,
-                    (cx, cz) -> notes().explored(ExploreRules.key(d, cx, cz)),
+                    // 0.23.1: unvisited = not in explored.json AND no painted map tile (a tile still loading counts as seen this round)
+                    (cx, cz) -> io.github.mojolowjo.entropybot.vocab.ExploreWords.seen(notes().explored(ExploreRules.key(d, cx, cz)),
+                            core.terrain() == null ? Boolean.FALSE : core.terrain().painted(d, cx, cz)),
                     (cx, cz) -> {
                         String why = io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"),
                                 commands.fenceOn(), io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.EXPLORE);

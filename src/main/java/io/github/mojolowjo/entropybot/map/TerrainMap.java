@@ -100,6 +100,26 @@ public final class TerrainMap {
         }
     }
 
+    /**
+     * 0.23.1 (explore): is chunk cx cz painted on the map? TRUE / FALSE, or null while its region's tile is still being read
+     * (asked again later). A region with no tile on disk is unpainted at once. Client thread. Never throws (null).
+     */
+    public Boolean painted(String d, int cx, int cz) {
+        try {
+            int rx = MapMath.region(cx << 4), rz = MapMath.region(cz << 4);
+            Region r = regions.get(key(d, rx, rz));
+            if (r == null) {
+                Path f = root.resolve(MapMath.dimFolder(d)).resolve(MapMath.fileName(rx, rz));
+                if (!java.nio.file.Files.exists(f)) return Boolean.FALSE;
+                r = region(d, cx << 4, cz << 4, lastChunk);
+            }
+            int[] px = r.px;
+            return px == null ? null : MapMath.chunkPainted(px, cx, cz);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** A short line for the log: regions in memory, dirty ones, tiles on disk, the last write. */
     public String status() {
         try {

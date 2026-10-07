@@ -64,6 +64,14 @@ public final class MapMath {
         return Math.floorMod(z, REGION) * REGION + Math.floorMod(x, REGION);
     }
 
+    /** 0.23.1: chunk cx cz has at least one painted pixel in its region's pixels (px: the region holding that chunk). */
+    public static boolean chunkPainted(int[] px, int cx, int cz) {
+        if (px == null) return false;
+        int bx = cx << 4, bz = cz << 4;
+        for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) if (px[index(bx + x, bz + z)] != 0) return true;
+        return false;
+    }
+
     /**
      * The folder of a dimension: its id with ':' as '_' (minecraft:overworld -> minecraft_overworld); a '/'
      * in the id becomes '_' too, so every dimension is one folder deep.

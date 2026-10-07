@@ -46,6 +46,9 @@ public final class Core {
     private boolean ready, inWorld;
     /** B7b: the ground the bot has had loaded, painted into map tiles for the dashboard. */
     private io.github.mojolowjo.entropybot.map.TerrainMap terrain;
+
+    /** 0.23.1: the terrain map (explore asks it which chunks are painted), or null. */
+    public io.github.mojolowjo.entropybot.map.TerrainMap terrain() { return terrain; }
     private int errors;
     /** B7e (E5): the flight recorder; NONE until E5 installs its own in the ready block. Read by E1's debug verbs. */
     public volatile io.github.mojolowjo.entropybot.recorder.Recorder recorder = io.github.mojolowjo.entropybot.recorder.Recorder.NONE;
