@@ -94,6 +94,9 @@ public final class FastServer {
 
         /** P4 GET /column: {x, z, ground, id, family, canopy} by the surface export's rule (ground/canopy -1 = none). Null: not in a world. */
         default JsonObject column(int x, int z) { return null; }
+
+        /** B3 GET /actions: the action table plus the state summary (actions.json's content, built now). Null: not in a world. */
+        default JsonObject actions() { return null; }
     }
 
     /** Where the key lives: re-read when the file changes, so a new dashboard key works without a restart. */
@@ -314,6 +317,13 @@ public final class FastServer {
                         return;
                     }
                     onGame(ex, () -> col ? handler.column(v[0], v[1]) : handler.block(v[0], v[1], v[2]));
+                }
+                case "/actions" -> {
+                    if (!method.equals("GET")) {
+                        send(ex, 405, err("GET only"));
+                        return;
+                    }
+                    onGame(ex, handler::actions);
                 }
                 default -> send(ex, 404, err("unknown path " + path));
             }

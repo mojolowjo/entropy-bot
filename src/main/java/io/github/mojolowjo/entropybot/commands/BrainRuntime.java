@@ -194,6 +194,7 @@ public final class BrainRuntime implements BrainEnv {
                 } catch (RuntimeException ignored) {}
             }
         }
+        s.planner = c.planning::chainFor;          // B3: a goal with no chain asks the planner
         // brain copy
         if (brain.copyOn()) s.copy = copy.update(ownerReport(), owner, s.now, brain.config().i("copyIdleS"));
         // the upkeep facts
@@ -280,6 +281,11 @@ public final class BrainRuntime implements BrainEnv {
     }
 
     @Override public DecisionLog decisions() { return log; }
+
+    @Override public void goalDone(String chain) { c.vocab.goalDone(chain); }
+
+    /** B3: the game stage as last sensed (every 30 s), for actions.json. */
+    String stage() { return stage; }
 
     /** state.json's "brain": on, the branch, the job (null when the brain was never switched on). */
     JsonObject stateBlock() {

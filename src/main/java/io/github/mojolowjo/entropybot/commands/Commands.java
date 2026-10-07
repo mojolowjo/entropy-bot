@@ -175,6 +175,11 @@ public final class Commands implements Chains.Env {
     final Crafting crafting;
     /** C4 + C5 (0.20.1): bootstrap, light, stock, junk, tool care. */
     final CampCommands camp = new CampCommands(this);
+    /** B3: goal, plan, actions, actions.json, the brain's planner hook. */
+    final GoalPlanning planning = new GoalPlanning(this);
+
+    /** B3: the areas as the fence sees them (an empty array without a policy). */
+    com.google.gson.JsonArray effectiveAreas() { return policy == null ? new com.google.gson.JsonArray() : policy.effectiveAreas(); }
 
     Chains chainsRef() { return chains; }
 
@@ -605,6 +610,7 @@ public final class Commands implements Chains.Env {
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
             if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null) brainRuntime.brain.tick();     // B1: every 2 s, never throws
+        if (worldTicks > 400) planning.tick(tick);                                                   // B3: actions.json when the state changed (every 5 s), never throws
             if (tick % 40 == 21) {
                 try { camp.junkTick(player); } catch (RuntimeException e) { LOG.warn("[entropybot] junk: {}", e.toString()); }      // C5
             }
@@ -866,7 +872,9 @@ public final class Commands implements Chains.Env {
             String n = vocab.needs(player, rest);
             return Reply.now(rest.isBlank() && brainRuntime != null ? n + "\n" + brainRuntime.brain.scoresLine() : n);     // B1: the brain's scores
         }
-        if (verb.equals("goal")) return Reply.now(vocab.goal(rest));
+        if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // B3: the planner
+        if (verb.equals("plan")) return Reply.now(planning.plan(player, rest));
+        if (verb.equals("actions")) return Reply.now(planning.actions(rest));
         if (verb.equals("goals")) return Reply.now(vocab.goals(rest));
         if (verb.equals("need")) {
             String st = vocab.needStanding(player, rest);
@@ -1831,6 +1839,13 @@ public final class Commands implements Chains.Env {
         @Override
         public void beforeIdleAnswer() {
             writeState(Minecraft.getInstance(), core.tick());
+        }
+
+        @Override
+        public JsonObject actions() {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null) return null;
+            return planning.document();
         }
 
         @Override
