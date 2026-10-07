@@ -184,8 +184,8 @@ class MiningRulesTest {
         assertEquals("error: \"mine\" only takes ores (and sand, gravel, clay, grass): oak_planks could be part of a build. \"dig x1 y1 z1 x2 y2 z2\" clears a box",
                 MineRules.notAnOre("minecraft:oak_planks"));
         assertEquals("error: I only \"mine\" inside my areas (map, home); elsewhere use stripmine", MineRules.outsideAreas(List.of("map", "home"), "hint"));
-        assertEquals("error: I only \"mine\" inside my areas (none set - area <name> <r>); elsewhere use stripmine",
-                MineRules.outsideAreas(List.of(), "area <name> <r>"));
+        assertEquals("error: I only \"mine\" inside my areas (none set - area here <r> <name>); elsewhere use stripmine",
+                MineRules.outsideAreas(List.of(), "area here <r> <name>"));
         Map<String, Integer> g = new LinkedHashMap<>();
         g.put("minecraft:raw_iron", 3);
         g.put("minecraft:cobblestone", 9);

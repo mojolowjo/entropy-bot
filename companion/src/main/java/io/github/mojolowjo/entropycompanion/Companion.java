@@ -172,7 +172,7 @@ public final class Companion {
             String lower = t.toLowerCase(Locale.ROOT);
             if (t.isEmpty() || lower.equals("help")) {
                 say("/bot <command> sends it to the bot. Here: /bot that (point), /bot that? (show only), /bot companion, "
-                        + "/bot corner1|corner2, /bot corners area|protect <name>, /bot corners clear, /bot boxes on|off. Bot help: /bot help <verb>");
+                        + "/bot corner1|corner2, /bot corners area|destroy|main|safe <name>, /bot corners clear, /bot boxes on|off. Bot help: /bot help <verb>");
                 return;
             }
             if (lower.equals("status")) {
@@ -239,11 +239,13 @@ public final class Companion {
         mc.execute(() -> {
             if (mc.player == null) return;
             MutableComponent line = prefix().append(Component.literal("both corners set - name it: "));
-            line.append(choice("[area]", "/bot corners area ", "the bot may work in this box (all heights)", ChatFormatting.GREEN));
+            line.append(choice("[area]", "/bot corners area ", "a neutral area: the bot may walk and dig natural blocks (all heights)", ChatFormatting.WHITE));
             line.append(Component.literal(" "));
-            line.append(choice("[area, these heights]", "/bot corners areay ", "the bot may work here, only between the corners' heights", ChatFormatting.DARK_GREEN));
+            line.append(choice("[destroy]", "/bot corners destroy ", "a destroy area between the corners' heights: dig <name> breaks everything there, built blocks too (never chests)", ChatFormatting.RED));
             line.append(Component.literal(" "));
-            line.append(choice("[protect]", "/bot corners protect ", "never dig here (a friend's build); 8 below to 16 above", ChatFormatting.RED));
+            line.append(choice("[main]", "/bot corners main ", "the main area (the base): never breaks built blocks (all heights)", ChatFormatting.BLUE));
+            line.append(Component.literal(" "));
+            line.append(choice("[safe]", "/bot corners safe ", "a safe area (someone's build): walk only, never dig; 8 below to 16 above", ChatFormatting.GREEN));
             mc.gui.getChat().addMessage(line);
         });
     }
@@ -265,10 +267,11 @@ public final class Companion {
             return;
         }
         String cmd = switch (sub) {
-            case "area" -> corners.areaCommand(name, false);
-            case "areay" -> corners.areaCommand(name, true);
-            case "protect" -> corners.protectCommand(name);
-            default -> "error: /bot corners area|areay|protect <name> | clear";
+            case "area", "neutral" -> corners.areaCommand(name, "neutral", false);
+            case "areay" -> corners.areaCommand(name, "neutral", true);
+            case "destroy", "main", "safe" -> corners.areaCommand(name, sub, false);
+            case "protect" -> corners.areaCommand(name, "safe", false);      // the old button word: a safe area now
+            default -> "error: /bot corners area|destroy|main|safe <name> | clear";
         };
         if (cmd.startsWith("error:")) {
             say(cmd);
@@ -285,7 +288,7 @@ public final class Companion {
         boxView = on;
         boxNextAt = 0;
         boxDownNoticed = false;
-        say("box view " + (on ? "on (green: areas, red: protect boxes, yellow: your corners)" : "off"));
+        say("box view " + (on ? "on (white: neutral, red: destroy, blue: main, green: safe areas, yellow: your corners)" : "off"));
     }
 
     /** From the client tick: fetch /api/map/boxes every 5 s while the box view is on. */

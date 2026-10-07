@@ -161,7 +161,7 @@ final class Gathering {
         }
         int[] me = Jobs.here(p);
         if (!commands.inAreas(Storage.dim(), me[0], me[2])) {
-            end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, "I'm outside my areas at " + Jobs.fmt(me), "walk me back into one, or \"area <name> <r>\""));
+            end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, "I'm outside my areas at " + Jobs.fmt(me), "walk me back into one, or \"area here <r> <name>\""));
             return;
         }
         GatherPlan.Step s;

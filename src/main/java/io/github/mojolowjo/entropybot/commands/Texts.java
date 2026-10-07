@@ -17,14 +17,14 @@ public final class Texts {
             "recipe", "come", "follow", "goto", "stop", "restart", "hold", "scout");
 
     public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
-            + "routines, routine show <name>, ores, stripmine status, restart ok|no, guard, guard vetoes, area list, area show <name>, area near, poi, poi show <id>, scout <dir> [n], find nearest <thing>";
+            + "routines, routine show <name>, ores, stripmine status, restart ok|no, fence, fence vetoes, area list, area show <name>, area near, poi, poi show <id>, scout <dir> [n], find nearest <thing>";
 
     /** Every command word; routine names can't use these. */
     public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
-            "setbase", "sethome", "forget", "places", "where", "have", "stock", "zone", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
+            "setbase", "sethome", "forget", "places", "where", "have", "stock", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
             "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "watch", "recorder", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
-            "stripmine", "ores", "dig", "place", "memory", "restart", "area", "protect", "unprotect", "guard", "compact", "rs", "trust", "untrust", "pots",
+            "stripmine", "ores", "dig", "place", "memory", "restart", "area", "fence", "compact", "rs", "trust", "untrust", "pots",
             "poi", "pois", "explore", "caves", "smelt", "get", "need", "supplies", "restock", "rule", "rules", "autominer", "why", "resume", "escort",
             "deaths", "reconnect", "hotbar", "tools", "infuse", "upgrade", "check", "confirm", "route", "surface", "restore", "chop", "gather", "cook",
             "bootstrap", "sleep", "light", "junk", "hold", "give", "carry", "unload", "fetch", "attack", "scout");
@@ -47,11 +47,11 @@ public final class Texts {
                     + "carry <item...> | carry off | carry list (follow you, pick up those drops near you), unload (home, deposit, back to you), fetch <item> [n] (storage, else gather, then give me)",
             "Making things: craft <item> [n] fetches what it needs from my chests and the RS network and uses a furnace when a step needs one; smelt <item> [n] (e.g. smelt iron_ingot 9; I go on with other things and pick it up when it is done), smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>, "
                     + "need <item> [n] (what it takes, what is missing), get <item> [n] (from storage), supplies set <item n, ...> | supplies | supplies clear, restock (top the supplies up), infuse <seed> [n] (on the infusion altar: I fetch the ingredients, fill the altar and pedestals, press the button; I never touch what isn't mine), upgrade <essence> [n] (e.g. upgrade imperium 4: the tiers climbed with the infusion crystal kept, in rounds my bag holds)",
-            "Items: inv, eat, wear, craft <item> [n] (planks = any wood; \"copper armor\", \"iron tools\"; comma lists), kit <material>, recipe <item>, drop <item|all> [n], mine <ore> [n] [dig] (ores, sand, gravel, clay, grass; inside my areas, 16+ from protect boxes; fetches a pickaxe first)",
+            "Items: inv, eat, wear, craft <item> [n] (planks = any wood; \"copper armor\", \"iron tools\"; comma lists), kit <material>, recipe <item>, drop <item|all> [n], mine <ore> [n] [dig] (ores, sand, gravel, clay, grass; inside my areas, 16+ from safe areas; fetches a pickaxe first)",
             "Tools and hotbar: hotbar set 1 pickaxe 2 sword 3 food 4 torch (slots 1-9; pickaxe, sword, axe, shovel, hoe, food, torch or an item; I put them there when idle), hotbar, hotbar clear <slot>|all, "
                     + "tools, tools ores iron|cheapest (ores with the iron pickaxe, or the cheapest that does the job; stone pickaxes for stone)",
             "Chests: scan [radius] (learn the chests around me), scan base|<place>|x y z (go there and learn them), deposit [item...] (put loot away in the base chests), where <item>, open x y z|<place> (walks there), take/put <item|all> [n] (exact; \"only ...\" = fell short), close, untrust/trust x y z|<place> (keep me out of a chest), trust (list) | Places: mark <name>, setbase, places, forget <name>, mark food (next to a chest: I fetch food from it when I run out)",
-            "Zone: zone corner1, zone corner2 (stand on them), zone, build <floor|walls|shell|fill> <block>, build clear (breaks everything in the zone, top down), dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]], place <block> x y z",
+            "Building: build <floor|walls|shell|fill> <block> <area>, build clear <area> (breaks everything in that area, top down), dig <area> (its whole box; a destroy area loses built blocks too), dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]], place <block> x y z",
             "Mining: mark mine (stand at the start facing the way to dig), stripmine [branches] [length] (try \"repeat forever stripmine\"), stripmine status|reset, stripmine ores collect|list (mine ores inside the mapped area, or only list them), stripmine turn left|right (a new mine from the corridor end; I turn by myself when the corridor is blocked), ores [name|clear]",
             "Mining for ores: mine strip <ores> [n] [at <mine>] (runs until n of them are mined), mine cave <ores> [n | <min>m] [at <cave>] (explores a cave, lights it, mines what it sees; remembers how far it got), "
                     + "ores: iron,diamond or iron_ore or any; ores prefer <ores> (the default list), caves (list), caves rename <old> <new>, explore [minutes] (walk unvisited land inside my areas, note what is there) | "
@@ -66,10 +66,9 @@ public final class Texts {
                     + "deaths, death policy on|off (fetch my corpse after a death; 5 deaths an hour park me), resume (after parking); reconnect on|off (after a kick); a running routine carries on after a reload or restart (12 h)",
             "Recorder (owner): recorder (settings, disk, incidents), recorder off|light|normal|detailed|max [for 30m|2h], recorder range <chunks> | trail <ticks|Ns> | snapshot <blocks>|now | states on|off | keep <hours> | mark <note>",
             "Chains: cmd then cmd then cmd | routine save <name> <chain>, routines, routine show/delete <name>, <name> (runs it), repeat [n|forever] <name or chain>, queue, stop",
-            "Guard (where I may go and dig): area <name> <r> (a work area r blocks around you), area protect <name> <r> [down up] (never dig there), area near [<r>|on|off] (I may work within 16 blocks of you anywhere), "
-                    + "area list, area show <name>, area add <name> x1 z1 x2 z2 [y1 y2], area corner1, area corner2 <name>, area grow <name> <n>, "
-                    + "area remove <name> confirm, area unprotect <name> confirm, protect <name> x1 y1 z1 x2 y2 z2, guard, guard vetoes, guard check x y z break|place|go, "
-                    + "guard mode strict | log confirm");
+            "Areas (where I may go and dig): area here <r> <name> [type] [down up], area x z x2 z2 <name> [type] [y1 y2] (types: neutral (white, the default), destroy (red: dig <area> breaks built blocks too), "
+                    + "main (blue: the base, built blocks never), safe (green: walk only, never dig)), area change name <name> <new>, area change type <name> <type>, area del <name> confirm, area list, area show <name>, "
+                    + "area near [<r>|on|off] (I may work within 16 blocks of you anywhere) | Fence: fence, fence vetoes, fence check x y z break|place|go, fence mode strict | log confirm");
 
     private static final Pattern CHAIN_SPLIT = Pattern.compile("\\s*;\\s*|\\s+then\\s+", Pattern.CASE_INSENSITIVE);
     private static final Pattern FAILED = Pattern.compile("^(error|busy|unknown|usage|only |sorry|i can't|i cannot|i have no|i don't|i haven't|no |nothing|none|say what)",
@@ -103,11 +102,12 @@ public final class Texts {
         if (splitChain(raw).size() > 1) return "sorry, only " + owner + " can start chains";
         if (verb.equals("stock") && isStockTargetsForm(r)) return "sorry, stock targets|set|clear are " + owner + "'s - you can use stock [filter]";
         if (GUEST_VERBS.contains(verb)) return null;
+        if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return OldWords.hint(verb, r);       // V1a: the cut word, its new form
         if ((verb.equals("routine") || verb.equals("routines")) && (r.isEmpty() || r.matches("^show\\b.*"))) return null;
         if (verb.equals("why") || verb.equals("rules") || (verb.equals("deaths") && r.isEmpty()) || (verb.equals("autominer") && (r.isEmpty() || r.equals("status")))) return null;
         if (verb.equals("ores") && !r.matches("^(clear|forget)\\b.*") && !r.matches("^prefer\\s+\\S.*")) return null;
         if (verb.equals("stripmine") && r.equals("status")) return null;
-        if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return null;
+        if (verb.equals("fence") && (r.isEmpty() || r.equals("vetoes") || r.equals("status"))) return null;
         if (verb.equals("escort") && r.matches("^(|status|off|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
         if (verb.equals("area") && (r.equals("list") || r.matches("^show\\b.*") || r.matches("^near(\\s+status)?$"))) return null;
         if ((verb.equals("poi") || verb.equals("pois")) && !r.matches("^forget\\b.*")) return null;

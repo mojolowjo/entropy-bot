@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * C3's box view data: the bot's areas (green) and protect boxes (red) from the dashboard's {@code /api/map/boxes}
- * ({areas:[{name,dim,x1,z1,x2,z2,y1?,y2?}], protect:[...]}), and which of them to draw near the owner. Plain Java.
+ * C3's box view data: the bot's areas, coloured by type (0.2.1: neutral white, destroy red, main blue, safe green), from the dashboard's {@code /api/map/boxes}
+ * ({areas:[{name,dim,x1,z1,x2,z2,y1?,y2?,type?}], protect:[... the safe ones]}), and which of them to draw near the owner. Plain Java.
  */
 public final class BoxSet {
     public static final int RANGE = 128;
@@ -19,7 +19,21 @@ public final class BoxSet {
     public enum Kind { AREA, PROTECT, CORNER }
 
     /** Inclusive block box; an area without heights spans the whole world height. */
-    public record Box(Kind kind, String name, String dim, int x1, int y1, int z1, int x2, int y2, int z2) {}
+    public record Box(Kind kind, String name, String dim, int x1, int y1, int z1, int x2, int y2, int z2, String type) {
+        public Box(Kind kind, String name, String dim, int x1, int y1, int z1, int x2, int y2, int z2) {
+            this(kind, name, dim, x1, y1, z1, x2, y2, z2, kind == Kind.PROTECT ? "safe" : "neutral");
+        }
+    }
+
+    /** 0.2.1: the line colour {r, g, b} of an area type (the bot's AreaType): neutral white, destroy red, main blue, safe green. */
+    public static float[] colour(String type) {
+        return switch (type == null ? "neutral" : type) {
+            case "destroy" -> new float[]{1f, 0.2f, 0.2f};
+            case "main" -> new float[]{0.2f, 0.45f, 1f};
+            case "safe" -> new float[]{0.2f, 1f, 0.25f};
+            default -> new float[]{1f, 1f, 1f};
+        };
+    }
 
     /** The boxes in a /api/map/boxes answer; bad entries are skipped. Throws on a body that is not JSON. */
     public static List<Box> parse(String body) {
@@ -40,8 +54,9 @@ public final class BoxSet {
                 int y2 = b.has("y2") && !b.get("y2").isJsonNull() ? b.get("y2").getAsInt() : WORLD_MAX_Y;
                 String dim = b.has("dim") ? b.get("dim").getAsString() : "minecraft:overworld";
                 String name = b.has("name") ? b.get("name").getAsString() : "?";
-                out.add(new Box(kind, name, dim, Math.min(x1, x2), Math.min(y1, y2), Math.min(z1, z2),
-                        Math.max(x1, x2), Math.max(y1, y2), Math.max(z1, z2)));
+                String type = kind == Kind.PROTECT ? "safe" : b.has("type") && b.get("type").isJsonPrimitive() ? b.get("type").getAsString() : "neutral";
+                out.add(new Box(type.equals("safe") ? Kind.PROTECT : kind, name, dim, Math.min(x1, x2), Math.min(y1, y2), Math.min(z1, z2),
+                        Math.max(x1, x2), Math.max(y1, y2), Math.max(z1, z2), type));
             } catch (RuntimeException ignored) {
                 // one broken entry never hides the rest
             }

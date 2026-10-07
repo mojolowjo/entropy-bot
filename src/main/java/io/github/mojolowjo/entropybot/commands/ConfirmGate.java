@@ -38,7 +38,13 @@ public final class ConfirmGate {
         static Gate say(String reply) { return new Gate(reply, null); }
     }
 
-    enum Kind { BUILD_CLEAR, DIG, AREA_REMOVE, STRIP_RESET }
+    enum Kind { BUILD_CLEAR, DIG, DIG_AREA, AREA_REMOVE, STRIP_RESET }
+
+    /** V1a: the area of "dig &lt;area&gt; [words]" (a name, not a coordinate), or null. */
+    static String digArea(List<String> w) {
+        if (w.isEmpty() || w.get(0).matches("^[-~0-9].*")) return null;
+        return w.get(0);
+    }
 
     private record Pending(String line, String what, long until) {}
 
@@ -162,8 +168,8 @@ public final class ConfirmGate {
         if (!w.isEmpty() && w.get(w.size() - 1).equals("confirm")) w = w.subList(0, w.size() - 1);
         switch (vr[0]) {
             case "build" -> { return !w.isEmpty() && w.get(0).equals("clear") ? Kind.BUILD_CLEAR : null; }
-            case "dig" -> { return digVolume(w) > BIG_DIG ? Kind.DIG : null; }
-            case "area" -> { return w.size() >= 2 && w.get(0).equals("remove") ? Kind.AREA_REMOVE : null; }
+            case "dig" -> { return digVolume(w) > BIG_DIG ? Kind.DIG : digArea(w) != null ? Kind.DIG_AREA : null; }
+            case "area" -> { return w.size() >= 2 && w.get(0).equals("del") ? Kind.AREA_REMOVE : null; }
             case "stripmine" -> { return w.size() == 1 && w.get(0).equals("reset") ? Kind.STRIP_RESET : null; }
             default -> { return null; }
         }
@@ -210,8 +216,12 @@ public final class ConfirmGate {
         List<String> w = Texts.words(Texts.verbAndRest(step)[1]);
         switch (k) {
             case BUILD_CLEAR -> {
-                String z = facts.zone();
-                return "build clear breaks every block in the " + (z != null ? z : "work zone") + ", top down (chests, built blocks and ores next to water or lava stay)";
+                String name = w.size() > 1 ? w.get(1) : "?", a = facts.area(name);
+                return "build clear breaks every block in the area " + name + (a != null ? " (" + a + ")" : "") + ", top down (chests, built blocks and ores next to water or lava stay)";
+            }
+            case DIG_AREA -> {
+                String name = w.get(0), a = facts.area(name);
+                return "dig " + name + " breaks every block in that area" + (a != null ? " (" + a + ")" : "") + " (a destroy area: built blocks too; never chests)";
             }
             case DIG -> {
                 if (w.get(4).equalsIgnoreCase("down") || w.get(4).equalsIgnoreCase("up"))
@@ -221,7 +231,7 @@ public final class ConfirmGate {
             }
             case AREA_REMOVE -> {
                 String name = w.get(1), a = facts.area(name);
-                return "area remove forgets the work area " + name + (a != null ? " (" + a + ")" : "") + "; a job whose box falls outside my areas stops";
+                return "area del forgets the area " + name + (a != null ? " (" + a + ")" : "") + "; a job whose box falls outside my areas stops";
             }
             default -> {
                 String m = facts.mine();

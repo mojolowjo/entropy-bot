@@ -51,6 +51,8 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     /** The rules' findings plus routing's (routing stage 1: planner not running, its errors, many fallbacks). */
     private List<SelfCheck.Finding> findings(LocalPlayer p) {
         List<SelfCheck.Finding> f = new java.util.ArrayList<>(SelfCheck.run(state(p)));
+        // V1a: the areas.json migration failed (the old file still loads; its protect boxes count as safe areas)
+        if (c.areaMigrationProblem != null) f.add(0, new SelfCheck.Finding("areasv1", c.areaMigrationProblem, "fix the file, then restart the game"));
         // C5 tool care: a worn or broken tool that nothing could replace
         for (String id : c.camp.careFindings()) f.add(new SelfCheck.Finding("toolcare:" + id, "my " + id + " is nearly broken or gone, and nothing can replace it (none in the chests, nothing to craft one from)",
                 "put a " + id + " (or its materials) in the base chests"));
@@ -263,11 +265,13 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     public String area(String name) {
         Policy pol = Core.INSTANCE.guard.core.basePolicy();
         if (pol == null || pol.areas == null) return null;
-        for (Box b : pol.areas) {
+        List<Box> all = new java.util.ArrayList<>(pol.areas);
+        all.addAll(pol.protect);
+        for (Box b : all) {
             if (b.name != null && b.name.equalsIgnoreCase(name)) {
                 Minecraft mc = Minecraft.getInstance();
                 boolean here = mc.level != null && Guard.dimOf(mc.level).equals(b.dim);
-                return "x " + b.x1 + ".." + b.x2 + ", z " + b.z1 + ".." + b.z2 + (here ? "" : ", " + b.dim);
+                return b.type.word() + ", x " + b.x1 + ".." + b.x2 + ", z " + b.z1 + ".." + b.z2 + (b.allY() ? "" : ", y " + b.y1 + ".." + b.y2) + (here ? "" : ", " + b.dim);
             }
         }
         return null;

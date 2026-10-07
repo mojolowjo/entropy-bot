@@ -370,12 +370,17 @@ public final class Jobs {
     long lastTravelAt;
 
     public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex) {
+        return startTravel(goal, label, dest, destDim, reflex, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER);
+    }
+
+    /** V1a: walker OWNER_ORDER (the owner's own goto/go) may walk outside every area; digging rules are unchanged. */
+    public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker walker) {
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
         LocalPlayer p = Minecraft.getInstance().player;
         if (!reflex) {
             int[] spot = dest != null ? dest : FenceRules.goalSpot(goal, (int) Math.floor(p.getY()));
-            String why = spot == null ? null : goalAllowed(spot[0], spot[1], spot[2]);
+            String why = spot == null ? null : FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(Minecraft.getInstance().level), spot[0], spot[1], spot[2], "go"), commands.fenceOn(), walker);
             if (why != null) return FenceRules.gotoRefusal(why);
             lastTravelAt = System.currentTimeMillis();     // package D: an errand (come, goto, go...) holds the furnace pickups
         }

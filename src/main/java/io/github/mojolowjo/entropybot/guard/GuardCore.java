@@ -135,7 +135,7 @@ public final class GuardCore {
 
     public synchronized String setMode(Mode m) {
         mode = m;
-        return "ok: guard mode " + m.name().toLowerCase();
+        return "ok: fence mode " + m.name().toLowerCase();
     }
 
     /** T2: a one-cell lease at x y z would be granted and a placement there not refused by the floor (no lease taken). */
@@ -159,6 +159,34 @@ public final class GuardCore {
         String id = "L" + (nextId++);
         Map<String, Lease> m = new LinkedHashMap<>(leases);
         m.put(id, new Lease(id, owner, task, box, place, force, tick, false, viaNear));
+        leases = Collections.unmodifiableMap(m);
+        return id;
+    }
+
+    /**
+     * V1a (0.22.0): a destroy lease: granted only for the owner's own "dig &lt;area&gt;" ({@code ownerDigArea}) when the box
+     * lies wholly inside that one area and the area's type is destroy (AreaTypeRules.breakBuilt), at most
+     * {@link #MAX_LEASE_VOLUME}. Its box may lose built blocks too; block entities stay floor. Granted and refused ones
+     * go into the veto log's event list. Returns the id, or "error: ...".
+     */
+    public synchronized String destroyLease(String owner, String task, Box box, String areaName, boolean ownerDigArea) {
+        if (owner == null || owner.isEmpty()) return "error: no token";
+        if (DENIED_DIMS.contains(box.dim)) return "error: no digging in " + box.dim;
+        if (box.allY()) return "error: a lease needs y1 and y2";
+        if (box.volume() > MAX_LEASE_VOLUME) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + MAX_LEASE_VOLUME;
+        Box a = basePolicy.destroyCovering(box, areaName == null ? "" : areaName);
+        if (a == null || !AreaTypeRules.breakBuilt(a.type, ownerDigArea)) {
+            String why = !ownerDigArea ? "built blocks go only with the owner's own dig <area>"
+                    : "that box is not inside the destroy area " + areaName;
+            log.record(tick, "destroy", box.dim, box.x1, box.y1, box.z1, "destroy lease refused: " + why, false, true);
+            return "error: " + why;
+        }
+        String id = "L" + (nextId++);
+        Lease l = new Lease(id, owner, task, box, false, false, tick, false, false);
+        l.destroy = true;
+        l.area = a.name;
+        Map<String, Lease> m = new LinkedHashMap<>(leases);
+        m.put(id, l);
         leases = Collections.unmodifiableMap(m);
         return id;
     }
@@ -269,9 +297,11 @@ public final class GuardCore {
         Mode m = mode;
         if (DENIED_DIMS.contains(dim)) return Verdict.floor("no " + action + " in " + dim);
         boolean go = "go".equals(action), place = "place".equals(action);
+        Box pr = p.protectAt(dim, x, y, z);
         if (!go) {
-            Box pr = p.protectAt(dim, x, y, z);
-            if (pr != null) return Verdict.floor("protected (" + (pr.name == null ? "box" : pr.name) + ")");
+            if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (safe)");
+        } else if (pr != null) {
+            return Verdict.OK;                          // V1a: a safe area may be walked
         }
         if (p.areaAt(dim, x, y, z) == null) {
             // 0.21.2: a lease granted inside the near-me zone stays good in its box after the owner walked off
@@ -304,7 +334,7 @@ public final class GuardCore {
             if (block.hasBlockEntity()) return Verdict.floor("block entity (a chest, machine, bed...)");
             if (block.isProtectedBlock()) {
                 Lease f = leaseAt(dim, x, y, z, false);
-                if (f == null || !f.force) return Verdict.floor("built block");
+                if (f == null || !(f.force || f.destroy)) return Verdict.floor("built block");
             }
         }
         if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {

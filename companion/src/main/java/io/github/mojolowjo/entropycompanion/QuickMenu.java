@@ -67,8 +67,10 @@ final class QuickMenu extends Screen {
         name.setMaxLength(24);
         name.setHint(Component.literal("area name"));
         addRenderableWidget(name);
-        addRenderableWidget(Button.builder(Component.literal("area"), b -> corners("area")).bounds(x0 + 100, y, 64, h).build());
-        addRenderableWidget(Button.builder(Component.literal("protect"), b -> corners("protect")).bounds(x0 + 168, y, 64, h).build());
+        addRenderableWidget(Button.builder(Component.literal("area"), b -> corners("area")).bounds(x0 + 100, y, 32, h).build());
+        addRenderableWidget(Button.builder(Component.literal("destroy"), b -> corners("destroy")).bounds(x0 + 134, y, 32, h).build());
+        addRenderableWidget(Button.builder(Component.literal("main"), b -> corners("main")).bounds(x0 + 168, y, 32, h).build());
+        addRenderableWidget(Button.builder(Component.literal("safe"), b -> corners("safe")).bounds(x0 + 202, y, 32, h).build());
         addRenderableWidget(Button.builder(Component.literal(c.boxView ? "boxes: on" : "boxes: off"), b -> {
             c.setBoxView(!c.boxView);
             onClose();

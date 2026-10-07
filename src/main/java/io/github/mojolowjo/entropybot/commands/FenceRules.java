@@ -30,6 +30,16 @@ public final class FenceRules {
         return r.replaceFirst("^would refuse: ", "").replaceFirst("^error: ", "guard error: ");
     }
 
+    /**
+     * V1a (0.22.0): as {@link #goalAllowed(String, boolean)}, but a walker AreaTypeRules lets out (the owner's own
+     * goto/go, explore, find) may walk to a spot outside every area. The floor (a portal, the Nether/End) still holds.
+     */
+    public static String goalAllowed(String check, boolean fenceOn, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker who) {
+        String why = goalAllowed(check, fenceOn);
+        if (why == null || !io.github.mojolowjo.entropybot.guard.AreaTypeRules.walk(null, who)) return why;
+        return why.startsWith("outside every area") || why.startsWith("no areas set") ? null : why;
+    }
+
     /** Where a travel goal ends, for the fence: "goto x y z", "goto x z" (at the bot's level y); null for a follow. */
     public static int[] goalSpot(String goal, int botY) {
         String g = goal == null ? "" : goal;
@@ -53,12 +63,12 @@ public final class FenceRules {
     /** "come" to an owner the fence won't let the bot reach. */
     public static String comeRefusal(String why, int x, int z) {
         if (why.startsWith("next to a ")) return "you're " + why;
-        return "you're outside my areas (" + x + " " + z + ") - area <name> 30";
+        return "you're outside my areas (" + x + " " + z + ") - area here 30 <name>";
     }
 
     /** "follow" a player standing outside the areas. */
     public static String followRefusal(String name, int x, int z) {
-        return name + " is outside my areas (" + x + " " + z + ") - area <name> 30";
+        return name + " is outside my areas (" + x + " " + z + ") - area here 30 <name>";
     }
 
     /** The whisper when a followed player leaves the areas (the follow ends, Baritone is cancelled). */

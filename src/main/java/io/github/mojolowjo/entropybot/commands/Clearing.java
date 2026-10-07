@@ -716,7 +716,8 @@ public final class Clearing {
     }
 
     private static String takeLeases(ClearState s) {
-        String r = s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
+        String r = s.job.destroyArea != null ? s.leases.takeDestroy(s.job.label, s.job.breakLeaseBox(), s.job.destroyArea)
+                : s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
         if (r == null && s.job.torchLeaseBox() != null) r = s.leases.take(s.job.torchLeaseTask(), s.job.torchLeaseBox(), true, false);
         return r;
     }

@@ -57,10 +57,10 @@ class SelfCheckTest {
     void eachRuleWithItsFix() {
         SelfCheck.Finding f = only(with(good(), "areas", 0));
         assertEquals("areas", f.key());
-        assertEquals("area <name> 60", f.fix());
+        assertEquals("area here 60 <name>", f.fix());
         f = only(with(good(), "strict", false));
         assertEquals("logmode", f.key());
-        assertEquals("guard mode strict", f.fix());
+        assertEquals("fence mode strict", f.fix());
         assertEquals("areas", only(with(with(good(), "strict", false), "areas", 0)).key(), "no areas says that, not log mode");
         assertEquals("setbase (standing at the base)", only(with(good(), "baseMarked", false)).fix());
         assertEquals("scan base", only(with(good(), "baseChests", 0)).fix());

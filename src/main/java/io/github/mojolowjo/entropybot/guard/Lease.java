@@ -24,6 +24,12 @@ public final class Lease {
      * box when the owner walks off (a dig started next to them finishes); it never reaches past its box.
      */
     public final boolean near;
+    /**
+     * V1a (0.22.0): a destroy lease: the owner's own "dig &lt;area&gt;" on a destroy area; it may break built blocks inside
+     * its box (never block entities). {@link #area} names that area.
+     */
+    public boolean destroy;
+    public String area;
     volatile long lastHeartbeat;
 
     Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick) {
@@ -56,6 +62,7 @@ public final class Lease {
         if (force) o.addProperty("force", true);
         if (seal) o.addProperty("seal", true);
         if (near) o.addProperty("near", true);
+        if (destroy) o.addProperty("destroy", area == null ? "?" : area);
         o.addProperty("since", createdTick);
         return o;
     }

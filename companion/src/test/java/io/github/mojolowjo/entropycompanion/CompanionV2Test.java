@@ -207,9 +207,12 @@ class CompanionV2Test {
         assertTrue(c.areaCommand("farm", false).startsWith("error: set corner 1"));
         c.set(1, new Corners.Pos(10, 64, -5, "minecraft:overworld"));
         c.set(2, new Corners.Pos(-20, 70, 30, "minecraft:overworld"));
-        assertEquals("area add farm -20 -5 10 30", c.areaCommand("farm", false));
-        assertEquals("area add farm -20 -5 10 30 64 70", c.areaCommand("farm", true));
-        assertEquals("protect alex_house -20 56 -5 10 86 30", c.protectCommand("alex_house"));
+        assertEquals("area -20 -5 10 30 farm", c.areaCommand("farm", false));
+        assertEquals("area -20 -5 10 30 farm 64 70", c.areaCommand("farm", true));
+        assertEquals("area -20 -5 10 30 alex_house safe 56 86", c.areaCommand("alex_house", "safe", false));
+        assertEquals("area -20 -5 10 30 pit destroy 64 70", c.areaCommand("pit", "destroy", false), "dig <area> needs heights");
+        assertEquals("area -20 -5 10 30 base main", c.areaCommand("base", "main", false));
+        assertTrue(c.areaCommand("x", "purple", false).startsWith("error: type"));
         assertTrue(c.areaCommand("Bad Name", false).startsWith("error: a name"));
         assertTrue(c.areaCommand("", false).startsWith("error"));
         c.set(2, new Corners.Pos(0, 0, 0, "minecraft:the_nether"));
@@ -238,6 +241,23 @@ class CompanionV2Test {
         assertEquals(1, BoxSet.near(all, "minecraft:overworld", 300, 0, BoxSet.RANGE).size(), "77 blocks outside the map area: in range");
         assertEquals(0, BoxSet.near(all, "minecraft:overworld", 400, 0, BoxSet.RANGE).size());
         assertThrows(RuntimeException.class, () -> BoxSet.parse("not json"));
+        assertEquals("safe", base.type());
+        assertEquals("neutral", all.get(0).type());
+    }
+
+    /** 0.2.1: the area types' colours (the bot's 0.22.0 areas carry "type"). */
+    @Test
+    void boxColoursByType() {
+        String body = "{\"areas\":[{\"name\":\"a\",\"x1\":0,\"z1\":0,\"x2\":1,\"z2\":1,\"type\":\"destroy\"},{\"name\":\"b\",\"x1\":0,\"z1\":0,\"x2\":1,\"z2\":1,\"type\":\"main\"},"
+                + "{\"name\":\"c\",\"x1\":0,\"z1\":0,\"x2\":1,\"z2\":1,\"type\":\"safe\"}],\"protect\":[]}";
+        List<BoxSet.Box> all = BoxSet.parse(body);
+        assertEquals(List.of("destroy", "main", "safe"), all.stream().map(BoxSet.Box::type).toList());
+        assertEquals(BoxSet.Kind.PROTECT, all.get(2).kind());
+        assertArrayEquals(new float[]{1f, 1f, 1f}, BoxSet.colour("neutral"));
+        assertArrayEquals(new float[]{1f, 0.2f, 0.2f}, BoxSet.colour("destroy"));
+        assertArrayEquals(new float[]{0.2f, 0.45f, 1f}, BoxSet.colour("main"));
+        assertArrayEquals(new float[]{0.2f, 1f, 0.25f}, BoxSet.colour("safe"));
+        assertArrayEquals(new float[]{1f, 1f, 1f}, BoxSet.colour(null));
     }
 
     // ---- the link notices once

@@ -141,6 +141,11 @@ public final class Commands implements Chains.Env {
 
     /** Every second: forget furnace jobs long past due (the owner hears it), and pick up due output while the bot is idle. */
     private void furnaceTick(LocalPlayer player, long tick) {
+        String mig = areaMigrationNote;                 // V1a: the one-time migration whisper
+        if (mig != null && tick > 200) {
+            areaMigrationNote = null;
+            whisper(owner(), mig);
+        }
         io.github.mojolowjo.entropybot.craft.FurnaceJobs fj = crafting.furnaces();
         if (fj.isEmpty()) return;
         long now = System.currentTimeMillis();
@@ -326,6 +331,41 @@ public final class Commands implements Chains.Env {
 
     // ---- start ----
 
+    /** V1a: an area of any type by name (its areas.json entry), or null. */
+    JsonObject policyArea(String name) { return policy == null ? null : policy.findArea(name); }
+
+    /** V1a: why the areas.json migration failed (null: fine); {@code check} reports it. */
+    volatile String areaMigrationProblem;
+    /** V1a: the migration's whisper for the owner (sent once when the bot is up), or null. */
+    volatile String areaMigrationNote;
+
+    /**
+     * V1a (0.22.0): areas.json v1 -> v2 ({@link AreaMigration}): areas.json and commands.json backed up first (a failed
+     * backup refuses the migration), one log line per change, both files saved. Never throws.
+     */
+    private String migrateAreas(BotFiles files) {
+        try {
+            JsonObject a = areaStore.data();
+            if (!AreaMigration.needed(a)) return "; areas: v2";
+            if (!areaStore.existed() || (a.size() == 0)) {
+                a.addProperty("version", PolicyCommands.VERSION);
+                areaStore.flush();
+                return "; areas: v2 (new file)";
+            }
+            AreaMigration.Result r = AreaMigration.withBackup(a, core.knowledge.places(), brainStore.data(), files::writeJson);
+            for (String l : r.lines()) LOG.info("[entropybot] areas: migrated {}", l);
+            areaStore.flush();
+            brainStore.flush();
+            areaMigrationNote = r.summary() + " (backup: " + AreaMigration.BACKUP_AREAS + ")";
+            LOG.info("[entropybot] {}", areaMigrationNote);
+            return "; " + areaMigrationNote;
+        } catch (RuntimeException e) {
+            areaMigrationProblem = "areas file v1 not migrated: " + e;
+            LOG.warn("[entropybot] areas: {}", areaMigrationProblem);
+            return "; " + areaMigrationProblem;
+        }
+    }
+
     /** Once, at the first tick in a world: the files, the move of the notes from the bridge's memory.json. */
     public String init(Minecraft mc, BotFiles files) {
         stateFiles = new BotFiles(mc.gameDirectory.toPath().resolve(BRIDGE_DIR));
@@ -398,6 +438,7 @@ public final class Commands implements Chains.Env {
         }
         pushHotbar();
         sb.append("; hotbar ").append(HotbarRules.describe(hotbarLayout())).append(", ores with ").append(toolOresSetting());
+        sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
         sb.append("; policy: ").append(policy.apply());
@@ -711,7 +752,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("ores")) return Reply.now(rest.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(rest) : Mining.get().ores(player, rest));
         if (verb.equals("stripmine") && rest.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, rest));
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
-        if (verb.equals("area") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
+        if (verb.equals("area") || verb.equals("fence") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
         if (verb.equals("recorder")) return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, rest, isOwner, owner()));     // B7e E5
@@ -756,7 +797,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("have")) return Reply.now(storage.have(player, rest));                 // C2 shared stock
         if (verb.equals("stock")) return Reply.now(storage.stockList(player, rest));
         if (verb.equals("trust") || verb.equals("untrust")) return Reply.now(storage.trust(verb, rest));
-        if (verb.equals("zone")) return Reply.now(DigCommands.zone(this, player, rest, from));        // B7d D1
+        if (verb.equals("zone")) return Reply.now(OldWords.hint("zone", rest));        // V1a: zone folded into areas
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
         // B7c: lookups and settings that never interrupt a job
@@ -821,6 +862,12 @@ public final class Commands implements Chains.Env {
 
     private String jobBusyText() { return jobs.running() && !jobs.walking() ? "busy: " + jobs.job.status + " (pm \"stop\" first)" : null; }
 
+    /** V1a: the owner's own goto/go may walk outside every area (no digging out there); anyone else's may not. */
+    io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker ownerWalker(String from) {
+        return from == null || from.equalsIgnoreCase(owner()) ? io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OWNER_ORDER
+                : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER;
+    }
+
     /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, twerk, find. */
     String modJob(String verb, String rest, String from, LocalPlayer player) {
         switch (verb) {
@@ -856,7 +903,7 @@ public final class Commands implements Chains.Env {
                 // S1: "goto me" (or the sender's own name) = "come" from that sender
                 if (Texts.gotoMeansCome(rest, from)) return modJob("come", "", from, player);
                 if (!rest.matches("^-?\\d+ -?\\d+ -?\\d+$") && !rest.matches("^-?\\d+ -?\\d+$")) return "usage: goto x y z  (or goto x z)";
-                return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false);
+                return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));
             }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
             case "sleep" -> { return SleepJob.start(this, player, rest); }              // C4: in bed until morning
@@ -869,7 +916,7 @@ public final class Commands implements Chains.Env {
                 String dim = Jobs.dimOf(pos);
                 int[] p = Jobs.pos(pos);
                 if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
-                return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
+                return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false, verb.equals("go") ? ownerWalker(from) : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER);
             }
             case "route" -> { return RouteTestRun.start(this, jobs, storage, player, rest); }       // routing stage 1: route test
             case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
@@ -1663,14 +1710,14 @@ public final class Commands implements Chains.Env {
             case "eat" -> { return Reply.now(core.reflexes.eat()); }
             case "defend" -> { return Reply.now(setDefence(text)); }
             case "escort" -> { return Reply.now(escortCommand(owner(), text, player)); }
-            case "area", "protect", "unprotect", "guard" -> {
+            case "area", "fence", "protect", "unprotect", "guard" -> {
                 return Reply.now(policy.command(type, text, true, owner(), hereOf(mc, from), posOf(mc, player)));
             }
             case "poi", "pois" -> { return Reply.now(poiCommand(text, player, true)); }
             case "caves" -> { return Reply.now(cavesCommand(text)); }
             // B7d: the listed/preferred ores and the zone never wait for a job
             case "ores" -> { return Reply.now(text.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(text) : Mining.get().ores(player, text)); }
-            case "zone" -> { return Reply.now(DigCommands.zone(this, player, text, from)); }
+            case "zone" -> { return Reply.now(OldWords.hint("zone", text)); }
             // package B: the hotbar layout and the tool policy (settings, never busy)
             case "hotbar" -> { return Reply.now(hotbarCommand(player, text)); }
             case "tools" -> { return Reply.now(toolsCommand(text)); }

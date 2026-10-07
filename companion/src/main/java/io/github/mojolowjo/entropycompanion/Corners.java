@@ -2,8 +2,8 @@ package io.github.mojolowjo.entropycompanion;
 
 /**
  * C3: the two corners the owner marks in the game (the crosshair block within 64, else the feet) and the bot
- * commands made from them. The bot already has {@code area add <name> x1 z1 x2 z2 [y1 y2]} and
- * {@code protect <name> x1 y1 z1 x2 y2 z2}, so no new verb is needed. Plain Java; thread-safe.
+ * commands made from them: the bot's {@code area x z x2 z2 <name> [type] [y1 y2]} (0.22.0; one verb for every
+ * type, the old protect form is gone). Plain Java; thread-safe.
  */
 public final class Corners {
     public static final String NAME_RE = "[a-z0-9_-]{1,24}";      // the bot's PolicyCommands.NAME_RE
@@ -33,22 +33,27 @@ public final class Corners {
         return null;
     }
 
-    /** "area add <name> x1 z1 x2 z2" (all heights), or with y: "... y1 y2"; an error text starts "error:". */
+    /**
+     * 0.2.1 (bot 0.22.0): "area x z x2 z2 <name> [type] [y1 y2]" from the corners. type: neutral (all heights; with
+     * withY the corners' heights), destroy (the corners' heights: "dig <area>" needs them), main (all heights), safe
+     * ({@link #PROTECT_DOWN} below to {@link #PROTECT_UP} above the corners). An error text starts "error:".
+     */
+    public synchronized String areaCommand(String name, String type, boolean withY) {
+        String m = check(name);
+        if (m != null) return m;
+        String t = type == null || type.isEmpty() ? "neutral" : type;
+        if (!t.matches("neutral|destroy|main|safe")) return "error: type must be neutral, destroy, main or safe";
+        String s = "area " + Math.min(c1.x, c2.x) + " " + Math.min(c1.z, c2.z) + " " + Math.max(c1.x, c2.x) + " " + Math.max(c1.z, c2.z) + " " + name;
+        if (!t.equals("neutral")) s += " " + t;
+        if (t.equals("safe")) return s + " " + (Math.min(c1.y, c2.y) - PROTECT_DOWN) + " " + (Math.max(c1.y, c2.y) + PROTECT_UP);
+        if (withY || t.equals("destroy")) return s + " " + Math.min(c1.y, c2.y) + " " + Math.max(c1.y, c2.y);
+        return s;
+    }
+
+    /** The neutral form (all heights, or the corners' heights). */
     public synchronized String areaCommand(String name, boolean withY) {
-        String m = check(name);
-        if (m != null) return m;
-        String s = "area add " + name + " " + Math.min(c1.x, c2.x) + " " + Math.min(c1.z, c2.z) + " " + Math.max(c1.x, c2.x) + " " + Math.max(c1.z, c2.z);
-        return withY ? s + " " + Math.min(c1.y, c2.y) + " " + Math.max(c1.y, c2.y) : s;
+        return areaCommand(name, "neutral", withY);
     }
-
-    /** "protect <name> x1 y1 z1 x2 y2 z2", reaching {@link #PROTECT_DOWN} below and {@link #PROTECT_UP} above the corners. */
-    public synchronized String protectCommand(String name) {
-        String m = check(name);
-        if (m != null) return m;
-        return "protect " + name + " " + Math.min(c1.x, c2.x) + " " + (Math.min(c1.y, c2.y) - PROTECT_DOWN) + " " + Math.min(c1.z, c2.z)
-                + " " + Math.max(c1.x, c2.x) + " " + (Math.max(c1.y, c2.y) + PROTECT_UP) + " " + Math.max(c1.z, c2.z);
-    }
-
     private String check(String name) {
         String m = missing();
         if (m != null) return "error: " + m;
