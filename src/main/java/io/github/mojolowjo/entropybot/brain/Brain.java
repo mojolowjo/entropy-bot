@@ -361,7 +361,8 @@ public final class Brain {
         JsonObject fails = d.getAsJsonObject("fails");
         // a job that "finished" at once and left its need open (a gather that counted the bag, not the group) counts as a failure,
         // so it can't loop every 2 s: three in a row park the need
-        boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night");
+        boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night")
+                && !j.need().startsWith("goal:");     // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
         if (quick) res = "ended at once (" + (res == null ? "no reply" : res.length() > 100 ? res.substring(0, 100) : res) + ") without meeting the need";
         if (outcome.startsWith("failed") || quick) {
             int n = (int) num(fails, j.need(), 0) + 1;

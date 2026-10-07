@@ -79,6 +79,8 @@ class BrainTest {
         @Override public void saved() {}
         @Override public void writeState(JsonObject o) { written = o; }
         @Override public DecisionLog decisions() { return log; }
+        final List<String> goalsDone = new ArrayList<>();
+        @Override public void goalDone(String chain) { goalsDone.add(chain); }
 
         /** B4: entropybot/ files in memory (brain-config.json, brain-tree.json, the override). */
         final java.util.Map<String, String> files = new java.util.HashMap<>();
@@ -567,6 +569,22 @@ class BrainTest {
     }
 
     // ---- the loop: brain on/off, whispers, parking ----
+
+    @Test
+    void aGoalThatEndsWellAtOnceIsReachedNotAFailure() {      // 0.23.0 smoke: goal_bed (2 crafts, 2 s) ran 3 times and parked
+        Fake f = on();
+        Brain b = new Brain(f);
+        List<String> done = f.goalsDone;
+        f.state.goals.add(new BrainState.Goal("bed", "goal_bed", f.now));
+        f.loop();
+        b.tick();
+        assertEquals(List.of("goal_bed"), f.started);
+        f.end("done - ok: made 1 white_bed");
+        f.state.goals.clear();
+        f.loop();
+        b.tick();
+        assertEquals(List.of("goal_bed"), done, "the goal leaves the list");
+    }
 
     @Test
     void theBrainStartsTheBestJobWithOneWhisperAndLogsIt() {
