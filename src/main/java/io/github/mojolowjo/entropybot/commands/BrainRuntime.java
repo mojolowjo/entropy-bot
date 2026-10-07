@@ -287,6 +287,27 @@ public final class BrainRuntime implements BrainEnv {
     /** B3: the game stage as last sensed (every 30 s), for actions.json. */
     String stage() { return stage; }
 
+    // B4: brain-config.json, brain-tree.json, brain-tree.override.json under entropybot/ (BotFiles: atomic writes)
+    @Override public String readFile(String name) {
+        try {
+            return Core.INSTANCE.files() == null ? "error: not in a world yet" : Core.INSTANCE.files().readJson(name);
+        } catch (RuntimeException e) {
+            return "error: " + e;
+        }
+    }
+
+    @Override public String writeFile(String name, String json) {
+        try {
+            return Core.INSTANCE.files() == null ? "error: not in a world yet" : Core.INSTANCE.files().writeJson(name, json);
+        } catch (RuntimeException e) {
+            return "error: " + e;
+        }
+    }
+
+    @Override public String modVersion() {
+        try { return Core.INSTANCE.version(); } catch (RuntimeException e) { return "unknown"; }
+    }
+
     /** state.json's "brain": on, the branch, the job (null when the brain was never switched on). */
     JsonObject stateBlock() {
         JsonObject root = c.brainData();

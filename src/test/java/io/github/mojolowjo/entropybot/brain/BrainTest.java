@@ -80,6 +80,16 @@ class BrainTest {
         @Override public void writeState(JsonObject o) { written = o; }
         @Override public DecisionLog decisions() { return log; }
 
+        /** B4: entropybot/ files in memory (brain-config.json, brain-tree.json, the override). */
+        final java.util.Map<String, String> files = new java.util.HashMap<>();
+        boolean filesBroken;
+        @Override public String readFile(String name) { return files.get(name); }
+        @Override public String writeFile(String name, String json) {
+            if (filesBroken) return "error: disk full";
+            files.put(name, json);
+            return "ok: " + json.length() + " bytes";
+        }
+
         /** The job ends with this message. */
         void end(String msg) {
             running = false;
@@ -717,7 +727,7 @@ class BrainTest {
         b.tick();
         assertEquals("brain copy is on - no owner data (the companion mod isn't reporting)", b.command("copy"));
         assertTrue(b.status().startsWith("brain is on - 1 loops/min"), b.status());
-        assertEquals("usage: brain on|off|status | brain copy on|off", b.command("dance"));
+        assertTrue(b.command("dance").startsWith("usage: brain on|off|status | brain copy on|off | brain get"));
         assertTrue(b.command("copy off").startsWith("ok: brain copy off"));
     }
 

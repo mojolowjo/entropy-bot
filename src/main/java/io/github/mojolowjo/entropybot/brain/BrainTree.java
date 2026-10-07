@@ -30,6 +30,16 @@ public final class BrainTree {
     public abstract static class Node {
         public final String id, label, cond;
         public final List<Node> children = new ArrayList<>();
+        /** B4: the verb or job it runs ("" none) and the settings it reads (the visible tree's fields). */
+        public String verb = "";
+        public List<String> keys = List.of();
+
+        @SuppressWarnings("unchecked")
+        <T extends Node> T meta(String verb, String... keys) {
+            this.verb = verb;
+            this.keys = List.of(keys);
+            return (T) this;
+        }
 
         Node(String id, String label, String cond) {
             this.id = id;
@@ -40,6 +50,12 @@ public final class BrainTree {
         abstract Decision run(Ctx c);
 
         public String type() { return getClass().getSimpleName().toLowerCase(); }
+
+        /** B4: the exported type: selector, sequence, condition, interrupt, leaf. */
+        public String exportType() {
+            if (this instanceof Action) return id.equals("job.interrupt") ? "interrupt" : "leaf";
+            return type();
+        }
     }
 
     static final class Selector extends Node {
@@ -96,13 +112,30 @@ public final class BrainTree {
         @Override Decision run(Ctx c) { return f.apply(c); }
     }
 
-    static Sequence when(String id, String label, String cond, Predicate<Ctx> p, Function<Ctx, Decision> act) {
-        return new Sequence(id, label, new Condition(id + "?", cond, p), new Action(id, label, act));
+    static Sequence when(String id, String label, String cond, Predicate<Ctx> p, Function<Ctx, Decision> act, String verb, String... keys) {
+        return new Sequence(id, label, new Condition(id + "?", cond, p).meta("", keys), new Action(id, label, act).meta(verb, keys));
     }
 
     private final Node root;
 
     public BrainTree() { root = build(); }
+
+    /** B4: a tree of another shape (a validated override file, {@link BrainTreeFile}). */
+    BrainTree(Node root) { this.root = root; }
+
+    /** B4: the nodes from the root to the leaf with this id, as uids ("r", "r/4", "r/4/1"); empty when not found. */
+    public List<String> pathTo(String leafId) {
+        List<String> out = new ArrayList<>();
+        return find(root, "r", leafId, out) ? out : List.of();
+    }
+
+    private static boolean find(Node n, String uid, String id, List<String> out) {
+        out.add(uid);
+        if (n.children.isEmpty() && n instanceof Action && n.id.equals(id)) return true;
+        for (int i = 0; i < n.children.size(); i++) if (find(n.children.get(i), uid + "/" + i, id, out)) return true;
+        out.remove(out.size() - 1);
+        return false;
+    }
 
     public Node root() { return root; }
 
@@ -115,40 +148,40 @@ public final class BrainTree {
         return new Selector("root", "the brain",
                 when("off", "nothing", "not in a world, parked by the death policy, or a menu open",
                         c -> !c.s().inWorld || c.s().parked || c.s().menuOpen,
-                        c -> new Decision("off", Kind.NOTHING, null, null, 0, !c.s().inWorld ? "not in a world" : c.s().parked ? "parked by the death policy (resume)" : "a menu is open")),
+                        c -> new Decision("off", Kind.NOTHING, null, null, 0, !c.s().inWorld ? "not in a world" : c.s().parked ? "parked by the death policy (resume)" : "a menu is open"), ""),
                 when("danger", "the reflexes handle it", "a mob counts (threat test), a reflex runs, or health is low",
                         c -> c.s().danger || c.s().health < c.c().i("dangerHealth"),
-                        c -> new Decision("danger", Kind.PAUSE, null, "safety", 100, c.s().danger ? c.s().dangerWhy : "health " + Math.round(c.s().health))),
+                        c -> new Decision("danger", Kind.PAUSE, null, "safety", 100, c.s().danger ? c.s().dangerWhy : "health " + Math.round(c.s().health)), "", "dangerHealth"),
                 when("owner", "keep the owner's order", "the owner's order runs",
                         c -> c.s().ownerJob != null,
-                        c -> new Decision("owner", Kind.NOTHING, null, null, 0, "your order runs: " + c.s().ownerJob)),
+                        c -> new Decision("owner", Kind.NOTHING, null, null, 0, "your order runs: " + c.s().ownerJob), ""),
                 when("passive", "passive", "escorting, defending or guarding",
                         c -> c.s().passive != null,
-                        c -> new Decision("passive", Kind.NOTHING, null, null, 0, c.s().passive + ": only danger and your words")),
+                        c -> new Decision("passive", Kind.NOTHING, null, null, 0, c.s().passive + ": only danger and your words"), ""),
                 new Sequence("job", "the brain's running job",
                         new Condition("job?", "a job the brain started runs", c -> c.running() != null),
                         new Selector("job.check", "interrupts",
-                                new Action("job.interrupt", "broken tool / hungry / bag full: handle, then resume", BrainTree::interrupt),
-                                new Action("job.switch", "outscored by the margin: switch", BrainTree::outscored),
+                                new Action("job.interrupt", "broken tool / hungry / bag full: handle, then resume", BrainTree::interrupt).meta("eat | deposit | craft", "hungryInterrupt", "fullInterrupt", "toolsWornPct"),
+                                new Action("job.switch", "outscored by the margin: switch", BrainTree::outscored).meta("", "switchMargin", "floor"),
                                 new Action("job.keep", "keep it", c -> new Decision("job.keep", Kind.KEEP, c.running().chain(), c.running().need(),
-                                        c.running().score(), "still on it")))),
+                                        c.running().score(), "still on it")).meta("", "switchMargin"))),
                 new Sequence("night", "night",
                         new Condition("night?", "night and nothing running", c -> c.s().night && !c.nightDoneHere()),
                         new Selector("night.pick", "sleep or light",
                                 when("night.sleep", "sleep", "sleep auto on and others sleep",
                                         c -> c.s().sleepAuto && c.s().othersSleeping,
-                                        c -> new Decision("night.sleep", Kind.START, "sleep", "night", 60, "night, and others are sleeping (sleep auto)")),
+                                        c -> new Decision("night.sleep", Kind.START, "sleep", "night", 60, "night, and others are sleeping (sleep auto)"), "sleep"),
                                 when("night.light", "light the spot", "my spot is dark",
                                         c -> !c.s().litHere,
-                                        c -> new Decision("night.light", Kind.START, "light here 8", "night", 50, "night: lighting my spot, then I work on")))),
+                                        c -> new Decision("night.light", Kind.START, "light here 8", "night", 50, "night: lighting my spot, then I work on"), "light here"))),
                 new Action("pick", "the needs: highest score wins", c -> {
                     Needs.Option o = c.scored().best(c.c().i("floor"));
                     return o == null ? null : new Decision("pick", Kind.START, o.chain(), o.need(), o.score(), o.reason());
-                }),
+                }).meta("the need's job", "floor"),
                 when("idle.near", "stay near you", "not released, the owner online and further than 32",
                         c -> c.s().bound() && BrainState.flat(c.s().botPos, c.s().ownerPos) > c.c().i("nearbyR"),
-                        c -> new Decision("idle.near", Kind.START, "come", "near", 0, "staying within " + c.c().i("nearbyR") + " of you (not released: done lets me go)")),
-                new Action("idle", "idle", c -> new Decision("idle", Kind.NOTHING, null, null, 0, "nothing scores above " + c.c().i("floor"))));
+                        c -> new Decision("idle.near", Kind.START, "come", "near", 0, "staying within " + c.c().i("nearbyR") + " of you (not released: done lets me go)"), "come", "nearbyR"),
+                new Action("idle", "idle", c -> new Decision("idle", Kind.NOTHING, null, null, 0, "nothing scores above " + c.c().i("floor"))).meta("", "floor"));
     }
 
     static Decision interrupt(Ctx c) {
