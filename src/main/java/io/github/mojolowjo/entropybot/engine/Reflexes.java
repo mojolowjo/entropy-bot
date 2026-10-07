@@ -40,6 +40,8 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SwordItem;
+import io.github.mojolowjo.entropybot.threat.FightOrFlee;
+import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
 import org.slf4j.Logger;
 
 /**
@@ -258,6 +260,9 @@ public final class Reflexes {
         o.add("escort", escort.status());
         if (deniedDim != null) o.addProperty("deniedDim", deniedDim);
         o.addProperty("engine", engine.disabled() ? "off" : engine.mode().name().toLowerCase());
+        try {
+            o.add("threat", ThreatRuntime.INSTANCE.status());      // B2: grid ok|fallback, ms a second
+        } catch (RuntimeException ignored) {}
         return o;
     }
 
@@ -303,6 +308,7 @@ public final class Reflexes {
         if (Hostility.INSTANCE.observe(p, now)) hurtTick = now;    // a hit by a mob, even one absorption took
         lastHealth = hp;
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
+        io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
 
         if (reflex == Reflex.RETREATING) {
             retreat(mc, p, hurt);
@@ -325,7 +331,7 @@ public final class Reflexes {
             fleeUntil = 0;
         }
         Threat ft = forcedThreat(p, mc);
-        Threat t = ft != null ? ft : defence ? nearestThreat(mc, p, hurt) : null;
+        Threat t = ft != null ? ft : defence ? nearestThreat(mc, p, hurt, true) : null;
         // C7 escort: what threatens the guarded player comes first, unless something is at the bot's own throat
         // (or the owner pointed at a target with `attack`, C1)
         if (escort.active()) escort.watch(mc);
@@ -353,7 +359,7 @@ public final class Reflexes {
             urgent = hurt || t.d < ReflexRules.URGENT;
             if (hp <= ReflexRules.RETREAT_AT || t.strong) startRetreat(mc, p, t);
             else if (t.creeper) creeper(mc, p, t);
-            else fight(mc, p, t);
+            else fightOrFlee(mc, p, t, hurt);
             return;
         }
         if (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING) settle("no monsters left");
@@ -396,7 +402,7 @@ public final class Reflexes {
      * The nearest mob that counts (0.19.1, {@link Hostility}): an Enemy (a NeutralMob only right after a hit), a mob on
      * the owner's hostile list, or whatever hit the bot in the last 5 s; never a player or a tamed/owned mob.
      */
-    private Threat nearestThreat(Minecraft mc, LocalPlayer p, boolean hurt) {
+    private Threat nearestThreat(Minecraft mc, LocalPlayer p, boolean hurt, boolean filter) {
         Threat best = null;
         Hostility h = Hostility.INSTANCE;
         for (Entity e : mc.level.entitiesForRendering()) {
@@ -407,6 +413,8 @@ public final class Reflexes {
             if (!k.counts()) continue;
             boolean seen = hurt || d <= 2.5 || p.hasLineOfSight(e);
             if (!ReflexRules.counts(d, hurt, seen)) continue;
+            // B2: aggro + reach by path + closing in (a mob that hit the bot, or a creeper within 6, always counts)
+            if (filter && !io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
             boolean strong = k == HostileRules.Kind.RETALIATION && Hostility.strong(p, le);
             best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
         }
@@ -547,7 +555,79 @@ public final class Reflexes {
 
     // ---- retreating ----
 
+    // ---- B2: fight or flee (docs/COMBAT_PLAN.md 4-5; only safer: a fight may become a retreat, never the reverse) ----
+    private long assessedAt = -100;
+    private String retreatWhy;
+    private boolean retreatLit;
+
+    private void fightOrFlee(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
+        boolean fighting = reflex == Reflex.FIGHTING;
+        if (!fighting || now - assessedAt >= 10) {
+            assessedAt = now;
+            FightOrFlee.Result v;
+            try {
+                v = assess(mc, p, hurt);
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] threat: fight-or-flee failed, fighting as before: {}", e.toString());
+                fight(mc, p, t);
+                return;
+            }
+            FightOrFlee.Verdict verdict = v.verdict();
+            // committed: keep fighting while not losing (the lit-spot walk is only for the start)
+            if (fighting && verdict == FightOrFlee.Verdict.LIT) verdict = FightOrFlee.Verdict.FIGHT;
+            if (!fighting || verdict != FightOrFlee.Verdict.FIGHT) ThreatRuntime.INSTANCE.verdict(t.id + ": " + v.why());
+            if (verdict == FightOrFlee.Verdict.HOME) {
+                retreatWhy = v.why();
+                startRetreat(mc, p, t);
+                return;
+            }
+            if (verdict == FightOrFlee.Verdict.LIT) {
+                int[] lit = ThreatRuntime.INSTANCE.litSpot();
+                if (lit != null) {
+                    startLitRetreat(mc, p, t, lit, v.why());
+                    return;
+                }
+            }
+        }
+        fight(mc, p, t);
+    }
+
+    private FightOrFlee.Result assess(Minecraft mc, LocalPlayer p, boolean hurt) {
+        List<FightOrFlee.Foe> foes = new java.util.ArrayList<>();
+        Hostility h = Hostility.INSTANCE;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
+            double d = p.distanceTo(e);
+            if (d > ReflexRules.lookRadius(hurt) || !h.kind(e, hurt).counts()) continue;
+            boolean seen = hurt || d <= 2.5 || p.hasLineOfSight(e);
+            if (!ReflexRules.counts(d, hurt, seen) || !ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
+            foes.add(new FightOrFlee.Foe(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), d, e instanceof Creeper));
+        }
+        int[] lit = ThreatRuntime.INSTANCE.litSpot();
+        FightOrFlee.Me me = new FightOrFlee.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue(),
+                Hostility.weaponHit(p), mc.level.getMaxLocalRawBrightness(p.blockPosition()), lit == null ? -1 : lit[3], ReflexRules.RETREAT_AT);
+        return FightOrFlee.assess(me, foes);
+    }
+
+    private void startLitRetreat(Minecraft mc, LocalPlayer p, Threat t, int[] lit, String why) {
+        if (reflex == Reflex.EATING) stopEating(mc, "retreating");
+        reflex = Reflex.RETREATING;
+        mc.options.keyShift.setDown(false);
+        retreatStart = now;
+        calmSince = now;
+        fleeTo = null;
+        retreatLit = true;
+        retreatTo = new Place(lit[0], lit[1], lit[2], Guard.dimOf(mc.level));
+        retreatGoal = new GoalNear(new BlockPos(lit[0], lit[1], lit[2]), 0);
+        engine.override(retreatGoal);
+        lastX = p.getX();
+        lastY = p.getY();
+        lastZ = p.getZ();
+        events.push("reflex", "retreating from " + t.id + " to a lit spot at " + lit[0] + " " + lit[1] + " " + lit[2] + " (" + why + ")", null);
+    }
+
     private void startRetreat(Minecraft mc, LocalPlayer p, Threat t) {
+        retreatLit = false;
         if (reflex == Reflex.EATING) stopEating(mc, "retreating");
         reflex = Reflex.RETREATING;
         mc.options.keyShift.setDown(false);
@@ -578,7 +658,8 @@ public final class Reflexes {
         String why = t.strong && p.getHealth() > ReflexRules.RETREAT_AT && t.e instanceof LivingEntity le
                 ? ", too strong to fight (max health " + Math.round(le.getMaxHealth()) + ")" : "";
         events.push("reflex", "retreating from " + t.id + " (health " + Math.round(p.getHealth()) + why + ")" +
-                (retreatTo != null ? " to the base" : " away from it") + (tp ? ", sent /home" : ""), null);
+                (retreatTo != null ? " to the base" : " away from it") + (tp ? ", sent /home" : "") + (retreatWhy != null ? " - " + retreatWhy : ""), null);
+        retreatWhy = null;
     }
 
     private void retreat(Minecraft mc, LocalPlayer p, boolean hurt) {
@@ -591,7 +672,7 @@ public final class Reflexes {
             return;
         }
         if (retreatTo != null && dist2(p, retreatTo) <= 9) {
-            settle("at the base");
+            settle(retreatLit ? "at a lit spot" : "at the base");
             return;
         }
         if (fleeTo != null && Math.abs(p.getX() - fleeTo[0]) + Math.abs(p.getZ() - fleeTo[1]) <= 3) {
@@ -600,7 +681,7 @@ public final class Reflexes {
         }
         // a Baritone cancel (the bridge stopping its job) dropped the goal: ask again
         if (engine.mode() == EngineProcess.Mode.NONE && retreatGoal != null) engine.override(retreatGoal);
-        Threat t = nearestThreat(mc, p, true);
+        Threat t = nearestThreat(mc, p, true, false);     // B2 never cuts a retreat short: the old test here
         if (t != null) calmSince = now;
         if (now - calmSince >= 100 || now - retreatStart >= 1800) settle(now - calmSince >= 100 ? "nothing chasing me" : "gave up after 90 s");
     }

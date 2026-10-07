@@ -123,6 +123,11 @@ public final class Escort {
             if (e == p || e instanceof Player || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
             if (e.distanceTo(g) > r * 2.0 + 1) continue;
             if (!Hostility.INSTANCE.kind(e, false).counts() || !Hostility.mayAttack(e)) continue;   // never a player or a pet
+            // B2: with the player beside the bot (4 blocks), the bot's reach grid stands for theirs: a mob with no path is noted
+            if (g.distanceTo(p) <= 4 && !(e instanceof Creeper) && io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.gridOk()) {
+                var td = io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.decision(e.getId());
+                if (td != null && Double.isNaN(td.reach()) && !Hostility.INSTANCE.hitMe(e)) continue;
+            }
             boolean aggressive = e instanceof Mob m && m.isAggressive();
             mobs.add(new EscortRules.Mob(e.getId(), idOf(e), e.getX(), e.getY(), e.getZ(), aggressive, e.getYHeadRot(), e instanceof Creeper));
             ents.add(e);

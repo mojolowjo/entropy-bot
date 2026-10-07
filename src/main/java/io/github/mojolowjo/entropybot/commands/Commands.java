@@ -743,6 +743,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
         if (verb.equals("autominer")) return Reply.now(chains.autominerCommand(rest));
+        if (verb.equals("why") && rest.trim().equalsIgnoreCase("threats")) return Reply.now(io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.why());   // B2
         if (verb.equals("why")) return Reply.now(chains.whyCommand());
         if (verb.equals("resume")) return Reply.now(chains.resumeCommand());
         if (verb.equals("deaths") || (verb.equals("death") && rest.trim().toLowerCase().matches("^policy\\b.*"))) return Reply.now(chains.deathsCommand(rest));
@@ -1799,6 +1800,14 @@ public final class Commands implements Chains.Env {
             boolean facing = Math.abs(net.minecraft.util.Mth.wrapDegrees(toBot - m.getYHeadRot())) <= 45f;
             o.addProperty("aggressive", aggressive);
             o.addProperty("target", m.getTarget() == p || (aggressive && facing));
+            // B2 (0.22.1): the threat test's last answer for this mob (absent until it was sampled)
+            io.github.mojolowjo.entropybot.threat.ThreatRules.Decision td = io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.decision(m.getId());
+            if (td != null) {
+                if (Double.isNaN(td.reach())) o.add("reach", com.google.gson.JsonNull.INSTANCE);
+                else o.addProperty("reach", Math.round(td.reach() * 10) / 10.0);
+                o.addProperty("closing", td.isClosing());
+                o.addProperty("threat", td.counts());
+            }
             a.add(o);
         }
         return a;
