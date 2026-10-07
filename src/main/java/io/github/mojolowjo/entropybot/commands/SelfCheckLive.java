@@ -56,6 +56,10 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         // C5 tool care: a worn or broken tool that nothing could replace
         for (String id : c.camp.careFindings()) f.add(new SelfCheck.Finding("toolcare:" + id, "my " + id + " is nearly broken or gone, and nothing can replace it (none in the chests, nothing to craft one from)",
                 "put a " + id + " (or its materials) in the base chests"));
+        // 0.23.6: poison, wither or hunger in the last 30 min and no milk bucket
+        long noMilk = io.github.mojolowjo.entropybot.Core.INSTANCE.reflexes.survival.noMilkAt();
+        if (noMilk > 0 && System.currentTimeMillis() - noMilk < 30 * 60_000L) f.add(new SelfCheck.Finding("nomilk", "I had poison, wither or hunger and no milk bucket to drink",
+                "need milk_bucket 1"));
         f.addAll(RouteCommand.findings(c));
         try {
             f.addAll(io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.findings());   // camera hooks (0.15.2)

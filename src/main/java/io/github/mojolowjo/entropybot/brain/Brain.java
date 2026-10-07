@@ -385,6 +385,7 @@ public final class Brain {
         boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night")
                 && !j.need().startsWith("goal:");     // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
         if (quick) res = "ended at once (" + (res == null ? "no reply" : res.length() > 100 ? res.substring(0, 100) : res) + ") without meeting the need";
+        if (outcome.equals("finished") || outcome.startsWith("failed")) io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.need(outcome.equals("finished") && !quick);     // 0.23.6
         if (outcome.startsWith("failed") || quick) {
             int n = (int) num(fails, j.need(), 0) + 1;
             fails.addProperty(j.need(), n);
@@ -438,6 +439,7 @@ public final class Brain {
         String reply = env.start(chain);
         if (reply != null && reply.startsWith("started")) {
             job = new Job(d.need(), chain, d.score(), ref, env.now());
+            io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.pick(d.need());      // 0.23.6
             if (d.chain().startsWith("restock")) data().addProperty("restockAt", env.now());
             if (d.need() != null && d.need().equals("night")) nightAt = s.botPos;
             env.saved();

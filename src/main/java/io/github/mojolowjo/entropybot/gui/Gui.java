@@ -87,15 +87,35 @@ public final class Gui {
         var menu = p.inventoryMenu;
         java.util.List<String> worn = new java.util.ArrayList<>();
         java.util.Map<String, Integer> slotOf = java.util.Map.of("helmet", 5, "chestplate", 6, "leggings", 7, "boots", 8);
+        // 0.23.6 armour care: a worn piece (10 % or less) comes off when the bag holds a good one for that slot
+        java.util.List<String> off = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, Integer> e : slotOf.entrySet()) {
+            ItemStack on = menu.getSlot(e.getValue()).getItem();
+            if (on.isEmpty() || !worn(on)) continue;
+            boolean spare = false;
+            for (int i = 9; i < 45 && i < menu.slots.size() && !spare; i++) {
+                ItemStack st = menu.getSlot(i).getItem();
+                spare = !st.isEmpty() && itemId(st).endsWith("_" + e.getKey()) && !worn(st);
+            }
+            if (!spare || p.getInventory().getFreeSlot() < 0) continue;
+            Minecraft.getInstance().gameMode.handleInventoryMouseClick(menu.containerId, e.getValue(), 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE, p);
+            off.add(GuiCore.shortId(itemId(on)));
+        }
         for (int i = 9; i < 45 && i < menu.slots.size(); i++) {
             ItemStack st = menu.getSlot(i).getItem();
             if (st.isEmpty()) continue;
             String id = itemId(st);
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("_(helmet|chestplate|leggings|boots)$").matcher(id);
-            if (!m.find() || !menu.getSlot(slotOf.get(m.group(1))).getItem().isEmpty()) continue;
+            if (!m.find() || !menu.getSlot(slotOf.get(m.group(1))).getItem().isEmpty() || worn(st)) continue;
             Minecraft.getInstance().gameMode.handleInventoryMouseClick(menu.containerId, i, 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE, p);
             worn.add(GuiCore.shortId(id));
         }
-        return worn.isEmpty() ? "error: no armor to put on (or those slots are full)" : "ok: put on " + String.join(", ", worn);
+        String took = off.isEmpty() ? "" : " (took off the worn " + String.join(", ", off) + ")";
+        return worn.isEmpty() ? "error: no armor to put on (or those slots are full)" + took : "ok: put on " + String.join(", ", worn) + took;
+    }
+
+    /** 0.23.6: a damageable item at 10 % of its uses or less. */
+    static boolean worn(ItemStack st) {
+        return st.isDamageableItem() && st.getMaxDamage() > 0 && st.getMaxDamage() - st.getDamageValue() <= st.getMaxDamage() * 0.10;
     }
 }

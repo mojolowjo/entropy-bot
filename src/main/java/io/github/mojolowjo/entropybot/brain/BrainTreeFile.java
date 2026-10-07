@@ -34,7 +34,7 @@ public final class BrainTreeFile {
     static final String[][] NEEDS = {
             {"safety", "safety: a threat counts or health under half", "", "dangerHealth", "need.safety.weight"},
             {"food", "food: edible items in the bag", "get food", "foodWant", "foodWantEarly", "foodTop", "need.food.weight"},
-            {"tools", "tools: a pickaxe for the stage", "craft <tier>_pickaxe", "toolsNone", "toolsWorn", "toolsWornPct", "need.tools.weight"},
+            {"gear", "gear: a pickaxe for the stage, then worn armour (armour care)", "craft <tier>_pickaxe", "toolsNone", "toolsWorn", "toolsWornPct", "need.gear.weight"},
             {"bag", "bag: free slots", "deposit", "bagFull", "bagLow", "bagSome", "need.bag.weight"},
             {"need", "your needs (need <item> <n>)", "gather <item> <n>", "ownerNeedBase", "ownerNeedSpan", "ageBonusMax", "deadbandPct"},
             {"goal", "your goals", "the goal's chain", "goalBase", "ageBonusMax", "need.goal.weight"},

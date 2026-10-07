@@ -246,6 +246,20 @@ public final class MovePackage {
             release();
             return;
         }
+        // 0.24.0: the run guard (drop over 3, lava, water, fire ahead) turns or stops the raw run
+        io.github.mojolowjo.entropybot.threat.RunGuard.Verdict g =
+                io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.runGuard(p, dx, dz);
+        if (!g.go()) {
+            String said = g.act() + " " + g.why();
+            if (!said.equals(lastGuard)) LOG.info("[entropybot] path: run guard {} on the instant start", said);
+            lastGuard = said;
+            if (g.stop()) {
+                release();
+                return;
+            }
+            dx = g.dirX();
+            dz = g.dirZ();
+        } else lastGuard = null;
         p.setYRot((float) (Math.toDegrees(Math.atan2(-dx, dz))));
         mc.options.keyUp.setDown(true);
         boolean sprint = p.getFoodData().getFoodLevel() > 6;
@@ -254,7 +268,10 @@ public final class MovePackage {
         rawDown = true;
     }
 
+    private String lastGuard;
+
     private void release() {
+        lastGuard = null;
         if (!rawDown) return;
         Minecraft mc = Minecraft.getInstance();
         mc.options.keyUp.setDown(false);
