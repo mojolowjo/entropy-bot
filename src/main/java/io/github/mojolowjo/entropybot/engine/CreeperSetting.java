@@ -21,7 +21,7 @@ public final class CreeperSetting {
     public static String command(String rest, JsonObject brain, Runnable save, Supplier<Mode> current, Consumer<Mode> apply) {
         String a = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
         if (a.isEmpty() || a.equals("status")) return "creepers: " + current.get().word() + " - " + describe(current.get());
-        if (!a.equals("flee") && !a.equals("melee") && !a.equals("bow")) return "error: defend creepers flee|melee|bow";
+        if (!a.equals("flee") && !a.equals("melee") && !a.equals("bow")) return "error: defence creepers flee|melee|bow";
         Mode m = Mode.parse(a);
         brain.addProperty(KEY, m.word());
         save.run();

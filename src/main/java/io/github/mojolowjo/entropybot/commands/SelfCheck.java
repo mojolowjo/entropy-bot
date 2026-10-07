@@ -44,19 +44,19 @@ public final class SelfCheck {
         List<Finding> out = new ArrayList<>();
         if (s.areas() <= 0) out.add(new Finding("areas", "no work areas: with the fence on I dig and build only near you (area near)","area here 60 <name>"));
         else if (!s.strict()) out.add(new Finding("logmode", "the fence is in log mode (the guard only notes what it would refuse)", "fence mode strict"));
-        if (!s.baseMarked()) out.add(new Finding("base", "no base marked", "setbase (standing at the base)"));
+        if (!s.baseMarked()) out.add(new Finding("base", "no base marked", "place base (standing at the base)"));
         else if (s.baseChests() <= 0) out.add(new Finding("basechests", "no base chests scanned: deposit and crafting can't use them", "scan base"));
-        if (!s.foodChest()) out.add(new Finding("food", "no food chest marked: when I run out I can't fetch food", "mark food (next to the food chest)"));
+        if (!s.foodChest()) out.add(new Finding("food", "no food chest marked: when I run out I can't fetch food", "place food (next to the food chest)"));
         if (!s.homeSet()) out.add(new Finding("home", "no home set: long trips back and retreats can't teleport", "sethome (with me at the base)"));
         if (s.mine() != null && s.mine().length >= 3 && s.mine()[1] <= LAVA_Y) {
             int[] m = s.mine();
             String dir = s.mineDir() == null ? "north" : s.mineDir();
             out.add(new Finding("minelava", "my mine at " + m[0] + " " + m[1] + " " + m[2] + " is at lava level (y " + LAVA_Y + " and below walk over lava)",
-                    "mark mine a few levels up, e.g. mark mine " + m[0] + " " + (LAVA_Y + 4) + " " + m[2] + " " + dir));
+                    "place mine a few levels up, e.g. place mine " + m[0] + " " + (LAVA_Y + 4) + " " + m[2] + " " + dir));
         }
         if (s.mine() != null && s.mineGaveUp() != null) {
             String why = s.mineGaveUp().length() > 120 ? s.mineGaveUp().substring(0, 120) + "..." : s.mineGaveUp();
-            out.add(new Finding("mineblocked", "my mine couldn't go on (" + why + ")", "stripmine turn left (or mark mine somewhere new)"));
+            out.add(new Finding("mineblocked", "my mine couldn't go on (" + why + ")", "mine strip turn left (or place mine somewhere new)"));
         }
         Map<String, Integer> sup = s.supplies() == null ? Map.of() : s.supplies();
         if (want(sup, "iron_pickaxe") < 1) {

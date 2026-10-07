@@ -1250,7 +1250,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("places")) {
             List<String> out = new ArrayList<>();
             places.forEach((k, v) -> out.add(k + " " + Jobs.fmt(Jobs.pos(v))));
-            return out.isEmpty() ? "no places yet - PM \"mark base\" where you want my base" : String.join(" | ", out);
+            return out.isEmpty() ? "no places yet - place base where you want my base" : String.join(" | ", out);
         }
         if (verb.equals("sethome")) {
             // the server's homes: "/sethome home" sets it, "/home" teleports there
@@ -1427,6 +1427,7 @@ public final class Commands implements Chains.Env {
         jobs.followFix = null;
         core.reflexes.escort.stop("stopped by \"stop\"");     // C7
         vocab.endHold("stop");                                   // V1b
+        core.reflexes.stopAttack();
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
         if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);     // also ends a raw "b pause"
@@ -1463,7 +1464,7 @@ public final class Commands implements Chains.Env {
                 String name = c.word().equals("me") ? from : c.name();
                 if (!isOwner && !name.equalsIgnoreCase(from)) return "sorry, only " + owner() + " can have me escort someone else (escort me works)";
                 if (name.equalsIgnoreCase(player.getGameProfile().getName())) return "error: I can't escort myself";
-                if (!core.reflexes.defence()) return Hints.next("error: self-defence is off, so I couldn't fight for you", "defend on");
+                if (!core.reflexes.defence()) return Hints.next("error: self-defence is off, so I couldn't fight for you", "defence on");
                 if (e.active() && !isOwner && !from.equalsIgnoreCase(e.name())) return "busy: I'm escorting " + e.name() + " (only " + owner() + " can change that)";
                 String busy = chainBusyText() != null ? chainBusyText() : jobBusyText();
                 if (busy != null) return busy;
@@ -1472,7 +1473,7 @@ public final class Commands implements Chains.Env {
                 e.setVitals(n -> ownerFix.vitals(n));
                 e.start(name, from, c.radius());
                 return "ok: escorting " + name + ": I follow and fight monsters within " + c.radius() + " blocks of " + (name.equalsIgnoreCase(from) ? "you" : name)
-                        + " (escort off or stop ends it)";
+                        + " (dismiss or stop ends it)";
             }
         }
     }
@@ -1672,7 +1673,7 @@ public final class Commands implements Chains.Env {
         JsonObject r = core.reflexes.status();
         String target = r.has("target") ? r.get("target").getAsString() : null;
         whisper(owner(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt() + (target != null ? " fighting " + target : "")
-                + ". Respawning - PM \"death\" and I will go back for my stuff.");
+                + ". Respawning - say \"debug death\" and I will go back for my stuff.");
     }
 
     // ---- cmd.json (bridge.ps1, the dashboard) ----
@@ -1881,7 +1882,9 @@ public final class Commands implements Chains.Env {
             case "memory" -> { return Reply.now(MemoryCommand.command(core, this, text)); }
             case "pm" -> {
                 String[] dv = Texts.verbAndRest(text);
-                if (dv[0].equals("debug")) return Reply.now(DebugVerbs.handle(core, dv[1], DebugRules.Source.LOCAL, true, owner()));
+                // the read-only debug verbs answer with the LOCAL source; "debug <plumbing verb>" (V1b) runs it through handle
+                if (dv[0].equals("debug") && !OldWords.DEBUG_VERBS.contains(Texts.verbAndRest(dv[1])[0]))
+                    return Reply.now(DebugVerbs.handle(core, dv[1], DebugRules.Source.LOCAL, true, owner()));
                 Reply r = handle(owner(), text, false, notifyListener(owner()));
                 return new Reply(r.text() == null || r.text().isEmpty() ? "ok" : r.text(), r.pending());
             }

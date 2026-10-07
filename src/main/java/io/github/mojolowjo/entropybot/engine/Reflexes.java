@@ -180,6 +180,12 @@ public final class Reflexes {
 
     private boolean forcedAnyway;
 
+    /** V1b: "stop" ends a forced attack too. */
+    public void stopAttack() {
+        forcedId = -1;
+        forcedAnyway = false;
+    }
+
     /** V1b: the forced target the attack rules let through (a player with defence players on). */
     private boolean forcedAllows(Entity e) { return forcedAnyway && e != null && e.getId() == forcedId; }
 
@@ -262,7 +268,7 @@ public final class Reflexes {
         List<FoodRun.Target> t = foodTargets(mc, p);
         if (t.isEmpty()) {
             eatRequested = false;
-            return "error: no food in my inventory, and no chest I know holds food - PM \"mark food\" standing at one (or scan the base)";
+            return "error: no food in my inventory, and no chest I know holds food - place food standing at one (or scan the base)";
         }
         fetchCooldownUntil = 0;
         return "started: fetching food from " + t.get(0).why() + " at " + t.get(0).key() + ", then eating";
@@ -825,7 +831,7 @@ public final class Reflexes {
         fetchTargets = foodTargets(mc, p);
         fetchCooldownUntil = now + 2400;            // whatever happens, the next run waits 2 minutes
         if (fetchTargets.isEmpty()) {
-            fetchNote = "no chest I know holds food (mark food at one, or scan the base)";
+            fetchNote = "no chest I know holds food (place food at one, or scan the base)";
             return false;
         }
         fetchNote = null;

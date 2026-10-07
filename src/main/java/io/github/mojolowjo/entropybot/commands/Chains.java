@@ -487,7 +487,7 @@ public final class Chains {
             deathResume = null;
             corpsePending = false;
             clearRun();
-            env.whisper(env.owner(), kept.size() + " deaths in an hour - I stay at the base now and do nothing by myself. PM \"resume\" when it is safe.");
+            env.whisper(env.owner(), kept.size() + " deaths in an hour - I stay at the base now and do nothing by myself. Say \"debug resume\" when it is safe.");
         } else {
             corpsePending = !(mem.has("deathPolicy") && !mem.get("deathPolicy").getAsBoolean());
         }
@@ -564,7 +564,7 @@ public final class Chains {
         boolean off = mem.has("deathPolicy") && !mem.get("deathPolicy").getAsBoolean();
         JsonObject p = obj(mem, "parked");
         return n + " death" + (n == 1 ? "" : "s") + " in the last hour; fetching my corpse after a death is " + (off ? "OFF" : "on")
-                + (p != null ? "; PARKED (" + str(p, "why", "?") + ") - PM \"resume\"" : "");
+                + (p != null ? "; PARKED (" + str(p, "why", "?") + ") - debug resume" : "");
     }
 
     // ---- rules ----
@@ -729,7 +729,7 @@ public final class Chains {
             env.saved();
             String pref = env.orePrefer();
             return t.equals("on") ? "ok: autominer on - when I have nothing to do I put things away, restock and mine (" + (pref == null || pref.isEmpty() ? "any ores" : pref)
-                    + "); \"why\" says what I decided" + (added.isEmpty() ? "" : "; I keep " + String.join(", ", added) + " in my supplies now") : "ok: autominer off";
+                    + "); \"debug why\" says what I decided" + (added.isEmpty() ? "" : "; I keep " + String.join(", ", added) + " in my supplies now") : "ok: autominer off";
         }
         boolean on = a != null && a.has("on") && a.get("on").getAsBoolean();
         long paused = a == null ? 0 : num(a, "pausedUntil", 0), held = a == null ? 0 : num(a, "heldUntil", 0);
@@ -748,7 +748,7 @@ public final class Chains {
         if (a == null || !a.has("on") || !a.get("on").getAsBoolean()) return "";
         a.addProperty("heldUntil", env.now() + AUTOMINER_HOLD_MS);
         env.saved();
-        return "; the autominer waits " + AUTOMINER_HOLD_MS / 60000 + " min (\"autominer on\" to go on now)";
+        return "; the autominer waits " + AUTOMINER_HOLD_MS / 60000 + " min (\"debug autominer on\" to go on now)";
     }
 
     static String decisionText(JsonObject e, long now) {

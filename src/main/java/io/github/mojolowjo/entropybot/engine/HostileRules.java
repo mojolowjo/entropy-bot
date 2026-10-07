@@ -48,7 +48,7 @@ public final class HostileRules {
         RETALIATION(true, "counted: hurt by it (retaliation)"),
         PEACEFUL(false, "NOT counted: a villager or golem (never fought back)"),
         NEUTRAL(false, "NOT counted: NeutralMob (only after something hit me)"),
-        NOT_HOSTILE(false, "NOT counted: not an Enemy and not on the hostile list (defend hostile add <id>)");
+        NOT_HOSTILE(false, "NOT counted: not an Enemy and not on the hostile list (defence hostile add <id>)");
 
         private final boolean counts;
         private final String text;

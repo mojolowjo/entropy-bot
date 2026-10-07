@@ -250,6 +250,6 @@ public final class Hostility {
         if (!loadFailed) return List.of();
         return List.of(new io.github.mojolowjo.entropybot.commands.SelfCheck.Finding("hostilelist",
                 "the hostile list file is broken: " + note + " (a copy is kept as " + HostileRules.FILE + ".bad)",
-                "defend hostile list, then defend hostile add <id> to write a fresh file"));
+                "defence hostile list, then defence hostile add <id> to write a fresh file"));
     }
 }

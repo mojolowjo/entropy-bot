@@ -27,8 +27,8 @@ class S1StripTest {
         assertEquals(177, b.i());
         assertEquals("lava", b.what());
         assertEquals("58 -55 194", b.at().key());
-        assertEquals("couldn't reach the mine: the corridor runs over lava from 58 -55 194 - mark a new mine (\"mark mine\" a few levels up, "
-                + "or \"mark mine 57 -54 194 north\")", StripTexts.badFloorText(g, b));
+        assertEquals("couldn't reach the mine: the corridor runs over lava from 58 -55 194 - place a new mine (\"place mine\" a few levels up, "
+                + "or \"place mine 57 -54 194 north\")", StripTexts.badFloorText(g, b));
         // the autominer's give-up match still sees it
         assertTrue(("error: " + StripTexts.badFloorText(g, b)).matches("(?s).*(blocked:|stuck|couldn't reach the mine|no progress).*"));
     }

@@ -22,7 +22,7 @@ class Wave1aTest {
     void stopHoldsTheAutominerForTenMinutes() {
         JsonObject mem = JsonParser.parseString("{\"autominer\":{\"on\":true,\"log\":[],\"pausedUntil\":0,\"defaults\":true}}").getAsJsonObject();
         CommandsTest.Fake f = CommandsTest.fake(mem);
-        assertEquals("; the autominer waits 10 min (\"autominer on\" to go on now)", f.chains.holdAutominer());
+        assertEquals("; the autominer waits 10 min (\"debug autominer on\" to go on now)", f.chains.holdAutominer());
         assertEquals(f.now + Chains.AUTOMINER_HOLD_MS, mem.getAsJsonObject("autominer").get("heldUntil").getAsLong());
         assertTrue(f.chains.autominerCommand("status").startsWith("autominer is on (waiting 10 min after a stop)"), f.chains.autominerCommand("status"));
         assertEquals(f.now + Chains.AUTOMINER_HOLD_MS, f.chains.autominerState().get("heldUntil").getAsLong());

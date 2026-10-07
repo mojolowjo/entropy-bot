@@ -642,7 +642,7 @@ final class Mining {
         protectBoxes();                           // S1: fail closed - a policy it can't read refuses here (BadPolicy, caught in mine())
         int[] me = Jobs.here(p);
         Caves.Cave c = core.caves.pick(m.at() == null ? "" : m.at(), dim(), me[0], me[1], me[2], System.currentTimeMillis(), now());
-        if (c == null) return "error: I know no cave called " + m.at() + " (\"caves\" lists them)";
+        if (c == null) return "error: I know no cave called " + m.at() + " (\"debug caves\" lists them)";
         int minutes = m.minutes() > 0 ? m.minutes() : CaveRules.MINUTES;
         CaveRun cv = new CaveRun();
         cv.name = c.name;
@@ -887,7 +887,7 @@ final class Mining {
         int[] me = Jobs.here(p);
         String name = st.id == null ? "" : st.id;
         Caves.Cave c = core.caves.pick(name, dim(), me[0], me[1], me[2], System.currentTimeMillis(), now());
-        if (c == null) return "I know no cave called " + name + " (\"caves\" lists them)";
+        if (c == null) return "I know no cave called " + name + " (\"debug caves\" lists them)";
         cv.name = c.name;
         cv.entrance = new int[]{c.ex, c.ey, c.ez};
         if (c.visited.isEmpty() && cv.own == null) cv.own = c.name;

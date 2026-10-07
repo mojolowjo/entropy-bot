@@ -62,7 +62,7 @@ class SelfCheckTest {
         assertEquals("logmode", f.key());
         assertEquals("fence mode strict", f.fix());
         assertEquals("areas", only(with(with(good(), "strict", false), "areas", 0)).key(), "no areas says that, not log mode");
-        assertEquals("setbase (standing at the base)", only(with(good(), "baseMarked", false)).fix());
+        assertEquals("place base (standing at the base)", only(with(good(), "baseMarked", false)).fix());
         assertEquals("scan base", only(with(good(), "baseChests", 0)).fix());
         assertEquals("food", only(with(good(), "foodChest", false)).key());
         assertEquals("home", only(with(good(), "homeSet", false)).key());
@@ -76,12 +76,12 @@ class SelfCheckTest {
         SelfCheck.Finding f = only(with(good(), "mine", new int[]{-119, -54, 194}));
         assertEquals("minelava", f.key());
         assertTrue(f.text().contains("-119 -54 194"), f.text());
-        assertTrue(f.fix().contains("mark mine -119 -50 194 north"), f.fix());
+        assertTrue(f.fix().contains("place mine -119 -50 194 north"), f.fix());
         assertTrue(SelfCheck.run(with(good(), "mine", new int[]{0, -53, 0})).isEmpty(), "one above lava level is fine");
         f = only(with(good(), "mineGaveUp", "blocked: lava ahead at 58 -55 194"));
         assertEquals("mineblocked", f.key());
         assertTrue(f.text().contains("lava ahead"));
-        assertTrue(f.fix().startsWith("stripmine turn left"));
+        assertTrue(f.fix().startsWith("mine strip turn left"));
         assertTrue(SelfCheck.run(with(with(good(), "mine", null), "mineGaveUp", "x")).isEmpty(), "no mine marked: nothing about it");
     }
 

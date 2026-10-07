@@ -147,7 +147,7 @@ public final class GatherRules {
         String put = "put some " + x + " in the base chests";
         if (s == null) return put + ", or tell me how: gather source " + x + " <command with {n}>";
         return switch (s.kind()) {
-            case ORE -> "mark a mine (stand at its start facing the way to dig: mark mine) so I can strip-mine, take me near exposed " + s.family()
+            case ORE -> "place a mine (stand at its start facing the way to dig: place mine) so I can strip-mine, take me near exposed " + s.family()
                     + " ore, or " + put;
             case LOG -> "\"area here <r> <name>\" where trees grow, or " + put;
             case CROP -> "check the farm has " + x + " crops (\"farm here\" by it), or " + put;

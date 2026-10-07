@@ -271,7 +271,7 @@ class GatherTest {
         String nw = GatherRules.noWayText("minecraft:diamond", "minecraft:diamond", 1, 0, new GatherRules.Tally(), "no recipe makes it and I know no source for it");
         assertTrue(nw.startsWith("error: gather diamond: 0/1, no way to get diamond"), nw);
         assertTrue(nw.contains("gather source diamond"), nw);
-        assertTrue(GatherRules.nextHint(GatherSources.resolve("raw_iron", Map.of()), "minecraft:raw_iron").startsWith("mark a mine"));
+        assertTrue(GatherRules.nextHint(GatherSources.resolve("raw_iron", Map.of()), "minecraft:raw_iron").startsWith("place a mine"));
         assertTrue(GatherRules.nextHint(GatherSources.resolve("oak_log", Map.of()), "minecraft:oak_log").contains("where trees grow"));
         assertTrue(GatherRules.nextHint(null, "minecraft:x").contains("gather source x"));
         assertEquals("gather: 3/4 iron_ingot, step 2: mine iron_ore 1", GatherRules.status("minecraft:iron_ingot", 4, 3, 2, "mine iron_ore 1"));

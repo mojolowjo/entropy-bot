@@ -10,7 +10,7 @@ import java.util.List;
 public final class StripTexts {
     private StripTexts() {}
 
-    public static final String NO_MINE = "error: no mine marked - stand where it should start, face the way to dig, and PM \"mark mine\"";
+    public static final String NO_MINE = "error: no mine marked - stand where it should start, face the way to dig, and say \"place mine\"";
     public static final String TURN_USAGE = "usage: stripmine turn left|right";
     public static final String AREA_HINT = "area here <r> <name>";
 
@@ -39,8 +39,8 @@ public final class StripTexts {
 
     /** "stripmine ores". */
     public static String oresMode(boolean collect) {
-        return "ores: " + (collect ? "mined inside the mapped area and taken to the base (PM \"stripmine ores list\" to leave them)"
-                : "left in place and listed (PM \"stripmine ores collect\" to mine them inside the mapped area)");
+        return "ores: " + (collect ? "mined inside the mapped area and taken to the base (\"mine strip ores list\" to leave them)"
+                : "left in place and listed (\"mine strip ores collect\" to mine them inside the mapped area)");
     }
 
     /** mapAreaText with the mod: "my areas (a, b)" or "my areas (none set - area <name> <r>)". */
@@ -118,7 +118,7 @@ public final class StripTexts {
         Pos last = g.cell(Math.max(0, b.i() - 1), 0);
         String head = b.what().equals("a drop") ? "the corridor has a drop at " + b.at().key() + " (a hole too deep to climb out of)"
                 : "the corridor runs over " + b.what() + " from " + b.at().key();
-        return "couldn't reach the mine: " + head + " - mark a new mine (\"mark mine\" a few levels up, or \"mark mine "
+        return "couldn't reach the mine: " + head + " - place a new mine (\"place mine\" a few levels up, or \"place mine "
                 + last.key() + " " + g.leftDir() + "\")";
     }
 }

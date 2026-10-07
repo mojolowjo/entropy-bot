@@ -23,7 +23,7 @@ public final class MemoryStatus {
     public static final String USAGE = "usage: memory [status]";
 
     public static final String FRESH = "\"memory fresh\" is gone: my notes are in separate files now, and a file that can't be read is set aside "
-            + "as *.broken.json and its backup loaded (or it starts empty) by itself, so they never go read-only. PM \"memory\" to see how they are";
+            + "as *.broken.json and its backup loaded (or it starts empty) by itself, so they never go read-only. debug memory shows how they are";
 
     /**
      * The problem a store had at load: the part of its load line about this file when that says "broken" ("broken,

@@ -319,9 +319,16 @@ final class VocabCommands {
         return "ok: standing need " + Texts.shortId(id) + " " + n + " (have " + have(p, id) + ") - needs lists them";
     }
 
+    /** The stock view keyed by full ids (it keeps vanilla ids short). */
+    private Map<String, Integer> fullStock(LocalPlayer p) {
+        Map<String, Integer> out = new java.util.HashMap<>();
+        c.storage.stock(p).totals().forEach((k, v) -> out.merge(k.indexOf(':') >= 0 ? k : "minecraft:" + k, v, Integer::sum));
+        return out;
+    }
+
     private int have(LocalPlayer p, String id) {
         try {
-            Map<String, Integer> t = c.storage.stock(p).totals();
+            Map<String, Integer> t = fullStock(p);
             if (!Kinds.isKind(id)) return t.getOrDefault(id, 0);
             int sum = 0;
             for (String k : expand(id)) sum += t.getOrDefault(k, 0);
@@ -589,7 +596,7 @@ final class VocabCommands {
         if (w.isEmpty() || !Kinds.isKind(w.get(0))) return null;
         List<String> ids = expand(w.get(0).toLowerCase(Locale.ROOT));
         Map<String, Integer> stock = null;
-        try { stock = c.storage.stock(p).totals(); } catch (RuntimeException ignored) {}
+        try { stock = fullStock(p); } catch (RuntimeException ignored) {}
         String id = Kinds.pick(ids, stock);
         if (id == null) {
             err[0] = "error: the kind " + w.get(0) + " is empty (kinds " + w.get(0) + ")";

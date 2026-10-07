@@ -356,7 +356,7 @@ public final class StripMine {
     TurnResult turn(LocalPlayer p, String mineName, String only, String why, boolean quiet) {
         JsonObject m = place(mineName);
         MineGeom g = MineBook.geom(m);
-        if (g == null) return new TurnResult(null, "no mine marked - PM \"mark mine\"");
+        if (g == null) return new TurnResult(null, "no mine placed - place mine");
         String dim = dim(p), mdim = MineBook.str(m, "dim");
         if (mdim != null && !mdim.equals(dim)) return new TurnResult(null, "the mine is in " + mdim);
         MineBook book = book();

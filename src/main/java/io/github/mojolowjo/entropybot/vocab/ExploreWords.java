@@ -15,6 +15,8 @@ public final class ExploreWords {
     private ExploreWords() {}
 
     public static final int DEFAULT_MINUTES = 5, FIND_MINUTES = 10, MAX_MINUTES = 30, RINGS = 24;
+    /** How far (chunks, either axis) from where it started it goes, so the walk home stays short (256 blocks). */
+    public static final int MAX_FROM_START = 16;
     public static final List<String> DIRS = List.of("north", "south", "east", "west");
 
     /** dir: null = any way; minutes 1-30. error: the usage. */
@@ -55,6 +57,7 @@ public final class ExploreWords {
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 int x = cx + dx, z = cz + dz;
+                if (Math.max(Math.abs(x - sx), Math.abs(z - sz)) > MAX_FROM_START) continue;
                 if (st != null) {
                     int ahead = (x - sx) * st[0] + (z - sz) * st[1], side = Math.abs((x - sx) * st[1]) + Math.abs((z - sz) * st[0]);
                     if (ahead <= 0 || side > ahead) continue;
