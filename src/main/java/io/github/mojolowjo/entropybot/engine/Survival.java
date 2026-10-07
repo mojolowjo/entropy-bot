@@ -56,6 +56,9 @@ public final class Survival {
     private Use use = Use.NONE;
     private int useTicks;
     private BlockPos waterAt;
+    private net.minecraft.world.item.Item drinkItem;
+    private String[] leases;
+    private long lastWhyLog = -100000;
     private long lastHeal = -100000, noMilkAt = -1, lastLog = -100000, lastStep = -100000;
     private String lastEffectsLine = "";
     private int errors;
@@ -88,8 +91,10 @@ public final class Survival {
         // a running use goes first
         if (use == Use.DRINK) {
             useTicks++;
-            mc.options.keyUse.setDown(true);
-            if (useTicks > 45 || !p.isUsingItem() && useTicks > 5) {
+            // the drink is gone from the hand (an empty bucket or bottle now): let go at once, never a second use
+            boolean gone = drinkItem != null && !p.getMainHandItem().is(drinkItem);
+            if (!gone) mc.options.keyUse.setDown(true);
+            if (gone || useTicks > 45 || !p.isUsingItem() && useTicks > 5) {
                 mc.options.keyUse.setDown(false);
                 use = Use.NONE;
                 note("drank (" + doing + ")");
@@ -115,10 +120,20 @@ public final class Survival {
         if (onFire || inHazard) {
             int bucket = find(p, s -> s.is(Items.WATER_BUCKET));
             boolean nether = level.dimensionType().ultraWarm();
-            boolean may = bucket >= 0 && SurvivalRules.mayPlaceWater(guardAllows(level, feet), nether, containerNear(level, feet), feetFree(level, feet));
+            // the guard part: restore-kind leases for the own feet cell (and the block clicked under it), held until picked up
+            boolean pre = bucket >= 0 && onFire && !resistant && !inHazard && SurvivalRules.mayPlaceWater(true, nether, containerNear(level, feet), feetFree(level, feet));
+            String[] got = pre ? Guard.INSTANCE.waterAtFeet(level, feet) : null;
+            boolean may = pre && got != null;
+            if (bucket >= 0 && onFire && !inHazard && !may && now - lastWhyLog > 100) {
+                lastWhyLog = now;
+                LOG.info("[entropybot] survival: water bucket not used: {}", nether ? "the Nether" : containerNear(level, feet) ? "a container near"
+                        : !feetFree(level, feet) ? "my feet cell is taken" : resistant ? "fire resistant" : "the guard (see above)");
+            }
             int potion = find(p, s -> potionHas(s, MobEffects.FIRE_RESISTANCE));
             BlockPos water = nearestWater(p);
             SurvivalRules.Fire act = SurvivalRules.fire(onFire, resistant, inHazard, bucket >= 0, may, water != null, potion >= 0);
+            if (act == SurvivalRules.Fire.PLACE_WATER) leases = got;
+            else Guard.INSTANCE.releaseLeases(got);
             switch (act) {
                 case STEP_OUT -> {
                     BlockPos out = safeNeighbour(level, feet);
@@ -131,7 +146,11 @@ public final class Survival {
                 }
                 case PLACE_WATER -> {
                     begin("on fire: water bucket at my feet");
-                    if (!select(mc, p, bucket)) return true;
+                    if (!select(mc, p, bucket)) {
+                        Guard.INSTANCE.releaseLeases(leases);
+                        leases = null;
+                        return true;
+                    }
                     p.setXRot(90);
                     BlockPos below = feet.below();
                     mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
@@ -228,6 +247,8 @@ public final class Survival {
         active = false;
         mc.options.keyUse.setDown(false);
         use = Use.NONE;
+        Guard.INSTANCE.releaseLeases(leases);
+        leases = null;
         events.push("reflex", "done " + doing + ": " + why, null);
         doing = "none";
         engine.release();
@@ -235,6 +256,9 @@ public final class Survival {
 
     private boolean drink(Minecraft mc, LocalPlayer p, int slot) {
         if (!select(mc, p, slot)) return true;
+        drinkItem = p.getMainHandItem().getItem();
+        // look at the sky: the key is still down the tick the drink ends, and an empty bucket's use then hits nothing
+        p.setXRot(-90);
         engine.hold();
         use = Use.DRINK;
         useTicks = 0;
@@ -286,9 +310,6 @@ public final class Survival {
         return st.isAir() || st.is(BlockTags.FIRE) || st.canBeReplaced() && !st.getFluidState().is(FluidTags.LAVA);
     }
 
-    private static boolean guardAllows(Level level, BlockPos pos) {
-        return Guard.INSTANCE.mayPlaceLiquid(level, pos);
-    }
 
     private static boolean containerNear(Level level, BlockPos feet) {
         for (BlockPos q : BlockPos.betweenClosed(feet.offset(-2, -1, -2), feet.offset(2, 2, 2))) {

@@ -67,14 +67,16 @@ public final class ArmorCareRules {
      * holds no good piece for the slot (that one is put on by {@code wear} instead, see {@link #spare}).
      */
     public static Map<String, String> needs(List<Piece> worn, List<Piece> bag) {
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, String> out = new LinkedHashMap<>(), empty = new LinkedHashMap<>();
         for (String s : SLOTS) {
             Piece on = null;
             for (Piece p : worn) if (s.equals(p.slot())) on = p;
             if (on != null && !on.empty() && !on.worn()) continue;
             if (spare(s, bag) != null) continue;
-            out.put(s, on == null || on.empty() ? null : on.id());
+            if (on == null || on.empty()) empty.put(s, null);
+            else out.put(s, on.id());          // worn pieces first, then the empty slots
         }
+        out.putAll(empty);
         return out;
     }
 

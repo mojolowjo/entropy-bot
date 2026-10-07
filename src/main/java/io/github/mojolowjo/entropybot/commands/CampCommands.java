@@ -526,13 +526,21 @@ final class CampCommands {
      * At a pause, after tool care: a worn or missing piece is fetched or crafted and worn ("... then wear"); a good spare
      * in the bag is just put on. One at a time, each slot retried every 10 minutes. True when it started something.
      */
-    boolean armorCareTick(LocalPlayer p, boolean idle) {
+    private long armorBusyLog;
+
+    boolean armorCareTick(LocalPlayer p, String busy) {
         List<ArmorCareRules.Piece> on = armor(p), bag = armorInBag(p);
         Set<String> filled = new LinkedHashSet<>();
         for (ArmorCareRules.Piece a : on) if (!a.empty()) filled.add(a.slot());
         Set<String> before = armorBefore;
         armorBefore = filled;
-        if (!idle) return false;
+        if (busy != null) {
+            if (ArmorCareRules.lowest(on) != null && System.currentTimeMillis() - armorBusyLog > 60_000) {
+                armorBusyLog = System.currentTimeMillis();
+                LOG.info("[entropybot] armour care: {} - waiting for a pause (busy: {})", ArmorCareRules.lowest(on), busy);
+            }
+            return false;
+        }
         // a good spare for a worn or empty slot: wear swaps it in
         for (ArmorCareRules.Piece a : on) {
             if ((a.empty() || a.worn()) && ArmorCareRules.spare(a.slot(), bag) != null && Minecraft.getInstance().screen == null) {

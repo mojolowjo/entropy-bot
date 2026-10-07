@@ -175,10 +175,36 @@ public final class Guard {
         return refuse(level, pos, "place", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", info));
     }
 
-    /** 0.23.6 dry run (no veto log): would a liquid placed at pos be allowed? For the fire reflex's water bucket. */
-    public boolean mayPlaceLiquid(Level level, BlockPos pos) {
-        GuardCore.Verdict v = core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", GuardCore.BlockInfo.placing(true, false));
-        return v.allowed() && !v.wouldVeto();
+    /**
+     * 0.23.6 the fire reflex's water bucket at the bot's own feet: restore-kind leases (one cell each, air or water only,
+     * never in a protect box or a denied dimension) for the feet cell and the block clicked under it, then a dry run.
+     * Returns the lease ids to release once the water is picked up again, or null (refused; nothing held).
+     */
+    public String[] waterAtFeet(Level level, BlockPos feet) {
+        String dim = dimOf(level);
+        String a = core.restoreLease("survival", "fire water", new Box(null, dim, feet.getX(), feet.getY(), feet.getZ(), feet.getX(), feet.getY(), feet.getZ()));
+        if (a.startsWith("error")) {
+            LOG.info("[entropybot] fire water: no lease at my feet: {}", a);
+            return null;
+        }
+        BlockPos b = feet.below();
+        String c = core.restoreLease("survival", "fire water", new Box(null, dim, b.getX(), b.getY(), b.getZ(), b.getX(), b.getY(), b.getZ()));
+        if (c.startsWith("error")) {
+            core.release(a);
+            return null;
+        }
+        GuardCore.Verdict v = core.checkUnlogged(dim, feet.getX(), feet.getY(), feet.getZ(), "place", GuardCore.BlockInfo.placing(true, false));
+        if (!v.allowed() || v.wouldVeto()) {
+            LOG.info("[entropybot] fire water: the guard says no at my feet: {}", v.reason());
+            core.release(a);
+            core.release(c);
+            return null;
+        }
+        return new String[]{a, c};
+    }
+
+    public void releaseLeases(String[] ids) {
+        if (ids != null) for (String id : ids) core.release(id);
     }
 
     private boolean refuse(Level level, BlockPos pos, String action, GuardCore.Verdict v) {

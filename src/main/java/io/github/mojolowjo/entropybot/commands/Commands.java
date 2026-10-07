@@ -620,7 +620,8 @@ public final class Commands implements Chains.Env {
                 try {
                     boolean pause = !jobs.running() && !chains.running() && !requests.busy() && !core.reflexes.hold() && !gathering.running();
                     camp.toolCareTick(player, pause);
-                    camp.armorCareTick(player, pause && !jobs.running() && !chains.running());     // 0.23.6 armour care
+                    String busy = jobs.running() ? "job" : chains.running() ? "chain" : requests.busy() ? "request" : core.reflexes.hold() ? "reflex" : gathering.running() ? "gather" : null;
+                    camp.armorCareTick(player, busy);     // 0.23.6 armour care
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] tool care: {}", e.toString());
                 }
