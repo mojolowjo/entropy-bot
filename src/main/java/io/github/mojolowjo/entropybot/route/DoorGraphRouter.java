@@ -88,7 +88,9 @@ final class DoorGraphRouter implements Router {
             dist[in] = goalSeed[d];
             heap.push(goalSeed[d], in);
         }
-        // ---- backward Dijkstra
+        // ---- backward Dijkstra (0.23.3: a penalised leaving door costs more, EdgePenalties)
+        final long nowMs = System.currentTimeMillis();
+        final boolean pens = !io.github.mojolowjo.entropybot.move.EdgePenalties.GLOBAL.isEmpty();
         int settled = 0;
         while (!heap.isEmpty()) {
             double v = heap.peekKey();
@@ -121,10 +123,12 @@ final class DoorGraphRouter implements Router {
             } else {
                 // out(B,e): reached from in(B,d) for every d with a crossing to e
                 int n = rec.doorCount();
+                double pen = pens ? penalty(rec, d, nowMs) : 0;
                 for (int i = 0; i < n; i++) {
                     if (!rec.doors().get(i).canEnter()) continue;
                     double c = rec.ticks(i, d);
                     if (!(c < Double.POSITIVE_INFINITY)) continue;
+                    c += pen;
                     int in = base[b] + 2 * i;
                     double nv = v + c;
                     if (nv < dist[in]) {
@@ -162,7 +166,7 @@ final class DoorGraphRouter implements Router {
         int bestE = -1;
         for (int e = 0; e < sRec.doorCount(); e++) {
             if (!sRec.doors().get(e).canLeave()) continue;
-            double v = startCost[e] + dist[base[sB] + 2 * e + 1];
+            double v = startCost[e] + dist[base[sB] + 2 * e + 1] + (pens ? penalty(sRec, e, nowMs) : 0);
             if (v < best) {
                 best = v;
                 bestE = e;
@@ -184,6 +188,14 @@ final class DoorGraphRouter implements Router {
             node = succ[node];
         }
         return new RoutePlan(RoutePlan.Status.OK, best, path, table, settled, micros(t0), "ok");
+    }
+
+    /** 0.23.3: the penalty on leaving rec through door d (EdgePenalties, keyed by the door's representative cell). */
+    static double penalty(SectionRecord rec, int d, long nowMs) {
+        Cell r = rec.doors().get(d).rep();
+        if (r == null) return 0;
+        return io.github.mojolowjo.entropybot.move.EdgePenalties.GLOBAL.penalty(
+                io.github.mojolowjo.entropybot.move.EdgePenalties.key(rec.key().toString(), r.x(), r.y(), r.z()), nowMs);
     }
 
     /** The box b with base[b] <= node < base[b+1]. */

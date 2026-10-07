@@ -175,6 +175,7 @@ public final class VerbTable {
         v("follow", "", "moving", G, "follow [name]", "follow you (or that player) until stop", "follow|follow Steve", "stop");
         v("goto", "", "moving", G, "goto x y z | goto x z | goto me", "walk to a spot (the owner's own goto may leave my areas)", "goto 120 64 -300", "status");
         v("go", "", "moving", O, "go <place> [marker] | go <marker> | go poi <id>", "walk to a place, a marker or a point of interest (far: /home first)", "go farm|go base furnace|go poi 11", "places");
+        v("path", "", "moving", O, "path [status] | path assist on|off|status | path penalties clear", "how I walk: far walks (over 48 blocks or 10 levels) go leg by leg through my long-route process (assist on, the default; off: plain Baritone); status: command-to-first-move, chain gaps, legs, fails, penalised route edges, ready paths", "path status|path assist off", "goto x y z");
         v("home", "", "moving", O, "home", "teleport home with the server's /home", "home", "go base");
         v("death", "", "moving", O, "death", "walk back to where I died and empty my corpse", "death", "deaths");
         v("corpse", "", "moving", O, "corpse", "empty my own corpse when it is near", "corpse", "inv");

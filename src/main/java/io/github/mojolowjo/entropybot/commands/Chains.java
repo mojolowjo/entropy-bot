@@ -134,6 +134,12 @@ public final class Chains {
 
     public boolean running() { return chain != null; }
 
+    /** 0.23.3: the chain's next step's text (its walk is pre-planned while the current step finishes), or null. */
+    public String nextStep() {
+        Chain c = chain;
+        return c == null || c.idx >= c.steps.size() ? null : c.steps.get(c.idx);
+    }
+
     public String name() { return chain == null ? null : chain.name; }
 
     /** B1: told how every chain ends (name, message). */

@@ -109,6 +109,7 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.leftWorld();   // 0.17.1: the surface scan forgotten
                 if (inWorld) io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.leftWorld();   // 0.19.3: the surface export's files wiped
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
+                if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();         // 0.23.3: edge penalties saved
                 inWorld = false;
                 return;
             }
@@ -131,6 +132,7 @@ public final class Core {
                 io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(files.root());
                 LOG.info("[entropybot] watch seen: {}", io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
+                io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(files.root());       // 0.23.3
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
@@ -177,6 +179,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.tick(tick);      // 0.17.1: the tunnel view's surface scan (never throws)
             io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.tick();      // 0.19.3: the surface export for the dashboard (never throws)
             io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.tick(tick);     // routing R2: the map builder (never throws)
+            if (mc.player != null) commands.jobs.movementTick(mc.player);                 // 0.23.3: the movement package (never throws)
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] tick error #{}: {}", errors, t.toString());

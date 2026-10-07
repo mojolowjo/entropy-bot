@@ -581,7 +581,8 @@ public final class Commands implements Chains.Env {
             wasDead = dead;
             if (tick % 5 == 0) processPms();
             if (tick % 5 == 0) pollCommand(mc, tick);
-            if (tick % 5 == 3) {
+            // 0.23.3: a chain whose step's job just ended goes on the next tick (no gap between walks), else every 5 ticks
+            if (tick % 5 == 3 || (chains.running() && !jobs.running() && !requests.busy())) {
                 try {
                     chains.stepChain();
                 } catch (RuntimeException e) {
@@ -894,6 +895,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("allow") && rest.isBlank()) return Reply.now(allowCommand("allowed", "", isOwner));
         if (verb.equals("places") && !isOwner && !rest.isBlank()) return Reply.now("sorry, only " + owner() + " can forget places");
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
+        if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));          // 0.23.3: never busy
         if (verb.equals("surface")) return Reply.now(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.command(rest));     // 0.19.3: never busy
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));

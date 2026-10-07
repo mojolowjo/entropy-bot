@@ -39,6 +39,8 @@ final class RouteCommand {
     static void syncRuntime(Commands c) {
         try {
             RouteRuntime.INSTANCE.setEnabled(RouteWalker.on(c));
+            com.google.gson.JsonObject r = c.routeSettings();          // 0.23.3: path assist (default on)
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.setAssist(!r.has("assist") || r.get("assist").getAsBoolean());
         } catch (Throwable t) {
             RouteWalker.RLOG.error("route on/off", t);
         }

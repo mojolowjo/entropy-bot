@@ -211,6 +211,13 @@ public final class Seq {
 
     void splice(int at, List<Step> add) { steps.addAll(at, add); }
 
+    /** 0.23.3: the next walk step's goal while the current step is not a walk (ReadyPaths pre-plans it), else null. */
+    int[] nextWalkGoal() {
+        if (idx >= steps.size() || steps.get(idx).type.equals("walk")) return null;
+        for (int i = idx + 1; i < steps.size(); i++) if (steps.get(i).type.equals("walk") && steps.get(i).pos != null) return steps.get(i).pos;
+        return null;
+    }
+
     private String step(Step st, LocalPlayer p) {
         long elapsed = now() - stepStart;
         switch (st.type) {
@@ -312,8 +319,15 @@ public final class Seq {
             j.shortTries = 0;
             j.plainGoal = goal;
             j.legDest = null;
+            // 0.23.3: a far walk goes through the long-route process (legs fed inside Baritone's loop)
+            if (!st.exact && jobs.startLong(p, j, st.pos, goal)) {
+                stage = "long";
+                setStatus(label + " - walking (long route) to " + (st.why != null ? st.why : fmt));
+                return "wait";
+            }
             // routing stage 1: ask the router (a plan within 300 ms, else plain); exact spots (the altar) stay plain
             j.route = st.exact ? null : RouteWalker.begin(jobs.commands(), p, st.pos, null, RouteWalker.radiusOf(goal), true, routeMode);
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.walkStarted(p, st.pos, now());      // 0.23.3: instant start
             if (j.route != null) {
                 stage = "planning";
                 setStatus(label + " - planning the way to " + (st.why != null ? st.why : fmt));
@@ -327,6 +341,14 @@ public final class Seq {
             stage = "walking";
             setStatus(label + " - walking to " + (st.why != null ? st.why : fmt));
             return "wait";
+        }
+        if (stage.equals("long")) {
+            String r = jobs.longTick(p, j);
+            if (r.equals("wait")) return "wait";
+            j.longRoute = false;
+            io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
+            if (r.equals("ok")) return "next";
+            return r.replaceFirst("^error: ", "");
         }
         if (stage.equals("planning")) {
             if (RouteWalker.poll(j.route) == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) return "wait";

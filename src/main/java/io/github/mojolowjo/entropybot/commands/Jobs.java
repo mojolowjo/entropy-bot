@@ -100,6 +100,8 @@ public final class Jobs {
         long escapeTick;
         /** A travel dug out and has not put those blocks back yet (done once it is 3+ blocks away). */
         boolean escapeWaiting;
+        /** 0.23.3: this walk runs through the long-route process (LongRouteProcess; its walk id is this job's id). */
+        boolean longRoute;
     }
 
     static final java.util.concurrent.atomic.AtomicLong NEXT_ID = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
@@ -129,6 +131,126 @@ public final class Jobs {
     Jobs(Core core, Commands commands) {
         this.core = core;
         this.commands = commands;
+        io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.setHost(new io.github.mojolowjo.entropybot.baritone.LongRouteProcess.Host() {
+            @Override
+            public boolean alive(long walkId) { return job != null && !job.done && job.id == walkId && job.longRoute; }
+
+            @Override
+            public boolean canDigOut(int[] me) { return digOutAllowed(me); }
+        });
+    }
+
+    /**
+     * 0.23.3: the movement package's tick (MovePackage): instant start / keep-moving inputs, the settings profile, the
+     * ready paths to home, base, mine, farm, the owner and a chain's next walk. Never throws.
+     */
+    public void movementTick(LocalPlayer p) {
+        try {
+            IBaritone b = baritone();
+            boolean walk = running() && (walking() || (job.seq != null && job.status != null && job.status.contains("walking")));
+            boolean breaking = false;
+            try { breaking = BaritoneAPI.getSettings().allowBreak.value; } catch (Throwable ignored) {}
+            boolean fleeing = core.reflexes.reflex() == Reflexes.Reflex.FLEEING || core.reflexes.reflex() == Reflexes.Reflex.RETREATING;
+            boolean idle = !commands.busyForQueue() && b != null && idle(b) && !core.reflexes.hold();
+            java.util.Map<String, io.github.mojolowjo.entropybot.route.Cell> targets = new java.util.LinkedHashMap<>();
+            if (core.tick() % 10 == 3) {
+                JsonObject h = commands.home();
+                String dim = Guard.dimOf(p.level());
+                if (h != null && dimOf(h).equals(dim)) targets.put("home", cell(pos(h)));
+                for (String name : new String[]{"base", "mine", "farm"}) {
+                    JsonObject pl = core.knowledge.places().get(name);
+                    if (pl != null && pl.has("x") && dimOf(pl).equals(dim)) targets.put(name, cell(pos(pl)));
+                }
+                net.minecraft.world.entity.player.Player o = null;
+                for (net.minecraft.world.entity.player.Player q : p.level().players()) if (q.getGameProfile().getName().equalsIgnoreCase(commands.owner())) o = q;
+                if (o != null && o != p) targets.put("owner", cell(here(o)));
+            }
+            int[] next = null;
+            Chains ch = commands.chainsRef();
+            String step = ch != null && ch.running() ? ch.nextStep() : null;
+            if (step != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("^goto (-?\\d+) (-?\\d+) (-?\\d+)$").matcher(step.trim());
+                if (m.find()) next = new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))};
+            }
+            if (next == null && running() && job.seq != null) next = job.seq.nextWalkGoal();
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.tick(p, core.tick(), walk, breaking, fleeing, idle, targets,
+                    next == null ? null : cell(next));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] movement tick: {}", e.toString());
+        }
+    }
+
+    private static io.github.mojolowjo.entropybot.route.Cell cell(int[] a) { return new io.github.mojolowjo.entropybot.route.Cell(a[0], a[1], a[2]); }
+
+    /**
+     * 0.23.3: the surface over x z with leaves skipped. The client level keeps only the MOTION_BLOCKING and
+     * WORLD_SURFACE heightmaps (MOTION_BLOCKING_NO_LEAVES read -64 live, so the dig-out never counted as underground):
+     * walk down from MOTION_BLOCKING past leaves. Vanilla API only (Heightmap, BlockTags.LEAVES).
+     */
+    static int surfaceNoLeaves(net.minecraft.world.level.Level level, int x, int z) {
+        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
+        int min = level.getMinBuildHeight();
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(x, y, z);
+        while (y > min) {
+            m.setY(y);
+            var st = level.getBlockState(m);
+            if (!st.is(net.minecraft.tags.BlockTags.LEAVES) && st.blocksMotion()) break;
+            y--;
+        }
+        return y + 1;
+    }
+
+    /** 0.23.3: the long walk's dig-out rule (the escape's own): underground and inside the areas. */
+    boolean digOutAllowed(int[] me) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return false;
+        int surface = surfaceNoLeaves(mc.level, me[0], me[2]);
+        boolean sky = mc.level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
+        boolean under = RestoreRules.underground(sky, surface, me[1]), in = commands.inAreas(Guard.dimOf(mc.level), me[0], me[2]);
+        LOG.info("[entropybot] long walk: dig-out check at {}: underground {} (surface {}), in my areas {}", fmt(me), under, surface, in);
+        return under && in;
+    }
+
+    /**
+     * 0.23.3: starts j's walk to d through the long-route process when path assist is on and d is far (LegPlan); false:
+     * walk as before. finalGoal: the walk's own goal (GoalBlock for a goto, a Seq step's goal).
+     */
+    boolean startLong(LocalPlayer p, Job j, int[] d, baritone.api.pathing.goals.Goal finalGoal) {
+        var mp = io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE;
+        int[] me = here(p);
+        if (d == null || !mp.wantsLong(me, d)) return false;
+        IBaritone b = baritone();
+        if (b == null) return false;
+        safeSettings();
+        j.longRoute = true;
+        j.route = null;
+        j.legDest = null;
+        j.goalObj = null;
+        io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.start(j.id, me, d, finalGoal, RouteWalker.radiusOf(finalGoal));
+        mp.walkStarted(p, d, core.tick());
+        return true;
+    }
+
+    /**
+     * 0.23.3: one tick of a long walk: "wait" while it runs, "ok" arrived, else the failure line. A dig-out it asks for
+     * starts here (the job's escape); a walk Baritone cancelled (an unstick, a stray cancelEverything) resumes.
+     */
+    String longTick(LocalPlayer p, Job j) {
+        var lr = io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE;
+        if (lr.walkId() != j.id) return "error: the long walk was replaced";
+        if (lr.takeDigOut()) {
+            if (startEscape(p, j, true)) return "wait";
+            lr.digOutFailed(here(p));
+        }
+        if (lr.arrived()) return "ok";
+        if (lr.failure() != null) {
+            int[] d = travelDest(j) != null ? travelDest(j) : j.dest;
+            if (d != null && WalkEnd.arrived(here(p), d)) return "ok";       // the goal block itself is unreachable but I'm there
+            return lr.failure();
+        }
+        if (lr.active()) return "wait";
+        lr.resume(here(p), lr.cancelled() ? "after a cancel" : "the process stopped");
+        return "wait";
     }
 
     public boolean running() { return job != null && !job.done; }
@@ -204,6 +326,12 @@ public final class Jobs {
         if (j.junkDropped > 0) msg = msg + "; dropped " + j.junkDropped + " junk";        // C5
         j.done = true;
         j.status = msg;
+        try {
+            // 0.23.3: the long walk ends with its job; the chain-gap clock starts
+            if (j.longRoute && io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.walkId() == j.id)
+                io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
+            if (j.type.equals("travel") || j.seq != null) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.walkEnded(core.tick());
+        } catch (RuntimeException e) { LOG.warn("[entropybot] path end: {}", e.toString()); }
         if (j.onEnd != null) {
             try { j.onEnd.run(); } catch (RuntimeException e) { LOG.warn("[entropybot] job end hook: {}", e.toString()); }
         }
@@ -326,7 +454,8 @@ public final class Jobs {
             j.escapeRestored += r.placedEscape;
             if (!r.left.isEmpty()) LOG.info("[entropybot] escape: {}", r.summary());
             IBaritone b = baritone();
-            if (b != null && j.goalObj != null) b.getCustomGoalProcess().setGoalAndPath(j.goalObj);
+            if (j.longRoute) io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.resume(here(Minecraft.getInstance().player), "after stepping off");      // 0.23.3
+            else if (b != null && j.goalObj != null) b.getCustomGoalProcess().setGoalAndPath(j.goalObj);
             else if (b != null && j.goal != null) b.getCommandManager().execute(j.goal);
             j.status = j.label;
             j.startTick = core.tick();
@@ -419,17 +548,23 @@ public final class Jobs {
         int[] d = travelDest(j);
         boolean fixed = !j.reflex && d != null && j.goal != null && j.goal.startsWith("goto ")
                 && (j.label == null || !j.label.startsWith("following"));
+        if (fixed && startLong(p, j, d, new baritone.api.pathing.goals.GoalBlock(d[0], d[1], d[2]))) {
+            j.status = j.label + " (long route)";
+            return;
+        }
         if (fixed) {
             j.plainGoal = new baritone.api.pathing.goals.GoalBlock(d[0], d[1], d[2]);
             j.route = RouteWalker.begin(commands, p, d, null, 0, true, null);
         }
         if (j.route != null) {
             j.status = j.label + " (planning)";
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.walkStarted(p, d, core.tick());     // 0.23.3: moving while it plans
             return;
         }
         b.getCommandManager().execute(j.goal);
         j.status = j.label;
         watch(j);
+        if (d != null && !j.reflex) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.walkStarted(p, d, core.tick());      // 0.23.3: instant start
     }
 
     /** A travel waiting for its plan: once it is there (or 300 ms passed), the walk starts with the goal it gives. */
@@ -694,6 +829,13 @@ public final class Jobs {
             }
             case "wait" -> { if (now >= j.until) finish("ok: waited"); }
             case "travel", "spawn" -> {
+                if (j.longRoute && j.tpTick < 0) {                // 0.23.3: the long-route process walks it; checked every tick
+                    String r = longTick(p, j);
+                    if (r.equals("wait")) return;
+                    if (r.equals("ok")) finish("ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
+                    else finish(r.startsWith("error") ? r : "error: " + r);
+                    return;
+                }
                 if (j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) routeTravelPoll(j);
                 else if (now % 20 == 0) stepWalk(p, j);
             }
@@ -862,7 +1004,8 @@ public final class Jobs {
         endUnstick(j);
         // and plan again from the new spot (a fresh stuck clock and fresh path events)
         IBaritone b = baritone();
-        if (b != null && j.goalObj != null) b.getCustomGoalProcess().setGoalAndPath(j.goalObj);
+        if (j.longRoute) io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.resume(here(Minecraft.getInstance().player), "after stepping off");      // 0.23.3
+            else if (b != null && j.goalObj != null) b.getCustomGoalProcess().setGoalAndPath(j.goalObj);
         else if (b != null && j.goal != null) b.getCommandManager().execute(j.goal);
         j.startTick = core.tick();
         j.lastStepTick = -1;
@@ -906,7 +1049,7 @@ public final class Jobs {
         String dim = Guard.dimOf(level);
         // 0.19.7: a tree crown over an open pit is no roof (live: canSeeSky said no under birch leaves 10 up), so the
         // surface ignores leaves and "sky" is also true when nothing but leaves is over the head
-        int surface = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, me[0], me[2]);
+        int surface = surfaceNoLeaves(level, me[0], me[2]);
         boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
         // 0.19.7: a climb out this job's own dig-out started may go on near the surface (live: the first step out of a
         // sealed pit left the bot in a 2-deep hole of its own, open to the sky, that it can't jump out of)
