@@ -24,6 +24,11 @@ public final class BuildSpotter {
             return "looks like a build at " + center[0] + " " + center[1] + " " + center[2] + " - protect it? (" + command() + ")";
         }
 
+        /** 0.23.4: the walk's hint (a walk that passes a build no safe or main area covers). */
+        public String walkWhisper() {
+            return "looks like a build at " + center[0] + " " + center[1] + " " + center[2] + " - area here 8 " + name + " safe?";
+        }
+
         public String command() {
             return "area " + box[0] + " " + box[2] + " " + box[3] + " " + box[5] + " " + name + " safe " + box[1] + " " + box[4];
         }
@@ -70,6 +75,22 @@ public final class BuildSpotter {
         String name = ("build_" + c[0] + "_" + c[2]).replace("-", "m");
         if (name.length() > 24) name = name.substring(0, 24);
         return new Hint(c, box, best.size(), name);
+    }
+
+    /** 0.23.4: a walk's build hint at most once a minute. */
+    public static final long WALK_HINT_MS = 60_000;
+
+    public static boolean walkHintDue(long lastAt, long now) {
+        return lastAt <= 0 || now - lastAt >= WALK_HINT_MS;
+    }
+
+    /**
+     * 0.23.4: may a walk whisper about this cluster? Never when its centre lies in a safe or main area (typeAtCenter
+     * "safe"/"main"), never in the near-me zone around the owner, never twice for one spot (mentioned).
+     */
+    public static boolean walkHintAllowed(String typeAtCenter, boolean inNearZone, boolean mentioned) {
+        if (mentioned || inNearZone) return false;
+        return !"safe".equals(typeAtCenter) && !"main".equals(typeAtCenter);
     }
 
     private static boolean near(int[] a, int[] b) {

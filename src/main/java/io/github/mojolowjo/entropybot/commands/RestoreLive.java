@@ -352,15 +352,54 @@ public final class RestoreLive {
     }
 
     private void scanBuilds0(LocalPlayer p, int[] center) {
+        BuildSpotter.Hint h = spotBuild(center);
+        if (h == null) return;
+        String dim = Guard.dimOf(Minecraft.getInstance().level);
+        RestoreBook.BuildHint added = book.addHint(h, dim, System.currentTimeMillis());
+        if (added == null) return;                            // this spot was mentioned before
+        changed();
+        LOG.info("[entropybot] restore: {} built blocks near {} - suggested {}", h.count(), Jobs.fmt(h.center()), h.command());
+        if (warnedHints.add(h.key())) c.whisper(c.owner(), h.whisper());
+    }
+
+    /**
+     * 0.23.4 (run 8): a walk passes center: a built cluster there that no safe or main area covers, outside the near-me
+     * zone, gets one whisper per spot ("looks like a build at x y z - area here 8 name safe?"). True when it whispered.
+     */
+    boolean walkHint(LocalPlayer p, int[] center) {
+        try {
+            BuildSpotter.Hint h = spotBuild(center);
+            if (h == null) return false;
+            String dim = Guard.dimOf(Minecraft.getInstance().level);
+            int[] k = h.center();
+            Policy pol = Core.INSTANCE.guard.core.policy();
+            io.github.mojolowjo.entropybot.guard.AreaType t = pol == null ? null : pol.typeAt(dim, k[0], k[1], k[2]);
+            Box near = Core.INSTANCE.guard.core.nearBox();
+            boolean inNear = near != null && near.contains(dim, k[0], k[1], k[2]);
+            boolean mentioned = warnedHints.contains(h.key());
+            if (!BuildSpotter.walkHintAllowed(t == null ? null : t.word(), inNear, mentioned)) return false;
+            if (book.addHint(h, dim, System.currentTimeMillis()) != null) changed();
+            warnedHints.add(h.key());
+            LOG.info("[entropybot] walk: {} built blocks near {} (area type {}) - hint whispered", h.count(), Jobs.fmt(k), t == null ? "none" : t.word());
+            c.whisper(c.owner(), h.walkWhisper());
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] walk build hint failed: {}", e.toString());
+            return false;
+        }
+    }
+
+    /** The biggest built cluster around center outside every protect box (BuildSpotter), or null. */
+    private BuildSpotter.Hint spotBuild(int[] center) {
         Minecraft mc = Minecraft.getInstance();
         Level level = mc.level;
         Guard g = Core.INSTANCE.guard;
-        if (level == null || c == null || !g.floorReady()) return;
+        if (level == null || c == null || !g.floorReady()) return null;
         String dim = Guard.dimOf(level);
         // the owner's own places (base, mine, farm...) are known to them: no hint there
         for (JsonObject pl : Core.INSTANCE.knowledge.places().values()) {
             if (!Jobs.dimOf(pl).equals(dim)) continue;
-            if (Jobs.distSq(Jobs.pos(pl), center) <= 24 * 24) return;
+            if (Jobs.distSq(Jobs.pos(pl), center) <= 24 * 24) return null;
         }
         List<Box> protect = protectBoxes();
         List<int[]> built = new ArrayList<>();
@@ -386,12 +425,8 @@ public final class RestoreLive {
             }
         }
         BuildSpotter.Hint h = BuildSpotter.spot(built);
-        if (h == null) return;
-        RestoreBook.BuildHint added = book.addHint(h, dim, System.currentTimeMillis());
-        if (added == null) return;                            // this spot was mentioned before
-        changed();
-        LOG.info("[entropybot] restore: {} built blocks near {} - suggested {} (kinds in the scan: {})", h.count(), Jobs.fmt(h.center()), h.command(), kinds);
-        if (warnedHints.add(h.key())) c.whisper(c.owner(), h.whisper());
+        if (h != null) LOG.debug("[entropybot] build scan near {}: kinds {}", Jobs.fmt(center), kinds);
+        return h;
     }
 
     // ---- check ----

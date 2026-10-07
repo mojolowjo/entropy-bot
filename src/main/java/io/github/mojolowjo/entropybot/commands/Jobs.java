@@ -137,8 +137,26 @@ public final class Jobs {
 
             @Override
             public boolean canDigOut(int[] me) { return digOutAllowed(me); }
+
+            @Override
+            public boolean boxedIn(int[] me) {
+                LocalPlayer p = Minecraft.getInstance().player;
+                return p != null && bestFreeStep(p, null) == null;
+            }
+
+            @Override
+            public String pauseCause() {
+                String c = walkReflex;
+                walkReflex = null;
+                return c;
+            }
         });
     }
+
+    /** 0.23.4: the last reflex (fighting, eating...) seen while a long walk ran, for its "after fight" note. */
+    private String walkReflex;
+    /** 0.23.4: the walk build hint's clock (one whisper a minute at most). */
+    private long walkHintAt;
 
     /**
      * 0.23.3: the movement package's tick (MovePackage): instant start / keep-moving inputs, the settings profile, the
@@ -152,6 +170,8 @@ public final class Jobs {
             try { breaking = BaritoneAPI.getSettings().allowBreak.value; } catch (Throwable ignored) {}
             boolean fleeing = core.reflexes.reflex() == Reflexes.Reflex.FLEEING || core.reflexes.reflex() == Reflexes.Reflex.RETREATING;
             boolean idle = !commands.busyForQueue() && b != null && idle(b) && !core.reflexes.hold();
+            if (running() && job.longRoute && core.reflexes.reflex() != Reflexes.Reflex.NONE) walkReflex = core.reflexes.reflex().name();
+            if (walk && !fleeing && core.tick() % 40 == 21) walkBuildHint(p);
             java.util.Map<String, io.github.mojolowjo.entropybot.route.Cell> targets = new java.util.LinkedHashMap<>();
             if (core.tick() % 10 == 3) {
                 JsonObject h = commands.home();
@@ -239,13 +259,16 @@ public final class Jobs {
         var lr = io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE;
         if (lr.walkId() != j.id) return "error: the long walk was replaced";
         if (lr.takeDigOut()) {
-            if (startEscape(p, j, true)) return "wait";
+            if (startEscape(p, j, true)) {
+                io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());     // 0.23.4: counted in path status
+                return "wait";
+            }
             lr.digOutFailed(here(p));
         }
         if (lr.arrived()) return "ok";
         if (lr.failure() != null) {
             int[] d = travelDest(j) != null ? travelDest(j) : j.dest;
-            if (d != null && WalkEnd.arrived(here(p), d)) return "ok";       // the goal block itself is unreachable but I'm there
+            if (d != null && WalkEnd.arrived(here(p), d)) return "ok";       // the goal block itself is unreachable but I'm there (goalVerdict judges it)
             return lr.failure();
         }
         if (lr.active()) return "wait";
@@ -832,8 +855,10 @@ public final class Jobs {
                 if (j.longRoute && j.tpTick < 0) {                // 0.23.3: the long-route process walks it; checked every tick
                     String r = longTick(p, j);
                     if (r.equals("wait")) return;
-                    if (r.equals("ok")) finish("ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
-                    else finish(r.startsWith("error") ? r : "error: " + r);
+                    if (r.equals("ok")) {
+                        String v = goalVerdict(p, j);
+                        finish(v != null ? v : "ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
+                    } else finish(r.startsWith("error") ? r : "error: " + r);
                     return;
                 }
                 if (j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) routeTravelPoll(j);
@@ -912,7 +937,8 @@ public final class Jobs {
                 finish(WalkEnd.shortResult(me, d));
                 return;
             }
-            finish("ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
+            String v = moving ? null : goalVerdict(p, j);
+            finish(v != null ? v : "ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
         } else {
             String r = useBlock(p, j.bed);
             finish(r.startsWith("ok") ? "ok: clicked the bed at " + j.bed + " (spawn set if it was night or the server allows it)" : r);
@@ -938,6 +964,69 @@ public final class Jobs {
                 && mc.level.getFluidState(feet).isEmpty();
     }
 
+    /**
+     * 0.23.4 (run 9a): an owner's goto x y z ending within the 3-block tolerance: is the goal cell itself inside a block
+     * or walled in? Then WalkEnd.goalVerdict's answer, else null (arrived near, as before). Unloaded goal: null.
+     */
+    String goalVerdict(LocalPlayer p, Job j) {
+        try {
+            if (j.reflex || j.goal == null || !j.goal.matches("^goto -?\\d+ -?\\d+ -?\\d+$")) return null;
+            int[] d = travelDest(j);
+            Minecraft mc = Minecraft.getInstance();
+            if (d == null || mc.level == null) return null;
+            BlockPos g = new BlockPos(d[0], d[1], d[2]);
+            if (!mc.level.isLoaded(g)) return null;
+            WalkEnd.GoalCell cell = goalCell(mc, g, here(p));
+            String v = WalkEnd.goalVerdict(here(p), d, cell);
+            if (v != null) LOG.info("[entropybot] walk end at {}: goal {} {}", fmt(here(p)), fmt(d), v);
+            return v;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] goal check: {}", e.toString());
+            return null;
+        }
+    }
+
+    private static boolean open(Minecraft mc, BlockPos c) {
+        return mc.level.getBlockState(c).getCollisionShape(mc.level, c).isEmpty();
+    }
+
+    static WalkEnd.GoalCell goalCell(Minecraft mc, BlockPos g, int[] me) {
+        var st = mc.level.getBlockState(g);
+        if (!st.getCollisionShape(mc.level, g).isEmpty()) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+            int[] best = null;
+            double bd = Double.MAX_VALUE;
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+                BlockPos c = g.offset(dx, dy, dz);
+                if ((dx | dy | dz) == 0 || !standable(mc, c)) continue;
+                double s = distSq(new int[]{c.getX(), c.getY(), c.getZ()}, me);
+                if (s < bd) { bd = s; best = new int[]{c.getX(), c.getY(), c.getZ()}; }
+            }
+            return new WalkEnd.GoalCell(id, false, best);
+        }
+        // walled in: no room for the head, or closed on all four sides at feet and head height (only reached
+        // from above, and the walk ended more than a block off, so it wasn't)
+        boolean walled = !open(mc, g.above());
+        if (!walled) {
+            walled = true;
+            for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                BlockPos s = g.relative(dir);
+                if (open(mc, s) && open(mc, s.above())) walled = false;
+            }
+        }
+        return new WalkEnd.GoalCell(null, walled, null);
+    }
+
+    /**
+     * 0.23.4 (run 8): a walk passing a built cluster no safe or main area covers whispers once per spot, at most once a
+     * minute, never in the near-me zone around the owner ("looks like a build at x y z - area here 8 name safe?").
+     */
+    private void walkBuildHint(LocalPlayer p) {
+        long now = System.currentTimeMillis();
+        if (!io.github.mojolowjo.entropybot.restore.BuildSpotter.walkHintDue(walkHintAt, now)) return;
+        if (RestoreLive.INSTANCE.walkHint(p, here(p))) walkHintAt = now;
+    }
+
     /** Picks the free spot next to the bot nearest the destination and starts walking onto it; false when there is none. */
     boolean startUnstick(LocalPlayer p, Job j) {
         BlockPos best = bestFreeStep(p, travelDest(j));
@@ -959,7 +1048,7 @@ public final class Jobs {
     }
 
     /** The free spot next to the bot nearest the destination, or null. */
-    private static BlockPos bestFreeStep(LocalPlayer p, int[] d) {
+    static BlockPos bestFreeStep(LocalPlayer p, int[] d) {
         Minecraft mc = Minecraft.getInstance();
         int[] me = here(p);
         BlockPos best = null;

@@ -14,6 +14,7 @@ import io.github.mojolowjo.entropybot.move.LegJudge;
 import io.github.mojolowjo.entropybot.move.LegPlan;
 import io.github.mojolowjo.entropybot.move.MoveStats;
 import io.github.mojolowjo.entropybot.move.NoDeadStop;
+import io.github.mojolowjo.entropybot.move.PauseNote;
 import io.github.mojolowjo.entropybot.route.Cell;
 import io.github.mojolowjo.entropybot.route.RoutePlan;
 import io.github.mojolowjo.entropybot.routing.RouteRuntime;
@@ -58,6 +59,12 @@ public final class LongRouteProcess implements IBaritoneProcess {
         boolean alive(long walkId);
 
         boolean canDigOut(int[] me);
+
+        /** 0.23.4: no free step next to the bot (a sealed cell). */
+        default boolean boxedIn(int[] me) { return false; }
+
+        /** 0.23.4: what held the walk last (a reflex word: fighting, eating...), cleared by the call; null = unknown. */
+        default String pauseCause() { return null; }
     }
 
     public final MoveStats stats = new MoveStats();
@@ -80,6 +87,8 @@ public final class LongRouteProcess implements IBaritoneProcess {
     /** Game time of the last onTick: a gap means a temporary process (a fight, a meal) had control in between. */
     private long lastTickTime;
     private String lastReason = "";
+    /** 0.23.4: the last pause's outcome for path status ("resumed leg 2/4 after fight (moved 1 block)"). */
+    private String lastPause = "";
     private boolean forceReplanLeg;
     /** Raw-input keep-moving target for MovePackage: {x, z} and until which game tick (0 = none). */
     private double[] keepTo;
@@ -112,12 +121,25 @@ public final class LongRouteProcess implements IBaritoneProcess {
         this.failure = null;
         this.digOutRequested = false;
         this.pausedAt = null;
+        this.lastPause = "";
         this.lastTickTime = 0;
         this.lastPos = null;              // a new walk measures its legs from here (a /tp or another walk moved the bot)
         machine.onLegReached();
         stats.longWalks++;
         planRoute(me, "start");
         active = true;
+        // 0.23.4: sealed in at the start (run 10 stood ~14 s): dig out before the first search, not after three failed ones
+        try {
+            if (host != null && host.boxedIn(me) && host.canDigOut(me)) {
+                machine.markDugOut();
+                stats.digOuts++;
+                digOutRequested = true;
+                lastReason = "sealed in at the start: dig-out first";
+                LOG.info("[entropybot] long walk: no free step at {} {} {}: dig-out before the first search", me[0], me[1], me[2]);
+            }
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] long walk: start check: {}", t.toString());
+        }
     }
 
     /** After a cancel (unstick, dig-out, someone's cancelEverything): carry on from here. */
@@ -125,14 +147,7 @@ public final class LongRouteProcess implements IBaritoneProcess {
         if (dest == null || arrived || failure != null) return;
         cancelled = false;
         digOutRequested = false;
-        if (LegJudge.resume(pausedAt != null ? pausedAt : lastPos, me)) {
-            stats.resumes++;
-            LOG.info("[entropybot] long walk resumed at {} {} {} ({}): leg {}/{} kept", me[0], me[1], me[2], why, idx + 1, legs.size());
-        } else {
-            stats.replansAfterPause++;
-            LOG.info("[entropybot] long walk re-planned at {} {} {} ({})", me[0], me[1], me[2], why);
-            planRoute(me, why);
-        }
+        afterPause(pausedAt != null ? pausedAt : lastPos, me, why);
         pausedAt = null;
         lastTickTime = 0;
         active = true;
@@ -177,7 +192,8 @@ public final class LongRouteProcess implements IBaritoneProcess {
         if (dest == null) return "long walk: none";
         return "long walk to " + dest[0] + " " + dest[1] + " " + dest[2] + ": " + (active ? "on" : arrived ? "arrived" : failure != null ? "failed" : "paused")
                 + ", leg " + Math.min(idx + 1, legs.size()) + "/" + legs.size() + (planning != null ? " (map planning)" : "")
-                + ", fails in a row " + machine.failsInRow() + (lastReason.isEmpty() ? "" : ", last: " + lastReason);
+                + ", fails in a row " + machine.failsInRow() + (lastReason.isEmpty() ? "" : ", last: " + lastReason)
+                + (lastPause.isEmpty() ? "" : ", after the last pause: " + lastPause);
     }
 
     /** A block changed: when it lies near the current leg's straight line, the leg is planned again. */
@@ -296,14 +312,9 @@ public final class LongRouteProcess implements IBaritoneProcess {
         lastTickTime = gt;
         if (pausedAt != null) {
             // back after a temporary process: the leg goes on (near) or the route is planned again (moved away)
-            if (LegJudge.resume(pausedAt, me)) {
-                stats.resumes++;
-                LOG.info("[entropybot] long walk resumed at {} {} {} after a pause: leg {}/{} kept", me[0], me[1], me[2], idx + 1, legs.size());
-            } else {
-                stats.replansAfterPause++;
-                LOG.info("[entropybot] long walk: moved {} blocks during the pause, planning again", Math.round(Math.sqrt(sq(pausedAt, me))));
-                planRoute(me, "after a pause");
-            }
+            String cause = null;
+            try { cause = host == null ? null : host.pauseCause(); } catch (Throwable ignored) {}
+            afterPause(pausedAt, me, cause == null ? "pause" : cause);
             pausedAt = null;
         }
         if (lastPos != null) legWalked += Math.sqrt(sq(lastPos, me));
@@ -339,7 +350,9 @@ public final class LongRouteProcess implements IBaritoneProcess {
         if (calcFailed) {
             stats.fails++;
             LegPlan.Leg l = legs.get(idx);
-            NoDeadStop.Action a = machine.onFail(host != null && host.canDigOut(me));
+            // 0.23.4: sealed in (no free step): the dig-out on this first failure, no waypoint skips first
+            boolean boxed = host != null && host.boxedIn(me);
+            NoDeadStop.Action a = machine.onFail(host != null && host.canDigOut(me), boxed);
             lastReason = "leg " + (idx + 1) + " to " + l.end().x() + " " + l.end().y() + " " + l.end().z() + ": no path (" + a.name().toLowerCase() + ")";
             LOG.info("[entropybot] long walk: {}", lastReason);
             switch (a) {
@@ -376,6 +389,24 @@ public final class LongRouteProcess implements IBaritoneProcess {
             } catch (Throwable ignored) {}
         }
         return new PathingCommand(goalOf(legs.get(idx)), PathingCommandType.SET_GOAL_AND_PATH);
+    }
+
+    /**
+     * 0.23.4: back after a pause (a fight, a meal, a cancel): the same 3-block rule, said explicitly in the log and in
+     * {@code path status}: "resumed leg i/n after fight" or "re-planned route after fight (moved N blocks)".
+     */
+    private void afterPause(int[] from, int[] me, String cause) {
+        long moved = from == null ? -1 : Math.round(Math.sqrt(sq(from, me)));
+        String c = PauseNote.cause(cause);
+        if (LegJudge.resume(from, me)) {
+            stats.resumes++;
+            lastPause = PauseNote.resumed(idx + 1, legs.size(), c, moved);
+        } else {
+            stats.replansAfterPause++;
+            lastPause = PauseNote.replanned(c, moved);
+            planRoute(me, "after " + c);
+        }
+        LOG.info("[entropybot] long walk at {} {} {}: {}", me[0], me[1], me[2], lastPause);
     }
 
     private void keepMoving(int[] me) {

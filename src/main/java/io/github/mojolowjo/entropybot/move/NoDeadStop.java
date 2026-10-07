@@ -27,8 +27,20 @@ public final class NoDeadStop {
 
     /** A leg search failed; canDigOut: underground and inside the areas. */
     public Action onFail(boolean canDigOut) {
+        return onFail(canDigOut, false);
+    }
+
+    /**
+     * 0.23.4: boxedIn: no free step next to the bot (a sealed cell). Skipping waypoints or re-planning can't help
+     * there, so the dig-out comes on the first failure (live run 10 stood ~14 s through two useless searches first).
+     */
+    public Action onFail(boolean canDigOut, boolean boxedIn) {
         fails++;
         total++;
+        if (boxedIn && canDigOut && !dugOut) {
+            dugOut = true;
+            return Action.DIG_OUT;
+        }
         if (fails == 1) return Action.NEXT_WAYPOINT;
         if (fails == 2) return Action.DETOUR;
         if (fails == MAX_FAILS && canDigOut && !dugOut) {
@@ -37,6 +49,9 @@ public final class NoDeadStop {
         }
         return Action.REPORT;
     }
+
+    /** 0.23.4: a dig-out started before any search (the walk began sealed in): it counts as this run's one dig-out. */
+    public void markDugOut() { dugOut = true; }
 
     /** The dig-out could not start (no safe way out): the walk ends here. */
     public Action digOutFailed() { return Action.REPORT; }

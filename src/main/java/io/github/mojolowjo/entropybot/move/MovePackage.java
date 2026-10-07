@@ -119,6 +119,21 @@ public final class MovePackage {
         }
     }
 
+    /** 0.23.4: the first-move clock runs this long (a sealed start digs out first: the move after it counts, standing included). */
+    static final long FIRST_MOVE_WINDOW = 1200;
+
+    /** 0.23.4: a walk's dig-out began (sealed in): its start time goes to path status; the first-move clock keeps running. */
+    public void digOutStarted(long tick) {
+        try {
+            if (moveAskedTick >= 0) {
+                stats().digOutStart(tick - moveAskedTick);
+                LOG.info("[entropybot] path: dig-out began {} ticks after the command", tick - moveAskedTick);
+            }
+        } catch (Throwable t) {
+            error("dig-out start", t);
+        }
+    }
+
     /** A walk job ended (for the chain-gap clock). */
     public void walkEnded(long tick) {
         lastWalkEndTick = tick;
@@ -143,7 +158,10 @@ public final class MovePackage {
                     lastWalkEndTick = -1;
                     LOG.info("[entropybot] path: first move after {} ticks", t);
                     moveAskedTick = -1;
-                } else if (tick - moveAskedTick > 200) moveAskedTick = -1;
+                } else if (tick - moveAskedTick > FIRST_MOVE_WINDOW) {
+                    stats().noMove++;                 // 0.23.4: counted, not silently dropped
+                    moveAskedTick = -1;
+                }
             }
             // the instant start, then the no-dead-stop keep-moving input
             boolean executing = b != null && b.getPathingBehavior().getCurrent() != null;
