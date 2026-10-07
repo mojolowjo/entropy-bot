@@ -64,7 +64,7 @@ public final class VerbTable {
                 "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
         // ---- stock (VOCABULARY 2)
         v("fetch", "", "stocking", O, "fetch <item|kind> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32|fetch logs 16", "inv");
-        v("need", "", "stocking", O, "need <item|kind> <n> | need <item>", "a standing need (the brain works toward it); without a count: what it takes and what is missing (that becomes cost <item> in 0.24)",
+        v("need", "", "stocking", O, "need <item|kind> <n> | need <item>", "a standing need (the brain works toward it: it gathers when it has under half of n, then up to n); without a count: what it takes and what is missing (that becomes cost <item> in 0.24)",
                 "need torch 64|need refinedstorage:basic_processor", "needs");
         v("needs", "", "stocking", O, "needs | needs clear <item>|all", "the standing needs with have/want (the group's stock), and the brain's need scores", "needs|needs clear torch", "need <item> <n>");
         v("goal", "", "stocking", O, "goal camp | goal stone tools | goal iron tools | goal iron <n> | goal food <n> | goal wood <n> | goal light <area>",

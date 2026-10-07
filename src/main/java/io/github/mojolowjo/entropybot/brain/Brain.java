@@ -305,7 +305,7 @@ public final class Brain {
                 return;
             }
             lastEvents = Interrupts.events(prev, s, cfg);
-            Needs.Scored sc = Needs.score(s, cfg, idleList(), parked(now));
+            Needs.Scored sc = Needs.score(s, cfg, idleList(), parked(now), job == null ? null : job.need());
             lastScored = sc;
             boolean nightDone = nightAt != null && BrainState.flat(nightAt, s.botPos) <= 16;
             BrainTree.Running running = job == null ? null : new BrainTree.Running(job.need(), job.chain(), job.score());

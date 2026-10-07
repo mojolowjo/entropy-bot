@@ -218,14 +218,14 @@ class BrainTest {
         assertEquals(0, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("food"), "met: drops to 0");
         s.needs.add(new BrainState.NeedItem("minecraft:torch", 32, 0, 0));
         assertEquals(80, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"));
-        s.needs.set(0, new BrainState.NeedItem("minecraft:torch", 32, 16, 0));
-        assertEquals(65, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"));
+        s.needs.set(0, new BrainState.NeedItem("minecraft:torch", 32, 15, 0));
+        assertEquals(66, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"));
         s.now = 1_000_000_000L;
-        s.needs.set(0, new BrainState.NeedItem("minecraft:torch", 32, 16, s.now - 20 * 60000));
-        assertEquals(75, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"), "rises while unmet: +1 per 2 min");
+        s.needs.set(0, new BrainState.NeedItem("minecraft:torch", 32, 15, s.now - 20 * 60000));
+        assertEquals(76, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"), "rises while unmet: +1 per 2 min");
         s.needs.set(0, new BrainState.NeedItem("minecraft:torch", 32, 40, 0));
         assertEquals(0, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"), "met");
-        assertEquals("gather torch 32", Needs.score(withNeed(16), c, IdleList.DEFAULT, Map.of()).best(10).chain());
+        assertEquals("gather torch 32", Needs.score(withNeed(15), c, IdleList.DEFAULT, Map.of()).best(10).chain());
         assertEquals(15, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("upkeep"));
     }
 
@@ -752,5 +752,20 @@ class BrainTest {
         f.loop();
         b.tick();
         assertEquals("mine strip any 32", f.started.get(1), "lit once here: work on");
+    }
+
+    @Test
+    void anItemNeedHasADeadband() {
+        // 0.22.3: need torch 32 fires below 16; once its gather runs it gathers to 32; mining 32 -> 31 doesn't re-fire it
+        BrainConfig c = BrainConfig.defaults();
+        assertEquals(16, Needs.refire(32));
+        assertEquals(1, Needs.refire(1));
+        assertEquals(2, Needs.refire(4));
+        assertFalse(Needs.score(withNeed(31), c, IdleList.DEFAULT, Map.of()).has("need:torch"), "31 of 32, idle: no gather");
+        assertFalse(Needs.score(withNeed(16), c, IdleList.DEFAULT, Map.of()).has("need:torch"), "16 of 32: still in the band");
+        assertTrue(Needs.score(withNeed(15), c, IdleList.DEFAULT, Map.of()).has("need:torch"), "15 of 32: gather");
+        assertTrue(Needs.score(withNeed(20), c, IdleList.DEFAULT, Map.of(), "need:torch").has("need:torch"), "gathering: on to 32");
+        assertFalse(Needs.score(withNeed(20), c, IdleList.DEFAULT, Map.of(), "upkeep").has("need:torch"), "mining: stays off");
+        assertFalse(Needs.score(withNeed(32), c, IdleList.DEFAULT, Map.of(), "need:torch").has("need:torch"), "met");
     }
 }

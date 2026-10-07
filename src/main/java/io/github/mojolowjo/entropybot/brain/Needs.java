@@ -55,6 +55,17 @@ public final class Needs {
      * runnable idle item that passes the nearby rule.
      */
     public static Scored score(BrainState s, BrainConfig c, List<String> idle, Map<String, String> parked) {
+        return score(s, c, idle, parked, null);
+    }
+
+    /**
+     * 0.22.3 deadband for the owner's item needs ({@code need <item> <n>}): a need fires when have &lt; refire(n), half
+     * of n rounded up (at least 1); once its gather runs (runningNeed is it) it stays on until have reaches n. So torches
+     * the strip mine burns (32 -&gt; 31) don't flip the brain back to gathering; it gathers again below 16.
+     */
+    public static int refire(int want) { return Math.max(1, (want + 1) / 2); }
+
+    public static Scored score(BrainState s, BrainConfig c, List<String> idle, Map<String, String> parked, String runningNeed) {
         List<Option> out = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
         // safety: the reflexes act; the score shows it
@@ -81,8 +92,12 @@ public final class Needs {
         for (BrainState.NeedItem n : s.needs) {
             int missing = n.want() - n.have();
             if (missing <= 0 || n.want() <= 0) continue;
-            int sc = clamp(c.i("ownerNeedBase") + c.i("ownerNeedSpan") * missing / (double) n.want() + age(s.now, n.since(), 2, c.i("ageBonusMax")));
             String sid = n.id().substring(n.id().indexOf(':') + 1);
+            if (n.have() >= refire(n.want()) && !("need:" + sid).equals(runningNeed)) {
+                skipped.add("need:" + sid + ": have " + n.have() + " of " + n.want() + " (gathers again below " + refire(n.want()) + ")");
+                continue;
+            }
+            int sc = clamp(c.i("ownerNeedBase") + c.i("ownerNeedSpan") * missing / (double) n.want() + age(s.now, n.since(), 2, c.i("ageBonusMax")));
             out.add(new Option("need:" + sid, sc, "gather " + sid + " " + n.want(), "need " + sid + " " + n.want() + ": have " + n.have(), null, n.since()));
         }
         // goals, oldest first

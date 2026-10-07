@@ -770,7 +770,11 @@ public final class Commands implements Chains.Env {
 
     private void sendOutbox(LocalPlayer player) {
         String[] m = outbox.poll();
-        if (m != null) player.connection.sendCommand("msg " + m[0] + " " + m[1]);
+        if (m == null) return;
+        java.util.List<String> online = new java.util.ArrayList<>();
+        for (net.minecraft.client.multiplayer.PlayerInfo i : player.connection.getOnlinePlayers()) online.add(i.getProfile().getName());
+        if (Outbox.canMsg(m[0], online)) player.connection.sendCommand("msg " + m[0] + " " + m[1]);
+        else player.displayClientMessage(net.minecraft.network.chat.Component.literal("[to " + m[0] + "] " + m[1]), false);
     }
 
     public String owner() {
