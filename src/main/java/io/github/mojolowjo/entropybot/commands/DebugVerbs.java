@@ -58,6 +58,10 @@ public final class DebugVerbs {
                 return core.events.since(Math.max(0, core.events.lastSeq() - n), n);
             }
             case "baritone" -> { return baritone(); }
+            case "threats", "threat" -> {
+                if (w.size() >= 4) { int[] c = DebugRules.ints(w, 1, 3, "usage: debug threats [x y z]"); return io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.probe(c[0], c[1], c[2]); }
+                return io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.debug();
+            }    // B2
             default -> {}
         }
         Minecraft mc = Minecraft.getInstance();
