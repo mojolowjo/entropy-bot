@@ -497,7 +497,7 @@ public final class Jobs {
     /** "spawn": walk to the nearest bed and click it. */
     public String startSetSpawn(LocalPlayer p) {
         String f = findBlock(p, "_bed 24");
-        if (!f.startsWith("found")) return Hints.next("error: no bed within 24 blocks", "base then spawn (or goto x y z next to a bed, then spawn)");
+        if (!f.startsWith("found")) return Hints.next("error: no bed within 24 blocks", "go base then spawn (or goto x y z next to a bed, then spawn)");
         String[] w = f.split(" ");
         String[] parts = w[4].split("\\.");          // block.minecraft.white_bed
         int x = Integer.parseInt(w[1]), y = Integer.parseInt(w[2]), z = Integer.parseInt(w[3]);
