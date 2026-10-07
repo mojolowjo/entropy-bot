@@ -54,10 +54,10 @@ public final class VerbTable {
         v("marker", "", "space", O, "marker <name> [of <place>] [x y z]", "a point under a place (default: the nearest place within 32), e.g. the furnace", "marker furnace|marker door of base", "go <place> <marker>");
         v("places", "", "space", G, "places | places forget <place|marker>", "the places I know, each with its markers (forget: the owner)", "places|places forget farm", "go <place> [marker]");
         v("area", "", "space", P, "area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> | area change type <name> <type> "
-                        + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]",
+                        + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status] | area candidates [accept <n> [name] | reject <n>|all]",
                 "named areas with a type: neutral (white, the default: walk, dig natural blocks), destroy (red: dig <area> breaks built blocks too, never chests), "
                         + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
-                        + "and the near-me zone (16 blocks around you, on by default; safe areas always win)",
+                        + "and the near-me zone (16 blocks around you, on by default; safe areas always win); candidates: the bases explore and find noted, accept makes one a safe area",
                 "area here 60 base main|area here 8 house safe|area 0 0 30 30 pit destroy 40 70|area change type pit neutral|area list", "fence", "area list");
         v("fence", "", "space", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
                 "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
@@ -78,6 +78,13 @@ public final class VerbTable {
         v("supplies", "", "stocking", O, "supplies | supplies set <item n, ...> | supplies clear", "what I always carry (set replaces the whole list)",
                 "supplies set torch 32, bread 16, iron_pickaxe 1|supplies", "supplies");
         v("deposit", "", "stocking", O, "deposit [item ...]", "put loot away in the base chests (keeps tools, armor, food, supplies)", "deposit|deposit cobblestone dirt", "inv");
+        v("restock", "", "stocking", O, "restock", "top my supplies up: from storage first, the rest crafted", "restock", "supplies");
+        v("hold", "", "stocking", G, "hold this", "pick up the items you throw me in the next 15 s (within 4 blocks)", "hold this", "inv");
+        v("give", "", "stocking", O, "give me <item> [n] | give <player> <item> [n]", "walk to you (or them) and throw the items (never my tools, armor, last 8 food, 16 torches or supplies)",
+                "give me cobblestone 32|give Steve bread 4", "inv");
+        v("carry", "", "stocking", O, "carry <item> [item ...] | carry off | carry list", "follow you and pick up those drops within 6 blocks of you; off = plain follow",
+                "carry oak_log cobblestone|carry off", "unload");
+        v("unload", "", "stocking", O, "unload", "go home, deposit (keeping tools, food, torches, supplies), then come back to you", "unload", "carry list");
         // ---- digging (VOCABULARY 3)
         v("mine", "", "digging", O, "mine strip [<ores>] [n] [at <mine>] | mine strip status|reset|turn left|right|ores collect|list | mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
                 "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores",
@@ -128,6 +135,10 @@ public final class VerbTable {
         v("wait", "", "jobs", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
         v("confirm", "", "jobs", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
         v("check", "", "jobs", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
+        v("why", "", "jobs", G, "why | why threats", "what I decided last and why (the autominer, the brain); why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
+                "why|why threats", "status");
+        v("deaths", "", "jobs", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not (5 deaths an hour park me at base)", "deaths", "resume", "deaths");
+        v("resume", "", "jobs", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "status");
         // ---- kinds and tools (VOCABULARY 6)
         v("kinds", "", "materials", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>",
                 "the kind-words logs, wood, ores, stone, food, seeds (usable for any item word: mine, get, cut, gather, need, fetch) and what each leaves out", "kinds|kinds logs exclude cherry_log", "cut 16 logs");
@@ -157,11 +168,15 @@ public final class VerbTable {
         v("goto", "", "moving", G, "goto x y z | goto x z | goto me", "walk to a spot (the owner's own goto may leave my areas)", "goto 120 64 -300", "status");
         v("go", "", "moving", O, "go <place> [marker] | go <marker> | go poi <id>", "walk to a place, a marker or a point of interest (far: /home first)", "go farm|go base furnace|go poi 11", "places");
         v("home", "", "moving", O, "home", "teleport home with the server's /home", "home", "go base");
+        v("death", "", "moving", O, "death", "walk back to where I died and empty my corpse", "death", "deaths");
+        v("corpse", "", "moving", O, "corpse", "empty my own corpse when it is near", "corpse", "inv");
         // ---- chests and storage
         v("open", "", "chests", O, "open x y z | open <place>", "walk to a chest and open it (lists what is inside)", "open -28 54 189|open bulk then take spruce_log 192 then close", "take <item> [n]");
         v("take", "", "chests", O, "take <item|all> [n]", "take from the open chest (exact counts)", "take charcoal 64", "close");
         v("put", "", "chests", O, "put <item|all> [n]", "put into the open chest", "put all|put charcoal 50", "close");
         v("close", "", "chests", O, "close", "close the open chest", "close", "inv");
+        v("trust", "", "chests", O, "trust | trust x y z|<place>", "list the chests I keep out of, or let me use one again", "trust", "untrust x y z");
+        v("untrust", "", "chests", O, "untrust x y z|<place>", "keep me out of a chest (craft trips, deposits, the food run)", "untrust -20 53 180", "trust");
         v("drop", "", "chests", O, "drop <item|all> [n]", "throw items on the ground", "drop dirt 64", "inv");
         v("wear", "", "chests", O, "wear", "put on armor from my bag", "wear", "inv");
         v("scan", "", "chests", O, "scan [radius] | scan base|<place>|x y z [radius]", "open the chests around (there) and remember them", "scan base|scan 8", "have <item>");
@@ -184,14 +199,17 @@ public final class VerbTable {
         v("upgrade", "", "crafting", O, "upgrade <essence> [n]", "climb the essence tiers with the infusion crystal", "upgrade imperium 4", "inv");
         // ---- other
         v("help", "", "other", G, "help | help <verb> | help <page> | help all", "this guide: one verb, one page of it, or all", "help mine|help 2", "status");
+        v("say", "", "other", O, "say <text>", "say it in public chat (never a command)", "say hello", "status");
+        v("twerk", "", "other", O, "twerk | twerk <seconds>", "crouch on and off (again to stop)", "twerk|twerk 15", "stop");
+        v("spawn", "", "other", O, "spawn", "walk to the nearest bed and set my respawn point there", "spawn", "status");
         v("allow", "", "other", O, "allow | allow <name>", "who I take orders from; allow a player too (the guest commands)", "allow|allow Steve", "deny <name>");
         v("deny", "", "other", O, "deny <name>", "stop taking orders from that player", "deny Steve", "allow");
         v("restart", "", "other", G, "restart ok|no", "I may be closed for an update in the next 15 minutes (or not)", "restart ok", "status");
         v("surface", "", "other", O, "surface | surface status | surface on|off", "the ground round the bot for the dashboard's 3D view (one file per loaded chunk; on by default)", "surface status", "status");
         v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] "
-                        + "| debug <plumbing verb> ...: b, memory, watch, recorder, mouse, route, autominer, why, deaths, resume, death, corpse, reconnect, say, twerk, spawn, sethome, trust, untrust, use, hold, give, carry, unload, restock, caves, ores, poi",
+                        + "| debug <plumbing verb> ...: b, memory, watch, recorder, mouse, route, autominer, reconnect, sethome, use, caves, ores, poi",
                 "read-only looks inside the game, and the plumbing verbs that left the main list (they work as before after the word debug: debug autominer on, debug b set allowSprint true, debug watch tunnel)",
-                "debug inv|debug autominer on|debug watch|debug why", "debug");
+                "debug inv|debug autominer on|debug watch|debug autominer status", "debug");
     }
 
     /** Every verb in table order. */

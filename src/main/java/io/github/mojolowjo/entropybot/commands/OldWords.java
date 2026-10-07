@@ -121,9 +121,8 @@ public final class OldWords {
     }
 
     /** V1b: the plumbing verbs that left the surface; each still runs after the word debug ("debug autominer on"). */
-    public static final java.util.Set<String> DEBUG_VERBS = java.util.Set.of("b", "memory", "watch", "recorder", "mouse", "route", "autominer", "why", "deaths",
-            "resume", "death", "corpse", "reconnect", "say", "twerk", "spawn", "sethome", "trust", "untrust", "use", "hold", "give", "carry", "unload", "restock",
-            "caves", "ores", "poi");
+    public static final java.util.Set<String> DEBUG_VERBS = java.util.Set.of("b", "memory", "watch", "recorder", "mouse", "route", "autominer",
+            "reconnect", "sethome", "use", "caves", "ores", "poi");
 
     /** V1b: every word that left the surface (0.22.2); it answers with its new form. The hints go at 0.24.0. */
     public static final java.util.Set<String> REMOVED;
@@ -167,7 +166,7 @@ public final class OldWords {
             case "inventory" -> { return "that is now inv"; }
             case "equip" -> { return "that is now wear"; }
             case "?" -> { return "that is now help" + sp; }
-            case "bed" -> { return "removed in 0.22; use debug spawn"; }
+            case "bed" -> { return "that is now spawn"; }
             case "pois" -> { return "removed in 0.22; use debug poi" + sp; }
             case "baritone" -> { return "removed in 0.22; use debug b" + sp; }
             case "allowed" -> { return "that is now allow"; }

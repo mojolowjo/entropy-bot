@@ -129,6 +129,25 @@ public final class Commands implements Chains.Env {
         saved();
     }
 
+    /** V1b-4: area candidates [accept n [name] | reject n|all] over commands.json "safeCandidates". */
+    String areaCandidates(String words, String from, Minecraft mc, LocalPlayer p) {
+        JsonObject b = brainStore.data();
+        JsonArray list = b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
+        var plan = io.github.mojolowjo.entropybot.vocab.AreaCandidates.plan(list, Texts.words(words.trim()));
+        String out = plan.text();
+        if (plan.areaCommand() != null) {
+            out = policyCommand("area", plan.areaCommand(), from, mc, p);
+            if (!out.startsWith("ok")) return out;
+        }
+        if (plan.remove() == -2) b.add("safeCandidates", new JsonArray());
+        else if (plan.remove() >= 0) list.remove(plan.remove());
+        if (plan.remove() != -1) {
+            if (plan.remove() >= 0) b.add("safeCandidates", list);
+            saved();
+        }
+        return out;
+    }
+
     /** V1b: a job, chain, gather or mule run is going (the queue waits). */
     boolean busyForQueue() {
         return jobs.running() || (chains != null && chains.running()) || gathering.running() || mule.running();
@@ -890,6 +909,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("mine") && rest.trim().toLowerCase().matches("^strip\\s+(status|ores( collect| list)?)$"))      // V1b: stripmine's forms under mine strip
             return Reply.now(StripMine.get().command(player, rest.trim().substring(5).trim()));
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
+        if (verb.equals("area") && rest.trim().toLowerCase().matches("^candidates\\b.*")) return Reply.now(areaCandidates(rest.trim().substring(10), from, mc, player));
         if (verb.equals("area") || verb.equals("fence") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
@@ -1673,7 +1693,7 @@ public final class Commands implements Chains.Env {
         JsonObject r = core.reflexes.status();
         String target = r.has("target") ? r.get("target").getAsString() : null;
         whisper(owner(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt() + (target != null ? " fighting " + target : "")
-                + ". Respawning - say \"debug death\" and I will go back for my stuff.");
+                + ". Respawning - say \"death\" and I will go back for my stuff.");
     }
 
     // ---- cmd.json (bridge.ps1, the dashboard) ----

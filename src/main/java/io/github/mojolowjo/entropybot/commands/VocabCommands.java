@@ -442,11 +442,12 @@ final class VocabCommands {
     String campHere(String from, LocalPlayer p, JobRequests.Listener l) {
         Minecraft mc = Minecraft.getInstance();
         PolicyCommands.Pos at = c.hereOf(mc, from);
-        String area = c.policyCommand("area", "here 24 camp neutral", from, mc, p);
-        if (!area.startsWith("ok") && !area.contains("camp")) return "error: couldn't make the camp area: " + area;
-        String place = c.placeCommand("mark", "camp " + at.x() + " " + at.y() + " " + at.z(), from, p);
-        String[] err = new String[1];
-        String bedMark = marker(from, "bed of camp " + at.x() + " " + at.y() + " " + at.z());
+        String name = io.github.mojolowjo.entropybot.vocab.NeedWords.campName(n -> c.policyArea(n) != null);
+        if (name == null) return "error: camp .. camp9 are all taken - area del <name> confirm for an old camp first";
+        String area = c.policyCommand("area", "here 24 " + name + " neutral", from, mc, p);
+        if (!area.startsWith("ok")) return "error: couldn't make the camp area: " + area;
+        String place = c.placeCommand("mark", name + " " + at.x() + " " + at.y() + " " + at.z(), from, p);
+        String bedMark = marker(from, "bed of " + name + " " + at.x() + " " + at.y() + " " + at.z());
         String bed = null;
         for (int i = 0; i < 36; i++) {
             var st = p.getInventory().getItem(i);
@@ -455,7 +456,7 @@ final class VocabCommands {
         String chain = "light here 12" + (bed != null ? " then place " + Texts.shortId(bed) + " " + (at.x() + 1) + " " + at.y() + " " + at.z() : "");
         Chains.Reply r = c.handle(from, chain, false, true, l);
         LOG.info("[entropybot] camp here: area {}, place {}, bed marker {}, chain {} -> {}", area, place, bedMark, chain, r.text());
-        return "ok: camp at " + at.x() + " " + at.y() + " " + at.z() + " (area camp, 24 round, neutral; place camp, marker bed) - " + String.valueOf(r.text()).replaceFirst("^ok: ", "")
+        return "ok: camp at " + at.x() + " " + at.y() + " " + at.z() + " (area " + name + ", 24 round, neutral; place " + name + ", marker bed) - " + String.valueOf(r.text()).replaceFirst("^ok: ", "")
                 + (bed == null ? " (no bed on me: sleep there with sleep when you bring one)" : "");
     }
 

@@ -56,7 +56,7 @@ final class Keys {
             c.following = false;
             c.send("stop");
         }
-        while (HOLD.consumeClick()) c.send("debug hold this");          // 0.2.2 (V1b): hold is under debug
+        while (HOLD.consumeClick()) c.send("hold this");                // 0.2.2 (V1b-4): hold is back on the surface
         while (CORNER1.consumeClick()) c.corner(1);
         while (CORNER2.consumeClick()) c.corner(2);
         while (BOXES.consumeClick()) c.setBoxView(!c.boxView);

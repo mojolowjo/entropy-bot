@@ -89,6 +89,9 @@ public final class SettingsBlock {
         out.add("hotbar", hb);
         JsonElement to = b.get("toolOres");
         out.addProperty("toolOres", to != null && to.isJsonPrimitive() && to.getAsString().equals("cheapest") ? "cheapest" : "iron");
+        JsonElement tm = b.get("toolMode");                     // V1b-4: tools mode best|cheapest|stone (the old toolOres maps on)
+        out.addProperty("toolMode", tm != null && tm.isJsonPrimitive() && tm.getAsString().matches("best|cheapest|stone") ? tm.getAsString()
+                : "cheapest".equals(out.get("toolOres").getAsString()) ? "cheapest" : "best");
         out.add("rules", RulesBlock.build(b, System.currentTimeMillis(), java.time.ZoneId.systemDefault()));     // B7e N: the rules card
         out.add("recorder",io.github.mojolowjo.entropybot.recorder.RecorderStatus.json());      // B7e E5
         return out;

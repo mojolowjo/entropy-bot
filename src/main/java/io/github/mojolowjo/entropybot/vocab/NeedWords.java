@@ -72,6 +72,16 @@ public final class NeedWords {
     }
 
     /** "sleep auto on|off" -> the value, null when not that form. */
+    /**
+     * V1b-4: the name for a new camp's area: camp, else camp2 .. camp9 (the first one no area of any type has), or null
+     * when all are taken. camp here never overwrites (and so never retypes) an existing area, a main one least of all.
+     */
+    public static String campName(java.util.function.Predicate<String> taken) {
+        if (!taken.test("camp")) return "camp";
+        for (int i = 2; i <= 9; i++) if (!taken.test("camp" + i)) return "camp" + i;
+        return null;
+    }
+
     public static Boolean sleepAuto(String rest) {
         String r = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
         if (r.equals("auto on")) return true;

@@ -13,14 +13,15 @@ public final class Texts {
     private Texts() {}
 
     /** V1b: what allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
-    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss");
+    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss", "hold", "why");
 
     /** Every command word of the surface (V1b: docs/VOCABULARY.md and nothing else); routine names can't use these nor {@link OldWords#REMOVED}. */
     public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get",
             "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "dismiss", "attack", "queue", "status", "inv",
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
             "camp", "bootstrap", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
-            "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "debug");
+            "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "debug",
+            "why", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -70,7 +71,9 @@ public final class Texts {
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return OldWords.hint(verb, r);       // V1a: the cut word, its new form
         if (verb.equals("fence") && (r.isEmpty() || r.equals("vetoes") || r.equals("status"))) return null;
         if (verb.equals("escort") && r.matches("^(|status|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
-        if (verb.equals("area") && r.equals("list")) return null;        return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + HelpCommand.guestList();
+        if (verb.equals("area") && r.equals("list")) return null;
+        if (verb.equals("deaths") && r.isEmpty()) return null;
+        return "sorry, only " + owner + " can use \"" + verb + "\". You can use: " + HelpCommand.guestList();
     }
 
     /** B7e: the answer to a cmd.json type the mod doesn't know (the KubeJS bridge used to take the rest). */
