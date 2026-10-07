@@ -47,6 +47,11 @@ public final class GameStage {
 
     /** The status part: " | deaths N in the last hour | stage X". */
     public static String statusPart(int deaths, String stage) {
-        return " | deaths " + deaths + " in the last hour" + (stage == null ? "" : " | stage " + stage);
+        return statusPart(deaths, stage, null);
+    }
+
+    /** B1: with the brain on, " | deaths N in the last hour | brain: on (upkeep: mine strip) stage X". */
+    public static String statusPart(int deaths, String stage, String brain) {
+        return " | deaths " + deaths + " in the last hour" + (brain != null ? " | " + brain + (stage == null ? "" : " stage " + stage) : stage == null ? "" : " | stage " + stage);
     }
 }

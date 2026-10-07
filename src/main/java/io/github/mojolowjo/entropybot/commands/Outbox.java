@@ -14,6 +14,16 @@ import java.util.List;
  * "(N whispers dropped: ...)". Plain Java, thread-safe; JUnit drives it.
  */
 public final class Outbox {
+    /**
+     * 0.22.3: true when a whisper to {@code to} can go out as {@code /msg}: the name is in the tab list (case-insensitive).
+     * False (singleplayer, the owner offline): the bot prints it in its own chat instead of the server's "No player was found".
+     */
+    public static boolean canMsg(String to, java.util.Collection<String> online) {
+        if (to == null || online == null) return false;
+        for (String n : online) if (to.equalsIgnoreCase(n)) return true;
+        return false;
+    }
+
     private final ArrayDeque<String[]> queue = new ArrayDeque<>();
     private String[] dropNote;
     private int dropped;

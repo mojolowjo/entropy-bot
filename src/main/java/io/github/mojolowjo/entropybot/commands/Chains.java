@@ -136,6 +136,12 @@ public final class Chains {
 
     public String name() { return chain == null ? null : chain.name; }
 
+    /** B1: told how every chain ends (name, message). */
+    java.util.function.BiConsumer<String, String> endHook;
+
+    /** B1: a corpse trip is due or runs (the brain starts nothing before it). */
+    public boolean corpseBusy() { return corpsePending || corpseRun; }
+
     public boolean parked() { return mem.has("parked") && mem.get("parked").isJsonObject(); }
 
     // ---- chains ----
@@ -197,6 +203,7 @@ public final class Chains {
         env.whisper(chain.from, chain.name + ": " + msg);
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
+        if (endHook != null) endHook.accept(chain.name, msg);         // B1: the brain hears how its chain ended
         chain = null;
         clearRun();
     }

@@ -68,7 +68,7 @@ public final class NeedWords {
 
     /** "done"/"free" (the owner's release) is lifted by the owner's next direct order, come or escort. */
     public static boolean liftsRelease(String verb) {
-        return !List.of("done", "free", "status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "check", "confirm", "sleep").contains(verb);
+        return !List.of("done", "free", "status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "check", "confirm", "sleep", "why", "brain", "idle").contains(verb);
     }
 
     /** "sleep auto on|off" -> the value, null when not that form. */

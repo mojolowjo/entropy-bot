@@ -27,7 +27,7 @@ public final class HelpCommand {
             if (n < 1 || n > VerbTable.SECTIONS.size()) return "there are pages 1 to " + VerbTable.SECTIONS.size() + " - " + index();
             return page(n);
         }
-        int si = VerbTable.SECTIONS.indexOf(r);
+        int si = VerbTable.of(r) != null ? -1 : VerbTable.SECTIONS.indexOf(r);     // B1: "help brain" is the verb (its page: help 8)
         if (si >= 0) return page(si + 1);
         String word = r.split("\\s+")[0];
         VerbTable.Verb v = VerbTable.of(word);
@@ -86,7 +86,7 @@ public final class HelpCommand {
     }
 
     static String guest(String r, String owner) {
-        if (r.isEmpty() || r.matches("^\\d+$") || r.equals("all") || VerbTable.SECTIONS.contains(r)) {
+        if (r.isEmpty() || r.matches("^\\d+$") || r.equals("all") || (VerbTable.SECTIONS.contains(r) && VerbTable.of(r) == null)) {
             return "You can use: " + guestList() + " - help <command> for one";
         }
         String word = r.split("\\s+")[0];

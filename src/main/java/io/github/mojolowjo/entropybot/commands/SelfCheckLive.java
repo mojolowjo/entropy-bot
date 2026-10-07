@@ -83,6 +83,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("threatcheck", "couldn't check the threat test: " + e, "debug threats"));
         }
         try {
+            if (c.brainRuntime != null) for (String[] t : c.brainRuntime.brain.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // B1
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("braincheck", "couldn't check the brain: " + e, "brain status"));
+        }
+        try {
             f.addAll(RestoreLive.INSTANCE.findings());      // P1: the restore hook, restore.json, blocks waiting, build hints
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("restorehook", "couldn't check the restore ledger: " + e, "restore status"));
