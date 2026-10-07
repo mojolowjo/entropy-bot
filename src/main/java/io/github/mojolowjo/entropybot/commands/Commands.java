@@ -596,6 +596,13 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] escort: {}", e.toString());
                 }
             }
+            if (tick % 20 == 13 && vocab.hold != null) {
+                try {
+                    vocab.holdTick(player);                  // V1b: defend/guard walk back after a fight
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] hold: {}", e.toString());
+                }
+            }
             if (tick % 20 == 17) {
                 try {
                     vocab.tick();                       // V1b: the queue
@@ -768,9 +775,30 @@ public final class Commands implements Chains.Env {
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));
         if (verb.equals("stop")) return Reply.now(stopAll());
-        if (verb.equals("defend") || verb.equals("defense") || verb.equals("defence")) return Reply.now(setDefence(rest));
-        if (verb.equals("escort")) return Reply.now(escortCommand(from, rest, player));          // C7
-        if (verb.equals("attack")) return Reply.now(core.reflexes.attack(rest));     // C1 (0.20.5): the companion's point key on a monster
+        if (verb.equals("defence") || verb.equals("defense")) {                     // V1b: the self-defence setting
+            Boolean pl = io.github.mojolowjo.entropybot.vocab.AttackRules.playersSetting(rest);
+            if (pl != null) {
+                if (!isOwner) return Reply.now("sorry, only " + owner() + " can change that");
+                VocabCommands.defencePlayers = pl;
+                return Reply.now("ok: defence players is " + (pl ? "ON: attack <player> works (until the game restarts)" : "off: I never attack players"));
+            }
+            return Reply.now(setDefence(rest));
+        }
+        if (verb.equals("defend") && rest.isBlank()) {                              // V1b: defend = hold this spot (a job)
+            if (!internal) { String c0 = chainBusyText(); if (c0 != null) return Reply.now(c0); }
+            vocab.endHold("a new order");
+            if (jobs.running()) jobs.finish("stopped: defend");
+            return Reply.now(vocab.defend(from, player));
+        }
+        if (verb.equals("defend")) return Reply.now(setDefence(rest));
+        if (verb.equals("dismiss")) return Reply.now(vocab.dismiss(from, player));
+        if (verb.equals("guard") && !io.github.mojolowjo.entropybot.vocab.HoldRules.fenceForm(rest)) {     // V1b: guard <area|place|marker>
+            vocab.endHold("a new order");
+            if (jobs.running()) jobs.finish("stopped: guard");
+            return Reply.now(vocab.guard(from, rest, player));
+        }
+        if (verb.equals("escort")) return Reply.now(escortCommand(from, rest.isBlank() ? "me" : rest, player));          // C7; V1b: escort alone = the sender (the owner)
+        if (verb.equals("attack")) return Reply.now(vocab.attack(from, rest, player));     // V1b: the attack rules (C1's point key sends attack target <id>)
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
         if (verb.equals("autominer")) return Reply.now(chains.autominerCommand(rest));
@@ -913,6 +941,7 @@ public final class Commands implements Chains.Env {
         boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
         if (!quiet) {
             if (jobs.running() && !jobs.walking()) return Reply.now("busy: " + jobs.job.status + " (pm \"stop\" first)");
+            if (!internal) vocab.endHold("a new order: " + verb);      // V1b: a direct order ends defend/guard
             jobs.replaceWalk();
         }
         String r = modJob(verb, rest, from, player);
@@ -920,6 +949,8 @@ public final class Commands implements Chains.Env {
     }
 
     /** The busy answers handle gives a big verb (null: not busy), so the confirm gate answers busy instead of asking. */
+    String chainBusyTextPub() { return chainBusyText(); }
+
     private String chainBusyText() { return chains.running() ? "busy: " + chains.chainStatus() + " (pm \"stop\" first)" : null; }
 
     private String jobBusyText() { return jobs.running() && !jobs.walking() ? "busy: " + jobs.job.status + " (pm \"stop\" first)" : null; }
@@ -1321,6 +1352,7 @@ public final class Commands implements Chains.Env {
         jobs.followWatch = null;
         jobs.followFix = null;
         core.reflexes.escort.stop("stopped by \"stop\"");     // C7
+        vocab.endHold("stop");                                   // V1b
         if (jobs.running()) jobs.finish("stopped");
         IBaritone mb = Jobs.baritone();
         if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);     // also ends a raw "b pause"

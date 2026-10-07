@@ -164,14 +164,20 @@ public final class VerbTable {
         v("fence", "", "safety", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
                 "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
                 "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
-        v("defend", "defense|defence", "safety", O, "defend on|off | defend creepers flee|melee|bow | defend hostile [list|add <id>...|remove <id>...]",
-                "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets or players, avoids creepers, retreats under 6 health)",
-                "defend on|defend hostile add arphex:spider_jump", "debug mobs");
-        v("escort", "", "safety", P, "escort me [radius] | escort <player> [radius] | escort off | escort status",
-                "follow a player and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry, warn of creepers and skeletons",
-                "escort me|escort me 10|escort off", "escort status", "escort me [radius], escort off, escort status");
-        v("attack", "", "safety", O, "attack <entityId> | attack nearest", "fight one monster (the companion's point key): ends when it dies, leaves 24 blocks or after 30 s; never players or pets",
-                "attack nearest", "defend");
+        v("defence", "", "safety", O, "defence on|off | defence creepers flee|melee|bow | defence hostile [list|add <id>...|remove <id>...] | defence players on|off",
+                "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets; players only with defence players on, which is off at every game start; avoids creepers, retreats under 6 health)",
+                "defence on|defence hostile add arphex:spider_jump", "defend");
+        v("defend", "", "safety", O, "defend", "hold this spot: stay within 4 blocks of where I stand and fight what comes, until dismiss, stop or another order",
+                "defend", "dismiss");
+        v("guard", "", "safety", O, "guard <area|place|marker>", "stay in that area (or within 8 of the place or marker) and fight what comes, until dismiss, stop or another order",
+                "guard base|guard farm gate", "dismiss");
+        v("escort", "", "safety", P, "escort [player] [radius] | escort me [radius] | escort status",
+                "go with that player (you when not given) and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry; until dismiss",
+                "escort|escort me 10|escort Steve", "dismiss", "escort me [radius], escort status");
+        v("dismiss", "", "safety", G, "dismiss", "end the escort (you, or the player I escort) and defend/guard (the owner)", "dismiss", "status");
+        v("attack", "", "safety", O, "attack <mob kind|player|entity id> [confirm] | attack nearest | attack target <id>",
+                "fight one mob: hostile goes; a passive one asks confirm unless you type its kind; a named one asks confirm (a name has letters, not just digits); a player never unless defence players on; never pets. Ends when it dies, leaves 24 blocks or after 30 s",
+                "attack zombie|attack nearest|attack 812 confirm", "defence");
         v("deaths", "", "safety", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "resume", "deaths");
         v("resume", "", "safety", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "autominer status");
         v("reconnect", "", "safety", O, "reconnect on|off", "rejoin after a kick (1, 5, 15 min; 3 an hour)", "reconnect on", "status");

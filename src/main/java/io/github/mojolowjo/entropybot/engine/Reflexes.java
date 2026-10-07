@@ -173,8 +173,31 @@ public final class Reflexes {
         forcedId = e.getId();
         forcedName = name;
         forcedUntil = now + FORCED_TICKS;
+        forcedAnyway = false;
         events.push("reflex", "attack " + name + " #" + forcedId, null);
         return "attacking the " + name + " (" + Math.round(d) + " blocks away)";
+    }
+
+    private boolean forcedAnyway;
+
+    /** V1b: the forced target the attack rules let through (a player with defence players on). */
+    private boolean forcedAllows(Entity e) { return forcedAnyway && e != null && e.getId() == forcedId; }
+
+    /**
+     * V1b: attack this entity (the verb's AttackRules said go: a passive mob confirmed, or a player with defence players
+     * on). Same fight loop and end rules as {@link #attack}; the may-attack check is skipped for it.
+     */
+    public String forceAttack(Entity e, String name) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null || e == null) return "error: not in a world";
+        double d = p.distanceTo(e);
+        if (d > FORCED_RANGE) return "error: the " + name + " is " + Math.round(d) + " blocks away (" + (int) FORCED_RANGE + " at most)";
+        forcedId = e.getId();
+        forcedName = name;
+        forcedUntil = now + FORCED_TICKS;
+        forcedAnyway = true;
+        events.push("reflex", "attack " + name + " #" + forcedId + " (rules: go)", null);
+        return "ok: attacking the " + name + " (" + Math.round(d) + " blocks away)";
     }
 
     /** The forced target as a threat, or null (none, or it just ended: then the end is whispered). */
@@ -186,9 +209,10 @@ public final class Reflexes {
         else if (!e.isAlive()) end = "killed a " + forcedName;
         else if (p.distanceTo(e) > FORCED_RANGE) end = "lost the " + forcedName + " (out of range)";
         else if (now > forcedUntil) end = "gave up on the " + forcedName + " (30 s)";
-        else if (!Hostility.mayAttack(e)) end = "stopped: the " + forcedName + " may not be attacked";
+        else if (!forcedAnyway && !Hostility.mayAttack(e)) end = "stopped: the " + forcedName + " may not be attacked";
         if (end != null) {
             forcedId = -1;
+            forcedAnyway = false;
             whisper(end);
             return null;
         }
@@ -476,7 +500,7 @@ public final class Reflexes {
             try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
             BlockPos ip = escort.interpose(mc, t.e);
             if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));
-            if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && Hostility.mayAttack(t.e)) {
+            if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
                 mc.gameMode.attack(p, t.e);         // the knockback sends it away from the bot, which stands between
                 p.swing(InteractionHand.MAIN_HAND);
             }
@@ -498,7 +522,7 @@ public final class Reflexes {
         try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
         if (t.d <= ReflexRules.REACH) {
             engine.hold();
-            if (p.getAttackStrengthScale(0f) >= 0.9f && Hostility.mayAttack(t.e)) {     // never a player or a pet (0.19.1)
+            if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)
                 mc.gameMode.attack(p, t.e);
                 p.swing(InteractionHand.MAIN_HAND);
             }
@@ -520,7 +544,7 @@ public final class Reflexes {
             engine.override(fleeGoal);      // a Baritone cancel (the bridge stopping a job) dropped it
         }
         // one that is already right here gets knocked back
-        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && Hostility.mayAttack(t.e)) {
+        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
             holdWeapon(mc, p);
             mc.gameMode.attack(p, t.e);
             p.swing(InteractionHand.MAIN_HAND);

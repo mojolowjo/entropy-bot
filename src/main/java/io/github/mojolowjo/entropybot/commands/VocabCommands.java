@@ -158,6 +158,139 @@ final class VocabCommands {
         return PlaceWords.resolveGo(placeList(), w.get(0), w.size() == 2 ? w.get(1) : null, err);
     }
 
+    // ---- fighting: defend, guard, dismiss, attack, defence players (V1b-2) ----
+
+    /** "defence players on|off" (owner only, never saved: off at every game start, decision 10). */
+    static volatile boolean defencePlayers;
+
+    /** "defend": stay within 4 blocks of where I stand and fight what comes, until stop, dismiss or another order. */
+    String defend(String from, LocalPlayer p) {
+        if (!Core.INSTANCE.reflexes.defence()) return Hints.next("error: self-defence is off, so I couldn't fight here", "defence on");
+        String busy = c.chainBusyTextPub();
+        if (busy != null) return busy;
+        int[] me = Jobs.here(p);
+        hold = new Hold("defending " + me[0] + " " + me[1] + " " + me[2], Guard.dimOf(p.level()), me[0], me[1], me[2], io.github.mojolowjo.entropybot.vocab.HoldRules.DEFEND_R, null, from);
+        LOG.info("[entropybot] {}", hold.what());
+        return "ok: defending this spot (" + me[0] + " " + me[1] + " " + me[2] + "): I stay within " + hold.r() + " blocks and fight what comes - dismiss or stop ends it";
+    }
+
+    /** "guard <area|place|marker>": stay in that area (its box) or within 8 of the place or marker, fight what comes. */
+    String guard(String from, String name, LocalPlayer p) {
+        if (!Core.INSTANCE.reflexes.defence()) return Hints.next("error: self-defence is off, so I couldn't fight there", "defence on");
+        String busy = c.chainBusyTextPub();
+        if (busy != null) return busy;
+        String n = name.trim().toLowerCase(Locale.ROOT);
+        String dim = Guard.dimOf(p.level());
+        JsonObject a = c.policyArea(n);
+        if (a != null) {
+            if (a.has("round")) return "error: " + n + " is a circle - guard a box area, a place or a marker";
+            if (!PolicyCommands.dimOf(a).equals(dim)) return "error: " + n + " is in " + PolicyCommands.dimOf(a);
+            boolean allY = !PolicyCommands.hasY(a);
+            int[] box = {PolicyCommands.n(a, "x1"), allY ? 1 : PolicyCommands.n(a, "y1"), PolicyCommands.n(a, "z1"), PolicyCommands.n(a, "x2"), allY ? 0 : PolicyCommands.n(a, "y2"), PolicyCommands.n(a, "z2")};
+            int[] h = io.github.mojolowjo.entropybot.vocab.HoldRules.home(box, 0, Jobs.here(p)[1], 0);
+            hold = new Hold("guarding the area " + n, dim, h[0], h[1], h[2], 0, box, from);
+        } else {
+            String[] err = new String[1];
+            PlaceWords.Spot s = PlaceWords.resolveGo(placeList(), n, null, err);
+            if (s == null) return "error: I have no area, place or marker called " + n + " (area list, places)";
+            hold = new Hold("guarding " + s.name(), dim, s.x(), s.y(), s.z(), io.github.mojolowjo.entropybot.vocab.HoldRules.GUARD_R, null, from);
+        }
+        String why = c.jobs.goalAllowed(hold.x(), hold.y(), hold.z());
+        if (why != null && !from.equalsIgnoreCase(c.owner())) {
+            hold = null;
+            return FenceRules.gotoRefusal(why);
+        }
+        LOG.info("[entropybot] {}", hold.what());
+        return "ok: " + hold.what() + ": I stay there and fight what comes - dismiss or stop ends it";
+    }
+
+    /** Ends defend/guard (null: none ran). */
+    String endHold(String why) {
+        if (hold == null) return null;
+        String t = "stopped " + hold.what() + " (" + why + ")";
+        hold = null;
+        LOG.info("[entropybot] {}", t);
+        return t;
+    }
+
+    /** "dismiss": from the owner, ends the escort and defend/guard; from the escorted player, their escort. */
+    String dismiss(String from, LocalPlayer p) {
+        boolean owner = from.equalsIgnoreCase(c.owner());
+        io.github.mojolowjo.entropybot.engine.Escort e = Core.INSTANCE.reflexes.escort;
+        List<String> done = new ArrayList<>();
+        if (e.active() && (owner || from.equalsIgnoreCase(e.name()))) done.add(c.escortCommand(from, "off", p).replaceFirst("^ok: ", ""));
+        if (owner) {
+            String h = endHold("dismissed");
+            if (h != null) done.add(h);
+        }
+        if (done.isEmpty()) return e.active() ? "sorry, only " + c.owner() + " or " + e.name() + " can end this escort" : "ok: nothing to dismiss (no escort, defend or guard)";
+        return "ok: " + String.join("; ", done);
+    }
+
+    /** Once a second while defend/guard holds: after a fight, walk back when out of the spot. */
+    void holdTick(LocalPlayer p) {
+        Hold h = hold;
+        if (h == null || Core.INSTANCE.reflexes.hold()) return;
+        if (!Core.INSTANCE.reflexes.defence()) {
+            c.whisper(h.from(), endHold("self-defence was switched off"));
+            return;
+        }
+        if (!Guard.dimOf(p.level()).equals(h.dim())) {
+            c.whisper(h.from(), endHold("I'm in another dimension"));
+            return;
+        }
+        if (c.jobs.running()) return;
+        int[] me = Jobs.here(p);
+        if (!io.github.mojolowjo.entropybot.vocab.HoldRules.outside(h.box(), h.x(), h.z(), h.r(), me[0], me[1], me[2])) return;
+        int[] to = io.github.mojolowjo.entropybot.vocab.HoldRules.home(h.box(), h.x(), h.y(), h.z());
+        String r = c.jobs.startTravel("goto " + to[0] + " " + to[1] + " " + to[2], "back to " + h.what().replaceFirst("^(defending|guarding) ", ""), to, h.dim(), true);
+        if (!r.startsWith("ok")) LOG.info("[entropybot] hold: couldn't walk back: {}", r);
+    }
+
+    /** "attack <mob kind|player|id> [confirm]" | "attack nearest" | "attack target <id>" (the companion's point key). */
+    String attack(String from, String rest, LocalPlayer p) {
+        io.github.mojolowjo.entropybot.vocab.AttackRules.Arg a = io.github.mojolowjo.entropybot.vocab.AttackRules.parse(rest);
+        if (a.error() != null) return a.error();
+        if (!Core.INSTANCE.reflexes.defence()) return Hints.next("error: self-defence is off, so I don't fight", "defence on");
+        if (a.how() == io.github.mojolowjo.entropybot.vocab.AttackRules.How.NEAREST) return Core.INSTANCE.reflexes.attack("nearest");
+        Minecraft mc = Minecraft.getInstance();
+        net.minecraft.world.entity.Entity e = null;
+        boolean typed = false;
+        if (a.how() == io.github.mojolowjo.entropybot.vocab.AttackRules.How.ID) {
+            e = mc.level.getEntity(a.id());
+            if (e == null) return "error: I can't see entity " + a.id() + " (too far for me, or gone)";
+        } else {
+            typed = true;
+            for (net.minecraft.world.entity.player.Player pl : mc.level.players()) {
+                if (pl != p && pl.getGameProfile().getName().equalsIgnoreCase(a.word())) e = pl;
+            }
+            if (e == null) {
+                String want = a.word().indexOf(':') >= 0 ? a.word() : "minecraft:" + a.word();
+                double best = Double.MAX_VALUE;
+                for (net.minecraft.world.entity.Entity q : mc.level.entitiesForRendering()) {
+                    if (q == p || !(q instanceof net.minecraft.world.entity.LivingEntity le) || !le.isAlive()) continue;
+                    String id = BuiltInRegistries.ENTITY_TYPE.getKey(q.getType()).toString();
+                    if (!id.equals(want)) continue;
+                    double d = p.distanceTo(q);
+                    if (d < best) { best = d; e = q; }
+                }
+                if (e == null) return "error: I see no " + a.word() + " (and no player of that name) near me";
+            }
+        }
+        if (!(e instanceof net.minecraft.world.entity.LivingEntity le) || !le.isAlive()) return "error: that isn't alive";
+        boolean player = e instanceof net.minecraft.world.entity.player.Player;
+        String kind = player ? ((net.minecraft.world.entity.player.Player) e).getGameProfile().getName() : BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+        boolean pet = !player && io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
+        boolean hostile = !player && !pet && io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.kind(e, true).counts();
+        String custom = !player && e.hasCustomName() && e.getCustomName() != null ? e.getCustomName().getString() : null;
+        if (player && !from.equalsIgnoreCase(c.owner())) return "sorry, only " + c.owner() + " can set me on a player";
+        var ans = io.github.mojolowjo.entropybot.vocab.AttackRules.decide(new io.github.mojolowjo.entropybot.vocab.AttackRules.Target(kind, player, pet, hostile, custom, typed),
+                a.confirm(), defencePlayers, e.getId());
+        LOG.info("[entropybot] attack {} #{}: {} ({})", kind, e.getId(), ans.verdict(), ans.text());
+        if (ans.verdict() != io.github.mojolowjo.entropybot.vocab.AttackRules.Verdict.GO) return ans.text();
+        return Core.INSTANCE.reflexes.forceAttack(e, kind);
+    }
+
     // ---- status ----
 
     /** " | deaths N in the last hour | stage X" (the stage from the stock view; left out when it can't be read). */

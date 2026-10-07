@@ -14,13 +14,13 @@ public final class Texts {
 
     /** What allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
     public static final Set<String> GUEST_VERBS = Set.of("help", "?", "", "status", "pos", "inv", "inventory", "queue", "places", "where", "have", "stock", "find",
-            "recipe", "come", "follow", "goto", "stop", "restart", "hold", "scout");
+            "recipe", "come", "follow", "goto", "stop", "restart", "hold", "scout", "dismiss");
 
     public static final String GUEST_HELP = "status, inv, queue, places, where <item>, have [item], stock [filter], find <block>, recipe <item>, come, follow [name], goto x y z, stop, hold this, "
             + "routines, routine show <name>, ores, stripmine status, restart ok|no, fence, fence vetoes, area list, area show <name>, area near, poi, poi show <id>, scout <dir> [n], find nearest <thing>";
 
     /** Every command word; routine names can't use these. */
-    public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defense", "defence", "mark",
+    public static final List<String> BUILTIN_VERBS = List.of("help", "status", "pos", "inv", "inventory", "stop", "defend", "defence", "guard", "dismiss", "mark",
             "setbase", "sethome", "forget", "places", "where", "have", "stock", "say", "come", "follow", "goto", "spawn", "bed", "go", "base", "home", "death", "build",
             "open", "allow", "deny", "allowed", "b", "baritone", "debug", "mouse", "watch", "recorder", "mine", "craft", "recipe", "eat", "twerk", "drop", "find", "use", "put",
             "take", "close", "scan", "wear", "equip", "kit", "corpse", "deposit", "routine", "routines", "repeat", "run", "wait", "queue", "farm",
