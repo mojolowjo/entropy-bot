@@ -63,7 +63,10 @@ public final class Needs {
      * of n rounded up (at least 1); once its gather runs (runningNeed is it) it stays on until have reaches n. So torches
      * the strip mine burns (32 -&gt; 31) don't flip the brain back to gathering; it gathers again below 16.
      */
-    public static int refire(int want) { return Math.max(1, (want + 1) / 2); }
+    public static int refire(int want) { return refire(want, 50); }
+
+    /** B4: the deadband share is a setting (deadbandPct): gathers again below pct % of want, rounded up, at least 1. */
+    public static int refire(int want, int pct) { return Math.max(1, (int) Math.ceil(want * pct / 100.0)); }
 
     public static Scored score(BrainState s, BrainConfig c, List<String> idle, Map<String, String> parked, String runningNeed) {
         List<Option> out = new ArrayList<>();
@@ -93,8 +96,9 @@ public final class Needs {
             int missing = n.want() - n.have();
             if (missing <= 0 || n.want() <= 0) continue;
             String sid = n.id().substring(n.id().indexOf(':') + 1);
-            if (n.have() >= refire(n.want()) && !("need:" + sid).equals(runningNeed)) {
-                skipped.add("need:" + sid + ": have " + n.have() + " of " + n.want() + " (gathers again below " + refire(n.want()) + ")");
+            int re = refire(n.want(), c.i("deadbandPct"));
+            if (n.have() >= re && !("need:" + sid).equals(runningNeed)) {
+                skipped.add("need:" + sid + ": have " + n.have() + " of " + n.want() + " (gathers again below " + re + ")");
                 continue;
             }
             int sc = clamp(c.i("ownerNeedBase") + c.i("ownerNeedSpan") * missing / (double) n.want() + age(s.now, n.since(), 2, c.i("ageBonusMax")));
@@ -134,7 +138,8 @@ public final class Needs {
                 skipped.add(o.need() + ": " + (int) BrainState.flat(o.where(), s.ownerPos) + " blocks from you (not released)");
                 continue;
             }
-            kept.add(o);
+            double w = c.weight(o.need());       // B4: need.<name>.weight
+            kept.add(w == 1 ? o : new Option(o.need(), clamp(o.score() * w), o.chain(), o.reason() + " (weight " + BrainConfig.num(w) + ")", o.where(), o.asked()));
         }
         kept.sort(Comparator.comparingInt(Option::score).reversed().thenComparing(Comparator.comparingLong(Option::asked).reversed()));
         return new Scored(kept, skipped);

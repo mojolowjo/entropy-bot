@@ -39,4 +39,12 @@ public interface BrainEnv {
     void writeState(JsonObject o);
 
     DecisionLog decisions();
+
+    /** B4: a file under entropybot/ (brain-config.json, brain-tree.override.json): its text, null when missing, "error: ..." when unreadable. */
+    default String readFile(String name) { return null; }
+
+    /** B4: writes a file under entropybot/ ("ok: ..." or "error: ..."). */
+    default String writeFile(String name, String json) { return "error: no files"; }
+
+    default String modVersion() { return "?"; }
 }

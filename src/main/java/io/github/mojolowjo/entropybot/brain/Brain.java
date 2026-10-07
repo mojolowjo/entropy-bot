@@ -28,7 +28,12 @@ public final class Brain {
     static final long QUICK_MS = 5_000;
 
     private final BrainEnv env;
-    private final BrainTree tree = new BrainTree();
+    private BrainTree tree = new BrainTree();
+    /** B4: where the tree came from (built-in / override), why (a refused override's reasons), and the export. */
+    private String treeSource = "built-in", treeNote = "";
+    private boolean treeLoaded, treeRefused, offWritten;
+    private long exportErrors;
+    public static final String CONFIG_FILE = "brain-config.json";
     private BrainConfig cfg = BrainConfig.defaults();
 
     /** The job the brain started. */
@@ -134,6 +139,8 @@ public final class Brain {
     /** "brain on|off|status", "brain copy on|off|status". */
     public String command(String rest) {
         String t = rest == null ? "" : rest.trim().toLowerCase();
+        if (t.matches("^(get|set|reset)\\b.*")) return settings(rest);         // B4
+        if (t.matches("^tree\\b.*")) return treeCommand(t.substring(4));
         JsonObject d = data();
         switch (t) {
             case "on" -> {
@@ -162,7 +169,7 @@ public final class Brain {
                 BrainState s = prev;
                 return "brain copy is " + (copyOn() ? "on" : "off") + (s != null && s.copy != null ? " - " + s.copy.why() : "");
             }
-            default -> { return "usage: brain on|off|status | brain copy on|off"; }
+            default -> { return "usage: brain on|off|status | brain copy on|off | brain get [key] | brain set <key> <value> | brain reset <key>|all | brain tree [reload]"; }
         }
     }
 
@@ -177,11 +184,13 @@ public final class Brain {
             l.forEach(a::add);
             data().add("idle", a);
             env.saved();
+            exportTree();
             return "ok: " + IdleList.show(l);
         }
         if (t.equals("list reset")) {
             data().remove("idle");
             env.saved();
+            exportTree();
             return "ok: " + IdleList.show(idleList());
         }
         return "usage: idle list | idle list set restock, strip, cave, farm | idle list reset";
@@ -276,6 +285,8 @@ public final class Brain {
             out.add(new String[]{"brain", "the brain is on but has not looked for " + (now - lastLoopAt) / 1000 + " s", "brain status"});
         if (env.decisions().errors() > 0)
             out.add(new String[]{"brainlog", "the decision log could not be written (" + env.decisions().lastError() + ")", "check the entropybot\\brain folder"});
+        if (treeRefused) out.add(new String[]{"braintree", treeNote, "fix " + BrainTreeFile.OVERRIDE + " (or delete it), then brain tree reload"});
+        if (!configNote.isEmpty()) out.add(new String[]{"brainconfig", "brain settings ignored: " + configNote, "brain get, then brain set or brain reset"});
         for (Map.Entry<String, String> e : parked(now).entrySet())
             out.add(new String[]{"brain:" + e.getKey(), "the brain's need " + e.getKey() + " failed 3 times and is parked (" + e.getValue() + ")", "why"});
         return out;
@@ -286,13 +297,20 @@ public final class Brain {
     public void tick() {
         long t0 = System.nanoTime();
         try {
-            if (!on()) return;
+            if (!treeLoaded) reloadTree();          // B4: export brain-tree.json on start
+            if (!on()) {
+                if (!offWritten) {                  // B4: the page sees "off" once
+                    offWritten = true;
+                    env.writeState(stateJson(prev));
+                }
+                return;
+            }
+            offWritten = false;
             long now = env.now();
             loops++;
             loopTimes.addLast(now);
             lastLoopAt = now;
-            cfg = BrainConfig.defaults();
-            configNote = cfg.load(data().has("config") && data().get("config").isJsonObject() ? data().getAsJsonObject("config") : null);
+            cfg = loadConfig();
             BrainState s = env.sense();
             s.now = now;
             // the job the brain started: still running?
@@ -481,8 +499,157 @@ public final class Brain {
         JsonObject p = new JsonObject();
         parked(env.now()).forEach(p::addProperty);
         o.add("parked", p);
+        // B4: the path of the branch taken (uids of brain-tree.json) and the need node, for the page's highlight
+        JsonArray path = new JsonArray();
+        if (last != null) tree.pathTo(last.branch()).forEach(path::add);
+        o.add("path", path);
+        if (last != null && last.need() != null) {
+            o.addProperty("need", last.need());
+            o.addProperty("needNode", BrainTreeFile.needNode(last.need()));
+        }
+        o.addProperty("tree", treeSource);
         return o;
     }
+
+    // ---- B4: settings (brain get|set|reset) and the tree file ----
+
+    /** brain-config.json, else (never saved there yet) commands.json brain.config; configNote names what was ignored. */
+    BrainConfig loadConfig() {
+        BrainConfig c = BrainConfig.defaults();
+        String f = env.readFile(CONFIG_FILE);
+        if (f != null && !f.startsWith("error")) {
+            try {
+                configNote = c.load(com.google.gson.JsonParser.parseString(f).getAsJsonObject());
+                return c;
+            } catch (RuntimeException e) {
+                configNote = CONFIG_FILE + " unreadable (" + e.getMessage() + ")";
+                return BrainConfig.defaults();
+            }
+        }
+        configNote = c.load(data().has("config") && data().get("config").isJsonObject() ? data().getAsJsonObject("config") : null);
+        return c;
+    }
+
+    static String canon(String key) {
+        for (String k : BrainConfig.DEFAULTS.keySet()) if (k.equalsIgnoreCase(key)) return k;
+        return key.toLowerCase();
+    }
+
+    String settings(String rest) {
+        String[] w = rest.trim().split("\\s+", 3);
+        String sub = w[0].toLowerCase();
+        BrainConfig c = loadConfig();
+        switch (sub) {
+            case "get" -> {
+                if (w.length < 2) {
+                    List<String> parts = new ArrayList<>();
+                    c.all().forEach((k, v) -> parts.add(k + " " + v + (v.equals(BrainConfig.DEFAULTS.get(k)) ? "" : "*")));
+                    c.weights().forEach((k, v) -> parts.add(k + " " + BrainConfig.num(v) + "*"));
+                    return "brain settings (* changed; brain get <key> for one): " + String.join(", ", parts) + " | idle " + String.join(", ", idleList());
+                }
+                String k = canon(w[1]);
+                if (k.equals("idle")) return IdleList.show(idleList());
+                String v = c.get(k);
+                if (v == null) return "error: no brain setting " + w[1] + " (brain get lists them)";
+                int[] r = BrainConfig.RANGES.get(k);
+                return k + " = " + v + " (default " + (r == null ? "1" : BrainConfig.DEFAULTS.get(k)) + ", " + (r == null ? "0 to 5" : r[0] + " to " + r[1]) + "): " + BrainConfig.help(k);
+            }
+            case "set" -> {
+                if (w.length < 3) return "usage: brain set <key> <value> (brain get lists the keys)";
+                String k = canon(w[1]);
+                if (k.equals("idle")) return idle("list set " + w[2]);
+                String was = c.get(k);
+                String err = c.set(k, w[2]);
+                if (err != null) return "error: " + err;
+                return saveConfig(c, "ok: " + k + " = " + c.get(k) + " (was " + was + ")");
+            }
+            case "reset" -> {
+                if (w.length < 2) return "usage: brain reset <key>|all";
+                if (w[1].equalsIgnoreCase("all")) return saveConfig(BrainConfig.defaults(), "ok: every brain setting is back to its default");
+                String k = canon(w[1]);
+                if (k.equals("idle")) return idle("list reset");
+                if (!c.reset(k)) return "error: no brain setting " + w[1] + " (brain get lists them)";
+                return saveConfig(c, "ok: " + k + " = " + c.get(k) + " (the default)");
+            }
+            default -> {
+                return "usage: brain get [key] | brain set <key> <value> | brain reset <key>|all";
+            }
+        }
+    }
+
+    private String saveConfig(BrainConfig c, String ok) {
+        String r = env.writeFile(CONFIG_FILE, c.changed().toString());
+        String tail = "";
+        if (r != null && r.startsWith("error")) {
+            data().add("config", c.changed());      // the file can't be written: kept in commands.json instead
+            tail = " (saved in commands.json: " + CONFIG_FILE + " " + r + ")";
+        } else data().remove("config");
+        env.saved();
+        cfg = c;
+        exportTree();
+        return ok + tail;
+    }
+
+    /** "brain tree [status|reload]". */
+    String treeCommand(String rest) {
+        String t = rest.trim().toLowerCase();
+        if (t.equals("reload")) {
+            reloadTree();
+            return (treeRefused ? "error: " : "ok: ") + treeNote + "; brain-tree.json written" + (exportErrors > 0 ? " (" + exportErrors + " write errors)" : "");
+        }
+        if (t.isEmpty() || t.equals("status")) return "brain tree: " + treeSource + " - " + treeNote;
+        return "usage: brain tree [status|reload]";
+    }
+
+    /** Loads brain-tree.override.json (refused: the built-in tree, a check line), then exports. */
+    void reloadTree() {
+        treeLoaded = true;
+        treeRefused = false;
+        String f = env.readFile(BrainTreeFile.OVERRIDE);
+        if (f == null) {
+            tree = new BrainTree();
+            treeSource = "built-in";
+            treeNote = "the built-in tree (no " + BrainTreeFile.OVERRIDE + ")";
+        } else if (f.startsWith("error")) {
+            refuse(f);
+        } else {
+            BrainTreeFile.Result r = BrainTreeFile.parse(f);
+            if (r.ok()) {
+                tree = r.tree();
+                treeSource = "override";
+                treeNote = "the tree from " + BrainTreeFile.OVERRIDE;
+                env.log("brain: tree loaded from " + BrainTreeFile.OVERRIDE);
+            } else {
+                List<String> e = r.errors();
+                refuse(String.join("; ", e.size() > 5 ? e.subList(0, 5) : e) + (e.size() > 5 ? " (+" + (e.size() - 5) + " more)" : ""));
+            }
+        }
+        exportTree();
+    }
+
+    private void refuse(String why) {
+        tree = new BrainTree();
+        treeSource = "built-in";
+        treeRefused = true;
+        treeNote = BrainTreeFile.OVERRIDE + " refused (" + why + ") - using the built-in tree";
+        env.log("brain: " + treeNote);
+    }
+
+    /** brain-tree.json, generated from the running tree; failures counted. */
+    void exportTree() {
+        try {
+            JsonObject o = BrainTreeFile.export(tree, cfg, idleList(), treeSource, treeNote, env.now(), env.modVersion());
+            String r = env.writeFile(BrainTreeFile.EXPORT, o.toString());
+            if (r == null || r.startsWith("error")) exportErrors++;
+        } catch (RuntimeException e) {
+            exportErrors++;
+            env.log("brain: brain-tree.json not written: " + e);
+        }
+    }
+
+    public String treeSource() { return treeSource; }
+
+    public String treeNote() { return treeNote; }
 
     /** For tests: the running job's chain or null. */
     public String jobChain() { return job == null ? null : job.chain(); }
