@@ -175,21 +175,52 @@ final class CampCommands {
         if (lit > 0) why.add(lit + " lit already");
         int skipped = water + air + outside + lit;
         if (spots.isEmpty()) return Chains.Reply.now("ok: " + LightGrid.report(0, skipped, String.join(", ", why)));
-        int have = Gui.inventory(p).getOrDefault("minecraft:torch", 0);
-        if (have < spots.size() && !internal) {
-            // not enough torches: fetch them from storage, else craft them (coal or charcoal + sticks), then light
-            int missing = spots.size() - have, stored = 0;
-            for (Crafting.Source s : c.crafting.storageSources(p)) stored += s.items().getOrDefault("minecraft:torch", 0);
-            String fetch = stored >= missing ? "get torch " + missing : "craft torch " + missing;
-            if (c.chainsRef().running()) return Chains.Reply.now("busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)");
-            return Chains.Reply.now(c.chainsRef().startChain(from, "light", fetch + " then light " + rest.trim(), 1));
+        Map<String, Integer> bag = Gui.inventory(p);
+        int have = bag.getOrDefault("minecraft:torch", 0);
+        // 0.23.1: short of torches (in a chain too: camp here): fetch them, else craft them from coal/charcoal, else from logs
+        // (charcoal at a furnace near me, the craft planner smelts it), else light with what I have and say what's missing
+        List<Seq.Step> before = new ArrayList<>();
+        String supplyNote = null;
+        if (have < spots.size()) {
+            if (c.jobs.running() && !c.jobs.walking()) return Chains.Reply.now("busy: " + c.jobs.job.status + " (pm \"stop\" first)");
+            int stored = 0, fuel = bag.getOrDefault("minecraft:coal", 0) + bag.getOrDefault("minecraft:charcoal", 0), logs = 0;
+            for (Map.Entry<String, Integer> e : bag.entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+            List<Crafting.Source> src = c.crafting.storageSources(p);
+            for (Crafting.Source s : src) {
+                stored += s.items().getOrDefault("minecraft:torch", 0);
+                fuel += s.items().getOrDefault("minecraft:coal", 0) + s.items().getOrDefault("minecraft:charcoal", 0);
+                for (Map.Entry<String, Integer> e : s.items().entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+            }
+            LightGrid.Supply sup = LightGrid.supply(have, spots.size(), stored, fuel, logs, near(lv, me, "furnace"));
+            LOG.info("[entropybot] light: {} torches for {} spots: {} ({} stored, {} coal/charcoal, {} logs)", have, spots.size(), sup.source(), stored, fuel, logs);
+            switch (sup.source()) {
+                case FETCH -> {
+                    Map<String, Integer> need = new LinkedHashMap<>();
+                    need.put("minecraft:torch", sup.count());
+                    before.addAll(Crafting.takeTrips(src, need).steps());
+                }
+                case CRAFT -> {
+                    Crafting.Prepared pr = c.crafting.prepareCraft(p, "minecraft:torch " + sup.count(), null);
+                    if (pr.err() != null) {
+                        supplyNote = "couldn't make torches (" + pr.err().replaceFirst("^error: ", "") + ")";
+                    } else {
+                        for (Seq.Step a : pr.steps()) a.direct = false;
+                        before.addAll(pr.steps());
+                        have += sup.count();
+                    }
+                }
+                case PARTIAL -> supplyNote = sup.text();
+                case NONE -> { return Chains.Reply.now(sup.text()); }
+                default -> { }
+            }
+            if (sup.source() == LightGrid.Source.FETCH) have += sup.count();
         }
         if (have < spots.size()) {
-            why.add((spots.size() - have) + " no torches left");
+            why.add((spots.size() - have) + " no torches left" + (supplyNote != null ? ": " + supplyNote : ""));
             skipped += spots.size() - have;
             spots = spots.subList(0, have);
         }
-        if (spots.isEmpty()) return Chains.Reply.now(Hints.next("error: I have no torches", "craft torch 16 (coal or charcoal + sticks), then light " + rest.trim()));
+        if (spots.isEmpty()) return Chains.Reply.now(Hints.next("error: I have no torches" + (supplyNote != null ? " - " + supplyNote : ""), "craft torch 16 (coal or charcoal + sticks), then light " + rest.trim()));
         if (c.jobs.running() && !c.jobs.walking()) return Chains.Reply.now("busy: " + c.jobs.job.status + " (pm \"stop\" first)");
         c.jobs.replaceWalk();
         // nearest first, then each next one nearest the last (a short walk)
@@ -202,7 +233,7 @@ final class CampCommands {
             at = left.remove(bi);
             order.add(at);
         }
-        List<Seq.Step> steps = new ArrayList<>();
+        List<Seq.Step> steps = new ArrayList<>(before);
         for (int[] s : order) steps.add(Clearing.placeStep(s, "minecraft:torch", null, true));
         Seq.Step note = new Seq.Step("lightnote");
         note.items = new LinkedHashMap<>();

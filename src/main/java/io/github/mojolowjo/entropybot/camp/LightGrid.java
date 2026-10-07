@@ -42,6 +42,33 @@ public final class LightGrid {
         return out;
     }
 
+    // ---- 0.23.1: where the torches come from ----
+
+    public enum Source { ENOUGH, FETCH, CRAFT, PARTIAL, NONE }
+
+    /**
+     * How light gets its torches. torches: what I carry; need: the spots; stored: torches in the chests/RS; fuel: coal and
+     * charcoal (bag + storage); logs: logs (bag + storage); furnaceNear: a furnace within reach (charcoal from logs).
+     * count: the torches to fetch or craft (CRAFT: at most 4 a coal or charcoal; from logs 4 a log), or for PARTIAL/NONE 0.
+     */
+    public record Supply(Source source, int count, String text) {}
+
+    public static final String NEXT = "give me coal or charcoal (or logs, with a furnace near), or torches";
+
+    public static Supply supply(int torches, int need, int stored, int fuel, int logs, boolean furnaceNear) {
+        if (torches >= need) return new Supply(Source.ENOUGH, 0, null);
+        int missing = need - torches;
+        if (stored >= missing) return new Supply(Source.FETCH, missing, "get torch " + missing);
+        int canMake = fuel * 4 + (furnaceNear ? logs * 4 : 0);
+        if (canMake > 0) {
+            int n = Math.min(missing, canMake);
+            return new Supply(Source.CRAFT, n, "craft torch " + n + (fuel == 0 ? " (charcoal from my logs first)" : ""));
+        }
+        String why = logs > 0 ? "I have logs but no furnace near for charcoal" : "no coal, charcoal or logs";
+        if (torches > 0) return new Supply(Source.PARTIAL, 0, "only " + torches + " torch" + (torches == 1 ? "" : "es") + " and nothing to make more from (" + why + ") - next: " + NEXT);
+        return new Supply(Source.NONE, 0, "error: no torches and nothing to make them from (" + why + ") - next: " + NEXT);
+    }
+
     /** The end line: "placed 14 torches, 3 spots skipped (water/air)". */
     public static String report(int placed, int skipped, String why) {
         return "placed " + placed + " torch" + (placed == 1 ? "" : "es") + (skipped > 0 ? ", " + skipped + " spot" + (skipped == 1 ? "" : "s") + " skipped (" + why + ")" : "");
