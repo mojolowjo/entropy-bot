@@ -88,7 +88,7 @@ public final class VerbTable {
         v("unload", "", "stocking", O, "unload", "go home, deposit (keeping tools, food, torches, supplies), then come back to you", "unload", "carry list");
         // ---- digging (VOCABULARY 3)
         v("mine", "", "digging", O, "mine strip [<ores>] [n] [at <mine>] | mine strip status|reset|turn left|right|ores collect|list | mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
-                "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores",
+                "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores; a strip mine needs room in its area: 17 blocks each side of the corridor (16-long branches + torches) and the corridor's length ahead, else it turns at the edge (blocked:area)",
                 "mine strip iron,diamond 16|mine strip|mine cave ores 20 10m|mine iron_ore 10", "deposit");
         v("dig", "", "digging", O, "dig <area> [-N|+N] [ores] [junk drop] [water [large]] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 -N|+N [same words, no floor]",
                 "dig <area>: the box of an area with heights (an all-heights area needs -N or +N; asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "

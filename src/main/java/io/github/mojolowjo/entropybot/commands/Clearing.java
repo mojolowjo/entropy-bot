@@ -791,6 +791,8 @@ public final class Clearing {
         InteractionResult r = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND,
                 new BlockHitResult(hit, McClearWorld.direction(s.face()), pos.offset(s.dx(), s.dy(), s.dz()), false));
         p.swing(InteractionHand.MAIN_HAND);
+        // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
+        if (r == InteractionResult.FAIL) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (no room for it, or the guard said no)";
         return "ok: " + r;
     }
 

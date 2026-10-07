@@ -479,7 +479,7 @@ final class VocabCommands {
             if (!st.isEmpty() && Commands.itemId(st).endsWith("_bed")) { bed = Commands.itemId(st); break; }
         }
         // 0.23.1: the light step comes last (it fetches or crafts its torches, or says why there are none)
-        String chain = (bed != null ? "place " + Texts.shortId(bed) + " " + (at.x() + 1) + " " + at.y() + " " + at.z() + " then " : "") + "light here 12";
+        String chain = (bed != null ? "place " + Texts.shortId(bed) + " " + (at.x() + 2) + " " + at.y() + " " + at.z() + " then " : "") + "light here 12";      // 2 off: the bed's head never lands on me
         Chains.Reply r = c.handle(from, chain, false, true, l);
         LOG.info("[entropybot] camp here: area {}, place {}, bed marker {}, chain {} -> {}", area, place, bedMark, chain, r.text());
         return "ok: camp at " + at.x() + " " + at.y() + " " + at.z() + " (area " + name + ", 24 round, neutral; place " + name + ", marker bed) - " + String.valueOf(r.text()).replaceFirst("^ok: ", "")
