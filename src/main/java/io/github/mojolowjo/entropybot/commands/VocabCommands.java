@@ -365,10 +365,10 @@ final class VocabCommands {
         return io.github.mojolowjo.entropybot.vocab.NeedWords.list(want, have);
     }
 
-    /** "goal <text>": a goal from the fixed grammar, queued for the brain (max 10). */
-    String goal(String rest) {
-        io.github.mojolowjo.entropybot.vocab.NeedWords.Goal g = io.github.mojolowjo.entropybot.vocab.NeedWords.goal(rest, n -> c.policyArea(n) != null);
-        if (g.error() != null) return g.error();
+    /** B3: a goal (its text and the chain or goal_ routine that does it) queued for the brain (max 10). */
+    String noteGoal(String text, String chain) {
+        record G(String text, String chain) {}
+        G g = new G(text, chain);
         JsonObject b = c.brainData();
         JsonArray goals = b.has("goals") && b.get("goals").isJsonArray() ? b.getAsJsonArray("goals") : new JsonArray();
         if (goals.size() >= io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_GOALS) return "error: I keep at most " + io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_GOALS + " goals - goals clear <n>|all first";
@@ -380,6 +380,22 @@ final class VocabCommands {
         b.add("goals", goals);
         c.saved();
         return "ok: goal " + g.text() + " noted (#" + goals.size() + ") - the brain works on goals when nothing else is asked (brain on); to do it now: " + g.chain();
+    }
+
+    /** B3: a finished goal leaves the list (the brain's goal job ended well): the first goal with that chain. */
+    void goalDone(String chain) {
+        JsonObject b = c.brainData();
+        if (!b.has("goals") || !b.get("goals").isJsonArray()) return;
+        JsonArray goals = b.getAsJsonArray("goals");
+        for (int i = 0; i < goals.size(); i++) {
+            try {
+                if (goals.get(i).getAsJsonObject().get("chain").getAsString().equals(chain)) {
+                    goals.remove(i);
+                    c.saved();
+                    return;
+                }
+            } catch (RuntimeException ignored) {}
+        }
     }
 
     /** "goals" | "goals clear <n>|all". */

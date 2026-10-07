@@ -39,4 +39,7 @@ public interface BrainEnv {
     void writeState(JsonObject o);
 
     DecisionLog decisions();
+
+    /** B3: the goal whose chain this is ended well (it leaves the goals list). */
+    default void goalDone(String chain) {}
 }

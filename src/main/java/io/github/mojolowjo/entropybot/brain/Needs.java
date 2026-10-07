@@ -104,7 +104,9 @@ public final class Needs {
         for (int i = 0; i < s.goals.size(); i++) {
             BrainState.Goal g = s.goals.get(i);
             int sc = clamp(c.i("goalBase") + age(s.now, g.at(), 10, c.i("ageBonusMax")));
-            out.add(new Option("goal:" + (i + 1), sc, g.chain(), "goal " + g.text(), null, g.at()));
+            String chain = g.chain();
+            if ((chain == null || chain.isBlank()) && s.planner != null) chain = s.planner.apply(g.text());      // B3: no ready chain -> the planner
+            out.add(new Option("goal:" + (i + 1), sc, chain == null || chain.isBlank() ? null : chain, "goal " + g.text(), null, g.at()));
         }
         // copy
         if (s.copy != null) {

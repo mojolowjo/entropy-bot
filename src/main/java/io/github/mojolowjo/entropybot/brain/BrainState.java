@@ -42,6 +42,8 @@ public final class BrainState {
     /** The copy rule's verdict; null while brain copy is off. */
     public CopyRules.Activity copy;
     public IdleList.Facts upkeep = new IdleList.Facts();
+    /** B3: the planner's hook for a goal with no chain (goal text -> a chain or null); null = no planner. */
+    public java.util.function.Function<String, String> planner;
 
     /** A standing need ("need torch 32"): what the group has, and since when it is noted (ms). */
     public record NeedItem(String id, int want, int have, long since) {}

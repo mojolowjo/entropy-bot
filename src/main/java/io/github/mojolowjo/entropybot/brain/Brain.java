@@ -364,7 +364,10 @@ public final class Brain {
                 env.whisper("brain: can't " + j.chain() + " - it failed " + n + " times (" + (res.length() > 120 ? res.substring(0, 120) + "..." : res) + "); I leave it for "
                         + cfg.i("parkMinutes") + " min");
             }
-        } else if (outcome.equals("finished")) fails.addProperty(j.need(), 0);
+        } else if (outcome.equals("finished")) {
+            fails.addProperty(j.need(), 0);
+            if (j.need().startsWith("goal:")) env.goalDone(j.chain());          // B3: a goal reached leaves the list
+        }
         env.saved();
     }
 
