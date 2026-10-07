@@ -610,7 +610,8 @@ public final class Commands implements Chains.Env {
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
             if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null) brainRuntime.brain.tick();     // B1: every 2 s, never throws
-        if (worldTicks > 400) planning.tick(tick);                                                   // B3: actions.json when the state changed (every 5 s), never throws
+        planning.drainSearches();                                                                    // 0.23.1: the planner's answers from the worker
+        if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
             if (tick % 40 == 21) {
                 try { camp.junkTick(player); } catch (RuntimeException e) { LOG.warn("[entropybot] junk: {}", e.toString()); }      // C5
             }
@@ -873,7 +874,7 @@ public final class Commands implements Chains.Env {
             return Reply.now(rest.isBlank() && brainRuntime != null ? n + "\n" + brainRuntime.brain.scoresLine() : n);     // B1: the brain's scores
         }
         if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // B3: the planner
-        if (verb.equals("plan")) return Reply.now(planning.plan(player, rest));
+        if (verb.equals("plan")) return Reply.now(planning.plan(from, player, rest));
         if (verb.equals("actions")) return Reply.now(planning.actions(rest));
         if (verb.equals("goals")) return Reply.now(vocab.goals(rest));
         if (verb.equals("need")) {

@@ -7,6 +7,7 @@ import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.plan.ActionTable;
+import io.github.mojolowjo.entropybot.plan.AsyncPlanner;
 import io.github.mojolowjo.entropybot.plan.GoalGrammar;
 import io.github.mojolowjo.entropybot.plan.PlanFacts;
 import io.github.mojolowjo.entropybot.plan.Planner;
@@ -35,8 +36,8 @@ import java.util.Set;
  * ({@link RoutineRule}); the texts the planner saved are kept in commands.json "plans" so an owner-edited routine is
  * never overwritten.
  *
- * <p>Loader notes: vanilla client getters only (ClientLevel.getBlockState, ItemStack DataComponents.FOOD); the search
- * runs on the client thread within its 200 ms budget (a worker is not needed at ~2000 nodes). Errors: every entry point
+ * <p>Loader notes: vanilla client getters only (ClientLevel.getBlockState, ItemStack DataComponents.FOOD); the facts are
+ * read on the client thread; the search (200 ms / 2000 nodes) runs on a worker (0.23.1, {@link AsyncPlanner}), its answer a whisper. Errors: every entry point
  * catches and answers "error: plan: ..." and logs once; a failed actions.json write is counted.
  */
 final class GoalPlanning {
@@ -119,7 +120,7 @@ final class GoalPlanning {
     }
 
     /** "plan <goal>": the dry run. */
-    String plan(LocalPlayer p, String rest) {
+    String plan(String to, LocalPlayer p, String rest) {
         try {
             GoalGrammar.Goal g = GoalGrammar.parse(rest, n -> c.policyArea(n) != null);
             if (g.error() != null) return g.error().replace("goal ", "plan ").replace("usage: plan camp", "usage: plan camp");
@@ -127,25 +128,49 @@ final class GoalPlanning {
             String existing = routineText(g.routine());
             if (RoutineRule.decide(existing, plannedText(g.routine())) == RoutineRule.Decision.KEEP)
                 return "plan " + g.text() + ": your routine " + g.routine() + " is the ready chain: " + String.join(" > ", Texts.splitChain(existing)) + " (routine delete " + g.routine() + " to plan afresh)";
-            Planner.Result r = search(p, g);
-            if (!r.ok()) return failText(g, r);
-            if (r.steps().isEmpty()) return "plan " + g.text() + ": nothing to do - I already have it";
-            return "plan " + g.text() + " (dry run, " + r.steps().size() + " steps, cost " + r.cost() + ", " + r.nodes() + " nodes, " + r.ms() + " ms): " + r.costed();
+            boolean started = searchAsync(p, g, "plan:" + g.text(), r -> {
+                String text;
+                if (r == null) text = "error: plan " + g.text() + ": the search failed (see the log)";
+                else if (!r.ok()) text = failText(g, r);
+                else if (r.steps().isEmpty()) text = "plan " + g.text() + ": nothing to do - I already have it";
+                else text = "plan " + g.text() + " (dry run, " + r.steps().size() + " steps, cost " + r.cost() + ", " + r.nodes() + " nodes, " + r.ms() + " ms): " + r.costed();
+                c.whisper(to, text);
+            });
+            return started ? "planning " + g.text() + " - the plan comes as the next whisper" : "error: already planning " + g.text() + " - the answer comes as a whisper";
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] plan: {}", e.toString());
             return "error: plan: " + e;
         }
     }
 
-    Planner.Result search(LocalPlayer p, GoalGrammar.Goal g) {
+    /** 0.23.1: the searches run on a worker; their results come back on the client thread through {@link #drainSearches}. */
+    final AsyncPlanner async = new AsyncPlanner();
+
+    /**
+     * Gathers the facts here (client thread), searches on the worker, and calls then (client thread, from the tick) with the
+     * result, or null when the search threw. False when the same key is still being searched.
+     */
+    boolean searchAsync(LocalPlayer p, GoalGrammar.Goal g, String key, java.util.function.Consumer<Planner.Result> then) {
         PlanFacts f = facts(p);
-        Planner.Result r = Planner.plan(f, g.needs());
-        plans++;
-        lastMs = r.ms();
-        lastNodes = r.nodes();
-        if (!r.ok()) failures++;
-        LOG.info("[entropybot] plan: {} -> {} ({} nodes, {} ms; {})", g.text(), r.ok() ? r.chain() : r.missing() != null ? "missing " + r.missing() : r.error(), r.nodes(), r.ms(), f.summary());
-        return r;
+        return async.submit(key, () -> Planner.plan(f, g.needs()), d -> {
+            Planner.Result r = d.result();
+            if (r == null) {
+                failures++;
+                LOG.warn("[entropybot] plan: {} -> the search threw: {}", g.text(), d.error());
+            } else {
+                plans++;
+                lastMs = r.ms();
+                lastNodes = r.nodes();
+                if (!r.ok()) failures++;
+                LOG.info("[entropybot] plan: {} -> {} ({} nodes, {} ms on the worker; {})", g.text(), r.ok() ? r.chain() : r.missing() != null ? "missing " + r.missing() : r.error(), r.nodes(), r.ms(), f.summary());
+            }
+            then.accept(r);
+        });
+    }
+
+    /** From the client tick: the finished searches' callbacks. Never throws. */
+    void drainSearches() {
+        try { async.drain(); } catch (RuntimeException e) { LOG.warn("[entropybot] plan: drain: {}", e.toString()); }
     }
 
     static String failText(GoalGrammar.Goal g, Planner.Result r) {
@@ -174,37 +199,51 @@ final class GoalPlanning {
             String name = g.routine();
             String existing = routineText(name);
             RoutineRule.Decision d = RoutineRule.decide(existing, plannedText(name));
-            String head;
-            if (d == RoutineRule.Decision.KEEP) {
-                head = "goal " + g.text() + ": your routine " + name + " is the ready chain (" + String.join(" > ", Texts.splitChain(existing)) + ")";
-            } else {
-                Planner.Result r = search(p, g);
-                if (!r.ok()) return failText(g, r);
-                if (r.steps().isEmpty()) return "ok: goal " + g.text() + ": I already have it";
-                String body = r.chain();
-                String saved = c.chainsRef().routineCommand("save " + name + " " + body);
-                if (!saved.startsWith("saved")) return "error: goal " + g.text() + ": found a plan but couldn't save it (" + saved + "): " + r.costed();
-                JsonObject rec = new JsonObject();
-                rec.addProperty("goal", g.text());
-                rec.addProperty("chain", body);
-                rec.addProperty("cost", r.cost());
-                rec.addProperty("at", System.currentTimeMillis());
-                plansStore().add(name, rec);
-                c.brainData().addProperty("lastPlan", name);
-                c.saved();
-                head = "goal " + g.text() + ": planned " + r.steps().size() + " steps (cost " + r.cost() + ")" + (d == RoutineRule.Decision.OVERWRITE ? ", the old plan replaced" : "")
-                        + ", saved as routine " + name + ": " + String.join(" > ", Texts.splitChain(body));
-            }
-            // run it now when nothing runs, else the brain takes it up later
-            if (!c.chainsRef().running() && !c.jobs.running()) {
-                String s = c.chainsRef().startChain(from, name, name, 1);
-                return head + (s.startsWith("started") ? " - running it now" : " - " + s);
-            }
-            return head + " - " + c.vocab.noteGoal(g.text(), name).replaceFirst("^ok: ", "");
+            if (d == RoutineRule.Decision.KEEP)
+                return runOrNote(from, g, name, "goal " + g.text() + ": your routine " + name + " is the ready chain (" + String.join(" > ", Texts.splitChain(existing)) + ")");
+            // 0.23.1: the search runs on the worker; the answer is the next whisper (and the routine starts then)
+            boolean started = searchAsync(p, g, "goal:" + g.text(), r -> {
+                String text;
+                try { text = planned(from, g, name, d, r); } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] goal: {}", e.toString());
+                    text = "error: goal: " + e;
+                }
+                c.whisper(from, text.replaceFirst("^ok: ", ""));
+            });
+            return started ? "planning goal " + g.text() + " - the plan comes as the next whisper" : "error: already planning goal " + g.text() + " - the answer comes as a whisper";
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] goal: {}", e.toString());
             return "error: goal: " + e;
         }
+    }
+
+    /** The goal's search came back (client thread): save the routine, then run it or note the goal. */
+    private String planned(String from, GoalGrammar.Goal g, String name, RoutineRule.Decision d, Planner.Result r) {
+        if (r == null) return "error: goal " + g.text() + ": the search failed (see the log)";
+        if (!r.ok()) return failText(g, r);
+        if (r.steps().isEmpty()) return "ok: goal " + g.text() + ": I already have it";
+        String body = r.chain();
+        String saved = c.chainsRef().routineCommand("save " + name + " " + body);
+        if (!saved.startsWith("saved")) return "error: goal " + g.text() + ": found a plan but couldn't save it (" + saved + "): " + r.costed();
+        JsonObject rec = new JsonObject();
+        rec.addProperty("goal", g.text());
+        rec.addProperty("chain", body);
+        rec.addProperty("cost", r.cost());
+        rec.addProperty("at", System.currentTimeMillis());
+        plansStore().add(name, rec);
+        c.brainData().addProperty("lastPlan", name);
+        c.saved();
+        return runOrNote(from, g, name, "goal " + g.text() + ": planned " + r.steps().size() + " steps (cost " + r.cost() + ")" + (d == RoutineRule.Decision.OVERWRITE ? ", the old plan replaced" : "")
+                + ", saved as routine " + name + ": " + String.join(" > ", Texts.splitChain(body)));
+    }
+
+    /** Runs the goal's routine now when nothing runs, else the brain takes it up later. */
+    private String runOrNote(String from, GoalGrammar.Goal g, String name, String head) {
+        if (!c.chainsRef().running() && !c.jobs.running()) {
+            String s = c.chainsRef().startChain(from, name, name, 1);
+            return head + (s.startsWith("started") ? " - running it now" : " - " + s);
+        }
+        return head + " - " + c.vocab.noteGoal(g.text(), name).replaceFirst("^ok: ", "");
     }
 
     String show(String name) {
@@ -235,17 +274,22 @@ final class GoalPlanning {
                 if (g.chain() != null) chain = g.chain();
                 else if (routineText(g.routine()) != null && RoutineRule.decide(routineText(g.routine()), plannedText(g.routine())) == RoutineRule.Decision.KEEP) chain = g.routine();
                 else {
-                    Planner.Result r = search(p, g);
-                    if (r.ok() && !r.steps().isEmpty() && c.chainsRef().routineCommand("save " + g.routine() + " " + r.chain()).startsWith("saved")) {
-                        JsonObject rec = new JsonObject();
-                        rec.addProperty("goal", g.text());
-                        rec.addProperty("chain", r.chain());
-                        rec.addProperty("cost", r.cost());
-                        rec.addProperty("at", now);
-                        plansStore().add(g.routine(), rec);
-                        c.saved();
-                        chain = g.routine();
-                    }
+                    // 0.23.1: on the worker; null now, the routine (cached) once the search came back
+                    searchAsync(p, g, "hook:" + goalText, r -> {
+                        String ch = null;
+                        if (r != null && r.ok() && !r.steps().isEmpty() && c.chainsRef().routineCommand("save " + g.routine() + " " + r.chain()).startsWith("saved")) {
+                            JsonObject rec = new JsonObject();
+                            rec.addProperty("goal", g.text());
+                            rec.addProperty("chain", r.chain());
+                            rec.addProperty("cost", r.cost());
+                            rec.addProperty("at", System.currentTimeMillis());
+                            plansStore().add(g.routine(), rec);
+                            c.saved();
+                            ch = g.routine();
+                        }
+                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch});
+                    });
+                    return null;
                 }
             }
             hookCache.put(goalText, new Object[]{now, chain});
