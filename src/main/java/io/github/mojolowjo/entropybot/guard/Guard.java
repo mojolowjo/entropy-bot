@@ -159,7 +159,10 @@ public final class Guard {
     }
 
     /** Every block placement (BlockItem.place) and every liquid, fire, egg or entity put down. True = refuse. */
-    public boolean vetoPlace(Level level, BlockPos pos) {
+    public boolean vetoPlace(Level level, BlockPos pos) { return vetoPlace(level, pos, false); }
+
+    /** 0.23.1: torch = the item put down is a torch (roaming outside the areas places nothing else). */
+    public boolean vetoPlace(Level level, BlockPos pos, boolean torch) {
         if (level == null) level = Minecraft.getInstance().level;
         if (level == null) return false;
         // water plan: a seal lease (just outside the areas) only fills air or water
@@ -167,7 +170,7 @@ public final class Guard {
         if (level.isLoaded(pos)) {
             var st = level.getBlockState(pos);
             boolean airOrWater = st.isAir() || (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.canBeReplaced());
-            info = GuardCore.BlockInfo.placing(airOrWater);
+            info = GuardCore.BlockInfo.placing(airOrWater, torch);
         }
         return refuse(level, pos, "place", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", info));
     }

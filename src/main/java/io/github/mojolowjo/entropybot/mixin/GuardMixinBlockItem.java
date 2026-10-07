@@ -23,7 +23,7 @@ public abstract class GuardMixinBlockItem {
         try {
             Level level = context.getLevel();
             if (!level.isClientSide()) return;
-            if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos())) cir.setReturnValue(InteractionResult.FAIL);
+            if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos(), net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(context.getItemInHand().getItem()).getPath().endsWith("torch"))) cir.setReturnValue(InteractionResult.FAIL);
         } catch (Throwable ignored) {}
     }
 }

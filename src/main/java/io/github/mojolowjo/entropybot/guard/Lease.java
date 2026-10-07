@@ -30,6 +30,8 @@ public final class Lease {
      */
     public boolean destroy;
     public String area;
+    /** 0.23.1: granted under the roaming permission of a running explore/find (outside the areas, natural blocks only). */
+    public boolean roam;
     volatile long lastHeartbeat;
 
     Lease(String id, String owner, String task, Box box, boolean place, boolean force, long tick) {
@@ -63,6 +65,7 @@ public final class Lease {
         if (seal) o.addProperty("seal", true);
         if (near) o.addProperty("near", true);
         if (destroy) o.addProperty("destroy", area == null ? "?" : area);
+        if (roam) o.addProperty("roam", true);
         o.addProperty("since", createdTick);
         return o;
     }

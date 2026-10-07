@@ -147,8 +147,8 @@ public final class VerbTable {
         v("hotbar", "", "materials", O, "hotbar | hotbar set <slot> <kind|item> ... | hotbar clear <slot>|all", "keep tools in hotbar slots (pickaxe, sword, axe, shovel, hoe, food, torch, or an item)",
                 "hotbar set 1 pickaxe 2 sword 3 food 4 torch", "hotbar");
         // ---- explore and find (VOCABULARY 6b)
-        v("explore", "", "exploring", O, "explore [north|south|east|west] [minutes]",
-                "walk land I've never seen (that way), inside or outside my areas, then home; someone's base out there: I keep 16 off, take nothing, and tell you", "explore 5|explore north 10", "places");
+        v("explore", "", "exploring", O, "explore [north|south|east|west] [minutes] [gather off]",
+                "walk land I've never seen and not on the map (that way), inside or outside my areas, then home; out there I cut a tree or mine a surface ore on the way (gather off: not), the report says what I took; someone's base: I keep 16 off, take nothing, and tell you", "explore 5|explore north 10|explore west 5 gather off", "places");
         v("find", "", "exploring", G, "find <block> | find nearest <poi kind|ore> | find cave|<poi kind>|<biome> [minutes]",
                 "find <block>: the nearest block of that kind; find cave, village, mineshaft, a biome...: walk until I find one (the owner), then note it as a point of interest", "find chest|find village|find cave|find cherry_grove", "go poi <id>");
         v("scout", "", "exploring", O, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status",

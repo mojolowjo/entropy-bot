@@ -43,13 +43,19 @@ public final class GuardCore {
         /** Water plan: the cell holds only air or water (what a seal lease may fill); true when not known. */
         default boolean airOrWater() { return true; }
 
+        /** 0.23.1: for a placement: the item put down is a torch (the only placement roaming allows). */
+        default boolean torch() { return false; }
+
         /** For a placement: the cell holds only air or water, or not. */
-        static BlockInfo placing(boolean airOrWater) {
+        static BlockInfo placing(boolean airOrWater) { return placing(airOrWater, false); }
+
+        static BlockInfo placing(boolean airOrWater, boolean torch) {
             return new BlockInfo() {
                 public boolean known() { return true; }
                 public boolean hasBlockEntity() { return false; }
                 public boolean isProtectedBlock() { return false; }
                 public boolean airOrWater() { return airOrWater; }
+                public boolean torch() { return torch; }
             };
         }
 
@@ -93,6 +99,52 @@ public final class GuardCore {
     private final VetoLog log = new VetoLog();
     private volatile long tick;
     private int nextId = 1;
+
+    // ---- 0.23.1: roaming (VOCABULARY 6b) ----
+
+    /** How far round the bot a roaming job may walk and take natural blocks; how far it keeps off a base. */
+    public static final int ROAM_R = 24, BASE_KEEP_OFF = 16;
+
+    /**
+     * The roaming permission of a running explore/find with gathering on: outside the areas, within {@link #ROAM_R} of
+     * the bot ({@code at}, moved as it walks), never within {@link #BASE_KEEP_OFF} of a base it saw; walk and natural
+     * blocks (the floor still refuses built blocks and block entities), no placement except torches. Tied to the job:
+     * {@code alive} false = gone (checked on every use, so a stopped job leaves nothing behind).
+     */
+    public record Roam(String owner, String dim, int[] at, java.util.List<int[]> bases, java.util.function.BooleanSupplier alive) {}
+
+    private volatile Roam roam;
+
+    public void setRoam(Roam r) { roam = r; }
+
+    public void endRoam(String owner) {
+        Roam r = roam;
+        if (r != null && (owner == null || r.owner().equals(owner))) roam = null;
+    }
+
+    /** The live roaming permission, or null (none, or its job ended). */
+    public Roam roam() {
+        Roam r = roam;
+        if (r == null) return null;
+        boolean alive;
+        try { alive = r.alive() == null || r.alive().getAsBoolean(); } catch (RuntimeException e) { alive = false; }
+        if (!alive) { roam = null; return null; }
+        return r;
+    }
+
+    /** x y z lies within the roaming permission: same dimension, within ROAM_R of the bot, not within BASE_KEEP_OFF of a base. */
+    public static boolean roamCovers(Roam r, String dim, int x, int y, int z) {
+        if (r == null || !r.dim().equals(dim)) return false;
+        int[] a = r.at();
+        if (Math.abs(x - a[0]) > ROAM_R || Math.abs(z - a[2]) > ROAM_R || Math.abs(y - a[1]) > ROAM_R) return false;
+        for (int[] b : r.bases()) if (Math.abs(x - b[0]) <= BASE_KEEP_OFF && Math.abs(z - b[2]) <= BASE_KEEP_OFF) return false;
+        return true;
+    }
+
+    private boolean roamCoversBox(Roam r, Box b) {
+        return r != null && roamCovers(r, b.dim, b.x1, b.y1, b.z1) && roamCovers(r, b.dim, b.x2, b.y2, b.z2)
+                && roamCovers(r, b.dim, b.x1, b.y1, b.z2) && roamCovers(r, b.dim, b.x2, b.y2, b.z1);
+    }
 
     /** The effective policy: the owner's areas plus the near-me zone when it is up. */
     public Policy policy() { return policy; }
@@ -151,6 +203,17 @@ public final class GuardCore {
         if (box.allY()) return "error: a lease needs y1 and y2";
         long max = force ? MAX_FORCE_VOLUME : MAX_LEASE_VOLUME;
         if (box.volume() > max) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + max;
+        if (!policy.areaCovers(box) && !place && !force && box.volume() <= 512 && roamCoversBox(roam(), box)
+                && policy.safeTouching(box) == null) {
+            // 0.23.1: roaming: a break lease for natural blocks near the bot, outside the areas (the floor still holds)
+            String id = "L" + (nextId++);
+            Lease l = new Lease(id, owner, task, box, false, false, tick, false, false);
+            l.roam = true;
+            Map<String, Lease> m = new LinkedHashMap<>(leases);
+            m.put(id, l);
+            leases = Collections.unmodifiableMap(m);
+            return id;
+        }
         if (!policy.areaCovers(box)) {
             if (policy.areas.isEmpty()) return "error: no areas set" + (near.on() ? " and I can't see where you are (near me: " + near.radius() + " blocks)" : "");
             return "error: that box is not inside one of my areas" + (nearBox != null ? " or within " + near.radius() + " blocks of you" : "");
@@ -309,6 +372,14 @@ public final class GuardCore {
                 Lease nl = leaseAt(dim, x, y, z, place);
                 if (nl != null && nl.near) return Verdict.OK;
             }
+            // 0.23.1: a running explore/find with gathering on may walk, break under its roam lease, and place (torches only,
+            // checkUnlogged) within 24 of the bot, never near a base it saw
+            Roam ro = roam();
+            if (ro != null && roamCovers(ro, dim, x, y, z)) {
+                if (go || place) return Verdict.OK;
+                Lease rl = leaseAt(dim, x, y, z, false);
+                if (rl != null && rl.roam) return Verdict.OK;
+            }
             if (p.areas.isEmpty()) return Verdict.rule("no areas set", m);
             // water plan: a seal lease lets a block in just outside the areas (the floor above still holds)
             if (place && sealOnly(dim, x, y, z)) return Verdict.OK;
@@ -339,6 +410,13 @@ public final class GuardCore {
         }
         if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {
             return Verdict.floor("a seal only fills water or air");
+        }
+        if ("place".equals(action) && !block.torch() && policy.areaAt(dim, x, y, z) == null && !sealOnly(dim, x, y, z)) {
+            Roam ro = roam();
+            if (ro != null && roamCovers(ro, dim, x, y, z)) {
+                Lease rl = leaseAt(dim, x, y, z, true);
+                if (rl == null || !rl.seal) return Verdict.floor("roaming outside my areas I place nothing but torches");
+            }
         }
         return checkBoxes(dim, x, y, z, action);
     }

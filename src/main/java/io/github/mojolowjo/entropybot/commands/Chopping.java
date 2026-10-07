@@ -188,6 +188,7 @@ final class Chopping {
                 case "chopplant": return plant(s, r, p);
                 case "chopaxe": return axe(s, r, p);
                 case "chopaxecheck": return axeCheck(s, st, r, p);
+                case "chopgather": return gatherAfter(s, r, p);
                 default: return "unknown step " + st.type;
             }
         } catch (MineRules.BadPolicy e) {
@@ -444,6 +445,76 @@ final class Chopping {
         List<Seq.Step> add = new ArrayList<>();
         for (int[] c : rp.cells()) add.add(Clearing.placeStep(c.clone(), r.sapling, null, true));
         s.splice(s.idx + 1, add);
+        return "next";
+    }
+
+    // ---- 0.23.1: one tree while exploring outside the areas (VOCABULARY 6b) ----
+
+    /**
+     * The steps that fell the nearest tree within 12 blocks whose every log the predicate allows (the roaming permission:
+     * outside the areas, near the bot, off any base), for the explore job's own Seq; null when there is none. No replant
+     * (roaming places nothing but torches). The pickup follows; the explore job's tally step counts what came in.
+     */
+    List<Seq.Step> gatherTree(Seq s, LocalPlayer p, java.util.function.Predicate<int[]> allowed) {
+        Live w = new Live(p.clientLevel);
+        int[] me = Jobs.here(p);
+        SurfaceColumns.Source src = SurfaceExport.liveSource(p.clientLevel);
+        List<int[]> cols = new ArrayList<>();
+        int rad = 12;
+        for (int x = me[0] - rad; x <= me[0] + rad; x++)
+            for (int z = me[2] - rad; z <= me[2] + rad; z++) {
+                int y = ChopRules.logTop(src, x, z, me[1] + 24, me[1] - 12);
+                if (y != ChopRules.NONE) cols.add(new int[]{x, y, z});
+            }
+        Run r = runs.get(s);
+        Set<String> tried = r != null ? r.tried : new HashSet<>();
+        int checked = 0;
+        for (int[] c : ChopRules.order(cols, me[0], me[1], me[2])) {
+            if (checked++ >= 16) break;
+            TreeFinder.Result res = TreeFinder.find(w, c[0], c[1], c[2]);
+            if (!res.ok()) continue;
+            TreeFinder.Tree t = res.tree();
+            int[] b = t.base();
+            if (!tried.add(TreeFinder.key(b[0], b[1], b[2]))) continue;
+            boolean ok = true;
+            for (int[] l : t.logs()) if (!allowed.test(l)) { ok = false; break; }
+            if (!ok) continue;
+            if (r == null) {
+                r = new Run();
+                r.args = ChopRules.parse("trees 1");
+                r.deadline = now() + ChopRules.MAX_TICKS;
+                r.tried.addAll(tried);
+                runs.put(s, r);
+            }
+            r.tree = t;
+            r.phase = "gather";
+            r.rounds = 0;
+            r.lastLeft = t.logs().size();
+            r.brokeAny = 0;
+            LOG.info("[entropybot] explore: cutting the tree at {} ({} logs of {}) outside my areas", t.at(), t.logs().size(), t.logId());
+            List<Seq.Step> add = new ArrayList<>();
+            add.add(Seq.Step.walk(b.clone(), true));
+            add.addAll(breakSteps(r, TreeFinder.lowest(t.logs())));
+            add.add(new Seq.Step("chopgather"));
+            return add;
+        }
+        return null;
+    }
+
+    /** After a break round of a gathered tree: more rounds while its logs stand and come down, then the pickup. */
+    private String gatherAfter(Seq s, Run r, LocalPlayer p) {
+        if (r.tree == null) return "next";
+        List<int[]> left = TreeFinder.left(new Live(p.clientLevel), r.tree);
+        r.rounds++;
+        boolean progress = left.size() < r.lastLeft;
+        r.lastLeft = left.size();
+        if (!left.isEmpty() && r.rounds < ChopRules.ROUNDS && (progress || r.rounds < 3)) {
+            List<Seq.Step> add = breakSteps(r, left);
+            add.add(new Seq.Step("chopgather"));
+            s.splice(s.idx + 1, add);
+            return "next";
+        }
+        s.splice(s.idx + 1, new ArrayList<>(List.of(new Seq.Step("choppickup"))));
         return "next";
     }
 

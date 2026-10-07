@@ -247,6 +247,7 @@ final class Mining {
             case "caverestart": return caveStep(s, st, p, elapsed);
             case "explore": return exploreStep(s, p);
             case "explorescout": return scoutStep(s, p);
+            case "exploretally": return tallyStep(s, p);
             case "mineore": return mineStep(s, st, p);
             case "mineoretool": return toolGetStep(s, st, p);
             case "mineorecheck": return toolCheckStep(s, st, p);
@@ -266,7 +267,18 @@ final class Mining {
         final Set<Integer> poiIds = new HashSet<>();
         final Set<String> bases = new HashSet<>();
         ExploreRules.Target target;
+        /** 0.23.1: gathering outside the areas (explore ... gather off = false); the bot's spot for the roam permission; the bases seen. */
+        boolean gather = true;
+        final int[] at = new int[3];
+        final List<int[]> baseSpots = new java.util.concurrent.CopyOnWriteArrayList<>();
+        long gatherAt;
+        int gathers;
+        Map<String, Integer> before;
+        final Map<String, Integer> took = new LinkedHashMap<>();
     }
+
+    /** 0.23.1: at most this many gathers (a tree, a surface vein) per explore/find run, one every 10 s at most. */
+    static final int GATHER_MAX = 8, GATHER_EVERY = 200, GATHER_LOGS_BELOW = 32;
 
     /**
      * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json), inside or outside the areas (a
@@ -276,7 +288,7 @@ final class Mining {
     String explore(LocalPlayer p, String rest) {
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.DEFAULT_MINUTES);
         if (a.error() != null) return a.error();
-        return startExplore(p, a.dir(), a.minutes(), null);
+        return startExplore(p, a.dir(), a.minutes(), null, a.gather());
     }
 
     /** V1b: "find cave|<poi kind>|<biome> [minutes]": a known one answers at once; else explore until one turns up. */
@@ -292,10 +304,10 @@ final class Mining {
             }
             if (best != null) return "ok: I know a " + f.what() + ": #" + best.id() + " at " + best.x() + " " + best.y() + " " + best.z() + " (" + Math.round(Math.sqrt(bd)) + "m) - go poi " + best.id();
         }
-        return startExplore(p, null, f.minutes(), f);
+        return startExplore(p, null, f.minutes(), f, f.gather());
     }
 
-    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find) {
+    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find, boolean gather) {
         String busy = busyText();
         if (busy != null) return busy;
         try {
@@ -319,7 +331,97 @@ final class Mining {
         String r = jobs.startSeq(s, "always");
         jobs.job.holdOnFight = true;              // a fight holds the walk (the mod fights), it doesn't end it
         jobs.job.goalInside = true;               // V1b: explore and find may walk outside the areas (the position watch leaves it be)
-        return r;
+        ex.gather = gather;
+        System.arraycopy(me, 0, ex.at, 0, 3);
+        if (gather && r != null && r.startsWith("started")) {
+            // 0.23.1: the roaming permission, tied to this job (gone the moment it ends or is stopped)
+            final Jobs.Job j = jobs.job;
+            io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.setRoam(new io.github.mojolowjo.entropybot.guard.GuardCore.Roam("explore", dim(), ex.at, ex.baseSpots,
+                    () -> jobs.running() && jobs.job == j));
+        }
+        return r + (gather ? "" : " (no gathering outside my areas)");
+    }
+
+    /** 0.23.1: a gather outside the areas while exploring: a tree (when short of logs) or an exposed ore vein; null = nothing. */
+    private List<Seq.Step> gatherSteps(Seq s, ExRun ex, LocalPlayer p) {
+        String d = dim();
+        io.github.mojolowjo.entropybot.guard.GuardCore.Roam ro = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.roam();
+        if (ro == null) return null;
+        java.util.function.Predicate<int[]> ok = c -> !commands.inAreas(d, c[0], c[2])
+                && io.github.mojolowjo.entropybot.guard.GuardCore.roamCovers(ro, d, c[0], c[1], c[2]);
+        int logs = 0;
+        for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+        if (logs < GATHER_LOGS_BELOW) {
+            List<Seq.Step> t = Chopping.get().gatherTree(s, p, ok);
+            if (t != null) return t;
+        }
+        List<Pos> vein = surfaceVein(p, ok);
+        if (vein.isEmpty()) return null;
+        Pos f = vein.get(0);
+        LOG.info("[entropybot] explore: mining {} exposed ore blocks at {} {} {} outside my areas", vein.size(), f.x(), f.y(), f.z());
+        List<Seq.Step> add = new ArrayList<>();
+        add.add(Seq.Step.walk(new int[]{f.x(), f.y(), f.z()}, true));
+        add.add(Clearing.clearStep(new ClearJob.Options().only(vein).soft(true).label("mining the ore at " + f.x() + " " + f.y() + " " + f.z())));
+        return add;
+    }
+
+    /** An ore within 8 blocks that touches open sky-lit air (a surface ore) and its vein (same block, joined, 8 at most). */
+    private List<Pos> surfaceVein(LocalPlayer p, java.util.function.Predicate<int[]> ok) {
+        Level level = p.level();
+        int[] me = Jobs.here(p);
+        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+        for (int r = 1; r <= 8; r++) for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
+            for (int dy = -4; dy <= 4; dy++) {
+                q.set(me[0] + dx, me[1] + dy, me[2] + dz);
+                if (!level.isLoaded(q)) continue;
+                BlockState st = level.getBlockState(q);
+                if (!st.is(Tags.Blocks.ORES) || !ok.test(new int[]{q.getX(), q.getY(), q.getZ()}) || !skyTouching(level, q)) continue;
+                List<Pos> vein = new ArrayList<>();
+                ArrayDequeHolder.fill(level, q.immutable(), st.getBlock(), ok, vein);
+                return vein;
+            }
+        }
+        return List.of();
+    }
+
+    private static boolean skyTouching(Level level, BlockPos at) {
+        for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
+            BlockPos n = at.relative(dir);
+            if (level.getBlockState(n).isAir() && level.getBrightness(LightLayer.SKY, n) > 0) return true;
+        }
+        return false;
+    }
+
+    /** The vein's flood fill (joined blocks of one kind, at most 8). */
+    private static final class ArrayDequeHolder {
+        static void fill(Level level, BlockPos start, Block kind, java.util.function.Predicate<int[]> ok, List<Pos> out) {
+            java.util.ArrayDeque<BlockPos> todo = new java.util.ArrayDeque<>(List.of(start));
+            Set<BlockPos> seen = new HashSet<>(List.of(start));
+            while (!todo.isEmpty() && out.size() < 8) {
+                BlockPos c = todo.poll();
+                out.add(new Pos(c.getX(), c.getY(), c.getZ()));
+                for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
+                    BlockPos n = c.relative(dir);
+                    if (seen.add(n) && level.isLoaded(n) && level.getBlockState(n).is(kind) && ok.test(new int[]{n.getX(), n.getY(), n.getZ()})) todo.add(n);
+                }
+            }
+        }
+    }
+
+    static String tookText(Map<String, Integer> took) { return io.github.mojolowjo.entropybot.vocab.ExploreWords.took(took); }
+
+    /** 0.23.1: after a gather, what came into the bag goes into the run's tally (the report's "took ..."). */
+    private String tallyStep(Seq s, LocalPlayer p) {
+        ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
+        if (ex == null || ex.before == null) return "next";
+        Map<String, Integer> now = Gui.inventory(p);
+        for (Map.Entry<String, Integer> e : now.entrySet()) {
+            int gained = e.getValue() - ex.before.getOrDefault(e.getKey(), 0);
+            if (gained > 0) ex.took.merge(e.getKey(), gained, Integer::sum);
+        }
+        ex.before = null;
+        return "next";
     }
 
     /** V1b: a scan of 16 blocks round the bot (y -6..+6) for someone's base; only outside the areas. */
@@ -404,6 +506,9 @@ final class Mining {
         IBaritone b = Jobs.baritone();
         int[] me = Jobs.here(p);
         String d = dim();
+        ex.at[0] = me[0];
+        ex.at[1] = me[1];
+        ex.at[2] = me[2];
         if (now() % 20 == 0 && notes().markExplored(ExploreRules.around(d, me[0], me[2])) > 0) ex.chunks++;
         String done = now() > ex.until ? "the time is up" : null;
         // V1b find: stop when it turned up
@@ -414,7 +519,7 @@ final class Mining {
                 LOG.warn("[entropybot] find: {}", e.toString());
             }
             if (ex.found != null) {
-                s.note = ex.found;
+                s.note = ex.found + tookText(ex.took);
                 if (b != null) Jobs.cancel(b);
                 notes().flush();
                 return "next";
@@ -430,6 +535,9 @@ final class Mining {
                     List<String> around = new ArrayList<>();
                     for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) around.add(ExploreRules.key(d, (me[0] >> 4) + dx, (me[2] >> 4) + dz));
                     notes().markExplored(around);
+                    boolean known = false;
+                    for (int[] bs : ex.baseSpots) if (Math.abs(bs[0] - me[0]) <= 16 && Math.abs(bs[2] - me[2]) <= 16) { known = true; break; }
+                    if (!known) ex.baseSpots.add(me.clone());      // 0.23.1: roaming keeps 16 off it
                     if (ex.bases.add(key)) {
                         String note = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseNote(sc, me[0], me[1], me[2]);
                         LOG.info("[entropybot] explore: {}", note);
@@ -441,6 +549,30 @@ final class Mining {
                 }
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] explore base scan: {}", e.toString());
+            }
+        }
+        // 0.23.1 (VOCABULARY 6b): outside the areas, off any base, take what keeps it going: a tree, an exposed ore vein
+        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY && !commands.inAreas(d, me[0], me[2])) {
+            ex.gatherAt = now();
+            try {
+                if (!io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(baseScan(p))) {
+                    List<Seq.Step> add = gatherSteps(s, ex, p);
+                    if (add != null) {
+                        if (b != null) Jobs.cancel(b);
+                        ex.target = null;
+                        ex.gathers++;
+                        ex.before = Gui.inventory(p);
+                        add = new ArrayList<>(add);
+                        add.add(new Seq.Step("exploretally"));
+                        s.splice(s.idx, add);
+                        s.stepStart = now();
+                        s.stage = null;
+                        s.setStatus(s.label + " - gathering on the way (" + ex.gathers + ")");
+                        return "wait";
+                    }
+                }
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] explore gather: {}", e.toString());
             }
         }
         if (done == null && ex.target != null && (now() - ex.targetAt < 20 || (b != null && !Jobs.idle(b) && now() - ex.targetAt < ExploreRules.WALK_TICKS))) {
@@ -468,6 +600,8 @@ final class Mining {
             for (ExploreRules.Poi q : pois()) if (!ex.poiIds.contains(q.id())) fresh.add(q);
             s.note = ExploreRules.note(ex.chunks, now() - ex.start, done != null ? done : "nothing left to explore in reach", fresh);
             if (ex.find != null) s.note = "no " + ex.find.what().replaceFirst("^minecraft:", "") + " found (" + (done != null ? done : "nothing left in reach") + "); " + s.note;
+            s.note += tookText(ex.took);
+            io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.endRoam("explore");
             int[] base = basePos();
             if (base != null) s.splice(s.idx + 1, List.of(Seq.Step.walk(base, true)));
             notes().flush();
