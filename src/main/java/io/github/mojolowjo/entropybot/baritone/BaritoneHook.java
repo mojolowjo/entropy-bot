@@ -28,6 +28,7 @@ public final class BaritoneHook {
     static final String[] FIXED_OFF = { "chatcontrol", "chatcontrolanyway", "prefixcontrol", "exploreforblocks", "allowwaterbucketfall" };
 
     private boolean hooked, engineRegistered;
+    private final PathEventFilter pathFilter = new PathEventFilter();
     private int attempts;
     private String lastError;
 
@@ -71,7 +72,14 @@ public final class BaritoneHook {
             b.getGameEventHandler().registerEventListener(new AbstractGameEventListener() {
                 @Override
                 public void onPathEvent(PathEvent event) {
-                    try { ring.push("path", event.name(), null); } catch (RuntimeException ignored) {}
+                    try {
+                        // 0.23.1: Baritone's idle tick sends CANCELED 20 times a second: repeats dropped, a line a minute
+                        switch (pathFilter.offer(event.name(), System.currentTimeMillis())) {
+                            case PASS -> ring.push("path", event.name(), null);
+                            case SUMMARY -> ring.push("path", pathFilter.summary(), null);
+                            default -> { }
+                        }
+                    } catch (RuntimeException ignored) {}
                 }
             });
             Settings s = BaritoneAPI.getSettings();

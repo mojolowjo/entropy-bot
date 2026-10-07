@@ -272,13 +272,13 @@ final class Mining {
         final int[] at = new int[3];
         final List<int[]> baseSpots = new java.util.concurrent.CopyOnWriteArrayList<>();
         long gatherAt;
-        int gathers;
+        int gathers, gatherMisses;
         Map<String, Integer> before;
         final Map<String, Integer> took = new LinkedHashMap<>();
     }
 
-    /** 0.23.1: at most this many gathers (a tree, a surface vein) per explore/find run, one every 10 s at most. */
-    static final int GATHER_MAX = 8, GATHER_EVERY = 200, GATHER_LOGS_BELOW = 32;
+    /** 0.23.1: at most this many gathers (a tree, a surface vein) per explore/find run; a look round every 2 s while out there. */
+    static final int GATHER_MAX = 8, GATHER_EVERY = 40, GATHER_LOGS_BELOW = 32;
 
     /**
      * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json), inside or outside the areas (a
@@ -356,7 +356,10 @@ final class Mining {
             if (t != null) return t;
         }
         List<Pos> vein = surfaceVein(p, ok);
-        if (vein.isEmpty()) return null;
+        if (vein.isEmpty()) {
+            if (ex.gatherMisses++ < 3) LOG.info("[entropybot] explore: nothing to take near {} {} (logs on me {})", Jobs.here(p)[0], Jobs.here(p)[2], logs);
+            return null;
+        }
         Pos f = vein.get(0);
         LOG.info("[entropybot] explore: mining {} exposed ore blocks at {} {} {} outside my areas", vein.size(), f.x(), f.y(), f.z());
         List<Seq.Step> add = new ArrayList<>();

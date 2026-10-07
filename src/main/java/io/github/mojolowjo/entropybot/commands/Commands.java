@@ -944,7 +944,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("marker")) return Reply.now(vocab.marker(from, rest));
         if (verb.equals("places")) return Reply.now(vocab.places(rest));
         if (verb.equals("kinds")) return Reply.now(vocab.kinds(rest));
-        if (verb.equals("place")) {
+        if (verb.equals("place") && Texts.splitChain(verb + " " + rest).size() <= 1) {     // 0.23.1: "place <block> x y z then ..." is a chain
             String pl = vocab.placeInstant(from, rest, player);
             if (pl != null) return Reply.now(pl);
         }
