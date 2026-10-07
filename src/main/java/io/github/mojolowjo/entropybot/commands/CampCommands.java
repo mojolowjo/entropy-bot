@@ -252,6 +252,8 @@ final class CampCommands {
             if (!lv.getFluidState(b).isEmpty()) return new int[]{x, Integer.MIN_VALUE, z};
             BlockState below = lv.getBlockState(b.below());
             if (lv.getBlockState(b).getBlock().getDescriptionId().contains("torch")) return new int[]{x, yy, z};     // lit already (the caller says so)
+            // 0.23.1: the cell above a torch is air over a non-full block: that spot is lit, not "no ground" (live: 22 of 25)
+            if (below.getBlock().getDescriptionId().contains("torch")) return new int[]{x, yy - 1, z};
             if (lv.getBlockState(b).canBeReplaced() && !below.isAir()) {
                 if (!lv.getFluidState(b.below()).isEmpty()) return new int[]{x, Integer.MIN_VALUE, z};
                 if (below.isCollisionShapeFullBlock(lv, b.below())) return new int[]{x, yy, z};
