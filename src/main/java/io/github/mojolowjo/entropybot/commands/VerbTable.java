@@ -66,7 +66,7 @@ public final class VerbTable {
         v("fetch", "", "stocking", O, "fetch <item|kind> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32|fetch logs 16", "inv");
         v("need", "", "stocking", O, "need <item|kind> <n> | need <item>", "a standing need (the brain works toward it); without a count: what it takes and what is missing (that becomes cost <item> in 0.24)",
                 "need torch 64|need refinedstorage:basic_processor", "needs");
-        v("needs", "", "stocking", O, "needs | needs clear <item>|all", "the standing needs with have/want (the group's stock)", "needs|needs clear torch", "need <item> <n>");
+        v("needs", "", "stocking", O, "needs | needs clear <item>|all", "the standing needs with have/want (the group's stock), and the brain's need scores", "needs|needs clear torch", "need <item> <n>");
         v("goal", "", "stocking", O, "goal camp | goal stone tools | goal iron tools | goal iron <n> | goal food <n> | goal wood <n> | goal light <area>",
                 "a longer task for the brain (a fixed list for now); it says the chain that does it now", "goal iron 16|goal stone tools", "goals");
         v("goals", "", "stocking", O, "goals | goals clear <n>|all", "the goals waiting for the brain", "goals|goals clear 1", "goal <text>");
@@ -135,7 +135,7 @@ public final class VerbTable {
         v("wait", "", "jobs", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
         v("confirm", "", "jobs", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
         v("check", "", "jobs", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
-        v("why", "", "jobs", G, "why | why threats", "what I decided last and why (the autominer, the brain); why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
+        v("why", "", "jobs", G, "why | why threats", "the brain's last decision: the branch, each need's score, what was skipped (and why), the stage; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
                 "why|why threats", "status");
         v("deaths", "", "jobs", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not (5 deaths an hour park me at base)", "deaths", "resume", "deaths");
         v("resume", "", "jobs", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "status");
@@ -153,7 +153,11 @@ public final class VerbTable {
         v("scout", "", "exploring", O, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status",
                 "walk up to n blocks (64, max 256) that way inside my areas, come back and report places, ores and mobs seen", "scout north 64|scout 120 -40", "find nearest <poi kind|ore>");
         // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
-        v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain, once it is in); your next order, come or escort takes it back", "done", "status");
+        v("brain", "", "brain", O, "brain on|off|status | brain copy on|off|status", "the brain: every 2 s it scores the needs (safety, food, tools, bag, your needs and goals, copy, the idle list) and starts the best job; it whispers only when it starts one (with why), when one fails 3 times (parked 30 min), and stays within 32 of you until done; off stops its own job, yours run on; copy: chop, mine or farm what you do near you",
+                "brain on|brain status|brain copy on", "why");
+        v("idle", "", "brain", O, "idle list | idle list set <items> | idle list reset", "what the brain does when nothing is asked, in order, skipping what cannot run: restock, strip (the marked mine), cave, farm, explore (default restock, strip, cave, farm)",
+                "idle list|idle list set strip, cave", "brain on");
+        v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain may leave 32 blocks of you); your next order, come or escort takes it back", "done", "status");
         v("sleep", "", "brain", O, "sleep | sleep status | sleep auto on|off", "go to the nearest bed (or put mine down at night) and sleep until morning or stop; auto: go to bed when others sleep (the brain, default on)",
                 "sleep|sleep auto off", "status");
         v("camp", "", "brain", O, "camp here", "a camp for a night or two: area camp (24 round, neutral), place camp with a bed marker, torches, my bed when I carry one; not a base", "camp here", "sleep");

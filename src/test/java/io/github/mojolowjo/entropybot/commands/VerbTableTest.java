@@ -67,7 +67,8 @@ class VerbTableTest {
             String p = HelpCommand.answer(String.valueOf(i), true, OWNER);
             assertTrue(p.startsWith("help " + i + "/" + VerbTable.SECTIONS.size() + " " + VerbTable.SECTIONS.get(i - 1) + ": "), p);
             assertTrue(Texts.whisperParts(p).size() <= 10, "page " + i + " fits: " + Texts.whisperParts(p).size());
-            assertEquals(p, HelpCommand.answer(VerbTable.SECTIONS.get(i - 1), true, OWNER), "a page by its name");
+            if (VerbTable.of(VerbTable.SECTIONS.get(i - 1)) == null)          // B1: "brain" is a verb too; help brain is the verb, help 8 the page
+                assertEquals(p, HelpCommand.answer(VerbTable.SECTIONS.get(i - 1), true, OWNER), "a page by its name");
         }
         assertTrue(HelpCommand.answer("2", true, OWNER).contains("help 3 for digging"));
         assertTrue(HelpCommand.answer("99", true, OWNER).startsWith("there are pages 1 to 12"));

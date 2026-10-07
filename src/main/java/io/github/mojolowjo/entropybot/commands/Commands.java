@@ -59,6 +59,8 @@ public final class Commands implements Chains.Env {
     public final JobRequests requests = new JobRequests();
     private final JsonStore pmStore = new JsonStore("pm.json"), brainStore = new JsonStore("commands.json"), areaStore = new JsonStore("areas.json");
     Chains chains;
+    /** B1: the brain's game side (null until the world's stores are loaded). */
+    BrainRuntime brainRuntime;
     private PolicyCommands policy;
     /** The kubejs/bridge folder: state.json out, cmd.json in. */
     private BotFiles stateFiles;
@@ -520,6 +522,8 @@ public final class Commands implements Chains.Env {
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
+        brainRuntime = new BrainRuntime(this);                  // B1: the brain (the autominer retired into it)
+        chains.endHook = brainRuntime::chainEnded;
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);
@@ -598,8 +602,9 @@ public final class Commands implements Chains.Env {
             if (!chains.resumeChecked() && worldTicks > 200) chains.resumeRun();
             if (tick % 100 == 55 && worldTicks > 400) {
                 chains.rulesTick();
-                chains.autominerTick();
+                // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
+            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null) brainRuntime.brain.tick();     // B1: every 2 s, never throws
             if (tick % 40 == 21) {
                 try { camp.junkTick(player); } catch (RuntimeException e) { LOG.warn("[entropybot] junk: {}", e.toString()); }      // C5
             }
@@ -798,6 +803,17 @@ public final class Commands implements Chains.Env {
 
     /** auto: a line the bot sends itself (furnace pickup, corpse fetch): it skips the confirm gate, so it never cancels the owner's question. */
     Reply handle(String from, String message, boolean internal, boolean auto, Listener l) {
+        Reply r = handleOnce(from, message, internal, auto, l);
+        // B1: the owner's order wins: a "busy" because of the brain's own chain makes the brain step aside, then it runs
+        if (!internal && !auto && r != null && r.pending() == null && r.text() != null && r.text().startsWith("busy: ") && brainRuntime != null
+                && brainRuntime.brainChainRunning() && from.equalsIgnoreCase(owner())) {
+            brainRuntime.yieldToOwner(Texts.verbAndRest(message)[0]);
+            r = handleOnce(from, message, internal, auto, l);
+        }
+        return r;
+    }
+
+    private Reply handleOnce(String from, String message, boolean internal, boolean auto, Listener l) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null) return Reply.now(null);
@@ -825,6 +841,11 @@ public final class Commands implements Chains.Env {
                 raw = vr[2];
             }
         }
+        // B1 (owner's answer 4.4): with the brain on, the owner's dig / mine strip|cave / explore gets its supplies first when short
+        if (isOwner && !internal && !auto && brainRuntime != null) {
+            Reply sup = brainRuntime.ownerSupply(from, raw);
+            if (sup != null) return sup;
+        }
         if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
         if (verb.equals("check")) return Reply.now(selfCheck.command(player));
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
@@ -837,7 +858,10 @@ public final class Commands implements Chains.Env {
         // V1b: the owner's direct order lifts "done" (come, escort or any job)
         if (isOwner && !internal && !auto) vocab.unrelease(verb);
         if (verb.equals("done") || verb.equals("free")) return Reply.now(vocab.release());
-        if (verb.equals("needs")) return Reply.now(vocab.needs(player, rest));
+        if (verb.equals("needs")) {
+            String n = vocab.needs(player, rest);
+            return Reply.now(rest.isBlank() && brainRuntime != null ? n + "\n" + brainRuntime.brain.scoresLine() : n);     // B1: the brain's scores
+        }
         if (verb.equals("goal")) return Reply.now(vocab.goal(rest));
         if (verb.equals("goals")) return Reply.now(vocab.goals(rest));
         if (verb.equals("need")) {
@@ -888,9 +912,17 @@ public final class Commands implements Chains.Env {
         if (verb.equals("attack")) return Reply.now(vocab.attack(from, rest, player));     // V1b: the attack rules (C1's point key sends attack target <id>)
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
         if (verb.equals("rule") || verb.equals("rules")) return Reply.now(chains.ruleCommand(verb.equals("rules") ? "list" : rest));
-        if (verb.equals("autominer")) return Reply.now(chains.autominerCommand(rest));
+        // B1: the autominer is the brain's upkeep now ("debug autominer on|off|status" answers with the brain)
+        if (verb.equals("autominer")) {
+            String t = rest.trim().toLowerCase();
+            if (t.equals("on") || t.equals("off")) return Reply.now("that is now brain " + t + ": " + brainRuntime.brain.command(t));
+            return Reply.now("the autominer is the brain's idle list now: " + brainRuntime.brain.status());
+        }
+        if (verb.equals("brain")) return Reply.now(brainRuntime.brain.command(rest));
+        if (verb.equals("idle")) return Reply.now(brainRuntime.brain.idle(rest));
         if (verb.equals("why") && rest.trim().equalsIgnoreCase("threats")) return Reply.now(io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.why());   // B2
-        if (verb.equals("why")) return Reply.now(chains.whyCommand());
+        if (verb.equals("why")) return Reply.now(brainRuntime.brain.on() || brainRuntime.brain.lastDecision() != null || chains.autominerLastText() == null
+                ? brainRuntime.brain.why() : chains.whyCommand());
         if (verb.equals("resume")) return Reply.now(chains.resumeCommand());
         if (verb.equals("deaths") || (verb.equals("death") && rest.trim().toLowerCase().matches("^policy\\b.*"))) return Reply.now(chains.deathsCommand(rest));
         if (verb.equals("reconnect") && rest.trim().toLowerCase().matches("^(on|off)$")) return Reply.now(reconnectCommand(rest));
@@ -1460,7 +1492,7 @@ public final class Commands implements Chains.Env {
         Minecraft mc = Minecraft.getInstance();
         mc.options.keyUse.setDown(false);
         mc.options.keyShift.setDown(false);
-        return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off" + chains.holdAutominer();
+        return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off" + chains.holdAutominer() + (brainRuntime != null ? brainRuntime.brain.hold() : "");
     }
 
     // ---- C7: escort me|<player> (follow + fight for them; Reflexes/Escort do the fighting) ----
@@ -2143,6 +2175,12 @@ public final class Commands implements Chains.Env {
             if (am != null) s.add("autominer", am);
         } catch (RuntimeException e) {
             errs.add("autominer: " + e);
+        }
+        try {                                                   // B1: the brain (on, status, branch)
+            JsonObject br = brainRuntime == null ? null : brainRuntime.stateBlock();
+            if (br != null) s.add("brain", br);
+        } catch (RuntimeException e) {
+            errs.add("brain: " + e);
         }
         JsonObject pm = new JsonObject();
         pm.addProperty("listening", true);

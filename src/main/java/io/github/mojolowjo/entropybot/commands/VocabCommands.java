@@ -326,6 +326,9 @@ final class VocabCommands {
         return out;
     }
 
+    /** B1: what the group has of an item or kind (the brain scores the owner's needs from it). */
+    int haveOf(LocalPlayer p, String id) { return have(p, id); }
+
     private int have(LocalPlayer p, String id) {
         try {
             Map<String, Integer> t = fullStock(p);
@@ -376,7 +379,7 @@ final class VocabCommands {
         goals.add(o);
         b.add("goals", goals);
         c.saved();
-        return "ok: goal " + g.text() + " noted (#" + goals.size() + ") - the brain works on goals once it is in; to do it now: " + g.chain();
+        return "ok: goal " + g.text() + " noted (#" + goals.size() + ") - the brain works on goals when nothing else is asked (brain on); to do it now: " + g.chain();
     }
 
     /** "goals" | "goals clear <n>|all". */
@@ -405,7 +408,7 @@ final class VocabCommands {
         b.addProperty("released", true);
         b.addProperty("releasedAt", System.currentTimeMillis());
         c.saved();
-        return "ok: released - I may do what I want now (the brain, once it is in); your next order, come or escort takes me back";
+        return "ok: released - I may do what I want now (with brain on: further than 32 blocks from you); your next order, come or escort takes me back";
     }
 
     boolean released() {
@@ -429,7 +432,7 @@ final class VocabCommands {
         if (v != null) {
             b.addProperty("sleepAuto", v);
             c.saved();
-            return "ok: sleep auto " + (v ? "on: I go to bed when others sleep (once the brain is in)" : "off: I only sleep when you say sleep");
+            return "ok: sleep auto " + (v ? "on: I go to bed when others sleep (with brain on)" : "off: I only sleep when you say sleep");
         }
         if (r.equals("auto")) return "sleep auto is " + (!b.has("sleepAuto") || b.get("sleepAuto").getAsBoolean() ? "on" : "off") + " - sleep auto on|off";
         return null;
@@ -471,7 +474,9 @@ final class VocabCommands {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] status stage: {}", e.toString());
         }
-        return GameStage.statusPart(deaths, stage);
+        String brain = null;
+        try { brain = c.brainRuntime == null ? null : c.brainRuntime.brain.statusPart(); } catch (RuntimeException e) { LOG.warn("[entropybot] status brain: {}", e.toString()); }
+        return GameStage.statusPart(deaths, stage, brain);
     }
 
     // ---- queue ----
