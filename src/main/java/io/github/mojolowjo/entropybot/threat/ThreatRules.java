@@ -21,6 +21,8 @@ public final class ThreatRules {
     public static final double RANGED_RANGE = 16;
     public static final double TELEPORT_RANGE = 16;
     public static final double CLOSE = 3;
+    /** 0.23.2, the close rule: any hostile closer than this (3D; strictly: a zombie on the roof of a 3-high room stands exactly 4 above) or one that hit the bot in the last 5 s counts at once. */
+    public static final double CLOSE_ANY = 4;
     /** Path distance must shrink by this much a sample (1 s) to count as closing in. */
     public static final double CLOSING_STEP = 1;
     /** Mobs further than this are not sampled at all (the reflexes look at most 24). */
@@ -113,7 +115,7 @@ public final class ThreatRules {
                 || ("sight".equals(how) && aggro));                  // a ranged mob in range shoots, it needn't come
         boolean counts;
         String rule;
-        if (s.hitMe()) { counts = true; rule = "it hit me"; }
+        if (s.hitMe() || s.straight() < CLOSE_ANY) { counts = true; rule = "close"; }
         else if (creeper(s.kind()) && s.straight() <= CREEPER_ALWAYS) { counts = true; rule = "creeper within " + fmt(CREEPER_ALWAYS); }
         else if (creeper(s.kind())) {
             counts = s.straight() <= CREEPER_BAR && !Double.isNaN(reach);
@@ -130,9 +132,9 @@ public final class ThreatRules {
      * sampled yet (a new mob): counts only within {@link #CLOSE}. gridOk false (no fresh search): the old test stands.
      */
     public static boolean filter(Decision d, boolean gridOk, double straight, boolean hitMe, boolean creeper) {
-        if (hitMe || !gridOk) return true;
+        if (hitMe || !gridOk || straight < CLOSE_ANY) return true;
         if (creeper && straight <= CREEPER_ALWAYS) return true;
-        if (d == null) return straight <= CLOSE;
+        if (d == null) return false;                         // not sampled yet and beyond the close rule
         return d.counts();
     }
 }

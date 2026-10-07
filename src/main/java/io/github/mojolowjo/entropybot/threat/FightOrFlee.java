@@ -47,6 +47,18 @@ public final class FightOrFlee {
         return d * (1 - a / 25.0);
     }
 
+    /** 0.23.2: the blast a melee creeper duel should expect (a hit-and-back-off that fails at about 3 blocks). */
+    public static final double CREEPER_BLAST = 12;
+
+    /** 0.23.2: a melee duel with a lone creeper only with a big margin: health above the retreat line after that blast (armour counted) is at least the buffer. */
+    public static boolean creeperDuelOk(Me me) {
+        double margin = me.health() - me.retreatAt() - taken(CREEPER_BLAST, me.armor());
+        return margin >= Math.max(4, 0.2 * me.maxHealth());
+    }
+
+    /** 0.23.2: sprint whenever a retreat moves (vanilla needs food above 6). */
+    public static boolean sprint(boolean moving, int food) { return moving && food > 6; }
+
     public static Result assess(Me me, List<Foe> foes) {
         if (foes.isEmpty()) return new Result(Verdict.FIGHT, Double.NaN, 0, "nothing counts");
         boolean creeper = false;

@@ -371,10 +371,29 @@ public final class Reflexes {
             return;
         }
         if (reflex != Reflex.FIGHTING) escortFighting = false;
-        // a lone creeper and a sword: take it on (CreeperDuel), else run as before
-        if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil && duel.mode() != CreeperRules.Mode.FLEE
+        // 0.23.2, the owner's creeper heuristic: a sprint runs to its end (7+ blocks); a creeper within 6 starts one
+        // (already sprinting away = keep going, else one hit for the knockback, then sprint straight away)
+        if (cspr.active() && creeperSprintTick(mc, p)) return;
+        if (t != null && t.creeper && t.d <= CreeperSprint.START) {
+            startCreeperSprint(mc, p, t);
+            return;
+        }
+        // then re-evaluate beyond 6: a duel only with the bow setting, or melee with a big margin (armour and health)
+        if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil
+                && CreeperSprint.duelAfter(duel.mode(), bigCreeperMargin(mc, p))
                 && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
             startDuel(mc, p, t);
+            return;
+        }
+        // just sprinted from it and no duel: stand still facing it (the job must not walk the bot back past it)
+        if (t != null && t.creeper && t.d < CreeperSprint.WATCH && cspr.watching(now, t.e.getId())) {
+            begin(Reflex.FLEEING, mc, "keeping away from a creeper");
+            target = "creeper";
+            targetDist = t.d;
+            urgent = false;
+            engine.hold();
+            stopMoving(mc);
+            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
             return;
         }
         if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
@@ -412,6 +431,8 @@ public final class Reflexes {
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();
         duel.abort(why);
+        cspr.abort(why);
+        if (reflex == Reflex.FLEEING || reflex == Reflex.RETREATING) stopMoving(mc);     // 0.23.2: safe, stop sprinting
         if (reflex == Reflex.EATING) mc.options.keyUse.setDown(false);
         if (reflex == Reflex.FETCHING && mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) mc.player.closeContainer();
         if (reflex != Reflex.NONE) events.push("reflex", "done " + reflex.name().toLowerCase() + ": " + why, null);
@@ -538,7 +559,96 @@ public final class Reflexes {
         }
     }
 
+    // ---- 0.23.2: the creeper sprint (CreeperSprint) ----
+    private final CreeperSprint cspr = new CreeperSprint();
+
+    private void startCreeperSprint(Minecraft mc, LocalPlayer p, Threat t) {
+        if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
+        if (reflex == Reflex.FETCHING) {
+            fetchCooldownUntil = now + 200;
+            settle("interrupted by a creeper");
+        }
+        if (duel.active()) duel.abort("creeper within " + (int) CreeperSprint.START + ": sprint");
+        double ax = p.getX() - t.e.getX(), az = p.getZ() - t.e.getZ();
+        net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
+        boolean away = CreeperSprint.sprintingAway(p.isSprinting(), v.x, v.z, ax, az);
+        boolean mayHit = duel.mode() != CreeperRules.Mode.FLEE && t.d <= ReflexRules.REACH && (Hostility.mayAttack(t.e) || forcedAllows(t.e));
+        double[] esc = ThreatRuntime.INSTANCE.escape(p, t.e);
+        CreeperSprint.Act a = cspr.start(now, t.e.getId(), away, mayHit, v.x, v.z, esc[0], esc[1]);
+        reflex = Reflex.FLEEING;
+        target = "creeper";
+        targetDist = t.d;
+        urgent = true;
+        engine.hold();              // the sprint drives the keys; Baritone stands by with its goal
+        if (a == CreeperSprint.Act.HIT) {
+            holdWeapon(mc, p);
+            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+            mc.gameMode.attack(p, t.e);
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+        driveSprint(mc, p);         // the same tick: the next movement tick runs away
+        long seen = ThreatRuntime.INSTANCE.firstSeen(t.e.getId());
+        String line = "creeper at " + Math.round(t.d * 10) / 10.0 + ": " + cspr.how() + " (heading run " + (int) esc[2]
+                + (seen < 0 ? "" : ", " + (now - seen) + " ticks after it appeared") + ")";
+        events.push("reflex", line, null);
+        LOG.info("[entropybot] creeper sprint: {}", line);
+    }
+
+    /** One tick of a running sprint; false when it just ended (the caller re-evaluates). */
+    private boolean creeperSprintTick(Minecraft mc, LocalPlayer p) {
+        Entity c = mc.level.getEntity(cspr.creeperId());
+        double d = c == null || !c.isAlive() ? Double.NaN : p.distanceTo(c);
+        if (cspr.step(now, d) == CreeperSprint.Act.DONE) {
+            String why = "creeper sprint: " + cspr.endWhy() + " (" + (now - cspr.startTick()) + " ticks)";
+            LOG.info("[entropybot] {}", why);
+            settle(why);
+            return false;
+        }
+        // stuck against something: a new heading from the grid
+        if (p.horizontalCollision && now % 5 == 0) {
+            double[] esc = ThreatRuntime.INSTANCE.escape(p, c);
+            cspr.steer(esc[0], esc[1]);
+        }
+        target = "creeper";
+        targetDist = d;
+        urgent = true;
+        driveSprint(mc, p);
+        return true;
+    }
+
+    private void driveSprint(Minecraft mc, LocalPlayer p) {
+        float yaw = (float) Math.toDegrees(Math.atan2(-cspr.dirX(), cspr.dirZ()));
+        p.setYRot(yaw);
+        p.setYHeadRot(yaw);
+        mc.options.keyUp.setDown(true);
+        boolean sprint = FightOrFlee.sprint(true, p.getFoodData().getFoodLevel());
+        mc.options.keySprint.setDown(sprint);
+        if (sprint && !p.isSprinting()) p.setSprinting(true);
+        mc.options.keyJump.setDown(p.horizontalCollision && p.onGround());
+    }
+
+    /** Keys up and no sprint (a retreat or a sprint ended: safe). */
+    private static void stopMoving(Minecraft mc) {
+        mc.options.keyUp.setDown(false);
+        mc.options.keySprint.setDown(false);
+        mc.options.keyJump.setDown(false);
+        if (mc.player != null && mc.player.isSprinting()) mc.player.setSprinting(false);
+    }
+
+    private boolean bigCreeperMargin(Minecraft mc, LocalPlayer p) {
+        try {
+            return FightOrFlee.creeperDuelOk(new FightOrFlee.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue(),
+                    Hostility.weaponHit(p), 0, -1, ReflexRules.RETREAT_AT));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     private void creeper(Minecraft mc, LocalPlayer p, Threat t) {
+        if (t.d < CreeperSprint.SAFE) {         // 0.23.2: sprint, not a Baritone walk
+            startCreeperSprint(mc, p, t);
+            return;
+        }
         begin(Reflex.FLEEING, mc, "avoiding a " + t.id);
         // one escape spot for 3 seconds: picking a new one every tick makes Baritone re-plan non-stop
         if ((t.d < ReflexRules.CREEPER_RUN || now < forceFleeUntil) && now >= fleeUntil) {
@@ -549,6 +659,7 @@ public final class Reflexes {
         } else if (now < fleeUntil && fleeGoal != null && engine.mode() == EngineProcess.Mode.NONE) {
             engine.override(fleeGoal);      // a Baritone cancel (the bridge stopping a job) dropped it
         }
+        if (FightOrFlee.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
         // one that is already right here gets knocked back
         if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
             holdWeapon(mc, p);
@@ -711,6 +822,8 @@ public final class Reflexes {
         }
         // a Baritone cancel (the bridge stopping its job) dropped the goal: ask again
         if (engine.mode() == EngineProcess.Mode.NONE && retreatGoal != null) engine.override(retreatGoal);
+        // 0.23.2: every retreat sprints
+        if (FightOrFlee.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
         Threat t = nearestThreat(mc, p, true, false);     // B2 never cuts a retreat short: the old test here
         if (t != null) calmSince = now;
         if (now - calmSince >= 100 || now - retreatStart >= 1800) settle(now - calmSince >= 100 ? "nothing chasing me" : "gave up after 90 s");

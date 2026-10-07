@@ -6,9 +6,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -27,12 +24,17 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.slf4j.Logger;
 
 /**
- * B2 threat test, the game side (docs/BRAIN_PLAN.md 5.2): once a second (from the reflex tick) copies the block grid
- * around the bot and samples the hostile mobs on the game thread, then one worker thread runs the two reach searches
- * (walkers, spiders) and {@link ThreatRules#decide} per mob. The reflexes read the latest decisions through
- * {@link #counts}. Loader notes: vanilla getters only (Level.getBlockState, BlockState.getCollisionShape,
- * Mob.isAggressive, Entity.getYHeadRot, LivingEntity.hasLineOfSight, Level.getMaxLocalRawBrightness); no mixin, no Baritone.
- * Errors: counted, the first 5 logged in full then one a minute; a failed or late search falls back to the old test.
+ * B2 threat test, the game side (docs/BRAIN_PLAN.md 5.2), event-driven since 0.23.2: the block array around the bot is
+ * kept ({@link ReachCache}); block changes patch single cells (the mod's ClientLevel hook through
+ * {@code FlightRecorder.watchListener}, see EntropyBot), a box shift copies only the new slice, and a full copy runs
+ * every 5 s and on a chunk load/unload inside the box. The search runs on the game thread, coalesced: at most once a
+ * tick, only when the array is dirty or the bot changed cell, and only while hostiles are near. A mob that appears gets
+ * its reach the same tick (a read when the array is clean). Decisions ({@link ThreatRules#decide}) are re-made each
+ * second (the closing measure), on every new search and for every new mob.
+ * Loader notes: vanilla getters only (Level.getBlockState, BlockState.getCollisionShape, Mob.isAggressive,
+ * Entity.getYHeadRot, LivingEntity.hasLineOfSight, Level.getMaxLocalRawBrightness); chunk events NeoForge ChunkEvent
+ * (Fabric: ClientChunkEvents); no new mixin, no Baritone.
+ * Errors: counted, the first 5 logged in full then one a minute; while broken the fight code uses the old test.
  */
 public final class ThreatRuntime {
     private static final Logger LOG = LogUtils.getLogger();
@@ -40,163 +42,199 @@ public final class ThreatRuntime {
 
     public static final int R = 16, DOWN = 8, UP = 8;
     static final int PERIOD = 20;
-    static final long FRESH_MS = 3000;
-    static final double SLOW_COPY_MS = 4;
+    static final int FULL_TICKS = 100;
+    static final long FRESH_MS = 12_000;
     static final double OVERRUN_MS = 5;
     static final int RING = 32;
+    static final int WINDOW = 100;          // counters' rate window, ticks
 
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "entropybot-threat");
-        t.setDaemon(true);
-        t.setPriority(Thread.MIN_PRIORITY);
-        return t;
-    });
-
-    private record Job(ReachGrid grid, int bx, int by, int bz, List<ThreatRules.MobSample> mobs, Map<Integer, int[]> cells) {}
-
-    private record Out(Map<Integer, ThreatRules.Decision> decisions, int[] lit, double bfsMs, long at, ReachGrid grid, int[] walk) {}
-
-    private Future<Out> pending;
-    private long lastTick = -1000;
-    // results (game thread only, except the volatile snapshot for the state writer)
+    private final ReachCache cache = new ReachCache(2 * R + 1, DOWN + UP + 1, 2 * R + 1);
+    private Level lastLevel;
+    private boolean needFull = true;
+    private long lastFullTick = -100000, lastPeriod = -100000;
+    private volatile long lastFullMs;
     private volatile Map<Integer, ThreatRules.Decision> latest = Map.of();
     private final Map<Integer, Double> prevReach = new HashMap<>();
+    private final Map<Integer, Long> firstSeen = new HashMap<>();
     private final ArrayDeque<String> ring = new ArrayDeque<>();
     private volatile int[] litSpot;
-    private volatile Out lastOut;
-    private volatile long lastAnswerMs;
+    private long nowTick;
     // counters
-    private long copies, searches, fallbacks, errors, counted, noted, slowSkips;
-    private double copyMsSum, copyMsMax, bfsMsSum, bfsMsMax, lastCopyMs, lastBfsMs;
-    private final ArrayDeque<double[]> recent = new ArrayDeque<>();     // {copyMs, bfsMs} of the last 10
-    private int slowStreak, skipCycles, mobsNear;
+    private long newMobReads, newMobSearches, chunkFulls, errors, counted, noted;
+    private int mobsNear;
+    private long winStart = -1, wPatches, wSearches, wFulls, wSlices;
+    private volatile double patchRate, searchRate, fullRate, sliceRate;
     private long lastErrorLog;
     private String lastError;
     private volatile String verdictLine;
     private long verdictAt;
+    private boolean broken;
 
     private ThreatRuntime() {}
+
+    private static final class Src implements ReachCache.Source {
+        final Level level;
+        final BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+
+        Src(Level level) { this.level = level; }
+
+        @Override
+        public byte code(int x, int y, int z) {
+            m.set(x, y, z);
+            return ThreatRuntime.code(level, m, level.getBlockState(m));
+        }
+
+        @Override
+        public byte light(int x, int y, int z) {
+            m.set(x, y, z);
+            return (byte) level.getMaxLocalRawBrightness(m);
+        }
+    }
 
     /** Every client tick from the reflexes (game thread). hurt: the reflexes' "just hit" window. Never throws. */
     public void tick(Minecraft mc, LocalPlayer p, long tick, boolean hurt) {
         try {
-            if (tick - lastTick < PERIOD) return;
-            lastTick = tick;
-            collect();
-            if (pending != null) {                  // the last search still runs: skip this second
-                fallbacks++;
-                return;
+            nowTick = tick;
+            Level level = mc.level;
+            if (level != lastLevel) {
+                lastLevel = level;
+                needFull = true;
+                latest = Map.of();
+                prevReach.clear();
+                firstSeen.clear();
             }
-            if (skipCycles > 0) {
-                skipCycles--;
-                fallbacks++;
-                return;
-            }
-            long t0 = System.nanoTime();
-            ReachGrid g = snapshot(mc.level, p);
-            Map<Integer, int[]> cells = new HashMap<>();
-            List<ThreatRules.MobSample> mobs = sample(mc, p, hurt, cells);
-            double copyMs = (System.nanoTime() - t0) / 1e6;
-            copies++;
-            lastCopyMs = copyMs;
-            copyMsSum += copyMs;
-            copyMsMax = Math.max(copyMsMax, copyMs);
-            if (copyMs > SLOW_COPY_MS) {
-                if (++slowStreak >= 2) {
-                    skipCycles = 10;
-                    slowSkips++;
-                    slowStreak = 0;
-                    LOG.warn("[entropybot] threat: grid copy slow ({} ms twice), straight distance only for 10 s", Math.round(copyMs * 10) / 10.0);
-                }
-            } else slowStreak = 0;
-            mobsNear = mobs.size();
-            int bx = p.getBlockX() - g.ox, by = p.getBlockY() - g.oy, bz = p.getBlockZ() - g.oz;
-            Map<Integer, Double> prev = new HashMap<>(prevReach);
-            Job job = new Job(g, bx, by, bz, mobs, cells);
-            pending = worker.submit(() -> run(job, prev));
-        } catch (Throwable t) {
-            error("tick", t);
-        }
-    }
-
-    /** The worker: two searches and the decisions. */
-    private static Out run(Job j, Map<Integer, Double> prev) {
-        long t0 = System.nanoTime();
-        ReachGrid g = j.grid();
-        int[] walk = g.search(j.bx(), j.by(), j.bz(), false);
-        boolean anySpider = false;
-        for (ThreatRules.MobSample m : j.mobs()) anySpider |= ThreatRules.moveOf(m.kind()) == ThreatRules.Move.SPIDER;
-        int[] spider = anySpider ? g.search(j.bx(), j.by(), j.bz(), true) : null;
-        Map<Integer, ThreatRules.Decision> out = new HashMap<>();
-        for (ThreatRules.MobSample m : j.mobs()) {
-            int[] c = j.cells().get(m.id());
-            int pd = -2;
-            if (c != null) pd = g.distAt(ThreatRules.moveOf(m.kind()) == ThreatRules.Move.SPIDER && spider != null ? spider : walk, c[0], c[1], c[2]);
-            Double pr = prev.get(m.id());
-            ThreatRules.MobSample s = new ThreatRules.MobSample(m.id(), m.kind(), m.straight(), m.aggressive(), m.yawOff(), m.seen(), m.hitMe(),
-                    pd, pr == null ? Double.NaN : pr);
-            out.put(m.id(), ThreatRules.decide(s));
-        }
-        int[] lit = g.nearestLit(walk, FightOrFlee.LIT, FightOrFlee.LIT_MAX_DIST);
-        return new Out(out, lit, (System.nanoTime() - t0) / 1e6, System.currentTimeMillis(), g, walk);
-    }
-
-
-    /** Takes a finished search's results (game thread). */
-    private void collect() {
-        Future<Out> f = pending;
-        if (f == null || !f.isDone()) return;
-        pending = null;
-        try {
-            Out o = f.get();
-            searches++;
-            lastBfsMs = o.bfsMs();
-            bfsMsSum += o.bfsMs();
-            bfsMsMax = Math.max(bfsMsMax, o.bfsMs());
-            recent.addLast(new double[]{lastCopyMs, o.bfsMs()});
-            while (recent.size() > 10) recent.removeFirst();
+            Src src = new Src(level);
+            int ox = p.getBlockX() - R, oy = p.getBlockY() - DOWN, oz = p.getBlockZ() - R;
+            if (needFull || tick - lastFullTick >= FULL_TICKS) {
+                cache.full(src, ox, oy, oz);
+                needFull = false;
+                lastFullTick = tick;
+                lastFullMs = System.currentTimeMillis();
+            } else cache.moveTo(src, ox, oy, oz);
+            rates(tick);
+            // the hostiles near, and which are new
+            Hostility h = Hostility.get();
+            List<Entity> near = new ArrayList<>();
+            List<Entity> fresh = new ArrayList<>();
+            boolean anySpider = false;
             Map<Integer, ThreatRules.Decision> old = latest;
-            prevReach.clear();
-            for (ThreatRules.Decision d : o.decisions().values()) {
-                if (!Double.isNaN(d.reach())) prevReach.put(d.id(), d.reach());
+            for (Entity e : mc.level.entitiesForRendering()) {
+                if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
+                double d = p.distanceTo(e);
+                if (d > ThreatRules.SAMPLE_RADIUS || !h.counts(e, hurt)) continue;
+                near.add(e);
+                if (!old.containsKey(e.getId())) fresh.add(e);
+                firstSeen.putIfAbsent(e.getId(), tick);
+                anySpider |= ThreatRules.moveOf(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString()) == ThreatRules.Move.SPIDER;
+            }
+            mobsNear = near.size();
+            boolean period = tick - lastPeriod >= PERIOD;
+            if (near.isEmpty()) {
+                if (period) {
+                    lastPeriod = tick;
+                    if (!old.isEmpty()) latest = Map.of();
+                    prevReach.clear();
+                    firstSeen.clear();
+                }
+                return;
+            }
+            boolean searched = cache.ensure(p.getBlockX(), p.getBlockY(), p.getBlockZ(), anySpider);
+            if (!fresh.isEmpty()) {
+                if (searched) newMobSearches++; else newMobReads += fresh.size();
+            }
+            if (!period && !searched && fresh.isEmpty()) return;
+            // decide: all of them on a period or a new search, else only the new ones
+            List<Entity> todo = period || searched ? near : fresh;
+            Map<Integer, ThreatRules.Decision> out = new HashMap<>(period || searched ? Map.of() : old);
+            if (!period && !searched) out.putAll(old);
+            for (Entity e : todo) {
+                ThreatRules.MobSample m = sampleOf(p, e, p.distanceTo(e), h.hitMe(e));
+                boolean sp = ThreatRules.moveOf(m.kind()) == ThreatRules.Move.SPIDER;
+                int pd = cache.dist(e.getBlockX(), e.getBlockY(), e.getBlockZ(), sp);
+                Double pr = prevReach.get(e.getId());
+                ThreatRules.MobSample s = new ThreatRules.MobSample(m.id(), m.kind(), m.straight(), m.aggressive(), m.yawOff(), m.seen(), m.hitMe(),
+                        pd, pr == null ? Double.NaN : pr);
+                ThreatRules.Decision d = ThreatRules.decide(s);
+                out.put(e.getId(), d);
                 if (d.counts()) counted++; else noted++;
                 ThreatRules.Decision was = old.get(d.id());
                 if (was == null || was.counts() != d.counts() || !was.rule().equals(d.rule())) remember(d);
             }
-            latest = o.decisions();
-            litSpot = o.lit();
-            lastOut = o;
-            lastAnswerMs = o.at();
+            if (period) {
+                lastPeriod = tick;
+                prevReach.clear();
+                for (ThreatRules.Decision d : out.values()) if (!Double.isNaN(d.reach())) prevReach.put(d.id(), d.reach());
+                firstSeen.keySet().retainAll(out.keySet());
+                ReachGrid g = cache.grid();
+                int[] w = cache.walk();
+                litSpot = g == null || w == null ? null : g.nearestLit(w, FightOrFlee.LIT, FightOrFlee.LIT_MAX_DIST);
+            }
+            latest = out;
+            broken = false;
         } catch (Throwable t) {
-            fallbacks++;
-            error("search", t.getCause() != null ? t.getCause() : t);
+            broken = true;
+            error("tick", t);
+        }
+    }
+
+    /** Hostility through one small seam, so this class needs only these two calls. */
+    private static final class Hostility {
+        static final Hostility H = new Hostility();
+
+        static Hostility get() { return H; }
+
+        boolean counts(Entity e, boolean hurt) { return io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.kind(e, hurt).counts(); }
+
+        boolean hitMe(Entity e) { return io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.hitMe(e); }
+    }
+
+    private void rates(long tick) {
+        if (winStart < 0) {
+            winStart = tick;
+            wPatches = cache.patches;
+            wSearches = cache.searches;
+            wFulls = cache.fulls;
+            wSlices = cache.slices;
+            return;
+        }
+        if (tick - winStart < WINDOW) return;
+        double s = (tick - winStart) / 20.0;
+        patchRate = (cache.patches - wPatches) / s;
+        searchRate = (cache.searches - wSearches) / s;
+        fullRate = (cache.fulls - wFulls) / s;
+        sliceRate = (cache.slices - wSlices) / s;
+        winStart = tick;
+        wPatches = cache.patches;
+        wSearches = cache.searches;
+        wFulls = cache.fulls;
+        wSlices = cache.slices;
+    }
+
+    /** A block changed in the client level (game thread, the ClientLevel hook): patch its cell. Never throws. */
+    public void blockChanged(Level level, BlockPos pos, BlockState to) {
+        try {
+            if (level != lastLevel || !cache.inBox(pos.getX(), pos.getY(), pos.getZ())) return;
+            cache.patch(pos.getX(), pos.getY(), pos.getZ(), code(level, pos, to), new Src(level));
+        } catch (Throwable t) {
+            error("patch", t);
+        }
+    }
+
+    /** A chunk loaded or unloaded: inside the box, the next tick reads it all again. */
+    public void chunkChanged(int cx, int cz) {
+        try {
+            if (cache.overlapsChunk(cx, cz)) {
+                needFull = true;
+                chunkFulls++;
+            }
+        } catch (Throwable t) {
+            error("chunk", t);
         }
     }
 
     private synchronized void remember(ThreatRules.Decision d) {
         ring.addLast(java.time.LocalTime.now().withNano(0) + " #" + d.id() + " " + d.line());
         while (ring.size() > RING) ring.removeFirst();
-    }
-
-    private ReachGrid snapshot(Level level, LocalPlayer p) {
-        int ox = p.getBlockX() - R, oy = p.getBlockY() - DOWN, oz = p.getBlockZ() - R;
-        ReachGrid g = new ReachGrid(2 * R + 1, DOWN + UP + 1, 2 * R + 1, ox, oy, oz);
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int y = 0; y < g.sy; y++) for (int z = 0; z < g.sz; z++) for (int x = 0; x < g.sx; x++) {
-            m.set(ox + x, oy + y, oz + z);
-            g.codes[g.idx(x, y, z)] = code(level, m, level.getBlockState(m));
-        }
-        // light only where a mob could stand (feet free, floor below)
-        for (int y = 1; y < g.sy - 1; y++) for (int z = 0; z < g.sz; z++) for (int x = 0; x < g.sx; x++) {
-            int i = g.idx(x, y, z);
-            byte c = g.codes[i];
-            if ((c != ReachGrid.AIR && c != ReachGrid.LOW) || g.codes[g.idx(x, y + 1, z)] != ReachGrid.AIR) continue;
-            byte below = g.codes[g.idx(x, y - 1, z)];
-            if (below != ReachGrid.SOLID && c != ReachGrid.LOW) continue;
-            m.set(ox + x, oy + y, oz + z);
-            g.light[i] = (byte) level.getMaxLocalRawBrightness(m);
-        }
-        return g;
     }
 
     static byte code(Level level, BlockPos pos, BlockState s) {
@@ -211,20 +249,6 @@ public final class ThreatRuntime {
         return ReachGrid.SOLID;
     }
 
-    private List<ThreatRules.MobSample> sample(Minecraft mc, LocalPlayer p, boolean hurt, Map<Integer, int[]> cs) {
-        io.github.mojolowjo.entropybot.engine.Hostility h = io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE;
-        List<ThreatRules.MobSample> out = new ArrayList<>();
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
-            double d = p.distanceTo(e);
-            if (d > ThreatRules.SAMPLE_RADIUS || !h.kind(e, hurt).counts()) continue;
-            out.add(sampleOf(p, e, d, h.hitMe(e)));
-            cs.put(e.getId(), new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
-        }
-        return out;
-    }
-
-
     static ThreatRules.MobSample sampleOf(LocalPlayer p, Entity e, double d, boolean hitMe) {
         String id = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
         boolean aggressive = e instanceof Mob m && m.isAggressive();
@@ -237,9 +261,9 @@ public final class ThreatRuntime {
 
     // ---- what the rest of the mod reads ----
 
-    /** A fresh search answered within the last 3 s. */
+    /** The grid is fresh (a full copy within 12 s) and the last tick ran clean. */
     public boolean gridOk() {
-        return System.currentTimeMillis() - lastAnswerMs <= FRESH_MS && skipCycles == 0;
+        return !broken && cache.grid() != null && System.currentTimeMillis() - lastFullMs <= FRESH_MS;
     }
 
     public ThreatRules.Decision decision(int entityId) { return latest.get(entityId); }
@@ -251,6 +275,23 @@ public final class ThreatRuntime {
 
     /** The nearest lit standing spot found by the last search {x, y, z, moves}, or null. */
     public int[] litSpot() { return gridOk() ? litSpot : null; }
+
+    /** The tick a mob was first seen near (for the reflex timing log), or -1. */
+    public long firstSeen(int id) {
+        Long t = firstSeen.get(id);
+        return t == null ? -1 : t;
+    }
+
+    /** 0.23.2: the escape heading from a creeper, from the grid ({dirX, dirZ, run}; run -1 = no grid, straight away). */
+    public double[] escape(LocalPlayer p, Entity from) {
+        double ax = p.getX() - from.getX(), az = p.getZ() - from.getZ();
+        try {
+            return EscapeDir.choose(gridOk() ? cache.grid() : null, p.getBlockX(), p.getBlockY(), p.getBlockZ(), ax, az);
+        } catch (RuntimeException e) {
+            error("escape", e);
+            return EscapeDir.choose(null, 0, 0, 0, ax, az);
+        }
+    }
 
     public void verdict(String line) {
         verdictLine = line;
@@ -277,15 +318,16 @@ public final class ThreatRuntime {
         return b.toString();
     }
 
-    /** "debug threats x y z": the last search at one block (a mob standing there). */
+    /** "debug threats x y z": the current array and search at one block (a mob standing there). */
     public String probe(int x, int y, int z) {
-        Out o = lastOut;
-        if (o == null) return "no search yet";
-        ReachGrid g = o.grid();
-        int d = g.distAt(o.walk(), x, y, z);
+        ReachGrid g = cache.grid();
+        int[] w = cache.walk();
+        if (g == null || w == null) return "no search yet";
+        int d = g.distAt(w, x, y, z);
         int lx = x - g.ox, ly = y - g.oy, lz = z - g.oz;
-        if (!g.in(lx, ly, lz)) return x + " " + y + " " + z + ": outside the last grid (origin " + g.ox + " " + g.oy + " " + g.oz + ")";
-        StringBuilder b = new StringBuilder(x + " " + y + " " + z + ": walk " + (d < 0 ? "no path" : d + " moves") + " | column");
+        if (!g.in(lx, ly, lz)) return x + " " + y + " " + z + ": outside the grid (origin " + g.ox + " " + g.oy + " " + g.oz + ")";
+        StringBuilder b = new StringBuilder(x + " " + y + " " + z + ": walk " + (d < 0 ? "no path" : d + " moves")
+                + (cache.dirty() ? " (array changed since the search)" : "") + " | column");
         for (int yy = Math.max(0, ly - 2); yy <= Math.min(g.sy - 1, ly + 2); yy++)
             b.append(" ").append(y + yy - ly).append("=").append("ASTLWl".charAt(g.codes[g.idx(lx, yy, lz)])).append(g.walkable(lx, yy, lz) ? "*" : "");
         return b.append(" (A air, S solid, T fence/wall, L lava, W water, l low; * = a mob stands there)").toString();
@@ -293,21 +335,15 @@ public final class ThreatRuntime {
 
     /** "debug threats": the counters. */
     public String debug() {
-        double avg = recentAvg();
         return "threat test: " + (gridOk() ? "grid ok" : "fallback") + ", grid " + (2 * R + 1) + "x" + (DOWN + UP + 1) + "x" + (2 * R + 1)
-                + " | copies " + copies + " (last " + r1(lastCopyMs) + " ms, avg " + r1(copies == 0 ? 0 : copyMsSum / copies) + ", max " + r1(copyMsMax) + ")"
-                + " | searches " + searches + " (last " + r1(lastBfsMs) + " ms, avg " + r1(searches == 0 ? 0 : bfsMsSum / searches) + ", max " + r1(bfsMsMax) + ")"
-                + " | per second now " + r1(avg) + " ms | mobs sampled " + mobsNear + " | counted " + counted + ", noted " + noted
-                + " | fallbacks " + fallbacks + ", slow skips " + slowSkips + ", errors " + errors
+                + " | per second (last 5 s): patches " + r1(patchRate) + ", searches " + r1(searchRate) + ", slice copies " + r1(sliceRate)
+                + ", full refreshes " + r1(fullRate)
+                + " | last search " + r1(cache.lastSearchMs) + " ms | totals: patches " + cache.patches + ", searches " + cache.searches
+                + ", full refreshes " + cache.fulls + " (" + chunkFulls + " for chunk loads), slices " + cache.slices + " (" + cache.sliceCells + " cells)"
+                + " | new mobs: " + newMobReads + " answered by a read, " + newMobSearches + " bursts needed a search"
+                + " | mobs near " + mobsNear + " | counted " + counted + ", noted " + noted + " | errors " + errors
                 + (lastError != null ? " (last: " + lastError + ")" : "")
-                + " | last answer " + (lastAnswerMs == 0 ? "never" : (System.currentTimeMillis() - lastAnswerMs) / 1000 + " s ago");
-    }
-
-    private double recentAvg() {
-        if (recent.isEmpty()) return 0;
-        double s = 0;
-        for (double[] r : recent) s += r[0] + r[1];
-        return s / recent.size();
+                + " | last full copy " + (lastFullMs == 0 ? "never" : (System.currentTimeMillis() - lastFullMs) / 1000 + " s ago");
     }
 
     static double r1(double d) { return Math.round(d * 100) / 100.0; }
@@ -315,10 +351,9 @@ public final class ThreatRuntime {
     /** For "check": {key, line, fix} findings. */
     public List<String[]> findings() {
         List<String[]> f = new ArrayList<>();
-        double avg = recentAvg();
-        if (avg > OVERRUN_MS) f.add(new String[]{"threatslow", "the threat test takes " + r1(avg) + " ms a second (over " + (int) OVERRUN_MS + ")", "debug threats"});
-        if (mobsNear > 0 && copies > 0 && System.currentTimeMillis() - lastAnswerMs > 10_000)
-            f.add(new String[]{"threatworker", "the threat search hasn't answered for 10 s with mobs near (the fight code uses straight distance)", "debug threats; the game log has [entropybot] threat lines"});
+        if (cache.lastSearchMs > OVERRUN_MS) f.add(new String[]{"threatslow", "the threat search took " + r1(cache.lastSearchMs) + " ms (over " + (int) OVERRUN_MS + ")", "debug threats"});
+        if (mobsNear > 0 && cache.fulls > 0 && System.currentTimeMillis() - lastFullMs > 15_000)
+            f.add(new String[]{"threatworker", "the threat grid hasn't refreshed for 15 s with mobs near (the fight code uses straight distance)", "debug threats; the game log has [entropybot] threat lines"});
         return f;
     }
 
@@ -326,7 +361,8 @@ public final class ThreatRuntime {
     public com.google.gson.JsonObject status() {
         com.google.gson.JsonObject o = new com.google.gson.JsonObject();
         o.addProperty("grid", gridOk() ? "ok" : "fallback");
-        o.addProperty("ms", r1(recentAvg()));
+        o.addProperty("ms", r1(cache.lastSearchMs));
+        o.addProperty("searchesPerS", r1(searchRate));
         o.addProperty("errors", errors);
         return o;
     }

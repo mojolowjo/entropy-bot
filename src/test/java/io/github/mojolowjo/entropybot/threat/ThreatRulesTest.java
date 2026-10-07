@@ -19,13 +19,13 @@ class ThreatRulesTest {
     void eachCheckAloneFails() {
         assertEquals("not aggro", ThreatRules.decide(s("minecraft:zombie", 6, false, 0, true, false, 7, 9)).rule());
         assertEquals("not aggro", ThreatRules.decide(s("minecraft:zombie", 6, true, 80, true, false, 7, 9)).rule(), "looking away");
-        assertEquals("can't reach me", ThreatRules.decide(s("minecraft:zombie", 4, true, 0, true, false, -1, Double.NaN)).rule());
+        assertEquals("can't reach me", ThreatRules.decide(s("minecraft:zombie", 5, true, 0, true, false, -1, Double.NaN)).rule());
         assertEquals("not closing in", ThreatRules.decide(s("minecraft:zombie", 6, true, 0, true, false, 7, 7)).rule());
     }
 
     @Test
     void theRoofZombieIsNoted() {
-        ThreatRules.Decision d = ThreatRules.decide(s("minecraft:zombie", 4, true, 0, false, false, -1, Double.NaN));
+        ThreatRules.Decision d = ThreatRules.decide(s("minecraft:zombie", 5, true, 0, false, false, -1, Double.NaN));
         assertFalse(d.counts());
         assertTrue(d.line().contains("no path"), d.line());
     }
@@ -55,13 +55,18 @@ class ThreatRulesTest {
     @Test
     void safetyInvariant_hitsAndCloseCreepersAlwaysCount() {
         assertTrue(ThreatRules.decide(s("minecraft:zombie", 4, false, 180, false, true, -1, Double.NaN)).counts(), "it hit me");
+        assertEquals("close", ThreatRules.decide(s("minecraft:zombie", 8, false, 180, false, true, -1, Double.NaN)).rule(), "a hit: close, at once");
+        assertEquals("close", ThreatRules.decide(s("minecraft:zombie", 3.9, false, 180, false, false, -1, Double.NaN)).rule(), "within 4, no path, not aggro");
+        assertEquals("not aggro", ThreatRules.decide(s("minecraft:zombie", 4.1, false, 180, false, false, -1, Double.NaN)).rule());
         assertTrue(ThreatRules.decide(s("minecraft:creeper", 5, false, 180, false, false, -1, Double.NaN)).counts(), "creeper within 6");
         assertTrue(ThreatRules.filter(null, true, 10, true, false));
         assertTrue(ThreatRules.filter(null, true, 5, false, true));
-        ThreatRules.Decision noted = ThreatRules.decide(s("minecraft:zombie", 4, true, 0, false, false, -1, Double.NaN));
+        ThreatRules.Decision noted = ThreatRules.decide(s("minecraft:zombie", 5, true, 0, false, false, -1, Double.NaN));
         assertTrue(ThreatRules.filter(noted, true, 4, true, false), "a noted mob that hits counts");
         assertTrue(ThreatRules.filter(noted, false, 4, false, false), "no fresh grid: the old test stands");
-        assertFalse(ThreatRules.filter(noted, true, 4, false, false));
+        assertFalse(ThreatRules.filter(noted, true, 4.5, false, false));
+        assertTrue(ThreatRules.filter(noted, true, 3.9, false, false), "the close rule: within 4 counts at once");
+        assertFalse(ThreatRules.filter(noted, true, 4.0, false, false), "a zombie on a 3-high roof stands exactly 4 above: not close");
         assertFalse(ThreatRules.filter(null, true, 6, false, false), "not sampled yet and not right here");
         assertTrue(ThreatRules.filter(null, true, 2, false, false), "not sampled yet but right here");
     }
