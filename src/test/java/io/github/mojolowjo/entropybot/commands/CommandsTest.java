@@ -33,11 +33,11 @@ class CommandsTest {
     @Test
     void guestsGetTheReadOnlySet() {
         assertNull(Texts.guestRefusal("come", "", "come", "owner"));
-        assertNull(Texts.guestRefusal("routine", "show night", "routine show night", "owner"));
+        assertNotNull(Texts.guestRefusal("routine", "show night", "routine show night", "owner"), "V1b: routines are the owner's");
         assertNull(Texts.guestRefusal("area", "list", "area list", "owner"));
         assertNotNull(Texts.guestRefusal("area", "add x here 5", "area add x here 5", "owner"));
         assertEquals("sorry, only owner can start chains", Texts.guestRefusal("come", "", "come then stop", "owner"));
-        assertEquals("sorry, only owner can set the preferred ores", Texts.guestRefusal("ores", "prefer iron", "ores prefer iron", "owner"));
+        assertNotNull(Texts.guestRefusal("ores", "prefer iron", "ores prefer iron", "owner"));
         assertTrue(Texts.guestRefusal("dig", "1 2 3 4 5 6", "dig 1 2 3 4 5 6", "owner").startsWith("sorry, only owner can use \"dig\""));
     }
 

@@ -107,7 +107,7 @@ class AutominerNightTest {
         assertEquals("autominer is on - last: 2m ago: mine strip any 32 because my mine at 1 2 3 is ready -> " + longResult, f.chains.autominerCommand(""));
         JsonObject st = f.chains.autominerState();
         assertTrue(st.get("on").getAsBoolean() && st.get("last").getAsString().endsWith(longResult), st.toString());
-        assertNull(Texts.guestRefusal("autominer", "status", "autominer status", "owner"), "a guest may ask");
+        assertNotNull(Texts.guestRefusal("autominer", "status", "autominer status", "owner"), "V1b: autominer is under debug, the owner's");
     }
 
     @Test

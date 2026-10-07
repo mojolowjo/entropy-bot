@@ -44,12 +44,12 @@ public final class PointRules {
             if (h.player() || h.pet()) return Result.no("I won't point the bot at players or pets");
             if (h.villager()) return Result.no("I won't point the bot at villagers");
             if (h.item()) return Result.cmd("goto " + at);                    // C6 adds a real pickup
-            if (h.monster()) return Result.cmd("attack " + h.entityId());
-            return Result.no("that " + shortId(h.id()) + " is no monster - the bot only attacks monsters");
+            // 0.2.2 (V1b): the bot's attack rules decide (a passive mob asks for confirm there); the point key only names it
+            return Result.cmd("attack target " + h.entityId());
         }
         if (h.container()) return Result.cmd("open " + at);
         if (h.ore() || h.id().endsWith("_ore")) return Result.cmd("mine " + bare(h.id()) + " " + Math.max(1, mineCount));
-        if (h.log()) return Result.cmd("chop " + Math.max(1, chopCount) + " " + bare(h.id()));
+        if (h.log()) return Result.cmd("cut " + Math.max(1, chopCount) + " " + bare(h.id()));
         return Result.cmd("goto " + h.x() + " " + (h.y() + 1) + " " + h.z());
     }
 

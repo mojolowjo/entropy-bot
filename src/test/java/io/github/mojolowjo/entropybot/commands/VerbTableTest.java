@@ -22,10 +22,10 @@ class VerbTableTest {
     @Test
     void coversEveryBuiltinVerb() {
         for (String v : Texts.BUILTIN_VERBS) assertNotNull(VerbTable.of(v), "not in the verb table: " + v);
-        for (String v : List.of("recorder", "debug", "mouse", "check", "confirm")) assertNotNull(VerbTable.of(v), v);
+        for (String v : List.of("debug", "check", "confirm", "cut", "dismiss")) assertNotNull(VerbTable.of(v), v);
         assertTrue(VerbTable.of("dig").usage().contains("[floor [block]]"), "dig's floor option");
         assertTrue(VerbTable.of("dig").usage().contains("[water [large]]"), "dig's water option (water plan)");
-        assertEquals("help", VerbTable.of("?").name());
+        assertNull(VerbTable.of("?"), "V1b: no aliases but done|free, routine|routines, rule|rules");
         assertEquals("routine", VerbTable.of("ROUTINES").name());
     }
 
@@ -62,15 +62,15 @@ class VerbTableTest {
     @Test
     void pagesAndIndex() {
         String idx = HelpCommand.answer("", true, OWNER);
-        assertTrue(idx.startsWith("help <page>: 1 moving, 2 chests"), idx);
+        assertTrue(idx.startsWith("help <page>: 1 space, 2 stocking"), idx);
         for (int i = 1; i <= VerbTable.SECTIONS.size(); i++) {
             String p = HelpCommand.answer(String.valueOf(i), true, OWNER);
             assertTrue(p.startsWith("help " + i + "/" + VerbTable.SECTIONS.size() + " " + VerbTable.SECTIONS.get(i - 1) + ": "), p);
             assertTrue(Texts.whisperParts(p).size() <= 10, "page " + i + " fits: " + Texts.whisperParts(p).size());
             assertEquals(p, HelpCommand.answer(VerbTable.SECTIONS.get(i - 1), true, OWNER), "a page by its name");
         }
-        assertTrue(HelpCommand.answer("2", true, OWNER).contains("help 3 for crafting"));
-        assertTrue(HelpCommand.answer("99", true, OWNER).startsWith("there are pages 1 to 8"));
+        assertTrue(HelpCommand.answer("2", true, OWNER).contains("help 3 for digging"));
+        assertTrue(HelpCommand.answer("99", true, OWNER).startsWith("there are pages 1 to 12"));
         assertTrue(HelpCommand.answer("0", true, OWNER).startsWith("there are pages"));
         assertTrue(HelpCommand.answer("123456789012", true, OWNER).startsWith("there are pages"));
         String all = HelpCommand.answer("all", true, OWNER);
@@ -122,9 +122,9 @@ class VerbTableTest {
     @Test
     void suggestions() {
         assertEquals("mine", VerbTable.suggest("minee"));
-        assertEquals("stripmine", VerbTable.suggest("stripmin"));
+        assertEquals("explore", VerbTable.suggest("explor"));
         assertEquals("deposit", VerbTable.suggest("deposti"));
-        assertEquals("autominer", VerbTable.suggest("autom"));
+        assertEquals("attack", VerbTable.suggest("attak"));
         assertNull(VerbTable.suggest("mine"), "a known word needs no suggestion");
         assertNull(VerbTable.suggest("xyzzyq"));
         assertNull(VerbTable.suggest(""));

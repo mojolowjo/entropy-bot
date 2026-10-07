@@ -257,31 +257,134 @@ final class Mining {
     // ==== explore ====
 
     static final class ExRun {
-        long until, start, targetAt;
-        int chunks;
+        long until, start, targetAt, scanAt;
+        int chunks, sx, sz;
+        String dir;
+        /** V1b find: what to look for (null: a plain explore). */
+        io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find;
+        String found;
         final Set<Integer> poiIds = new HashSet<>();
+        final Set<String> bases = new HashSet<>();
         ExploreRules.Target target;
     }
 
-    /** "explore [minutes]": unvisited land inside the areas, then home; the report names the new points of interest. */
+    /**
+     * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json), inside or outside the areas (a
+     * walk lease: explore may leave them, never into a safe area), then home; someone's base out there is kept off and
+     * noted. The report names the new points of interest.
+     */
     String explore(LocalPlayer p, String rest) {
-        int minutes = ExploreRules.minutes(rest);
+        io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.DEFAULT_MINUTES);
+        if (a.error() != null) return a.error();
+        return startExplore(p, a.dir(), a.minutes(), null);
+    }
+
+    /** V1b: "find cave|<poi kind>|<biome> [minutes]": a known one answers at once; else explore until one turns up. */
+    String find(LocalPlayer p, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find f) {
+        if (f.kind() == io.github.mojolowjo.entropybot.vocab.ExploreWords.FindKind.POI || f.kind() == io.github.mojolowjo.entropybot.vocab.ExploreWords.FindKind.CAVE) {
+            int[] me = Jobs.here(p);
+            ExploreRules.Poi best = null;
+            long bd = Long.MAX_VALUE;
+            for (ExploreRules.Poi q : pois()) {
+                if (!q.kind().equals(f.what())) continue;
+                long dx = q.x() - me[0], dz = q.z() - me[2], d = dx * dx + dz * dz;
+                if (d < bd) { bd = d; best = q; }
+            }
+            if (best != null) return "ok: I know a " + f.what() + ": #" + best.id() + " at " + best.x() + " " + best.y() + " " + best.z() + " (" + Math.round(Math.sqrt(bd)) + "m) - go poi " + best.id();
+        }
+        return startExplore(p, null, f.minutes(), f);
+    }
+
+    private String startExplore(LocalPlayer p, String dir, int minutes, io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find) {
         String busy = busyText();
         if (busy != null) return busy;
         try {
-            if (boxes(policy(), "areas").isEmpty()) return ExploreRules.NO_AREAS + PolicyCommands.AREA_HINT;
+            policy();
         } catch (MineRules.BadPolicy e) {
             return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't explore");
         }
         ExRun ex = new ExRun();
         ex.until = now() + minutes * 1200L;
         ex.start = now();
+        ex.dir = dir;
+        ex.find = find;
+        int[] me = Jobs.here(p);
+        ex.sx = me[0] >> 4;
+        ex.sz = me[2] >> 4;
         for (ExploreRules.Poi q : pois()) ex.poiIds.add(q.id());
-        Seq s = new Seq(jobs, storage, "exploring for " + minutes + " min", List.of(new Seq.Step("explore")), "always");
+        String label = find != null ? "looking for a " + find.what().replaceFirst("^minecraft:", "") + " (" + minutes + " min at most)"
+                : "exploring " + (dir != null ? dir + " " : "") + "for " + minutes + " min";
+        Seq s = new Seq(jobs, storage, label, List.of(new Seq.Step("explore")), "always");
         runs.put(s, ex);
         String r = jobs.startSeq(s, "always");
         jobs.job.holdOnFight = true;              // a fight holds the walk (the mod fights), it doesn't end it
+        jobs.job.goalInside = true;               // V1b: explore and find may walk outside the areas (the position watch leaves it be)
         return r;
+    }
+
+    /** V1b: a scan of 16 blocks round the bot (y -6..+6) for someone's base; only outside the areas. */
+    private io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan baseScan(LocalPlayer p) {
+        Level level = p.level();
+        int[] me = Jobs.here(p);
+        int built = 0, be = 0, named = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_R;
+        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+        io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
+        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -6; dy <= 6; dy++) {
+            q.set(me[0] + dx, me[1] + dy, me[2] + dz);
+            if (!level.isLoaded(q)) continue;
+            BlockState st = level.getBlockState(q);
+            if (st.isAir()) continue;
+            if (level.getBlockEntity(q) != null) be++;
+            else if (g.isProtectedBlock(st.getBlock())) built++;
+        }
+        for (net.minecraft.world.entity.Entity e : level.getEntities(p, p.getBoundingBox().inflate(r))) {
+            if (!(e instanceof net.minecraft.world.entity.player.Player) && e.hasCustomName() && e.getCustomName() != null
+                    && io.github.mojolowjo.entropybot.vocab.AttackRules.isName(e.getCustomName().getString())) named++;
+        }
+        return new io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan(built, be, named);
+    }
+
+    /** V1b find: dark air below the surface within 8 blocks (a cave under the bot). */
+    private int darkAirBelow(LocalPlayer p) {
+        Level level = p.level();
+        int[] me = Jobs.here(p);
+        int n = 0;
+        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+        for (int dx = -8; dx <= 8; dx += 2) for (int dz = -8; dz <= 8; dz += 2) {
+            int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, me[0] + dx, me[2] + dz);
+            for (int y = top - 4; y >= Math.max(level.getMinBuildHeight(), top - 40); y--) {
+                q.set(me[0] + dx, y, me[2] + dz);
+                if (level.isLoaded(q) && level.getBlockState(q).isAir() && level.getBrightness(LightLayer.SKY, q) == 0) n++;
+            }
+        }
+        return n;
+    }
+
+    /** V1b find: did it turn up (a new POI of the kind, the biome under the bot, a cave)? The found text, or null. */
+    private String findCheck(ExRun ex, LocalPlayer p) {
+        io.github.mojolowjo.entropybot.vocab.ExploreWords.Find f = ex.find;
+        int[] me = Jobs.here(p);
+        switch (f.kind()) {
+            case POI -> {
+                for (ExploreRules.Poi q : pois()) if (q.kind().equals(f.what()) && !ex.poiIds.contains(q.id()))
+                    return "found a " + f.what() + ": #" + q.id() + " at " + q.x() + " " + q.y() + " " + q.z() + " (go poi " + q.id() + ")";
+            }
+            case BIOME -> {
+                String b = p.level().getBiome(new BlockPos(me[0], me[1], me[2])).unwrapKey().map(k -> k.location().toString()).orElse("");
+                if (b.equals(f.what())) {
+                    var poi = core.pois.saw("biome " + f.what().replaceFirst("^minecraft:", ""), me[0], me[1], me[2], dim(), System.currentTimeMillis(), now(), null);
+                    return "found " + f.what().replaceFirst("^minecraft:", "") + " at " + me[0] + " " + me[1] + " " + me[2] + (poi != null ? " (poi #" + poi.id() + ")" : "");
+                }
+            }
+            case CAVE -> {
+                if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isCave(darkAirBelow(p))) {
+                    var poi = core.pois.saw("cave", me[0], me[1], me[2], dim(), System.currentTimeMillis(), now(), null);
+                    return "found a cave under " + me[0] + " " + me[1] + " " + me[2] + (poi != null ? " (poi #" + poi.id() + "; mine cave <ores> there)" : "");
+                }
+            }
+            default -> { }
+        }
+        return null;
     }
 
     private List<ExploreRules.Poi> pois() {
@@ -303,17 +406,68 @@ final class Mining {
         String d = dim();
         if (now() % 20 == 0 && notes().markExplored(ExploreRules.around(d, me[0], me[2])) > 0) ex.chunks++;
         String done = now() > ex.until ? "the time is up" : null;
+        // V1b find: stop when it turned up
+        if (ex.find != null && done == null && now() % 20 == 5) {
+            try {
+                ex.found = findCheck(ex, p);
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] find: {}", e.toString());
+            }
+            if (ex.found != null) {
+                s.note = ex.found;
+                if (b != null) Jobs.cancel(b);
+                notes().flush();
+                return "next";
+            }
+        }
+        // V1b: outside the areas, someone's base within 16: keep off (mark its chunks seen), note it once, walk elsewhere
+        if (done == null && now() - ex.scanAt >= 100 && !commands.inAreas(d, me[0], me[2])) {
+            ex.scanAt = now();
+            try {
+                io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc = baseScan(p);
+                if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc)) {
+                    String key = (me[0] >> 5) + " " + (me[2] >> 5);
+                    List<String> around = new ArrayList<>();
+                    for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) around.add(ExploreRules.key(d, (me[0] >> 4) + dx, (me[2] >> 4) + dz));
+                    notes().markExplored(around);
+                    if (ex.bases.add(key)) {
+                        String note = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseNote(sc, me[0], me[1], me[2]);
+                        LOG.info("[entropybot] explore: {}", note);
+                        commands.noteSafeCandidate(d, me, sc);
+                        commands.whisper(commands.owner(), note);
+                    }
+                    ex.target = null;
+                    if (b != null) Jobs.cancel(b);
+                }
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] explore base scan: {}", e.toString());
+            }
+        }
         if (done == null && ex.target != null && (now() - ex.targetAt < 20 || (b != null && !Jobs.idle(b) && now() - ex.targetAt < ExploreRules.WALK_TICKS))) {
             s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");
             return "wait";
         }
         // didn't get there (water, cliffs): give that chunk up
         if (ex.target != null && !ExploreRules.arrived(me[0], me[2], ex.target)) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
-        ex.target = done != null ? null : ExploreRules.target(d, me[0], me[1], me[2], land(d), null);
+        ex.target = null;
+        if (done == null) {
+            // V1b: the nearest never-seen chunk (that way, with a direction), inside or outside the areas; never a refused spot
+            final int y = me[1];
+            int[] c = io.github.mojolowjo.entropybot.vocab.ExploreWords.next(me[0] >> 4, me[2] >> 4, ex.sx, ex.sz, ex.dir,
+                    (cx, cz) -> notes().explored(ExploreRules.key(d, cx, cz)),
+                    (cx, cz) -> {
+                        String why = io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"),
+                                commands.fenceOn(), io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.EXPLORE);
+                        if (why != null) notes().markExplored(List.of(ExploreRules.key(d, cx, cz)));
+                        return why != null;
+                    });
+            if (c != null) ex.target = new ExploreRules.Target((c[0] << 4) + 8, (c[1] << 4) + 8);
+        }
         if (ex.target == null) {
             List<ExploreRules.Poi> fresh = new ArrayList<>();
             for (ExploreRules.Poi q : pois()) if (!ex.poiIds.contains(q.id())) fresh.add(q);
             s.note = ExploreRules.note(ex.chunks, now() - ex.start, done != null ? done : "nothing left to explore in reach", fresh);
+            if (ex.find != null) s.note = "no " + ex.find.what().replaceFirst("^minecraft:", "") + " found (" + (done != null ? done : "nothing left in reach") + "); " + s.note;
             int[] base = basePos();
             if (base != null) s.splice(s.idx + 1, List.of(Seq.Step.walk(base, true)));
             notes().flush();

@@ -38,9 +38,11 @@ final class QuickMenu extends Screen {
         entries.put("stop", "stop");
         entries.put("deposit", "deposit");
         entries.put("eat", "eat");
-        entries.put("guard me", "guard me");
-        entries.put("give me food", "give me food");
-        entries.put("unload", "unload");
+        entries.put("escort me", "escort");                  // 0.2.2 (V1b): escort until dismiss
+        entries.put("dismiss", "dismiss");
+        entries.put("cut 16 logs", "cut 16 logs");
+        entries.put("done (free time)", "done");
+        entries.put("fetch food", "fetch food 8");
         entries.put("scan base", "scan base");
         entries.put("status", "status");
         ItemStack held = minecraft != null && minecraft.player != null ? minecraft.player.getMainHandItem() : ItemStack.EMPTY;

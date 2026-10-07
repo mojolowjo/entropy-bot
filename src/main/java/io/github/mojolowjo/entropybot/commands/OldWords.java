@@ -96,6 +96,20 @@ public final class OldWords {
      * a chain is checked; the first old one answers. The V1a words (area, protect, guard, zone) answer in their own verbs.
      */
     public static String removedAnswer(String verb, String rest, String raw) {
+        String v = verb == null ? "" : verb.toLowerCase();
+        String inner = null;          // a chain inside repeat, routine save, rule ... do
+        String r0 = rest == null ? "" : rest.trim();
+        if (v.equals("repeat")) inner = r0.replaceFirst("(?i)^(\\d+|forever)\\s+", "");
+        else if ((v.equals("routine") || v.equals("routines")) && r0.toLowerCase().startsWith("save ")) inner = r0.replaceFirst("(?i)^save\\s+\\S+\\s*", "");
+        else if ((v.equals("rule") || v.equals("rules")) && r0.toLowerCase().contains(" do ")) inner = r0.substring(r0.toLowerCase().indexOf(" do ") + 4);
+        if (inner != null) {
+            for (String s : Texts.splitChain(inner)) {
+                String[] vr = Texts.verbAndRest(s);
+                String h = v1b(vr[0], vr[1]);
+                if (h != null) return h + " (in: " + s + ")";
+            }
+            return null;
+        }
         List<String> steps = Texts.splitChain(raw == null ? "" : raw);
         if (steps.size() <= 1) return v1b(verb, rest);
         for (String s : steps) {
@@ -106,14 +120,61 @@ public final class OldWords {
         return null;
     }
 
-    /** The V1b hint for one step, or null. */
+    /** V1b: the plumbing verbs that left the surface; each still runs after the word debug ("debug autominer on"). */
+    public static final java.util.Set<String> DEBUG_VERBS = java.util.Set.of("b", "memory", "watch", "recorder", "mouse", "route", "autominer", "why", "deaths",
+            "resume", "death", "corpse", "reconnect", "say", "twerk", "spawn", "sethome", "trust", "untrust", "use", "hold", "give", "carry", "unload", "restock",
+            "caves", "ores", "poi");
+
+    /** V1b: every word that left the surface (0.22.2); it answers with its new form. The hints go at 0.24.0. */
+    public static final java.util.Set<String> REMOVED;
+
+    static {
+        java.util.Set<String> r = new java.util.TreeSet<>(DEBUG_VERBS);
+        r.addAll(List.of("mark", "setbase", "forget", "base", "stripmine", "chop", "defense", "pos", "inventory", "equip", "?", "bed", "pois", "baritone",
+                "allowed", "run", "where", "zone", "protect", "unprotect"));
+        REMOVED = java.util.Collections.unmodifiableSet(r);
+    }
+
+    /** The V1b hint for one step, or null (the line runs). */
     static String v1b(String verb, String rest) {
         String v = verb == null ? "" : verb.toLowerCase();
-        if (v.equals("dig")) {
-            String t = translate(v, rest);
-            return t == null ? null : "that is now " + t;
+        String r = rest == null ? "" : rest.trim();
+        String lr = r.toLowerCase();
+        String sp = r.isEmpty() ? "" : " " + r;
+        if (DEBUG_VERBS.contains(v)) return "removed in 0.22; use debug " + v + sp;
+        switch (v) {
+            case "dig" -> {
+                String t = translate(v, rest);
+                return t == null ? null : "that is now " + t;
+            }
+            case "mark" -> { return "that is now place" + (r.isEmpty() ? " <name>" : sp); }
+            case "setbase" -> { return "that is now place base" + sp; }
+            case "forget" -> { return "that is now places forget" + (r.isEmpty() ? " <name>" : sp); }
+            case "base" -> { return "that is now go base"; }
+            case "stripmine" -> { return "that is now mine strip" + sp; }
+            case "chop" -> { return "that is now cut" + (r.isEmpty() ? " <n>" : sp); }
+            case "defense" -> { return "that is now defence" + sp; }
+            case "defend" -> { return r.isEmpty() ? null : "that is now defence" + sp + " (defend alone holds this spot)"; }
+            case "escort" -> { return lr.equals("off") ? "that is now dismiss" : null; }
+            case "tools" -> {
+                if (lr.matches("^ores\\s+iron$")) return "that is now tools mode best (or tools mode stone)";
+                if (lr.matches("^ores\\s+cheapest$")) return "that is now tools mode cheapest";
+                if (lr.startsWith("ores")) return "that is now tools mode best|cheapest|stone";
+                return null;
+            }
+            case "build" -> { return lr.matches("^clear\\b.*") ? "that is now dig" + (lr.split("\\s+").length > 1 ? " " + r.split("\\s+")[1] : " <area>") + " (build only places now)" : null; }
+            case "pos" -> { return "that is now status"; }
+            case "inventory" -> { return "that is now inv"; }
+            case "equip" -> { return "that is now wear"; }
+            case "?" -> { return "that is now help" + sp; }
+            case "bed" -> { return "removed in 0.22; use debug spawn"; }
+            case "pois" -> { return "removed in 0.22; use debug poi" + sp; }
+            case "baritone" -> { return "removed in 0.22; use debug b" + sp; }
+            case "allowed" -> { return "that is now allow"; }
+            case "run" -> { return "that is now " + (r.isEmpty() ? "<routine name>" : r) + " (say the routine's name)"; }
+            case "where" -> { return "that is now have" + (r.isEmpty() ? " <item>" : sp); }
+            default -> { return null; }
         }
-        return null;
     }
 
     /** A saved chain with every old form rewritten (null when nothing changed). */

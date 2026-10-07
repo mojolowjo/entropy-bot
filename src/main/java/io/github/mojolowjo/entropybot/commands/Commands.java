@@ -88,6 +88,47 @@ public final class Commands implements Chains.Env {
         return core.reflexes.escort.active() || vocab.hold != null;
     }
 
+    /** V1b: the point-of-interest kinds find walks for (the POI scanner's own words, plus cave). */
+    static final List<String> POI_KINDS = List.of("village", "mineshaft", "geode", "spawner", "trial chamber", "stronghold", "lava lake", "diamonds", "loot chest",
+            "ancient debris", "emeralds", "nether portal", "archaeology", "trophy");
+
+    /** V1b: a biome id of the level's registry (find cherry_grove). */
+    static boolean isBiome(String id) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(id);
+            return rl != null && mc.level != null && mc.level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME).containsKey(rl);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    static String resolveItemNamePub(String q) { return resolveItemName(q); }
+
+    /** V1b: an area/fence command as the PM would run it (camp here makes its area this way). */
+    String policyCommand(String verb, String rest, String from, Minecraft mc, LocalPlayer p) {
+        return policy.command(verb, rest, from.equalsIgnoreCase(owner()), owner(), hereOf(mc, from), posOf(mc, p));
+    }
+
+    /** V1b: someone's base seen while exploring, kept as a safe-area candidate (commands.json "safeCandidates", the last 20). */
+    void noteSafeCandidate(String dim, int[] at, io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc) {
+        JsonObject b = brainStore.data();
+        JsonArray list = b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
+        JsonObject o = new JsonObject();
+        o.addProperty("dim", dim);
+        o.addProperty("x", at[0]);
+        o.addProperty("y", at[1]);
+        o.addProperty("z", at[2]);
+        o.addProperty("built", sc.built());
+        o.addProperty("blockEntities", sc.blockEntities());
+        o.addProperty("named", sc.named());
+        o.addProperty("at", System.currentTimeMillis());
+        list.add(o);
+        while (list.size() > 20) list.remove(0);
+        b.add("safeCandidates", list);
+        saved();
+    }
+
     /** V1b: a job, chain, gather or mule run is going (the queue waits). */
     boolean busyForQueue() {
         return jobs.running() || (chains != null && chains.running()) || gathering.running() || mule.running();
@@ -768,7 +809,34 @@ public final class Commands implements Chains.Env {
         if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
         if (verb.equals("check")) return Reply.now(selfCheck.command(player));
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
+        // V1b: the plumbing verbs live under debug ("debug autominer on" runs "autominer on" as before)
+        if (verb.equals("debug") && OldWords.DEBUG_VERBS.contains(Texts.verbAndRest(rest)[0])) {
+            if (!isOwner) return Reply.now("sorry, only " + owner() + " can use debug");
+            return handle(from, rest, internal, true, l);
+        }
         if (verb.equals("debug")) return Reply.now(DebugVerbs.handle(core, rest, DebugRules.Source.PM, isOwner, owner()));
+        // V1b: the owner's direct order lifts "done" (come, escort or any job)
+        if (isOwner && !internal && !auto) vocab.unrelease(verb);
+        if (verb.equals("done") || verb.equals("free")) return Reply.now(vocab.release());
+        if (verb.equals("needs")) return Reply.now(vocab.needs(player, rest));
+        if (verb.equals("goal")) return Reply.now(vocab.goal(rest));
+        if (verb.equals("goals")) return Reply.now(vocab.goals(rest));
+        if (verb.equals("need")) {
+            String st = vocab.needStanding(player, rest);
+            if (st != null) return Reply.now(st);
+        }
+        if (verb.equals("sleep")) {
+            String sa = vocab.sleepAuto(rest);
+            if (sa != null) return Reply.now(sa);
+        }
+        if (verb.equals("camp")) {
+            if (!rest.trim().equalsIgnoreCase("here")) return Reply.now("usage: camp here");
+            String busy = chainBusyText() != null ? chainBusyText() : jobBusyText();
+            if (busy != null) return Reply.now(busy);
+            return Reply.now(vocab.campHere(from, player, l));
+        }
+        if (verb.equals("allow") && rest.isBlank()) return Reply.now(allowCommand("allowed", "", isOwner));
+        if (verb.equals("places") && !isOwner && !rest.isBlank()) return Reply.now("sorry, only " + owner() + " can forget places");
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
         if (verb.equals("surface")) return Reply.now(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.command(rest));     // 0.19.3: never busy
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
@@ -891,7 +959,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("poi") || verb.equals("pois")) return Reply.now(poiCommand(rest, player, isOwner));
         if (verb.equals("caves")) return Reply.now(cavesCommand(rest));
         // B7c: lookups and settings that never interrupt a job
-        if (verb.equals("need")) return Reply.now(crafting.need(player, rest));
+        if (verb.equals("need")) return Reply.now(crafting.need(player, rest) + (internal ? "" : io.github.mojolowjo.entropybot.vocab.NeedWords.COST_HINT));
         if (verb.equals("supplies")) return Reply.now(crafting.supplies(player, rest));
         if (verb.equals("recipe")) return Reply.now(crafting.recipe(player, rest));
         if (verb.equals("smelt") && Crafting.smeltInstant(rest)) return Reply.now(crafting.smelt(player, rest));   // package D: smelt jobs|mode|forget never wait
@@ -1024,6 +1092,12 @@ public final class Commands implements Chains.Env {
             case "twerk" -> { return jobs.startTwerk(rest); }
             case "find" -> {
                 if (rest.trim().toLowerCase().matches("^nearest(\\s.*)?$")) return Mining.get().findNearest(player, rest.trim().substring(7));   // C8
+                // V1b: find cave|<poi kind>|<biome> walks (the owner); find <block> stays the nearby list
+                io.github.mojolowjo.entropybot.vocab.ExploreWords.Find f = io.github.mojolowjo.entropybot.vocab.ExploreWords.find(rest, POI_KINDS, Commands::isBiome);
+                if (f.kind() != io.github.mojolowjo.entropybot.vocab.ExploreWords.FindKind.BLOCK) {
+                    if (from != null && !from.equalsIgnoreCase(owner())) return "sorry, only " + owner() + " can send me looking (find <block> works)";
+                    return Mining.get().find(player, f);
+                }
                 return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest);
             }
             case "scout" -> {                                                       // C8: look ahead and report

@@ -25,19 +25,18 @@ class CompanionV2Test {
         assertEquals("mine iron_ore 8", d(PointRules.Hit.block("minecraft:iron_ore", 1, 2, 3, true, false, false)).command());
         assertEquals("mine deepslate_iron_ore 8", d(PointRules.Hit.block("minecraft:deepslate_iron_ore", 1, 2, 3, false, false, false)).command(), "_ore without the tag");
         assertEquals("mine oritech:nickel_ore 8", d(PointRules.Hit.block("oritech:nickel_ore", 1, 2, 3, true, false, false)).command(), "modded keeps its prefix");
-        assertEquals("chop 16 oak_log", d(PointRules.Hit.block("minecraft:oak_log", 1, 2, 3, false, true, false)).command());
-        assertEquals("chop 16 biomesoplenty:fir_log", d(PointRules.Hit.block("biomesoplenty:fir_log", 1, 2, 3, false, true, false)).command());
+        assertEquals("cut 16 oak_log", d(PointRules.Hit.block("minecraft:oak_log", 1, 2, 3, false, true, false)).command());
+        assertEquals("cut 16 biomesoplenty:fir_log", d(PointRules.Hit.block("biomesoplenty:fir_log", 1, 2, 3, false, true, false)).command());
         assertEquals("open -28 54 189", d(PointRules.Hit.block("minecraft:chest", -28, 54, 189, false, false, true)).command());
         assertEquals("open 1 2 3", d(PointRules.Hit.block("minecraft:barrel", 1, 2, 3, false, false, true)).command());
         assertEquals("goto 10 65 -5", d(PointRules.Hit.block("minecraft:grass_block", 10, 64, -5, false, false, false)).command(), "ground: the block above");
-        assertEquals("attack 4711", d(PointRules.Hit.entity("minecraft:zombie", 4711, 1, 2, 3, true, false, false, false, false)).command());
+        assertEquals("attack target 4711", d(PointRules.Hit.entity("minecraft:zombie", 4711, 1, 2, 3, true, false, false, false, false)).command());
         assertEquals("goto 1 2 3", d(PointRules.Hit.entity("minecraft:item", 5, 1, 2, 3, false, false, false, false, true)).command(), "item: goto for now");
         assertTrue(d(PointRules.Hit.entity("minecraft:player", 1, 0, 0, 0, false, true, false, false, false)).refusal().contains("players or pets"));
         assertTrue(d(PointRules.Hit.entity("minecraft:wolf", 1, 0, 0, 0, false, false, true, false, false)).refusal().contains("players or pets"));
         assertTrue(d(PointRules.Hit.entity("minecraft:villager", 1, 0, 0, 0, false, false, false, true, false)).refusal().contains("villagers"));
         PointRules.Result pig = d(PointRules.Hit.entity("minecraft:pig", 1, 0, 0, 0, false, false, false, false, false));
-        assertFalse(pig.ok());
-        assertTrue(pig.refusal().contains("pig is no monster"));
+        assertEquals("attack target 1", pig.command(), "0.2.2: a passive mob goes to the bot, which asks for confirm");
         assertEquals("nothing under the crosshair", d(PointRules.Hit.miss()).refusal());
         assertEquals("nothing under the crosshair", d(null).refusal());
         // a chest that is also tagged weirdly still opens

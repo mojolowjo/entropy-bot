@@ -26,7 +26,7 @@ public final class VerbTable {
                        String next, String guestForms) {}
 
     /** The sections of the guide, in page order ("help 1" .. "help N"). */
-    public static final List<String> SECTIONS = List.of("moving", "chests", "crafting", "mining", "safety", "automation", "info", "other");
+    public static final List<String> SECTIONS = List.of("space", "stocking", "digging", "fighting", "jobs", "materials", "exploring", "brain", "moving", "chests", "crafting", "other");
 
     private static final Map<String, Verb> BY_NAME = new LinkedHashMap<>();
     private static final Map<String, Verb> BY_WORD = new LinkedHashMap<>();
@@ -47,180 +47,151 @@ public final class VerbTable {
 
     static {
         Who G = Who.GUEST, P = Who.PARTLY, O = Who.OWNER;
+        // ---- space: places, markers, areas (VOCABULARY 1)
+        v("place", "", "space", O, "place <name> [x y z] [north|south|east|west] | place <block> x y z",
+                "remember a place (where you stand, or the coordinates; place mine north = a mine, place food = the food chest, place base = the base); with a block and three numbers: put one block there",
+                "place farm|place mine north|place cobblestone 10 64 20", "places");
+        v("marker", "", "space", O, "marker <name> [of <place>] [x y z]", "a point under a place (default: the nearest place within 32), e.g. the furnace", "marker furnace|marker door of base", "go <place> <marker>");
+        v("places", "", "space", G, "places | places forget <place|marker>", "the places I know, each with its markers (forget: the owner)", "places|places forget farm", "go <place> [marker]");
+        v("area", "", "space", P, "area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> | area change type <name> <type> "
+                        + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]",
+                "named areas with a type: neutral (white, the default: walk, dig natural blocks), destroy (red: dig <area> breaks built blocks too, never chests), "
+                        + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
+                        + "and the near-me zone (16 blocks around you, on by default; safe areas always win)",
+                "area here 60 base main|area here 8 house safe|area 0 0 30 30 pit destroy 40 70|area change type pit neutral|area list", "fence", "area list");
+        v("fence", "", "space", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
+                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
+                "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
+        // ---- stock (VOCABULARY 2)
+        v("fetch", "", "stocking", O, "fetch <item|kind> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32|fetch logs 16", "inv");
+        v("need", "", "stocking", O, "need <item|kind> <n> | need <item>", "a standing need (the brain works toward it); without a count: what it takes and what is missing (that becomes cost <item> in 0.24)",
+                "need torch 64|need refinedstorage:basic_processor", "needs");
+        v("needs", "", "stocking", O, "needs | needs clear <item>|all", "the standing needs with have/want (the group's stock)", "needs|needs clear torch", "need <item> <n>");
+        v("goal", "", "stocking", O, "goal camp | goal stone tools | goal iron tools | goal iron <n> | goal food <n> | goal wood <n> | goal light <area>",
+                "a longer task for the brain (a fixed list for now); it says the chain that does it now", "goal iron 16|goal stone tools", "goals");
+        v("goals", "", "stocking", O, "goals | goals clear <n>|all", "the goals waiting for the brain", "goals|goals clear 1", "goal <text>");
+        v("have", "", "stocking", G, "have [item]", "what we have as a group (my bag, the chests, the RS network, your bag) and which chest has it", "have iron_ingot|have", "fetch <item> [n]");
+        v("stock", "", "stocking", O, "stock [filter] | stock targets | stock set <item> <n> | stock clear <item>|all",
+                "the group's totals, biggest first, and how fresh each source is; targets/set/clear: how much the base chests should hold",
+                "stock ingot|stock set torch 64|stock targets", "have <item>");
+        v("get", "", "stocking", O, "get <item|kind> [n]", "fetch from the chests or the RS network", "get coal 16|get logs 32", "inv");
+        v("supplies", "", "stocking", O, "supplies | supplies set <item n, ...> | supplies clear", "what I always carry (set replaces the whole list)",
+                "supplies set torch 32, bread 16, iron_pickaxe 1|supplies", "supplies");
+        v("deposit", "", "stocking", O, "deposit [item ...]", "put loot away in the base chests (keeps tools, armor, food, supplies)", "deposit|deposit cobblestone dirt", "inv");
+        // ---- digging (VOCABULARY 3)
+        v("mine", "", "digging", O, "mine strip [<ores>] [n] [at <mine>] | mine strip status|reset|turn left|right|ores collect|list | mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
+                "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores",
+                "mine strip iron,diamond 16|mine strip|mine cave ores 20 10m|mine iron_ore 10", "deposit");
+        v("dig", "", "digging", O, "dig <area> [-N|+N] [ores] [junk drop] [water [large]] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 -N|+N [same words, no floor]",
+                "dig <area>: the box of an area with heights (an all-heights area needs -N or +N; asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "
+                        + "a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
+                        + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
+                        + "any coordinate may be ~ or ~N (from my feet); -N: each column's surface block and N-1 below, +N: the N blocks above the surface (N 1-64)",
+                "dig 10 60 10 20 64 20 ores|dig pit -3|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 +10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
+        v("build", "", "digging", O, "build floor|walls|shell|fill <block> <area>", "build inside an area with heights (never breaks a block)", "build floor cobblestone yard", "status");
+        v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
+                "fell trees in my areas for n logs (logs: any kind but what kinds logs leaves out), never next to builds; pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
+        v("gather", "", "digging", O, "gather <item|kind> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
+                "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave), "
+                        + "cut or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
+                "gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch", "deposit");
+        v("light", "", "digging", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks, inside my areas (fetches or crafts torches first)",
+                "light here 8|light 0 0 30 30", "status");
+        v("junk", "", "digging", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
+                "what I throw away when my bag is nearly full mid-job (or put in the chest placed as junk)", "junk list|junk add tuff|junk mode chest", "junk list");
+        // ---- fighting (VOCABULARY 4)
+        v("defence", "", "fighting", O, "defence on|off | defence creepers flee|melee|bow | defence hostile [list|add <id>...|remove <id>...] | defence players on|off",
+                "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets; players only with defence players on, which is off at every game start; avoids creepers, retreats under 6 health)",
+                "defence on|defence hostile add arphex:spider_jump", "defend");
+        v("defend", "", "fighting", O, "defend", "hold this spot: stay within 4 blocks of where I stand and fight what comes, until dismiss, stop or another order",
+                "defend", "dismiss");
+        v("guard", "", "fighting", O, "guard <area|place|marker>", "stay in that area (or within 8 of the place or marker) and fight what comes, until dismiss, stop or another order",
+                "guard base|guard farm gate", "dismiss");
+        v("escort", "", "fighting", P, "escort [player] [radius] | escort me [radius] | escort status",
+                "go with that player (you when not given) and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry; until dismiss",
+                "escort|escort me 10|escort Steve", "dismiss", "escort me [radius], escort status");
+        v("dismiss", "", "fighting", G, "dismiss", "end the escort (you, or the player I escort) and defend/guard (the owner)", "dismiss", "status");
+        v("attack", "", "fighting", O, "attack <mob kind|player|entity id> [confirm] | attack nearest | attack target <id>",
+                "fight one mob: hostile goes; a passive one asks confirm unless you type its kind; a named one asks confirm (a name has letters, not just digits); a player never unless defence players on; never pets. Ends when it dies, leaves 24 blocks or after 30 s",
+                "attack zombie|attack nearest|attack 812 confirm", "defence");
+        // ---- queue and status (VOCABULARY 5)
+        v("queue", "", "jobs", G, "queue | queue <task> | queue clear", "what runs and what waits; queue a task with a finish after the current one (never escort, follow, defend, guard, repeat forever; the owner)",
+                "queue|queue craft torch 16", "status");
+        v("status", "", "jobs", G, "status", "where I am, health, food, the job, deaths in the last hour and the game stage", "status", "inv");
+        v("inv", "", "jobs", G, "inv", "what I carry", "inv", "deposit");
+        v("stop", "", "jobs", G, "stop", "cancel everything, breaking off (the queue stays: queue clear)", "stop", "status");
+        v("routine", "routines", "jobs", O, "routines | routine save <name> <chain> | routine show <name> | routine delete <name>", "saved chains; say the name to run one",
+                "routine save night deposit then eat then go base|routines", "<name>");
+        v("rule", "rules", "jobs", O, "rules | rule every <n>m|h do <cmds> | rule at HH:MM do <cmds> | rule when full do <cmds> | rule when idle <n>m do <cmds> | rule when night|day do <cmds> | rule delete <n>",
+                "things I do by myself when idle", "rule every 30m do farm then deposit|rule when full do deposit", "rules");
+        v("repeat", "", "jobs", O, "repeat [n|forever] <routine or chain>", "loop it (a round at most every 10 s)", "repeat forever farm|repeat 3 night", "queue");
+        v("wait", "", "jobs", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
+        v("confirm", "", "jobs", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
+        v("check", "", "jobs", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
+        // ---- kinds and tools (VOCABULARY 6)
+        v("kinds", "", "materials", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>",
+                "the kind-words logs, wood, ores, stone, food, seeds (usable for any item word: mine, get, cut, gather, need, fetch) and what each leaves out", "kinds|kinds logs exclude cherry_log", "cut 16 logs");
+        v("tools", "", "materials", O, "tools | tools mode best|cheapest|stone", "which tool I use: best (the default), cheapest (wears out first), stone (stone for all but ores that need more)", "tools mode stone|tools", "tools");
+        v("hotbar", "", "materials", O, "hotbar | hotbar set <slot> <kind|item> ... | hotbar clear <slot>|all", "keep tools in hotbar slots (pickaxe, sword, axe, shovel, hoe, food, torch, or an item)",
+                "hotbar set 1 pickaxe 2 sword 3 food 4 torch", "hotbar");
+        // ---- explore and find (VOCABULARY 6b)
+        v("explore", "", "exploring", O, "explore [north|south|east|west] [minutes]",
+                "walk land I've never seen (that way), inside or outside my areas, then home; someone's base out there: I keep 16 off, take nothing, and tell you", "explore 5|explore north 10", "places");
+        v("find", "", "exploring", G, "find <block> | find nearest <poi kind|ore> | find cave|<poi kind>|<biome> [minutes]",
+                "find <block>: the nearest block of that kind; find cave, village, mineshaft, a biome...: walk until I find one (the owner), then note it as a point of interest", "find chest|find village|find cave|find cherry_grove", "go poi <id>");
+        v("scout", "", "exploring", O, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status",
+                "walk up to n blocks (64, max 256) that way inside my areas, come back and report places, ores and mobs seen", "scout north 64|scout 120 -40", "find nearest <poi kind|ore>");
+        // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
+        v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain, once it is in); your next order, come or escort takes it back", "done", "status");
+        v("sleep", "", "brain", O, "sleep | sleep status | sleep auto on|off", "go to the nearest bed (or put mine down at night) and sleep until morning or stop; auto: go to bed when others sleep (the brain, default on)",
+                "sleep|sleep auto off", "status");
+        v("camp", "", "brain", O, "camp here", "a camp for a night or two: area camp (24 round, neutral), place camp with a bed marker, torches, my bed when I carry one; not a base", "camp here", "sleep");
+        v("bootstrap", "", "brain", O, "bootstrap | bootstrap status", "a camp from nothing: cut, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp placed",
+                "bootstrap|bootstrap status", "places");
+        v("restore", "", "brain", O, "restore [status] | restore now [r] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off",
+                "blocks I broke on the way (mine ... dig tunnels, digging out of a stuck spot) and put back; build hints to protect",
+                "restore status|restore now|restore ignore 10 64 -20", "status");
         // ---- moving
         v("come", "", "moving", G, "come", "walk to you (out of view: the companion mod's position)", "come", "follow");
         v("follow", "", "moving", G, "follow [name]", "follow you (or that player) until stop", "follow|follow Steve", "stop");
-        v("goto", "", "moving", G, "goto x y z | goto x z | goto me", "walk to a spot", "goto 120 64 -300", "status");
-        v("go", "", "moving", O, "go <place> [marker] | go <marker> | go poi <id>", "walk to a named place or marker (far: /home first)", "go farm|go base furnace|go poi 11", "places");
-        v("base", "", "moving", O, "base", "walk to the base (far: /home first)", "base", "deposit");
-        v("home", "", "moving", O, "home", "teleport home with the server's /home", "home", "sethome");
-        v("sethome", "", "moving", O, "sethome", "my home = where I stand (/sethome home)", "sethome", "home");
-        v("route", "", "moving", O, "route status | route on|off | route mode goal|legs | route build [place|x y z] | route dump x y z | route test <placeA> <placeB> [trips]",
-                "the travel map for long walks: its status, on/off, how walks use it, build it toward a place, dump a box, measure trips (to routes/trips.csv)",
-                "route status|route test base farm 6", "route status");
-        v("mark", "", "moving", O, "mark <name> [x y z] [north|south|east|west]", "remember a spot (where you stand, or the coordinates); mark mine and mark food are special",
-                "mark farm|mark mine north", "places");
-        v("setbase", "", "moving", O, "setbase [x y z]", "mark base", "setbase", "scan base");
-        v("forget", "", "moving", O, "forget <name>", "forget a place", "forget farm", "places");
-        v("places", "", "moving", G, "places | places forget <place|marker>", "the places I know, each with its markers", "places|places forget farm", "go <place> [marker]");
-        v("marker", "", "moving", O, "marker <name> [of <place>] [x y z]", "a point under a place (default: the nearest place within 32), e.g. the furnace", "marker furnace|marker door of base", "go <place> <marker>");
-        v("spawn", "bed", "moving", O, "spawn", "walk to the nearest bed and set my respawn point there", "spawn", "status");
-        v("sleep", "", "moving", O, "sleep | sleep status", "go to the nearest bed (or put mine down at night) and sleep until morning or stop", "sleep|sleep status", "rule when night do sleep");
-        v("stop", "", "moving", G, "stop", "cancel everything, breaking off (the autominer waits 10 min)", "stop", "autominer on");
-        v("death", "", "moving", O, "death | death policy on|off", "walk back to where I died and empty my corpse", "death", "deaths");
-        v("corpse", "", "moving", O, "corpse", "empty my own corpse when it is near", "corpse", "inv");
+        v("goto", "", "moving", G, "goto x y z | goto x z | goto me", "walk to a spot (the owner's own goto may leave my areas)", "goto 120 64 -300", "status");
+        v("go", "", "moving", O, "go <place> [marker] | go <marker> | go poi <id>", "walk to a place, a marker or a point of interest (far: /home first)", "go farm|go base furnace|go poi 11", "places");
+        v("home", "", "moving", O, "home", "teleport home with the server's /home", "home", "go base");
         // ---- chests and storage
         v("open", "", "chests", O, "open x y z | open <place>", "walk to a chest and open it (lists what is inside)", "open -28 54 189|open bulk then take spruce_log 192 then close", "take <item> [n]");
         v("take", "", "chests", O, "take <item|all> [n]", "take from the open chest (exact counts)", "take charcoal 64", "close");
         v("put", "", "chests", O, "put <item|all> [n]", "put into the open chest", "put all|put charcoal 50", "close");
         v("close", "", "chests", O, "close", "close the open chest", "close", "inv");
-        v("deposit", "", "chests", O, "deposit [item ...]", "put loot away in the base chests (keeps tools, armor, food, supplies)", "deposit|deposit cobblestone dirt", "inv");
-        v("scan", "", "chests", O, "scan [radius] | scan base|<place>|x y z [radius]", "open the chests around (there) and remember them", "scan base|scan 8", "where <item>");
-        v("where", "", "chests", G, "where <item>", "which chest has it (and the RS network, and your bag with the companion)", "where iron", "open <place>");
-        v("have", "", "chests", G, "have [item]", "what we have as a group: my bag, the chests, the RS network, your bag", "have iron_ingot", "stock iron");
-        v("stock", "", "chests", G, "stock [filter] | stock targets | stock set <item> <n> | stock clear <item>|all",
-                "the group's totals, biggest first, and how fresh each source is; targets/set/clear (owner): how much the BASE chests should hold (restock base fills them)",
-                "stock ingot|stock set torch 64|stock targets", "restock base");
-        v("find", "", "chests", G, "find <block>", "the nearest block of that kind", "find chest|find crafting_table", "goto x y z");
-        v("trust", "", "chests", O, "trust | trust x y z|<place>", "list the chests I keep out of, or let me use one again", "trust", "untrust x y z");
-        v("untrust", "", "chests", O, "untrust x y z|<place>", "keep me out of a chest (craft trips, deposits, the food run)", "untrust -20 53 180", "trust");
-        v("junk", "", "chests", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
-                "what I throw away when my bag is nearly full mid-job (or put in the chest marked junk)", "junk list|junk add tuff|junk mode chest", "junk list");
         v("drop", "", "chests", O, "drop <item|all> [n]", "throw items on the ground", "drop dirt 64", "inv");
-        // C6 mule and fetch
-        v("hold", "", "chests", G, "hold this", "pick up the items you throw me in the next 15 s (within 4 blocks)", "hold this", "inv");
-        v("give", "", "chests", O, "give me <item> [n] | give <player> <item> [n]", "walk to you (or them) and throw the items (never my tools, armor, last 8 food, 16 torches or supplies)",
-                "give me cobblestone 32|give Steve bread 4", "inv");
-        v("carry", "", "chests", O, "carry <item> [item ...] | carry off | carry list", "follow you and pick up those drops within 6 blocks of you; off = plain follow",
-                "carry oak_log cobblestone|carry off", "unload");
-        v("unload", "", "chests", O, "unload", "go home, deposit (keeping tools, food, torches, supplies), then come back to you", "unload", "carry list");
-        v("fetch", "", "chests", O, "fetch <item> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32", "inv");
-        v("use", "", "chests", O, "use x y z", "right-click a block", "use -23 53 156", "close");
-        v("wear", "equip", "chests", O, "wear", "put on armor from my bag", "wear", "inv");
+        v("wear", "", "chests", O, "wear", "put on armor from my bag", "wear", "inv");
+        v("scan", "", "chests", O, "scan [radius] | scan base|<place>|x y z [radius]", "open the chests around (there) and remember them", "scan base|scan 8", "have <item>");
         v("rs", "", "chests", O, "rs [x y z] | rs take <item> [n] | rs put <item|all> [n] | rs disks [x y z]", "the Refined Storage network: read it, take, put, the disks",
-                "rs|rs take bread 32", "where <item>");
+                "rs|rs take bread 32", "have <item>");
         v("pots", "", "chests", O, "pots [chests]", "empty the botany pots at the base into the RS network (or the chests)", "pots", "rs");
         // ---- crafting, smelting, the farm
         v("craft", "", "crafting", O, "craft <item> [n] | craft <material> armor|tools | craft a, b 16", "craft it, fetching materials and making the parts (table and furnace as needed)",
                 "craft stick 16|craft copper armor", "inv");
         v("kit", "", "crafting", O, "kit <material>", "craft that material's armor and tools, then wear the armor", "kit copper", "inv");
-        v("recipe", "", "crafting", G, "recipe <item>", "what an item needs", "recipe hopper", "need <item> [n]");
-        v("need", "", "crafting", O, "need <item> [n]", "what it takes and what is missing", "need refinedstorage:basic_processor 4", "craft <item> [n]");
-        v("get", "", "crafting", O, "get <item> [n]", "fetch from the chests or the RS network", "get coal 16", "inv");
-        v("supplies", "", "crafting", O, "supplies | supplies set <item n, ...> | supplies clear", "what I always carry (set replaces the whole list)",
-                "supplies set torch 32, bread 16, iron_pickaxe 1|supplies", "restock");
-        v("restock", "", "crafting", O, "restock", "top my supplies up: from storage first, the rest crafted", "restock", "supplies");
+        v("recipe", "", "crafting", O, "recipe <item>", "what an item needs", "recipe hopper", "need <item>");
         v("smelt", "", "crafting", O, "smelt <item> [n] | smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>",
                 "smelt at a base furnace and go on with other things", "smelt iron_ingot 9|smelt jobs", "smelt collect");
-        v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "where <item>");
         v("cook", "", "crafting", O, "cook <food> [n]", "cook raw food at a furnace (smelt cooked_<food>)", "cook beef 8", "smelt jobs");
+        v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "place food");
         v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
                 "one farm round (harvest, replant or let Harvest with Ease replant, pick up); plant a new field", "farm|farm plant wheat here 4|farm status", "deposit");
+        v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "have <item>");
         v("infuse", "", "crafting", O, "infuse <seed> [n]", "make seeds on the infusion altar (never touches what isn't mine)", "infuse silicon 2", "inv");
         v("upgrade", "", "crafting", O, "upgrade <essence> [n]", "climb the essence tiers with the infusion crystal", "upgrade imperium 4", "inv");
-        v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "mark food");
-        v("hotbar", "", "crafting", O, "hotbar | hotbar set <slot> <kind|item> ... | hotbar clear <slot>|all", "keep tools in hotbar slots (pickaxe, sword, axe, shovel, hoe, food, torch, or an item)",
-                "hotbar set 1 pickaxe 2 sword 3 food 4 torch", "hotbar");
-        v("tools", "", "crafting", O, "tools | tools mode best|cheapest|stone", "which tool I use: best (the default), cheapest (wears out first), stone (stone for all but ores that need more)", "tools mode stone|tools", "tools");
-        v("kinds", "", "crafting", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>", "the kind-words logs, wood, ores, stone, food, seeds (usable for any item word: mine, get, cut, gather, need, fetch) and what each leaves out", "kinds|kinds logs exclude cherry_log", "cut 16 logs");
-        // ---- digging and mining
-        v("mine", "", "mining", O, "mine <ore> [n] [dig] | mine strip <ores> [n] [at <mine>] | mine cave <ores> [n | <min>m] [at <cave>]",
-                "mine ores in view (dig: may dig to them), strip-mine at a mine, or go caving", "mine iron_ore 10|mine strip iron,diamond 16", "deposit");
-        v("stripmine", "", "mining", P, "stripmine [branches] [length] | stripmine status | stripmine reset | stripmine ores collect|list | stripmine turn left|right",
-                "dig more branches at the marked mine (reset asks to confirm)", "stripmine 3 16|repeat forever stripmine", "stripmine status", "stripmine status");
-        v("caves", "", "mining", P, "caves | caves rename <old> <new>", "the caves I know", "caves", "mine cave any 20 10m", "caves");
-        v("chop", "", "mining", O, "chop <logs> [log type] | chop trees <n> [log type] | chop status",
-                "fell trees in my areas (never next to builds or in protect boxes), pick up the logs, replant a sapling; leaves are left; 20 min at most",
-                "chop 16|chop trees 3 birch|chop status", "deposit");
-        v("cut", "", "mining", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status", "fell trees in my areas for n logs (logs: any kind but those kinds logs excludes), pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
-        v("gather", "", "mining", O, "gather <item> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
-                "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave), "
-                        + "chopped or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
-                "gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch|gather source oritech:raw_nickel mine strip nickel {n}", "deposit");
-        v("explore", "", "mining", O, "explore [minutes]", "walk unvisited land inside my areas, then home", "explore 5", "poi");
-        v("scout", "", "mining", G, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status", "walk up to n blocks (64, max 256) that way inside my areas, come back and report places, ores and mobs seen", "scout north 64|scout 120 -40", "find nearest <poi kind|ore>");
-        v("ores", "", "mining", P, "ores [name] | ores clear | ores prefer <ores>", "ores I left in place, nearest first; the preferred ore list", "ores iron|ores prefer diamond,iron",
-                "mine <ore> [n]", "ores [name], ores prefer (just looking)");
-        v("dig", "", "mining", O, "dig <area> [ores] [junk drop] [water [large]] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 down|up N [same words, no floor]",
-                "dig <area>: the whole box of an area with heights (asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "
-                        + "clear a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
-                        + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
-                        + "any coordinate may be ~ or ~N (from my feet); down N: each column's surface block and N-1 below, up N: the N blocks above the surface (N 1-64)",
-                "dig 10 60 10 20 64 20 ores|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 up 10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
-        v("build", "", "mining", O, "build floor|walls|shell|fill <block> <area> | build clear <area>", "build inside an area with heights (never breaks); clear breaks the whole area (asks to confirm)",
-                "build floor cobblestone yard|build clear yard", "status");
-        v("light", "", "mining", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks, inside my areas (fetches or crafts torches first)",
-                "light here 8|light 0 0 30 30", "status");
-        v("bootstrap", "", "mining", O, "bootstrap | bootstrap status", "a camp from nothing: chop, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp marked",
-                "bootstrap|bootstrap status", "places");
-        v("place", "", "moving", O, "place <name> [x y z] [north|south|east|west] | place <block> x y z", "remember a place (where you stand, or the coordinates; place mine north = a mine, place food = the food chest); with a block and three numbers: put one block there", "place farm|place mine north|place cobblestone 10 64 20", "places");
-        // ---- safety and areas
-        v("area", "", "safety", P, "area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> | area change type <name> <type> "
-                        + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]",
-                "named areas with a type: neutral (white, the default: walk, dig natural blocks), destroy (red: dig <area> breaks built blocks too, never chests), "
-                        + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
-                        + "and the near-me zone (16 blocks around you, on by default; safe areas always win)",
-                "area here 60 base main|area here 8 house safe|area 0 0 30 30 pit destroy 40 70|area change type pit neutral|area list", "fence", "area list, area show <name>, area near");
-        v("fence", "", "safety", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
-                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
-                "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
-        v("defence", "", "safety", O, "defence on|off | defence creepers flee|melee|bow | defence hostile [list|add <id>...|remove <id>...] | defence players on|off",
-                "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets; players only with defence players on, which is off at every game start; avoids creepers, retreats under 6 health)",
-                "defence on|defence hostile add arphex:spider_jump", "defend");
-        v("defend", "", "safety", O, "defend", "hold this spot: stay within 4 blocks of where I stand and fight what comes, until dismiss, stop or another order",
-                "defend", "dismiss");
-        v("guard", "", "safety", O, "guard <area|place|marker>", "stay in that area (or within 8 of the place or marker) and fight what comes, until dismiss, stop or another order",
-                "guard base|guard farm gate", "dismiss");
-        v("escort", "", "safety", P, "escort [player] [radius] | escort me [radius] | escort status",
-                "go with that player (you when not given) and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry; until dismiss",
-                "escort|escort me 10|escort Steve", "dismiss", "escort me [radius], escort status");
-        v("dismiss", "", "safety", G, "dismiss", "end the escort (you, or the player I escort) and defend/guard (the owner)", "dismiss", "status");
-        v("attack", "", "safety", O, "attack <mob kind|player|entity id> [confirm] | attack nearest | attack target <id>",
-                "fight one mob: hostile goes; a passive one asks confirm unless you type its kind; a named one asks confirm (a name has letters, not just digits); a player never unless defence players on; never pets. Ends when it dies, leaves 24 blocks or after 30 s",
-                "attack zombie|attack nearest|attack 812 confirm", "defence");
-        v("deaths", "", "safety", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "resume", "deaths");
-        v("resume", "", "safety", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "autominer status");
-        v("reconnect", "", "safety", O, "reconnect on|off", "rejoin after a kick (1, 5, 15 min; 3 an hour)", "reconnect on", "status");
-        v("restart", "", "safety", G, "restart ok|no", "I may be closed for an update in the next 15 minutes (or not)", "restart ok", "status");
-        v("check", "", "safety", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
-        v("restore", "", "safety", O, "restore [status] | restore now [r] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off",
-                "blocks I broke on the way (mine ... dig tunnels, digging out of a stuck spot) and put back; build hints to protect",
-                "restore status|restore now|restore ignore 10 64 -20", "status");
-        v("confirm", "", "safety", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
-        // ---- automation
-        v("routine", "routines", "automation", P, "routines | routine save <name> <chain> | routine show <name> | routine delete <name>", "saved chains; say the name to run one",
-                "routine save night deposit then eat then base|routines", "<name>", "routines, routine show <name>");
-        v("repeat", "", "automation", O, "repeat [n|forever] <routine or chain>", "loop it (a round at most every 10 s)", "repeat forever farm|repeat 3 night", "queue");
-        v("run", "", "automation", O, "run <routine>", "run a saved routine", "run night", "queue");
-        v("wait", "", "automation", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
-        v("queue", "", "automation", G, "queue | queue <task> | queue clear", "what runs and what waits; queue a task with a finish after the current one (never escort, follow, defend, guard, repeat forever)", "queue|queue craft torch 16", "status");
-        v("rule", "rules", "automation", P, "rules | rule every <n>m|h do <cmds> | rule at HH:MM do <cmds> | rule when full do <cmds> | rule when idle <n>m do <cmds> | rule when night|day do <cmds> | rule delete <n>",
-                "things I do by myself when idle", "rule every 30m do farm then deposit|rule when full do deposit", "rules", "rules");
-        v("autominer", "", "automation", P, "autominer on|off|status", "mine on my own when idle (deposit, restock, strip mine, else caves)", "autominer on", "why", "autominer status");
-        v("why", "", "automation", G, "why | why threats", "what the autominer decided and why; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes", "why|why threats", "autominer status");
-        // ---- info
-        v("help", "?", "info", G, "help | help <verb> | help <page> | help all", "this guide: one verb, one page of it, or all", "help mine|help 2", "status");
-        v("status", "pos", "info", G, "status", "where I am, health, food and the job", "status", "inv");
-        v("inv", "inventory", "info", G, "inv", "what I carry", "inv", "deposit");
-        v("poi", "pois", "info", P, "poi [n] | poi <kind> | poi show <id> | poi forget <id>", "points of interest I have seen (dungeons, spawners, villages...)",
-                "poi|poi spawner", "go poi <id>", "poi [n], poi <kind>, poi show <id>");
-        v("memory", "", "info", O, "memory", "how my note files are", "memory", "status");
-        // ---- other (owner only)
-        v("say", "", "other", O, "say <text>", "say it in public chat (never a command)", "say hello", "status");
-        v("twerk", "", "other", O, "twerk | twerk <seconds>", "crouch on and off (again to stop)", "twerk|twerk 15", "stop");
-        v("allow", "", "other", O, "allow <name>", "take orders from that player too (the guest commands)", "allow Steve", "allowed");
-        v("deny", "", "other", O, "deny <name>", "stop taking orders from that player", "deny Steve", "allowed");
-        v("allowed", "", "other", O, "allowed", "who I take orders from", "allowed", "allow <name>");
-        v("b", "baritone", "other", O, "b <baritone command>", "a raw Baritone command (careful: never goto <block name>)", "b set allowSprint true", "status");
-        v("debug", "", "other", O, "debug | debug gui|inv|baritone | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n]",
-                "read-only looks inside the game (from the laptop or the dashboard, not by PM); debug threats: the threat test's counters (grid copies and ms, search ms, mobs, counted / noted, fallbacks, errors), with x y z the last search at that block", "debug inv|debug incident|debug threats", "debug");
-        v("watch", "", "other", O, "watch | watch off | watch status | watch distance 1-8 | watch tunnel [off|status|height 1-40|turn left|right|dollhouse [on|off]|cut [on|off|status|mode shadow|cone|outline|radius N]] | watch dollhouse [on|off] | watch cut [on|off|status|mode shadow|cone|outline|radius N] | watch steer [on|off|status] | watch turn [on|off|status|rate 5-180] | watch seen [on|off|status] | watch shot | watch probe [off|status]",
-                "watch: a camera behind the bot that follows its walking direction; watch tunnel: a camera above it that passes through blocks, the real world hidden, only what the bot's own view saw (tunnels, caves, the ground and trees round it out to the render distance), the bot and mobs drawn (no x-ray); dollhouse (the default): only floors and far walls facing the camera; cut (on by default): nothing between the camera and the bot is drawn; cut mode shadow (the default) removes whole blocks that are in the way: the camera sees the bot's box through them (radius 0-2 = margin round the box, default 0.5) and they are at least half a block nearer, so a trunk beside the bot stays; cut mode cone removes whole blocks in a cone from the camera to the bot (radius 1-6 at the bot, default 2.5); neither cuts the floor under its feet, cut mode outline the older bot-shaped hole (radius 0-3 = margin, default 0.6), each radius kept per mode; steer (on by default, active only while a watch view is on): W/S/A/D move the bot away from/towards/left/right of the camera, never while the bot drives itself; turn (on by default): A/D also turn the camera (45 deg/s, watch turn rate 5-180), the arrow keys only turn it; dollhouse and the other watch settings are kept across restarts; watch seen: the faces it records drawn cyan; render only, 60 FPS while on, watch off for the normal view",
-                "watch|watch tunnel|watch tunnel dollhouse on|watch cut mode shadow|watch cut radius 1|watch seen", "watch off");
-        v("surface", "", "info", O, "surface | surface status | surface on|off", "the ground round the bot for the dashboard's 3D view (one file per loaded chunk; on by default)", "surface status", "status");
-    v("mouse", "", "other", O, "mouse free|grab", "let the bot's window keep (grab) or release (free) the mouse", "mouse free", "status");
-        v("recorder", "", "other", O, "recorder | recorder off|light|normal|detailed|max | recorder <preset> for <N>m|<N>h | recorder range <chunks> | recorder trail <ticks> | recorder snapshot <blocks>|now | recorder states on|off | recorder keep <hours> | recorder mark <note>",
-                "the flight recorder: what the bot saw and did, kept for a while", "recorder|recorder detailed for 30m", "debug incident");
+        // ---- other
+        v("help", "", "other", G, "help | help <verb> | help <page> | help all", "this guide: one verb, one page of it, or all", "help mine|help 2", "status");
+        v("allow", "", "other", O, "allow | allow <name>", "who I take orders from; allow a player too (the guest commands)", "allow|allow Steve", "deny <name>");
+        v("deny", "", "other", O, "deny <name>", "stop taking orders from that player", "deny Steve", "allow");
+        v("restart", "", "other", G, "restart ok|no", "I may be closed for an update in the next 15 minutes (or not)", "restart ok", "status");
+        v("surface", "", "other", O, "surface | surface status | surface on|off", "the ground round the bot for the dashboard's 3D view (one file per loaded chunk; on by default)", "surface status", "status");
+        v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] "
+                        + "| debug <plumbing verb> ...: b, memory, watch, recorder, mouse, route, autominer, why, deaths, resume, death, corpse, reconnect, say, twerk, spawn, sethome, trust, untrust, use, hold, give, carry, unload, restock, caves, ores, poi",
+                "read-only looks inside the game, and the plumbing verbs that left the main list (they work as before after the word debug: debug autominer on, debug b set allowSprint true, debug watch tunnel)",
+                "debug inv|debug autominer on|debug watch|debug why", "debug");
     }
 
     /** Every verb in table order. */

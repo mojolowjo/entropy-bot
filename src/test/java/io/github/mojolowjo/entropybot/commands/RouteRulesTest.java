@@ -108,10 +108,10 @@ class RouteRulesTest {
 
     @Test
     void verbIsDocumented() {
-        VerbTable.Verb v = VerbTable.of("route");
+        assertTrue(OldWords.DEBUG_VERBS.contains("route"), "V1b: route lives under debug"); VerbTable.Verb v = VerbTable.of("debug");
         assertTrue(v != null && v.who() == VerbTable.Who.OWNER);
-        assertTrue(v.usage().contains("route test <placeA> <placeB> [trips]"));
-        assertTrue(Texts.BUILTIN_VERBS.contains("route"));
+        assertTrue(v.usage().contains("route"));
+        assertTrue(OldWords.REMOVED.contains("route"));
         assertTrue(Texts.MOD_JOB_VERBS.contains("route"));
         assertFalse(Texts.GUEST_VERBS.contains("route"));
     }

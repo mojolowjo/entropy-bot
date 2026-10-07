@@ -291,6 +291,167 @@ final class VocabCommands {
         return Core.INSTANCE.reflexes.forceAttack(e, kind);
     }
 
+    // ---- needs, goals, release, sleep auto, camp (V1b-3) ----
+
+    private JsonObject obj(String key) {
+        JsonObject b = c.brainData();
+        if (!b.has(key) || !b.get(key).isJsonObject()) b.add(key, new JsonObject());
+        return b.getAsJsonObject(key);
+    }
+
+    /** "need <item> <n>": a standing need (the brain gathers toward it). Null: no count (the old answer runs). */
+    String needStanding(LocalPlayer p, String rest) {
+        String[] s = io.github.mojolowjo.entropybot.vocab.NeedWords.standing(rest);
+        if (s == null) return null;
+        String id = Kinds.isKind(s[0]) ? s[0] : Commands.resolveItemNamePub(s[0]);
+        if (id == null) return "error: I know no item called " + s[0];
+        JsonObject needs = obj("needs");
+        int n = Integer.parseInt(s[1]);
+        if (n == 0) {
+            needs.remove(id);
+            c.saved();
+            return "ok: no standing need for " + Texts.shortId(id) + " any more";
+        }
+        if (!needs.has(id) && needs.size() >= io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_NEEDS)
+            return "error: I keep at most " + io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_NEEDS + " needs - needs clear <item> first";
+        needs.addProperty(id, n);
+        c.saved();
+        return "ok: standing need " + Texts.shortId(id) + " " + n + " (have " + have(p, id) + ") - needs lists them";
+    }
+
+    private int have(LocalPlayer p, String id) {
+        try {
+            Map<String, Integer> t = c.storage.stock(p).totals();
+            if (!Kinds.isKind(id)) return t.getOrDefault(id, 0);
+            int sum = 0;
+            for (String k : expand(id)) sum += t.getOrDefault(k, 0);
+            return sum;
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /** "needs" | "needs clear <item>|all". */
+    String needs(LocalPlayer p, String rest) {
+        List<String> w = Texts.words(rest == null ? "" : rest.toLowerCase(Locale.ROOT));
+        JsonObject needs = obj("needs");
+        if (w.size() == 2 && w.get(0).equals("clear")) {
+            if (w.get(1).equals("all")) {
+                c.brainData().add("needs", new JsonObject());
+                c.saved();
+                return "ok: no standing needs";
+            }
+            String id = Kinds.isKind(w.get(1)) ? w.get(1) : Kinds.norm(w.get(1));
+            if (needs.remove(id) == null) return "error: no standing need for " + w.get(1) + " (needs lists them)";
+            c.saved();
+            return "ok: no standing need for " + Texts.shortId(id) + " any more";
+        }
+        if (!w.isEmpty()) return "usage: needs | needs clear <item>|all";
+        Map<String, Integer> want = new java.util.LinkedHashMap<>(), have = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> e : needs.entrySet()) {
+            want.put(e.getKey(), e.getValue().getAsInt());
+            have.put(e.getKey(), have(p, e.getKey()));
+        }
+        return io.github.mojolowjo.entropybot.vocab.NeedWords.list(want, have);
+    }
+
+    /** "goal <text>": a goal from the fixed grammar, queued for the brain (max 10). */
+    String goal(String rest) {
+        io.github.mojolowjo.entropybot.vocab.NeedWords.Goal g = io.github.mojolowjo.entropybot.vocab.NeedWords.goal(rest, n -> c.policyArea(n) != null);
+        if (g.error() != null) return g.error();
+        JsonObject b = c.brainData();
+        JsonArray goals = b.has("goals") && b.get("goals").isJsonArray() ? b.getAsJsonArray("goals") : new JsonArray();
+        if (goals.size() >= io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_GOALS) return "error: I keep at most " + io.github.mojolowjo.entropybot.vocab.NeedWords.MAX_GOALS + " goals - goals clear <n>|all first";
+        JsonObject o = new JsonObject();
+        o.addProperty("text", g.text());
+        o.addProperty("chain", g.chain());
+        o.addProperty("at", System.currentTimeMillis());
+        goals.add(o);
+        b.add("goals", goals);
+        c.saved();
+        return "ok: goal " + g.text() + " noted (#" + goals.size() + ") - the brain works on goals once it is in; to do it now: " + g.chain();
+    }
+
+    /** "goals" | "goals clear <n>|all". */
+    String goals(String rest) {
+        List<String> w = Texts.words(rest == null ? "" : rest.toLowerCase(Locale.ROOT));
+        JsonObject b = c.brainData();
+        JsonArray goals = b.has("goals") && b.get("goals").isJsonArray() ? b.getAsJsonArray("goals") : new JsonArray();
+        if (w.size() == 2 && w.get(0).equals("clear")) {
+            if (w.get(1).equals("all")) { b.add("goals", new JsonArray()); c.saved(); return "ok: no goals"; }
+            if (!w.get(1).matches("^\\d{1,2}$") || Integer.parseInt(w.get(1)) < 1 || Integer.parseInt(w.get(1)) > goals.size()) return "error: no goal " + w.get(1) + " (goals lists them)";
+            goals.remove(Integer.parseInt(w.get(1)) - 1);
+            b.add("goals", goals);
+            c.saved();
+            return "ok: goal " + w.get(1) + " cleared";
+        }
+        if (!w.isEmpty()) return "usage: goals | goals clear <n>|all";
+        if (goals.isEmpty()) return "no goals - " + io.github.mojolowjo.entropybot.vocab.NeedWords.GOAL_USAGE;
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < goals.size(); i++) out.add((i + 1) + ". " + goals.get(i).getAsJsonObject().get("text").getAsString());
+        return "goals: " + String.join(", ", out);
+    }
+
+    /** "done" / "free": the owner releases the bot (the brain's rule 2: it may leave 32 blocks of the owner). */
+    String release() {
+        JsonObject b = c.brainData();
+        b.addProperty("released", true);
+        b.addProperty("releasedAt", System.currentTimeMillis());
+        c.saved();
+        return "ok: released - I may do what I want now (the brain, once it is in); your next order, come or escort takes me back";
+    }
+
+    boolean released() {
+        JsonObject b = c.brainData();
+        return b.has("released") && b.get("released").getAsBoolean();
+    }
+
+    /** The owner's next direct order lifts the release. */
+    void unrelease(String verb) {
+        if (!released() || !io.github.mojolowjo.entropybot.vocab.NeedWords.liftsRelease(verb)) return;
+        c.brainData().addProperty("released", false);
+        c.saved();
+        LOG.info("[entropybot] release lifted by {}", verb);
+    }
+
+    /** "sleep auto on|off" (default on; the brain's night branch reads it), "sleep auto". Null: not that form. */
+    String sleepAuto(String rest) {
+        String r = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
+        Boolean v = io.github.mojolowjo.entropybot.vocab.NeedWords.sleepAuto(r);
+        JsonObject b = c.brainData();
+        if (v != null) {
+            b.addProperty("sleepAuto", v);
+            c.saved();
+            return "ok: sleep auto " + (v ? "on: I go to bed when others sleep (once the brain is in)" : "off: I only sleep when you say sleep");
+        }
+        if (r.equals("auto")) return "sleep auto is " + (!b.has("sleepAuto") || b.get("sleepAuto").getAsBoolean() ? "on" : "off") + " - sleep auto on|off";
+        return null;
+    }
+
+    /**
+     * "camp here": an area of 24 round the owner (or me), type neutral, named camp; the place camp with a bed marker; then
+     * torches round it (and my bed put down when I carry one). Not a base: no main area, no setbase.
+     */
+    String campHere(String from, LocalPlayer p, JobRequests.Listener l) {
+        Minecraft mc = Minecraft.getInstance();
+        PolicyCommands.Pos at = c.hereOf(mc, from);
+        String area = c.policyCommand("area", "here 24 camp neutral", from, mc, p);
+        if (!area.startsWith("ok") && !area.contains("camp")) return "error: couldn't make the camp area: " + area;
+        String place = c.placeCommand("mark", "camp " + at.x() + " " + at.y() + " " + at.z(), from, p);
+        String[] err = new String[1];
+        String bedMark = marker(from, "bed of camp " + at.x() + " " + at.y() + " " + at.z());
+        String bed = null;
+        for (int i = 0; i < 36; i++) {
+            var st = p.getInventory().getItem(i);
+            if (!st.isEmpty() && Commands.itemId(st).endsWith("_bed")) { bed = Commands.itemId(st); break; }
+        }
+        String chain = "light here 12" + (bed != null ? " then place " + Texts.shortId(bed) + " " + (at.x() + 1) + " " + at.y() + " " + at.z() : "");
+        Chains.Reply r = c.handle(from, chain, false, true, l);
+        LOG.info("[entropybot] camp here: area {}, place {}, bed marker {}, chain {} -> {}", area, place, bedMark, chain, r.text());
+        return "ok: camp at " + at.x() + " " + at.y() + " " + at.z() + " (area camp, 24 round, neutral; place camp, marker bed) - " + String.valueOf(r.text()).replaceFirst("^ok: ", "")
+                + (bed == null ? " (no bed on me: sleep there with sleep when you bring one)" : "");
+    }
+
     // ---- status ----
 
     /** " | deaths N in the last hour | stage X" (the stage from the stock view; left out when it can't be read). */
