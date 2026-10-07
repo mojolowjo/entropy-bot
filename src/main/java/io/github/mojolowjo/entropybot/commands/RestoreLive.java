@@ -154,6 +154,8 @@ public final class RestoreLive {
         if (esc != null && esc == j.id) reason = Ledger.ESCAPE;
         else if (pathJob == j.id && !pathTargets.contains(id)) reason = Ledger.PATH;
         else return;                                         // the job's purpose (or no incidental context)
+        // V1a: the ledger is off inside a destroy area (AreaTypeRules.restore)
+        if (!io.github.mojolowjo.entropybot.guard.AreaTypeRules.restore(Guard.INSTANCE.core.basePolicy().typeAt(dim, pos.getX(), pos.getY(), pos.getZ()))) return;
         boolean ore = st.is(Tags.Blocks.ORES);
         String why = RestoreRules.whyNot(id, ore);
         List<String> items = why == null ? RestoreRules.itemsFor(id) : List.of();

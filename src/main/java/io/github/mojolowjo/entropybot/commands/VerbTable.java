@@ -138,29 +138,29 @@ public final class VerbTable {
         v("scout", "", "mining", G, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status", "walk up to n blocks (64, max 256) that way inside my areas, come back and report places, ores and mobs seen", "scout north 64|scout 120 -40", "find nearest <poi kind|ore>");
         v("ores", "", "mining", P, "ores [name] | ores clear | ores prefer <ores>", "ores I left in place, nearest first; the preferred ore list", "ores iron|ores prefer diamond,iron",
                 "mine <ore> [n]", "ores [name], ores prefer (just looking)");
-        v("dig", "", "mining", O, "dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 down|up N [same words, no floor]",
-                "clear a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
+        v("dig", "", "mining", O, "dig <area> [ores] [junk drop] [water [large]] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 down|up N [same words, no floor]",
+                "dig <area>: the whole box of an area with heights (asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "
+                        + "clear a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
                         + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
                         + "any coordinate may be ~ or ~N (from my feet); down N: each column's surface block and N-1 below, up N: the N blocks above the surface (N 1-64)",
                 "dig 10 60 10 20 64 20 ores|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 up 10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
-        v("zone", "", "mining", O, "zone corner1|corner2 [x y z] | zone | zone clear", "the work zone for build (stand on opposite corners)", "zone corner1|zone corner2", "build floor <block>");
-        v("build", "", "mining", O, "build floor|walls|shell|fill <block> | build clear", "build inside the zone (never breaks); clear breaks the whole zone (asks to confirm)",
-                "build floor cobblestone|build clear", "status");
+        v("build", "", "mining", O, "build floor|walls|shell|fill <block> <area> | build clear <area>", "build inside an area with heights (never breaks); clear breaks the whole area (asks to confirm)",
+                "build floor cobblestone yard|build clear yard", "status");
         v("light", "", "mining", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks, inside my areas (fetches or crafts torches first)",
                 "light here 8|light 0 0 30 30", "status");
         v("bootstrap", "", "mining", O, "bootstrap | bootstrap status", "a camp from nothing: chop, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp marked",
                 "bootstrap|bootstrap status", "places");
         v("place", "", "mining", O, "place <block> x y z", "place one block (walks into reach)", "place cobblestone 10 64 20", "status");
         // ---- safety and areas
-        v("area", "", "safety", P, "area <name> <r> | area protect <name> <r> [down up] | area near [<r>|on|off|status] | area list | area show <name> | area add <name> x1 z1 x2 z2 [y1 y2] "
-                        + "| area corner1 | area corner2 <name> | area grow <name> <n> | area remove <name> | area unprotect <name> confirm",
-                "where I may walk and dig: a work area r blocks around you, a never-touch box, and the near-me zone (16 blocks around you, on by default; protect boxes always win; remove asks to confirm)",
-                "area base 60|area protect house 8|area near 24|area list", "guard", "area list, area show <name>, area near");
-        v("protect", "", "safety", O, "protect | protect <name> here <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2", "a box I never dig (default 8 below, 16 above); same as area protect",
-                "area protect base 16|protect base here 16", "protect");
-        v("unprotect", "", "safety", O, "unprotect <name> confirm", "remove a protect box (same as area unprotect)", "area unprotect base confirm", "protect");
-        v("guard", "", "safety", P, "guard | guard vetoes | guard check x y z break|place|go | guard mode strict | guard mode log confirm", "the fence: its mode, what it refused, dry runs",
-                "guard|guard check 10 64 20 break", "area list", "guard, guard vetoes");
+        v("area", "", "safety", P, "area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> | area change type <name> <type> "
+                        + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]",
+                "named areas with a type: neutral (white, the default: walk, dig natural blocks), destroy (red: dig <area> breaks built blocks too, never chests), "
+                        + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
+                        + "and the near-me zone (16 blocks around you, on by default; safe areas always win)",
+                "area here 60 base main|area here 8 house safe|area 0 0 30 30 pit destroy 40 70|area change type pit neutral|area list", "fence", "area list, area show <name>, area near");
+        v("fence", "", "safety", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
+                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
+                "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
         v("defend", "defense|defence", "safety", O, "defend on|off | defend creepers flee|melee|bow | defend hostile [list|add <id>...|remove <id>...]",
                 "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets or players, avoids creepers, retreats under 6 health)",
                 "defend on|defend hostile add arphex:spider_jump", "debug mobs");

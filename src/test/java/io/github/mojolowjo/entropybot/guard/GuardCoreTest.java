@@ -60,8 +60,8 @@ class GuardCoreTest {
         assertEquals("block entity (a chest, machine, bed...)", g.check(OW, -45, 16, 396, "break", CHEST).reason());
         assertEquals("built block", g.check(OW, -45, 16, 396, "break", PLANKS).reason());
         assertTrue(g.check(OW, -45, 16, 396, "break", PLANKS).floor());
-        assertEquals("protected (base)", g.check(OW, -26, 53, 187, "break", PLAIN).reason());
-        assertEquals("protected (base)", g.check(OW, -26, 53, 187, "place", PLAIN).reason());
+        assertEquals("in base (safe)", g.check(OW, -26, 53, 187, "break", PLAIN).reason());
+        assertEquals("in base (safe)", g.check(OW, -26, 53, 187, "place", PLAIN).reason());
         assertTrue(g.checkBoxes(OW, -26, 53, 187, "go").allowed(), "walking through a protect box is fine");
         assertEquals("no break in minecraft:the_nether", g.check("minecraft:the_nether", 0, 64, 0, "break", PLAIN).reason());
         assertFalse(g.checkBoxes("minecraft:the_end", 0, 64, 0, "go").allowed());

@@ -65,7 +65,28 @@ public final class LeaseSet {
         return null;
     }
 
-    public static final String AREA_HINT = "area <name> <r>";
+    /**
+     * V1a (0.22.0): the destroy leases of the owner's own "dig &lt;area&gt;" on a destroy area (sliced like any lease; the
+     * guard grants them only inside that area). Null when fine, else the error (in log mode too: a destroy lease is
+     * never assumed).
+     */
+    public String takeDestroy(String task, ClearBox b, String area) {
+        List<String> got = new ArrayList<>();
+        for (ClearBox sl : PlaceRules.leaseSlices(b, PlaceRules.LEASE_MAX)) {
+            String r = core.destroyLease(owner, task, box(task, sl), area, true);
+            if (r.startsWith("error")) {
+                for (String id : got) core.release(id);
+                return "error: the guard refused: " + r.replaceFirst("^error: ", "");
+            }
+            got.add(r);
+            log.accept("lease " + r + " for " + task + ": " + sl + " (destroy " + area + ")");
+        }
+        ids.addAll(got);
+        taken.add(new Object[]{task, b, false, false, area});
+        return null;
+    }
+
+    public static final String AREA_HINT = "area here <r> <name>";
 
     /** placeLease for a block item: the cell alone (T1), once per cell while this set lives. */
     public String placeLease(int x, int y, int z, String task) {
@@ -153,7 +174,8 @@ public final class LeaseSet {
         List<Object[]> again = new ArrayList<>(taken);
         taken.clear();
         for (Object[] t : again) {
-            String r = take((String) t[0], (ClearBox) t[1], (Boolean) t[2], (Boolean) t[3]);
+            String r = t.length > 4 ? takeDestroy((String) t[0], (ClearBox) t[1], (String) t[4])
+                    : take((String) t[0], (ClearBox) t[1], (Boolean) t[2], (Boolean) t[3]);
             if (r != null) {
                 releaseAll();
                 return r;

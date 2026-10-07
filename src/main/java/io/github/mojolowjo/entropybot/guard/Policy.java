@@ -36,8 +36,13 @@ public final class Policy {
             throw new IllegalArgumentException("bad policy JSON: " + e.getMessage());
         }
         List<Box> areas = new ArrayList<>(), protect = new ArrayList<>();
-        if (o.has("areas")) for (JsonElement e : o.getAsJsonArray("areas")) areas.add(Box.fromJson(e.getAsJsonObject(), DEFAULT_DIM));
-        if (o.has("protect")) for (JsonElement e : o.getAsJsonArray("protect")) protect.add(Box.fromJson(e.getAsJsonObject(), DEFAULT_DIM));
+        // V1a: a safe area is a protect box (one list for the owner, two here for the lock-free checks)
+        if (o.has("areas")) for (JsonElement e : o.getAsJsonArray("areas")) {
+            Box b = Box.fromJson(e.getAsJsonObject(), DEFAULT_DIM);
+            if (b.type == AreaType.SAFE) protect.add(b);
+            else areas.add(b);
+        }
+        if (o.has("protect")) for (JsonElement e : o.getAsJsonArray("protect")) protect.add(Box.fromJson(e.getAsJsonObject(), DEFAULT_DIM).withType(AreaType.SAFE));
         for (Box a : areas) if (GuardCore.DENIED_DIMS.contains(a.dim)) throw new IllegalArgumentException("no areas in " + a.dim);
         return new Policy(areas, protect);
     }
@@ -67,6 +72,22 @@ public final class Policy {
 
     public Box protectAt(String dim, int x, int y, int z) {
         for (Box b : protect) if (b.contains(dim, x, y, z)) return b;
+        return null;
+    }
+
+    /** V1a: the type at a spot: safe in a protect box, else the first area's type, else null (outside every area). */
+    public AreaType typeAt(String dim, int x, int y, int z) {
+        if (protectAt(dim, x, y, z) != null) return AreaType.SAFE;
+        Box a = areaAt(dim, x, y, z);
+        return a == null ? null : a.type;
+    }
+
+    /** V1a: the destroy area (by name, any case) the box lies wholly inside, or null. */
+    public Box destroyCovering(Box box, String areaName) {
+        for (Box a : areas) {
+            if (a.type != AreaType.DESTROY || a.name == null || !a.name.equalsIgnoreCase(areaName)) continue;
+            if (box.inside(a)) return a;
+        }
         return null;
     }
 

@@ -133,6 +133,8 @@ final class DigCommands {
      */
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
+        String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
+        if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);
         if (a == null) return DIG_USAGE;
         if (a.surfaceForm()) return digSurface(c, p, a, rest, from);
@@ -164,6 +166,50 @@ final class DigCommands {
                 .water(a.water(), a.large()).line("dig " + rest.trim());
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
+        return startClear(c, p, o, restockSteps(c, p, box.volume()));
+    }
+
+    /**
+     * V1a (0.22.0): the box of an area for dig/build: {x1, y1, z1, x2, y2, z2}, or an "error: ..." in err[0]. The area
+     * needs its own y range (question 3: no accidental dig to bedrock).
+     */
+    static int[] areaBox(Commands c, String name, String[] err) {
+        JsonObject b = c.policyArea(name);
+        if (b == null) { err[0] = "error: I have no area called " + name + " (area list)"; return null; }
+        if (b.has("round")) { err[0] = "error: " + name + " is a circle - make a box area for this"; return null; }
+        if (!PolicyCommands.hasY(b)) {
+            err[0] = "error: " + name + " covers every height - give it heights: area " + PolicyCommands.n(b, "x1") + " " + PolicyCommands.n(b, "z1") + " "
+                    + PolicyCommands.n(b, "x2") + " " + PolicyCommands.n(b, "z2") + " " + name + " " + PolicyCommands.typeOf(b).word() + " <y1> <y2>";
+            return null;
+        }
+        if (!PolicyCommands.dimOf(b).equals(Storage.dim())) { err[0] = "error: " + name + " is in " + PolicyCommands.dimOf(b); return null; }
+        return new int[]{PolicyCommands.n(b, "x1"), PolicyCommands.n(b, "y1"), PolicyCommands.n(b, "z1"), PolicyCommands.n(b, "x2"), PolicyCommands.n(b, "y2"), PolicyCommands.n(b, "z2")};
+    }
+
+    /**
+     * V1a: "dig &lt;area&gt; [ores] [junk drop] [water [large]]": the whole box of a named area, the careful way. In a destroy
+     * area and from the owner, built blocks go too (a destroy lease; block entities never). A safe area refuses.
+     */
+    static String digArea(Commands c, LocalPlayer p, String name, String rest, String from) {
+        String[] err = new String[1];
+        int[] n = areaBox(c, name, err);
+        if (n == null) return err[0];
+        JsonObject b = c.policyArea(name);
+        io.github.mojolowjo.entropybot.guard.AreaType t = PolicyCommands.typeOf(b);
+        if (t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + name + " is a safe area - I never dig there";
+        List<String> words = Texts.words(rest.trim().toLowerCase());
+        boolean ores = words.contains("ores"), junk = words.contains("junk") && words.contains("drop"), water = words.contains("water") || words.contains("large"), large = words.contains("large");
+        for (String w : words.subList(1, words.size())) {
+            if (!List.of("ores", "junk", "drop", "water", "large").contains(w)) return "usage: dig <area> [ores] [junk drop] [water [large]]";
+        }
+        ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
+        if (box.volume() > 20000) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
+        boolean owner = from == null || from.equalsIgnoreCase(c.owner());
+        boolean destroy = io.github.mojolowjo.entropybot.guard.AreaTypeRules.breakBuilt(t, owner);
+        String label = "digging " + name + " (" + t.word() + ", " + box.volume() + " blocks)" + (destroy ? " (built blocks too)" : "") + (ores ? " (ores too)" : "");
+        ClearJob.Options o = new ClearJob.Options().box(box).collect(ores).label(label).junkDrop(junk).liquidBlocks(true).water(water, large).line("dig " + rest.trim());
+        if (destroy) o.destroyArea(name);
+        LOG.info("[entropybot] dig {}: {} area, destroy lease {}", name, t.word(), destroy);
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
     }
 
@@ -283,18 +329,30 @@ final class DigCommands {
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
         Map<String, String> ops = Map.of("floor", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
-        JsonObject z = zone(c);
-        if (!complete(z)) return NO_ZONE;
-        if (!zoneDim(z).equals(Storage.dim())) return "error: the zone is in " + zoneDim(z);
-        if (shape.equals("clear")) return startClear(c, p, new ClearJob.Options(), List.of());
-        if (parts.length < 2 || parts[1].isEmpty()) return "error: which block? e.g. build " + shape + " cobblestone";
+        // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
+        int need = shape.equals("clear") ? 2 : 3;
+        if (parts.length != need) return shape.equals("clear") ? "usage: build clear <area>" : "usage: build " + shape + " <block> <area>  (e.g. build " + shape + " cobblestone yard)";
+        String areaName = parts[need - 1].toLowerCase();
+        String[] err = new String[1];
+        int[] an = areaBox(c, areaName, err);
+        if (an == null) return err[0];
+        if (PolicyCommands.typeOf(c.policyArea(areaName)) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + areaName + " is a safe area - I never build or dig there";
+        JsonObject z = new JsonObject();
+        z.addProperty("dim", Storage.dim());
+        z.addProperty("x1", an[0]); z.addProperty("y1", an[1]); z.addProperty("z1", an[2]);
+        z.addProperty("x2", an[3]); z.addProperty("y2", an[4]); z.addProperty("z2", an[5]);
+        if (shape.equals("clear")) {
+            ClearBox cb = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
+            if (cb.volume() > 20000) return "error: " + areaName + " is too big to clear in one go (20000 blocks max)";
+            return startClear(c, p, new ClearJob.Options().box(cb).label("clearing " + areaName), List.of());
+        }
         Map<String, Integer> counts = Gui.inventory(p);
         String id = c.crafting.planner.resolveItem(parts[1], counts);
         if (id == null) return "error: I don't know a block called " + parts[1];
         if (counts.getOrDefault(id, 0) <= 0) return "error: I have no " + CraftPlanner.shortId(id) + " - next: get " + CraftPlanner.shortId(id) + " 64 (or give me some)";
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
-        ClearBox box = zoneBox(c);
+        ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
         // the guard: Baritone's placements need a place lease for the zone (the bridge took none; strict mode refused them)
         Clearing.BuildState bs = new Clearing.BuildState();
@@ -320,7 +378,7 @@ final class DigCommands {
         Clearing.placingOwned = true;
         c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
         c.jobs.job.holdOnFight = true;
-        return "started: " + bs.status + " (" + zoneText(z) + ")";
+        return "started: " + bs.status + " (area " + areaName + ")";
     }
 
     // ---- place ----

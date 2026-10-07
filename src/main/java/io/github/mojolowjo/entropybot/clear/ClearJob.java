@@ -85,6 +85,9 @@ public final class ClearJob {
         public Options soft(boolean s) { soft = s; return this; }
         public Options mustFinish(boolean m) { mustFinish = m; return this; }
         public Options force(boolean f) { force = f; return this; }
+        /** V1a: the owner's own "dig <area>" on a destroy area: built blocks go too, under a destroy lease (never block entities). */
+        public String destroyArea;
+        public Options destroyArea(String a) { destroyArea = a; return this; }
         public Options minStandY(Integer y) { minStandY = y; return this; }
         public Options torches(List<Pos> t) { torches = t; return this; }
         public Options dump(List<Pos> d) { dump = d; return this; }
@@ -102,6 +105,8 @@ public final class ClearJob {
     public final Set<String> only;
     public final String label;
     public final boolean keepOres, collect, soft, mustFinish, force;
+    /** V1a: {@link Options#destroyArea} (null: not a destroy dig). */
+    public final String destroyArea;
     /** F: {@link Options#junkDrop}, {@link Options#floor} / {@link Options#floorBlock} */
     public final boolean junkDrop, floor;
     public final String floorBlock;
@@ -179,6 +184,7 @@ public final class ClearJob {
         this.soft = o.soft;
         this.mustFinish = o.mustFinish;
         this.force = o.force;
+        this.destroyArea = o.destroyArea;
         this.minStandY = o.minStandY;
         this.torches = o.torches == null ? new ArrayList<>() : new ArrayList<>(o.torches);
         this.dump = o.dump;

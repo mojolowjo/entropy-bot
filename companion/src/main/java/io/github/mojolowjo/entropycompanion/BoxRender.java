@@ -12,7 +12,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import java.util.List;
 
 /**
- * C3's box view: the bot's areas (green), protect boxes (red) and the owner's pending corners (yellow) as line boxes
+ * C3's box view: the bot's areas by type (neutral white, destroy red, main blue, safe green) and the owner's pending corners (yellow) as line boxes
  * in the owner's world, within {@link BoxSet#RANGE} blocks. Drawn at AFTER_PARTICLES: in 1.21.1 the model-view stack
  * holds the camera rotation there (LevelRenderer.renderLevel pushes it before the entities and pops it after the
  * weather), so camera-relative coordinates with an identity pose are right. Stale boxes (dashboard down) are grey.
@@ -39,9 +39,8 @@ final class BoxRender {
                 List<BoxSet.Box> near = BoxSet.near(c.boxes, dim, cam.x, cam.z, BoxSet.RANGE);
                 boolean stale = c.boxesStale;
                 for (BoxSet.Box b : near) {
-                    float r = stale ? 0.6f : b.kind() == BoxSet.Kind.PROTECT ? 1f : 0.2f;
-                    float g = stale ? 0.6f : b.kind() == BoxSet.Kind.PROTECT ? 0.2f : 1f;
-                    float bl = stale ? 0.6f : 0.2f;
+                    float[] col = BoxSet.colour(b.type());          // 0.2.1: by area type
+                    float r = stale ? 0.6f : col[0], g = stale ? 0.6f : col[1], bl = stale ? 0.6f : col[2];
                     // whole-height areas are drawn 48 blocks around the camera's height, not to the build limit
                     double y1 = b.y1() <= BoxSet.WORLD_MIN_Y ? Math.max(b.y1(), cam.y - 48) : b.y1();
                     double y2 = b.y2() >= BoxSet.WORLD_MAX_Y ? Math.min(b.y2() + 1, cam.y + 48) : b.y2() + 1;

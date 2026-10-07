@@ -12,7 +12,7 @@ public final class StripTexts {
 
     public static final String NO_MINE = "error: no mine marked - stand where it should start, face the way to dig, and PM \"mark mine\"";
     public static final String TURN_USAGE = "usage: stripmine turn left|right";
-    public static final String AREA_HINT = "area <name> <r>";
+    public static final String AREA_HINT = "area here <r> <name>";
 
     public static String noMine(String name) {
         return name.equals("mine") ? NO_MINE

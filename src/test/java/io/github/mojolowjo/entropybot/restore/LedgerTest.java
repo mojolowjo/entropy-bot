@@ -110,7 +110,7 @@ class LedgerTest {
         assertEquals("manual", back.mode);
         assertEquals(1, back.ledger.size());
         assertEquals(1, back.openHints(List.of()).size());
-        assertEquals("protect build_10_20 5 60 15 15 68 25", back.hints.get(0).command());
+        assertEquals("area 5 15 15 25 build_10_20 safe 60 68", back.hints.get(0).command());
         // a protect box over it closes the hint; so does "restore ignore"
         assertTrue(back.openHints(List.of(new Box("house", OW, 0, 0, 0, 30, 100, 30))).isEmpty());
         assertFalse(back.ignore(100, 64, 100));

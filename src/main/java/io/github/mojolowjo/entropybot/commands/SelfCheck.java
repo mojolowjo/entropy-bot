@@ -42,8 +42,8 @@ public final class SelfCheck {
     /** Every problem in the state, most basic first. */
     public static List<Finding> run(State s) {
         List<Finding> out = new ArrayList<>();
-        if (s.areas() <= 0) out.add(new Finding("areas", "no work areas: with the fence on I dig and build only near you (area near)","area <name> 60"));
-        else if (!s.strict()) out.add(new Finding("logmode", "the fence is in log mode (the guard only notes what it would refuse)", "guard mode strict"));
+        if (s.areas() <= 0) out.add(new Finding("areas", "no work areas: with the fence on I dig and build only near you (area near)","area here 60 <name>"));
+        else if (!s.strict()) out.add(new Finding("logmode", "the fence is in log mode (the guard only notes what it would refuse)", "fence mode strict"));
         if (!s.baseMarked()) out.add(new Finding("base", "no base marked", "setbase (standing at the base)"));
         else if (s.baseChests() <= 0) out.add(new Finding("basechests", "no base chests scanned: deposit and crafting can't use them", "scan base"));
         if (!s.foodChest()) out.add(new Finding("food", "no food chest marked: when I run out I can't fetch food", "mark food (next to the food chest)"));

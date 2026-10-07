@@ -2,23 +2,26 @@ package io.github.mojolowjo.entropybot.commands;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import io.github.mojolowjo.entropybot.guard.AreaType;
 import io.github.mojolowjo.entropybot.memory.Limits;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * "area ...", "protect ...", "unprotect ...", "guard ..." (B1's PM verbs, moved from the bridge in B7a with the
- * same wording). The policy lives in {@code areas.json} now: {areas:[{name,dim,x1,z1,x2,z2,y1?,y2?}], protect:[...],
- * strict, corner1}; every change saves it and hands it to the guard. Plain Java behind {@link Guard}.
+ * "area ..." and "fence ..." (V1a, 0.22.0: areas with a type; the old protect/unprotect/guard words only answer with the
+ * new form, {@link OldWords}). The policy lives in {@code areas.json}: {version: 2, areas:[{name,dim,x1,z1,x2,z2,y1?,y2?,
+ * type?}], protect:[... type "safe"], strict, near}. The owner sees one list; the file keeps the safe areas apart (the
+ * guard's lock-free protect check and every reader of "protect" stay as they were). Plain Java behind {@link Guard}.
  */
 public final class PolicyCommands {
-    /** 0.21.2: the short form (the old "area add <name> here <r>" still works). */
-    public static final String AREA_HINT = "area <name> <r>";
+    /** V1a: the short form. */
+    public static final String AREA_HINT = "area here <r> <name>";
     static final String NAME_RE = "^[a-z0-9_-]{1,24}$";
     static final String DEFAULT_DIM = "minecraft:overworld";
+    /** areas.json's format: 2 = typed areas (V1a). */
+    public static final int VERSION = 2;
 
     /** A spot: block coordinates and dimension. */
     public record Pos(int x, int y, int z, String dim) {}
@@ -46,9 +49,10 @@ public final class PolicyCommands {
         default String nearStatus() { return null; }
     }
 
-    /** The words "area" takes as subcommands: an area can't be called one of these. */
+    /** The words "area" takes as subcommands (and the old ones, so an old line never makes an area): no area name. */
     static final java.util.Set<String> AREA_WORDS = java.util.Set.of("list", "show", "add", "corner1", "corner2", "grow", "remove",
-            "protect", "unprotect", "near", "here", "confirm", "on", "off", "status");
+            "protect", "unprotect", "near", "here", "confirm", "on", "off", "status", "change", "del", "name", "type",
+            "neutral", "destroy", "main", "safe", "all", "me");
 
     private final JsonObject p;
     private final Guard guard;
@@ -96,8 +100,10 @@ public final class PolicyCommands {
         return a;
     }
 
+    /** The work areas (every type but safe). */
     public JsonArray areas() { return p.getAsJsonArray("areas"); }
 
+    /** The safe areas (the old protect boxes). */
     public JsonArray protect() { return p.getAsJsonArray("protect"); }
 
     public boolean strict() { return p.has("strict") && p.get("strict").getAsBoolean(); }
@@ -129,6 +135,14 @@ public final class PolicyCommands {
         return false;
     }
 
+    /** V1a: an area of any type by name (case-insensitive), or null. */
+    public JsonObject findArea(String name) {
+        int i = findBox(areas(), name);
+        if (i >= 0) return areas().get(i).getAsJsonObject();
+        i = findBox(protect(), name);
+        return i >= 0 ? protect().get(i).getAsJsonObject() : null;
+    }
+
     static String dimOf(JsonObject b) {
         return b.has("dim") && !b.get("dim").isJsonNull() ? b.get("dim").getAsString() : DEFAULT_DIM;
     }
@@ -136,6 +150,11 @@ public final class PolicyCommands {
     static int n(JsonObject o, String k) { return o.get(k).getAsInt(); }
 
     static boolean hasY(JsonObject b) { return b.has("y1") && b.has("y2") && !b.get("y1").isJsonNull() && !b.get("y2").isJsonNull(); }
+
+    /** V1a: the type of an area entry (absent = neutral). */
+    public static AreaType typeOf(JsonObject b) {
+        return AreaType.orNeutral(b.has("type") && b.get("type").isJsonPrimitive() ? b.get("type").getAsString() : null);
+    }
 
     /** "-272 -64 to 223 431" (plus ", y 10..60" when the box has a height). */
     static String boxText(JsonObject b) {
@@ -146,10 +165,20 @@ public final class PolicyCommands {
         return n(b, "x1") + " " + n(b, "z1") + " to " + n(b, "x2") + " " + n(b, "z2") + (hasY(b) ? ", y " + n(b, "y1") + ".." + n(b, "y2") : "");
     }
 
+    /** "map (main, blue: -272 -64 to 223 431)". */
+    static String areaText(JsonObject b) {
+        AreaType t = typeOf(b);
+        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")";
+    }
+
+    static String nameOf(JsonObject b) {
+        return b.has("name") && !b.get("name").isJsonNull() ? b.get("name").getAsString() : "box";
+    }
+
     static int findBox(JsonArray list, String name) {
         for (int i = 0; i < list.size(); i++) {
             JsonObject b = list.get(i).getAsJsonObject();
-            if (b.has("name") && name.equals(b.get("name").getAsString())) return i;
+            if (b.has("name") && name.equalsIgnoreCase(b.get("name").getAsString())) return i;
         }
         return -1;
     }
@@ -176,12 +205,6 @@ public final class PolicyCommands {
         return g;
     }
 
-    private String names(JsonArray l) {
-        List<String> out = new ArrayList<>();
-        for (JsonElement e : l) out.add(e.getAsJsonObject().has("name") ? e.getAsJsonObject().get("name").getAsString() : "box");
-        return out.isEmpty() ? "none" : String.join(", ", out);
-    }
-
     private String changed(String msg, boolean modeReply) {
         saved.run();
         String[] r = guard.apply(guardPolicy(), strict());
@@ -195,50 +218,152 @@ public final class PolicyCommands {
         return true;
     }
 
-    private static int[] ints(List<String> l) {
-        int[] out = new int[l.size()];
-        for (int i = 0; i < out.length; i++) out[i] = Integer.parseInt(l.get(i));
-        return out;
+    private static boolean isInt(String s) { return s.matches("^-?\\d+$"); }
+
+    /** Package H: a new area past its cap is refused (i = the index of the one replaced, or -1). */
+    static String areasFull(JsonArray areas, int i) {
+        return Limits.full(i >= 0, areas.size(), Limits.AREAS, "areas", "remove one first (area del <name> confirm)");
     }
 
-    private static Integer intOr(List<String> parts, int i, Integer def) {
-        if (parts.size() <= i) return def;
-        try { return Integer.parseInt(parts.get(i)); } catch (NumberFormatException e) { return null; }
+    /** An area name that is one of "area"'s own words or a type word. */
+    static String reservedName(String name) {
+        return "error: \"" + name + "\" is one of my area words (list, show, here, change, del, near, a type...) - pick another name, e.g. " + name + "1";
+    }
+
+    /** V1a: the name rules ({@code AreaNames}): letters, digits, _ and -, 1-24, not an area word or a type. Null when fine. */
+    static String badName(String name) {
+        if (name == null || !name.matches(NAME_RE)) return "error: an area name is 1-24 letters, digits, _ and - (e.g. farm, alex_house)";
+        if (AREA_WORDS.contains(name)) return reservedName(name);
+        return null;
+    }
+
+    /** One parsed "area" creation line. error != null: the answer. */
+    record NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error) {
+        static NewArea err(String e) { return new NewArea(null, null, null, null, null, null, e); }
+    }
+
+    static final String USAGE = "usage: area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> "
+            + "| area change type <name> <type> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (types: neutral, destroy, main, safe)";
+
+    /**
+     * Parses "here &lt;r&gt; &lt;name&gt; [type] [down up]" (r != null; y1/y2 = down/up) and "x z x2 z2 &lt;name&gt; [type]
+     * [y1 y2]" (xz != null). Pure, for {@code AreaNamesTest}.
+     */
+    static NewArea parseNew(List<String> w) {
+        int i;
+        int[] xz = null;
+        Integer r = null;
+        if (!w.isEmpty() && w.get(0).equalsIgnoreCase("here")) {
+            if (w.size() < 3 || !w.get(1).matches("^\\d{1,4}$")) return NewArea.err("usage: area here <r> <name> [type] [down up]  (r = blocks each way, 1..2000)");
+            r = Integer.parseInt(w.get(1));
+            if (r < 1 || r > 2000) return NewArea.err("error: r is 1..2000 blocks each way");
+            i = 2;
+        } else if (w.size() >= 5 && allInts(w.subList(0, 4))) {
+            xz = new int[4];
+            for (int k = 0; k < 4; k++) xz[k] = Integer.parseInt(w.get(k));
+            i = 4;
+        } else {
+            return NewArea.err(USAGE);
+        }
+        String name = w.get(i).toLowerCase();
+        String bad = badName(name);
+        if (bad != null) return NewArea.err(bad);
+        i++;
+        AreaType type = AreaType.NEUTRAL;
+        if (i < w.size() && !isInt(w.get(i))) {
+            type = AreaType.of(w.get(i));
+            if (type == null) return NewArea.err(AreaType.BAD);
+            i++;
+        }
+        Integer y1 = null, y2 = null;
+        int left = w.size() - i;
+        if (left == 2 && allInts(w.subList(i, w.size()))) {
+            y1 = Integer.parseInt(w.get(i));
+            y2 = Integer.parseInt(w.get(i + 1));
+            if (r != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
+        } else if (left != 0) {
+            return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+        }
+        return new NewArea(name, type, xz, r, y1, y2, null);
+    }
+
+    /** The area entry for a parsed line (here = the owner's spot or the bot's; a safe "here" area defaults to 8 down, 16 up). */
+    static JsonObject build(NewArea a, Pos here, Pos me) {
+        JsonObject b;
+        if (a.r() != null) {
+            Integer lo = null, hi = null;
+            if (a.y1() != null) { lo = here.y() - a.y1(); hi = here.y() + a.y2(); }
+            else if (a.type() == AreaType.SAFE) { lo = here.y() - 8; hi = here.y() + 16; }
+            b = makeBox(a.name(), here.dim(), here.x() - a.r(), here.z() - a.r(), here.x() + a.r(), here.z() + a.r(), lo, hi);
+        } else {
+            int[] v = a.xz();
+            b = makeBox(a.name(), me.dim(), v[0], v[1], v[2], v[3], a.y1(), a.y2());
+        }
+        if (a.type() != AreaType.NEUTRAL) b.addProperty("type", a.type().word());
+        return b;
+    }
+
+    /** Removes an area of any type by name; true when one was there. */
+    private boolean removeNamed(String name) {
+        int i = findBox(areas(), name);
+        if (i >= 0) { areas().remove(i); return true; }
+        i = findBox(protect(), name);
+        if (i >= 0) { protect().remove(i); return true; }
+        return false;
+    }
+
+    /** Puts an entry in the list its type belongs to (safe: protect). Null when fine, else the cap's error. */
+    private String put(JsonObject b) {
+        String name = nameOf(b);
+        boolean safe = typeOf(b) == AreaType.SAFE;
+        JsonArray list = safe ? protect() : areas();
+        boolean replacing = findArea(name) != null;
+        int i = findBox(list, name);
+        String full = safe ? Limits.full(i >= 0, list.size(), Limits.PROTECT, "safe areas", "delete one first (area del <name> confirm)") : areasFull(list, i);
+        if (full != null) return full;
+        if (replacing) removeNamed(name);
+        list.add(b);
+        return null;
+    }
+
+    /** V1a: "fence check" names where the spot lies: " (in mine, destroy)" / " (outside every area)". */
+    String whereText(String dim, int x, int y, int z) {
+        for (JsonArray l : List.of(protect(), areas())) {
+            for (JsonElement e : l) {
+                JsonObject b = e.getAsJsonObject();
+                if (dimOf(b).equals(dim) && boxGap(b, x, y, z) == 0) return " (in " + nameOf(b) + ", " + typeOf(b).word() + ")";
+            }
+        }
+        JsonObject n = guard.nearArea();
+        if (n != null && dimOf(n).equals(dim) && boxGap(n, x, y, z) == 0) return " (within " + nearR() + " blocks of you)";
+        return " (outside every area)";
+    }
+
+    /** "area list": one list, every type, with the colour word. */
+    String listText() {
+        String nearLine = guard.nearStatus();
+        String tail = nearLine == null ? "" : " | " + nearLine;
+        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - " + AREA_HINT + " [type]" + tail;
+        List<String> out = new ArrayList<>();
+        for (JsonElement e : areas()) out.add(areaText(e.getAsJsonObject()));
+        for (JsonElement e : protect()) out.add(areaText(e.getAsJsonObject()));
+        return "areas: " + String.join(", ", out) + tail;
     }
 
     /**
-     * @param here  the owner's spot when the bot can see them, else the bot's ("here", as "mark" does)
+     * @param here  the owner's spot when the bot can see them (or the companion's fix), else the bot's
      * @param me    the bot's spot
      */
-    /** Package H: a new area past {@link Limits#AREAS} is refused (i = the index of the one replaced, or -1). */
-    static String areasFull(JsonArray areas, int i) {
-        return Limits.full(i >= 0, areas.size(), Limits.AREAS, "areas", "remove one first (area remove <name> confirm) or grow one (area grow <name> <n>)");
-    }
-
-    /** 0.21.2: an area name that is one of "area"'s own words. */
-    static String reservedName(String name) {
-        return "error: \"" + name + "\" is one of my area words (list, show, add, near, protect, ...) - pick another name, e.g. area " + name + "1 16";
-    }
-
     public String command(String verb, String rest, boolean isOwner, String owner, Pos here, Pos me) {
         List<String> parts = Texts.words(rest);
         String sub = parts.isEmpty() ? "" : parts.get(0).toLowerCase();
         String notOwner = "only " + owner + " can change where I may go and dig";
-        JsonArray areas = areas(), protect = protect();
+        // the cut words answer with the new form and do nothing else
+        String old = OldWords.hint(verb, rest);
+        if (old != null) return old;
         if (verb.equals("area")) {
-            String usage = "usage: area <name> <r> | area protect <name> <r> [down up] | area list | show <name> | near [<r>|on|off|status] | add <name> x1 z1 x2 z2 [y1 y2] | corner1 | corner2 <name> | grow <name> <n> | remove <name> confirm | unprotect <name> confirm";
             String nearLine = guard.nearStatus();
-            // "area list 16" and the like: an area called like one of the words - say so instead of listing
-            if (parts.size() == 2 && parts.get(1).matches("^\\d+$") && java.util.Set.of("list", "here", "confirm", "on", "off", "status", "corner1", "add", "grow").contains(sub)) {
-                return reservedName(sub);
-            }
-            if (sub.isEmpty() || sub.equals("list")) {
-                String tail = nearLine == null ? "" : " | " + nearLine;
-                if (areas.isEmpty()) return "no areas set - " + AREA_HINT + tail;
-                List<String> out = new ArrayList<>();
-                for (JsonElement e : areas) out.add(e.getAsJsonObject().get("name").getAsString() + " (" + boxText(e.getAsJsonObject()) + ")");
-                return "areas: " + String.join(", ", out) + tail;
-            }
+            if (sub.isEmpty() || sub.equals("list")) return listText();
             // 0.21.2: the near-me zone (status for everyone allowed, changes for the owner)
             if (sub.equals("near")) {
                 String arg = parts.size() > 1 ? parts.get(1).toLowerCase() : "status";
@@ -248,7 +373,7 @@ public final class PolicyCommands {
                     p.getAsJsonObject("near").addProperty("on", arg.equals("on"));
                     guard.setNear(nearOn(), nearR());
                     saved.run();
-                    return "ok: near me " + arg + (arg.equals("on") ? " - I may work in a circle of " + nearR() + " blocks around you, wherever you are (protect boxes and the safety rules still hold)"
+                    return "ok: near me " + arg + (arg.equals("on") ? " - I may work in a circle of " + nearR() + " blocks around you, wherever you are (safe areas and the safety rules still hold)"
                             : " - only my areas count now");
                 }
                 Integer r = arg.matches("^\\d{1,4}$") ? Integer.valueOf(arg) : null;
@@ -261,153 +386,72 @@ public final class PolicyCommands {
                 saved.run();
                 return "ok: near me " + r + " blocks (on) - I may work in a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down)";
             }
-            // 0.21.2: "area protect ..." = protect, "area unprotect ..." = unprotect (the old words stay)
-            if (sub.equals("protect")) {
-                List<String> w = new ArrayList<>(parts.subList(1, parts.size()));
-                if (w.size() >= 2 && w.size() <= 4 && allInts(w.subList(1, w.size()))) w.add(1, "here");
-                return command("protect", String.join(" ", w), isOwner, owner, here, me);
-            }
-            if (sub.equals("unprotect")) return command("unprotect", String.join(" ", parts.subList(1, parts.size())), isOwner, owner, here, me);
             String name = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
-            // 0.21.2: "area <name> <r>" (and "area <name> here <r>"): a work area r blocks each way around you
-            if (!AREA_WORDS.contains(sub)) {
-                boolean shortForm = (parts.size() == 2 && parts.get(1).matches("^-?\\d+$"))
-                        || (parts.size() == 3 && parts.get(1).equalsIgnoreCase("here") && parts.get(2).matches("^-?\\d+$"));
-                if (!shortForm) return usage;
-                if (!isOwner) return notOwner;
-                if (!sub.matches(NAME_RE)) return "usage: area <name> <r>  (names: letters, digits, _ and -)";
-                return command("area", "add " + sub + " here " + parts.get(parts.size() - 1), true, owner, here, me);
-            }
             if (sub.equals("show")) {
-                int i = findBox(areas, name);
-                if (i < 0) return "I have no area called " + (name.isEmpty() ? "?" : name) + " (PM \"area list\")";
-                JsonObject b = areas.get(i).getAsJsonObject();
-                String r = name + ": " + boxText(b) + ", " + (n(b, "x2") - n(b, "x1") + 1) + "x" + (n(b, "z2") - n(b, "z1") + 1);
+                JsonObject b = findArea(name);
+                if (b == null) return "I have no area called " + (name.isEmpty() ? "?" : name) + " (area list)";
+                String r = areaText(b) + ", " + (n(b, "x2") - n(b, "x1") + 1) + "x" + (n(b, "z2") - n(b, "z1") + 1);
                 if (!dimOf(b).equals(me.dim()) || boxGap(b, me.x(), me.y(), me.z()) > 0) return r + " - I'm outside it";
                 return r + " - edges: west " + (me.x() - n(b, "x1")) + ", east " + (n(b, "x2") - me.x()) + ", north " + (me.z() - n(b, "z1")) + ", south " + (n(b, "z2") - me.z());
             }
             if (!isOwner) return notOwner;
-            if (sub.equals("add")) {
-                if (!name.matches(NAME_RE)) return usage + " (names: letters, digits, _ and -)";
-                if (AREA_WORDS.contains(name)) return reservedName(name);
-                JsonObject b;
-                if (parts.size() > 2 && parts.get(2).equalsIgnoreCase("here")) {
-                    Integer r = intOr(parts, 3, null);
-                    if (r == null || r < 1 || r > 2000) return "usage: area add " + name + " here <r>  (r = blocks each way, 1..2000)";
-                    b = makeBox(name, here.dim(), here.x() - r, here.z() - r, here.x() + r, here.z() + r, null, null);
-                } else if (allInts(parts.subList(Math.min(2, parts.size()), parts.size())) && (parts.size() == 6 || parts.size() == 8)) {
-                    int[] v = ints(parts.subList(2, parts.size()));
-                    b = makeBox(name, me.dim(), v[0], v[1], v[2], v[3], parts.size() == 8 ? v[4] : null, parts.size() == 8 ? v[5] : null);
-                } else {
-                    return usage;
+            if (sub.equals("del")) {
+                JsonObject b = findArea(name);
+                if (b == null) return "I have no area called " + (name.isEmpty() ? "?" : name) + " (area list)";
+                if (parts.size() < 3 || !parts.get(2).equalsIgnoreCase("confirm")) return "say \"area del " + name + " confirm\" to delete it";
+                removeNamed(name);
+                return changed("ok: area " + name + " deleted", false);
+            }
+            if (sub.equals("change")) {
+                String what = name;
+                if (parts.size() != 4 || !(what.equals("name") || what.equals("type"))) return "usage: area change name <name> <new name> | area change type <name> <type>";
+                String target = parts.get(2).toLowerCase(), val = parts.get(3).toLowerCase();
+                JsonObject b = findArea(target);
+                if (b == null) return "I have no area called " + target + " (area list)";
+                if (what.equals("name")) {
+                    String bad = badName(val);
+                    if (bad != null) return bad;
+                    if (findArea(val) != null && !val.equalsIgnoreCase(target)) return "error: there is an area called " + val + " already";
+                    b.addProperty("name", val);
+                    return changed("ok: area " + target + " is now called " + val, false);
                 }
-                int i = findBox(areas, name);
-                String full = areasFull(areas, i);
-                if (full != null) return full;
-                if (i >= 0) areas.set(i, b);
-                else areas.add(b);
-                return changed("ok: area " + name + (i >= 0 ? " replaced" : " added") + " (" + boxText(b) + ")", false);
-            }
-            if (sub.equals("corner1")) {
-                JsonObject c = new JsonObject();
-                c.addProperty("x", here.x());
-                c.addProperty("y", here.y());
-                c.addProperty("z", here.z());
-                c.addProperty("dim", here.dim());
-                p.add("corner1", c);
-                saved.run();
-                return "corner 1 = " + here.x() + " " + here.y() + " " + here.z() + " - stand on the opposite corner and PM \"area corner2 <name>\"";
-            }
-            if (sub.equals("corner2")) {
-                if (!name.matches(NAME_RE)) return "usage: area corner2 <name>  (names: letters, digits, _ and -)";
-                if (AREA_WORDS.contains(name)) return reservedName(name);
-                JsonObject c = p.has("corner1") && p.get("corner1").isJsonObject() ? p.getAsJsonObject("corner1") : null;
-                if (c == null) return "set corner 1 first: PM \"area corner1\" standing on one corner";
-                if (c.has("dim") && !c.get("dim").getAsString().equals(here.dim())) return "corner 1 is in " + c.get("dim").getAsString() + " - PM \"area corner1\" again here";
-                JsonObject b = makeBox(name, here.dim(), n(c, "x"), n(c, "z"), here.x(), here.z(), null, null);
-                int i = findBox(areas, name);
-                String full = areasFull(areas, i);
-                if (full != null) return full;
-                if (i >= 0) areas.set(i, b);
-                else areas.add(b);
-                p.add("corner1", JsonNull.INSTANCE);
-                return changed("ok: area " + name + (i >= 0 ? " replaced" : " added") + " (" + boxText(b) + ")", false);
-            }
-            if (sub.equals("grow")) {
-                int i = findBox(areas, name);
-                if (i < 0) return "I have no area called " + (name.isEmpty() ? "?" : name) + " (PM \"area list\")";
-                Integer g = intOr(parts, 2, null);
-                if (g == null || g < 1 || g > 2000) return "usage: area grow " + name + " <blocks>  (1..2000)";
-                JsonObject b = areas.get(i).getAsJsonObject();
-                b.addProperty("x1", n(b, "x1") - g);
-                b.addProperty("z1", n(b, "z1") - g);
-                b.addProperty("x2", n(b, "x2") + g);
-                b.addProperty("z2", n(b, "z2") + g);
-                return changed("ok: area " + name + " grown by " + g + " (" + boxText(b) + ")", false);
-            }
-            if (sub.equals("remove")) {
-                int i = findBox(areas, name);
-                if (i < 0) return "I have no area called " + (name.isEmpty() ? "?" : name) + " (PM \"area list\")";
-                if (parts.size() < 3 || !parts.get(2).equalsIgnoreCase("confirm")) return "say \"area remove " + name + " confirm\" to remove it";
-                areas.remove(i);
-                return changed("ok: area " + name + " removed", false);
-            }
-            return usage;
-        }
-        if (verb.equals("protect")) {
-            if (sub.isEmpty() || sub.equals("list")) {
-                if (protect.isEmpty()) return "no protect boxes - area protect <name> <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2";
-                List<String> out = new ArrayList<>();
-                for (JsonElement e : protect) out.add(e.getAsJsonObject().get("name").getAsString() + " (" + boxText(e.getAsJsonObject()) + ")");
-                return "protect: " + String.join(", ", out);
-            }
-            if (!isOwner) return notOwner;
-            String name = sub;
-            if (!name.matches(NAME_RE)) return "usage: area protect <name> <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2  (names: letters, digits, _ and -)";
-            JsonObject b;
-            if (parts.size() > 1 && parts.get(1).equalsIgnoreCase("here")) {
-                Integer r = intOr(parts, 2, null), down = intOr(parts, 3, 8), up = intOr(parts, 4, 16);
-                if (r == null || r < 1 || r > 2000 || down == null || down < 0 || up == null || up < 0) {
-                    return "usage: area protect " + name + " <r> [down up]  (r = blocks each way; down/up = blocks below/above, default 8 and 16)";
+                AreaType t = AreaType.of(val);
+                if (t == null) return AreaType.BAD;
+                JsonObject nb = b.deepCopy();
+                if (t == AreaType.NEUTRAL) nb.remove("type");
+                else nb.addProperty("type", t.word());
+                removeNamed(target);
+                String full = put(nb);
+                if (full != null) {
+                    put(b);
+                    return full;
                 }
-                b = makeBox(name, here.dim(), here.x() - r, here.z() - r, here.x() + r, here.z() + r, here.y() - down, here.y() + up);
-            } else if (allInts(parts.subList(1, parts.size())) && parts.size() == 7) {
-                int[] v = ints(parts.subList(1, parts.size()));
-                b = makeBox(name, me.dim(), v[0], v[2], v[3], v[5], v[1], v[4]);
-            } else {
-                return "usage: area protect <name> <r> [down up] | protect <name> x1 y1 z1 x2 y2 z2";
+                return changed("ok: area " + target + " is now " + t.word() + " (" + t.colour + ")", false);
             }
-            int i = findBox(protect, name);
-            // package H: Baritone asks the guard about every protect box for every path node
-            String full = Limits.full(i >= 0, protect.size(), Limits.PROTECT, "protect boxes", "unprotect one first (unprotect <name> confirm)");
+            NewArea a = parseNew(parts);
+            if (a.error() != null) return a.error();
+            JsonObject b = build(a, here, me);
+            if (io.github.mojolowjo.entropybot.guard.GuardCore.DENIED_DIMS.contains(dimOf(b))) return "error: no areas in " + dimOf(b);
+            boolean existed = findArea(a.name()) != null;
+            String full = put(b);
             if (full != null) return full;
-            if (i >= 0) protect.set(i, b);
-            else protect.add(b);
-            return changed("ok: protect " + name + (i >= 0 ? " replaced" : " added") + " (" + boxText(b) + ")", false);
+            return changed("ok: area " + areaText(b) + (existed ? " replaced" : " added"), false);
         }
-        if (verb.equals("unprotect")) {
-            if (!isOwner) return notOwner;
-            int i = findBox(protect, sub);
-            if (i < 0) return "I have no protect box called " + (sub.isEmpty() ? "?" : sub) + " (PM \"protect\")";
-            if (parts.size() < 2 || !parts.get(1).equalsIgnoreCase("confirm")) return "say \"area unprotect " + sub + " confirm\" to remove it";
-            protect.remove(i);
-            return changed("ok: protect box " + sub + " removed", false);
-        }
-        if (verb.equals("guard")) {
-            if (sub.isEmpty()) {
+        if (verb.equals("fence")) {
+            if (sub.isEmpty() || sub.equals("status")) {
                 JsonObject g = guard.status();
-                if (g == null) return "guard: mod not loaded (the fence is off) | areas: " + names(areas) + " | protect: " + names(protect) + " | mode wanted: " + (strict() ? "strict" : "log");
+                if (g == null) return "fence: mod not loaded (off) | " + listText() + " | mode wanted: " + (strict() ? "strict" : "log");
                 String mode = g.has("mode") ? g.get("mode").getAsString() : "?";
                 List<String> tasks = new ArrayList<>();
                 if (g.has("leases")) for (JsonElement e : g.getAsJsonArray("leases")) {
                     JsonObject l = e.getAsJsonObject();
-                    tasks.add(l.has("task") ? l.get("task").getAsString() : "job");
+                    tasks.add((l.has("task") ? l.get("task").getAsString() : "job") + (l.has("destroy") ? " (destroy " + l.get("destroy").getAsString() + ")" : ""));
                 }
                 List<String> hooks = new ArrayList<>();
                 if (g.has("click") && g.get("click").getAsBoolean()) hooks.add("click");
                 if (g.has("astar") && g.get("astar").getAsBoolean()) hooks.add("astar");
-                return "guard: " + mode + " mode" + (!mode.equals(strict() ? "strict" : "log") ? " (my notes say " + (strict() ? "strict" : "log") + ")" : "")
-                        + " | areas: " + names(g.has("areas") ? g.getAsJsonArray("areas") : new JsonArray()) + " | protect: " + names(g.has("protect") ? g.getAsJsonArray("protect") : new JsonArray())
+                return "fence: " + mode + " mode" + (!mode.equals(strict() ? "strict" : "log") ? " (my notes say " + (strict() ? "strict" : "log") + ")" : "")
+                        + " | " + listText().replaceFirst(" \\| near me.*$", "")
                         + " | leases: " + tasks.size() + (tasks.isEmpty() ? "" : " (" + String.join("; ", tasks.subList(0, Math.min(3, tasks.size()))) + ")")
                         + " | vetoes " + num(g, "vetoes") + ", would-be " + num(g, "wouldVetoes") + " | hooks: " + (hooks.isEmpty() ? "none" : String.join(", ", hooks))
                         + (guard.nearStatus() == null ? "" : " | " + guard.nearStatus());
@@ -417,7 +461,7 @@ public final class PolicyCommands {
                 try {
                     list = com.google.gson.JsonParser.parseString(guard.vetoes(5)).getAsJsonArray();
                 } catch (RuntimeException e) {
-                    return "guard: vetoes unreadable (" + e.getMessage() + ")";
+                    return "fence: vetoes unreadable (" + e.getMessage() + ")";
                 }
                 if (list.isEmpty()) return "no vetoes";
                 List<String> out = new ArrayList<>();
@@ -430,29 +474,36 @@ public final class PolicyCommands {
             if (!isOwner) return notOwner;
             if (sub.equals("check")) {
                 String m = parts.size() > 4 ? parts.get(4).toLowerCase() : "";
-                if (parts.size() < 4 || !allInts(parts.subList(1, 4)) || !m.matches("^(break|place|go)$")) return "usage: guard check x y z break|place|go";
-                int[] v = ints(parts.subList(1, 4));
-                return guard.check(me.dim(), v[0], v[1], v[2], m);
+                if (parts.size() < 4 || !allInts(parts.subList(1, 4)) || !m.matches("^(break|place|go)$")) return "usage: fence check x y z break|place|go";
+                int x = Integer.parseInt(parts.get(1)), y = Integer.parseInt(parts.get(2)), z = Integer.parseInt(parts.get(3));
+                String r = guard.check(me.dim(), x, y, z, m);
+                return (r == null ? "?" : r) + whereText(me.dim(), x, y, z);
             }
             if (sub.equals("mode")) {
                 String m = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
                 if (m.equals("strict")) {
                     p.addProperty("strict", true);
-                    return changed("ok: strict mode - the fence is on (" + (areas.isEmpty() ? "no areas yet - " + AREA_HINT + "; walking stays free, digging and building only "
-                            + (nearOn() ? "within " + nearR() + " blocks of you" : "nowhere") : "areas: " + names(areas) + (nearOn() ? ", plus " + nearR() + " blocks around you" : "")) + ")", true);
+                    return changed("ok: strict mode - the fence is on (" + (areas().isEmpty() ? "no work areas yet - " + AREA_HINT + "; walking stays free, digging and building only "
+                            + (nearOn() ? "within " + nearR() + " blocks of you" : "nowhere") : "areas: " + names(areas()) + (nearOn() ? ", plus " + nearR() + " blocks around you" : "")) + ")", true);
                 }
                 if (m.equals("log")) {
                     if (parts.size() < 3 || !parts.get(2).equalsIgnoreCase("confirm")) {
-                        return "say \"guard mode log confirm\" to switch the fence off (the guard then only logs what it would refuse; the floor stays)";
+                        return "say \"fence mode log confirm\" to switch the fence off (the guard then only logs what it would refuse; the floor stays)";
                     }
                     p.addProperty("strict", false);
                     return changed("ok: log mode - the fence is off, the guard only logs (the floor stays)", true);
                 }
-                return "usage: guard mode strict | guard mode log confirm";
+                return "usage: fence mode strict | fence mode log confirm";
             }
-            return "usage: guard | guard vetoes | guard check x y z break|place|go | guard mode strict | guard mode log confirm";
+            return "usage: fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm";
         }
         return "unknown command \"" + verb + "\"";
+    }
+
+    private static String names(JsonArray l) {
+        List<String> out = new ArrayList<>();
+        for (JsonElement e : l) out.add(nameOf(e.getAsJsonObject()));
+        return out.isEmpty() ? "none" : String.join(", ", out);
     }
 
     private static long num(JsonObject o, String k) {

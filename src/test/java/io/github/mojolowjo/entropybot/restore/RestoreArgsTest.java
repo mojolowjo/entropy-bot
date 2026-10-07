@@ -49,7 +49,7 @@ class RestoreArgsTest {
         assertEquals(6, h.count());
         assertArrayEquals(new int[]{98, 62, -32, 107, 66, -28}, h.box());
         assertEquals("build_102_m30", h.name());
-        assertEquals("looks like a build at 102 64 -30 - protect it? (protect build_102_m30 98 62 -32 107 66 -28)", h.whisper());
+        assertEquals("looks like a build at 102 64 -30 - protect it? (area 98 -32 107 -28 build_102_m30 safe 62 66)", h.whisper());
         assertTrue(h.name().matches("^[a-z0-9_-]{1,24}$"), "a name protect accepts");
         assertNull(BuildSpotter.spot(built.subList(0, 5)), "five is not a build");
         assertTrue(BuildSpotter.ownKind("minecraft:wall_torch"));

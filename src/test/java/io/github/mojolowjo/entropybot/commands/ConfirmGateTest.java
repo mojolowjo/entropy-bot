@@ -28,14 +28,26 @@ class ConfirmGateTest {
         assertEquals(line, g.line());
     }
 
+    /** V1a: "dig &lt;area&gt;" always asks (a destroy area loses built blocks); a trailing confirm runs it. */
+    @Test
+    void digAnAreaAsks() {
+        ConfirmGate c = gate();
+        ConfirmGate.Gate g = c.gate(O, "dig base", false, 0);
+        asks(g);
+        assertTrue(g.reply().contains("dig base breaks every block in that area (x -10..50"), g.reply());
+        runs(c.gate(O, "confirm", false, 1000), "dig base");
+        runs(c.gate(O, "dig base confirm", false, 0), "dig base");
+        runs(c.gate(O, "dig 1 2 3 4 5 6", false, 0), "dig 1 2 3 4 5 6");
+    }
+
     @Test
     void buildClearAsksThenConfirmRunsIt() {
         ConfirmGate c = gate();
-        ConfirmGate.Gate g = c.gate(O, "build clear", false, 1000);
+        ConfirmGate.Gate g = c.gate(O, "build clear base", false, 1000);
         asks(g);
-        assertTrue(g.reply().contains("zone 0 60 0 to 9 64 9"), "the summary names the zone: " + g.reply());
+        assertTrue(g.reply().contains("area base (x -10..50"), "the summary names the area: " + g.reply());
         assertTrue(c.waiting(O, 1000));
-        runs(c.gate("MojoLowJo", "confirm", false, 20_000), "build clear");
+        runs(c.gate("MojoLowJo", "confirm", false, 20_000), "build clear base");
         assertFalse(c.waiting(O, 20_000));
         assertTrue(c.gate(O, "confirm", false, 21_000).reply().startsWith("error: nothing to confirm"), "only once");
     }
@@ -77,16 +89,16 @@ class ConfirmGateTest {
         runs(c.gate(O, "stripmine reset confirm", false, 0), "stripmine reset");
         runs(c.gate(O, "dig 0 0 0 20 20 20 ores confirm", false, 0), "dig 0 0 0 20 20 20 ores");
         // area remove keeps its own word
-        runs(c.gate(O, "area remove base confirm", false, 0), "area remove base confirm");
+        runs(c.gate(O, "area del base confirm", false, 0), "area del base confirm");
     }
 
     @Test
     void areaRemoveAsksAndRunsWithItsWord() {
         ConfirmGate c = gate();
-        ConfirmGate.Gate g = c.gate(O, "area remove base", false, 0);
+        ConfirmGate.Gate g = c.gate(O, "area del base", false, 0);
         asks(g);
         assertTrue(g.reply().contains("x -10..50, z 0..60"), g.reply());
-        runs(c.gate(O, "confirm", false, 1000), "area remove base confirm");
+        runs(c.gate(O, "confirm", false, 1000), "area del base confirm");
     }
 
     @Test
@@ -163,7 +175,7 @@ class ConfirmGateTest {
         runs(c.gate(O, "deposit then build clear confirm", false, 0), "deposit then build clear");
         runs(c.gate(O, "build clear then dig 0 0 0 20 20 20 confirm", false, 0), "build clear then dig 0 0 0 20 20 20");
         runs(c.gate(O, "dig 0 0 0 1 1 1 confirm then deposit", false, 0), "dig 0 0 0 1 1 1 then deposit");
-        runs(c.gate(O, "build clear then area remove base confirm", false, 0), "build clear then area remove base confirm");
+        runs(c.gate(O, "build clear then area del base confirm", false, 0), "build clear then area del base confirm");
         assertFalse(c.waiting(O, 0));
     }
 
@@ -184,7 +196,7 @@ class ConfirmGateTest {
         assertEquals("busy: chain (pm \"stop\" first)", c.gate(O, "build clear then deposit", false, 0, "busy: chain (pm \"stop\" first)", null).reply());
         assertFalse(c.waiting(O, 0));
         // area remove is not a job: it still asks mid-job
-        asks(c.gate(O, "area remove base", false, 0, null, "busy: digging (pm \"stop\" first)"));
+        asks(c.gate(O, "area del base", false, 0, null, "busy: digging (pm \"stop\" first)"));
         // not busy: asks as before
         asks(c.gate(O, "build clear", false, 0, null, null));
     }

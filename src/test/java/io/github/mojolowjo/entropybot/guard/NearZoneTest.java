@@ -187,7 +187,7 @@ class NearZoneTest {
         Verdict v = g.checkBoxes(OW, 0, 64, 0, "break");
         assertFalse(v.allowed());
         assertTrue(v.floor());
-        assertTrue(v.reason().contains("protected (keep)"));
+        assertTrue(v.reason().contains("in keep (safe)"));
         String id = g.lease("j", "t", new Box("t", OW, 10, 64, 10, 11, 65, 11), false, false);
         assertTrue(id.startsWith("L"));
         assertFalse(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true, true, false)).allowed(), "a chest in the zone");

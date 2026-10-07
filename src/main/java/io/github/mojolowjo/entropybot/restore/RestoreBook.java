@@ -35,7 +35,7 @@ public final class RestoreBook {
         }
 
         public String command() {
-            return "protect " + name + " " + box[0] + " " + box[1] + " " + box[2] + " " + box[3] + " " + box[4] + " " + box[5];
+            return "area " + box[0] + " " + box[2] + " " + box[3] + " " + box[5] + " " + name + " safe " + box[1] + " " + box[4];
         }
 
         JsonObject toJson() {

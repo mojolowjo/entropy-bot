@@ -163,7 +163,7 @@ class MineNotesTest {
         for (int i = 1; i <= 8; i++) fresh.add(new ExploreRules.Poi(i, i % 2 == 0 ? "dungeon" : "geode", i, 30, -i));
         assertEquals("explored 3 chunks in 2 min (nothing left to explore in reach); new: geode at 1 30 -1, dungeon at 2 30 -2, geode at 3 30 -3, dungeon at 4 30 -4, "
                 + "geode at 5 30 -5, dungeon at 6 30 -6 (+2 more, \"poi\")", ExploreRules.note(3, 2400, "nothing left to explore in reach", fresh));
-        assertEquals("error: I explore only inside my areas, and there are none - area <name> <r>", ExploreRules.NO_AREAS + "area <name> <r>");
+        assertEquals("error: I explore only inside my areas, and there are none - area here <r> <name>", ExploreRules.NO_AREAS + "area here <r> <name>");
     }
 
     /** The cave records "mine cave" leans on: a new cave here, carrying on in a known one, closing one with nothing in it. */

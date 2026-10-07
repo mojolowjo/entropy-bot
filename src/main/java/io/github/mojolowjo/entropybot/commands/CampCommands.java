@@ -71,7 +71,7 @@ final class CampCommands {
         // the fence: the camp's digs and placements need leases inside an area (strict mode)
         boolean strict = Core.INSTANCE.guard.core.mode() == GuardCore.Mode.STRICT;
         if (!status && strict && c.areaGap(feet[0], feet[1], feet[2], dim) > 0) {
-            return Hints.next("error: this spot is outside my work areas, so I may not dig or place here", "area add camp here 48, then bootstrap");
+            return Hints.next("error: this spot is outside my work areas, so I may not dig or place here", "area here 48 camp, then bootstrap");
         }
         boolean tableNear = near(lv, feet, "crafting_table"), furnaceNear = near(lv, feet, "furnace"), chestNear = near(lv, feet, "chest") || near(lv, feet, "barrel");
         int[] dir = quarryDir(lv, feet);

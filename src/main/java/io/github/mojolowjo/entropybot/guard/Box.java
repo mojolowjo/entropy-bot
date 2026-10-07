@@ -21,6 +21,8 @@ public final class Box {
      */
     public final boolean round;
     public final int cx, cz, r;
+    /** V1a (0.22.0): the area's type (JSON "type", absent = neutral). A lease box or a plain box is neutral. */
+    public final AreaType type;
 
     public Box(String name, String dim, int x1, int y1, int z1, int x2, int y2, int z2) {
         this.name = name;
@@ -30,7 +32,18 @@ public final class Box {
         this.z1 = Math.min(z1, z2); this.z2 = Math.max(z1, z2);
         this.round = false;
         this.cx = 0; this.cz = 0; this.r = 0;
+        this.type = AreaType.NEUTRAL;
     }
+
+    private Box(Box o, AreaType t) {
+        this.name = o.name; this.dim = o.dim;
+        this.x1 = o.x1; this.y1 = o.y1; this.z1 = o.z1; this.x2 = o.x2; this.y2 = o.y2; this.z2 = o.z2;
+        this.round = o.round; this.cx = o.cx; this.cz = o.cz; this.r = o.r;
+        this.type = t == null ? AreaType.NEUTRAL : t;
+    }
+
+    /** This box with another type. */
+    public Box withType(AreaType t) { return new Box(this, t); }
 
     private Box(String name, String dim, int cx, int cz, int r, int y1, int y2) {
         int rr = Math.max(0, r);
@@ -41,6 +54,7 @@ public final class Box {
         this.y1 = Math.min(y1, y2); this.y2 = Math.max(y1, y2);
         this.round = true;
         this.cx = cx; this.cz = cz; this.r = rr;
+        this.type = AreaType.NEUTRAL;
     }
 
     /** A round area: horizontal distance to (cx, cz) at most r (block columns), y1..y2. */
@@ -148,6 +162,11 @@ public final class Box {
         int y1 = o.has("y1") ? o.get("y1").getAsInt() : ALL_Y_MIN;
         int y2 = o.has("y2") ? o.get("y2").getAsInt() : ALL_Y_MAX;
         String name = o.has("name") && !o.get("name").isJsonNull() ? o.get("name").getAsString() : null;
+        AreaType type = AreaType.orNeutral(o.has("type") && o.get("type").isJsonPrimitive() ? o.get("type").getAsString() : null);
+        return fromJson0(o, dim, y1, y2, name).withType(type);
+    }
+
+    private static Box fromJson0(JsonObject o, String dim, int y1, int y2, String name) {
         if (o.has("round") && o.get("round").isJsonObject()) {
             JsonObject rd = o.getAsJsonObject("round");
             for (String k : new String[]{"cx", "cz", "r"}) if (!rd.has(k)) throw new IllegalArgumentException("round box needs " + k);
@@ -162,6 +181,7 @@ public final class Box {
         o.addProperty("dim", dim);
         o.addProperty("x1", x1); o.addProperty("z1", z1); o.addProperty("x2", x2); o.addProperty("z2", z2);
         if (!allY()) { o.addProperty("y1", y1); o.addProperty("y2", y2); }
+        if (type != AreaType.NEUTRAL) o.addProperty("type", type.word());
         if (round) {
             JsonObject rd = new JsonObject();
             rd.addProperty("cx", cx);
