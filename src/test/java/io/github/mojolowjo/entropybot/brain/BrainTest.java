@@ -587,6 +587,37 @@ class BrainTest {
     }
 
     @Test
+    void goalParksAreKeyedByTextAndGoWithGoalsClear() {       // 0.23.1: parking was keyed by the index (goal:1) and outlived goals clear
+        Fake f = on();
+        Brain b = new Brain(f);
+        f.state.goals.add(new BrainState.Goal("bed", "goal_bed", f.now));
+        for (int i = 0; i < 3; i++) {
+            f.loop();
+            b.tick();
+            f.end("stopped at step 1 (craft): error: no wool");
+            f.now += 10_000;
+        }
+        f.loop();
+        b.tick();
+        assertTrue(b.parked(f.now).containsKey("goal:bed"), b.parked(f.now).toString());
+        // a different goal in slot 1 is not parked
+        f.state.goals.clear();
+        f.state.goals.add(new BrainState.Goal("furnace", "goal_furnace", f.now));
+        f.loop();
+        b.tick();
+        assertTrue(f.started.contains("goal_furnace"), f.started.toString());
+        // goals clear all (or of that goal) forgets the park and the fails
+        assertTrue(Brain.forgetGoalParks(b.data(), null) >= 1);
+        assertTrue(b.parked(f.now).isEmpty());
+        com.google.gson.JsonObject d = new com.google.gson.JsonObject(), p = new com.google.gson.JsonObject();
+        p.add("goal:bed", new com.google.gson.JsonObject());
+        p.add("need:torch", new com.google.gson.JsonObject());
+        d.add("parked", p);
+        assertEquals(1, Brain.forgetGoalParks(d, "Bed"));
+        assertTrue(p.has("need:torch") && !p.has("goal:bed"));
+    }
+
+    @Test
     void theBrainStartsTheBestJobWithOneWhisperAndLogsIt() {
         Fake f = on();
         Brain b = new Brain(f);

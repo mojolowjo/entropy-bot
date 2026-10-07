@@ -92,6 +92,27 @@ public final class Brain {
 
     public BrainConfig config() { return cfg; }
 
+    /** The brain's need key for a goal: keyed by its text, never its list index (0.23.1), so a new goal #1 starts clean. */
+    public static String goalNeed(String text) {
+        return "goal:" + (text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /**
+     * 0.23.1: forgets the parks and failure counts of goals. text null = every goal ({@code goals clear all}); else that goal.
+     * brainData is the store's "brain" object. Returns how many entries went.
+     */
+    public static int forgetGoalParks(JsonObject brainData, String text) {
+        if (brainData == null) return 0;
+        int n = 0;
+        for (String key : new String[]{"parked", "fails"}) {
+            if (!brainData.has(key) || !brainData.get(key).isJsonObject()) continue;
+            JsonObject o = brainData.getAsJsonObject(key);
+            for (String k : new ArrayList<>(o.keySet()))
+                if (text == null ? k.startsWith("goal:") : k.equals(goalNeed(text))) { o.remove(k); n++; }
+        }
+        return n;
+    }
+
     /** Parked needs that are still parked: need -> why. */
     Map<String, String> parked(long now) {
         Map<String, String> out = new LinkedHashMap<>();

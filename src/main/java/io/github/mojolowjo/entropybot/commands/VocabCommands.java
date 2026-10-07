@@ -404,9 +404,15 @@ final class VocabCommands {
         JsonObject b = c.brainData();
         JsonArray goals = b.has("goals") && b.get("goals").isJsonArray() ? b.getAsJsonArray("goals") : new JsonArray();
         if (w.size() == 2 && w.get(0).equals("clear")) {
-            if (w.get(1).equals("all")) { b.add("goals", new JsonArray()); c.saved(); return "ok: no goals"; }
+            if (w.get(1).equals("all")) {
+                b.add("goals", new JsonArray());
+                io.github.mojolowjo.entropybot.brain.Brain.forgetGoalParks(b, null);       // 0.23.1: no park outlives the goals
+                c.saved();
+                return "ok: no goals";
+            }
             if (!w.get(1).matches("^\\d{1,2}$") || Integer.parseInt(w.get(1)) < 1 || Integer.parseInt(w.get(1)) > goals.size()) return "error: no goal " + w.get(1) + " (goals lists them)";
-            goals.remove(Integer.parseInt(w.get(1)) - 1);
+            JsonElement gone = goals.remove(Integer.parseInt(w.get(1)) - 1);
+            try { io.github.mojolowjo.entropybot.brain.Brain.forgetGoalParks(b, gone.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException ignored) {}
             b.add("goals", goals);
             c.saved();
             return "ok: goal " + w.get(1) + " cleared";
