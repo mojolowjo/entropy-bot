@@ -211,7 +211,12 @@ class BrainTreeFileTest {
     void writesTheExportForTheDashboard() throws Exception {
         Path p = Path.of("build", "brain-tree.json");
         Files.createDirectories(p.getParent());
-        Files.writeString(p, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(exported(new BrainTree())));
+        String version = "unknown";
+        Path gp = Path.of("gradle.properties");
+        if (Files.exists(gp)) for (String l : Files.readAllLines(gp)) if (l.startsWith("mod_version=")) version = l.substring(12).trim();
+        JsonObject o = BrainTreeFile.export(new BrainTree(), BrainConfig.defaults(), IdleList.DEFAULT, "built-in", "the built-in tree (exported by the mod's tests)",
+                System.currentTimeMillis(), version);
+        Files.writeString(p, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(o));
         assertTrue(Files.size(p) > 1000);
     }
 }
