@@ -30,15 +30,15 @@ class HintsTest {
         assertEquals("craft stone_pickaxe 3", Hints.pickaxeFix("stone"));
         assertEquals("craft stone_pickaxe 3", Hints.pickaxeFix(null));
         assertEquals("get iron_pickaxe 1 (or craft iron_pickaxe)", Hints.pickaxeFix("iron"));
-        assertTrue(Hints.placeFix("base").startsWith("setbase"));
-        assertTrue(Hints.placeFix("mine").startsWith("mark mine"));
+        assertTrue(Hints.placeFix("base").startsWith("place base"));
+        assertTrue(Hints.placeFix("mine").startsWith("place mine"));
         assertEquals("places", Hints.placeFix("farm"));
     }
 
     @Test
     void auditedRepliesEndWithTheirFix() {
         assertTrue(StorageRules.depositPlan(Map.of("minecraft:dirt", 3), List.of(), new int[3], "").err().endsWith("- next: scan base"));
-        assertTrue(StorageRules.resolveSpot("base", Map.of(), "minecraft:overworld").err().endsWith("- next: setbase (standing at the base)"));
+        assertTrue(StorageRules.resolveSpot("base", Map.of(), "minecraft:overworld").err().endsWith("- next: place base (standing at the base)"));
         assertTrue(io.github.mojolowjo.entropybot.farm.Compact.NO_TABLE.contains("next: craft crafting_table"));
     }
 }

@@ -58,7 +58,7 @@ public final class Commands implements Chains.Env {
     private final Core core;
     public final JobRequests requests = new JobRequests();
     private final JsonStore pmStore = new JsonStore("pm.json"), brainStore = new JsonStore("commands.json"), areaStore = new JsonStore("areas.json");
-    private Chains chains;
+    Chains chains;
     private PolicyCommands policy;
     /** The kubejs/bridge folder: state.json out, cmd.json in. */
     private BotFiles stateFiles;
@@ -80,6 +80,18 @@ public final class Commands implements Chains.Env {
     /** B7e N: the "check" self-test (and its idle check), and the confirm question for big verbs. */
     final SelfCheckLive selfCheck = new SelfCheckLive(this);
     final ConfirmGate confirmGate = new ConfirmGate(selfCheck);
+    /** V1b: places/markers, queue, kinds, cut, the fighting jobs, explore/find, needs/goals (game side of vocab/). */
+    final VocabCommands vocab = new VocabCommands(this);
+
+    /** V1b: something holds the bot in place for good (an escort, defend, guard): the queue waits. */
+    boolean heldInPlace() {
+        return core.reflexes.escort.active() || vocab.hold != null;
+    }
+
+    /** V1b: a job, chain, gather or mule run is going (the queue waits). */
+    boolean busyForQueue() {
+        return jobs.running() || (chains != null && chains.running()) || gathering.running() || mule.running();
+    }
     private String placesSent;
 
     public Commands(Core core) {
@@ -225,8 +237,15 @@ public final class Commands implements Chains.Env {
         return HotbarRules.toolOres(b.has("toolOres") && b.get("toolOres").isJsonPrimitive() ? b.get("toolOres").getAsString() : null);
     }
 
+    /** V1b: the tools mode, best|cheapest|stone (commands.json "toolMode"; an old "toolOres" cheapest reads as cheapest). */
+    String toolMode() {
+        JsonObject b = brainStore.data();
+        return io.github.mojolowjo.entropybot.vocab.ToolMode.of(b.has("toolMode") && b.get("toolMode").isJsonPrimitive() ? b.get("toolMode").getAsString() : null,
+                b.has("toolOres") && b.get("toolOres").isJsonPrimitive() ? b.get("toolOres").getAsString() : null);
+    }
+
     private void pushHotbar() {
-        io.github.mojolowjo.entropybot.engine.Hotbar.set(hotbarLayout(), toolOresSetting());
+        io.github.mojolowjo.entropybot.engine.Hotbar.set(hotbarLayout(), toolMode());
     }
 
     private void setHotbar(Map<Integer, String> layout) {
@@ -272,16 +291,16 @@ public final class Commands implements Chains.Env {
         return HotbarRules.USAGE;
     }
 
-    /** "tools" | "tools ores iron|cheapest". */
+    /** "tools" | "tools mode best|cheapest|stone" (V1b; "tools ores ..." answers its new form in OldWords). */
     String toolsCommand(String rest) {
         String t = rest == null ? "" : rest.trim();
-        if (t.isEmpty()) return HotbarRules.toolsText(toolOresSetting()) + "\n" + camp.toolsText(Minecraft.getInstance().player);
-        String[] r = HotbarRules.toolsCommand(t);
-        if (r[0] == null) return r[1];
-        brainStore.data().addProperty("toolOres", r[0]);
+        if (t.isEmpty()) return io.github.mojolowjo.entropybot.vocab.ToolMode.text(toolMode()) + "\n" + camp.toolsText(Minecraft.getInstance().player);
+        String m = io.github.mojolowjo.entropybot.vocab.ToolMode.parse(t);
+        if (m == null) return io.github.mojolowjo.entropybot.vocab.ToolMode.USAGE;
+        brainStore.data().addProperty("toolMode", m);
         saved();
         pushHotbar();
-        return r[1];
+        return "ok: " + io.github.mojolowjo.entropybot.vocab.ToolMode.text(m);
     }
 
     /**
@@ -437,7 +456,7 @@ public final class Commands implements Chains.Env {
             }
         }
         pushHotbar();
-        sb.append("; hotbar ").append(HotbarRules.describe(hotbarLayout())).append(", ores with ").append(toolOresSetting());
+        sb.append("; hotbar ").append(HotbarRules.describe(hotbarLayout())).append(", tools mode ").append(toolMode());
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
@@ -577,6 +596,13 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] escort: {}", e.toString());
                 }
             }
+            if (tick % 20 == 17) {
+                try {
+                    vocab.tick();                       // V1b: the queue
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] queue: {}", e.toString());
+                }
+            }
             if (tick % 200 == 150) pushPlaces();
             if (tick % 20 == 0) writeState(mc, tick);
             brainStore.flushIfDue(tick);
@@ -651,7 +677,7 @@ public final class Commands implements Chains.Env {
     }
 
     /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
-    private Listener notifyListener(String to) {
+    Listener notifyListener(String to) {
         return r -> {
             if (!JobRequests.quiet(r.doneMsg)) whisper(to, r.doneMsg.replaceFirst("^ok: ", ""));
         };
@@ -716,6 +742,11 @@ public final class Commands implements Chains.Env {
             String r = Texts.guestRefusal(verb, rest, raw, owner());
             if (r != null) return Reply.now(r);
         }
+        // V1b: an old word answers with its new form and never runs (a chain's own steps and the bot's own lines still run)
+        if (!internal && !auto) {
+            String old = OldWords.removedAnswer(verb, rest, raw);
+            if (old != null) return Reply.now(old);
+        }
         // B7e N: big or destructive verbs ask first ("confirm" runs them; chain steps and a trailing "confirm" pass; a busy bot answers busy)
         if (!auto) {
             ConfirmGate.Gate gate = confirmGate.gate(from, raw, internal, System.currentTimeMillis(), chainBusyText(), jobBusyText());
@@ -748,10 +779,20 @@ public final class Commands implements Chains.Env {
         if (verb.equals("resume")) return Reply.now(chains.resumeCommand());
         if (verb.equals("deaths") || (verb.equals("death") && rest.trim().toLowerCase().matches("^policy\\b.*"))) return Reply.now(chains.deathsCommand(rest));
         if (verb.equals("reconnect") && rest.trim().toLowerCase().matches("^(on|off)$")) return Reply.now(reconnectCommand(rest));
-        if (verb.equals("queue")) return Reply.now(chains.chainStatus());
+        if (verb.equals("queue")) return Reply.now(isOwner || rest.isBlank() ? vocab.queue(from, rest) : "sorry, only " + owner() + " can queue tasks");   // V1b
+        // V1b: places and markers, the kind-words (instant)
+        if (verb.equals("marker")) return Reply.now(vocab.marker(from, rest));
+        if (verb.equals("places")) return Reply.now(vocab.places(rest));
+        if (verb.equals("kinds")) return Reply.now(vocab.kinds(rest));
+        if (verb.equals("place")) {
+            String pl = vocab.placeInstant(from, rest, player);
+            if (pl != null) return Reply.now(pl);
+        }
         // B7d: the listed ores (D3) and the preferred ores (D2); the strip mine's status and ore mode never wait
         if (verb.equals("ores")) return Reply.now(rest.trim().toLowerCase().matches("^prefer\\b.*") ? StripMine.get().oresPrefer(rest) : Mining.get().ores(player, rest));
         if (verb.equals("stripmine") && rest.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, rest));
+        if (verb.equals("mine") && rest.trim().toLowerCase().matches("^strip\\s+(status|ores( collect| list)?)$"))      // V1b: stripmine's forms under mine strip
+            return Reply.now(StripMine.get().command(player, rest.trim().substring(5).trim()));
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
         if (verb.equals("area") || verb.equals("fence") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
@@ -793,7 +834,27 @@ public final class Commands implements Chains.Env {
             return Reply.now(chains.startChain(from, "gather to base", "gather " + g + " then deposit " + item, 1));
         }
         // memory lookups and edits never interrupt a job
-        if (verb.matches("^(mark|setbase|sethome|forget|places)$")) return Reply.now(placeCommand(verb, rest, from, player));
+        if (verb.matches("^(mark|setbase|sethome|forget)$")) return Reply.now(placeCommand(verb, rest, from, player));
+        // V1b: the kind-words for the one-item verbs (get, fetch, need, gather): the kind's id with the most in stock
+        if (verb.matches("^(get|fetch|need|gather)$")) {
+            String[] kerr = new String[1];
+            String k = vocab.oneOfKind(player, rest, kerr);
+            if (kerr[0] != null) return Reply.now(kerr[0]);
+            if (k != null) {
+                rest = k;
+                raw = verb + " " + k;
+            }
+        }
+        if (verb.equals("mine")) {
+            String[] redirect = new String[1];
+            String k = vocab.mineKinds(rest, redirect);
+            if (redirect[0] != null && redirect[0].startsWith("error")) return Reply.now(redirect[0]);
+            if (redirect[0] != null) return handle(from, redirect[0], internal, true, l);
+            if (k != null) {
+                rest = k;
+                raw = verb + " " + k;
+            }
+        }
         if (verb.equals("where")) return Reply.now(storage.where(player, rest));
         if (verb.equals("have")) return Reply.now(storage.have(player, rest));                 // C2 shared stock
         if (verb.equals("stock")) return Reply.now(storage.stockList(player, rest));
@@ -847,7 +908,7 @@ public final class Commands implements Chains.Env {
         // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
         if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
         if (verb.equals("farm") && FarmCommand.instant(rest)) return Reply.now(crafting.farm(player, rest));
-        if (verb.equals("chop") && Chopping.instant(rest)) return Reply.now(Chopping.get().command(player, rest));    // P3: chop status
+        if ((verb.equals("chop") || verb.equals("cut")) && Chopping.instant(rest)) return Reply.now(Chopping.get().command(player, rest));    // P3: chop status
         // everything below may replace a running walk, but not a running task (find, recipe and close never interrupt)
         boolean quiet = verb.equals("find") || verb.equals("recipe") || verb.equals("close");
         if (!quiet) {
@@ -913,6 +974,13 @@ public final class Commands implements Chains.Env {
                 if (verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$")) return storage.goPoi(player, Integer.parseInt(rest.trim().split("\\s+")[1]));
                 String name = verb.equals("go") ? rest.toLowerCase() : "base";
                 JsonObject pos = core.knowledge.places().get(name);
+                if (pos == null && verb.equals("go")) {              // V1b: go <place> <marker> | go <marker>
+                    String[] gerr = new String[1];
+                    io.github.mojolowjo.entropybot.vocab.PlaceWords.Spot sp = vocab.goSpot(rest, gerr);
+                    if (sp != null) return jobs.startTravel("goto " + sp.x() + " " + sp.y() + " " + sp.z(), "going to " + sp.name(), new int[]{sp.x(), sp.y(), sp.z()},
+                            Guard.dimOf(player.level()), false, ownerWalker(from));
+                    if (gerr[0] != null && gerr[0].startsWith("error")) return gerr[0];
+                }
                 if (pos == null) return "I have no place called " + name + " - next: " + Hints.placeFix(name);
                 String dim = Jobs.dimOf(pos);
                 int[] p = Jobs.pos(pos);
@@ -975,11 +1043,15 @@ public final class Commands implements Chains.Env {
             case "place" -> { return DigCommands.place(this, player, rest, from); }
             case "stripmine" -> { return StripMine.get().command(player, rest); }
             case "mine" -> {
+                // V1b: "mine strip" alone, "mine strip <branches> [length]", reset, turn: the old stripmine forms
+                if (rest.trim().toLowerCase().matches("^strip(\\s+(reset|turn\\s+(left|right)|\\d+(\\s+\\d+)?))?$"))
+                    return StripMine.get().command(player, rest.trim().substring(5).trim());
                 if (rest.trim().toLowerCase().matches("^strip\\b.*")) return StripMine.get().mineStrip(player, rest);
                 return Mining.get().mine(player, rest, s -> null);
             }
             case "explore" -> { return Mining.get().explore(player, rest); }
             case "chop" -> { return Chopping.get().command(player, rest); }             // P3: fell trees, pick up, replant
+            case "cut" -> { return Chopping.get().command(player, vocab.cutLine(rest)); }      // V1b: cut <n> [logs|type] (the kind's exclusions)
             case "upgrade" -> { return crafting.upgrade(player, rest); }         // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
@@ -1019,10 +1091,10 @@ public final class Commands implements Chains.Env {
         java.util.Map<String, JsonObject> places = core.knowledge.places();
         if (verb.equals("mark") || verb.equals("setbase")) {
             String name = verb.equals("setbase") ? "base" : (parts.isEmpty() ? "" : parts.get(0).toLowerCase());
-            if (!name.matches("^[a-z0-9_-]{1,24}$")) return "usage: mark <name> [x y z]";
+            if (!name.matches("^[a-z0-9_-]{1,24}$")) return "usage: place <name> [x y z] [north|south|east|west]";
             // package H: at most Limits.PLACES named places (a known name may always move)
             String full = io.github.mojolowjo.entropybot.memory.Limits.full(places.containsKey(name), places.size(), io.github.mojolowjo.entropybot.memory.Limits.PLACES,
-                    "places", "forget one first (forget <name>; \"places\" lists them)");
+                    "places", "forget one first (places forget <name>; \"places\" lists them)");
             if (full != null) return full;
             // a direction word makes any place a mine ("mark deepmine north": "mine strip ... at deepmine")
             List<String> args = new ArrayList<>();
@@ -1032,14 +1104,14 @@ public final class Commands implements Chains.Env {
                 else args.add(a);
             }
             PolicyCommands.Pos pos = resolvePos(mc, verb.equals("setbase") ? rest : String.join(" ", args), from);
-            if (pos == null) return "I can't see you - come closer or give coordinates - next: mark " + name + " x y z";
+            if (pos == null) return "I can't see you - come closer or give coordinates - next: place " + name + " x y z";
             String dir = null;
             if (name.equals("mine") || dirWord != null) {
                 Player who = from != null ? Jobs.findPlayer(from) : null;
                 // the position came from the companion mod, which doesn't know which way they face: they must say it
                 if (dirWord == null && who == null && from != null && ownerFixPos(from) != null
                         && !String.join(" ", args).trim().matches("^-?\\d+ -?\\d+ -?\\d+$"))
-                    return "error: I can't see which way you're facing - say it: mark " + name + " north|south|east|west";
+                    return "error: I can't see which way you're facing - say it: place " + name + " north|south|east|west";
                 dir = dirWord != null ? dirWord : dirFromYaw((who != null ? who : player).getYRot());
                 // package A: a mine starts where I can stand and may walk to (solid rock, given by coordinates, can't be reached)
                 String notHere = mineSpotReason(mc, pos);
@@ -1057,9 +1129,11 @@ public final class Commands implements Chains.Env {
             o.addProperty("z", pos.z());
             o.addProperty("dim", pos.dim());
             if (dir != null) o.addProperty("dir", dir);
+            JsonObject old = places.get(name);           // V1b: a moved place keeps its markers
+            if (old != null && old.has("markers")) o.add("markers", old.get("markers").deepCopy());
             putPlace(name, o);
             return "remembered " + name + " at " + pos.x() + " " + pos.y() + " " + pos.z()
-                    + (dir != null ? ", digging " + dir + (name.equals("mine") ? " (PM \"stripmine\" to start)" : " (\"mine strip <ores> at " + name + "\")") : "")
+                    + (dir != null ? ", digging " + dir + (name.equals("mine") ? " (\"mine strip\" to start)" : " (\"mine strip <ores> at " + name + "\")") : "")
                     + (name.equals("food") ? (snapped != null ? " (the chest there): when I run out of food I fetch some from it" : " - no chest within 2 blocks of that spot, stand right next to it") : "");
         }
         if (verb.equals("forget")) {
@@ -1194,8 +1268,10 @@ public final class Commands implements Chains.Env {
         if (gathering.running()) s += " | " + gathering.statusText();
         if (mule.running()) s += " | " + mule.statusText();
         JsonObject mem = memoryBlock();
-        if (mem.has("state") && "broken".equals(mem.get("state").getAsString())) s += " | a note file was broken at start (PM memory)";
-        return s;
+        if (mem.has("state") && "broken".equals(mem.get("state").getAsString())) s += " | a note file was broken at start (debug memory)";
+        if (vocab.hold != null) s += " | " + vocab.hold.what();
+        if (!vocab.queued.isEmpty()) s += " | " + vocab.queued.size() + " queued";
+        return s + vocab.statusPart(p);
     }
 
     /** B7e: state.json's "memory" block (the stores' health), refreshed at most every 20 s (it reads ~14 files' times). */

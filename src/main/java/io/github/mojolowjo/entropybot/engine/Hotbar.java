@@ -25,13 +25,14 @@ public final class Hotbar {
     private Hotbar() {}
 
     private static volatile Map<Integer, String> layout = Map.of();
-    private static volatile String toolOres = "iron";
+    private static volatile String toolOres = "best";
     /** Ticks of quiet before the first idle swap (HotbarKeeper's). */
     public static final int IDLE_TICKS = HotbarKeeper.IDLE_TICKS;
 
-    public static void set(Map<Integer, String> l, String ores) {
+    /** V1b: mode = the tools mode (best|cheapest|stone), handed to the engines as their tool policy. */
+    public static void set(Map<Integer, String> l, String mode) {
         layout = java.util.Collections.unmodifiableMap(new TreeMap<>(l));
-        toolOres = HotbarRules.toolOres(ores);
+        toolOres = io.github.mojolowjo.entropybot.vocab.ToolMode.of(mode, null);
     }
 
     public static Map<Integer, String> layout() { return layout; }

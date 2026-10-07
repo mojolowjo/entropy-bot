@@ -229,8 +229,17 @@ public final class MineRules {
      * does the job; -1 with none (minePickSlot).
      */
     public static int pickSlot(List<Slot> slots, boolean requiresCorrectTool, String need, String toolOres) {
+        // V1b: tools mode best|stone pick by tier among the pickaxes that do (cheapest: the lowest)
+        if (io.github.mojolowjo.entropybot.vocab.ToolMode.BEST.equals(toolOres) || io.github.mojolowjo.entropybot.vocab.ToolMode.STONE.equals(toolOres)) {
+            List<Slot> ok = new ArrayList<>();
+            for (Slot s : slots) if (pickOk(s, requiresCorrectTool, need)) ok.add(s);
+            int[] tiers = new int[ok.size()];
+            for (int i = 0; i < tiers.length; i++) tiers[i] = Tools.toolTier(ok.get(i).id());
+            int i = io.github.mojolowjo.entropybot.vocab.ToolMode.pick(tiers, toolOres);
+            return i < 0 ? -1 : ok.get(i).index();
+        }
         int best = -1, bestT = 99, iron = -1, ironT = 99;
-        boolean ores = !"cheapest".equals(toolOres);
+        boolean ores = "iron".equals(toolOres);
         for (Slot s : slots) {
             if (!pickOk(s, requiresCorrectTool, need)) continue;
             int t = Tools.toolTier(s.id());

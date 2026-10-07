@@ -267,6 +267,14 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     }
 
     @Override
+    public String areaDigProblem(String name, List<String> words) {
+        JsonObject b = c.policyArea(name);
+        if (b == null) return io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, false, false, false, false, words);
+        return io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, true, b.has("round"), !PolicyCommands.hasY(b),
+                PolicyCommands.typeOf(b) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE, words);
+    }
+
+    @Override
     public String area(String name) {
         Policy pol = Core.INSTANCE.guard.core.basePolicy();
         if (pol == null || pol.areas == null) return null;

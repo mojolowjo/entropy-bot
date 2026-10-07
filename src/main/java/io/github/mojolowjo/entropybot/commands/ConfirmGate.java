@@ -29,6 +29,9 @@ public final class ConfirmGate {
 
         /** "x -10..50, z 0..60". */
         default String area(String name) { return null; }
+
+        /** V1b: why "dig &lt;area&gt; [words]" can't run (no such area, all heights without -N...), checked before asking; null = fine. */
+        default String areaDigProblem(String name, List<String> words) { return null; }
     }
 
     /** reply != null: answer it and do nothing else; else run line (maybe changed from what came in). */
@@ -125,6 +128,11 @@ public final class ConfirmGate {
         Kind k = kind(l);
         if (k == null) return Gate.run(vr[0].equals("dig") && endsWithConfirm(l) ? l.replaceFirst("(?i)\\s+confirm$", "") : l);
         if (k == Kind.DIG && !internal && digOver(l)) return Gate.say(tooBig(l));
+        if (k == Kind.DIG_AREA && !internal) {            // V1b: say what's wrong with the area before asking
+            List<String> w = Texts.words(vr[1].toLowerCase(Locale.ROOT));
+            String no = facts.areaDigProblem(w.get(0), w);
+            if (no != null) return Gate.say(no);
+        }
         if (internal || endsWithConfirm(l)) return Gate.run(runLine(k, l));
         String busy = k == Kind.AREA_REMOVE ? null : chainBusy != null ? chainBusy : jobBusy;
         if (busy != null) return Gate.say(busy);
@@ -171,26 +179,28 @@ public final class ConfirmGate {
             case "dig" -> { return digVolume(w) > BIG_DIG ? Kind.DIG : digArea(w) != null ? Kind.DIG_AREA : null; }
             case "area" -> { return w.size() >= 2 && w.get(0).equals("del") ? Kind.AREA_REMOVE : null; }
             case "stripmine" -> { return w.size() == 1 && w.get(0).equals("reset") ? Kind.STRIP_RESET : null; }
+            case "mine" -> { return w.size() == 2 && w.get(0).equals("strip") && w.get(1).equals("reset") ? Kind.STRIP_RESET : null; }
             default -> { return null; }
         }
     }
 
     /** The box's block count of "dig x1 y1 z1 x2 y2 z2 [words]", or -1 when it isn't one. */
     static long digVolume(List<String> w) {
-        if (w.size() < 6) return -1;
-        // 0.19.5: "dig x1 z1 x2 z2 down|up N": at most columns x N blocks (the verb counts the real ones)
-        if (w.get(4).equals("down") || w.get(4).equals("up")) {
+        if (w.size() < 5) return -1;
+        // V1b: "dig x1 z1 x2 z2 -N|+N": at most columns x N blocks (the verb counts the real ones)
+        if (io.github.mojolowjo.entropybot.clear.DigArgs.signedForm(w.toArray(new String[0])) != null) {
             Integer a = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(0), 0), b = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(1), 0),
                     c = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(2), 0), d = io.github.mojolowjo.entropybot.clear.RelCoord.parse(w.get(3), 0);
             if (a == null || b == null || c == null || d == null) return -1;
             int depth;
             try {
-                depth = io.github.mojolowjo.entropybot.clear.SurfaceDig.clampN(Integer.parseInt(w.get(5)));
+                depth = io.github.mojolowjo.entropybot.clear.SurfaceDig.clampN(Integer.parseInt(w.get(4).substring(1)));
             } catch (NumberFormatException e) {
                 return -1;
             }
             return (Math.abs((long) c - a) + 1) * (Math.abs((long) d - b) + 1) * depth;
         }
+        if (w.size() < 6) return -1;
         long[] n = new long[6];
         for (int i = 0; i < 6; i++) {
             // ~ forms count from 0: right when both ends of an axis are ~ (or both plain)
@@ -224,9 +234,9 @@ public final class ConfirmGate {
                 return "dig " + name + " breaks every block in that area" + (a != null ? " (" + a + ")" : "") + " (a destroy area: built blocks too; never chests)";
             }
             case DIG -> {
-                if (w.get(4).equalsIgnoreCase("down") || w.get(4).equalsIgnoreCase("up"))
+                if (io.github.mojolowjo.entropybot.clear.DigArgs.signedForm(w.toArray(new String[0])) != null)
                     return "dig breaks up to " + digVolume(Texts.words(String.join(" ", w).toLowerCase(Locale.ROOT))) + " blocks (" + String.join(" ", w.subList(0, 2)) + " to "
-                            + String.join(" ", w.subList(2, 4)) + ", from the surface " + w.get(4) + " " + w.get(5) + ")";
+                            + String.join(" ", w.subList(2, 4)) + ", " + w.get(4) + " from the surface)";
                 return "dig breaks up to " + digVolume(w) + " blocks (" + String.join(" ", w.subList(0, 3)) + " to " + String.join(" ", w.subList(3, 6)) + ")";
             }
             case AREA_REMOVE -> {
@@ -235,7 +245,7 @@ public final class ConfirmGate {
             }
             default -> {
                 String m = facts.mine();
-                return "stripmine reset starts " + (m != null ? m : "the mine") + " over at branch 1 (the chests stay, the note forgets them)";
+                return "mine strip reset starts " + (m != null ? m : "the mine") + " over at branch 1 (the chests stay, the note forgets them)";
             }
         }
     }

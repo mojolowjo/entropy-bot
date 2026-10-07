@@ -26,7 +26,9 @@ public final class ChopRules {
     public static final long MAX_TICKS = 20 * 60 * 20L;
     /** Trees that failed in a row before it gives up; break rounds per tree; how far it looks for trees. */
     public static final int FAILS = 3, ROUNDS = 8, RADIUS = 48;
-    public static final String USAGE = "usage: chop <logs> [log type] | chop trees <n> [log type] | chop status (e.g. chop 16, chop trees 3 birch)";
+    public static final String USAGE = "usage: cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status (e.g. cut 16, cut 16 logs, cut trees 3 birch)";
+    /** V1b: the type filter "any log except these" (the logs kind's exclusions, '.'-separated paths). */
+    public static final String EXCEPT = "except:";
 
     /** n: logs wanted (trees = false) or trees wanted (trees = true); type: a log filter or null; error: the usage. */
     public record Args(int n, boolean trees, String type, boolean status, String error) {}
@@ -63,6 +65,8 @@ public final class ChopRules {
         if (type == null) return true;
         if (logId == null) return false;
         String path = logId.indexOf(':') >= 0 ? logId.substring(logId.indexOf(':') + 1) : logId;
+        // V1b: "cut ... logs" with the logs kind's exclusions: any log but these ("except:cherry_log.pale_oak_log")
+        if (type.startsWith(EXCEPT)) return !java.util.Arrays.asList(type.substring(EXCEPT.length()).split("\\.")).contains(path);
         if (type.indexOf(':') >= 0) return type.equals(logId);
         String t = type.endsWith("_log") || type.endsWith("_stem") ? type : type + "_log";
         return path.equals(t) || path.equals(type + "_stem");

@@ -33,9 +33,9 @@ public final class Hints {
     /** A place the bot doesn't know: base gets "setbase", mine "mark mine", food "mark food", others "places". */
     public static String placeFix(String name) {
         String n = name == null ? "" : name.trim().toLowerCase();
-        if (n.equals("base")) return "setbase (standing at the base)";
-        if (n.equals("mine")) return "mark mine (standing at its start, facing the way to dig)";
-        if (n.equals("food")) return "mark food (next to the food chest)";
+        if (n.equals("base")) return "place base (standing at the base)";
+        if (n.equals("mine")) return "place mine (standing at its start, facing the way to dig)";
+        if (n.equals("food")) return "place food (next to the food chest)";
         return "places";
     }
 }

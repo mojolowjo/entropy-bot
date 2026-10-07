@@ -194,6 +194,23 @@ final class DigCommands {
      * area and from the owner, built blocks go too (a destroy lease; block entities never). A safe area refuses.
      */
     static String digArea(Commands c, LocalPlayer p, String name, String rest, String from) {
+        List<String> ws = Texts.words(rest.trim().toLowerCase());
+        JsonObject b0 = c.policyArea(name);
+        String no = io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, b0 != null, b0 != null && b0.has("round"), b0 != null && !PolicyCommands.hasY(b0),
+                b0 != null && PolicyCommands.typeOf(b0) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE, ws);
+        if (no != null) return no;
+        // V1b: "dig <area> -N|+N": the area's x z, N down or up from the surface (an all-heights area needs it)
+        String sn = io.github.mojolowjo.entropybot.vocab.DigForms.signed(ws);
+        if (sn != null) {
+            if (!PolicyCommands.dimOf(b0).equals(Storage.dim())) return "error: " + name + " is in " + PolicyCommands.dimOf(b0);
+            StringBuilder line = new StringBuilder();
+            line.append(PolicyCommands.n(b0, "x1")).append(' ').append(PolicyCommands.n(b0, "z1")).append(' ').append(PolicyCommands.n(b0, "x2")).append(' ')
+                    .append(PolicyCommands.n(b0, "z2")).append(' ').append(sn);
+            for (String w : ws.subList(1, ws.size())) if (!w.equals(sn) && !w.equals("confirm")) line.append(' ').append(w);
+            DigArgs a = DigArgs.parse(line.toString(), null);
+            if (a == null) return DIG_USAGE;
+            return digSurface(c, p, a, line.toString(), from);
+        }
         String[] err = new String[1];
         int[] n = areaBox(c, name, err);
         if (n == null) return err[0];
@@ -202,9 +219,6 @@ final class DigCommands {
         if (t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + name + " is a safe area - I never dig there";
         List<String> words = Texts.words(rest.trim().toLowerCase());
         boolean ores = words.contains("ores"), junk = words.contains("junk") && words.contains("drop"), water = words.contains("water") || words.contains("large"), large = words.contains("large");
-        for (String w : words.subList(1, words.size())) {
-            if (!List.of("ores", "junk", "drop", "water", "large").contains(w)) return "usage: dig <area> [ores] [junk drop] [water [large]]";
-        }
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
         if (box.volume() > 20000) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
         boolean owner = from == null || from.equalsIgnoreCase(c.owner());

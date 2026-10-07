@@ -110,7 +110,7 @@ class SurfaceDigTest {
         assertEquals(1210, SurfaceDig.build(w, 0, 0, 10, 10, false, 10, -64, 319).blocks().size());
         assertNotNull(SurfaceDig.build(w, 0, 0, 100, 100, false, 1, -64, 319).error(), "too many columns");
         // the gate's upper bound for the same line
-        assertEquals(1210, io.github.mojolowjo.entropybot.commands.ConfirmGateAccess.volume("0 0 10 10 down 10"));
+        assertEquals(1210, io.github.mojolowjo.entropybot.commands.ConfirmGateAccess.volume("0 0 10 10 -10"));
     }
 
     @Test
@@ -124,21 +124,21 @@ class SurfaceDigTest {
 
     @Test
     void surfaceFormWithTrailingWords() {
-        DigArgs a = DigArgs.parse("1 2 3 4 down 3 ores", new int[] {0, 0, 0});
+        DigArgs a = DigArgs.parse("1 2 3 4 -3 ores", new int[] {0, 0, 0});
         assertNotNull(a);
         assertTrue(a.surfaceForm());
         assertEquals("down", a.surface());
         assertEquals(3, a.depth());
         assertTrue(a.ores());
         assertArrayEquals(new int[] {1, 2, 3, 4}, a.n());
-        DigArgs b = DigArgs.parse("~-8 ~-8 ~8 ~8 UP 10 junk drop water large", new int[] {100, 64, -50});
+        DigArgs b = DigArgs.parse("~-8 ~-8 ~8 ~8 +10 junk drop water large", new int[] {100, 64, -50});
         assertNotNull(b);
         assertEquals("up", b.surface());
         assertArrayEquals(new int[] {92, -58, 108, -42}, b.n());
         assertTrue(b.junkDrop() && b.water() && b.large());
-        assertEquals(64, DigArgs.parse("0 0 1 1 down 200", null).depth());
-        assertNull(DigArgs.parse("0 0 1 1 down x", null));
-        assertNull(DigArgs.parse("0 0 1 1 down", null));
+        assertEquals(64, DigArgs.parse("0 0 1 1 -200", null).depth());
+        assertNull(DigArgs.parse("0 0 1 1 -x", null));
+        assertNull(DigArgs.parse("0 0 1 1", null));
         assertNull(DigArgs.parse("0 0 1 1 sideways 3", null));
     }
 

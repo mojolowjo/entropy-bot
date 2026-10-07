@@ -17,6 +17,7 @@ public final class OldWords {
         List<String> w = Texts.words(rest == null ? "" : rest.trim());
         String sub = w.isEmpty() ? "" : w.get(0).toLowerCase();
         switch (v) {
+            case "dig" -> { return io.github.mojolowjo.entropybot.clear.DigArgs.oldSurfaceHint(rest); }     // V1b: down|up N -> -N|+N
             case "protect" -> {
                 if (sub.isEmpty() || sub.equals("list")) return "area list";
                 return protectForm(w);
@@ -88,6 +89,31 @@ public final class OldWords {
             }
             default -> { return null; }
         }
+    }
+
+    /**
+     * V1b: the answer to a typed line (one command or a chain) that uses a removed word, or null (it runs). Each step of
+     * a chain is checked; the first old one answers. The V1a words (area, protect, guard, zone) answer in their own verbs.
+     */
+    public static String removedAnswer(String verb, String rest, String raw) {
+        List<String> steps = Texts.splitChain(raw == null ? "" : raw);
+        if (steps.size() <= 1) return v1b(verb, rest);
+        for (String s : steps) {
+            String[] vr = Texts.verbAndRest(s);
+            String h = v1b(vr[0], vr[1]);
+            if (h != null) return h + " (in the chain: " + s + ")";
+        }
+        return null;
+    }
+
+    /** The V1b hint for one step, or null. */
+    static String v1b(String verb, String rest) {
+        String v = verb == null ? "" : verb.toLowerCase();
+        if (v.equals("dig")) {
+            String t = translate(v, rest);
+            return t == null ? null : "that is now " + t;
+        }
+        return null;
     }
 
     /** A saved chain with every old form rewritten (null when nothing changed). */

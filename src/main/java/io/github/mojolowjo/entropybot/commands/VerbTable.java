@@ -51,7 +51,7 @@ public final class VerbTable {
         v("come", "", "moving", G, "come", "walk to you (out of view: the companion mod's position)", "come", "follow");
         v("follow", "", "moving", G, "follow [name]", "follow you (or that player) until stop", "follow|follow Steve", "stop");
         v("goto", "", "moving", G, "goto x y z | goto x z | goto me", "walk to a spot", "goto 120 64 -300", "status");
-        v("go", "", "moving", O, "go <place> | go poi <id>", "walk to a named place (far: /home first)", "go farm|go poi 11", "places");
+        v("go", "", "moving", O, "go <place> [marker] | go <marker> | go poi <id>", "walk to a named place or marker (far: /home first)", "go farm|go base furnace|go poi 11", "places");
         v("base", "", "moving", O, "base", "walk to the base (far: /home first)", "base", "deposit");
         v("home", "", "moving", O, "home", "teleport home with the server's /home", "home", "sethome");
         v("sethome", "", "moving", O, "sethome", "my home = where I stand (/sethome home)", "sethome", "home");
@@ -62,7 +62,8 @@ public final class VerbTable {
                 "mark farm|mark mine north", "places");
         v("setbase", "", "moving", O, "setbase [x y z]", "mark base", "setbase", "scan base");
         v("forget", "", "moving", O, "forget <name>", "forget a place", "forget farm", "places");
-        v("places", "", "moving", G, "places", "the places I know", "places", "go <place>");
+        v("places", "", "moving", G, "places | places forget <place|marker>", "the places I know, each with its markers", "places|places forget farm", "go <place> [marker]");
+        v("marker", "", "moving", O, "marker <name> [of <place>] [x y z]", "a point under a place (default: the nearest place within 32), e.g. the furnace", "marker furnace|marker door of base", "go <place> <marker>");
         v("spawn", "bed", "moving", O, "spawn", "walk to the nearest bed and set my respawn point there", "spawn", "status");
         v("sleep", "", "moving", O, "sleep | sleep status", "go to the nearest bed (or put mine down at night) and sleep until morning or stop", "sleep|sleep status", "rule when night do sleep");
         v("stop", "", "moving", G, "stop", "cancel everything, breaking off (the autominer waits 10 min)", "stop", "autominer on");
@@ -120,7 +121,8 @@ public final class VerbTable {
         v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "mark food");
         v("hotbar", "", "crafting", O, "hotbar | hotbar set <slot> <kind|item> ... | hotbar clear <slot>|all", "keep tools in hotbar slots (pickaxe, sword, axe, shovel, hoe, food, torch, or an item)",
                 "hotbar set 1 pickaxe 2 sword 3 food 4 torch", "hotbar");
-        v("tools", "", "crafting", O, "tools | tools ores iron|cheapest", "which pickaxe ores get", "tools ores iron", "tools");
+        v("tools", "", "crafting", O, "tools | tools mode best|cheapest|stone", "which tool I use: best (the default), cheapest (wears out first), stone (stone for all but ores that need more)", "tools mode stone|tools", "tools");
+        v("kinds", "", "crafting", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>", "the kind-words logs, wood, ores, stone, food, seeds (usable for any item word: mine, get, cut, gather, need, fetch) and what each leaves out", "kinds|kinds logs exclude cherry_log", "cut 16 logs");
         // ---- digging and mining
         v("mine", "", "mining", O, "mine <ore> [n] [dig] | mine strip <ores> [n] [at <mine>] | mine cave <ores> [n | <min>m] [at <cave>]",
                 "mine ores in view (dig: may dig to them), strip-mine at a mine, or go caving", "mine iron_ore 10|mine strip iron,diamond 16", "deposit");
@@ -130,6 +132,7 @@ public final class VerbTable {
         v("chop", "", "mining", O, "chop <logs> [log type] | chop trees <n> [log type] | chop status",
                 "fell trees in my areas (never next to builds or in protect boxes), pick up the logs, replant a sapling; leaves are left; 20 min at most",
                 "chop 16|chop trees 3 birch|chop status", "deposit");
+        v("cut", "", "mining", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status", "fell trees in my areas for n logs (logs: any kind but those kinds logs excludes), pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
         v("gather", "", "mining", O, "gather <item> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
                 "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave), "
                         + "chopped or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
@@ -150,7 +153,7 @@ public final class VerbTable {
                 "light here 8|light 0 0 30 30", "status");
         v("bootstrap", "", "mining", O, "bootstrap | bootstrap status", "a camp from nothing: chop, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp marked",
                 "bootstrap|bootstrap status", "places");
-        v("place", "", "mining", O, "place <block> x y z", "place one block (walks into reach)", "place cobblestone 10 64 20", "status");
+        v("place", "", "moving", O, "place <name> [x y z] [north|south|east|west] | place <block> x y z", "remember a place (where you stand, or the coordinates; place mine north = a mine, place food = the food chest); with a block and three numbers: put one block there", "place farm|place mine north|place cobblestone 10 64 20", "places");
         // ---- safety and areas
         v("area", "", "safety", P, "area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> | area change type <name> <type> "
                         + "| area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]",
@@ -184,7 +187,7 @@ public final class VerbTable {
         v("repeat", "", "automation", O, "repeat [n|forever] <routine or chain>", "loop it (a round at most every 10 s)", "repeat forever farm|repeat 3 night", "queue");
         v("run", "", "automation", O, "run <routine>", "run a saved routine", "run night", "queue");
         v("wait", "", "automation", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
-        v("queue", "", "automation", G, "queue", "where the running chain is", "queue", "stop");
+        v("queue", "", "automation", G, "queue | queue <task> | queue clear", "what runs and what waits; queue a task with a finish after the current one (never escort, follow, defend, guard, repeat forever)", "queue|queue craft torch 16", "status");
         v("rule", "rules", "automation", P, "rules | rule every <n>m|h do <cmds> | rule at HH:MM do <cmds> | rule when full do <cmds> | rule when idle <n>m do <cmds> | rule when night|day do <cmds> | rule delete <n>",
                 "things I do by myself when idle", "rule every 30m do farm then deposit|rule when full do deposit", "rules", "rules");
         v("autominer", "", "automation", P, "autominer on|off|status", "mine on my own when idle (deposit, restock, strip mine, else caves)", "autominer on", "why", "autominer status");

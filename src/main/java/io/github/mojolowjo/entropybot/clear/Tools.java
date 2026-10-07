@@ -61,7 +61,20 @@ public final class Tools {
      * cheapest. So stone pickaxes wear out on stone and the iron one is kept for ores.
      */
     public static int choose(List<Slot> slots, boolean needsCorrectTool, boolean ore, String toolOres) {
-        if (ore && !"cheapest".equals(toolOres)) {
+        // V1b: tools mode best|stone pick by tier among the tools that do the job (cheapest = choose's own order)
+        if (io.github.mojolowjo.entropybot.vocab.ToolMode.BEST.equals(toolOres) || io.github.mojolowjo.entropybot.vocab.ToolMode.STONE.equals(toolOres)) {
+            List<Slot> ok = new ArrayList<>();
+            for (Slot s : slots) {
+                if (s.id().endsWith("_sword")) continue;
+                if (needsCorrectTool ? !s.correctForDrops() : s.speed() <= 1) continue;
+                ok.add(s);
+            }
+            int[] tiers = new int[ok.size()];
+            for (int i = 0; i < tiers.length; i++) tiers[i] = toolTier(ok.get(i).id());
+            int i = io.github.mojolowjo.entropybot.vocab.ToolMode.pick(tiers, toolOres);
+            return i < 0 ? -1 : ok.get(i).index();
+        }
+        if (ore && "iron".equals(toolOres)) {
             List<Slot> iron = new ArrayList<>();
             for (Slot s : slots) if (toolTier(s.id()) >= ORE_TIER) iron.add(s);
             int best = choose(iron, needsCorrectTool);
@@ -81,7 +94,8 @@ public final class Tools {
      */
     public static boolean stonePicksFirst(String chosenId, boolean ore, String toolOres, boolean stoneCanBreak, boolean triedAlready) {
         if (triedAlready || chosenId == null || !isPickaxe(chosenId) || toolTier(chosenId) < ORE_TIER || !stoneCanBreak) return false;
-        return !(ore && !"cheapest".equals(toolOres));
+        if (!io.github.mojolowjo.entropybot.vocab.ToolMode.makesStonePicks(toolOres)) return false;     // V1b: best mode keeps the best
+        return !(ore && "iron".equals(toolOres));
     }
 
     /** The whisper while it makes them ({@code using}: the pickaxe it would have used). */
