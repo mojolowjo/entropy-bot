@@ -16,6 +16,7 @@ class LightSupplyTest {
         LightGrid.Supply c = LightGrid.supply(2, 16, 0, 2, 0, false);
         assertEquals(LightGrid.Source.CRAFT, c.source());
         assertEquals(8, c.count(), "4 torches a coal");
+        assertEquals(12, LightGrid.supply(0, 25, 0, 3, 6, true).count(), "coal first, only what it makes (no furnace trip)");
         LightGrid.Supply l = LightGrid.supply(2, 16, 0, 0, 5, true);
         assertEquals(LightGrid.Source.CRAFT, l.source(), "logs with a furnace near: charcoal first");
         assertEquals(14, l.count());
