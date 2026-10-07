@@ -139,6 +139,7 @@ public final class BrainRuntime implements BrainEnv {
         s.pickaxes = picks;
         s.pickPct = bestPct;
         s.pickDurability = dur;
+        s.armorWorn = io.github.mojolowjo.entropybot.camp.ArmorCareRules.lowest(CampCommands.armor(p));
         s.toolBroke = lastPickaxes > 0 && picks < lastPickaxes && brainChainRunning();
         lastPickaxes = picks;
         // the stage (the stock view, every 30 s)

@@ -261,14 +261,14 @@ class BrainTest {
         BrainState s = calm();
         s.stage = "nothing";
         s.pickaxes = 0;
-        assertEquals(0, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("tools"), "no tool need at stage nothing");
+        assertEquals(0, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("gear"), "no tool need at stage nothing");
         s.stage = "stone";
-        Needs.Option t = Needs.score(s, c, IdleList.DEFAULT, Map.of()).options().stream().filter(o -> o.need().equals("tools")).findFirst().orElseThrow();
+        Needs.Option t = Needs.score(s, c, IdleList.DEFAULT, Map.of()).options().stream().filter(o -> o.need().equals("gear")).findFirst().orElseThrow();
         assertEquals(70, t.score());
         assertEquals("craft stone_pickaxe 1", t.chain());
         s.pickaxes = 1;
         s.pickPct = 9;
-        assertEquals(40, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("tools"));
+        assertEquals(40, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("gear"));
         s.foodItems = 4;
         assertEquals(40, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("food"));
         s.stage = "wood";

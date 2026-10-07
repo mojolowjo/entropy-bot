@@ -10,6 +10,7 @@ import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.camp.LightGrid;
 import io.github.mojolowjo.entropybot.camp.StockRules;
 import io.github.mojolowjo.entropybot.camp.ToolCareRules;
+import io.github.mojolowjo.entropybot.camp.ArmorCareRules;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -446,7 +447,7 @@ final class CampCommands {
     }
 
     String toolsText(LocalPlayer p) {
-        return p == null ? "" : ToolCareRules.text(tools(p));
+        return p == null ? "" : ToolCareRules.text(tools(p)) + "\n" + ArmorCareRules.text(armor(p));
     }
 
     /** Every 100 ticks; at a pause (no job, chain or request, no reflex) a worn or broken tool is replaced. */
@@ -456,7 +457,7 @@ final class CampCommands {
         Map<String, String> now = ToolCareRules.carried(tl);
         // a broken kind stays "before" until replaced (so the next pause still sees it)
         for (Map.Entry<String, String> e : needs.entrySet()) now.putIfAbsent(e.getKey(), e.getValue());
-        careStuck.keySet().retainAll(needs.keySet());
+        careStuck.keySet().removeIf(k -> !k.startsWith("armor:") && !needs.containsKey(k));
         if (!idle || needs.isEmpty()) {
             toolsBefore = now;
             return;
@@ -490,6 +491,87 @@ final class CampCommands {
             }
         }
         toolsBefore = now;
+    }
+
+    // ---------------------------------------------------------------- armour care (0.23.6)
+
+    /** The four worn slots (empty ones as a Piece with id null). */
+    static List<ArmorCareRules.Piece> armor(LocalPlayer p) {
+        List<ArmorCareRules.Piece> out = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            String slot = ArmorCareRules.SLOTS.get(3 - i);          // armor list: 0 boots .. 3 helmet
+            ItemStack st = p.getInventory().armor.get(i);
+            out.add(st.isEmpty() ? new ArmorCareRules.Piece(slot, null, 0, 0)
+                    : new ArmorCareRules.Piece(slot, Gui.itemId(st), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
+        }
+        return out;
+    }
+
+    /** Armour pieces in the bag (not worn). */
+    static List<ArmorCareRules.Piece> armorInBag(LocalPlayer p) {
+        List<ArmorCareRules.Piece> out = new ArrayList<>();
+        for (int i = 0; i < 36; i++) {
+            ItemStack st = p.getInventory().getItem(i);
+            if (st.isEmpty()) continue;
+            String id = Gui.itemId(st);
+            String slot = ArmorCareRules.slot(id);
+            if (slot != null) out.add(new ArmorCareRules.Piece(slot, id, st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
+        }
+        return out;
+    }
+
+    private Set<String> armorBefore = new LinkedHashSet<>();
+
+    /**
+     * At a pause, after tool care: a worn or missing piece is fetched or crafted and worn ("... then wear"); a good spare
+     * in the bag is just put on. One at a time, each slot retried every 10 minutes. True when it started something.
+     */
+    boolean armorCareTick(LocalPlayer p, boolean idle) {
+        List<ArmorCareRules.Piece> on = armor(p), bag = armorInBag(p);
+        Set<String> filled = new LinkedHashSet<>();
+        for (ArmorCareRules.Piece a : on) if (!a.empty()) filled.add(a.slot());
+        Set<String> before = armorBefore;
+        armorBefore = filled;
+        if (!idle) return false;
+        // a good spare for a worn or empty slot: wear swaps it in
+        for (ArmorCareRules.Piece a : on) {
+            if ((a.empty() || a.worn()) && ArmorCareRules.spare(a.slot(), bag) != null && Minecraft.getInstance().screen == null) {
+                String r = Gui.wearArmor(p);
+                LOG.info("[entropybot] armour care: wear -> {}", r);
+                if (r.startsWith("ok")) return true;
+            }
+        }
+        Map<String, String> needs = ArmorCareRules.needs(on, bag);
+        careStuck.keySet().removeIf(k -> k.startsWith("armor:") && !needs.containsKey(k.substring(6)));
+        long ms = System.currentTimeMillis();
+        Set<String> stored = null;
+        Map<String, Integer> have = null;
+        for (Map.Entry<String, String> e : needs.entrySet()) {
+            String slot = e.getKey();
+            if (ms - careTried.getOrDefault("armor:" + slot, 0L) < CARE_RETRY_MS) continue;
+            careTried.put("armor:" + slot, ms);
+            if (stored == null) {
+                stored = new LinkedHashSet<>();
+                have = new LinkedHashMap<>(Gui.inventory(p));
+                for (Crafting.Source s : c.crafting.storageSources(p)) {
+                    stored.addAll(s.items().keySet());
+                    final Map<String, Integer> h = have;
+                    s.items().forEach((k, v) -> h.merge(k, v, Integer::sum));
+                }
+            }
+            String cmd = ArmorCareRules.replacement(slot, e.getValue(), stored, have);
+            if (cmd == null) {
+                // a worn piece, or one that broke since the last look: a check line; a slot never filled stays quiet
+                if (e.getValue() != null || before.contains(slot)) careStuck.put("armor:" + slot, e.getValue() == null ? slot : e.getValue());
+                continue;
+            }
+            careStuck.remove("armor:" + slot);
+            LOG.info("[entropybot] armour care: {} {} -> {}", slot, e.getValue() == null ? "missing" : e.getValue() + " worn", cmd);
+            Chains.Reply r = c.handle(c.owner(), cmd, false, true, null);
+            LOG.info("[entropybot] armour care: {} -> {}", cmd, r.text());
+            if (r.text() == null || !r.text().startsWith("error")) return true;      // one at a time
+        }
+        return false;
     }
 
     /** "check": tools that are nearly broken and that nothing can replace. */

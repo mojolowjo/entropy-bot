@@ -144,6 +144,7 @@ public final class Core {
             }
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
             reflexes.tick(tick);
+            if (tick % 20 == 7) io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.tick(mc, mc.player, files, s -> commands.whisper(commands.owner(), s));     // 0.23.6
             knowledge.flushIfDue(tick);
             if (tick % 20 == 0) writeStock();                                   // C2: stock.json for the dashboard
             // package H: what the caps dropped, in the log

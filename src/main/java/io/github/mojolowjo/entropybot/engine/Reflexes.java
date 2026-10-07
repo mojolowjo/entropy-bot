@@ -114,12 +114,15 @@ public final class Reflexes {
     /** C7: escort me|<player> (Commands starts the follow; this fights for them). */
     public final Escort escort = new Escort();
     private boolean escortFighting;
+    /** 0.23.6: fire, milk, the fight potion. */
+    public final Survival survival;
 
     public Reflexes(EventRing events, EngineProcess engine, Knowledge knowledge) {
         this.events = events;
         this.engine = engine;
         this.knowledge = knowledge;
         this.duel = new CreeperDuel(events);
+        this.survival = new Survival(events, engine);
     }
 
     /** "defend creepers flee|melee|bow" (commands.json "creepers"). */
@@ -235,7 +238,7 @@ public final class Reflexes {
         return out;
     }
 
-    public boolean hold() { return reflex != Reflex.NONE; }
+    public boolean hold() { return reflex != Reflex.NONE || survival.active(); }
 
     public Reflex reflex() { return reflex; }
 
@@ -298,7 +301,7 @@ public final class Reflexes {
 
     private String statusText() {
         return switch (reflex) {
-            case NONE -> "none";
+            case NONE -> survival.active() ? survival.doing() : "none";
             case EATING -> "eating";
             case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
             case FLEEING -> "avoiding a " + target;
@@ -339,6 +342,7 @@ public final class Reflexes {
         lastHealth = hp;
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
+        if (reflex != Reflex.EATING && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) return;     // 0.23.6
 
         if (reflex == Reflex.RETREATING) {
             retreat(mc, p, hurt);
@@ -616,7 +620,21 @@ public final class Reflexes {
         return true;
     }
 
+    private String guardNote;
+
     private void driveSprint(Minecraft mc, LocalPlayer p) {
+        // 0.23.6: never off a drop over 3, into lava, water or fire: the next 2 cells along the run, each tick
+        io.github.mojolowjo.entropybot.threat.RunGuard.Verdict g = ThreatRuntime.INSTANCE.runGuard(p, cspr.dirX(), cspr.dirZ());
+        if (!g.go() && !g.why().equals(guardNote)) {
+            guardNote = g.why();
+            events.push("reflex", "run guard: " + g.why(), null);
+            LOG.info("[entropybot] run guard: {}", g.why());
+        }
+        if (g.stop()) {
+            stopMoving(mc);
+            return;
+        }
+        if (!g.go()) cspr.steer(g.dirX(), g.dirZ());
         float yaw = (float) Math.toDegrees(Math.atan2(-cspr.dirX(), cspr.dirZ()));
         p.setYRot(yaw);
         p.setYHeadRot(yaw);
@@ -1140,6 +1158,7 @@ public final class Reflexes {
         deadTicks++;
         if (deadTicks == 1) {
             if (reflex != Reflex.NONE) settle("died");
+            io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.death();      // 0.23.6
             events.push("reflex", "died at " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ(), null);
         }
         // respawn after 2 seconds, and again every 10 s if the first click didn't take

@@ -618,7 +618,9 @@ public final class Commands implements Chains.Env {
             }
             if (tick % 100 == 65 && worldTicks > 600) {
                 try {
-                    camp.toolCareTick(player, !jobs.running() && !chains.running() && !requests.busy() && !core.reflexes.hold() && !gathering.running());
+                    boolean pause = !jobs.running() && !chains.running() && !requests.busy() && !core.reflexes.hold() && !gathering.running();
+                    camp.toolCareTick(player, pause);
+                    camp.armorCareTick(player, pause && !jobs.running() && !chains.running());     // 0.23.6 armour care
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] tool care: {}", e.toString());
                 }
@@ -860,6 +862,7 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
         if (verb.equals("check")) return Reply.now(selfCheck.command(player));
+        if (verb.equals("summary")) return Reply.now(io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.now(core.files()));     // 0.23.6
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
         // V1b: the plumbing verbs live under debug ("debug autominer on" runs "autominer on" as before)
         if (verb.equals("debug") && OldWords.DEBUG_VERBS.contains(Texts.verbAndRest(rest)[0])) {

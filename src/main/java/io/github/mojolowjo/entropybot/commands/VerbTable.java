@@ -135,6 +135,7 @@ public final class VerbTable {
         v("repeat", "", "jobs", O, "repeat [n|forever] <routine or chain>", "loop it (a round at most every 10 s)", "repeat forever farm|repeat 3 night", "queue");
         v("wait", "", "jobs", O, "wait <seconds>", "a pause (a step in a chain)", "deposit then wait 30 then farm", "queue");
         v("confirm", "", "jobs", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
+        v("summary", "", "jobs", O, "summary", "the day so far: items gathered and deposited, jobs done and failed, deaths, needs met, blocks put back, distance walked, the brain's top picks (also whispered at dawn, and in summary.json)", "summary", "check");
         v("check", "", "jobs", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
         v("why", "", "jobs", G, "why | why threats", "the brain's last decision: the branch, each need's score, what was skipped (and why), the stage; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
                 "why|why threats", "status");
@@ -143,7 +144,7 @@ public final class VerbTable {
         // ---- kinds and tools (VOCABULARY 6)
         v("kinds", "", "materials", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>",
                 "the kind-words logs, wood, ores, stone, food, seeds (usable for any item word: mine, get, cut, gather, need, fetch) and what each leaves out", "kinds|kinds logs exclude cherry_log", "cut 16 logs");
-        v("tools", "", "materials", O, "tools | tools mode best|cheapest|stone", "which tool I use: best (the default), cheapest (wears out first), stone (stone for all but ores that need more)", "tools mode stone|tools", "tools");
+        v("tools", "", "materials", O, "tools | tools mode best|cheapest|stone", "which tool I use: best (the default), cheapest (wears out first), stone (stone for all but ores that need more); also the tool and armour care lines (worn pieces are replaced at a pause)", "tools mode stone|tools", "tools");
         v("hotbar", "", "materials", O, "hotbar | hotbar set <slot> <kind|item> ... | hotbar clear <slot>|all", "keep tools in hotbar slots (pickaxe, sword, axe, shovel, hoe, food, torch, or an item)",
                 "hotbar set 1 pickaxe 2 sword 3 food 4 torch", "hotbar");
         // ---- explore and find (VOCABULARY 6b)

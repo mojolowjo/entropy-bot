@@ -87,7 +87,10 @@ public final class Needs {
             else if (s.pickPct <= c.i("toolsWornPct")) { tools = c.i("toolsWorn"); toolWhy = "my pickaxe is at " + s.pickPct + " %"; }
             else toolWhy = "pickaxe " + s.pickPct + " %";
         }
-        out.add(new Option("tools", tools, tools > 0 ? "craft " + tier + "_pickaxe 1" : null, toolWhy, null, 0));
+        // 0.23.6: the gear need (was "tools"): the pickaxe, then the armour (armour care replaces it at a pause; the score shows it)
+        String gearChain = tools > 0 ? "craft " + tier + "_pickaxe 1" : null;
+        if (tools == 0 && s.armorWorn != null && tier != null) { tools = c.i("toolsWorn"); toolWhy = s.armorWorn + " (armour care replaces it at a pause)"; }
+        out.add(new Option("gear", tools, gearChain, toolWhy, null, 0));
         // bag
         int bag = s.freeSlots <= 2 ? c.i("bagFull") : s.freeSlots <= 4 ? c.i("bagLow") : s.freeSlots <= 8 ? c.i("bagSome") : 0;
         out.add(new Option("bag", bag, bag > 0 ? "deposit" : null, s.freeSlots + " free slots", s.basePos, 0));

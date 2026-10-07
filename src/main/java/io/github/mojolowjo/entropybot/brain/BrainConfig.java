@@ -96,6 +96,7 @@ public final class BrainConfig {
         if (need == null) return 1;
         String n = need.startsWith("need:") ? need.substring(5) : need.startsWith("goal:") ? "goal" : need;
         Double w = weights.get("need." + n.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_") + ".weight");
+        if (w == null && n.equals("gear")) w = weights.get("need.tools.weight");      // 0.23.6: the old name still works
         return w == null ? 1 : w;
     }
 

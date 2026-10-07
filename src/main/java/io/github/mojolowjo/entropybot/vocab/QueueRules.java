@@ -16,7 +16,7 @@ public final class QueueRules {
     public static final int MAX = 10;
     static final Set<String> ENDLESS = Set.of("follow", "escort", "defend", "guard");
     /** Answers, not tasks: nothing to wait for. */
-    static final Set<String> INSTANT = Set.of("status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "stop", "dismiss", "confirm", "check");
+    static final Set<String> INSTANT = Set.of("status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "stop", "dismiss", "confirm", "check", "summary");
 
     /** Null when the line may be queued, else the refusal. */
     public static String refusal(String line) {

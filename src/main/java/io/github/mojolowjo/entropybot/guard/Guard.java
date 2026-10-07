@@ -175,6 +175,12 @@ public final class Guard {
         return refuse(level, pos, "place", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", info));
     }
 
+    /** 0.23.6 dry run (no veto log): would a liquid placed at pos be allowed? For the fire reflex's water bucket. */
+    public boolean mayPlaceLiquid(Level level, BlockPos pos) {
+        GuardCore.Verdict v = core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", GuardCore.BlockInfo.placing(true, false));
+        return v.allowed() && !v.wouldVeto();
+    }
+
     private boolean refuse(Level level, BlockPos pos, String action, GuardCore.Verdict v) {
         if (v.allowed() && !v.wouldVeto()) return false;
         String line = (v.allowed() ? "would refuse " : "refused ") + action + " at " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + ": " + v.reason();

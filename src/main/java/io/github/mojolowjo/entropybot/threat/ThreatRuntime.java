@@ -282,6 +282,25 @@ public final class ThreatRuntime {
         return t == null ? -1 : t;
     }
 
+    /** 0.23.6: the grid snapshot when fresh, else null (the fire reflex's water search, the run guard). */
+    public ReachGrid grid() { return gridOk() ? cache.grid() : null; }
+
+    /**
+     * 0.23.6 run guard for a raw run along (dx, dz): go, turn or stop ({@link RunGuard}). Fire comes from the level (no
+     * collision box, so not in the grid). Without a fresh grid it says go (the old behaviour). Never throws.
+     */
+    public RunGuard.Verdict runGuard(LocalPlayer p, double dx, double dz) {
+        try {
+            Level level = p.level();
+            BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+            RunGuard.Fire fire = (x, y, z) -> level.getBlockState(m.set(x, y, z)).is(net.minecraft.tags.BlockTags.FIRE);
+            return RunGuard.decide(grid(), p.getX(), p.getBlockY(), p.getZ(), dx, dz, fire);
+        } catch (RuntimeException e) {
+            error("run guard", e);
+            return new RunGuard.Verdict("go", dx, dz, "error");
+        }
+    }
+
     /** 0.23.2: the escape heading from a creeper, from the grid ({dirX, dirZ, run}; run -1 = no grid, straight away). */
     public double[] escape(LocalPlayer p, Entity from) {
         double ax = p.getX() - from.getX(), az = p.getZ() - from.getZ();
