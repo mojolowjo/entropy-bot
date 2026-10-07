@@ -26,7 +26,13 @@ public record SectionRecord(SectionKey key, Quality quality, long builtAt, long 
         /** From loaded chunks. */
         LIVE,
         /** From Baritone's chunk cache only (2 bits a block); rebuilt from live data when loaded. */
-        COARSE
+        COARSE,
+        /**
+         * chunks-0.23.5: from the companion's surface chunk (the owner's client saw it; ground heights only, see
+         * {@code routing.SurfaceCellMoves}); rebuilt from live or coarse data when the bot gets there, and from newer
+         * companion data. Appended last: the file stores the ordinal.
+         */
+        SURFACE
     }
 
     public static final char IMPOSSIBLE = 0xFFFF;

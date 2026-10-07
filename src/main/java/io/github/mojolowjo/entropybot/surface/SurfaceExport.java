@@ -30,7 +30,9 @@ import java.util.concurrent.Executors;
  * 0.19.3: the surface export for the dashboard's RTS view. One JSON file per LOADED client chunk in
  * {@code entropybot\surface\<dim folder>\<cx>.<cz>.json} (format: {@link SurfaceColumns}; families: {@link SurfaceFamily}),
  * written on load, rewritten after block changes (at most every 2 s per chunk, {@link SurfaceSchedule}), deleted on
- * unload; the dimension's folder is wiped when the bot joins or leaves a world (or changes dimension). On whenever the
+ * unload; the dimension's folder is wiped when the bot joins or leaves a world (or changes dimension). chunks-0.23.5: the
+ * companion's chunks (written by the dashboard, {@code "src":"companion"}) are never deleted on unload nor wiped
+ * ({@link SurfaceFiles}); a chunk the bot loads is overwritten by its own scan (the bot wins while loaded). On whenever the
  * bot is in a world; {@code surface off|on} is kept in {@code entropybot\surface.json} (its own small file, the
  * {@code WatchSettings}/watch.json pattern: the camera's save rewrites watch.json whole, so a foreign key would be lost).
  *
@@ -76,6 +78,7 @@ public final class SurfaceExport {
     private volatile long chunksWritten, deleted, lastWriteAtMs, lastWriteNanos, scanned;
     private volatile boolean writeErrorLogged;
     private volatile String lastWriteError;
+    private volatile int companionKept;
     private long lastColumnErrorLogMs;
     private long columnErrors;
     private String lastTickError;
@@ -113,11 +116,13 @@ public final class SurfaceExport {
         try {
             schedule.unloaded(cx, cz);
             Path d = dimDir;
+            String dd = dim;
             if (d == null) return;
             String name = SurfaceColumns.fileName(cx, cz);
             worker().execute(() -> {
                 try {
-                    if (Files.deleteIfExists(d.resolve(name))) deleted++;
+                    // chunks-0.23.5: only its own file; a companion chunk (the owner's scan) stays for the route map and the RTS page
+                    if (SurfaceFiles.deleteOwn(d.resolve(name), dd)) deleted++;
                 } catch (Throwable t) {
                     writeFailed("delete " + name, t);
                 }
@@ -185,7 +190,7 @@ public final class SurfaceExport {
         if (root == null) return;
         dim = d;
         dimDir = root.resolve(SurfaceColumns.dimFolder(d));
-        wipe(dimDir);
+        wipe(dimDir, d);
         long now = System.currentTimeMillis();
         int rd = mc.options.renderDistance().get() + 2;
         BlockPos p = mc.player.blockPosition();
@@ -197,7 +202,7 @@ public final class SurfaceExport {
 
     private void stopAndWipe() {
         schedule.clear();
-        if (dimDir != null) wipe(dimDir);
+        if (dimDir != null) wipe(dimDir, dim);
         dim = null;
         dimDir = null;
     }
@@ -212,13 +217,12 @@ public final class SurfaceExport {
         }
     }
 
-    private void wipe(Path dir) {
+    /** chunks-0.23.5: the bot's own files go; the companion's files of this dimension stay ({@link SurfaceFiles#wipe}). */
+    private void wipe(Path dir, String d) {
         worker().execute(() -> {
             try {
-                if (!Files.isDirectory(dir)) return;
-                try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.json*")) {
-                    for (Path f : ds) Files.deleteIfExists(f);
-                }
+                int[] r = SurfaceFiles.wipe(dir, d);
+                companionKept = r[1];
             } catch (Throwable t) {
                 writeFailed("wipe " + dir.getFileName(), t);
             }
@@ -380,6 +384,15 @@ public final class SurfaceExport {
                 (System.currentTimeMillis() - at) / 1000));
         Path d = dimDir;
         sb.append(" | folder ").append(d == null ? "(none: not in a world or off)" : d.toString());
+        // chunks-0.23.5: the companion's chunks in the folder (the dashboard writes them) and what the route map took in
+        try {
+            int[] n = SurfaceFiles.count(d);
+            sb.append(" | files: ").append(n[0]).append(" own, ").append(n[1]).append(" from the companion (kept at the last wipe ").append(companionKept).append(")");
+        } catch (Throwable t) {
+            sb.append(" | files: couldn't count (").append(t).append(")");
+        }
+        String rl = io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.companionLine();
+        sb.append(" | route map: ").append(rl == null ? "not started (companion chunks are read once it runs)" : rl);
         if (columnErrors > 0) sb.append(" | column errors ").append(columnErrors);
         if (lastWriteError != null) sb.append(" | last file error ").append(lastWriteError);
         if (lastTickError != null) sb.append(" | errors ").append(tickErrors).append(", last ").append(lastTickError);

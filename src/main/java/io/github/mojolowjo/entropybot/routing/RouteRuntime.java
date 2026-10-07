@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.routing;
 
+import io.github.mojolowjo.entropybot.surface.SurfaceColumns;
+import io.github.mojolowjo.entropybot.route.CellMoves;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
@@ -119,6 +121,12 @@ public final class RouteRuntime implements RoutePlanner {
     private IBaritone listenedBaritone;
     private volatile RouteStats lastStats;
     private final Env env = new Env();
+    // chunks-0.23.5: the companion's surface chunks (read on the io thread every 5 s), their moves, the next look
+    private volatile SurfaceInbox inbox;
+    private volatile SurfaceCellMoves surfaceMoves;
+    private long nextInboxPollMs;
+    private Future<?> inboxFuture;
+    static final int ARRIVALS_PER_TICK = 16;
     final AtomicLong levelCalls = new AtomicLong(), chunkLoads = new AtomicLong(), baritoneChanges = new AtomicLong(),
             baritoneFallbackMarks = new AtomicLong();
 
@@ -278,6 +286,8 @@ public final class RouteRuntime implements RoutePlanner {
                     .append(" (").append(levelCalls.get()).append(" calls), chunk loads ").append(chunkLoads.get())
                     .append(", Baritone block events ").append(baritoneChanges.get());
             if (baritoneFallbackMarks.get() > 0) sb.append(" (used as fallback ").append(baritoneFallbackMarks.get()).append(")");
+            String cl = companionLine();
+            if (cl != null) sb.append("; ").append(cl);
             return sb.toString();
         } catch (Throwable t) {
             return "route map: status failed: " + t;
@@ -340,14 +350,41 @@ public final class RouteRuntime implements RoutePlanner {
             int n = e.scheduler.refillIdle(areas, OVERWORLD, places());
             log.info("idle queue filled: " + n + " boxes");
         }
-        e.scheduler.tick(env);
         long now = System.currentTimeMillis();
+        companionChunks(e, now);
+        e.scheduler.tick(env);
         if (!loading && now - lastSaveMs >= SAVE_EVERY_MS && (saveFuture == null || saveFuture.isDone())) {
             lastSaveMs = now;
             RouteTiles t = tiles;
             RouteFileHeader h = header;
             saveFuture = io.submit(() -> t.saveDirty(e.store, h));
         }
+    }
+
+    /**
+     * chunks-0.23.5, where the route map takes in the companion's chunks: every {@link SurfaceInbox#POLL_MS} the inbox
+     * reads the surface folder on the io thread; each tick up to {@link #ARRIVALS_PER_TICK} arrivals go to
+     * {@link RouteScheduler#surfaceArrived}, which puts their boxes on the idle queue (built as SURFACE by
+     * {@link SurfaceCellMoves} while the bot is idle, like the bot's own chunk loads). Game thread.
+     */
+    private void companionChunks(RouteEngine e, long now) {
+        SurfaceInbox in = inbox;
+        if (in == null || loading) return;
+        if (now >= nextInboxPollMs && (inboxFuture == null || inboxFuture.isDone())) {
+            nextInboxPollMs = now + SurfaceInbox.POLL_MS;
+            inboxFuture = io.submit(() -> in.poll(System.currentTimeMillis()));
+        }
+        for (int i = 0; i < ARRIVALS_PER_TICK; i++) {
+            SurfaceInbox.Arrival a = in.nextArrival();
+            if (a == null) break;
+            e.scheduler.surfaceArrived(env, OVERWORLD, a.cx(), a.cz(), a.t());
+        }
+    }
+
+    /** chunks-0.23.5: the companion chunk line for {@code surface status} (null before the route map has started once). */
+    public String companionLine() {
+        SurfaceInbox in = inbox;
+        return in == null ? null : in.line(System.currentTimeMillis());
     }
 
     private void start(Minecraft mc, IBaritone b) {
@@ -369,6 +406,11 @@ public final class RouteRuntime implements RoutePlanner {
         settingsHash = settingsHash();
         areasHash = RouteHashes.areas(areas.hashInput());
         header = RouteFileHeader.current(Core.INSTANCE.version(), baritoneVersion(), settingsHash, areasHash);
+        SurfaceInbox in = new SurfaceInbox(root.resolve("surface").resolve(
+                SurfaceColumns.dimFolder(OVERWORLD_ID)));
+        inbox = in;
+        surfaceMoves = new SurfaceCellMoves(in::chunk);
+        nextInboxPollMs = 0;
         engine = e;
         tiles = t;
         loading = true;
@@ -674,7 +716,21 @@ public final class RouteRuntime implements RoutePlanner {
                     // no cache: the box is unknown
                 }
             }
-            return RouteRules.quality(loaded, cached);
+            SurfaceInbox in = inbox;
+            SurfaceChunk s = loaded[4] || in == null ? null : in.chunk(k.sx(), k.sz());
+            return RouteRules.quality(loaded, cached, s != null && s.covers(k.minY()));
+        }
+
+        @Override
+        public long surfaceTime(SectionKey k) {
+            SurfaceInbox in = inbox;
+            SurfaceChunk s = in == null ? null : in.chunk(k.sx(), k.sz());
+            return s == null ? 0 : s.t();
+        }
+
+        @Override
+        public CellMoves surfaceMoves() {
+            return surfaceMoves;
         }
 
         @Override

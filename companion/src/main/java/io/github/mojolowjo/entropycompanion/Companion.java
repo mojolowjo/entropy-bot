@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * and overlay lines are put on the client thread with {@code mc.execute}. Never throws out of a public method.
  */
 public final class Companion {
-    public static final String VERSION = "0.2.0";
+    public static final String VERSION = "0.3.0";
     private static final Logger LOG = LogUtils.getLogger();
     private static final Pattern UNKNOWN = Pattern.compile("^unknown command \"([^\"]+)\"");
     static final long BOX_POLL_MS = 5000;
@@ -172,7 +172,7 @@ public final class Companion {
             String lower = t.toLowerCase(Locale.ROOT);
             if (t.isEmpty() || lower.equals("help")) {
                 say("/bot <command> sends it to the bot. Here: /bot that (point), /bot that? (show only), /bot companion, "
-                        + "/bot corner1|corner2, /bot corners area|destroy|main|safe <name>, /bot corners clear, /bot boxes on|off. Bot help: /bot help <verb>");
+                        + "/bot corner1|corner2, /bot corners area|destroy|main|safe <name>, /bot corners clear, /bot boxes on|off, /bot companion chunks on|off|status. Bot help: /bot help <verb>");
                 return;
             }
             if (lower.equals("status")) {
@@ -183,6 +183,10 @@ public final class Companion {
             if (lower.equals("companion")) {
                 say(statusLine());
                 say(counters());
+                return;
+            }
+            if (lower.startsWith("companion chunks")) {
+                chunksCommand(lower.substring("companion chunks".length()).trim());
                 return;
             }
             if (lower.equals("that") || lower.equals("that?")) {
@@ -317,6 +321,32 @@ public final class Companion {
         });
     }
 
+    // ---- 0.3.0 chunk sharing ----
+
+    /** Where the config lives (set by the mod entry), for /bot companion chunks on|off. */
+    static java.nio.file.Path configFile;
+
+    /** "/bot companion chunks [on|off|status]". */
+    void chunksCommand(String arg) {
+        ChunkShare cs = ChunkShare.INSTANCE;
+        if (arg.isEmpty() || arg.equals("status")) {
+            say(cs == null ? "chunk sharing: not started" : cs.line());
+            return;
+        }
+        if (!arg.equals("on") && !arg.equals("off")) {
+            say("/bot companion chunks on|off|status");
+            return;
+        }
+        boolean on = arg.equals("on");
+        String err = configFile == null ? "no config file" : CompanionConfig.saveShareChunks(configFile, on);
+        if (err != null) {
+            say("chunk sharing: couldn't save config/" + CompanionConfig.FILE_NAME + " (" + err + ")");
+            return;
+        }
+        say("chunk sharing " + (on ? "on: the surface of the chunks you have loaded goes to the bot (changed ones, every 10 s)"
+                : "off: nothing more is sent") + " (saved in config/" + CompanionConfig.FILE_NAME + "; takes effect within a second)");
+    }
+
     // ---- status ----
 
     String statusLine() {
@@ -328,7 +358,8 @@ public final class Companion {
         long reply = cmds.lastReplyAt();
         return "companion " + VERSION + ": dashboard " + (c.url.isEmpty() ? "(no url)" : c.url) + ", " + posting
                 + ", last reply " + (reply == 0 ? "none" : (System.currentTimeMillis() - reply) / 1000 + " s ago")
-                + ", keys: " + Keys.summary() + ", overlay " + (c.overlaySeconds > 0 ? "on" : "off") + ", box view " + (boxView ? "on" : "off");
+                + ", keys: " + Keys.summary() + ", overlay " + (c.overlaySeconds > 0 ? "on" : "off") + ", box view " + (boxView ? "on" : "off")
+                + "; " + (ChunkShare.INSTANCE == null ? "chunk sharing not started" : ChunkShare.INSTANCE.line());
     }
 
     String counters() {

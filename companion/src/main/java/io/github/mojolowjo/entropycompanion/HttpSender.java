@@ -35,6 +35,22 @@ public final class HttpSender implements PostLoop.Sender, CmdClient.Http {
         }
     }
 
+    /** 0.3.0: a JSON post as bytes (gzip: the bytes are gzipped, Content-Encoding says so). Returns the HTTP status. */
+    public int postBytes(URI endpoint, String key, byte[] body, boolean gzip, int timeoutMs) throws IOException {
+        HttpRequest.Builder b = HttpRequest.newBuilder(endpoint)
+                .timeout(Duration.ofMillis(timeoutMs))
+                .header("X-Key", key)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body));
+        if (gzip) b.header("Content-Encoding", "gzip");
+        try {
+            return client.send(b.build(), HttpResponse.BodyHandlers.discarding()).statusCode();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted", e);
+        }
+    }
+
     @Override
     public CmdClient.Resp send(String method, URI uri, String key, String body, int timeoutMs) throws IOException {
         HttpRequest.Builder b = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(timeoutMs)).header("X-Key", key);
