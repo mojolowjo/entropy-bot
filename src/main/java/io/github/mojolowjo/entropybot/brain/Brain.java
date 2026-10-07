@@ -24,6 +24,8 @@ public final class Brain {
     public static final long HOLD_MS = 600_000;
     /** An owner order within this of a brain start: the strongest label for the learning step (the outcome says overridden_by_owner). */
     static final long OVERRIDE_MS = 60_000;
+    /** A job that ends this soon after its start without failing still counts toward parking. */
+    static final long QUICK_MS = 5_000;
 
     private final BrainEnv env;
     private final BrainTree tree = new BrainTree();
@@ -37,7 +39,8 @@ public final class Brain {
     private BrainTree.Decision last;
     private Needs.Scored lastScored;
     private List<Interrupts.Event> lastEvents = List.of();
-    private String lastLogged;
+    private String lastLogged, lastWhisper;
+    private long lastWhisperAt;
     private long lastDecisionAt;
     private int[] nightAt;
     private final ArrayDeque<String> whys = new ArrayDeque<>();
@@ -338,7 +341,11 @@ public final class Brain {
         JsonObject d = data();
         if (!d.has("fails") || !d.get("fails").isJsonObject()) d.add("fails", new JsonObject());
         JsonObject fails = d.getAsJsonObject("fails");
-        if (outcome.startsWith("failed")) {
+        // a job that "finished" at once and left its need open (a gather that counted the bag, not the group) counts as a failure,
+        // so it can't loop every 2 s: three in a row park the need
+        boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night");
+        if (quick) res = "ended at once (" + (res == null ? "no reply" : res.length() > 100 ? res.substring(0, 100) : res) + ") without meeting the need";
+        if (outcome.startsWith("failed") || quick) {
             int n = (int) num(fails, j.need(), 0) + 1;
             fails.addProperty(j.need(), n);
             if (j.chain().contains("mine strip") && res.matches("(?s).*(blocked:|stuck|couldn't reach the mine|no progress).*")) {
@@ -391,7 +398,10 @@ public final class Brain {
             if (d.chain().startsWith("restock")) data().addProperty("restockAt", env.now());
             if (d.need() != null && d.need().equals("night")) nightAt = s.botPos;
             env.saved();
-            env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (sup == null ? "" : " - " + sup.why()));
+            if (!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
+                env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (sup == null ? "" : " - " + sup.why()));
+            lastWhisper = d.chain();
+            lastWhisperAt = env.now();
             env.log("brain: " + d.branch() + " -> " + chain + " (" + d.reason() + ")");
         } else {
             env.decisions().outcome(env.now(), ref, "failed:" + reply);

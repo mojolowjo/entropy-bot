@@ -160,7 +160,8 @@ public final class BrainTree {
     static Decision outscored(Ctx c) {
         Needs.Option o = c.scored().best(c.c().i("floor"));
         if (o == null || o.need().equals(c.running().need())) return null;
-        int cur = c.scored().scoreOf(c.running().need());
+        // a job of a need that is not scored (night, near) keeps the score it started with
+        int cur = c.scored().has(c.running().need()) ? c.scored().scoreOf(c.running().need()) : c.running().score();
         if (o.score() - cur < c.c().i("switchMargin")) return null;
         return new Decision("job.switch", Kind.SWITCH, o.chain(), o.need(), o.score(), o.reason() + " (" + o.score() + " beats " + c.running().need() + " " + cur + ")");
     }

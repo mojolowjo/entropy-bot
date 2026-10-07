@@ -173,11 +173,12 @@ public final class BrainRuntime implements BrainEnv {
         s.released = c.vocab.released();
         // what runs
         s.menuOpen = mc.screen != null && !brainChainRunning() && !c.jobs.running();
-        if (c.chains.running() && !CHAIN.equals(c.chains.name())) s.ownerJob = c.chains.name();
-        else if (!brainChainRunning() && c.jobs.running()) s.ownerJob = c.jobs.job.status;
+        if (brainChainRunning()) s.ownerJob = null;         // the brain's chain: its step (a job, a gather, a carry) is the brain's
+        else if (c.chains.running()) s.ownerJob = c.chains.name();
+        else if (c.jobs.running()) s.ownerJob = c.jobs.job.status;
         else if (c.gathering.running()) s.ownerJob = "gather";
         else if (c.mule.running()) s.ownerJob = "carry";
-        else if (!c.chains.running() && c.requests.busy()) s.ownerJob = "a request";
+        else if (c.requests.busy()) s.ownerJob = "a request";
         if (c.heldInPlace()) s.passive = core.reflexes.escort.active() ? "escorting " + core.reflexes.escort.name() : c.vocab.hold.what();
         // the owner's needs and goals
         if (root.has("needs") && root.get("needs").isJsonObject()) {

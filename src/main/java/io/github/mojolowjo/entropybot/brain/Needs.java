@@ -29,6 +29,11 @@ public final class Needs {
             return 0;
         }
 
+        public boolean has(String need) {
+            for (Option o : options) if (o.need().equals(need)) return true;
+            return false;
+        }
+
         public String line() {
             List<String> w = new ArrayList<>();
             for (Option o : options) w.add(o.need() + " " + o.score());
@@ -78,7 +83,7 @@ public final class Needs {
             if (missing <= 0 || n.want() <= 0) continue;
             int sc = clamp(c.i("ownerNeedBase") + c.i("ownerNeedSpan") * missing / (double) n.want() + age(s.now, n.since(), 2, c.i("ageBonusMax")));
             String sid = n.id().substring(n.id().indexOf(':') + 1);
-            out.add(new Option("need:" + sid, sc, "gather " + sid + " " + missing, "need " + sid + " " + n.want() + ": have " + n.have(), null, n.since()));
+            out.add(new Option("need:" + sid, sc, "gather " + sid + " " + n.want(), "need " + sid + " " + n.want() + ": have " + n.have(), null, n.since()));
         }
         // goals, oldest first
         for (int i = 0; i < s.goals.size(); i++) {

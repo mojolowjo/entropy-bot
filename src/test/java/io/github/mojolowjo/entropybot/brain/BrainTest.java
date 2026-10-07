@@ -225,7 +225,7 @@ class BrainTest {
         assertEquals(75, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"), "rises while unmet: +1 per 2 min");
         s.needs.set(0, new BrainState.NeedItem("minecraft:torch", 32, 40, 0));
         assertEquals(0, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("need:torch"), "met");
-        assertEquals("gather torch 16", Needs.score(withNeed(16), c, IdleList.DEFAULT, Map.of()).best(10).chain());
+        assertEquals("gather torch 32", Needs.score(withNeed(16), c, IdleList.DEFAULT, Map.of()).best(10).chain());
         assertEquals(15, Needs.score(s, c, IdleList.DEFAULT, Map.of()).scoreOf("upkeep"));
     }
 
@@ -327,7 +327,16 @@ class BrainTest {
         sc = Needs.score(s2, c, IdleList.DEFAULT, Map.of());
         BrainTree.Decision d = new BrainTree().run(new BrainTree.Ctx(s2, c, sc, r59, false));
         assertEquals("job.switch", d.branch());
-        assertEquals("gather torch 29", d.chain());
+        assertEquals("gather torch 30", d.chain());
+    }
+
+    @Test
+    void aNightJobKeepsItsStartScore() {
+        // live 2026-10-06: "light here 8" (night, 50) was cut by need torch 52 because night is not a scored need
+        BrainState s = calm();
+        s.needs.add(new BrainState.NeedItem("minecraft:torch", 32, 30, 0));       // 52
+        BrainTree.Decision d = decide(s, new BrainTree.Running("night", "light here 8", 50));
+        assertEquals("job.keep", d.branch());
     }
 
     @Test
