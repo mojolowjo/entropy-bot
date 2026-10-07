@@ -27,6 +27,14 @@ class AreaTypesTest {
     }
 
     @Test
+    void aBoxTouchingASafeAreaIsFound() {
+        Policy p = Policy.parse(POLICY);
+        assertEquals("house", p.safeTouching(new Box("dig", OW, 69, 60, 5, 72, 60, 6)).name);
+        assertNull(p.safeTouching(new Box("dig", OW, 70, 60, 5, 72, 60, 6)));
+        assertNull(p.safeTouching(new Box("dig", "minecraft:the_nether", 65, 60, 5, 66, 60, 6)));
+    }
+
+    @Test
     void theTable() {
         for (AreaType t : AreaType.values()) {
             assertTrue(AreaTypeRules.walk(t, AreaTypeRules.Walker.OTHER), "walk in " + t);

@@ -152,6 +152,9 @@ final class DigCommands {
         if (force && box.volume() > 64) return "error: dig ... force is for small boxes (64 blocks max)";
         // force is the owner's (guests never get dig at all; this is the second lock)
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
+        // V1a: a dig box that touches a safe area is refused whole, not block by block
+        var safe = Core.INSTANCE.guard.core.policy().safeTouching(new io.github.mojolowjo.entropybot.guard.Box("dig", Storage.dim(), box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2()));
+        if (safe != null) return "error: that box touches " + (safe.name == null ? "a safe area" : safe.name) + " (safe) - nothing in a safe area is dug; make the box smaller";
         // a dig box has to lie inside an area: in strict mode the lease says so, in log mode this gate does
         if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
             List<String> names = new ArrayList<>();

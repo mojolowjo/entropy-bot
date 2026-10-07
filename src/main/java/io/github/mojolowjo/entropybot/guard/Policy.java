@@ -91,6 +91,12 @@ public final class Policy {
         return null;
     }
 
+    /** V1a live test: the first safe area (protect box) the box overlaps, or null - a dig touching one is refused up front. */
+    public Box safeTouching(Box box) {
+        for (Box b : protect) if (b.overlaps(box)) return b;
+        return null;
+    }
+
     /** True when the box lies entirely inside one area (a lease must). */
     public boolean areaCovers(Box box) {
         for (Box a : areas) if (box.inside(a)) return true;
