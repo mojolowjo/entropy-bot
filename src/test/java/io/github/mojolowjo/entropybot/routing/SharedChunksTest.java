@@ -80,7 +80,7 @@ class SharedChunksTest {
         assertEquals(65, s.minFeet());
         assertTrue(s.covers(64));        // the box y 64..79
         assertFalse(s.covers(48));       // 48..63: under the ground block (64)
-        assertTrue(s.covers(80));        // 80..95: one above the feet band (65)
+        assertFalse(s.covers(80));       // 80..95: above the feet band (65) and the head (66)
         assertFalse(s.covers(96));
         assertFalse(SurfaceChunk.parse(chunk(0, 0, 1, 64, 1, null)).companion(), "no src: the bot's own");
         assertNull(SurfaceChunk.parse("{\"v\":1}"));

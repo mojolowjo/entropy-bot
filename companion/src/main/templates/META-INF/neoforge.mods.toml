@@ -9,6 +9,10 @@ displayName="${mod_name}"
 authors="${mod_authors}"
 description='''${mod_description}'''
 
+# 0.3.0: one client mixin (ClientLevel block changes, for the chunk scanner)
+[[mixins]]
+config="entropycompanion.mixins.json"
+
 # Client only: every dependency is declared for the client side, and the entry class is @Mod(dist = CLIENT),
 # so a server neither needs this jar nor loads it, and a server without it accepts the client (the mod
 # registers no network channels).

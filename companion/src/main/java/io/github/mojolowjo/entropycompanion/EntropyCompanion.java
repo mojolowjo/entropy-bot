@@ -19,6 +19,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.level.ChunkEvent;
 import org.slf4j.Logger;
 
 import java.nio.file.Files;
@@ -49,6 +50,7 @@ public final class EntropyCompanion {
     private final AtomicBoolean busy = new AtomicBoolean();
     private final PostLoop loop;
     private final Companion companion;
+    private final ChunkShare chunks;
 
     private volatile CompanionConfig config;
     private volatile long configMtime = Long.MIN_VALUE;
@@ -61,6 +63,12 @@ public final class EntropyCompanion {
         loop = new PostLoop(this::currentConfig, http, m -> LOG.info("[entropycompanion] {}", m), System::currentTimeMillis);
         companion = new Companion(this::currentConfig, loop, http);
         Companion.INSTANCE = companion;
+        Companion.configFile = configFile;
+        // 0.3.0 chunk sharing: chunk load/unload on the game bus, the scan in the client tick, block changes by the mixin
+        chunks = new ChunkShare(this::currentConfig, http);
+        ChunkShare.INSTANCE = chunks;
+        NeoForge.EVENT_BUS.addListener(ChunkEvent.Load.class, chunks::onLoad);
+        NeoForge.EVENT_BUS.addListener(ChunkEvent.Unload.class, chunks::onUnload);
         modBus.addListener(RegisterKeyMappingsEvent.class, Keys::register);
         modBus.addListener(RegisterGuiLayersEvent.class, e ->
                 e.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "replies"), Overlay::render));
@@ -75,8 +83,8 @@ public final class EntropyCompanion {
         NeoForge.EVENT_BUS.addListener(RenderLevelStageEvent.class, BoxRender::onRender);
         LOG.info("[entropycompanion] {}", config);
         String alias = config.commandAlias.isEmpty() ? "" : ",/" + config.commandAlias;
-        LOG.info("[entropycompanion] {} ready: commands /bot{}, keys point=V menu=G (rebind in Controls), overlay {}, box view off",
-                Companion.VERSION, alias, config.overlaySeconds > 0 ? "on" : "off");
+        LOG.info("[entropycompanion] {} ready: commands /bot{}, keys point=V menu=G (rebind in Controls), overlay {}, box view off, chunk sharing {}",
+                Companion.VERSION, alias, config.overlaySeconds > 0 ? "on" : "off", config.shareChunks ? "on" : "off");
     }
 
     private long mtime() {
@@ -114,6 +122,7 @@ public final class EntropyCompanion {
         } catch (RuntimeException e) {
             companion.error("keys", e);
         }
+        chunks.tick();      // 0.3.0 chunk sharing; never throws
         try {
             if (mc.player == null || mc.level == null) return;
             if (!loop.due() || !busy.compareAndSet(false, true)) return;

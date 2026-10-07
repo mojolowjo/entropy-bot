@@ -35,6 +35,27 @@ public final class CompanionConfig {
     public int pointChopCount = 16;
     /** 0.2.0: seconds a reply stays in the overlay (0 to 30; 0 = chat only). */
     public int overlaySeconds = 6;
+    /** 0.3.0: share the surface of the chunks this client has loaded with the bot (through the dashboard). */
+    public boolean shareChunks = true;
+
+    /**
+     * 0.3.0: sets shareChunks in the file, keeping every other value as written (the file is read again on its next
+     * change). Returns null when saved, else why not.
+     */
+    public static String saveShareChunks(Path file, boolean on) {
+        try {
+            com.google.gson.JsonObject o = Files.exists(file)
+                    ? com.google.gson.JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject()
+                    : GSON.toJsonTree(new CompanionConfig()).getAsJsonObject();
+            o.addProperty("shareChunks", on);
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Files.writeString(tmp, GSON.toJson(o) + "\n", StandardCharsets.UTF_8);
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return null;
+        } catch (IOException | RuntimeException e) {
+            return e.getClass().getSimpleName();
+        }
+    }
 
     /** Reads the file, writing the defaults first when there is none. A broken file gives the defaults and is left alone. */
     public static CompanionConfig load(Path file) {
