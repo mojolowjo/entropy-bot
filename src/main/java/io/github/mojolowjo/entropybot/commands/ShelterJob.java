@@ -32,7 +32,7 @@ import java.util.Set;
  */
 public final class ShelterJob {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long PLACE_TICKS = 6, BREAK_TICKS = 200, OUT_TICKS = 60, MAX_WAIT = 20 * 60 * 20;
+    static final long PLACE_TICKS = 6, BREAK_TICKS = 800, OUT_TICKS = 60, MAX_WAIT = 20 * 60 * 20;
 
     private ShelterJob() {}
 
@@ -235,11 +235,12 @@ public final class ShelterJob {
             return false;
         }
         if (now - ps.stageAt > BREAK_TICKS) {
-            ps.note = "error: my shelter wall at " + Jobs.fmt(c) + " didn't break in 10 s";
+            ps.note = "error: my shelter wall at " + Jobs.fmt(c) + " didn't break in 40 s (no tool for it?)";
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
         if (ps.hit == null) {
+            holdTool(p, ps.block);
             // the own-block permission: a one-cell force lease (the guard refuses built blocks otherwise)
             String le = ps.leases.take("opening my shelter at " + Jobs.fmt(c), new ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, true);
             if (le != null) {
@@ -257,6 +258,19 @@ public final class ShelterJob {
         } else mc.gameMode.continueDestroyBlock(bp, face);
         p.swing(InteractionHand.MAIN_HAND);
         return false;
+    }
+
+    /** The fastest tool for the shell's block in hand: a pickaxe for stone, an axe for planks, a shovel for dirt (best tier first). */
+    private static void holdTool(LocalPlayer p, String block) {
+        String kind = block == null ? "_pickaxe" : block.endsWith("_planks") ? "_axe" : block.endsWith("dirt") ? "_shovel" : "_pickaxe";
+        String best = null;
+        int bestTier = -1;
+        for (String id : Gui.inventory(p).keySet()) {
+            if (!id.endsWith(kind) || (kind.equals("_axe") && id.endsWith("_pickaxe"))) continue;
+            int t = io.github.mojolowjo.entropybot.brain.NightSafety.tierOf(id);
+            if (t > bestTier) { best = id; bestTier = t; }
+        }
+        if (best != null) Clearing.holdItem(p, best);
     }
 
     private static boolean out(State ps, LocalPlayer p, ClientLevel lv, long now) {
