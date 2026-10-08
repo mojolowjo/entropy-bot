@@ -75,6 +75,9 @@ public final class Mule {
 
     boolean running() { return run != null; }
 
+    /** 0.24.2: a carry runs (assist's idle mode). */
+    boolean carrying() { Run r = run; return r != null && r.phase == Phase.CARRY; }
+
     String statusText() {
         Run r = run;
         if (r == null) return null;

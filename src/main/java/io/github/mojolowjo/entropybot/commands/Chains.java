@@ -134,6 +134,12 @@ public final class Chains {
 
     public boolean running() { return chain != null; }
 
+    /** The running chain's name, or null (0.24.2: assist knows its own). */
+    public String runningName() { Chain c = chain; return c == null ? null : c.name; }
+
+    /** 0.24.2: assist's chains end quietly (it whispers only on an activity change) and never resume after a restart. */
+    static boolean quiet(String name) { return "assist".equals(name); }
+
     /** 0.23.3: the chain's next step's text (its walk is pre-planned while the current step finishes), or null. */
     public String nextStep() {
         Chain c = chain;
@@ -206,7 +212,7 @@ public final class Chains {
 
     void endChain(String msg) {
         if (chain == null) return;
-        env.whisper(chain.from, chain.name + ": " + msg);
+        if (!quiet(chain.name)) env.whisper(chain.from, chain.name + ": " + msg);
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
         if (endHook != null) endHook.accept(chain.name, msg);         // B1: the brain hears how its chain ended
@@ -224,7 +230,7 @@ public final class Chains {
     }
 
     void saveRun() {
-        if (chain == null) return;
+        if (chain == null || quiet(chain.name)) return;
         JsonObject r = new JsonObject();
         r.addProperty("name", chain.name);
         r.addProperty("text", chain.text);

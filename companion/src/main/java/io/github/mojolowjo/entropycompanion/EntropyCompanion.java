@@ -127,9 +127,10 @@ public final class EntropyCompanion {
             if (mc.player == null || mc.level == null) return;
             if (!loop.due() || !busy.compareAndSet(false, true)) return;
             OwnerState.State st = state(mc, mc.player);
+            OwnerState.Extra ex = extra(mc, st.held());
             worker.execute(() -> {
                 try {
-                    loop.attemptBody(at -> companion.ownerState.json(st, at));
+                    loop.attemptBody(at -> companion.ownerState.json(st, ex, at));
                 } finally {
                     busy.set(false);
                 }
@@ -138,6 +139,13 @@ public final class EntropyCompanion {
             busy.set(false); // never let an exception out of the client tick
             companion.error("tick", e);
         }
+    }
+
+    /** 0.3.1 (assist): the last broken/placed block, the crosshair target and the action guess, on the client thread. */
+    private static OwnerState.Extra extra(Minecraft mc, String held) {
+        OwnerActions a = OwnerEvents.ACTIONS;
+        String action = OwnerActions.guess(held, a.broke(), a.placed(), a.attackedAt(), System.currentTimeMillis());
+        return new OwnerState.Extra(a.broke(), a.placed(), OwnerEvents.target(mc), action);
     }
 
     /** The owner's state for the v2 post, copied on the client thread. */

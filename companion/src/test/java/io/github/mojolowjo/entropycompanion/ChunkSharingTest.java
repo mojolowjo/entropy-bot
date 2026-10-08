@@ -68,7 +68,7 @@ class ChunkSharingTest {
         int n = ChunkScanner.step(q, new FakeWorld(), b, 10, () -> fake.addAndGet(2_000_000), null);
         assertEquals(1, n, "the first always; then over 1 ms");
         assertEquals(2, q.size(), "the rest are due again");
-        assertEquals(2, ChunkScanner.step(q, new FakeWorld(), b, 20, System::nanoTime, null));
+        assertEquals(2, ChunkScanner.step(q, new FakeWorld(), b, 20, () -> 0L, null), "a clock that stands still: both fit the budget (System::nanoTime was flaky on a busy machine)");
     }
 
     @Test

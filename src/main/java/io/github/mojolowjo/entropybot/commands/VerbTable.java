@@ -83,7 +83,7 @@ public final class VerbTable {
         v("hold", "", "stocking", G, "hold this", "pick up the items you throw me in the next 15 s (within 4 blocks)", "hold this", "inv");
         v("give", "", "stocking", O, "give me <item> [n] | give <player> <item> [n]", "walk to you (or them) and throw the items (never my tools, armor, last 8 food, 16 torches or supplies)",
                 "give me cobblestone 32|give Steve bread 4", "inv");
-        v("carry", "", "stocking", O, "carry <item> [item ...] | carry off | carry list", "follow you and pick up those drops within 6 blocks of you; off = plain follow",
+        v("carry", "", "stocking", O, "carry <item> [item ...] | carry all | carry off | carry list", "follow you and pick up those drops (all: every drop) within 6 blocks of you; off = plain follow",
                 "carry oak_log cobblestone|carry off", "unload");
         v("unload", "", "stocking", O, "unload", "go home, deposit (keeping tools, food, torches, supplies), then come back to you", "unload", "carry list");
         // ---- digging (VOCABULARY 3)
@@ -118,7 +118,12 @@ public final class VerbTable {
         v("escort", "", "fighting", P, "escort [player] [radius] | escort me [radius] | escort status",
                 "go with that player (you when not given) and fight monsters near them (radius 6, 2-16), stand between them and a creeper, throw food when they're hungry; until dismiss",
                 "escort|escort me 10|escort Steve", "dismiss", "escort me [radius], escort status");
-        v("dismiss", "", "fighting", G, "dismiss", "end the escort (you, or the player I escort) and defend/guard (the owner)", "dismiss", "status");
+        v("assist", "", "fighting", O, "assist | assist off | assist status",
+                "help you with what you do (your companion mod 0.3.1 tells me): follow you and fight what threatens either of us; chopping: the half-cut trees near your last log, else cut that kind; "
+                        + "mining: that ore or stone within 12 of your last block; farming: a farm round when the farm place is near you; building: hand you the block you place when you run low; "
+                        + "idle: follow and pick up drops (after 60 s idle: just follow); a new activity counts after 5 s; whispers only when it changes; off, dismiss or stop ends it; brain copy on|off is the same",
+                "assist|assist status|assist off", "dismiss");
+        v("dismiss", "", "fighting", G, "dismiss", "end the escort (you, or the player I escort), assist and defend/guard (the owner)", "dismiss", "status");
         v("attack", "", "fighting", O, "attack <mob kind|player|entity id> [confirm] | attack nearest | attack target <id>",
                 "fight one mob: hostile goes; a passive one asks confirm unless you type its kind; a named one asks confirm (a name has letters, not just digits); a player never unless defence players on; never pets. Ends when it dies, leaves 24 blocks or after 30 s",
                 "attack zombie|attack nearest|attack 812 confirm", "defence");

@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * and overlay lines are put on the client thread with {@code mc.execute}. Never throws out of a public method.
  */
 public final class Companion {
-    public static final String VERSION = "0.3.0";
+    public static final String VERSION = "0.3.1";
     private static final Logger LOG = LogUtils.getLogger();
     private static final Pattern UNKNOWN = Pattern.compile("^unknown command \"([^\"]+)\"");
     static final long BOX_POLL_MS = 5000;
