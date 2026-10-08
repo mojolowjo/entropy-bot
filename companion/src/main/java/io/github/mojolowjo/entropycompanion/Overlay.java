@@ -24,6 +24,14 @@ final class Overlay {
                 g.drawString(mc.font, s, 4, y, s.contains("unreachable") || s.contains("refused") ? 0xFFFF7070 : 0xFFE0E0E0);
                 y += 12;
             }
+            // 0.5.0: the quiet "why?" line after an activity switch (text only: input is never taken)
+            ActionLogMc l = ActionLogMc.INSTANCE;
+            String pr = l == null ? null : l.promptLine(System.currentTimeMillis());
+            if (pr != null) {
+                int w = mc.font.width(pr);
+                g.fill(2, y - 2, 6 + w, y + 10, 0x60000000);
+                g.drawString(mc.font, pr, 4, y, 0xFFA0C8FF);
+            }
         } catch (RuntimeException e) {
             c.error("overlay", e);
         }

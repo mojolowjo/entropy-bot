@@ -74,8 +74,12 @@ public final class ActionLog {
         return e.num("x", x).num("y", y).num("z", z);
     }
 
+    /** 0.5.0: events and bytes a minute, and the heavy work's time a tick (for /bot log status). */
+    final HeavyLog.Meter meter = new HeavyLog.Meter();
+
     void add(LogEvent e) {
         String line = e.finish();
+        meter.event(System.currentTimeMillis(), line.length() + 1);
         synchronized (buf) {
             buf.addLast(line);
             emitted++;
@@ -174,6 +178,21 @@ public final class ActionLog {
                 if (n > 1) b.append(',');
                 quote(b, e.getKey());
                 b.append(':').append(e.getValue());
+            }
+            b.append('}');
+            return this;
+        }
+
+        /** 0.5.0: a flat name -> short string object (at most 64 entries). */
+        LogEvent strs(String k, Map<String, String> m) {
+            key(k).b.append('{');
+            int n = 0;
+            for (Map.Entry<String, String> e : m.entrySet()) {
+                if (n++ >= 64) break;
+                if (n > 1) b.append(',');
+                quote(b, e.getKey());
+                b.append(':');
+                quote(b, e.getValue());
             }
             b.append('}');
             return this;

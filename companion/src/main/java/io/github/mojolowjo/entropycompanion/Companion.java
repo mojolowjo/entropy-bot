@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * and overlay lines are put on the client thread with {@code mc.execute}. Never throws out of a public method.
  */
 public final class Companion {
-    public static final String VERSION = "0.4.0";
+    public static final String VERSION = "0.5.0";
     private static final Logger LOG = LogUtils.getLogger();
     private static final Pattern UNKNOWN = Pattern.compile("^unknown command \"([^\"]+)\"");
     static final long BOX_POLL_MS = 5000;
@@ -173,7 +173,7 @@ public final class Companion {
             String lower = t.toLowerCase(Locale.ROOT);
             if (t.isEmpty() || lower.equals("help")) {
                 say("/bot <command> sends it to the bot. Here: /bot that (point), /bot that? (show only), /bot companion, "
-                        + "/bot corner1|corner2, /bot corners area|destroy|main|safe <name>, /bot corners clear, /bot boxes on|off, /bot companion chunks on|off|status, /bot log status|on|off|mark <note>|session <name>. Bot help: /bot help <verb>");
+                        + "/bot corner1|corner2, /bot corners area|destroy|main|safe <name>, /bot corners clear, /bot boxes on|off, /bot companion chunks on|off|status, /bot log status|on|off|heavy on|off|prompt on|off|mark <note>|why <word>|dismiss|session <name>. Bot help: /bot help <verb>");
                 return;
             }
             if (lower.equals("status")) {
