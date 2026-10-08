@@ -109,6 +109,54 @@ public final class Kinds {
         return out;
     }
 
+    /** 0.24.3: the plain foods with a known source, in the order to try them (meat/fish: only with raw in storage). */
+    static final List<String> PLAIN_FOODS = List.of("minecraft:bread", "minecraft:baked_potato", "minecraft:potato", "minecraft:carrot",
+            "minecraft:cooked_beef", "minecraft:cooked_porkchop", "minecraft:cooked_mutton", "minecraft:cooked_chicken",
+            "minecraft:apple", "minecraft:cooked_cod", "minecraft:cooked_salmon");
+    static final Set<String> NEVER_FOOD = Set.of("minecraft:golden_carrot", "minecraft:golden_apple", "minecraft:enchanted_golden_apple",
+            "minecraft:rotten_flesh", "minecraft:spider_eye", "minecraft:poisonous_potato", "minecraft:pufferfish", "minecraft:suspicious_stew");
+
+    /**
+     * 0.24.3: the food kind's one id. In order: an edible the bag or storage already holds (the most); then the plain
+     * foods (bread first; cooked meat or fish only when its raw form is in stock - hunting is off); then a modded food
+     * whose whole plan resolves (never first). Null: nothing fits. stock may be null; resolves may be null (= no).
+     */
+    public static String pickFood(List<String> ids, Map<String, Integer> stock, Predicate<String> resolves) {
+        return pickFood(ids, stock, null, resolves);
+    }
+
+    /**
+     * As above; farmKnown: a farm (place "farm") is marked, so bread, potatoes and carrots have a source; without it they
+     * need their crop in stock (wheat for bread). Null farmKnown counts as true.
+     */
+    public static String pickFood(List<String> ids, Map<String, Integer> stock, Boolean farmKnown, Predicate<String> resolves) {
+        Set<String> allowed = new TreeSet<>(ids);
+        allowed.removeAll(NEVER_FOOD);
+        String best = null;
+        int bestN = 0;
+        for (String id : allowed) {
+            int n = stock == null ? 0 : stock.getOrDefault(id, 0);
+            if (n > bestN) { best = id; bestN = n; }
+        }
+        if (best != null) return best;
+        for (String id : PLAIN_FOODS) {
+            if (!allowed.contains(id)) continue;
+            String raw = id.startsWith("minecraft:cooked_") ? "minecraft:" + id.substring("minecraft:cooked_".length()) : null;
+            if (raw != null && (stock == null || stock.getOrDefault(raw, 0) <= 0)) continue;
+            if (id.equals("minecraft:apple")) continue;             // apples only from stock (step 1): no orchard source
+            if (raw == null && (farmKnown != null && !farmKnown)) {
+                String crop = id.equals("minecraft:bread") ? "minecraft:wheat" : id.equals("minecraft:baked_potato") ? "minecraft:potato" : id;
+                if (stock == null || stock.getOrDefault(crop, 0) <= 0) continue;
+            }
+            return id;
+        }
+        for (String id : allowed) {
+            if (id.startsWith("minecraft:")) continue;
+            if (resolves != null && resolves.test(id)) return id;
+        }
+        return null;
+    }
+
     /**
      * One id for verbs that take one (get, fetch, need, gather): the kind's id with the most in stock (ties: the first
      * in id order), else the first. Null when the kind is empty.

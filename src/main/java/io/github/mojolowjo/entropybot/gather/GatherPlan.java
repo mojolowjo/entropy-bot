@@ -47,6 +47,26 @@ public final class GatherPlan {
 
         /** The owner's sources (commands.json "gatherSources"): item id -> command. */
         Map<String, String> overrides();
+
+        /**
+         * 0.24.3: a modded ore block the bot knows (listed in ores.json, or named in "ores prefer"). An unknown one fails
+         * the plan fast ("needs x which I don't know") instead of a long mine/cave search. Vanilla ores are always known.
+         */
+        default boolean knownBlock(String block) { return true; }
+    }
+
+    /** 0.24.3: the why of a plan that needs an ore block nobody has seen. */
+    public static String unknownBlockWhy(String block) {
+        return "needs " + GatherSources.shortId(block) + " which I don't know";
+    }
+
+    /** 0.24.3: does the whole plan for n of id resolve (no NO_WAY anywhere on the chosen path)? */
+    public static boolean resolves(String id, int n, World w) {
+        try {
+            return next(id, n, w).kind() != Kind.NO_WAY;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     public enum Kind { DONE, GET, CRAFT, SOURCE, NO_WAY }
@@ -87,6 +107,8 @@ public final class GatherPlan {
 
     private static Step source(GatherSources.Source src, int n, boolean anyWood, World w) {
         if (src.kind() == GatherSources.Kind.NONE) return noWay(src.item(), src.hint());
+        if (src.kind() == GatherSources.Kind.ORE && src.block() != null && !src.block().startsWith("minecraft:") && !w.knownBlock(src.block()))
+            return noWay(src.item(), unknownBlockWhy(src.block()));
         return new Step(Kind.SOURCE, src.item(), n, GatherSources.commands(src, n, w.mineMarked(), anyWood), null);
     }
 

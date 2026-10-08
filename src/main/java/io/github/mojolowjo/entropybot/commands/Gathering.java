@@ -349,7 +349,24 @@ final class Gathering {
             @Override public boolean mineMarked() { return mine; }
 
             @Override public Map<String, String> overrides() { return ov; }
+
+            @Override public boolean knownBlock(String block) { return knownOre(block); }
         };
+    }
+
+    /** 0.24.3: a modded ore block is known once the bot has listed one (ores.json) or the owner set a source for it. */
+    private boolean knownOre(String block) {
+        if (block == null || block.startsWith("minecraft:")) return true;
+        try {
+            for (JsonObject o : core.mineNotes.ores().values()) {
+                String id = o.has("id") ? o.get("id").getAsString() : "";
+                if (GatherSources.full(id).equals(block) || GatherSources.full(id).equals(block.replaceFirst(":", ":deepslate_"))) return true;
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] gather: reading the listed ores failed", e);
+            return true;      // don't fail a plan on a read error
+        }
+        return false;
     }
 
     private static List<GatherPlan.Need> needs(List<Crafter.Need> in) {

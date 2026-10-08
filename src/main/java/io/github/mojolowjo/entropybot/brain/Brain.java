@@ -402,7 +402,7 @@ public final class Brain {
                 p.addProperty("why", (res.length() > 160 ? res.substring(0, 160) : res));
                 d.getAsJsonObject("parked").add(j.need(), p);
                 fails.addProperty(j.need(), 0);
-                env.whisper("brain: can't " + j.chain() + " - it failed " + n + " times (" + (res.length() > 120 ? res.substring(0, 120) + "..." : res) + "); I leave it for "
+                parkWhisper(d, j.need(), now, "brain: can't " + j.chain() + " - it failed " + n + " times (" + (res.length() > 120 ? res.substring(0, 120) + "..." : res) + "); I leave it for "
                         + cfg.i("parkMinutes") + " min");
             }
         } else if (outcome.equals("finished")) {
@@ -443,7 +443,8 @@ public final class Brain {
             if (d.chain().startsWith("restock")) data().addProperty("restockAt", env.now());
             if (d.need() != null && d.need().equals("night")) nightAt = s.botPos;
             env.saved();
-            if (!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
+            if ((!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
+                    && parkWhisperDue(num(parkWhispers(data()), d.need() == null ? "" : d.need(), 0), env.now()))      // 0.24.3: a need parked in the last hour starts quietly
                 env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (sup == null ? "" : " - " + sup.why()));
             lastWhisper = d.chain();
             lastWhisperAt = env.now();
@@ -453,6 +454,28 @@ public final class Brain {
             // counted like a job that failed at once (3 in a row park it)
             failOnce(new Job(d.need(), chain, d.score(), ref, env.now()), reply);
         }
+    }
+
+    /** 0.24.3: a parked need whispers at most once an hour (check keeps listing it). */
+    static final long PARK_WHISPER_MS = 3_600_000L;
+
+    static boolean parkWhisperDue(long lastAt, long now) {
+        return lastAt <= 0 || now - lastAt >= PARK_WHISPER_MS;
+    }
+
+    private static JsonObject parkWhispers(JsonObject d) {
+        if (!d.has("parkWhispered") || !d.get("parkWhispered").isJsonObject()) d.add("parkWhispered", new JsonObject());
+        return d.getAsJsonObject("parkWhispered");
+    }
+
+    private void parkWhisper(JsonObject d, String need, long now, String text) {
+        JsonObject w = parkWhispers(d);
+        if (!parkWhisperDue(num(w, need, 0), now)) {
+            env.log("brain: parked " + need + " quietly (whispered within the hour): " + text);
+            return;
+        }
+        w.addProperty(need, now);
+        env.whisper(text);
     }
 
     private void failOnce(Job j, String reply) {
@@ -468,7 +491,7 @@ public final class Brain {
             p.addProperty("why", String.valueOf(reply));
             d.getAsJsonObject("parked").add(j.need(), p);
             fails.addProperty(j.need(), 0);
-            env.whisper("brain: can't " + j.chain() + " - " + reply + "; I leave it for " + cfg.i("parkMinutes") + " min");
+            parkWhisper(d, j.need(), env.now(), "brain: can't " + j.chain() + " - " + reply + "; I leave it for " + cfg.i("parkMinutes") + " min");
         }
         env.saved();
     }

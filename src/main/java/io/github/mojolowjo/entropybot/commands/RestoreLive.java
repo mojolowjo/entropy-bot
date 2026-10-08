@@ -389,6 +389,28 @@ public final class RestoreLive {
         }
     }
 
+    /** 0.24.3: the cluster holds a place, a noted chest or a ledger block, or lies near where the bot respawned. */
+    private boolean ownSpot(BuildSpotter.Hint h, String dim) {
+        List<int[]> places = new ArrayList<>(), chests = new ArrayList<>(), own = new ArrayList<>();
+        for (JsonObject pl : Core.INSTANCE.knowledge.places().values()) if (Jobs.dimOf(pl).equals(dim)) places.add(Jobs.pos(pl));
+        java.util.regex.Pattern num = java.util.regex.Pattern.compile("-?\\d+");
+        for (String k : Core.INSTANCE.knowledge.chests().keySet()) {
+            java.util.regex.Matcher m = num.matcher(k);
+            int[] p = new int[3];
+            int i = 0;
+            while (i < 3 && m.find()) p[i++] = Integer.parseInt(m.group());
+            if (i == 3) chests.add(p);
+        }
+        for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.all()) if (dim.equals(e.dim)) own.add(e.pos());
+        List<int[]> homes = new ArrayList<>(c == null ? List.of() : c.respawn.homes());
+        Level lv = Minecraft.getInstance().level;
+        if (lv != null && dim.equals("minecraft:overworld")) {
+            BlockPos sp = lv.getSharedSpawnPos();                // the world spawn: where a bot without a bed comes back
+            homes.add(new int[]{sp.getX(), sp.getY(), sp.getZ()});
+        }
+        return BuildSpotter.ownSpot(h, places, chests, own, homes);
+    }
+
     /** The biggest built cluster around center outside every protect box (BuildSpotter), or null. */
     private BuildSpotter.Hint spotBuild(int[] center) {
         Minecraft mc = Minecraft.getInstance();
@@ -425,6 +447,10 @@ public final class RestoreLive {
             }
         }
         BuildSpotter.Hint h = BuildSpotter.spot(built);
+        if (h != null && ownSpot(h, dim)) {
+            LOG.debug("[entropybot] build scan near {}: the bot's own spot (a place, a noted chest, its blocks or its spawn) - no hint", Jobs.fmt(h.center()));
+            return null;
+        }
         if (h != null) LOG.debug("[entropybot] build scan near {}: kinds {}", Jobs.fmt(center), kinds);
         return h;
     }

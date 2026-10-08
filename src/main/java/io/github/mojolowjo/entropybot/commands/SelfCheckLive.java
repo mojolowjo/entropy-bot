@@ -94,6 +94,8 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("braincheck", "couldn't check the brain: " + e, "brain status"));
         }
+        String rl = c.respawn.checkLine();                  // 0.24.3: joined/respawned outside every area
+        if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp then bootstrap"));
         try {
             f.addAll(RestoreLive.INSTANCE.findings());      // P1: the restore hook, restore.json, blocks waiting, build hints
         } catch (RuntimeException e) {

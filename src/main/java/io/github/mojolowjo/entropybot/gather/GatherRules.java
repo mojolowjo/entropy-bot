@@ -135,6 +135,9 @@ public final class GatherRules {
         String x = GatherSources.shortId(item);
         String did = t.isEmpty() ? "" : " (" + t.text() + ")";
         String head = (have > 0 || !t.isEmpty() ? "stopped: " : "error: ") + "gather " + GatherSources.shortId(target) + ": " + Math.min(have, want) + "/" + want + did + ", ";
+        if (hint.startsWith("needs ") && hint.endsWith("which I don't know")) {
+            return head + "no way to get " + GatherSources.shortId(target) + ": " + hint + " - next: put some " + GatherSources.shortId(target) + " in the base chests";
+        }
         if (hint.startsWith("no recipe") || hint.startsWith("its recipe")) {
             return head + "no way to get " + x + " (" + hint + ") - next: put some in the base chests, or tell me how: gather source " + x + " <command with {n}>";
         }

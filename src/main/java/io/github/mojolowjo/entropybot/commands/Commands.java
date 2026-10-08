@@ -168,6 +168,8 @@ public final class Commands implements Chains.Env {
 
     /** P2: "gather &lt;item&gt; [n]" - runs other verbs as its steps. */
     final Gathering gathering;
+    /** 0.24.3: the join/respawn-outside-the-areas check, and where it respawned (no build hints there). */
+    final io.github.mojolowjo.entropybot.camp.RespawnRule respawn = new io.github.mojolowjo.entropybot.camp.RespawnRule();
     /** C6: hold this, give, carry, unload, fetch. */
     final Mule mule;
     /** 0.24.2: assist (help the owner with what they are doing). */
@@ -609,6 +611,19 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 5) chains.deathTick(dead);
+            if (worldTicks == 1) respawn.joined();
+            if (tick % 20 == 6) {
+                try {                                         // 0.24.3: joined or respawned outside every area: say so once
+                    int[] me = Jobs.here(player);
+                    String w = respawn.tick(dead, tick, me, !dead && inAreas(Storage.dim(), me[0], me[2]));
+                    if (w != null) {
+                        LOG.info("[entropybot] {}", w);
+                        whisper(owner(), w);
+                    }
+                } catch (RuntimeException e) {
+                    if (errors++ < 5) LOG.warn("[entropybot] respawn check: {}", e.toString());
+                }
+            }
             if (!chains.resumeChecked() && worldTicks > 200) chains.resumeRun();
             if (tick % 100 == 55 && worldTicks > 400) {
                 chains.rulesTick();

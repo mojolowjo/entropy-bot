@@ -93,6 +93,34 @@ public final class BuildSpotter {
         return !"safe".equals(typeAtCenter) && !"main".equals(typeAtCenter);
     }
 
+    /** 0.24.3: how far from the bot's spawn point or a bed it used a build hint never fires. */
+    public static final int HOME_RADIUS = 24;
+
+    /**
+     * 0.24.3: is this cluster the bot's own spot? True (no hint) when its grown box holds a place the bot knows, a chest
+     * it has notes for, or one of its own placed blocks (the restore ledger, the camp's table/chest/furnace), or its
+     * centre lies within {@link #HOME_RADIUS} of its spawn point or a bed it used. Lists may be null.
+     */
+    public static boolean ownSpot(Hint h, List<int[]> places, List<int[]> chests, List<int[]> ownBlocks, List<int[]> homes) {
+        if (h == null) return false;
+        for (List<int[]> l : List.of(nz(places), nz(chests), nz(ownBlocks))) {
+            for (int[] p : l) if (p != null && inBox(h.box(), p)) return true;
+        }
+        for (int[] s : nz(homes)) {
+            if (s == null) continue;
+            // flat distance from the spot to the cluster's box (a spawn under or over a build still counts)
+            long dx = Math.max(0, Math.max(h.box()[0] - s[0], s[0] - h.box()[3])), dz = Math.max(0, Math.max(h.box()[2] - s[2], s[2] - h.box()[5]));
+            if (dx * dx + dz * dz <= (long) HOME_RADIUS * HOME_RADIUS) return true;
+        }
+        return false;
+    }
+
+    private static List<int[]> nz(List<int[]> l) { return l == null ? List.of() : l; }
+
+    static boolean inBox(int[] b, int[] p) {
+        return p[0] >= b[0] && p[0] <= b[3] && p[1] >= b[1] && p[1] <= b[4] && p[2] >= b[2] && p[2] <= b[5];
+    }
+
     private static boolean near(int[] a, int[] b) {
         return Math.abs(a[0] - b[0]) <= LINK && Math.abs(a[1] - b[1]) <= LINK && Math.abs(a[2] - b[2]) <= LINK;
     }

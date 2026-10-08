@@ -626,7 +626,21 @@ final class VocabCommands {
         List<String> ids = expand(w.get(0).toLowerCase(Locale.ROOT));
         Map<String, Integer> stock = null;
         try { stock = fullStock(p); } catch (RuntimeException ignored) {}
-        String id = Kinds.pick(ids, stock);
+        String kind = w.get(0).toLowerCase(Locale.ROOT);
+        String id;
+        if (kind.equals("food")) {
+            // 0.24.3: stock first, then plain foods, a modded food only when its whole plan resolves
+            io.github.mojolowjo.entropybot.gather.GatherPlan.World gw;
+            try { gw = c.gathering.world(p); } catch (RuntimeException e) { gw = null; LOG.warn("[entropybot] food choice: no gather view", e); }
+            final io.github.mojolowjo.entropybot.gather.GatherPlan.World fw = gw;
+            boolean farm;
+            try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
+            id = Kinds.pickFood(ids, stock, farm, x -> fw != null && io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, 1, fw));
+            if (id == null) {
+                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";
+                return null;
+            }
+        } else id = Kinds.pick(ids, stock);
         if (id == null) {
             err[0] = "error: the kind " + w.get(0) + " is empty (kinds " + w.get(0) + ")";
             return null;
