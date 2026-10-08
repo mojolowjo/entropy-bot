@@ -753,7 +753,7 @@ public final class Reflexes {
                 DeadEnd.Check d = fighting ? null : ThreatRuntime.INSTANCE.deadEnd(p, t.e);
                 int[] m = d == null ? null : d.mouth();
                 int far = m == null ? 0 : Math.abs(m[0] - p.getBlockX()) + Math.abs(m[2] - p.getBlockZ());
-                if (far > 0 && far <= 6) {
+                if (far > 3 && far <= 6) {     // within 3 the retreat counts as arrived at once (a loop live): fight from here
                     startLitRetreat(mc, p, t, new int[]{m[0], m[1], m[2], far}, v.why());
                     return;
                 }

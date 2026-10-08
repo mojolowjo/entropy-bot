@@ -45,7 +45,7 @@ public final class ConfirmGate {
 
     /** V1a: the area of "dig &lt;area&gt; [words]" (a name, not a coordinate), or null. */
     static String digArea(List<String> w) {
-        if (w.isEmpty() || w.get(0).matches("^[-~0-9].*")) return null;
+        if (w.isEmpty() || w.get(0).matches("^[-~0-9].*") || w.get(0).equals("stairs")) return null;     // 0.24.4: dig stairs
         return w.get(0);
     }
 

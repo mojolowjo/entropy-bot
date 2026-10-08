@@ -46,6 +46,14 @@ class DamageLogTest {
         o.add(hit(0, "zombie", 2, 18));
         assertTrue(o.death(400_000).isEmpty());
         assertEquals("none recorded", HitLog.text(o.lastDeath(), UTC));
+        // a second death lists only the hits after the first
+        HitLog two = new HitLog();
+        two.add(hit(1000, "zombie", 3, 0));
+        two.death(1500);
+        two.add(new HitLog.Hit(2000, "genericKill", null, null, 20, 0, 0, 0, 0, null));
+        List<HitLog.Hit> second = two.death(2500);
+        assertEquals(1, second.size());
+        assertEquals("genericKill", second.get(0).source());
     }
 
     @Test

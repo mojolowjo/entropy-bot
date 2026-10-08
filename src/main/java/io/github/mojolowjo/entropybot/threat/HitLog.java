@@ -58,10 +58,10 @@ public final class HitLog {
         return new ArrayList<>(all.subList(Math.max(0, all.size() - Math.max(0, n)), all.size()));
     }
 
-    /** A death: the last 20 hits within 5 minutes before it become that death's list. */
+    /** A death: the last 20 hits within 5 minutes before it (and after the death before) become that death's list. */
     public synchronized List<Hit> death(long now) {
         List<Hit> l = new ArrayList<>();
-        for (Hit h : last(DEATH_HITS)) if (now - h.atMs() <= 300_000) l.add(h);
+        for (Hit h : last(DEATH_HITS)) if (now - h.atMs() <= 300_000 && h.atMs() > lastDeathMs) l.add(h);
         lastDeath = List.copyOf(l);
         lastDeathMs = now;
         return lastDeath;
