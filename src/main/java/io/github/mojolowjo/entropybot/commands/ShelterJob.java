@@ -100,6 +100,9 @@ public final class ShelterJob {
         s.stageAt = s.startedAt;
         s.sawNight = SleepJob.night(lv);
         s.leases = Clearing.newLeases();
+        // a shelter it built before (the ledger's "built: shelter") is its own again
+        for (int[] cell : ShelterPlan.allCells(f)) if (RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) s.own.add(ShelterPlan.key(cell));
+        if (s.block == null) s.block = ShelterPlan.material(bag, 2) != null ? ShelterPlan.material(bag, 2) : "minecraft:cobblestone";
         // centre on the cell so the shell's blocks never touch the bot
         p.setPos(f[0] + 0.5, p.getY(), f[2] + 0.5);
         Seq.Step st = new Seq.Step("shelter");

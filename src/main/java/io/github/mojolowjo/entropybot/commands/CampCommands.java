@@ -62,8 +62,9 @@ final class CampCommands {
     String bootstrap(LocalPlayer p, String from, boolean internal, String rest) {
         boolean status = rest != null && rest.trim().equalsIgnoreCase("status");
         if (rest != null && !rest.isBlank() && !status) return "usage: bootstrap | bootstrap status";
-        if (internal && !status) return "error: bootstrap is a chain of its own - run it by itself, not inside a chain";
-        if (!status && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+        // 0.24.3: inside a chain its steps go right after it (the chain "bootstrap then gather ..." stopped silently)
+        boolean splice = !status && c.chainsRef().running() && internal;
+        if (!status && !splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
         if (!status && c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
         Minecraft mc = Minecraft.getInstance();
         ClientLevel lv = mc.level;
@@ -76,16 +77,42 @@ final class CampCommands {
         }
         boolean tableNear = near(lv, feet, "crafting_table"), furnaceNear = near(lv, feet, "furnace"), chestNear = near(lv, feet, "chest") || near(lv, feet, "barrel");
         int[] dir = quarryDir(lv, feet);
-        List<int[]> free = freeRing(lv, feet, dir);
+        List<int[]> free = new ArrayList<>(freeRing(lv, feet, dir));
+        List<String> pre = new ArrayList<>();
+        if (free.size() < 3) {
+            // make spots: clear leaves or plants next to me (natural blocks, a dig of one cell and the one above)
+            for (int[] cl : io.github.mojolowjo.entropybot.camp.FreeSpots.toClear(feet, x -> clearable(lv, x), 3 - free.size())) {
+                pre.add("dig " + cl[0] + " " + cl[1] + " " + cl[2] + " " + cl[0] + " " + (cl[1] + 1) + " " + cl[2]);
+                free.add(cl);
+            }
+        }
+        if (free.isEmpty() && !status) {
+            int[] spot = flatSpotNear(lv, feet, dir);
+            if (spot == null) return Hints.next("error: no free spot for the crafting table within 16 blocks (every cell around me is solid or water)", "goto a flat, open spot, then bootstrap");
+            String text = "goto " + Jobs.fmt(spot) + " then bootstrap";
+            LOG.info("[entropybot] bootstrap: no room at {}, moving to {}", Jobs.fmt(feet), Jobs.fmt(spot));
+            if (splice) {
+                String err = c.chainsRef().spliceNext(text);
+                return err == null ? "ok: no room for a camp here - walking to " + Jobs.fmt(spot) + " first" : "error: " + err;
+            }
+            return c.chainsRef().startChain(from, "bootstrap", text, 1);
+        }
         int[] table = free.size() > 0 ? free.get(0) : null, furnace = free.size() > 1 ? free.get(1) : null, chest = free.size() > 2 ? free.get(2) : null;
         boolean campMarked = Core.INSTANCE.knowledge.places().containsKey("camp");
         BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
                 feet, table, furnace, chest, dir));
         if (plan.err() != null) return plan.err();
         if (plan.steps().isEmpty()) return plan.summary();
-        if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", plan.steps());
-        LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", plan.steps()));
-        String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", plan.steps()), 1);
+        List<String> all = new ArrayList<>(pre);
+        all.addAll(plan.steps());
+        if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", all);
+        LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", all));
+        if (splice) {
+            String err = c.chainsRef().spliceNext(String.join(" then ", all));
+            lastRun = (err == null ? "started (in a chain) " : "refused: ") + plan.summary();
+            return err == null ? "ok: bootstrap (" + plan.summary() + "): " + all.size() + " steps next in this chain" : "error: bootstrap: " + err;
+        }
+        String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", all), 1);
         lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
         return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
     }
@@ -126,16 +153,37 @@ final class CampCommands {
 
     /** Free cells 2 away from the bot (feet level), on the side away from the quarry, nearest the bot's back first. */
     static List<int[]> freeRing(ClientLevel lv, int[] f, int[] dir) {
-        List<int[]> out = new ArrayList<>();
-        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
-            if (Math.max(Math.abs(dx), Math.abs(dz)) != 2) continue;
-            if (dx * dir[0] + dz * dir[1] > 0) continue;              // the quarry's side stays free
-            BlockPos b = new BlockPos(f[0] + dx, f[1], f[2] + dz);
-            if (placeable(lv, b)) out.add(new int[]{b.getX(), b.getY(), b.getZ()});
+        // 0.24.3: rings 1-3 (a 3x3 pit has only ring 1), air above each, the quarry's side last (FreeSpots)
+        return io.github.mojolowjo.entropybot.camp.FreeSpots.find(f, dir, c -> placeable(lv, new BlockPos(c[0], c[1], c[2])),
+                c -> lv.getBlockState(new BlockPos(c[0], c[1] + 1, c[2])).canBeReplaced());
+    }
+
+    /** 0.24.3: leaves or a plant (not a block entity, not a built block) on solid ground: clearing it makes a free spot. */
+    static boolean clearable(ClientLevel lv, int[] c) {
+        BlockPos b = new BlockPos(c[0], c[1], c[2]);
+        BlockState st = lv.getBlockState(b);
+        if (st.isAir() || st.hasBlockEntity() || !lv.getFluidState(b).isEmpty()) return false;
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+        boolean soft = id.endsWith("_leaves") || id.contains("bush") || id.contains("fern") || id.contains("grass") && !id.equals("grass_block")
+                || id.contains("flower") || id.contains("sapling") || id.contains("vine") || st.canBeReplaced();
+        return soft && lv.getBlockState(b.below()).isCollisionShapeFullBlock(lv, b.below())
+                && lv.getBlockState(b.above()).getCollisionShape(lv, b.above()).isEmpty() | lv.getBlockState(b.above()).getBlock().getDescriptionId().endsWith("_leaves");
+    }
+
+    /** 0.24.3: the nearest spot within 16 blocks with 3 free cells around it (a walkable cell on solid ground), or null. */
+    static int[] flatSpotNear(ClientLevel lv, int[] f, int[] dir) {
+        int[] best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int dx = -16; dx <= 16; dx += 2) for (int dz = -16; dz <= 16; dz += 2) for (int dy = -3; dy <= 3; dy++) {
+            int[] c = {f[0] + dx, f[1] + dy, f[2] + dz};
+            BlockPos b = new BlockPos(c[0], c[1], c[2]);
+            if (!placeable(lv, b) || !lv.getBlockState(b.above()).canBeReplaced()) continue;
+            double d = dx * dx + dz * dz + dy * dy;
+            if (d >= bestD || freeRing(lv, c, dir).size() < 3) continue;
+            best = c;
+            bestD = d;
         }
-        // the cells straight behind first, then the sides
-        out.sort((a, b) -> Integer.compare((a[0] - f[0]) * dir[0] + (a[2] - f[2]) * dir[1], (b[0] - f[0]) * dir[0] + (b[2] - f[2]) * dir[1]));
-        return out;
+        return best;
     }
 
     // ---------------------------------------------------------------- light

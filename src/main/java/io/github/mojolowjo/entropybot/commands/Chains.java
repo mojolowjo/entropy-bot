@@ -286,6 +286,23 @@ public final class Chains {
     public boolean resumeChecked() { return runResumeChecked; }
 
     /** Every 5 ticks: starts the next step once the last one has finished. */
+    /**
+     * 0.24.3: a step that is a chain of its own (bootstrap) puts its steps right after itself in the running chain.
+     * Null when done, else why not (no chain, too many steps).
+     */
+    public String spliceNext(String text) {
+        Chain c = chain;
+        if (c == null) return "no chain runs";
+        List<String> add = expandSteps(Texts.splitChain(text), 0);
+        String tooLong = stepsRefusal(c.steps.size() + add.size());
+        if (tooLong != null) return tooLong;
+        List<String> all = new ArrayList<>(c.steps);
+        all.addAll(Math.min(c.idx, all.size()), add);
+        c.steps = all;
+        saveRun();
+        return null;
+    }
+
     public void stepChain() {
         Chain c = chain;
         if (c == null || !env.alive()) return;
