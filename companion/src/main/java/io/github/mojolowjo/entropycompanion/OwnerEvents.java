@@ -35,7 +35,10 @@ public final class OwnerEvents {
             if (mc.level == null || pos == null) return;
             BlockState s = mc.level.getBlockState(pos);
             if (s.isAir()) return;
-            ACTIONS.broke(BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString(), pos.getX(), pos.getY(), pos.getZ(), System.currentTimeMillis());
+            String id = BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString();
+            ACTIONS.broke(id, pos.getX(), pos.getY(), pos.getZ(), System.currentTimeMillis());
+            ActionLogMc l = ActionLogMc.INSTANCE;
+            if (l != null) l.broke(id, pos);
         } catch (RuntimeException e) {
             warn("broke", e);
         }
@@ -55,18 +58,31 @@ public final class OwnerEvents {
             ItemStack used = usedStack;
             usedStack = ItemStack.EMPTY;
             Minecraft mc = Minecraft.getInstance();
-            if (mc.level == null || hit == null || r == null || !r.consumesAction() || !(used.getItem() instanceof BlockItem bi)) return;
+            if (mc.level == null || hit == null || r == null || !r.consumesAction()) return;
+            ActionLogMc l = ActionLogMc.INSTANCE;
             BlockPos at = hit.getBlockPos();
-            if (mc.level.getBlockState(at).getBlock() != bi.getBlock()) at = at.relative(hit.getDirection());
-            if (mc.level.getBlockState(at).getBlock() != bi.getBlock()) return;       // nothing of it there: not a placement
-            ACTIONS.placed(BuiltInRegistries.ITEM.getKey(used.getItem()).toString(), at.getX(), at.getY(), at.getZ(), System.currentTimeMillis());
+            if (used.getItem() instanceof BlockItem bi) {
+                if (mc.level.getBlockState(at).getBlock() != bi.getBlock()) at = at.relative(hit.getDirection());
+                if (mc.level.getBlockState(at).getBlock() == bi.getBlock()) {
+                    String id = BuiltInRegistries.ITEM.getKey(used.getItem()).toString();
+                    ACTIONS.placed(id, at.getX(), at.getY(), at.getZ(), System.currentTimeMillis());
+                    if (l != null) l.placed(id, at);
+                    return;
+                }
+                at = hit.getBlockPos();
+            }
+            // 0.4.0: not a placement: the block was used (a table, a furnace, a bed, a door, a chest...)
+            BlockState s = mc.level.getBlockState(at);
+            if (l != null && !s.isAir()) l.used(BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString(), at);
         } catch (RuntimeException e) {
             warn("placed", e);
         }
     }
 
-    public static void attacked() {
+    public static void attacked(Entity target) {
         ACTIONS.attacked(System.currentTimeMillis());
+        ActionLogMc l = ActionLogMc.INSTANCE;
+        if (l != null) l.attacked(target);
     }
 
     /** What is under the crosshair now, or null (client thread). */

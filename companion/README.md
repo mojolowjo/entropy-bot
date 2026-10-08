@@ -8,3 +8,5 @@ nothing from the bot's mod.
 Config: `config/entropy-companion.json` (`enabled`, `url`, `key`, `intervalSeconds`), created on the first
 run; nothing is sent while `url` or `key` is empty. Build: `gradlew build` (JDK 21). Details and the
 bot-side pieces: `docs/companion.md` in the minecraft-bot repo.
+
+0.4.0: the owner's action log (`actionLog`, `/bot log status|on|off|mark <note>|session <name>`): events to`nconfig/entropy-companion/log/<day>.jsonl` (30 days, 50 MB) and to the dashboard's `/api/ownerlog`.

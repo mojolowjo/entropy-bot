@@ -40,6 +40,13 @@ public abstract class OwnerMixinGameMode {
 
     @Inject(method = "attack", at = @At("HEAD"), require = 0)
     private void entropycompanion$attack(Player player, Entity target, CallbackInfo ci) {
-        OwnerEvents.attacked();
+        OwnerEvents.attacked(target);
+    }
+
+    /** 0.4.0 action log: crafts, furnace output and throws from an open menu. */
+    @Inject(method = "handleInventoryMouseClick", at = @At("HEAD"), require = 0)
+    private void entropycompanion$click(int containerId, int slotId, int button, net.minecraft.world.inventory.ClickType type, Player player, CallbackInfo ci) {
+        io.github.mojolowjo.entropycompanion.ActionLogMc l = io.github.mojolowjo.entropycompanion.ActionLogMc.instance();
+        if (l != null) l.click(slotId, button, type, player);
     }
 }

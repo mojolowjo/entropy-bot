@@ -37,17 +37,24 @@ public final class CompanionConfig {
     public int overlaySeconds = 6;
     /** 0.3.0: share the surface of the chunks this client has loaded with the bot (through the dashboard). */
     public boolean shareChunks = true;
+    /** 0.4.0: record the owner's action log (config/entropy-companion/log/, and posted to the dashboard when set up). */
+    public boolean actionLog = true;
 
     /**
      * 0.3.0: sets shareChunks in the file, keeping every other value as written (the file is read again on its next
      * change). Returns null when saved, else why not.
      */
     public static String saveShareChunks(Path file, boolean on) {
+        return saveBoolean(file, "shareChunks", on);
+    }
+
+    /** 0.4.0: sets one true/false value in the file, keeping every other value. Returns null when saved, else why not. */
+    public static String saveBoolean(Path file, String name, boolean on) {
         try {
             com.google.gson.JsonObject o = Files.exists(file)
                     ? com.google.gson.JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject()
                     : GSON.toJsonTree(new CompanionConfig()).getAsJsonObject();
-            o.addProperty("shareChunks", on);
+            o.addProperty(name, on);
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             Files.writeString(tmp, GSON.toJson(o) + "\n", StandardCharsets.UTF_8);
             Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);

@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "ChunkMixinClientLevel",
-    "OwnerMixinGameMode"
+    "OwnerMixinGameMode",
+    "LogMixinPacketListener",
+    "LogMixinLocalPlayer"
   ],
   "injectors": {
     "defaultRequire": 0
