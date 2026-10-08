@@ -97,6 +97,7 @@ public final class ShelterJob {
         s.timer = a[0];
         s.keep = a[1];
         s.startedAt = Core0.tick();
+        s.stageAt = s.startedAt;
         s.sawNight = SleepJob.night(lv);
         s.leases = Clearing.newLeases();
         // centre on the cell so the shell's blocks never touch the bot
@@ -126,7 +127,8 @@ public final class ShelterJob {
 
     static boolean solid(ClientLevel lv, int[] c) {
         BlockPos b = new BlockPos(c[0], c[1], c[2]);
-        return lv.getBlockState(b).isCollisionShapeFullBlock(lv, b);
+        // a cell is closed when nothing can be put there: a full block, or a chest, a fence, a slab... (not air, grass, water)
+        return !lv.getBlockState(b).canBeReplaced();
     }
 
     /** The Seq "shelter" step. */
