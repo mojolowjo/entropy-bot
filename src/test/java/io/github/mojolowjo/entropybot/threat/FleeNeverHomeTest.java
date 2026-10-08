@@ -40,6 +40,8 @@ class FleeNeverHomeTest {
         FightOrFlee.Result f = FightOrFlee.assess(me(20, 0, 1, 0, -1), many("phantom", 3));
         assertEquals(FightOrFlee.Verdict.FIGHT, f.verdict(), f.why());
         assertEquals(FightOrFlee.Verdict.SHELTER, FightOrFlee.assess(me(20, 0, 1, 0, 8), many("skeleton", 4)).verdict(), "ranged too");
+        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 1, 0, 0), many("phantom", 3)).verdict(), "at the lit spot already: no 0-block shelter loop");
+        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 1, 15, 10), many("phantom", 3)).verdict(), "lit here: stay");
     }
 
     @Test

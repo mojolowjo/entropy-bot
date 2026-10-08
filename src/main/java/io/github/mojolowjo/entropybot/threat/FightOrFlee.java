@@ -99,9 +99,10 @@ public final class FightOrFlee {
                 + ", expect to lose up to " + ThreatRules.fmt(Math.round(high * 10) / 10.0) + " to " + foes.size() + " mob" + (foes.size() == 1 ? "" : "s") + ")";
         if (margin >= buffer) return new Result(Verdict.FIGHT, margin, high, "fight: " + num);
         if (noWalker) {
-            if (me.litDist() >= 0 && me.litDist() <= LIT_MAX_DIST)
+            // already lit here or at the spot: stay and hit them when they dive (a shelter walk of 0 blocks looped live)
+            if (me.light() < LIT && me.litDist() > 2 && me.litDist() <= LIT_MAX_DIST)
                 return new Result(Verdict.SHELTER, margin, high, "shelter: fliers/ranged, a lit spot " + me.litDist() + " blocks away: " + num);
-            return new Result(Verdict.FIGHT, margin, high, "fight: fliers/ranged can't be outrun, hitting them when in reach: " + num);
+            return new Result(Verdict.FIGHT, margin, high, (me.light() >= LIT || (me.litDist() >= 0 && me.litDist() <= 2) ? "fight (fliers/ranged, lit here: staying put): " : "fight: fliers/ranged can't be outrun, hitting them when in reach: ") + num);
         }
         if (margin < 0) return new Result(Verdict.HOME, margin, high, "retreat home: losing, " + num);
         if (me.light() >= LIT) return new Result(Verdict.FIGHT, margin, high, "fight (tight, but lit here): " + num);

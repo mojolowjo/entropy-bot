@@ -1312,7 +1312,7 @@ public final class Jobs {
         if (!running()) return;
         JsonObject st = core.reflexes.status();
         String target = st.has("target") ? st.get("target").getAsString() : "a monster";
-        if (r == Reflexes.Reflex.RETREATING && prev != Reflexes.Reflex.RETREATING) {
+        if (r == Reflexes.Reflex.RETREATING && prev != Reflexes.Reflex.RETREATING && !core.reflexes.sheltering()) {   // 0.24.1: a shelter keeps the job
             stopForReflex("stopped: low health, getting away from " + target);
         } else if ((r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) && st.has("urgent") && st.get("urgent").getAsBoolean()
                 && !job.type.equals("travel") && !job.holdOnFight) {

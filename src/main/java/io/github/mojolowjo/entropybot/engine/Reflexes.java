@@ -242,6 +242,9 @@ public final class Reflexes {
 
     public Reflex reflex() { return reflex; }
 
+    /** 0.24.1: a retreat to a lit spot (shelter / LIT verdict): the job is held, not stopped. */
+    public boolean sheltering() { return reflex == Reflex.RETREATING && retreatLit; }
+
     public void setDefence(boolean on) {
         defence = on;
         if (!on && (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING || reflex == Reflex.RETREATING)) settle("self-defence off");

@@ -27,7 +27,9 @@ public final class ReflexNotes {
         String prev = reflexWas;
         reflexWas = k;
         if (k.equals("retreating") && !prev.equals("retreating")) {
-            out.add("Low health (" + Math.round(health) + "/20), retreating from " + (target == null || target.isEmpty() ? "a monster" : target));
+            String who = target == null || target.isEmpty() ? "a monster" : target;
+            // 0.24.1: a retreat at good health is a shelter (fliers/ranged, a tight fight in the dark), not low health
+            out.add(health > 6 ? "Taking cover from " + who + " (health " + Math.round(health) + "/20)" : "Low health (" + Math.round(health) + "/20), retreating from " + who);
         }
         if (deniedDim != null && !deniedDim.equals(deniedNoted)) {
             deniedNoted = deniedDim;
