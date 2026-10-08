@@ -105,7 +105,9 @@ public final class Needs {
                 continue;
             }
             int sc = clamp(c.i("ownerNeedBase") + c.i("ownerNeedSpan") * missing / (double) n.want() + age(s.now, n.since(), 2, c.i("ageBonusMax")));
-            out.add(new Option("need:" + sid, sc, "gather " + sid + " " + n.want(), "need " + sid + " " + n.want() + ": have " + n.have(), null, n.since()));
+            // 0.24.3: a modded item keeps its namespace in the chain (gather abyssal_stew was "not an item id")
+            String gid = n.id().startsWith("minecraft:") || n.id().indexOf(':') < 0 ? sid : n.id();
+            out.add(new Option("need:" + sid, sc, "gather " + gid + " " + n.want(), "need " + sid + " " + n.want() + ": have " + n.have(), null, n.since()));
         }
         // goals, oldest first
         for (int i = 0; i < s.goals.size(); i++) {
