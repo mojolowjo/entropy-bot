@@ -81,7 +81,8 @@ class PlannerTest {
     void shelterOfPlanks() {
         Planner.Result r = Planner.plan(forest(), GoalGrammar.parse("shelter", null).needs());
         assertTrue(r.ok(), r.missing());
-        assertTrue(r.chain().endsWith("area here 1 shelter neutral 1 2 then build shell oak_planks shelter"), r.chain());
+        assertTrue(r.chain().endsWith("then shelter"), r.chain());
+        assertFalse(r.chain().contains("oak_planks"), r.chain());      // 0.24.3: the plank kind is whatever was cut
         assertTrue(index(r, "cut ") == 0, r.costed());
     }
 

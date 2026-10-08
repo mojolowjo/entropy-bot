@@ -170,6 +170,9 @@ public final class VerbTable {
         v("done", "free", "brain", O, "done | free", "I have nothing for you: do what you want (the brain may leave 32 blocks of you); your next order, come or escort takes it back", "done", "status");
         v("sleep", "", "brain", O, "sleep | sleep status | sleep auto on|off", "go to the nearest bed (or put mine down at night) and sleep until morning or stop; auto: go to bed when others sleep (the brain, default on)",
                 "sleep|sleep auto off", "status");
+        v("shelter", "", "brain", O, "shelter | shelter 5m | shelter keep | shelter status | shelter leave",
+                "build a 1x2 shell around me from my planks, cobblestone or dirt (cut logs first when short), a torch inside, wait until day (or the timer), open my own wall and step out; keep: close it behind me; \"night status\" shows how safe a night out is (score, band, time to dusk; brain set night.shelterBelow|night.workBelow|night.duskHours <n>)",
+                "shelter|shelter status", "sleep");
         v("camp", "", "brain", O, "camp here", "a camp for a night or two: area camp (24 round, neutral), place camp with a bed marker, torches, my bed when I carry one; not a base", "camp here", "sleep");
         v("bootstrap", "", "brain", O, "bootstrap | bootstrap status", "a camp from nothing: cut, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp placed",
                 "bootstrap|bootstrap status", "places");

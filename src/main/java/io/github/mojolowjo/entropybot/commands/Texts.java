@@ -21,7 +21,7 @@ public final class Texts {
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
             "camp", "bootstrap", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
             "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "path", "server", "debug",
-            "why", "brain", "idle", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust");
+            "why", "brain", "idle", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust", "shelter");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -30,7 +30,7 @@ public final class Texts {
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
             "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "scout", "cut");
+            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "scout", "cut", "shelter");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");

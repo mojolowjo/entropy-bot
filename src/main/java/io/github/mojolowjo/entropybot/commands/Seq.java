@@ -259,6 +259,7 @@ public final class Seq {
             case "clear":
             case "placeblock": return Clearing.step(this, st, p, elapsed);
             case "sleep": return SleepJob.step(this, st, p);                    // C4: in bed until morning
+            case "shelter": return ShelterJob.step(this, st, p);                // 0.24.3: a shell around me until day
             case "lightnote": return CampCommands.lightNote(this, st);          // C4: the light job's end line       // B7d D1: dig, build, place
             default:
                 if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2

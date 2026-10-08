@@ -277,7 +277,19 @@ public final class Brain {
         String latest = older.isEmpty() ? "" : older.remove(older.size() - 1);
         String scores = lastScored == null ? "" : " | scores: " + lastScored.line() + (lastScored.skipped().isEmpty() ? "" : " | skipped: " + String.join("; ", lastScored.skipped()));
         return (older.isEmpty() ? "" : String.join(" | ", older) + "\n") + "latest: " + latest + scores + (prev != null ? " | stage " + prev.stage : "")
-                + (lastEvents.isEmpty() ? "" : " | events " + lastEvents);
+                + (lastEvents.isEmpty() ? "" : " | events " + lastEvents)
+                + (prev != null ? " | " + NightSafety.status(prev, cfg) : "");
+    }
+
+    /** 0.24.3 "night status": the night safety score, its band and the time to dusk (sensed now). */
+    public String nightStatus() {
+        BrainState s = env.sense();
+        if (!s.inWorld) return "night status: not in a world";
+        return NightSafety.status(s, cfg) + " - " + switch (NightSafety.band(NightSafety.score(s), cfg)) {
+            case SHELTER -> "at dusk I shelter until day (and start no surface job in the last " + cfg.i("night.duskHours") + " h before it)";
+            case UNDERGROUND -> "at night I work only underground or in the lit camp";
+            default -> "at night I light my spot and sleep when others do";
+        } + (on() ? "" : " (the brain is off: brain on)");
     }
 
     /** "needs": the brain's scores (a line added to the owner's needs). */

@@ -1028,6 +1028,12 @@ public final class Commands implements Chains.Env {
         if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
         if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
         if (verb.equals("bootstrap")) return Reply.now(camp.bootstrap(player, from, internal, rest));
+        // 0.24.3: the shelter's status/leave never wait for its job; "night status" shows the night safety
+        if (verb.equals("shelter") && rest.trim().toLowerCase().matches("^(status|leave)$")) return Reply.now(ShelterJob.start(this, player, rest, internal, from));
+        if (verb.equals("night")) {
+            if (!rest.trim().isEmpty() && !rest.trim().equalsIgnoreCase("status")) return Reply.now("usage: night status");
+            return Reply.now(brainRuntime == null ? "night status: the brain isn't loaded" : brainRuntime.brain.nightStatus());
+        }
         if (verb.equals("gather") && io.github.mojolowjo.entropybot.camp.StockRules.toBase(rest) != null) {
             String g = io.github.mojolowjo.entropybot.camp.StockRules.toBase(rest);
             if (internal) return Reply.now("error: \"gather ... to base\" is a chain of its own - in a chain write: gather " + g + " then deposit <item>");
@@ -1174,6 +1180,7 @@ public final class Commands implements Chains.Env {
             }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
             case "sleep" -> { return SleepJob.start(this, player, rest); }              // C4: in bed until morning
+            case "shelter" -> { return ShelterJob.start(this, player, rest, false, from); }   // 0.24.3: a shell around me until day
             case "home" -> { return jobs.startHome(player); }
             case "go", "base" -> {
                 if (verb.equals("go") && rest.trim().toLowerCase().matches("^poi\\s+\\d+$")) return storage.goPoi(player, Integer.parseInt(rest.trim().split("\\s+")[1]));

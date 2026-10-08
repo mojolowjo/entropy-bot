@@ -47,6 +47,9 @@ public final class DaySummary {
 
     public synchronized void death() { deaths++; }
 
+    /** 0.24.3: deaths so far today (the night safety score). */
+    public synchronized int deaths() { return deaths; }
+
     /** The brain started a job for this need. */
     public synchronized void pick(String need) {
         if (need != null) picks.merge(need, 1, Integer::sum);

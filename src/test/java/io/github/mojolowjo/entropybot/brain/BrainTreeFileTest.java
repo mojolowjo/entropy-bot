@@ -144,7 +144,7 @@ class BrainTreeFileTest {
         kids.set(5, job);
         BrainTreeFile.Result r = BrainTreeFile.parse(o.toString());
         assertTrue(r.ok(), r.errors().toString());
-        assertEquals(List.of("r", "r/4", "r/4/1", "r/4/1/1", "r/4/1/1/1"), r.tree().pathTo("night.light"));
+        assertEquals(List.of("r", "r/4", "r/4/1", "r/4/1/3", "r/4/1/3/1"), r.tree().pathTo("night.light"));
     }
 
     @Test

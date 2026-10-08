@@ -42,7 +42,7 @@ public final class ActionTable {
         a("mine", "mine strip <ore> [n] | mine <ore>_ore [n] | mine cave <ore> [n]", "ore family, n", "a pickaxe of the ore's tier; a marked mine, an ore in view, or a known cave", "have(ore drop, n)", "10 + 3 per item", true, true);
         a("quarry", "dig x1 y1 z1 x2 y2 z2 (8 staircase columns, as bootstrap)", "the bot's spot", "a pickaxe; stone under me; inside my areas", "have(cobblestone, ~40)", "25", true, true);
         a("gather", "gather <item|kind> [n]", "item, n", "the gather verb's sources (storage, craft, smelt, mine, cut, farm)", "have(item, n)", "20 + 2 per item", true, true);
-        a("build", "area here 1 shelter neutral 1 2 then build shell <block> shelter", "a block kind", "have(block, 32)", "shelter around me", "10", true, true);
+        a("build", "shelter", "a block kind", "have(block, 32)", "shelter around me", "10", true, true);
         a("light", "light here <r> | light x1 z1 x2 z2", "an area", "torches (it fetches or crafts them)", "torches every 6 blocks", "10 + per torch", true, false);
         a("sleep", "sleep", "", "night; a bed near or in my bag", "slept (morning)", "5", true, false);
         a("deposit", "deposit [item ...]", "", "base chests scanned (scan base)", "free bag slots", "10", true, false);
@@ -73,6 +73,7 @@ public final class ActionTable {
         v("a:build", "build");
         v("a:light", "light");
         v("a:sleep", "sleep");
+        v("a:build", "shelter");
         v("a:deposit", "deposit", "unload");
         v("a:attack", "attack");
         v("a:eat", "eat");
@@ -87,7 +88,7 @@ public final class ActionTable {
         v("n:a whole job of its own (it plans itself)", "restock", "bootstrap", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
         v("n:moves items away or to a player (never a step toward having them)", "give", "drop", "wear");
         v("n:recovery after a death", "death", "corpse", "resume");
-        v("n:chat, waiting or debugging", "say", "twerk", "spawn", "wait", "stop", "debug");
+        v("n:chat, waiting or debugging", "night", "say", "twerk", "spawn", "wait", "stop", "debug");
     }
 
     public static Map<String, ActionSpec> actions() { return java.util.Collections.unmodifiableMap(ACTIONS); }

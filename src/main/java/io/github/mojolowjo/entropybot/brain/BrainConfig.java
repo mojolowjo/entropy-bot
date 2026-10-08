@@ -59,6 +59,9 @@ public final class BrainConfig {
                 {"copyScore", 55, 0, 100, "brain copy's score"},
                 {"upkeep", 15, 0, 100, "the idle list's score"},
                 {"deadbandPct", 50, 1, 100, "your need gathers again below this % of its count (deadband)"},
+                {"night.shelterBelow", NightSafety.FULL_IRON, 0, 40, "night safety score below: shelter at dusk until day (default: full iron + iron sword + 8 food)"},
+                {"night.workBelow", NightSafety.FULL_IRON + 4, 0, 40, "night safety score below (and not sheltering): only underground or lit-camp work at night"},
+                {"night.duskHours", 2, 0, 6, "in-game hours before dusk with no new surface job in the shelter band"},
         };
         for (Object[] row : rows) {
             d.put((String) row[0], (Integer) row[1]);

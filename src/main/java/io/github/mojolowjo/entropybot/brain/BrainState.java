@@ -39,6 +39,14 @@ public final class BrainState {
     /** 0.23.6: the first worn armour piece ("my iron_chestplate is at 6 %"), or null. */
     public String armorWorn;
     public boolean toolBroke;
+    /** 0.24.3 night safety: armour and weapon tier (0-3; harmless defaults: diamond), deaths in the last day, the level's
+     *  day time (-1 unknown), a bed within reach, the camp place (null: none). */
+    public int armourTier = 3, weaponTier = 3, deathsDay;
+    public long dayTime = -1;
+    public boolean bedNear = true;
+    public int[] campPos;
+    /** 0.24.3: shell blocks in the bag (planks, cobblestone, dirt; logs count 4). */
+    public int shelterBlocks = 64;
     public final List<NeedItem> needs = new ArrayList<>();
     public final List<Goal> goals = new ArrayList<>();
     /** The copy rule's verdict; null while brain copy is off. */

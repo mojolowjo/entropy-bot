@@ -166,6 +166,28 @@ public final class BrainRuntime implements BrainEnv {
         s.othersSleeping = others;
         s.litHere = mc.level.getBrightness(LightLayer.BLOCK, p.blockPosition()) >= 8;
         s.botPos = Jobs.here(p);
+        // 0.24.3: night safety (armour, weapon, deaths today, time, a bed near, the camp)
+        try {
+            java.util.List<String> worn = new java.util.ArrayList<>();
+            for (var pc : CampCommands.armor(p)) if (pc.id() != null) worn.add(pc.id());
+            s.armourTier = io.github.mojolowjo.entropybot.brain.NightSafety.armourTier(worn);
+            int wt = 0;
+            for (int i = 0; i < 36; i++) {
+                ItemStack st = p.getInventory().getItem(i);
+                if (st.isEmpty()) continue;
+                String id = Commands.itemId(st);
+                if (id.endsWith("_sword") || id.endsWith("_axe")) wt = Math.max(wt, io.github.mojolowjo.entropybot.brain.NightSafety.tierOf(id));
+            }
+            s.weaponTier = wt;
+            s.shelterBlocks = io.github.mojolowjo.entropybot.camp.ShelterPlan.blocks(io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
+            s.deathsDay = io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.deaths();
+            s.dayTime = dt;
+            if (s.night) s.bedNear = Jobs.findBlock(p, "_bed 24").startsWith("found");
+            JsonObject camp = core.knowledge.places().get("camp");
+            if (camp != null && Jobs.dimOf(camp).equals(Storage.dim())) s.campPos = Jobs.pos(camp);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] brain night safety: {}", e.toString());
+        }
         // the owner
         String owner = c.owner();
         s.ownerOnline = mc.getConnection() != null && mc.getConnection().getPlayerInfo(owner) != null;

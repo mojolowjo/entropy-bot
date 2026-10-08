@@ -173,6 +173,24 @@ public final class RestoreLive {
 
     // ---- the contexts ----
 
+    /** 0.24.3: blocks the bot placed itself (a shelter): ledger entries never re-placed, its own spot for the build hint. */
+    void noteBuilt(List<int[]> cells, String block, String why) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || readOnly || cells == null) return;
+        String dim = Guard.dimOf(mc.level);
+        Commands cm = c;
+        long job = cm != null && cm.jobs.running() ? cm.jobs.job.id : 0;
+        String label = cm != null && cm.jobs.running() ? cm.jobs.job.label : "shelter";
+        int n = 0;
+        for (int[] p : cells) {
+            if (book.ledger.add(p[0], p[1], p[2], dim, block, block, List.of(), why, job, label, why, Core.INSTANCE.tick(), System.currentTimeMillis()) != null) n++;
+        }
+        if (n > 0) {
+            changed();
+            LOG.info("[entropybot] restore: {} blocks noted as {}", n, why);
+        }
+    }
+
     /** "mine ... dig": while this job runs, every block but the target that Baritone breaks is a path break. */
     void pathContext(long job, String targetId) {
         pathTargets = Set.of(targetId);

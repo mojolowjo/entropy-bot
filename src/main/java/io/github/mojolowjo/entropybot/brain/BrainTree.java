@@ -161,27 +161,71 @@ public final class BrainTree {
                 new Sequence("job", "the brain's running job",
                         new Condition("job?", "a job the brain started runs", c -> c.running() != null),
                         new Selector("job.check", "interrupts",
+                                new Action("job.dusk", "shelter band and dusk near: a surface job gives way to the shelter", c -> {
+                                    if (!shelterBand(c) || !surfaceBarred(c) || c.nightDoneHere() || NightSafety.underground(c.running().chain())) return null;
+                                    return new Decision("job.dusk", Kind.SWITCH, shelterChain(c), "night", 70, "dusk is near and " + NightSafety.status(c.s(), c.c()));
+                                }).meta("shelter", "night.shelterBelow", "night.duskHours"),
                                 new Action("job.interrupt", "broken tool / hungry / bag full: handle, then resume", BrainTree::interrupt).meta("eat | deposit | craft", "hungryInterrupt", "fullInterrupt", "toolsWornPct"),
                                 new Action("job.switch", "outscored by the margin: switch", BrainTree::outscored).meta("", "switchMargin", "floor"),
                                 new Action("job.keep", "keep it", c -> new Decision("job.keep", Kind.KEEP, c.running().chain(), c.running().need(),
                                         c.running().score(), "still on it")).meta("", "switchMargin"))),
                 new Sequence("night", "night",
-                        new Condition("night?", "night and nothing running", c -> c.s().night && !c.nightDoneHere()),
-                        new Selector("night.pick", "sleep or light",
+                        new Condition("night?", "night (or near dusk in the shelter band) and nothing running",
+                                c -> (c.s().night || (shelterBand(c) && NightSafety.nearDusk(c.s().dayTime, c.c().i("night.duskHours")))) && !c.nightDoneHere()),
+                        new Selector("night.pick", "shelter, sleep or light",
+                                when("night.shelter", "shelter", "night safety in the shelter band (0.24.3)",
+                                        BrainTree::shelterBand,
+                                        c -> new Decision("night.shelter", Kind.START, shelterChain(c), "night", 70,
+                                                (c.s().night ? "night" : "dusk is near") + ", and " + NightSafety.status(c.s(), c.c()) + ": I shelter until day"), "shelter", "night.shelterBelow", "night.duskHours"),
                                 when("night.sleep", "sleep", "sleep auto on and others sleep",
-                                        c -> c.s().sleepAuto && c.s().othersSleeping,
+                                        c -> c.s().night && c.s().sleepAuto && c.s().othersSleeping,
                                         c -> new Decision("night.sleep", Kind.START, "sleep", "night", 60, "night, and others are sleeping (sleep auto)"), "sleep"),
+                                when("night.shelter.nobed", "shelter", "underground band and no bed (or sleep auto off): shelter",
+                                        c -> c.s().night && underBand(c) && (!c.s().sleepAuto || !c.s().bedNear) && !hasUnderground(c),
+                                        c -> new Decision("night.shelter.nobed", Kind.START, shelterChain(c), "night", 55,
+                                                "night, no bed and no underground job: " + NightSafety.status(c.s(), c.c())), "shelter", "night.workBelow"),
                                 when("night.light", "light the spot", "my spot is dark",
                                         c -> !c.s().litHere,
                                         c -> new Decision("night.light", Kind.START, "light here 8", "night", 50, "night: lighting my spot, then I work on"), "light here"))),
                 new Action("pick", "the needs: highest score wins", c -> {
-                    Needs.Option o = c.scored().best(c.c().i("floor"));
+                    Needs.Option o = surfaceBarred(c) ? bestUnderground(c) : c.scored().best(c.c().i("floor"));
                     return o == null ? null : new Decision("pick", Kind.START, o.chain(), o.need(), o.score(), o.reason());
                 }).meta("the need's job", "floor"),
                 when("idle.near", "stay near you", "not released, the owner online and further than 32",
                         c -> c.s().bound() && BrainState.flat(c.s().botPos, c.s().ownerPos) > c.c().i("nearbyR"),
                         c -> new Decision("idle.near", Kind.START, "come", "near", 0, "staying within " + c.c().i("nearbyR") + " of you (not released: done lets me go)"), "come", "nearbyR"),
                 new Action("idle", "idle", c -> new Decision("idle", Kind.NOTHING, null, null, 0, "nothing scores above " + c.c().i("floor"))).meta("", "floor"));
+    }
+
+    // ---- 0.24.3: night safety ----
+
+    static boolean shelterBand(Ctx c) {
+        return NightSafety.band(NightSafety.score(c.s()), c.c()) == NightSafety.Band.SHELTER;
+    }
+
+    static boolean underBand(Ctx c) {
+        return NightSafety.band(NightSafety.score(c.s()), c.c()) == NightSafety.Band.UNDERGROUND;
+    }
+
+    /** No surface job now: night in the underground band, or near dusk (or night) in the shelter band. */
+    static boolean surfaceBarred(Ctx c) {
+        if (shelterBand(c)) return c.s().night || NightSafety.nearDusk(c.s().dayTime, c.c().i("night.duskHours"));
+        return c.s().night && underBand(c);
+    }
+
+    static Needs.Option bestUnderground(Ctx c) {
+        for (Needs.Option o : c.scored().options())
+            if (o.chain() != null && o.score() > c.c().i("floor") && NightSafety.underground(o.chain())) return o;
+        return null;
+    }
+
+    static boolean hasUnderground(Ctx c) { return bestUnderground(c) != null; }
+
+    /** To the camp first when one is marked and further than 8 blocks, then shelter. */
+    static String shelterChain(Ctx c) {
+        int[] camp = c.s().campPos;
+        String prep = c.s().shelterBlocks < io.github.mojolowjo.entropybot.camp.ShelterPlan.FULL ? "cut 8 logs then craft planks 32 then " : "";
+        return prep + (camp != null && BrainState.flat(camp, c.s().botPos) > 8 ? "go camp then shelter" : "shelter");
     }
 
     static Decision interrupt(Ctx c) {

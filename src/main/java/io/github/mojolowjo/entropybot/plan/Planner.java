@@ -496,7 +496,7 @@ public final class Planner {
                 }
                 case "quarry" -> String.join(" then ", io.github.mojolowjo.entropybot.camp.BootstrapPlan.quarrySteps(f.feet, f.dir));
                 case "gather" -> "gather " + word(s.item) + " " + s.amount;
-                case "build" -> "area here 1 shelter neutral 1 2 then build shell " + (s.extra.equals("planks") ? "oak_planks" : s.extra) + " shelter";
+                case "build" -> "shelter";       // 0.24.3: the shelter verb builds from any planks, cobblestone or dirt it carries
                 default -> s.action + " " + s.item + " " + s.amount;
             };
             out.add(new PlanStep(t, s.cost, s.action));
