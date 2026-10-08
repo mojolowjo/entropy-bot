@@ -173,6 +173,8 @@ public final class RestoreLive {
 
     // ---- the contexts ----
 
+    Commands commands() { return c; }
+
     /** 0.24.3: the ledger says the bot built this cell itself (why starts "built:"). */
     boolean builtByMe(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
@@ -428,6 +430,10 @@ public final class RestoreLive {
             if (i == 3) chests.add(p);
         }
         for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.all()) if (dim.equals(e.dim)) own.add(e.pos());
+        if (c != null) for (String k : ShelterJob.ownBlocks(c)) {           // its shelters
+            String[] w = k.split(" ");
+            if (w.length == 3) own.add(new int[]{Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2])});
+        }
         List<int[]> homes = new ArrayList<>(c == null ? List.of() : c.respawn.homes());
         Level lv = Minecraft.getInstance().level;
         if (lv != null && dim.equals("minecraft:overworld")) {

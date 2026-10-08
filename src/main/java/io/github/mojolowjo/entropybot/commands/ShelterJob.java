@@ -101,7 +101,7 @@ public final class ShelterJob {
         s.sawNight = SleepJob.night(lv);
         s.leases = Clearing.newLeases();
         // a shelter it built before (the ledger's "built: shelter") is its own again
-        for (int[] cell : ShelterPlan.allCells(f)) if (RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) s.own.add(ShelterPlan.key(cell));
+        for (int[] cell : ShelterPlan.allCells(f)) if (ownBlocks(c).contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) s.own.add(ShelterPlan.key(cell));
         if (s.block == null) s.block = ShelterPlan.material(bag, 2) != null ? ShelterPlan.material(bag, 2) : "minecraft:cobblestone";
         // centre on the cell so the shell's blocks never touch the bot
         p.setPos(f[0] + 0.5, p.getY(), f[2] + 0.5);
@@ -221,6 +221,21 @@ public final class ShelterJob {
             cells.add(new int[]{Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2])});
         }
         RestoreLive.INSTANCE.noteBuilt(cells, ps.block, "built: shelter");
+        // and in commands.json "shelterBlocks" (the ledger forgets a cell once it is full again): the next shelter here may open them
+        try {
+            Commands c = Core0.commands();
+            if (c != null) {
+                com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+                Set<String> all = new java.util.LinkedHashSet<>(ownBlocks(c));
+                all.addAll(ps.own);
+                java.util.List<String> l = new ArrayList<>(all);
+                for (String k : l.subList(Math.max(0, l.size() - 200), l.size())) a.add(k);
+                c.brainData().add("shelterBlocks", a);
+                c.saved();
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] shelter: saving my blocks failed: {}", e.toString());
+        }
     }
 
     private static boolean open(State ps, LocalPlayer p, ClientLevel lv, long now) {
@@ -311,8 +326,22 @@ public final class ShelterJob {
         return false;
     }
 
+    /** The shelter blocks the bot built (commands.json "shelterBlocks", "x y z"; at most 200). */
+    static Set<String> ownBlocks(Commands c) {
+        Set<String> out = new HashSet<>();
+        try {
+            com.google.gson.JsonObject d = c.brainData();
+            if (d.has("shelterBlocks") && d.get("shelterBlocks").isJsonArray()) for (var e : d.getAsJsonArray("shelterBlocks")) out.add(e.getAsString());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] shelter: reading my blocks failed: {}", e.toString());
+        }
+        return out;
+    }
+
     /** The core tick (a tiny indirection so the class reads without Core's import noise). */
     static final class Core0 {
         static long tick() { return io.github.mojolowjo.entropybot.Core.INSTANCE.tick(); }
+
+        static Commands commands() { return RestoreLive.INSTANCE.commands(); }
     }
 }
