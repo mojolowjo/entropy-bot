@@ -13,7 +13,10 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
@@ -51,6 +54,7 @@ public final class EntropyCompanion {
     private final PostLoop loop;
     private final Companion companion;
     private final ChunkShare chunks;
+    private ActionLogMc actionLog;
 
     private volatile CompanionConfig config;
     private volatile long configMtime = Long.MIN_VALUE;
@@ -69,6 +73,16 @@ public final class EntropyCompanion {
         ChunkShare.INSTANCE = chunks;
         NeoForge.EVENT_BUS.addListener(ChunkEvent.Load.class, chunks::onLoad);
         NeoForge.EVENT_BUS.addListener(ChunkEvent.Unload.class, chunks::onUnload);
+        // 0.4.0 action log: config/entropy-companion/log/, posted to /api/ownerlog
+        ActionLogMc alog = new ActionLogMc(this::currentConfig, http, companion, FMLPaths.CONFIGDIR.get().resolve("entropy-companion").resolve("log"));
+        ActionLogMc.INSTANCE = alog;
+        actionLog = alog;
+        NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingIn.class, alog::onLogin);
+        NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingOut.class, alog::onLogout);
+        NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.Clone.class, alog::onClone);
+        NeoForge.EVENT_BUS.addListener(LivingEntityUseItemEvent.Finish.class, alog::onEat);
+        NeoForge.EVENT_BUS.addListener(ScreenEvent.Opening.class, alog::onScreenOpen);
+        NeoForge.EVENT_BUS.addListener(ScreenEvent.Closing.class, alog::onScreenClose);
         modBus.addListener(RegisterKeyMappingsEvent.class, Keys::register);
         modBus.addListener(RegisterGuiLayersEvent.class, e ->
                 e.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "replies"), Overlay::render));
@@ -83,8 +97,8 @@ public final class EntropyCompanion {
         NeoForge.EVENT_BUS.addListener(RenderLevelStageEvent.class, BoxRender::onRender);
         LOG.info("[entropycompanion] {}", config);
         String alias = config.commandAlias.isEmpty() ? "" : ",/" + config.commandAlias;
-        LOG.info("[entropycompanion] {} ready: commands /bot{}, keys point=V menu=G (rebind in Controls), overlay {}, box view off, chunk sharing {}",
-                Companion.VERSION, alias, config.overlaySeconds > 0 ? "on" : "off", config.shareChunks ? "on" : "off");
+        LOG.info("[entropycompanion] {} ready: commands /bot{}, keys point=V menu=G (rebind in Controls), overlay {}, box view off, chunk sharing {}, action log {}",
+                Companion.VERSION, alias, config.overlaySeconds > 0 ? "on" : "off", config.shareChunks ? "on" : "off", config.actionLog ? "on" : "off");
     }
 
     private long mtime() {
@@ -123,6 +137,7 @@ public final class EntropyCompanion {
             companion.error("keys", e);
         }
         chunks.tick();      // 0.3.0 chunk sharing; never throws
+        actionLog.tick(mc); // 0.4.0 action log; never throws
         try {
             if (mc.player == null || mc.level == null) return;
             if (!loop.due() || !busy.compareAndSet(false, true)) return;
