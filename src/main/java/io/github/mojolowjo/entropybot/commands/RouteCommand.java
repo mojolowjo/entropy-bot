@@ -41,6 +41,8 @@ final class RouteCommand {
             RouteRuntime.INSTANCE.setEnabled(RouteWalker.on(c));
             com.google.gson.JsonObject r = c.routeSettings();          // 0.23.3: path assist (default on)
             io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.setAssist(!r.has("assist") || r.get("assist").getAsBoolean());
+            io.github.mojolowjo.entropybot.move.ServerCmds.setOn(r.has("serverCommands") && r.get("serverCommands").getAsBoolean());     // 0.24.1, default off
+            io.github.mojolowjo.entropybot.move.ServerCmds.setMaxWalk(r.has("maxWalk") ? r.get("maxWalk").getAsInt() : io.github.mojolowjo.entropybot.move.ServerCmds.MAX_WALK_DEFAULT);
         } catch (Throwable t) {
             RouteWalker.RLOG.error("route on/off", t);
         }

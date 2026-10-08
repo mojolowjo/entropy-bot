@@ -17,7 +17,8 @@ import java.util.Map;
 public final class FightOrFlee {
     private FightOrFlee() {}
 
-    public enum Verdict { FIGHT, LIT, HOME }
+    /** 0.24.1: SHELTER = fliers/ranged at good health: to the nearest lit spot, the job kept; HOME never sends /home by itself (Reflexes: health under 6 and server commands on). */
+    public enum Verdict { FIGHT, LIT, SHELTER, HOME }
 
     public record Foe(String kind, double dist, boolean creeper) {}
 
@@ -61,6 +62,14 @@ public final class FightOrFlee {
 
     public static Result assess(Me me, List<Foe> foes) {
         if (foes.isEmpty()) return new Result(Verdict.FIGHT, Double.NaN, 0, "nothing counts");
+        if (me.health() < me.retreatAt())
+            return new Result(Verdict.HOME, Double.NaN, Double.NaN, "retreat home: health " + ThreatRules.fmt(Math.round(me.health())) + " below " + ThreatRules.fmt(me.retreatAt()));
+        // 0.24.1: fliers and ranged mobs can't be outrun on foot: at good health never home, fight them when in reach or shelter
+        boolean noWalker = true;
+        for (Foe f : foes) {
+            ThreatRules.Move mv = ThreatRules.moveOf(f.kind());
+            if (mv != ThreatRules.Move.FLY && mv != ThreatRules.Move.RANGED) noWalker = false;
+        }
         boolean creeper = false;
         double[] rate = new double[foes.size()], kill = new double[foes.size()];
         double band = 1.25;
@@ -89,10 +98,15 @@ public final class FightOrFlee {
         String num = "margin " + ThreatRules.fmt(Math.round(margin * 10) / 10.0) + " (health " + ThreatRules.fmt(Math.round(me.health()))
                 + ", expect to lose up to " + ThreatRules.fmt(Math.round(high * 10) / 10.0) + " to " + foes.size() + " mob" + (foes.size() == 1 ? "" : "s") + ")";
         if (margin >= buffer) return new Result(Verdict.FIGHT, margin, high, "fight: " + num);
-        if (margin < 0) return new Result(Verdict.HOME, margin, high, "flee home: losing, " + num);
+        if (noWalker) {
+            if (me.litDist() >= 0 && me.litDist() <= LIT_MAX_DIST)
+                return new Result(Verdict.SHELTER, margin, high, "shelter: fliers/ranged, a lit spot " + me.litDist() + " blocks away: " + num);
+            return new Result(Verdict.FIGHT, margin, high, "fight: fliers/ranged can't be outrun, hitting them when in reach: " + num);
+        }
+        if (margin < 0) return new Result(Verdict.HOME, margin, high, "retreat home: losing, " + num);
         if (me.light() >= LIT) return new Result(Verdict.FIGHT, margin, high, "fight (tight, but lit here): " + num);
         if (me.litDist() >= 0 && me.litDist() <= LIT_MAX_DIST)
             return new Result(Verdict.LIT, margin, high, "retreat to a lit spot " + me.litDist() + " blocks away (tight, dark here): " + num);
-        return new Result(Verdict.HOME, margin, high, "flee home: tight, dark, no lit spot near: " + num);
+        return new Result(Verdict.HOME, margin, high, "retreat home: tight, dark, no lit spot near: " + num);
     }
 }

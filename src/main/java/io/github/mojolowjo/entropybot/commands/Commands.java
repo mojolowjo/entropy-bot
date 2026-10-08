@@ -899,7 +899,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("allow") && rest.isBlank()) return Reply.now(allowCommand("allowed", "", isOwner));
         if (verb.equals("places") && !isOwner && !rest.isBlank()) return Reply.now("sorry, only " + owner() + " can forget places");
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
-        if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));          // 0.23.3: never busy
+        if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));
+        if (verb.equals("server")) return Reply.now(PathCommand.server(this, rest, isOwner));      // 0.24.1: never busy          // 0.23.3: never busy
         if (verb.equals("surface")) return Reply.now(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.command(rest));     // 0.19.3: never busy
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
@@ -1324,7 +1325,8 @@ public final class Commands implements Chains.Env {
             return out.isEmpty() ? "no places yet - place base where you want my base" : String.join(" | ", out);
         }
         if (verb.equals("sethome")) {
-            // the server's homes: "/sethome home" sets it, "/home" teleports there
+            // the server's homes: "/sethome home" sets it, "/home" teleports there. 0.24.1: only with server commands on
+            if (!io.github.mojolowjo.entropybot.move.ServerCmds.on()) return "error: server commands are off - I don't send /sethome (server commands on to allow it; place base marks my base)";
             player.connection.sendCommand("sethome home");
             int[] me = Jobs.here(player);
             setHome(me, Guard.dimOf(player.level()));
@@ -1947,6 +1949,7 @@ public final class Commands implements Chains.Env {
                 return Reply.now("ok");
             }
             case "command" -> {
+                if (!io.github.mojolowjo.entropybot.move.ServerCmds.on()) return Reply.now("error: server commands are off - I don't send /" + text.replaceFirst("^/", "").split(" ")[0] + " (server commands on)");
                 player.connection.sendCommand(text.replaceFirst("^/", ""));
                 return Reply.now("ok");
             }
@@ -1968,6 +1971,7 @@ public final class Commands implements Chains.Env {
             }
             case "restart" -> { return Reply.now(restartCommand(from != null ? from : owner(), text)); }
             case "reload" -> {
+                if (!io.github.mojolowjo.entropybot.move.ServerCmds.on()) return Reply.now("error: server commands are off (server commands on)");
                 player.connection.sendCommand("kubejs reload client-scripts");
                 return Reply.now("ok: reloading");
             }

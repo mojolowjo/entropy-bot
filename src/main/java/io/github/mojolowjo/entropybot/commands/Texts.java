@@ -20,7 +20,7 @@ public final class Texts {
             "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "dismiss", "attack", "queue", "status", "inv",
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
             "camp", "bootstrap", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
-            "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "path", "debug",
+            "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "path", "server", "debug",
             "why", "brain", "idle", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust");
 
     /**

@@ -639,6 +639,7 @@ final class StripSteps {
         Jobs.Job j = seq.job();
         if (seq.stage == null) {
             if (sm.commands().home() == null) return "next";
+            if (!io.github.mojolowjo.entropybot.move.ServerCmds.allowed("the strip mine's way out by /home")) return "next";
             IBaritone b = Jobs.baritone();
             if (b != null) Jobs.cancel(b);
             seq.jobs.sendHome(p, j);

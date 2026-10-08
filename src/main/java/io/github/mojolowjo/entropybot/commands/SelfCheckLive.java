@@ -61,6 +61,9 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         if (noMilk > 0 && System.currentTimeMillis() - noMilk < 30 * 60_000L) f.add(new SelfCheck.Finding("nomilk", "I had poison, wither or hunger and no milk bucket to drink",
                 "need milk_bucket 1"));
         f.addAll(RouteCommand.findings(c));
+        // 0.24.1: a job that would have sent /home or /sethome with server commands off (walked instead)
+        int sci = 0;
+        for (String line : io.github.mojolowjo.entropybot.move.ServerCmds.checkLines()) f.add(new SelfCheck.Finding("servercmd" + (sci++), line, "server commands on (only if the server allows /home)"));
         try {
             f.addAll(io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.findings());   // camera hooks (0.15.2)
         } catch (RuntimeException e) {

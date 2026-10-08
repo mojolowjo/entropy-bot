@@ -530,6 +530,12 @@ public final class Jobs {
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
         LocalPlayer p = Minecraft.getInstance().player;
+        // 0.24.1: absurd walks are refused before any planning (path maxWalk)
+        {
+            int[] far = dest != null ? dest : FenceRules.goalSpot(goal, (int) Math.floor(p.getY()));
+            String tooFar = far == null ? null : io.github.mojolowjo.entropybot.move.ServerCmds.tooFar(here(p), far, io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk());
+            if (tooFar != null) return tooFar;
+        }
         if (!reflex) {
             int[] spot = dest != null ? dest : FenceRules.goalSpot(goal, (int) Math.floor(p.getY()));
             String why = spot == null ? null : FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(Minecraft.getInstance().level), spot[0], spot[1], spot[2], "go"), commands.fenceOn(), walker);
@@ -640,6 +646,13 @@ public final class Jobs {
         JsonObject h = commands.home();
         int[] me = here(p);
         if (h != null && dimOf(h).equals(Guard.dimOf(p.level())) && distSq(pos(h), me) <= 64) return "ok: already home (" + fmt(pos(h)) + ")";
+        // 0.24.1: server commands off: walk home (the long-route process), never /home
+        if (!io.github.mojolowjo.entropybot.move.ServerCmds.allowed("home")) {
+            if (h == null) return "error: server commands are off and I know no home - place base, or server commands on";
+            if (!dimOf(h).equals(Guard.dimOf(p.level()))) return "error: server commands are off and my home is in " + dimOf(h) + " - I can't walk there";
+            int[] hp = pos(h);
+            return startTravel("goto " + hp[0] + " " + hp[1] + " " + hp[2], "walking home (server commands are off)", hp, dimOf(h), false);
+        }
         IBaritone b = baritone();
         if (b != null) cancel(b);
         Job j = new Job();
@@ -716,7 +729,8 @@ public final class Jobs {
     /** Worth a /home on the way? Only if dest is near home and the bot is far from it (another dimension, 40+ across, 10+ up or down). */
     boolean tpWorth(Player p, int[] dest, String destDim) {
         JsonObject h = commands.home();
-        return h != null && TpRules.worth(pos(h), dimOf(h), dest, destDim, here(p), Guard.dimOf(p.level()), core.tick(), tpFailedAt);
+        boolean worth = h != null && TpRules.worth(pos(h), dimOf(h), dest, destDim, here(p), Guard.dimOf(p.level()), core.tick(), tpFailedAt);
+        return worth && io.github.mojolowjo.entropybot.move.ServerCmds.allowed("a far trip's teleport home");
     }
 
     void sendHome(LocalPlayer p, Job j) {

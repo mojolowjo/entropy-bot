@@ -410,7 +410,11 @@ public final class Reflexes {
             target = t.id;
             targetDist = t.d;
             urgent = hurt || t.d < ReflexRules.URGENT;
-            if (hp <= ReflexRules.RETREAT_AT || t.strong) startRetreat(mc, p, t);
+            if (hp <= ReflexRules.RETREAT_AT || t.strong) {
+                io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.verdict(t.id + ": retreat home: "
+                        + (t.strong ? "too strong to fight" : "health " + Math.round(hp) + " at or below " + Math.round(ReflexRules.RETREAT_AT)));
+                startRetreat(mc, p, t);
+            }
             else if (t.creeper) creeper(mc, p, t);
             else fightOrFlee(mc, p, t, hurt);
             return;
@@ -740,7 +744,7 @@ public final class Reflexes {
                 startRetreat(mc, p, t);
                 return;
             }
-            if (verdict == FightOrFlee.Verdict.LIT) {
+            if (verdict == FightOrFlee.Verdict.LIT || verdict == FightOrFlee.Verdict.SHELTER) {
                 int[] lit = ThreatRuntime.INSTANCE.litSpot();
                 if (lit != null) {
                     startLitRetreat(mc, p, t, lit, v.why());
@@ -796,7 +800,8 @@ public final class Reflexes {
         fleeTo = null;
         String dim = Guard.dimOf(mc.level);
         Place b = base;
-        if (b != null && b.dim.equals(dim) && dist2(p, b) > 64) {
+        // 0.24.1: a base further than path maxWalk (an old home after a move) is never the goal: get away instead
+        if (b != null && b.dim.equals(dim) && dist2(p, b) > 64 && dist2(p, b) <= (double) io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk() * io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk()) {
             retreatTo = b;
             retreatGoal = new GoalNear(new BlockPos(b.x, b.y, b.z), 2);
         } else {
@@ -804,9 +809,12 @@ public final class Reflexes {
             retreatGoal = new GoalXZ(fleeTo[0], fleeTo[1]);
         }
         engine.override(retreatGoal);
-        // far from home: /home as well, and keep moving (the server may have a warm-up)
+        // far from home: /home as well, and keep moving (the server may have a warm-up). 0.24.1: only under 6 health
+        // and with server commands on (the live bug: phantoms at full health sent the bot to an old home ~10M blocks off)
         Place h = home;
-        boolean tp = h != null && now - homeSentAt >= 1200 && (!h.dim.equals(dim) || dist2(p, h) > 16 * 16);
+        boolean far = h != null && now - homeSentAt >= 1200 && (!h.dim.equals(dim) || dist2(p, h) > 16 * 16);
+        boolean tp = far && io.github.mojolowjo.entropybot.move.ServerCmds.homeTp(p.getHealth(), io.github.mojolowjo.entropybot.move.ServerCmds.on());
+        if (far && p.getHealth() < 6 && !tp) io.github.mojolowjo.entropybot.move.ServerCmds.allowed("the retreat under 6 health");
         if (tp) {
             homeSentAt = now;
             p.connection.sendCommand("home");
@@ -982,7 +990,8 @@ public final class Reflexes {
         Place h = home;
         double d = FoodRun.dist(p.getX(), p.getY(), p.getZ(), t.x(), t.y(), t.z());
         fetchStageAt = now;
-        if (d > 64 && h != null && h.dim.equals(Guard.dimOf(mc.level)) && FoodRun.dist(h.x + 0.5, h.y, h.z + 0.5, t.x(), t.y(), t.z()) <= 32 && now - homeSentAt >= 1200) {
+        if (d > 64 && h != null && h.dim.equals(Guard.dimOf(mc.level)) && FoodRun.dist(h.x + 0.5, h.y, h.z + 0.5, t.x(), t.y(), t.z()) <= 32 && now - homeSentAt >= 1200
+                && io.github.mojolowjo.entropybot.move.ServerCmds.allowed("the food run's teleport home")) {
             homeSentAt = now;
             p.connection.sendCommand("home");
             lastX = p.getX();
@@ -1186,6 +1195,7 @@ public final class Reflexes {
             }
         }
         // /home 2 s after arriving, then once a minute until it works
-        if (deniedDim != null && now - deniedAt >= 40 && (now - deniedAt - 40) % 1200 == 0) p.connection.sendCommand("home");
+        if (deniedDim != null && now - deniedAt >= 40 && (now - deniedAt - 40) % 1200 == 0
+                && io.github.mojolowjo.entropybot.move.ServerCmds.allowed("leaving " + deniedDim + " by /home (no walk out of another dimension)")) p.connection.sendCommand("home");
     }
 }

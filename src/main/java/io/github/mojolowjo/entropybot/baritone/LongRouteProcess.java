@@ -124,6 +124,14 @@ public final class LongRouteProcess implements IBaritoneProcess {
         this.lastPause = "";
         this.lastTickTime = 0;
         this.lastPos = null;              // a new walk measures its legs from here (a /tp or another walk moved the bot)
+        // 0.24.1: the safety net for absurd walks (the live bug planned 392833 legs): refused, never planned
+        String tooFar = io.github.mojolowjo.entropybot.move.ServerCmds.tooFar(me, dest, io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk());
+        if (tooFar != null) {
+            this.failure = tooFar.replaceFirst("^error: ", "");
+            this.active = false;
+            LOG.warn("[entropybot] long walk refused: {}", this.failure);
+            return;
+        }
         machine.onLegReached();
         stats.longWalks++;
         planRoute(me, "start");
