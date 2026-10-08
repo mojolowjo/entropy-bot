@@ -41,6 +41,7 @@ import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SwordItem;
 import io.github.mojolowjo.entropybot.threat.FightOrFlee;
+import io.github.mojolowjo.entropybot.threat.DeadEnd;
 import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
 import org.slf4j.Logger;
 
@@ -335,6 +336,7 @@ public final class Reflexes {
             if (reflex != Reflex.NONE) settle("left the world");
             return;
         }
+        io.github.mojolowjo.entropybot.threat.HitWatch.INSTANCE.observe(p);     // 0.24.4 damage log
         if (p.isDeadOrDying()) {
             death(mc, p);
             return;
@@ -736,6 +738,7 @@ public final class Reflexes {
             FightOrFlee.Result v;
             try {
                 v = assess(mc, p, hurt);
+                v = FightOrFlee.holdIfDeadEnd(v, ThreatRuntime.INSTANCE.deadEnd(p, t.e));     // 0.24.4
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] threat: fight-or-flee failed, fighting as before: {}", e.toString());
                 fight(mc, p, t);
@@ -745,6 +748,18 @@ public final class Reflexes {
             // committed: keep fighting while not losing (the lit-spot walk is only for the start)
             if (fighting && verdict == FightOrFlee.Verdict.LIT) verdict = FightOrFlee.Verdict.FIGHT;
             if (!fighting || verdict != FightOrFlee.Verdict.FIGHT) ThreatRuntime.INSTANCE.verdict(t.id + ": " + v.why());
+            if (verdict == FightOrFlee.Verdict.HOLD) {
+                // 0.24.4: a dead end behind: step to the corridor mouth (one mob at a time) and fight there
+                DeadEnd.Check d = fighting ? null : ThreatRuntime.INSTANCE.deadEnd(p, t.e);
+                int[] m = d == null ? null : d.mouth();
+                int far = m == null ? 0 : Math.abs(m[0] - p.getBlockX()) + Math.abs(m[2] - p.getBlockZ());
+                if (far > 0 && far <= 6) {
+                    startLitRetreat(mc, p, t, new int[]{m[0], m[1], m[2], far}, v.why());
+                    return;
+                }
+                fight(mc, p, t);
+                return;
+            }
             if (verdict == FightOrFlee.Verdict.HOME) {
                 retreatWhy = v.why();
                 startRetreat(mc, p, t);

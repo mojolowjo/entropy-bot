@@ -152,7 +152,7 @@ public final class RestoreLive {
         Long esc;
         synchronized (expected) { esc = expected.remove(key); }
         if (esc != null && esc == j.id) reason = Ledger.ESCAPE;
-        else if (pathJob == j.id && !pathTargets.contains(id)) reason = Ledger.PATH;
+        else if (pathJob == j.id && !pathTargets.contains(id) && !purpose(id)) reason = Ledger.PATH;
         else return;                                         // the job's purpose (or no incidental context)
         // V1a: the ledger is off inside a destroy area (AreaTypeRules.restore)
         if (!io.github.mojolowjo.entropybot.guard.AreaTypeRules.restore(Guard.INSTANCE.core.basePolicy().typeAt(dim, pos.getX(), pos.getY(), pos.getZ()))) return;
@@ -199,6 +199,12 @@ public final class RestoreLive {
             changed();
             LOG.info("[entropybot] restore: {} blocks noted as {}", n, why);
         }
+    }
+
+    /** 0.24.4: a block of the gathered terrain family (RestoreRules.purposeBreak) is the job's purpose. */
+    private boolean purpose(String id) {
+        for (String t : pathTargets) if (io.github.mojolowjo.entropybot.restore.RestoreRules.purposeBreak(t, id)) return true;
+        return false;
     }
 
     /** "mine ... dig": while this job runs, every block but the target that Baritone breaks is a path break. */

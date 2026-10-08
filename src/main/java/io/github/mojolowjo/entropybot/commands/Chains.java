@@ -600,7 +600,8 @@ public final class Chains {
         boolean off = mem.has("deathPolicy") && !mem.get("deathPolicy").getAsBoolean();
         JsonObject p = obj(mem, "parked");
         return n + " death" + (n == 1 ? "" : "s") + " in the last hour; fetching my corpse after a death is " + (off ? "OFF" : "on")
-                + (p != null ? "; PARKED (" + str(p, "why", "?") + ") - resume" : "");
+                + (p != null ? "; PARKED (" + str(p, "why", "?") + ") - resume" : "")
+                + io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.deathText(java.time.ZoneId.systemDefault());     // 0.24.4
     }
 
     // ---- rules ----

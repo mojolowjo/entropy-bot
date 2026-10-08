@@ -495,6 +495,20 @@ public final class Storage {
         if (d == null) return "I haven't died yet";
         if (d.has("dim") && !d.get("dim").isJsonNull() && !d.get("dim").getAsString().equals(dim())) return "I died in " + d.get("dim").getAsString();
         long t = d.has("time") ? d.get("time").getAsLong() : System.currentTimeMillis();
+        // 0.24.4: a corpse at the bottom of a sheer shaft (more than 3 below its rim): a staircase down first, then this again
+        try {
+            int[] c = Jobs.pos(d);
+            int[] rim = c == null ? null : StairPlan.shaft(Commands.cells(p.level()), c[0], c[1], c[2]);
+            if (rim != null && p.getBlockY() > c[1] + StairPlan.SHAFT_DROP) {
+                if (rim[5] > StairPlan.MAX) return "error: my corpse is " + rim[5] + " blocks down a shaft at " + c[0] + " " + c[1] + " " + c[2] + " - more than " + StairPlan.MAX + "; dig stairs in parts";
+                if (commands.chainsRef().running()) return "busy: " + commands.chainsRef().chainStatus() + " (my corpse is down a shaft: stop first, then death)";
+                String text = String.join(" then ", StairPlan.down(rim, c[0], c[1], c[2])) + " then death";
+                String r = commands.chainsRef().startChain(commands.owner(), "death", text, 1);
+                return "my corpse is " + rim[5] + " blocks down a shaft: digging stairs down from " + rim[0] + " " + rim[1] + " " + rim[2] + " - " + r;
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] death: shaft check failed: {}", e.toString());
+        }
         return startSeq("going back to where I died (" + Texts.ago(t, System.currentTimeMillis()) + ")", List.of(Step.walk(Jobs.pos(d), true), new Step("loot")), "always");
     }
 

@@ -18,7 +18,7 @@ public final class FightOrFlee {
     private FightOrFlee() {}
 
     /** 0.24.1: SHELTER = fliers/ranged at good health: to the nearest lit spot, the job kept; HOME never sends /home by itself (Reflexes: health under 6 and server commands on). */
-    public enum Verdict { FIGHT, LIT, SHELTER, HOME }
+    public enum Verdict { FIGHT, LIT, SHELTER, HOME, HOLD }
 
     public record Foe(String kind, double dist, boolean creeper) {}
 
@@ -42,6 +42,23 @@ public final class FightOrFlee {
     static final double SWING_S = 0.65;        // a sword's cooldown (12.5 ticks)
     static final double HIT_EVERY_S = 1.0;     // a melee mob's hit interval
 
+    static String basisText(java.util.Map<String, String> b) {
+        java.util.List<String> l = new java.util.ArrayList<>();
+        b.forEach((k, v) -> l.add(k + " " + v));
+        return String.join(", ", l);
+    }
+
+    /**
+     * 0.24.4 dead-end rule: a retreat (HOME, LIT, SHELTER) into a dead end becomes HOLD: stand at the corridor mouth (a
+     * one-wide cell, one mob at a time) and fight. FIGHT and a missing check stay as they are.
+     */
+    public static Result holdIfDeadEnd(Result r, DeadEnd.Check d) {
+        if (r == null || d == null || !d.deadEnd() || r.verdict() == Verdict.FIGHT || r.verdict() == Verdict.HOLD) return r;
+        String at = d.mouth() == null ? "here" : d.mouth()[0] + " " + d.mouth()[1] + " " + d.mouth()[2];
+        return new Result(Verdict.HOLD, r.margin(), r.loss(), "hold the corridor mouth at " + at + ": a dead end behind me (" + d.cells()
+                + " free cells within " + DeadEnd.RANGE + ", under " + DeadEnd.MIN_CELLS + "), instead of: " + r.why());
+    }
+
     /** Damage after armour (vanilla, no toughness). */
     static double taken(double d, int armor) {
         double a = Math.min(20, Math.max(armor / 5.0, armor - d / 2.0));
@@ -60,7 +77,10 @@ public final class FightOrFlee {
     /** 0.23.2: sprint whenever a retreat moves (vanilla needs food above 6). */
     public static boolean sprint(boolean moving, int food) { return moving && food > 6; }
 
-    public static Result assess(Me me, List<Foe> foes) {
+    public static Result assess(Me me, List<Foe> foes) { return assess(me, foes, MobDamage.INSTANCE); }
+
+    /** 0.24.4: with the measured damage per hit (after armour) where a kind has 3+ samples, else the hand table. */
+    public static Result assess(Me me, List<Foe> foes, MobDamage seen) {
         if (foes.isEmpty()) return new Result(Verdict.FIGHT, Double.NaN, 0, "nothing counts");
         if (me.health() < me.retreatAt())
             return new Result(Verdict.HOME, Double.NaN, Double.NaN, "retreat home: health " + ThreatRules.fmt(Math.round(me.health())) + " below " + ThreatRules.fmt(me.retreatAt()));
@@ -73,12 +93,22 @@ public final class FightOrFlee {
         boolean creeper = false;
         double[] rate = new double[foes.size()], kill = new double[foes.size()];
         double band = 1.25;
+        java.util.LinkedHashMap<String, String> basis = new java.util.LinkedHashMap<>();
         for (int i = 0; i < foes.size(); i++) {
             Foe f = foes.get(i);
             creeper |= f.creeper();
             double[] m = MOBS.get(ThreatRules.path(f.kind()));
-            if (m == null) { m = new double[]{5, 20}; band = 2.5; }
-            rate[i] = taken(m[0], me.armor()) / HIT_EVERY_S;
+            double obs = seen == null ? Double.NaN : seen.observed(f.kind());
+            if (!Double.isNaN(obs)) {
+                if (m == null) m = new double[]{obs, 20};
+                rate[i] = obs / HIT_EVERY_S;
+                double[] st = seen.get(f.kind());
+                basis.put(ThreatRules.path(f.kind()), "observed " + ThreatRules.fmt(Math.round(obs * 10) / 10.0) + "/hit (n=" + (long) st[1] + ")");
+            } else {
+                if (m == null) { m = new double[]{5, 20}; band = 2.5; }
+                rate[i] = taken(m[0], me.armor()) / HIT_EVERY_S;
+                basis.put(ThreatRules.path(f.kind()), "assumed " + ThreatRules.fmt(Math.round(taken(m[0], me.armor()) * 10) / 10.0) + "/hit");
+            }
             kill[i] = Math.ceil(m[1] / Math.max(1, me.weaponHit())) * (me.weaponHit() <= 1 ? 0.25 : SWING_S);
         }
         if (creeper && foes.size() > 1) return new Result(Verdict.HOME, Double.NaN, Double.NaN, "a creeper in a group of " + foes.size());
@@ -96,7 +126,7 @@ public final class FightOrFlee {
         double margin = me.health() - me.retreatAt() - high;
         double buffer = Math.max(4, 0.2 * me.maxHealth());
         String num = "margin " + ThreatRules.fmt(Math.round(margin * 10) / 10.0) + " (health " + ThreatRules.fmt(Math.round(me.health()))
-                + ", expect to lose up to " + ThreatRules.fmt(Math.round(high * 10) / 10.0) + " to " + foes.size() + " mob" + (foes.size() == 1 ? "" : "s") + ")";
+                + ", expect to lose up to " + ThreatRules.fmt(Math.round(high * 10) / 10.0) + " to " + foes.size() + " mob" + (foes.size() == 1 ? "" : "s") + "; " + basisText(basis) + ")";
         if (margin >= buffer) return new Result(Verdict.FIGHT, margin, high, "fight: " + num);
         if (noWalker) {
             // already lit here or at the spot: stay and hit them when they dive (a shelter walk of 0 blocks looped live)

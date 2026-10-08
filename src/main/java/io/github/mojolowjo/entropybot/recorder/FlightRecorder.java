@@ -1,5 +1,8 @@
 package io.github.mojolowjo.entropybot.recorder;
 
+import io.github.mojolowjo.entropybot.threat.HitLog;
+import io.github.mojolowjo.entropybot.threat.HitWatch;
+
 import io.github.mojolowjo.entropybot.summary.DaySummary;
 
 import com.google.gson.JsonElement;
@@ -230,6 +233,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         }
         int[] me = {p.getBlockX(), p.getBlockY(), p.getBlockZ()};
         // a death (with or without a job running)
+        HitWatch.INSTANCE.observe(p);     // 0.24.4: the killing blow is in the list
         boolean dead = p.isDeadOrDying();
         if (dead && !wasDead) {
             note(p, dim, now, "died");
@@ -592,11 +596,12 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
             if (d > half && d <= 64) grabs.put("around " + target[0] + " " + target[1] + " " + target[2],
                     Grab.box(level, target[0] - half, target[1] - half, target[2] - half, target[0] + half, target[1] + half, target[2] + half));
         }
-        if (!submit(() -> writeIncident(now, reason, job, dim, me, target, half, grabs))) return null;
+        String hits = HitLog.text(HitLog.INSTANCE.last(HitLog.DEATH_HITS), zone);
+        if (!submit(() -> writeIncident(now, reason, job, dim, me, target, half, grabs, hits))) return null;
         return me;
     }
 
-    private void writeIncident(long now, String reason, String job, String dim, int[] me, int[] target, int half, Map<String, Grab> grabs) {
+    private void writeIncident(long now, String reason, String job, String dim, int[] me, int[] target, int half, Map<String, Grab> grabs, String hits) {
         List<IncidentText.Box> boxes = new ArrayList<>();
         for (Map.Entry<String, Grab> e : grabs.entrySet()) {
             Grab g = e.getValue();
@@ -609,7 +614,8 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
             for (Change c : store.changes(dim, target[0], target[1], target[2], r, since, 400)) if (!cs.contains(c)) cs.add(c);
             cs.sort(Comparator.comparingLong(Change::atMs).reversed());
         }
-        String text = IncidentText.render(now, reason, job, dim, me, half, boxes, store.trail(since, 600), cs, zone);
+        String text = IncidentText.render(now, reason, job, dim, me, half, boxes, store.trail(since, 600), cs, zone)
+                + "\nhits taken (last " + HitLog.DEATH_HITS + ", oldest first): " + hits + "\n";
         String file = store.writeIncident(now, reason, text);
         if (file != null) {
             store.maintain();

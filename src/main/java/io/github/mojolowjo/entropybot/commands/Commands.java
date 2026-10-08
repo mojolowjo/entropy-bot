@@ -192,6 +192,31 @@ public final class Commands implements Chains.Env {
 
     Chains chainsRef() { return chains; }
 
+    /** 0.24.4: the shaft test over the client level (loaded cells only; an unloaded one counts as not free). */
+    static StairPlan.Cells cells(net.minecraft.world.level.Level level) {
+        return (x, y, z) -> {
+            net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+            if (!level.isLoaded(bp)) return false;
+            return level.getBlockState(bp).getCollisionShape(level, bp).isEmpty();
+        };
+    }
+
+    /** 0.24.4: a goto straight down a vertical hole (drop over 3, the bot at its rim) is refused with the staircase as the next step. */
+    static String shaftRefusal(LocalPlayer p, String rest) {
+        try {
+            String[] w = rest.trim().split("\\s+");
+            if (w.length != 3) return null;
+            int gx = Integer.parseInt(w[0]), gy = Integer.parseInt(w[1]), gz = Integer.parseInt(w[2]);
+            if (p.getBlockY() - gy <= StairPlan.SHAFT_DROP || Math.abs(p.getBlockX() - gx) + Math.abs(p.getBlockZ() - gz) > 6) return null;
+            int[] rim = StairPlan.shaft(cells(p.level()), gx, gy, gz);
+            if (rim == null || p.getBlockY() < rim[1] - 1) return null;
+            return "error: " + gx + " " + gy + " " + gz + " is straight down a shaft (" + rim[5] + " blocks) - I can't climb down or back up a sheer hole; dig a staircase: goto "
+                    + rim[0] + " " + rim[1] + " " + rim[2] + " then dig stairs " + StairPlan.dirName(rim[3], rim[4]) + " " + Math.min(StairPlan.MAX, rim[5]);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** What "restock" tops the bag up to: {id: n} (commands.json "supplies", moved over from memory.json once). */
     Map<String, Integer> suppliesMap() {
         Map<String, Integer> out = new LinkedHashMap<>();
@@ -1187,6 +1212,8 @@ public final class Commands implements Chains.Env {
                 // S1: "goto me" (or the sender's own name) = "come" from that sender
                 if (Texts.gotoMeansCome(rest, from)) return modJob("come", "", from, player);
                 if (!rest.matches("^-?\\d+ -?\\d+ -?\\d+$") && !rest.matches("^-?\\d+ -?\\d+$")) return "usage: goto x y z  (or goto x z)";
+                String shaftNo = shaftRefusal(player, rest);     // 0.24.4
+                if (shaftNo != null) return shaftNo;
                 return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));
             }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }

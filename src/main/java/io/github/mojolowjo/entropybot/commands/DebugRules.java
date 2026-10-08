@@ -36,7 +36,7 @@ public final class DebugRules {
     public static final String PM_REFUSAL = "debug only from the laptop or the dashboard (bridge.ps1 do debug ..., or the dashboard's command box)";
 
     public static final String LIST = "debug (read-only): gui | inv | block x y z | blocks x1 y1 z1 x2 y2 z2 [at <time>] (" + MAX_CELLS
-            + " blocks at most) | baritone | events [n] | guard x y z | changes x y z [r] [since <time>] | trail [minutes] | incident [n] | mobs [radius]"
+            + " blocks at most) | baritone | events [n] | guard x y z | changes x y z [r] [since <time>] | trail [minutes] | incident [n] | mobs [radius] | hits [n]"
             + " - times: HH:mm (today), -10m, -2h, or epoch ms";
 
     /** Null when this caller may use debug, else the refusal. */

@@ -23,6 +23,7 @@ public final class DaySummary {
     private static final Pattern FAIL = Pattern.compile("(?i)^(error|failed|stopped|couldn't|can't|blocked)|\\berror:");
 
     private final Map<String, Integer> gathered = new LinkedHashMap<>(), deposited = new LinkedHashMap<>(), picks = new LinkedHashMap<>();
+    private final Map<String, Double> damage = new LinkedHashMap<>();
     private int jobsDone, jobsFailed, deaths, needsMet, needsUnmet, restored;
     private double walked;
     private long since;
@@ -31,6 +32,7 @@ public final class DaySummary {
         gathered.clear();
         deposited.clear();
         picks.clear();
+        damage.clear();
         jobsDone = jobsFailed = deaths = needsMet = needsUnmet = restored = 0;
         walked = 0;
         since = now;
@@ -46,6 +48,28 @@ public final class DaySummary {
     }
 
     public synchronized void death() { deaths++; }
+
+    /** 0.24.4: a hit the bot took (the damage log), by source ("zombie", "fall"). */
+    public synchronized void damage(String source, double amount) {
+        if (source != null && amount > 0) damage.merge(source, amount, Double::sum);
+    }
+
+    /** "21 (zombie 14, fall 7)" or "0". */
+    synchronized String damageText() {
+        double sum = 0;
+        for (double v : damage.values()) sum += v;
+        if (damage.isEmpty()) return "0";
+        List<Map.Entry<String, Double>> l = new ArrayList<>(damage.entrySet());
+        l.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < Math.min(4, l.size()); i++) out.add(l.get(i).getKey() + " " + r1(l.get(i).getValue()));
+        return r1(sum) + " (" + String.join(", ", out) + ")";
+    }
+
+    static String r1(double d) {
+        double r = Math.round(d * 10) / 10.0;
+        return r == Math.rint(r) ? String.valueOf((long) r) : String.valueOf(r);
+    }
 
     /** 0.24.3: deaths so far today (the night safety score). */
     public synchronized int deaths() { return deaths; }
@@ -110,6 +134,7 @@ public final class DaySummary {
         b.append("; needs ").append(needsMet).append(" met, ").append(needsUnmet).append(" unmet");
         b.append("; put back ").append(restored).append(" blocks");
         b.append("; walked ").append(Math.round(walked)).append(" blocks");
+        b.append("; damage taken ").append(damageText());
         List<Map.Entry<String, Integer>> l = new ArrayList<>(picks.entrySet());
         l.sort((a, c) -> c.getValue() - a.getValue());
         List<String> tp = new ArrayList<>();
@@ -139,6 +164,9 @@ public final class DaySummary {
         JsonObject p = new JsonObject();
         picks.forEach(p::addProperty);
         o.add("picks", p);
+        JsonObject dm = new JsonObject();
+        damage.forEach((k, v) -> dm.addProperty(k, Math.round(v * 10) / 10.0));
+        o.add("damage", dm);
         o.addProperty("text", text(day));
         return o;
     }

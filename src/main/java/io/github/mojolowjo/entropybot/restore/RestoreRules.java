@@ -54,6 +54,23 @@ public final class RestoreRules {
         return out;
     }
 
+    /** 0.24.4: stone a stone tool or a furnace takes (the stone_tool_materials family) and plain dirt. */
+    static final Set<String> TOOL_STONE = Set.of("stone", "cobblestone", "deepslate", "cobbled_deepslate", "blackstone");
+    static final Set<String> DIRT = Set.of("dirt", "grass_block", "coarse_dirt", "rooted_dirt", "podzol", "mycelium");
+
+    /**
+     * 0.24.4 restore keeps purpose blocks: while a job gathers a terrain block (target: cobblestone for a pickaxe, dirt),
+     * a broken block of the same family is the job's purpose, never re-placed (live: the ledger put back the cobblestone
+     * the bot had dug to craft a pickaxe). An ore target keeps every other break a path break.
+     */
+    public static boolean purposeBreak(String targetId, String brokenId) {
+        if (targetId == null || brokenId == null) return false;
+        String t = shortId(targetId), b = shortId(brokenId);
+        if (t.equals(b)) return true;
+        if (!natural(targetId) || !natural(brokenId)) return false;
+        return (TOOL_STONE.contains(t) && TOOL_STONE.contains(b)) || (DIRT.contains(t) && DIRT.contains(b));
+    }
+
     /** Why a broken block is never put back: "an ore" or "not terrain"; null when it is restorable. */
     public static String whyNot(String blockId, boolean ore) {
         if (ore || shortId(blockId).endsWith("_ore") || shortId(blockId).equals("ancient_debris")) return "an ore";

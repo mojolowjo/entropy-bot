@@ -131,8 +131,22 @@ final class DigCommands {
      * mines them; "force" building blocks too; B7e F: "floor" fills the layer under it afterwards, "junk drop" throws
      * plain junk away when the bag is full instead of a base trip).
      */
+    /** 0.24.4 "dig stairs <dir> <n>": a 1-wide walkable staircase down from where I stand (StairPlan), run as a chain. */
+    static String stairs(Commands c, LocalPlayer p, String rest, String from) {
+        String[] w = rest.toLowerCase().split("\\s+");
+        int[] d = w.length >= 1 ? StairPlan.dir(w[0]) : null;
+        if (d == null || w.length < 2 || !w[1].matches("\\d+")) return "usage: dig stairs north|south|east|west <n> (n steps down, at most " + StairPlan.MAX + ")";
+        int n = Integer.parseInt(w[1]);
+        if (n < 1 || n > StairPlan.MAX) return "error: dig stairs takes 1 to " + StairPlan.MAX + " steps (a longer one: run it again from the bottom)";
+        int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
+        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+        String text = String.join(" then ", StairPlan.steps(x, y, z, d[0], d[1], n));
+        return c.chainsRef().startChain(from, "dig stairs", text, 1);
+    }
+
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
+        if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);

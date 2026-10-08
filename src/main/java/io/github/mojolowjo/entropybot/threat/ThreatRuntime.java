@@ -312,6 +312,18 @@ public final class ThreatRuntime {
         }
     }
 
+    /** 0.24.4 dead-end rule: the check for the bot against this mob on the fresh grid, else null (no rule). Never throws. */
+    public DeadEnd.Check deadEnd(LocalPlayer p, Entity mob) {
+        try {
+            ReachGrid g = grid();
+            if (g == null || mob == null) return null;
+            return DeadEnd.check(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mob.getBlockX(), mob.getBlockY(), mob.getBlockZ());
+        } catch (RuntimeException e) {
+            error("dead end", e);
+            return null;
+        }
+    }
+
     public void verdict(String line) {
         verdictLine = line;
         verdictAt = System.currentTimeMillis();
