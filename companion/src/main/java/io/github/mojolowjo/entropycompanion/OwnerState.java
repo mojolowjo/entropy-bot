@@ -29,8 +29,14 @@ public final class OwnerState {
     private long lastInvSent = Long.MIN_VALUE / 2;
     private boolean everSent;
 
+    /** 0.3.1 (assist): the owner's last broken and placed block, what is under the crosshair, the action guess. */
+    public record Extra(OwnerActions.Ev broke, OwnerActions.Ev placed, OwnerActions.Target target, String action) {}
+
     /** The body for the state at time now, or null when a value is unusable. Decides whether inv goes along. */
-    public String json(State s, long now) {
+    public String json(State s, long now) { return json(s, null, now); }
+
+    /** The same with 0.3.1's fields: broke {id,x,y,z,age}, placed {id,x,y,z,age,left}, target {id,x,y,z,kind}, action. */
+    public String json(State s, Extra x, long now) {
         String v1 = OwnerPayload.json(new OwnerPayload.Snapshot(s.name(), s.x(), s.y(), s.z(), s.dim()), now);
         if (v1 == null) return null;
         JsonObject o = com.google.gson.JsonParser.parseString(v1).getAsJsonObject();
@@ -55,6 +61,12 @@ public final class OwnerState {
         counts.addProperty("food", food);
         counts.addProperty("blocks", blocks);
         o.add("counts", counts);
+        if (x != null) {
+            if (x.broke() != null) o.add("broke", x.broke().json(now, null));
+            if (x.placed() != null) o.add("placed", x.placed().json(now, sum.getOrDefault(x.placed().id(), 0)));
+            if (x.target() != null) o.add("target", x.target().json());
+            if (x.action() != null) o.addProperty("action", x.action());
+        }
         int hash = sum.hashCode();
         if ((!everSent || hash != lastInvHash) && now - lastInvSent >= INV_GAP_MS) {
             JsonArray inv = new JsonArray();

@@ -178,6 +178,7 @@ public final class MuleRules {
     public static boolean carryTakes(Seen s, List<String> wanted) {
         if (s.dist() > CARRY_RADIUS || s.item() == null) return false;
         for (String w : wanted) {
+            if (w.equals("all")) return true;                // 0.24.2: carry all (assist's idle mode)
             Predicate<String> m = GuiCore.nameMatcher(w);
             if (m.test(s.item())) return true;
         }

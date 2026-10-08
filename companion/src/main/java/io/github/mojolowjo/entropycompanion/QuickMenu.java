@@ -40,6 +40,8 @@ final class QuickMenu extends Screen {
         entries.put("eat", "eat");
         entries.put("escort me", "escort");                  // 0.2.2 (V1b): escort until dismiss
         entries.put("dismiss", "dismiss");
+        entries.put("assist me", "assist");                  // 0.3.1: help with what I'm doing
+        entries.put("assist off", "assist off");
         entries.put("cut 16 logs", "cut 16 logs");
         entries.put("done (free time)", "done");
         entries.put("fetch food", "fetch food 8");

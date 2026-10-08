@@ -87,7 +87,7 @@ public final class Commands implements Chains.Env {
 
     /** V1b: something holds the bot in place for good (an escort, defend, guard): the queue waits. */
     boolean heldInPlace() {
-        return core.reflexes.escort.active() || vocab.hold != null;
+        return core.reflexes.escort.active() || vocab.hold != null || assist.on();     // 0.24.2: assist holds it too
     }
 
     /** V1b: the point-of-interest kinds find walks for (the POI scanner's own words, plus cave). */
@@ -170,6 +170,10 @@ public final class Commands implements Chains.Env {
     final Gathering gathering;
     /** C6: hold this, give, carry, unload, fetch. */
     final Mule mule;
+    /** 0.24.2: assist (help the owner with what they are doing). */
+    final Assist assist = new Assist(this);
+
+    Core core() { return core; }
 
     /** B7c: craft/smelt/get/need/recipe/kit/supplies/restock, farm and compact. */
     final Crafting crafting;
@@ -671,6 +675,11 @@ public final class Commands implements Chains.Env {
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] escort: {}", e.toString());
                 }
+                try {
+                    assist.tick(player);                     // 0.24.2
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] assist: {}", e.toString());
+                }
             }
             if (tick % 20 == 13 && vocab.hold != null) {
                 try {
@@ -921,7 +930,15 @@ public final class Commands implements Chains.Env {
             return Reply.now(vocab.defend(from, player));
         }
         if (verb.equals("defend")) return Reply.now(setDefence(rest));
-        if (verb.equals("dismiss")) return Reply.now(vocab.dismiss(from, player));
+        if (verb.equals("dismiss")) {
+            if (assist.on() && isOwner) {                                            // 0.24.2: dismiss ends assist too
+                assist.end(player);
+                String d = vocab.dismiss(from, player);
+                return Reply.now("ok: assist ended" + (d.startsWith("ok: nothing") ? "" : "; " + d.replaceFirst("^ok: ", "")));
+            }
+            return Reply.now(vocab.dismiss(from, player));
+        }
+        if (verb.equals("assist")) return Reply.now(assist.command(from, rest, player));     // 0.24.2
         if (verb.equals("guard") && !io.github.mojolowjo.entropybot.vocab.HoldRules.fenceForm(rest)) {     // V1b: guard <area|place|marker>
             vocab.endHold("a new order");
             if (jobs.running()) jobs.finish("stopped: guard");
@@ -937,6 +954,8 @@ public final class Commands implements Chains.Env {
             if (t.equals("on") || t.equals("off")) return Reply.now("that is now brain " + t + ": " + brainRuntime.brain.command(t));
             return Reply.now("the autominer is the brain's idle list now: " + brainRuntime.brain.status());
         }
+        String copyAsAssist = verb.equals("brain") ? io.github.mojolowjo.entropybot.assist.AssistRules.fromBrainCopy(rest) : null;
+        if (copyAsAssist != null) return Reply.now(assist.command(from, copyAsAssist, player));     // 0.24.2: brain copy = assist
         if (verb.equals("brain")) return Reply.now(brainRuntime.brain.command(rest));
         if (verb.equals("idle")) return Reply.now(brainRuntime.brain.idle(rest));
         if (verb.equals("why") && rest.trim().equalsIgnoreCase("threats")) return Reply.now(io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.why());   // B2
@@ -1497,6 +1516,7 @@ public final class Commands implements Chains.Env {
         jobs.followWatch = null;
         jobs.followFix = null;
         core.reflexes.escort.stop("stopped by \"stop\"");     // C7
+        assist.forget();                                         // 0.24.2
         vocab.endHold("stop");                                   // V1b
         core.reflexes.stopAttack();
         if (jobs.running()) jobs.finish("stopped");
@@ -1550,7 +1570,7 @@ public final class Commands implements Chains.Env {
     }
 
     /** Ends the follow the escort started (only that one). */
-    private void endEscortFollow() {
+    void endEscortFollow() {
         // a follow job is "done" at once (it never arrives); Baritone's follow process (or the companion walk) carries it
         if (jobs.job == null || jobs.job.label == null || !jobs.job.label.startsWith("following") || (jobs.running() && !jobs.walking())) return;
         jobs.followWatch = null;
@@ -1559,6 +1579,8 @@ public final class Commands implements Chains.Env {
         IBaritone mb = Jobs.baritone();
         if (mb != null) io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(mb);
     }
+
+    boolean stillFollowingPub() { return stillFollowing(); }
 
     /** Baritone's follow is still on, or the companion-position walk is. */
     private boolean stillFollowing() {
