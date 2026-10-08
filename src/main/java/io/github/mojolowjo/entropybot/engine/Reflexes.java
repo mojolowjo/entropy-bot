@@ -242,6 +242,9 @@ public final class Reflexes {
 
     public Reflex reflex() { return reflex; }
 
+    /** 0.24.3: a forced attack (attack / hunt) is still on. */
+    public boolean forcing() { return forcedId >= 0; }
+
     /** 0.24.1: a retreat to a lit spot (shelter / LIT verdict): the job is held, not stopped. */
     public boolean sheltering() { return reflex == Reflex.RETREATING && retreatLit; }
 

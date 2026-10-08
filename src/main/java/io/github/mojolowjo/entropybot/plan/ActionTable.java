@@ -74,6 +74,7 @@ public final class ActionTable {
         v("a:light", "light");
         v("a:sleep", "sleep");
         v("a:build", "shelter");
+        v("a:gather", "hunt");
         v("a:deposit", "deposit", "unload");
         v("a:attack", "attack");
         v("a:eat", "eat");
@@ -88,7 +89,7 @@ public final class ActionTable {
         v("n:a whole job of its own (it plans itself)", "restock", "bootstrap", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
         v("n:moves items away or to a player (never a step toward having them)", "give", "drop", "wear");
         v("n:recovery after a death", "death", "corpse", "resume");
-        v("n:chat, waiting or debugging", "night", "say", "twerk", "spawn", "wait", "stop", "debug");
+        v("n:chat, waiting or debugging", "night", "hunting", "say", "twerk", "spawn", "wait", "stop", "debug");
     }
 
     public static Map<String, ActionSpec> actions() { return java.util.Collections.unmodifiableMap(ACTIONS); }

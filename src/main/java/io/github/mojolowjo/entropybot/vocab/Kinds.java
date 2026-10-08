@@ -18,7 +18,7 @@ import java.util.function.Predicate;
 public final class Kinds {
     private Kinds() {}
 
-    public static final List<String> KINDS = List.of("logs", "wood", "ores", "stone", "food", "seeds");
+    public static final List<String> KINDS = List.of("logs", "wood", "ores", "stone", "food", "seeds", "animals");
 
     static final Set<String> STONE = Set.of("minecraft:stone", "minecraft:cobblestone", "minecraft:deepslate", "minecraft:cobbled_deepslate",
             "minecraft:andesite", "minecraft:diorite", "minecraft:granite", "minecraft:tuff", "minecraft:blackstone");
@@ -43,6 +43,7 @@ public final class Kinds {
             case "stone": return STONE.contains(id);
             case "food": return isFood != null && isFood.test(id);
             case "seeds": return path.endsWith("_seeds");
+            case "animals": return HuntRules.ANIMALS.contains(id);
             default: return false;
         }
     }
@@ -56,6 +57,7 @@ public final class Kinds {
     public static List<String> expand(String kind, Collection<String> ids, Predicate<String> isFood, Rule rule) {
         String k = kind.toLowerCase(Locale.ROOT);
         TreeSet<String> out = new TreeSet<>();
+        if (k.equals("animals")) out.addAll(HuntRules.ANIMALS);             // entities, not items: their own list
         for (String id : ids) if (byName(k, id, isFood)) out.add(id);
         if (rule != null) {
             out.addAll(rule.include());
@@ -130,6 +132,11 @@ public final class Kinds {
      * need their crop in stock (wheat for bread). Null farmKnown counts as true.
      */
     public static String pickFood(List<String> ids, Map<String, Integer> stock, Boolean farmKnown, Predicate<String> resolves) {
+        return pickFood(ids, stock, farmKnown, false, resolves);
+    }
+
+    /** As above; hunting: hunting is on, so cooked beef (hunt cows, cook) comes after the crops and before modded foods. */
+    public static String pickFood(List<String> ids, Map<String, Integer> stock, Boolean farmKnown, boolean hunting, Predicate<String> resolves) {
         Set<String> allowed = new TreeSet<>(ids);
         allowed.removeAll(NEVER_FOOD);
         String best = null;
@@ -150,6 +157,8 @@ public final class Kinds {
             }
             return id;
         }
+        if (hunting) for (String id : List.of("minecraft:cooked_beef", "minecraft:cooked_porkchop", "minecraft:cooked_mutton", "minecraft:cooked_chicken"))
+            if (allowed.contains(id)) return id;
         for (String id : allowed) {
             if (id.startsWith("minecraft:")) continue;
             if (resolves != null && resolves.test(id)) return id;

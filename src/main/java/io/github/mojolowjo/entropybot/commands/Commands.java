@@ -163,11 +163,14 @@ public final class Commands implements Chains.Env {
         this.crafting = new Crafting(core, this, jobs, storage);
         storage.crafting = crafting;
         this.gathering = new Gathering(core, this);
+        this.hunting = new Hunting(this);
         this.mule = new Mule(core, this);
     }
 
     /** P2: "gather &lt;item&gt; [n]" - runs other verbs as its steps. */
     final Gathering gathering;
+    /** 0.24.3: hunting on|off and hunt <n> [animal]. */
+    final Hunting hunting;
     /** 0.24.3: the join/respawn-outside-the-areas check, and where it respawned (no build hints there). */
     final io.github.mojolowjo.entropybot.camp.RespawnRule respawn = new io.github.mojolowjo.entropybot.camp.RespawnRule();
     /** C6: hold this, give, carry, unload, fetch. */
@@ -602,6 +605,12 @@ public final class Commands implements Chains.Env {
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] gather: {}", e.toString());
                     gathering.stop("error: " + e);
+                }
+                try {
+                    hunting.tick(player);                      // 0.24.3: the next animal
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] hunt: {}", e.toString());
+                    hunting.stop("error: " + e);
                 }
                 try {
                     mule.tick(player);                         // C6: hold this, give, carry, unload, fetch
@@ -1097,6 +1106,8 @@ public final class Commands implements Chains.Env {
         }
         // P2: gather (its status and sources answer at once; a running gather owns the bot between its steps too)
         if (verb.equals("gather")) return gathering.command(from, rest, raw, l, player);
+        if (verb.equals("hunt")) return hunting.command(from, rest, raw, l, player);
+        if (verb.equals("hunting")) return Reply.now(hunting.setting(rest));
         if (verb.equals("light")) {                                                  // C4: torches on a grid
             if (!internal && gathering.running()) return Reply.now("busy: " + gathering.statusText() + " (pm \"stop\" first)");
             return camp.light(player, rest, from, internal, raw, l);
@@ -1534,6 +1545,7 @@ public final class Commands implements Chains.Env {
         lastStop = System.currentTimeMillis();         // package D: no furnace pickup for a while after "stop"
         String routine = chains.clear();
         String gathered = gathering.stop("stopped by \"stop\"");
+        hunting.stop("stopped by \"stop\"");
         if (routine == null && gathered != null) routine = "gather " + gathered;
         String muled = mule.stop("stopped by \"stop\"");
         if (routine == null && muled != null) routine = muled;
@@ -1778,6 +1790,7 @@ public final class Commands implements Chains.Env {
         chains.noteDeath();
         jobs.finish("stopped: the bot died");
         mule.stop("the bot died");
+        hunting.stop("the bot died");
         gathering.stop("the bot died");                    // P2: a chain set aside by the death runs the gather again after the corpse
         JsonObject d = new JsonObject();
         d.addProperty("x", (int) Math.floor(p.getX()));

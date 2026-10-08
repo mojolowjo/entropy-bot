@@ -165,6 +165,6 @@ class V1bOneTest {
         assertEquals("nothing", GameStage.of(Map.of("minecraft:iron_pickaxe", 0)), "a count of 0 isn't had");
         assertEquals(" | deaths 2 in the last hour | stage stone", GameStage.statusPart(2, "stone"));
         assertEquals(" | deaths 0 in the last hour", GameStage.statusPart(0, null));
-        assertEquals(new TreeSet<>(Kinds.KINDS), new TreeSet<>(List.of("logs", "wood", "ores", "stone", "food", "seeds")));
+        assertEquals(new TreeSet<>(Kinds.KINDS), new TreeSet<>(List.of("logs", "wood", "ores", "stone", "food", "seeds", "animals")));
     }
 }

@@ -303,6 +303,8 @@ final class Gathering {
 
     Map<String, String> overrides() {
         Map<String, String> out = new LinkedHashMap<>();
+        // 0.24.3: hunting on: raw meat comes from hunt (the owner's own source for an item still wins)
+        if (commands.hunting != null && commands.hunting.on()) for (String raw : io.github.mojolowjo.entropybot.vocab.HuntRules.RAW) out.put(raw, io.github.mojolowjo.entropybot.vocab.HuntRules.source(raw));
         JsonObject o = overridesJson(false);
         if (o != null) for (Map.Entry<String, JsonElement> e : o.entrySet()) {
             try {

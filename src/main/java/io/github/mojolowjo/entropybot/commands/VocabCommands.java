@@ -635,7 +635,7 @@ final class VocabCommands {
             final io.github.mojolowjo.entropybot.gather.GatherPlan.World fw = gw;
             boolean farm;
             try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
-            id = Kinds.pickFood(ids, stock, farm, x -> fw != null && io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, 1, fw));
+            id = Kinds.pickFood(ids, stock, farm, c.hunting.on(), x -> fw != null && io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, 1, fw));
             if (id == null) {
                 err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";
                 return null;
