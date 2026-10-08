@@ -495,7 +495,13 @@ final class CampCommands {
     }
 
     String toolsText(LocalPlayer p) {
-        return p == null ? "" : ToolCareRules.text(tools(p)) + "\n" + ArmorCareRules.text(armor(p));
+        return p == null ? "" : ToolCareRules.text(tools(p)) + "\n" + ArmorCareRules.text(armor(p))
+                + "\n" + ArmorCareRules.orderText(ironFirst());
+    }
+
+    /** 0.25.1 gear.ironFirst (a brain setting; defaults until the brain loaded them). */
+    static boolean ironFirst() {
+        try { return io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("gear.ironFirst"); } catch (RuntimeException e) { return true; }
     }
 
     /** Every 100 ticks; at a pause (no job, chain or request, no reflex) a worn or broken tool is replaced. */
@@ -597,7 +603,8 @@ final class CampCommands {
                 if (r.startsWith("ok")) return true;
             }
         }
-        Map<String, String> needs = ArmorCareRules.needs(on, bag);
+        boolean ironFirst = ironFirst();
+        Map<String, String> needs = ArmorCareRules.ordered(ArmorCareRules.needs(on, bag), ironFirst);      // 0.25.1
         careStuck.keySet().removeIf(k -> k.startsWith("armor:") && !needs.containsKey(k.substring(6)));
         long ms = System.currentTimeMillis();
         Set<String> stored = null;
@@ -615,7 +622,7 @@ final class CampCommands {
                     s.items().forEach((k, v) -> h.merge(k, v, Integer::sum));
                 }
             }
-            String cmd = ArmorCareRules.replacement(slot, e.getValue(), stored, have);
+            String cmd = ArmorCareRules.replacement(slot, e.getValue(), stored, ArmorCareRules.spendable(slot, on, have, ironFirst));
             if (cmd == null) {
                 // a worn piece, or one that broke since the last look: a check line; a slot never filled stays quiet
                 if (e.getValue() != null || before.contains(slot)) careStuck.put("armor:" + slot, e.getValue() == null ? slot : e.getValue());

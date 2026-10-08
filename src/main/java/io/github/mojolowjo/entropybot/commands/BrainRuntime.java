@@ -83,15 +83,21 @@ public final class BrainRuntime implements BrainEnv {
      */
     Chains.Reply ownerSupply(String from, String raw) {
         try {
-            if (!brain.on() || c.chains.running() || c.jobs.running()) return null;
+            if (c.chains.running() || c.jobs.running()) return null;
             String v = Texts.verbAndRest(raw)[0];
             if (!v.equals("dig") && !v.equals("mine") && !v.equals("explore")) return null;
+            boolean on = brain.on();
+            // 0.25.1 cave.eatFirst: also with the brain off (the owner's own habit before a cave trip)
+            if (!on && !io.github.mojolowjo.entropybot.brain.PlayRules.caveTrip(raw)) return null;
             BrainState s = sense();
-            SupplyCheck.Supply sup = SupplyCheck.before(raw, s, 0, 0);
-            if (sup == null) return null;
-            String r = c.chains.startChain(from, "supply", sup.chain() + " then " + raw, 1);
-            LOG.info("[entropybot] brain: supply check for {}: {} -> {}", raw, sup.chain(), r);
-            return Chains.Reply.now(r.startsWith("started") ? "ok: " + sup.why() + ", then " + raw : r);
+            SupplyCheck.Supply sup = on ? SupplyCheck.before(raw, s, 0, 0) : null;
+            String eat = io.github.mojolowjo.entropybot.brain.PlayRules.eatFirst(raw, s, io.github.mojolowjo.entropybot.brain.BrainConfig.current());
+            if (sup == null && eat == null) return null;
+            String pre = (sup == null ? "" : sup.chain() + " then ") + (eat == null ? "" : "eat then ");
+            String r = c.chains.startChain(from, "supply", pre + raw, 1);
+            LOG.info("[entropybot] brain: supply check for {}: {}{} -> {}", raw, pre, eat == null ? "" : " (" + eat + ")", r);
+            String why = sup == null ? eat : eat == null ? sup.why() : sup.why() + "; " + eat;
+            return Chains.Reply.now(r.startsWith("started") ? "ok: " + why + ", then " + raw : r);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] brain: supply check: {}", e.toString());
             return null;
@@ -120,12 +126,13 @@ public final class BrainRuntime implements BrainEnv {
         s.food = p.getFoodData().getFoodLevel();
         s.freeSlots = c.freeSlots();
         // the bag: food, torches, pickaxes
-        int food = 0, torches = 0, picks = 0, bestPct = 0, dur = 0;
+        int food = 0, torches = 0, picks = 0, bestPct = 0, dur = 0, wood = 0;
         for (int i = 0; i < 36; i++) {
             ItemStack st = p.getInventory().getItem(i);
             if (st.isEmpty()) continue;
             String id = Commands.itemId(st);
             if (st.has(DataComponents.FOOD)) food += st.getCount();
+            if (id.endsWith("_log") || id.endsWith("_planks") || id.endsWith("_wood") || id.endsWith("_stem")) wood += st.getCount();      // 0.25.1
             if (id.equals("minecraft:torch")) torches += st.getCount();
             if (id.endsWith("_pickaxe")) {
                 picks++;
@@ -135,6 +142,7 @@ public final class BrainRuntime implements BrainEnv {
             }
         }
         s.foodItems = food;
+        s.woodItems = wood;
         s.torches = torches;
         s.pickaxes = picks;
         s.pickPct = bestPct;
@@ -145,9 +153,14 @@ public final class BrainRuntime implements BrainEnv {
         // the stage (the stock view, every 30 s)
         if (stockAt < 0 || s.now - stockAt > 30_000) {
             stockAt = s.now;
-            try { stage = GameStage.of(c.storage.stock(p).totals()); } catch (RuntimeException e) { LOG.warn("[entropybot] brain stage: {}", e.toString()); }
+            try {
+                Map<String, Integer> totals = c.storage.stock(p).totals();
+                stage = GameStage.of(totals);
+                foodStock = edible(totals);          // 0.25.1: bag + storage (the stock view)
+            } catch (RuntimeException e) { LOG.warn("[entropybot] brain stage: {}", e.toString()); }
         }
         s.stage = stage;
+        s.foodStock = foodStock < 0 ? food : Math.max(foodStock, food);
         // danger: the reflexes fight, flee or retreat (the B2 threat test fed them), or one holds the bot
         Reflexes.Reflex r = core.reflexes.reflex();
         s.danger = r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING || r == Reflexes.Reflex.RETREATING;
@@ -243,6 +256,24 @@ public final class BrainRuntime implements BrainEnv {
         if (farm != null) s.upkeep.farm = xyz(farm);
         if (base != null) s.basePos = xyz(base);
         return s;
+    }
+
+    private int foodStock = -1;
+
+    /** 0.25.1: edible items among the stock totals (an item whose default stack has the FOOD component). */
+    static int edible(Map<String, Integer> totals) {
+        int n = 0;
+        for (Map.Entry<String, Integer> e : totals.entrySet()) {
+            try {
+                var rl = net.minecraft.resources.ResourceLocation.tryParse(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey());
+                if (rl == null) continue;
+                var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl);
+                if (item != null && item.getDefaultInstance().has(DataComponents.FOOD)) n += Math.max(0, e.getValue());
+            } catch (RuntimeException ignored) {
+                // an odd id: not food
+            }
+        }
+        return n;
     }
 
     static int[] xyz(JsonObject o) {

@@ -165,7 +165,7 @@ public final class BrainTree {
                                     if (!shelterBand(c) || !surfaceBarred(c) || c.nightDoneHere() || NightSafety.underground(c.running().chain())) return null;
                                     return new Decision("job.dusk", Kind.SWITCH, shelterChain(c), "night", 70, "dusk is near and " + NightSafety.status(c.s(), c.c()));
                                 }).meta("shelter", "night.shelterBelow", "night.duskHours"),
-                                new Action("job.interrupt", "broken tool / hungry / bag full: handle, then resume", BrainTree::interrupt).meta("eat | deposit | craft", "hungryInterrupt", "fullInterrupt", "toolsWornPct"),
+                                new Action("job.interrupt", "broken tool / hungry / bag full: handle, then resume", BrainTree::interrupt).meta("eat | go base then deposit then smelt collect | craft", "hungryInterrupt", "fullInterrupt", "brain.bagFullSlots", "toolsWornPct"),
                                 new Action("job.switch", "outscored by the margin: switch", BrainTree::outscored).meta("", "switchMargin", "floor"),
                                 new Action("job.keep", "keep it", c -> new Decision("job.keep", Kind.KEEP, c.running().chain(), c.running().need(),
                                         c.running().score(), "still on it")).meta("", "switchMargin"))),
@@ -190,7 +190,7 @@ public final class BrainTree {
                 new Action("pick", "the needs: highest score wins", c -> {
                     Needs.Option o = surfaceBarred(c) ? bestUnderground(c) : c.scored().best(c.c().i("floor"));
                     return o == null ? null : new Decision("pick", Kind.START, o.chain(), o.need(), o.score(), o.reason());
-                }).meta("the need's job", "floor"),
+                }).meta("the need's job", "floor", "brain.foodStock", "brain.foodDusk", "cave.eatFirst"),
                 when("idle.near", "stay near you", "not released, the owner online and further than 32",
                         c -> c.s().bound() && BrainState.flat(c.s().botPos, c.s().ownerPos) > c.c().i("nearbyR"),
                         c -> new Decision("idle.near", Kind.START, "come", "near", 0, "staying within " + c.c().i("nearbyR") + " of you (not released: done lets me go)"), "come", "nearbyR"),
@@ -231,6 +231,8 @@ public final class BrainTree {
     static Decision interrupt(Ctx c) {
         String[] m = Interrupts.midJob(c.s(), c.c());
         if (m == null) return null;
+        // 0.25.1: the running job is the bag's own trip (or holds a deposit): no interrupt for a full bag
+        if (m[0].equals("FULL") && (c.running().need().equals("bag") || Interrupts.bagTrip(c.running().chain()))) return null;
         return new Decision("job.interrupt", Kind.SWITCH, m[1] + " then " + c.running().chain(), c.running().need(), c.running().score(), m[2] + ": " + m[1] + ", then back to " + c.running().chain());
     }
 

@@ -80,6 +80,46 @@ public final class ArmorCareRules {
         return out;
     }
 
+    /** 0.25.1 gear.ironFirst: the order iron goes into (the owner's play: chestplate, then leggings, then helmet and boots). */
+    public static final List<String> IRON_ORDER = List.of("chestplate", "leggings", "helmet", "boots");
+
+    /**
+     * 0.25.1 gear.ironFirst: the needs in the iron order (worn pieces keep going first; within each group chestplate,
+     * leggings, helmet, boots). Off: as given.
+     */
+    public static Map<String, String> ordered(Map<String, String> needs, boolean ironFirst) {
+        if (!ironFirst) return needs;
+        Map<String, String> out = new LinkedHashMap<>();
+        for (boolean worn : new boolean[]{true, false})
+            for (String s : IRON_ORDER) if (needs.containsKey(s) && (needs.get(s) != null) == worn) out.put(s, needs.get(s));
+        return out;
+    }
+
+    /**
+     * 0.25.1 gear.ironFirst: what a helmet or boots may spend. The iron a chestplate and leggings below iron tier (worn
+     * or missing) still need is held back, so leather fills helmet and boots and the ingots go to the body first. Off,
+     * or for the chestplate/leggings themselves: have as given.
+     */
+    public static Map<String, Integer> spendable(String slot, List<Piece> worn, Map<String, Integer> have, boolean ironFirst) {
+        if (!ironFirst || slot.equals("chestplate") || slot.equals("leggings") || have == null) return have;
+        int hold = 0;
+        for (String body : List.of("chestplate", "leggings")) {
+            Piece on = null;
+            for (Piece p : worn) if (body.equals(p.slot())) on = p;
+            if (on == null || on.empty() || on.worn() || rank(tier(on.id())) < rank("iron")) hold += COST.get(body);
+        }
+        if (hold == 0) return have;
+        Map<String, Integer> out = new LinkedHashMap<>(have);
+        out.put("minecraft:iron_ingot", Math.max(0, have.getOrDefault("minecraft:iron_ingot", 0) - hold));
+        return out;
+    }
+
+    /** The "tools" line for the order. */
+    public static String orderText(boolean ironFirst) {
+        return ironFirst ? "gear order (gear.ironFirst on): iron to chestplate then leggings first; helmet and boots take leather while the body needs the iron"
+                : "gear order (gear.ironFirst off): worn pieces first, then helmet, chestplate, leggings, boots";
+    }
+
     /** A good (not worn) piece for the slot in the bag, or null. */
     public static String spare(String slot, List<Piece> bag) {
         for (Piece p : bag) if (slot.equals(slot(p.id())) && !p.worn()) return p.id();

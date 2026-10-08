@@ -52,6 +52,8 @@ public final class Seq {
         public boolean exact;
         /** Routing stage 1 (route test): a walk that never sends /home first (the trips measure walking). */
         public boolean noHome;
+        /** 0.25.1: the ore-detour look ran for this walk (once per step). */
+        boolean oreChecked;
         Object state;
 
         /** B7d: a "clear" step's options, and what it did once it ended (see {@link Clearing}). */
@@ -154,7 +156,7 @@ public final class Seq {
     void tick(LocalPlayer p) {
         if (idx >= steps.size()) {
             jobs.finish("ok: done " + label + (wore != null ? "; " + wore.replaceFirst("^ok: ", "") : "") + (note != null ? "; " + note : "")
-                    + (tpNote != null ? "; " + tpNote : ""));
+                    + (tpNote != null ? "; " + tpNote : "") + (detourNote != null ? "; " + detourNote : ""));
             return;
         }
         if (routeTest != null) routeTest.poll();         // routing stage 1: the trip's path events and Baritone's debug lines
@@ -289,10 +291,71 @@ public final class Seq {
         }
     }
 
+    /** 0.25.1: what the ore detours of this job did (the end note), and the counters for "path status". */
+    String detourNote;
+
+    /**
+     * 0.25.1 path.oreDetour: a walk home (its goal within 24 of the base place, the bot further than twice the radius
+     * from it) first mines one ore vein in sight within the radius ({@link io.github.mojolowjo.entropybot.clear.OreDetour}):
+     * a soft "only" clear spliced before this walk (leases, the guard, the careful-clear rules). True when spliced.
+     * Never throws: an error is logged and counted, and the walk goes on.
+     */
+    private boolean oreDetour(Step st, LocalPlayer p) {
+        try {
+            int r = io.github.mojolowjo.entropybot.brain.BrainConfig.current().i("path.oreDetour");
+            if (r <= 0 || st.pos == null || st.exact || routeTest != null) return false;
+            com.google.gson.JsonObject base = jobs.core().knowledge.places().get("base");
+            if (base == null || !Jobs.dimOf(base).equals(Storage.dim())) return false;
+            int[] b = Jobs.pos(base), me = Jobs.here(p);
+            if (Math.hypot(st.pos[0] - b[0], st.pos[2] - b[2]) > 24 || Math.hypot(me[0] - b[0], me[2] - b[2]) <= 2.0 * r) return false;
+            if (jobs.commands().freeSlots() <= 1) return false;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null) return false;
+            io.github.mojolowjo.entropybot.clear.ClearWorld w = new io.github.mojolowjo.entropybot.clear.McClearWorld(mc.level, p, Clearing.avoidPredicate());
+            String dim = Storage.dim();
+            List<io.github.mojolowjo.entropybot.clear.Pos> vein = io.github.mojolowjo.entropybot.clear.OreDetour.pick(w, me[0], me[1], me[2], r,
+                    id -> canMine(p, id), (x, z) -> jobs.commands().inAreas(dim, x, z));
+            if (vein.isEmpty()) return false;
+            String line = io.github.mojolowjo.entropybot.clear.OreDetour.line(w, vein, me[0], me[1], me[2]);
+            Step c = Clearing.clearStep(new io.github.mojolowjo.entropybot.clear.ClearJob.Options().only(vein).collect(true).soft(true).label(line));
+            splice(idx, List.of(c));
+            stepStart = now();
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.oreDetourLine = java.time.LocalTime.now().withNano(0) + " " + line;
+            detourNote = detourNote == null ? line : detourNote + "; " + line;
+            setStatus(label + " - " + line);
+            org.slf4j.LoggerFactory.getLogger(Seq.class).info("[entropybot] {}", line);
+            return true;
+        } catch (RuntimeException e) {
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.oreDetourErrors++;
+            org.slf4j.LoggerFactory.getLogger(Seq.class).warn("[entropybot] ore detour failed, walking on: {}", e.toString());
+            return false;
+        }
+    }
+
+    /** A pickaxe in the bag mines this block with drops (the game's isCorrectToolForDrops). */
+    static boolean canMine(LocalPlayer p, String id) {
+        try {
+            var rl = net.minecraft.resources.ResourceLocation.tryParse(id);
+            if (rl == null) return false;
+            net.minecraft.world.level.block.state.BlockState bs = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(rl).defaultBlockState();
+            for (int i = 0; i < 36; i++) {
+                net.minecraft.world.item.ItemStack s = p.getInventory().getItem(i);
+                if (!s.isEmpty() && Gui.itemId(s).endsWith("_pickaxe") && s.isCorrectToolForDrops(bs)) return true;
+            }
+        } catch (RuntimeException ignored) {
+            // an odd id: not minable here
+        }
+        return false;
+    }
+
     private String walkStep(Step st, LocalPlayer p, long elapsed) {
         Jobs.Job j = job();
         String fmt = Jobs.fmt(st.pos);
         IBaritone b = Jobs.baritone();
+        if (stage == null && !st.oreChecked) {
+            st.oreChecked = true;
+            if (oreDetour(st, p)) return "wait";          // 0.25.1: a clear of the vein runs first, then this walk
+        }
         if (stage == null) {
             // the fence first (package D review: never a /home for a walk the guard would refuse anyway)
             String fence = jobs.goalAllowed(st.pos[0], st.pos[1], st.pos[2]);
