@@ -158,7 +158,16 @@ public final class BlindRuntime {
         titleSet = false;
         mode.lastTitle(null);
         try {
-            mc.updateTitle();
+            // Not mc.updateTitle(): a pack mod owns that call (FancyMenu's custom window title; live 2026-10-10 the vanilla
+            // title never came back). Window.setTitle works (the blind title appears at once), so write vanilla's text
+            // ourselves, the way Minecraft.createTitle builds it (singleplayer / 3rd-party server).
+            String title = "Minecraft " + net.minecraft.SharedConstants.getCurrentVersion().getName();
+            var conn = mc.getConnection();
+            if (conn != null && conn.getConnection().isConnected()) {
+                var sp = mc.getSingleplayerServer();
+                title += " - " + net.minecraft.client.resources.language.I18n.get(sp != null && !sp.isPublished() ? "title.singleplayer" : "title.multiplayer.other");
+            }
+            mc.getWindow().setTitle(title);
         } catch (Throwable t) {
             if (titleError == null) LOG.warn("[entropybot] blind: restoring the window title threw {}", t.toString());
             titleError = "restoring the window title threw " + t;
