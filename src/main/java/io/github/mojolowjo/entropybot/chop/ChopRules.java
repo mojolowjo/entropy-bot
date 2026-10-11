@@ -143,6 +143,13 @@ public final class ChopRules {
         return null;
     }
 
+    /** 0.26.4: as above, the failed-trees rule from {@link ChopLoop#giveUp} (reach failures go on up to maxTrees). */
+    public static String stopReason(Args a, int logs, int trees, long now, long deadline, int failsInRow, int reachFails, int maxTrees, String nearestReachable) {
+        if (a.trees() ? trees >= a.n() : logs >= a.n()) return "";
+        if (now >= deadline) return "the 20 minutes are up";
+        return ChopLoop.giveUp(failsInRow, reachFails, maxTrees, nearestReachable);
+    }
+
     /** "23 oak_log, 4 birch_log" (logs gained per id). */
     public static String logs(Map<String, Integer> got) {
         List<String> parts = new ArrayList<>();

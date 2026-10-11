@@ -70,6 +70,9 @@ public final class BrainConfig {
                 {"cave.eatFirst", 1, 0, 1, "before mine cave with food on me and the bar below 20: eat first (1 on, 0 off)"},
                 {"path.oreDetour", 8, 0, 16, "on the way home: mine an ore in sight within this many blocks first (one vein, 8 blocks; 0 = off)"},
                 {"gear.ironFirst", 1, 0, 1, "armour: iron goes to chestplate then leggings before helmet/boots, leather fills helmet/boots (1 on, 0 off)"},
+                // 0.26.4 TreeChop-aware cut
+                {"chop.maxChops", 24, 4, 64, "cut with TreeChop: breaks of one tree's trunk (each a chop) before it is given up"},
+                {"chop.maxTrees", 8, 3, 20, "cut: trees I couldn't get at, in a row, before the cut gives up (other failures: 3)"},
                 {"brain.foodStock", 8, 0, 128, "edible items in bag + storage below this near dusk with wood enough: food before wood"},
                 {"brain.foodDusk", 60, 0, 100, "the food need's score near dusk when food stock is low and wood enough (always above a wood job)"},
                 // 0.26.1 "steady brain" (R1-R6)

@@ -5,6 +5,7 @@ import baritone.api.pathing.goals.GoalBlock;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.cave.MineRules;
+import io.github.mojolowjo.entropybot.chop.ChopLoop;
 import io.github.mojolowjo.entropybot.chop.ChopRules;
 import io.github.mojolowjo.entropybot.chop.TreeFinder;
 import io.github.mojolowjo.entropybot.clear.ClearJob;
@@ -123,6 +124,13 @@ final class Chopping {
         List<int[]> planted = List.of();
         String sapling;
         int brokeAny;
+        /** 0.26.4 TreeChop: this tree's loop, the trunk cell watched for chops, run totals. */
+        ChopLoop.State loop = new ChopLoop.State();
+        int[] trunk;
+        String trunkId, trunkSig;
+        int chopsTotal, reachFails;
+        String nearestReachable;
+        boolean treeChop;
     }
 
     // ==== the verb ====
@@ -144,6 +152,7 @@ final class Chopping {
         if (Jobs.baritone() == null) return "error: baritone not loaded";
         Run r = new Run();
         r.args = a;
+        r.treeChop = treeChopLoaded();
         r.deadline = now() + ChopRules.MAX_TICKS;
         String what = a.trees() ? a.n() + (a.n() == 1 ? " tree" : " trees") : a.n() + " logs";
         String label = "chopping " + what + (a.type() != null ? " (" + a.type() + ")" : "");
@@ -157,6 +166,21 @@ final class Chopping {
         RestoreLive.INSTANCE.scanBuilds(p, me);   // P1: someone's build near here? (a whisper, never a box)
         LOG.info("[entropybot] chop: {} ({})", label, modsLine());
         return res;
+    }
+
+    /** 0.26.4: TreeChop present (each break of a trunk is a chop; the tree falls after enough). */
+    static boolean treeChopLoaded() {
+        try {
+            return ModList.get().isLoaded("treechop");
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] chop: can't read the mod list: {}", e.toString());
+            return false;
+        }
+    }
+
+    /** 0.26.4 brain settings chop.maxChops / chop.maxTrees (defaults until the brain loaded them). */
+    static int setting(String key, int dflt) {
+        try { return io.github.mojolowjo.entropybot.brain.BrainConfig.current().i(key); } catch (RuntimeException e) { return dflt; }
     }
 
     private static String modsLine() {
@@ -206,7 +230,8 @@ final class Chopping {
         Live w = new Live(p.clientLevel);
         if (r.tree != null && "fell".equals(r.phase)) return afterBreak(s, r, p, w);
         if (r.tree != null && "planted".equals(r.phase)) treeDone(r, p, w);
-        String why = ChopRules.stopReason(r.args, ChopRules.total(r.got), r.trees, now(), r.deadline, r.failsInRow);
+        String why = ChopRules.stopReason(r.args, ChopRules.total(r.got), r.trees, now(), r.deadline, r.failsInRow, r.reachFails,
+                setting("chop.maxTrees", ChopLoop.DEFAULT_MAX_TREES), r.nearestReachable);
         if (why != null) return end(s, r, p, why);
         if (Mining.get().bagRoom(p) <= 2) {
             List<Seq.Step> dep = depositSteps(p);
@@ -229,6 +254,10 @@ final class Chopping {
         r.rounds = 0;
         r.lastLeft = t.logs().size();
         r.brokeAny = 0;
+        r.loop = new ChopLoop.State();
+        r.trunk = TreeFinder.lowest(t.logs()).get(0).clone();
+        r.trunkId = w.id(r.trunk[0], r.trunk[1], r.trunk[2]);
+        r.trunkSig = w.sig(r.trunk[0], r.trunk[1], r.trunk[2]);
         r.before = Gui.inventory(p);
         r.tried.add(TreeFinder.key(t.base()[0], t.base()[1], t.base()[2]));
         LOG.info("[entropybot] chop: tree at {} ({} logs of {})", t.at(), t.logs().size(), t.logId());
@@ -247,41 +276,64 @@ final class Chopping {
         Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(only).soft(true)
                 .label("chopping the tree at " + r.tree.at()));
         Seq.Step wait = new Seq.Step("chopwait");
-        wait.ticks = 40;
+        wait.ticks = r.treeChop ? 12 : 40;     // TreeChop: a chop shows at once; Falling Trees' fall takes 1.5 s
         return new ArrayList<>(List.of(clear, wait));
     }
 
     /** After a break round: more rounds while its logs stand (and progress is made), then the pickup and the replant. */
     private String afterBreak(Seq s, Run r, LocalPlayer p, Live w) {
         List<int[]> left = TreeFinder.left(w, r.tree);
-        r.rounds++;
-        boolean progress = left.size() < r.lastLeft;
-        if (progress) r.brokeAny += r.lastLeft - left.size();
+        String idNow = w.id(r.trunk[0], r.trunk[1], r.trunk[2]), sigNow = w.sig(r.trunk[0], r.trunk[1], r.trunk[2]);
+        int gained = ChopRules.total(ChopRules.gained(r.before, Gui.inventory(p), Chopping::isLogItem));
+        ChopLoop.Round rd = new ChopLoop.Round(r.lastLeft, left.size(), r.trunkId, idNow, r.trunkSig, sigNow, lastBroken(s), gained);
+        int chopsBefore = r.loop.chops;
+        ChopLoop.Next next = ChopLoop.step(r.loop, rd, r.treeChop, setting("chop.maxChops", ChopLoop.DEFAULT_MAX_CHOPS), ChopRules.ROUNDS);
+        r.chopsTotal += r.loop.chops - chopsBefore;
+        r.rounds = r.loop.rounds;
+        if (left.size() < r.lastLeft) r.brokeAny += r.lastLeft - left.size();
+        if (r.loop.chops > 0 || gained > 0) r.brokeAny = Math.max(r.brokeAny, 1);
         r.lastLeft = left.size();
-        if (!left.isEmpty() && r.rounds < ChopRules.ROUNDS && (progress || r.rounds < 3)) {
-            LOG.info("[entropybot] chop: round {} at {}: {} logs left", r.rounds, r.tree.at(), left.size());
-            spliceHere(s, breakSteps(r, left));
+        r.trunkId = idNow;
+        r.trunkSig = sigNow;
+        if (next == ChopLoop.Next.AGAIN) {
+            LOG.debug("[entropybot] chop: round {} at {}: {} logs left, {} chops", r.rounds, r.tree.at(), left.size(), r.loop.chops);
+            // TreeChop: keep chopping the same trunk block while it stands (the tree falls as a whole)
+            List<int[]> cells = r.treeChop && w.log(r.trunk[0], r.trunk[1], r.trunk[2]) ? List.of(r.trunk) : left;
+            spliceHere(s, breakSteps(r, cells));
             return "wait";
         }
-        if (!left.isEmpty() && r.brokeAny == 0) {
-            // not one log came down: no spot to stand within reach (low leaves all around a short trunk), a guard refusal...
+        if (next == ChopLoop.Next.UNREACHABLE) {
+            // not one log came down and no chop: no spot to stand within reach (low leaves all around a short trunk), a guard refusal...
             String clr = lastClear(s);
             r.notes.add("tree at " + r.tree.at() + ": skipped - I couldn't get at its trunk" + (clr != null ? " (" + clr + ")" : ""));
             LOG.info("[entropybot] chop: nothing came down at {} - skipped", r.tree.at());
             r.failsInRow++;
+            r.reachFails++;
             r.tree = null;
             r.phase = null;
             return main(s, r, p);
         }
-        if (!left.isEmpty()) {
+        if (next == ChopLoop.Next.PARTIAL && !left.isEmpty()) {
             int[] c = left.get(0);
-            r.notes.add("tree at " + r.tree.at() + ": " + left.size() + " logs left (out of reach at " + c[0] + " " + c[1] + " " + c[2] + ")");
-            LOG.info("[entropybot] chop: giving up on {} logs at {}", left.size(), r.tree.at());
+            r.notes.add("tree at " + r.tree.at() + ": " + left.size() + " logs left (" + (r.treeChop && r.loop.chops > 0
+                    ? r.loop.chops + " chops and it didn't fall" : "out of reach at " + c[0] + " " + c[1] + " " + c[2]) + ")");
+            LOG.info("[entropybot] chop: giving up on {} logs at {} ({} chops)", left.size(), r.tree.at(), r.loop.chops);
+        } else if (r.treeChop) {
+            LOG.info("[entropybot] chop: the tree at {} fell after {} chops", r.tree.at(), r.loop.chops);
         }
         r.phase = "planted";
         Seq.Step pick = new Seq.Step("choppickup");
         spliceHere(s, new ArrayList<>(List.of(pick, new Seq.Step("chopplant"))));
         return "wait";
+    }
+
+    /** The blocks the last clear step of this job broke (with TreeChop each is a chop), 0 when none ran. */
+    private static int lastBroken(Seq s) {
+        for (int i = s.idx - 1; i >= 0; i--) {
+            Seq.Step st = s.steps.get(i);
+            if (st.cleared != null) return st.cleared.broken();
+        }
+        return 0;
     }
 
     /** Why the last clear step of this job left blocks (its message's tail), or null. */
@@ -307,6 +359,7 @@ final class Chopping {
         if (r.brokeAny > 0 || ChopRules.total(g) > 0) {
             r.trees++;
             r.failsInRow = 0;
+            r.reachFails = 0;
         } else {
             r.failsInRow++;
         }
@@ -342,8 +395,11 @@ final class Chopping {
         r.looked = inside.size();
         LOG.info("[entropybot] chop: {} log columns in my areas within {} (nearest outside: {})", inside.size(), ChopRules.RADIUS, r.nearestOutside);
         int checked = 0;
+        List<ChopLoop.Cand> cands = new ArrayList<>();
+        Map<String, TreeFinder.Tree> found = new java.util.HashMap<>();
+        int limit = Math.max(24, setting("chop.maxTrees", ChopLoop.DEFAULT_MAX_TREES) * 2);
         for (int[] c : ChopRules.order(inside, me[0], me[1], me[2])) {
-            if (checked >= 24) break;
+            if (checked >= limit) break;
             TreeFinder.Result res = TreeFinder.find(w, c[0], c[1], c[2]);
             if (!res.ok()) {
                 if (r.firstWhy == null) r.firstWhy = res.why();
@@ -382,9 +438,34 @@ final class Chopping {
                 r.tried.add(TreeFinder.key(b[0], b[1], b[2]));
                 continue;
             }
-            return t;
+            // 0.26.4: trunks with a free standing cell next to their base first (after a reach failure: the next nearest)
+            boolean reach = trunkReachable(p, b);
+            long cost = (long) (b[0] - me[0]) * (b[0] - me[0]) + (long) (b[2] - me[2]) * (b[2] - me[2]) + 4L * (b[1] - me[1]) * (b[1] - me[1]);
+            cands.add(new ChopLoop.Cand(b, cost, reach));
+            found.put(TreeFinder.key(b[0], b[1], b[2]), t);
+            if (reach && r.reachFails == 0) break;      // the usual case: the nearest tree is fine
         }
-        return null;
+        if (cands.isEmpty()) return null;
+        List<ChopLoop.Cand> ord = ChopLoop.order(cands);
+        r.nearestReachable = null;
+        for (ChopLoop.Cand c : ord) if (c.reachable()) { r.nearestReachable = c.base()[0] + " " + c.base()[1] + " " + c.base()[2]; break; }
+        int[] b = ord.get(0).base();
+        return found.get(TreeFinder.key(b[0], b[1], b[2]));
+    }
+
+    /** A free standing cell (feet at the trunk's base level, one up or down) next to the trunk base. */
+    private static boolean trunkReachable(LocalPlayer p, int[] b) {
+        try {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            int[][] d = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            for (int[] o : d)
+                for (int dy = -1; dy <= 1; dy++)
+                    if (Jobs.standable(mc, new BlockPos(b[0] + o[0], b[1] + dy, b[2] + o[1]))) return true;
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] chop: reach check failed: {}", e.toString());
+            return true;
+        }
+        return false;
     }
 
     /** Walks over the drops near the tree for up to 10 s (Falling Trees drops them where the trunk lands). */
@@ -618,6 +699,7 @@ final class Chopping {
 
     private String end(Seq s, Run r, LocalPlayer p, String why) {
         List<String> notes = new ArrayList<>();
+        if (r.treeChop && r.chopsTotal > 0) notes.add(ChopLoop.felledNote(r.trees, r.chopsTotal));
         if (r.axeNote != null) notes.add(r.axeNote);
         if (r.skippedBuilt > 0) notes.add(r.skippedBuilt + " skipped: " + r.firstBuilt.replaceFirst("^the tree at \\S+ \\S+ \\S+ is ", "")
                 + (r.skippedBuilt > 1 ? " and more" : ""));
@@ -684,6 +766,19 @@ final class Chopping {
             String id = BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString();
             if (ClearRules.choppedLog(id)) return true;                     // TreeChop's partly chopped log
             return s.is(BlockTags.LOGS) && isLogItem(id);                    // never stripped logs or 6-sided wood (built)
+        }
+
+        /** 0.26.4: the block's id plus its block entity data (TreeChop's chop count lives there), for "did that break chop?". */
+        String sig(int x, int y, int z) {
+            try {
+                if (!level.isLoaded(m.set(x, y, z))) return null;
+                String id = BuiltInRegistries.BLOCK.getKey(st(x, y, z).getBlock()).toString();
+                net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(m.set(x, y, z));
+                return be == null ? id : id + be.saveWithoutMetadata(level.registryAccess());
+            } catch (RuntimeException e) {
+                LOG.debug("[entropybot] chop: block data at {} {} {}: {}", x, y, z, e.toString());
+                return null;
+            }
         }
 
         @Override public boolean leaves(int x, int y, int z) {

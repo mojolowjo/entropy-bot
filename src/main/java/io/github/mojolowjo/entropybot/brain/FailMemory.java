@@ -29,7 +29,7 @@ public final class FailMemory {
             {Reason.GUARD_REFUSED, Pattern.compile("would refuse|the guard refuse|refused by the guard|guard refused|fence refuse")},
             {Reason.NO_BED, Pattern.compile("no bed")},
             {Reason.NO_PLACE, Pattern.compile("i have no (place|area|mine)\\b|no places yet|i have no place, area|no (camp|base) place")},
-            {Reason.NO_PATH, Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach|no trees in my areas")},
+            {Reason.NO_PATH, Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach|no trees in my areas|chopped nothing|couldn't get at its trunk")},
             {Reason.NO_ITEM, Pattern.compile("no torches|i have no |no \\S+ on me|missing \\d|not enough |none on me|i need \\d+ |i need .* there is none|no furnace recipe")},
     };
     /** A fight or the owner: never a precondition (checked first). */
