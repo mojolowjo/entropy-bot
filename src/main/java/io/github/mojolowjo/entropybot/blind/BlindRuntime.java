@@ -102,7 +102,13 @@ public final class BlindRuntime {
                 secondStart = now;
                 frameCounter += Math.max(0, mc.getFps());
                 mode.frames(frameCounter);
-                if (mode.enabled() && world && mode.config().title()) setTitle(mc);
+                if (BlindMode.titleAction(mode.enabled(), world, mode.config().title(), restoreLeft) == BlindMode.TitleAction.SET) setTitle(mc);
+            }
+            // blind off: vanilla's title back, on the client thread after the title step, and once more each of the
+            // next 2 ticks so nothing queued before the switch can leave the blind title behind
+            if (BlindMode.titleAction(mode.enabled(), world, mode.config().title(), restoreLeft) == BlindMode.TitleAction.RESTORE) {
+                restoreLeft--;
+                restoreTitle(mc);
             }
         } catch (Throwable t) {
             LOG.warn("[entropybot] blind tick: {}", t.toString());
@@ -145,8 +151,10 @@ public final class BlindRuntime {
         }
     }
 
+    /** Ticks left in which vanilla's title is put back (set on blind off). */
+    private int restoreLeft;
+
     private void restoreTitle(Minecraft mc) {
-        if (!titleSet) return;
         titleSet = false;
         mode.lastTitle(null);
         try {
@@ -180,7 +188,7 @@ public final class BlindRuntime {
             asserted = false;
             try { mc.noRender = false; } catch (Throwable ignored) {}
             resumeSound(mc);
-            restoreTitle(mc);
+            restoreLeft = 3;          // the restore runs in postTick (not here): never gated on a flag the title step may not have set
         }
         String head = on ? (changed ? "ok: blind mode on - no frames are drawn; the bot works on (blind off to see it again)"
                 : "blind mode is already on")

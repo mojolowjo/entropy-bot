@@ -24,10 +24,21 @@ class BlindModeTest {
         String s = m.status(10, 15000);
         assertTrue(s.startsWith("blind mode: on since "), s);
         assertTrue(s.contains("(10 s)"), s);
-        assertTrue(s.contains("frames skipped 0") && s.contains("title on") && s.contains("sound pause") && s.contains("maxFps 10"), s);
+        assertTrue(s.contains("frames skipped 0") && s.contains("title: blind status line") && s.contains("sound pause") && s.contains("maxFps 10"), s);
         assertFalse(s.contains("options.txt"), "no hint at 10");
         assertTrue(m.set(false, 20000));
         assertEquals(0, m.since());
+        assertTrue(m.status(10, 21000).contains("title: vanilla"), "off: vanilla's title");
+    }
+
+    @Test
+    void titleDecision() {
+        assertEquals(BlindMode.TitleAction.SET, BlindMode.titleAction(true, true, true, 0));
+        assertEquals(BlindMode.TitleAction.NONE, BlindMode.titleAction(true, true, false, 0), "title:false leaves it alone");
+        assertEquals(BlindMode.TitleAction.NONE, BlindMode.titleAction(true, false, true, 0));
+        assertEquals(BlindMode.TitleAction.RESTORE, BlindMode.titleAction(false, true, true, 3), "blind off: vanilla back");
+        assertEquals(BlindMode.TitleAction.RESTORE, BlindMode.titleAction(false, true, true, 1));
+        assertEquals(BlindMode.TitleAction.NONE, BlindMode.titleAction(false, true, true, 0), "never SET while off");
     }
 
     @Test

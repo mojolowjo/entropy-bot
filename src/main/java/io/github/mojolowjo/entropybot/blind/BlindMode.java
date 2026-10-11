@@ -183,6 +183,17 @@ public final class BlindMode {
         return "Entropy Bot " + (name == null ? "?" : name) + " | blind | " + x + " " + y + " " + z + " | " + j + " | " + tps + " tps | " + fps + " fps";
     }
 
+    public enum TitleAction { SET, RESTORE, NONE }
+
+    /**
+     * Pure: what the tick does with the window title. Blind on in a world with title on: SET (the once-a-second step).
+     * Blind off with restore ticks left: RESTORE (vanilla's title). Otherwise NONE (left to vanilla).
+     */
+    public static TitleAction titleAction(boolean enabled, boolean inWorld, boolean titleOn, int restoreLeft) {
+        if (enabled) return inWorld && titleOn ? TitleAction.SET : TitleAction.NONE;
+        return restoreLeft > 0 ? TitleAction.RESTORE : TitleAction.NONE;
+    }
+
     /** Pure: the maxFps hint, or "" when it is 20 or lower (260 = unlimited in vanilla's slider). */
     public static String fpsHint(int maxFps) {
         return maxFps > FPS_HINT_ABOVE ? " (set maxFps 10-20 in options.txt for the lowest cost)" : "";
@@ -192,7 +203,7 @@ public final class BlindMode {
     public String status(int maxFps, long nowMs) {
         return "blind mode: " + (enabled ? "on since " + clock(since) + " (" + ((nowMs - since) / 1000) + " s)" : "off")
                 + " | frames skipped " + framesSkipped
-                + " | title " + (config.title() ? "on" : "off")
+                + " | title: " + (!enabled || !config.title() ? "vanilla" : "blind status line")
                 + " | sound " + config.sound()
                 + " | maxFps " + maxFps + fpsHint(maxFps)
                 + (configProblem != null ? " | " + configProblem : "")
