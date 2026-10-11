@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.recorder;
 
+import io.github.mojolowjo.entropybot.motor.Motor;
 import io.github.mojolowjo.entropybot.threat.HitLog;
 import io.github.mojolowjo.entropybot.threat.HitWatch;
 
@@ -596,7 +597,12 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
             if (d > half && d <= 64) grabs.put("around " + target[0] + " " + target[1] + " " + target[2],
                     Grab.box(level, target[0] - half, target[1] - half, target[2] - half, target[0] + half, target[1] + half, target[2] + half));
         }
-        String hits = HitLog.text(HitLog.INSTANCE.last(HitLog.DEATH_HITS), zone);
+        String hitText = HitLog.text(HitLog.INSTANCE.last(HitLog.DEATH_HITS), zone);
+        try {
+            hitText = hitText + "\n" + Motor.INSTANCE.incidentText();     // 0.27.0
+        } catch (RuntimeException | LinkageError ignored) {
+        }
+        final String hits = hitText;
         if (!submit(() -> writeIncident(now, reason, job, dim, me, target, half, grabs, hits))) return null;
         return me;
     }

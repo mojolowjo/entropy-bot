@@ -63,6 +63,21 @@ public final class ReachGrid {
 
     static boolean pass(byte c) { return c == AIR || c == WATER || c == LOW; }
 
+    // 0.27.0 motor: the same cell rules in world coordinates
+    /** The code at a world cell (outside: air above, solid below, as {@link #code}). */
+    public byte codeAt(int wx, int wy, int wz) { return code(wx - ox, wy - oy, wz - oz); }
+
+    /** A 1x2 body stands at this world cell. */
+    public boolean standable(int wx, int wy, int wz) { return walkable(wx - ox, wy - oy, wz - oz); }
+
+    /** Feet and head cells at this world cell let a body through (no floor needed). */
+    public boolean open(int wx, int wy, int wz) { return pass(codeAt(wx, wy, wz)) && pass(codeAt(wx, wy + 1, wz)); }
+
+    /** A walker steps (or jumps 1, or drops up to 3) from world cell b to the neighbouring world cell a. */
+    public boolean stepEdge(int bx, int by, int bz, int ax, int ay, int az) {
+        return walkEdge(bx - ox, by - oy, bz - oz, ax - ox, ay - oy, az - oz);
+    }
+
     static boolean floorish(byte c) { return c == SOLID || c == TALL || c == LOW; }
 
     /** A 1x2 body stands here: feet and head free, something under the feet (or in water / on a low block). */

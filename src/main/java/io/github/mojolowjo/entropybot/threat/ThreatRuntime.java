@@ -360,6 +360,11 @@ public final class ThreatRuntime {
         StringBuilder b = new StringBuilder();
         b.append("threat test: ").append(gridOk() ? "grid ok" : "fallback (straight distance)");
         if (verdictLine != null) b.append("\nlast verdict (").append((System.currentTimeMillis() - verdictAt) / 1000).append(" s ago): ").append(verdictLine);
+        try {
+            String m = io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.whyLine();      // 0.27.0
+            if (m != null) b.append('\n').append(m);
+        } catch (RuntimeException ignored) {
+        }
         Map<Integer, ThreatRules.Decision> now = latest;
         if (!now.isEmpty() && gridOk()) {
             b.append("\nnow:");

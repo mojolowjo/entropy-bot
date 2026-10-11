@@ -43,6 +43,11 @@ import net.minecraft.world.item.SwordItem;
 import io.github.mojolowjo.entropybot.threat.FightOrFlee;
 import io.github.mojolowjo.entropybot.threat.DeadEnd;
 import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
+import io.github.mojolowjo.entropybot.threat.MobTactics;
+import io.github.mojolowjo.entropybot.threat.ThreatRules;
+import io.github.mojolowjo.entropybot.motor.Arbiter;
+import io.github.mojolowjo.entropybot.motor.Motor;
+import io.github.mojolowjo.entropybot.motor.MotorPlan;
 import org.slf4j.Logger;
 
 /**
@@ -124,6 +129,7 @@ public final class Reflexes {
         this.knowledge = knowledge;
         this.duel = new CreeperDuel(events);
         this.survival = new Survival(events, engine);
+        Motor.INSTANCE.bind(engine);        // 0.27.0: the motor pauses the job's Baritone through the same process
     }
 
     /** "defend creepers flee|melee|bow" (commands.json "creepers"). */
@@ -322,6 +328,7 @@ public final class Reflexes {
         try {
             now = tick;
             step();
+            motorAfter();
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] reflex error #{}: {}", errors, t.toString());
@@ -350,6 +357,7 @@ public final class Reflexes {
         lastHealth = hp;
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
+        Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
         if (reflex != Reflex.EATING && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) return;     // 0.23.6
 
         if (reflex == Reflex.RETREATING) {
@@ -456,6 +464,7 @@ public final class Reflexes {
         target = null;
         urgent = false;
         clearSpot();            // 0.25.1
+        Motor.INSTANCE.stop("reflex ended: " + why, now);     // 0.27.0
         engine.release();
     }
 
@@ -564,11 +573,13 @@ public final class Reflexes {
         begin(Reflex.FIGHTING, mc, "fighting " + t.id);
         holdWeapon(mc, p);
         try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+        if (motorFoot(mc, p, t)) return;        // 0.27.0: out of water, a running move, hold under a flier
         if (t.d <= ReflexRules.REACH) {
             engine.hold();
             if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)
                 mc.gameMode.attack(p, t.e);
                 p.swing(InteractionHand.MAIN_HAND);
+                afterHit(p, t);
             }
         } else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) {
             // close the distance (skeletons shoot from range)
@@ -755,7 +766,119 @@ public final class Reflexes {
         }
         boolean there = p.getBlockX() == spot[0] && p.getBlockZ() == spot[2] && Math.abs(p.getBlockY() - spot[1]) <= 1;
         if (there) engine.hold();
+        else if (motorStep(p, t)) { /* 0.27.0: step to / climb by raw input */ }
         else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) engine.override(new GoalNear(new BlockPos(spot[0], spot[1], spot[2]), 0));
+    }
+
+    // ---- 0.27.0 the motor: short moves by raw input (motor/Motor) ----
+    private long motorRetryAt;
+    private int hitTargetId = -1, hitsOnTarget;
+    static final long MOTOR_RETRY_TICKS = 20;
+
+    /** A reflex move must not outlive the fight: a retreat, a flee or a duel takes the keys back. */
+    private void motorAfter() {
+        Motor m = Motor.INSTANCE;
+        if (m.active() && m.arbiter().owner() == Arbiter.Owner.REFLEX && (reflex != Reflex.FIGHTING || duel.active() || cspr.active()))
+            m.stop("the reflexes moved on (" + statusText() + ")", now);
+    }
+
+    private void motorNote(String targetId, MotorPlan.Plan plan, String line, String refused) {
+        ThreatRuntime.INSTANCE.verdict(targetId + ": " + line + (refused == null ? "" : " - not moved: " + refused));
+        if (refused != null) motorRetryAt = now + MOTOR_RETRY_TICKS;
+        else events.push("reflex", "motor: " + line, null);
+    }
+
+    /** Hit what is in reach (no Baritone): used while a move runs. */
+    private void hitInReach(Minecraft mc, LocalPlayer p, Threat t) {
+        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+            mc.gameMode.attack(p, t.e);
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+    }
+
+    /** Footwork before the plain fight: true when the motor drives this tick. Never throws. */
+    private boolean motorFoot(Minecraft mc, LocalPlayer p, Threat t) {
+        Motor m = Motor.INSTANCE;
+        try {
+            if (!m.enabled()) return false;
+            if (m.active() && m.arbiter().owner() == Arbiter.Owner.REFLEX) {
+                hitInReach(mc, p, t);
+                return true;
+            }
+            if (now < motorRetryAt) return false;
+            if (p.isInWater()) {
+                MotorPlan.Plan pl = MotorPlan.outOfWater(Motor.grid(), p.getBlockX(), p.getBlockY(), p.getBlockZ());
+                String line = "out of water (" + pl.why() + ", fighting " + t.id + ")";
+                String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, line, now);
+                motorNote(t.id, pl, line, r);
+                if (r == null) {
+                    hitInReach(mc, p, t);
+                    return true;
+                }
+            }
+            ThreatRules.Move mv = ThreatRules.moveOf(t.id);
+            if (MobTactics.holdForFlier(mv, t.d, ReflexRules.REACH)) {
+                MotorPlan.Plan pl = MotorPlan.hold(t.id);
+                String line = "hold (" + t.id + " flies, at " + Math.round(t.d * 10) / 10.0 + ", dY " + Math.round(t.e.getY() - p.getY()) + ")";
+                String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, line, now);
+                motorNote(t.id, pl, line, r);
+                if (r == null) {
+                    engine.hold();
+                    hitInReach(mc, p, t);
+                    return true;
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] motor: footwork failed, fighting as before: {}", e.toString());
+            motorRetryAt = now + MOTOR_RETRY_TICKS;
+        }
+        return false;
+    }
+
+    /** After the bot's own hit: the owner's back-off (MobTactics). Never throws. */
+    private void afterHit(LocalPlayer p, Threat t) {
+        try {
+            Motor m = Motor.INSTANCE;
+            if (!m.enabled() || m.active()) return;
+            if (t.e.getId() != hitTargetId) {
+                hitTargetId = t.e.getId();
+                hitsOnTarget = 0;
+            }
+            hitsOnTarget++;
+            int backoffHealth = io.github.mojolowjo.entropybot.brain.BrainConfig.current().i("motor.backoffHealth");
+            MobTactics.Decision d = MobTactics.afterHit(t.id, ThreatRules.moveOf(t.id), t.d, p.getHealth(), backoffHealth, hitsOnTarget);
+            if (d.action() != MobTactics.Action.BACK_OFF) return;
+            MotorPlan.Plan pl = MotorPlan.backOff(Motor.grid(), p.getBlockX(), p.getBlockY(), p.getBlockZ(), t.e.getX(), t.e.getZ(), MobTactics.BACKOFF_CELLS);
+            String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, d.line(), now);
+            motorNote(t.id, pl, d.line(), r);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] motor: back-off failed: {}", e.toString());
+        }
+    }
+
+    /** Walk to the cover / high-ground spot by raw input when it is within 4 (else Baritone, as before). */
+    private boolean motorStep(LocalPlayer p, Threat t) {
+        Motor m = Motor.INSTANCE;
+        try {
+            if (!m.enabled()) return false;
+            if (m.active() && m.arbiter().owner() == Arbiter.Owner.REFLEX
+                    && (m.kind() == MotorPlan.Kind.STEP_TO || m.kind() == MotorPlan.Kind.CLIMB)) return true;
+            if (now < motorRetryAt) return false;
+            int bx = p.getBlockX(), by = p.getBlockY(), bz = p.getBlockZ();
+            int dx = spot[0] - bx, dy = spot[1] - by, dz = spot[2] - bz;
+            if (Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz))) > MotorPlan.STEP_RADIUS) return false;
+            MotorPlan.Plan pl = dy == 1 && Math.abs(dx) + Math.abs(dz) == 1
+                    ? MotorPlan.climb(Motor.grid(), bx, by, bz, dx, dz)
+                    : MotorPlan.stepTo(Motor.grid(), bx, by, bz, spot[0], spot[1], spot[2]);
+            String line = pl.name() + " (" + (spotCover ? "cover from " : "high ground vs ") + t.id + ")";
+            String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, line, now);
+            motorNote(t.id, pl, line, r);
+            return r == null;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] motor: step to the spot failed, walking with Baritone: {}", e.toString());
+            motorRetryAt = now + MOTOR_RETRY_TICKS;
+            return false;
+        }
     }
 
     /** The cover and high-ground holds; true when one acted this tick. Errors: logged, the old fight goes on. */

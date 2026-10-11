@@ -87,6 +87,10 @@ public final class BrainConfig {
                 {"weather.storm", 1, 0, 1, "a thunderstorm with sky above me counts as night for the night bands (1 on, 0 off)"},
                 {"passive.ownerTimeoutS", 300, 0, 3600, "escorting or assisting and you are offline this many seconds: dismiss then home (0 = off)"},
                 {"spawn.cooldownMinutes", 1440, 60, 10080, "in-game minutes between two tries to set my spawn at a bed (1440 = one day)"},
+                // 0.27.0 motor (short moves by raw input: back off, hold, step to, climb, out of water)
+                {"motor", 1, 0, 1, "the motor: footwork in fights by raw input (back off, hold under fliers, step to cover or high ground, out of water; 1 on, 0 off)"},
+                {"motor.backoffHealth", 10, 0, 20, "health at or below: back off 2 after each hit on a melee mob within 2 blocks"},
+                {"motor.moveTicks", 60, 20, 200, "a motor move ends after this many ticks"},
             {"brain.feasibility", 1, 0, 1, "before a brain job starts, check each step's preconditions; a missing item asks the planner for a way first, else the job is skipped (1 on, 0 off)"},
             {"brain.subgoalMaxSteps", 6, 1, 12, "the most steps a sub-plan may take that gets a missing item before a brain job (feasibility)"},
             // 0.26.3 the day plan

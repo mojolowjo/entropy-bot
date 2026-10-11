@@ -233,7 +233,7 @@ public final class VerbTable {
         v("blind", "", "other", O, "blind on|off|status", "stop drawing frames while the bot works on (less CPU and GPU; the window title shows where it is and its job); off draws again; watch needs it off",
                 "blind on|blind status", "blind status");
         v("surface", "", "other", O, "surface | surface status | surface on|off", "the ground round the bot for the dashboard's 3D view (one file per loaded chunk; on by default)", "surface status", "status");
-        v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] | debug hits [n] "
+        v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] | debug hits [n] | debug motor "
                         + "| debug <plumbing verb> ...: b, memory, watch, recorder, mouse, route, autominer, reconnect, sethome, use, caves, ores, poi",
                 "read-only looks inside the game, and the plumbing verbs that left the main list (they work as before after the word debug: debug autominer on, debug b set allowSprint true, debug watch tunnel)",
                 "debug inv|debug autominer on|debug watch|debug autominer status", "debug");

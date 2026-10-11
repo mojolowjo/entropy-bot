@@ -63,6 +63,7 @@ public final class DebugVerbs {
                 return "last hits (oldest first): " + io.github.mojolowjo.entropybot.threat.HitLog.text(io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(n), zone)
                         + "\nmeasured per hit: " + io.github.mojolowjo.entropybot.threat.MobDamage.INSTANCE.toJson();
             }
+            case "motor" -> { return io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.debug(); }     // 0.27.0
             case "threats", "threat" -> {
                 if (w.size() >= 4) { int[] c = DebugRules.ints(w, 1, 3, "usage: debug threats [x y z]"); return io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.probe(c[0], c[1], c[2]); }
                 return io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.debug();
