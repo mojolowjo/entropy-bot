@@ -59,6 +59,101 @@ public final class Brain {
         this.day = new DayPlanRuntime(env);
     }
 
+    // ---- 0.26.5: learned scores (BRAIN_PLAN 4.5d) ----
+
+    public static final String OUTCOMES_FILE = "outcomes.json";
+    /** Before the load: catches the live decisions (their pending refs move to the loaded table). */
+    private OutcomeTable learnTable = new OutcomeTable();
+    private volatile OutcomeTable learnLoaded;
+    private volatile String learnNote = "", learnSource = "";
+    private boolean learnStarted, learnReady;
+    private java.util.concurrent.Executor learnExec = r -> {
+        Thread t = new Thread(r, "entropybot-brain-learn");
+        t.setDaemon(true);
+        t.start();
+    };
+
+    /** Tests: run the load on the calling thread. */
+    void learnExecutor(java.util.concurrent.Executor e) { learnExec = e; }
+
+    public OutcomeTable learned() { return learnReady ? learnTable : null; }
+
+    /** First loop: hooks the decision log and loads the table off the tick; later loops adopt it once it is there. */
+    void learnLoad(long now) {
+        if (!learnStarted) {
+            learnStarted = true;
+            DecisionLog log = env.decisions();
+            if (log != null) log.listener(new DecisionLog.Listener() {
+                @Override public void decision(long ref, String chosen, JsonObject state) {
+                    learnTable.decision(ref, chosen, OutcomeTable.bucket(state));
+                }
+
+                @Override public void outcome(long t, long ref, String outcome) {
+                    if (learnTable.outcome(t, ref, outcome, OutcomeTable.Params.of(cfg).halfLifeDays()) && learnReady) saveLearned();
+                }
+            });
+            final double hl = OutcomeTable.Params.of(cfg).halfLifeDays();
+            learnExec.execute(() -> {
+                try {
+                    String text = env.readFile(OUTCOMES_FILE);
+                    OutcomeTable t = null;
+                    if (text != null && !text.startsWith("error:")) {
+                        try {
+                            t = OutcomeTable.fromJson(text);
+                            learnSource = "outcomes.json";
+                        } catch (IllegalArgumentException e) {
+                            learnNote = OUTCOMES_FILE + " was broken (" + e.getMessage() + ") - rebuilt from the decision logs";
+                        }
+                    } else if (text != null) learnNote = OUTCOMES_FILE + " could not be read (" + text + ") - rebuilt from the decision logs";
+                    if (t == null) {
+                        t = new OutcomeTable();
+                        int n = log == null ? 0 : t.replay(log.recentLines(now, DecisionLog.KEEP_DAYS, OutcomeTable.MAX_LINES), hl);
+                        learnSource = "the decision logs (" + n + " outcomes)";
+                    }
+                    learnLoaded = t;
+                } catch (Throwable e) {
+                    learnNote = "the learned table could not be built (" + e + ") - scores unadjusted";
+                    learnLoaded = new OutcomeTable();
+                }
+            });
+        }
+        if (!learnReady && learnLoaded != null) {
+            OutcomeTable t = learnLoaded;
+            t.adoptPending(learnTable);
+            learnTable = t;
+            learnReady = true;
+            env.log("brain: learned table from " + learnSource + ": " + t.keys() + " keys, " + t.tries() + " tries" + (learnNote.isEmpty() ? "" : " (" + learnNote + ")"));
+            if (!learnSource.equals(OUTCOMES_FILE)) saveLearned();
+        }
+    }
+
+    private void saveLearned() {
+        String r = env.writeFile(OUTCOMES_FILE, learnTable.toJson().toString());
+        if (r == null || r.startsWith("error")) learnTable.saveError();
+    }
+
+    /** "brain learned [kind]" / "brain learned reset". */
+    String learnedCommand(String rest) {
+        String t = rest == null ? "" : rest.trim().toLowerCase();
+        if (!learnReady) return learnStarted ? "learned: still loading" : "learned: not loaded yet (the brain loads it on its first loop: brain on)";
+        if (t.equals("reset")) {
+            learnTable.reset();
+            saveLearned();
+            return "ok: the learned table is empty; it fills again as brain jobs end";
+        }
+        return learnTable.show(t.isEmpty() ? null : t, env.now(), OutcomeTable.Params.of(cfg));
+    }
+
+    /** The scores line with each adjusted option's learned note ("cave 15 x0.8 (learned: ...)"). */
+    String learnedScoresLine(Needs.Scored sc, BrainState s) {
+        List<String> w = new ArrayList<>();
+        for (Needs.Option o : sc.options()) {
+            String note = s == null || o.chain() == null ? "" : s.learned(o.chain()).note();
+            w.add(o.need() + " " + o.score() + (note.isEmpty() ? "" : " " + note));
+        }
+        return String.join(", ", w);
+    }
+
     // ---- 0.26.3: the day plan ----
 
     private final DayPlanRuntime day;
@@ -178,6 +273,7 @@ public final class Brain {
         String t = rest == null ? "" : rest.trim().toLowerCase();
         if (t.matches("^(get|set|reset)\\b.*")) return settings(rest);         // B4
         if (t.matches("^tree\\b.*")) return treeCommand(t.substring(4));
+        if (t.matches("^learned\\b.*")) return learnedCommand(t.substring(7));      // 0.26.5
         JsonObject d = data();
         switch (t) {
             case "on" -> {
@@ -206,7 +302,7 @@ public final class Brain {
                 BrainState s = prev;
                 return "brain copy is " + (copyOn() ? "on" : "off") + (s != null && s.copy != null ? " - " + s.copy.why() : "");
             }
-            default -> { return "usage: brain on|off|status | brain copy on|off | brain get [key] | brain set <key> <value> | brain reset <key>|all | brain tree [reload]"; }
+            default -> { return "usage: brain on|off|status | brain copy on|off | brain get [key] | brain set <key> <value> | brain reset <key>|all | brain tree [reload] | brain learned [job kind] | brain learned reset"; }
         }
     }
 
@@ -271,6 +367,8 @@ public final class Brain {
         b.append(" | cost ").append(r2(cm[0])).append(" ms a loop (max ").append(r2(cm[1])).append(", last sense ").append(r2(lastSenseMs)).append(" ms; last minute)");
         b.append(" | ").append(feasibilityLine());      // 0.26.2
         b.append(" | ").append(day.statusLine());       // 0.26.3
+        b.append(" | learned: ").append(learnReady ? learnTable.keys() + " keys, " + learnTable.tries() + " tries"
+                + (cfg.i("brain.learn") == 0 ? " (brain.learn 0: not used)" : "") : learnStarted ? "loading" : "not loaded");      // 0.26.5
         if (mem.size() > 0) b.append(" | failure memory: ").append(mem.describe(now));
         if (prev != null) b.append(" | stage ").append(prev.stage);
         if (job != null) b.append(" | job: ").append(job.chain()).append(" (").append(job.need()).append(")");
@@ -298,7 +396,7 @@ public final class Brain {
         String latest = older.isEmpty() ? "" : older.remove(older.size() - 1);
         List<String> sk = new ArrayList<>(lastSkipped);
         if (lastScored != null) sk.addAll(lastScored.skipped());
-        String scores = (lastScored == null ? "" : " | scores: " + lastScored.line()) + (sk.isEmpty() ? "" : " | skipped: " + String.join("; ", sk));
+        String scores = (lastScored == null ? "" : " | scores: " + learnedScoresLine(lastScored, prev)) + (sk.isEmpty() ? "" : " | skipped: " + String.join("; ", sk));
         return (older.isEmpty() ? "" : String.join(" | ", older) + "\n") + "latest: " + latest + scores + (prev != null ? " | stage " + prev.stage : "")
                 + (lastEvents.isEmpty() ? "" : " | events " + lastEvents)
                 + (prev != null ? " | " + NightSafety.status(prev, cfg) : "")
@@ -345,6 +443,7 @@ public final class Brain {
         if (treeRefused) out.add(new String[]{"braintree", treeNote, "fix " + BrainTreeFile.OVERRIDE + " (or delete it), then brain tree reload"});
         String[] dp = day.finding();      // 0.26.3: a broken dayplan.json
         if (dp != null) out.add(dp);
+        if (!learnNote.isEmpty()) out.add(new String[]{"brainlearned", learnNote, "brain learned"});      // 0.26.5
         if (!configNote.isEmpty()) out.add(new String[]{"brainconfig", "brain settings ignored: " + configNote, "brain get, then brain set or brain reset"});
         for (Map.Entry<String, String> e : parked(now).entrySet())
             out.add(new String[]{"brain:" + e.getKey(), "the brain's need " + e.getKey() + " failed 3 times and is parked (" + e.getValue() + ")", "why"});
@@ -377,6 +476,9 @@ public final class Brain {
             BrainState s = env.sense();
             lastSenseMs = (System.nanoTime() - ts) / 1e6;
             s.now = now;
+            learnLoad(now);                                         // 0.26.5: the learned table (off the tick)
+            s.learn = learnReady ? learnTable : null;
+            s.learnParams = OutcomeTable.Params.of(cfg);
             // the job the brain started: still running?
             if (job != null && !env.jobRunning()) endJob(s);
             s.brainJob = job == null ? null : job.chain();
@@ -836,6 +938,12 @@ public final class Brain {
             o.add("job", j);
         }
         o.addProperty("stage", s == null ? null : s.stage);
+        if (learnReady) {      // 0.26.5: the top 10 adjustments (m != 1 first) and the bucket the bot is in now
+            JsonArray la = new JsonArray();
+            for (JsonObject r : learnTable.rows(null, env.now(), OutcomeTable.Params.of(cfg), 10)) la.add(r);
+            o.add("learned", la);
+            if (s != null) o.addProperty("learnedBucket", OutcomeTable.bucket(s));
+        }
         o.addProperty("loopsPerMin", loopsPerMinute(env.now()));
         o.addProperty("lastLoopMs", Math.round(lastLoopMs * 100) / 100.0);
         double[] cm = costMinute(env.now());      // 0.26.1: the snapshot cost counter

@@ -30,6 +30,57 @@ public final class DecisionLog {
         List<String> days();
 
         void delete(String day) throws IOException;
+
+        /** 0.26.5: one day's lines (oldest first); empty when none or unreadable. */
+        default List<String> read(String day) throws IOException { return List.of(); }
+    }
+
+    /** 0.26.5: told of every decision (ref, chosen, state) and outcome (t, ref, outcome): the learned table. */
+    public interface Listener {
+        void decision(long ref, String chosen, JsonObject state);
+
+        void outcome(long t, long ref, String outcome);
+    }
+
+    private volatile Listener listener;
+
+    public void listener(Listener l) { listener = l; }
+
+    /**
+     * 0.26.5: the last days' lines (at most maxLines, the newest kept), oldest first, for the learned table's replay.
+     * Never throws: an unreadable day is counted as an error and skipped.
+     */
+    public List<String> recentLines(long now, int keepDays, int maxLines) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        try {
+            LocalDate from = LocalDate.parse(day(now, zone)).minusDays(keepDays - 1);
+            List<String> ds = new java.util.ArrayList<>();
+            for (String d : sink.days()) {
+                try { if (!LocalDate.parse(d).isBefore(from)) ds.add(d); } catch (java.time.format.DateTimeParseException ignored) {}
+            }
+            ds.sort(java.util.Comparator.reverseOrder());
+            java.util.ArrayDeque<List<String>> chunks = new java.util.ArrayDeque<>();
+            int n = 0;
+            for (String d : ds) {
+                if (n >= maxLines) break;
+                List<String> l;
+                try {
+                    l = sink.read(d);
+                } catch (IOException | RuntimeException e) {
+                    errors++;
+                    lastError = e.toString();
+                    continue;
+                }
+                if (n + l.size() > maxLines) l = l.subList(l.size() - (maxLines - n), l.size());
+                chunks.addFirst(l);
+                n += l.size();
+            }
+            for (List<String> l : chunks) out.addAll(l);
+        } catch (RuntimeException e) {
+            errors++;
+            lastError = e.toString();
+        }
+        return out;
     }
 
     private final Sink sink;
@@ -77,6 +128,10 @@ public final class DecisionLog {
         if (dayPlanCtx != null) o.add("dayPlan", dayPlanCtx.deepCopy());      // 0.26.3
         o.add("outcome", com.google.gson.JsonNull.INSTANCE);
         write(now, o);
+        Listener l = listener;
+        if (l != null && chosen != null) {
+            try { l.decision(ref, chosen, state); } catch (RuntimeException e) { errors++; lastError = e.toString(); }
+        }
         return ref;
     }
 
@@ -104,6 +159,10 @@ public final class DecisionLog {
         o.addProperty("ref", ref);
         o.addProperty("outcome", outcome);
         write(now, o);
+        Listener l = listener;
+        if (l != null) {
+            try { l.outcome(now, ref, outcome); } catch (RuntimeException e) { errors++; lastError = e.toString(); }
+        }
     }
 
     /** A line copied from the old autominer log (the history, read-only): {t, branch: autominer, chosen, reason, outcome}. */

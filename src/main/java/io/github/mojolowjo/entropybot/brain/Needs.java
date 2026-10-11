@@ -142,7 +142,10 @@ public final class Needs {
             out.add(new Option("torch", TORCH_SCORE, "gather torch 16", "night, my spot is dark and I have no torches, coal or logs", null, 0));
         // upkeep: the first idle item that may run here
         Option up = null;
-        for (IdleList.Pick p : IdleList.candidates(idle, s.upkeep)) {
+        List<IdleList.Pick> picks = IdleList.candidates(idle, s.upkeep);
+        // 0.26.5: the runnable items ordered by their learned multiplier (the list's order on a tie, and with no table)
+        if (s.learn != null && s.learnParams != null) picks = s.learn.order(picks, OutcomeTable.bucket(s), s.now, s.learnParams);
+        for (IdleList.Pick p : picks) {
             if (s.bound() && p.where() != null && BrainState.flat(p.where(), s.ownerPos) > c.i("nearbyR")) {
                 skipped.add("upkeep " + p.item() + ": " + (int) BrainState.flat(p.where(), s.ownerPos) + " blocks from you (not released: done lets me go)");
                 continue;

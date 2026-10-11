@@ -326,7 +326,7 @@ public final class BrainTree {
     static Decision pick(Ctx c) {
         boolean barred = surfaceBarred(c);
         int floor = c.c().i("floor");
-        for (Needs.Option o : c.scored().options()) {
+        for (Needs.Option o : learnedOrder(c.scored().options(), c.s())) {
             if (o.chain() == null || o.score() <= floor) continue;
             if (barred && !NightSafety.underground(o.chain())) continue;
             if (c.mem() != null) {
@@ -336,9 +336,23 @@ public final class BrainTree {
                     continue;
                 }
             }
-            return new Decision("pick", Kind.START, o.chain(), o.need(), o.score(), o.reason());
+            String note = c.s().learned(o.chain()).note();
+            return new Decision("pick", Kind.START, o.chain(), o.need(), o.score(), o.reason() + (note.isEmpty() ? "" : " [" + note + "]"));
         }
         return null;
+    }
+
+    /**
+     * 0.26.5: the options by score x the learned multiplier (stable: equal products keep the scorer's order). Only the
+     * pick uses it; no table (or brain.learn 0) = the scorer's order.
+     */
+    static List<Needs.Option> learnedOrder(List<Needs.Option> opts, BrainState s) {
+        if (s.learn == null || s.learnParams == null || !s.learnParams.on() || opts.size() < 2) return opts;
+        java.util.Map<Needs.Option, Double> v = new java.util.IdentityHashMap<>();
+        for (Needs.Option o : opts) v.put(o, o.chain() == null ? o.score() : o.score() * s.learned(o.chain()).m());
+        List<Needs.Option> out = new ArrayList<>(opts);
+        out.sort(java.util.Comparator.comparingDouble((Needs.Option o) -> -v.get(o)));
+        return out;
     }
 
     static Needs.Option bestUnderground(Ctx c) {

@@ -28,6 +28,17 @@ class GuardCoreTest {
     }
 
     @Test
+    void forceLeaseCountsEvenBehindAnEarlierPlaceLease() {
+        // 0.26.5 shelter bug: the wall cell's place lease came first and hid the one-cell force lease
+        GuardCore g = withPolicy();
+        assertFalse(g.lease("tok", "placing oak_planks", new Box(null, OW, -48, 68, -27, -48, 68, -27), true, false).startsWith("error"));
+        assertEquals("built block", g.check(OW, -48, 68, -27, "break", PLANKS).reason());
+        assertFalse(g.lease("tok", "opening my shelter", new Box(null, OW, -48, 68, -27, -48, 68, -27), false, true).startsWith("error"));
+        assertTrue(g.check(OW, -48, 68, -27, "break", PLANKS).allowed());
+        assertFalse(g.check(OW, -48, 68, -27, "break", CHEST).allowed(), "block entities stay floor");
+    }
+
+    @Test
     void startsInLogModeDuringB0() {
         GuardCore g = new GuardCore();
         assertEquals(GuardCore.DEFAULT_MODE, g.mode());

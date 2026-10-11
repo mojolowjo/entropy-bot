@@ -543,6 +543,12 @@ public final class BrainRuntime implements BrainEnv {
             Files.writeString(f, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
 
+        @Override public java.util.List<String> read(String day) throws IOException {
+            Path f = file(day);
+            if (f == null || !Files.exists(f)) return java.util.List.of();
+            return Files.readAllLines(f, StandardCharsets.UTF_8);
+        }
+
         @Override public long size(String day) {
             try {
                 Path f = file(day);

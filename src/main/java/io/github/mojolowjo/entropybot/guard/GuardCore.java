@@ -351,6 +351,15 @@ public final class GuardCore {
         return null;
     }
 
+    /** A break-capable force or destroy lease covers this cell (any of them, whatever else covers it too). */
+    boolean forceLeaseAt(String dim, int x, int y, int z) {
+        for (Lease l : leases.values()) {
+            if (l.seal || !(l.force || l.destroy)) continue;
+            if (l.box.contains(dim, x, y, z)) return true;
+        }
+        return false;
+    }
+
     /**
      * The box rules only (denied dimensions, protect boxes, areas, leases): cheap, lock-free, safe on
      * the pathfinder thread. {@code action} is "break", "place" or "go".
@@ -404,8 +413,9 @@ public final class GuardCore {
             if (!block.known()) return Verdict.floor("protected blocks not loaded yet");
             if (block.hasBlockEntity()) return Verdict.floor("block entity (a chest, machine, bed...)");
             if (block.isProtectedBlock()) {
-                Lease f = leaseAt(dim, x, y, z, false);
-                if (f == null || !(f.force || f.destroy)) return Verdict.floor("built block");
+                // 0.26.5: any covering force/destroy lease counts, not only the first lease found (the shelter's own place
+                // leases on its wall cells came first and hid the one-cell force lease: the wall never broke)
+                if (!forceLeaseAt(dim, x, y, z)) return Verdict.floor("built block");
             }
         }
         if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {

@@ -78,6 +78,12 @@ public final class BrainConfig {
                 // 0.26.1 "steady brain" (R1-R6)
                 {"brain.failMemoryMinutes", 10, 0, 120, "a brain job that failed for a reason it can't fix by retrying (no item, outside my areas, no path, no bed, none in my chests, the guard) is skipped this many minutes, or until the cause changes (0 = off)"},
                 {"brain.preDepositSlots", 8, 0, 36, "free slots at or below when the brain picks a gathering job with a base known: deposit first (0 = off)"},
+                // 0.26.5 learned scores (BRAIN_PLAN 4.5d)
+                {"brain.learn", 1, 0, 1, "learned scores: a pick's score times its job's success rate here (1 on, 0 off; brain learned)"},
+                {"brain.learnMin", 3, 1, 50, "finished + failed tries a job needs in a context before its score is adjusted"},
+                {"brain.learnFloor", 60, 10, 100, "the lowest learned multiplier in % (a job that always fails)"},
+                {"brain.learnCeil", 130, 100, 300, "the highest learned multiplier in % (a job that always finishes)"},
+                {"brain.learnHalfLifeDays", 7, 1, 60, "learned counts halve in this many days"},
                 {"weather.storm", 1, 0, 1, "a thunderstorm with sky above me counts as night for the night bands (1 on, 0 off)"},
                 {"passive.ownerTimeoutS", 300, 0, 3600, "escorting or assisting and you are offline this many seconds: dismiss then home (0 = off)"},
                 {"spawn.cooldownMinutes", 1440, 60, 10080, "in-game minutes between two tries to set my spawn at a bed (1440 = one day)"},

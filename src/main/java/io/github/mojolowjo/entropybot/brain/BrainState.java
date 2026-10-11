@@ -79,6 +79,16 @@ public final class BrainState {
     /** 0.26.3: the day plan's active goal, offered as the need day_goal (filled by the brain's DayPlanRuntime), else null. */
     public DayGoal dayGoal;
 
+    /** 0.26.5: the learned table and its settings (null: not loaded yet or brain.learn 0: every multiplier is 1). */
+    public OutcomeTable learn;
+    public OutcomeTable.Params learnParams = OutcomeTable.Params.defaults();
+
+    /** 0.26.5: the learned adjustment of a chain here (m 1 when no table). */
+    public OutcomeTable.Adjust learned(String chain) {
+        if (learn == null || chain == null || learnParams == null || !learnParams.on()) return new OutcomeTable.Adjust(OutcomeTable.kind(chain), "", 1.0, 0, 0, false);
+        return learn.adjust(chain, OutcomeTable.bucket(this), now, learnParams);
+    }
+
     /** The day plan's active goal: its form, its chain (the planner's), the why line. */
     public record DayGoal(String text, String chain, String why) {}
 
@@ -117,6 +127,9 @@ public final class BrainState {
         o.addProperty("threats", danger ? 1 : 0);
         o.addProperty("light", litHere);
         o.addProperty("night", night);
+        // 0.26.5: the learned table's buckets
+        o.addProperty("daypart", OutcomeTable.daypart(night, dayTime));
+        o.addProperty("baseDist", basePos == null ? -1 : (int) Math.round(flat(botPos, basePos)));
         // R9: -1 unknown (out of view, no fresh companion fix), -2 a placeholder position the brain ignores (0.25.x logged it as ~14142025)
         o.addProperty("ownerDist", ownerPos == null ? -1 : !ownerKnown() ? -2 : (int) Math.round(flat(botPos, ownerPos)));
         if (thundering) o.addProperty("storm", skyAbove);
