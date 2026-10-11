@@ -31,10 +31,23 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import org.slf4j.Logger;
 
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.Tags;
+
 import java.nio.file.Path;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -97,12 +110,25 @@ public final class ActionLogMc {
     private Map<String, Integer> openTotals;
     private String openType = "";
     private boolean openCrafting;
+    // 0.5.0 heavy log (client thread)
+    static final long PROMPT_MS = 10_000;
+    final HeavyLog.Activity activity = new HeavyLog.Activity();
+    private long lastMobScanAt, lastCtxAt, lastInvAt, lastInvSig, lastSeenAt;
+    private double nearestHostile = 1e9;
+    private int nearestHostileDy, lastRawLight, lastBlockLight;
+    private String mobString = "", lastSeenSig = "";
+    private int seenLayer = -1, scx, scy, scz;
+    private final BlockPos.MutableBlockPos seenPos = new BlockPos.MutableBlockPos();
+    private final Map<String, double[]> seenOre = new HashMap<>(), seenLog = new HashMap<>();
+    private final java.util.IdentityHashMap<Block, Byte> kindCache = new java.util.IdentityHashMap<>();
+    private volatile String prompt;
+    private volatile long promptUntil;
 
     ActionLogMc(Supplier<CompanionConfig> config, HttpSender http, Companion companion, Path dir) {
         this.config = config;
         this.http = http;
         this.companion = companion;
-        this.store = new LogStore(dir, ZoneId.systemDefault(), LogStore.CAP_BYTES);
+        this.store = new LogStore(dir, ZoneId.systemDefault(), LogStore.CAP_BYTES, LogStore.DAY_CAP_BYTES);
         this.uploader = new LogUploader(store, companion::say);
         ActionLog.INSTANCE = log;
         worker.scheduleWithFixedDelay(this::flush, 2, 2, TimeUnit.SECONDS);
@@ -143,12 +169,15 @@ public final class ActionLogMc {
     // ---- the tick ----
 
     void tick(Minecraft mc) {
+        long t0 = System.nanoTime();
+        boolean measured = false;
         try {
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null || !on()) {
                 inWorld = false;
                 return;
             }
+            measured = true;
             String d = mc.level.dimension().location().toString();
             log.context(mc.level.getDayTime(), d, p.getX(), p.getY(), p.getZ());
             if (!inWorld) {
@@ -167,17 +196,25 @@ public final class ActionLogMc {
                 log.add(ev("tp").num("fx", (long) Math.floor(px)).num("fy", (long) Math.floor(py)).num("fz", (long) Math.floor(pz)));
             px = p.getX(); py = p.getY(); pz = p.getZ();
             long now = System.currentTimeMillis();
-            if (now - lastPosAt >= POS_EVERY_MS) {
+            boolean heavy = heavy();
+            CompanionConfig.Rate rate = config.get().actionLogRate;
+            if (heavy && now - lastMobScanAt >= rate.mobScanSeconds * 1000L) scanMobs(mc, p, now);
+            boolean fight = heavy && nearestHostile <= HeavyLog.FIGHT_RADIUS;
+            long posEvery = !heavy ? POS_EVERY_MS : (fight ? rate.fightPosSeconds : rate.posSeconds) * 1000L;
+            if (now - lastPosAt >= posEvery) {
                 double mx = px - sx, my = py - sy, mz = pz - sz;
-                if (mx * mx + my * my + mz * mz >= 1) {
+                if (fight || mx * mx + my * my + mz * mz >= 1) {
                     int near = 0;
                     for (Player o : mc.level.players()) if (o != p && o.distanceToSqr(p) <= 256) near++;
-                    log.add(ev("pos").num("players", near).bool("sprint", p.isSprinting()).num("free", freeSlots(p.getInventory()))
-                            .dec("hp", p.getHealth()).num("food", p.getFoodData().getFoodLevel()));
+                    ActionLog.LogEvent ev = ev("pos").num("players", near).bool("sprint", p.isSprinting()).num("free", freeSlots(p.getInventory()))
+                            .dec("hp", p.getHealth()).num("food", p.getFoodData().getFoodLevel());
+                    if (heavy) posHeavy(mc, p, ev, fight);
+                    log.add(ev);
                     sx = px; sy = py; sz = pz;
                 }
                 lastPosAt = now;
             }
+            if (heavy) heavyTick(mc, p, now, rate);
             Item h = p.getMainHandItem().getItem();
             if (h != held) {
                 held = h;
@@ -200,16 +237,26 @@ public final class ActionLogMc {
             if (hp < health - 0.01f) {
                 DamageSource src = p.getLastDamageSource();
                 log.add(ev("damage").str("source", src == null ? "unknown" : src.getMsgId()).dec("amount", health - hp).dec("health", hp));
+                if (heavy) {
+                    Entity by = src == null ? null : src.getEntity();
+                    if (by == null) by = p.getLastHurtByMob();
+                    ActionLog.LogEvent hin = hit("in", by, p).dec("amount", health - hp).dec("hp", hp);
+                    if (src != null && src.getDirectEntity() != null && src.getDirectEntity() != src.getEntity()) hin.bool("proj", true);
+                    log.add(hin);
+                    if (by != null && !(by instanceof Player)) feed("fighting");
+                }
             }
             health = hp;
             boolean dd = p.isDeadOrDying();
             if (dd && !dead) {
                 DamageSource src = p.getLastDamageSource();
                 log.add(ev("death").str("source", src == null ? "unknown" : src.getMsgId()));
+                if (heavy) context(mc, p, "death", true);
             }
             dead = dd;
             boolean sl = p.isSleeping();
             if (sl != sleeping) log.add(ev("sleep").str("what", sl ? "start" : "wake"));
+            if (sl && !sleeping && heavy) feed("sleeping");
             sleeping = sl;
             if (target != null) {
                 if (now - targetAt > KILL_WINDOW_MS) target = null;
@@ -221,6 +268,8 @@ public final class ActionLogMc {
             }
         } catch (RuntimeException e) {
             error("tick", e);
+        } finally {
+            if (measured) log.meter.tick(System.currentTimeMillis(), System.nanoTime() - t0);
         }
     }
 
@@ -245,6 +294,11 @@ public final class ActionLogMc {
             Minecraft mc = Minecraft.getInstance();
             log.newSession();
             inWorld = false;
+            kindCache.clear();                 // tags may differ on another server
+            seenLayer = -1;
+            lastInvSig = 0;
+            lastSeenSig = "";
+            activity.current = "idle";
             boolean sp = mc.hasSingleplayerServer();
             String name;
             if (sp) name = mc.getSingleplayerServer().getWorldData().getLevelName();
@@ -313,6 +367,10 @@ public final class ActionLogMc {
             ActionLog.LogEvent ev = ev("chest").str("what", "open").str("container", type).num("free", freeSlots(mc.player.getInventory()));
             if (System.currentTimeMillis() - usedAt < 3000) ev.str("block", usedBlock).num("bx", ux).num("by", uy).num("bz", uz);
             log.add(ev);
+            if (heavy()) {
+                feed(openCrafting ? "crafting" : "storage");
+                context(mc, mc.player, "chest", true);
+            }
         } catch (RuntimeException ex) {
             error("screen open", ex);
         }
@@ -362,6 +420,7 @@ public final class ActionLogMc {
             if (!on() || mc.player == null) return;
             log.add(ev("break").str("block", block).str("tool", id(mc.player.getMainHandItem()))
                     .num("bx", pos.getX()).num("by", pos.getY()).num("bz", pos.getZ()));
+            if (heavy()) feed(HeavyLog.blockActivity(block, false, false));
         } catch (RuntimeException e) {
             error("break", e);
         }
@@ -370,7 +429,13 @@ public final class ActionLogMc {
     void placed(String item, BlockPos pos) {
         try {
             if (!on()) return;
-            log.add(ev("place").str("block", item).num("bx", pos.getX()).num("by", pos.getY()).num("bz", pos.getZ()));
+            ActionLog.LogEvent ev = ev("place").str("block", item).num("bx", pos.getX()).num("by", pos.getY()).num("bz", pos.getZ());
+            Minecraft mc = Minecraft.getInstance();
+            boolean torch = item != null && item.contains("torch");
+            if (heavy() && torch && mc.level != null)       // the light at the owner's feet up to 1 s before (the torch's own light not yet in)
+                ev.num("lt", lastRawLight).num("bl", lastBlockLight);
+            log.add(ev);
+            if (heavy() && !torch) feed("building");
         } catch (RuntimeException e) {
             error("place", e);
         }
@@ -395,6 +460,10 @@ public final class ActionLogMc {
             target = e;
             targetWeapon = id(mc.player.getMainHandItem());
             targetAt = System.currentTimeMillis();
+            if (heavy()) {
+                log.add(hit("out", e, mc.player).str("weapon", targetWeapon).dec("cd", mc.player.getAttackStrengthScale(0f)));
+                feed("fighting");
+            }
         } catch (RuntimeException ex) {
             error("attack", ex);
         }
@@ -419,10 +488,13 @@ public final class ActionLogMc {
                 return;
             }
             if (type == ClickType.QUICK_CRAFT || type == ClickType.CLONE) return;
-            if (s instanceof ResultSlot)
+            if (s instanceof ResultSlot) {
                 log.add(ev("craft").str("item", id(st)).num("count", st.getCount()).bool("quick", type == ClickType.QUICK_MOVE));
-            else if (s instanceof FurnaceResultSlot)
+                if (heavy()) feed("crafting");
+            } else if (s instanceof FurnaceResultSlot) {
                 log.add(ev("smelt").str("item", id(st)).num("count", st.getCount()).str("container", openType));
+                if (heavy()) feed("crafting");
+            }
         } catch (RuntimeException e) {
             error("click", e);
         }
@@ -464,6 +536,241 @@ public final class ActionLogMc {
         });
     }
 
+    // ---- 0.5.0 heavy log (client thread) ----
+    // Budgets: hostiles within 24 once a second (entity lookup in a box, line of sight for the nearest 12 only); the
+    // seen scan (ores/logs within 16) is a sphere spread over ~11 ticks, 3 layers a tick (~1.6k block reads a tick
+    // while it runs, then idle until the next interval); the 9x9 sketch only at a mark; inventory totals at triggers
+    // and every invSeconds (written only when changed). /bot log status shows the measured ms a tick.
+
+    private boolean heavy() {
+        CompanionConfig c = config.get();
+        return c.enabled && c.actionLog && c.actionLogHeavy;
+    }
+
+    private static String typeId(Entity e) {
+        return e instanceof Player ? "player" : HeavyLog.shortId(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
+    }
+
+    /** A hit event's shared fields: the other side (a kind; a player is only "player"), distance, dY, gap, the owner's moves. */
+    private ActionLog.LogEvent hit(String dir, Entity other, LocalPlayer p) {
+        ActionLog.LogEvent ev = ev("hit").str("dir", dir).str("mob", other == null ? "unknown" : typeId(other));
+        if (other != null) {
+            double dx = other.getX() - p.getX(), dz = other.getZ() - p.getZ(), hd = Math.sqrt(dx * dx + dz * dz);
+            Vec3 v = p.getDeltaMovement();
+            ev.dec("d", p.distanceTo(other)).num("dy", Math.round(other.getY() - p.getY()))
+                    .dec("gap", Math.max(0, hd - (p.getBbWidth() + other.getBbWidth()) / 2))
+                    .bool("ret", v.x * dx + v.z * dz < -0.001);
+        }
+        return ev.bool("spr", p.isSprinting()).bool("snk", p.isShiftKeyDown()).bool("blk", p.isBlocking()).bool("gnd", p.onGround());
+    }
+
+    private void scanMobs(Minecraft mc, LocalPlayer p, long now) {
+        lastMobScanAt = now;
+        BlockPos at = p.blockPosition();
+        lastRawLight = mc.level.getMaxLocalRawBrightness(at);
+        lastBlockLight = mc.level.getBrightness(LightLayer.BLOCK, at);
+        List<Entity> found = mc.level.getEntities(p, p.getBoundingBox().inflate(HeavyLog.MOB_RADIUS), e -> e instanceof Enemy && e.isAlive());
+        found.sort(java.util.Comparator.comparingDouble(e -> e.distanceToSqr(p)));
+        List<HeavyLog.Mob> l = new ArrayList<>();
+        nearestHostile = 1e9;
+        nearestHostileDy = 0;
+        for (Entity e : found) {
+            double d = e.distanceTo(p);
+            if (d > HeavyLog.MOB_RADIUS || l.size() >= HeavyLog.MAX_MOBS) break;
+            int dy = (int) Math.round(e.getY() - p.getY());
+            if (l.isEmpty()) {
+                nearestHostile = d;
+                nearestHostileDy = dy;
+            }
+            l.add(new HeavyLog.Mob(typeId(e), d, p.hasLineOfSight(e), dy));
+        }
+        mobString = HeavyLog.mobs(l);
+    }
+
+    /** The pos line's heavy fields: light, the crosshair target, and in a fight the moves and the nearest hostile. */
+    private void posHeavy(Minecraft mc, LocalPlayer p, ActionLog.LogEvent ev, boolean fight) {
+        ev.num("lt", lastRawLight).num("bl", lastBlockLight);
+        HitResult hr = mc.hitResult;
+        if (hr != null && hr.getType() != HitResult.Type.MISS) {
+            String ch = null;
+            if (hr instanceof BlockHitResult bh) ch = "b:" + HeavyLog.shortId(BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(bh.getBlockPos()).getBlock()).toString());
+            else if (hr instanceof EntityHitResult eh) ch = "e:" + typeId(eh.getEntity());
+            if (ch != null) ev.str("ch", ch).dec("chd", hr.getLocation().distanceTo(p.getEyePosition()));
+        }
+        if (fight) {
+            ev.bool("f", true).bool("jmp", !p.onGround() && p.getDeltaMovement().y > 0).bool("snk", p.isShiftKeyDown())
+                    .dec("md", nearestHostile).num("mdy", nearestHostileDy);
+        }
+    }
+
+    private void heavyTick(Minecraft mc, LocalPlayer p, long now, CompanionConfig.Rate rate) {
+        if (now - lastCtxAt >= rate.ctxSeconds * 1000L) context(mc, p, "t", false);
+        if (now - lastInvAt >= rate.invSeconds * 1000L) inventory(p, "t", true);
+        seenStep(mc, p, now, rate);
+        if (prompt != null && now > promptUntil) prompt = null;
+    }
+
+    /** ctx: health, absorption, armour, light, food, free slots and the hostiles; at a trigger also the armour worn and an inventory snapshot. */
+    private void context(Minecraft mc, LocalPlayer p, String trig, boolean full) {
+        long now = System.currentTimeMillis();
+        if (full) scanMobs(mc, p, now);
+        lastCtxAt = now;
+        ActionLog.LogEvent ev = ev("ctx").str("tr", trig).dec("hp", p.getHealth()).dec("ab", p.getAbsorptionAmount()).num("arm", p.getArmorValue())
+                .num("lt", lastRawLight).num("bl", lastBlockLight).num("food", p.getFoodData().getFoodLevel()).num("free", freeSlots(p.getInventory()));
+        if (!mobString.isEmpty()) ev.str("mobs", mobString);
+        if (full) {
+            StringBuilder aw = new StringBuilder();
+            for (EquipmentSlot s : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+                if (aw.length() > 0) aw.append('|');
+                ItemStack st = p.getItemBySlot(s);
+                aw.append(st.isEmpty() ? "" : HeavyLog.shortId(id(st)));
+            }
+            ev.str("aw", aw.toString()).str("act", activity.current);
+        }
+        log.add(ev);
+        if (full) inventory(p, trig, false);
+    }
+
+    private void inventory(LocalPlayer p, String trig, boolean onlyIfChanged) {
+        lastInvAt = System.currentTimeMillis();
+        Map<String, Integer> t = totals(p.getInventory());
+        long sig = HeavyLog.signature(t);
+        if (onlyIfChanged && sig == lastInvSig) return;
+        lastInvSig = sig;
+        log.add(ev("inv").str("tr", trig).num("free", freeSlots(p.getInventory())).counts("items", t));
+    }
+
+    /** 0 = nothing, 1 = ore (the c:ores tag), 2 = log (minecraft:logs); cached per block. */
+    private byte kind(BlockState st) {
+        Block b = st.getBlock();
+        Byte k = kindCache.get(b);
+        if (k == null) {
+            k = st.is(Tags.Blocks.ORES) ? (byte) 1 : st.is(BlockTags.LOGS) ? (byte) 2 : (byte) 0;
+            kindCache.put(b, k);
+        }
+        return k;
+    }
+
+    private static void seenAdd(Map<String, double[]> m, String id, double d2) {
+        double[] v = m.computeIfAbsent(id, x -> new double[]{0, Double.MAX_VALUE});
+        v[0]++;
+        if (d2 < v[1]) v[1] = d2;
+    }
+
+    private static Map<String, String> seenOut(Map<String, double[]> m) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, double[]> e : m.entrySet()) out.put(HeavyLog.shortId(e.getKey()), HeavyLog.seenValue((int) e.getValue()[0], Math.sqrt(e.getValue()[1])));
+        return out;
+    }
+
+    private void seenStep(Minecraft mc, LocalPlayer p, long now, CompanionConfig.Rate rate) {
+        final int R = HeavyLog.SEEN_RADIUS;
+        if (seenLayer < 0) {
+            if (now - lastSeenAt < rate.seenSeconds * 1000L) return;
+            BlockPos at = p.blockPosition();
+            scx = at.getX(); scy = at.getY(); scz = at.getZ();
+            seenOre.clear();
+            seenLog.clear();
+            seenLayer = 0;
+        }
+        int minY = mc.level.getMinBuildHeight(), maxY = mc.level.getMaxBuildHeight();
+        for (int k = 0; k < 3 && seenLayer <= 2 * R; k++, seenLayer++) {
+            int dy = seenLayer - R, y = scy + dy;
+            if (y < minY || y >= maxY) continue;
+            for (int dx = -R; dx <= R; dx++) {
+                for (int dz = -R; dz <= R; dz++) {
+                    int d2 = dx * dx + dy * dy + dz * dz;
+                    if (d2 > R * R) continue;
+                    BlockState st = mc.level.getBlockState(seenPos.set(scx + dx, y, scz + dz));
+                    if (st.isAir()) continue;
+                    byte kd = kind(st);
+                    if (kd == 0) continue;
+                    seenAdd(kd == 1 ? seenOre : seenLog, BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString(), d2);
+                }
+            }
+        }
+        if (seenLayer <= 2 * R) return;
+        seenLayer = -1;
+        lastSeenAt = now;
+        Map<String, double[]> drops = new HashMap<>();
+        for (ItemEntity ie : mc.level.getEntitiesOfClass(ItemEntity.class, p.getBoundingBox().inflate(R)))
+            seenAdd(drops, id(ie.getItem()), ie.distanceToSqr(p));
+        if (seenOre.isEmpty() && seenLog.isEmpty() && drops.isEmpty()) {
+            lastSeenSig = "";
+            return;
+        }
+        Map<String, String> o = seenOut(seenOre), lg = seenOut(seenLog), dr = seenOut(drops);
+        String sig = o + "|" + lg + "|" + dr;
+        if (sig.equals(lastSeenSig)) return;            // the same view as 5 s ago: not written again
+        lastSeenSig = sig;
+        ActionLog.LogEvent ev = ev("seen").num("r", R);
+        if (!o.isEmpty()) ev.strs("ore", o);
+        if (!lg.isEmpty()) ev.strs("log", lg);
+        if (!dr.isEmpty()) ev.strs("drop", dr);
+        log.add(ev);
+    }
+
+    /** After a mark: context with the inventory, and the 9x9 column sketch around the owner. */
+    private void afterMark() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (!heavy() || mc.player == null || mc.level == null) return;
+            context(mc, mc.player, "mark", true);
+            sketch(mc, mc.player, "mark");
+        } catch (RuntimeException e) {
+            error("mark context", e);
+        }
+    }
+
+    private void sketch(Minecraft mc, LocalPlayer p, String trig) {
+        BlockPos at = p.blockPosition();
+        int h = HeavyLog.SKETCH / 2;
+        Integer[] d = new Integer[HeavyLog.SKETCH * HeavyLog.SKETCH];
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        int i = 0;
+        for (int dz = -h; dz <= h; dz++) {
+            for (int dx = -h; dx <= h; dx++) {
+                Integer found = null;
+                boolean aboveFree = !mc.level.getBlockState(m.set(at.getX() + dx, at.getY() + 5, at.getZ() + dz)).blocksMotion();
+                for (int dy = 4; dy >= -5; dy--) {
+                    boolean solid = mc.level.getBlockState(m.set(at.getX() + dx, at.getY() + dy, at.getZ() + dz)).blocksMotion();
+                    if (solid && aboveFree) {
+                        found = dy;
+                        break;
+                    }
+                    aboveFree = !solid;
+                }
+                d[i++] = found;
+            }
+        }
+        log.add(ev("sketch").str("tr", trig).str("h", HeavyLog.sketch(d)));
+    }
+
+    /** An action's activity label; a switch writes a switch event with context and maybe shows the prompt. */
+    private void feed(String label) {
+        try {
+            long now = System.currentTimeMillis();
+            String old = activity.feed(label, now);
+            if (old == null) return;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null || mc.level == null) return;
+            log.add(ev("switch").str("from", old).str("to", activity.current));
+            context(mc, mc.player, "switch", true);
+            if (config.get().actionLogPrompt) {
+                prompt = "now " + activity.current + " - why? /bot log why <word> (" + String.join(" ", HeavyLog.WORDS) + ")";
+                promptUntil = now + PROMPT_MS;
+            }
+        } catch (RuntimeException e) {
+            error("switch", e);
+        }
+    }
+
+    /** The quiet prompt line for the overlay, or null. */
+    String promptLine(long now) {
+        String s = prompt;
+        return s == null || now > promptUntil ? null : s;
+    }
+
     // ---- /bot log ----
 
     void command(String arg) {
@@ -488,7 +795,49 @@ public final class ActionLogMc {
                 return;
             }
             if (!addNow("mark", "note", note)) return;
+            afterMark();
             companion.say("marked: " + note);
+            return;
+        }
+        if (lower.equals("why") || lower.startsWith("why ")) {
+            String w = HeavyLog.whyWord(a.substring(3));
+            if (w == null) {
+                companion.say("/bot log why <one word>: " + String.join(", ", HeavyLog.WORDS) + " or your own word");
+                return;
+            }
+            if (!on()) {
+                companion.say("action log is off (/bot log on)");
+                return;
+            }
+            if (Minecraft.getInstance().player == null) {
+                companion.say("join a world first");
+                return;
+            }
+            log.add(ev("mark").str("why", w).str("act", activity.current));
+            afterMark();
+            prompt = null;
+            companion.say("marked why: " + w + " (" + activity.current + ")");
+            return;
+        }
+        if (lower.equals("dismiss")) {
+            prompt = null;
+            return;
+        }
+        if (lower.startsWith("heavy ") || lower.startsWith("prompt ")) {
+            String[] w = lower.split("\\s+");
+            if (w.length != 2 || !(w[1].equals("on") || w[1].equals("off"))) {
+                companion.say("/bot log " + w[0] + " on|off");
+                return;
+            }
+            boolean on = w[1].equals("on");
+            String key = w[0].equals("heavy") ? "actionLogHeavy" : "actionLogPrompt";
+            String err = Companion.configFile == null ? "no config file" : CompanionConfig.saveBoolean(Companion.configFile, key, on);
+            if (!on && key.equals("actionLogPrompt")) prompt = null;
+            companion.say(err != null ? "action log: couldn't save the config (" + err + ")"
+                    : key.equals("actionLogHeavy") ? (on ? "heavy log on: context, inventory, what is in view, fights and sketches are recorded too"
+                            : "heavy log off: only the 0.4.0 events are recorded")
+                    : (on ? "switch prompt on: a quiet line asks why when you change activity (/bot log why <word>, /bot log dismiss)"
+                            : "switch prompt off"));
             return;
         }
         if (lower.startsWith("session")) {
@@ -501,7 +850,7 @@ public final class ActionLogMc {
             companion.say("this session is now called: " + name);
             return;
         }
-        companion.say("/bot log status | on | off | mark <note> | session <name>");
+        companion.say("/bot log status | on | off | heavy on|off | prompt on|off | mark <note> | why <word> | dismiss | session <name>");
     }
 
     private boolean addNow(String type, String field, String text) {
@@ -529,7 +878,9 @@ public final class ActionLogMc {
                 + (log.dropped + store.dropped > 0 ? ", dropped " + (log.dropped + store.dropped) : "") + "), queued "
                 + kb(uploader.queuedBytes()) + " (+" + log.buffered() + " in memory), " + post + "; files " + store.files().size()
                 + " days, " + kb(store.totalBytes()) + " of " + LogStore.CAP_BYTES / (1024 * 1024) + " MB, session " + log.session()
-                + (errors > 0 ? "; errors " + errors : "") + ("none".equals(store.lastError) ? "" : "; file error " + store.lastError);
+                + (errors > 0 ? "; errors " + errors : "") + ("none".equals(store.lastError) ? "" : "; file error " + store.lastError)
+                + "; heavy " + (c.actionLogHeavy ? "on" : "off") + " (prompt " + (c.actionLogPrompt ? "on" : "off") + "): " + log.meter.line(now)
+                + (uploader.lastPostBytes > 0 ? ", last post " + kb(uploader.lastPostBytes) + " gzip" : "") + ", activity " + activity.current;
     }
 
     private static String kb(long b) {

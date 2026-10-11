@@ -39,6 +39,35 @@ public final class CompanionConfig {
     public boolean shareChunks = true;
     /** 0.4.0: record the owner's action log (config/entropy-companion/log/, and posted to the dashboard when set up). */
     public boolean actionLog = true;
+    /**
+     * 0.5.0 heavy log: context, inventory snapshots, what was in view, the crosshair, fight details, column sketches.
+     * (Top-level keys beside {@code actionLog}, which stays a plain true/false so 0.4.0 config files still read.)
+     */
+    public boolean actionLogHeavy = true;
+    /** 0.5.0: a quiet overlay line asking "why?" when the log sees you switch activity (never blocks input). */
+    public boolean actionLogPrompt = false;
+    /** 0.5.0: the heavy log's intervals in seconds. */
+    public Rate actionLogRate = new Rate();
+
+    /** 0.5.0: the heavy log's intervals (seconds), clamped by {@link #normalised}. */
+    public static final class Rate {
+        public int posSeconds = 5;
+        public int fightPosSeconds = 1;
+        public int ctxSeconds = 3;
+        public int mobScanSeconds = 1;
+        public int seenSeconds = 5;
+        public int invSeconds = 60;
+
+        Rate normalised() {
+            posSeconds = Math.max(1, Math.min(60, posSeconds));
+            fightPosSeconds = Math.max(1, Math.min(10, fightPosSeconds));
+            ctxSeconds = Math.max(2, Math.min(60, ctxSeconds));
+            mobScanSeconds = Math.max(1, Math.min(10, mobScanSeconds));
+            seenSeconds = Math.max(3, Math.min(120, seenSeconds));
+            invSeconds = Math.max(10, Math.min(600, invSeconds));
+            return this;
+        }
+    }
 
     /**
      * 0.3.0: sets shareChunks in the file, keeping every other value as written (the file is read again on its next
@@ -96,6 +125,7 @@ public final class CompanionConfig {
         pointMineCount = Math.max(1, Math.min(64, pointMineCount));
         pointChopCount = Math.max(1, Math.min(256, pointChopCount));
         overlaySeconds = Math.max(0, Math.min(30, overlaySeconds));
+        actionLogRate = actionLogRate == null ? new Rate() : actionLogRate.normalised();
         return this;
     }
 

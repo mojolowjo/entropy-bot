@@ -19,7 +19,8 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class LogUploader {
     public static final long INTERVAL_MS = 10_000;
-    public static final int BATCH_BYTES = 512 * 1024, BATCH_LINES = 2000;
+    /** 0.5.0: up to 16 MB of lines read a post, gzipped to at most GZIP_MAX (halved until it fits); was 512 KB / 2000 lines. */
+    public static final int BATCH_BYTES = 16 * 1024 * 1024, BATCH_LINES = 50_000, GZIP_MAX = 2 * 1024 * 1024;
 
     /** The post: the gzipped body; returns the HTTP status (throws when unreachable). */
     public interface Poster {
@@ -34,7 +35,7 @@ public final class LogUploader {
     String cursorName = "";
     long cursorOffset;
     private boolean cursorLoaded;
-    long posts, failed, sentLines, lastOkAt;
+    long posts, failed, sentLines, lastOkAt, lastPostBytes;
     String lastError = "none";
 
     public LogUploader(LogStore store, Consumer<String> notice) {
@@ -124,7 +125,13 @@ public final class LogUploader {
         if (b == null) return;
         String err;
         try {
-            int status = poster.post(gzip(b.ndjson()));
+            byte[] gz = gzip(b.ndjson());
+            while (gz.length > GZIP_MAX && b.lines() > 1) {      // too big packed: send the first half of the lines
+                b = half(b);
+                gz = gzip(b.ndjson());
+            }
+            lastPostBytes = gz.length;
+            int status = poster.post(gz);
             err = status == 200 ? null : status == 403 ? "the dashboard refused the key (HTTP 403)" : "HTTP " + status;
         } catch (IOException | RuntimeException e) {
             err = "the dashboard is unreachable (" + e.getClass().getSimpleName() + ")";
@@ -160,6 +167,18 @@ public final class LogUploader {
             } catch (IOException ignored) {}
         }
         return q;
+    }
+
+    /** The batch cut after half its lines (the cursor then moves only that far). */
+    static Batch half(Batch b) {
+        int want = b.lines() / 2, seen = 0;
+        byte[] d = b.ndjson();
+        for (int i = 0; i < d.length; i++) {
+            if (d[i] == '\n' && ++seen == want) {
+                return new Batch(b.name(), b.start(), b.start() + i + 1, java.util.Arrays.copyOf(d, i + 1), want);
+            }
+        }
+        return b;
     }
 
     static byte[] gzip(byte[] b) throws IOException {

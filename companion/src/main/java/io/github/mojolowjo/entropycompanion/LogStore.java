@@ -20,21 +20,27 @@ import java.util.stream.Stream;
  */
 public final class LogStore {
     public static final int KEEP_DAYS = 30;
-    public static final long CAP_BYTES = 50L * 1024 * 1024;
+    /** 0.5.0 (heavy log): 500 MB in all, 300 MB for one day (was 50 MB in all). */
+    public static final long CAP_BYTES = 500L * 1024 * 1024, DAY_CAP_BYTES = 300L * 1024 * 1024;
     static final Pattern NAME = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}\\.jsonl$");
 
     final Path dir;
     private final ZoneId zone;
-    private final long cap;
-    private long total = -1;
+    private final long cap, dayCap;
+    private long total = -1, today = -1;
     private String lastCleanDay = "";
     long written, dropped, writeErrors;
     String lastError = "none";
 
     public LogStore(Path dir, ZoneId zone, long cap) {
+        this(dir, zone, cap, cap);
+    }
+
+    public LogStore(Path dir, ZoneId zone, long cap, long dayCap) {
         this.dir = dir;
         this.zone = zone;
         this.cap = cap;
+        this.dayCap = Math.min(cap, dayCap);
     }
 
     String day(long now) {
@@ -83,6 +89,7 @@ public final class LogStore {
             if (delete(p)) total -= sz;
         }
         lastCleanDay = today;
+        this.today = size(dir.resolve(today + ".jsonl"));
     }
 
     private static long size(Path p) {
@@ -111,6 +118,10 @@ public final class LogStore {
         int n = 0;
         for (String l : lines) {
             long add = l.length() + 1L;
+            if (today + b.length() + add > dayCap) {           // today alone is full: drop (counted)
+                dropped += lines.size() - n;
+                break;
+            }
             if (total + b.length() + add > cap) {
                 clean(now, b.length() + add);
                 if (total + b.length() + add > cap) {
@@ -127,6 +138,7 @@ public final class LogStore {
             byte[] bytes = b.toString().getBytes(StandardCharsets.UTF_8);
             Files.write(dir.resolve(day(now) + ".jsonl"), bytes, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             total += bytes.length;
+            today += bytes.length;
             written += n;
         } catch (IOException e) {
             writeErrors++;
