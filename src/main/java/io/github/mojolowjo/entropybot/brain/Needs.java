@@ -93,7 +93,10 @@ public final class Needs {
         out.add(new Option("gear", tools, gearChain, toolWhy, null, 0));
         // bag
         int bag = s.freeSlots <= 2 ? c.i("bagFull") : s.freeSlots <= 4 ? c.i("bagLow") : s.freeSlots <= 8 ? c.i("bagSome") : 0;
-        out.add(new Option("bag", bag, bag > 0 ? "deposit" : null, s.freeSlots + " free slots", s.basePos, 0));
+        // 0.25.1: a full bag is the trip home (go base, deposit, smelt collect, maybe sleep)
+        boolean trip = bag > 0 && PlayRules.bagFull(s, c);
+        out.add(new Option("bag", bag, bag > 0 ? (trip ? PlayRules.bagChain(s, c) : "deposit") : null,
+                trip ? PlayRules.bagWhy(s, c) : s.freeSlots + " free slots", s.basePos, 0));
         // the owner's standing needs
         for (BrainState.NeedItem n : s.needs) {
             int missing = n.want() - n.have();
@@ -134,6 +137,9 @@ public final class Needs {
         }
         if (up == null) up = new Option("upkeep", 0, null, "nothing on the idle list can run", null, 0);
         out.add(up);
+        // 0.25.1: near dusk with wood enough and food stock low, food scores above wood
+        Option dusk = PlayRules.duskFood(s, c, out);
+        if (dusk != null) out.replaceAll(o -> o.need().equals("food") ? dusk : o);
         // the nearby rule and the parked needs
         List<Option> kept = new ArrayList<>();
         for (Option o : out) {

@@ -455,6 +455,7 @@ public final class Reflexes {
         reflex = Reflex.NONE;
         target = null;
         urgent = false;
+        clearSpot();            // 0.25.1
         engine.release();
     }
 
@@ -731,14 +732,124 @@ public final class Reflexes {
     private String retreatWhy;
     private boolean retreatLit;
 
+    // ---- 0.25.1: cover from a ranged attacker, high ground against a group (the owner's played tactics) ----
+    private int[] spot;
+    private boolean spotCover;
+    private int spotMob = -1, coverDoneMob = -1;
+    private long spotStart, spotAssess;
+    static final long HIGH_HOLD_TICKS = 600;
+
+    private void clearSpot() {
+        spot = null;
+        spotMob = -1;
+    }
+
+    /** Stand on (or walk to) the spot facing the mob; hit it when it is in reach. */
+    private void holdSpot(Minecraft mc, LocalPlayer p, Threat t, String line) {
+        begin(Reflex.FIGHTING, mc, line);
+        holdWeapon(mc, p);
+        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+            mc.gameMode.attack(p, t.e);
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+        boolean there = p.getBlockX() == spot[0] && p.getBlockZ() == spot[2] && Math.abs(p.getBlockY() - spot[1]) <= 1;
+        if (there) engine.hold();
+        else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) engine.override(new GoalNear(new BlockPos(spot[0], spot[1], spot[2]), 0));
+    }
+
+    /** The cover and high-ground holds; true when one acted this tick. Errors: logged, the old fight goes on. */
+    private boolean spotTick(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
+        try {
+            io.github.mojolowjo.entropybot.brain.BrainConfig cfg = io.github.mojolowjo.entropybot.brain.BrainConfig.current();
+            if (spot != null && spotCover) {
+                int close = cfg.i("threat.coverCloseAt"), wait = cfg.i("threat.coverWait");
+                if (spotMob == t.e.getId() && !io.github.mojolowjo.entropybot.threat.Cover.over(t.d, now - spotStart, close, wait)) {
+                    holdSpot(mc, p, t, "taking cover from " + t.id);
+                    return true;
+                }
+                ThreatRuntime.INSTANCE.verdict(t.id + ": leaving cover: " + (spotMob != t.e.getId() ? "another mob is nearer"
+                        : t.d <= close ? "it closed to " + Math.round(t.d) + " (threat.coverCloseAt " + close + ")" : "waited " + wait + " s (threat.coverWait)") + " - fighting");
+                coverDoneMob = spotMob;
+                clearSpot();
+                return false;
+            }
+            if (spot != null) {         // high ground
+                if (now - spotStart > HIGH_HOLD_TICKS) {
+                    clearSpot();
+                    return false;
+                }
+                if (now - spotAssess >= 10) {
+                    spotAssess = now;
+                    FightOrFlee.Result v = assess(mc, p, hurt);
+                    if (v.verdict() == FightOrFlee.Verdict.HOME) {      // only safer: losing on the ledge still retreats
+                        clearSpot();
+                        return false;
+                    }
+                }
+                holdSpot(mc, p, t, "holding high ground against " + t.id);
+                return true;
+            }
+            int range = cfg.i("threat.coverRange");
+            if (range > 0 && t.e.getId() != coverDoneMob
+                    && io.github.mojolowjo.entropybot.threat.Cover.wanted(io.github.mojolowjo.entropybot.threat.Cover.ranged(t.id,
+                    io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(10), System.currentTimeMillis()), t.d, range)) {
+                io.github.mojolowjo.entropybot.threat.Cover.Spot c = ThreatRuntime.INSTANCE.cover(p, t.e);
+                if (c != null) {
+                    spot = new int[]{c.x(), c.y(), c.z()};
+                    spotCover = true;
+                    spotMob = t.e.getId();
+                    spotStart = now;
+                    String line = io.github.mojolowjo.entropybot.threat.Cover.line(t.id, t.e.getBlockX(), t.e.getBlockY(), t.e.getBlockZ(), t.d, c,
+                            cfg.i("threat.coverCloseAt"), cfg.i("threat.coverWait"));
+                    ThreatRuntime.INSTANCE.verdict(t.id + ": " + line);
+                    events.push("reflex", line, null);
+                    holdSpot(mc, p, t, "taking cover from " + t.id);
+                    return true;
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: cover/high ground failed, fighting as before: {}", e.toString());
+            clearSpot();
+        }
+        return false;
+    }
+
+    /** Melee mobs that count near (for the high-ground rule): world {x, y, z}. */
+    private List<int[]> meleeNear(Minecraft mc, LocalPlayer p, boolean hurt) {
+        List<int[]> out = new java.util.ArrayList<>();
+        Hostility h = Hostility.INSTANCE;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
+            double d = p.distanceTo(e);
+            if (d > ReflexRules.lookRadius(hurt) || !h.kind(e, hurt).counts()) continue;
+            if (!ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
+            var mv = io.github.mojolowjo.entropybot.threat.ThreatRules.moveOf(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
+            if (mv == io.github.mojolowjo.entropybot.threat.ThreatRules.Move.RANGED || mv == io.github.mojolowjo.entropybot.threat.ThreatRules.Move.FLY) continue;
+            out.add(new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
+        }
+        return out;
+    }
+
     private void fightOrFlee(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
+        if (spotTick(mc, p, t, hurt)) return;          // 0.25.1
         boolean fighting = reflex == Reflex.FIGHTING;
         if (!fighting || now - assessedAt >= 10) {
             assessedAt = now;
             FightOrFlee.Result v;
+            io.github.mojolowjo.entropybot.threat.HighGround.Spot hg = null;
             try {
                 v = assess(mc, p, hurt);
                 v = FightOrFlee.holdIfDeadEnd(v, ThreatRuntime.INSTANCE.deadEnd(p, t.e));     // 0.24.4
+                // 0.25.1 high ground (a dead end's hold and a losing retreat win)
+                if (!fighting && io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("threat.highGround")
+                        && v.verdict() != FightOrFlee.Verdict.HOLD && v.verdict() != FightOrFlee.Verdict.HOME) {
+                    List<int[]> melee = meleeNear(mc, p, hurt);
+                    if (melee.size() >= io.github.mojolowjo.entropybot.threat.HighGround.MIN_MOBS) {
+                        hg = ThreatRuntime.INSTANCE.highGround(p, melee);
+                        v = io.github.mojolowjo.entropybot.threat.HighGround.apply(v, hg, melee.size(), true);
+                    }
+                }
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] threat: fight-or-flee failed, fighting as before: {}", e.toString());
                 fight(mc, p, t);
@@ -748,6 +859,16 @@ public final class Reflexes {
             // committed: keep fighting while not losing (the lit-spot walk is only for the start)
             if (fighting && verdict == FightOrFlee.Verdict.LIT) verdict = FightOrFlee.Verdict.FIGHT;
             if (!fighting || verdict != FightOrFlee.Verdict.FIGHT) ThreatRuntime.INSTANCE.verdict(t.id + ": " + v.why());
+            if (verdict == FightOrFlee.Verdict.HOLD && hg != null && io.github.mojolowjo.entropybot.threat.HighGround.isHighGround(v)) {
+                spot = new int[]{hg.x(), hg.y(), hg.z()};
+                spotCover = false;
+                spotMob = -1;
+                spotStart = now;
+                spotAssess = now;
+                events.push("reflex", v.why(), null);
+                holdSpot(mc, p, t, "holding high ground against " + t.id);
+                return;
+            }
             if (verdict == FightOrFlee.Verdict.HOLD) {
                 // 0.24.4: a dead end behind: step to the corridor mouth (one mob at a time) and fight there
                 DeadEnd.Check d = fighting ? null : ThreatRuntime.INSTANCE.deadEnd(p, t.e);

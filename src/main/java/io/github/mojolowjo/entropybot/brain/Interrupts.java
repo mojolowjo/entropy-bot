@@ -44,11 +44,17 @@ public final class Interrupts {
      * Mid-job only (BRAIN_PLAN 4.4): what stops a running brain job to be handled first, as {event, handler chain, why},
      * or null. Something broke (no pickaxe left), food at {@code hungryInterrupt} or below, the bag full.
      */
+    /** 0.25.1: the running chain already holds a deposit (the trip runs: no second interrupt every 2 s). */
+    static boolean bagTrip(String chain) {
+        return chain != null && (chain.startsWith("deposit") || chain.contains(" deposit"));
+    }
+
     public static String[] midJob(BrainState s, BrainConfig c) {
         String tier = SupplyCheck.tier(s.stage);
         if (s.toolBroke && s.pickaxes == 0 && tier != null) return new String[]{"BROKEN", "craft " + tier + "_pickaxe 1", "my pickaxe broke"};
         if (s.food <= c.i("hungryInterrupt")) return new String[]{"HUNGRY", "eat", "food " + s.food + "/20"};
-        if (s.freeSlots <= c.i("fullInterrupt")) return new String[]{"FULL", "deposit", "my bag is full"};
+        // 0.25.1: brain.bagFullSlots (default 4): the trip home, the furnaces, maybe bed
+        if (PlayRules.bagFull(s, c) && !bagTrip(s.brainJob)) return new String[]{"FULL", PlayRules.bagChain(s, c), PlayRules.bagWhy(s, c)};
         return null;
     }
 }

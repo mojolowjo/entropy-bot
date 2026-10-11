@@ -330,7 +330,10 @@ public final class Brain {
     public void tick() {
         long t0 = System.nanoTime();
         try {
-            if (!treeLoaded) reloadTree();          // B4: export brain-tree.json on start
+            if (!treeLoaded) {
+                cfg = loadConfig();                 // 0.25.1: the reflexes and armour care read the settings with the brain off too
+                reloadTree();                       // B4: export brain-tree.json on start
+            }
             if (!on()) {
                 if (!offWritten) {                  // B4: the page sees "off" once
                     offWritten = true;
@@ -445,8 +448,9 @@ public final class Brain {
 
     private void start(BrainTree.Decision d, BrainState s, Needs.Scored sc) {
         SupplyCheck.Supply sup = SupplyCheck.before(d.chain(), s, 0, 0);
-        String chain = sup == null ? d.chain() : sup.chain() + " then " + d.chain();
-        long ref = record(d, s, sc, d.reason() + (sup == null ? "" : "; " + sup.why()));
+        String eat = PlayRules.eatFirst(d.chain(), s, cfg);          // 0.25.1: cave.eatFirst (why shows it, no extra whisper)
+        String chain = (sup == null ? "" : sup.chain() + " then ") + (eat == null ? "" : "eat then ") + d.chain();
+        long ref = record(d, s, sc, d.reason() + (sup == null ? "" : "; " + sup.why()) + (eat == null ? "" : "; " + eat));
         lastLogged = d.branch();
         String reply = env.start(chain);
         if (reply != null && reply.startsWith("started")) {
@@ -582,6 +586,7 @@ public final class Brain {
         if (f != null && !f.startsWith("error")) {
             try {
                 configNote = c.load(com.google.gson.JsonParser.parseString(f).getAsJsonObject());
+                BrainConfig.current(c);
                 return c;
             } catch (RuntimeException e) {
                 configNote = CONFIG_FILE + " unreadable (" + e.getMessage() + ")";
@@ -589,6 +594,7 @@ public final class Brain {
             }
         }
         configNote = c.load(data().has("config") && data().get("config").isJsonObject() ? data().getAsJsonObject("config") : null);
+        BrainConfig.current(c);
         return c;
     }
 
@@ -648,6 +654,7 @@ public final class Brain {
         } else data().remove("config");
         env.saved();
         cfg = c;
+        BrainConfig.current(c);
         exportTree();
         return ok + tail;
     }

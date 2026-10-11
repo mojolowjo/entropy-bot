@@ -352,8 +352,14 @@ public final class MovePackage {
                 + "; penalised edges " + EdgePenalties.GLOBAL.count(now) + " (+" + s.penalised + " this session)"
                 + "; ready paths " + ready.ready(me, now) + "/" + ready.size() + " (planned " + s.readyPlanned + ", failed " + s.readyFailed
                 + ", used " + s.readyHits + ", chain pre-plans " + s.chainPrePlans + ")"
-                + "; " + LongRouteProcess.INSTANCE.statusLine();
+                + "; " + LongRouteProcess.INSTANCE.statusLine()
+                + "; ore detour (path.oreDetour): " + (oreDetourLine == null ? "none yet" : "last " + oreDetourLine)
+                + (oreDetourErrors > 0 ? ", " + oreDetourErrors + " errors" : "");
     }
+
+    /** 0.25.1: the last ore detour on a walk home and the errors (set by the walk step). */
+    public volatile String oreDetourLine;
+    public volatile long oreDetourErrors;
 
     private void error(String where, Throwable t) {
         if (errors++ < 10 || errors % 1000 == 0) LOG.warn("[entropybot] path ({}): {}", where, t.toString());

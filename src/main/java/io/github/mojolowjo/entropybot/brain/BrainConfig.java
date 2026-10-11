@@ -62,6 +62,17 @@ public final class BrainConfig {
                 {"night.shelterBelow", NightSafety.FULL_IRON, 0, 40, "night safety score below: shelter at dusk until day (default: full iron + iron sword + 8 food)"},
                 {"night.workBelow", NightSafety.FULL_IRON + 4, 0, 40, "night safety score below (and not sheltering): only underground or lit-camp work at night"},
                 {"night.duskHours", 2, 0, 6, "in-game hours before dusk with no new surface job in the shelter band"},
+                // 0.25.1: the owner's played tactics (the companion action log, replayed 2026-10-08); on|off keys take 1/0 or on/off
+                {"threat.coverRange", 8, 0, 32, "a ranged attacker further than this: take cover out of its sight (0 = off)"},
+                {"threat.coverCloseAt", 4, 1, 16, "in cover: fight once the ranged attacker is this close"},
+                {"threat.coverWait", 15, 0, 120, "in cover: fight after this many seconds anyway"},
+                {"threat.highGround", 1, 0, 1, "2+ melee mobs: hold a spot 1-3 above them with one way up (1 on, 0 off; a dead end's hold wins)"},
+                {"brain.bagFullSlots", 4, 0, 36, "free slots at or below, on a job: go base then deposit then smelt collect (then sleep at night in the shelter band)"},
+                {"cave.eatFirst", 1, 0, 1, "before mine cave with food on me and the bar below 20: eat first (1 on, 0 off)"},
+                {"path.oreDetour", 8, 0, 16, "on the way home: mine an ore in sight within this many blocks first (one vein, 8 blocks; 0 = off)"},
+                {"gear.ironFirst", 1, 0, 1, "armour: iron goes to chestplate then leggings before helmet/boots, leather fills helmet/boots (1 on, 0 off)"},
+                {"brain.foodStock", 8, 0, 128, "edible items in bag + storage below this near dusk with wood enough: food before wood"},
+                {"brain.foodDusk", 60, 0, 100, "the food need's score near dusk when food stock is low and wood enough (always above a wood job)"},
         };
         for (Object[] row : rows) {
             d.put((String) row[0], (Integer) row[1]);
@@ -77,6 +88,16 @@ public final class BrainConfig {
     private final Map<String, Double> weights = new TreeMap<>();
 
     public static BrainConfig defaults() { return new BrainConfig(); }
+
+    /** 0.25.1: the settings as last loaded or saved by the brain (the reflexes, armour care and walks read them; defaults until then). */
+    private static volatile BrainConfig current = new BrainConfig();
+
+    public static BrainConfig current() { return current; }
+
+    static void current(BrainConfig c) { if (c != null) current = c; }
+
+    /** A 0/1 setting is on. */
+    public boolean on(String key) { return i(key) != 0; }
 
     public static boolean known(String key) { return DEFAULTS.containsKey(key) || WEIGHT_KEY.matcher(key).matches(); }
 
@@ -123,6 +144,8 @@ public final class BrainConfig {
     public String set(String key, String text) {
         if (key == null || !known(key)) return "no brain setting " + key + " (brain get lists them)";
         double d;
+        String tx = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+        if (tx.equals("on") || tx.equals("off")) text = tx.equals("on") ? "1" : "0";      // 0.25.1: on|off keys
         try {
             d = Double.parseDouble(text.trim());
         } catch (RuntimeException e) {

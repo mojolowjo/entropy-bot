@@ -47,6 +47,8 @@ public final class BrainState {
     public int[] campPos;
     /** 0.24.3: shell blocks in the bag (planks, cobblestone, dirt; logs count 4). */
     public int shelterBlocks = 64;
+    /** 0.25.1: logs and planks in the bag; edible items in bag + storage (the stock view, every 30 s). */
+    public int woodItems, foodStock = 16;
     public final List<NeedItem> needs = new ArrayList<>();
     public final List<Goal> goals = new ArrayList<>();
     /** The copy rule's verdict; null while brain copy is off. */
