@@ -85,8 +85,10 @@ public final class BlindRuntime {
             ensureLoaded(mc);
             ticksThisSecond++;
             boolean world = mc.level != null && mc.player != null;
-            // the mod's own config screen stays visible (someone opened it to switch blind off)
-            if (mode.enabled() && world && !(mc.screen instanceof BotConfigScreen)) {
+            // any open screen draws (the owner's pause menu, chat, inventory, the config screen; the bot's chests and the
+            // death screen for a moment): a menu nobody can see is useless, and menus are open a tiny share of a bot's
+            // time. With nothing open the frame loop is skipped again (owner's request 2026-10-10: "menus not reactive").
+            if (mode.enabled() && world && mc.screen == null) {
                 mc.noRender = true;
                 asserted = true;
                 if (!soundPaused && mode.config().pauseSound()) pauseSound(mc);
