@@ -168,7 +168,9 @@ public final class BrainRuntime implements BrainEnv {
                 lastTotals = totals;          // 0.26.2: the feasibility facts' stock
                 stage = GameStage.of(totals);
                 foodStock = edible(totals);          // 0.25.1: bag + storage (the stock view)
-                int h = totals.hashCode();           // 0.26.1 R1: a scan or deposit changed the stock view
+                // 0.26.1 R1: a scan or deposit changed the stock view; 0.26.2 fix: storage only (the totals count the bag too,
+                // so a /clear or any pickup cleared every NONE_IN_CHESTS record and "get food" failed 3 times into a park)
+                int h = io.github.mojolowjo.entropybot.brain.FailMemory.storageHash(totals, io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
                 if (h != stockHash) { stockHash = h; storageSeq++; }
             } catch (RuntimeException e) { LOG.warn("[entropybot] brain stage: {}", e.toString()); }
         }

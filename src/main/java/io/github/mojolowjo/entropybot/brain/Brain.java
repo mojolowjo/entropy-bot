@@ -479,8 +479,12 @@ public final class Brain {
         // 0.26.1 R1/R6: a failed brain job with a precondition reason is remembered (the owner's stop or order never)
         if (outcome.startsWith("failed")) {
             int minutes = cfg.i("brain.failMemoryMinutes");
+            // 0.26.2 fix: a supply prefix's "get X" that found none in the chests is remembered as that get, not as the job
+            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("^stopped at step \\d+ \\((get [^)]*)\\)").matcher(res == null ? "" : res);
+            String key = sm.find() && FailMemory.classify(res) == FailMemory.Reason.NONE_IN_CHESTS ? sm.group(1) : j.base();
             FailMemory.Reason r = j.need() != null && j.need().equals("spawn") ? mem.record(j.base(), FailMemory.Reason.NO_BED, s, now, minutes)
-                    : mem.record(j.base(), res, s, now, minutes);
+                    : mem.record(key, res, s, now, minutes);
+            if (r != null && !key.equals(j.base())) env.log("brain: remembered " + key + " (a step of " + j.base() + ") failed " + r);
             if (r != null) env.log("brain: remembered " + j.base() + " failed " + r + " for " + minutes + " min");
         } else if (outcome.equals("finished")) {
             String b = j.chain().toLowerCase();
@@ -554,7 +558,17 @@ public final class Brain {
         String pre = d.branch().equals("pick") ? PlayRules.preDeposit(d.chain(), s, cfg) : null;
         String job0 = pre != null ? pre : d.chain();
         String preWhy = pre == null ? "" : "; " + s.freeSlots + " free slots (brain.preDepositSlots " + cfg.i("brain.preDepositSlots") + "): deposit first";
-        String chain = (sup == null ? "" : sup.chain() + " then ") + (eat == null ? "" : "eat then ") + job0;
+        String supChain = sup == null ? null : sup.chain();
+        if (supChain != null && cfg.i("brain.failMemoryMinutes") > 0) {      // 0.26.2 fix: drop a get the chests could not serve
+            List<String> keep = new ArrayList<>();
+            for (String st : supChain.split("\\s+then\\s+")) {
+                String[] w = st.trim().split("\\s+");
+                if (w.length >= 2 && w[0].equals("get") && mem.noneInChests(w[1], s, s.now)) continue;
+                keep.add(st.trim());
+            }
+            supChain = keep.isEmpty() ? null : String.join(" then ", keep);
+        }
+        String chain = (supChain == null ? "" : supChain + " then ") + (eat == null ? "" : "eat then ") + job0;
         return new String[]{chain, (sup == null ? "" : "; " + sup.why()) + (eat == null ? "" : "; " + eat) + preWhy, sup == null ? null : sup.why()};
     }
 

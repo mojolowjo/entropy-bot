@@ -107,6 +107,30 @@ public final class FailMemory {
         return gone;
     }
 
+    /**
+     * 0.26.2 fix: the hash of what storage holds (the stock totals less the bag), so NONE_IN_CHESTS clears on a scan or
+     * deposit, never on a change of the bag alone. Keys compared without "minecraft:".
+     */
+    public static int storageHash(Map<String, Integer> totals, Map<String, Integer> bag) {
+        Map<String, Integer> b = new java.util.HashMap<>();
+        if (bag != null) bag.forEach((k, v) -> b.merge(k.substring(k.indexOf(':') + 1), v == null ? 0 : v, Integer::sum));
+        java.util.TreeMap<String, Integer> out = new java.util.TreeMap<>();
+        if (totals != null) totals.forEach((k, v) -> {
+            String s = k.substring(k.indexOf(':') + 1);
+            int n = (v == null ? 0 : v) - b.getOrDefault(s, 0);
+            if (n > 0) out.merge(s, n, Integer::sum);
+        });
+        return out.hashCode();
+    }
+
+    /** 0.26.2 fix: a live record says "get <item> ..." found none in the chests (any count): a supply prefix skips that get. */
+    public boolean noneInChests(String item, BrainState s, long now) {
+        String pre = "get " + norm(item) + " ";
+        for (Entry e : new ArrayList<>(map.values()))
+            if (e.reason() == Reason.NONE_IN_CHESTS && (e.chain() + " ").startsWith(pre) && blocks(e.chain(), s, now) != null) return true;
+        return false;
+    }
+
     /** A deposit or scan the brain ran itself finished: NONE_IN_CHESTS records go. */
     public void storageChanged() { map.values().removeIf(e -> e.reason() == Reason.NONE_IN_CHESTS); }
 
@@ -117,7 +141,7 @@ public final class FailMemory {
         Entry hit = null;
         for (var it = map.values().iterator(); it.hasNext(); ) {
             Entry e = it.next();
-            if (!e.chain().equals(n)) continue;
+            if (!e.chain().equals(n) && !(e.reason() == Reason.NONE_IN_CHESTS && sameGet(e.chain(), n))) continue;
             if (e.until() <= now || causeGone(e, s)) { it.remove(); continue; }
             if (hit == null) hit = e;
         }
@@ -127,6 +151,12 @@ public final class FailMemory {
     /** "light here 8 failed NO_ITEM 3 min ago" (the skipped text; why and the decision log carry it). */
     public static String skipText(Entry e, long now) {
         return e.chain() + " failed " + e.reason() + " " + Math.max(0, (now - e.at()) / 60_000) + " min ago";
+    }
+
+    /** 0.26.2 fix: two single-step gets of the same item ("get food 4", "get food 8") are one for NONE_IN_CHESTS. */
+    static boolean sameGet(String a, String b) {
+        String[] x = a.split(" "), y = b.split(" ");
+        return x.length >= 2 && y.length >= 2 && x.length <= 3 && y.length <= 3 && x[0].equals("get") && y[0].equals("get") && x[1].equals(y[1]);
     }
 
     public int size() { return map.size(); }

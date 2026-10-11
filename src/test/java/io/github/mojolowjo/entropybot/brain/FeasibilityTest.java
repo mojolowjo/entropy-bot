@@ -324,6 +324,33 @@ class FeasibilityTest {
         }
     }
 
+    /** Live 2026-10-11 (botlab, /clear): get food failed NONE_IN_CHESTS and was retried into a park. */
+    @Nested class GetFoodNoneInChests {
+        @Test void startFailThenSkip() {
+            BrainTest.Fake f = brain(s -> { s.foodItems = 0; s.foodStock = 5; s.feas.pickTier = 2; });      // stale stock: get looks feasible
+            Brain b = new Brain(f);
+            b.tick();
+            assertTrue(f.started.get(0).startsWith("get food"), f.started.toString());
+            f.end("stopped at step 1 (get food 4): none of my chests has bread (as far as I know - \"scan base\" / \"rs\")");
+            f.state.foodItems = 0;                  // the bag changed, storage did not: storageSeq stays
+            f.loop();
+            b.tick();
+            assertTrue(b.failMemory().describe(f.now).contains("NONE_IN_CHESTS"), b.failMemory().describe(f.now));
+            f.end("done");
+            f.loop();
+            b.tick();
+            assertEquals(1, f.started.stream().filter(c -> c.startsWith("get food")).count(), f.started.toString());
+            assertTrue(b.why().contains("failed NONE_IN_CHESTS"), b.why());
+        }
+
+        @Test void storageHashIgnoresTheBag() {
+            Map<String, Integer> totals = Map.of("minecraft:bread", 0, "minecraft:cobblestone", 70, "minecraft:dirt", 3);
+            int h = FailMemory.storageHash(totals, Map.of("minecraft:dirt", 3, "minecraft:cobblestone", 6));
+            assertEquals(h, FailMemory.storageHash(Map.of("minecraft:cobblestone", 64), Map.of()));      // /clear: the bag went, storage the same
+            assertNotEquals(h, FailMemory.storageHash(Map.of("minecraft:cobblestone", 64, "minecraft:bread", 2), Map.of()));      // a scan found bread
+        }
+    }
+
     @Test void deferredMapKeyIgnoresCase() { assertEquals(FailMemory.norm("Light  Here 8"), FailMemory.norm("light here 8")); }
 
     @Test void stockMapIsShortIds() { BrainState s = empty(); s.feas.stock.putAll(Map.of("torch", 1)); assertEquals(FEASIBLE, v("light here 8", s).kind()); }
