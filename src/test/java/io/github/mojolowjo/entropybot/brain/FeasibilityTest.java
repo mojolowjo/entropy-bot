@@ -351,6 +351,61 @@ class FeasibilityTest {
         }
     }
 
+    /** Live 2026-10-11 re-test: three sub-plans differing only in goto/place coordinates were each tried (NO_PATH). */
+    @Nested class StepNormalized {
+        static String sub(int x) { return "cut 3 logs then craft planks 12 then craft stick 4 then craft crafting_table 1 then goto " + x + " 87 38 then place crafting_table 8 87 " + (x + 26) + " then craft wooden_pickaxe 1"; }
+
+        @Test void keys() {
+            assertEquals("cut logs", FailMemory.stepKey("cut 3 logs"));
+            assertEquals("goto", FailMemory.stepKey("goto 10 87 -38"));
+            assertEquals("place crafting_table", FailMemory.stepKey("place minecraft:crafting_table 8 87 36"));
+            assertEquals("get food", FailMemory.stepKey("get food 4"));
+            assertEquals("mine strip any", FailMemory.stepKey("mine strip any 32"));
+        }
+
+        @Test void threeLoopsThreeSubPlansOnlyTheFirstRuns() {
+            BrainTest.Fake f = brain(s -> {});          // no pickaxe: mine strip needs a sub-plan
+            f.planner = true;
+            Brain b = new Brain(f);
+            b.tick();                                   // loop 1: planning
+            f.planPending.get(0).accept(new String[]{sub(10), null});
+            f.loop();
+            b.tick();                                   // loop 2: the sub-plan runs
+            assertEquals(1, f.started.size());
+            assertTrue(f.started.get(0).startsWith(sub(10) + " then mine strip any 32"), f.started.get(0));
+            f.end("stopped at step 1 (cut 3 logs): couldn't get there (3 waypoints failed)");
+            f.loop();
+            b.tick();                                   // loop 3: remembered, skipped; no new sub-plan
+            f.loop();
+            b.tick();
+            assertEquals(1, f.started.stream().filter(c -> c.contains("mine strip")).count(), f.started.toString());
+            assertEquals(1, f.planAsked.size(), "no second sub-plan for a remembered chain");
+            String why = b.why();
+            assertTrue(why.contains("infeasible: mine strip any 32 (no wooden pickaxe or better (any); getting it failed: cut logs NO_PATH"), why);
+            // the second and third sub-plans (other coordinates) are blocked too
+            BrainState s = f.state;
+            assertNotNull(b.failMemory().blocks(sub(11) + " then mine strip any 32", s, f.now));
+            assertNotNull(b.failMemory().blocks(sub(12) + " then mine strip any 32", s, f.now));
+        }
+
+        @Test void aStepRecordBlocksAnotherChainThatCuts() {
+            FailMemory m = new FailMemory();
+            BrainState s = new BrainState();
+            m.recordStep("cut 3 logs", FailMemory.Reason.NO_PATH, s, 0, 10);
+            assertNotNull(m.blocks("cut 8 logs then craft planks 32 then shelter 5m", s, 1));
+            assertNull(m.blocks("light here 8", s, 1));
+        }
+
+        @Test void theGetRuleIsTheItemCase() {
+            FailMemory m = new FailMemory();
+            BrainState s = new BrainState();
+            m.recordStep("get food 4", FailMemory.Reason.NONE_IN_CHESTS, s, 0, 10);
+            assertNotNull(m.blocks("get food 8", s, 1));
+            assertTrue(m.noneInChests("food", s, 1));
+            assertNull(m.blocks("get bread 8", s, 1));
+        }
+    }
+
     @Test void deferredMapKeyIgnoresCase() { assertEquals(FailMemory.norm("Light  Here 8"), FailMemory.norm("light here 8")); }
 
     @Test void stockMapIsShortIds() { BrainState s = empty(); s.feas.stock.putAll(Map.of("torch", 1)); assertEquals(FEASIBLE, v("light here 8", s).kind()); }

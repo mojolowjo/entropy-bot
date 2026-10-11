@@ -336,7 +336,7 @@ class SteadyBrainTest {
             f.end("stopped at step 1 (" + chain + "): couldn't get there (stopped at 1 2 3: no path)");
             f.loop();
             b.tick();
-            assertEquals(1, b.failMemory().size());
+            assertEquals(2, b.failMemory().size());      // 0.26.2: the chain and its failing step
             assertEquals(1, f.started.size(), "not started again");
             assertTrue(b.why().contains("skipped: " + chain.toLowerCase() + " failed NO_PATH 0 min ago"), b.why());
             assertTrue(f.whispers.stream().anyMatch(w -> w.startsWith("brain: skipping " + chain.toLowerCase())), f.whispers.toString());

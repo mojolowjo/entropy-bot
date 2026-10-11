@@ -426,7 +426,7 @@ public final class Brain {
         JsonObject w = data().has("skipWhispered") && data().get("skipWhispered").isJsonObject() ? data().getAsJsonObject("skipWhispered") : new JsonObject();
         data().add("skipWhispered", w);
         for (String sk : skipped) {
-            String kind = sk.replaceFirst(" \\d+ min ago$", "");
+            String kind = sk.replaceFirst(" \\d+ min ago$", "").replaceAll("\\d+ min( ago)?", "N min");      // 0.26.2: stable for the infeasible texts
             if (!parkWhisperDue(num(w, kind, 0), now)) continue;
             w.addProperty(kind, now);
             if (sk.startsWith("infeasible: ")) {      // 0.26.2: its own words
@@ -480,11 +480,22 @@ public final class Brain {
         if (outcome.startsWith("failed")) {
             int minutes = cfg.i("brain.failMemoryMinutes");
             // 0.26.2 fix: a supply prefix's "get X" that found none in the chests is remembered as that get, not as the job
-            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("^stopped at step \\d+ \\((get [^)]*)\\)").matcher(res == null ? "" : res);
-            String key = sm.find() && FailMemory.classify(res) == FailMemory.Reason.NONE_IN_CHESTS ? sm.group(1) : j.base();
-            FailMemory.Reason r = j.need() != null && j.need().equals("spawn") ? mem.record(j.base(), FailMemory.Reason.NO_BED, s, now, minutes)
-                    : mem.record(key, res, s, now, minutes);
-            if (r != null && !key.equals(j.base())) env.log("brain: remembered " + key + " (a step of " + j.base() + ") failed " + r);
+            // 0.26.2: the failing step (numbers and coordinates stripped) AND the originating chain (the pick's own chain,
+            // before any prefix or sub-plan) are both remembered; a supply get that found none in the chests: the step only
+            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("^stopped at step \\d+ \\(([^)]*)\\)").matcher(res == null ? "" : res);
+            String step = sm.find() ? sm.group(1) : null;
+            FailMemory.Reason cls = j.need() != null && j.need().equals("spawn") ? FailMemory.Reason.NO_BED : FailMemory.classify(res);
+            FailMemory.Reason r = null;
+            if (cls != null) {
+                boolean ownStep = step == null || FailMemory.stepKeys(j.base()).contains(FailMemory.stepKey(step));
+                String why = subWhy.get(FailMemory.norm(j.base()));
+                String note = why != null && step != null ? why + "; getting it failed: " + FailMemory.stepKey(step) + " " + cls : null;
+                // the chain first: a skip names the chain before the step
+                if (ownStep || cls != FailMemory.Reason.NONE_IN_CHESTS || !step.startsWith("get ")) r = mem.record(j.base(), cls, s, now, minutes, note);
+                else r = cls;
+                if (step != null) mem.recordStep(step, cls, s, now, minutes);
+                if (step != null) env.log("brain: remembered step " + FailMemory.stepKey(step) + " (of " + j.base() + ") failed " + cls);
+            }
             if (r != null) env.log("brain: remembered " + j.base() + " failed " + r + " for " + minutes + " min");
         } else if (outcome.equals("finished")) {
             String b = j.chain().toLowerCase();
@@ -582,6 +593,8 @@ public final class Brain {
     private final Map<String, Sub> subs = new LinkedHashMap<>();
     private final ArrayDeque<Long> feasChecked = new ArrayDeque<>(), feasInfeasible = new ArrayDeque<>(), feasSubgoals = new ArrayDeque<>();
     private JsonObject lastFeas;
+    /** 0.26.2: a sub-plan chain -> the chain it serves; that chain -> what was missing (the skip note). */
+    private final Map<String, String> origins = new LinkedHashMap<>(), subWhy = new LinkedHashMap<>();
 
     private static void mark(ArrayDeque<Long> q, long now) {
         q.addLast(now);
@@ -650,6 +663,11 @@ public final class Brain {
                 if (sub.chain() != null && !sub.chain().isBlank()) {
                     subs.remove(key);
                     mark(feasSubgoals, now);
+                    String sc = sub.chain() + " then " + d.chain();
+                    if (origins.size() > 50) origins.clear();
+                    if (subWhy.size() > 50) subWhy.clear();
+                    origins.put(FailMemory.norm(sc), d.chain());
+                    subWhy.put(FailMemory.norm(d.chain()), v.missing());
                     lastFeas = feasJson(v, d.chain(), sub.chain());
                     return new BrainTree.Decision(d.branch(), d.kind(), sub.chain() + " then " + d.chain(), d.need(), d.score(),
                             d.chain() + " needs " + v.item() + ": " + sub.chain() + " first");
@@ -674,6 +692,7 @@ public final class Brain {
 
     private void start(BrainTree.Decision d, BrainState s, Needs.Scored sc) {
         String[] comp = compose(d, s);
+        String origin = origins.getOrDefault(FailMemory.norm(d.chain()), d.chain());      // 0.26.2: the pick's own chain
         String chain = comp[0];
         String supWhy = comp[2];
         if (d.need() != null && d.need().equals("spawn")) { data().addProperty("spawnTriedAt", env.now()); env.saved(); }      // R6: the cooldown counts tries
@@ -681,7 +700,7 @@ public final class Brain {
         lastLogged = d.branch();
         String reply = env.start(chain);
         if (reply != null && reply.startsWith("started")) {
-            job = new Job(d.need(), chain, d.score(), ref, env.now(), d.chain());
+            job = new Job(d.need(), chain, d.score(), ref, env.now(), origin);
             io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.pick(d.need());      // 0.23.6
             if (d.chain().startsWith("restock")) data().addProperty("restockAt", env.now());
             if (d.need() != null && d.need().equals("night")) nightAt = s.botPos;
@@ -696,7 +715,7 @@ public final class Brain {
         } else {
             env.decisions().outcome(env.now(), ref, "failed:" + reply);
             // counted like a job that failed at once (3 in a row park it)
-            failOnce(new Job(d.need(), chain, d.score(), ref, env.now(), d.chain()), reply);
+            failOnce(new Job(d.need(), chain, d.score(), ref, env.now(), origin), reply);
         }
     }
 

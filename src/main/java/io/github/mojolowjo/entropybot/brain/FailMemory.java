@@ -46,7 +46,7 @@ public final class FailMemory {
 
     /** One record and what the bot had when it was made (the cause checks). */
     /** bedAll[0]: a bed was near (or in the bag) at the record and every check since (NO_BED clears only when a bed comes back). */
-    public record Entry(String chain, Reason reason, long at, long until, int[] pos, int items, long storageSeq, boolean[] bedAll) {}
+    public record Entry(String chain, Reason reason, long at, long until, int[] pos, int items, long storageSeq, boolean[] bedAll, String note) {}
 
     private final Map<String, Entry> map = new LinkedHashMap<>();
 
@@ -68,9 +68,12 @@ public final class FailMemory {
     }
 
     /** Records under a given reason (R6: a failed spawn is NO_BED whatever it said). */
-    public Reason record(String chain, Reason r, BrainState s, long now, int minutes) {
+    public Reason record(String chain, Reason r, BrainState s, long now, int minutes) { return record(chain, r, s, now, minutes, null); }
+
+    /** 0.26.2: with a note for the skip text ("no wooden_pickaxe; getting one failed: cut logs NO_PATH"). */
+    public Reason record(String chain, Reason r, BrainState s, long now, int minutes, String note) {
         if (minutes <= 0 || chain == null || r == null) return null;
-        map.put(key(chain, r), new Entry(norm(chain), r, now, now + minutes * 60_000L, s.botPos == null ? null : s.botPos.clone(), items(s), s.storageSeq, new boolean[]{PlayRules.bedFor(s)}));
+        map.put(key(chain, r), new Entry(norm(chain), r, now, now + minutes * 60_000L, s.botPos == null ? null : s.botPos.clone(), items(s), s.storageSeq, new boolean[]{PlayRules.bedFor(s)}, note));
         return r;
     }
 
@@ -125,6 +128,8 @@ public final class FailMemory {
 
     /** 0.26.2 fix: a live record says "get <item> ..." found none in the chests (any count): a supply prefix skips that get. */
     public boolean noneInChests(String item, BrainState s, long now) {
+        Entry st = blocks("get " + norm(item), s, now);
+        if (st != null && st.reason() == Reason.NONE_IN_CHESTS) return true;
         String pre = "get " + norm(item) + " ";
         for (Entry e : new ArrayList<>(map.values()))
             if (e.reason() == Reason.NONE_IN_CHESTS && (e.chain() + " ").startsWith(pre) && blocks(e.chain(), s, now) != null) return true;
@@ -138,10 +143,12 @@ public final class FailMemory {
     public Entry blocks(String chain, BrainState s, long now) {
         if (chain == null || map.isEmpty()) return null;
         String n = norm(chain);
+        java.util.Set<String> keys = new java.util.HashSet<>(stepKeys(chain));
         Entry hit = null;
         for (var it = map.values().iterator(); it.hasNext(); ) {
             Entry e = it.next();
-            if (!e.chain().equals(n) && !(e.reason() == Reason.NONE_IN_CHESTS && sameGet(e.chain(), n))) continue;
+            if (!e.chain().equals(n) && !(e.chain().startsWith(STEP) && keys.contains(e.chain().substring(STEP.length())))
+                    && !(e.reason() == Reason.NONE_IN_CHESTS && sameGet(e.chain(), n))) continue;
             if (e.until() <= now || causeGone(e, s)) { it.remove(); continue; }
             if (hit == null) hit = e;
         }
@@ -150,6 +157,8 @@ public final class FailMemory {
 
     /** "light here 8 failed NO_ITEM 3 min ago" (the skipped text; why and the decision log carry it). */
     public static String skipText(Entry e, long now) {
+        if (e.note() != null) return "infeasible: " + e.chain() + " (" + e.note() + " " + Math.max(0, (now - e.at()) / 60_000) + " min ago) - skipped "
+                + Math.max(1, (e.until() - now + 59_999) / 60_000) + " min";
         return e.chain() + " failed " + e.reason() + " " + Math.max(0, (now - e.at()) / 60_000) + " min ago";
     }
 
@@ -157,6 +166,36 @@ public final class FailMemory {
     static boolean sameGet(String a, String b) {
         String[] x = a.split(" "), y = b.split(" ");
         return x.length >= 2 && y.length >= 2 && x.length <= 3 && y.length <= 3 && x[0].equals("get") && y[0].equals("get") && x[1].equals(y[1]);
+    }
+
+    /** 0.26.2: step records are kept as "step:<key>". */
+    public static final String STEP = "step:";
+
+    /**
+     * 0.26.2: a step without its numbers: lower case, "minecraft:" dropped, every integer word (counts, coordinates, ~ ^
+     * relative ones) dropped. "cut 3 logs" -> "cut logs", "goto 10 87 38" -> "goto", "place crafting_table 8 87 36" ->
+     * "place crafting_table", "get food 4" -> "get food", "mine strip any 32" -> "mine strip any".
+     */
+    public static String stepKey(String step) {
+        List<String> out = new ArrayList<>();
+        for (String w : norm(step).split(" ")) {
+            String x = w.startsWith("minecraft:") ? w.substring(10) : w;
+            if (x.isEmpty() || x.matches("[~^]?-?\\d*")) continue;
+            out.add(x);
+        }
+        return String.join(" ", out);
+    }
+
+    public static List<String> stepKeys(String chain) {
+        List<String> out = new ArrayList<>();
+        for (String st : norm(chain).split(" then ")) if (!st.isBlank()) out.add(stepKey(st));
+        return out;
+    }
+
+    /** 0.26.2: a failing step, by its key: it blocks every chain holding a step with that key. */
+    public Reason recordStep(String step, Reason r, BrainState s, long now, int minutes) {
+        if (step == null || stepKey(step).isEmpty()) return null;
+        return record(STEP + stepKey(step), r, s, now, minutes, null);
     }
 
     public int size() { return map.size(); }
