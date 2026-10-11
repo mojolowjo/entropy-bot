@@ -57,6 +57,32 @@ public final class BrainState {
     /** B3: the planner's hook for a goal with no chain (goal text -> a chain or null); null = no planner. */
     public java.util.function.Function<String, String> planner;
 
+    /**
+     * 0.26.1 "steady brain" inputs, each a bounded read on the game side (no block scan in the loop except the bed
+     * search, capped at r 24 and once a minute by day): coal + charcoal and logs (not planks) in the bag; a bed in the
+     * bag; the level thunders and the bot's head cell sees the sky; the bot stands inside one of its areas; how long the
+     * owner has been offline (ms, 0 online); escort or assist runs (owner-bound passive, R5); the stock view changed
+     * (a scan or deposit; R1 clears "none in my chests"); materials for a pickaxe of the stage's tier in the bag (R8);
+     * the guard refuses brain copy's target (R9, null = allowed); spawn set near the base and a spawn try is due (R6,
+     * filled by the brain from its store).
+     */
+    public int coal, logs;
+    public boolean bedInBag, thundering, skyAbove = true, areasHere = true;
+    public long ownerOfflineMs;
+    public boolean passiveOwnerBound;
+    public long storageSeq;
+    public boolean pickMaterials;
+    public String copyRefused;
+    public boolean spawnNearBase, spawnDue;
+
+    /** R9: an owner position this far (flat) from the bot is a placeholder, never a real one (maxWalk is 2000). */
+    public static final int OWNER_SENTINEL_DIST = 100_000;
+
+    /** R9: the owner's position is known and real (seen, or a fresh companion fix; never the far placeholder). */
+    public boolean ownerKnown() {
+        return ownerPos != null && Math.abs(ownerPos[0]) < 30_000_000 && Math.abs(ownerPos[2]) < 30_000_000 && flat(botPos, ownerPos) < OWNER_SENTINEL_DIST;
+    }
+
     /** A standing need ("need torch 32"): what the group has, and since when it is noted (ms). */
     public record NeedItem(String id, int want, int have, long since) {}
 
@@ -64,7 +90,7 @@ public final class BrainState {
     public record Goal(String text, String chain, long at) {}
 
     /** True when the brain must stay near the owner (rule 2: not released and the owner online and placed). */
-    public boolean bound() { return !released && ownerOnline && ownerPos != null; }
+    public boolean bound() { return !released && ownerOnline && ownerKnown(); }
 
     public static double flat(int[] a, int[] b) {
         if (a == null || b == null) return Double.MAX_VALUE;
@@ -84,7 +110,9 @@ public final class BrainState {
         o.addProperty("threats", danger ? 1 : 0);
         o.addProperty("light", litHere);
         o.addProperty("night", night);
-        o.addProperty("ownerDist", ownerPos == null ? -1 : (int) Math.round(flat(botPos, ownerPos)));
+        // R9: -1 unknown (out of view, no fresh companion fix), -2 a placeholder position the brain ignores (0.25.x logged it as ~14142025)
+        o.addProperty("ownerDist", ownerPos == null ? -1 : !ownerKnown() ? -2 : (int) Math.round(flat(botPos, ownerPos)));
+        if (thundering) o.addProperty("storm", skyAbove);
         o.addProperty("released", released);
         o.addProperty("job", brainJob != null ? "brain: " + brainJob : ownerJob != null ? "owner: " + ownerJob : passive);
         o.addProperty("pickPct", pickaxes == 0 ? -1 : pickPct);

@@ -41,6 +41,9 @@ public final class Needs {
         }
     }
 
+    /** R2: the torch need's score (night, dark, nothing to light it with): above upkeep, below the owner's needs. */
+    public static final int TORCH_SCORE = 40;
+
     static int clamp(double v) { return (int) Math.round(Math.max(0, Math.min(100, v))); }
 
     static int age(long now, long since, int perMinutes, int max) {
@@ -123,8 +126,17 @@ public final class Needs {
         // copy
         if (s.copy != null) {
             boolean go = s.copy.chain() != null;
-            out.add(new Option("copy", go ? c.i("copyScore") : 0, s.copy.chain(), s.copy.why(), go ? s.ownerPos : null, 0));
+            if (go && s.copyRefused != null) {          // R9: the guard would refuse the copied job's target
+                skipped.add("copy " + s.copy.chain() + " " + s.copyRefused);
+                out.add(new Option("copy", 0, null, "copy " + s.copy.chain() + " " + s.copyRefused, null, 0));
+            } else if (go && !s.ownerKnown()) {          // R9: no real owner position, nothing to copy near
+                skipped.add("copy " + s.copy.chain() + ": your position is unknown");
+                out.add(new Option("copy", 0, null, "your position is unknown", null, 0));
+            } else out.add(new Option("copy", go ? c.i("copyScore") : 0, s.copy.chain(), s.copy.why(), go ? s.ownerPos : null, 0));
         }
+        // 0.26.1 (R2): night, my spot dark and no torches nor anything to make them: gather torches
+        if (s.night && !s.litHere && s.torches <= 0 && !PlayRules.torchMaterials(s))
+            out.add(new Option("torch", TORCH_SCORE, "gather torch 16", "night, my spot is dark and I have no torches, coal or logs", null, 0));
         // upkeep: the first idle item that may run here
         Option up = null;
         for (IdleList.Pick p : IdleList.candidates(idle, s.upkeep)) {

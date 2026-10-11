@@ -113,6 +113,10 @@ class BrainTest {
         s.litHere = a.litHere; s.botPos = a.botPos; s.ownerPos = a.ownerPos; s.basePos = a.basePos; s.ownerOnline = a.ownerOnline; s.released = a.released;
         s.ownerJob = a.ownerJob; s.passive = a.passive; s.pickaxes = a.pickaxes; s.pickPct = a.pickPct; s.pickDurability = a.pickDurability;
         s.toolBroke = a.toolBroke; s.needs.addAll(a.needs); s.goals.addAll(a.goals); s.copy = a.copy; s.upkeep = a.upkeep;
+        // 0.26.1
+        s.coal = a.coal; s.logs = a.logs; s.bedInBag = a.bedInBag; s.thundering = a.thundering; s.skyAbove = a.skyAbove; s.areasHere = a.areasHere;
+        s.ownerOfflineMs = a.ownerOfflineMs; s.passiveOwnerBound = a.passiveOwnerBound; s.storageSeq = a.storageSeq; s.pickMaterials = a.pickMaterials;
+        s.copyRefused = a.copyRefused; s.spawnNearBase = a.spawnNearBase;
         return s;
     }
 

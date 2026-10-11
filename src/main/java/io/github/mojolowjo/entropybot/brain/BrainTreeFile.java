@@ -39,6 +39,7 @@ public final class BrainTreeFile {
             {"need", "your needs (need <item> <n>)", "gather <item> <n>", "ownerNeedBase", "ownerNeedSpan", "ageBonusMax", "deadbandPct"},
             {"goal", "your goals", "the goal's chain", "goalBase", "ageBonusMax", "need.goal.weight"},
             {"copy", "brain copy: do what you do", "the copied job", "copyScore", "copyR", "copyIdleS", "need.copy.weight"},
+            {"torch", "torches: night, my spot dark and nothing to light it with (0.26.1)", "gather torch 16", "need.torch.weight"},
             {"upkeep", "the idle list, first item that can run", "restock | mine strip | mine cave | farm | explore", "upkeep", "nearbyR", "idle", "need.upkeep.weight"},
     };
 

@@ -37,7 +37,7 @@ public final class Brain {
     private BrainConfig cfg = BrainConfig.defaults();
 
     /** The job the brain started. */
-    private record Job(String need, String chain, int score, long ref, long at) {}
+    private record Job(String need, String chain, int score, long ref, long at, String base) {}
 
     private Job job;
     private BrainState prev;
@@ -251,6 +251,9 @@ public final class Brain {
         if (on() && held > now) b.append(" (waiting ").append((held - now + 59999) / 60000).append(" min after a stop)");
         b.append(" - ").append(loopsPerMinute(now)).append(" loops/min, last ").append(Math.round(lastLoopMs * 10) / 10.0).append(" ms")
                 .append(lastLoopAt < 0 ? " (never)" : " " + (now - lastLoopAt) / 1000 + " s ago").append(", errors ").append(errors);
+        double[] cm = costMinute(now);      // 0.26.1: the snapshot cost counter
+        b.append(" | cost ").append(r2(cm[0])).append(" ms a loop (max ").append(r2(cm[1])).append(", last sense ").append(r2(lastSenseMs)).append(" ms; last minute)");
+        if (mem.size() > 0) b.append(" | failure memory: ").append(mem.describe(now));
         if (prev != null) b.append(" | stage ").append(prev.stage);
         if (job != null) b.append(" | job: ").append(job.chain()).append(" (").append(job.need()).append(")");
         if (last != null) b.append(" | last: ").append(last.branch()).append(lastDecisionAt > 0 ? " " + (now - lastDecisionAt) / 1000 + " s ago" : "");
@@ -275,7 +278,9 @@ public final class Brain {
         if (last == null) return on() ? "no decision yet (the brain looks every 2 s)" : "the brain is off - brain on";
         List<String> older = new ArrayList<>(whys);
         String latest = older.isEmpty() ? "" : older.remove(older.size() - 1);
-        String scores = lastScored == null ? "" : " | scores: " + lastScored.line() + (lastScored.skipped().isEmpty() ? "" : " | skipped: " + String.join("; ", lastScored.skipped()));
+        List<String> sk = new ArrayList<>(lastSkipped);
+        if (lastScored != null) sk.addAll(lastScored.skipped());
+        String scores = (lastScored == null ? "" : " | scores: " + lastScored.line()) + (sk.isEmpty() ? "" : " | skipped: " + String.join("; ", sk));
         return (older.isEmpty() ? "" : String.join(" | ", older) + "\n") + "latest: " + latest + scores + (prev != null ? " | stage " + prev.stage : "")
                 + (lastEvents.isEmpty() ? "" : " | events " + lastEvents)
                 + (prev != null ? " | " + NightSafety.status(prev, cfg) : "");
@@ -347,12 +352,17 @@ public final class Brain {
             loopTimes.addLast(now);
             lastLoopAt = now;
             cfg = loadConfig();
+            long ts = System.nanoTime();
             BrainState s = env.sense();
+            lastSenseMs = (System.nanoTime() - ts) / 1e6;
             s.now = now;
             // the job the brain started: still running?
             if (job != null && !env.jobRunning()) endJob(s);
             s.brainJob = job == null ? null : job.chain();
             if (!s.night) nightAt = null;
+            spawnFacts(s, now);                                     // 0.26.1 R6
+            List<String> cleared = mem.sweep(s, now);               // 0.26.1 R1: expired or cause gone
+            if (!cleared.isEmpty()) env.log("brain: failure memory cleared (the cause changed): " + String.join(", ", cleared));
             if (num(data(), "heldUntil", 0) > now) {
                 prev = s;
                 env.writeState(stateJson(s));
@@ -363,7 +373,10 @@ public final class Brain {
             lastScored = sc;
             boolean nightDone = nightAt != null && BrainState.flat(nightAt, s.botPos) <= 16;
             BrainTree.Running running = job == null ? null : new BrainTree.Running(job.need(), job.chain(), job.score());
-            BrainTree.Decision d = tree.run(new BrainTree.Ctx(s, cfg, sc, running, nightDone));
+            List<String> skipped = new ArrayList<>();
+            BrainTree.Decision d = tree.run(new BrainTree.Ctx(s, cfg, sc, running, nightDone, cfg.i("brain.failMemoryMinutes") > 0 ? mem : null, skipped));
+            lastSkipped = skipped;
+            skipWhispers(skipped, d, now);
             act(d, s, sc);
             prev = s;
             env.writeState(stateJson(s));
@@ -373,7 +386,71 @@ public final class Brain {
             if (errors <= 5 || errors % 1200 == 0) env.log("brain: loop error #" + errors + ": " + e);
         } finally {
             lastLoopMs = (System.nanoTime() - t0) / 1e6;
+            if (lastLoopAt == env.now()) cost(env.now(), lastLoopMs);
         }
+    }
+
+    // ---- 0.26.1: the loop's cost (the brain-snapshot counter: sense + tree, ms per loop over the last minute) ----
+
+    private final ArrayDeque<double[]> costs = new ArrayDeque<>();
+    private double lastSenseMs;
+
+    void cost(long now, double ms) {
+        costs.addLast(new double[]{now, ms});
+        while (!costs.isEmpty() && now - (long) costs.peekFirst()[0] > 60_000) costs.pollFirst();
+    }
+
+    /** {avg, max} ms per loop over the last minute (0 when none). */
+    double[] costMinute(long now) {
+        while (!costs.isEmpty() && now - (long) costs.peekFirst()[0] > 60_000) costs.pollFirst();
+        double sum = 0, max = 0;
+        for (double[] c : costs) { sum += c[1]; max = Math.max(max, c[1]); }
+        return new double[]{costs.isEmpty() ? 0 : sum / costs.size(), max};
+    }
+
+    static double r2(double v) { return Math.round(v * 100) / 100.0; }
+
+    // ---- 0.26.1 R1: the failure memory ----
+
+    private final FailMemory mem = new FailMemory();
+    private List<String> lastSkipped = List.of();
+
+    /** The failure memory (tests, status). */
+    public FailMemory failMemory() { return mem; }
+
+    /** A whisper for the first skip of a (chain, reason) in an hour, only when the skip changed what the bot does. */
+    void skipWhispers(List<String> skipped, BrainTree.Decision d, long now) {
+        if (skipped.isEmpty()) return;
+        JsonObject w = data().has("skipWhispered") && data().get("skipWhispered").isJsonObject() ? data().getAsJsonObject("skipWhispered") : new JsonObject();
+        data().add("skipWhispered", w);
+        for (String sk : skipped) {
+            String kind = sk.replaceFirst(" \\d+ min ago$", "");
+            if (!parkWhisperDue(num(w, kind, 0), now)) continue;
+            w.addProperty(kind, now);
+            env.whisper("brain: skipping " + kind + " (" + sk.replaceFirst("^.* failed \\S+ ", "") + ")" + (d.chain() != null ? " - " + d.chain() + " instead" : ""));
+        }
+        for (String k : new ArrayList<>(w.keySet())) if (now - num(w, k, 0) > PARK_WHISPER_MS) w.remove(k);
+    }
+
+    // ---- 0.26.1 R6: spawn at a bed ----
+
+    /** In-game minutes to ms (1 in-game minute = 1000/60 ticks of 50 ms). */
+    static long gameMinutesMs(int minutes) { return Math.round(minutes * 1000.0 / 60 * 50); }
+
+    /** Fills spawnNearBase (sensed, or a spawn the brain set within 32 of the base) and spawnDue (the cooldown passed). */
+    void spawnFacts(BrainState s, long now) {
+        JsonObject d = data();
+        if (d.has("spawnAt") && d.get("spawnAt").isJsonArray()) {
+            try {
+                var a = d.getAsJsonArray("spawnAt");
+                int[] at = {a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt()};
+                if (s.basePos == null || BrainState.flat(at, s.basePos) <= 32) s.spawnNearBase = true;
+            } catch (RuntimeException ignored) {
+                d.remove("spawnAt");
+            }
+        }
+        long tried = num(d, "spawnTriedAt", 0);
+        s.spawnDue = tried <= 0 || now - tried >= gameMinutesMs(cfg.i("spawn.cooldownMinutes"));
     }
 
     static boolean failed(String res) {
@@ -393,12 +470,29 @@ public final class Brain {
         else outcome = "finished";
         env.decisions().outcome(now, j.ref(), outcome.length() > 400 ? outcome.substring(0, 400) : outcome);
         JsonObject d = data();
+        // 0.26.1 R1/R6: a failed brain job with a precondition reason is remembered (the owner's stop or order never)
+        if (outcome.startsWith("failed")) {
+            int minutes = cfg.i("brain.failMemoryMinutes");
+            FailMemory.Reason r = j.need() != null && j.need().equals("spawn") ? mem.record(j.base(), FailMemory.Reason.NO_BED, s, now, minutes)
+                    : mem.record(j.base(), res, s, now, minutes);
+            if (r != null) env.log("brain: remembered " + j.base() + " failed " + r + " for " + minutes + " min");
+        } else if (outcome.equals("finished")) {
+            String b = j.chain().toLowerCase();
+            if (b.startsWith("deposit") || b.contains(" deposit") || b.startsWith("scan") || b.contains(" scan")) mem.storageChanged();
+            if ("spawn".equals(j.need()) && s.botPos != null) {
+                com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+                for (int v : s.botPos) a.add(v);
+                d.add("spawnAt", a);
+                env.log("brain: spawn set at the bed near " + s.botPos[0] + " " + s.botPos[1] + " " + s.botPos[2]);
+            }
+        }
         if (!d.has("fails") || !d.get("fails").isJsonObject()) d.add("fails", new JsonObject());
         JsonObject fails = d.getAsJsonObject("fails");
         // a job that "finished" at once and left its need open (a gather that counted the bag, not the group) counts as a failure,
         // so it can't loop every 2 s: three in a row park the need
         boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night")
-                && !j.need().startsWith("goal:");     // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
+                && !j.need().startsWith("goal:")      // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
+                && !j.base().startsWith("eat") && !j.need().equals("spawn") && !j.need().equals("passive");     // 0.26.1: quick by nature
         if (quick) res = "ended at once (" + (res == null ? "no reply" : res.length() > 100 ? res.substring(0, 100) : res) + ") without meeting the need";
         if (outcome.equals("finished") || outcome.startsWith("failed")) io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.need(outcome.equals("finished") && !quick);     // 0.23.6
         if (outcome.startsWith("failed") || quick) {
@@ -449,17 +543,23 @@ public final class Brain {
     private void start(BrainTree.Decision d, BrainState s, Needs.Scored sc) {
         SupplyCheck.Supply sup = SupplyCheck.before(d.chain(), s, 0, 0);
         String eat = PlayRules.eatFirst(d.chain(), s, cfg);          // 0.25.1: cave.eatFirst (why shows it, no extra whisper)
-        String chain = (sup == null ? "" : sup.chain() + " then ") + (eat == null ? "" : "eat then ") + d.chain();
-        long ref = record(d, s, sc, d.reason() + (sup == null ? "" : "; " + sup.why()) + (eat == null ? "" : "; " + eat));
+        // 0.26.1 R3: a gathering job picked with few free slots and a base known: deposit first
+        String pre = d.branch().equals("pick") ? PlayRules.preDeposit(d.chain(), s, cfg) : null;
+        String job0 = pre != null ? pre : d.chain();
+        String preWhy = pre == null ? "" : "; " + s.freeSlots + " free slots (brain.preDepositSlots " + cfg.i("brain.preDepositSlots") + "): deposit first";
+        String chain = (sup == null ? "" : sup.chain() + " then ") + (eat == null ? "" : "eat then ") + job0;
+        if (d.need() != null && d.need().equals("spawn")) { data().addProperty("spawnTriedAt", env.now()); env.saved(); }      // R6: the cooldown counts tries
+        long ref = record(d, s, sc, d.reason() + (sup == null ? "" : "; " + sup.why()) + (eat == null ? "" : "; " + eat) + preWhy);
         lastLogged = d.branch();
         String reply = env.start(chain);
         if (reply != null && reply.startsWith("started")) {
-            job = new Job(d.need(), chain, d.score(), ref, env.now());
+            job = new Job(d.need(), chain, d.score(), ref, env.now(), d.chain());
             io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.pick(d.need());      // 0.23.6
             if (d.chain().startsWith("restock")) data().addProperty("restockAt", env.now());
             if (d.need() != null && d.need().equals("night")) nightAt = s.botPos;
             env.saved();
-            if ((!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
+            if (d.branch().equals("passive.leave")) env.whisper(BrainTree.LEFT_WHISPER);      // 0.26.1 R5: exactly this
+            else if ((!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
                     && parkWhisperDue(num(parkWhispers(data()), d.need() == null ? "" : d.need(), 0), env.now()))      // 0.24.3: a need parked in the last hour starts quietly
                 env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (sup == null ? "" : " - " + sup.why()));
             lastWhisper = d.chain();
@@ -468,7 +568,7 @@ public final class Brain {
         } else {
             env.decisions().outcome(env.now(), ref, "failed:" + reply);
             // counted like a job that failed at once (3 in a row park it)
-            failOnce(new Job(d.need(), chain, d.score(), ref, env.now()), reply);
+            failOnce(new Job(d.need(), chain, d.score(), ref, env.now(), d.chain()), reply);
         }
     }
 
@@ -515,10 +615,11 @@ public final class Brain {
     private long record(BrainTree.Decision d, BrainState s, Needs.Scored sc, String reason) {
         Map<String, Integer> scores = new LinkedHashMap<>();
         for (Needs.Option o : sc.options()) scores.put(o.need(), o.score());
-        String line = Texts.ago(env.now()) + d.branch() + (d.chain() != null ? ": " + d.chain() : "") + " because " + reason;
+        String line = Texts.ago(env.now()) + d.branch() + (d.chain() != null ? ": " + d.chain() : "") + " because " + reason
+                + (lastSkipped.isEmpty() ? "" : " (skipped: " + String.join("; ", lastSkipped) + ")");
         whys.addLast(line);
         while (whys.size() > 5) whys.pollFirst();
-        return env.decisions().decision(env.now(), env.tick(), d.branch(), scores, d.chain(), reason, s.summary());
+        return env.decisions().decision(env.now(), env.tick(), d.branch(), scores, d.chain(), reason, s.summary(), lastSkipped);
     }
 
     /** Small text helpers. */
@@ -545,6 +646,7 @@ public final class Brain {
         if (lastScored != null) for (Needs.Option x : lastScored.options()) sc.addProperty(x.need(), x.score());
         o.add("scores", sc);
         JsonArray sk = new JsonArray();
+        lastSkipped.forEach(sk::add);      // 0.26.1 R1: the tree's skips first
         if (lastScored != null) lastScored.skipped().forEach(sk::add);
         o.add("skipped", sk);
         JsonArray ev = new JsonArray();
@@ -560,6 +662,14 @@ public final class Brain {
         o.addProperty("stage", s == null ? null : s.stage);
         o.addProperty("loopsPerMin", loopsPerMinute(env.now()));
         o.addProperty("lastLoopMs", Math.round(lastLoopMs * 100) / 100.0);
+        double[] cm = costMinute(env.now());      // 0.26.1: the snapshot cost counter
+        o.addProperty("loopMsAvg", r2(cm[0]));
+        o.addProperty("loopMsMax", r2(cm[1]));
+        o.addProperty("senseMs", r2(lastSenseMs));
+        JsonArray ls = new JsonArray();
+        lastSkipped.forEach(ls::add);
+        o.add("treeSkipped", ls);
+        o.addProperty("failMemory", mem.describe(env.now()));
         o.addProperty("errors", errors);
         o.addProperty("why", whys.isEmpty() ? null : whys.peekLast());
         JsonObject p = new JsonObject();
@@ -587,6 +697,7 @@ public final class Brain {
             try {
                 configNote = c.load(com.google.gson.JsonParser.parseString(f).getAsJsonObject());
                 BrainConfig.current(c);
+                if (!c.migrated().isEmpty()) migrated(c);
                 return c;
             } catch (RuntimeException e) {
                 configNote = CONFIG_FILE + " unreadable (" + e.getMessage() + ")";
@@ -595,7 +706,17 @@ public final class Brain {
         }
         configNote = c.load(data().has("config") && data().get("config").isJsonObject() ? data().getAsJsonObject("config") : null);
         BrainConfig.current(c);
+        if (!c.migrated().isEmpty()) migrated(c);
         return c;
+    }
+
+    /** 0.26.1 R7: a saved fullInterrupt was migrated: log it once and save the settings without the old key. */
+    private void migrated(BrainConfig c) {
+        env.log("brain: settings: " + c.migrated());
+        String r = env.writeFile(CONFIG_FILE, c.changed().toString());
+        if (r != null && r.startsWith("error")) data().add("config", c.changed());
+        else data().remove("config");
+        env.saved();
     }
 
     static String canon(String key) {
@@ -617,6 +738,7 @@ public final class Brain {
                 }
                 String k = canon(w[1]);
                 if (k.equals("idle")) return IdleList.show(idleList());
+                if (BrainConfig.renamed(k) != null) return BrainConfig.renamed(k);      // 0.26.1 R7
                 String v = c.get(k);
                 if (v == null) return "error: no brain setting " + w[1] + " (brain get lists them)";
                 int[] r = BrainConfig.RANGES.get(k);

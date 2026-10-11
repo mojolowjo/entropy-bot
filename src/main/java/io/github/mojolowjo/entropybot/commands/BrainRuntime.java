@@ -39,7 +39,8 @@ import java.util.Map;
  * package for the package-private parts of Commands it reads.
  *
  * <p>Loader notes: only vanilla client getters (LocalPlayer health/food/inventory, ItemStack DataComponents.FOOD and
- * damage, Level.getBrightness(LightLayer.BLOCK), Level.getDayTime, ClientPacketListener.getPlayerInfo); the tick comes
+ * damage, Level.getBrightness(LightLayer.BLOCK), Level.getDayTime, ClientPacketListener.getPlayerInfo; 0.26.1: Level.isThundering,
+ * Level.canSeeSky(BlockPos) at the head cell, the guard's dry run BotAPI.check for brain copy); the tick comes
  * through Commands (NeoForge ClientTickEvent.Post via Core; Fabric: END_CLIENT_TICK). No mixin, no Baritone.
  * Errors: the loop catches everything (Brain.tick); brain.json write failures are counted, never fatal.
  */
@@ -126,7 +127,9 @@ public final class BrainRuntime implements BrainEnv {
         s.food = p.getFoodData().getFoodLevel();
         s.freeSlots = c.freeSlots();
         // the bag: food, torches, pickaxes
-        int food = 0, torches = 0, picks = 0, bestPct = 0, dur = 0, wood = 0;
+        int food = 0, torches = 0, picks = 0, bestPct = 0, dur = 0, wood = 0, coal = 0, logs = 0;
+        boolean bedBag = false;
+        Map<String, Integer> bag = new java.util.HashMap<>();      // 0.26.1 R8: the pickaxe materials
         for (int i = 0; i < 36; i++) {
             ItemStack st = p.getInventory().getItem(i);
             if (st.isEmpty()) continue;
@@ -134,6 +137,10 @@ public final class BrainRuntime implements BrainEnv {
             if (st.has(DataComponents.FOOD)) food += st.getCount();
             if (id.endsWith("_log") || id.endsWith("_planks") || id.endsWith("_wood") || id.endsWith("_stem")) wood += st.getCount();      // 0.25.1
             if (id.equals("minecraft:torch")) torches += st.getCount();
+            if (id.equals("minecraft:coal") || id.equals("minecraft:charcoal")) coal += st.getCount();      // 0.26.1 R2
+            if (id.endsWith("_log") || id.endsWith("_stem")) logs += st.getCount();
+            if (id.endsWith("_bed")) bedBag = true;
+            bag.merge(id.substring(id.indexOf(':') + 1), st.getCount(), Integer::sum);
             if (id.endsWith("_pickaxe")) {
                 picks++;
                 int left = st.isDamageableItem() ? st.getMaxDamage() - st.getDamageValue() : 1000;
@@ -144,6 +151,9 @@ public final class BrainRuntime implements BrainEnv {
         s.foodItems = food;
         s.woodItems = wood;
         s.torches = torches;
+        s.coal = coal;
+        s.logs = logs;
+        s.bedInBag = bedBag;
         s.pickaxes = picks;
         s.pickPct = bestPct;
         s.pickDurability = dur;
@@ -157,9 +167,13 @@ public final class BrainRuntime implements BrainEnv {
                 Map<String, Integer> totals = c.storage.stock(p).totals();
                 stage = GameStage.of(totals);
                 foodStock = edible(totals);          // 0.25.1: bag + storage (the stock view)
+                int h = totals.hashCode();           // 0.26.1 R1: a scan or deposit changed the stock view
+                if (h != stockHash) { stockHash = h; storageSeq++; }
             } catch (RuntimeException e) { LOG.warn("[entropybot] brain stage: {}", e.toString()); }
         }
         s.stage = stage;
+        s.storageSeq = storageSeq;
+        s.pickMaterials = io.github.mojolowjo.entropybot.brain.PlayRules.pickMaterials(SupplyCheck.tier(stage), bag);
         s.foodStock = foodStock < 0 ? food : Math.max(foodStock, food);
         // danger: the reflexes fight, flee or retreat (the B2 threat test fed them), or one holds the bot
         Reflexes.Reflex r = core.reflexes.reflex();
@@ -195,7 +209,15 @@ public final class BrainRuntime implements BrainEnv {
             s.shelterBlocks = io.github.mojolowjo.entropybot.camp.ShelterPlan.blocks(io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
             s.deathsDay = io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.deaths();
             s.dayTime = dt;
-            if (s.night) s.bedNear = Jobs.findBlock(p, "_bed 24").startsWith("found");
+            // 0.26.1 R6: by day too, capped: one bed search (r 24) a minute by day, every loop at night as before
+            if (s.night || s.now - bedAt > 60_000) {
+                bedAt = s.now;
+                bedNearDay = Jobs.findBlock(p, "_bed 24").startsWith("found");
+            }
+            s.bedNear = bedNearDay;
+            // 0.26.1 R4: two bounded reads: the level thunders, the head cell sees the sky
+            s.thundering = mc.level.isThundering();
+            s.skyAbove = mc.level.canSeeSky(p.blockPosition().above());
             JsonObject camp = core.knowledge.places().get("camp");
             if (camp != null && Jobs.dimOf(camp).equals(Storage.dim())) s.campPos = Jobs.pos(camp);
         } catch (RuntimeException e) {
@@ -204,9 +226,16 @@ public final class BrainRuntime implements BrainEnv {
         // the owner
         String owner = c.owner();
         s.ownerOnline = mc.getConnection() != null && mc.getConnection().getPlayerInfo(owner) != null;
-        for (Player o : mc.level.players()) if (o.getGameProfile().getName().equalsIgnoreCase(owner)) s.ownerPos = new int[]{o.getBlockX(), o.getBlockY(), o.getBlockZ()};
+        // 0.26.1 R9: a removed or placeholder entity is no position (ownerKnown() drops the far placeholder too)
+        for (Player o : mc.level.players())
+            if (o.getGameProfile().getName().equalsIgnoreCase(owner) && !o.isRemoved() && o.distanceToSqr(p) < 1e10) s.ownerPos = new int[]{o.getBlockX(), o.getBlockY(), o.getBlockZ()};
         if (s.ownerPos == null) s.ownerPos = c.ownerFixPos(owner);
         s.released = c.vocab.released();
+        // 0.26.1 R5: how long the owner has been offline (0 online; the clock starts when the loop first sees it)
+        if (s.ownerOnline) ownerOffAt = -1;
+        else if (ownerOffAt < 0) ownerOffAt = s.now;
+        s.ownerOfflineMs = s.ownerOnline ? 0 : s.now - ownerOffAt;
+        s.areasHere = c.inAreas(Storage.dim(), s.botPos[0], s.botPos[2]);      // 0.26.1 R1: OUTSIDE clears inside an area
         // what runs
         s.menuOpen = mc.screen != null && !brainChainRunning() && !c.jobs.running();
         if (brainChainRunning()) s.ownerJob = null;         // the brain's chain: its step (a job, a gather, a carry) is the brain's
@@ -215,7 +244,11 @@ public final class BrainRuntime implements BrainEnv {
         else if (c.gathering.running()) s.ownerJob = "gather";
         else if (c.mule.running()) s.ownerJob = "carry";
         else if (c.requests.busy()) s.ownerJob = "a request";
-        if (c.heldInPlace()) s.passive = core.reflexes.escort.active() ? "escorting " + core.reflexes.escort.name() : c.vocab.hold.what();
+        if (c.heldInPlace()) {      // 0.26.1: assist alone (no hold) named itself; escort and assist are owner-bound (R5)
+            boolean esc = core.reflexes.escort.active();
+            s.passive = esc ? "escorting " + core.reflexes.escort.name() : c.vocab.hold != null ? c.vocab.hold.what() : "assisting";
+            s.passiveOwnerBound = esc || c.assist.on();
+        }
         // the owner's needs and goals
         if (root.has("needs") && root.get("needs").isJsonObject()) {
             for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("needs").entrySet()) {
@@ -232,7 +265,14 @@ public final class BrainRuntime implements BrainEnv {
         }
         s.planner = c.planning::chainFor;          // B3: a goal with no chain asks the planner
         // brain copy
-        if (brain.copyOn()) s.copy = copy.update(ownerReport(), owner, s.now, brain.config().i("copyIdleS"));
+        if (brain.copyOn()) {
+            s.copy = copy.update(ownerReport(), owner, s.now, brain.config().i("copyIdleS"));
+            // 0.26.1 R9: the guard (as fence check) on the copied job's spot, the owner's feet: one bounded check
+            if (s.copy != null && s.copy.chain() != null && s.ownerKnown()) {
+                String gr = io.github.mojolowjo.entropybot.api.BotAPI.check(Storage.dim(), s.ownerPos[0], s.ownerPos[1], s.ownerPos[2], "break");
+                if (gr != null && gr.startsWith("would refuse:")) s.copyRefused = gr.contains("outside") ? "outside my areas" : "(the guard " + gr.substring(6) + ")";
+            }
+        }
         // the upkeep facts
         s.upkeep.now = s.now;
         s.upkeep.ores = c.orePrefer() == null || c.orePrefer().isEmpty() ? "any" : c.orePrefer();
@@ -259,6 +299,10 @@ public final class BrainRuntime implements BrainEnv {
     }
 
     private int foodStock = -1;
+    /** 0.26.1: the stock view's hash and change count (R1), the day bed search's time and answer (R6), when the owner went offline (R5). */
+    private int stockHash;
+    private long storageSeq, bedAt = -60_001, ownerOffAt = -1;
+    private boolean bedNearDay;
 
     /** 0.25.1: edible items among the stock totals (an item whose default stack has the FOOD component). */
     static int edible(Map<String, Integer> totals) {

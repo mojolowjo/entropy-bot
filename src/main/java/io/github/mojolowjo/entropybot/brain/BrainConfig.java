@@ -45,7 +45,6 @@ public final class BrainConfig {
                 {"foodWantEarly", 4, 0, 64, "edible items wanted at the stages nothing and wood"},
                 {"foodTop", 80, 0, 100, "the food need's top score"},
                 {"hungryInterrupt", 6, 0, 20, "food bar at or below: a running brain job stops to eat"},
-                {"fullInterrupt", 0, 0, 36, "free slots at or below: a running brain job stops to deposit"},
                 {"bagFull", 90, 0, 100, "bag score at 2 or fewer free slots"},
                 {"bagLow", 60, 0, 100, "bag score at 4 or fewer free slots"},
                 {"bagSome", 25, 0, 100, "bag score at 8 or fewer free slots"},
@@ -73,6 +72,12 @@ public final class BrainConfig {
                 {"gear.ironFirst", 1, 0, 1, "armour: iron goes to chestplate then leggings before helmet/boots, leather fills helmet/boots (1 on, 0 off)"},
                 {"brain.foodStock", 8, 0, 128, "edible items in bag + storage below this near dusk with wood enough: food before wood"},
                 {"brain.foodDusk", 60, 0, 100, "the food need's score near dusk when food stock is low and wood enough (always above a wood job)"},
+                // 0.26.1 "steady brain" (R1-R6)
+                {"brain.failMemoryMinutes", 10, 0, 120, "a brain job that failed for a reason it can't fix by retrying (no item, outside my areas, no path, no bed, none in my chests, the guard) is skipped this many minutes, or until the cause changes (0 = off)"},
+                {"brain.preDepositSlots", 8, 0, 36, "free slots at or below when the brain picks a gathering job with a base known: deposit first (0 = off)"},
+                {"weather.storm", 1, 0, 1, "a thunderstorm with sky above me counts as night for the night bands (1 on, 0 off)"},
+                {"passive.ownerTimeoutS", 300, 0, 3600, "escorting or assisting and you are offline this many seconds: dismiss then home (0 = off)"},
+                {"spawn.cooldownMinutes", 1440, 60, 10080, "in-game minutes between two tries to set my spawn at a bed (1440 = one day)"},
         };
         for (Object[] row : rows) {
             d.put((String) row[0], (Integer) row[1]);
@@ -124,11 +129,33 @@ public final class BrainConfig {
         return w == null ? 1 : w;
     }
 
-    /** Overrides from JSON; returns the keys it ignored (unknown or out of range), "" when none. */
+    /** 0.26.1 (R7): the removed key and the key that replaced it. */
+    public static final String OLD_FULL = "fullInterrupt", NEW_FULL = "brain.bagFullSlots";
+
+    /** 0.26.1: the answer for a removed key ("renamed: brain.bagFullSlots"), null for any other. */
+    public static String renamed(String key) {
+        return key != null && key.equalsIgnoreCase(OLD_FULL) ? "renamed: " + NEW_FULL : null;
+    }
+
+    /** The last {@link #load}'s migration note ("" none): the caller logs it once and saves the file without the old key. */
+    private String migrated = "";
+
+    public String migrated() { return migrated; }
+
+    /**
+     * Overrides from JSON; returns the keys it ignored (unknown or out of range), "" when none. 0.26.1 (R7): a saved
+     * {@code fullInterrupt} is not ignored but migrated into {@code brain.bagFullSlots} when larger (note in {@link #migrated}).
+     */
     public String load(JsonObject o) {
+        migrated = "";
         if (o == null) return "";
         StringBuilder bad = new StringBuilder();
+        Integer oldFull = null;
         for (Map.Entry<String, JsonElement> e : o.entrySet()) {
+            if (e.getKey().equalsIgnoreCase(OLD_FULL)) {
+                try { oldFull = (int) Math.round(e.getValue().getAsDouble()); } catch (RuntimeException ex) { oldFull = 0; }
+                continue;
+            }
             String err;
             try {
                 err = set(e.getKey(), e.getValue().getAsString());
@@ -137,11 +164,21 @@ public final class BrainConfig {
             }
             if (err != null) bad.append(bad.length() == 0 ? "" : ", ").append(e.getKey());
         }
+        if (oldFull != null) {
+            int was = i(NEW_FULL);
+            int[] r = RANGES.get(NEW_FULL);
+            int v = Math.max(r[0], Math.min(r[1], oldFull));
+            if (v > was) {
+                values.put(NEW_FULL, v);
+                migrated = "fullInterrupt " + oldFull + " moved into " + NEW_FULL + " (was " + was + ", now " + v + ")";
+            } else migrated = "fullInterrupt " + oldFull + " dropped (" + NEW_FULL + " " + was + " is not smaller)";
+        }
         return bad.toString();
     }
 
     /** Sets a key from text; null when ok, else why not (unknown key, not a number, out of range). */
     public String set(String key, String text) {
+        if (renamed(key) != null) return renamed(key);
         if (key == null || !known(key)) return "no brain setting " + key + " (brain get lists them)";
         double d;
         String tx = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);

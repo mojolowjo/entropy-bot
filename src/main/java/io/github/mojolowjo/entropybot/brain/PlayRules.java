@@ -19,7 +19,68 @@ public final class PlayRules {
 
     /** The bag counts as full for a running job. */
     public static boolean bagFull(BrainState s, BrainConfig c) {
-        return s.freeSlots <= Math.max(c.i("fullInterrupt"), c.i("brain.bagFullSlots"));
+        return s.freeSlots <= c.i("brain.bagFullSlots");      // 0.26.1 (R7): fullInterrupt is migrated into it
+    }
+
+    // ---- 0.26.1 "steady brain" ----
+
+    /** R3: a job that fills the bag: mine (strip, cave, an ore), cut/chop, gather, farm, dig. */
+    public static boolean gatheringJob(String chain) {
+        if (chain == null) return false;
+        String[] w = chain.trim().toLowerCase(Locale.ROOT).split("\\s+");
+        if (w.length == 0) return false;
+        return switch (w[0]) {
+            case "mine" -> !(w.length >= 2 && w[1].matches("status|ores|reset|turn")) && !(w.length >= 3 && w[1].matches("strip|cave") && w[2].matches("status|ores|reset|turn"));
+            case "cut", "chop", "gather", "farm", "dig" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * R3 pre-deposit: the chain to run instead ({@code deposit then <job>}) when the brain picked a gathering job with
+     * {@code brain.preDepositSlots} or fewer free slots and a base known; null when the rule does not apply.
+     */
+    public static String preDeposit(String chain, BrainState s, BrainConfig c) {
+        int slots = c.i("brain.preDepositSlots");
+        if (slots <= 0 || chain == null || s.basePos == null || s.freeSlots > slots) return null;
+        if (bagTripOrRestock(chain) || !gatheringJob(chain)) return null;
+        return "deposit then " + chain;
+    }
+
+    static boolean bagTripOrRestock(String chain) {
+        String c = chain.trim().toLowerCase(Locale.ROOT);
+        return c.startsWith("deposit") || c.startsWith("restock") || c.contains(" deposit");
+    }
+
+    /** R2: torches can be had for the night: in the bag, or coal/charcoal or logs to craft them. */
+    public static boolean torchMaterials(BrainState s) { return s.coal > 0 || s.logs > 0; }
+
+    /** R2: a bed for the night: one within 24 blocks, or one in the bag (sleep places it). */
+    public static boolean bedFor(BrainState s) { return s.bedNear || s.bedInBag; }
+
+    /**
+     * R8: the pickaxe materials for one of this tier in the bag (bag counts by id without the namespace): 3 heads
+     * (planks, cobblestone-like stone, iron_ingot, diamond) and 2 sticks or 1 plank/log to make them.
+     */
+    public static boolean pickMaterials(String tier, java.util.Map<String, Integer> bag) {
+        if (tier == null || bag == null) return false;
+        int planks = 0, logs = 0, stone = 0;
+        for (var e : bag.entrySet()) {
+            String id = e.getKey().substring(e.getKey().indexOf(':') + 1);
+            int n = e.getValue() == null ? 0 : e.getValue();
+            if (id.endsWith("_planks")) planks += n;
+            if (id.endsWith("_log") || id.endsWith("_stem")) logs += n;
+            if (id.equals("cobblestone") || id.equals("cobbled_deepslate") || id.equals("blackstone")) stone += n;
+        }
+        int sticks = bag.getOrDefault("stick", bag.getOrDefault("minecraft:stick", 0));
+        boolean handle = sticks >= 2 || planks >= 2 || logs >= 1;
+        return switch (tier) {
+            case "wooden" -> planks + logs * 4 >= 5 || (planks >= 3 && sticks >= 2);
+            case "stone" -> stone >= 3 && handle;
+            case "iron" -> bag.getOrDefault("iron_ingot", bag.getOrDefault("minecraft:iron_ingot", 0)) >= 3 && handle;
+            case "diamond" -> bag.getOrDefault("diamond", bag.getOrDefault("minecraft:diamond", 0)) >= 3 && handle;
+            default -> false;
+        };
     }
 
     /** At night, in the shelter band (or others sleep and sleep auto): the trip home ends in bed. */
