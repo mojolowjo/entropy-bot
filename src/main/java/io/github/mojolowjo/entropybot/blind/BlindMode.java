@@ -207,7 +207,8 @@ public final class BlindMode {
                 + " | sound " + config.sound()
                 + " | maxFps " + maxFps + fpsHint(maxFps)
                 + (configProblem != null ? " | " + configProblem : "")
-                + (resetSeen ? " | something keeps turning rendering back on (see check)" : "");
+                + (resetSeen ? " | something keeps turning rendering back on (see check)" : "")
+                + (enabled ? " | the window shows its last drawn frame; the game runs underneath, menus still draw" : "");
     }
 
     static String clock(long ms) {

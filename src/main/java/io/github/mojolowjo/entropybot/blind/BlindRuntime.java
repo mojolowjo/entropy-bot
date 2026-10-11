@@ -88,7 +88,11 @@ public final class BlindRuntime {
             // any open screen draws (the owner's pause menu, chat, inventory, the config screen; the bot's chests and the
             // death screen for a moment): a menu nobody can see is useless, and menus are open a tiny share of a bot's
             // time. With nothing open the frame loop is skipped again (owner's request 2026-10-10: "menus not reactive").
-            if (mode.enabled() && world && mc.screen == null) {
+            // After a screen closes, a few more frames draw: the frozen frame is then the plain world, not the menu that
+            // was last drawn (live 2026-10-10: the pause menu "stayed up" after Esc).
+            if (mc.screen != null) screenGrace = SCREEN_GRACE_TICKS;
+            else if (screenGrace > 0) screenGrace--;
+            if (mode.enabled() && world && mc.screen == null && screenGrace == 0) {
                 mc.noRender = true;
                 asserted = true;
                 if (!soundPaused && mode.config().pauseSound()) pauseSound(mc);
@@ -155,6 +159,9 @@ public final class BlindRuntime {
 
     /** Ticks left in which vanilla's title is put back (set on blind off). */
     private int restoreLeft;
+    /** Ticks after a screen closed during which frames still draw (so the frozen frame shows no menu). */
+    private int screenGrace;
+    static final int SCREEN_GRACE_TICKS = 3;
 
     private void restoreTitle(Minecraft mc) {
         titleSet = false;
@@ -201,7 +208,7 @@ public final class BlindRuntime {
             resumeSound(mc);
             restoreLeft = 3;          // the restore runs in postTick (not here): never gated on a flag the title step may not have set
         }
-        String head = on ? (changed ? "ok: blind mode on - no frames are drawn; the bot works on (blind off to see it again)"
+        String head = on ? (changed ? "ok: blind mode on - the window keeps its last drawn frame while the game runs underneath (menus like Esc and chat still draw; blind off to see the world again)"
                 : "blind mode is already on")
                 : (changed ? "ok: blind mode off - the window draws again" : "blind mode is already off");
         return head + saved + r;
