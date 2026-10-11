@@ -18,6 +18,15 @@ import java.util.ArrayDeque;
  * the server last played on is noted while in a world (T4: or the one the game was launched to join); out of one, it
  * reconnects after 1, 5 and 15 minutes, then every 30 minutes for 24 hours, at most 3 times in any hour
  * ({@link ReconnectRules}). A relaunch after a crash stays the watchdog's (tools/watchdog.ps1).
+ *
+ * <p>0.26.3 connect timeout ({@code reconnect.connectTimeoutS}, default 60, 15-600; 2026-10-11 a retry sat on
+ * "Connecting to ..." from 10:39 past 11:30): an attempt this mod started that is not in a world after that long is
+ * cancelled exactly like vanilla's cancel button in {@code ConnectScreen.init()} (1.21.1): the button sets
+ * {@code ConnectScreen.aborted}, calls {@code channelFuture.cancel(true)} and {@code Connection.disconnect(ConnectScreen.ABORT_CONNECTION)},
+ * then {@code Minecraft.setScreen(parent)}; we press that button ({@code Button.onPress()}, found by its message
+ * {@code CommonComponents.GUI_CANCEL} in {@code Screen.children()}), falling back to {@code Minecraft.disconnect(Screen)}
+ * (which nulls {@code pendingConnection} in updateScreenAndTick). The try counts as failed: the next wait starts then,
+ * with the same backoff. Loader notes: vanilla client classes only (no mixin, no accessor).
  */
 public final class Reconnect {
     private static final Logger LOG = LogUtils.getLogger();
@@ -61,6 +70,7 @@ public final class Reconnect {
                 if (d != null && d.ip != null && !d.ip.isEmpty()) server = d.ip;
                 outSince = -1;
                 firstOutMs = -1;
+                attemptAt = -1;
                 tries = 0;
                 gaveUpLogged = false;           // (recent stays: 3 tries in any hour, kicks in a row included)
                 statusText = "in a world";
@@ -69,7 +79,9 @@ public final class Reconnect {
             if (server == null && launchServer != null && !savedFlagRead) {
                 // the owner's `reconnect off` lives in commands.json, which Commands only reads inside a world
                 savedFlagRead = true;
-                if (!ReconnectRules.savedFlag(mc.gameDirectory.toPath().resolve("entropybot").resolve("commands.json"))) on = false;
+                java.nio.file.Path cj = mc.gameDirectory.toPath().resolve("entropybot").resolve("commands.json");
+                if (!ReconnectRules.savedFlag(cj)) on = false;
+                connectTimeoutS = ReconnectRules.savedTimeout(cj);      // 0.26.3
             }
             server = ReconnectRules.seed(server, launchServer);
             long now = System.currentTimeMillis();
@@ -77,8 +89,22 @@ public final class Reconnect {
                 statusText = ReconnectRules.statusText(on, server, tries, -1, ZoneId.systemDefault());
                 return;
             }
+            // 0.26.3: an attempt still not in a world after connectTimeoutS is cancelled (vanilla's cancel button) and
+            // counts as a failed try: the next wait starts now, with the same backoff
+            if (attemptAt >= 0 && ended(mc.screen)) attemptAt = -1;      // refused or dropped: the normal path
+            if (ReconnectRules.connectTimedOut(attemptAt, now, connectTimeoutS, false)) {
+                String how = cancel(mc);
+                attemptAt = -1;
+                outSince = tick;
+                lastTimeoutAt = now;
+                lastTimeout = ReconnectRules.timeoutText(connectTimeoutS);
+                LOG.info("[entropybot] reconnect: try {} to {} still not in a world after {} s - cancelled ({}), counted as a failed try", tries, server, connectTimeoutS, how);
+                events.push("job", lastTimeout + " (try " + tries + ")", null);
+                return;
+            }
             if (mc.screen instanceof ConnectScreen) {
-                statusText = "connecting to " + server + (tries > 0 ? " (try " + tries + ")" : "");
+                statusText = "connecting to " + server + (tries > 0 ? " (try " + tries + ")" : "")
+                        + (attemptAt >= 0 ? ", " + (now - attemptAt) / 1000 + " s of " + connectTimeoutS : "");
                 return;
             }
             if (outSince < 0) outSince = tick;
@@ -99,10 +125,54 @@ public final class Reconnect {
             outSince = tick;
             LOG.info("[entropybot] reconnecting to {} (try {})", server, tries);
             events.push("job", "reconnecting to " + server + " (try " + tries + ")", null);
+            attemptAt = now;
             ConnectScreen.startConnecting(new TitleScreen(), mc, ServerAddress.parseString(server),
                     new ServerData("server", server, ServerData.Type.OTHER), false, null);
         } catch (Throwable t) {
             LOG.warn("[entropybot] reconnect: {}", t.toString());
         }
+    }
+
+    // ---- 0.26.3: the connect timeout ----
+
+    private volatile int connectTimeoutS = ReconnectRules.TIMEOUT_DEFAULT_S;
+    /** Wall clock the current attempt began (-1: none in progress); the last timeout's text and time. */
+    private long attemptAt = -1;
+    private volatile String lastTimeout;
+    private volatile long lastTimeoutAt = -1;
+
+    public int connectTimeoutS() { return connectTimeoutS; }
+
+    public void setConnectTimeoutS(int s) { if (ReconnectRules.timeoutRefusal(s) == null) connectTimeoutS = s; }
+
+    /** check: "reconnect: the last connect attempt timed out after 60 s" within the last 24 h, else null. */
+    public String lastTimeout() {
+        return lastTimeout != null && System.currentTimeMillis() - lastTimeoutAt < ReconnectRules.GIVE_UP_MS ? lastTimeout : null;
+    }
+
+    /** The attempt is over without a world: back at the title, the server list or vanilla's "disconnected" screen. */
+    static boolean ended(net.minecraft.client.gui.screens.Screen s) {
+        return s == null || s instanceof TitleScreen || s instanceof net.minecraft.client.gui.screens.DisconnectedScreen
+                || s instanceof net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen;
+    }
+
+    /**
+     * Cancels the pending connection the way vanilla's cancel button does: ConnectScreen's own Cancel button
+     * ({@code CommonComponents.GUI_CANCEL}, found among {@code Screen.children()}) is pressed, which sets its
+     * {@code aborted} flag, cancels the netty {@code channelFuture} and calls {@code Connection.disconnect(ABORT_CONNECTION)},
+     * then {@code setScreen(parent)} (our TitleScreen). Without that button (a screen past the handshake, not yet built):
+     * {@code Minecraft.disconnect(new TitleScreen())}, which drops a pending connection and shows the title.
+     */
+    static String cancel(Minecraft mc) {
+        if (mc.screen instanceof ConnectScreen cs) {
+            for (var l : cs.children()) {
+                if (l instanceof net.minecraft.client.gui.components.Button b && net.minecraft.network.chat.CommonComponents.GUI_CANCEL.equals(b.getMessage())) {
+                    b.onPress();
+                    return "the connect screen's cancel";
+                }
+            }
+        }
+        mc.disconnect(new TitleScreen());
+        return "Minecraft.disconnect";
     }
 }

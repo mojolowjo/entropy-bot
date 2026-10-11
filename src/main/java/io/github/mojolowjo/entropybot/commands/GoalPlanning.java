@@ -188,6 +188,28 @@ final class GoalPlanning {
         });
     }
 
+    /**
+     * 0.26.3: the day plan's dry run of {@code goal <form>}: a ready chain (camp, light) or an owner-kept goal_ routine at
+     * once, else the search on the worker. then gets {chain, null}, {"", why} (nothing to do) or {null, why} (no plan).
+     * False when the same goal is still being planned.
+     */
+    boolean dayRun(LocalPlayer p, String goal, java.util.function.Consumer<String[]> then) {
+        GoalGrammar.Goal g = GoalGrammar.parse(goal, n -> c.policyArea(n) != null);
+        if (g.error() != null) { then.accept(new String[]{null, g.error().replaceFirst("^error: ", "")}); return true; }
+        if (g.chain() != null) { then.accept(new String[]{g.chain(), null}); return true; }
+        String existing = routineText(g.routine());
+        if (existing != null && RoutineRule.decide(existing, plannedText(g.routine())) == RoutineRule.Decision.KEEP) {
+            then.accept(new String[]{g.routine(), null});      // your edited routine is the ready chain
+            return true;
+        }
+        return searchAsync(p, g, "day:" + g.text(), r -> {
+            if (r == null) then.accept(new String[]{null, "the search threw (see the log)"});
+            else if (!r.ok()) then.accept(new String[]{null, r.error() != null ? r.error() : "missing " + r.missing()});
+            else if (r.steps().isEmpty()) then.accept(new String[]{"", "I already have it"});
+            else then.accept(new String[]{r.chain(), null});
+        });
+    }
+
     /** From the client tick: the finished searches' callbacks. Never throws. */
     void drainSearches() {
         try { async.drain(); } catch (RuntimeException e) { LOG.warn("[entropybot] plan: drain: {}", e.toString()); }

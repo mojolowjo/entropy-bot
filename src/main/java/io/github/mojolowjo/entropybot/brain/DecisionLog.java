@@ -74,9 +74,27 @@ public final class DecisionLog {
             o.add("skipped", a);
         }
         if (feasibility != null) o.add("feasibility", feasibility);
+        if (dayPlanCtx != null) o.add("dayPlan", dayPlanCtx.deepCopy());      // 0.26.3
         o.add("outcome", com.google.gson.JsonNull.INSTANCE);
         write(now, o);
         return ref;
+    }
+
+    private JsonObject dayPlanCtx;
+
+    /** 0.26.3: the day plan ({id, goals, active, state, step}) each decision line carries from now on; null = none. */
+    public void dayPlanContext(JsonObject plan) { dayPlanCtx = plan; }
+
+    /** 0.26.3: one line per day plan state change: {t, branch: dayplan, from, to, reason, dayPlan}. */
+    public void dayPlan(long now, String from, String to, String reason, JsonObject plan) {
+        JsonObject o = new JsonObject();
+        o.addProperty("t", now);
+        o.addProperty("branch", "dayplan");
+        o.addProperty("from", from);
+        o.addProperty("to", to);
+        o.addProperty("reason", reason);
+        if (plan != null) o.add("dayPlan", plan);
+        write(now, o);
     }
 
     /** The outcome of the decision ref. */

@@ -123,6 +123,9 @@ public final class Needs {
             if ((chain == null || chain.isBlank()) && s.planner != null) chain = s.planner.apply(g.text());      // B3: no ready chain -> the planner
             out.add(new Option(Brain.goalNeed(g.text()), sc, chain == null || chain.isBlank() ? null : chain, "goal " + g.text(), null, g.at()));
         }
+        // 0.26.3: the day plan's active goal (the plan is paused while an owner goal is noted or runs)
+        if (s.dayGoal != null && s.dayGoal.chain() != null && s.goals.isEmpty())
+            out.add(new Option(DayPlanRuntime.NEED, c.i("dayPlan.score"), s.dayGoal.chain(), s.dayGoal.why(), null, 0));
         // copy
         if (s.copy != null) {
             boolean go = s.copy.chain() != null;

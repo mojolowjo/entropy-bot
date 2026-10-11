@@ -455,6 +455,14 @@ public final class Chains {
         return "goto " + was[0] + " " + was[1] + " " + was[2];
     }
 
+    /** 0.26.3: the running chain's step, "3/7 craft iron_pickaxe 1" (the day plan's why and progress), null when none. */
+    public String stepText() {
+        Chain c = chain;
+        if (c == null || c.steps.isEmpty()) return null;
+        int i = Math.max(1, Math.min(c.idx, c.steps.size()));
+        return i + "/" + c.steps.size() + " " + c.steps.get(i - 1);
+    }
+
     public String chainStatus() {
         Chain c = chain;
         if (c == null) return "nothing queued";

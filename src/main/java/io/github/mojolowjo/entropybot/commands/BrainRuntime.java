@@ -363,6 +363,48 @@ public final class BrainRuntime implements BrainEnv {
         return c.planning.subgoal(p, item, n, maxSteps, then);
     }
 
+    /** 0.26.3: the day plan's dry run on the planner's worker (GoalPlanning.dayRun). */
+    @Override public boolean planDay(String goal, java.util.function.Consumer<String[]> then) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return false;
+        return c.planning.dayRun(p, goal, then);
+    }
+
+    @Override public String chainStep() { return brainChainRunning() ? c.chains.stepText() : null; }
+
+    /**
+     * 0.26.3: a main area with dark cells, sampled once per selection: every 4th column of each main area in this
+     * dimension (at most 1024 samples an area), the surface cell (Level.getHeightmapPos MOTION_BLOCKING_NO_LEAVES) loaded,
+     * its block light (Level.getBrightness(LightLayer.BLOCK)) 0 = dark; {@link io.github.mojolowjo.entropybot.brain.DayPlan#darkEnough}.
+     */
+    @Override public String darkMainArea() {
+        net.minecraft.client.multiplayer.ClientLevel lv = Minecraft.getInstance().level;
+        if (lv == null) return null;
+        String dim = Storage.dim();
+        for (JsonElement e : c.effectiveAreas()) {
+            if (!e.isJsonObject()) continue;
+            JsonObject a = e.getAsJsonObject();
+            if (!a.has("type") || !"main".equals(a.get("type").getAsString()) || !a.has("name")) continue;
+            if (a.has("dim") && !a.get("dim").getAsString().equals(dim)) continue;
+            int x1 = Math.min(a.get("x1").getAsInt(), a.get("x2").getAsInt()), x2 = Math.max(a.get("x1").getAsInt(), a.get("x2").getAsInt());
+            int z1 = Math.min(a.get("z1").getAsInt(), a.get("z2").getAsInt()), z2 = Math.max(a.get("z1").getAsInt(), a.get("z2").getAsInt());
+            int step = Math.max(4, (int) Math.ceil(Math.sqrt((double) (x2 - x1 + 1) * (z2 - z1 + 1) / 1024.0)));
+            int sampled = 0, dark = 0;
+            for (int x = x1; x <= x2; x += step) for (int z = z1; z <= z2; z += step) {
+                net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, 0, z);
+                if (!lv.isLoaded(bp)) continue;
+                net.minecraft.core.BlockPos top = lv.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bp);
+                sampled++;
+                if (lv.getBrightness(LightLayer.BLOCK, top) == 0) dark++;
+            }
+            if (io.github.mojolowjo.entropybot.brain.DayPlan.darkEnough(dark, sampled)) {
+                LOG.info("[entropybot] brain: day plan: main area {} has {} dark of {} sampled cells", a.get("name").getAsString(), dark, sampled);
+                return a.get("name").getAsString();
+            }
+        }
+        return null;
+    }
+
     private int foodStock = -1;
     /** 0.26.1: the stock view's hash and change count (R1), the day bed search's time and answer (R6), when the owner went offline (R5). */
     private int stockHash;

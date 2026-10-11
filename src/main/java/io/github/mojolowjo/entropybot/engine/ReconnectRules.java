@@ -82,6 +82,50 @@ public final class ReconnectRules {
         return launched == null || launched.isBlank() ? null : launched.trim();
     }
 
+    // ---- 0.26.3: the connect timeout (a retry whose "Connecting to ..." never got an answer sat there for an hour) ----
+
+    /** commands.json key beside "reconnect". */
+    public static final String TIMEOUT_KEY = "reconnect.connectTimeoutS";
+    public static final int TIMEOUT_DEFAULT_S = 60, TIMEOUT_MIN_S = 15, TIMEOUT_MAX_S = 600;
+
+    /** Null when s is a valid timeout, else why not. */
+    public static String timeoutRefusal(int s) {
+        return s < TIMEOUT_MIN_S || s > TIMEOUT_MAX_S ? "reconnect timeout takes " + TIMEOUT_MIN_S + " to " + TIMEOUT_MAX_S + " seconds, not " + s : null;
+    }
+
+    /** The saved timeout from commands.json's object (missing, odd or out of range: the default). */
+    public static int timeoutOf(com.google.gson.JsonObject o) {
+        try {
+            if (o == null || !o.has(TIMEOUT_KEY)) return TIMEOUT_DEFAULT_S;
+            int s = o.get(TIMEOUT_KEY).getAsInt();
+            return timeoutRefusal(s) == null ? s : TIMEOUT_DEFAULT_S;
+        } catch (RuntimeException e) {
+            return TIMEOUT_DEFAULT_S;
+        }
+    }
+
+    /** The same, read from the file (outside a world, before Commands loaded it). */
+    public static int savedTimeout(java.nio.file.Path commandsJson) {
+        try {
+            if (!java.nio.file.Files.isRegularFile(commandsJson)) return TIMEOUT_DEFAULT_S;
+            com.google.gson.JsonElement e = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(commandsJson));
+            return e.isJsonObject() ? timeoutOf(e.getAsJsonObject()) : TIMEOUT_DEFAULT_S;
+        } catch (Exception ex) {
+            return TIMEOUT_DEFAULT_S;
+        }
+    }
+
+    /**
+     * The attempt started at attemptStartMs (-1: none in progress) is over its time: not in a world timeoutS seconds or
+     * more after it began. In a world never.
+     */
+    public static boolean connectTimedOut(long attemptStartMs, long nowMs, int timeoutS, boolean inWorld) {
+        return attemptStartMs >= 0 && !inWorld && nowMs - attemptStartMs >= timeoutS * 1000L;
+    }
+
+    /** check's line for a timed-out attempt. */
+    public static String timeoutText(int timeoutS) { return "reconnect: the last connect attempt timed out after " + timeoutS + " s"; }
+
     /** The saved "reconnect" flag in commands.json: false only when the file says false (missing or unreadable = on). */
     public static boolean savedFlag(java.nio.file.Path commandsJson) {
         try {

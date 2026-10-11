@@ -566,6 +566,7 @@ public final class Commands implements Chains.Env {
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);
+        core.reconnect.setConnectTimeoutS(io.github.mojolowjo.entropybot.engine.ReconnectRules.timeoutOf(b));      // 0.26.3
         core.reflexes.setCreeperMode(io.github.mojolowjo.entropybot.engine.CreeperSetting.load(b));     // B7e C
         // package G: the fast channel starts once bridge.ps1 has written entropybot/fast.json (the key's path)
         fast = new io.github.mojolowjo.entropybot.fast.FastChannel(files.root(), new FastHandler(), m -> LOG.info("{}", m));
@@ -1009,12 +1010,13 @@ public final class Commands implements Chains.Env {
         if (copyAsAssist != null) return Reply.now(assist.command(from, copyAsAssist, player));     // 0.24.2: brain copy = assist
         if (verb.equals("brain")) return Reply.now(brainRuntime.brain.command(rest));
         if (verb.equals("idle")) return Reply.now(brainRuntime.brain.idle(rest));
+        if (verb.equals("dayplan")) return Reply.now(brainRuntime.brain.dayplan(rest));      // 0.26.3: the day plan
         if (verb.equals("why") && rest.trim().equalsIgnoreCase("threats")) return Reply.now(io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.why());   // B2
         if (verb.equals("why")) return Reply.now(brainRuntime.brain.on() || brainRuntime.brain.lastDecision() != null || chains.autominerLastText() == null
                 ? brainRuntime.brain.why() : chains.whyCommand());
         if (verb.equals("resume")) return Reply.now(chains.resumeCommand());
         if (verb.equals("deaths") || (verb.equals("death") && rest.trim().toLowerCase().matches("^policy\\b.*"))) return Reply.now(chains.deathsCommand(rest));
-        if (verb.equals("reconnect") && rest.trim().toLowerCase().matches("^(on|off)$")) return Reply.now(reconnectCommand(rest));
+        if (verb.equals("reconnect") && rest.trim().toLowerCase().matches("^(on|off|timeout( \\S+)?)$")) return Reply.now(reconnectCommand(rest));
         if (verb.equals("queue")) return Reply.now(isOwner || rest.isBlank() ? vocab.queue(from, rest) : "sorry, only " + owner() + " can queue tasks");   // V1b
         // V1b: places and markers, the kind-words (instant)
         if (verb.equals("marker")) return Reply.now(vocab.marker(from, rest));
@@ -1680,7 +1682,21 @@ public final class Commands implements Chains.Env {
     }
 
     String reconnectCommand(String rest) {
-        boolean on = rest.toLowerCase().contains("on");
+        String t = rest.trim().toLowerCase();
+        if (t.startsWith("timeout")) {      // 0.26.3: reconnect.connectTimeoutS
+            String v = t.substring(7).trim();
+            if (v.isEmpty()) return "reconnect timeout: " + core.reconnect.connectTimeoutS() + " s (a connect attempt not in a world after that is abandoned and counts as a failed try; "
+                    + io.github.mojolowjo.entropybot.engine.ReconnectRules.TIMEOUT_MIN_S + "-" + io.github.mojolowjo.entropybot.engine.ReconnectRules.TIMEOUT_MAX_S + ")";
+            int s;
+            try { s = Integer.parseInt(v.replaceFirst("s$", "")); } catch (NumberFormatException e) { return "error: reconnect timeout takes seconds, e.g. reconnect timeout 60"; }
+            String err = io.github.mojolowjo.entropybot.engine.ReconnectRules.timeoutRefusal(s);
+            if (err != null) return "error: " + err;
+            brainStore.data().addProperty(io.github.mojolowjo.entropybot.engine.ReconnectRules.TIMEOUT_KEY, s);
+            saved();
+            core.reconnect.setConnectTimeoutS(s);
+            return "ok: reconnect timeout " + s + " s - a connect attempt still not in a world after " + s + " s is cancelled and counts as a failed try";
+        }
+        boolean on = t.contains("on");
         brainStore.data().addProperty("reconnect", on);
         saved();
         core.reconnect.setOn(on);

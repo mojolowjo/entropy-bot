@@ -54,7 +54,23 @@ public final class Brain {
     private double lastLoopMs;
     private String lastError, configNote = "";
 
-    public Brain(BrainEnv env) { this.env = env; }
+    public Brain(BrainEnv env) {
+        this.env = env;
+        this.day = new DayPlanRuntime(env);
+    }
+
+    // ---- 0.26.3: the day plan ----
+
+    private final DayPlanRuntime day;
+
+    public DayPlanRuntime dayPlan() { return day; }
+
+    /** "dayplan | dayplan skip | dayplan clear | dayplan now". */
+    public String dayplan(String rest) {
+        String r = rest == null ? "" : rest.trim();
+        boolean night = prev != null ? prev.night : env.sense().night;
+        return day.command(r, night, on(), () -> { if (job != null && DayPlanRuntime.NEED.equals(job.need())) stopJob("dayplan " + r); }, env.now());
+    }
 
     // ---- the store ----
 
@@ -254,6 +270,7 @@ public final class Brain {
         double[] cm = costMinute(now);      // 0.26.1: the snapshot cost counter
         b.append(" | cost ").append(r2(cm[0])).append(" ms a loop (max ").append(r2(cm[1])).append(", last sense ").append(r2(lastSenseMs)).append(" ms; last minute)");
         b.append(" | ").append(feasibilityLine());      // 0.26.2
+        b.append(" | ").append(day.statusLine());       // 0.26.3
         if (mem.size() > 0) b.append(" | failure memory: ").append(mem.describe(now));
         if (prev != null) b.append(" | stage ").append(prev.stage);
         if (job != null) b.append(" | job: ").append(job.chain()).append(" (").append(job.need()).append(")");
@@ -284,7 +301,8 @@ public final class Brain {
         String scores = (lastScored == null ? "" : " | scores: " + lastScored.line()) + (sk.isEmpty() ? "" : " | skipped: " + String.join("; ", sk));
         return (older.isEmpty() ? "" : String.join(" | ", older) + "\n") + "latest: " + latest + scores + (prev != null ? " | stage " + prev.stage : "")
                 + (lastEvents.isEmpty() ? "" : " | events " + lastEvents)
-                + (prev != null ? " | " + NightSafety.status(prev, cfg) : "");
+                + (prev != null ? " | " + NightSafety.status(prev, cfg) : "")
+                + (day.plan().whyLine() == null ? "" : " | " + day.plan().whyLine());      // 0.26.3
     }
 
     /** 0.24.3 "night status": the night safety score, its band and the time to dusk (sensed now). */
@@ -325,6 +343,8 @@ public final class Brain {
         if (env.decisions().errors() > 0)
             out.add(new String[]{"brainlog", "the decision log could not be written (" + env.decisions().lastError() + ")", "check the entropybot\\brain folder"});
         if (treeRefused) out.add(new String[]{"braintree", treeNote, "fix " + BrainTreeFile.OVERRIDE + " (or delete it), then brain tree reload"});
+        String[] dp = day.finding();      // 0.26.3: a broken dayplan.json
+        if (dp != null) out.add(dp);
         if (!configNote.isEmpty()) out.add(new String[]{"brainconfig", "brain settings ignored: " + configNote, "brain get, then brain set or brain reset"});
         for (Map.Entry<String, String> e : parked(now).entrySet())
             out.add(new String[]{"brain:" + e.getKey(), "the brain's need " + e.getKey() + " failed 3 times and is parked (" + e.getValue() + ")", "why"});
@@ -362,6 +382,13 @@ public final class Brain {
             s.brainJob = job == null ? null : job.chain();
             if (!s.night) nightAt = null;
             spawnFacts(s, now);                                     // 0.26.1 R6
+            // 0.26.3: dawn, the selection, the day_goal need (held after a stop: interrupted, the stall clock waits)
+            day.loop(s, cfg, num(data(), "heldUntil", 0) > now ? "held" : job == null ? null : job.need());
+            // the day goal's job runs but the plan moved on (given up, done, paused by your goal or the night): it stops
+            if (job != null && DayPlanRuntime.NEED.equals(job.need()) && (s.dayGoal == null || !job.chain().contains(s.dayGoal.chain()))) {
+                stopJob("the day plan moved on");
+                s.brainJob = null;
+            }
             List<String> cleared = mem.sweep(s, now);               // 0.26.1 R1: expired or cause gone
             if (!cleared.isEmpty()) env.log("brain: failure memory cleared (the cause changed): " + String.join(", ", cleared));
             if (num(data(), "heldUntil", 0) > now) {
@@ -512,7 +539,7 @@ public final class Brain {
         // a job that "finished" at once and left its need open (a gather that counted the bag, not the group) counts as a failure,
         // so it can't loop every 2 s: three in a row park the need
         boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night")
-                && !j.need().startsWith("goal:")      // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
+                && !j.need().startsWith("goal:") && !j.need().equals(DayPlanRuntime.NEED)      // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
                 && !j.base().startsWith("eat") && !j.need().equals("spawn") && !j.need().equals("passive");     // 0.26.1: quick by nature
         if (quick) res = "ended at once (" + (res == null ? "no reply" : res.length() > 100 ? res.substring(0, 100) : res) + ") without meeting the need";
         if (outcome.equals("finished") || outcome.startsWith("failed")) io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.need(outcome.equals("finished") && !quick);     // 0.23.6
@@ -538,6 +565,7 @@ public final class Brain {
         } else if (outcome.equals("finished")) {
             fails.addProperty(j.need(), 0);
             if (j.need().startsWith("goal:")) env.goalDone(j.chain());          // B3: a goal reached leaves the list
+            if (j.need().equals(DayPlanRuntime.NEED)) day.jobFinished(now);    // 0.26.3: the day goal's chain finished
         }
         env.saved();
     }
@@ -673,6 +701,7 @@ public final class Brain {
                             d.chain() + " needs " + v.item() + ": " + sub.chain() + " first");
                 }
                 notFound = sub.why();
+                if (DayPlanRuntime.NEED.equals(d.need())) day.abandon("no source for " + v.item(), now);      // 0.26.3: the planner found no way
             }
             lastFeas = feasJson(v, d.chain(), null);
             int minutes = cfg.i("brain.failMemoryMinutes");
@@ -833,6 +862,7 @@ public final class Brain {
             o.addProperty("needNode", BrainTreeFile.needNode(last.need()));
         }
         o.addProperty("tree", treeSource);
+        o.add("dayPlan", day.json());      // 0.26.3: the brain page's Day Plan card
         return o;
     }
 

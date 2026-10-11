@@ -57,4 +57,17 @@ public interface BrainEnv {
      * is never called).
      */
     default boolean planSubgoal(String item, int n, int maxSteps, java.util.function.Consumer<String[]> then) { return false; }
+
+    /**
+     * 0.26.3 the day plan: a dry run of {@code goal <form>} on the planner's worker. then gets {chain, null} (a plan; a
+     * ready chain like camp or light at once), {"", why} (nothing to do: I have it) or {null, why} (no plan) on the client
+     * thread. False = no planner here (then is never called).
+     */
+    default boolean planDay(String goal, java.util.function.Consumer<String[]> then) { return false; }
+
+    /** 0.26.3: the brain's running chain's step ("3/7 craft iron_pickaxe 1"), null when none runs. */
+    default String chainStep() { return null; }
+
+    /** 0.26.3: a main area with dark cells (its name), null none or unknown. Called once per day plan selection (bounded sample). */
+    default String darkMainArea() { return null; }
 }

@@ -76,6 +76,11 @@ public final class BrainState {
     public boolean spawnNearBase, spawnDue;
     /** 0.26.2: the feasibility facts (known false until the game side reads them: then checks needing them are UNKNOWN). */
     public Feasibility.Facts feas = new Feasibility.Facts();
+    /** 0.26.3: the day plan's active goal, offered as the need day_goal (filled by the brain's DayPlanRuntime), else null. */
+    public DayGoal dayGoal;
+
+    /** The day plan's active goal: its form, its chain (the planner's), the why line. */
+    public record DayGoal(String text, String chain, String why) {}
 
     /** R9: an owner position this far (flat) from the bot is a placeholder, never a real one (maxWalk is 2000). */
     public static final int OWNER_SENTINEL_DIST = 100_000;

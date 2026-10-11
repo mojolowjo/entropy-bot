@@ -100,6 +100,12 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("blindcheck", "couldn't check blind mode: " + e, "blind status"));
         }
+        try {
+            String rt = io.github.mojolowjo.entropybot.Core.INSTANCE.reconnect.lastTimeout();      // 0.26.3: a hung connect was cancelled
+            if (rt != null) f.add(new SelfCheck.Finding("reconnect", rt, "reconnect timeout <15-600> (the server may be down or the address wrong)"));
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("reconnectcheck", "couldn't check reconnect: " + e, "status"));
+        }
         String rl = c.respawn.checkLine();                  // 0.24.3: joined/respawned outside every area
         if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp then bootstrap"));
         try {

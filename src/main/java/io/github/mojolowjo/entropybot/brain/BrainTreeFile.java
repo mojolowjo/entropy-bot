@@ -38,6 +38,7 @@ public final class BrainTreeFile {
             {"bag", "bag: free slots", "deposit", "bagFull", "bagLow", "bagSome", "need.bag.weight"},
             {"need", "your needs (need <item> <n>)", "gather <item> <n>", "ownerNeedBase", "ownerNeedSpan", "ageBonusMax", "deadbandPct"},
             {"goal", "your goals", "the goal's chain", "goalBase", "ageBonusMax", "need.goal.weight"},
+            {"day_goal", "the day plan's active goal (0.26.3; paused by your goal and at night)", "the goal's chain", "dayPlan.score", "dayPlan.stallMinutes", "dayPlan.maxGoals", "need.day_goal.weight"},
             {"copy", "brain copy: do what you do", "the copied job", "copyScore", "copyR", "copyIdleS", "need.copy.weight"},
             {"torch", "torches: night, my spot dark and nothing to light it with (0.26.1)", "gather torch 16", "need.torch.weight"},
             {"upkeep", "the idle list, first item that can run", "restock | mine strip | mine cave | farm | explore", "upkeep", "nearbyR", "idle", "need.upkeep.weight"},

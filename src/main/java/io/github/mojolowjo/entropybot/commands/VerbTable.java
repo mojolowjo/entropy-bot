@@ -164,6 +164,8 @@ public final class VerbTable {
                 "brain on|brain status|brain copy on", "why");
         v("idle", "", "brain", O, "idle list | idle list set <items> | idle list reset", "what the brain does when nothing is asked, in order, skipping what cannot run: restock, strip (the marked mine), cave, farm, explore (default restock, strip, cave, farm)",
                 "idle list|idle list set strip, cave", "brain on");
+        v("dayplan", "", "brain", O, "dayplan | dayplan skip | dayplan clear | dayplan now", "the day plan: at dawn the brain picks up to dayPlan.maxGoals goals from the stage and the stock (each checked by a planner dry run), whispers today: ..., and serves them one by one as the need day_goal (score dayPlan.score); unfinished goals carry over to the next dawn; your goal pauses it; a goal without progress for dayPlan.stallMinutes is given up; skip gives up the active goal, clear empties the plan, now plans the day at once (by day)",
+                "dayplan|dayplan skip|dayplan now", "why");
         v("plan", "", "brain", O, "plan <goal>", "a dry run of goal <goal>: the chain the planner finds with each step's cost, nothing runs (or what is missing)", "plan furnace|plan iron tools", "goal <goal>");
         v("actions", "", "brain", O, "actions | actions <verb>", "the action table: what each verb needs and gives, which ones the planner chains; all of it with the state is entropybot/actions.json (for a model)",
                 "actions|actions craft", "plan <goal>");
