@@ -173,6 +173,10 @@ public final class WatchCamera {
         if (t.startsWith("watch")) t = t.substring(5).trim();
         WatchSettings.INSTANCE.ensureLoaded();          // TLL 32: the saved settings first, so a change below is never overwritten by them
         if (t.equals("off") || t.equals("stop")) return allOff();
+        // 0.26.0: blind mode wins (nothing is rendered, so a watch view would show nothing)
+        String blindNo = io.github.mojolowjo.entropybot.blind.BlindMode.watchRefusal(
+                io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.mode().enabled(), t);
+        if (blindNo != null) return blindNo;
         if (t.equals("steer") || t.startsWith("steer ")) return WatchSteer.INSTANCE.command(t.substring(5));
         if (t.equals("turn") || t.startsWith("turn ")) return WatchSteer.INSTANCE.turnCommand(t.substring(4));   // watch turn (2026-10-05)
         if (t.equals("status")) {
@@ -391,6 +395,14 @@ public final class WatchCamera {
     }
 
     /** {@code watch off}: both views off, the normal view and frame cap back. */
+    /** 0.26.0: true when any watch view is on (blind on turns them off). */
+    public boolean anyOn() {
+        return on || TunnelView.INSTANCE.on();
+    }
+
+    /** 0.26.0: every watch view off (blind on), the same as "watch off". */
+    public String turnAllOff() { return allOff(); }
+
     private String allOff() {
         boolean was = on || TunnelView.INSTANCE.on();
         on = false;

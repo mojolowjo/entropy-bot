@@ -956,6 +956,7 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("allow") && rest.isBlank()) return Reply.now(allowCommand("allowed", "", isOwner));
         if (verb.equals("places") && !isOwner && !rest.isBlank()) return Reply.now("sorry, only " + owner() + " can forget places");
+        if (verb.equals("blind")) return Reply.now(io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.command(rest));          // 0.26.0: never busy
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
         if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));
         if (verb.equals("server")) return Reply.now(PathCommand.server(this, rest, isOwner));      // 0.24.1: never busy          // 0.23.3: never busy
@@ -2312,6 +2313,11 @@ public final class Commands implements Chains.Env {
         mod.addProperty("version", core.version());
         mod.add("features", core.features());
         s.add("mod", mod);
+        try {                                                   // 0.26.0: blind mode {on, since, framesSkipped}
+            s.add("blind", io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.mode().stateJson());
+        } catch (RuntimeException e) {
+            errs.add("blind: " + e);
+        }
         try {
             JsonObject g = core.guardStatus(), gs = new JsonObject();
             gs.add("mode", g.get("mode"));

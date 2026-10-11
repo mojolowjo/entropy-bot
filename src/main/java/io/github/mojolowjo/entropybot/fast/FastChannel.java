@@ -84,8 +84,11 @@ public final class FastChannel {
             say("fast channel: " + CONFIG + " has no keyFile");
             return;
         }
-        int port = c.has("port") && c.get("port").isJsonPrimitive() ? c.get("port").getAsInt() : FastServer.DEFAULT_PORT;
-        if (port < 0 || port > 65535) port = FastServer.DEFAULT_PORT;
+        int port = port(c);
+        if (port < 0) {
+            say("fast channel: " + CONFIG + "'s port is not a number from 1 to 65535: using " + FastServer.DEFAULT_PORT);
+            port = FastServer.DEFAULT_PORT;
+        }
         Path key;
         try {
             key = Path.of(c.get("keyFile").getAsString());
@@ -102,6 +105,20 @@ public final class FastChannel {
         if (hook == null) {
             hook = new Thread(this::shutdown, "entropybot-fast-exit");
             try { Runtime.getRuntime().addShutdownHook(hook); } catch (RuntimeException ignored) {}
+        }
+    }
+
+    /**
+     * fast.json's optional "port" (0.26.0, so a second bot instance can use its own: bridge.ps1 picks it with
+     * $env:BRIDGE_FAST_PORT): absent = {@link FastServer#DEFAULT_PORT}, -1 when present but not 1..65535.
+     */
+    static int port(JsonObject c) {
+        if (!c.has("port")) return FastServer.DEFAULT_PORT;
+        try {
+            int p = c.get("port").getAsInt();
+            return p >= 0 && p <= 65535 ? p : -1;          // 0 = any free port (tests)
+        } catch (RuntimeException e) {
+            return -1;
         }
     }
 

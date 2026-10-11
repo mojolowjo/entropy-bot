@@ -94,6 +94,12 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("braincheck", "couldn't check the brain: " + e, "brain status"));
         }
+        try {
+            f.addAll(io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.findings());   // 0.26.0 blind mode
+            f.addAll(io.github.mojolowjo.entropybot.blind.BotConfigScreen.findings());          // 0.26.0 the config screen's dashboard buttons
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("blindcheck", "couldn't check blind mode: " + e, "blind status"));
+        }
         String rl = c.respawn.checkLine();                  // 0.24.3: joined/respawned outside every area
         if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp then bootstrap"));
         try {

@@ -10,8 +10,29 @@ import net.neoforged.neoforge.common.NeoForge;
 /** The mod entry: client only. Everything happens in {@link Core} once per client tick. */
 @Mod(value = Core.MODID, dist = Dist.CLIENT)
 public final class EntropyBot {
-    public EntropyBot(IEventBus modBus) {
+    public EntropyBot(IEventBus modBus, net.neoforged.fml.ModContainer container) {
         NeoForge.EVENT_BUS.addListener(EntropyBot::onClientTick);
+        // 0.26.0 blind mode (NeoForge: ClientTickEvent.Pre for the self-check, Post at LOWEST so the noRender
+        // re-assert runs after every other listener; FMLClientSetupEvent reads blind.json)
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, ClientTickEvent.Post.class,
+                e -> io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.postTick());
+        NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, e -> io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.preTick());
+        modBus.addListener(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent.class, e -> {
+            try {
+                io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.load(
+                        net.minecraft.client.Minecraft.getInstance().gameDirectory.toPath().resolve(Core.MODID));
+            } catch (Throwable t) {
+                com.mojang.logging.LogUtils.getLogger().warn("[entropybot] blind: client setup: {}", t.toString());
+            }
+        });
+        io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.hooks(() -> {
+            var j = Core.INSTANCE.commands.jobs.job;
+            return j != null && Core.INSTANCE.commands.jobs.running() ? j.type : null;
+        }, s -> Core.INSTANCE.commands.whisper(Core.INSTANCE.commands.owner(), s));
+        // 0.26.0 the config screen (NeoForge 21.1: IConfigScreenFactory registered as the mod's extension point;
+        // loader-specific, the screen itself is a vanilla Screen)
+        container.registerExtensionPoint(net.neoforged.neoforge.client.gui.IConfigScreenFactory.class,
+                (net.neoforged.neoforge.client.gui.IConfigScreenFactory) (mod, parent) -> new io.github.mojolowjo.entropybot.blind.BotConfigScreen(parent));
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
         io.github.mojolowjo.entropybot.engine.WatchEvents.register();     // watch camera v1/v2 + the render-stage probe
         io.github.mojolowjo.entropybot.engine.WatchSteer.register(modBus);      // watch steer: camera-relative keys in the watch views (+ watch turn's keys)
