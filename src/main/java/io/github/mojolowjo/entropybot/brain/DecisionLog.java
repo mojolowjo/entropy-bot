@@ -51,6 +51,11 @@ public final class DecisionLog {
 
     /** 0.26.1 R1: with the leaves the tree skipped ("light here 8 failed NO_ITEM 3 min ago"), as {@code skipped} when any. */
     public long decision(long now, long tick, String branch, Map<String, Integer> scores, String chosen, String reason, JsonObject state, List<String> skipped) {
+        return decision(now, tick, branch, scores, chosen, reason, state, skipped, null);
+    }
+
+    /** 0.26.2: with the feasibility verdict ({step, missing, class, subchain}) when the brain judged one. */
+    public long decision(long now, long tick, String branch, Map<String, Integer> scores, String chosen, String reason, JsonObject state, List<String> skipped, JsonObject feasibility) {
         long ref = Math.max(now, lastRef + 1);
         lastRef = ref;
         JsonObject o = new JsonObject();
@@ -68,6 +73,7 @@ public final class DecisionLog {
             skipped.forEach(a::add);
             o.add("skipped", a);
         }
+        if (feasibility != null) o.add("feasibility", feasibility);
         o.add("outcome", com.google.gson.JsonNull.INSTANCE);
         write(now, o);
         return ref;

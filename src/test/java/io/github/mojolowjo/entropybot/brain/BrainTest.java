@@ -82,6 +82,17 @@ class BrainTest {
         final List<String> goalsDone = new ArrayList<>();
         @Override public void goalDone(String chain) { goalsDone.add(chain); }
 
+        /** 0.26.2: the sub-plan hook: off (false) unless planner is set; asks are kept, answered by the test. */
+        boolean planner;
+        final List<String> planAsked = new ArrayList<>();
+        final List<Consumer<String[]>> planPending = new ArrayList<>();
+        @Override public boolean planSubgoal(String item, int n, int maxSteps, Consumer<String[]> then) {
+            if (!planner) return false;
+            planAsked.add(n + " " + item + " max " + maxSteps);
+            planPending.add(then);
+            return true;
+        }
+
         /** B4: entropybot/ files in memory (brain-config.json, brain-tree.json, the override). */
         final java.util.Map<String, String> files = new java.util.HashMap<>();
         boolean filesBroken;
@@ -117,6 +128,7 @@ class BrainTest {
         s.coal = a.coal; s.logs = a.logs; s.bedInBag = a.bedInBag; s.thundering = a.thundering; s.skyAbove = a.skyAbove; s.areasHere = a.areasHere;
         s.ownerOfflineMs = a.ownerOfflineMs; s.passiveOwnerBound = a.passiveOwnerBound; s.storageSeq = a.storageSeq; s.pickMaterials = a.pickMaterials;
         s.copyRefused = a.copyRefused; s.spawnNearBase = a.spawnNearBase;
+        s.feas = a.feas;      // 0.26.2
         return s;
     }
 

@@ -50,4 +50,11 @@ public interface BrainEnv {
     default String writeFile(String name, String json) { return "error: no files"; }
 
     default String modVersion() { return "?"; }
+
+    /**
+     * 0.26.2: plans a way to get n of item with at most maxSteps steps, off the brain's tick (the planner's worker). then is
+     * called later on the client thread with {chain, null} when found, {null, why} when not. False = no planner here (then
+     * is never called).
+     */
+    default boolean planSubgoal(String item, int n, int maxSteps, java.util.function.Consumer<String[]> then) { return false; }
 }

@@ -253,6 +253,7 @@ public final class Brain {
                 .append(lastLoopAt < 0 ? " (never)" : " " + (now - lastLoopAt) / 1000 + " s ago").append(", errors ").append(errors);
         double[] cm = costMinute(now);      // 0.26.1: the snapshot cost counter
         b.append(" | cost ").append(r2(cm[0])).append(" ms a loop (max ").append(r2(cm[1])).append(", last sense ").append(r2(lastSenseMs)).append(" ms; last minute)");
+        b.append(" | ").append(feasibilityLine());      // 0.26.2
         if (mem.size() > 0) b.append(" | failure memory: ").append(mem.describe(now));
         if (prev != null) b.append(" | stage ").append(prev.stage);
         if (job != null) b.append(" | job: ").append(job.chain()).append(" (").append(job.need()).append(")");
@@ -374,7 +375,8 @@ public final class Brain {
             boolean nightDone = nightAt != null && BrainState.flat(nightAt, s.botPos) <= 16;
             BrainTree.Running running = job == null ? null : new BrainTree.Running(job.need(), job.chain(), job.score());
             List<String> skipped = new ArrayList<>();
-            BrainTree.Decision d = tree.run(new BrainTree.Ctx(s, cfg, sc, running, nightDone, cfg.i("brain.failMemoryMinutes") > 0 ? mem : null, skipped));
+            BrainTree.Ctx ctx = new BrainTree.Ctx(s, cfg, sc, running, nightDone, cfg.i("brain.failMemoryMinutes") > 0 ? mem : null, skipped);
+            BrainTree.Decision d = feasible(tree.run(ctx), s, ctx, now);      // 0.26.2: feasibility before every start
             lastSkipped = skipped;
             skipWhispers(skipped, d, now);
             act(d, s, sc);
@@ -427,6 +429,10 @@ public final class Brain {
             String kind = sk.replaceFirst(" \\d+ min ago$", "");
             if (!parkWhisperDue(num(w, kind, 0), now)) continue;
             w.addProperty(kind, now);
+            if (sk.startsWith("infeasible: ")) {      // 0.26.2: its own words
+                env.whisper("brain: " + sk + (d.chain() != null ? " - " + d.chain() + " instead" : ""));
+                continue;
+            }
             env.whisper("brain: skipping " + kind + " (" + sk.replaceFirst("^.* failed \\S+ ", "") + ")" + (d.chain() != null ? " - " + d.chain() + " instead" : ""));
         }
         for (String k : new ArrayList<>(w.keySet())) if (now - num(w, k, 0) > PARK_WHISPER_MS) w.remove(k);
@@ -540,7 +546,8 @@ public final class Brain {
         lastDecisionAt = now;
     }
 
-    private void start(BrainTree.Decision d, BrainState s, Needs.Scored sc) {
+    /** The chain start() runs for a decision (the supply, eat and pre-deposit prefixes) and the why's tail. */
+    String[] compose(BrainTree.Decision d, BrainState s) {
         SupplyCheck.Supply sup = SupplyCheck.before(d.chain(), s, 0, 0);
         String eat = PlayRules.eatFirst(d.chain(), s, cfg);          // 0.25.1: cave.eatFirst (why shows it, no extra whisper)
         // 0.26.1 R3: a gathering job picked with few free slots and a base known: deposit first
@@ -548,8 +555,115 @@ public final class Brain {
         String job0 = pre != null ? pre : d.chain();
         String preWhy = pre == null ? "" : "; " + s.freeSlots + " free slots (brain.preDepositSlots " + cfg.i("brain.preDepositSlots") + "): deposit first";
         String chain = (sup == null ? "" : sup.chain() + " then ") + (eat == null ? "" : "eat then ") + job0;
+        return new String[]{chain, (sup == null ? "" : "; " + sup.why()) + (eat == null ? "" : "; " + eat) + preWhy, sup == null ? null : sup.why()};
+    }
+
+    // ---- 0.26.2: feasibility before every start ----
+
+    /** A sub-plan for (chain, item): pending, or found (chain) / not found (why). */
+    private record Sub(long at, boolean pending, String chain, String why) {}
+
+    /** A finished sub-plan is used within this, then asked again. */
+    static final long SUB_TTL = 300_000;
+    private final Map<String, Sub> subs = new LinkedHashMap<>();
+    private final ArrayDeque<Long> feasChecked = new ArrayDeque<>(), feasInfeasible = new ArrayDeque<>(), feasSubgoals = new ArrayDeque<>();
+    private JsonObject lastFeas;
+
+    private static void mark(ArrayDeque<Long> q, long now) {
+        q.addLast(now);
+        while (!q.isEmpty() && now - q.peekFirst() > 3_600_000L) q.pollFirst();
+    }
+
+    private static int hour(ArrayDeque<Long> q, long now) {
+        while (!q.isEmpty() && now - q.peekFirst() > 3_600_000L) q.pollFirst();
+        return q.size();
+    }
+
+    /** status: "feasibility: 12 checked, 2 infeasible, 1 subgoals this hour" (or "feasibility off"). */
+    public String feasibilityLine() {
+        long now = env.now();
+        if (cfg.i("brain.feasibility") <= 0) return "feasibility off";
+        return "feasibility: " + hour(feasChecked, now) + " checked, " + hour(feasInfeasible, now) + " infeasible, " + hour(feasSubgoals, now) + " subgoals this hour";
+    }
+
+    static JsonObject feasJson(Feasibility.Verdict v, String chain, String subchain) {
+        JsonObject o = new JsonObject();
+        o.addProperty("chain", chain);
+        o.addProperty("step", v.stepText());
+        o.addProperty("missing", v.missing());
+        o.addProperty("class", v.cls() == null ? null : v.cls().name());
+        o.addProperty("subchain", subchain);
+        return o;
+    }
+
+    /**
+     * Judges a START/SWITCH before it runs (BRAIN_PLAN 4.5b). Feasible or UNKNOWN: as is. Infeasible with an item a plan could
+     * give: the planner is asked on its worker (this loop defers: NOTHING, "planning a way ..."), a found way runs first
+     * ("<sub> then <chain>"); none (or no item): the chain goes into the failure memory under the verdict's class and the
+     * tree runs again, so the next sibling or need answers (at most 4 rounds). Owner chains never reach here.
+     */
+    BrainTree.Decision feasible(BrainTree.Decision d, BrainState s, BrainTree.Ctx ctx, long now) {
+        lastFeas = null;
+        if (cfg.i("brain.feasibility") <= 0) return d;
+        for (int round = 0; round < 4; round++) {
+            if (d == null || d.chain() == null || (d.kind() != BrainTree.Kind.START && d.kind() != BrainTree.Kind.SWITCH)) return d;
+            Feasibility.Verdict v = Feasibility.check(compose(d, s)[0], s);
+            mark(feasChecked, now);
+            if (!v.infeasible()) return d;
+            mark(feasInfeasible, now);
+            String notFound = null;
+            if (v.item() != null) {
+                String key = FailMemory.norm(d.chain()) + "|" + v.item();
+                Sub sub = subs.get(key);
+                if (sub != null && !sub.pending() && now - sub.at() > SUB_TTL) { subs.remove(key); sub = null; }
+                if (sub == null) {
+                    subs.put(key, new Sub(now, true, null, null));
+                    boolean asked;
+                    try {
+                        asked = env.planSubgoal(v.item(), v.n(), cfg.i("brain.subgoalMaxSteps"), r -> subs.put(key, new Sub(env.now(), false, r == null ? null : r[0], r == null ? "no answer" : r[1])));
+                    } catch (RuntimeException e) {
+                        asked = false;
+                        env.log("brain: feasibility: the sub-plan for " + v.item() + " threw: " + e);
+                    }
+                    if (!asked && subs.get(key).pending()) subs.put(key, new Sub(now, false, null, "no planner"));
+                    sub = subs.get(key);
+                }
+                if (sub.pending()) {
+                    lastFeas = feasJson(v, d.chain(), null);
+                    return new BrainTree.Decision("feasibility.plan", BrainTree.Kind.NOTHING, null, d.need(), 0,
+                            "planning a way to get " + v.item() + " for " + d.chain() + " (" + v.missing() + ")");
+                }
+                if (sub.chain() != null && !sub.chain().isBlank()) {
+                    subs.remove(key);
+                    mark(feasSubgoals, now);
+                    lastFeas = feasJson(v, d.chain(), sub.chain());
+                    return new BrainTree.Decision(d.branch(), d.kind(), sub.chain() + " then " + d.chain(), d.need(), d.score(),
+                            d.chain() + " needs " + v.item() + ": " + sub.chain() + " first");
+                }
+                notFound = sub.why();
+            }
+            lastFeas = feasJson(v, d.chain(), null);
+            int minutes = cfg.i("brain.failMemoryMinutes");
+            if (v.cls() == null) return new BrainTree.Decision("feasibility.skip", BrainTree.Kind.NOTHING, null, d.need(), 0, "infeasible: " + d.chain() + " (" + v.missing() + ")");
+            if (minutes <= 0) {          // the failure memory is off: it can't be skipped for long, so it starts as before
+                env.log("brain: feasibility: " + d.chain() + " looks infeasible (" + v.missing() + ") but brain.failMemoryMinutes is 0: starting it");
+                return d;
+            }
+            mem.record(d.chain(), v.cls(), s, now, minutes);
+            String why = "infeasible: " + d.chain() + " (" + v.missing() + (notFound == null ? "" : "; no plan: " + notFound) + ") - skipped " + minutes + " min";
+            env.log("brain: " + why);
+            ctx.skipped().add(why);
+            d = tree.run(ctx);
+        }
+        return d;
+    }
+
+    private void start(BrainTree.Decision d, BrainState s, Needs.Scored sc) {
+        String[] comp = compose(d, s);
+        String chain = comp[0];
+        String supWhy = comp[2];
         if (d.need() != null && d.need().equals("spawn")) { data().addProperty("spawnTriedAt", env.now()); env.saved(); }      // R6: the cooldown counts tries
-        long ref = record(d, s, sc, d.reason() + (sup == null ? "" : "; " + sup.why()) + (eat == null ? "" : "; " + eat) + preWhy);
+        long ref = record(d, s, sc, d.reason() + comp[1]);
         lastLogged = d.branch();
         String reply = env.start(chain);
         if (reply != null && reply.startsWith("started")) {
@@ -561,7 +675,7 @@ public final class Brain {
             if (d.branch().equals("passive.leave")) env.whisper(BrainTree.LEFT_WHISPER);      // 0.26.1 R5: exactly this
             else if ((!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
                     && parkWhisperDue(num(parkWhispers(data()), d.need() == null ? "" : d.need(), 0), env.now()))      // 0.24.3: a need parked in the last hour starts quietly
-                env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (sup == null ? "" : " - " + sup.why()));
+                env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (supWhy == null ? "" : " - " + supWhy));
             lastWhisper = d.chain();
             lastWhisperAt = env.now();
             env.log("brain: " + d.branch() + " -> " + chain + " (" + d.reason() + ")");
@@ -619,7 +733,7 @@ public final class Brain {
                 + (lastSkipped.isEmpty() ? "" : " (skipped: " + String.join("; ", lastSkipped) + ")");
         whys.addLast(line);
         while (whys.size() > 5) whys.pollFirst();
-        return env.decisions().decision(env.now(), env.tick(), d.branch(), scores, d.chain(), reason, s.summary(), lastSkipped);
+        return env.decisions().decision(env.now(), env.tick(), d.branch(), scores, d.chain(), reason, s.summary(), lastSkipped, lastFeas);
     }
 
     /** Small text helpers. */
@@ -670,6 +784,8 @@ public final class Brain {
         lastSkipped.forEach(ls::add);
         o.add("treeSkipped", ls);
         o.addProperty("failMemory", mem.describe(env.now()));
+        if (lastFeas != null) o.add("feasibility", lastFeas);      // 0.26.2
+        o.addProperty("feasibilityHour", feasibilityLine());
         o.addProperty("errors", errors);
         o.addProperty("why", whys.isEmpty() ? null : whys.peekLast());
         JsonObject p = new JsonObject();

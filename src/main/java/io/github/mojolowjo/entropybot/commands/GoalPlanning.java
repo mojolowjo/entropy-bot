@@ -168,6 +168,26 @@ final class GoalPlanning {
         });
     }
 
+    /**
+     * 0.26.2: the brain's feasibility sub-plan (n of item, at most maxSteps steps, half the node budget). The facts are read
+     * here (client thread), the search runs on the worker; then gets {chain, null} or {null, why} on the client thread.
+     * False when the same item is still being planned.
+     */
+    boolean subgoal(LocalPlayer p, String item, int n, int maxSteps, java.util.function.Consumer<String[]> then) {
+        PlanFacts f = facts(p);
+        List<Planner.Need> needs = List.of(Planner.Need.item(item, Math.max(1, n)));
+        return async.submit("subgoal:" + item, () -> Planner.plan(f, needs, Planner.MAX_NODES / 2, Planner.BUDGET_MS / 2, maxSteps), d -> {
+            Planner.Result r = d.result();
+            String[] out;
+            if (r == null) out = new String[]{null, "the search threw: " + d.error()};
+            else if (r.ok() && !r.steps().isEmpty()) out = new String[]{r.chain(), null};
+            else if (r.ok()) out = new String[]{null, "nothing to do - I have it"};
+            else out = new String[]{null, r.error() != null ? r.error() : "missing " + r.missing()};
+            LOG.info("[entropybot] plan: brain sub-plan {} {} -> {}", n, item, out[0] != null ? out[0] : out[1]);
+            then.accept(out);
+        });
+    }
+
     /** From the client tick: the finished searches' callbacks. Never throws. */
     void drainSearches() {
         try { async.drain(); } catch (RuntimeException e) { LOG.warn("[entropybot] plan: drain: {}", e.toString()); }

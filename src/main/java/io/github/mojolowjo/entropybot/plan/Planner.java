@@ -146,7 +146,10 @@ public final class Planner {
 
     public static Result plan(PlanFacts facts, List<Need> goal) { return plan(facts, goal, MAX_NODES, BUDGET_MS); }
 
-    public static Result plan(PlanFacts facts, List<Need> goal, int maxNodes, long budgetMs) {
+    public static Result plan(PlanFacts facts, List<Need> goal, int maxNodes, long budgetMs) { return plan(facts, goal, maxNodes, budgetMs, MAX_STEPS); }
+
+    /** 0.26.2: with a step cap (the brain's sub-plans: brain.subgoalMaxSteps). */
+    public static Result plan(PlanFacts facts, List<Need> goal, int maxNodes, long budgetMs, int maxSteps) {
         long t0 = System.nanoTime();
         Node root = new Node();
         for (Map.Entry<String, Integer> e : facts.bag.entrySet()) if (e.getValue() > 0) root.pool.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(new int[]{-1, e.getValue()});
@@ -171,7 +174,7 @@ public final class Planner {
             }
             List<String> why = new ArrayList<>();
             List<Node> kids = r.flag() ? flagProviders(n, r, facts, why) : itemProviders(n, r, facts, why);
-            for (Node k : kids) if (!k.dead && k.steps.size() <= MAX_STEPS) q.add(k);
+            for (Node k : kids) if (!k.dead && k.steps.size() <= maxSteps) q.add(k);
             if (kids.isEmpty() && n.g < bestMissingG) {
                 bestMissingG = n.g;
                 bestMissing = (r.flag() ? r.what() : r.n() + " " + word(r.what())) + (why.isEmpty() ? "" : " - " + String.join("; ", why));

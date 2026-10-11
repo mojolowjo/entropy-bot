@@ -78,6 +78,8 @@ public final class BrainConfig {
                 {"weather.storm", 1, 0, 1, "a thunderstorm with sky above me counts as night for the night bands (1 on, 0 off)"},
                 {"passive.ownerTimeoutS", 300, 0, 3600, "escorting or assisting and you are offline this many seconds: dismiss then home (0 = off)"},
                 {"spawn.cooldownMinutes", 1440, 60, 10080, "in-game minutes between two tries to set my spawn at a bed (1440 = one day)"},
+            {"brain.feasibility", 1, 0, 1, "before a brain job starts, check each step's preconditions; a missing item asks the planner for a way first, else the job is skipped (1 on, 0 off)"},
+            {"brain.subgoalMaxSteps", 6, 1, 12, "the most steps a sub-plan may take that gets a missing item before a brain job (feasibility)"},
         };
         for (Object[] row : rows) {
             d.put((String) row[0], (Integer) row[1]);

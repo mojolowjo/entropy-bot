@@ -74,6 +74,8 @@ public final class BrainState {
     public boolean pickMaterials;
     public String copyRefused;
     public boolean spawnNearBase, spawnDue;
+    /** 0.26.2: the feasibility facts (known false until the game side reads them: then checks needing them are UNKNOWN). */
+    public Feasibility.Facts feas = new Feasibility.Facts();
 
     /** R9: an owner position this far (flat) from the bot is a placeholder, never a real one (maxWalk is 2000). */
     public static final int OWNER_SENTINEL_DIST = 100_000;

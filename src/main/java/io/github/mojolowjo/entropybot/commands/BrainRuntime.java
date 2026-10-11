@@ -165,6 +165,7 @@ public final class BrainRuntime implements BrainEnv {
             stockAt = s.now;
             try {
                 Map<String, Integer> totals = c.storage.stock(p).totals();
+                lastTotals = totals;          // 0.26.2: the feasibility facts' stock
                 stage = GameStage.of(totals);
                 foodStock = edible(totals);          // 0.25.1: bag + storage (the stock view)
                 int h = totals.hashCode();           // 0.26.1 R1: a scan or deposit changed the stock view
@@ -295,7 +296,69 @@ public final class BrainRuntime implements BrainEnv {
         JsonObject farm = core.knowledge.places().get("farm"), base = core.knowledge.places().get("base");
         if (farm != null) s.upkeep.farm = xyz(farm);
         if (base != null) s.basePos = xyz(base);
+        feasFacts(p, s, bag);
         return s;
+    }
+
+    /**
+     * 0.26.2: the feasibility facts, bounded reads only: the bag (read above), the stock totals of the 30 s refresh, the
+     * places, the base chests' notes, the caves' count, a lazy fence check (BotAPI.check, only when a go/goto is judged);
+     * the table/furnace (CampCommands.near) and trees (GoalPlanning.scan) block reads at most once a minute.
+     * Errors: caught and logged once a minute; the facts stay "not known" (checks answer UNKNOWN).
+     */
+    private void feasFacts(LocalPlayer p, BrainState s, Map<String, Integer> bag) {
+        try {
+            io.github.mojolowjo.entropybot.brain.Feasibility.Facts f = s.feas;
+            f.bag.putAll(bag);
+            if (lastTotals != null) for (Map.Entry<String, Integer> e : lastTotals.entrySet()) {
+                String k = e.getKey().substring(e.getKey().indexOf(':') + 1);
+                int n = e.getValue() - bag.getOrDefault(k, 0);
+                if (n > 0) f.stock.merge(k, n, Integer::sum);
+            }
+            int t = 0;
+            for (String k : bag.keySet()) if (k.endsWith("_pickaxe")) t = Math.max(t, io.github.mojolowjo.entropybot.plan.PlanFacts.tier(k.substring(0, k.length() - 8)));
+            f.pickTier = t;
+            Core core = Core.INSTANCE;
+            for (Map.Entry<String, JsonObject> e : core.knowledge.places().entrySet()) f.places.put(e.getKey(), xyz(e.getValue()));
+            f.isArea = n -> c.policyArea(n) != null;
+            f.baseChests = !c.storage.baseChests(p, false).isEmpty();
+            f.mineMarked = s.upkeep.mine != null && s.upkeep.mineReady;
+            f.caveKnown = core.caves.size() > 0;
+            String dim = Storage.dim();
+            f.inFence = q -> {
+                String r = io.github.mojolowjo.entropybot.api.BotAPI.check(dim, q[0], q[1], q[2], "go");
+                return r == null || !r.startsWith("would refuse");
+            };
+            if (s.now - nearAt > 60_000) {
+                nearAt = s.now;
+                net.minecraft.client.multiplayer.ClientLevel lv = Minecraft.getInstance().level;
+                io.github.mojolowjo.entropybot.plan.PlanFacts pf = new io.github.mojolowjo.entropybot.plan.PlanFacts();
+                GoalPlanning.scan(lv, s.botPos, pf);
+                nearTrees = pf.flags.contains("trees");
+                nearTable = CampCommands.near(lv, s.botPos, "crafting_table");
+                nearFurnace = CampCommands.near(lv, s.botPos, "furnace");
+            }
+            f.trees = nearTrees;
+            f.table = nearTable;
+            f.furnace = nearFurnace;
+            f.known = true;
+        } catch (RuntimeException e) {
+            if (s.now - feasErrAt > 60_000) {
+                feasErrAt = s.now;
+                LOG.warn("[entropybot] brain feasibility facts: {}", e.toString());
+            }
+        }
+    }
+
+    private long nearAt = -60_001, feasErrAt = -60_001;
+    private boolean nearTrees, nearTable, nearFurnace;
+    private Map<String, Integer> lastTotals;
+
+    /** 0.26.2: a sub-plan for the brain's feasibility check, on the planner's worker (GoalPlanning.searchAsync's pattern). */
+    @Override public boolean planSubgoal(String item, int n, int maxSteps, java.util.function.Consumer<String[]> then) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return false;
+        return c.planning.subgoal(p, item, n, maxSteps, then);
     }
 
     private int foodStock = -1;
