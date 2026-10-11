@@ -19,7 +19,8 @@ import java.util.regex.Pattern;
  */
 public final class FailMemory {
 
-    public enum Reason { NO_ITEM, OUTSIDE, NONE_IN_CHESTS, NO_PATH, NO_BED, GUARD_REFUSED }
+    /** NO_PLACE (0.26.1 live check): a place, area or mine the chain names is not marked; it only expires. */
+    public enum Reason { NO_ITEM, OUTSIDE, NONE_IN_CHESTS, NO_PATH, NO_BED, GUARD_REFUSED, NO_PLACE }
 
     /** Checked in this order (a guard refusal names "outside my areas" too: OUTSIDE wins, the cause it clears on). */
     private static final Object[][] PATTERNS = {
@@ -27,8 +28,9 @@ public final class FailMemory {
             {Reason.OUTSIDE, Pattern.compile("outside (my|every|the) areas?|outside every work area")},
             {Reason.GUARD_REFUSED, Pattern.compile("would refuse|the guard refuse|refused by the guard|guard refused|fence refuse")},
             {Reason.NO_BED, Pattern.compile("no bed")},
-            {Reason.NO_PATH, Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach")},
-            {Reason.NO_ITEM, Pattern.compile("no torches|i have no |no \\S+ on me|missing \\d|not enough |none on me")},
+            {Reason.NO_PLACE, Pattern.compile("i have no (place|area|mine)\\b|no places yet|i have no place, area|no (camp|base) place")},
+            {Reason.NO_PATH, Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach|no trees in my areas")},
+            {Reason.NO_ITEM, Pattern.compile("no torches|i have no |no \\S+ on me|missing \\d|not enough |none on me|i need \\d+ |i need .* there is none|no furnace recipe")},
     };
     /** A fight or the owner: never a precondition (checked first). */
     private static final Pattern NOT_A_CAUSE = Pattern.compile("attacked by|low health|fight|stopped: your|overridden|interrupted|stopped by");
@@ -52,9 +54,9 @@ public final class FailMemory {
 
     static String norm(String chain) { return chain == null ? "" : chain.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " "); }
 
-    /** The items whose rise clears NO_ITEM: torches, coal, logs, wood, food, pickaxes, a bed in the bag. */
+    /** The items whose rise clears NO_ITEM: torches, coal, logs, wood, food, pickaxes, a bed in the bag, shelter blocks. */
     static int items(BrainState s) {
-        return s.torches + s.coal + s.logs + s.woodItems + s.foodItems + s.pickaxes + (s.bedInBag ? 1 : 0);
+        return s.torches + s.coal + s.logs + s.woodItems + s.foodItems + s.pickaxes + (s.bedInBag ? 1 : 0) + s.shelterBlocks;      // shelterBlocks: planks, cobblestone, dirt
     }
 
     /** Records a failed brain job; the reason it was recorded under, or null when not (memory off or not a precondition). */
@@ -84,7 +86,7 @@ public final class FailMemory {
                 yield !e.bedAll()[0];
             }
             case NONE_IN_CHESTS -> s.storageSeq != e.storageSeq();
-            case GUARD_REFUSED -> false;
+            case GUARD_REFUSED, NO_PLACE -> false;
         };
     }
 

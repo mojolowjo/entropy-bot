@@ -83,6 +83,65 @@ class SteadyBrainTest {
         }
 
         @Test
+        void theShelterMaterialShortfallIsNoItem() {
+            assertEquals(FailMemory.Reason.NO_ITEM, FailMemory.classify("error: I need 9 planks, cobblestone or dirt for a shelter - next: craft planks 80 then shelter (or dig some dirt)"));
+        }
+
+        @Test
+        void theShelterShortfallClearsWhenShelterBlocksRise() {
+            BrainState s = calm();
+            s.shelterBlocks = 0;
+            FailMemory m = new FailMemory();
+            m.record("shelter 5m", "error: I need 9 planks, cobblestone or dirt for a shelter", s, T, 10);
+            assertNotNull(m.blocks("shelter 5m", s, T + 1));
+            s.shelterBlocks = 16;
+            assertNull(m.blocks("shelter 5m", s, T + 2));
+        }
+
+        @Test
+        void sleepWithNoBedCarriedIsNoBed() {
+            assertEquals(FailMemory.Reason.NO_BED, FailMemory.classify("error: no bed within 24 blocks and I carry none - next: give me a bed"));
+            assertEquals(FailMemory.Reason.NO_BED, FailMemory.classify("error: no bed within 24 blocks - next: go base then spawn"));
+        }
+
+        @Test
+        void lightWithNoTorchesIsNoItem() {
+            assertEquals(FailMemory.Reason.NO_ITEM, FailMemory.classify("error: I have no torches - next: craft torch 16 (coal or charcoal + sticks), then light here 8"));
+        }
+
+        @Test
+        void aMissingPickaxeOrItemIsNoItem() {
+            assertEquals(FailMemory.Reason.NO_ITEM, FailMemory.classify("I have no pickaxe that can mine iron_ore - next: craft stone_pickaxe 1"));
+            assertEquals(FailMemory.Reason.NO_ITEM, FailMemory.classify("error: I have no cobblestone - next: get cobblestone 64"));
+            assertEquals(FailMemory.Reason.NO_ITEM, FailMemory.classify("error: I need inferium_essence to upgrade essence and there is none in my bag, my chests"));
+            assertEquals(FailMemory.Reason.NO_ITEM, FailMemory.classify("error: no furnace recipe makes stick"));
+        }
+
+        @Test
+        void anUnmarkedPlaceIsNoPlace() {
+            assertEquals(FailMemory.Reason.NO_PLACE, FailMemory.classify("I have no place called camp - next: place camp"));
+            assertEquals(FailMemory.Reason.NO_PLACE, FailMemory.classify("error: I have no area called yard (area list)"));
+            assertEquals(FailMemory.Reason.NO_PLACE, FailMemory.classify("I have no place or marker called base (places lists them)"));
+            assertEquals(FailMemory.Reason.NO_PLACE, FailMemory.classify("no places yet - place base where you want my base"));
+        }
+
+        @Test
+        void noPlaceOnlyExpires() {
+            BrainState s = calm();
+            FailMemory m = new FailMemory();
+            m.record("go camp then shelter", "I have no place called camp", s, T, 10);
+            s.torches += 5;
+            s.botPos = new int[]{50, 64, 50};
+            assertNotNull(m.blocks("go camp then shelter", s, T + 9 * 60_000));
+            assertNull(m.blocks("go camp then shelter", s, T + 10 * 60_000));
+        }
+
+        @Test
+        void noTreesIsNoPathAndClearsByWalking() {
+            assertEquals(FailMemory.Reason.NO_PATH, FailMemory.classify("no trees in my areas (12 log columns looked at; too far)"));
+        }
+
+        @Test
         void aFightOrTheOwnerIsNeverAPrecondition() {
             assertNull(FailMemory.classify("stopped at step 2: attacked by a zombie"));
             assertNull(FailMemory.classify("stopped: your stop"));
