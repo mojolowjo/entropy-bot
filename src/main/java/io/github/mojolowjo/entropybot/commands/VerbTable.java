@@ -232,6 +232,7 @@ public final class VerbTable {
         v("restart", "", "other", G, "restart ok|no", "I may be closed for an update in the next 15 minutes (or not)", "restart ok", "status");
         v("blind", "", "other", O, "blind on|off|status", "stop drawing frames while the bot works on (less CPU and GPU; the window title shows where it is and its job); off draws again; watch needs it off",
                 "blind on|blind status", "blind status");
+        v("sense", "", "other", O, "sense | sense status", "the one chunk pass: chunks read (load, resend, rescans), patches applied and dropped, tick time, the summaries and the ore index, files, the self-audit", "sense status", "ores known");
         v("surface", "", "other", O, "surface | surface status | surface on|off", "the ground round the bot for the dashboard's 3D view (one file per loaded chunk; on by default)", "surface status", "status");
         v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] | debug hits [n] | debug motor "
                         + "| debug <plumbing verb> ...: b, memory, watch, recorder, mouse, route, autominer, reconnect, sethome, use, caves, ores, poi",

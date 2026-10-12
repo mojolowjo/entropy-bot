@@ -31,18 +31,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Paints a top-down terrain map of the ground the bot has had loaded (docs/BOT_PLAN.md B7b), in the paper-map
- * look, for the dashboard to draw under its marks. Shaped like {@link io.github.mojolowjo.entropybot.poi.PoiScanner}:
- * one loaded chunk every {@link #EVERY} ticks, spiralling out to {@link #RADIUS} chunks, a chunk painted again
- * after {@link #RESCAN} ticks. Pixels live in 512x512 regions (one int[] of ARGB each), loaded from their PNG the
+ * look, for the dashboard to draw under its marks. Since 0.28.0 a reader of the one chunk pass ({@code sense/ChunkPass}):
+ * a chunk the pass reads (it arrived, or came again) is queued here ({@link #chunkRead}) and painted, one every
+ * {@link #EVERY} ticks; a block change at or near a column's top repaints that column and the one south of it (its
+ * shading) ({@link #columnChanged}). No spiral and no 5-minute repaint any more. Pixels live in 512x512 regions (one int[] of ARGB each), loaded from their PNG the
  * first time a region is touched, so a restart keeps what was drawn. Dirty regions are written at most every
  * {@link #WRITE_EVERY} ticks: copied here on the client thread, encoded and written on one background thread.
  * Dimensions with a ceiling (the Nether) are skipped: their top is the bedrock roof.
  */
 public final class TerrainMap {
     private static final Logger LOG = LogUtils.getLogger();
-    static final int RADIUS = 5;
-    static final long RESCAN = 6000;        // 5 minutes
     static final int EVERY = 2;             // ticks between two chunks
+    static final int QUEUE_CHUNKS = 4096, QUEUE_COLUMNS = 8192, COLUMNS_PER_TICK = 64;
     static final long WRITE_EVERY = 600;    // 30 s between two writes of the dirty regions
     static final long FORGET_AFTER = 12000; // a clean region untouched for 10 minutes leaves memory
     static final int MAX_STEP = 8;          // blocks to step down through see-through tops (glass, ...)
@@ -50,12 +50,12 @@ public final class TerrainMap {
 
     private final Path root;
     private final Map<String, Region> regions = new HashMap<>();
-    private final Map<Long, Long> scanned = new HashMap<>();
+    /** 0.28.0: chunks the pass read (to paint whole) and columns it patched near the top (packed x, z), in order. */
+    private final java.util.LinkedHashSet<Long> toPaint = new java.util.LinkedHashSet<>(), columns = new java.util.LinkedHashSet<>();
     private final Set<String> dims = ConcurrentHashMap.newKeySet();
     private final Queue<Region> retry = new ConcurrentLinkedQueue<>();
     private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-    private int[][] spiral;
-    private int cursor;
+    private long columnsPainted;
     private String dim;
     private long lastChunk = Long.MIN_VALUE / 2, lastWrite;
     private int colY;                       // the height column() found, NO_Y for nothing
@@ -84,10 +84,28 @@ public final class TerrainMap {
 
     public TerrainMap(Path root) {
         this.root = root.toAbsolutePath().normalize();
-        java.util.List<int[]> s = new java.util.ArrayList<>();
-        for (int dx = -RADIUS; dx <= RADIUS; dx++) for (int dz = -RADIUS; dz <= RADIUS; dz++) s.add(new int[] { dx, dz });
-        s.sort(java.util.Comparator.comparingInt(a -> a[0] * a[0] + a[1] * a[1]));
-        spiral = s.toArray(new int[0][]);
+    }
+
+    private static long key(int a, int b) { return ((long) a << 32) ^ (b & 0xffffffffL); }
+
+    /** 0.28.0: the chunk pass read chunk cx cz: paint it (queued; game thread). Never throws. */
+    public void chunkRead(int cx, int cz) {
+        try {
+            if (toPaint.size() >= QUEUE_CHUNKS) toPaint.remove(toPaint.iterator().next());
+            toPaint.add(key(cx, cz));
+        } catch (Throwable t) {
+            errors++;
+        }
+    }
+
+    /** 0.28.0: a block at or near column x z's top changed: repaint that column (and its shading neighbour). Never throws. */
+    public void columnChanged(int x, int z) {
+        try {
+            if (columns.size() >= QUEUE_COLUMNS) columns.remove(columns.iterator().next());
+            columns.add(key(x, z));
+        } catch (Throwable t) {
+            errors++;
+        }
     }
 
     /** Once per client tick while in a world. Never throws. */
@@ -129,7 +147,8 @@ public final class TerrainMap {
             String last = ms == 0 ? "nothing written yet" : "last write " + Math.max(0, (System.currentTimeMillis() - ms) / 1000) + "s ago";
             int errs = errors + ioErrors.get();
             return "terrain map: " + regions.size() + " regions in memory, " + dirty + " dirty, "
-                + (onDisk < 0 ? "?" : String.valueOf(onDisk)) + " tiles on disk, " + painted + " chunks painted, " + last
+                + (onDisk < 0 ? "?" : String.valueOf(onDisk)) + " tiles on disk, " + painted + " chunks painted, " + columnsPainted + " columns repainted, "
+                + toPaint.size() + " chunks waiting, " + last
                 + (errs > 0 ? ", " + errs + " errors" : "");
         } catch (Throwable t) {
             return "terrain map: " + t;
@@ -150,7 +169,8 @@ public final class TerrainMap {
                 LOG.warn("[entropybot] terrain map: tiles still being written after 3 s");
             }
             regions.clear();
-            scanned.clear();
+            toPaint.clear();
+            columns.clear();
             dim = null;
         } catch (Throwable t) {
             errors++;
@@ -164,34 +184,82 @@ public final class TerrainMap {
             lastWrite = tick;
             writeDirty(tick, false);
         }
-        if (tick - lastChunk < EVERY) return;
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         ClientLevel level = mc.level;
-        if (p == null || level == null || level.dimensionType().hasCeiling()) return;
-        String d = Guard.dimOf(level);
-        if (!d.equals(dim)) {
-            dim = d;
-            scanned.clear();
+        if (p == null || level == null) return;
+        if (level.dimensionType().hasCeiling()) {
+            toPaint.clear();
+            columns.clear();
+            return;
         }
-        if (scanned.size() > 8192) scanned.values().removeIf(at -> tick - at >= RESCAN);
-        int pcx = p.getBlockX() >> 4, pcz = p.getBlockZ() >> 4;
-        // the next chunk in the spiral that is loaded and not painted lately
-        for (int tries = 0; tries < spiral.length; tries++) {
-            int[] o = spiral[cursor++ % spiral.length];
-            int cx = pcx + o[0], cz = pcz + o[1];
-            long k = ((long) cx << 32) ^ (cz & 0xffffffffL);
-            Long at = scanned.get(k);
-            if (at != null && tick - at < RESCAN) continue;
+        String d = Guard.dimOf(level);
+        // a new dimension: the queue is kept (an entry is read from the level that is loaded now, so it paints what is there)
+        if (!d.equals(dim)) dim = d;
+        // 0.28.0: the columns the pass patched (a few per tick), then one chunk it read every EVERY ticks
+        for (int n = 0; n < COLUMNS_PER_TICK && !columns.isEmpty(); n++) {
+            java.util.Iterator<Long> it = columns.iterator();
+            long k = it.next();
+            int x = (int) (k >> 32), z = (int) k;
+            LevelChunk chunk = level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
+            if (chunk == null || chunk.isEmpty()) {
+                it.remove();
+                continue;
+            }
+            Region r = region(d, x, z, tick);
+            if (r.px == null) break;                  // still loading: next tick
+            it.remove();
+            paintColumn(level, chunk, x, z, r);
+            columnsPainted++;
+        }
+        if (tick - lastChunk < EVERY) return;
+        for (java.util.Iterator<Long> it = toPaint.iterator(); it.hasNext(); ) {
+            long k = it.next();
+            int cx = (int) (k >> 32), cz = (int) k;
             LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
-            if (chunk == null || chunk.isEmpty()) continue;
+            if (chunk == null || chunk.isEmpty()) {
+                it.remove();                          // gone meanwhile: painted when it comes again
+                continue;
+            }
             Region r = region(d, cx << 4, cz << 4, tick);
-            if (r.px == null) continue; // still loading: painted on a later pass
-            scanned.put(k, tick);
+            if (r.px == null) return;                 // still loading: painted on a later tick
+            it.remove();
             lastChunk = tick;
             paint(level, chunk, cx, cz, r);
             painted++;
             return;
+        }
+    }
+
+    /** 0.28.0: repaints column x z and the one south of it (whose shading reads this column's height). */
+    private void paintColumn(ClientLevel level, LevelChunk chunk, int x, int z, Region r) {
+        int north = NO_Y;
+        LevelChunk n = (z - 1) >> 4 == z >> 4 ? chunk : level.getChunkSource().getChunk(x >> 4, (z - 1) >> 4, ChunkStatus.FULL, false);
+        if (n != null && !n.isEmpty()) {
+            column(level, n, x, z - 1, NO_Y);
+            north = colY;
+        }
+        boolean changed = false;
+        int c = column(level, chunk, x, z, north);
+        int here = colY;
+        if (c != 0) {
+            int i = MapMath.index(x, z);
+            if (r.px[i] != c) {
+                r.px[i] = c;
+                changed = true;
+            }
+        }
+        if (changed) r.dirty = true;
+        LevelChunk s = (z + 1) >> 4 == z >> 4 ? chunk : level.getChunkSource().getChunk(x >> 4, (z + 1) >> 4, ChunkStatus.FULL, false);
+        if (s == null || s.isEmpty()) return;
+        Region rs = region(dim, x, z + 1, lastWrite);
+        if (rs.px == null) return;
+        int cs = column(level, s, x, z + 1, here);
+        if (cs == 0) return;
+        int i = MapMath.index(x, z + 1);
+        if (rs.px[i] != cs) {
+            rs.px[i] = cs;
+            rs.dirty = true;
         }
     }
 

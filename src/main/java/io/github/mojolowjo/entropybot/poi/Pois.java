@@ -88,6 +88,24 @@ public final class Pois {
         return p;
     }
 
+    /**
+     * 0.28.0: a block of this kind went (the chunk pass saw it removed, or a fresh read no longer has it). The point of
+     * this kind within {@link #MERGE} of x y z is dropped unless {@code stillThere} says another block of its kind is
+     * still near it (a village with a second bell). Returns the point dropped, or null.
+     */
+    public synchronized Poi gone(String kind, int x, int y, int z, String dim, long tick, java.util.function.Predicate<Poi> stillThere) {
+        for (int i = 0; i < list.size(); i++) {
+            Poi p = list.get(i);
+            if (!p.kind().equals(kind) || !p.dim().equals(dim)) continue;
+            if (Math.abs(p.x() - x) > MERGE || Math.abs(p.y() - y) > MERGE || Math.abs(p.z() - z) > MERGE) continue;
+            if (stillThere != null && stillThere.test(p)) return null;
+            list.remove(i);
+            touch(tick);
+            return p;
+        }
+        return null;
+    }
+
     public synchronized boolean forget(int id, long tick) {
         boolean gone = list.removeIf(p -> p.id() == id);
         if (gone) touch(tick);

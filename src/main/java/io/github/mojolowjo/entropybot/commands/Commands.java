@@ -980,6 +980,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));
         if (verb.equals("server")) return Reply.now(PathCommand.server(this, rest, isOwner));      // 0.24.1: never busy          // 0.23.3: never busy
         if (verb.equals("surface")) return Reply.now(io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.command(rest));     // 0.19.3: never busy
+        if (verb.equals("sense")) return Reply.now(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.command(rest));          // 0.28.0: never busy
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));

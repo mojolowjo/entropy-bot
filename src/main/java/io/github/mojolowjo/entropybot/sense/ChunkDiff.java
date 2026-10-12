@@ -92,7 +92,8 @@ public final class ChunkDiff {
                 out.add(what + "." + k + " count " + na + " vs " + nb);
                 continue;
             }
-            if (ga == null || gb == null || nb > io.github.mojolowjo.entropybot.memory.Limits.SENSE_SPOTS) continue;
+            // positions only where both lists are whole (a list trimmed at the cap keeps an arbitrary subset)
+            if (ga == null || gb == null || ga.spots.size() != ga.n || gb.spots.size() != gb.n) continue;
             if (!new HashSet<>(ga.spots).equals(new HashSet<>(gb.spots))) out.add(what + "." + k + " positions");
         }
     }

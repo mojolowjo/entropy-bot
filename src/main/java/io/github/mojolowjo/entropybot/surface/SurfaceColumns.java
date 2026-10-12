@@ -39,12 +39,33 @@ public final class SurfaceColumns {
     public static SurfaceColumns scan(Source src, int cx, int cz, int minY, ErrorSink errs) {
         SurfaceColumns s = new SurfaceColumns();
         for (int lz = 0; lz < 16; lz++)
-            for (int lx = 0; lx < 16; lx++) {
-                int x = (cx << 4) + lx, z = (cz << 4) + lz, i = index(x, z);
+            for (int lx = 0; lx < 16; lx++) scanColumn(src, s, (cx << 4) + lx, (cz << 4) + lz, minY, errs);
+        return s;
+    }
+
+    /** A deep copy (the worker thread writes the copy while the game thread patches the original). */
+    public SurfaceColumns copy() {
+        SurfaceColumns s = new SurfaceColumns();
+        for (int[][] p : new int[][][]{{g, s.g}, {f, s.f}, {c, s.c}, {l, s.l}, {u, s.u}, {g2, s.g2}, {f2, s.f2}, {u2, s.u2}})
+            System.arraycopy(p[0], 0, p[1], 0, 256);
+        return s;
+    }
+
+    /**
+     * 0.28.0 (the chunk pass's per-column patch): one column of {@code s} scanned again by the same rule as {@link #scan};
+     * the other 255 columns are untouched. Never throws (a failing column is -1/0/-1/0).
+     */
+    public static void scanColumn(Source src, SurfaceColumns s, int x, int z, int minY, ErrorSink errs) {
+        {
+            {
+                int i = index(x, z);
                 s.g[i] = -1;
+                s.f[i] = 0;
                 s.c[i] = -1;
+                s.l[i] = 0;
                 s.u[i] = -1;
                 s.g2[i] = -1;
+                s.f2[i] = 0;
                 s.u2[i] = -1;
                 try {
                     int canopy = -1;
@@ -75,7 +96,7 @@ public final class SurfaceColumns {
                     if (errs != null) errs.error(x, z, e);
                 }
             }
-        return s;
+        }
     }
 
     /**

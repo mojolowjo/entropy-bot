@@ -44,10 +44,11 @@ public final class EntropyBot {
         io.github.mojolowjo.entropybot.recorder.FlightRecorder.watchListener = (level, pos, from, to) -> {
             if (level == net.minecraft.client.Minecraft.getInstance().level)
                 io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.blockChanged(pos.getX(), pos.getY(), pos.getZ());
-            if (level == net.minecraft.client.Minecraft.getInstance().level)
-                io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.blockChanged(pos.getX(), pos.getZ());   // 0.19.3: surface export (never throws)
+            // 0.28.0: the surface export's column changes come through the chunk pass (chunkPassListener below)
             io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.blockChanged(level, pos, to);   // 0.23.2: patch the reach grid (never throws)
         };
+        // 0.28.0: the one chunk pass hears every block change first (before the recorder's filters); no new mixin
+        io.github.mojolowjo.entropybot.recorder.FlightRecorder.chunkPassListener = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE::blockChanged;
         // 0.16.1: the tunnel view's cutaway shaders (mod bus; the listener catches every failure, the view then draws without the cut)
         modBus.addListener(net.neoforged.neoforge.client.event.RegisterShadersEvent.class,
                 io.github.mojolowjo.entropybot.watchview.CutShaders::onRegister);
@@ -58,6 +59,8 @@ public final class EntropyBot {
     }
 
     private static void onChunkLoad(net.neoforged.neoforge.event.level.ChunkEvent.Load event) {
+        // 0.28.0: the chunk pass (first loads and resends; never throws)
+        if (event.getLevel().isClientSide()) io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.chunkLoaded(event.getLevel(), event.getChunk());
         try {
             if (event.getLevel().isClientSide() && event.getLevel() == net.minecraft.client.Minecraft.getInstance().level)
                 io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.chunkLoaded(event.getChunk().getPos().x, event.getChunk().getPos().z);
@@ -71,6 +74,7 @@ public final class EntropyBot {
     }
 
     private static void onChunkUnload(net.neoforged.neoforge.event.level.ChunkEvent.Unload event) {
+        if (event.getLevel().isClientSide()) io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.chunkUnloaded(event.getLevel(), event.getChunk());     // 0.28.0
         try {
             if (event.getLevel().isClientSide() && event.getLevel() == net.minecraft.client.Minecraft.getInstance().level)
                 io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.chunkUnloaded(event.getChunk().getPos().x, event.getChunk().getPos().z);
