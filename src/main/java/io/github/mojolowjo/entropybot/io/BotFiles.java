@@ -63,6 +63,34 @@ public final class BotFiles {
         }
     }
 
+    /**
+     * 0.28.0: writes text atomically (a temp file, then a move; a plain replace where the move can't be atomic) to a file
+     * under this root whose name the {@link #writeJson} pattern would refuse (the chunk pass's {@code sense/<dim>/-3.4.json}).
+     * The target must lie under the root. Throws IOException (the caller counts and logs it).
+     */
+    public void writeAtomic(Path target, String text) throws IOException {
+        Path t = target.toAbsolutePath().normalize();
+        if (!t.startsWith(root)) throw new IOException("not under " + root + ": " + t);
+        writeAtomicAnywhere(t, text);
+    }
+
+    /** As {@link #writeAtomic}, without the root check (plain Java callers and tests with their own folder). */
+    public static void writeAtomicAnywhere(Path target, String text) throws IOException {
+        Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+        try {
+            Files.createDirectories(target.getParent());
+            Files.write(tmp, text.getBytes(StandardCharsets.UTF_8));
+            try {
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            throw e;
+        }
+    }
+
     /** The file's text, null when it does not exist, "error: ..." when it cannot be read. */
     public String readJson(String name) {
         String bad = validate(name);
