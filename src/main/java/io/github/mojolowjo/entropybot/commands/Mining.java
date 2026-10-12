@@ -373,8 +373,12 @@ final class Mining {
             String failed = j.kFailed;
             j.kClear = null;
             j.kFailed = null;
-            if (failed == null && mined > 0) j.knownVeins++;
-            else if (t != null) {
+            boolean dug = j.kDigging;
+            j.kDigging = false;
+            if (failed == null && mined > 0) {
+                j.knownVeins++;
+                if (dug) j.kDug++;
+            } else if (t != null) {
                 String r = knownMiss(s, p, j, t, failed != null ? failed : "the vein clear mined nothing there (out of reach from " + Jobs.fmt(me) + ")");
                 if (!r.equals("wait")) return r;
             }
@@ -382,7 +386,7 @@ final class Mining {
         boolean inside = commands.inAreas(d, me[0], me[2]);
         if (!inside || now > j.deadline) return end(s, j, "stopped: " + (!inside ? MineRules.leftAreasText(Jobs.fmt(me)) : MineRules.timeUpText()) + ", mining " + sid(j) + gains(p, j));
         if (j.count > 0 && mineCount(p, j) >= j.count)
-            return end(s, j, MineRules.shortText(j.target, mineCount(p, j), j.count, (j.kBlocks.isEmpty() ? "" : "blocks " + blocksText(j) + " ") + "from known ore (" + j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + ", " + j.kTries + " missed)", gains(p, j), j.toolNote));
+            return end(s, j, MineRules.shortText(j.target, mineCount(p, j), j.count, (j.kBlocks.isEmpty() ? "" : "blocks " + blocksText(j) + " ") + "from known ore (" + j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + (j.kDug > 0 ? ", dug to " + j.kDug + " of them" : "") + ", " + j.kTries + " missed)", gains(p, j), j.toolNote));
         String pc = pickCheck(s, p, j);
         if (pc != null) return pc;
         if (j.kTarget != null) {
@@ -413,7 +417,7 @@ final class Mining {
         if (hits.isEmpty()) {
             if (j.kTries > 0 || j.kKnown > 0) {
                 int left = knownCount(p, fam);
-                String veins = j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + " mined" + (j.kBlocks.isEmpty() ? "" : " (" + blocksText(j) + ")");
+                String veins = j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + " mined" + (j.kDug > 0 ? " (dug to " + j.kDug + " of them)" : "") + (j.kBlocks.isEmpty() ? "" : " (" + blocksText(j) + ")");
                 String why = j.kTries == 0 ? veins + ", no more " + fam + " ore I can walk to known within " + io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R
                         + (left > 0 ? " (" + left + " more known, buried or tried)" : "") + " - next: mine strip " + fam + " or mine cave " + fam
                         : veins + ", " + io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, left, j.kTries);
@@ -427,23 +431,38 @@ final class Mining {
         Level level = p.level();
         io.github.mojolowjo.entropybot.sense.OreIndex.Hit best = null;
         double bestCost = Double.MAX_VALUE;
-        int buried = 0;
+        int buried = 0, tooDeep = 0, deepest = 0;
+        int bestTop = Integer.MIN_VALUE;          // with dig: the surface block over a buried ore (the dig box runs from the ore up to it)
         for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) {
             BlockPos q = new BlockPos(h.x(), h.y(), h.z());
-            if (!level.isLoaded(q) || !exposed(level, q)) {
+            double cost;
+            int top = Integer.MIN_VALUE;
+            if (level.isLoaded(q) && exposed(level, q)) cost = Math.sqrt(h.d2()) * (skyOpen(level, q) ? 1 : 2);      // open to the sky first, then caves
+            else if (j.dig && level.isLoaded(q)) {
+                // 0.28.0 (the owner): "mine ... dig" digs down to a covered ore, as "dig x1 y1 z1 x2 y2 z2 ores" would: the column over it
+                top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, h.x(), h.z()) - 1;
+                int depth = top - h.y() + 1;
+                if (depth > 16) {
+                    tooDeep++;
+                    deepest = Math.max(deepest, depth);
+                    continue;
+                }
+                cost = Math.sqrt(h.d2()) + depth * 2;
+            } else {
                 buried++;
                 continue;
             }
-            double cost = Math.sqrt(h.d2()) * (skyOpen(level, q) ? 1 : 2);      // open to the sky first, then caves
             if (cost < bestCost) {
                 bestCost = cost;
                 best = h;
+                bestTop = top;
             }
         }
+        if (best == null && tooDeep > 0) LOG.info("[entropybot] mine: {} known {} too deep for a dig ({} blocks), use mine strip", tooDeep, sid(j), deepest);
         if (best == null) {
             LOG.info("[entropybot] mine: the {} nearest known {} are all buried or not loaded (I walk only to ore with an open face)", hits.size(), sid(j));
             for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) j.knownTried.add(BlockPos.asLong(h.x(), h.y(), h.z()));
-            return mineEnd(s, p, j, io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, j.kKnown, j.kTries) + " (" + buried + " nearest are buried)");
+            return mineEnd(s, p, j, io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, j.kKnown, j.kTries) + (tooDeep > 0 ? " (" + tooDeep + " too deep for a dig (" + deepest + " blocks), use mine strip)" : " (" + buried + " nearest are buried; mine ... dig digs to them)"));
         }
         j.kVein = new ArrayList<>();
         for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit v : io.github.mojolowjo.entropybot.sense.KnownOre.vein(hits, best, io.github.mojolowjo.entropybot.sense.KnownOre.VEIN_MAX))
@@ -454,6 +473,21 @@ final class Mining {
         LOG.info("[entropybot] mine: next known {} at {} ({}, {} blocks; try {}/{}; {} buried ones skipped)", sid(j), Jobs.fmt(t),
                 skyOpen(level, new BlockPos(t[0], t[1], t[2])) ? "open to the sky" : "in a cave", (int) Math.round(Math.sqrt(best.d2())),
                 j.kTries + 1, io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS, buried);
+        if (bestTop != Integer.MIN_VALUE) {
+            // walk to the surface over it, then the box clear of the column (ores included), like the dig verb; its outcome is the try
+            int[] stand = {t[0], bestTop + 1, t[2]};
+            Seq.Step w = Seq.Step.walk(stand, true);
+            w.optional = true;
+            Seq.Step box = Clearing.clearStep(new ClearJob.Options().box(io.github.mojolowjo.entropybot.clear.ClearBox.of(t[0], t[1], t[2], t[0], bestTop, t[2]))
+                    .collect(true).label("digging to the known " + sid(j) + " at " + Jobs.fmt(t) + " (" + (bestTop - t[1] + 1) + " blocks down)"));
+            box.optional = true;
+            j.kClear = box;
+            j.kLast = t;
+            j.kDigging = true;
+            s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - digging down to known ore at " + Jobs.fmt(t));
+            spliceHere(s, Jobs.distSq(me, stand) <= 16 ? List.of(box) : List.of(w, box));
+            return "wait";
+        }
         if (Jobs.distSq(me, t) <= 16) return knownClear(s, j, t);
         j.kTarget = t;
         Seq.Step w = Seq.Step.walk(t.clone(), true);
@@ -1402,7 +1436,8 @@ final class Mining {
         int[] kTarget;
         String kFailed;
         int kTries, kKnown, kWalks;
-        boolean familyWord;
+        boolean familyWord, kDigging;
+        int kDug;
         /** the ore blocks the vein clears mined, by id (the end line names them) */
         final Map<String, Integer> kBlocks = new LinkedHashMap<>();
         int[] kLast;
