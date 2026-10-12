@@ -448,6 +448,8 @@ public final class Jobs {
         if (lr.failure() != null) {
             int[] d = travelDest(j) != null ? travelDest(j) : j.dest;
             if (d != null && WalkEnd.arrived(here(p), d)) return "ok";       // the goal block itself is unreachable but I'm there (goalVerdict judges it)
+            String st = sealedStairs(p, here(p), d);
+            if (st != null) return "ok: " + st;                               // 0.27.4: the job ends with the whisper; the staircase runs next
             return lr.failure();
         }
         if (lr.active()) return "wait";
@@ -1051,7 +1053,8 @@ public final class Jobs {
                     if (r.equals("ok")) {
                         String v = goalVerdict(p, j);
                         finish(v != null ? v : "ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
-                    } else finish(r.startsWith("error") ? r : "error: " + r);
+                    } else if (r.startsWith("ok: ")) finish(r);                    // 0.27.4: sealed underground, digging a staircase up
+                    else finish(r.startsWith("error") ? r : "error: " + r);
                     return;
                 }
                 if (j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) routeTravelPoll(j);
@@ -1436,6 +1439,53 @@ public final class Jobs {
         if (core.tick() - stairsWhisperedAt > 20 * 60 * 10) {      // once per 10 minutes
             stairsWhisperedAt = core.tick();
             commands.whisper(commands.owner(), msg);
+        }
+    }
+
+    /** 0.27.4: the goal of the last sealed-walk staircase, and how many were dug for it (at most SealedWalk.MAX_STAIRS). */
+    private int[] stairDest;
+    private int stairCount;
+
+    /**
+     * 0.27.4: a failed walk underground inside the areas toward a goal above: the staircase up to the goal's height, then
+     * a goto back to the goal (a chain, started by stairsTick once nothing runs). Returns the whisper line, or null (the
+     * caller reports the walk's failure) with the reason logged.
+     */
+    private String sealedStairs(LocalPlayer p, int[] me, int[] d) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            net.minecraft.world.level.Level level = mc.level;
+            if (level == null || d == null || me == null) return null;
+            String dim = Guard.dimOf(level);
+            if (!java.util.Arrays.equals(stairDest, d)) { stairDest = d.clone(); stairCount = 0; }
+            int surface = surfaceNoLeaves(level, me[0], me[2]);
+            boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
+            boolean under = RestoreRules.underground(sky, surface, me[1]);
+            boolean inAreas = commands.inAreas(dim, me[0], me[2]);
+            if (!SealedWalk.want(under, inAreas, d, me, true, stairCount)) {
+                if (under && inAreas && d[1] > me[1] + 2) LOG.info("[entropybot] sealed walk at {}: no more staircases for {} ({} dug)", fmt(me), fmt(d), stairCount);
+                return null;
+            }
+            io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
+            EscapePlan.Grid g = (x, y, z) -> escapeKind(level, pol, dim, x, y, z);
+            int[] side = EscapePlan.stairSide(g, me, d);
+            if (side == null) {
+                LOG.info("[entropybot] sealed walk at {}: no side to dig a staircase up from (built blocks, fluid or a protect box next to me)", fmt(me));
+                return null;
+            }
+            int n = SealedWalk.steps(d, me);
+            java.util.List<String> steps = new java.util.ArrayList<>(StairPlan.upSteps(me[0], me[1], me[2], side[0], side[1], n));
+            String roof = me[0] + " " + (me[1] + 2) + " " + me[2];
+            if (ShelterJob.ownBlocks(commands).contains(roof) || RestoreLive.INSTANCE.builtByMe(me[0], me[1] + 2, me[2])) steps.set(0, steps.get(0) + " force");
+            steps.add("goto " + d[0] + " " + d[1] + " " + d[2]);
+            pendingStairs = String.join(" then ", steps);
+            stairCount++;
+            String msg = "I am sealed in underground at " + fmt(me) + " - digging a staircase up (" + n + " steps " + StairPlan.dirName(side[0], side[1]) + ")";
+            LOG.info("[entropybot] sealed walk: {} (then goto {})", msg, fmt(d));
+            return msg;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] sealed walk staircase failed to plan: {}", e.toString());
+            return null;
         }
     }
 
