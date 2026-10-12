@@ -53,6 +53,9 @@ public final class GatherPlan {
          * the plan fast ("needs x which I don't know") instead of a long mine/cave search. Vanilla ores are always known.
          */
         default boolean knownBlock(String block) { return true; }
+
+        /** 0.28.0: the chunk pass's index knows ore of this family within 64 blocks inside the areas. */
+        default boolean oreKnown(String family) { return false; }
     }
 
     /** 0.24.3: the why of a plan that needs an ore block nobody has seen. */
@@ -125,7 +128,8 @@ public final class GatherPlan {
         if (src.kind() == GatherSources.Kind.NONE) return noWay(src.item(), src.hint());
         if (src.kind() == GatherSources.Kind.ORE && src.block() != null && !src.block().startsWith("minecraft:") && !w.knownBlock(src.block()))
             return noWay(src.item(), unknownBlockWhy(src.block()));
-        return new Step(Kind.SOURCE, src.item(), n, GatherSources.commands(src, n, w.mineMarked(), anyWood), null);
+        return new Step(Kind.SOURCE, src.item(), n, GatherSources.commands(src, n, w.mineMarked(), anyWood,
+                src.kind() == GatherSources.Kind.ORE && w.oreKnown(src.family())), null);
     }
 
     static int stock(World w, String id) {

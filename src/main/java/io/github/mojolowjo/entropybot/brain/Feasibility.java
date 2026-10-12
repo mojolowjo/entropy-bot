@@ -57,6 +57,8 @@ public final class Feasibility {
         public boolean baseChests, table, furnace, trees, mineMarked, caveKnown;
         /** The fence: a spot (x y z) the bot may walk to (an area or the near-me zone); null = unknown. */
         public Predicate<int[]> inFence;
+        /** 0.28.0: an ore family ("iron") is known within 64 inside the areas (the chunk pass's index); null = unknown. */
+        public Predicate<String> oreKnown;
     }
 
     static final class Sim {
@@ -333,6 +335,11 @@ public final class Feasibility {
         if (sim.pickTier() < need && !stocked && !(need <= 2 && sim.s.pickMaterials))
             return no(i, st, "no " + tierName(need) + " pickaxe or better (" + ores + ")", tierName(need) + "_pickaxe", 1, FailMemory.Reason.NO_ITEM);
         if (cave && !f.caveKnown) return Verdict.unknown(i, st, "no known cave (one may be in view)");
+        // 0.28.0: a plain "mine <ore>" walks to known ore; none known within 64 in the areas = it would only search
+        if (!strip && !cave && f.oreKnown != null && (ores.endsWith("_ore") || ores.matches("iron|coal|copper|gold|diamond|emerald|redstone|lapis"))) {
+            String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(ores);
+            if (!f.oreKnown.test(fam)) return no(i, st, "no " + fam + " ore known within 64 in my areas", null, 0, null);
+        }
         return OK;
     }
 }

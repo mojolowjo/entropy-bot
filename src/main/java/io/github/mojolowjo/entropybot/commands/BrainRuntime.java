@@ -348,6 +348,7 @@ public final class BrainRuntime implements BrainEnv {
             f.baseChests = !c.storage.baseChests(p, false).isEmpty();
             f.mineMarked = s.upkeep.mine != null && s.upkeep.mineReady;
             f.caveKnown = core.caves.size() > 0;
+            f.oreKnown = Mining.indexReady() ? fam -> Mining.get().oreKnownNear(p, fam) : null;      // 0.28.0: the chunk pass's index
             String dim = Storage.dim();
             f.inFence = q -> {
                 String r = io.github.mojolowjo.entropybot.api.BotAPI.check(dim, q[0], q[1], q[2], "go");

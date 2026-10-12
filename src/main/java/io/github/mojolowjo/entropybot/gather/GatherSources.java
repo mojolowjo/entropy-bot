@@ -106,12 +106,25 @@ public final class GatherSources {
      * mineMarked: a "mine" place with a direction is marked. anyWood: chop any log type (a tag asked for "any planks").
      */
     public static List<String> commands(Source s, int n, boolean mineMarked, boolean anyWood) {
+        return commands(s, n, mineMarked, anyWood, false);
+    }
+
+    /**
+     * 0.28.0: oreKnown = the chunk pass's index knows this family within 64 blocks inside the areas: then "mine &lt;ore&gt;"
+     * (which walks to the known ore) goes first, before the strip mine and the cave.
+     */
+    public static List<String> commands(Source s, int n, boolean mineMarked, boolean anyWood, boolean oreKnown) {
         int k = Math.max(1, n);
         List<String> out = new ArrayList<>();
         switch (s.kind()) {
             case OVERRIDE -> out.add(s.command().contains("{n}") ? s.command().replace("{n}", String.valueOf(k)) : s.command());
             case ORE -> {
+                if (oreKnown) out.add("mine " + shortId(s.block()) + " " + k);
                 if (mineMarked) out.add("mine strip " + s.family() + " " + k);
+                if (oreKnown) {
+                    out.add("mine cave " + s.family() + " " + k + " 10m");
+                    break;
+                }
                 out.add("mine " + shortId(s.block()) + " " + k);
                 out.add("mine cave " + s.family() + " " + k + " 10m");
             }
