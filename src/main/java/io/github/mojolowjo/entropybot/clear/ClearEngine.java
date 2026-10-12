@@ -391,7 +391,7 @@ public final class ClearEngine {
         for (String k : job.noSpot) {
             Pos p = Pos.parse(k);
             if (examples.size() < 3 && !job.skip.containsKey(k) && !job.fails.containsKey(k) && clearable(w, job, p.x(), p.y(), p.z())) {
-                examples.add(k + " out of reach (nowhere to stand close enough)");
+                examples.add(k + " out of reach (nowhere to stand close enough" + (!job.explainSpots || job.noSpotWhy.isEmpty() ? "" : "; spots turned down: " + job.noSpotWhy) + ")");
             }
         }
         int left = job.lastScanLeft != null ? job.lastScanLeft : 0;

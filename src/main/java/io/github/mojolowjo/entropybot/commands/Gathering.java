@@ -136,7 +136,8 @@ final class Gathering {
         GatherSources.Source src = GatherSources.resolve(item, overrides());
         if (src == null) return "crafted or smelted";
         if (src.kind() == GatherSources.Kind.NONE) return "none - " + src.hint();
-        return String.join(", then ", GatherSources.commands(src, 1, mineMarked(), false));
+        return String.join(", then ", GatherSources.commands(src, 1, mineMarked(), false,
+                src.kind() == GatherSources.Kind.ORE && Mining.get().oreKnownNear(p, src.family())));
     }
 
     // ==== the driver (every 5 ticks) ====
@@ -352,7 +353,9 @@ final class Gathering {
 
             @Override public Map<String, String> overrides() { return ov; }
 
-            @Override public boolean knownBlock(String block) { return knownOre(block); }
+            @Override public boolean knownBlock(String block) { return knownOre(block) || Mining.get().oreKnownNear(p, io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(block)); }
+
+            @Override public boolean oreKnown(String family) { return Mining.get().oreKnownNear(p, family); }      // 0.28.0: the index
         };
     }
 

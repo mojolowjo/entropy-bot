@@ -26,6 +26,12 @@ move into it release by release.
 - **Events.** Baritone's path events (`CALC_FAILED`, `AT_GOAL`, `CANCELED`...) and chat lines, and the
   guard's decisions, in a ring with sequence numbers.
 - **Files.** Atomic JSON writes under `<game dir>/entropybot/`.
+- **The one chunk pass (0.28.0, `sense/`).** Every chunk is read once when it arrives (and again on a resend or
+  after a dropped patch), kept as a small summary (ore counts and positions by family, POI blocks, column tops) and
+  patched per block from the existing block hook; once a minute one chunk is re-read to check the patches. Points of
+  interest, the terrain map and the surface export read it; `entropybot/sense/<dim>/<cx>.<cz>.json` keeps the
+  summaries across restarts, so `mine <ore>`, gather, the brain and the cave job plan from the ore index
+  (`ores known [family] [r]`). `sense status` shows reads, patches, drops, tick time, files and the self-audit.
 
 ## For scripts
 

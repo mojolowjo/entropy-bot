@@ -47,7 +47,8 @@ import java.util.concurrent.Executors;
  *       {@code ClientChunkEvents.CHUNK_LOAD / CHUNK_UNLOAD} (fabric-lifecycle-events-v1).</li>
  *   <li>the tick: NeoForge {@code ClientTickEvent.Post} (through {@code Core.onClientTick}); Fabric:
  *       {@code ClientTickEvents.END_CLIENT_TICK}.</li>
- *   <li>block changes: the mod's own ClientLevel mixin ({@code RecorderMixinClientLevel} -> {@code FlightRecorder.watchListener});
+ *   <li>block changes: the mod's own ClientLevel mixin ({@code RecorderMixinClientLevel} -> {@code FlightRecorder.chunkPassListener}
+ *       -> {@code sense.ChunkPass} since 0.28.0; a change marks its column and a due chunk rescans only those columns);
  *       mixins are loader-neutral (Fabric has no client block-change event either).</li>
  *   <li>block reads, tags, heightmaps: vanilla only ({@code ClientLevel.getBlockState}, {@code BlockState.is(TagKey)},
  *       {@code Heightmap.Types.WORLD_SURFACE}).</li>
@@ -66,6 +67,15 @@ public final class SurfaceExport {
             "crops", BlockTags.CROPS);
 
     private final SurfaceSchedule schedule = new SurfaceSchedule();
+    /**
+     * 0.28.0 (the chunk pass): the last columns written per loaded chunk, the columns changed since, and the chunks that
+     * arrived (a full scan). A changed chunk rescans only its changed columns (no 256-column rescan); the file format is
+     * the same. Game thread only; the worker gets a copy.
+     */
+    private final Map<Long, SurfaceColumns> lastCols = new HashMap<>();
+    private final Map<Long, java.util.BitSet> dirtyCols = new HashMap<>();
+    private final java.util.Set<Long> fullDue = new java.util.HashSet<>();
+    private volatile long columnsPatched, chunksPatched;
     private final Map<Block, Integer> familyCache = new HashMap<>();
     private ExecutorService worker;
     private volatile boolean on = true;
@@ -106,7 +116,10 @@ public final class SurfaceExport {
 
     public void chunkLoaded(int cx, int cz) {
         try {
-            if (on && dim != null) schedule.loaded(cx, cz, System.currentTimeMillis());
+            if (on && dim != null) {
+                schedule.loaded(cx, cz, System.currentTimeMillis());
+                fullDue.add(SurfaceSchedule.key(cx, cz));
+            }
         } catch (Throwable t) {
             tickError("chunk load", t);
         }
@@ -115,6 +128,10 @@ public final class SurfaceExport {
     public void chunkUnloaded(int cx, int cz) {
         try {
             schedule.unloaded(cx, cz);
+            long k = SurfaceSchedule.key(cx, cz);
+            lastCols.remove(k);
+            dirtyCols.remove(k);
+            fullDue.remove(k);
             Path d = dimDir;
             String dd = dim;
             if (d == null) return;
@@ -138,6 +155,7 @@ public final class SurfaceExport {
             ClientLevel level = Minecraft.getInstance().level;
             if (level == null || level.getChunkSource().getChunk(x >> 4, z >> 4, false) == null) return;
             schedule.changed(x >> 4, z >> 4, System.currentTimeMillis());
+            dirtyCols.computeIfAbsent(SurfaceSchedule.key(x >> 4, z >> 4), k -> new java.util.BitSet(256)).set(SurfaceColumns.index(x, z));
         } catch (Throwable t) {
             tickError("block change", t);
         }
@@ -173,9 +191,23 @@ public final class SurfaceExport {
                     continue;
                 }
                 if (level.getChunkSource().getChunk(cx, cz, false) == null) continue;
-                SurfaceColumns cols = SurfaceColumns.scan(source(level), cx, cz, level.getMinBuildHeight(), this::columnError);
-                scanned++;
-                write(dimDir, dim, cx, cz, cols, now);
+                long k = SurfaceSchedule.key(cx, cz);
+                java.util.BitSet bits = dirtyCols.remove(k);
+                SurfaceColumns prev = lastCols.get(k), cols;
+                if (fullDue.remove(k) || prev == null || bits == null) {
+                    cols = SurfaceColumns.scan(source(level), cx, cz, level.getMinBuildHeight(), this::columnError);
+                    scanned++;
+                } else {
+                    // 0.28.0: only the columns that changed (the file stays the same format)
+                    cols = prev;
+                    SurfaceColumns.Source src = source(level);
+                    for (int b = bits.nextSetBit(0); b >= 0; b = bits.nextSetBit(b + 1))
+                        SurfaceColumns.scanColumn(src, cols, (cx << 4) + (b & 15), (cz << 4) + (b >> 4), level.getMinBuildHeight(), this::columnError);
+                    columnsPatched += bits.cardinality();
+                    chunksPatched++;
+                }
+                lastCols.put(k, cols);
+                write(dimDir, dim, cx, cz, cols.copy(), now);
             }
         } catch (Throwable t) {
             tickError("tick", t);
@@ -185,6 +217,9 @@ public final class SurfaceExport {
     /** A new world or dimension: wipe its folder, start over with the chunks loaded now round the bot. */
     private void start(ClientLevel level, String d, Minecraft mc) {
         schedule.clear();
+        lastCols.clear();
+        dirtyCols.clear();
+        fullDue.clear();
         familyCache.clear();
         Path root = root();
         if (root == null) return;
@@ -202,6 +237,9 @@ public final class SurfaceExport {
 
     private void stopAndWipe() {
         schedule.clear();
+        lastCols.clear();
+        dirtyCols.clear();
+        fullDue.clear();
         if (dimDir != null) wipe(dimDir, dim);
         dim = null;
         dimDir = null;
@@ -414,6 +452,7 @@ public final class SurfaceExport {
     public String status() {
         StringBuilder sb = new StringBuilder("surface export: ").append(on ? "on" : "off");
         sb.append(" | ").append(chunksWritten).append(" chunk files written, ").append(deleted).append(" deleted, ").append(schedule.pending()).append(" pending");
+        sb.append(" | columns patched ").append(columnsPatched).append(" (").append(chunksPatched).append(" chunk rewrites by column, ").append(scanned).append(" full scans)");
         long at = lastWriteAtMs;
         sb.append(" | last write ").append(at == 0 ? "never" : String.format(java.util.Locale.ROOT, "%.1f ms, %d s ago", lastWriteNanos / 1e6,
                 (System.currentTimeMillis() - at) / 1000));

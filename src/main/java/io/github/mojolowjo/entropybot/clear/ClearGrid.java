@@ -244,20 +244,23 @@ public final class ClearGrid {
                     // never stand on it, nor under it when sand/gravel sits on top
                     if (x == t.x() && z == t.z() && (y == t.y() + 1 || (fallAbove && y < t.y()))) continue;
                     // a vein clear stays on the walkway: from a hole 2 deep the bot can't climb back out
-                    if (job.minStandY != null && y < job.minStandY) continue;
+                    if (job.minStandY != null && y < job.minStandY) { job.noSpotWhy.merge("walkway (minStandY)", 1, Integer::sum); continue; }
                     // T3: with the fence on, only inside the owner's areas (a cave next to a tunnel area is not)
-                    if (!job.standAllowed(x, y, z)) continue;
+                    if (!job.standAllowed(x, y, z)) { job.noSpotWhy.merge("fence", 1, Integer::sum); continue; }
                     double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
                     if (ClearEngine.eyeDistSq(ex, ey, ez, t.x(), t.y(), t.z()) > r * r) continue;
                     int i = g.idx(x, y, z);
-                    if (i < 0 || g.wet[i] || g.wet(x, y + 1, z)) continue;     // not standing in water
+                    if (i < 0 || g.wet[i] || g.wet(x, y + 1, z)) { if (i >= 0) job.noSpotWhy.merge("wet", 1, Integer::sum); continue; }     // not standing in water
                     Integer bad = job.badSpots.get(Pos.key(x, y, z));
                     if (bad != null && job.broken - bad < 10) continue;      // failed to get there recently
                     double d;
                     if (dist[i] >= 0) d = dist[i];
                     // F (2026-10-04): with the fence on, only spots it can walk to. Baritone's partial path toward a spot
                     // it can't reach wandered down a cave 28 blocks out of the tunnel area (x 262 -48 854, the cave crossing)
-                    else if (job.standOk != null) continue;
+                    else if (job.standOk != null) {
+                        if (g.stand(x, y, z)) job.noSpotWhy.merge("not walkable (fence on)", 1, Integer::sum);
+                        continue;
+                    }
                     else if (g.stand(x, y, z)) {
                         double dx = x - bot.x(), dy = y - bot.y(), dz = z - bot.z();
                         d = 1000 + Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -273,7 +276,9 @@ public final class ClearGrid {
             job.sightBudget--;
             Spot s = cands.get(i);
             if (ClearEngine.sightOf(w, s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z()) != null) return s;
+            job.noSpotWhy.merge("no sight", 1, Integer::sum);
         }
+        if (cands.isEmpty()) job.noSpotWhy.merge("no standable cell in reach", 1, Integer::sum);
         return null;
     }
 

@@ -76,6 +76,20 @@ public final class Limits {
     /** B7d D1: ores listed for players (the bridge's LIMITS.ores); the oldest seen go past it. */
     public static final int ORES = 1000;
 
+    /**
+     * 0.28.0 the chunk pass (sense/): chunk summaries kept in memory per dimension (the oldest seen leave memory past it;
+     * their files under entropybot/sense stay and come back at the next load). ~1.5 KB each: 4096 are ~6 MB.
+     */
+    public static final int SENSE_SUMMARIES = 4096;
+    /** Positions listed per ore family (and POI kind) per chunk; the count stays exact beyond it. */
+    public static final int SENSE_SPOTS = 64;
+    /** A changed summary's file is written at most this often (ms). */
+    public static final long SENSE_WRITE_MS = 5000;
+    /** The pass's chunk reads per client tick: about this much time (ns); a patch is O(1) and not counted. */
+    public static final long SENSE_BUDGET_NS = 1_000_000;
+    /** "mine <ore>" asks the index this far round the bot (blocks); "iron known within 64" for gather and the brain. */
+    public static final int SENSE_MINE_R = 96, SENSE_KNOWN_R = 64;
+
     /** A chest note's "seen" (0 when missing or odd). */
     static long seen(JsonObject note) {
         try {

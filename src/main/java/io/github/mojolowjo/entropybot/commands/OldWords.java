@@ -140,6 +140,7 @@ public final class OldWords {
         String r = rest == null ? "" : rest.trim();
         String lr = r.toLowerCase();
         String sp = r.isEmpty() ? "" : " " + r;
+        if (v.equals("ores") && lr.matches("^known\\b.*")) return null;      // 0.28.0: "ores known [family] [r]" runs ("ores" alone stays under debug)
         if (DEBUG_VERBS.contains(v)) return "removed in 0.22; use debug " + v + sp;
         switch (v) {
             case "dig" -> {

@@ -12,7 +12,6 @@ import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.io.BotFiles;
 import io.github.mojolowjo.entropybot.cave.Caves;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
-import io.github.mojolowjo.entropybot.poi.PoiScanner;
 import io.github.mojolowjo.entropybot.poi.Pois;
 import net.minecraft.client.Minecraft;
 import net.neoforged.fml.ModList;
@@ -37,7 +36,6 @@ public final class Core {
     /** B7d (D3): the listed ores and the explored chunks (ores.json, explored.json; moved over from memory.json once). */
     public final io.github.mojolowjo.entropybot.cave.MineNotes mineNotes = new io.github.mojolowjo.entropybot.cave.MineNotes();
     public final io.github.mojolowjo.entropybot.engine.Reconnect reconnect = new io.github.mojolowjo.entropybot.engine.Reconnect(events);
-    public final PoiScanner poiScanner = new PoiScanner(pois, events);
     public final Reflexes reflexes = new Reflexes(events, engine, knowledge);
     public final io.github.mojolowjo.entropybot.commands.Commands commands = new io.github.mojolowjo.entropybot.commands.Commands(this);
     public final String token = UUID.randomUUID().toString();
@@ -107,6 +105,7 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.leftWorld();   // camera v2: known air saved
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.leftWorld();  // watch seen: seen faces saved
                 if (inWorld) io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.leftWorld();   // 0.17.1: the surface scan forgotten
+                if (inWorld) io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.leftWorld();         // 0.28.0: summaries written, all stale
                 if (inWorld) io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.leftWorld();   // 0.19.3: the surface export's files wiped
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
                 if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();         // 0.23.3: edge penalties saved
@@ -152,7 +151,7 @@ public final class Core {
             if (pruned != null) LOG.info("[entropybot] knowledge: {}", pruned);
             pruned = caves.takePruneNote();
             if (pruned != null) LOG.info("[entropybot] caves: {}", pruned);
-            poiScanner.tick(tick);
+            io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.tick(tick);      // 0.28.0: the one chunk pass (POIs, map, ore index; never throws)
             try { recorder.tick(tick); } catch (RuntimeException e) { if (errors++ <= 5) LOG.warn("[entropybot] recorder: {}", e.toString()); }
             if (terrain != null) {
                 terrain.tick(tick);

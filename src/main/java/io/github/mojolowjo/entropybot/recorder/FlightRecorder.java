@@ -365,7 +365,12 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     public static volatile BlockListener routeListener;
     /** 0.17.1: the tunnel view's surface scan (SkyScanner), the same way as routing: a listener, no second mixin. Or null. */
     public static volatile BlockListener watchListener;
-    private static int listenerErrors, watchListenerErrors;
+    /**
+     * 0.28.0: the one chunk pass (sense/ChunkPass): called first, for every real change, before the recorder's range and
+     * rate filter (ChangeFilter.Limiter), so it never loses a change to them; it keeps its own missed rule. Or null.
+     */
+    public static volatile BlockListener chunkPassListener;
+    private static int listenerErrors, watchListenerErrors, chunkPassErrors;
 
     /**
      * The mixin's HEAD: remembers the old state at pos (only while a recorder is installed and on; game thread only, as
@@ -374,7 +379,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     public static void pushOld(net.minecraft.world.level.Level level, BlockPos pos) {
         if (!Minecraft.getInstance().isSameThread()) return;
         FlightRecorder r = active;
-        if (depth < OLD.length) OLD[depth] = (r != null && r.on) || routeListener != null || watchListener != null ? level.getBlockState(pos) : null;
+        if (depth < OLD.length) OLD[depth] = (r != null && r.on) || routeListener != null || watchListener != null || chunkPassListener != null ? level.getBlockState(pos) : null;
         depth++;
     }
 
@@ -390,6 +395,14 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
 
     /** The mixin's entry: a block the client set changed from {@code from} to {@code to}. Never throws. */
     public static void blockChanged(ClientLevel level, BlockPos pos, BlockState from, BlockState to, boolean byBot) {
+        BlockListener cp = chunkPassListener;
+        if (cp != null && from != to) {
+            try {
+                cp.changed(level, pos, from, to);
+            } catch (Throwable t) {
+                if (++chunkPassErrors <= 5 || chunkPassErrors % 1000 == 0) LOG.warn("[entropybot] chunk pass block listener ({}): {}", chunkPassErrors, t.toString());
+            }
+        }
         BlockListener l = routeListener;
         if (l != null && from != to) {
             try {
