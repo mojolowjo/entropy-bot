@@ -136,9 +136,20 @@ public final class Kinds {
     }
 
     /** As above; hunting: hunting is on, so cooked beef (hunt cows, cook) comes after the crops and before modded foods. */
+    /** 0.27.3 (d6): a food candidate whose plan mines more blocks than this is skipped (the reason goes to the log). */
+    public static final int MAX_FOOD_MINING = 256;
+
+    /** 0.27.3 (d6): edible items that are potions, elixirs, essences or brews by name (modded drinks), never "food". */
+    static final java.util.regex.Pattern NOT_FOOD_WORDS = java.util.regex.Pattern.compile("elixir|potion|essence|tonic|brew|draught|philter|flask|vial|serum|tincture");
+
+    /** 0.27.3 (d6): real food: not on the never list and not a potion-like drink by its name. */
+    public static boolean realFood(String id) {
+        return id != null && !NEVER_FOOD.contains(id) && !NOT_FOOD_WORDS.matcher(id.substring(id.indexOf(':') + 1)).find();
+    }
+
     public static String pickFood(List<String> ids, Map<String, Integer> stock, Boolean farmKnown, boolean hunting, Predicate<String> resolves) {
         Set<String> allowed = new TreeSet<>(ids);
-        allowed.removeAll(NEVER_FOOD);
+        allowed.removeIf(id -> !realFood(id));
         String best = null;
         int bestN = 0;
         for (String id : allowed) {

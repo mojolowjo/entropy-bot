@@ -620,6 +620,9 @@ final class VocabCommands {
      * A line whose item word is a kind, made concrete for the verbs that take one id (get, fetch, need, gather): the
      * kind's id with the most in stock. Null: no kind word in it. err[0]: the kind is empty.
      */
+    /** 0.27.3 (d6): the last food candidates skipped for too much mining (for why and the gather error), or null. */
+    static volatile String lastFoodSkip;
+
     String oneOfKind(LocalPlayer p, String rest, String[] err) {
         List<String> w = Texts.words(rest == null ? "" : rest);
         if (w.isEmpty() || !Kinds.isKind(w.get(0))) return null;
@@ -635,9 +638,25 @@ final class VocabCommands {
             final io.github.mojolowjo.entropybot.gather.GatherPlan.World fw = gw;
             boolean farm;
             try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
-            id = Kinds.pickFood(ids, stock, farm, c.hunting.on(), x -> fw != null && io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, 1, fw));
+            // 0.27.3 (d6): a modded food counts only when its plan for the wanted count mines at most Kinds.MAX_FOOD_MINING blocks
+            int want = w.size() >= 2 && w.get(1).matches("\\d{1,5}") ? Integer.parseInt(w.get(1)) : 1;
+            List<String> skippedFood = new ArrayList<>();
+            id = Kinds.pickFood(ids, stock, farm, c.hunting.on(), x -> {
+                if (fw == null || !io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, want, fw)) return false;
+                int mined = io.github.mojolowjo.entropybot.gather.GatherPlan.miningBlocks(x, want, fw);
+                if (mined > Kinds.MAX_FOOD_MINING) {
+                    skippedFood.add(Texts.shortId(x) + " (its plan mines " + mined + " blocks, over " + Kinds.MAX_FOOD_MINING + ")");
+                    return false;
+                }
+                return true;
+            });
+            if (!skippedFood.isEmpty()) {
+                lastFoodSkip = "food choice skipped " + String.join(", ", skippedFood);
+                LOG.info("[entropybot] {}", lastFoodSkip);
+            }
             if (id == null) {
-                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";
+                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm)"
+                        + (skippedFood.isEmpty() ? "" : "; skipped " + String.join(", ", skippedFood)) + " - put some food in the base chests";
                 return null;
             }
         } else id = Kinds.pick(ids, stock);

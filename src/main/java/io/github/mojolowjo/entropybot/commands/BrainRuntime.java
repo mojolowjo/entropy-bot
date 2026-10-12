@@ -251,6 +251,7 @@ public final class BrainRuntime implements BrainEnv {
         s.areasHere = c.inAreas(Storage.dim(), s.botPos[0], s.botPos[2]);      // 0.26.1 R1: OUTSIDE clears inside an area
         // 0.27.3 area.return: outside every area (and the near-me zone, part of inAreas): the nearest inside cell
         s.sheltering = ShelterJob.current != null;
+        s.foodSkip = VocabCommands.lastFoodSkip;          // 0.27.3 (d6)
         if (!s.areasHere) {
             try {
                 s.areaReturn = io.github.mojolowjo.entropybot.brain.AreaReturn.withY(

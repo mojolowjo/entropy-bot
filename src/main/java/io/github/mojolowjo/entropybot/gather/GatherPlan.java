@@ -69,6 +69,22 @@ public final class GatherPlan {
         }
     }
 
+    /**
+     * 0.27.3 (d6, live: food 32 chose a modded elixir whose plan was "mine gold_ore 3072"): the blocks the plan for n of
+     * id mines next (a SOURCE step whose commands mine, dig or quarry), 0 when it mines none; -1 when it has no way.
+     */
+    public static int miningBlocks(String id, int n, World w) {
+        try {
+            Step s = next(id, n, w);
+            if (s.kind() == Kind.NO_WAY) return -1;
+            if (s.kind() != Kind.SOURCE || s.commands() == null) return 0;
+            for (String c : s.commands()) if (c.startsWith("mine") || c.startsWith("dig") || c.startsWith("quarry")) return s.n();
+            return 0;
+        } catch (RuntimeException e) {
+            return -1;
+        }
+    }
+
     public enum Kind { DONE, GET, CRAFT, SOURCE, NO_WAY }
 
     /**

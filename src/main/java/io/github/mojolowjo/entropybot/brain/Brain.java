@@ -410,6 +410,7 @@ public final class Brain {
                 + (lastEvents.isEmpty() ? "" : " | events " + lastEvents)
                 + (prev != null ? " | " + NightSafety.status(prev, cfg) : "")
                 + (areaLine(prev) == null ? "" : " | " + areaLine(prev))      // 0.27.3
+                + (prev == null || prev.foodSkip == null ? "" : " | " + prev.foodSkip)      // 0.27.3 (d6)
                 + (day.plan().whyLine() == null ? "" : " | " + day.plan().whyLine());      // 0.26.3
     }
 

@@ -83,6 +83,8 @@ public final class BrainState {
     public AreaReturn.Target areaReturn;
     public boolean sheltering;
     public String areaReturnParked;
+    /** 0.27.3 (d6): food candidates the last food choice skipped (too much mining), for why; null none. */
+    public String foodSkip;
 
     /** 0.26.5: the learned table and its settings (null: not loaded yet or brain.learn 0: every multiplier is 1). */
     public OutcomeTable learn;
