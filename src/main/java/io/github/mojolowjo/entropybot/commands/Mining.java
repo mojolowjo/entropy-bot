@@ -311,12 +311,18 @@ final class Mining {
         int[] me = Jobs.here(p);
         List<Box> prot = boxes(policy(), "protect");
         Level level = p.level();
-        return pass().nearest(d, id -> id.equals(j.target), me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, (x, y, z) -> {
+        // the whole family (iron_ore and deepslate_iron_ore drop the same raw_iron; live: the deepslate ones were skipped)
+        // (the owner: "mine iron_ore" / "mine iron" take both; "mine deepslate_iron_ore" stays exact)
+        String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+        boolean exact = !j.familyWord;      // the owner: "mine iron" = the family, deepslate or not; "mine iron_ore" = exactly that block
+        java.util.function.Predicate<String> idOk = id -> exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
+        return pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, (x, y, z) -> {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
             if (!commands.inAreas(d, x, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
             BlockPos q = new BlockPos(x, y, z);
             if (!level.isLoaded(q)) return true;              // known from before: go and look
-            return level.getBlockState(q).is(j.block) && (j.dig || exposed(level, q));
+            return idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())
+                    && (j.dig || exposed(level, q));
         });
     }
 
@@ -332,7 +338,8 @@ final class Mining {
         restoreSettings();                                // the clear engine breaks; Baritone only walks
         j.phase = "known";
         j.kTarget = null;
-        LOG.info("[entropybot] mine: {} known in the index - walking to it (no Baritone search)", sid(j));
+        LOG.info("[entropybot] mine: {} known in the index - walking to it (no Baritone search; {})", sid(j),
+                j.familyWord ? "any " + io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target) + " ore block, deepslate or not" : "exactly " + sid(j));
         return true;
     }
 
@@ -358,7 +365,10 @@ final class Mining {
             // the vein clear is over: it counts only when it mined something
             Clearing.Outcome o = j.kClear.cleared;
             int mined = 0;
-            if (o != null && o.mined() != null) for (int v : o.mined().values()) mined += v;
+            if (o != null && o.mined() != null) for (Map.Entry<String, Integer> e : o.mined().entrySet()) {
+                mined += e.getValue();
+                j.kBlocks.merge(MineRules.shortId(e.getKey()), e.getValue(), Integer::sum);
+            }
             int[] t = j.kLast;
             String failed = j.kFailed;
             j.kClear = null;
@@ -372,7 +382,7 @@ final class Mining {
         boolean inside = commands.inAreas(d, me[0], me[2]);
         if (!inside || now > j.deadline) return end(s, j, "stopped: " + (!inside ? MineRules.leftAreasText(Jobs.fmt(me)) : MineRules.timeUpText()) + ", mining " + sid(j) + gains(p, j));
         if (j.count > 0 && mineCount(p, j) >= j.count)
-            return end(s, j, MineRules.shortText(j.target, mineCount(p, j), j.count, "from known ore (" + j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + ", " + j.kTries + " missed)", gains(p, j), j.toolNote));
+            return end(s, j, MineRules.shortText(j.target, mineCount(p, j), j.count, (j.kBlocks.isEmpty() ? "" : "blocks " + blocksText(j) + " ") + "from known ore (" + j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + ", " + j.kTries + " missed)", gains(p, j), j.toolNote));
         String pc = pickCheck(s, p, j);
         if (pc != null) return pc;
         if (j.kTarget != null) {
@@ -381,12 +391,34 @@ final class Mining {
             String failed = j.kFailed;
             j.kTarget = null;
             j.kFailed = null;
-            if (failed == null && Jobs.distSq(me, t) <= 20) return knownClear(s, j, t);
+            if (failed == null && Jobs.distSq(me, t) <= 20) {
+                j.kWalks = 0;
+                return knownClear(s, j, t);
+            }
+            // walk ended short (live: standing on leaves, 2 s): walk again from here, twice, before it counts as a try
+            if (j.kWalks < 2) {
+                j.kWalks++;
+                j.kTarget = t;
+                Seq.Step w = Seq.Step.walk(t.clone(), true);
+                w.optional = true;
+                LOG.info("[entropybot] mine: the walk to the known {} at {} ended short at {}{} - walking again ({}/2)", sid(j), Jobs.fmt(t), Jobs.fmt(me),
+                        failed != null ? " (" + failed + ")" : "", j.kWalks);
+                spliceHere(s, List.of(w));
+                return "wait";
+            }
+            j.kWalks = 0;
             return knownMiss(s, p, j, t, failed != null ? failed : "the walk ended at " + Jobs.fmt(me) + ", out of reach");
         }
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> hits = knownHits(p, j, 64);
         if (hits.isEmpty()) {
-            if (j.kTries > 0 || j.kKnown > 0) return mineEnd(s, p, j, io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, Math.max(j.kKnown, knownCount(p, fam)), j.kTries));
+            if (j.kTries > 0 || j.kKnown > 0) {
+                int left = knownCount(p, fam);
+                String veins = j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + " mined" + (j.kBlocks.isEmpty() ? "" : " (" + blocksText(j) + ")");
+                String why = j.kTries == 0 ? veins + ", no more " + fam + " ore I can walk to known within " + io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R
+                        + (left > 0 ? " (" + left + " more known, buried or tried)" : "") + " - next: mine strip " + fam + " or mine cave " + fam
+                        : veins + ", " + io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, left, j.kTries);
+                return mineEnd(s, p, j, why);
+            }
             j.knownWhy = io.github.mojolowjo.entropybot.sense.KnownOre.noneWhy(fam);
             j.phase = "mining";
             return seek(s, p, j, j.knownWhy);
@@ -429,6 +461,13 @@ final class Mining {
         s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - walking to known ore at " + Jobs.fmt(t) + " (" + (int) Math.round(Math.sqrt(best.d2())) + " blocks)");
         spliceHere(s, List.of(w));
         return "wait";
+    }
+
+    /** "2 iron_ore, 1 deepslate_iron_ore". */
+    private static String blocksText(MineRun j) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : j.kBlocks.entrySet()) parts.add(e.getValue() + " " + e.getKey());
+        return String.join(", ", parts);
     }
 
     /** Listed positions of the family within the mine's reach (for the end line). */
@@ -1362,7 +1401,10 @@ final class Mining {
         final Set<Long> knownTried = new HashSet<>();
         int[] kTarget;
         String kFailed;
-        int kTries, kKnown;
+        int kTries, kKnown, kWalks;
+        boolean familyWord;
+        /** the ore blocks the vein clears mined, by id (the end line names them) */
+        final Map<String, Integer> kBlocks = new LinkedHashMap<>();
         int[] kLast;
         List<Pos> kVein = new ArrayList<>();
         Seq.Step kClear;
@@ -1379,7 +1421,11 @@ final class Mining {
             // "mine coal" (the owner's words): the family's ore block, coal -> coal_ore (deepslate_coal_ore is its own)
             ResourceLocation ore = ResourceLocation.tryParse(a.id() + "_ore");
             if (ore != null && BuiltInRegistries.BLOCK.containsKey(ore) && text != null && !text.trim().isEmpty())
-                return prepareMine(p, text.trim().replaceFirst("^(\\S+)", "$1_ore"));
+                {
+                    Object fo = prepareMine(p, text.trim().replaceFirst("^(\\S+)", "$1_ore"));
+                    if (fo instanceof MineRun mr) mr.familyWord = true;      // 0.28.0 (the owner): "mine iron" = any block of the family
+                    return fo;
+                }
             return "error: unknown block " + a.id();
         }
         Block block = BuiltInRegistries.BLOCK.get(rl);
@@ -1538,7 +1584,7 @@ final class Mining {
         // started while a fight or a meal already holds the bot: the hold hook only fires on a new hold, so apply it now
         // (Baritone's mine stopped, breaking off); the held path in mineStep starts it again when the hold ends
         if (core.reflexes.hold() && jobs.job.onHold != null) jobs.job.onHold.run();
-        return "started: " + status;
+        return "started: " + status + (r.familyWord ? " (any " + io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(r.target) + " ore block, deepslate or not)" : "");
     }
 
     /** Baritone's mine from here, the first time. */
