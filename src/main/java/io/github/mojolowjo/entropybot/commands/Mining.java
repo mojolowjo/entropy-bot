@@ -362,7 +362,8 @@ final class Mining {
         }
         boolean inside = commands.inAreas(d, me[0], me[2]);
         if (!inside || now > j.deadline) return end(s, j, "stopped: " + (!inside ? MineRules.leftAreasText(Jobs.fmt(me)) : MineRules.timeUpText()) + ", mining " + sid(j) + gains(p, j));
-        if (j.count > 0 && mineCount(p, j) >= j.count) return end(s, j, MineRules.doneText(j.target, gains(p, j), j.toolNote));
+        if (j.count > 0 && mineCount(p, j) >= j.count)
+            return end(s, j, MineRules.shortText(j.target, mineCount(p, j), j.count, "from known ore (" + j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + ", " + j.kTries + " missed)", gains(p, j), j.toolNote));
         String pc = pickCheck(s, p, j);
         if (pc != null) return pc;
         if (j.kTarget != null) {
@@ -371,7 +372,7 @@ final class Mining {
             String failed = j.kFailed;
             j.kTarget = null;
             j.kFailed = null;
-            if (failed == null && Jobs.distSq(me, t) <= 20) return knownClear(s, j);
+            if (failed == null && (j.kRouted || Jobs.distSq(me, t) <= 20)) return knownClear(s, j);     // after a dug route the vein clear walks the last bit itself
             return knownMiss(s, p, j, t, failed != null ? failed : "stopped at " + Jobs.fmt(me));
         }
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> hits = knownHits(p, j, 64);
@@ -418,6 +419,7 @@ final class Mining {
         int[] t = {best.x(), best.y(), best.z()};
         if (Jobs.distSq(me, t) <= 16) return knownClear(s, j);
         j.kTarget = t;
+        j.kRouted = bestRoute != null;
         List<Seq.Step> steps = new ArrayList<>();
         if (bestRoute == null) {
             Seq.Step w = Seq.Step.walk(t.clone(), true);
@@ -425,16 +427,14 @@ final class Mining {
             steps.add(w);
             s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - walking to known ore at " + Jobs.fmt(t) + " (" + (int) Math.round(Math.sqrt(best.d2())) + " blocks)");
         } else {
+            // like the strip mine's corridor: clear steps only (the clear engine walks to where it reaches the next column);
+            // no walk steps of their own, so the movement package's sealed-in dig-out never fires on this staircase,
+            // and the route is a dig the job made: left open, never put back
             for (int[] col : bestRoute) {
                 Seq.Step c = Clearing.clearStep(new ClearJob.Options().box(io.github.mojolowjo.entropybot.clear.ClearBox.of(col[0], col[1], col[2], col[0], col[3], col[2]))
                         .collect(true).soft(true).label("digging to the known " + sid(j) + " at " + Jobs.fmt(t)));
                 c.optional = true;
                 steps.add(c);
-                if (col[4] != Integer.MIN_VALUE) {
-                    Seq.Step w = Seq.Step.walk(new int[]{col[0], col[4], col[2]}, false);
-                    w.optional = true;
-                    steps.add(w);
-                }
             }
             s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - digging " + bestRoute.size() + " steps to known ore at " + Jobs.fmt(t));
         }
@@ -1369,6 +1369,7 @@ final class Mining {
         int[] kTarget;
         String kFailed;
         int kTries, kKnown;
+        boolean kRouted;
         List<Pos> kVein = new ArrayList<>();
         Seq.Step kClear;
         int knownVeins;
@@ -1561,6 +1562,7 @@ final class Mining {
 
     /** Ends the mine: Baritone stops, breaking off, the leases go, and the job reports. */
     private String end(Seq s, MineRun j, String text) {
+        LOG.info("[entropybot] mine: the job ends: {}", text);      // 0.28.0: every mine end has its reason in the log
         IBaritone b = Jobs.baritone();
         if (b != null) Jobs.cancel(b);
         restoreSettings();

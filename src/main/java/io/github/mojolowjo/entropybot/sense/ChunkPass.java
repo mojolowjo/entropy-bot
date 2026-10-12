@@ -85,7 +85,7 @@ public final class ChunkPass {
     private volatile String lastWriteError;
     private volatile long lastWriteErrLogMs;
     // tick time: last, max, the last minute by second
-    private long lastNs, maxNs;
+    private long lastNs, maxNs, joinMaxNs, dimStartMs;
     private final long[] secSum = new long[60], secCnt = new long[60], secAt = new long[60];
 
     private ChunkPass() {}
@@ -214,6 +214,7 @@ public final class ChunkPass {
         live.clear();
         index.markAllStale();
         dim = d;
+        dimStartMs = now;
         int rd = mc.options.renderDistance().get() + 2;
         BlockPos p = mc.player.blockPosition();
         int ecx = p.getX() >> 4, ecz = p.getZ() >> 4;
@@ -448,7 +449,10 @@ public final class ChunkPass {
 
     private void timeTick(long ns) {
         lastNs = ns;
-        if (ns > maxNs) maxNs = ns;
+        // the first 10 s after a join or a dimension change (the burst of first reads) is kept apart from the steady max
+        if (dimStartMs > 0 && System.currentTimeMillis() - dimStartMs < 10_000) {
+            if (ns > joinMaxNs) joinMaxNs = ns;
+        } else if (ns > maxNs) maxNs = ns;
         long sec = System.currentTimeMillis() / 1000;
         int i = (int) (sec % 60);
         if (secAt[i] != sec) {
@@ -498,7 +502,8 @@ public final class ChunkPass {
         sb.append(" | patches ").append(patches).append(" applied, dropped: ").append(dropUnsure).append(" unsure (rescanned), ")
                 .append(dropError).append(" errors; ").append(beforeRead).append(" before the chunk's read (the read covers them)");
         sb.append(" | missed marks ").append(schedule.missedMarks).append(" (+").append(schedule.missedDeduped).append(" deduped)");
-        sb.append(String.format(Locale.ROOT, " | tick %.3f ms last, %.3f max, %.3f avg (1 min)", lastNs / 1e6, maxNs / 1e6, avgMs()));
+        sb.append(String.format(Locale.ROOT, " | tick %.3f ms last, %.3f max, %.3f avg (1 min); max (join) %.1f ms (the first 10 s: first reads, not a steady cost)",
+                lastNs / 1e6, maxNs / 1e6, avgMs(), joinMaxNs / 1e6));
         int[] fp = index.familiesAndPositions();
         sb.append(" | summaries ").append(index.size()).append(" in memory (").append(index.staleCount()).append(" stale, ").append(index.evicted).append(" left memory at the cap ")
                 .append(Limits.SENSE_SUMMARIES).append(")");
