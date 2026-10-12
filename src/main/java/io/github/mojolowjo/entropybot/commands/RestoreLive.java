@@ -208,6 +208,14 @@ public final class RestoreLive {
     }
 
     /** "mine ... dig": while this job runs, every block but the target that Baritone breaks is a path break. */
+    /** 0.28.0: the job's breaks are its purpose from here on (a known-ore dig): no path context. */
+    void endPathContext(long job) {
+        if (pathJob == job) {
+            pathJob = -1;
+            pathTargets = Set.of();
+        }
+    }
+
     void pathContext(long job, String targetId) {
         pathTargets = Set.of(targetId);
         pathJob = job;

@@ -124,6 +124,41 @@ public final class KnownOre {
                 + ") - next: mine strip " + family + ", mine cave " + family + ", or dig a box to it (dig x1 y1 z1 x2 y2 z2 ores)";
     }
 
+    /** The world as the side tunnel sees it: does a body pass this cell (no collision)? */
+    public interface Free {
+        boolean free(int x, int y, int z);
+    }
+
+    /**
+     * 0.28.0 (live LAN world: ore in a shell one block over the floor): a 1-wide, 2-high tunnel beside the ore, from the
+     * cell next to it toward the bot ({@code fx fz}) outward until a cell where the bot can stand (both band cells free,
+     * a floor under it). The band is the ore's level and the one above (ore at the feet), else the one below and the
+     * ore's level (ore at head height). Returns {x1, y1, z1, x2, y2, z2, standX, standY, standZ}: the box to dig (x1 > x2
+     * means nothing to dig: the cell beside the ore is open already) and where to stand; null when no stand within max.
+     */
+    public static int[] sideTunnel(int fx, int fz, int ox, int oy, int oz, Free w, int max) {
+        int dx = 0, dz = 0;
+        if (Math.abs(fx - ox) >= Math.abs(fz - oz)) dx = fx >= ox ? 1 : -1;
+        else dz = fz >= oz ? 1 : -1;
+        for (int y0 : new int[]{oy, oy - 1}) {
+            int firstDig = -1, lastDig = -1;
+            for (int k = 1; k <= max; k++) {
+                int x = ox + dx * k, z = oz + dz * k;
+                boolean open = w.free(x, y0, z) && w.free(x, y0 + 1, z);
+                if (open && !w.free(x, y0 - 1, z)) {
+                    if (firstDig < 0) return new int[]{1, y0, 0, 0, y0 + 1, 0, x, y0, z};      // nothing to dig
+                    int ax = ox + dx * firstDig, az = oz + dz * firstDig, bx = ox + dx * lastDig, bz = oz + dz * lastDig;
+                    return new int[]{Math.min(ax, bx), y0, Math.min(az, bz), Math.max(ax, bx), y0 + 1, Math.max(az, bz), x, y0, z};
+                }
+                if (!open) {
+                    if (firstDig < 0) firstDig = k;
+                    lastDig = k;
+                } else if (w.free(x, y0 - 1, z)) break;          // a drop: no floor along this band
+            }
+        }
+        return null;
+    }
+
     /** The most targets one mine run tries before it gives up on the index. */
     public static final int MAX_TARGETS = 5, ROUTE_MAX = 64;
 

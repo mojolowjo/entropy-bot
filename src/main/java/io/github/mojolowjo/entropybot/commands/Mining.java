@@ -341,6 +341,9 @@ final class Mining {
         if (b != null) Jobs.cancel(b);
         restoreSettings();                                // the clear engine breaks; Baritone only walks
         j.phase = "known";
+        // the known-ore digs are the job's purpose, like the strip mine's corridor: never in the restore ledger
+        // (live: each try put a cobblestone back over the owner's ore). Baritone's own path breaks get it again in mineGo.
+        if (jobs.job != null) RestoreLive.INSTANCE.endPathContext(jobs.job.id);
         j.kTarget = null;
         LOG.info("[entropybot] mine: {} known in the index - walking to it (no Baritone search; {})", sid(j),
                 j.familyWord ? "any " + io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target) + " ore block, deepslate or not" : "exactly " + sid(j));
@@ -384,7 +387,7 @@ final class Mining {
                 if (dug) j.kDug++;
             } else if (t != null) {
                 String r = knownMiss(s, p, j, t, failed != null ? failed : "the vein clear mined nothing there (out of reach from " + Jobs.fmt(me) + ")");
-                if (!r.equals("wait")) return r;
+                if (!r.equals("wait") || j.kTries >= io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS) return r;      // the job ended: no "try 6/5"
             }
         }
         boolean inside = commands.inAreas(d, me[0], me[2]);
@@ -437,10 +440,26 @@ final class Mining {
         double bestCost = Double.MAX_VALUE;
         int buried = 0, tooDeep = 0, deepest = 0;
         int bestTop = Integer.MIN_VALUE;          // with dig: the surface block over a buried ore (the dig box runs from the ore up to it)
+        int[] bestTun = null;                     // with dig: the side tunnel (KnownOre.sideTunnel) to the best one
         for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) {
             BlockPos q = new BlockPos(h.x(), h.y(), h.z());
             double cost;
             int top = Integer.MIN_VALUE;
+            // 0.28.0 live (the owner's shells one over the floor): with dig, a 2-high side tunnel at the ore's level first
+            int[] tun = j.dig && level.isLoaded(q) ? io.github.mojolowjo.entropybot.sense.KnownOre.sideTunnel(me[0], me[2], h.x(), h.y(), h.z(), (x, y, z) -> {
+                BlockPos c = new BlockPos(x, y, z);
+                return level.getBlockState(c).getCollisionShape(level, c).isEmpty();
+            }, 16) : null;
+            if (tun != null) {
+                cost = Math.sqrt(h.d2()) + (tun[0] <= tun[3] ? (Math.abs(tun[3] - tun[0]) + Math.abs(tun[5] - tun[2]) + 1) * 2 : 0);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    best = h;
+                    bestTop = Integer.MIN_VALUE;
+                    bestTun = tun;
+                }
+                continue;
+            }
             if (level.isLoaded(q) && exposed(level, q)) cost = Math.sqrt(h.d2()) * (skyOpen(level, q) ? 1 : 2);      // open to the sky first, then caves
             else if (j.dig && level.isLoaded(q)) {
                 // 0.28.0 (the owner): "mine ... dig" digs down to a covered ore, as "dig x1 y1 z1 x2 y2 z2 ores" would: the column over it
@@ -460,6 +479,7 @@ final class Mining {
                 bestCost = cost;
                 best = h;
                 bestTop = top;
+                bestTun = null;
             }
         }
         if (best == null && tooDeep > 0) LOG.info("[entropybot] mine: {} known {} too deep for a dig ({} blocks), use mine strip", tooDeep, sid(j), deepest);
@@ -477,6 +497,34 @@ final class Mining {
         LOG.info("[entropybot] mine: next known {} at {} ({}, {} blocks; try {}/{}; {} buried ones skipped)", sid(j), Jobs.fmt(t),
                 skyOpen(level, new BlockPos(t[0], t[1], t[2])) ? "open to the sky" : "in a cave", (int) Math.round(Math.sqrt(best.d2())),
                 j.kTries + 1, io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS, buried);
+        if (bestTun != null) {
+            // walk to the stand cell (the walk step goes round the shell), dig the 2-high side cells, then the vein clear from there
+            int[] stand = {bestTun[6], bestTun[7], bestTun[8]};
+            List<Seq.Step> steps = new ArrayList<>();
+            if (Jobs.distSq(me, stand) > 2) {
+                Seq.Step w = Seq.Step.walk(stand, true);
+                w.optional = true;
+                steps.add(w);
+            }
+            if (bestTun[0] <= bestTun[3]) {
+                Seq.Step box = Clearing.clearStep(new ClearJob.Options().box(io.github.mojolowjo.entropybot.clear.ClearBox.of(bestTun[0], bestTun[1], bestTun[2], bestTun[3], bestTun[4], bestTun[5]))
+                        .collect(true).label("digging beside the known " + sid(j) + " at " + Jobs.fmt(t)));
+                box.optional = true;
+                steps.add(box);
+            }
+            Seq.Step vein = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true)
+                    .label("mining " + j.kVein.size() + " known " + sid(j) + " blocks"));
+            vein.optional = true;
+            steps.add(vein);
+            j.kClear = vein;
+            j.kLast = t;
+            j.kDigging = bestTun[0] <= bestTun[3];
+            LOG.info("[entropybot] mine: side tunnel to the known {} at {}: stand {}{}", sid(j), Jobs.fmt(t), Jobs.fmt(stand),
+                    bestTun[0] <= bestTun[3] ? ", dig " + bestTun[0] + " " + bestTun[1] + " " + bestTun[2] + " to " + bestTun[3] + " " + bestTun[4] + " " + bestTun[5] : ", nothing to dig");
+            s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - to known ore at " + Jobs.fmt(t) + " from the side");
+            spliceHere(s, steps);
+            return "wait";
+        }
         if (bestTop != Integer.MIN_VALUE) {
             // walk to the surface over it, then the box clear of the column (ores included), like the dig verb; its outcome is the try
             int[] stand = {t[0], bestTop + 1, t[2]};
@@ -551,7 +599,7 @@ final class Mining {
     private String knownClear(Seq s, MineRun j, int[] target) {
         j.kLast = target;
         // (nothing marked tried here: a vein clear that mines nothing costs a try on its target only)
-        Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true)
+        Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true)
                 .label("mining " + j.kVein.size() + " known " + sid(j) + " blocks"));
         clear.optional = true;
         j.kClear = clear;
@@ -1237,7 +1285,7 @@ final class Mining {
         if (!vein.isEmpty()) {
             List<Pos> cells = new ArrayList<>();
             for (CaveSearch.Ore o : vein) cells.add(new Pos(o.x(), o.y(), o.z()));
-            Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(cells).collect(true).soft(true)
+            Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(cells).collect(true).soft(true).explainSpots(true)
                     .label("mining " + cells.size() + " ore blocks in " + cv.name));
             cv.pendingClear = clear;
             spliceHere(s, List.of(clear));
@@ -1781,6 +1829,8 @@ final class Mining {
         }
         mineSettings(j);
         if (j.need != null) holdPick(p, j);
+        // Baritone mines again: its path breaks with dig go back in the restore ledger (knownStart took the context off)
+        if (j.dig && s.job() != null) RestoreLive.INSTANCE.pathContext(s.job().id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
         b.getMineProcess().mine(Math.max(1, j.count - mineCount(p, j)), j.block);
         j.phase = "mining";
         j.anchor = me;

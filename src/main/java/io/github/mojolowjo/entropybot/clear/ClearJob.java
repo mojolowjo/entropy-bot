@@ -33,6 +33,8 @@ public final class ClearJob {
         public boolean force;
         /** never stand (or chase drops) lower than this (a vein clear stays on the walkway) */
         public Integer minStandY;
+        /** 0.28.0: the "nowhere to stand" examples name the rules that turned the stand cells down (the known-ore mine). */
+        public boolean explainSpots;
         /** floor spots to put torches on once they're dug out */
         public List<Pos> torches;
         /** chests to empty the inventory into when full (null: the base chests) */
@@ -89,6 +91,7 @@ public final class ClearJob {
         public String destroyArea;
         public Options destroyArea(String a) { destroyArea = a; return this; }
         public Options minStandY(Integer y) { minStandY = y; return this; }
+        public Options explainSpots(boolean e) { explainSpots = e; return this; }
         public Options torches(List<Pos> t) { torches = t; return this; }
         public Options dump(List<Pos> d) { dump = d; return this; }
     }
@@ -119,6 +122,7 @@ public final class ClearJob {
     /** true when no box or only list was given (the work zone) */
     public final boolean zone;
     public Integer minStandY;
+    public boolean explainSpots;
     public final List<Pos> torches;
     public final List<Pos> dump;
     public final OreBook ores;
@@ -166,6 +170,8 @@ public final class ClearJob {
     public final Map<String, String> skip = new LinkedHashMap<>();
     public final Map<String, Fail> fails = new LinkedHashMap<>();
     public final Set<String> noSpot = new LinkedHashSet<>();
+    /** 0.28.0: why stand cells were turned down (rule -> count), for the "nowhere to stand" text. */
+    public final java.util.Map<String, Integer> noSpotWhy = new java.util.TreeMap<>();
     /** TLL 30: the water cell that cut the bot off from the rest of the box ({@link ClearGrid#waterLock}), or null */
     public Pos waterLock;
     public final Map<String, Integer> badSpots = new HashMap<>();
@@ -186,6 +192,7 @@ public final class ClearJob {
         this.force = o.force;
         this.destroyArea = o.destroyArea;
         this.minStandY = o.minStandY;
+        this.explainSpots = o.explainSpots;
         this.torches = o.torches == null ? new ArrayList<>() : new ArrayList<>(o.torches);
         this.dump = o.dump;
         this.ores = ores != null ? ores : new OreBook.Simple();
