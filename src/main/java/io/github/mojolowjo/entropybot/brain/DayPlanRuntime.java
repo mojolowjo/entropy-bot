@@ -140,7 +140,7 @@ public final class DayPlanRuntime {
         apply(r, now);
         DayPlan.Goal a = plan.active();
         DayPlan.State st = plan.state();
-        if (a != null && a.chain != null && !a.chain.isBlank() && (st == DayPlan.State.PENDING || st == DayPlan.State.SERVING || st == DayPlan.State.INTERRUPTED))
+        if (a != null && !plan.replanning() && a.chain != null && !a.chain.isBlank() && (st == DayPlan.State.PENDING || st == DayPlan.State.SERVING || st == DayPlan.State.INTERRUPTED))
             s.dayGoal = new BrainState.DayGoal(a.text, a.chain, plan.whyLine());
         context();
     }
@@ -216,6 +216,32 @@ public final class DayPlanRuntime {
         apply(plan.abandon(reason), now);
     }
 
+    /**
+     * 0.27.1: the active goal's chain failed or was judged infeasible for missing. itemClass (NO_ITEM / NONE_IN_CHESTS):
+     * re-planned once from the current bag and stock on the planner's worker (state "replanning"); a second time, or another
+     * class: given up. A planner that throws or is busy ends the re-plan as "no plan" (logged), never silently.
+     */
+    public boolean chainFailed(String missing, boolean itemClass, long now) {
+        if (!loaded) load();
+        DayPlan.Goal a = plan.active();
+        if (a == null || plan.replanning()) return false;
+        apply(plan.chainFailed(missing, itemClass), now);
+        if (!plan.replanning()) return false;
+        String goal = a.text;
+        boolean ok;
+        try {
+            ok = env.planDay(goal, r -> {
+                if (plan.active() != a) { env.log("brain: day plan: re-plan of " + goal + " came back after the goal ended - dropped"); return; }
+                apply(plan.replanned(r == null ? null : r[0], r == null ? "no answer" : r[1]), env.now());
+            });
+        } catch (RuntimeException e) {
+            ok = false;
+            env.log("brain: day plan: the re-plan of " + goal + " threw: " + e);
+        }
+        if (!ok && plan.replanning()) apply(plan.replanned(null, "no planner (busy or no player)"), now);
+        return true;
+    }
+
     /** "dayplan | dayplan skip | dayplan clear | dayplan now". stopDayJob stops the brain's job when it is the day goal's. */
     public String command(String rest, boolean night, boolean brainOn, Runnable stopDayJob, long now) {
         if (!loaded) load();
@@ -231,12 +257,18 @@ public final class DayPlanRuntime {
                 DayPlan.Goal n = plan.active();
                 return "ok: skipped " + a.text + (n == null ? " - the plan is done" : " - next: " + n.text);
             }
-            case "clear" -> {
+            case "clear", "clear hold" -> {
                 stopDayJob.run();
                 DayPlan.State from = plan.state();
                 plan.clear();
-                change(now, from, plan.state(), "dayplan clear");
+                change(now, from, plan.state(), "dayplan " + t);
                 save();
+                // 0.27.1: by day a clear plans afresh on the next loop (as dayplan now); hold = the idle list until dawn
+                if (DayPlan.replanAfterClear(night, t.endsWith("hold"))) {
+                    nowAsked = true;
+                    return "ok: the day plan is cleared - planning a new one from what I have now (dayplan clear hold: none until dawn)" + off;
+                }
+                nowAsked = false;
                 return "ok: the day plan is cleared - the idle list until the next dawn (dayplan now makes a new one)";
             }
             case "now" -> {
@@ -245,7 +277,7 @@ public final class DayPlanRuntime {
                 nowAsked = true;
                 return "ok: planning the day now - the plan comes as a whisper" + off;
             }
-            default -> { return "usage: dayplan | dayplan skip | dayplan clear | dayplan now"; }
+            default -> { return "usage: dayplan | dayplan skip | dayplan clear [hold] | dayplan now"; }
         }
     }
 

@@ -305,7 +305,7 @@ final class Chopping {
         if (next == ChopLoop.Next.UNREACHABLE) {
             // not one log came down and no chop: no spot to stand within reach (low leaves all around a short trunk), a guard refusal...
             String clr = lastClear(s);
-            r.notes.add("tree at " + r.tree.at() + ": skipped - I couldn't get at its trunk" + (clr != null ? " (" + clr + ")" : ""));
+            r.notes.add(ChopLoop.skipNote(r.tree.at(), false, clr));      // 0.27.1: "couldn't get at" only for a reach failure
             LOG.info("[entropybot] chop: nothing came down at {} - skipped", r.tree.at());
             r.failsInRow++;
             r.reachFails++;
@@ -438,27 +438,38 @@ final class Chopping {
                 r.tried.add(TreeFinder.key(b[0], b[1], b[2]));
                 continue;
             }
+            // 0.27.1: a one-log column without leaves above it is a stump or a lone log: tried only when nothing else is left
+            boolean stump = TreeFinder.stump(w, t);
+            if (stump && r.tried.add("stump " + t.at())) LOG.info("[entropybot] chop: stump at {} (1 log, no leaves above) - only if no tree is left", t.at());
             // 0.26.4: trunks with a free standing cell next to their base first (after a reach failure: the next nearest)
-            boolean reach = trunkReachable(p, b);
+            boolean reach = !stump && trunkReachable(p, b);
             long cost = (long) (b[0] - me[0]) * (b[0] - me[0]) + (long) (b[2] - me[2]) * (b[2] - me[2]) + 4L * (b[1] - me[1]) * (b[1] - me[1]);
-            cands.add(new ChopLoop.Cand(b, cost, reach));
+            cands.add(new ChopLoop.Cand(b, cost, reach, stump));
             found.put(TreeFinder.key(b[0], b[1], b[2]), t);
             if (reach && r.reachFails == 0) break;      // the usual case: the nearest tree is fine
         }
         if (cands.isEmpty()) return null;
         List<ChopLoop.Cand> ord = ChopLoop.order(cands);
+        if (ChopLoop.onlyStumps(cands)) LOG.info("[entropybot] chop: only stumps or lone logs left - trying the nearest one");
         r.nearestReachable = null;
         for (ChopLoop.Cand c : ord) if (c.reachable()) { r.nearestReachable = c.base()[0] + " " + c.base()[1] + " " + c.base()[2]; break; }
         int[] b = ord.get(0).base();
         return found.get(TreeFinder.key(b[0], b[1], b[2]));
     }
 
-    /** A free standing cell (feet at the trunk's base level, one up or down) next to the trunk base. */
+    /**
+     * A free standing cell (feet at the trunk's base level, one up or down) near the trunk base: 0.27.1 the 8 cells around
+     * it, and 2 out when a cell next to the base is leaves or grass (ChopLoop.standOffsets).
+     */
     private static boolean trunkReachable(LocalPlayer p, int[] b) {
         try {
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-            int[][] d = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-            for (int[] o : d)
+            boolean wide = false;
+            if (mc.level != null) for (int[] o : ChopLoop.standOffsets(false)) {
+                BlockState st = mc.level.getBlockState(new BlockPos(b[0] + o[0], b[1], b[2] + o[1]));
+                if (st.is(BlockTags.LEAVES) || st.getBlock() instanceof LeavesBlock || st.is(BlockTags.REPLACEABLE)) { wide = true; break; }
+            }
+            for (int[] o : ChopLoop.standOffsets(wide))
                 for (int dy = -1; dy <= 1; dy++)
                     if (Jobs.standable(mc, new BlockPos(b[0] + o[0], b[1] + dy, b[2] + o[1]))) return true;
         } catch (RuntimeException e) {
@@ -801,6 +812,23 @@ final class Chopping {
             if (s.hasBlockEntity()) return true;
             if (id.endsWith("_sapling") || id.endsWith("torch") || id.endsWith("_propagule")) return false;   // its own replants and torches
             return ClearRules.builtId(id);
+        }
+
+        private java.util.Set<String> shelters;
+
+        /** 0.27.1: the restore ledger's "built: ..." cells and its shelters' blocks are the bot's own (never someone's build). */
+        @Override public boolean ownBuilt(int x, int y, int z) {
+            try {
+                if (RestoreLive.INSTANCE.builtByMe(x, y, z)) return true;
+                if (shelters == null) {
+                    Commands c = RestoreLive.INSTANCE.commands();
+                    shelters = c == null ? java.util.Set.of() : ShelterJob.ownBlocks(c);
+                }
+                return shelters.contains(x + " " + y + " " + z);
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] chop: own-block check at {} {} {} failed: {} - counted as a build", x, y, z, e.toString());
+                return false;
+            }
         }
     }
 

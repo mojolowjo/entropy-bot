@@ -70,13 +70,47 @@ public final class ChopLoop {
     public static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
     /** A tree candidate: where, how far (squared, the order's cost), whether a free standing cell touches its trunk base. */
-    public record Cand(int[] base, long cost, boolean reachable) {}
+    public record Cand(int[] base, long cost, boolean reachable, boolean stump) {
+        public Cand(int[] base, long cost, boolean reachable) { this(base, cost, reachable, false); }
+    }
 
-    /** Reachable trunks first, each group nearest first (stable). */
+    /**
+     * Real trees before stumps/lone logs (0.27.1), then reachable trunks first, each group nearest first (stable). 0.27.1:
+     * when no real tree has a free cell next to its trunk, the plain nearest order (the 0.26.3 behaviour: the walk decides).
+     */
     public static List<Cand> order(List<Cand> in) {
         List<Cand> out = new ArrayList<>(in);
-        out.sort(Comparator.comparing((Cand c) -> !c.reachable()).thenComparingLong(Cand::cost));
+        boolean anyReach = false;
+        for (Cand c : in) if (c.reachable() && !c.stump()) anyReach = true;
+        final boolean useReach = anyReach;
+        out.sort(Comparator.comparing(Cand::stump).thenComparing((Cand c) -> useReach && !c.reachable()).thenComparingLong(Cand::cost));
         return out;
+    }
+
+    /** 0.27.1: only stumps are left (the caller then tries them, nearest first). */
+    public static boolean onlyStumps(List<Cand> in) {
+        for (Cand c : in) if (!c.stump()) return false;
+        return !in.isEmpty();
+    }
+
+    /**
+     * 0.27.1: the cells around a trunk base to look for a standing spot: the 8 around it, and with wide (the base in
+     * leaves or grass) also the ring 2 out. Each is tried at levels -1..+1 by the caller. {dx, dz} pairs.
+     */
+    public static List<int[]> standOffsets(boolean wide) {
+        List<int[]> out = new ArrayList<>();
+        int r = wide ? 2 : 1;
+        for (int dx = -r; dx <= r; dx++)
+            for (int dz = -r; dz <= r; dz++)
+                if (dx != 0 || dz != 0) out.add(new int[]{dx, dz});
+        out.sort(Comparator.comparingInt(o -> Math.max(Math.abs(o[0]), Math.abs(o[1]))));
+        return out;
+    }
+
+    /** 0.27.1: why a tree where nothing came down is skipped: a failed walk or an out-of-reach clear = "couldn't get at its trunk". */
+    public static String skipNote(String at, boolean walkFailed, String clearWhy) {
+        if (walkFailed || clearWhy != null) return "tree at " + at + ": skipped - I couldn't get at its trunk" + (clearWhy != null ? " (" + clearWhy + ")" : "");
+        return "tree at " + at + ": skipped - nothing came down";
     }
 
     /** The stop reason once this many trees failed in a row: reach failures may go on to maxTrees, others stop at fails. */

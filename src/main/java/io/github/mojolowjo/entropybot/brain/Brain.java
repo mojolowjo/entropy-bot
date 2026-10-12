@@ -160,7 +160,7 @@ public final class Brain {
 
     public DayPlanRuntime dayPlan() { return day; }
 
-    /** "dayplan | dayplan skip | dayplan clear | dayplan now". */
+    /** "dayplan | dayplan skip | dayplan clear [hold] | dayplan now". */
     public String dayplan(String rest) {
         String r = rest == null ? "" : rest.trim();
         boolean night = prev != null ? prev.night : env.sense().night;
@@ -302,7 +302,7 @@ public final class Brain {
                 BrainState s = prev;
                 return "brain copy is " + (copyOn() ? "on" : "off") + (s != null && s.copy != null ? " - " + s.copy.why() : "");
             }
-            default -> { return "usage: brain on|off|status | brain copy on|off | brain get [key] | brain set <key> <value> | brain reset <key>|all | brain tree [reload] | brain learned [job kind] | brain learned reset"; }
+            default -> { return "usage: brain on|off|status | brain copy on|off | brain get [key] | brain set <key> <value> | brain reset <key>|all|parks | brain tree [reload] | brain learned [job kind] | brain learned reset"; }
         }
     }
 
@@ -588,6 +588,18 @@ public final class Brain {
         s.spawnDue = tried <= 0 || now - tried >= gameMinutesMs(cfg.i("spawn.cooldownMinutes"));
     }
 
+    /** 0.27.1: the failure classes a day goal is re-planned for (a missing item), else it fails as before. */
+    static boolean dayReplan(FailMemory.Reason cls) {
+        return cls == FailMemory.Reason.NO_ITEM || cls == FailMemory.Reason.NONE_IN_CHESTS;
+    }
+
+    /** 0.27.1: a chain's end text without the "stopped at step N (...): " head (the "gave up" text). */
+    static String missingOf(String res) {
+        if (res == null) return "its chain failed";
+        String m = res.replaceFirst("^stopped at step \\d+ \\(([^)]*)\\): ", "$1: ").replaceFirst("^error: ", "");
+        return m.length() > 160 ? m.substring(0, 160) : m;
+    }
+
     static boolean failed(String res) {
         return res != null && !res.startsWith("done") && !res.startsWith("ok");
     }
@@ -606,6 +618,7 @@ public final class Brain {
         env.decisions().outcome(now, j.ref(), outcome.length() > 400 ? outcome.substring(0, 400) : outcome);
         JsonObject d = data();
         // 0.26.1 R1/R6: a failed brain job with a precondition reason is remembered (the owner's stop or order never)
+        boolean replanStarted = false;
         if (outcome.startsWith("failed")) {
             int minutes = cfg.i("brain.failMemoryMinutes");
             // 0.26.2 fix: a supply prefix's "get X" that found none in the chests is remembered as that get, not as the job
@@ -626,6 +639,8 @@ public final class Brain {
                 if (step != null) env.log("brain: remembered step " + FailMemory.stepKey(step) + " (of " + j.base() + ") failed " + cls);
             }
             if (r != null) env.log("brain: remembered " + j.base() + " failed " + r + " for " + minutes + " min");
+            // 0.27.1: a day goal's chain that missed an item is re-planned once from the current bag and stock
+            if (DayPlanRuntime.NEED.equals(j.need()) && dayReplan(cls)) replanStarted = day.chainFailed(missingOf(res), true, now);
         } else if (outcome.equals("finished")) {
             String b = j.chain().toLowerCase();
             if (b.startsWith("deposit") || b.contains(" deposit") || b.startsWith("scan") || b.contains(" scan")) mem.storageChanged();
@@ -653,6 +668,10 @@ public final class Brain {
                 g.addProperty("at", now);
                 g.addProperty("why", res.replaceFirst("^stopped at step \\d+ \\([^)]*\\): ", ""));
                 d.add("stripGaveUp", g);
+            }
+            if (replanStarted) {      // 0.27.1: a fresh chain starts its own count
+                n = 0;
+                fails.addProperty(j.need(), 0);
             }
             if (n >= cfg.i("parkFailures")) {
                 if (!d.has("parked") || !d.get("parked").isJsonObject()) d.add("parked", new JsonObject());
@@ -803,7 +822,8 @@ public final class Brain {
                             d.chain() + " needs " + v.item() + ": " + sub.chain() + " first");
                 }
                 notFound = sub.why();
-                if (DayPlanRuntime.NEED.equals(d.need())) day.abandon("no source for " + v.item(), now);      // 0.26.3: the planner found no way
+                // 0.26.3: the planner found no way; 0.27.1: the day goal is re-planned once from the current bag first
+                if (DayPlanRuntime.NEED.equals(d.need())) day.chainFailed(v.missing() + "; no source for " + v.item(), true, now);
             }
             lastFeas = feasJson(v, d.chain(), null);
             int minutes = cfg.i("brain.failMemoryMinutes");
@@ -1006,6 +1026,33 @@ public final class Brain {
         env.saved();
     }
 
+    /**
+     * 0.27.1 "brain reset parks": forgets the parked needs, the failure counts, the failure memory (chain and step records)
+     * and the cached sub-plans; the learned table and the settings stay. Answers what went.
+     */
+    String resetParks() {
+        JsonObject d = data();
+        List<String> parkedNames = new ArrayList<>();
+        if (d.has("parked") && d.get("parked").isJsonObject()) parkedNames.addAll(d.getAsJsonObject("parked").keySet());
+        int counts = 0;
+        if (d.has("fails") && d.get("fails").isJsonObject())
+            for (Map.Entry<String, JsonElement> e : d.getAsJsonObject("fails").entrySet()) {
+                try { if (e.getValue().getAsInt() > 0) counts++; } catch (RuntimeException ignored) { counts++; }
+            }
+        int[] rec = mem.counts();
+        d.remove("parked");
+        d.remove("fails");
+        d.remove("stripGaveUp");
+        mem.clear();
+        subs.clear();
+        env.saved();
+        String line = "ok: cleared " + parkedNames.size() + " parked " + (parkedNames.size() == 1 ? "need" : "needs") + (parkedNames.isEmpty() ? "" : " (" + String.join(", ", parkedNames) + ")")
+                + ", " + counts + " failure " + (counts == 1 ? "count" : "counts") + ", " + rec[0] + " remembered failed " + (rec[0] == 1 ? "chain" : "chains") + " and " + rec[1] + " failed step "
+                + (rec[1] == 1 ? "record" : "records") + " - the learned table and the settings stay";
+        env.log("brain: " + line);
+        return line;
+    }
+
     static String canon(String key) {
         for (String k : BrainConfig.DEFAULTS.keySet()) if (k.equalsIgnoreCase(key)) return k;
         return key.toLowerCase();
@@ -1041,7 +1088,8 @@ public final class Brain {
                 return saveConfig(c, "ok: " + k + " = " + c.get(k) + " (was " + was + ")");
             }
             case "reset" -> {
-                if (w.length < 2) return "usage: brain reset <key>|all";
+                if (w.length < 2) return "usage: brain reset <key>|all|parks";
+                if (w[1].equalsIgnoreCase("parks")) return resetParks();
                 if (w[1].equalsIgnoreCase("all")) return saveConfig(BrainConfig.defaults(), "ok: every brain setting is back to its default");
                 String k = canon(w[1]);
                 if (k.equals("idle")) return idle("list reset");
@@ -1049,7 +1097,7 @@ public final class Brain {
                 return saveConfig(c, "ok: " + k + " = " + c.get(k) + " (the default)");
             }
             default -> {
-                return "usage: brain get [key] | brain set <key> <value> | brain reset <key>|all";
+                return "usage: brain get [key] | brain set <key> <value> | brain reset <key>|all|parks";
             }
         }
     }

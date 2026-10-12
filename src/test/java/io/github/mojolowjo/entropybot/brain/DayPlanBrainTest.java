@@ -362,7 +362,7 @@ class DayPlanBrainTest {
     @Test void clearEmptiesThePlan() {
         lowWoodAndFood();
         dawn();
-        assertTrue(brain.dayplan("clear").startsWith("ok: the day plan is cleared"));
+        assertTrue(brain.dayplan("clear hold").startsWith("ok: the day plan is cleared"));      // 0.27.1: hold = no new plan until dawn
         assertTrue(brain.dayPlan().plan().goals().isEmpty());
         loop();
         assertFalse(env.written.getAsJsonObject("scores").has("day_goal"));
@@ -468,7 +468,9 @@ class DayPlanBrainTest {
         env.subAnswer = new String[]{null, "missing coal"};
         dawn();
         loop();
-        assertTrue(env.whispers.contains("gave up wood 64: no source for torch"), env.whispers.toString());
+        // 0.27.1: re-planned once first; the same chain again gives it up with what was missing
+        assertTrue(env.whispers.stream().anyMatch(w -> w.startsWith("gave up wood 64:") && w.endsWith("no source for torch")), env.whispers.toString());
+        assertEquals(2, env.asked.stream().filter("wood 64"::equals).count());
         assertEquals("food 32", brain.dayPlan().plan().active().text);
     }
 

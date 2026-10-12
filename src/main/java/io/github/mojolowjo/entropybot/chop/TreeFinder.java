@@ -45,6 +45,28 @@ public final class TreeFinder {
 
         /** A building block or a block entity (never a sapling or the bot's torches). */
         boolean built(int x, int y, int z);
+
+        /** 0.27.1: the bot built this block itself (the restore ledger's "built: ..." entries, its shelters): never someone's build. */
+        default boolean ownBuilt(int x, int y, int z) { return false; }
+    }
+
+    /** 0.27.1: a built block that makes a tree someone's: built, and not one the bot placed itself. Pure. */
+    public static boolean foreignBuilt(boolean built, boolean own) { return built && !own; }
+
+    /**
+     * 0.27.1: a stump or a lone log: a one-log tree with no natural leaves in the levels above it (dy 1..LEAF_GAP, within
+     * LEAF_GAP sideways), or TreeChop's chopped_log leftover alone. Such columns are skipped while real trees are left.
+     */
+    public static boolean stump(World w, Tree t) {
+        if (t == null || t.logs().size() != 1) return false;
+        int[] c = t.logs().get(0);
+        String id = w.id(c[0], c[1], c[2]);
+        if (id != null && id.contains("chopped_log")) return true;
+        for (int dy = 1; dy <= LEAF_GAP; dy++)
+            for (int dx = -LEAF_GAP; dx <= LEAF_GAP; dx++)
+                for (int dz = -LEAF_GAP; dz <= LEAF_GAP; dz++)
+                    if (w.leaves(c[0] + dx, c[1] + dy, c[2] + dz) && !w.persistentLeaves(c[0] + dx, c[1] + dy, c[2] + dz)) return false;
+        return true;
     }
 
     /** A tree: its logs, the base cells (lowest logs on soil), the commonest log id and its bounds (x1 y1 z1 x2 y2 z2). */
@@ -135,7 +157,7 @@ public final class TreeFinder {
         for (int x = box[0] - BUILT_GAP; x <= box[3] + BUILT_GAP; x++)
             for (int y = box[1] - BUILT_GAP; y <= box[4] + BUILT_GAP; y++)
                 for (int z = box[2] - BUILT_GAP; z <= box[5] + BUILT_GAP; z++) {
-                    if (!w.built(x, y, z)) continue;
+                    if (!w.built(x, y, z) || !foreignBuilt(true, w.ownBuilt(x, y, z))) continue;      // 0.27.1: its own blocks never count
                     long d = (long) (x - cx) * (x - cx) + (long) (y - cy) * (y - cy) + (long) (z - cz) * (z - cz);
                     if (d < bd) {
                         bd = d;

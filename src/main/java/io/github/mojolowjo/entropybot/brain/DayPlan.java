@@ -45,6 +45,8 @@ public final class DayPlan {
         public long noProgressMs;
         public int lastStep = -1, lastCount = -1;
         public double bestDist = -1;
+        /** 0.27.1: re-planned once after a missing item (a second failure gives it up). */
+        public boolean replanned;
 
         public Goal(String text) { this.text = norm(text); }
 
@@ -321,7 +323,7 @@ public final class DayPlan {
     public Result update(Tick t, int stallMinutes) {
         List<String> w = new ArrayList<>(), log = new ArrayList<>();
         State from = state;
-        if (state == State.IDLE || state == State.SELECTING) return new Result(w, log, from, state);
+        if (state == State.IDLE || state == State.SELECTING || replanning) return new Result(w, log, from, state);
         if (t.ownerGoal() != null) {
             if (state != State.PAUSED_OWNER) {
                 Goal match = null;
@@ -447,6 +449,68 @@ public final class DayPlan {
 
     public static final String QUEUE_EMPTY = "day plan done - idle list now";
 
+    // ---- 0.27.1: re-plan once on a missing item ----
+
+    /** The active goal is being re-planned from the current bag and stock (its job is not offered meanwhile). */
+    boolean replanning;
+    /** What the failed chain missed (the "gave up" text when the re-plan brings nothing new). */
+    String failedMissing;
+
+    public boolean replanning() { return replanning; }
+
+    /**
+     * The active goal's chain failed (or was judged infeasible) for missing: itemClass (NO_ITEM / NONE_IN_CHESTS) and not
+     * re-planned yet: state replanning (the runtime asks the planner); else the goal is given up.
+     */
+    public Result chainFailed(String missing, boolean itemClass) {
+        List<String> w = new ArrayList<>(), log = new ArrayList<>();
+        State from = state;
+        Goal a = active();
+        if (a == null || replanning) return new Result(w, log, from, state);
+        String m = missing == null || missing.isBlank() ? "its chain failed" : missing;
+        if (itemClass && !a.replanned) {
+            a.replanned = true;
+            replanning = true;
+            failedMissing = m;
+            log.add("day plan: replanning " + a.text + " from what I have now (" + m + ")");
+        } else abandon(a, m, w, log);
+        return new Result(w, log, from, state);
+    }
+
+    /** The re-plan's answer: a new chain serves the goal; none, "already have it" or the same chain again ends it. */
+    public Result replanned(String chain, String why) {
+        List<String> w = new ArrayList<>(), log = new ArrayList<>();
+        State from = state;
+        Goal a = active();
+        boolean was = replanning;
+        replanning = false;
+        if (a == null || !was) return new Result(w, log, from, state);
+        String miss = failedMissing == null ? "its chain failed" : failedMissing;
+        if (chain == null) abandon(a, miss + "; no plan: " + (why == null ? "no answer" : why), w, log);
+        else if (chain.isBlank()) done(a, "I already have it", w, log);
+        else if (sameChain(chain, a.chain)) abandon(a, miss, w, log);
+        else {
+            a.chain = chain;
+            a.noProgressMs = 0;
+            a.lastStep = -1;
+            if (state != State.PAUSED_NIGHT && state != State.PAUSED_OWNER) state = State.PENDING;
+            log.add("day plan: " + a.text + " replanned: " + chain);
+        }
+        return new Result(w, log, from, state);
+    }
+
+    /** Two chains are the same plan (case and spacing aside). */
+    public static boolean sameChain(String a, String b) {
+        if (a == null || b == null) return a == b;
+        return a.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").equals(b.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " "));
+    }
+
+    /**
+     * 0.27.1 dayplan clear: by day without hold the next loop selects anew (as dayplan now); at night or with hold, only at
+     * the next dawn. Pure.
+     */
+    public static boolean replanAfterClear(boolean night, boolean hold) { return !night && !hold; }
+
     /** dayplan clear. */
     public void clear() {
         goals.clear();
@@ -454,6 +518,8 @@ public final class DayPlan {
         dry.clear();
         state = State.IDLE;
         step = null;
+        replanning = false;
+        failedMissing = null;
     }
 
     // ---- texts ----
@@ -464,6 +530,7 @@ public final class DayPlan {
         Goal a = active();
         if (a == null) return goals.isEmpty() ? null : "day plan: " + state.name().toLowerCase(Locale.ROOT) + " (" + doneCount() + "/" + goals.size() + " done)";
         int pos = goals.indexOf(a) + 1;
+        if (replanning) return "day plan: " + a.text + " (" + pos + "/" + goals.size() + "), replanning";
         String tail = switch (state) {
             case PAUSED_OWNER -> ", paused: your goal runs";
             case PAUSED_NIGHT -> ", paused for the night";
@@ -509,6 +576,7 @@ public final class DayPlan {
             e.addProperty("carried", g.carried);
             e.addProperty("priority", g.priority);
             e.addProperty("noProgressMs", g.noProgressMs);
+            if (g.replanned) e.addProperty("replanned", true);
             a.add(e);
         }
         o.add("goals", a);
@@ -537,6 +605,7 @@ public final class DayPlan {
                 x.carried = g.has("carried") && g.get("carried").getAsBoolean();
                 x.priority = g.has("priority") ? g.get("priority").getAsInt() : 0;
                 x.noProgressMs = g.has("noProgressMs") ? g.get("noProgressMs").getAsLong() : 0;
+                x.replanned = g.has("replanned") && g.get("replanned").getAsBoolean();
                 p.goals.add(x);
             }
         } catch (IllegalArgumentException e) {
@@ -557,6 +626,7 @@ public final class DayPlan {
         Goal a = active();
         o.addProperty("active", a == null ? null : a.text);
         o.addProperty("step", step);
+        if (replanning) o.addProperty("replanning", true);
         JsonArray gs = new JsonArray();
         for (Goal g : goals) {
             JsonObject e = new JsonObject();

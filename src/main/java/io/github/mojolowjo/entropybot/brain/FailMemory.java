@@ -202,6 +202,13 @@ public final class FailMemory {
 
     public void clear() { map.clear(); }
 
+    /** 0.27.1: {chain records, step records} (for brain reset parks). */
+    public int[] counts() {
+        int steps = 0;
+        for (Entry e : map.values()) if (e.chain().startsWith(STEP)) steps++;
+        return new int[]{map.size() - steps, steps};
+    }
+
     /** For status: "light here 8 NO_ITEM 7 min left, ...". */
     public String describe(long now) {
         List<String> w = new ArrayList<>();
