@@ -388,6 +388,11 @@ final class DigCommands {
         Map<String, Integer> counts = Gui.inventory(p);
         String id = c.crafting.planner.resolveItem(parts[1], counts);
         if (id == null) return "error: I don't know a block called " + parts[1];
+        // 0.28.1 (trial fix G): the count it needs, said up front; under a tenth of it refuses with the gather hint
+        int needN = io.github.mojolowjo.entropybot.camp.BuildCount.need(shape, an[0], an[1], an[2], an[3], an[4], an[5]);
+        int haveN = counts.getOrDefault(id, 0);
+        String refuse = io.github.mojolowjo.entropybot.camp.BuildCount.refusal(needN, haveN, CraftPlanner.shortId(id));
+        if (refuse != null) return refuse;
         if (counts.getOrDefault(id, 0) <= 0) return "error: I have no " + CraftPlanner.shortId(id) + " - next: get " + CraftPlanner.shortId(id) + " 64 (or give me some)";
         IBaritone b = Jobs.baritone();
         if (b == null) return "error: baritone not loaded";
@@ -417,7 +422,7 @@ final class DigCommands {
         Clearing.placingOwned = true;
         c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
         c.jobs.job.holdOnFight = true;
-        return "started: " + bs.status + " (area " + areaName + ")";
+        return "started: " + bs.status + " (area " + areaName + ") " + io.github.mojolowjo.entropybot.camp.BuildCount.note(needN, haveN, CraftPlanner.shortId(id));
     }
 
     // ---- place ----
