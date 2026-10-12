@@ -44,6 +44,11 @@ public final class EscapePlan {
      * pocket it came from), nearest to dest first, then the fewest breaks; so a sealed pit is climbed toward the goal.
      */
     public static Escape plan(Grid g, int[] feet, int[] dest, boolean towardGoal) {
+        return plan(g, feet, dest, towardGoal, false);
+    }
+
+    /** requireBreak: only ways out that dig at least one block (the fallback below: never the free step back into the pocket). */
+    private static Escape plan(Grid g, int[] feet, int[] dest, boolean towardGoal, boolean requireBreak) {
         boolean toward = towardGoal && dest != null;
         double here = dest == null ? 0 : Math.sqrt(sq(feet[0] - dest[0]) + sq(feet[1] - dest[1]) + sq(feet[2] - dest[2]));
         Escape best = null;
@@ -71,7 +76,7 @@ public final class EscapePlan {
                     }
                     if (!contains(breaks, c)) breaks.add(c);
                 }
-                if (!ok || breaks.size() > MAX_BREAKS) continue;
+                if (!ok || breaks.size() > MAX_BREAKS || (requireBreak && breaks.isEmpty())) continue;
                 double d = dest == null ? 0 : Math.sqrt(sq(tx - dest[0]) + sq(ty - dest[1]) + sq(tz - dest[2]));
                 if (toward) {
                     if (d >= here - 0.5) continue;
@@ -87,6 +92,9 @@ public final class EscapePlan {
                 }
             }
         }
+        // 0.27.3 (live, run1 pit): a goal straight up (or any goal no side step gets closer to) left toward with nothing,
+        // although a 2-break way out existed: fall back to the fewest-breaks plan rather than report "no safe dig-out"
+        if (best == null && toward) return plan(g, feet, dest, false, true);
         return best;
     }
 

@@ -69,6 +69,19 @@ class EscapePlanTest {
     }
 
     @Test
+    void aGoalStraightUpFallsBackToTheFewestBreaks() {
+        // live run1 (0.27.3): a 1x1 stone pit at 21 45 83, goto 21 68 83 (straight up): no side step is closer to the
+        // goal, so toward mode found nothing and the walk ended "no safe dig-out" although north was 2 breaks away
+        World w = new World().set(0, 10, 0, EscapePlan.Kind.OPEN).set(0, 11, 0, EscapePlan.Kind.OPEN)
+                .set(0, 12, 0, EscapePlan.Kind.BLOCKED);     // an own/foreign roof: no climb
+        for (int[] s : new int[][]{{1, 0}, {-1, 0}, {0, 1}}) for (int y = 9; y <= 12; y++) w.set(s[0], y, s[1], EscapePlan.Kind.BLOCKED);
+        EscapePlan.Escape e = EscapePlan.plan(w, new int[]{0, 10, 0}, new int[]{0, 33, 0}, true);
+        assertNotNull(e, "the fewest-breaks way out when nothing gets closer to the goal");
+        assertArrayEquals(new int[]{0, 10, -1}, e.feet(), "north, the only breakable side");
+        assertEquals(2, e.breaks().size());
+    }
+
+    @Test
     void protectedFluidOrBuiltCellsAreNeverBroken() {
         World w = new World().set(0, 10, 0, EscapePlan.Kind.OPEN).set(0, 11, 0, EscapePlan.Kind.OPEN);
         w.fill = EscapePlan.Kind.FLOOR_ONLY;                       // everything around is built / by water / in a protect box
