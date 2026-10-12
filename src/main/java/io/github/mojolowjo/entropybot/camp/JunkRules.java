@@ -26,7 +26,44 @@ public final class JunkRules {
     /** The default list (the owner's plan, 2026-10-05): string is kept on purpose. */
     public static final List<String> DEFAULT = List.of("minecraft:cobblestone", "minecraft:dirt", "minecraft:gravel", "minecraft:rotten_flesh",
             "minecraft:spider_eye", "minecraft:cobbled_deepslate", "minecraft:netherrack", "minecraft:andesite", "minecraft:diorite",
-            "minecraft:granite", "minecraft:tuff", "minecraft:poisonous_potato");
+            "minecraft:granite", "minecraft:tuff", "minecraft:poisonous_potato", "minecraft:snowball");
+
+    /** 0.28.1 (trial fix F): what a build or shelter places; kept while such a job runs or waits in the chain. */
+    static final List<String> BUILD_BLOCKS = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:dirt");
+
+    /**
+     * 0.28.1: the ids a running or queued job wants, so the junk drop leaves them. texts: the running job's label and
+     * status, the chain's steps not done yet, a "need" line. A build/shelter/place text keeps cobblestone, cobbled
+     * deepslate, dirt and planks (planks are never on the default list; their suffix is matched in {@link #plan}), and
+     * any item it names ("build shell cobblestone house" keeps cobblestone).
+     */
+    public static Set<String> wanted(List<String> texts) {
+        Set<String> out = new LinkedHashSet<>();
+        if (texts == null) return out;
+        for (String t0 : texts) {
+            if (t0 == null) continue;
+            String t = t0.trim().toLowerCase(Locale.ROOT);
+            boolean builds = t.matches("(?s)^(build|building|shelter|place|placing|need)\\b.*") || t.contains("build ") || t.contains("shelter");
+            if (!builds) continue;
+            out.addAll(BUILD_BLOCKS);
+            out.add("*_planks");
+            for (String w : t.split("[^a-z0-9_:]+")) {
+                if (w.length() < 3 || w.matches("^-?\\d+$")) continue;
+                if (w.matches("^(build|building|shelter|place|placing|need|shell|walls|floor|fill|roof|house|camp|started|status|then|here|the)$")) continue;
+                out.add(full(w));
+            }
+        }
+        return out;
+    }
+
+    /** {@link #plan} that also leaves the wanted ids ({@link #wanted}; "*_planks" = any planks). */
+    public static Map<String, Integer> plan(Set<String> junk, Map<String, Integer> depositables, Map<String, Integer> inv, String collecting,
+                                            Set<String> wanted) {
+        Map<String, Integer> out = plan(junk, depositables, inv, collecting);
+        if (wanted == null || wanted.isEmpty()) return out;
+        out.keySet().removeIf(id -> wanted.contains(id) || (wanted.contains("*_planks") && id.endsWith("_planks")));
+        return out;
+    }
     /** Never on the list (a typo or a bad idea): these are tools, fuel, food or valuables. */
     static final Pattern NEVER = Pattern.compile("_(pickaxe|axe|shovel|hoe|sword|helmet|chestplate|leggings|boots)$|(^|:)(torch|shield|bow|crossbow|coal|charcoal|diamond|emerald|bread)$|(^|:)raw_");
 
