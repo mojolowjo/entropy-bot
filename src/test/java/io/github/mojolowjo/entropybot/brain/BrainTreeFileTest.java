@@ -54,8 +54,8 @@ class BrainTreeFileTest {
         List<String> p = t.pathTo("night.light");
         assertEquals("r", p.get(0));
         assertEquals(5, p.size());
-        assertTrue(p.get(4).startsWith("r/6/1/"), p.toString());      // 0.26.1: passive.sel, weather.storm and spawn added
-        assertEquals(List.of("r", "r/8"), t.pathTo("pick"));
+        assertTrue(p.get(4).startsWith("r/7/1/"), p.toString());      // 0.27.3 area.return; 0.26.1: passive.sel, weather.storm and spawn added
+        assertEquals(List.of("r", "r/9"), t.pathTo("pick"));
         assertEquals(List.of(), t.pathTo("nope"));
         assertEquals("need.need", BrainTreeFile.needNode("need:torch"));
         assertEquals("need.goal", BrainTreeFile.needNode("goal:2"));
@@ -139,12 +139,12 @@ class BrainTreeFileTest {
         assertTrue(BrainTreeFile.parse(o.toString()).ok(), BrainTreeFile.parse(o.toString()).errors().toString());
         // move night before the brain's running job
         JsonArray kids = o.getAsJsonObject("root").getAsJsonArray("children");
-        JsonElement job = kids.get(4), night = kids.get(6);      // 0.26.1: weather.storm sits between them
-        kids.set(4, night);
-        kids.set(6, job);
+        JsonElement job = kids.get(5), night = kids.get(7);      // 0.27.3: area.return after danger      // 0.26.1: weather.storm sits between them
+        kids.set(5, night);
+        kids.set(7, job);
         BrainTreeFile.Result r = BrainTreeFile.parse(o.toString());
         assertTrue(r.ok(), r.errors().toString());
-        assertEquals(List.of("r", "r/4", "r/4/1", "r/4/1/5", "r/4/1/5/1"), r.tree().pathTo("night.light"));
+        assertEquals(List.of("r", "r/5", "r/5/1", "r/5/1/5", "r/5/1/5/1"), r.tree().pathTo("night.light"));
     }
 
     @Test

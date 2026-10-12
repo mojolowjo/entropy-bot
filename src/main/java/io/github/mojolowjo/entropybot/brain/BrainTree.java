@@ -167,6 +167,9 @@ public final class BrainTree {
                 when("danger", "the reflexes handle it", "a mob counts (threat test), a reflex runs, or health is low",
                         c -> c.s().danger || c.s().health < c.c().i("dangerHealth"),
                         c -> new Decision("danger", Kind.PAUSE, null, "safety", 100, c.s().danger ? c.s().dangerWhy : "health " + Math.round(c.s().health)), "", "dangerHealth"),
+                // 0.27.3: outside every area every job is refused: walk back into the nearest one first
+                when("area.return", "walk back into my areas", "outside every area and the near-me zone, an area in this dimension, no order of yours, not passive or sheltering, not parked",
+                        BrainTree::areaReturnFires, BrainTree::areaReturn, "goto", "area.return", "parkFailures", "parkMinutes"),
                 when("owner", "keep the owner's order", "the owner's order runs",
                         c -> c.s().ownerJob != null,
                         c -> new Decision("owner", Kind.NOTHING, null, null, 0, "your order runs: " + c.s().ownerJob), ""),
@@ -254,6 +257,23 @@ public final class BrainTree {
                         c -> c.s().bound() && BrainState.flat(c.s().botPos, c.s().ownerPos) > c.c().i("nearbyR"),
                         c -> new Decision("idle.near", Kind.START, "come", "near", 0, "staying within " + c.c().i("nearbyR") + " of you (not released: done lets me go)"), "come", "nearbyR"),
                 new Action("idle", "idle", c -> new Decision("idle", Kind.NOTHING, null, null, 0, "nothing scores above " + c.c().i("floor"))).meta("", "floor"));
+    }
+
+    // ---- 0.27.3: area.return ----
+
+    /** The need name the walk back runs under (its failures park it like a need's). */
+    public static final String AREA_NEED = "area";
+
+    static boolean areaReturnFires(Ctx c) {
+        BrainState s = c.s();
+        return AreaReturn.fires(c.c().on("area.return"), s.areaReturn, s.areasHere, s.ownerJob, s.passive, s.sheltering, s.areaReturnParked);
+    }
+
+    static Decision areaReturn(Ctx c) {
+        AreaReturn.Target t = c.s().areaReturn;
+        if (c.running() != null && AREA_NEED.equals(c.running().need()))
+            return new Decision("area.return", Kind.KEEP, c.running().chain(), AREA_NEED, 90, "walking back into " + t.name());
+        return new Decision("area.return", c.running() != null ? Kind.SWITCH : Kind.START, t.chain(), AREA_NEED, 90, AreaReturn.whisper(t.name()));
     }
 
     // ---- 0.24.3: night safety ----

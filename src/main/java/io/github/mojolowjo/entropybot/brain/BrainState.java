@@ -78,6 +78,11 @@ public final class BrainState {
     public Feasibility.Facts feas = new Feasibility.Facts();
     /** 0.26.3: the day plan's active goal, offered as the need day_goal (filled by the brain's DayPlanRuntime), else null. */
     public DayGoal dayGoal;
+    /** 0.27.3 area.return: the walk back when the bot stands outside every area (null: inside, or no area in this
+     *  dimension); a shelter job holds the bot; the walk back is parked (why, else null; filled by the brain). */
+    public AreaReturn.Target areaReturn;
+    public boolean sheltering;
+    public String areaReturnParked;
 
     /** 0.26.5: the learned table and its settings (null: not loaded yet or brain.learn 0: every multiplier is 1). */
     public OutcomeTable learn;

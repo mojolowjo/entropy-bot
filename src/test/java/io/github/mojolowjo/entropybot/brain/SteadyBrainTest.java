@@ -1396,8 +1396,8 @@ class SteadyBrainTest {
             assertTrue(keys(byId.get("weather.storm.shelter")).contains("weather.storm"));
             assertTrue(keys(byId.get("spawn")).contains("spawn.cooldownMinutes"));
             assertTrue(keys(byId.get("pick")).containsAll(List.of("brain.failMemoryMinutes", "brain.preDepositSlots")));
-            assertEquals("r/7/1", byId.get("spawn").get("uid").getAsString());
-            assertEquals("r/5", byId.get("weather.storm").get("uid").getAsString());
+            assertEquals("r/8/1", byId.get("spawn").get("uid").getAsString());
+            assertEquals("r/6", byId.get("weather.storm").get("uid").getAsString());
             for (String k : List.of("brain.failMemoryMinutes", "brain.preDepositSlots", "weather.storm", "passive.ownerTimeoutS", "spawn.cooldownMinutes"))
                 assertTrue(o.getAsJsonObject("keys").has(k), k);
             BrainTreeFile.Result r = BrainTreeFile.parse(o.toString());
@@ -1422,9 +1422,9 @@ class SteadyBrainTest {
         @Test
         void brainJsonPathsReachTheNewBranches() {
             BrainTree t = new BrainTree();
-            assertEquals(List.of("r", "r/3", "r/3/0", "r/3/0/1"), t.pathTo("passive.leave"));
-            assertEquals("r/5/0/1", t.pathTo("weather.storm.shelter").get(3));
-            assertEquals(List.of("r", "r/7", "r/7/1"), t.pathTo("spawn"));
+            assertEquals(List.of("r", "r/4", "r/4/0", "r/4/0/1"), t.pathTo("passive.leave"));
+            assertEquals("r/6/0/1", t.pathTo("weather.storm.shelter").get(3));
+            assertEquals(List.of("r", "r/8", "r/8/1"), t.pathTo("spawn"));
         }
     }
 }

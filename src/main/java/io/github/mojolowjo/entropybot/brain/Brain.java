@@ -375,6 +375,8 @@ public final class Brain {
         if (last != null) b.append(" | last: ").append(last.branch()).append(lastDecisionAt > 0 ? " " + (now - lastDecisionAt) / 1000 + " s ago" : "");
         Map<String, String> p = parked(now);
         if (!p.isEmpty()) b.append(" | parked: ").append(p);
+        String ar = areaLine(prev);
+        if (ar != null) b.append(" | ").append(ar);      // 0.27.3
         b.append(" | idle list ").append(String.join(", ", idleList())).append(" | copy ").append(copyOn() ? "on" : "off");
         DecisionLog log = env.decisions();
         b.append(" | log ").append(log.written()).append(" lines").append(log.dropped() > 0 ? ", " + log.dropped() + " dropped (5 MB a day)" : "")
@@ -382,6 +384,13 @@ public final class Brain {
         if (!configNote.isEmpty()) b.append(" | brain.config ignored: ").append(configNote);
         if (lastError != null) b.append(" | last error: ").append(lastError);
         return b.toString();
+    }
+
+    /** 0.27.3: the area.return line for why and status (null when inside or no area). */
+    String areaLine(BrainState s) {
+        if (s == null) return null;
+        String w = AreaReturn.why(cfg.on("area.return"), s.areaReturn, s.areasHere, s.ownerJob, s.passive, s.sheltering, s.areaReturnParked);
+        return w == null ? null : "area.return: " + w;
     }
 
     int loopsPerMinute(long now) {
@@ -400,6 +409,7 @@ public final class Brain {
         return (older.isEmpty() ? "" : String.join(" | ", older) + "\n") + "latest: " + latest + scores + (prev != null ? " | stage " + prev.stage : "")
                 + (lastEvents.isEmpty() ? "" : " | events " + lastEvents)
                 + (prev != null ? " | " + NightSafety.status(prev, cfg) : "")
+                + (areaLine(prev) == null ? "" : " | " + areaLine(prev))      // 0.27.3
                 + (day.plan().whyLine() == null ? "" : " | " + day.plan().whyLine());      // 0.26.3
     }
 
@@ -499,6 +509,8 @@ public final class Brain {
                 return;
             }
             lastEvents = Interrupts.events(prev, s, cfg);
+            s.areaReturnParked = parked(now).get(BrainTree.AREA_NEED);           // 0.27.3: 3 failed walks back park it
+            if (s.areasHere) areaWhispered = false;
             Needs.Scored sc = Needs.score(s, cfg, idleList(), parked(now), job == null ? null : job.need());
             lastScored = sc;
             boolean nightDone = nightAt != null && BrainState.flat(nightAt, s.botPos) <= 16;
@@ -657,7 +669,8 @@ public final class Brain {
         // so it can't loop every 2 s: three in a row park the need
         boolean quick = outcome.equals("finished") && now - j.at() < QUICK_MS && !j.need().equals("near") && !j.need().equals("night")
                 && !j.need().startsWith("goal:") && !j.need().equals(DayPlanRuntime.NEED)      // a goal's routine that ends well is the goal reached, however fast (0.23.0 smoke)
-                && !j.base().startsWith("eat") && !j.need().equals("spawn") && !j.need().equals("passive");     // 0.26.1: quick by nature
+                && !j.base().startsWith("eat") && !j.need().equals("spawn") && !j.need().equals("passive")     // 0.26.1: quick by nature
+                && !j.need().equals(BrainTree.AREA_NEED);      // 0.27.3: a short walk back in is quick by nature
         if (quick) res = "ended at once (" + (res == null ? "no reply" : res.length() > 100 ? res.substring(0, 100) : res) + ") without meeting the need";
         if (outcome.equals("finished") || outcome.startsWith("failed")) io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.need(outcome.equals("finished") && !quick);     // 0.23.6
         if (outcome.startsWith("failed") || quick) {
@@ -711,7 +724,11 @@ public final class Brain {
     }
 
     /** The chain start() runs for a decision (the supply, eat and pre-deposit prefixes) and the why's tail. */
+    /** 0.27.3: the area.return whisper went out since the bot was last inside an area. */
+    private boolean areaWhispered;
+
     String[] compose(BrainTree.Decision d, BrainState s) {
+        if (d.branch().equals("area.return")) return new String[]{d.chain(), "", null};      // 0.27.3: the walk alone, no supplies first
         SupplyCheck.Supply sup = SupplyCheck.before(d.chain(), s, 0, 0);
         String eat = PlayRules.eatFirst(d.chain(), s, cfg);          // 0.25.1: cave.eatFirst (why shows it, no extra whisper)
         // 0.26.1 R3: a gathering job picked with few free slots and a base known: deposit first
@@ -857,6 +874,10 @@ public final class Brain {
             if (d.need() != null && d.need().equals("night")) nightAt = s.botPos;
             env.saved();
             if (d.branch().equals("passive.leave")) env.whisper(BrainTree.LEFT_WHISPER);      // 0.26.1 R5: exactly this
+            else if (d.branch().equals("area.return")) {      // 0.27.3: once per time outside
+                if (!areaWhispered) env.whisper(d.reason());
+                areaWhispered = true;
+            }
             else if ((!d.chain().equals(lastWhisper) || env.now() - lastWhisperAt > 60_000)      // the same start twice in a minute: once
                     && parkWhisperDue(num(parkWhispers(data()), d.need() == null ? "" : d.need(), 0), env.now()))      // 0.24.3: a need parked in the last hour starts quietly
                 env.whisper("brain: " + d.chain() + " (" + d.reason() + ")" + (supWhy == null ? "" : " - " + supWhy));

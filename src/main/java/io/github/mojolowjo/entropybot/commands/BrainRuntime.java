@@ -46,6 +46,16 @@ import java.util.Map;
  */
 public final class BrainRuntime implements BrainEnv {
     private static final Logger LOG = LogUtils.getLogger();
+
+    /** 0.27.3: feet cell f is standable: a loaded chunk, a full block below, no collision at the feet and the head, no fluid. */
+    static boolean standable(net.minecraft.client.multiplayer.ClientLevel lv, int[] f) {
+        if (lv == null || !lv.hasChunk(f[0] >> 4, f[2] >> 4)) return false;
+        net.minecraft.core.BlockPos b = new net.minecraft.core.BlockPos(f[0], f[1], f[2]);
+        var below = lv.getBlockState(b.below());
+        return below.isCollisionShapeFullBlock(lv, b.below()) && lv.getBlockState(b).getCollisionShape(lv, b).isEmpty()
+                && lv.getBlockState(b.above()).getCollisionShape(lv, b.above()).isEmpty()
+                && lv.getFluidState(b).isEmpty() && lv.getFluidState(b.above()).isEmpty();
+    }
     public static final String CHAIN = "brain";
 
     private final Commands c;
@@ -239,6 +249,17 @@ public final class BrainRuntime implements BrainEnv {
         else if (ownerOffAt < 0) ownerOffAt = s.now;
         s.ownerOfflineMs = s.ownerOnline ? 0 : s.now - ownerOffAt;
         s.areasHere = c.inAreas(Storage.dim(), s.botPos[0], s.botPos[2]);      // 0.26.1 R1: OUTSIDE clears inside an area
+        // 0.27.3 area.return: outside every area (and the near-me zone, part of inAreas): the nearest inside cell
+        s.sheltering = ShelterJob.current != null;
+        if (!s.areasHere) {
+            try {
+                s.areaReturn = io.github.mojolowjo.entropybot.brain.AreaReturn.withY(
+                        io.github.mojolowjo.entropybot.brain.AreaReturn.nearest(c.areaRects(Storage.dim()), s.botPos[0], s.botPos[2]),
+                        s.botPos[1], f -> standable(mc.level, f));
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] brain area.return: {}", e.toString());
+            }
+        }
         // what runs
         s.menuOpen = mc.screen != null && !brainChainRunning() && !c.jobs.running();
         if (brainChainRunning()) s.ownerJob = null;         // the brain's chain: its step (a job, a gather, a carry) is the brain's

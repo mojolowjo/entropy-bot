@@ -188,6 +188,23 @@ public final class Commands implements Chains.Env {
     final GoalPlanning planning = new GoalPlanning(this);
 
     /** B3: the areas as the fence sees them (an empty array without a policy). */
+    /** 0.27.3: the owner's rectangular areas of this dimension (not the near-me circle), for area.return. */
+    java.util.List<io.github.mojolowjo.entropybot.brain.AreaReturn.Area> areaRects(String dim) {
+        java.util.List<io.github.mojolowjo.entropybot.brain.AreaReturn.Area> out = new java.util.ArrayList<>();
+        if (policy == null) return out;
+        for (com.google.gson.JsonElement e : policy.areas()) {
+            try {
+                JsonObject a = e.getAsJsonObject();
+                if (a.has("round") || !PolicyCommands.dimOf(a).equals(dim)) continue;
+                out.add(new io.github.mojolowjo.entropybot.brain.AreaReturn.Area(PolicyCommands.nameOf(a),
+                        PolicyCommands.n(a, "x1"), PolicyCommands.n(a, "z1"), PolicyCommands.n(a, "x2"), PolicyCommands.n(a, "z2")));
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] area.return: a bad area entry: {}", ex.toString());
+            }
+        }
+        return out;
+    }
+
     com.google.gson.JsonArray effectiveAreas() { return policy == null ? new com.google.gson.JsonArray() : policy.effectiveAreas(); }
 
     Chains chainsRef() { return chains; }

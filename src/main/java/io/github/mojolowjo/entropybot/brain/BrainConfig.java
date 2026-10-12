@@ -84,7 +84,8 @@ public final class BrainConfig {
                 {"brain.learnFloor", 60, 10, 100, "the lowest learned multiplier in % (a job that always fails)"},
                 {"brain.learnCeil", 130, 100, 300, "the highest learned multiplier in % (a job that always finishes)"},
                 {"brain.learnHalfLifeDays", 7, 1, 60, "learned counts halve in this many days"},
-                {"weather.storm", 1, 0, 1, "a thunderstorm with sky above me counts as night for the night bands (1 on, 0 off)"},
+                {"area.return", 1, 0, 1, "outside every area (and the near-me zone): I walk back into the nearest one (1 on, 0 off)"},
+                {"weather.storm", 1, 0, 1,"a thunderstorm with sky above me counts as night for the night bands (1 on, 0 off)"},
                 {"passive.ownerTimeoutS", 300, 0, 3600, "escorting or assisting and you are offline this many seconds: dismiss then home (0 = off)"},
                 {"spawn.cooldownMinutes", 1440, 60, 10080, "in-game minutes between two tries to set my spawn at a bed (1440 = one day)"},
                 // 0.27.0 motor (short moves by raw input: back off, hold, step to, climb, out of water)
