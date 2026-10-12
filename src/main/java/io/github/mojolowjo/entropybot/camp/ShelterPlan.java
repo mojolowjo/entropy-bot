@@ -148,6 +148,29 @@ public final class ShelterPlan {
         return null;
     }
 
+    /**
+     * 0.27.3 (d3, live: a shelter in a 1x1 pit with 2 own planks, roof and one wall, was "not in one" after a restart):
+     * the way out where a side may also be one own cell plus one natural cell the dig rules allow (mayDig: underground
+     * inside the areas). Both own first, then mixed; null if none.
+     */
+    public static int[][] exit(int[] f, Set<String> own, Predicate<int[]> mayDig) {
+        int[][] both = exit(f, own);
+        if (both != null || mayDig == null) return both;
+        for (int[] d : SIDES) {
+            int[] feet = {f[0] + d[0], f[1], f[2] + d[1]}, head = {feet[0], f[1] + 1, feet[2]};
+            boolean fo = mayBreak(feet, own), ho = mayBreak(head, own);
+            if ((fo && (ho || mayDig.test(head))) || (ho && mayDig.test(feet))) return new int[][]{feet, head, {f[0] + 2 * d[0], f[1], f[2] + 2 * d[1]}};
+        }
+        return null;
+    }
+
+    /** 0.27.3 (d3): the shell around f holds at least one own block (a shelter of mine, however much of it was there before). */
+    public static boolean anyOwn(int[] f, Set<String> own) {
+        if (own == null) return false;
+        for (int[] c : allCells(f)) if (own.contains(key(c))) return true;
+        return false;
+    }
+
     public enum Stage { BUILD, WAIT, OPEN, OUT, CLOSE, DONE }
 
     /**

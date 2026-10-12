@@ -44,6 +44,8 @@ public final class ShelterJob {
         boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
+        /** 0.27.3 (d3): natural shell cells the dig rules allow (underground inside the areas): a way out with one own cell. */
+        final Set<String> dig = new HashSet<>();
         int[][] exit;
         int idx;
         int[] hit;
@@ -192,9 +194,9 @@ public final class ShelterJob {
                 LOG.info("[entropybot] shelter: {} -> {}", ps.stage, n);
                 if (n == ShelterPlan.Stage.WAIT) noteBuilt(ps, lv);
                 if (n == ShelterPlan.Stage.OPEN) {
-                    ps.exit = ShelterPlan.exit(ps.feet, ps.own);
+                    ps.exit = ShelterPlan.exit(ps.feet, ps.own, x -> ps.dig.contains(ShelterPlan.key(x)));      // 0.27.3: one own + one natural cell too
                     if (ps.exit == null) {
-                        s.jobs.finish("error: my shelter has no wall of my own to open (all its sides were there before) - next: stop, and dig me out by hand");
+                        s.jobs.finish("error: my shelter has no wall of my own to open (all its sides were there before) - next: a goto (underground inside my areas I dig a staircase up), or dig me out by hand");
                         return "wait";
                     }
                     ps.idx = 0;
@@ -271,7 +273,8 @@ public final class ShelterJob {
             ps.stageAt = now;
             return ps.idx >= 2;
         }
-        if (!ShelterPlan.mayBreak(c, ps.own)) {
+        boolean ownCell = ShelterPlan.mayBreak(c, ps.own);
+        if (!ownCell && !ps.dig.contains(ShelterPlan.key(c))) {
             ps.note = "error: the block at " + Jobs.fmt(c) + " isn't mine - I only open my own shelter";
             return false;
         }
@@ -281,9 +284,9 @@ public final class ShelterJob {
         }
         Minecraft mc = Minecraft.getInstance();
         if (ps.hit == null) {
-            holdTool(p, ps.block);
+            holdTool(p, ownCell ? ps.block : "minecraft:stone");      // 0.27.3: a natural cell: the pickaxe
             // the own-block permission: a one-cell force lease (the guard refuses built blocks otherwise)
-            String le = ps.leases.take("opening my shelter at " + Jobs.fmt(c), new ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, true);
+            String le = ps.leases.take("opening my shelter at " + Jobs.fmt(c), new ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, ownCell);      // own: force; natural: a plain lease
             if (le != null) {
                 ps.note = "error: couldn't open my shelter at " + Jobs.fmt(c) + ": " + le.replaceFirst("^error: ", "");
                 return false;
@@ -385,16 +388,18 @@ public final class ShelterJob {
         if (lv == null || p == null) return null;
         int[] f = Jobs.here(p);
         Set<String> own = knownOwn(c, f);
-        if (!io.github.mojolowjo.entropybot.move.SurfaceSeal.inOwnShelter(f, own, x -> solid(lv, x))) return null;
+        // 0.27.3 (d3): a closed shell with at least one own cell (a pit with my roof and one wall) counts too
+        if (!io.github.mojolowjo.entropybot.move.SurfaceSeal.inOwnShelterLoose(f, own, x -> solid(lv, x))) return null;
         State s = new State();
         s.feet = f;
         s.own.addAll(own);
         s.stage = ShelterPlan.Stage.WAIT;
         s.timer = 1;                 // expired
         s.torchDone = true;
-        int[][] ex = ShelterPlan.exit(f, own);
-        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new BlockPos(ex[0][0], ex[0][1], ex[0][2])).getBlock()).toString();
-        s.block = id;
+        for (int[] cell : ShelterPlan.allCells(f)) if (!own.contains(ShelterPlan.key(cell)) && mayDig(c, lv, f, cell)) s.dig.add(ShelterPlan.key(cell));
+        int[] any = null;
+        for (int[] cell : ShelterPlan.allCells(f)) if (own.contains(ShelterPlan.key(cell))) { any = cell; break; }
+        s.block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new BlockPos(any[0], any[1], any[2])).getBlock()).toString();
         s.recovered = true;
         return s;
     }
@@ -423,6 +428,21 @@ public final class ShelterJob {
             LOG.info("[entropybot] shelter: {} of my shelter blocks still stand", kept.size());
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] shelter: pruning my blocks failed: {}", e.toString());
+        }
+    }
+
+    /** 0.27.3 (d3): a natural shell cell the dig rules allow: underground (no sky over the head) inside the areas, natural, no container, no fluid next to it. */
+    static boolean mayDig(Commands c, ClientLevel lv, int[] f, int[] cell) {
+        try {
+            BlockPos bp = new BlockPos(cell[0], cell[1], cell[2]);
+            if (lv.canSeeSky(new BlockPos(f[0], f[1] + 1, f[2])) || !c.inAreas(Storage.dim(), cell[0], cell[2])) return false;
+            var st = lv.getBlockState(bp);
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+            return io.github.mojolowjo.entropybot.restore.RestoreRules.natural(id) && !st.hasBlockEntity() && st.getFluidState().isEmpty()
+                    && io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(lv, cell[0], cell[1], cell[2]) == null;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] shelter: dig check at {}: {}", Jobs.fmt(cell), e.toString());
+            return false;
         }
     }
 

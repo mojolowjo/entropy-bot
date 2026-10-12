@@ -134,6 +134,14 @@ final class DigCommands {
     /** 0.24.4 "dig stairs <dir> <n>": a 1-wide walkable staircase down from where I stand (StairPlan), run as a chain. */
     static String stairs(Commands c, LocalPlayer p, String rest, String from) {
         String[] w = rest.toLowerCase().split("\\s+");
+        if (w.length >= 1 && w[0].equals("up")) {      // 0.27.3: "dig stairs up <dir> <n>"
+            int[] u = w.length >= 2 ? StairPlan.dir(w[1]) : null;
+            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.MAX + ")";
+            int n = Integer.parseInt(w[2]);
+            if (n < 1 || n > StairPlan.MAX) return "error: dig stairs up takes 1 to " + StairPlan.MAX + " steps";
+            if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+            return c.chainsRef().startChain(from, "dig stairs up", String.join(" then ", StairPlan.upSteps(p.getBlockX(), p.getBlockY(), p.getBlockZ(), u[0], u[1], n)), 1);
+        }
         int[] d = w.length >= 1 ? StairPlan.dir(w[0]) : null;
         if (d == null || w.length < 2 || !w[1].matches("\\d+")) return "usage: dig stairs north|south|east|west <n> (n steps down, at most " + StairPlan.MAX + ")";
         int n = Integer.parseInt(w[1]);

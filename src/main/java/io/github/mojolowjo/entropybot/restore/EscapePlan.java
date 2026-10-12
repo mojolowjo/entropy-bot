@@ -90,6 +90,55 @@ public final class EscapePlan {
         return best;
     }
 
+    /**
+     * 0.27.3 (d3): the side {dx, dz} to start a staircase up from feet (sides nearest dest first, else east, west,
+     * south, north): the first step's feet and head cells (y+1, y+2 beside) are open or breakable, a solid cell under it
+     * (y beside), and the cell over the bot's head (y+2) is not blocked (an own roof is broken with force). Null if none.
+     */
+    public static int[] stairSide(Grid g, int[] feet, int[] dest) {
+        List<int[]> order = new ArrayList<>(List.of(SIDES));
+        if (dest != null) order.sort(java.util.Comparator.comparingDouble(s -> sq(feet[0] + s[0] - dest[0]) + sq(feet[2] + s[1] - dest[2])));
+        if (g.at(feet[0], feet[1] + 2, feet[2]) == Kind.BLOCKED) return null;
+        for (int[] s : order) {
+            int tx = feet[0] + s[0], tz = feet[2] + s[1];
+            Kind under = g.at(tx, feet[1], tz), a = g.at(tx, feet[1] + 1, tz), b = g.at(tx, feet[1] + 2, tz);
+            boolean solid = under == Kind.BREAKABLE || under == Kind.FLOOR_ONLY;
+            if (solid && (a == Kind.OPEN || a == Kind.BREAKABLE) && (b == Kind.OPEN || b == Kind.BREAKABLE)) return s.clone();
+        }
+        return null;
+    }
+
+    /**
+     * 0.27.3 (d2: "no leaves, plants or own blocks to open" named no cell): why plan found nothing, per level side:
+     * the first cell that may not be broken (what names it) or how many breaks it would take. "east: persistent
+     * leaves at 1 71 0; north: 4 breaks (max 3); ..."
+     */
+    public static String explain(Grid g, java.util.function.Function<int[], String> what, int[] feet) {
+        String[] names = {"east", "west", "south", "north"};
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < SIDES.length; i++) {
+            int tx = feet[0] + SIDES[i][0], ty = feet[1], tz = feet[2] + SIDES[i][1];
+            Kind floor = g.at(tx, ty - 1, tz);
+            if (floor != Kind.BREAKABLE && floor != Kind.FLOOR_ONLY) {
+                out.add(names[i] + ": no floor at " + tx + " " + (ty - 1) + " " + tz + " (" + what.apply(new int[]{tx, ty - 1, tz}) + ")");
+                continue;
+            }
+            int breaks = 0;
+            String bad = null;
+            for (int[] c : new int[][]{{tx, ty + 1, tz}, {tx, ty, tz}}) {
+                Kind k = g.at(c[0], c[1], c[2]);
+                if (k == Kind.OPEN) continue;
+                if (k != Kind.BREAKABLE) {
+                    bad = what.apply(c) + " at " + c[0] + " " + c[1] + " " + c[2];
+                    break;
+                }
+                breaks++;
+            }
+            out.add(names[i] + ": " + (bad != null ? bad : breaks > MAX_BREAKS ? breaks + " breaks (max " + MAX_BREAKS + ")" : "open with " + breaks + " break(s)"));
+        }
+        return String.join("; ", out);
+    }
+
     private static double sq(double v) { return v * v; }
 
     private static boolean contains(List<int[]> l, int[] c) {

@@ -288,11 +288,74 @@ public final class Jobs {
         }, me, dest, towardGoal);
     }
 
+    /** 0.27.3 (d1): sealed in my own shelter: its way out (ShelterPlan.exit) as the dig-out, head cell first; else null. */
+    EscapePlan.Escape ownShelterExit(net.minecraft.world.level.Level level, int[] me) {
+        try {
+            java.util.Set<String> own = ShelterJob.knownOwn(commands, me);
+            java.util.function.Predicate<int[]> closed = c -> !level.getBlockState(new BlockPos(c[0], c[1], c[2])).canBeReplaced();
+            if (!SurfaceSeal.inOwnShelter(me, own, closed)) return null;
+            int[][] ex = io.github.mojolowjo.entropybot.camp.ShelterPlan.exit(me, own);
+            if (ex == null || !own.contains(io.github.mojolowjo.entropybot.camp.ShelterPlan.key(ex[0]))) return null;
+            java.util.List<int[]> breaks = new java.util.ArrayList<>();
+            for (int[] c : new int[][]{ex[1], ex[0]}) if (c != null && closed.test(c) && own.contains(io.github.mojolowjo.entropybot.camp.ShelterPlan.key(c))) breaks.add(c);
+            LOG.info("[entropybot] in my own shelter at {}: opening my own wall at {}", fmt(me), fmt(ex[0]));
+            return new EscapePlan.Escape(ex[0], breaks);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] own shelter exit: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** 0.27.3 (d2): the surface dig-out's refusal, side by side ("east: oak_leaves (persistent...) at x y z; ..."). */
+    String surfaceWhy(net.minecraft.world.level.Level level, String dim, int[] me) {
+        try {
+            io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
+            return EscapePlan.explain((x, y, z) -> {
+                BlockPos bp = new BlockPos(x, y, z);
+                if (!level.isLoaded(bp)) return EscapePlan.Kind.BLOCKED;
+                var st = level.getBlockState(bp);
+                if (!st.getFluidState().isEmpty()) return EscapePlan.Kind.BLOCKED;
+                if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
+                SurfaceSeal.Kind k = surfaceKind(level, x, y, z);
+                boolean ok = k == SurfaceSeal.Kind.OWN || (k != SurfaceSeal.Kind.NO && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z));
+                if (ok) return EscapePlan.Kind.BREAKABLE;
+                return st.isCollisionShapeFullBlock(level, bp) ? EscapePlan.Kind.FLOOR_ONLY : EscapePlan.Kind.BLOCKED;
+            }, c -> surfaceWhat(level, dim, c), me);
+        } catch (RuntimeException e) {
+            return "(explaining failed: " + e + ")";
+        }
+    }
+
+    /** 0.27.3 (d2): what a cell is for the surface dig-out's refusal line (why it may not be broken). */
+    String surfaceWhat(net.minecraft.world.level.Level level, String dim, int[] c) {
+        try {
+            BlockPos bp = new BlockPos(c[0], c[1], c[2]);
+            if (!level.isLoaded(bp)) return "not loaded";
+            var st = level.getBlockState(bp);
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+            if (!st.getFluidState().isEmpty()) return id + " (a fluid)";
+            if (st.getCollisionShape(level, bp).isEmpty()) return id + " (open)";
+            SurfaceSeal.Kind k = surfaceKind(level, c[0], c[1], c[2]);
+            if (k == SurfaceSeal.Kind.NO) {
+                if (st.is(net.minecraft.tags.BlockTags.LEAVES)) return id + " (persistent: placed by a player, never broken)";
+                if (st.hasBlockEntity()) return id + " (a container or machine)";
+                if (Guard.liquidNextTo(level, c[0], c[1], c[2]) != null) return id + " (next to water or lava)";
+                return id + " (not leaves, a plant or my own block)";
+            }
+            if (k != SurfaceSeal.Kind.OWN && !io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(core.guard.core.policy(), dim, c[0], c[1], c[2]))
+                return id + " (not leasable: outside my areas' box or in a protect box)";
+            return id;
+        } catch (RuntimeException e) {
+            return "unknown (" + e + ")";
+        }
+    }
+
     /** 0.27.2: starts the surface dig-out: one lease per cell, own blocks noted as the shelter's door. False when none. */
     private boolean startSurfaceEscape(LocalPlayer p, Job j, int[] me, String dim, boolean towardGoal) {
         Minecraft mc = Minecraft.getInstance();
         net.minecraft.world.level.Level level = mc.level;
-        EscapePlan.Escape e = surfacePlan(level, dim, me, travelDest(j), towardGoal);
+        EscapePlan.Escape e = ownShelterExit(level, me);          // 0.27.3 (d1): in my own shelter: open my own wall first
+        if (e == null) e = surfacePlan(level, dim, me, travelDest(j), towardGoal);
         if (e == null) return false;
         IBaritone b = baritone();
         if (b != null) cancel(b);
@@ -1030,6 +1093,11 @@ public final class Jobs {
         boolean early = j.type.equals("travel") && ev == null && travelDest(j) != null && j.lastStepTick >= 0
                 && !onFullBlock(p) && core.tick() - j.bestTick > UNSTICK_EARLY;
         if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < UNSTICK_TRIES && startUnstick(p, j)) return;
+        // 0.27.3 (d1): a short walk with no path and no free step (its tries spent) still gets the dig-out
+        if ("nopath".equals(ev) && bestFreeStep(p, null) == null && startEscape(p, j, false)) {
+            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());
+            return;
+        }
         if (stuck) {
             if (b != null) cancel(b);
             finish(noPathResult(p, j));
@@ -1158,7 +1226,11 @@ public final class Jobs {
     /** Picks the free spot next to the bot nearest the destination and starts walking onto it; false when there is none. */
     boolean startUnstick(LocalPlayer p, Job j) {
         BlockPos best = bestFreeStep(p, travelDest(j));
-        if (best == null) return startEscape(p, j);          // P1: boxed in: dig out (underground, inside the areas only)
+        if (best == null) {                                   // P1: boxed in: dig out (underground, inside the areas only)
+            boolean r = startEscape(p, j);
+            if (r) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());      // 0.27.3: short walks count in path status too
+            return r;
+        }
         return stepTo(p, j, best);
     }
 
@@ -1187,6 +1259,9 @@ public final class Jobs {
                     if (dx == 0 && dz == 0) continue;
                     BlockPos c = new BlockPos(me[0] + dx, me[1] + dy, me[2] + dz);
                     if (!standable(mc, c)) continue;
+                    // 0.27.3 (d1, live: "stepping to -10 70 31" out of a sealed shelter): a diagonal cell counts only when
+                    // one of the two side cells lets the body through (the shell's open corners are no way out)
+                    if (dx != 0 && dz != 0 && !SurfaceSeal.diagonalPass((x, y, z) -> open(mc, new BlockPos(x, y, z)), me, dx, dy, dz)) continue;
                     double score = d == null ? Math.abs(dx) + Math.abs(dz) : Math.sqrt(distSq(new int[]{c.getX(), c.getY(), c.getZ()}, d));
                     if (score < bestScore) {
                         bestScore = score;
@@ -1274,19 +1349,22 @@ public final class Jobs {
         if (!RestoreRules.underground(sky, surface, me[1]) && !ownClimb) {
             // 0.27.2: on the surface only leaves, plants, snow layers and its own shelter blocks (run1: a shelter in leaves)
             if (startSurfaceEscape(p, j, me, dim, towardGoal)) return true;
-            LOG.info("[entropybot] stuck at {} with no free step, on the surface: no leaves, plants or own blocks to open (owner's rule)", fmt(me));
+            LOG.info("[entropybot] stuck at {} with no free step, on the surface: no way out by leaves, plants or own blocks (owner's rule): {}", fmt(me), surfaceWhy(level, dim, me));
             return false;
         }
         if (!commands.inAreas(dim, me[0], me[2])) {
             if (startSurfaceEscape(p, j, me, dim, towardGoal)) return true;
-            LOG.info("[entropybot] stuck at {} with no free step, outside my areas: no dig-out", fmt(me));
+            LOG.info("[entropybot] stuck at {} with no free step, outside my areas: no dig-out (surface: {})", fmt(me), surfaceWhy(level, dim, me));
             return false;
         }
         io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
         EscapePlan.Escape e = EscapePlan.plan((x, y, z) -> escapeKind(level, pol, dim, x, y, z), me, travelDest(j), towardGoal);
         if (e == null) {
-            LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}", fmt(me), EscapePlan.MAX_BREAKS);
+            LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}: {}", fmt(me), EscapePlan.MAX_BREAKS,
+                    EscapePlan.explain((x, y, z) -> escapeKind(level, pol, dim, x, y, z), c -> surfaceWhat(level, dim, c), me));
             core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);
+            // 0.27.3 (d3): underground inside the areas: a staircase up toward the surface instead (after this job ends)
+            planStairsUp(me, surface, travelDest(j), (x, y, z) -> escapeKind(level, pol, dim, x, y, z));
             return false;
         }
         IBaritone b = baritone();
@@ -1324,6 +1402,50 @@ public final class Jobs {
         LOG.info("[entropybot] stuck at {} underground with no free step: digging out {} block(s) ({}) to {}", fmt(me), e.breaks().size(), cells.toString().replaceAll("; $", ""), fmt(e.feet()));
         core.events.push("job", "escape: digging out " + e.breaks().size() + " block(s) at " + fmt(me), null);
         return true;
+    }
+
+    /** 0.27.3 (d3): the staircase up a sealed underground spot gets (a chain started once this job has ended), or null. */
+    volatile String pendingStairs;
+    private long stairsWhisperedAt = -1_000_000;
+
+    /** Picks the side (toward dest first) whose first step's cells are all natural and breakable, and notes the staircase. */
+    private void planStairsUp(int[] me, int surface, int[] dest, EscapePlan.Grid g) {
+        int n = StairPlan.upCount(me[1], surface);
+        if (n <= 0) return;
+        int[] side = EscapePlan.stairSide(g, me, dest);
+        if (side == null) {
+            LOG.info("[entropybot] stuck at {} underground: no side to dig a staircase up from (built blocks, fluid or a protect box next to me)", fmt(me));
+            return;
+        }
+        java.util.List<String> steps = new java.util.ArrayList<>(StairPlan.upSteps(me[0], me[1], me[2], side[0], side[1], n));
+        // an own shelter roof over the head (the pit's plank): the first dig may break my own block (force, never a chest)
+        String roof = me[0] + " " + (me[1] + 2) + " " + me[2];
+        if (ShelterJob.ownBlocks(commands).contains(roof) || RestoreLive.INSTANCE.builtByMe(me[0], me[1] + 2, me[2])) steps.set(0, steps.get(0) + " force");
+        pendingStairs = String.join(" then ", steps);
+        String msg = "I am sealed in underground at " + fmt(me) + " - digging a staircase up (" + n + " steps " + StairPlan.dirName(side[0], side[1]) + ")";
+        LOG.info("[entropybot] {}", msg);
+        if (core.tick() - stairsWhisperedAt > 20 * 60 * 10) {      // once per 10 minutes
+            stairsWhisperedAt = core.tick();
+            commands.whisper(commands.owner(), msg);
+        }
+    }
+
+    /** Called every tick by Commands: the noted staircase starts as a chain once nothing runs. */
+    void stairsTick() {
+        String s = pendingStairs;
+        if (s == null || running()) return;
+        pendingStairs = null;
+        try {
+            Chains ch = commands.chainsRef();
+            if (ch == null || ch.running()) {
+                LOG.info("[entropybot] escape staircase not started: a chain runs");
+                return;
+            }
+            String r = ch.startChain(commands.owner(), "escape stairs", s, 1);
+            LOG.info("[entropybot] escape staircase: {}", r);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] escape staircase failed to start: {}", e.toString());
+        }
     }
 
     private static void holdPickaxe(Minecraft mc, LocalPlayer p) {

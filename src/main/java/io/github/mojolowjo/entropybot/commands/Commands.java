@@ -642,6 +642,7 @@ public final class Commands implements Chains.Env {
                     chains.endChain("stopped: " + e);
                 }
             }
+            if (tick % 5 == 1 && !chains.running()) jobs.stairsTick();      // 0.27.3 (d3): a sealed pit's staircase up
             if (tick % 5 == 4) {
                 try {
                     gathering.tick(player);                    // P2: the next gather step once the last one ended

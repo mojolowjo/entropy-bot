@@ -63,6 +63,26 @@ public final class StairPlan {
         return out;
     }
 
+    /**
+     * 0.27.3 "dig stairs up <dir> <n>" (and the underground escape's way out of a sealed pit): column i = 1..n at
+     * (x+dx*i, z+dz*i) with the feet at y+i. Each step digs the 2x2 between the column before and this one at y+i..y+i+1
+     * (the new feet and head, and the head room over the step before to jump up) and walks onto it.
+     */
+    public static List<String> upSteps(int x, int y, int z, int dx, int dz, int n) {
+        List<String> out = new ArrayList<>();
+        for (int i = 1; i <= n; i++) {
+            int px = x + dx * (i - 1), pz = z + dz * (i - 1), cx = x + dx * i, cz = z + dz * i;
+            out.add("dig " + Math.min(px, cx) + " " + (y + i) + " " + Math.min(pz, cz) + " " + Math.max(px, cx) + " " + (y + i + 1) + " " + Math.max(pz, cz));
+            out.add("goto " + cx + " " + (y + i) + " " + cz);
+        }
+        return out;
+    }
+
+    /** 0.27.3: the steps up from feet y to the surface (open sky from surface up), at most MAX; 0 when not below it. */
+    public static int upCount(int y, int surface) {
+        return Math.max(0, Math.min(MAX, surface - y));
+    }
+
     /** A vertical hole above (x, y, z): {rimX, rimY, rimZ, dx, dz, drop} with (dx, dz) from the hole to the rim, or null. */
     public static int[] shaft(Cells c, int x, int y, int z) {
         if (!c.free(x, y, z) || !c.free(x, y + 1, z)) return null;

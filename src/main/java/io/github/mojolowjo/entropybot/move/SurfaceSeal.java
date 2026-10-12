@@ -53,9 +53,30 @@ public final class SurfaceSeal {
                 for (int dz = -1; dz <= 1; dz++) {
                     if (dx == 0 && dz == 0) continue;
                     int x = me[0] + dx, y = me[1] + dy, z = me[2] + dz;
+                    if (dx != 0 && dz != 0 && !diagonalPass(g::open, me, dx, dy, dz)) continue;      // 0.27.3: corners need a side open
                     if (g.open(x, y, z) && g.open(x, y + 1, z) && g.floor(x, y - 1, z)) return false;
                 }
         return true;
+    }
+
+    /** A cell test (open: nothing to bump into). */
+    public interface Open {
+        boolean open(int x, int y, int z);
+    }
+
+    /**
+     * 0.27.3 (d1): a diagonal step (dx, dz both set) from me to dy: the body passes only when one of the two side cells
+     * (me+dx or me+dz) is open at the bot's feet and head, plus one more when it steps up (y..max(y, y+dy)+1).
+     */
+    public static boolean diagonalPass(Open g, int[] me, int dx, int dy, int dz) {
+        int top = Math.max(me[1], me[1] + dy) + 1, bot = me[1];
+        int[][] sides = {{me[0] + dx, me[2]}, {me[0], me[2] + dz}};
+        for (int[] s : sides) {
+            boolean ok = true;
+            for (int y = bot; y <= top && ok; y++) ok = g.open(s[0], y, s[1]);
+            if (ok) return true;
+        }
+        return false;
     }
 
     /**
@@ -66,6 +87,16 @@ public final class SurfaceSeal {
         if (feet == null || own == null || own.isEmpty()) return false;
         for (int[] c : ShelterPlan.allCells(feet)) if (!closed.test(c)) return false;
         return ShelterPlan.exit(feet, own) != null;
+    }
+
+    /**
+     * 0.27.3 (d3): as above, but a closed shell with at least one own cell counts (an underground pit closed by a roof and
+     * one wall of mine); mayDig (natural cells the dig rules allow there) only matters for the way out, not for this test.
+     */
+    public static boolean inOwnShelterLoose(int[] feet, Set<String> own, Predicate<int[]> closed) {
+        if (feet == null || own == null || own.isEmpty()) return false;
+        for (int[] c : ShelterPlan.allCells(feet)) if (!closed.test(c)) return false;
+        return ShelterPlan.anyOwn(feet, own);
     }
 
     /** How many own cells of the shell around feet are there (for the status line). */
