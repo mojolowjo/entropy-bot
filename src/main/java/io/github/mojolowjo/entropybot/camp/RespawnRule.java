@@ -18,7 +18,7 @@ public final class RespawnRule {
     private final List<int[]> homes = new ArrayList<>();
 
     public static String text(int[] p) {
-        return "I'm at " + p[0] + " " + p[1] + " " + p[2] + ", outside my areas - say: area here 48 camp, then bootstrap, or come get me";
+        return "I'm at " + p[0] + " " + p[1] + " " + p[2] + ", outside my areas - say: area here 48 camp neutral then bootstrap, or come get me";
     }
 
     /** A new world join: check again once settled. */

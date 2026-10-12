@@ -119,6 +119,60 @@ class TrialFixTest {
                 BuildCount.refusal(170, 16, "cobblestone"));
     }
 
+    // ---- C: climb ----
+
+    /** Fake cells: solid (DIG) at or under y=9, OPEN above; extra cells by key "x y z". */
+    private static ClimbPlan.Cells cells(Map<String, ClimbPlan.Kind> extra) {
+        return (x, y, z) -> extra.getOrDefault(x + " " + y + " " + z, y <= 9 ? ClimbPlan.Kind.DIG : ClimbPlan.Kind.OPEN);
+    }
+
+    @Test
+    void climbOutOfAOneWideShaft() {
+        // the bot at 0 6 0 in a 1x1 shaft (0 6..9 0 open), surface feet at 10
+        Map<String, ClimbPlan.Kind> m = new HashMap<>();
+        for (int y = 6; y <= 9; y++) m.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);
+        ClimbPlan.Plan p = ClimbPlan.plan(cells(m), 0, 6, 0, 10, true);
+        assertNull(p.err());
+        assertEquals(4, p.up());
+        assertEquals("north", p.dir(), "all sides equal: the first");
+        assertEquals("dig 0 7 -1 0 8 0", p.steps().get(0));
+        assertEquals("goto 0 7 -1", p.steps().get(1));
+        assertEquals("goto 0 10 -4", p.steps().get(p.steps().size() - 1));
+        assertEquals("climb 4 up (a staircase north, " + p.dig() + " blocks to dig) to 0 10 -4", ClimbPlan.startText(p));
+        // no pickaxe: the dig can't happen
+        ClimbPlan.Plan np = ClimbPlan.plan(cells(m), 0, 6, 0, 10, false);
+        assertTrue(np.err().startsWith("error: climbing 4 up needs "), np.err());
+        assertTrue(np.err().endsWith("next: craft wooden_pickaxe 1, then climb"));
+        // not in a hole
+        assertTrue(ClimbPlan.plan(cells(m), 0, 10, 0, 10, true).steps().isEmpty());
+        assertTrue(ClimbPlan.inHole(6, 10, false));
+        assertFalse(ClimbPlan.inHole(6, 10, true));
+        assertFalse(ClimbPlan.inHole(8, 10, false));
+        assertEquals("I'm in a hole (the rim is 4 above me) - next: climb", ClimbPlan.holeHint(4));
+    }
+
+    @Test
+    void climbAvoidsWaterAndChestsAndUsesThePitEdge() {
+        Map<String, ClimbPlan.Kind> m = new HashMap<>();
+        for (int y = 6; y <= 9; y++) m.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);
+        m.put("0 8 -2", ClimbPlan.Kind.BLOCKED);          // water north
+        m.put("0 7 1", ClimbPlan.Kind.BLOCKED);           // a chest south
+        ClimbPlan.Plan p = ClimbPlan.plan(cells(m), 0, 6, 0, 10, true);
+        assertEquals("east", p.dir());
+        // everything blocked: the error names a side
+        Map<String, ClimbPlan.Kind> all = new HashMap<>(m);
+        all.put("1 7 0", ClimbPlan.Kind.BLOCKED);
+        all.put("-1 7 0", ClimbPlan.Kind.BLOCKED);
+        ClimbPlan.Plan none = ClimbPlan.plan(cells(all), 0, 6, 0, 10, true);
+        assertTrue(none.err().startsWith("error: no way up from 0 6 0 (north: "), none.err());
+        // a 3x3 pit 3 deep (x,z -1..1, y 7..9 open): from the centre every first step has an open floor; it starts at the edge
+        Map<String, ClimbPlan.Kind> pit = new HashMap<>();
+        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) for (int y = 7; y <= 9; y++) pit.put(x + " " + y + " " + z, ClimbPlan.Kind.OPEN);
+        ClimbPlan.Plan e = ClimbPlan.plan(cells(pit), 0, 7, 0, 10, true);
+        assertNull(e.err());
+        assertTrue(e.steps().get(0).startsWith("goto "), e.steps().toString());
+    }
+
     // ---- D: shovel ----
 
     @Test

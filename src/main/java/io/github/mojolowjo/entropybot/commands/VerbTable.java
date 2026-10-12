@@ -96,7 +96,9 @@ public final class VerbTable {
                         + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
                         + "any coordinate may be ~ or ~N (from my feet); -N: each column's surface block and N-1 below, +N: the N blocks above the surface (N 1-64)",
                 "dig 10 60 10 20 64 20 ores|dig pit -3|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 +10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
-        v("build", "", "digging", O, "build floor|walls|shell|fill <block> <area>", "build inside an area with heights (never breaks a block)", "build floor cobblestone yard", "status");
+        v("build", "", "digging", O, "build floor|walls|shell|fill <block> <area>", "build inside an area with heights (never breaks a block); says how many blocks it needs at the start (shell = all six faces, walls = four sides, floor = the bottom layer, fill = all) and refuses with a gather hint when I carry under a tenth of them", "build floor cobblestone yard|build shell cobblestone house", "status");
+        v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb",
+                "climb", "goto <x y z>");
         v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
                 "fell trees in my areas for n logs (logs: any kind but what kinds logs leaves out), never next to builds; pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
         v("gather", "", "digging", O, "gather <item|kind> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",

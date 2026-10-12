@@ -554,12 +554,35 @@ public final class Jobs {
     }
 
     /** Ends the job: its request hears msg (the requester's whisper, a chain's next step). */
+    /**
+     * 0.28.1 (trial fix C): a walk or dig that ends short ("couldn't get there", "stuck") with the bot 3+ under the
+     * surface and no sky over it says so, with "next: climb" (trial 1: both bots ended in their own pit, no hint).
+     */
+    private String holeNote(Job j, String msg) {
+        try {
+            if (msg == null || msg.startsWith("ok") || msg.contains("next: climb")) return msg;
+            String low = msg.toLowerCase();
+            if (!(j.type.equals("travel") || low.contains("couldn't get there") || low.contains("stuck"))) return msg;
+            LocalPlayer p = Minecraft.getInstance().player;
+            if (p == null) return msg;
+            int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
+            int surface = surfaceNoLeaves(p.level(), x, z);
+            boolean sky = p.level().canSeeSky(new BlockPos(x, y + 1, z));
+            if (!ClimbPlan.inHole(y, surface, sky) || ClimbPlan.depth(y, surface) > ClimbPlan.HINT_MAX) return msg;     // a deep mine is no hole
+            return msg + " - " + ClimbPlan.holeHint(ClimbPlan.depth(y, surface));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] hole note: {}", e.toString());
+            return msg;
+        }
+    }
+
     public void finish(String msg) {
         Job j = job;
         if (j == null || j.done) return;
         msg = restoreGate(j, msg);
         if (msg == null) return;                          // P1: the job's blocks are put back first; finish comes again then
         if (j.junkDropped > 0) msg = msg + "; dropped " + j.junkDropped + " junk";        // C5
+        msg = holeNote(j, msg);                                                           // 0.28.1 (trial fix C)
         j.done = true;
         j.status = msg;
         try {

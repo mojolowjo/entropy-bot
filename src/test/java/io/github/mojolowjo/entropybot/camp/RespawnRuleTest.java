@@ -14,7 +14,7 @@ class RespawnRuleTest {
         assertNull(r.tick(true, 220, p, false));         // died
         assertNull(r.tick(false, 240, p, false));        // respawned, settling
         String w = r.tick(false, 340, p, false);
-        assertEquals("I'm at 63 77 16, outside my areas - say: area here 48 camp, then bootstrap, or come get me", w);
+        assertEquals("I'm at 63 77 16, outside my areas - say: area here 48 camp neutral then bootstrap, or come get me", w);
         assertNull(r.tick(false, 360, p, false));        // once
         assertEquals(w, r.checkLine());
         assertEquals(1, r.homes().size());

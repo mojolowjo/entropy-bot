@@ -119,7 +119,24 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("reconnectcheck", "couldn't check reconnect: " + e, "status"));
         }
         String rl = c.respawn.checkLine();                  // 0.24.3: joined/respawned outside every area
-        if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp then bootstrap"));
+        if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp neutral then bootstrap"));
+        try {                                               // 0.28.1 (trial fix C/A): a hole, a camp mark in the air
+            net.minecraft.client.player.LocalPlayer me = net.minecraft.client.Minecraft.getInstance().player;
+            if (me != null) {
+                int x = me.getBlockX(), y = me.getBlockY(), z = me.getBlockZ();
+                int surface = Jobs.surfaceNoLeaves(me.level(), x, z);
+                boolean sky = me.level().canSeeSky(new net.minecraft.core.BlockPos(x, y + 1, z));
+                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.HINT_MAX) f.add(new SelfCheck.Finding("hole", "I'm in a hole (rim " + ClimbPlan.depth(y, surface) + " above me)", "climb"));
+                com.google.gson.JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
+                if (camp != null && camp.has("x") && Jobs.dimOf(camp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(me.level()))) {
+                    int[] cp = Jobs.pos(camp);
+                    if (Jobs.targetInAir(me.level(), cp[0], cp[1], cp[2]))
+                        f.add(new SelfCheck.Finding("campair", "the camp mark " + Jobs.fmt(cp) + " is in the air", "place camp (standing on the ground there)"));
+                }
+            }
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("holecheck", "couldn't check for a hole: " + e, "status"));
+        }
         try {
             f.addAll(RestoreLive.INSTANCE.findings());      // P1: the restore hook, restore.json, blocks waiting, build hints
         } catch (RuntimeException e) {

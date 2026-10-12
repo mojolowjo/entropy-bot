@@ -131,6 +131,44 @@ final class DigCommands {
      * mines them; "force" building blocks too; B7e F: "floor" fills the layer under it afterwards, "junk drop" throws
      * plain junk away when the bag is full instead of a base trip).
      */
+    /** 0.28.1 (trial fix C): one cell for ClimbPlan (vanilla BlockState only). */
+    static ClimbPlan.Kind climbCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(bp)) return ClimbPlan.Kind.BLOCKED;
+        var st = lv.getBlockState(bp);
+        if (!st.getFluidState().isEmpty() || st.hasBlockEntity() || st.getDestroySpeed(lv, bp) < 0) return ClimbPlan.Kind.BLOCKED;
+        if (st.getCollisionShape(lv, bp).isEmpty()) return ClimbPlan.Kind.OPEN;
+        return ClimbPlan.Kind.DIG;
+    }
+
+    /** 0.28.1 "climb": out of a hole by a dug staircase up to the surface (ClimbPlan), run as a chain like "dig stairs up". */
+    static String climb(Commands c, LocalPlayer p, String rest, String from) {
+        if (rest != null && !rest.isBlank()) return "usage: climb  (dig a staircase up out of the hole I'm in)";
+        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+        if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
+        net.minecraft.world.level.Level lv = p.level();
+        int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
+        int surface;
+        try {
+            surface = Jobs.surfaceNoLeaves(lv, x, z);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] climb: surface at {} {}: {}", x, z, e.toString());
+            return "error: I can't read the ground over me (" + e + ") - next: dig stairs up <dir> <n>";
+        }
+        boolean pick = false;
+        for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (e.getValue() > 0 && e.getKey().endsWith("_pickaxe")) pick = true;
+        ClimbPlan.Plan plan = ClimbPlan.plan((cx, cy, cz) -> climbCell(lv, cx, cy, cz), x, y, z, surface, pick);
+        if (plan.err() != null) {
+            LOG.info("[entropybot] climb at {} {} {} (surface {}): {}", x, y, z, surface, plan.err());
+            return plan.err();
+        }
+        if (plan.steps().isEmpty()) return "ok: I'm not in a hole (the surface here is at " + surface + ", I'm at " + y + ")";
+        String text = ClimbPlan.startText(plan);
+        LOG.info("[entropybot] climb at {} {} {}: {} - {}", x, y, z, text, String.join(" > ", plan.steps()));
+        String r = c.chainsRef().startChain(from, "climb", String.join(" then ", plan.steps()), 1);
+        return r.startsWith("started") ? "started: " + text + " - each step reports; a failed one says why" : r;
+    }
+
     /** 0.24.4 "dig stairs <dir> <n>": a 1-wide walkable staircase down from where I stand (StairPlan), run as a chain. */
     static String stairs(Commands c, LocalPlayer p, String rest, String from) {
         String[] w = rest.toLowerCase().split("\\s+");

@@ -1084,6 +1084,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
         if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
         if (verb.equals("bootstrap")) return Reply.now(camp.bootstrap(player, from, internal, rest));
+        if (verb.equals("climb")) return Reply.now(internal ? "error: climb is a chain of its own - run it by itself" : DigCommands.climb(this, player, rest, from));   // 0.28.1
         // 0.24.3: the shelter's status/leave never wait for its job; "night status" shows the night safety
         if (verb.equals("shelter") && rest.trim().toLowerCase().matches("^(status|leave)$")) return Reply.now(ShelterJob.start(this, player, rest, internal, from));
         if (verb.equals("night")) {
