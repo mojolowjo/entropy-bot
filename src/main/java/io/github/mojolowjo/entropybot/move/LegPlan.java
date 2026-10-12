@@ -49,6 +49,21 @@ public final class LegPlan {
         return out;
     }
 
+    /**
+     * 0.27.3: the legs kept inside the areas: a leg end (not the last) whose column is outside them moves to the
+     * nearest inside column (insideFor answers null when the column is inside, else that column {x, z}; null = no
+     * clipping). A moved end is xz-only (its height is unknown). The caller clips only when start and goal are inside.
+     */
+    public static List<Leg> clip(List<Leg> legs, java.util.function.Function<int[], int[]> insideFor) {
+        if (insideFor == null || legs == null) return legs;
+        List<Leg> out = new ArrayList<>();
+        for (Leg l : legs) {
+            int[] to = l.last() ? null : insideFor.apply(new int[]{l.end().x(), l.end().z()});
+            out.add(to == null ? l : new Leg(new Cell(to[0], l.end().y(), to[1]), true, false));
+        }
+        return out;
+    }
+
     /** Distance from (x,y,z) to a leg's end (flat for an xz-only leg). */
     public static double distTo(Leg l, int x, int y, int z) {
         double dx = l.end().x() - x, dz = l.end().z() - z, dy = l.xzOnly() ? 0 : l.end().y() - y;

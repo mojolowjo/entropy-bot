@@ -148,6 +148,20 @@ public final class Jobs {
             }
 
             @Override
+            public boolean insideAreas(int x, int z) {         // 0.27.3: with no area in this dimension: everywhere
+                String dim = Storage.dim();
+                return commands.areaRects(dim).isEmpty() || commands.inAreas(dim, x, z);
+            }
+
+            @Override
+            public int[] insideFor(int[] xz) {
+                String dim = Storage.dim();
+                if (commands.inAreas(dim, xz[0], xz[1])) return null;
+                var t = io.github.mojolowjo.entropybot.brain.AreaReturn.nearest(commands.areaRects(dim), xz[0], xz[1]);
+                return t == null ? null : new int[]{t.x(), t.z()};
+            }
+
+            @Override
             public String pauseCause() {
                 String c = walkReflex;
                 walkReflex = null;

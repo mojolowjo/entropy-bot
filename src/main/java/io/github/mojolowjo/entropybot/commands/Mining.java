@@ -900,7 +900,9 @@ final class Mining {
         Caves.Cave c = core.caves.get(cv.name);
         if (c == null) return "the cave search failed: no cave called " + cv.name;
         core.caves.visit(c, me[0], me[1], me[2], System.currentTimeMillis(), now());
-        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null;
+        // 0.27.3: a dark spot or ore outside the areas (and the near-me zone) is no candidate (live: a caving walk left a 48 area)
+        boolean fenced = !commands.areaRects(d).isEmpty();
+        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || (fenced && !commands.inAreas(d, x, z));
         CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE, off);
         cv.steps++;
         // ores first: one vein at a time
@@ -955,6 +957,11 @@ final class Mining {
     private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why) { return caveMove(s, cv, p, why, false); }
 
     /** closeForGood (S1: a cave in a protect box): the cave is closed even when an earlier job made it. */
+    /** 0.27.3: x z lies outside every area (and the near-me zone) while areas exist in this dimension. */
+    private boolean outsideFenced(String d, int x, int z) {
+        return !commands.areaRects(d).isEmpty() && !commands.inAreas(d, x, z);
+    }
+
     private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why, boolean closeForGood) {
         int[] me = Jobs.here(p);
         String d = dim();
@@ -967,7 +974,7 @@ final class Mining {
         if (cv.moves > CaveRules.MOVES) return caveFinish(s, cv, CaveRules.noCaveText(cv.noCaveAt, why), false, true);
         // S1: never a known cave whose entrance lies in or by a protect box
         CaveRules.Known best = CaveRules.nearestKnown(knownCaves(), d, me[0], me[1], me[2], CaveRules.closedNames(cv.noCaveAt),
-                k -> jobs.goalAllowed(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null);
+                k -> jobs.goalAllowed(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null || outsideFenced(d, k.x(), k.z()));
         List<Seq.Step> steps = new ArrayList<>();
         ExploreRules.Target t = null;
         if (best != null) {
@@ -981,7 +988,7 @@ final class Mining {
             // S1: unexplored land in or by a protect box is passed over (that chunk goes in the job's skip set)
             for (int n = 0; n < 12; n++) {
                 t = ExploreRules.target(d, me[0], me[1], me[2], land(d), cv.skip);
-                if (t == null || CaveRules.offLimits(prot, d, t.x(), me[1], t.z()) == null) break;
+                if (t == null || (CaveRules.offLimits(prot, d, t.x(), me[1], t.z()) == null && !outsideFenced(d, t.x(), t.z()))) break;      // 0.27.3: and inside the areas
                 cv.skip.add(ExploreRules.key(d, t.x() >> 4, t.z() >> 4));
                 t = null;
             }

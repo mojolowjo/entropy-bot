@@ -65,6 +65,30 @@ public final class LongRouteProcess implements IBaritoneProcess {
 
         /** 0.23.4: what held the walk last (a reflex word: fighting, eating...), cleared by the call; null = unknown. */
         default String pauseCause() { return null; }
+
+        /**
+         * 0.27.3 (walks stay inside the areas): for a column {x, z}, null when it is inside the areas (or the near-me
+         * zone) or no clipping applies, else the nearest inside column {x, z}.
+         */
+        default int[] insideFor(int[] xz) { return null; }
+
+        /** 0.27.3: whether the column is inside the areas or the near-me zone (true when there are none). */
+        default boolean insideAreas(int x, int z) { return true; }
+    }
+
+    /** 0.27.3: legs clipped to the areas when the walk starts and ends inside them (explore and an owner's goto out: not). */
+    private List<LegPlan.Leg> clipped(List<LegPlan.Leg> l, int[] me) {
+        try {
+            if (host == null || !host.insideAreas(me[0], me[2]) || !host.insideAreas(dest[0], dest[2])) return l;
+            List<LegPlan.Leg> c = LegPlan.clip(l, host::insideFor);
+            int moved = 0;
+            for (int i = 0; i < l.size(); i++) if (c.get(i) != l.get(i)) moved++;
+            if (moved > 0) LOG.info("[entropybot] long walk: {} leg end(s) moved inside my areas", moved);
+            return c;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] long walk: clipping the legs to my areas failed: {}", e.toString());
+            return l;
+        }
     }
 
     public final MoveStats stats = new MoveStats();
@@ -222,7 +246,7 @@ public final class LongRouteProcess implements IBaritoneProcess {
 
     private void planRoute(int[] me, String why) {
         Cell start = new Cell(me[0], me[1], me[2]), goal = new Cell(dest[0], dest[1], dest[2]);
-        legs = LegPlan.legs(start, List.of(), goal);           // straight until the map answers
+        legs = clipped(LegPlan.legs(start, List.of(), goal), me);           // straight until the map answers
         edgeKeys.clear();
         idx = 0;
         legStart = me.clone();
@@ -255,7 +279,7 @@ public final class LongRouteProcess implements IBaritoneProcess {
                 doors.add(s.rep());
                 edgeKeys.put(s.rep(), EdgePenalties.key(s.box().toString(), s.rep().x(), s.rep().y(), s.rep().z()));
             }
-            legs = LegPlan.legs(new Cell(me[0], me[1], me[2]), doors, new Cell(dest[0], dest[1], dest[2]));
+            legs = clipped(LegPlan.legs(new Cell(me[0], me[1], me[2]), doors, new Cell(dest[0], dest[1], dest[2])), me);
             idx = 0;
             legStart = me.clone();
             legWalked = 0;
