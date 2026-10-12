@@ -237,6 +237,38 @@ public final class Jobs {
         return y + 1;
     }
 
+    /** 0.28.1 (trial fix A): one cell for SurfaceRule, from the level (vanilla BlockState/BlockTags only). */
+    static io.github.mojolowjo.entropybot.world.SurfaceRule.Cell surfaceCell(net.minecraft.world.level.Level level, int x, int y, int z) {
+        BlockPos bp = new BlockPos(x, y, z);
+        if (!level.isLoaded(bp)) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.SOLID;      // unknown: stop there
+        var st = level.getBlockState(bp);
+        if (!st.getFluidState().isEmpty() && st.getCollisionShape(level, bp).isEmpty()) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.FLUID;
+        if (st.is(net.minecraft.tags.BlockTags.LEAVES)) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.LEAVES;
+        if (st.is(net.minecraft.tags.BlockTags.LOGS)) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.LOG;
+        if (st.is(net.minecraft.world.level.block.Blocks.SNOW)) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.SNOW_LAYER;
+        if (st.isAir()) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.AIR;
+        if (st.getCollisionShape(level, bp).isEmpty()) return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.PLANT;
+        return io.github.mojolowjo.entropybot.world.SurfaceRule.Cell.SOLID;
+    }
+
+    /** 0.28.1: the ground under x y z (SurfaceRule.groundFeet): {x, feet y, z}; the spot itself when the level is missing. */
+    public static int[] groundUnder(net.minecraft.world.level.Level level, int x, int y, int z) {
+        if (level == null) return new int[]{x, y, z};
+        try {
+            int g = io.github.mojolowjo.entropybot.world.SurfaceRule.groundFeet(yy -> surfaceCell(level, x, yy, z), y, level.getMinBuildHeight());
+            return new int[]{x, g, z};
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] ground under {} {} {}: {}", x, y, z, e.toString());
+            return new int[]{x, y, z};
+        }
+    }
+
+    /** 0.28.1: a walk target whose cell and the one under it are open (a mark left in the air). */
+    static boolean targetInAir(net.minecraft.world.level.Level level, int x, int y, int z) {
+        if (level == null || !level.isLoaded(new BlockPos(x, y - 1, z))) return false;
+        return io.github.mojolowjo.entropybot.world.SurfaceRule.inAir(yy -> surfaceCell(level, x, yy, z), y);
+    }
+
     /** 0.23.3: the long walk's dig-out rule (the escape's own): underground and inside the areas. */
     boolean digOutAllowed(int[] me) {
         Minecraft mc = Minecraft.getInstance();
