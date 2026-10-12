@@ -19,7 +19,7 @@ public final class Texts {
     public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get",
             "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "assist", "dismiss", "attack", "queue", "status", "inv",
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
-            "camp", "bootstrap", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
+            "camp", "bootstrap", "climb", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
             "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
             "why", "brain", "idle", "dayplan", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "blind");
 
@@ -48,6 +48,22 @@ public final class Texts {
             if (!t.isEmpty()) out.add(t);
         }
         return out;
+    }
+
+    /**
+     * 0.28.1 (trial fix B): the policy verbs (area, fence, protect, unprotect, guard) answer at once - unless the text is a
+     * chain ("area here 48 camp then bootstrap"), which goes to the chain runner first so "then" never reads as an area type.
+     */
+    public static boolean isPolicyVerbAlone(String verb, String raw) {
+        if (verb == null) return false;
+        boolean policy = verb.equals("area") || verb.equals("fence") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard");
+        return policy && splitChain(raw).size() <= 1;
+    }
+
+    /** 0.28.1: a reply with a note after it ("started: going to ... (the mark was in the air, ...)"); the reply alone when the note is empty. */
+    public static String withNote(String reply, String note) {
+        if (note == null || note.isBlank()) return reply;
+        return (reply == null ? "" : reply) + " (" + note + ")";
     }
 
     /** A reply that means the step didn't happen. */

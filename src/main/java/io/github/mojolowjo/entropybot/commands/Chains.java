@@ -146,6 +146,15 @@ public final class Chains {
         return c == null || c.idx >= c.steps.size() ? null : c.steps.get(c.idx);
     }
 
+    /** 0.28.1: the running chain's steps not done yet (the junk drop keeps what a queued build wants); empty when none. */
+    public java.util.List<String> restSteps() {
+        Chain c = chain;
+        if (c == null) return java.util.List.of();
+        int from = Math.max(0, c.idx - 1);
+        if (from >= c.steps.size()) return java.util.List.of();
+        return new java.util.ArrayList<>(c.steps.subList(from, c.steps.size()));
+    }
+
     public String name() { return chain == null ? null : chain.name; }
 
     /** B1: told how every chain ends (name, message). */

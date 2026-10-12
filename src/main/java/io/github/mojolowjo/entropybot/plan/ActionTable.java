@@ -86,7 +86,7 @@ public final class ActionTable {
         v("n:a setting or a note, not a step toward a thing", "marker", "need", "supplies", "junk", "defence", "tools", "hotbar", "brain", "idle", "done", "routine",
                 "rule", "trust", "untrust", "allow", "deny", "restart", "surface", "sense", "blind", "path", "server", "confirm", "goal", "dayplan");
         v("n:runs until stopped or another order (no end state)", "follow", "defend", "guard", "escort", "assist", "dismiss", "carry", "repeat", "explore", "scout", "hold");
-        v("n:a whole job of its own (it plans itself)", "restock", "bootstrap", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
+        v("n:a whole job of its own (it plans itself)", "restock", "bootstrap", "climb", "farm", "compact", "infuse", "upgrade", "pots", "rs", "scan", "restore", "find");
         v("n:moves items away or to a player (never a step toward having them)", "give", "drop", "wear");
         v("n:recovery after a death", "death", "corpse", "resume");
         v("n:chat, waiting or debugging", "night", "hunting", "say", "twerk", "spawn", "wait", "stop", "debug");

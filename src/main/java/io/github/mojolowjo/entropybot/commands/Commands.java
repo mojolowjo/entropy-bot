@@ -1051,8 +1051,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("mine") && rest.trim().toLowerCase().matches("^strip\\s+(status|ores( collect| list)?)$"))      // V1b: stripmine's forms under mine strip
             return Reply.now(StripMine.get().command(player, rest.trim().substring(5).trim()));
         if (verb.equals("restart")) return Reply.now(restartCommand(from, rest));
-        if (verb.equals("area") && rest.trim().toLowerCase().matches("^candidates\\b.*")) return Reply.now(areaCandidates(rest.trim().substring(10), from, mc, player));
-        if (verb.equals("area") || verb.equals("fence") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard")) {
+        if (verb.equals("area") && Texts.splitChain(raw).size() <= 1 && rest.trim().toLowerCase().matches("^candidates\\b.*")) return Reply.now(areaCandidates(rest.trim().substring(10), from, mc, player));
+        if (Texts.isPolicyVerbAlone(verb, raw)) {     // 0.28.1: "area ... then ..." is a chain (falls through to the chain test below)
             return Reply.now(policy.command(verb, rest, isOwner, owner(), hereOf(mc, from), posOf(mc, player)));
         }
         if (verb.equals("recorder")) return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, rest, isOwner, owner()));     // B7e E5
@@ -1084,6 +1084,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("sleep") && rest.trim().equalsIgnoreCase("status")) return Reply.now(SleepJob.status(player));
         if (verb.equals("restock") && rest.trim().equalsIgnoreCase("base")) return Reply.now(internal ? "error: restock base is a chain of its own - run it by itself" : camp.restockBase(player, from));
         if (verb.equals("bootstrap")) return Reply.now(camp.bootstrap(player, from, internal, rest));
+        if (verb.equals("climb")) return Reply.now(internal ? "error: climb is a chain of its own - run it by itself" : DigCommands.climb(this, player, rest, from));   // 0.28.1
         // 0.24.3: the shelter's status/leave never wait for its job; "night status" shows the night safety
         if (verb.equals("shelter") && rest.trim().toLowerCase().matches("^(status|leave)$")) return Reply.now(ShelterJob.start(this, player, rest, internal, from));
         if (verb.equals("night")) {
@@ -1236,6 +1237,15 @@ public final class Commands implements Chains.Env {
                 if (!rest.matches("^-?\\d+ -?\\d+ -?\\d+$") && !rest.matches("^-?\\d+ -?\\d+$")) return "usage: goto x y z  (or goto x z)";
                 String shaftNo = shaftRefusal(player, rest);     // 0.24.4
                 if (shaftNo != null) return shaftNo;
+                java.util.regex.Matcher gm = java.util.regex.Pattern.compile("^(-?\\d+) (-?\\d+) (-?\\d+)$").matcher(rest);
+                if (gm.find()) {                                  // 0.28.1 (trial fix A): a target in the air walks to the ground there
+                    int gx = Integer.parseInt(gm.group(1)), gy = Integer.parseInt(gm.group(2)), gz = Integer.parseInt(gm.group(3));
+                    if (Jobs.targetInAir(player.level(), gx, gy, gz)) {
+                        int[] g = Jobs.groundUnder(player.level(), gx, gy, gz);
+                        return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false, ownerWalker(from)),
+                                io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(g[0], g[1], g[2]));
+                    }
+                }
                 return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));
             }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
@@ -1257,6 +1267,11 @@ public final class Commands implements Chains.Env {
                 String dim = Jobs.dimOf(pos);
                 int[] p = Jobs.pos(pos);
                 if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
+                if (dim.equals(Guard.dimOf(player.level())) && Jobs.targetInAir(player.level(), p[0], p[1], p[2])) {     // 0.28.1 (trial fix A)
+                    p = Jobs.groundUnder(player.level(), p[0], p[1], p[2]);
+                    return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false, verb.equals("go") ? ownerWalker(from)
+                            : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER), io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(p[0], p[1], p[2]));
+                }
                 return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false, verb.equals("go") ? ownerWalker(from) : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER);
             }
             case "route" -> { return RouteTestRun.start(this, jobs, storage, player, rest); }       // routing stage 1: route test
@@ -1383,6 +1398,12 @@ public final class Commands implements Chains.Env {
             }
             PolicyCommands.Pos pos = resolvePos(mc, verb.equals("setbase") ? rest : String.join(" ", args), from);
             if (pos == null) return "I can't see you - come closer or give coordinates - next: place " + name + " x y z";
+            // 0.28.1 (trial fix A): a place without coordinates goes on the ground under the spot (not on a tree top)
+            String posArg = (verb.equals("setbase") ? rest : String.join(" ", args)).trim();
+            if (!posArg.matches("^-?\\d+ -?\\d+ -?\\d+$") && mc.level != null) {
+                int[] g = Jobs.groundUnder(mc.level, pos.x(), pos.y(), pos.z());
+                if (g[1] != pos.y()) pos = new PolicyCommands.Pos(g[0], g[1], g[2], pos.dim());
+            }
             String dir = null;
             if (name.equals("mine") || dirWord != null) {
                 Player who = from != null ? Jobs.findPlayer(from) : null;
