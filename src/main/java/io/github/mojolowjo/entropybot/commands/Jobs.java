@@ -293,13 +293,10 @@ public final class Jobs {
         try {
             java.util.Set<String> own = ShelterJob.knownOwn(commands, me);
             java.util.function.Predicate<int[]> closed = c -> !level.getBlockState(new BlockPos(c[0], c[1], c[2])).canBeReplaced();
-            if (!SurfaceSeal.inOwnShelter(me, own, closed)) return null;
-            int[][] ex = io.github.mojolowjo.entropybot.camp.ShelterPlan.exit(me, own);
-            if (ex == null || !own.contains(io.github.mojolowjo.entropybot.camp.ShelterPlan.key(ex[0]))) return null;
-            java.util.List<int[]> breaks = new java.util.ArrayList<>();
-            for (int[] c : new int[][]{ex[1], ex[0]}) if (c != null && closed.test(c) && own.contains(io.github.mojolowjo.entropybot.camp.ShelterPlan.key(c))) breaks.add(c);
-            LOG.info("[entropybot] in my own shelter at {}: opening my own wall at {}", fmt(me), fmt(ex[0]));
-            return new EscapePlan.Escape(ex[0], breaks);
+            java.util.List<int[]> r = SurfaceSeal.ownExit(me, own, closed);
+            if (r == null) return null;
+            LOG.info("[entropybot] in my own shelter at {}: opening my own wall at {}", fmt(me), fmt(r.get(0)));
+            return new EscapePlan.Escape(r.get(0), new java.util.ArrayList<>(r.subList(1, r.size())));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] own shelter exit: {}", e.toString());
             return null;
@@ -1314,6 +1311,9 @@ public final class Jobs {
         if (!st.getFluidState().isEmpty()) return EscapePlan.Kind.BLOCKED;
         if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
         if (!st.isCollisionShapeFullBlock(level, bp)) return EscapePlan.Kind.BLOCKED;
+        // 0.27.3 fix: my own shelter blocks (shelterBlocks / the ledger) are mine to open, not a stranger's build
+        if ((ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
+                && !st.hasBlockEntity() && Guard.liquidNextTo(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         boolean ok = RestoreRules.natural(id) && !st.hasBlockEntity() && !core.guard.isProtectedBlock(st.getBlock())
                 && !st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && st.getDestroySpeed(level, bp) >= 0
@@ -1341,6 +1341,9 @@ public final class Jobs {
         String dim = Guard.dimOf(level);
         // 0.19.7: a tree crown over an open pit is no roof (live: canSeeSky said no under birch leaves 10 up), so the
         // surface ignores leaves and "sky" is also true when nothing but leaves is over the head
+        // 0.27.3 fix (live d1): in my own shelter its roof makes the spot look underground: open my own wall first,
+        // before the underground/surface split (force lease per own cell, the shelter leave's way)
+        if (ownShelterExit(level, me) != null && startSurfaceEscape(p, j, me, dim, towardGoal)) return true;
         int surface = surfaceNoLeaves(level, me[0], me[2]);
         boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
         // 0.19.7: a climb out this job's own dig-out started may go on near the surface (live: the first step out of a
@@ -1364,7 +1367,8 @@ public final class Jobs {
                     EscapePlan.explain((x, y, z) -> escapeKind(level, pol, dim, x, y, z), c -> surfaceWhat(level, dim, c), me));
             core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);
             // 0.27.3 (d3): underground inside the areas: a staircase up toward the surface instead (after this job ends)
-            planStairsUp(me, surface, travelDest(j), (x, y, z) -> escapeKind(level, pol, dim, x, y, z));
+            if (!io.github.mojolowjo.entropybot.camp.ShelterPlan.anyOwn(me, ShelterJob.knownOwn(commands, me)))      // never from inside my own shell
+                planStairsUp(me, surface, travelDest(j), (x, y, z) -> escapeKind(level, pol, dim, x, y, z));
             return false;
         }
         IBaritone b = baritone();

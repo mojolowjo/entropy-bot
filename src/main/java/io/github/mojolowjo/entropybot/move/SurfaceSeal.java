@@ -99,6 +99,20 @@ public final class SurfaceSeal {
         return ShelterPlan.anyOwn(feet, own);
     }
 
+    /**
+     * 0.27.3 fix: the escape from inside my own shelter, checked before the underground/surface split (its own roof makes
+     * the spot look underground): {feet cell to step to, breaks (head first, own and closed only)}, or null when not in one.
+     */
+    public static java.util.List<int[]> ownExit(int[] feet, Set<String> own, Predicate<int[]> closed) {
+        if (!inOwnShelter(feet, own, closed)) return null;
+        int[][] ex = ShelterPlan.exit(feet, own);
+        if (ex == null) return null;
+        java.util.List<int[]> out = new java.util.ArrayList<>();
+        out.add(ex[0]);
+        for (int[] c : new int[][]{ex[1], ex[0]}) if (closed.test(c) && own.contains(ShelterPlan.key(c))) out.add(c);
+        return out;
+    }
+
     /** How many own cells of the shell around feet are there (for the status line). */
     public static int ownCount(int[] feet, Set<String> own) {
         int n = 0;

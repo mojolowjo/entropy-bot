@@ -35,6 +35,19 @@ class SealedExitTest {
         assertTrue(SurfaceSeal.diagonalPass(oneGone, F, -1, 0, 1));
     }
 
+    /** 0.27.3 fix (live d1): a closed own shell on the surface: the escape is my own wall, not "underground: no way out". */
+    @Test void closedOwnShellOnTheSurfaceOpensTheOwnWall() {
+        int[] f = {-9, 70, 42};
+        Set<String> own = new HashSet<>();
+        for (int[] c : ShelterPlan.allCells(f)) own.add(ShelterPlan.key(c));
+        List<int[]> ex = SurfaceSeal.ownExit(f, own, c -> true);
+        assertNotNull(ex);
+        assertEquals("-9 70 41", ShelterPlan.key(ex.get(0)), "the north wall's feet cell is the step");
+        assertEquals(List.of("-9 71 41", "-9 70 41"), ex.subList(1, ex.size()).stream().map(ShelterPlan::key).toList(), "head first");
+        assertNull(SurfaceSeal.ownExit(f, Set.of(), c -> true), "not mine: no own exit");
+        assertNull(SurfaceSeal.ownExit(f, own, c -> c[1] != 72), "an open roof: not sealed in");
+    }
+
     @Test void pitShelterWithOneOwnWallIsRecognisedAndHasAMixedExit() {
         int[] f = {21, 45, 83};
         Set<String> own = new HashSet<>(List.of("21 47 83", "20 45 83"));
