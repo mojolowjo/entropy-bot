@@ -314,11 +314,15 @@ final class Mining {
         // the whole family (iron_ore and deepslate_iron_ore drop the same raw_iron; live: the deepslate ones were skipped)
         // (the owner: "mine iron_ore" / "mine iron" take both; "mine deepslate_iron_ore" stays exact)
         String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+        io.github.mojolowjo.entropybot.clear.ClearJob.StandCheck stand = Clearing.standCheck(commands);
         boolean exact = !j.familyWord;      // the owner: "mine iron" = the family, deepslate or not; "mine iron_ore" = exactly that block
         java.util.function.Predicate<String> idOk = id -> exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
         return pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, (x, y, z) -> {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
             if (!commands.inAreas(d, x, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
+            // 0.28.0 live (LAN flat world): the clear engine stands only inside an area in 3D (Clearing.standCheck), so an
+            // area whose floor is above the cell under/beside the ore left "nowhere to stand": that ore is no candidate
+            if (stand != null && !stand.ok(x, y - 1, z) && !stand.ok(x, y, z)) return false;
             BlockPos q = new BlockPos(x, y, z);
             if (!level.isLoaded(q)) return true;              // known from before: go and look
             return idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())
@@ -513,7 +517,7 @@ final class Mining {
     /** A target the bot couldn't get to: a try is spent; past the cap the job ends (known, but unreachable). */
     private String knownMiss(Seq s, LocalPlayer p, MineRun j, int[] t, String why) {
         j.knownTried.add(BlockPos.asLong(t[0], t[1], t[2]));
-        for (Pos c : j.kVein) j.knownTried.add(BlockPos.asLong(c.x(), c.y(), c.z()));
+        // 0.28.0 live: only the target is spent; its vein neighbours stay candidates (the clear's patches drop what it mined)
         j.kTries++;
         LOG.info("[entropybot] mine: couldn't get to the known {} at {} ({}; try {}/{})", sid(j), Jobs.fmt(t), why, j.kTries, io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS);
         if (j.kTries >= io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS)
@@ -546,7 +550,7 @@ final class Mining {
     /** The vein's cells to the clear engine (the strip mine's and the cave's vein clear), spliced in front of this step. */
     private String knownClear(Seq s, MineRun j, int[] target) {
         j.kLast = target;
-        for (Pos c : j.kVein) j.knownTried.add(BlockPos.asLong(c.x(), c.y(), c.z()));
+        // (nothing marked tried here: a vein clear that mines nothing costs a try on its target only)
         Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true)
                 .label("mining " + j.kVein.size() + " known " + sid(j) + " blocks"));
         clear.optional = true;
