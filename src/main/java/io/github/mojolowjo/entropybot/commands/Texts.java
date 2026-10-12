@@ -50,6 +50,22 @@ public final class Texts {
         return out;
     }
 
+    /**
+     * 0.28.1 (trial fix B): the policy verbs (area, fence, protect, unprotect, guard) answer at once - unless the text is a
+     * chain ("area here 48 camp then bootstrap"), which goes to the chain runner first so "then" never reads as an area type.
+     */
+    public static boolean isPolicyVerbAlone(String verb, String raw) {
+        if (verb == null) return false;
+        boolean policy = verb.equals("area") || verb.equals("fence") || verb.equals("protect") || verb.equals("unprotect") || verb.equals("guard");
+        return policy && splitChain(raw).size() <= 1;
+    }
+
+    /** 0.28.1: a reply with a note after it ("started: going to ... (the mark was in the air, ...)"); the reply alone when the note is empty. */
+    public static String withNote(String reply, String note) {
+        if (note == null || note.isBlank()) return reply;
+        return (reply == null ? "" : reply) + " (" + note + ")";
+    }
+
     /** A reply that means the step didn't happen. */
     public static boolean stepFailed(String reply) {
         String r = reply == null ? "" : reply.replaceFirst("^ok: ", "");
