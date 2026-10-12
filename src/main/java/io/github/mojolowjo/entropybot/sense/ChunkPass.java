@@ -502,7 +502,9 @@ public final class ChunkPass {
         int[] fp = index.familiesAndPositions();
         sb.append(" | summaries ").append(index.size()).append(" in memory (").append(index.staleCount()).append(" stale, ").append(index.evicted).append(" left memory at the cap ")
                 .append(Limits.SENSE_SUMMARIES).append(")");
-        sb.append(" | ore families ").append(fp[0]).append(", positions ").append(fp[1]);
+        // an estimate (~56 bytes a listed position, ~1.5 KB a summary): an ore-rich pack lists ~550 positions a chunk
+        sb.append(" | ore families ").append(fp[0]).append(", positions ").append(fp[1]).append(String.format(Locale.ROOT, " (~%.0f MB in memory)",
+                (fp[1] * 56.0 + index.size() * 1500.0) / 1e6));
         sb.append(" | files: ").append(written.get()).append(" written, ").append(dirty.pending()).append(" waiting, ").append(filesLoadedCount).append(" loaded (")
                 .append(filesNote).append(")").append(filesBroken > 0 ? ", " + filesBroken + " broken skipped" : "");
         if (lastWriteError != null) sb.append(", last write error ").append(lastWriteError).append(" (").append(writeErrors.get()).append(")");

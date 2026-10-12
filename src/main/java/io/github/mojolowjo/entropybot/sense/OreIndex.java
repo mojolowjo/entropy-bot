@@ -207,6 +207,39 @@ public final class OreIndex {
         return out;
     }
 
+    /** A count within r: the listed positions inside r; capped = some chunk's list is cut at the cap, so the true number may be higher. */
+    public record Count(int n, boolean capped) {}
+
+    /**
+     * 0.28.0 fix: family -> positions within r (3D) of x y z, counted from the listed positions (never whole-chunk sums);
+     * capped when a chunk in reach holds more of that family than it lists.
+     */
+    public Map<String, Count> within(String d, int x, int y, int z, int r) {
+        Map<String, int[]> acc = new TreeMap<>();
+        Map<Long, ChunkSummary> m = dims.get(d);
+        if (m != null) {
+            long r2 = (long) r * r;
+            for (ChunkSummary s : m.values()) {
+                if (!chunkNear(s, x, z, r)) continue;
+                for (Map.Entry<String, ChunkSummary.Group> e : s.ores.entrySet()) {
+                    int in = 0;
+                    for (ChunkSummary.Spot sp : e.getValue().spots) {
+                        long dx = sp.x() - x, dy = sp.y() - y, dz = sp.z() - z;
+                        if (dx * dx + dy * dy + dz * dz <= r2) in++;
+                    }
+                    boolean cut = e.getValue().n > e.getValue().spots.size();
+                    if (in == 0 && !cut) continue;
+                    int[] a = acc.computeIfAbsent(e.getKey(), k -> new int[2]);
+                    a[0] += in;
+                    if (cut) a[1] = 1;
+                }
+            }
+        }
+        Map<String, Count> out = new TreeMap<>();
+        for (Map.Entry<String, int[]> e : acc.entrySet()) out.put(e.getKey(), new Count(e.getValue()[0], e.getValue()[1] == 1));
+        return out;
+    }
+
     /** Chunks known within r (flat) of x z whose centre column allow takes (null: all). */
     public int chunksSeen(String d, int x, int z, int r, Allow allow) {
         Map<Long, ChunkSummary> m = dims.get(d);

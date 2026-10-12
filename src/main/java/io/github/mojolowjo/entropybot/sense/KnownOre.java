@@ -79,33 +79,99 @@ public final class KnownOre {
 
     private static String shortId(String id) { return id.startsWith("minecraft:") ? id.substring(10) : id; }
 
-    /** The no-family answer: each family's count within r, nearest first by its nearest spot. */
-    public static String summary(int r, Map<String, Integer> totals, Map<String, OreIndex.Hit> nearest, int chunks, int stale) {
+    static final String CAPPED_NOTE = " (+: some chunk lists only " + io.github.mojolowjo.entropybot.memory.Limits.SENSE_SPOTS
+            + " positions of a family, so there are more)";
+
+    private static String n(OreIndex.Count c) { return c.n() + (c.capped() ? "+" : ""); }
+
+    /** The no-family answer: each family's positions within r (counted from the listed positions), nearest first. */
+    public static String summary(int r, Map<String, OreIndex.Count> counts, Map<String, OreIndex.Hit> nearest, int chunks, int stale) {
         String seen = chunks + " chunk" + (chunks == 1 ? "" : "s") + " seen within " + r + (stale > 0 ? " (" + stale + " not loaded now)" : "");
-        if (totals.isEmpty()) return "no ores known within " + r + " of me (" + seen + ") - explore or mine cave";
-        List<String> fams = new ArrayList<>(totals.keySet());
+        List<String> fams = new ArrayList<>();
+        for (Map.Entry<String, OreIndex.Count> e : counts.entrySet()) if (e.getValue().n() > 0 || nearest.containsKey(e.getKey())) fams.add(e.getKey());
+        if (fams.isEmpty()) return "no ores known within " + r + " of me (" + seen + ") - explore or mine cave";
         fams.sort((a, b) -> {
             OreIndex.Hit ha = nearest.get(a), hb = nearest.get(b);
             long da = ha == null ? Long.MAX_VALUE : ha.d2(), db = hb == null ? Long.MAX_VALUE : hb.d2();
             return da != db ? Long.compare(da, db) : a.compareTo(b);
         });
         List<String> parts = new ArrayList<>();
+        boolean capped = false;
         for (String f : fams) {
             OreIndex.Hit h = nearest.get(f);
-            parts.add(f + " " + totals.get(f) + (h == null ? "" : " (nearest " + h.x() + " " + h.y() + " " + h.z() + ", " + (int) Math.round(Math.sqrt(h.d2())) + " away)"));
+            OreIndex.Count c = counts.get(f);
+            capped |= c.capped();
+            parts.add(f + " " + n(c) + (h == null ? "" : " (nearest " + h.x() + " " + h.y() + " " + h.z() + ", " + (int) Math.round(Math.sqrt(h.d2())) + " away)"));
         }
-        return "ores known within " + r + ": " + String.join(", ", parts) + " | " + seen;
+        return "ores known within " + r + ": " + String.join(", ", parts) + " | " + seen + (capped ? CAPPED_NOTE : "");
     }
 
-    /** The one-family answer: the count and up to 8 nearest positions. */
-    public static String family(String fam, int r, int count, List<OreIndex.Hit> hits, int chunks) {
+    /** The one-family answer: its positions within r (from the listed positions) and up to 8 nearest. */
+    public static String family(String fam, int r, OreIndex.Count count, List<OreIndex.Hit> hits, int chunks) {
         String seen = chunks + " chunk" + (chunks == 1 ? "" : "s") + " seen within " + r;
-        if (count == 0 && hits.isEmpty()) return "no " + fam + " ore known within " + r + " of me (" + seen + ") - explore or mine cave";
+        if (count.n() == 0 && hits.isEmpty()) return "no " + fam + " ore listed within " + r + " of me (" + seen + ")" + (count.capped() ? CAPPED_NOTE : " - explore or mine cave");
         List<String> parts = new ArrayList<>();
         for (int i = 0; i < hits.size() && i < 8; i++) {
             OreIndex.Hit h = hits.get(i);
             parts.add(h.x() + " " + h.y() + " " + h.z() + " (" + shortId(h.id()) + ", " + (int) Math.round(Math.sqrt(h.d2())) + " away" + (h.stale() ? ", not loaded" : "") + ")");
         }
-        return fam + " ore known within " + r + ": " + count + " in all" + (parts.isEmpty() ? "" : "; nearest: " + String.join(", ", parts)) + " | " + seen;
+        return fam + " ore known within " + r + ": " + n(count) + (parts.isEmpty() ? "" : "; nearest: " + String.join(", ", parts)) + " | " + seen + (count.capped() ? CAPPED_NOTE : "");
+    }
+
+    /** The end line when ore is known in reach but none could be reached (never "no ore known" then). */
+    public static String unreachableText(String family, int known, int tried) {
+        return known + " " + family + " ore known within " + io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R + " but none I could reach (tried " + tried
+                + ") - next: mine strip " + family + ", mine cave " + family + ", or dig a box to it (dig x1 y1 z1 x2 y2 z2 ores)";
+    }
+
+    /** The most targets one mine run tries before it gives up on the index. */
+    public static final int MAX_TARGETS = 5, ROUTE_MAX = 64;
+
+    /**
+     * 0.28.0 fix: the cells to dig from the feet (fx fy fz) to stand next to the ore (ox oy oz), like "dig stairs": a 1-wide
+     * staircase down (3-high per column) or up (2-high plus head room), then a 2-high tunnel to the cell beside the ore.
+     * Each column: {x, yLow, z, yHigh, standY}. Null when it would take more than ROUTE_MAX columns (or the ore is the feet).
+     */
+    public static List<int[]> route(int fx, int fy, int fz, int ox, int oy, int oz) {
+        // the stand cell: beside the ore on the side facing the bot (its longer axis); straight above/below: east of it
+        int sx = ox, sz = oz;
+        if (fx == ox && fz == oz) sx = ox + 1;
+        else if (Math.abs(ox - fx) >= Math.abs(oz - fz)) sx = ox - Integer.signum(ox - fx);
+        else sz = oz - Integer.signum(oz - fz);
+        List<int[]> out = new ArrayList<>();
+        int x = fx, y = fy, z = fz, ldx = 1, ldz = 0;
+        while (y != oy) {
+            if (out.size() >= ROUTE_MAX) return null;
+            int dx = 0, dz = 0;
+            if (Math.abs(sx - x) >= Math.abs(sz - z) && sx != x) dx = Integer.signum(sx - x);
+            else if (sz != z) dz = Integer.signum(sz - z);
+            else {
+                // over the stand already: step away from the ore and come back on the flat
+                dx = sx != ox ? Integer.signum(sx - ox) : ldx;
+                dz = sz != oz ? Integer.signum(sz - oz) : (dx == 0 ? ldz : 0);
+            }
+            ldx = dx;
+            ldz = dz;
+            int px = x, pz = z;
+            x += dx;
+            z += dz;
+            if (x == ox && z == oz) return null;
+            if (y > oy) {
+                y--;
+                out.add(new int[]{x, y, z, y + 2, y});
+            } else {
+                y++;
+                out.add(new int[]{x, y, z, y + 1, y});
+                out.add(new int[]{px, y + 1, pz, y + 1, Integer.MIN_VALUE});      // head room over the step before
+            }
+        }
+        while (x != sx || z != sz) {
+            if (out.size() >= ROUTE_MAX) return null;
+            if (sx != x) x += Integer.signum(sx - x);
+            else z += Integer.signum(sz - z);
+            if (x == ox && z == oz) return null;
+            out.add(new int[]{x, y, z, y + 1, y});
+        }
+        return out;
     }
 }
