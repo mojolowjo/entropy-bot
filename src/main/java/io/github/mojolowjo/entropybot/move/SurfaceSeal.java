@@ -104,12 +104,24 @@ public final class SurfaceSeal {
      * the spot look underground): {feet cell to step to, breaks (head first, own and closed only)}, or null when not in one.
      */
     public static java.util.List<int[]> ownExit(int[] feet, Set<String> own, Predicate<int[]> closed) {
-        if (!inOwnShelter(feet, own, closed)) return null;
-        int[][] ex = ShelterPlan.exit(feet, own);
+        return ownExit(feet, own, closed, null);
+    }
+
+    /**
+     * 0.27.4 (live: a pit with my roof and one wall, the rest natural stone): as above, but a closed shell with at least one
+     * own cell counts (inOwnShelterLoose), and a side may be one own cell plus one natural cell mayDig allows (the
+     * underground pit's head cell). The natural cell is broken too (head first, then the step cell). mayDig null: own only.
+     */
+    public static java.util.List<int[]> ownExit(int[] feet, Set<String> own, Predicate<int[]> closed, Predicate<int[]> mayDig) {
+        if (feet == null || own == null || own.isEmpty()) return null;
+        for (int[] c : ShelterPlan.allCells(feet)) if (!closed.test(c)) return null;
+        if (!ShelterPlan.anyOwn(feet, own)) return null;
+        int[][] ex = ShelterPlan.exit(feet, own, mayDig);
         if (ex == null) return null;
         java.util.List<int[]> out = new java.util.ArrayList<>();
         out.add(ex[0]);
-        for (int[] c : new int[][]{ex[1], ex[0]}) if (closed.test(c) && own.contains(ShelterPlan.key(c))) out.add(c);
+        for (int[] c : new int[][]{ex[1], ex[0]})
+            if (closed.test(c) && (own.contains(ShelterPlan.key(c)) || (mayDig != null && mayDig.test(c)))) out.add(c);
         return out;
     }
 

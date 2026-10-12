@@ -127,6 +127,14 @@ public final class ShelterPlan {
 
     public static String key(int[] c) { return c[0] + " " + c[1] + " " + c[2]; }
 
+    /** 0.27.4: a refused shelter placing, named by its cause: no face to place against, the guard (or no room), else as given. */
+    public static String placeWhy(String r) {
+        String m = r == null ? "" : r.replaceFirst("^error: ", "");
+        if (m.contains("nothing in reach")) return "no face to place against (" + m + ")";
+        if (m.contains("game refused")) return "the guard refused, or no room for it (" + m + ")";
+        return m;
+    }
+
     /** 0.27.3 (d4): the own cells to store: those still standing (stands null: all), unique, at most 200. */
     public static List<String> keepOwn(java.util.Collection<String> own, Predicate<String> stands) {
         List<String> out = new ArrayList<>();

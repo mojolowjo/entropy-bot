@@ -293,7 +293,10 @@ public final class Jobs {
         try {
             java.util.Set<String> own = ShelterJob.knownOwn(commands, me);
             java.util.function.Predicate<int[]> closed = c -> !level.getBlockState(new BlockPos(c[0], c[1], c[2])).canBeReplaced();
-            java.util.List<int[]> r = SurfaceSeal.ownExit(me, own, closed);
+            // 0.27.4: a natural cell the dig rules allow (underground inside my areas) may be the other half of the way out
+            java.util.function.Predicate<int[]> mayDig = c -> level instanceof net.minecraft.client.multiplayer.ClientLevel cl
+                    && closed.test(c) && ShelterJob.mayDig(commands, cl, me, c);
+            java.util.List<int[]> r = SurfaceSeal.ownExit(me, own, closed, mayDig);
             if (r == null) return null;
             LOG.info("[entropybot] in my own shelter at {}: opening my own wall at {}", fmt(me), fmt(r.get(0)));
             return new EscapePlan.Escape(r.get(0), new java.util.ArrayList<>(r.subList(1, r.size())));
@@ -363,7 +366,7 @@ public final class Jobs {
             return true;
         }
         io.github.mojolowjo.entropybot.clear.LeaseSet ls = Clearing.newLeases();
-        int leaves = 0, plants = 0, own = 0;
+        int leaves = 0, plants = 0, own = 0, natural = 0;
         java.util.List<int[]> doors = new java.util.ArrayList<>();
         for (int[] c : e.breaks()) {
             SurfaceSeal.Kind k = surfaceKind(level, c[0], c[1], c[2]);
@@ -373,7 +376,9 @@ public final class Jobs {
                 LOG.info("[entropybot] stuck at {}: the guard refused the surface dig-out at {} ({})", fmt(me), fmt(c), le);
                 return false;
             }
-            if (k == SurfaceSeal.Kind.OWN) { own++; doors.add(c); } else if (k == SurfaceSeal.Kind.LEAVES) leaves++; else plants++;
+            if (k == SurfaceSeal.Kind.OWN) { own++; doors.add(c); } else if (k == SurfaceSeal.Kind.LEAVES) leaves++;
+            else if (k == SurfaceSeal.Kind.NO) natural++;          // 0.27.4: natural stone of a pit's way out (mayDig)
+            else plants++;
         }
         j.escapeLeaseSet = ls;
         j.escapeLease = null;
@@ -385,8 +390,8 @@ public final class Jobs {
         if (j.escapeAt == null) j.escapeAt = me;
         // never put back: leaves and plants are not restored, own shelter blocks become the shelter's door
         if (!doors.isEmpty()) ShelterJob.noteDoor(commands, doors);
-        if (own > 0) holdAxe(mc, p); else holdPickaxe(mc, p);
-        io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.surfaceDigOut(leaves, plants, own);
+        if (own > 0 && natural == 0) holdAxe(mc, p); else holdPickaxe(mc, p);          // 0.27.4: stone needs the pickaxe
+        io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.surfaceDigOut(leaves, plants + natural, own);
         LOG.info("[entropybot] stuck at {} on the surface with no free step: dig-out (surface) of {} block(s) (leaves {}, own blocks {}, plants {}) to {}",
                 fmt(me), e.breaks().size(), leaves, own, plants, fmt(e.feet()));
         core.events.push("job", "escape: surface dig-out of " + e.breaks().size() + " block(s) at " + fmt(me), null);

@@ -48,6 +48,11 @@ public final class ShelterJob {
         final Set<String> dig = new HashSet<>();
         int[][] exit;
         int idx;
+        /** 0.27.4: shell cells an entity stood in this pass; retried after a pause (3 rounds at most). */
+        List<int[]> skipped = new ArrayList<>();
+        int skipRounds;
+        long skipAt = -1;
+        String skipWhy = "";
         int[] hit;
         LeaseSet leases;
         String note = "";
@@ -223,6 +228,7 @@ public final class ShelterJob {
             ps.own.add(ShelterPlan.key(ps.todo.get(ps.idx)));
             ps.idx++;
         }
+        if (ps.idx >= ps.todo.size() && !ps.skipped.isEmpty()) return retrySkipped(ps, lv, p, now);
         if (ps.idx >= ps.todo.size()) {
             if (!ps.torchDone) {
                 ps.torchDone = true;
@@ -236,12 +242,70 @@ public final class ShelterJob {
         }
         int[] c = ps.todo.get(ps.idx);
         s.setStatus("sheltering: building " + (ps.idx + 1) + "/" + ps.todo.size());
+        // 0.27.4: an entity in the cell (its corpse, a mob, a boat) is skipped for now: the other cells go on
+        String taken = entityIn(lv, p, c);
+        if (taken != null) {
+            ps.skipped.add(c);
+            ps.skipWhy = "the cell " + Jobs.fmt(c) + " is taken by " + taken;
+            LOG.info("[entropybot] shelter: {} - skipped for now", ps.skipWhy);
+            ps.idx++;
+            return false;
+        }
         String r = Clearing.placeAt(p, ps.block, c[0], c[1], c[2], ps.leases);
         if (r.startsWith("error")) {
-            if (now - ps.stageAt > 200) ps.note = "error: couldn't build my shelter at " + Jobs.fmt(c) + ": " + r.replaceFirst("^error: ", "");
+            if (now - ps.stageAt > 200) ps.note = "error: couldn't build my shelter at " + Jobs.fmt(c) + ": " + ShelterPlan.placeWhy(r);
         }
         return false;
     }
+
+    /** 0.27.4: ticks between the passes over the skipped cells (3 s), and the passes after the first (3). */
+    static final long SKIP_TICKS = 60;
+    static final int SKIP_ROUNDS = 3;
+
+    /**
+     * 0.27.4: after the other cells, the skipped ones again (a pause first). Still taken after SKIP_ROUNDS passes: the
+     * shelter fails and names the cell and what is in it.
+     */
+    private static boolean retrySkipped(State ps, ClientLevel lv, LocalPlayer p, long now) {
+        if (ps.skipAt < 0) ps.skipAt = now;
+        if (now - ps.skipAt < SKIP_TICKS) return false;
+        ps.skipAt = -1;
+        if (ps.skipRounds >= SKIP_ROUNDS) {
+            int[] first = ps.skipped.get(0);
+            String taken = entityIn(lv, p, first);
+            if (taken != null) {
+                ps.note = "error: couldn't build my shelter at " + Jobs.fmt(first) + ": the cell " + Jobs.fmt(first) + " is taken by " + taken
+                        + " (still there after " + SKIP_ROUNDS + " tries)";
+                return false;
+            }
+            // free now: the last pass places it (a refusal there names the guard or the face)
+        }
+        ps.skipRounds++;
+        LOG.info("[entropybot] shelter: retrying {} skipped cell(s), round {}/{}", ps.skipped.size(), ps.skipRounds, SKIP_ROUNDS);
+        ps.todo = new ArrayList<>(ps.skipped);
+        ps.skipped = new ArrayList<>();
+        ps.idx = 0;
+        return false;
+    }
+
+    /**
+     * 0.27.4: the kind of a living entity (other than the bot and item drops) whose box lies in cell c, or null. Vanilla
+     * client: Level.getEntities(Entity, AABB) on the ClientLevel, the registry key of its EntityType (BuiltInRegistries).
+     */
+    static String entityIn(ClientLevel lv, LocalPlayer p, int[] c) {
+        try {
+            net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(c[0], c[1], c[2], c[0] + 1, c[1] + 1, c[2] + 1);
+            for (net.minecraft.world.entity.Entity e : lv.getEntities(p, box)) {
+                if (!e.isAlive() || e.isSpectator() || e instanceof net.minecraft.world.entity.item.ItemEntity
+                        || e instanceof net.minecraft.world.entity.ExperienceOrb) continue;
+                return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+            }
+        } catch (RuntimeException ex) {
+            LOG.warn("[entropybot] shelter: entity check at {}: {}", Jobs.fmt(c), ex.toString());
+        }
+        return null;
+    }
+
 
     /** The shell's blocks in the restore ledger as "built: shelter" (never re-placed, never counted as a stranger's build). */
     private static void noteBuilt(State ps, ClientLevel lv) {
@@ -257,6 +321,8 @@ public final class ShelterJob {
             if (c != null) {
                 // 0.27.3 (d4): only the current shelter's cells (the old list kept every shelter's forever)
                 saveOwn(c, ps.own);
+                // 0.27.4: every cell ever built stays "own" (a newer shelter elsewhere must not make an old pit's walls strangers')
+                noteEver(c, ps.own);
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] shelter: saving my blocks failed: {}", e.toString());
@@ -412,6 +478,23 @@ public final class ShelterJob {
         c.saved();
     }
 
+    /** 0.27.4: adds cells to commands.json "shelterEver" (never pruned by a new shelter; the newest 400 kept). */
+    static void noteEver(Commands c, java.util.Collection<String> cells) {
+        try {
+            com.google.gson.JsonObject d = c.brainData();
+            java.util.LinkedHashSet<String> all = new java.util.LinkedHashSet<>();
+            if (d.has("shelterEver") && d.get("shelterEver").isJsonArray()) for (var e : d.getAsJsonArray("shelterEver")) all.add(e.getAsString());
+            all.addAll(cells);
+            List<String> l = new ArrayList<>(all);
+            com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+            for (String k : l.subList(Math.max(0, l.size() - 400), l.size())) a.add(k);
+            d.add("shelterEver", a);
+            c.saved();
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] shelter: saving my ever-built blocks failed: {}", e.toString());
+        }
+    }
+
     /** 0.27.3 (d4): on leaving, drop the cells that are no longer a block (opened as the door, broken by someone). */
     static void pruneOwn(State ps, ClientLevel lv) {
         try {
@@ -446,12 +529,16 @@ public final class ShelterJob {
         }
     }
 
-    /** The shelter blocks the bot built (commands.json "shelterBlocks", "x y z"; at most 200). */
+    /**
+     * 0.27.4: every cell the bot built for a shelter, "x y z": commands.json "shelterBlocks" (the current shelter) plus
+     * "shelterEver" (all of them, newest 400). The own-block tests use this union.
+     */
     static Set<String> ownBlocks(Commands c) {
         Set<String> out = new HashSet<>();
         try {
             com.google.gson.JsonObject d = c.brainData();
             if (d.has("shelterBlocks") && d.get("shelterBlocks").isJsonArray()) for (var e : d.getAsJsonArray("shelterBlocks")) out.add(e.getAsString());
+            if (d.has("shelterEver") && d.get("shelterEver").isJsonArray()) for (var e : d.getAsJsonArray("shelterEver")) out.add(e.getAsString());
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] shelter: reading my blocks failed: {}", e.toString());
         }

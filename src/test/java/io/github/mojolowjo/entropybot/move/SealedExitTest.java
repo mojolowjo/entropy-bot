@@ -63,6 +63,23 @@ class SealedExitTest {
         assertFalse(SurfaceSeal.inOwnShelterLoose(f, own, c -> c[1] != 46), "an open cell: no shelter");
     }
 
+    /**
+     * 0.27.4 (live: a 1x1 pit, my roof and one wall, the rest natural stone; the planks were no longer in the stored list):
+     * the escape opens my wall and the natural cell above it: head first, then the step cell.
+     */
+    @Test void pitWithOwnRoofAndWallGivesAMixedExit() {
+        int[] f = {21, 45, 83};
+        Set<String> own = Set.of("21 47 83", "20 45 83");
+        java.util.function.Predicate<int[]> natural = c -> c[1] == 46;
+        List<int[]> ex = SurfaceSeal.ownExit(f, own, c -> true, natural);
+        assertNotNull(ex, "a closed pit with my roof and wall is my shelter");
+        assertEquals(List.of("20 45 83", "20 46 83", "20 45 83"), ex.stream().map(ShelterPlan::key).toList(),
+                "step cell first, then the natural head cell, then my wall");
+        assertNull(SurfaceSeal.ownExit(f, own, c -> true), "without the natural cell the rules allow there is no exit");
+        assertNull(SurfaceSeal.ownExit(f, own, c -> c[1] != 46, natural), "an open cell: not sealed in");
+        assertNull(SurfaceSeal.ownExit(f, Set.of("99 99 99"), c -> true, natural), "no own cell: not mine");
+    }
+
     @Test void stairSideAndUpSteps() {
         int[] f = {0, 40, 0};
         // natural stone everywhere except the bot's own cells; the roof over the head is an own plank (FLOOR_ONLY)
