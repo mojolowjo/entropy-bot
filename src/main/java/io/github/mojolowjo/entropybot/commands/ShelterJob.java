@@ -97,7 +97,10 @@ public final class ShelterJob {
         if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
         ClientLevel lv = Minecraft.getInstance().level;
         int[] f = Jobs.here(p);
-        List<int[]> todo = ShelterPlan.shell(f, x -> solid(lv, x));
+        // 0.27.3: an anchored order (every block leans on the ground, a clickable block or one placed before it)
+        Clearing.LiveWorld lw = new Clearing.LiveWorld();
+        lw.set(p);
+        List<int[]> todo = ShelterPlan.ordered(f, x -> solid(lv, x), x -> io.github.mojolowjo.entropybot.clear.PlaceRules.clickable(lw, x[0], x[1], x[2]));
         Map<String, Integer> bag = Gui.inventory(p);
         String block = ShelterPlan.material(bag, todo.size());
         if (block == null && !todo.isEmpty()) {
@@ -199,6 +202,7 @@ public final class ShelterJob {
                 ps.stage = n;
                 ps.stageAt = now;
                 if (n == ShelterPlan.Stage.DONE) {
+                    pruneOwn(ps, lv);
                     s.jobs.finish("ok: sheltered at " + Jobs.fmt(ps.feet) + " until " + DayNight.clock(lv.getDayTime()) + " and stepped out"
                             + (ps.keep == 1 ? " (closed it behind me)" : "") + " - it stays as my shelter");
                 }
@@ -249,13 +253,8 @@ public final class ShelterJob {
         try {
             Commands c = Core0.commands();
             if (c != null) {
-                com.google.gson.JsonArray a = new com.google.gson.JsonArray();
-                Set<String> all = new java.util.LinkedHashSet<>(ownBlocks(c));
-                all.addAll(ps.own);
-                java.util.List<String> l = new ArrayList<>(all);
-                for (String k : l.subList(Math.max(0, l.size() - 200), l.size())) a.add(k);
-                c.brainData().add("shelterBlocks", a);
-                c.saved();
+                // 0.27.3 (d4): only the current shelter's cells (the old list kept every shelter's forever)
+                saveOwn(c, ps.own);
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] shelter: saving my blocks failed: {}", e.toString());
@@ -398,6 +397,33 @@ public final class ShelterJob {
         s.block = id;
         s.recovered = true;
         return s;
+    }
+
+    /** 0.27.3: commands.json "shelterBlocks" = exactly these cells (the current shelter's). */
+    static void saveOwn(Commands c, java.util.Collection<String> own) {
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        for (String k : ShelterPlan.keepOwn(own, null)) a.add(k);
+        c.brainData().add("shelterBlocks", a);
+        c.saved();
+    }
+
+    /** 0.27.3 (d4): on leaving, drop the cells that are no longer a block (opened as the door, broken by someone). */
+    static void pruneOwn(State ps, ClientLevel lv) {
+        try {
+            Commands c = Core0.commands();
+            if (c == null || lv == null) return;
+            java.util.List<String> kept = ShelterPlan.keepOwn(ownBlocks(c), k -> {
+                String[] w = k.split(" ");
+                return solid(lv, new int[]{Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2])});
+            });
+            com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+            for (String k : kept) a.add(k);
+            c.brainData().add("shelterBlocks", a);
+            c.saved();
+            LOG.info("[entropybot] shelter: {} of my shelter blocks still stand", kept.size());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] shelter: pruning my blocks failed: {}", e.toString());
+        }
     }
 
     /** The shelter blocks the bot built (commands.json "shelterBlocks", "x y z"; at most 200). */

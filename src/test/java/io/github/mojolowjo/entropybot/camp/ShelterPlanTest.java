@@ -24,6 +24,39 @@ class ShelterPlanTest {
         for (int[] c : s) assertFalse(c[0] == 10 && c[2] == 20 && c[1] < 66, "never the bot's own cell");
     }
 
+    /** 0.27.3: every placement leans on the ground, a clickable block or a cell placed before it; a dip gets a footing. */
+    @Test void anchoredOrderOnOpenGrassWithADip() {
+        java.util.function.Predicate<int[]> ground = c -> c[1] <= 63 && !(c[0] == 11 && c[1] == 63 && c[2] == 20);
+        List<int[]> o = ShelterPlan.ordered(F, ground, ground);
+        assertEquals(ShelterPlan.FULL + 1, o.size());                     // the shell plus one footing
+        Set<String> placed = new HashSet<>();
+        for (int[] c : o) {
+            assertTrue(ShelterPlan.hasAnchor(c, placed, ground), "no anchor for " + ShelterPlan.key(c));
+            placed.add(ShelterPlan.key(c));
+        }
+        assertTrue(placed.contains("11 63 20"), "the dip is filled");
+        assertArrayEquals(new int[]{10, 66, 20}, o.get(o.size() - 1));     // the roof stays last
+        int footing = -1, east = -1;
+        for (int i = 0; i < o.size(); i++) {
+            if (ShelterPlan.key(o.get(i)).equals("11 63 20")) footing = i;
+            if (ShelterPlan.key(o.get(i)).equals("11 64 20")) east = i;
+        }
+        assertTrue(footing < east, "footing before the wall on it");
+    }
+
+    @Test void flatGroundKeepsTheOldOrder() {
+        java.util.function.Predicate<int[]> ground = c -> c[1] <= 63;
+        List<int[]> o = ShelterPlan.ordered(F, ground, ground);
+        List<int[]> s = ShelterPlan.shell(F, ground);
+        assertEquals(s.size(), o.size());
+        for (int i = 0; i < s.size(); i++) assertArrayEquals(s.get(i), o.get(i));
+    }
+
+    @Test void keepOwnOnlyStanding() {
+        assertEquals(List.of("1 2 3"), ShelterPlan.keepOwn(List.of("1 2 3", "4 5 6", "1 2 3"), k -> k.startsWith("1")));
+        assertEquals(2, ShelterPlan.keepOwn(List.of("1 2 3", "4 5 6"), null).size());
+    }
+
     @Test void solidCellsAreLeftOut() {
         List<int[]> s = ShelterPlan.shell(F, c -> c[0] == 11);              // a wall to the east already
         assertEquals(ShelterPlan.FULL - 2, s.size());

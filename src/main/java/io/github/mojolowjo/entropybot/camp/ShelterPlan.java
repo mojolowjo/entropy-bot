@@ -36,6 +36,51 @@ public final class ShelterPlan {
         return out;
     }
 
+    /**
+     * 0.27.3 (live: "nothing in reach to place oak_planks against" on open grass): the shell in an order where every
+     * placement has a face neighbour to click: a clickable world block (anchor) or a cell placed before it. A feet-level
+     * side over a dip (the cell below takes a block) gets a footing first, which itself leans on the bot's own floor.
+     * The preferred order stays feet ring, head ring, support, roof; a cell with no anchor yet waits for one; cells that
+     * never get one go last (placeAt then names the cell). solid: the cell holds a block now; anchor: a block to click.
+     */
+    public static List<int[]> ordered(int[] f, Predicate<int[]> solid, Predicate<int[]> anchor) {
+        List<int[]> want = new ArrayList<>();
+        for (int[] d : SIDES) {
+            int[] below = {f[0] + d[0], f[1] - 1, f[2] + d[1]};
+            if (solid != null && !solid.test(below)) want.add(below);                      // footing over a dip
+        }
+        want.addAll(shell(f, solid));
+        List<int[]> out = new ArrayList<>();
+        Set<String> placed = new java.util.HashSet<>();
+        List<int[]> left = new ArrayList<>(want);
+        boolean progress = true;
+        while (!left.isEmpty() && progress) {
+            progress = false;
+            for (int i = 0; i < left.size(); i++) {
+                int[] c = left.get(i);
+                if (hasAnchor(c, placed, anchor)) {
+                    out.add(c);
+                    placed.add(key(c));
+                    left.remove(i);
+                    progress = true;
+                    break;                        // back to the preferred order with the new block in place
+                }
+            }
+        }
+        out.addAll(left);
+        return out;
+    }
+
+    /** A face neighbour of c that can be clicked: placed already, or an anchor block in the world. */
+    public static boolean hasAnchor(int[] c, Set<String> placed, Predicate<int[]> anchor) {
+        int[][] n = {{0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}};
+        for (int[] d : n) {
+            int[] x = {c[0] + d[0], c[1] + d[1], c[2] + d[2]};
+            if (placed.contains(key(x)) || (anchor != null && anchor.test(x))) return true;
+        }
+        return false;
+    }
+
     private static void add(List<int[]> out, int[] c, Predicate<int[]> solid) {
         if (solid == null || !solid.test(c)) out.add(c);
     }
@@ -81,6 +126,13 @@ public final class ShelterPlan {
     }
 
     public static String key(int[] c) { return c[0] + " " + c[1] + " " + c[2]; }
+
+    /** 0.27.3 (d4): the own cells to store: those still standing (stands null: all), unique, at most 200. */
+    public static List<String> keepOwn(java.util.Collection<String> own, Predicate<String> stands) {
+        List<String> out = new ArrayList<>();
+        for (String k : new java.util.LinkedHashSet<>(own)) if (stands == null || stands.test(k)) out.add(k);
+        return out.size() > 200 ? new ArrayList<>(out.subList(out.size() - 200, out.size())) : out;
+    }
 
     /** The own-block rule: the bot may break a shell block only when it placed that block itself. */
     public static boolean mayBreak(int[] pos, Set<String> own) {
