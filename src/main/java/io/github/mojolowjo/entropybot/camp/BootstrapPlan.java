@@ -34,7 +34,13 @@ public final class BootstrapPlan {
      * furnace, chest: free cells next to it for those blocks (null: none found); dir: the quarry's direction {dx, dz}.
      */
     public record Facts(Map<String, Integer> inv, boolean tableNear, boolean furnaceNear, boolean chestNear, boolean campMarked,
-                        int[] feet, int[] table, int[] furnace, int[] chest, int[] dir) {}
+                        int[] feet, int[] table, int[] furnace, int[] chest, int[] dir, boolean snowy) {
+        /** Before 0.28.1 (no snow check). */
+        public Facts(Map<String, Integer> inv, boolean tableNear, boolean furnaceNear, boolean chestNear, boolean campMarked,
+                     int[] feet, int[] table, int[] furnace, int[] chest, int[] dir) {
+            this(inv, tableNear, furnaceNear, chestNear, campMarked, feet, table, furnace, chest, dir, false);
+        }
+    }
 
     /** The chain (commands, in order) and a one-line summary; err: why it can't start (with the next command). */
     public record Plan(List<String> steps, String summary, String err) {}
@@ -135,12 +141,16 @@ public final class BootstrapPlan {
         int sticks = 0;
         for (String k : tools) sticks += stickCost(k);
         if (needWoodPick && quarry) sticks += 2;
+        // 0.28.1 (trial fix D): in snow a wooden shovel right after the table (snow blocks drop only for a shovel; the stone one comes later)
+        boolean woodShovel = f.snowy() && best(inv, "shovel") == 0;
+        if (woodShovel) sticks += 2;
         sticks += (torchMissing + 3) / 4;
         sticks = Math.max(0, sticks - count(inv, "minecraft:stick"));
         int planks = (sticks + 3) / 4 * 2;
         if (needTable && count(inv, "minecraft:crafting_table") == 0) planks += 4;
         if (needChest && count(inv, "minecraft:chest") == 0) planks += 8;
         if (needWoodPick && quarry) planks += 3;
+        if (woodShovel) planks += 1;
         if (coalNeed > 0) planks += (coalNeed * 2 + 2) / 3;
         int plankHave = sumSuffix(inv, "_planks") + 4 * sumSuffix(inv, "_log", "_wood", "_stem", "_hyphae");
         int logs = (Math.max(0, planks + 4 * coalNeed - plankHave) + 3) / 4;          // a charcoal takes a whole log
@@ -156,6 +166,7 @@ public final class BootstrapPlan {
             out.add("goto " + fmt(f.feet()));          // back to the camp centre: the spot is 2 away, in reach
             out.add("place crafting_table " + fmt(f.table()));
         } else skipped.add("table");
+        if (woodShovel) out.add("craft wooden_shovel 1");      // 0.28.1: needs the table (a 1x3 recipe)
         if (quarry) {
             if (needWoodPick) out.add("craft wooden_pickaxe 1");
             out.addAll(quarrySteps(f.feet(), f.dir()));

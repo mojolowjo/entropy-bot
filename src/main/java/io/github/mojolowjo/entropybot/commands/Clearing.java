@@ -970,7 +970,7 @@ public final class Clearing {
             List<Tools.Slot> slots = w.toolSlots(p, t.x(), t.y(), t.z());
             boolean need = w.needsCorrectTool(t.x(), t.y(), t.z());
             int i = Tools.choose(slots, need, w.ore(t.x(), t.y(), t.z()), Hotbar.toolOres());
-            if (i < 0) return new ClearRun.Held(Tools.okWithout(need), null);
+            if (i < 0) return new ClearRun.Held(Tools.okWithout(need, w.name(t.x(), t.y(), t.z())), null);     // 0.28.1: snow by hand
             String id = Gui.itemId(p.getInventory().getItem(i));
             if (Tools.isPickaxe(id)) job.lastPick = id;
             Hotbar.toHand(mc, p, i);

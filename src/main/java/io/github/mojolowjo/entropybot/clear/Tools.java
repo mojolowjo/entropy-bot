@@ -109,6 +109,14 @@ public final class Tools {
     }
 
     /**
+     * 0.28.1 (trial fix D): snow (layers, blocks) breaks quickly by hand and only its snowballs need a shovel, so a dig
+     * with no shovel breaks it anyway (trial 1: "broke 0 blocks; 18 left, needs a better tool (snow_block)").
+     */
+    public static boolean okWithout(boolean needsCorrectTool, String blockName) {
+        return !needsCorrectTool || needsShovel(blockName);
+    }
+
+    /**
      * noTool's decision when no tool can harvest the block: with a pickaxe left, skip the block ({@link #skip});
      * after two tries at crafting, stop ({@link #stop}); else craft 3 pickaxes, stone first, then the kind it was
      * using ({@link #craft}, craft texts like "minecraft:stone_pickaxe 3", tried in order).
@@ -116,6 +124,8 @@ public final class Tools {
     public record NoTool(String skip, String stop, List<String> craft) {}
 
     public static NoTool noTool(ClearJob job, boolean hasPickaxe, String blockName) {
+        // 0.28.1 (trial fix D): snow needs a shovel, not a better pickaxe (the trial's "broke 0 blocks ... needs a better tool (snow_block)")
+        if (needsShovel(blockName)) return new NoTool(null, shovelStop(blockName), null);
         if (hasPickaxe) return new NoTool("needs a better tool (" + blockName + ")", null, null);
         if (job.craftTries >= 2) return new NoTool(null, "stopped: out of pickaxes (" + blockName + " needs one)", null);
         job.craftTries++;
@@ -123,6 +133,18 @@ public final class Tools {
         tries.add("minecraft:stone_pickaxe 3");
         if (job.lastPick != null && !job.lastPick.equals("minecraft:stone_pickaxe")) tries.add(job.lastPick + " 3");
         return new NoTool(null, null, tries);
+    }
+
+    /** 0.28.1: blocks only a shovel harvests (vanilla: snow layers, snow blocks, powder snow); ids with or without the namespace. */
+    public static boolean needsShovel(String blockName) {
+        String b = blockName == null ? "" : blockName.replaceFirst("^[^:]*:", "").toLowerCase(java.util.Locale.ROOT);
+        return b.equals("snow") || b.equals("snow_block") || b.equals("powder_snow");
+    }
+
+    /** 0.28.1: the dig's stop for a shovel block with no shovel in the bag. */
+    public static String shovelStop(String blockName) {
+        String b = blockName == null ? "snow" : blockName.replaceFirst("^[^:]*:", "");
+        return "stopped: " + b + " needs a shovel - next: craft wooden_shovel 1";
     }
 
     /** Every craft try failed to start ({@code lastError} = the last reply). */

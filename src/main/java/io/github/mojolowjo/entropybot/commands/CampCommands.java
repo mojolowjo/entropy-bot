@@ -68,7 +68,10 @@ final class CampCommands {
         if (!status && c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
         Minecraft mc = Minecraft.getInstance();
         ClientLevel lv = mc.level;
-        int[] feet = Jobs.here(p);
+        int[] here = Jobs.here(p);
+        // 0.28.1 (trial fix A): the camp goes on the ground under me (trial 1: on a spruce top, 8 up in the air once it was chopped)
+        int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
+        if (feet[1] != here[1]) LOG.info("[entropybot] bootstrap: standing at {}, the camp goes on the ground at {}", Jobs.fmt(here), Jobs.fmt(feet));
         String dim = Guard.dimOf(lv);
         // the fence: the camp's digs and placements need leases inside an area (strict mode)
         boolean strict = Core.INSTANCE.guard.core.mode() == GuardCore.Mode.STRICT;
@@ -99,8 +102,14 @@ final class CampCommands {
         }
         int[] table = free.size() > 0 ? free.get(0) : null, furnace = free.size() > 1 ? free.get(1) : null, chest = free.size() > 2 ? free.get(2) : null;
         boolean campMarked = Core.INSTANCE.knowledge.places().containsKey("camp");
+        // 0.28.1 (trial fix D): a snow layer on a spot is dug first (trial 1: the table "couldn't go" on snow); snow near = snowy
+        for (int[] s : new int[][]{tableNear ? null : table, furnaceNear ? null : furnace, chestNear ? null : chest}) {
+            if (s != null && lv.getBlockState(new BlockPos(s[0], s[1], s[2])).is(net.minecraft.world.level.block.Blocks.SNOW))
+                pre.add("dig " + s[0] + " " + s[1] + " " + s[2] + " " + s[0] + " " + s[1] + " " + s[2]);
+        }
+        boolean snowy = snowNear(lv, feet);
         BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
-                feet, table, furnace, chest, dir));
+                feet, table, furnace, chest, dir, snowy));
         if (plan.err() != null) return plan.err();
         if (plan.steps().isEmpty()) return plan.summary();
         List<String> all = new ArrayList<>(pre);
@@ -125,6 +134,18 @@ final class CampCommands {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
             String id = lv.getBlockState(m).getBlock().getDescriptionId();
             if (id.endsWith("." + word) || id.endsWith("_" + word) && !id.contains("ender_chest")) return true;
+        }
+        return false;
+    }
+
+    /** 0.28.1: snow, a snow block or powder snow within 3 blocks of the camp's feet (that level and the one under it). */
+    static boolean snowNear(ClientLevel lv, int[] f) {
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = -1; dy <= 0; dy++) {
+            m.set(f[0] + dx, f[1] + dy, f[2] + dz);
+            BlockState st = lv.getBlockState(m);
+            if (st.is(net.minecraft.world.level.block.Blocks.SNOW) || st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)
+                    || st.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW)) return true;
         }
         return false;
     }
@@ -471,7 +492,12 @@ final class CampCommands {
     Map<String, Integer> junkPlan(LocalPlayer p, String collecting) {
         List<StorageRules.Held> held = Storage.held(p);
         Map<String, Integer> dep = StorageRules.depositables(held, null, true, null, c.storage.keeps());
-        return JunkRules.plan(junkList(), dep, Gui.inventory(p), collecting);
+        // 0.28.1: a running or queued build/shelter keeps its blocks (the trial's house cobblestone went over the side)
+        List<String> texts = new ArrayList<>();
+        texts.add(collecting);
+        if (c.jobs.job != null && !c.jobs.job.done) texts.add(c.jobs.job.type + " " + c.jobs.job.label);
+        texts.addAll(c.chainsRef().restSteps());
+        return JunkRules.plan(junkList(), dep, Gui.inventory(p), collecting, JunkRules.wanted(texts));
     }
 
     /** Junk mode chest: the junk items of a deposit go to the chest marked "junk" (its pos), or null. */
