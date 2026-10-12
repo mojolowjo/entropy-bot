@@ -237,15 +237,10 @@ public final class SurfaceExport {
             try {
                 Files.createDirectories(dir);
                 Files.write(tmp, cols.toJson(d, cx, cz, t).getBytes(StandardCharsets.UTF_8));
-                try {
-                    Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } catch (AtomicMoveNotSupportedException e) {
-                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-                }
+                replace(tmp, target);
                 chunksWritten++;
                 lastWriteAtMs = System.currentTimeMillis();
                 lastWriteNanos = System.nanoTime() - t0;
-                writeErrorLogged = false;
             } catch (Throwable e) {
                 try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
                 writeFailed("write " + target.getFileName(), e);
@@ -253,11 +248,51 @@ public final class SurfaceExport {
         });
     }
 
+    /**
+     * 0.27.3 (d5, live in NINE-run1: "couldn't write -1.1.json (AccessDeniedException)" every chunk): on Windows a rename
+     * over a file another process has open (the dashboard serving /api/surfacechunk, a second game on the same junctioned
+     * folder) is denied. Replace: the atomic move, retried 3 times 15 ms apart, then a plain overwrite of the target (a
+     * reader may see a half file once; the next change rewrites it), counted as a fallback.
+     */
+    private void replace(Path tmp, Path target) throws IOException {
+        IOException last = null;
+        for (int i = 0; i < 3; i++) {
+            try {
+                try {
+                    Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                return;
+            } catch (java.nio.file.FileSystemException e) {      // AccessDeniedException among them
+                last = e;
+                try { Thread.sleep(15); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+            }
+        }
+        try {
+            Files.write(target, Files.readAllBytes(tmp));
+            Files.deleteIfExists(tmp);
+            moveFallbacks++;
+            if (moveFallbacks == 1 || moveFallbacks % 500 == 0)
+                LOG.info("[entropybot] surface export: renaming over {} was denied ({}); wrote it in place ({} times so far)", target.getFileName(), last, moveFallbacks);
+        } catch (IOException e) {
+            if (last != null) e.addSuppressed(last);
+            throw e;
+        }
+    }
+
+    /** 0.27.3: in-place writes after a denied rename, and when the last error line went to the log. */
+    private volatile long moveFallbacks, writeErrors, lastWriteErrorLogMs;
+
+    /** Failures go to the log once a minute at most, with the count (0.27.3: was once per success-failure flip, i.e. every chunk). */
     private void writeFailed(String what, Throwable t) {
         lastWriteError = what + ": " + t;
-        if (!writeErrorLogged) {
+        writeErrors++;
+        long now = System.currentTimeMillis();
+        if (now - lastWriteErrorLogMs >= 60_000) {
+            lastWriteErrorLogMs = now;
             writeErrorLogged = true;
-            LOG.warn("[entropybot] surface export: couldn't {} ({}); retried on the next change", what, t.toString());
+            LOG.warn("[entropybot] surface export: couldn't {} ({}); {} write errors so far, retried on the next change", what, t.toString(), writeErrors);
         }
     }
 
@@ -394,7 +429,8 @@ public final class SurfaceExport {
         String rl = io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.companionLine();
         sb.append(" | route map: ").append(rl == null ? "not started (companion chunks are read once it runs)" : rl);
         if (columnErrors > 0) sb.append(" | column errors ").append(columnErrors);
-        if (lastWriteError != null) sb.append(" | last file error ").append(lastWriteError);
+        if (lastWriteError != null) sb.append(" | last file error ").append(lastWriteError).append(" (").append(writeErrors).append(" errors)");
+        if (moveFallbacks > 0) sb.append(" | ").append(moveFallbacks).append(" written in place (rename denied: a reader had the file open)");
         if (lastTickError != null) sb.append(" | errors ").append(tickErrors).append(", last ").append(lastTickError);
         sb.append(" | ").append(settingsNote);
         return sb.toString();
