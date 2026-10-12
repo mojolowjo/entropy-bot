@@ -87,6 +87,29 @@ public final class ChopLoop {
         return out;
     }
 
+    /** 0.27.2: a stump for the order: any one-log column (leaves or not), or 0.27.1's leafless stump. */
+    public static boolean isStump(int logs, boolean leaflessStump) {
+        return logs <= 1 || leaflessStump;
+    }
+
+    public static final int STUMP_SKIP_RADIUS = 48;
+
+    /**
+     * 0.27.2: the order, but with every stump dropped when a real tree (2+ logs) stands within 48 blocks (flat) of me;
+     * stumps always after every real tree (order).
+     */
+    public static List<Cand> order(List<Cand> in, int[] me) {
+        boolean realNear = false;
+        for (Cand c : in) {
+            if (c.stump() || me == null) continue;
+            long dx = c.base()[0] - me[0], dz = c.base()[2] - me[2];
+            if (dx * dx + dz * dz <= (long) STUMP_SKIP_RADIUS * STUMP_SKIP_RADIUS) realNear = true;
+        }
+        List<Cand> keep = new ArrayList<>();
+        for (Cand c : in) if (!(realNear && c.stump())) keep.add(c);
+        return order(keep);
+    }
+
     /** 0.27.1: only stumps are left (the caller then tries them, nearest first). */
     public static boolean onlyStumps(List<Cand> in) {
         for (Cand c : in) if (!c.stump()) return false;

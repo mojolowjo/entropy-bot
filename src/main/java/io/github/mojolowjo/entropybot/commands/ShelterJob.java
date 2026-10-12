@@ -41,7 +41,7 @@ public final class ShelterJob {
         int[] feet;
         String block;
         long timer = -1, keep, startedAt, stageAt, lastAct;
-        boolean sawNight, leave, torchDone;
+        boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
         int[][] exit;
@@ -67,12 +67,30 @@ public final class ShelterJob {
     /** "shelter ...". */
     static String start(Commands c, LocalPlayer p, String rest, boolean internal, String from) {
         String r = rest == null ? "" : rest.trim().toLowerCase();
-        if (r.equals("status")) return status();
+        boolean armed = current != null && c.jobs.running();
+        if (r.equals("status")) {
+            if (armed) return status();
+            State rec = recognise(c, p);
+            if (rec == null) return status();
+            return "shelter: in my shelter at " + Jobs.fmt(rec.feet) + " from before (no job knows it: a restart?), timer expired, "
+                    + rec.own.size() + " of its blocks are mine - shelter leave opens my own wall";
+        }
         if (r.equals("leave")) {
-            State s = current;
-            if (s == null || !c.jobs.running()) return "I'm not in a shelter";
-            s.leave = true;
-            return "ok: leaving my shelter";
+            if (armed) {
+                current.leave = true;
+                return "ok: leaving my shelter";
+            }
+            // 0.27.2: not armed (a restart forgot it): any shelter of its own the ledger knows around the bot
+            State rec = recognise(c, p);
+            if (rec == null) return "I'm not in a shelter";
+            if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
+            rec.leave = true;
+            rec.startedAt = Core0.tick();
+            rec.stageAt = rec.startedAt;
+            rec.leases = Clearing.newLeases();
+            LOG.info("[entropybot] shelter: re-armed my shelter at {} (from before, {} own blocks): leaving", Jobs.fmt(rec.feet), rec.own.size());
+            String res = launch(c, p, rec, "leaving my shelter at " + Jobs.fmt(rec.feet));
+            return res.startsWith("started") ? "ok: leaving my shelter at " + Jobs.fmt(rec.feet) + " (I knew it from before the restart)" : res;
         }
         long[] a = ShelterPlan.args(r);
         if (a == null) return "usage: shelter [5m|30s] [keep] | shelter status | shelter leave";
@@ -103,12 +121,18 @@ public final class ShelterJob {
         // a shelter it built before (the ledger's "built: shelter") is its own again
         for (int[] cell : ShelterPlan.allCells(f)) if (ownBlocks(c).contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) s.own.add(ShelterPlan.key(cell));
         if (s.block == null) s.block = ShelterPlan.material(bag, 2) != null ? ShelterPlan.material(bag, 2) : "minecraft:cobblestone";
+        return launch(c, p, s, "sheltering at " + Jobs.fmt(f));
+    }
+
+    /** Starts the shelter job for state s (centred on its cell). */
+    private static String launch(Commands c, LocalPlayer p, State s, String label) {
+        int[] f = s.feet;
         // centre on the cell so the shell's blocks never touch the bot
         p.setPos(f[0] + 0.5, p.getY(), f[2] + 0.5);
         Seq.Step st = new Seq.Step("shelter");
         st.state = s;
         current = s;
-        String res = c.jobs.startSeq(new Seq(c.jobs, c.storage, "sheltering at " + Jobs.fmt(f), List.of(st), "fail"), "fail");
+        String res = c.jobs.startSeq(new Seq(c.jobs, c.storage, label, List.of(st), "fail"), "fail");
         Jobs.Job j = c.jobs.job;
         if (j != null) {
             Runnable prev = j.onEnd;
@@ -324,6 +348,56 @@ public final class ShelterJob {
         String r = Clearing.placeAt(p, ps.block, c[0], c[1], c[2], ps.leases);
         if (r.startsWith("error") && now - ps.stageAt > 200) ps.note = "error: couldn't close my shelter at " + Jobs.fmt(c) + ": " + r.replaceFirst("^error: ", "");
         return false;
+    }
+
+    /** 0.27.2: own shelter cells a surface dig-out opened: commands.json "shelterDoors" (the last 50), like shelter leave's way out. */
+    static void noteDoor(Commands c, List<int[]> cells) {
+        try {
+            com.google.gson.JsonObject d = c.brainData();
+            Set<String> all = new java.util.LinkedHashSet<>();
+            if (d.has("shelterDoors") && d.get("shelterDoors").isJsonArray()) for (var e : d.getAsJsonArray("shelterDoors")) all.add(e.getAsString());
+            for (int[] x : cells) all.add(ShelterPlan.key(x));
+            List<String> l = new ArrayList<>(all);
+            com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+            for (String k : l.subList(Math.max(0, l.size() - 50), l.size())) a.add(k);
+            d.add("shelterDoors", a);
+            c.saved();
+            LOG.info("[entropybot] shelter: opened my own wall as a door at {}", String.join("; ", l.subList(Math.max(0, l.size() - cells.size()), l.size())));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] shelter: saving the door failed: {}", e.toString());
+        }
+    }
+
+    /** 0.27.2: the own cells the bot knows: commands.json shelterBlocks plus the ledger's built cells of the shell around f. */
+    static Set<String> knownOwn(Commands c, int[] f) {
+        Set<String> own = new HashSet<>();
+        Set<String> stored = ownBlocks(c);
+        for (int[] cell : ShelterPlan.allCells(f))
+            if (stored.contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) own.add(ShelterPlan.key(cell));
+        return own;
+    }
+
+    /**
+     * 0.27.2: a shelter of its own around the bot that no job knows (the state was only in memory: a restart lost it).
+     * The re-armed state ("in it, timer expired"), or null when the bot is not inside one.
+     */
+    static State recognise(Commands c, LocalPlayer p) {
+        ClientLevel lv = Minecraft.getInstance().level;
+        if (lv == null || p == null) return null;
+        int[] f = Jobs.here(p);
+        Set<String> own = knownOwn(c, f);
+        if (!io.github.mojolowjo.entropybot.move.SurfaceSeal.inOwnShelter(f, own, x -> solid(lv, x))) return null;
+        State s = new State();
+        s.feet = f;
+        s.own.addAll(own);
+        s.stage = ShelterPlan.Stage.WAIT;
+        s.timer = 1;                 // expired
+        s.torchDone = true;
+        int[][] ex = ShelterPlan.exit(f, own);
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new BlockPos(ex[0][0], ex[0][1], ex[0][2])).getBlock()).toString();
+        s.block = id;
+        s.recovered = true;
+        return s;
     }
 
     /** The shelter blocks the bot built (commands.json "shelterBlocks", "x y z"; at most 200). */

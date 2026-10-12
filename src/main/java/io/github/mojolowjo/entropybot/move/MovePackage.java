@@ -354,7 +354,27 @@ public final class MovePackage {
                 + ", used " + s.readyHits + ", chain pre-plans " + s.chainPrePlans + ")"
                 + "; " + LongRouteProcess.INSTANCE.statusLine()
                 + "; ore detour (path.oreDetour): " + (oreDetourLine == null ? "none yet" : "last " + oreDetourLine)
-                + (oreDetourErrors > 0 ? ", " + oreDetourErrors + " errors" : "");
+                + (oreDetourErrors > 0 ? ", " + oreDetourErrors + " errors" : "")
+                + "; " + SurfaceSeal.statusLine(surfaceLeaves, surfacePlants, surfaceOwn) + ", " + surfaceRuns + " times";
+    }
+
+    /** 0.27.2: the surface dig-outs this session (blocks by kind) and the last 8 start times (ms) for the check finding. */
+    public volatile int surfaceLeaves, surfacePlants, surfaceOwn, surfaceRuns;
+    public final long[] surfaceTimes = new long[8];
+
+    public synchronized void surfaceDigOut(int leaves, int plants, int own) {
+        surfaceLeaves += leaves;
+        surfacePlants += plants;
+        surfaceOwn += own;
+        surfaceTimes[surfaceRuns % surfaceTimes.length] = System.currentTimeMillis();
+        surfaceRuns++;
+    }
+
+    /** 0.27.2: the check's "sealed" finding, or null. */
+    public String sealedFinding() {
+        if (!SurfaceSeal.tooOften(surfaceTimes, System.currentTimeMillis())) return null;
+        return "sealed: I had to dig myself out on the surface more than 3 times in the last hour (" + SurfaceSeal.statusLine(surfaceLeaves, surfacePlants, surfaceOwn)
+                + ") - next: shelter leave after a night, or clear the leaves around my spot";
     }
 
     /** 0.25.1: the last ore detour on a walk home and the errors (set by the walk step). */

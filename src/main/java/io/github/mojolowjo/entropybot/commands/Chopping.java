@@ -439,7 +439,8 @@ final class Chopping {
                 continue;
             }
             // 0.27.1: a one-log column without leaves above it is a stump or a lone log: tried only when nothing else is left
-            boolean stump = TreeFinder.stump(w, t);
+            // 0.27.2: any one-log column (whatever its leaves) counts as a stump: after every real tree, skipped near one
+            boolean stump = ChopLoop.isStump(t.logs().size(), TreeFinder.stump(w, t));
             if (stump && r.tried.add("stump " + t.at())) LOG.info("[entropybot] chop: stump at {} (1 log, no leaves above) - only if no tree is left", t.at());
             // 0.26.4: trunks with a free standing cell next to their base first (after a reach failure: the next nearest)
             boolean reach = !stump && trunkReachable(p, b);
@@ -449,7 +450,8 @@ final class Chopping {
             if (reach && r.reachFails == 0) break;      // the usual case: the nearest tree is fine
         }
         if (cands.isEmpty()) return null;
-        List<ChopLoop.Cand> ord = ChopLoop.order(cands);
+        List<ChopLoop.Cand> ord = ChopLoop.order(cands, me);
+        if (ord.isEmpty()) return null;
         if (ChopLoop.onlyStumps(cands)) LOG.info("[entropybot] chop: only stumps or lone logs left - trying the nearest one");
         r.nearestReachable = null;
         for (ChopLoop.Cand c : ord) if (c.reachable()) { r.nearestReachable = c.base()[0] + " " + c.base()[1] + " " + c.base()[2]; break; }
