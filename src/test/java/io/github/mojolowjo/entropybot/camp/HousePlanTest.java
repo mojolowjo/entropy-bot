@@ -72,4 +72,30 @@ class HousePlanTest {
         assertEquals("minecraft:oak_planks", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10, "minecraft:oak_planks", 64)));
         assertEquals("minecraft:stone_bricks", HousePlan.chooseBlock("stone_bricks", Map.of()));
     }
+
+    @Test
+    void doorFacesTheCamp() {
+        assertEquals("south", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{10, 0, 40})));
+        assertEquals("north", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{10, 0, -40})));
+        assertEquals("east", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{40, 0, 10})));
+        assertEquals("west", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{-40, 0, 10})));
+    }
+
+    @Test
+    void doorDefaultsSouth() {
+        assertEquals("south", HousePlan.sideName(HousePlan.doorSide(10, 10, null)));
+    }
+
+    @Test
+    void doorOnTheDiagonalPicksTheLongerAxis() {
+        assertEquals("east", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{40, 0, 12}))); // |dx|=30 > |dz|=2
+        assertEquals("south", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{12, 0, 40}))); // |dz|=30 > |dx|=2
+    }
+
+    @Test
+    void needLeavesOutTheDoor() {
+        // shell for 7x7x5 box (0,64,0)-(6,68,6): floor 49 + roof 49 + 4 walls * 5*5 - 4*5 overlap = 170; need = shell - 2 door cells = 168
+        assertEquals(170, BuildCount.need("shell", 0, 64, 0, 6, 68, 6));
+        assertEquals(168, HousePlan.need(0, 64, 0, 6, 68, 6));
+    }
 }
