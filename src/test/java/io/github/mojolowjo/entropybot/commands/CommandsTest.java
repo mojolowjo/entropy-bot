@@ -27,6 +27,9 @@ class CommandsTest {
         assertTrue(Texts.stepFailed("ok: no path"), "\"ok: \" is dropped first");
         assertTrue(Texts.stepFailed("I have no routine called x"));
         assertFalse(Texts.stepFailed("started: waiting 2s"));
+        assertFalse(Texts.stepFailed("ok: nothing to collect yet - 2 jobs due later"));
+        assertFalse(Texts.stepFailed("ok: nothing to put back"));
+        assertTrue(Texts.stepFailed("nothing to collect yet"), "without ok: it is still a failure");
         assertFalse(Texts.stepFailed(null));
     }
 

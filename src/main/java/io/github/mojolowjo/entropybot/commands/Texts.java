@@ -40,6 +40,8 @@ public final class Texts {
     private static final Pattern FAILED = Pattern.compile("^(error|busy|unknown|usage|only |sorry|i can't|i cannot|i have no|i don't|i haven't|no |nothing|none|say what)",
             Pattern.CASE_INSENSITIVE);
 
+    // These are the idempotent 'already done' endings of a step.
+    private static final Pattern BENIGN_OK = Pattern.compile("^(nothing to collect yet|nothing to put back|nothing to dig there|nothing to drop|nothing open|no crafting table of mine to pick up|no supplies to keep|no hotbar layout)", Pattern.CASE_INSENSITIVE);
     /** "a then b; c" -> [a, b, c] (empty parts dropped). */
     public static List<String> splitChain(String text) {
         List<String> out = new ArrayList<>();
@@ -69,6 +71,9 @@ public final class Texts {
     /** A reply that means the step didn't happen. */
     public static boolean stepFailed(String reply) {
         String r = reply == null ? "" : reply.replaceFirst("^ok: ", "");
+        if (reply != null && reply.startsWith("ok: ") && BENIGN_OK.matcher(r).find()) {
+            return false;
+        }
         return FAILED.matcher(r).find();
     }
 
