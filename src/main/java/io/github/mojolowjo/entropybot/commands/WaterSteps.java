@@ -44,7 +44,12 @@ final class WaterSteps {
     /** The clear's own end message with the water totals (KIND_FINISH: the blocks of every round). */
     static String endText(Seq.Step st, ClearJob job, String msg) {
         if (st.clear == null || !st.clear.water) return msg;
-        return WaterPlan.endMessage(msg, st.clear.waterTally, job.broken, Clearing.KIND_FINISH.equals(st.kind));
+        return WaterPlan.endMessage(msg, st.clear.waterTally, job.broken, finishing(st));
+    }
+
+    /** The step ends the job with its own report (the dig verb's clear, or a dig via baritone). */
+    static boolean finishing(Seq.Step st) {
+        return Clearing.KIND_FINISH.equals(st.kind) || BuilderDig.KIND.equals(st.kind);
     }
 
     static final class WaterState {
@@ -134,7 +139,9 @@ final class WaterSteps {
             d.state = new DrainState(at, box);
             steps.add(d);
         }
-        Seq.Step again = Clearing.KIND_FINISH.equals(ws.clear.kind) ? Clearing.finishingClearStep(o) : Clearing.clearStep(o);
+        // 0.29.0: a dig via baritone goes on via baritone
+        Seq.Step again = BuilderDig.KIND.equals(ws.clear.kind) ? BuilderDig.step(o)
+                : Clearing.KIND_FINISH.equals(ws.clear.kind) ? Clearing.finishingClearStep(o) : Clearing.clearStep(o);
         steps.add(again);
         // a floor dig: its fill reports (and counts) the new clear
         for (int j = seq.idx + 1; j < seq.steps.size(); j++) {
@@ -156,7 +163,7 @@ final class WaterSteps {
     /** The dig ends blocked: the job's end (a dig), or the clear's outcome for the floor fill after it. */
     private static String end(Seq seq, WaterState ws, Clearing.Outcome prev, String endMsg, int broken) {
         ClearJob.Options o = ws.clear.clear;
-        boolean finish = Clearing.KIND_FINISH.equals(ws.clear.kind);
+        boolean finish = finishing(ws.clear);
         String m = WaterPlan.endMessage(endMsg, o.waterTally, broken, finish);
         ws.clear.cleared = prev == null ? new Clearing.Outcome(false, broken, 0, java.util.Map.of(), List.of(), m)
                 : new Clearing.Outcome(false, prev.broken(), prev.left(), prev.mined(), prev.ores(), m);

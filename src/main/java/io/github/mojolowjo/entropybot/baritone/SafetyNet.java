@@ -143,10 +143,26 @@ public final class SafetyNet {
 
     /** A mod job turned Baritone's breaking on and Baritone's mine really runs (S1: not during its walks or holds). */
     static boolean breakingOwned(IBaritone b) {
+        if (builderBreakingOwned(b)) return true;
         try {
             var j = Core.INSTANCE.commands.jobs.job;
             if (j == null || j.done || !j.ownsBreaking) return false;
             return b != null && b.getMineProcess().isActive();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * 0.29.0: the third owner: a "dig ... via baritone" step runs Baritone's builder (its flag is up, a job runs and the
+     * builder process is really active). Its path digging needs allowBreak for the whole job.
+     */
+    static boolean builderBreakingOwned(IBaritone b) {
+        try {
+            if (!io.github.mojolowjo.entropybot.commands.BuilderDig.breaking()) return false;
+            var j = Core.INSTANCE.commands.jobs.job;
+            if (j == null || j.done) return false;
+            return b != null && b.getBuilderProcess().isActive();
         } catch (Throwable t) {
             return false;
         }

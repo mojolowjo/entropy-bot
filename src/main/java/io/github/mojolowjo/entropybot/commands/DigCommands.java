@@ -280,6 +280,9 @@ final class DigCommands {
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);
         if (a == null) return DIG_USAGE;
+        // 0.29.0: "via baritone" is for the box form only (the surface form and areas come later)
+        if (a.viaBaritone() && a.surfaceForm()) return "error: via baritone works with a box dig only for now (dig x1 y1 z1 x2 y2 z2 ... via baritone)";
+        if (a.viaBaritone() && a.floor()) return "error: floor doesn't work with via baritone yet - dig the box via baritone, then the floor without it";
         if (a.surfaceForm()) return digSurface(c, p, a, rest, from);
         int[] n = a.n();
         boolean force = a.force(), ores = a.ores();
@@ -310,6 +313,8 @@ final class DigCommands {
         ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop()).explainSpots(true)
                 .liquidBlocks(true)           // water plan item 1: water or lava in the way ends it as "blocked by ..."
                 .water(a.water(), a.large()).line("dig " + rest.trim());
+        // 0.29.0 (P1): Baritone's builder breaks the box, the same rules as its mask (BuilderDig, clear/BaritoneMask)
+        if (a.viaBaritone()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));

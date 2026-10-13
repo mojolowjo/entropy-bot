@@ -199,6 +199,7 @@ public final class Seq {
         stageTick += held;
         if (idx >= steps.size()) return;
         Crafting.afterHold(steps.get(idx));
+        BuilderDig.afterHold(steps.get(idx), held);            // 0.29.0: the builder may have been cancelled by the hold
         String t = steps.get(idx).type;
         if ((t.equals("ops") || t.equals("put") || t.equals("note") || t.equals("rsmove") || t.equals("rsread") || t.equals("rsdisks")
                 || t.equals("smeltput") || t.equals("smelttake")) && !Gui.open(p)) {
