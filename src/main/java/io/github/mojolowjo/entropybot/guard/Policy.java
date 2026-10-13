@@ -91,7 +91,15 @@ public final class Policy {
         return null;
     }
 
-    /** V1a live test: the first safe area (protect box) the box overlaps, or null - a dig touching one is refused up front. */
+    /**
+     * Returns the first safe area (protect box) in list order whose box overlaps the given box,
+     * or {@code null} if none overlap. Two boxes overlap when they share at least one cell,
+     * including the Y range (see {@link Box#overlaps}). The order of the {@code protect} list
+     * decides which safe area is reported when several overlap.
+     *
+     * <p>Called by the dig verb to refuse a dig box up front when the result is not {@code null},
+     * and by {@link GuardCore#grant} to refuse a roaming break lease near a safe area.
+     */
     public Box safeTouching(Box box) {
         for (Box b : protect) if (b.overlaps(box)) return b;
         return null;

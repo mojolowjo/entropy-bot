@@ -35,6 +35,34 @@ class AreaTypesTest {
     }
 
     @Test
+    void safeTouchingFindsTheOverlap() {
+        String policyJson = "{\"areas\":[],\"protect\":[{\"name\":\"safe1\",\"x1\":0,\"y1\":60,\"z1\":0,\"x2\":9,\"y2\":70,\"z2\":9}]}";
+        Policy p = Policy.parse(policyJson);
+        Box digOverlap = new Box("dig", OW, 5, 62, 5, 15, 64, 15);
+        Box digMiss = new Box("dig", OW, 20, 62, 20, 25, 64, 25);
+        assertEquals("safe1", p.safeTouching(digOverlap).name);
+        assertNull(p.safeTouching(digMiss));
+    }
+
+    @Test
+    void safeTouchingRespectsY() {
+        String policyJson = "{\"areas\":[],\"protect\":[{\"name\":\"safe1\",\"x1\":0,\"y1\":60,\"z1\":0,\"x2\":9,\"y2\":70,\"z2\":9}]}";
+        Policy p = Policy.parse(policyJson);
+        Box digAbove = new Box("dig", OW, 0, 80, 0, 9, 85, 9);
+        assertNull(p.safeTouching(digAbove));
+    }
+
+    @Test
+    void safeTouchingReportsTheFirst() {
+        String policyJson = "{\"areas\":[],\"protect\":["
+                + "{\"name\":\"safe1\",\"x1\":0,\"y1\":60,\"z1\":0,\"x2\":9,\"y2\":70,\"z2\":9},"
+                + "{\"name\":\"safe2\",\"x1\":5,\"y1\":60,\"z1\":5,\"x2\":14,\"y2\":70,\"z2\":14}]}";
+        Policy p = Policy.parse(policyJson);
+        Box digOverlapBoth = new Box("dig", OW, 5, 62, 5, 9, 64, 9);
+        assertEquals("safe1", p.safeTouching(digOverlapBoth).name);
+    }
+
+    @Test
     void theTable() {
         for (AreaType t : AreaType.values()) {
             assertTrue(AreaTypeRules.walk(t, AreaTypeRules.Walker.OTHER), "walk in " + t);
