@@ -190,9 +190,52 @@ final class DigCommands {
         return c.chainsRef().startChain(from, "dig stairs", text, 1);
     }
 
+    /** 0.28.2 (B1): one cell for StonePit (vanilla BlockState and tags only). */
+    static io.github.mojolowjo.entropybot.gather.StonePit.Cell stoneCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(bp)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
+        var st = lv.getBlockState(bp);
+        if (!st.getFluidState().isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.LIQUID;
+        if (st.hasBlockEntity() || st.getDestroySpeed(lv, bp) < 0) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
+        if (st.getCollisionShape(lv, bp).isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.AIR;
+        if (st.is(net.minecraft.tags.BlockTags.BASE_STONE_OVERWORLD) || st.is(net.minecraft.world.level.block.Blocks.COBBLESTONE)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.STONE;
+        return io.github.mojolowjo.entropybot.gather.StonePit.Cell.SOFT;
+    }
+
+    /**
+     * 0.28.2 (B1, trial fix package 2) "dig stone [n]": gather's cobblestone source. A walkable staircase quarry (StonePit)
+     * from my feet, long enough for n stone; one careful clear of exactly those cells (the areas, leases, tools, base
+     * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
+     */
+    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from) {
+        int n = rest.isEmpty() ? 64 : Math.max(1, Math.min(256, Integer.parseInt(rest)));
+        net.minecraft.world.level.Level lv = p.level();
+        int[] here = Jobs.here(p);
+        int[] feet = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) lv, here[0], here[1], here[2]);
+        int[] dir = CampCommands.quarryDir((net.minecraft.client.multiplayer.ClientLevel) lv, feet);
+        var plan = io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), feet, dir, n);
+        if (plan.err() != null) return plan.err();
+        String dim = Storage.dim();
+        var g = Core.INSTANCE.guard.core;
+        for (int[] cell : plan.cells()) {
+            var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
+            if (ar == null || ar.name == null) continue;
+            JsonObject ab = c.policyArea(ar.name);
+            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN)
+                return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
+        }
+        List<io.github.mojolowjo.entropybot.clear.Pos> only = new ArrayList<>();
+        for (int[] cell : plan.cells()) only.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2]));
+        String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
+        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns", n, Jobs.fmt(feet), only.size(), plan.stone(), plan.columns());
+        ClearJob.Options o = new ClearJob.Options().only(only).collect(false).label(label).liquidBlocks(true).line("dig stone " + n);
+        return startClear(c, p, o, restockSteps(c, p, only.size()));
+    }
+
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
+        if (rest != null && rest.trim().toLowerCase().matches("^stone(\\s+\\d+)?$")) return stoneQuarry(c, p, rest.trim().substring(5).trim(), from);   // 0.28.2
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);
