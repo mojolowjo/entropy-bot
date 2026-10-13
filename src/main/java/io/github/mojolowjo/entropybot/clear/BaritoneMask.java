@@ -5,6 +5,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 0.29.0 (docs/DIG_VIA_BARITONE_PLAN.md): {@code dig ... via baritone} hands the box to Baritone's builder, whose break
@@ -50,9 +51,52 @@ public final class BaritoneMask {
     public final boolean force, keepOres;
     private final Fence fence;
 
-    /** Mask calls, the cells it refused (anything but DIG and EMPTY/OUTSIDE), the exceptions. */
-    public long calls, refused, errors;
-    public String firstError;
+    /**
+     * Mask calls, the cells it refused (anything but DIG and EMPTY/OUTSIDE), the exceptions. Atomic: Baritone asks
+     * {@link #partOf} from its path-calculation thread while the client thread refreshes the snapshot.
+     */
+    public final java.util.concurrent.atomic.AtomicLong calls = new java.util.concurrent.atomic.AtomicLong(),
+            refused = new java.util.concurrent.atomic.AtomicLong(), errors = new java.util.concurrent.atomic.AtomicLong();
+    public volatile String firstError;
+
+    /**
+     * The cells the builder may break, as {@link #packed} cells: computed on the client thread ({@link #refresh}) and
+     * swapped in whole, so {@link #partOf} never touches the world (Baritone calls it off the client thread, during A*).
+     */
+    private volatile Set<Long> snapshot = Set.of();
+
+    /** The client thread: the DIG cells of the box now ({@link #digCells}), swapped in. Returns how many. */
+    public int refresh(ClearWorld w) {
+        long[] ref = new long[1];
+        Set<Long> s = digCells(w, ref);
+        snapshot = Set.copyOf(s);
+        refused.set(ref[0]);
+        return s.size();
+    }
+
+    public Set<Long> snapshot() {
+        return snapshot;
+    }
+
+    /**
+     * Baritone's question from any thread: is the cell at origin (ox, oy, oz) + (x, y, z) in the snapshot? Never
+     * throws (anything odd: false, counted).
+     */
+    public boolean partOf(int ox, int oy, int oz, int x, int y, int z) {
+        try {
+            calls.incrementAndGet();
+            return snapshot.contains(packed(ox + x, oy + y, oz + z));
+        } catch (Throwable t) {
+            errors.incrementAndGet();
+            if (firstError == null) firstError = t.toString();
+            return false;
+        }
+    }
+
+    /** The size of the air fill over the box: {x2-x1+1, y2-y1+1, z2-z1+1}. */
+    public static int[] size(ClearBox b) {
+        return new int[]{b.x2() - b.x1() + 1, b.y2() - b.y1() + 1, b.z2() - b.z1() + 1};
+    }
 
     public BaritoneMask(ClearBox box, boolean force, boolean keepOres, Fence fence) {
         this.box = box;
@@ -63,23 +107,24 @@ public final class BaritoneMask {
 
     /** The builder's question: may it break x y z (absolute coordinates)? Never throws. */
     public boolean allows(ClearWorld w, int x, int y, int z) {
-        calls++;
+        calls.incrementAndGet();
         Verdict v;
         try {
             v = verdict(w, x, y, z);
         } catch (RuntimeException e) {
-            errors++;
+            errors.incrementAndGet();
             if (firstError == null) firstError = x + " " + y + " " + z + ": " + e;
             v = Verdict.ERROR;
         }
-        if (v != Verdict.DIG && v != Verdict.EMPTY && v != Verdict.OUTSIDE) refused++;
+        if (v != Verdict.DIG && v != Verdict.EMPTY && v != Verdict.OUTSIDE) refused.incrementAndGet();
         return v == Verdict.DIG;
     }
 
     /** The rule for one cell (may throw on a broken world; {@link #allows} catches). */
     public Verdict verdict(ClearWorld w, int x, int y, int z) {
         if (!box.contains(x, y, z)) return Verdict.OUTSIDE;
-        if (w.air(x, y, z) || w.fluid(x, y, z)) return Verdict.EMPTY;
+        if (w.air(x, y, z)) return Verdict.EMPTY;
+        if (w.fluid(x, y, z)) return liquidBlock(w, x, y, z) ? Verdict.EMPTY : Verdict.WATER;      // waterlogged: a block stands there
         if (w.unbreakable(x, y, z)) return Verdict.UNBREAKABLE;
         if (w.blockEntity(x, y, z)) return Verdict.PROTECTED;            // never, force or not
         if (w.builtBlock(x, y, z) && !force) return Verdict.PROTECTED;
@@ -89,6 +134,13 @@ public final class BaritoneMask {
         if (ClearEngine.nextToLiquid(w, x, y, z)) return Verdict.WATER;
         if (keepOres && w.ore(x, y, z)) return Verdict.ORE;
         return Verdict.DIG;
+    }
+
+    /** A plain liquid block (water, lava, a mod fluid), not a waterlogged block: its name is the fluid's. */
+    public static boolean liquidBlock(ClearWorld w, int x, int y, int z) {
+        String n = w.name(x, y, z), k = w.fluidKind(x, y, z);
+        if (n.equals("water") || n.equals("lava")) return true;
+        return k != null && (n.equals(k) || n.equals(ClearRules.blockName(k)));
     }
 
     /** The liquid cell above or beside x y z (the order of {@link ClearEngine#nextToLiquid}), or null. */
@@ -138,7 +190,7 @@ public final class BaritoneMask {
                     try {
                         v = verdict(w, x, y, z);
                     } catch (RuntimeException e) {
-                        errors++;
+                        errors.incrementAndGet();
                         if (firstError == null) firstError = x + " " + y + " " + z + ": " + e;
                         v = Verdict.ERROR;
                     }
@@ -149,6 +201,7 @@ public final class BaritoneMask {
                         if (out.liquid == null) {
                             try {
                                 out.liquid = liquidNext(w, x, y, z);
+                                if (out.liquid == null && w.fluid(x, y, z)) out.liquid = new Pos(x, y, z);     // waterlogged itself
                                 if (out.liquid != null) out.liquidKind = w.fluidKind(out.liquid.x(), out.liquid.y(), out.liquid.z());
                             } catch (RuntimeException ignored) {}
                         }
@@ -160,14 +213,25 @@ public final class BaritoneMask {
     }
 
     /** The cells the builder may break now ({@link Verdict#DIG}), as {@link #packed} cells (the start snapshot the count uses). */
-    public java.util.Set<Long> digCells(ClearWorld w) {
-        java.util.Set<Long> s = new java.util.HashSet<>();
+    public Set<Long> digCells(ClearWorld w) {
+        return digCells(w, new long[1]);
+    }
+
+    private Set<Long> digCells(ClearWorld w, long[] refusedOut) {
+        Set<Long> s = new java.util.HashSet<>();
         for (int y = box.y1(); y <= box.y2(); y++)
             for (int x = box.x1(); x <= box.x2(); x++)
                 for (int z = box.z1(); z <= box.z2(); z++) {
+                    Verdict v;
                     try {
-                        if (verdict(w, x, y, z) == Verdict.DIG) s.add(packed(x, y, z));
-                    } catch (RuntimeException ignored) {}
+                        v = verdict(w, x, y, z);
+                    } catch (RuntimeException e) {
+                        errors.incrementAndGet();
+                        if (firstError == null) firstError = x + " " + y + " " + z + ": " + e;
+                        v = Verdict.ERROR;
+                    }
+                    if (v == Verdict.DIG) s.add(packed(x, y, z));
+                    else if (v != Verdict.EMPTY && v != Verdict.OUTSIDE) refusedOut[0]++;
                 }
         return s;
     }
@@ -179,6 +243,7 @@ public final class BaritoneMask {
 
     /** The counters for status and debug lines: "mask calls N, refused K, errors E". */
     public String counters() {
-        return "mask calls " + calls + ", refused " + refused + (errors > 0 ? ", mask errors " + errors : "");
+        long e = errors.get();
+        return "mask calls " + calls.get() + ", refused " + refused.get() + (e > 0 ? ", mask errors " + e : "");
     }
 }

@@ -74,14 +74,19 @@ public final class BuilderDig {
         BaritoneMask mask;
         final Clearing.LiveWorld world = new Clearing.LiveWorld();
         io.github.mojolowjo.entropybot.clear.LeaseSet leases;
-        /** the cells the mask allowed at the start (what "broke N" counts) */
-        Set<Long> startCells = new HashSet<>();
+        /** the cells the mask allowed at the start (what "broke N" counts); immutable, read from Baritone's event thread too */
+        volatile Set<Long> startCells = Set.of();
         /** the protect-box cells of the box (taken once at the start) */
         Set<Long> fenced = new HashSet<>();
         boolean prepared, running, done, inTrip, caughtSet, noDeposit;
         String tripKind, caught;
-        long lastChange, startTick, lastPoll, lastBeat = -1000, lastErrLog = -10000, loggedErrors;
-        int brokeAtPoll, brokeAtStart, restarts, events;
+        /** written by blockChanged (Baritone's event thread) and the step */
+        volatile long lastChange;
+        /** a start cell turned to air since the last snapshot: refresh it at the next tick */
+        volatile boolean dirty;
+        final java.util.concurrent.atomic.AtomicInteger events = new java.util.concurrent.atomic.AtomicInteger();
+        long startTick, lastPoll, lastBeat = -1000, lastErrLog = -10000, loggedErrors, lastRefresh = -1000;
+        int brokeAtPoll, brokeAtStart, restarts;
         boolean holdSeen;
         double[] startXZ;
         Saved saved;
@@ -219,7 +224,8 @@ public final class BuilderDig {
         }
         Set<Long> fenced = s.fenced;
         s.mask = new BaritoneMask(box, s.job.force, s.job.keepOres, (x, y, z) -> fenced.contains(BaritoneMask.packed(x, y, z)) ? "protect box or safe area" : null);
-        s.startCells = s.mask.digCells(s.world);
+        s.startCells = Set.copyOf(s.mask.digCells(s.world));
+        s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();
         String le = s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
         if (le != null) {
@@ -277,21 +283,18 @@ public final class BuilderDig {
         IBaritone b = Jobs.baritone();
         if (b == null) throw new IllegalStateException("baritone not loaded");
         ClearBox box = s.job.box;
-        int w = box.x2() - box.x1() + 1, h = box.y2() - box.y1() + 1, l = box.z2() - box.z1() + 1;
+        int[] sz = BaritoneMask.size(box);
         final int ox = box.x1(), oy = box.y1(), oz = box.z1();
-        final State st = s;
-        ISchematic fill = new FillSchematic(w, h, l, Blocks.AIR.defaultBlockState());
+        final BaritoneMask mask = s.mask;
+        mask.refresh(s.world);
+        s.lastRefresh = now;
+        ISchematic fill = new FillSchematic(sz[0], sz[1], sz[2], Blocks.AIR.defaultBlockState());
         ISchematic masked = new MaskSchematic(fill) {
             @Override
             protected boolean partOfMask(int x, int y, int z, BlockState currentState) {
-                // relative to the origin (Baritone subtracts it); fail-closed: anything odd is "not part of the dig"
-                try {
-                    return st.mask.allows(st.world, ox + x, oy + y, oz + z);
-                } catch (Throwable t) {
-                    st.mask.errors++;
-                    if (st.mask.firstError == null) st.mask.firstError = t.toString();
-                    return false;
-                }
+                // Baritone calls this from its path thread too: only the client-thread snapshot is read, never the world;
+                // relative to the origin (Baritone subtracts it); fail-closed (BaritoneMask.partOf never throws)
+                return mask.partOf(ox, oy, oz, x, y, z);
             }
         };
         applySettings(s);
@@ -351,7 +354,7 @@ public final class BuilderDig {
                 s.caughtSet = false;
                 s.tripKind = null;
             }
-            String le = s.leases.ensure();
+            String le = beat(s, now, true);
             if (le != null) return end(seq, st, s, p, null, "the guard: " + le.replaceFirst("^error: ", ""));
             try {
                 startBuilder(s, now);
@@ -361,25 +364,29 @@ public final class BuilderDig {
             seq.setStatus(s.job.label + ": digging (via baritone)");
             return "wait";
         }
-        if (now - s.lastBeat >= 20) {
-            s.lastBeat = now;
-            s.leases.beat();
-            String le = s.leases.ensure();
-            if (le != null) return end(seq, st, s, p, null, "the guard: " + le.replaceFirst("^error: ", ""));
+        String le0 = beat(s, now, false);
+        if (le0 != null) return end(seq, st, s, p, null, "the guard: " + le0.replaceFirst("^error: ", ""));
+        // the snapshot Baritone reads: every 10 ticks, or at once after a start cell was broken
+        if (s.dirty || now - s.lastRefresh >= 10) {
+            s.dirty = false;
+            s.lastRefresh = now;
+            s.mask.refresh(s.world);
         }
-        if (s.mask.errors > s.loggedErrors && now - s.lastErrLog >= 200) {
-            LOG.warn("[entropybot] dig via baritone: mask errors {} (first: {}) - those blocks are left alone", s.mask.errors, s.mask.firstError);
-            s.loggedErrors = s.mask.errors;
+        long errs = s.mask.errors.get();
+        if (errs > s.loggedErrors && now - s.lastErrLog >= 200) {
+            LOG.warn("[entropybot] dig via baritone: mask errors {} (first: {}) - those blocks are left alone", errs, s.mask.firstError);
+            s.loggedErrors = errs;
             s.lastErrLog = now;
         }
         if (now - s.lastPoll < 20) return "wait";
         s.lastPoll = now;
         // the fallback count (block-change events may not come for our own breaks): the start cells that are air now
         int b = broke(s);
-        if (b != s.brokeAtPoll) {
-            s.brokeAtPoll = b;
+        if (b > s.brokeAtPoll) {
             s.lastChange = Math.max(s.lastChange, now);
+            s.restarts = 0;                                 // progress: the restart cap counts from here
         }
+        s.brokeAtPoll = b;
         seq.setStatus(s.job.label + ": broke " + b + " of " + s.startCells.size() + " (via baritone; " + s.mask.counters() + ")");
         // the bag is full: the builder stops, junk is thrown or taken home, then it starts again
         if (!s.noDeposit && p.getInventory().getFreeSlot() < 0) return trip(seq, s, p);
@@ -402,6 +409,22 @@ public final class BuilderDig {
             }
         }
         return end(seq, st, s, p, e, null);
+    }
+
+    /**
+     * The lease heartbeat, every 20 ticks whether the builder runs or not (a long restock trip before the first run tick
+     * must not lose it); a lease that died is taken again, and once more before giving up. force: now. Null or the error.
+     */
+    static String beat(State s, long now, boolean force) {
+        if (!force && now - s.lastBeat < 20) return null;
+        s.lastBeat = now;
+        s.leases.beat();
+        String le = s.leases.ensure();
+        if (le != null) {
+            LOG.info("[entropybot] dig via baritone: lease lost ({}), taking it again", le);
+            le = s.leases.ensure();
+        }
+        return le;
     }
 
     /** The bag is full: junk thrown here ("junk drop") or a base trip; the builder waits cancelled. */
@@ -454,7 +477,7 @@ public final class BuilderDig {
         if (stop != null || left == null) {
             msg = "stopped: " + s.job.label + " - " + (stop != null ? stop : "couldn't re-scan the box") + " - broke " + broke;
         } else {
-            msg = BuilderReport.text(s.job.label, broke, left, gave, s.mask.errors);
+            msg = BuilderReport.text(s.job.label, broke, left, gave, s.mask.errors.get());
         }
         s.job.broken = broke;
         if (left != null) s.job.skip.putAll(left.waterCells);
@@ -513,11 +536,15 @@ public final class BuilderDig {
         }
     }
 
-    /** BaritoneHook.onBlockChange: a block of the running dig's box changed (the stall clock starts again). */
-    public static void blockChanged(int x, int y, int z) {
+    /**
+     * BaritoneHook.onBlockChange (Baritone's event thread): a start cell of the running dig turned to air (the stall
+     * clock starts again, the snapshot is refreshed). Water flowing or gravel falling is no progress.
+     */
+    public static void blockChanged(int x, int y, int z, boolean air) {
         State s = current;
-        if (s == null || s.job == null || !s.job.box.contains(x, y, z)) return;
-        s.events++;
+        if (s == null || !air || !s.startCells.contains(BaritoneMask.packed(x, y, z))) return;
+        s.events.incrementAndGet();
+        s.dirty = true;
         try { s.lastChange = Core.INSTANCE.tick(); } catch (Throwable ignored) {}
     }
 }

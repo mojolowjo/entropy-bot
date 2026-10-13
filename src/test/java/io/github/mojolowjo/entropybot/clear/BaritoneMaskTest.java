@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.clear;
 import io.github.mojolowjo.entropybot.clear.BaritoneMask.Verdict;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -47,7 +48,7 @@ class BaritoneMaskTest {
         assertFalse(m.allows(w, 4, 51, 1));
         assertFalse(m.allows(w, 1, 49, 1));
         assertEquals(Verdict.OUTSIDE, m.verdict(w, -1, 51, 0));
-        assertEquals(0, m.refused, "outside is not a refusal");
+        assertEquals(0, m.refused.get(), "outside is not a refusal");
     }
 
     @Test
@@ -120,9 +121,9 @@ class BaritoneMaskTest {
         assertFalse(m.allows(w, 2, 51, 2));
         assertFalse(m.allows(w, 2, 51, 1));
         assertTrue(m.allows(w, 1, 51, 1));
-        assertEquals(2, m.errors);
-        assertEquals(2, m.refused);
-        assertEquals(3, m.calls);
+        assertEquals(2, m.errors.get());
+        assertEquals(2, m.refused.get());
+        assertEquals(3, m.calls.get());
         assertNotNull(m.firstError);
         assertTrue(m.firstError.contains("chunk gone"));
         assertTrue(m.counters().contains("mask errors 2"));
@@ -160,6 +161,91 @@ class BaritoneMaskTest {
         assertEquals(15, cells.size());
         assertTrue(cells.contains(BaritoneMask.packed(3, 50, 3)));
         assertFalse(cells.contains(BaritoneMask.packed(0, 50, 0)));
+    }
+
+    /** FakeWorld with waterlogged cells: a block that also holds water. */
+    static ClearWorld waterlogged(FakeWorld f, java.util.Set<Long> wet) {
+        return new ClearWorld() {
+            boolean wet(int x, int y, int z) { return wet.contains(BaritoneMask.packed(x, y, z)); }
+            @Override public String id(int x, int y, int z) { return f.id(x, y, z); }
+            @Override public boolean air(int x, int y, int z) { return f.air(x, y, z); }
+            @Override public boolean fluid(int x, int y, int z) { return wet(x, y, z) || f.fluid(x, y, z); }
+            @Override public String fluidKind(int x, int y, int z) { return wet(x, y, z) ? "water" : f.fluidKind(x, y, z); }
+            @Override public boolean blockEntity(int x, int y, int z) { return f.blockEntity(x, y, z); }
+            @Override public boolean unbreakable(int x, int y, int z) { return f.unbreakable(x, y, z); }
+            @Override public boolean builtBlock(int x, int y, int z) { return f.builtBlock(x, y, z); }
+            @Override public boolean avoided(int x, int y, int z) { return f.avoided(x, y, z); }
+            @Override public boolean ore(int x, int y, int z) { return f.ore(x, y, z); }
+            @Override public boolean noCollision(int x, int y, int z) { return f.noCollision(x, y, z); }
+            @Override public boolean fullBlock(int x, int y, int z) { return f.fullBlock(x, y, z); }
+            @Override public double collisionHeight(int x, int y, int z) { return f.collisionHeight(x, y, z); }
+            @Override public int blockLight(int x, int y, int z) { return f.blockLight(x, y, z); }
+            @Override public Hit clip(double fx, double fy, double fz, double tx, double ty, double tz) { return f.clip(fx, fy, fz, tx, ty, tz); }
+        };
+    }
+
+    @Test
+    void waterloggedBlockIsWaterNotEmpty() {
+        FakeWorld f = new FakeWorld();
+        f.fill(0, 3, 50, 52, 0, 3, "air");
+        f.set(1, 50, 1, "cobblestone_wall");             // stands there, holds water
+        ClearWorld w = waterlogged(f, java.util.Set.of(BaritoneMask.packed(1, 50, 1)));
+        BaritoneMask m = mask(true, true);
+        assertEquals(Verdict.WATER, m.verdict(w, 1, 50, 1));
+        assertFalse(m.allows(w, 1, 50, 1));
+        BaritoneMask.Leftover l = m.leftover(w);
+        assertEquals(1, l.count(Verdict.WATER));
+        assertEquals(new Pos(1, 50, 1), l.liquid, "the waterlogged cell itself is the water");
+        assertFalse(BuilderReport.text("d", 0, l, BuilderReport.End.IDLE, 0).startsWith("done"));
+        f.set(2, 50, 2, "water");                        // a plain water block stays EMPTY
+        assertEquals(Verdict.EMPTY, m.verdict(w, 2, 50, 2));
+    }
+
+    @Test
+    void partOfReadsOnlyTheSnapshotWithTheOriginOffset() {
+        FakeWorld w = new FakeWorld();
+        w.fill(0, 3, 51, 52, 0, 3, "air");
+        w.set(2, 50, 3, "chest");
+        BaritoneMask m = mask(false, true);
+        assertFalse(m.partOf(0, 50, 0, 1, 0, 1), "empty before the first refresh");
+        assertEquals(15, m.refresh(w));
+        assertEquals(1, m.refused.get());
+        assertTrue(m.partOf(0, 50, 0, 1, 0, 1), "relative 1 0 1 + origin 0 50 0 = 1 50 1");
+        assertFalse(m.partOf(0, 50, 0, 2, 0, 3), "the chest");
+        assertFalse(m.partOf(0, 50, 0, 1, 1, 1), "air above");
+        assertTrue(m.partOf(-5, 40, 7, 6, 10, -6), "any origin: absolute 1 50 1");
+        w.set(1, 50, 1, "air");                          // broken: still in the snapshot until the refresh
+        assertTrue(m.partOf(0, 50, 0, 1, 0, 1));
+        m.refresh(w);
+        assertFalse(m.partOf(0, 50, 0, 1, 0, 1));
+        assertTrue(m.calls.get() == 7);
+    }
+
+    @Test
+    void partOfNeverThrows() {
+        BaritoneMask m = mask(false, true);
+        // packed() itself cannot throw; prove the guard by a snapshot that throws on lookup
+        try {
+            var f = BaritoneMask.class.getDeclaredField("snapshot");
+            f.setAccessible(true);
+            f.set(m, new java.util.AbstractSet<Long>() {
+                @Override public java.util.Iterator<Long> iterator() { throw new IllegalStateException("x"); }
+                @Override public int size() { return 0; }
+                @Override public boolean contains(Object o) { throw new StackOverflowError("deep"); }
+            });
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+        assertFalse(m.partOf(0, 0, 0, 1, 1, 1));
+        assertEquals(1, m.errors.get());
+        assertTrue(m.firstError.contains("deep"));
+    }
+
+    @Test
+    void fillSizeIsInclusive() {
+        assertArrayEquals(new int[]{4, 3, 4}, BaritoneMask.size(BOX));
+        assertArrayEquals(new int[]{1, 1, 1}, BaritoneMask.size(ClearBox.of(5, 5, 5, 5, 5, 5)));
+        assertArrayEquals(new int[]{6, 1, 6}, BaritoneMask.size(ClearBox.of(5, 83, 2, 0, 83, -3)));
     }
 
     @Test
