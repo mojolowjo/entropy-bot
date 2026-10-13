@@ -63,4 +63,16 @@ class DigWhyTest {
     void emptyBox() {
         assertEquals("nothing to dig there (air, or done already)", DigWhy.reason(null, 0, 0, NONE, NONE, List.of(), NONE));
     }
+    @Test
+    void shovelBlocks() {
+        assertTrue(DigWhy.reason(null, 0, 4, Map.of("1 2 3", "needs a better tool (dirt)"), NONE, List.of(), NONE).contains("wooden_shovel"));
+        assertTrue(DigWhy.reason(null, 0, 4, Map.of("1 2 3", "needs a better tool (snow_block)"), NONE, List.of(), NONE).contains("wooden_shovel"));
+        assertTrue(DigWhy.reason(null, 0, 4, Map.of("1 2 3", "needs a better tool (gravel)"), NONE, List.of(), NONE).contains("needs a shovel for gravel"));
+    }
+
+    @Test
+    void axeBlocks() {
+        assertTrue(DigWhy.reason(null, 0, 4, Map.of("1 2 3", "needs a better tool (oak_log)"), NONE, List.of(), NONE).contains("wooden_axe"));
+        assertTrue(DigWhy.reason(null, 0, 4, Map.of("1 2 3", "needs a better tool (spruce_planks)"), NONE, List.of(), NONE).contains("needs an axe for spruce_planks"));
+    }
 }

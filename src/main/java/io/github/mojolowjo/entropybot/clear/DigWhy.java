@@ -5,22 +5,22 @@ import java.util.Map;
 
 /**
  * 0.28.2 (trial fix package 2, B2): a dig that broke 0 blocks says why, with the next step (trial 2: "broke 0 blocks; N
- * left" twice with no reason). The first reason met, in this order: no pickaxe, nowhere to stand, the fence/guard, a
+ * left" twice with no reason). The first reason met, in this order: no tool (pickaxe, shovel or axe), nowhere to stand, the fence/guard, a
  * protected block, gave up on a block (too slow, the server puts it back), water or lava next to it. Pure.
  */
 public final class DigWhy {
     private DigWhy() {}
 
     /**
-     * @param prefix   the end's prefix as given to finishMessage (null: a plain end)
-     * @param broken   blocks broken
-     * @param left     targets left at the last scan
-     * @param skip     cell key -&gt; why it was skipped
-     * @param fails    cell key -&gt; why it was given up
-     * @param noSpot   cells with nowhere to stand
-     * @param protectedLeft built blocks left alone (key -&gt; name)
-     * @return " - why - next: ..." text to append, or null (it broke something, or the prefix says why already)
-     */
+    * @param prefix   the end's prefix as given to finishMessage (null: a plain end)
+    * @param broken   blocks broken
+    * @param left     targets left at the last scan
+    * @param skip     cell key -&gt; why it was skipped
+    * @param fails    cell key -&gt; why it was given up
+    * @param noSpot   cells with nowhere to stand
+    * @param protectedLeft built blocks left alone (key -&gt; name)
+    * @return " - why - next: ..." text to append, or null (it broke something, or the prefix says why already)
+    */
     public static String reason(String prefix, int broken, int left, Map<String, String> skip, Map<String, String> fails,
                                 Collection<String> noSpot, Map<String, String> protectedLeft) {
         if (broken > 0) return null;
@@ -30,9 +30,17 @@ public final class DigWhy {
             String w = e.getValue() == null ? "" : e.getValue();
             if (w.startsWith("needs a better tool")) {
                 String block = w.replaceFirst("^needs a better tool \\(?", "").replaceFirst("\\)$", "");
-                return block.matches(".*(stone|cobble|deepslate|ore|andesite|diorite|granite|tuff).*") && !block.contains("diamond") && !block.contains("obsidian")
-                        ? "needs a pickaxe for " + block + " - next: craft wooden_pickaxe 1"
-                        : "needs a better pickaxe for " + block + " - next: craft stone_pickaxe 1 (iron_pickaxe for diamond, gold, redstone)";
+                if (block.matches(".*(dirt|sand|gravel|snow|clay|mud|soul_sand|soul_soil|podzol|mycelium|farmland|grass_block|rooted_dirt|coarse_dirt).*")) {
+                    return "needs a shovel for " + block + " - next: craft wooden_shovel 1";
+                }
+                else if (block.matches(".*(_log|_wood|_planks|_stem|_hyphae|_fence|_door|_trapdoor|bookshelf|chest|crafting_table|barrel).*")) {
+                    return "needs an axe for " + block + " - next: craft wooden_axe 1";
+                }
+                else {
+                    return block.matches(".*(stone|cobble|deepslate|ore|andesite|diorite|granite|tuff).*") && !block.contains("diamond") && !block.contains("obsidian")
+                            ? "needs a pickaxe for " + block + " - next: craft wooden_pickaxe 1"
+                            : "needs a better pickaxe for " + block + " - next: craft stone_pickaxe 1 (iron_pickaxe for diamond, gold, redstone)";
+                }
             }
         }
         if (prefix != null && prefix.contains("out of pickaxes")) return "needs a pickaxe - next: craft wooden_pickaxe 1";
