@@ -108,6 +108,62 @@ public final class ClimbPlan {
         }
         return new Plan(steps, names[bestK], up, digN, null, new int[]{ox + d[0] * up, y + up, oz + d[1] * up});
     }
+    /** 0.28.2 (D): a cell that is one of my own blocks (the restore/build ledger, my shelter) or inside my main area. */
+    public interface Own { boolean at(int x, int y, int z); }
+
+    /** The surface way out: the side, the cells to dig (feet and head), or why not. */
+    public record Out(String dir, List<int[]> cells, String err) {}
+
+    /**
+     * 0.28.2 (trial fix package 2, D): walled in at surface level (trial 2, Sonnet: its own walls around it, "climb"
+     * said it was no hole). Null when not walled in (a side with feet and head open). Else the side whose blocking
+     * cells are all my own and fewest, with open air (feet and head) beyond, a floor under it; {@code prefer} (a side
+     * name, e.g. the door side) wins a tie. Out.err when every side holds a block that is not mine.
+     */
+    public static Out walledIn(Cells c, Own own, int x, int y, int z, String prefer) {
+        String[] names = {"north", "south", "east", "west"};
+        for (String n : names) {
+            int[] d = StairPlan.dir(n);
+            if (c.at(x + d[0], y, z + d[1]) == Kind.OPEN && c.at(x + d[0], y + 1, z + d[1]) == Kind.OPEN) return null;
+        }
+        Out best = null;
+        int bestN = Integer.MAX_VALUE;
+        String firstWhy = null;
+        for (String n : names) {
+            int[] d = StairPlan.dir(n);
+            int ax = x + d[0], az = z + d[1];
+            List<int[]> cells = new ArrayList<>();
+            String why = null;
+            for (int yy = y; yy <= y + 1 && why == null; yy++) {
+                Kind k = c.at(ax, yy, az);
+                if (k == Kind.OPEN) continue;
+                if (k == Kind.BLOCKED || !own.at(ax, yy, az)) why = "the block at " + ax + " " + yy + " " + az + " is a built block that is not mine (or water, a container, bedrock)";
+                else cells.add(new int[]{ax, yy, az});
+            }
+            int bx = ax + d[0], bz = az + d[1];
+            if (why == null && (c.at(bx, y, bz) == Kind.BLOCKED || c.at(bx, y + 1, bz) == Kind.BLOCKED)) why = "no way on beyond it";
+            if (why == null && c.at(ax, y - 1, az) == Kind.OPEN) why = "no floor there";
+            if (why != null) {
+                if (firstWhy == null) firstWhy = n + ": " + why;
+                continue;
+            }
+            int score = cells.size() * 2 + (n.equals(prefer) ? 0 : 1);
+            if (score < bestN) {
+                bestN = score;
+                best = new Out(n, cells, null);
+            }
+        }
+        if (best != null) return best;
+        return new Out(null, List.of(), "error: I'm walled in at " + x + " " + y + " " + z + " and no side is my own wall or natural ground (" + firstWhy
+                + ") - next: dig x y z x y+1 z force next to me (if the wall is yours), or ask the owner");
+    }
+
+    /** The dig for {@link #walledIn}'s cells: "dig x y z x y2 z force" (force: my own planks are built blocks). */
+    public static String outDig(Out o) {
+        int[] a = o.cells().get(0), b = o.cells().get(o.cells().size() - 1);
+        return "dig " + a[0] + " " + a[1] + " " + a[2] + " " + b[0] + " " + b[1] + " " + b[2] + " force";
+    }
+
     /** The start reply: "started: climb 6 up (a staircase east, 14 blocks to dig) to 3 70 -2". */
     public static String startText(Plan p) {
         int[] e = p.end();

@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 public final class GatherSources {
     private GatherSources() {}
 
-    public enum Kind { OVERRIDE, ORE, LOG, CROP, BLOCK, NONE }
+    public enum Kind { OVERRIDE, ORE, LOG, CROP, BLOCK, STONE, NONE }
 
     /**
      * One item's source. ore: the family word ("iron", "nickel") and the ore block id; log: the wood type or null;
@@ -63,7 +63,8 @@ public final class GatherSources {
             "minecraft:gravel", new Object[]{"gravel", 1},
             "minecraft:clay", new Object[]{"clay", 1},
             "minecraft:clay_ball", new Object[]{"clay", 4});
-    static final Pattern NO_WAY = Pattern.compile("^minecraft:(cobblestone|stone|dirt|cobbled_deepslate|deepslate|andesite|diorite|granite|tuff|netherrack|soul_sand|blackstone|end_stone)$");
+    static final Pattern NO_WAY = Pattern.compile("^minecraft:(dirt|deepslate|andesite|diorite|granite|tuff|netherrack|soul_sand|blackstone|end_stone)$");
+    static final Pattern STONE = Pattern.compile("^minecraft:(cobblestone|cobbled_deepslate)$");
     static final Pattern NETHER = Pattern.compile("^minecraft:(quartz|nether_quartz_ore|glowstone_dust|glowstone|blaze_rod|ancient_debris|netherite_scrap|nether_wart|magma_cream|ghast_tear|crimson_.*|warped_.*|shroomlight)$");
 
     /** The item's source (overrides: item id -> command, from commands.json). */
@@ -94,6 +95,8 @@ public final class GatherSources {
             Object[] b = BLOCKS.get(item);
             return new Source(Kind.BLOCK, item, null, "minecraft:" + b[0], (Integer) b[1], null, null, null);
         }
+        // 0.28.2 (B1): cobblestone from a staircase quarry at my feet ("stone" is smelted from it)
+        if (STONE.matcher(item).find()) return new Source(Kind.STONE, item, null, item, 1, null, null, null);
         if (NO_WAY.matcher(item).find()) {
             return Source.none(item, "I only dig stone and dirt in a box you give me: \"dig x1 y1 z1 x2 y2 z2\" (or tell me how: gather source "
                     + shortId(item) + " <command with {n}>), or put some in the base chests");
@@ -131,6 +134,7 @@ public final class GatherSources {
             case LOG -> out.add("chop " + Math.max(k, 1) + (anyWood || s.wood() == null ? "" : " " + s.wood()));
             case CROP -> out.add("farm");
             case BLOCK -> out.add("mine " + shortId(s.block()) + " " + (int) Math.ceil(k / (double) s.perBlock()));
+            case STONE -> out.add("dig stone " + k);
             default -> {}
         }
         return out;
@@ -154,8 +158,8 @@ public final class GatherSources {
     /** "gather sources [item]": the table, or what one item's chain looks like (with the live plan's line). */
     public static String table(Map<String, String> overrides) {
         StringBuilder sb = new StringBuilder("gather sources: ores (raw_iron, coal, diamond, ...) -> mine strip <ore> at the mine, else mine <ore> in view, else mine cave"
-                + "; logs -> chop; wheat, carrots, potatoes, beetroot, essence -> farm; sand, gravel, clay -> mine <block>; anything else -> crafted or smelted from those"
-                + "; stone, dirt and Nether items -> none (put some in the base chests)");
+                + "; logs -> chop; wheat, carrots, potatoes, beetroot, essence -> farm; sand, gravel, clay -> mine <block>; cobblestone -> dig stone <n> (a staircase quarry at my feet); anything else -> crafted or smelted from those"
+                + "; dirt, deepslate and Nether items -> none (put some in the base chests)");
         if (overrides != null && !overrides.isEmpty()) {
             List<String> o = new ArrayList<>();
             for (Map.Entry<String, String> e : overrides.entrySet()) o.add(shortId(e.getKey()) + " -> " + e.getValue());

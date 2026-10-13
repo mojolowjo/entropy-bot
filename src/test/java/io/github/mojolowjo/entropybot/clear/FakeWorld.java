@@ -22,6 +22,11 @@ final class FakeWorld implements ClearWorld {
         HARD.put("crafting_table", 2.5); HARD.put("torch", 0.0); HARD.put("bedrock", -1.0); HARD.put("water", 100.0); HARD.put("lava", 100.0);
         HARD.put("air", 0.0);
     }
+    static final Map<String, Double> THIN_BLOCK_HEIGHTS = new HashMap<>();
+    static {
+        THIN_BLOCK_HEIGHTS.put("snow", 0.125);
+        THIN_BLOCK_HEIGHTS.put("moss_carpet", 0.0625);
+    }
 
     final Map<Long, String> blocks = new HashMap<>();
     final Set<String> avoid = new HashSet<>();
@@ -107,12 +112,18 @@ final class FakeWorld implements ClearWorld {
 
     @Override public boolean fullBlock(int x, int y, int z) {
         String n = get(x, y, z);
-        return !NONSOLID.contains(n) && !n.equals("torch");
+        if (NONSOLID.contains(n) || n.equals("torch")) return false;
+        return collisionHeight(x, y, z) >= 1;
     }
 
     @Override public double collisionHeight(int x, int y, int z) {
         String n = get(x, y, z);
-        return NONSOLID.contains(n) ? 0 : n.equals("moss_carpet") ? 0.0625 : 1;
+        if (NONSOLID.contains(n)) return 0;
+        Double h = THIN_BLOCK_HEIGHTS.get(n);
+        if (h != null) return h;
+        if (n.endsWith("_carpet")) return 0.0625;
+        if (n.endsWith("_slab")) return 0.5;
+        return 1;
     }
 
     @Override public int blockLight(int x, int y, int z) { return lit.contains(k(x, y, z)) ? 14 : 0; }
@@ -130,19 +141,48 @@ final class FakeWorld implements ClearWorld {
         double tmy = sy != 0 ? (sy > 0 ? y + 1 - fy : fy - y) * tdy : Double.POSITIVE_INFINITY;
         double tmz = sz != 0 ? (sz > 0 ? z + 1 - fz : fz - z) * tdz : Double.POSITIVE_INFINITY;
         Face face = null;
+        double t = 0; // t at which we entered the current cell
         for (int n = 0; n < 64; n++) {
             String nm = get(x, y, z);
-            if (n > 0 && !nm.equals("air") && !nm.equals("water") && !nm.equals("torch")) return new Hit(x, y, z, face);
+            double tExit = Math.min(tmx, Math.min(tmy, tmz));
+            if (tExit > 1) tExit = 1;
+            if (n > 0 && !nm.equals("air") && !nm.equals("water") && !nm.equals("torch")) {
+                double h = collisionHeight(x, y, z);
+                if (h >= 1 || h <= 0) {
+                    // a full cube, or a no-collision block (grass, a crop): the sim's old rule, an outline hit
+                    return new Hit(x, y, z, face);
+                } else {
+                    double yEntry = fy + t * dy;
+                    double yExit = fy + tExit * dy;
+                    double yMin = Math.min(yEntry, yExit);
+                    if (yMin <= y + h) {
+                        Face hitFace;
+                        if (yEntry > y + h) {
+                            hitFace = Face.DOWN;
+                        } else {
+                            hitFace = face;
+                        }
+                        return new Hit(x, y, z, hitFace);
+                    }
+                    // else: treat as air and continue
+                }
+            }
             if (x == ex && y == ey && z == ez) break;
             if (tmx < tmy && tmx < tmz) {
                 if (tmx > 1) break;
+                double tOld = tmx;
                 x += sx; tmx += tdx; face = sx > 0 ? Face.WEST : Face.EAST;
+                t = tOld;
             } else if (tmy < tmz) {
                 if (tmy > 1) break;
+                double tOld = tmy;
                 y += sy; tmy += tdy; face = sy > 0 ? Face.DOWN : Face.UP;
+                t = tOld;
             } else {
                 if (tmz > 1) break;
+                double tOld = tmz;
                 z += sz; tmz += tdz; face = sz > 0 ? Face.NORTH : Face.SOUTH;
+                t = tOld;
             }
         }
         return null;

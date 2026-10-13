@@ -83,6 +83,10 @@ public final class ClearEngine {
         }
         if (pts.isEmpty()) return null;
         pts.add(0, new double[] { cx, cy, cz });
+        // 0.28.3: thin blocks (a snow layer, a carpet, a slab) fill only the bottom or top of their cell: a ray at the
+        // centre passes through air and hits the block beyond ("no sight" x24 in a snow dip). Aim low and high too.
+        pts.add(new double[] { cx, y + 0.06, cz });
+        pts.add(new double[] { cx, y + 0.94, cz });
         for (double[] p : pts) {
             Hit hit = w.clip(ex, ey, ez, p[0], p[1], p[2]);
             if (hit == null) continue;
@@ -423,6 +427,13 @@ public final class ClearEngine {
             msg.append("; left ").append(job.protectedCount).append(job.protectedCount >= 200 ? "+" : "")
                .append(" built block").append(job.protectedCount == 1 ? "" : "s")
                .append(" alone (e.g. ").append(first.getKey()).append(" ").append(first.getValue()).append(")");
+        }
+        // 0.28.2 (B2): broke nothing: the first reason met and the next step (never a bare "broke 0 blocks")
+        if (job.broken == 0 && job.exactId == null) {
+            Map<String, String> fw = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, ClearJob.Fail> e : job.fails.entrySet()) fw.put(e.getKey(), e.getValue().why);
+            String why = DigWhy.reason(prefix, job.broken, left, job.skip, fw, job.noSpot, job.protectedLeft);
+            if (why != null) msg.append(" - ").append(why);
         }
         return msg.toString();
     }

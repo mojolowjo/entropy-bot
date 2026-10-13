@@ -96,7 +96,8 @@ class GatherTest {
         assertNull(GatherSources.resolve("mysticalagriculture:prudentium_essence", none));
         assertEquals(GatherSources.Kind.BLOCK, GatherSources.resolve("sand", none).kind());
         assertEquals(4, GatherSources.resolve("clay_ball", none).perBlock());
-        assertEquals(GatherSources.Kind.NONE, GatherSources.resolve("cobblestone", none).kind());
+        assertEquals(GatherSources.Kind.STONE, GatherSources.resolve("cobblestone", none).kind());     // 0.28.2
+        assertEquals(GatherSources.Kind.NONE, GatherSources.resolve("dirt", none).kind());
         assertEquals(GatherSources.Kind.NONE, GatherSources.resolve("quartz", none).kind());
         assertNull(GatherSources.resolve("stick", none));
         assertNull(GatherSources.resolve("iron_ingot", none));
@@ -187,9 +188,11 @@ class GatherTest {
     void noWayAndOverrides() {
         Fake w = new Fake();
         GatherPlan.Step f = GatherPlan.next("furnace", 1, w);
-        assertEquals(GatherPlan.Kind.NO_WAY, f.kind());
         assertEquals("minecraft:cobblestone", f.leaf());
-        assertTrue(f.why().contains("dig x1 y1 z1 x2 y2 z2"), f.why());
+        assertEquals("dig stone 8", f.command(0));                   // 0.28.2: the staircase quarry
+        GatherPlan.Step d = GatherPlan.next("minecraft:dirt", 1, w);
+        assertEquals(GatherPlan.Kind.NO_WAY, d.kind());
+        assertTrue(d.why().contains("dig x1 y1 z1 x2 y2 z2"), d.why());
         GatherPlan.Step u = GatherPlan.next("minecraft:bedrock", 1, w);
         assertEquals(GatherPlan.Kind.NO_WAY, u.kind());
         w.overrides.put("minecraft:cobblestone", "dig 0 60 0 3 61 3");

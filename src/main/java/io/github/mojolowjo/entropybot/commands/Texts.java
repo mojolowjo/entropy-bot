@@ -19,7 +19,7 @@ public final class Texts {
     public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get",
             "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "assist", "dismiss", "attack", "queue", "status", "inv",
             "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
-            "camp", "bootstrap", "climb", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
+            "camp", "bootstrap", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
             "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
             "why", "brain", "idle", "dayplan", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "blind");
 
@@ -40,6 +40,8 @@ public final class Texts {
     private static final Pattern FAILED = Pattern.compile("^(error|busy|unknown|usage|only |sorry|i can't|i cannot|i have no|i don't|i haven't|no |nothing|none|say what)",
             Pattern.CASE_INSENSITIVE);
 
+    // These are the idempotent 'already done' endings of a step.
+    private static final Pattern BENIGN_OK = Pattern.compile("^(nothing to collect yet|nothing to put back|nothing to dig there|nothing to drop|nothing open|no crafting table of mine to pick up|no supplies to keep|no hotbar layout)", Pattern.CASE_INSENSITIVE);
     /** "a then b; c" -> [a, b, c] (empty parts dropped). */
     public static List<String> splitChain(String text) {
         List<String> out = new ArrayList<>();
@@ -69,6 +71,9 @@ public final class Texts {
     /** A reply that means the step didn't happen. */
     public static boolean stepFailed(String reply) {
         String r = reply == null ? "" : reply.replaceFirst("^ok: ", "");
+        if (reply != null && reply.startsWith("ok: ") && BENIGN_OK.matcher(r).find()) {
+            return false;
+        }
         return FAILED.matcher(r).find();
     }
 

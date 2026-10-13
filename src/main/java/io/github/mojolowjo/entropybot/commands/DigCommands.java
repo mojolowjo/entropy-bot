@@ -43,7 +43,7 @@ final class DigCommands {
 
     static final String NO_ZONE = "error: no work zone - PM \"zone corner1\" and \"zone corner2\" standing on opposite corners";
     static final String DIG_USAGE = DigArgs.USAGE;
-    static final String BUILD_USAGE = "error: usage build <floor|walls|fill|shell|clear> [block]";
+    static final String BUILD_USAGE = "error: usage build <floor|walls|roof|fill|shell|clear> <block> <area>";
     static final String PLACE_USAGE = "error: usage place <block item> x y z";
 
     // ---- the work zone ----
@@ -162,11 +162,51 @@ final class DigCommands {
             LOG.info("[entropybot] climb at {} {} {} (surface {}): {}", x, y, z, surface, plan.err());
             return plan.err();
         }
-        if (plan.steps().isEmpty()) return "ok: I'm not in a hole (the surface here is at " + surface + ", I'm at " + y + ")";
+        if (plan.steps().isEmpty()) {
+            // 0.28.2 (D): at the surface but walled in by my own blocks (trial 2: its own house walls): dig one side open
+            ClimbPlan.Out out;
+            try {
+                java.util.Set<String> shelter = ShelterJob.ownBlocks(c);
+                String dim = Storage.dim();
+                var g = Core.INSTANCE.guard.core;
+                // 0.28.3 (trial 3, Haiku: a natural dip after a walk, "no side is my own wall"): a natural block that is
+                // not protected (no block entity, not a building block) may go too; built blocks only when they are mine
+                ClimbPlan.Own own = (ox, oy, oz) -> shelter.contains(ox + " " + oy + " " + oz) || RestoreLive.INSTANCE.builtByMe(ox, oy, oz)
+                        || inMainArea(c, g.policy().areaAt(dim, ox, oy, oz))
+                        || !Core.INSTANCE.guard.isProtectedBlock(lv.getBlockState(new net.minecraft.core.BlockPos(ox, oy, oz)).getBlock());
+                out = ClimbPlan.walledIn((cx, cy, cz) -> climbCell(lv, cx, cy, cz), own, x, y, z, doorSide(c, x, z));
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] climb: walled-in check at {} {} {}: {}", x, y, z, e.toString());
+                return "error: couldn't check the walls around me (" + e + ") - next: status";
+            }
+            if (out == null) return "ok: I'm not in a hole and not walled in (the surface here is at " + surface + ", I'm at " + y + ")";
+            if (out.err() != null) return out.err();
+            String dig = ClimbPlan.outDig(out);
+            LOG.info("[entropybot] climb: walled in at {} {} {} - digging out to the {}: {}", x, y, z, out.dir(), dig);
+            String r = c.chainsRef().startChain(from, "climb", dig, 1);
+            return r.startsWith("started") ? "started: digging out to the " + out.dir() + " (walled in; " + out.cells().size() + " to break) - it ends ok: when the side is open" : r;
+        }
         String text = ClimbPlan.startText(plan);
         LOG.info("[entropybot] climb at {} {} {}: {} - {}", x, y, z, text, String.join(" > ", plan.steps()));
         String r = c.chainsRef().startChain(from, "climb", String.join(" then ", plan.steps()), 1);
         return r.startsWith("started") ? "started: " + text + " - each step reports; a failed one says why" : r;
+    }
+
+    /** 0.28.2 (D): a box of the guard's policy that is one of my main areas. */
+    static boolean inMainArea(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
+        if (ar == null || ar.name == null) return false;
+        JsonObject ab = c.policyArea(ar.name);
+        return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN;
+    }
+
+    /** 0.28.2 (D): the side toward the camp mark (a house's door faces it), else south. */
+    static String doorSide(Commands c, int x, int z) {
+        JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
+        if (camp == null || !camp.has("x")) return "south";
+        int[] cp = Jobs.pos(camp);
+        int dx = cp[0] - x, dz = cp[2] - z;
+        if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? "east" : "west";
+        return dz < 0 ? "north" : "south";
     }
 
     /** 0.24.4 "dig stairs <dir> <n>": a 1-wide walkable staircase down from where I stand (StairPlan), run as a chain. */
@@ -190,9 +230,52 @@ final class DigCommands {
         return c.chainsRef().startChain(from, "dig stairs", text, 1);
     }
 
+    /** 0.28.2 (B1): one cell for StonePit (vanilla BlockState and tags only). */
+    static io.github.mojolowjo.entropybot.gather.StonePit.Cell stoneCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(bp)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
+        var st = lv.getBlockState(bp);
+        if (!st.getFluidState().isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.LIQUID;
+        if (st.hasBlockEntity() || st.getDestroySpeed(lv, bp) < 0) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
+        if (st.getCollisionShape(lv, bp).isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.AIR;
+        if (st.is(net.minecraft.tags.BlockTags.BASE_STONE_OVERWORLD) || st.is(net.minecraft.world.level.block.Blocks.COBBLESTONE)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.STONE;
+        return io.github.mojolowjo.entropybot.gather.StonePit.Cell.SOFT;
+    }
+
+    /**
+     * 0.28.2 (B1, trial fix package 2) "dig stone [n]": gather's cobblestone source. A walkable staircase quarry (StonePit)
+     * from my feet, long enough for n stone; one careful clear of exactly those cells (the areas, leases, tools, base
+     * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
+     */
+    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from) {
+        int n = rest.isEmpty() ? 64 : Math.max(1, Math.min(256, Integer.parseInt(rest)));
+        net.minecraft.world.level.Level lv = p.level();
+        int[] here = Jobs.here(p);
+        int[] feet = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) lv, here[0], here[1], here[2]);
+        int[] dir = CampCommands.quarryDir((net.minecraft.client.multiplayer.ClientLevel) lv, feet);
+        var plan = io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), feet, dir, n);
+        if (plan.err() != null) return plan.err();
+        String dim = Storage.dim();
+        var g = Core.INSTANCE.guard.core;
+        for (int[] cell : plan.cells()) {
+            var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
+            if (ar == null || ar.name == null) continue;
+            JsonObject ab = c.policyArea(ar.name);
+            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN)
+                return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
+        }
+        List<io.github.mojolowjo.entropybot.clear.Pos> only = new ArrayList<>();
+        for (int[] cell : plan.cells()) only.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2]));
+        String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
+        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns", n, Jobs.fmt(feet), only.size(), plan.stone(), plan.columns());
+        ClearJob.Options o = new ClearJob.Options().only(only).collect(false).label(label).liquidBlocks(true).line("dig stone " + n);
+        return startClear(c, p, o, restockSteps(c, p, only.size()));
+    }
+
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
+        if (rest != null && rest.trim().toLowerCase().matches("^stone(\\s+\\d+)?$")) return stoneQuarry(c, p, rest.trim().substring(5).trim(), from);   // 0.28.2
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);
@@ -224,7 +307,7 @@ final class DigCommands {
         String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "")
                 + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "")
                 + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
-        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop())
+        ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop()).explainSpots(true)
                 .liquidBlocks(true)           // water plan item 1: water or lava in the way ends it as "blocked by ..."
                 .water(a.water(), a.large()).line("dig " + rest.trim());
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
@@ -404,7 +487,7 @@ final class DigCommands {
     static String build(Commands c, LocalPlayer p, String rest, String from) {
         String[] parts = rest == null ? new String[0] : rest.trim().split("\\s+");
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
-        Map<String, String> ops = Map.of("floor", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
+        Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
         int need = shape.equals("clear") ? 2 : 3;
@@ -449,8 +532,10 @@ final class DigCommands {
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();
         cm.execute("sel clear");
-        cm.execute("sel pos1 " + x1 + " " + (shape.equals("floor") ? ylo : y1) + " " + z1);
-        cm.execute("sel pos2 " + x2 + " " + (shape.equals("floor") ? ylo : y2) + " " + z2);
+        int yLayer = shape.equals("roof") ? box.y2() : ylo;              // 0.28.2: roof = the top layer
+        boolean layer = shape.equals("floor") || shape.equals("roof");
+        cm.execute("sel pos1 " + x1 + " " + (layer ? yLayer : y1) + " " + z1);
+        cm.execute("sel pos2 " + x2 + " " + (layer ? yLayer : y2) + " " + z2);
         cm.execute("sel " + ops.get(shape) + " " + id);
         bs.status = "building " + shape + " of " + CraftPlanner.shortId(id);
         bs.start = Core.INSTANCE.tick();

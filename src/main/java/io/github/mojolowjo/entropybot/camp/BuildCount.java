@@ -18,7 +18,7 @@ public final class BuildCount {
         long dx = Math.abs(x2 - x1) + 1L, dy = Math.abs(y2 - y1) + 1L, dz = Math.abs(z2 - z1) + 1L;
         long n;
         switch (shape == null ? "" : shape) {
-            case "floor" -> n = dx * dz;
+            case "floor", "roof" -> n = dx * dz;          // 0.28.2: roof = the top layer
             case "fill" -> n = dx * dy * dz;
             case "walls" -> n = dx * dy * dz - Math.max(0, dx - 2) * dy * Math.max(0, dz - 2);
             case "shell" -> n = dx * dy * dz - Math.max(0, dx - 2) * Math.max(0, dy - 2) * Math.max(0, dz - 2);

@@ -1,0 +1,75 @@
+package io.github.mojolowjo.entropybot.camp;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class HousePlanTest {
+    private static HousePlan.Plan plan(int[] box, Map<String, Integer> inv, Map<String, Boolean> standing, int[] camp) {
+        return HousePlan.plan(new HousePlan.Facts("house", box, true, "minecraft:cobblestone", inv, standing, camp));
+    }
+
+    @Test
+    void sevenBySevenFiveHigh() {
+        HousePlan.Plan p = plan(new int[]{0, 64, 0, 6, 68, 6}, Map.of("minecraft:cobblestone", 200, "minecraft:chest", 1,
+                "minecraft:crafting_table", 1, "minecraft:furnace", 1), Map.of(), null);
+        assertNull(p.err());
+        assertEquals(List.of(
+                "build floor cobblestone house",
+                "build walls cobblestone house",
+                "build roof cobblestone house",
+                "dig 3 65 6 3 66 6 force",                 // door south (no camp), middle of the side
+                "place chest 2 65 1",                      // back wall (north) inside
+                "place crafting_table 3 65 1",
+                "place furnace 4 65 1",
+                "place base 3 65 3",
+                "place food 2 65 1",
+                "scan base"), p.steps());
+        assertTrue(p.summary().contains("needs about 168 cobblestone (you have 200)"), p.summary());
+        assertTrue(p.summary().contains("door on the south side"));
+    }
+
+    @Test
+    void counts() {
+        assertEquals(170, BuildCount.need("shell", 0, 64, 0, 6, 68, 6));
+        assertEquals(168, HousePlan.need(0, 64, 0, 6, 68, 6));
+        assertEquals(120, BuildCount.need("walls", 0, 64, 0, 6, 68, 6));
+        assertEquals(49, BuildCount.need("roof", 0, 64, 0, 6, 68, 6));
+    }
+
+    @Test
+    void doorFacesTheCampAndStationsGoOpposite() {
+        HousePlan.Plan p = plan(new int[]{6, 68, 6, 0, 64, 0}, Map.of(), Map.of(), new int[]{40, 64, 2});
+        assertTrue(p.steps().contains("dig 6 65 3 6 66 3 force"), p.steps().toString());
+        assertTrue(p.steps().contains("place chest 1 65 2"), p.steps().toString());
+        assertTrue(p.summary().contains("east"));
+        assertTrue(p.summary().contains("have 0) - gather cobblestone 168"));
+    }
+
+    @Test
+    void craftsMissingStationsAndSkipsStanding() {
+        HousePlan.Plan p = plan(new int[]{0, 64, 0, 6, 68, 6}, Map.of(), Map.of("chest", true), null);
+        assertFalse(p.steps().stream().anyMatch(s -> s.startsWith("place chest")));
+        int c = p.steps().indexOf("craft crafting_table 1");
+        assertTrue(c >= 0 && p.steps().get(c + 1).equals("place crafting_table 3 65 1"));
+        assertTrue(p.steps().contains("craft furnace 1"));
+        assertTrue(p.summary().contains("crafts crafting_table, furnace first"));
+    }
+
+    @Test
+    void refusesSmallOrFlat() {
+        assertEquals(HousePlan.TOO_SMALL, plan(new int[]{0, 64, 0, 5, 68, 6}, Map.of(), Map.of(), null).err());
+        assertEquals(HousePlan.TOO_SMALL, plan(new int[]{0, 64, 0, 6, 67, 6}, Map.of(), Map.of(), null).err());
+        assertEquals(HousePlan.TOO_SMALL, HousePlan.plan(new HousePlan.Facts("h", null, false, "minecraft:cobblestone", Map.of(), Map.of(), null)).err());
+    }
+
+    @Test
+    void blockChoice() {
+        assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10)));
+        assertEquals("minecraft:oak_planks", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10, "minecraft:oak_planks", 64)));
+        assertEquals("minecraft:stone_bricks", HousePlan.chooseBlock("stone_bricks", Map.of()));
+    }
+}

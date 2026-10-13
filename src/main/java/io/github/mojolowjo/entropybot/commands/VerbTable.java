@@ -90,21 +90,24 @@ public final class VerbTable {
         v("mine", "", "digging", O, "mine strip [<ores>] [n] [at <mine>] | mine strip status|reset|turn left|right|ores collect|list | mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
                 "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores; a strip mine needs room in its area: 17 blocks each side of the corridor (16-long branches + torches) and the corridor's length ahead, else it turns at the edge (blocked:area)",
                 "mine strip iron,diamond 16|mine strip|mine cave ores 20 10m|mine iron_ore 10", "deposit");
-        v("dig", "", "digging", O, "dig <area> [-N|+N] [ores] [junk drop] [water [large]] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 -N|+N [same words, no floor] | dig stairs north|south|east|west <n> | dig stairs up north|south|east|west <n>",
-                "dig stairs <dir> <n>: a 1-wide walkable staircase n steps down from where I stand, a torch every 6 (also how death reaches a corpse down a shaft); dig stairs up <dir> <n>: n steps up (also how I leave a sealed pit underground in my areas); dig <area>: the box of an area with heights (an all-heights area needs -N or +N; asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "
+        v("dig", "", "digging", O, "dig <area> [-N|+N] [ores] [junk drop] [water [large]] | dig x1 y1 z1 x2 y2 z2 [ores] [force] [floor [block]] [junk drop] [water [large]] | dig x1 z1 x2 z2 -N|+N [same words, no floor] | dig stairs north|south|east|west <n> | dig stairs up north|south|east|west <n> | dig stone [n]",
+                "dig stone [n]: a walkable 3-wide staircase quarry from my feet down into the stone, long enough for n cobblestone (64), never into a main area (gather cobblestone uses it); a dig that breaks nothing says why and what next (no pickaxe, nowhere to stand, the fence, a protected block, a block it gave up on); dig stairs <dir> <n>: a 1-wide walkable staircase n steps down from where I stand, a torch every 6 (also how death reaches a corpse down a shaft); dig stairs up <dir> <n>: n steps up (also how I leave a sealed pit underground in my areas); dig <area>: the box of an area with heights (an all-heights area needs -N or +N; asks to confirm; a destroy area loses built blocks too, never chests; never a safe area); "
                         + "a box the careful way (20000 blocks max; over 1000 asks to confirm; force: built blocks, 64 max); water or lava in the way "
                         + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
                         + "any coordinate may be ~ or ~N (from my feet); -N: each column's surface block and N-1 below, +N: the N blocks above the surface (N 1-64)",
                 "dig 10 60 10 20 64 20 ores|dig pit -3|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 +10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
-        v("build", "", "digging", O, "build floor|walls|shell|fill <block> <area>", "build inside an area with heights (never breaks a block); says how many blocks it needs at the start (shell = all six faces, walls = four sides, floor = the bottom layer, fill = all) and refuses with a gather hint when I carry under a tenth of them", "build floor cobblestone yard|build shell cobblestone house", "status");
-        v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb",
+        v("build", "", "digging", O, "build floor|walls|roof|shell|fill <block> <area>", "build inside an area with heights (never breaks a block); says how many blocks it needs at the start (shell = all six faces, walls = four sides, floor = the bottom layer, roof = the top layer, fill = all) and refuses with a gather hint when I carry under a tenth of them", "build floor cobblestone yard|build roof cobblestone house|build shell cobblestone house", "status");
+        v("house", "", "digging", O, "house <area> [block]",
+                "a small house in an area of at least 7x7, 5 high (area x z x2 z2 house main y1 y2): floor, walls, roof, a 1x2 door toward the camp (else south), then a chest, crafting table and furnace inside along the back wall (crafted first when I have the material), the base marked inside, food marked at the chest, scan base; block: cobblestone, or planks when I carry more planks; names the blocks it needs up front; run it again after a stop, it skips what stands",
+                "house house|house house oak_planks", "deposit");
+        v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb; at the surface but walled in by my own blocks (my walls, my shelter, or inside my main area): it digs the one side open (feet and head, toward the camp if it can)",
                 "climb", "goto <x y z>");
         v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
                 "fell trees in my areas for n logs (logs: any kind but what kinds logs leaves out), never next to builds; pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
         v("gather", "", "digging", O, "gather <item|kind> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
-                "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave), "
+                "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave; cobblestone: dig stone n, a staircase quarry at my feet), "
                         + "cut or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
-                "gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch", "deposit");
+                "gather cobblestone 64|gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch", "deposit");
         v("light", "", "digging", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks, inside my areas (fetches or crafts torches first)",
                 "light here 8|light 0 0 30 30", "status");
         v("junk", "", "digging", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
@@ -211,12 +214,12 @@ public final class VerbTable {
                 "rs|rs take bread 32", "have <item>");
         v("pots", "", "chests", O, "pots [chests]", "empty the botany pots at the base into the RS network (or the chests)", "pots", "rs");
         // ---- crafting, smelting, the farm
-        v("craft", "", "crafting", O, "craft <item> [n] | craft <material> armor|tools | craft a, b 16", "craft it, fetching materials and making the parts (table and furnace as needed)",
+        v("craft", "", "crafting", O, "craft <item> [n] | craft <material> armor|tools | craft a, b 16", "craft it, fetching materials and making the parts (table and furnace as needed); no crafting table in reach (none within 12, or one down in a pit): I put down the one I carry (or make one from my wood) next to me, craft, and always take it back (\"used my own table at x y z, taken back\"); the camp's table is never touched",
                 "craft stick 16|craft copper armor", "inv");
         v("kit", "", "crafting", O, "kit <material>", "craft that material's armor and tools, then wear the armor", "kit copper", "inv");
         v("recipe", "", "crafting", O, "recipe <item>", "what an item needs", "recipe hopper", "need <item>");
         v("smelt", "", "crafting", O, "smelt <item> [n] | smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>",
-                "smelt at a base furnace and go on with other things", "smelt iron_ingot 9|smelt jobs", "smelt collect");
+                "smelt at a base furnace and go on with other things; no furnace near me but one in my bag: I put it down next to me and wait there (the furnace stays)", "smelt iron_ingot 9|smelt jobs", "smelt collect");
         v("cook", "", "crafting", O, "cook <food> [n]", "cook raw food at a furnace (smelt cooked_<food>)", "cook beef 8", "smelt jobs");
         v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "place food");
         v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",

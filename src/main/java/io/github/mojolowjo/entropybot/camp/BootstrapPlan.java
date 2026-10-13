@@ -34,11 +34,16 @@ public final class BootstrapPlan {
      * furnace, chest: free cells next to it for those blocks (null: none found); dir: the quarry's direction {dx, dz}.
      */
     public record Facts(Map<String, Integer> inv, boolean tableNear, boolean furnaceNear, boolean chestNear, boolean campMarked,
-                        int[] feet, int[] table, int[] furnace, int[] chest, int[] dir, boolean snowy) {
+                        int[] feet, int[] table, int[] furnace, int[] chest, int[] dir, boolean snowy, boolean quarryBlocked) {
+        /** 0.28.1 (no quarry check). */
+        public Facts(Map<String, Integer> inv, boolean tableNear, boolean furnaceNear, boolean chestNear, boolean campMarked,
+                     int[] feet, int[] table, int[] furnace, int[] chest, int[] dir, boolean snowy) {
+            this(inv, tableNear, furnaceNear, chestNear, campMarked, feet, table, furnace, chest, dir, snowy, false);
+        }
         /** Before 0.28.1 (no snow check). */
         public Facts(Map<String, Integer> inv, boolean tableNear, boolean furnaceNear, boolean chestNear, boolean campMarked,
                      int[] feet, int[] table, int[] furnace, int[] chest, int[] dir) {
-            this(inv, tableNear, furnaceNear, chestNear, campMarked, feet, table, furnace, chest, dir, false);
+            this(inv, tableNear, furnaceNear, chestNear, campMarked, feet, table, furnace, chest, dir, false, false);
         }
     }
 
@@ -169,7 +174,9 @@ public final class BootstrapPlan {
         if (woodShovel) out.add("craft wooden_shovel 1");      // 0.28.1: needs the table (a 1x3 recipe)
         if (quarry) {
             if (needWoodPick) out.add("craft wooden_pickaxe 1");
-            out.addAll(quarrySteps(f.feet(), f.dir()));
+            // 0.28.2 (B3): ice, snow or water in the staircase's way (trial 2: it broke 0): gather's quarry finds its own way
+            if (f.quarryBlocked()) out.add("gather cobblestone " + (cobbleNeed - cobbleHave + 4));
+            else out.addAll(quarrySteps(f.feet(), f.dir()));
         }
         for (String k : tools) out.add("craft stone_" + k + " 1");
         if (tools.isEmpty()) skipped.add("stone tools");
