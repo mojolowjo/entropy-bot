@@ -568,7 +568,17 @@ public final class Jobs {
             int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
             int surface = surfaceNoLeaves(p.level(), x, z);
             boolean sky = p.level().canSeeSky(new BlockPos(x, y + 1, z));
-            if (!ClimbPlan.inHole(y, surface, sky) || ClimbPlan.depth(y, surface) > ClimbPlan.HINT_MAX) return msg;     // a deep mine is no hole
+            if (!ClimbPlan.inHole(y, surface, sky)) {
+                // 0.28.2 (D): at the surface, walled in on all four sides (feet or head): climb digs one side open
+                net.minecraft.world.level.Level lv = p.level();
+                boolean walled = ClimbPlan.depth(y, surface) < ClimbPlan.HOLE;
+                for (String n : new String[]{"north", "south", "east", "west"}) {
+                    int[] d = StairPlan.dir(n);
+                    if (DigCommands.climbCell(lv, x + d[0], y, z + d[1]) == ClimbPlan.Kind.OPEN && DigCommands.climbCell(lv, x + d[0], y + 1, z + d[1]) == ClimbPlan.Kind.OPEN) walled = false;
+                }
+                return walled ? msg + " - I'm walled in on every side - next: climb" : msg;
+            }
+            if (ClimbPlan.depth(y, surface) > ClimbPlan.HINT_MAX) return msg;     // a deep mine is no hole
             return msg + " - " + ClimbPlan.holeHint(ClimbPlan.depth(y, surface));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] hole note: {}", e.toString());

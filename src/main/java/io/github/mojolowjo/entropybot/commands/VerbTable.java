@@ -100,7 +100,7 @@ public final class VerbTable {
         v("house", "", "digging", O, "house <area> [block]",
                 "a small house in an area of at least 7x7, 5 high (area x z x2 z2 house main y1 y2): floor, walls, roof, a 1x2 door toward the camp (else south), then a chest, crafting table and furnace inside along the back wall (crafted first when I have the material), the base marked inside, food marked at the chest, scan base; block: cobblestone, or planks when I carry more planks; names the blocks it needs up front; run it again after a stop, it skips what stands",
                 "house house|house house oak_planks", "deposit");
-        v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb",
+        v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb; at the surface but walled in by my own blocks (my walls, my shelter, or inside my main area): it digs the one side open (feet and head, toward the camp if it can)",
                 "climb", "goto <x y z>");
         v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
                 "fell trees in my areas for n logs (logs: any kind but what kinds logs leaves out), never next to builds; pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");

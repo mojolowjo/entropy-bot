@@ -162,11 +162,48 @@ final class DigCommands {
             LOG.info("[entropybot] climb at {} {} {} (surface {}): {}", x, y, z, surface, plan.err());
             return plan.err();
         }
-        if (plan.steps().isEmpty()) return "ok: I'm not in a hole (the surface here is at " + surface + ", I'm at " + y + ")";
+        if (plan.steps().isEmpty()) {
+            // 0.28.2 (D): at the surface but walled in by my own blocks (trial 2: its own house walls): dig one side open
+            ClimbPlan.Out out;
+            try {
+                java.util.Set<String> shelter = ShelterJob.ownBlocks(c);
+                String dim = Storage.dim();
+                var g = Core.INSTANCE.guard.core;
+                ClimbPlan.Own own = (ox, oy, oz) -> shelter.contains(ox + " " + oy + " " + oz) || RestoreLive.INSTANCE.builtByMe(ox, oy, oz)
+                        || inMainArea(c, g.policy().areaAt(dim, ox, oy, oz));
+                out = ClimbPlan.walledIn((cx, cy, cz) -> climbCell(lv, cx, cy, cz), own, x, y, z, doorSide(c, x, z));
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] climb: walled-in check at {} {} {}: {}", x, y, z, e.toString());
+                return "error: couldn't check the walls around me (" + e + ") - next: status";
+            }
+            if (out == null) return "ok: I'm not in a hole and not walled in (the surface here is at " + surface + ", I'm at " + y + ")";
+            if (out.err() != null) return out.err();
+            String dig = ClimbPlan.outDig(out);
+            LOG.info("[entropybot] climb: walled in at {} {} {} - digging out to the {}: {}", x, y, z, out.dir(), dig);
+            String r = c.chainsRef().startChain(from, "climb", dig, 1);
+            return r.startsWith("started") ? "started: digging out to the " + out.dir() + " (walled in by my own blocks; " + out.cells().size() + " to break) - it ends ok: when the side is open" : r;
+        }
         String text = ClimbPlan.startText(plan);
         LOG.info("[entropybot] climb at {} {} {}: {} - {}", x, y, z, text, String.join(" > ", plan.steps()));
         String r = c.chainsRef().startChain(from, "climb", String.join(" then ", plan.steps()), 1);
         return r.startsWith("started") ? "started: " + text + " - each step reports; a failed one says why" : r;
+    }
+
+    /** 0.28.2 (D): a box of the guard's policy that is one of my main areas. */
+    static boolean inMainArea(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
+        if (ar == null || ar.name == null) return false;
+        JsonObject ab = c.policyArea(ar.name);
+        return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN;
+    }
+
+    /** 0.28.2 (D): the side toward the camp mark (a house's door faces it), else south. */
+    static String doorSide(Commands c, int x, int z) {
+        JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
+        if (camp == null || !camp.has("x")) return "south";
+        int[] cp = Jobs.pos(camp);
+        int dx = cp[0] - x, dz = cp[2] - z;
+        if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? "east" : "west";
+        return dz < 0 ? "north" : "south";
     }
 
     /** 0.24.4 "dig stairs <dir> <n>": a 1-wide walkable staircase down from where I stand (StairPlan), run as a chain. */
