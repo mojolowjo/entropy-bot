@@ -111,7 +111,7 @@ class TrialFixTest {
         assertEquals(48, BuildCount.need("walls", 0, 0, 0, 4, 2, 4));
         assertEquals(66, BuildCount.need("shell", 4, 2, 4, 0, 0, 0));
         assertEquals(7 * 7 * 5 - 5 * 3 * 5, BuildCount.need("shell", 0, 129, 0, 6, 133, 6));
-        assertEquals(-1, BuildCount.need("roof", 0, 0, 0, 1, 1, 1));
+        assertEquals(4, BuildCount.need("roof", 0, 0, 0, 1, 1, 1));         // 0.28.2: roof = the top layer
         assertEquals("(needs 170 cobblestone, you have 40 - gather cobblestone 130 first)", BuildCount.note(170, 40, "cobblestone"));
         assertEquals("(needs 50 cobblestone, you have 64)", BuildCount.note(50, 64, "cobblestone"));
         assertNull(BuildCount.refusal(170, 17, "cobblestone"));

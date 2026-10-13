@@ -137,6 +137,25 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("holecheck", "couldn't check for a hole: " + e, "status"));
         }
+        try {                                               // 0.28.2 (C): a main area (house-sized) without its stations inside
+            var lv = Minecraft.getInstance().level;
+            if (lv != null) {
+                for (Box a : Core.INSTANCE.guard.core.policy().areas) {
+                    if (a.name == null) continue;
+                    JsonObject ab = c.policyArea(a.name);
+                    if (ab == null || PolicyCommands.typeOf(ab) != io.github.mojolowjo.entropybot.guard.AreaType.MAIN) continue;
+                    String[] err = new String[1];
+                    int[] b = DigCommands.areaBox(c, a.name, err);
+                    if (b == null || Math.abs(b[3] - b[0]) + 1 < 7 || Math.abs(b[5] - b[2]) + 1 < 7 || Math.abs(b[4] - b[1]) + 1 < 5) continue;
+                    if (Math.abs(b[3] - b[0]) > 64 || Math.abs(b[5] - b[2]) > 64) continue;       // a big base area, not a house
+                    List<String> miss = new ArrayList<>();
+                    for (String s : io.github.mojolowjo.entropybot.camp.HousePlan.STATIONS) if (!CampCommands.insideHas(lv, b, s)) miss.add(s.replace('_', ' '));
+                    if (!miss.isEmpty()) f.add(new SelfCheck.Finding("house:" + a.name, "the main area " + a.name + " has no " + String.join(", ", miss) + " inside", "house " + a.name));
+                }
+            }
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("housecheck", "couldn't check the house areas: " + e, "area list"));
+        }
         try {                                               // 0.28.2 (A): a craft's own table it couldn't take back
             Clearing.leftOwnTableFindings();                // prunes the ones gone
             for (String k : new ArrayList<>(Clearing.LEFT_OWN_TABLES)) {

@@ -96,7 +96,10 @@ public final class VerbTable {
                         + "ends it \"blocked by water at x y z\"; water: seal the water off with junk blocks and dig on (large: a big body of water too); "
                         + "any coordinate may be ~ or ~N (from my feet); -N: each column's surface block and N-1 below, +N: the N blocks above the surface (N 1-64)",
                 "dig 10 60 10 20 64 20 ores|dig pit -3|dig ~-2 ~ ~-2 ~2 ~-5 ~2|dig ~-8 ~-8 ~8 ~8 +10|dig 247 -46 853 310 -44 855 floor junk drop water", "deposit");
-        v("build", "", "digging", O, "build floor|walls|shell|fill <block> <area>", "build inside an area with heights (never breaks a block); says how many blocks it needs at the start (shell = all six faces, walls = four sides, floor = the bottom layer, fill = all) and refuses with a gather hint when I carry under a tenth of them", "build floor cobblestone yard|build shell cobblestone house", "status");
+        v("build", "", "digging", O, "build floor|walls|roof|shell|fill <block> <area>", "build inside an area with heights (never breaks a block); says how many blocks it needs at the start (shell = all six faces, walls = four sides, floor = the bottom layer, roof = the top layer, fill = all) and refuses with a gather hint when I carry under a tenth of them", "build floor cobblestone yard|build roof cobblestone house|build shell cobblestone house", "status");
+        v("house", "", "digging", O, "house <area> [block]",
+                "a small house in an area of at least 7x7, 5 high (area x z x2 z2 house main y1 y2): floor, walls, roof, a 1x2 door toward the camp (else south), then a chest, crafting table and furnace inside along the back wall (crafted first when I have the material), the base marked inside, food marked at the chest, scan base; block: cobblestone, or planks when I carry more planks; names the blocks it needs up front; run it again after a stop, it skips what stands",
+                "house house|house house oak_planks", "deposit");
         v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb",
                 "climb", "goto <x y z>");
         v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
@@ -211,12 +214,12 @@ public final class VerbTable {
                 "rs|rs take bread 32", "have <item>");
         v("pots", "", "chests", O, "pots [chests]", "empty the botany pots at the base into the RS network (or the chests)", "pots", "rs");
         // ---- crafting, smelting, the farm
-        v("craft", "", "crafting", O, "craft <item> [n] | craft <material> armor|tools | craft a, b 16", "craft it, fetching materials and making the parts (table and furnace as needed)",
+        v("craft", "", "crafting", O, "craft <item> [n] | craft <material> armor|tools | craft a, b 16", "craft it, fetching materials and making the parts (table and furnace as needed); no crafting table in reach (none within 12, or one down in a pit): I put down the one I carry (or make one from my wood) next to me, craft, and always take it back (\"used my own table at x y z, taken back\"); the camp's table is never touched",
                 "craft stick 16|craft copper armor", "inv");
         v("kit", "", "crafting", O, "kit <material>", "craft that material's armor and tools, then wear the armor", "kit copper", "inv");
         v("recipe", "", "crafting", O, "recipe <item>", "what an item needs", "recipe hopper", "need <item>");
         v("smelt", "", "crafting", O, "smelt <item> [n] | smelt jobs | smelt collect [all] | smelt mode efficient|wait | smelt forget <#|all>",
-                "smelt at a base furnace and go on with other things", "smelt iron_ingot 9|smelt jobs", "smelt collect");
+                "smelt at a base furnace and go on with other things; no furnace near me but one in my bag: I put it down next to me and wait there (the furnace stays)", "smelt iron_ingot 9|smelt jobs", "smelt collect");
         v("cook", "", "crafting", O, "cook <food> [n]", "cook raw food at a furnace (smelt cooked_<food>)", "cook beef 8", "smelt jobs");
         v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "place food");
         v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",

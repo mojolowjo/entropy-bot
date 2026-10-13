@@ -43,7 +43,7 @@ final class DigCommands {
 
     static final String NO_ZONE = "error: no work zone - PM \"zone corner1\" and \"zone corner2\" standing on opposite corners";
     static final String DIG_USAGE = DigArgs.USAGE;
-    static final String BUILD_USAGE = "error: usage build <floor|walls|fill|shell|clear> [block]";
+    static final String BUILD_USAGE = "error: usage build <floor|walls|roof|fill|shell|clear> <block> <area>";
     static final String PLACE_USAGE = "error: usage place <block item> x y z";
 
     // ---- the work zone ----
@@ -404,7 +404,7 @@ final class DigCommands {
     static String build(Commands c, LocalPlayer p, String rest, String from) {
         String[] parts = rest == null ? new String[0] : rest.trim().split("\\s+");
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
-        Map<String, String> ops = Map.of("floor", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
+        Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
         int need = shape.equals("clear") ? 2 : 3;
@@ -449,8 +449,10 @@ final class DigCommands {
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();
         cm.execute("sel clear");
-        cm.execute("sel pos1 " + x1 + " " + (shape.equals("floor") ? ylo : y1) + " " + z1);
-        cm.execute("sel pos2 " + x2 + " " + (shape.equals("floor") ? ylo : y2) + " " + z2);
+        int yLayer = shape.equals("roof") ? box.y2() : ylo;              // 0.28.2: roof = the top layer
+        boolean layer = shape.equals("floor") || shape.equals("roof");
+        cm.execute("sel pos1 " + x1 + " " + (layer ? yLayer : y1) + " " + z1);
+        cm.execute("sel pos2 " + x2 + " " + (layer ? yLayer : y2) + " " + z2);
         cm.execute("sel " + ops.get(shape) + " " + id);
         bs.status = "building " + shape + " of " + CraftPlanner.shortId(id);
         bs.start = Core.INSTANCE.tick();

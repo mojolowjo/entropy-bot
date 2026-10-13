@@ -126,6 +126,57 @@ final class CampCommands {
         return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
     }
 
+    // ---------------------------------------------------------------- house (0.28.2, trial fix package 2 C)
+
+    /** "house &lt;area&gt; [block]": floor, walls, roof, door gap, chest/table/furnace inside, base marked (HousePlan). */
+    String house(LocalPlayer p, String from, boolean internal, String rest) {
+        List<String> w = io.github.mojolowjo.entropybot.commands.Texts.words(rest == null ? "" : rest.trim().toLowerCase());
+        if (w.isEmpty() || w.size() > 2) return "usage: house <area> [block]  (e.g. house house, house house oak_planks)";
+        boolean splice = c.chainsRef().running() && internal;
+        if (!splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+        if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
+        String area = w.get(0);
+        JsonObject ab = c.policyArea(area);
+        if (ab == null) return "error: I have no area called " + area + " - next: area x z x2 z2 " + area + " main y1 y2";
+        if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + area + " is a safe area - I never build there";
+        String[] err = new String[1];
+        int[] box = DigCommands.areaBox(c, area, err);
+        Map<String, Integer> inv = Gui.inventory(p);
+        String blk = io.github.mojolowjo.entropybot.camp.HousePlan.chooseBlock(w.size() > 1 ? w.get(1) : null, inv);
+        String rid = c.crafting.planner.resolveItem(blk.replaceFirst("^minecraft:", ""), inv);
+        if (rid != null) blk = rid;
+        ClientLevel lv = Minecraft.getInstance().level;
+        Map<String, Boolean> standing = new java.util.HashMap<>();
+        if (box != null && lv != null) {
+            for (String s : io.github.mojolowjo.entropybot.camp.HousePlan.STATIONS) standing.put(s, insideHas(lv, box, s));
+        }
+        JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
+        int[] cp = camp != null && camp.has("x") ? Jobs.pos(camp) : null;
+        var plan = io.github.mojolowjo.entropybot.camp.HousePlan.plan(new io.github.mojolowjo.entropybot.camp.HousePlan.Facts(
+                area, box, box != null, blk, inv, standing, cp));
+        if (plan.err() != null) return box == null && err[0] != null && !err[0].contains("covers every height") ? err[0] : plan.err();
+        String text = String.join(" then ", plan.steps());
+        LOG.info("[entropybot] house {}: {}", area, String.join(" > ", plan.steps()));
+        if (splice) {
+            String e = c.chainsRef().spliceNext(text);
+            return e == null ? "ok: " + plan.summary() + " - next in this chain" : "error: house: " + e;
+        }
+        String r = c.chainsRef().startChain(from, "house", text, 1);
+        return r.startsWith("started") ? "started: " + plan.summary() + " - each step reports; run house " + area + " again after a stop, it skips what stands" : r;
+    }
+
+    /** A block whose id contains the word inside the area box's walls (x1+1..x2-1, y1+1..y2-1, z1+1..z2-1). */
+    static boolean insideHas(ClientLevel lv, int[] b, String word) {
+        int x1 = Math.min(b[0], b[3]) + 1, x2 = Math.max(b[0], b[3]) - 1, y1 = Math.min(b[1], b[4]) + 1, y2 = Math.max(b[1], b[4]) - 1;
+        int z1 = Math.min(b[2], b[5]) + 1, z2 = Math.max(b[2], b[5]) - 1;
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int x = x1; x <= x2; x++) for (int y = y1; y <= y2; y++) for (int z = z1; z <= z2; z++) {
+            m.set(x, y, z);
+            if (lv.isLoaded(m) && net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(m).getBlock()).getPath().equals(word)) return true;
+        }
+        return false;
+    }
+
     /** A block whose id contains the word within BootstrapPlan.NEAR blocks (a few levels up and down). */
     static boolean near(ClientLevel lv, int[] c, String word) {
         int r = BootstrapPlan.NEAR;
