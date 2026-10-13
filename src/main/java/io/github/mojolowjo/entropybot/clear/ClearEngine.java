@@ -83,6 +83,10 @@ public final class ClearEngine {
         }
         if (pts.isEmpty()) return null;
         pts.add(0, new double[] { cx, cy, cz });
+        // 0.28.3: thin blocks (a snow layer, a carpet, a slab) fill only the bottom or top of their cell: a ray at the
+        // centre passes through air and hits the block beyond ("no sight" x24 in a snow dip). Aim low and high too.
+        pts.add(new double[] { cx, y + 0.06, cz });
+        pts.add(new double[] { cx, y + 0.94, cz });
         for (double[] p : pts) {
             Hit hit = w.clip(ex, ey, ez, p[0], p[1], p[2]);
             if (hit == null) continue;
