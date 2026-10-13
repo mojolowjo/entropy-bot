@@ -108,8 +108,10 @@ final class CampCommands {
                 pre.add("dig " + s[0] + " " + s[1] + " " + s[2] + " " + s[0] + " " + s[1] + " " + s[2]);
         }
         boolean snowy = snowNear(lv, feet);
+        boolean quarryBlocked = quarryBlocked(lv, feet, dir);
+        if (quarryBlocked) LOG.info("[entropybot] bootstrap: ice, snow or water in the staircase quarry at {} - the stone step uses gather cobblestone", Jobs.fmt(feet));
         BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
-                feet, table, furnace, chest, dir, snowy));
+                feet, table, furnace, chest, dir, snowy, quarryBlocked));
         if (plan.err() != null) return plan.err();
         if (plan.steps().isEmpty()) return plan.summary();
         List<String> all = new ArrayList<>(pre);
@@ -124,6 +126,22 @@ final class CampCommands {
         String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", all), 1);
         lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
         return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
+    }
+
+    /** 0.28.2 (B3): ice, snow or water in a cell of the staircase quarry's dig boxes (BootstrapPlan.quarrySteps). */
+    static boolean quarryBlocked(ClientLevel lv, int[] feet, int[] dir) {
+        int dx = dir[0], dz = dir[1], px = dz != 0 ? 1 : 0, pz = dx != 0 ? 1 : 0;
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int i = 1; i <= BootstrapPlan.QUARRY_LEN; i++) {
+            int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
+            for (int a = -1; a <= 1; a++) for (int y = feet[1] - i; y <= feet[1]; y++) {
+                m.set(cx + px * a, y, cz + pz * a);
+                if (!lv.isLoaded(m)) continue;
+                BlockState st = lv.getBlockState(m);
+                if (!st.getFluidState().isEmpty() || st.is(net.minecraft.tags.BlockTags.ICE) || st.is(net.minecraft.tags.BlockTags.SNOW)) return true;
+            }
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------- house (0.28.2, trial fix package 2 C)
