@@ -75,6 +75,10 @@ public final class ClearJob {
         }
 
         public Options line(String l) { line = l; return this; }
+
+        /** 0.29.0: "dig ... via baritone": Baritone's builder breaks the box ({@link BaritoneMask}); the water round's re-run too. */
+        public boolean viaBaritone;
+        public Options viaBaritone(boolean v) { viaBaritone = v; return this; }
         public Options junkDrop(boolean j) { junkDrop = j; return this; }
         public Options floor(boolean f, String block) { floor = f; floorBlock = block; return this; }
         public Options box(ClearBox b) { box = b; return this; }

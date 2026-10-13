@@ -12,16 +12,24 @@ import java.util.List;
  * block). The surface form {@code dig x1 z1 x2 z2 down|up N [words]} ({@link SurfaceDig}): {@code n} then holds
  * x1 z1 x2 z2, {@code surface} is "down" or "up" and {@code depth} is N (clamped to 1..{@link SurfaceDig#MAX_N}).
  * {@code floor} is a box-only word (the verb refuses it with the surface form).
+ *
+ * <p>0.29.0: {@code via baritone} (or just {@code baritone}) sets {@link #viaBaritone}: Baritone's builder breaks the box
+ * and the mod's rules decide per cell ({@link BaritoneMask}). Box form only (the verb refuses it with the other forms).
  */
 public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large,
-                      String surface, int depth) {
+                      String surface, int depth, boolean viaBaritone) {
     public static final String USAGE = "error: usage dig x1 z1 x2 z2 -N|+N [words below, no floor] (N down or up from the surface; any coordinate may be ~ or ~N, from my feet)"
             + " | dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop] [water [large]]";
 
-    private static final List<String> WORDS = List.of("force", "ores", "floor", "junk", "drop", "water", "large");
+    private static final List<String> WORDS = List.of("force", "ores", "floor", "junk", "drop", "water", "large", "via", "baritone");
 
     public DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large) {
-        this(n, force, ores, floor, floorBlock, junkDrop, water, large, null, 0);
+        this(n, force, ores, floor, floorBlock, junkDrop, water, large, null, 0, false);
+    }
+
+    public DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large,
+                   String surface, int depth) {
+        this(n, force, ores, floor, floorBlock, junkDrop, water, large, surface, depth, false);
     }
 
     /** True for {@code dig x1 z1 x2 z2 +N|-N}. */
@@ -91,7 +99,7 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
             }
             from = 6;
         }
-        boolean force = false, ores = false, floor = false, junk = false, water = false, large = false;
+        boolean force = false, ores = false, floor = false, junk = false, water = false, large = false, via = false;
         String block = null;
         for (int i = from; i < w.length; i++) {
             String t = w[i].toLowerCase();
@@ -111,9 +119,16 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
                 case "junkdrop" -> junk = true;
                 case "water" -> water = true;
                 case "large" -> large = true;          // "water large" (or "large" anywhere: water too)
+                case "via" -> {
+                    // 0.29.0: "via baritone" (also "baritone" alone, below)
+                    if (i + 1 >= w.length || !w[i + 1].equalsIgnoreCase("baritone")) return null;
+                    via = true;
+                    i++;
+                }
+                case "baritone" -> via = true;
                 default -> { return null; }
             }
         }
-        return new DigArgs(n, force, ores, floor, block, junk, water || large, large, surface, depth);
+        return new DigArgs(n, force, ores, floor, block, junk, water || large, large, surface, depth, via);
     }
 }
