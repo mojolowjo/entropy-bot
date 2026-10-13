@@ -3,7 +3,7 @@ package io.github.mojolowjo.entropybot.clear;
 import java.util.Collection;
 import java.util.Map;
 
-    /**
+/**
  * 0.28.2 (trial fix package 2, B2): a dig that broke 0 blocks says why, with the next step (trial 2: "broke 0 blocks; N
  * left" twice with no reason). The first reason met, in this order: no tool (pickaxe, shovel or axe), nowhere to stand, the fence/guard, a
  * protected block, gave up on a block (too slow, the server puts it back), water or lava next to it. Pure.
@@ -15,11 +15,11 @@ public final class DigWhy {
      * @param prefix   the end's prefix as given to finishMessage (null: a plain end)
      * @param broken   blocks broken
      * @param left     targets left at the last scan
-     * @param skip     cell key -> why it was skipped
-     * @param fails    cell key -> why it was given up
+     * @param skip     cell key -&gt; why it was skipped
+     * @param fails    cell key -&gt; why it was given up
      * @param noSpot   cells with nowhere to stand
-     * @param protectedLeft built blocks left alone (key -> name)
-     * @param names    cell key -> short block name (may be empty, never null)
+     * @param protectedLeft built blocks left alone (key -&gt; name)
+     * @param names    cell key -&gt; short block name (may be empty, never null)
      * @return " - why - next: ..." text to append, or null (it broke something, or the prefix says why already)
      */
     public static String reason(String prefix, int broken, int left, Map<String, String> skip, Map<String, String> fails,

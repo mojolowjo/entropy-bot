@@ -98,7 +98,7 @@ public final class Policy {
      * decides which safe area is reported when several overlap.
      *
      * <p>Called by the dig verb to refuse a dig box up front when the result is not {@code null},
-     * and by {@link GuardCore#grant} to refuse a roaming break lease near a safe area.
+     * and by {@link GuardCore#lease} to refuse a roaming break lease near a safe area.
      */
     public Box safeTouching(Box box) {
         for (Box b : protect) if (b.overlaps(box)) return b;

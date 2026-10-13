@@ -94,7 +94,7 @@ class HousePlanTest {
 
     @Test
     void needLeavesOutTheDoor() {
-        // shell for 7x7x5 box (0,64,0)-(6,68,6): floor 49 + roof 49 + 4 walls * 5*5 - 4*5 overlap = 170; need = shell - 2 door cells = 168
+        // shell for 7x7x5 box (0,64,0)-(6,68,6): shell = 7*7*5 - 5*5*3 = 170; need = shell - 2 door cells = 168
         assertEquals(170, BuildCount.need("shell", 0, 64, 0, 6, 68, 6));
         assertEquals(168, HousePlan.need(0, 64, 0, 6, 68, 6));
     }
