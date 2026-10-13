@@ -424,6 +424,13 @@ public final class ClearEngine {
                .append(" built block").append(job.protectedCount == 1 ? "" : "s")
                .append(" alone (e.g. ").append(first.getKey()).append(" ").append(first.getValue()).append(")");
         }
+        // 0.28.2 (B2): broke nothing: the first reason met and the next step (never a bare "broke 0 blocks")
+        if (job.broken == 0 && job.exactId == null) {
+            Map<String, String> fw = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, ClearJob.Fail> e : job.fails.entrySet()) fw.put(e.getKey(), e.getValue().why);
+            String why = DigWhy.reason(prefix, job.broken, left, job.skip, fw, job.noSpot, job.protectedLeft);
+            if (why != null) msg.append(" - ").append(why);
+        }
         return msg.toString();
     }
 }

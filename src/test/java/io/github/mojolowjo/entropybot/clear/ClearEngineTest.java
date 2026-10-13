@@ -352,19 +352,22 @@ class ClearEngineTest {
         k.skip.put("5 60 0", "next to water/lava");          // gone since: not an example
         k.skip.put("1 60 0", "next to water/lava");
         assertEquals("ok: finished clearing the zone - broke 0 blocks; 4 left, e.g. 1 60 0 next to water/lava, 2 60 0 couldn't reach it, "
-                + "3 60 0 out of reach (nowhere to stand close enough)", ClearEngine.finishMessage(w, k, null));
+                + "3 60 0 out of reach (nowhere to stand close enough)"
+                + " - nowhere to stand within reach of 3 60 0 - next: goto 3 60 0 (stand next to it), then dig again", ClearEngine.finishMessage(w, k, null));
         // built blocks: one, many, 200+
         ClearJob p = job(ClearBox.of(0, 70, 0, 0, 70, 0));
         p.protectedLeft.put("1 2 3", "glass");
         p.protectedCount = 1;
-        assertEquals("ok: done clearing the zone - broke 0 blocks; left 1 built block alone (e.g. 1 2 3 glass)", ClearEngine.finishMessage(w, p, null));
+        assertEquals("ok: done clearing the zone - broke 0 blocks; left 1 built block alone (e.g. 1 2 3 glass)"
+                + " - 1 2 3 is protected (a built block: glass) - next: dig 1 2 3 1 2 3 force (if it is yours)", ClearEngine.finishMessage(w, p, null));
         p.protectedCount = 200;
+        p.broken = 1;
         assertTrue(ClearEngine.finishMessage(w, p, null).endsWith("; left 200+ built blocks alone (e.g. 1 2 3 glass)"));
         // ores showing in the walls are listed at the end
         ClearJob o = job(ClearBox.of(0, 60, 0, 0, 60, 0));
         w.set(0, 60, 0, "air");
         w.set(0, 59, 0, "coal_ore");
-        assertEquals("ok: done clearing the zone - broke 0 blocks; 1 ores left in place for you (PM \"ores\")", ClearEngine.finishMessage(w, o, null));
+        assertEquals("ok: done clearing the zone - broke 0 blocks; 1 ores left in place for you (PM \"ores\") - nothing to dig there (air, or done already)", ClearEngine.finishMessage(w, o, null));
         // a corridor that has to go all the way
         ClearJob c = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 80, 0, 0, 80, 0)).mustFinish(true).label("digging the mine corridor (branch 2)"), null, null);
         w.set(0, 80, 0, "bedrock");
