@@ -13,6 +13,7 @@ import io.github.mojolowjo.entropybot.craft.FurnacePlan;
 import io.github.mojolowjo.entropybot.craft.GridLayout;
 import io.github.mojolowjo.entropybot.craft.GridLoop;
 import io.github.mojolowjo.entropybot.craft.McRecipes;
+import io.github.mojolowjo.entropybot.craft.OwnTable;
 import io.github.mojolowjo.entropybot.craft.RecipeData;
 import io.github.mojolowjo.entropybot.farm.Compact;
 import io.github.mojolowjo.entropybot.farm.FarmCommand;
@@ -390,11 +391,30 @@ final class Crafting {
             efficient = false;
             collectTargets = true;
         }
-        boolean smelts = false;
+        boolean smelts = false, ownFurnace = false;
         for (Crafter.Step s : plan) {
             if (s instanceof Crafter.Smelt sm) {
                 smelts = true;
-                if (efficient ? findFurnaces(p, true).isEmpty() : findFurnace(p) == null) return CraftJob.noFurnace(sm.item());
+                if (efficient ? findFurnaces(p, true).isEmpty() : findFurnace(p) == null) {
+                    // 0.28.2 (A): a furnace in the bag goes down next to me (and stays: it holds the job); wait mode there
+                    int[] spot = Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 && findFurnace(p) == null ? ownFurnaceSpot(p) : null;
+                    if (ownFurnace) continue;
+                    if (spot == null && findFurnace(p) != null && efficient) {
+                        efficient = false;                 // a furnace near me but not at the base: stand by it
+                        collectTargets = true;
+                        continue;
+                    }
+                    if (spot == null) return CraftJob.noFurnace(sm.item()) + (Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 ? " (no free spot next to me for mine)" : " - next: craft furnace 1");
+                    Step place = Clearing.placeStep(spot, "minecraft:furnace", null, false);
+                    out.add(place);
+                    Step note = new Step("ownfurnacenote");
+                    note.pos = spot;
+                    out.add(note);
+                    ownFurnace = true;
+                    efficient = false;
+                    collectTargets = true;
+                    LOG.info("[entropybot] smelt: no furnace near me - putting mine down at {}", Jobs.fmt(spot));
+                }
             }
         }
         for (FurnacePlan.Action a : FurnacePlan.order(plan, planner::recipe, efficient, collectTargets)) {
@@ -495,8 +515,51 @@ final class Crafting {
     String craft(LocalPlayer p, String text, List<Step> extra) {
         Prepared r = prepareCraft(p, text, extra);
         if (r.err() != null) return r.err();
-        boolean opens = r.steps().stream().anyMatch(s -> s.type.equals("open") || s.type.equals("craft"));
-        return startSeq(r.label(), r.steps(), opens ? "always" : "fail");
+        List<Step> steps = r.steps();
+        String tail = "";
+        // 0.28.2 (A): no reachable table but one in the bag (or wood): put it down here, craft, always take it back
+        if (needsTable(steps)) {
+            OwnTable.Choice[] ch = new OwnTable.Choice[1];
+            List<Step> plain = new ArrayList<>(steps);
+            for (Step s : plain) s.direct = false;
+            List<Step> own = Clearing.ownTableSteps(p, findTable(p), plain, ch);
+            if (own != null) {
+                steps = own;
+                tail = OwnTable.startNote(ch[0]);
+            } else {
+                for (Step s : plain) s.direct = r.direct() && s.type.equals("craft");
+                if (ch[0] == OwnTable.Choice.NONE) return craftNoTable(steps);
+            }
+        }
+        boolean opens = steps.stream().anyMatch(s -> s.type.equals("open") || s.type.equals("craft"));
+        String started = startSeq(r.label(), steps, opens ? "always" : "fail");
+        return started.startsWith("started") ? started + tail : started;
+    }
+
+    /** 0.28.2 (A): a free cell next to me for my own furnace (the table placer's spot rule), or null. */
+    private static int[] ownFurnaceSpot(LocalPlayer p) {
+        Clearing.LiveWorld w = new Clearing.LiveWorld();
+        w.set(p);
+        var spot = io.github.mojolowjo.entropybot.clear.PlaceRules.tableSpot(w, io.github.mojolowjo.entropybot.clear.McClearWorld.botOf(p), null, Clearing::placeCellAllowed);
+        return spot == null ? null : new int[]{spot.x(), spot.y(), spot.z()};
+    }
+
+    /** 0.28.2: a plan whose crafting steps want a 3x3 grid. */
+    private boolean needsTable(List<Step> steps) {
+        for (Step s : steps) {
+            if (!s.type.equals("craft") || s.crafts == null) continue;
+            for (Crafter.Craft c : s.crafts) {
+                RecipeData rd = planner.recipe(c.recipeId());
+                if (c.needsTable() || (rd != null && !rd.fits(2))) return true;
+            }
+        }
+        return false;
+    }
+
+    /** No table anywhere and nothing to make one: the old error, with the next step. */
+    private String craftNoTable(List<Step> steps) {
+        for (Step s : steps) if (s.type.equals("craft") && s.crafts != null && !s.crafts.isEmpty()) return CraftJob.noTable(s.crafts.get(0).item()) + " - next: gather oak_log 4 (a log makes a table), then craft again";
+        return CraftJob.noTable("this");
     }
 
     String recipe(LocalPlayer p, String text) { return planner.recipeInfo(text, Gui.inventory(p)); }
@@ -823,6 +886,9 @@ final class Crafting {
     String step(Seq s, Step st, LocalPlayer p, long elapsed) {
         switch (st.type) {
             case "craft": return craftStep(s, st, p);
+            case "ownfurnacenote":                         // 0.28.2 (A): the furnace went down; it stays (it holds the job)
+                addNote(s, OwnTable.furnacePlaced(Jobs.fmt(st.pos)));
+                return "next";
             case "craftitem": {
                 // hand over to a craft plan spliced in after this step; the sequence carries on when it ends
                 Prepared r = prepareCraft(p, st.text, null);

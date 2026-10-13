@@ -92,6 +92,8 @@ public final class Seq {
     final Storage storage;
     final List<Step> steps;
     String label, note, tpNote, wore;
+    /** 0.28.2: the error a craft step ended with while its own table still stood; the job ends with it after the pickup. */
+    String afterPickupError;
     int idx;
     long stepStart, stageTick;
     String stage;
@@ -155,6 +157,10 @@ public final class Seq {
     /** Every 2 ticks while the job runs. */
     void tick(LocalPlayer p) {
         if (idx >= steps.size()) {
+            if (afterPickupError != null) {           // 0.28.2: a craft failed, its own table was taken back first
+                jobs.finish("error: " + afterPickupError + " (while " + label + ")" + (note != null ? "; " + note : ""));
+                return;
+            }
             jobs.finish("ok: done " + label + (wore != null ? "; " + wore.replaceFirst("^ok: ", "") : "") + (note != null ? "; " + note : "")
                     + (tpNote != null ? "; " + tpNote : "") + (detourNote != null ? "; " + detourNote : ""));
             return;
@@ -174,6 +180,7 @@ public final class Seq {
             stage = null;
             return;
         }
+        if (Clearing.ownTableCaught(this, r)) return;    // 0.28.2: the craft's own table is always taken back
         if (Clearing.caught(this, r)) return;            // B7d D1: a trip a clear spliced in failed: the clear hears it and goes on
         if (routeTest != null && routeTest.caught(this, r, p)) return;      // a failed test trip is recorded, the next one goes on
         if (Chopping.caught(this, r, p)) return;          // P2: a failed axe fetch/craft in a chop goes on by hand

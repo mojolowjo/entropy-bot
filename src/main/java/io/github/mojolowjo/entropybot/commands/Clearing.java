@@ -337,11 +337,16 @@ public final class Clearing {
             // gone (picked up, broken by someone) or something else now: not ours to mention
             if (id != null && !PlaceRules.TABLE_ID.equals(id)) continue;
             left.add(Jobs.fmt(t.pos));
+            if (WHY_OWN_TABLE.equals(t.why)) LEFT_OWN_TABLES.add(Jobs.fmt(t.pos));       // 0.28.2: a check finding
         }
         if (left.isEmpty()) return msg;
         String where = String.join(", ", left);
         LOG.info("[entropybot] clear: the job ended ({}) and left my crafting table at {}", msg, where);
         return msg + " - left my crafting table at " + where;
+    }
+
+    private static String join(String a, String b) {
+        return a == null || a.isEmpty() ? b : a + "; " + b;
     }
 
     /** A table pickup step the place step armed (the bot's own table went down there). */
@@ -498,8 +503,18 @@ public final class Clearing {
         if (KIND_TABLE.equals(st.kind)) {
             // picked up (or gone): disarmed; still standing there: stays armed, so the job's end names it
             String id = blockId(st.pos);
-            if (id != null && !PlaceRules.TABLE_ID.equals(id)) st.got = null;
-            else if (armedPickup(st)) LOG.info("[entropybot] clear: couldn't pick up my crafting table at {}", Jobs.fmt(st.pos));
+            if (id != null && !PlaceRules.TABLE_ID.equals(id)) {
+                if (WHY_OWN_TABLE.equals(st.why) && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.takenBack(Jobs.fmt(st.pos)));
+                st.got = null;
+            } else if (armedPickup(st)) {
+                LOG.info("[entropybot] clear: couldn't pick up my crafting table at {}", Jobs.fmt(st.pos));
+                if (WHY_OWN_TABLE.equals(st.why)) {
+                    LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));
+                    seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.leftAt(Jobs.fmt(st.pos)));
+                    st.got = null;              // named in the note already
+                }
+            }
+            if (WHY_OWN_TABLE.equals(st.why)) return "next";
         }
         if (KIND_FINISH.equals(st.kind)) {
             seq.jobs.finish(msg);
@@ -566,8 +581,24 @@ public final class Clearing {
             LOG.info("[entropybot] clear: no spot next to me for a crafting table, the craft walks to one");
             return null;
         }
+        Seq.Step craft = new Seq.Step("craftitem");
+        craft.text = craftText;
+        List<Seq.Step> out = tableAround(spot, choice == PlaceRules.TableChoice.CRAFT_AND_PLACE, List.of(craft), null);
+        LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.TABLE_NEAR, spot.key(), choice);
+        return out;
+    }
+
+    /** 0.28.2: the pickup steps of a craft verb's own table carry this in {@code why} (their end makes the job's note). */
+    static final String WHY_OWN_TABLE = "owntable";
+
+    /**
+     * The one table placer (18a, shared by the clear's trips and, since 0.28.2, the craft verb): [craft a table]
+     * [place it at spot] [middle] [the armed pickup]. The pickup only ever takes that exact cell, only while it is still a
+     * crafting table and only after our own click put it there.
+     */
+    static List<Seq.Step> tableAround(Pos spot, boolean craftTable, List<Seq.Step> middle, String why) {
         List<Seq.Step> out = new ArrayList<>();
-        if (choice == PlaceRules.TableChoice.CRAFT_AND_PLACE) {
+        if (craftTable) {
             Seq.Step mk = new Seq.Step("craftitem");
             mk.text = "minecraft:crafting_table 1";
             out.add(mk);
@@ -580,15 +611,80 @@ public final class Clearing {
         po.armed(() -> armedPickup(pickup));
         pickup.kind = KIND_TABLE;
         pickup.pos = at;
+        pickup.why = why;
         Seq.Step place = placeStep(at, "minecraft:crafting_table", null, false);
         ((PlaceState) place.state).pickup = pickup;
         out.add(place);
-        Seq.Step craft = new Seq.Step("craftitem");
-        craft.text = craftText;
-        out.add(craft);
+        out.addAll(middle);
         out.add(pickup);
-        LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.TABLE_NEAR, spot.key(), choice);
         return out;
+    }
+
+    /**
+     * 0.28.2 (A): the craft verb's own table. Null when the craft uses a known table as before (or there is no spot);
+     * else the steps around {@code craftSteps}. {@code choice[0]} gets what was decided (for the started reply).
+     */
+    static List<Seq.Step> ownTableSteps(LocalPlayer p, int[] known, List<Seq.Step> craftSteps, io.github.mojolowjo.entropybot.craft.OwnTable.Choice[] choice) {
+        Double dist = known == null ? null : p.getEyePosition().distanceTo(new Vec3(known[0] + 0.5, known[1] + 0.5, known[2] + 0.5));
+        int dy = known == null ? 0 : known[1] - (int) Math.floor(p.getY() + 0.01);
+        Map<String, Integer> inv = Gui.inventory(p);
+        boolean carries = inv.getOrDefault(PlaceRules.TABLE_ID, 0) > 0, wood = false;
+        for (String id : inv.keySet()) wood |= PlaceRules.wood(id);
+        var c = io.github.mojolowjo.entropybot.craft.OwnTable.choose(dist, dy, carries, wood);
+        choice[0] = c;
+        if (c != io.github.mojolowjo.entropybot.craft.OwnTable.Choice.PLACE_CARRIED
+                && c != io.github.mojolowjo.entropybot.craft.OwnTable.Choice.CRAFT_AND_PLACE) return null;
+        LiveWorld w = new LiveWorld();
+        w.set(p);
+        Pos spot = PlaceRules.tableSpot(w, McClearWorld.botOf(p), null, Clearing::placeCellAllowed);
+        if (spot == null) {
+            LOG.info("[entropybot] craft: no spot next to me for my own crafting table");
+            choice[0] = known != null ? io.github.mojolowjo.entropybot.craft.OwnTable.Choice.WALK_FAR : io.github.mojolowjo.entropybot.craft.OwnTable.Choice.NONE;
+            return null;
+        }
+        LOG.info("[entropybot] craft: no reachable crafting table ({}) - putting my own down at {} ({})", known == null ? "none" : Jobs.fmt(known), spot.key(), c);
+        return tableAround(spot, c == io.github.mojolowjo.entropybot.craft.OwnTable.Choice.CRAFT_AND_PLACE, craftSteps, WHY_OWN_TABLE);
+    }
+
+    /** 0.28.2: own tables a job could not take back (x y z), for check; pruned once the cell is no crafting table. */
+    static final Set<String> LEFT_OWN_TABLES = new LinkedHashSet<>();
+
+    /** check's findings for {@link #LEFT_OWN_TABLES} (those still standing). */
+    static List<String> leftOwnTableFindings() {
+        List<String> out = new ArrayList<>();
+        for (java.util.Iterator<String> it = LEFT_OWN_TABLES.iterator(); it.hasNext(); ) {
+            String k = it.next();
+            String[] a = k.split(" ");
+            String id = blockId(new int[]{Integer.parseInt(a[0]), Integer.parseInt(a[1]), Integer.parseInt(a[2])});
+            if (id != null && !PlaceRules.TABLE_ID.equals(id)) {
+                it.remove();
+                continue;
+            }
+            out.add(io.github.mojolowjo.entropybot.craft.OwnTable.leftAt(k));
+        }
+        return out;
+    }
+
+    /**
+     * 0.28.2 (A, the owner's rule): a craft job with its own table down failed: run the pickup before the job ends.
+     * True when it jumped to the pickup (the job ends after it with {@code r}).
+     */
+    static boolean ownTableCaught(Seq seq, String r) {
+        if (seq.afterPickupError != null) return false;
+        for (int i = seq.idx + 1; i < seq.steps.size(); i++) {
+            Seq.Step st = seq.steps.get(i);
+            if (WHY_OWN_TABLE.equals(st.why) && armedPickup(st)) {
+                seq.afterPickupError = r;
+                seq.idx = i;
+                seq.stage = null;
+                seq.stepStart = seq.now();
+                LocalPlayer p = Minecraft.getInstance().player;
+                if (p != null && (Gui.open(p) || Minecraft.getInstance().screen != null)) Gui.close(p);
+                LOG.info("[entropybot] craft: {} - taking my own table back first", r);
+                return true;
+            }
+        }
+        return false;
     }
 
     /** T3: with the fence on, stand spots and drops only inside an area of this dimension (the guard's policy, read live); else null. */
