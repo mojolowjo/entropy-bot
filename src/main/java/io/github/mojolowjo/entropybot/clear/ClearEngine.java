@@ -432,7 +432,23 @@ public final class ClearEngine {
         if (job.broken == 0 && job.exactId == null) {
             Map<String, String> fw = new java.util.LinkedHashMap<>();
             for (Map.Entry<String, ClearJob.Fail> e : job.fails.entrySet()) fw.put(e.getKey(), e.getValue().why);
-            String why = DigWhy.reason(prefix, job.broken, left, job.skip, fw, job.noSpot, job.protectedLeft);
+            Map<String, String> names = new java.util.LinkedHashMap<>();
+            try {
+                for (String key : job.fails.keySet()) {
+                    Pos p = Pos.parse(key);
+                    String n = w.name(p.x(), p.y(), p.z());
+                    names.put(key, n);
+                }
+                for (String key : job.skip.keySet()) {
+                    if (!names.containsKey(key)) {
+                        Pos p = Pos.parse(key);
+                        String n = w.name(p.x(), p.y(), p.z());
+                        names.put(key, n);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+            }
+            String why = DigWhy.reason(prefix, job.broken, left, job.skip, fw, job.noSpot, job.protectedLeft, names);
             if (why != null) msg.append(" - ").append(why);
         }
         return msg.toString();
