@@ -55,13 +55,31 @@ class ToolsGridTest {
         assertEquals("needs a better tool (diamond_ore)", Tools.noTool(j, true, "diamond_ore").skip());
         j.lastPick = "leafscopperbackport:copper_pickaxe";
         Tools.NoTool a = Tools.noTool(j, false, "stone");
-        assertEquals(List.of("minecraft:stone_pickaxe 3", "leafscopperbackport:copper_pickaxe 3"), a.craft());
+        assertEquals(List.of("minecraft:stone_pickaxe 3", "leafscopperbackport:copper_pickaxe 3", "minecraft:wooden_pickaxe 3"), a.craft());
         j.lastPick = "minecraft:stone_pickaxe";
-        assertEquals(List.of("minecraft:stone_pickaxe 3"), Tools.noTool(j, false, "stone").craft());
+        assertEquals(List.of("minecraft:stone_pickaxe 3", "minecraft:wooden_pickaxe 3"), Tools.noTool(j, false, "stone").craft());
         assertEquals("stopped: out of pickaxes (stone needs one)", Tools.noTool(j, false, "stone").stop());
         assertEquals("stopped: out of pickaxes and I can't make more (no table)", Tools.cantCraftMessage("error: no table"));
         assertEquals("stopped: out of pickaxes and making more failed (missing sticks)", Tools.craftFailedMessage("error: missing sticks"));
         assertEquals("out of pickaxes - making 3 stone_pickaxe, then back to clearing", Tools.craftingWhisper("minecraft:stone_pickaxe 3"));
+    }
+
+    @Test
+    void noToolTriesWoodenLast() {
+        ClearJob j = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 0, 0, 0, 0, 0)), null, null);
+        j.lastPick = null;
+        j.craftTries = 0;
+        Tools.NoTool result = Tools.noTool(j, false, "stone");
+        assertEquals(List.of("minecraft:stone_pickaxe 3", "minecraft:wooden_pickaxe 3"), result.craft());
+    }
+
+    @Test
+    void noToolDoesNotRepeatWooden() {
+        ClearJob j = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 0, 0, 0, 0, 0)), null, null);
+        j.lastPick = "minecraft:wooden_pickaxe";
+        j.craftTries = 0;
+        Tools.NoTool result = Tools.noTool(j, false, "stone");
+        assertEquals(List.of("minecraft:stone_pickaxe 3", "minecraft:wooden_pickaxe 3"), result.craft());
     }
 
     @Test

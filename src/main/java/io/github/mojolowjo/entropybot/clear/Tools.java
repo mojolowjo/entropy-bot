@@ -119,7 +119,7 @@ public final class Tools {
     /**
      * noTool's decision when no tool can harvest the block: with a pickaxe left, skip the block ({@link #skip});
      * after two tries at crafting, stop ({@link #stop}); else craft 3 pickaxes, stone first, then the kind it was
-     * using ({@link #craft}, craft texts like "minecraft:stone_pickaxe 3", tried in order).
+     * using, then wooden ({@link #craft}, craft texts like "minecraft:stone_pickaxe 3", tried in order).
      */
     public record NoTool(String skip, String stop, List<String> craft) {}
 
@@ -132,6 +132,8 @@ public final class Tools {
         List<String> tries = new ArrayList<>();
         tries.add("minecraft:stone_pickaxe 3");
         if (job.lastPick != null && !job.lastPick.equals("minecraft:stone_pickaxe")) tries.add(job.lastPick + " 3");
+        // 0.28.4 (trial 5): with logs but no cobblestone, stone pickaxes can't be made - wooden ones can
+        if (job.lastPick == null || !job.lastPick.equals("minecraft:wooden_pickaxe")) tries.add("minecraft:wooden_pickaxe 3");
         return new NoTool(null, null, tries);
     }
 

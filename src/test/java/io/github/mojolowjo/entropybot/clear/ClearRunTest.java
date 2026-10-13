@@ -57,8 +57,9 @@ class ClearRunTest {
         String msg = d.run(ClearJob.start(new ClearJob.Options(), SimWorlds.ZONE, d.ores));
         assertEquals(2, d.toolBreaks);
         assertEquals(List.of("minecraft:stone_pickaxe 3 -> error: I don't know an item called minecraft:stone_pickaxe",
-                "leafscopperbackport:copper_pickaxe 3 -> error: I don't know an item called leafscopperbackport:copper_pickaxe"), d.crafts);
-        assertEquals("stopped: out of pickaxes and I can't make more (I don't know an item called leafscopperbackport:copper_pickaxe) - broke 305 blocks; "
+                "leafscopperbackport:copper_pickaxe 3 -> error: I don't know an item called leafscopperbackport:copper_pickaxe",
+                "minecraft:wooden_pickaxe 3 -> error: I don't know an item called minecraft:wooden_pickaxe"), d.crafts);
+        assertEquals("stopped: out of pickaxes and I can't make more (I don't know an item called minecraft:wooden_pickaxe) - broke 305 blocks; "
                 + "2564 left; 1 ores left in place for you (PM \"ores\")", msg);
     }
 
