@@ -169,8 +169,11 @@ final class DigCommands {
                 java.util.Set<String> shelter = ShelterJob.ownBlocks(c);
                 String dim = Storage.dim();
                 var g = Core.INSTANCE.guard.core;
+                // 0.28.3 (trial 3, Haiku: a natural dip after a walk, "no side is my own wall"): a natural block that is
+                // not protected (no block entity, not a building block) may go too; built blocks only when they are mine
                 ClimbPlan.Own own = (ox, oy, oz) -> shelter.contains(ox + " " + oy + " " + oz) || RestoreLive.INSTANCE.builtByMe(ox, oy, oz)
-                        || inMainArea(c, g.policy().areaAt(dim, ox, oy, oz));
+                        || inMainArea(c, g.policy().areaAt(dim, ox, oy, oz))
+                        || !Core.INSTANCE.guard.isProtectedBlock(lv.getBlockState(new net.minecraft.core.BlockPos(ox, oy, oz)).getBlock());
                 out = ClimbPlan.walledIn((cx, cy, cz) -> climbCell(lv, cx, cy, cz), own, x, y, z, doorSide(c, x, z));
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] climb: walled-in check at {} {} {}: {}", x, y, z, e.toString());
@@ -181,7 +184,7 @@ final class DigCommands {
             String dig = ClimbPlan.outDig(out);
             LOG.info("[entropybot] climb: walled in at {} {} {} - digging out to the {}: {}", x, y, z, out.dir(), dig);
             String r = c.chainsRef().startChain(from, "climb", dig, 1);
-            return r.startsWith("started") ? "started: digging out to the " + out.dir() + " (walled in by my own blocks; " + out.cells().size() + " to break) - it ends ok: when the side is open" : r;
+            return r.startsWith("started") ? "started: digging out to the " + out.dir() + " (walled in; " + out.cells().size() + " to break) - it ends ok: when the side is open" : r;
         }
         String text = ClimbPlan.startText(plan);
         LOG.info("[entropybot] climb at {} {} {}: {} - {}", x, y, z, text, String.join(" > ", plan.steps()));

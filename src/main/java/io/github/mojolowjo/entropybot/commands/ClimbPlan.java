@@ -137,7 +137,7 @@ public final class ClimbPlan {
             for (int yy = y; yy <= y + 1 && why == null; yy++) {
                 Kind k = c.at(ax, yy, az);
                 if (k == Kind.OPEN) continue;
-                if (k == Kind.BLOCKED || !own.at(ax, yy, az)) why = "the block at " + ax + " " + yy + " " + az + " is not mine";
+                if (k == Kind.BLOCKED || !own.at(ax, yy, az)) why = "the block at " + ax + " " + yy + " " + az + " is a built block that is not mine (or water, a container, bedrock)";
                 else cells.add(new int[]{ax, yy, az});
             }
             int bx = ax + d[0], bz = az + d[1];
@@ -154,8 +154,8 @@ public final class ClimbPlan {
             }
         }
         if (best != null) return best;
-        return new Out(null, List.of(), "error: I'm walled in at " + x + " " + y + " " + z + " and no side is my own wall (" + firstWhy
-                + ") - next: dig x y z x y+1 z force next to me (owner only), or ask the owner");
+        return new Out(null, List.of(), "error: I'm walled in at " + x + " " + y + " " + z + " and no side is my own wall or natural ground (" + firstWhy
+                + ") - next: dig x y z x y+1 z force next to me (if the wall is yours), or ask the owner");
     }
 
     /** The dig for {@link #walledIn}'s cells: "dig x y z x y2 z force" (force: my own planks are built blocks). */
