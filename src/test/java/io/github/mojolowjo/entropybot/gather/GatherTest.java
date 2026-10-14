@@ -293,4 +293,18 @@ class GatherTest {
         assertEquals("no axe (making one failed: the crafting table did not open) - chopped by hand",
                 ChopRules.axeFailedNote("made", "error: the crafting table did not open"));
     }
-}
+
+    // 0.30.0 (P2 live): the quarry's no-tool stop makes a pickaxe before gather gives up
+    @Test
+    void pickaxeFixAfterTheQuarry() {
+        String cmd = "dig stone 64", no = "stopped: quarrying ... needs a pickaxe for stone (broke 0 blocks) - next: craft wooden_pickaxe 1";
+        assertEquals("craft stone_pickaxe 1", GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:cobblestone", 285, "minecraft:stick", 2), 0));
+        assertEquals("craft stone_pickaxe 1", GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:cobblestone", 3, "minecraft:oak_planks", 2), 0), "sticks from planks");
+        assertEquals("craft wooden_pickaxe 1", GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:cobblestone", 2, "minecraft:oak_log", 2), 0));
+        assertEquals("craft wooden_pickaxe 1", GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:oak_planks", 3, "minecraft:stick", 2), 0));
+        assertNull(GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:cobblestone", 285), 0), "no wood, no sticks: give up");
+        assertNull(GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:oak_planks", 4), 0), "4 planks: not 3 + sticks");
+        assertNull(GatherRules.pickaxeFix(cmd, no, Map.of("minecraft:cobblestone", 285, "minecraft:stick", 2), GatherRules.MAX_PICK_FIXES), "tried enough");
+        assertNull(GatherRules.pickaxeFix("strip mine", no, Map.of("minecraft:cobblestone", 285, "minecraft:stick", 2), 0), "the quarry only");
+        assertNull(GatherRules.pickaxeFix(cmd, "stopped: blocked by water at 1 2 3", Map.of("minecraft:cobblestone", 285, "minecraft:stick", 2), 0));
+    }}

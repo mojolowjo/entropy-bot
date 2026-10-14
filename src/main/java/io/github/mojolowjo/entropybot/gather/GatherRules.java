@@ -169,4 +169,31 @@ public final class GatherRules {
     public static long deadline(long now, int minutes) {
         return now + minutes * 1200L;
     }
-}
+
+    /** 0.30.0: pickaxe crafts gather tries in one run after a quarry's no-tool stop before it gives up. */
+    public static final int MAX_PICK_FIXES = 3;
+
+    /**
+     * 0.30.0 (P2 live): a "dig stone" step ended "needs a pickaxe for ...": the craft gather runs before the quarry goes
+     * again (the Tools.noTool ladder: a stone pickaxe from 3 cobblestone and sticks, the sticks from planks or a log; else a
+     * wooden one from planks or logs), or null: give up with the step's text (another step, nothing to make one from,
+     * or {@link #MAX_PICK_FIXES} crafts already).
+     */
+    public static String pickaxeFix(String command, String msg, Map<String, Integer> inv, int fixes) {
+        if (command == null || msg == null || !command.startsWith("dig stone") || !msg.contains("needs a pickaxe")) return null;
+        if (fixes >= MAX_PICK_FIXES) return null;
+        int cobble = 0, sticks = 0, planks = 0, logs = 0;
+        for (Map.Entry<String, Integer> e : inv.entrySet()) {
+            String k = e.getKey();
+            int n = Math.max(0, e.getValue());
+            if (k.equals("minecraft:cobblestone") || k.equals("minecraft:cobbled_deepslate")) cobble += n;
+            else if (k.equals("minecraft:stick")) sticks += n;
+            else if (k.endsWith("_planks")) planks += n;
+            else if (k.endsWith("_log") || k.endsWith("_stem")) logs += n;
+        }
+        int wood = planks + 4 * logs;                       // planks it can have
+        int stickPlanks = sticks >= 2 ? 0 : 2;             // 2 planks make 4 sticks
+        if (cobble >= 3 && wood >= stickPlanks) return "craft stone_pickaxe 1";
+        if (wood >= 3 + stickPlanks) return "craft wooden_pickaxe 1";
+        return null;
+    }}

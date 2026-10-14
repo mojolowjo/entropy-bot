@@ -53,6 +53,9 @@ final class Gathering {
         GatherPlan.Step step;
         String command, lastFail;
         int beforeLeaf, beforeBag;
+        /** 0.30.0: the pickaxe craft running after a quarry's no-tool stop (null: none), that stop's text, crafts so far */
+        String fixing, toolText;
+        int pickFixes;
         final Map<String, Integer> leafFails = new HashMap<>();
         final GatherRules.Tally tally = new GatherRules.Tally();
     }
@@ -222,6 +225,32 @@ final class Gathering {
     }
 
     private void afterStep(Run r, LocalPlayer p, String msg) {
+        if (r.fixing != null) {
+            fixDone(r, p, msg);
+            return;
+        }
+        // 0.30.0: the quarry stopped for want of a pickaxe: make one (as its next hint says), then quarry again
+        String fix = GatherRules.pickaxeFix(r.command, msg, Gui.inventory(p), r.pickFixes);
+        if (fix != null) {
+            r.pickFixes++;
+            r.toolText = msg;
+            r.fixing = fix;
+            whisper(r, "step " + r.steps + " (" + r.command + "): " + shortMsg(msg) + " - " + fix + " first");
+            LOG.info("[entropybot] gather: {} after {}", fix, r.command);
+            Chains.Reply rep;
+            try {
+                rep = commands.handle(r.from, fix, true, null);
+            } catch (RuntimeException e) {
+                rep = Chains.Reply.now("error: " + e);
+            }
+            if (run != r) return;
+            if (rep.pending() != null) {
+                r.sub = rep.pending();
+                return;
+            }
+            fixDone(r, p, rep.text() == null ? "" : rep.text());
+            return;
+        }
         GatherPlan.Step s = r.step;
         int gainLeaf = measure(p, s.leaf()) - r.beforeLeaf, gainBag = bag(p, s.leaf()) - r.beforeBag;
         switch (s.kind()) {
@@ -243,6 +272,18 @@ final class Gathering {
         }
         int have = bag(p, r.item);
         whisper(r, "step " + r.steps + " (" + r.command + "): " + shortMsg(msg) + " - " + have + "/" + r.want + " " + GatherSources.shortId(r.item));
+    }
+
+    /** The pickaxe craft ended: made, the quarry goes again at the next tick; failed, gather ends with the quarry's text. */
+    private void fixDone(Run r, LocalPlayer p, String msg) {
+        String fix = r.fixing;
+        r.fixing = null;
+        if (Texts.stepFailed(msg) || msg.startsWith("busy") || msg.startsWith("stopped")) {
+            end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, r.command + " - " + r.toolText.replaceFirst("^(error|stopped): ", "")
+                    + " (" + fix + " failed: " + shortMsg(msg) + ")", null));
+            return;
+        }
+        whisper(r, fix + ": " + shortMsg(msg) + " - quarrying again");
     }
 
     static String shortMsg(String m) {
