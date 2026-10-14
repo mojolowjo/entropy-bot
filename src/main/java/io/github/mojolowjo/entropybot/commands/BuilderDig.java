@@ -232,7 +232,10 @@ public final class BuilderDig {
             return "error: couldn't read the guard's protect boxes: " + e;
         }
         Set<Long> fenced = s.fenced;
-        s.mask = new BaritoneMask(box, s.job.force, s.job.keepOres, (x, y, z) -> fenced.contains(BaritoneMask.packed(x, y, z)) ? "protect box or safe area" : null);
+        // 0.30.0 (P2): an only list (the staircase quarry, a surface dig): the job's box is its bounding box, the mask
+        // takes only the listed cells
+        s.mask = new BaritoneMask(box, s.job.force, s.job.keepOres, (x, y, z) -> fenced.contains(BaritoneMask.packed(x, y, z)) ? "protect box or safe area" : null,
+                BaritoneMask.onlyCells(o.only));
         s.startCells = Set.copyOf(s.mask.digCells(s.world));
         s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();

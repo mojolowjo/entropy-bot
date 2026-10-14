@@ -248,6 +248,57 @@ class BaritoneMaskTest {
         assertArrayEquals(new int[]{6, 1, 6}, BaritoneMask.size(ClearBox.of(5, 83, 2, 0, 83, -3)));
     }
 
+    // ---- 0.30.0 (P2): an only list ----
+
+    static final java.util.List<Pos> STAIRS = java.util.List.of(new Pos(0, 52, 0), new Pos(0, 51, 0), new Pos(1, 51, 0), new Pos(1, 50, 0),
+            new Pos(2, 50, 0), new Pos(2, 49, 0));
+
+    static BaritoneMask onlyMask() {
+        return new BaritoneMask(BaritoneMask.onlyBox(STAIRS), false, true, null, BaritoneMask.onlyCells(STAIRS));
+    }
+
+    @Test
+    void onlyListBoxIsItsBoundingBox() {
+        ClearBox b = BaritoneMask.onlyBox(STAIRS);
+        assertEquals(0, b.x1());
+        assertEquals(2, b.x2());
+        assertEquals(49, b.y1());
+        assertEquals(52, b.y2());
+        assertEquals(0, b.z1());
+        assertEquals(0, b.z2());
+        assertEquals(null, BaritoneMask.onlyBox(java.util.List.of()));
+        assertEquals(null, BaritoneMask.onlyCells(null));
+    }
+
+    @Test
+    void onlyListedCellsArePartOfTheSchematic() {
+        FakeWorld w = new FakeWorld();
+        BaritoneMask m = onlyMask();
+        assertEquals(Verdict.DIG, m.verdict(w, 1, 51, 0));
+        assertEquals(Verdict.OUTSIDE, m.verdict(w, 1, 52, 0), "in the bounding box, not listed: the step above stays");
+        assertEquals(Verdict.OUTSIDE, m.verdict(w, 2, 51, 0));
+        assertEquals(6, m.refresh(w));
+        java.util.Set<Long> snap = m.snapshot();
+        for (Pos p : STAIRS) assertTrue(snap.contains(BaritoneMask.packed(p.x(), p.y(), p.z())));
+        assertFalse(m.partOf(0, 49, 0, 0, 1, 0), "0 50 0 is not listed");
+        assertTrue(m.partOf(0, 49, 0, 1, 1, 0));
+        assertEquals(0, m.refused.get(), "unlisted cells are not refusals");
+    }
+
+    @Test
+    void onlyListStillAppliesTheRules() {
+        FakeWorld w = new FakeWorld();
+        w.set(1, 50, 0, "chest");
+        w.set(2, 49, 0, "air");
+        BaritoneMask m = onlyMask();
+        assertEquals(4, m.refresh(w), "the chest refused, the air empty");
+        assertEquals(Verdict.PROTECTED, m.verdict(w, 1, 50, 0));
+        BaritoneMask.Leftover left = m.leftover(w);
+        assertEquals(1, left.count(Verdict.PROTECTED));
+        assertEquals(4, left.unreachable(), "only listed cells count as left");
+        assertEquals(4, m.digCells(w).size());
+    }
+
     @Test
     void packedKeepsNegativeCoordinates() {
         long k = BaritoneMask.packed(-20, -60, -300);

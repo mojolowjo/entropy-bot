@@ -99,10 +99,36 @@ public final class BaritoneMask {
     }
 
     public BaritoneMask(ClearBox box, boolean force, boolean keepOres, Fence fence) {
+        this(box, force, keepOres, fence, null);
+    }
+
+    /**
+     * 0.30.0 (P2): an explicit cell list ({@code ClearJob.Options.only}: the staircase quarry, a surface dig). The box is
+     * the list's bounding box ({@link #onlyBox}); a cell of the box that is not listed is {@link Verdict#OUTSIDE}, never
+     * part of the schematic. only null: the whole box.
+     */
+    public BaritoneMask(ClearBox box, boolean force, boolean keepOres, Fence fence, Set<Long> only) {
         this.box = box;
         this.force = force;
         this.keepOres = keepOres;
         this.fence = fence;
+        this.only = only == null ? null : Set.copyOf(only);
+    }
+
+    /** The listed cells ({@link #packed}), or null for a whole box. */
+    public final Set<Long> only;
+
+    /** The packed cells of an only list (null or empty: null). */
+    public static Set<Long> onlyCells(List<Pos> cells) {
+        if (cells == null || cells.isEmpty()) return null;
+        Set<Long> s = new java.util.HashSet<>();
+        for (Pos p : cells) s.add(packed(p.x(), p.y(), p.z()));
+        return s;
+    }
+
+    /** The bounding box of an only list (what the air fill covers), or null for none. */
+    public static ClearBox onlyBox(List<Pos> cells) {
+        return cells == null || cells.isEmpty() ? null : ClearBox.around(cells);
     }
 
     /** The builder's question: may it break x y z (absolute coordinates)? Never throws. */
@@ -123,6 +149,7 @@ public final class BaritoneMask {
     /** The rule for one cell (may throw on a broken world; {@link #allows} catches). */
     public Verdict verdict(ClearWorld w, int x, int y, int z) {
         if (!box.contains(x, y, z)) return Verdict.OUTSIDE;
+        if (only != null && !only.contains(packed(x, y, z))) return Verdict.OUTSIDE;
         if (w.air(x, y, z)) return Verdict.EMPTY;
         if (w.fluid(x, y, z)) return liquidBlock(w, x, y, z) ? Verdict.EMPTY : Verdict.WATER;      // waterlogged: a block stands there
         if (w.unbreakable(x, y, z)) return Verdict.UNBREAKABLE;
