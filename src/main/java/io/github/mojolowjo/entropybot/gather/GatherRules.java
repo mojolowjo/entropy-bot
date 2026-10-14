@@ -179,6 +179,28 @@ public final class GatherRules {
      * wooden one from planks or logs), or null: give up with the step's text (another step, nothing to make one from,
      * or {@link #MAX_PICK_FIXES} crafts already).
      */
+    /** Quarry give-ups in a row after which gather digs the slope face in front instead (trial 8: five in a row). */
+    public static final int QUARRY_GIVEUPS = 2;
+
+    /** A "dig stone" step that ended with the builder giving up ("gave up (...)"), not a tool or water stop. */
+    public static boolean quarryGaveUp(String command, String msg) {
+        return command != null && msg != null && command.startsWith("dig stone") && msg.contains("gave up (");
+    }
+
+    /**
+     * 0.30.1 (package 4): the count of quarry give-ups in a row after a step: +1 for a give-up, 0 for any other end of a
+     * "dig stone", unchanged for other steps (a pickaxe craft in between does not reset it).
+     */
+    public static int quarryGiveUps(int before, String command, String msg) {
+        if (command == null || !command.startsWith("dig stone")) return before;
+        return quarryGaveUp(command, msg) ? before + 1 : 0;
+    }
+
+    /** True when the next step is the face dig ({@link #QUARRY_GIVEUPS} give-ups in a row). */
+    public static boolean faceDigDue(int giveUps) {
+        return giveUps >= QUARRY_GIVEUPS;
+    }
+
     public static String pickaxeFix(String command, String msg, Map<String, Integer> inv, int fixes) {
         if (command == null || msg == null || !command.startsWith("dig stone") || !msg.contains("needs a pickaxe")) return null;
         if (fixes >= MAX_PICK_FIXES) return null;
