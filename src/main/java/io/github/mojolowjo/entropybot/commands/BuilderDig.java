@@ -91,6 +91,11 @@ public final class BuilderDig {
         boolean holdSeen;
         double[] startXZ;
         Saved saved;
+        /** the drop sweep running now (the builder is stopped meanwhile), what comes after it, the totals */
+        io.github.mojolowjo.entropybot.clear.DropSweep sweep;
+        BuilderReport.End afterSweep;
+        boolean tripAfterSweep, sweptForTrip;
+        int sweepInv, picked, dropsLeft, sweeps;
     }
 
     static Seq.Step step(ClearJob.Options o) {
@@ -360,6 +365,7 @@ public final class BuilderDig {
             String err = prepare(s, p, st.clear, seq.jobs.core().commands);
             if (err != null) return err.replaceFirst("^error: ", "");
         }
+        if (s.sweep != null) return sweepTick(seq, st, s, p, now);
         if (!s.running) {
             if (s.inTrip) {
                 String how = s.caughtSet ? s.caught : null;
@@ -405,7 +411,11 @@ public final class BuilderDig {
         s.brokeAtPoll = b;
         seq.setStatus(s.job.label + ": broke " + b + " of " + s.startCells.size() + " (via baritone; " + s.mask.counters() + ")");
         // the bag is full: the builder stops, junk is thrown or taken home, then it starts again
-        if (!s.noDeposit && p.getInventory().getFreeSlot() < 0) return trip(seq, s, p);
+        if (!s.noDeposit && p.getInventory().getFreeSlot() < 0) {
+            // first what still fits (stacks with room), then the trip
+            if (!s.sweptForTrip) return startSweep(seq, s, p, now, null, true);
+            return trip(seq, s, p);
+        }
         IBaritone bar = Jobs.baritone();
         if (bar == null) return end(seq, st, s, p, null, "Baritone went away");
         IBuilderProcess bp = bar.getBuilderProcess();
@@ -424,7 +434,84 @@ public final class BuilderDig {
                 return "wait";                              // next tick: startBuilder
             }
         }
-        return end(seq, st, s, p, e, null);
+        return startSweep(seq, s, p, now, e, false);        // the drops first, then the report
+    }
+
+    // ---- the drop sweep (Baritone's builder never walks over its drops) ----
+
+    private static String startSweep(Seq seq, State s, LocalPlayer p, long now, BuilderReport.End e, boolean trip) {
+        stopBuilder(s);
+        s.sweep = new io.github.mojolowjo.entropybot.clear.DropSweep(s.job.box, now);
+        s.afterSweep = e;
+        s.tripAfterSweep = trip;
+        s.sweepInv = invTotal(p);
+        s.sweeps++;
+        seq.setStatus(s.job.label + ": picking up the drops (via baritone)");
+        return "wait";
+    }
+
+    private static String sweepTick(Seq seq, Seq.Step st, State s, LocalPlayer p, long now) {
+        var sw = s.sweep;
+        var cur = sw.current();
+        boolean alive = cur != null && dropEntity(cur.id()) != null;
+        IBaritone b = Jobs.baritone();
+        boolean idle = b == null || Jobs.idle(b);
+        var a = sw.tick(now, seenDrops(s, p, now), alive, idle);
+        if (a.kind() == io.github.mojolowjo.entropybot.clear.DropSweep.Kind.WALK) {
+            if (b != null) {
+                Jobs.safeSettings();
+                b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(new BlockPos(a.item().x(), a.item().y(), a.item().z())));
+            }
+            return "wait";
+        }
+        if (a.kind() == io.github.mojolowjo.entropybot.clear.DropSweep.Kind.WAIT) return "wait";
+        if (b != null) Jobs.cancel(b);
+        s.picked += Math.max(0, invTotal(p) - s.sweepInv);
+        s.dropsLeft = sw.capped ? sw.left : 0;
+        LOG.info("[entropybot] dig via baritone: drop sweep {}: {} walks, {}", s.sweeps, sw.walks, sw.note(s.picked));
+        s.sweep = null;
+        if (s.tripAfterSweep) {
+            s.sweptForTrip = true;
+            if (p.getInventory().getFreeSlot() >= 0) return "wait";     // room again: dig on (next tick starts the builder)
+            return trip(seq, s, p);
+        }
+        return end(seq, st, s, p, s.afterSweep, null);
+    }
+
+    /** The drops the plain dig would chase (its dropWanted and junk-drop rules), in the sweep's area, with room in the bag. */
+    private static List<io.github.mojolowjo.entropybot.clear.DropSweep.Item> seenDrops(State s, LocalPlayer p, long now) {
+        List<io.github.mojolowjo.entropybot.clear.DropSweep.Item> out = new ArrayList<>();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return out;
+        Map<String, Integer> inv = null;
+        var pinv = p.getInventory();
+        for (net.minecraft.world.entity.Entity e : mc.level.entitiesForRendering()) {
+            if (!(e instanceof net.minecraft.world.entity.item.ItemEntity ie) || !e.isAlive()) continue;
+            int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
+            if (!s.sweep.covers(x, y, z) || !s.job.dropWanted(x, y, z)) continue;
+            if (s.job.junkDrop) {
+                if (inv == null) inv = io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
+                if (!io.github.mojolowjo.entropybot.clear.JunkDrop.chase(io.github.mojolowjo.entropybot.gui.Gui.itemId(ie.getItem()), s.job, inv, x, y, z, now)) continue;
+            }
+            if (pinv.getFreeSlot() < 0 && pinv.getSlotWithRemainingSpace(ie.getItem()) < 0) continue;
+            out.add(new io.github.mojolowjo.entropybot.clear.DropSweep.Item(String.valueOf(e.getId()), x, y, z, e.distanceTo(p)));
+        }
+        return out;
+    }
+
+    private static net.minecraft.world.entity.item.ItemEntity dropEntity(String id) {
+        try {
+            var e = Minecraft.getInstance().level.getEntity(Integer.parseInt(id));
+            return e instanceof net.minecraft.world.entity.item.ItemEntity ie && ie.isAlive() && !ie.isRemoved() ? ie : null;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private static int invTotal(LocalPlayer p) {
+        int n = 0;
+        for (int c : io.github.mojolowjo.entropybot.gui.Gui.inventory(p).values()) n += c;
+        return n;
     }
 
     /** Debug (DIG_VIA_BARITONE_PLAN section 9): the look/click state while the builder runs, every 20 ticks. */
@@ -538,6 +625,7 @@ public final class BuilderDig {
             }
         }
         stopBuilder(s);
+        s.sweptForTrip = false;                             // after this trip, the next full bag sweeps first again
         seq.splice(seq.idx, steps);
         s.inTrip = true;
         s.tripKind = kind;
@@ -573,6 +661,7 @@ public final class BuilderDig {
         } else {
             msg = BuilderReport.text(s.job.label, broke, left, gave, s.mask.errors.get());
         }
+        if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
         s.job.broken = broke;
         if (left != null) s.job.skip.putAll(left.waterCells);
         int leftN = 0;
