@@ -262,6 +262,7 @@ public final class Clearing {
      * the clear hears how it ended and carries on (the bridge's finishJob -> resume). False when no clear waits on it.
      */
     static boolean caught(Seq seq, String r) {
+        if (BuilderDig.caught(seq, r)) return true;             // 0.29.0: a trip of a dig via baritone
         for (int j = seq.idx + 1; j < seq.steps.size(); j++) {
             Seq.Step c = seq.steps.get(j);
             if (!c.type.equals("clear") || !(c.state instanceof ClearState s) || !s.inTrip) continue;
@@ -323,6 +324,8 @@ public final class Clearing {
                 if (ps.pickup != null && ps.clicked) tables.add(ps.pickup);
             } else if (st.state instanceof BuildState bs && !bs.done) {
                 endBuild(bs);
+            } else if (st.state instanceof BuilderDig.State ds) {
+                BuilderDig.ended(ds);                   // 0.29.0: the builder off, its settings back, its leases
             } else if (st.state instanceof FloorSteps.FloorState fs) {
                 FloorSteps.ended(fs);                   // B7e F: the fill's place leases
             }
@@ -374,6 +377,7 @@ public final class Clearing {
         if (FloorSteps.KIND_JUNK.equals(st.kind)) return FloorSteps.junkRun(seq, st, p);
         if (WaterSteps.KIND_WATER.equals(st.kind)) return WaterSteps.waterRun(seq, st, p);          // water plan
         if (WaterSteps.KIND_DRAIN.equals(st.kind)) return WaterSteps.drainRun(seq, st, p);
+        if (BuilderDig.KIND.equals(st.kind)) return BuilderDig.run(seq, st, p);                  // 0.29.0: dig ... via baritone
         return clearRun(seq, st, p);
     }
 

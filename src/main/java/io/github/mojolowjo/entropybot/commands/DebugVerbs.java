@@ -243,7 +243,8 @@ public final class DebugVerbs {
             }
             return "baritone: " + (b == null ? "not loaded" : "in control: " + control + ", " + (pathing ? "pathing" : "not pathing") + ", goal " + goal)
                     + " | protected list: " + io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.held()
-                    + " | changed settings: " + (changed.isEmpty() ? "none" : String.join(", ", changed));
+                    + " | changed settings: " + (changed.isEmpty() ? "none" : String.join(", ", changed))
+                    + " | " + BuilderDig.statusLine();
         } catch (Throwable t) {
             return "error: " + t;
         }

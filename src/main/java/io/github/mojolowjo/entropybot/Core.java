@@ -215,6 +215,7 @@ public final class Core {
         if (terrain != null) a.add("terrain");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
+        try { if (baritone.hooked() && io.github.mojolowjo.entropybot.commands.BuilderDig.checkLine().equals("builder: ok")) a.add("builder"); } catch (Throwable ignored) {}
         if (io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.available()) a.add("route:map");
         return a;
     }

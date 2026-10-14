@@ -22,6 +22,13 @@ public final class DigWhy {
      * @param names    cell key -&gt; short block name (may be empty, never null)
      * @return " - why - next: ..." text to append, or null (it broke something, or the prefix says why already)
      */
+    /** "needs a pickaxe for stone - next: craft wooden_pickaxe 1" (or a better one): one text for plain dig and via baritone. */
+    public static String pickaxeText(String block) {
+        return block.matches(".*(stone|cobble|deepslate|ore|andesite|diorite|granite|tuff).*") && !block.contains("diamond") && !block.contains("obsidian")
+                ? "needs a pickaxe for " + block + " - next: craft wooden_pickaxe 1"
+                : "needs a better pickaxe for " + block + " - next: craft stone_pickaxe 1 (iron_pickaxe for diamond, gold, redstone)";
+    }
+
     public static String reason(String prefix, int broken, int left, Map<String, String> skip, Map<String, String> fails,
                                 Collection<String> noSpot, Map<String, String> protectedLeft, Map<String, String> names) {
         if (broken > 0) return null;
@@ -38,9 +45,7 @@ public final class DigWhy {
                     return "needs an axe for " + block + " - next: craft wooden_axe 1";
                 }
                 else {
-                    return block.matches(".*(stone|cobble|deepslate|ore|andesite|diorite|granite|tuff).*") && !block.contains("diamond") && !block.contains("obsidian")
-                            ? "needs a pickaxe for " + block + " - next: craft wooden_pickaxe 1"
-                            : "needs a better pickaxe for " + block + " - next: craft stone_pickaxe 1 (iron_pickaxe for diamond, gold, redstone)";
+                    return pickaxeText(block);
                 }
             }
         }
