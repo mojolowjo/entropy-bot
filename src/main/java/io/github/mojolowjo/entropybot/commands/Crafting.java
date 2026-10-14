@@ -914,7 +914,12 @@ final class Crafting {
             case "smeltreg": return smeltReg(s, st);
             case "smeltfuelwait": {
                 // the furnace stays open while the other fuel burns; go on when its slot is empty or holds ours
-                if (!Gui.open(p)) return "next";
+                if (!Gui.open(p)) {
+                    // review: the furnace closed under us (a hit, a player): never run the top-up against no furnace
+                    addNote(s, "the furnace at " + Jobs.fmt(st.pos) + " closed while its other fuel burned; my fuel not added");
+                    if (s.idx + 1 < s.steps.size() && "ops".equals(s.steps.get(s.idx + 1).type)) s.steps.remove(s.idx + 1);
+                    return "next";
+                }
                 FurnaceJobs.Slots fs = furnaceSlots(p);
                 if (fs.fuel() == null || fs.fuelN() <= 0 || fs.fuel().equals(st.smelt.fuel())) return "next";
                 if (elapsed >= st.ticks) {

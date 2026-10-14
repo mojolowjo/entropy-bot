@@ -220,6 +220,15 @@ public final class Clearing {
         String stage;
         long stageTick, layerStart;
         int layerY = Integer.MIN_VALUE;
+        // review 1: the stall clock runs from the first placement or once I am near the zone (the walk there never counts)
+        ClearBox box;
+        boolean clockOn;
+        // review 4: the missing cells, recounted in pick/check and every 20 ticks otherwise
+        List<Pos> missing;
+        long missingAt = -1;
+        // (8) the block for the current pick (a filler under a hole, else the build block); (9) the not-moving watch
+        String placeId;
+        long lastFeet = Long.MIN_VALUE, stillSince;
     }
 
     /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
@@ -1039,12 +1048,34 @@ public final class Clearing {
         LiveWorld w = new LiveWorld();
         w.set(p);
         int miss = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells).size();
+        if (!bs.clockOn && (miss < bs.lastMissing || bs.box == null || bs.box.distTo(p.getX(), p.getY(), p.getZ()) <= 8)) {
+            bs.clockOn = true;
+            bs.lastChange = now;
+        }
         if (miss < bs.lastMissing) bs.lastChange = now;
         bs.lastMissing = miss;
+        if (!bs.clockOn) bs.lastChange = now;
         io.github.mojolowjo.entropybot.clear.BuilderReport.End e = b == null ? io.github.mojolowjo.entropybot.clear.BuilderReport.End.IDLE
                 : io.github.mojolowjo.entropybot.clear.BuilderReport.watch(!Jobs.idle(b) && b.getBuilderProcess().isActive(),
                 b.getBuilderProcess().isPaused(), now - bs.lastChange);
         if (miss == 0 && e == null) e = io.github.mojolowjo.entropybot.clear.BuilderReport.End.IDLE;
+        // (9) the fast path: the builder has goals but no path and I have not moved a block for 10 s = nothing it can do
+        long feet = p.blockPosition().asLong();
+        if (feet != bs.lastFeet) {
+            bs.lastFeet = feet;
+            bs.stillSince = now;
+        }
+        if (e == null && b != null && bs.clockOn) {
+            try {
+                var pb = b.getPathingBehavior();
+                if (b.getBuilderProcess().isActive() && !pb.isPathing() && pb.getGoal() != null && now - bs.stillSince >= 200) {
+                    LOG.info("[entropybot] build: Baritone has goals but no path and I stood still 10 s - placing the rest myself");
+                    e = io.github.mojolowjo.entropybot.clear.BuilderReport.End.STALLED;
+                }
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] build: the not-moving watch failed: {}", ex.toString());
+            }
+        }
         if (e == null) return "wait";
         LOG.info("[entropybot] build: Baritone's part ended ({}), {} of {} cells missing", e, miss, bs.cells.size());
         stopBuilderPart(bs);
@@ -1100,10 +1131,22 @@ public final class Clearing {
     private static String rimTick(Seq seq, BuildState bs, LocalPlayer p, long now) {
         LiveWorld w = new LiveWorld();
         w.set(p);
-        List<Pos> missing = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells);
+        boolean recount = bs.missing == null || bs.stage.equals("pick") || bs.stage.equals("check") || now - bs.missingAt >= 20;
+        if (recount) {
+            bs.missing = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells);
+            bs.missingAt = now;
+        }
+        List<Pos> missing = bs.missing;
+        if (bs.layerStart == 0) bs.layerStart = now;
         String blk = GuiCore.shortId(bs.id);
         int baritonePlaced = Math.max(0, bs.startMissing - missing.size() - bs.mine);
         if (missing.isEmpty()) return rimEnd(seq, bs, io.github.mojolowjo.entropybot.clear.RimPlan.doneText(bs.shape, blk, baritonePlaced, bs.mine));
+        // review 3: 90 s without a placement of mine ends it, in every stage (a walk that never ends too)
+        if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.LAYER_CAP_TICKS) {
+            IBaritone wb = Jobs.baritone();
+            if (wb != null && !Jobs.idle(wb)) Jobs.cancel(wb);
+            return rimStop(seq, bs, w, missing, baritonePlaced, null);
+        }
         switch (bs.stage) {
             case "pick" -> {
                 if (Gui.inventory(p).getOrDefault(bs.id, 0) <= 0) return rimStop(seq, bs, w, missing, baritonePlaced, io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_BLOCKS);
@@ -1114,8 +1157,16 @@ public final class Clearing {
                     bs.layerY = pk.cell().y();
                     bs.layerStart = now;
                 }
-                if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.LAYER_CAP_TICKS) return rimStop(seq, bs, w, missing, baritonePlaced, null);
                 bs.pick = pk;
+                bs.placeId = bs.id;
+                if (pk.filler()) {
+                    String fid = io.github.mojolowjo.entropybot.clear.RimPlan.filler(Gui.inventory(p), bs.id);
+                    if (fid == null) {
+                        giveUpCell(bs, pk.cell(), io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_SUPPORT);
+                        return "wait";
+                    }
+                    bs.placeId = fid;
+                }
                 if (pk.why() != null) {
                     giveUpCell(bs, pk.cell(), pk.why());
                     return "wait";
@@ -1154,7 +1205,7 @@ public final class Clearing {
                 }
                 String r;
                 try {
-                    r = placeAt(p, bs.id, c.x(), c.y(), c.z(), bs.leases);
+                    r = placeAt(p, bs.placeId != null ? bs.placeId : bs.id, c.x(), c.y(), c.z(), bs.leases);
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }
@@ -1172,7 +1223,10 @@ public final class Clearing {
                 if (now - bs.stageTick < 6) return "wait";
                 Pos c = bs.pick.cell();
                 if (PlaceRules.free(w, c.x(), c.y(), c.z())) triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
-                else bs.mine++;
+                else {
+                    if (!bs.pick.filler()) bs.mine++;
+                    bs.layerStart = now;                            // progress: the 90 s count again
+                }
                 bs.stage = "pick";
                 return "wait";
             }

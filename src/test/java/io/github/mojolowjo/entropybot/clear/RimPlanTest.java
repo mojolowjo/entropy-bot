@@ -64,6 +64,31 @@ class RimPlanTest {
         assertNull(pk.stand(), "standing on the corner's neighbour plank, the cell is in reach: no walk");
     }
 
+    @Test void aFromHereCellThatFailedOnceWalksOnItsSecondTry() {
+        FakeWorld w = hillside();
+        w.fill(5, 9, 53, 53, -2, 2, "oak_planks");
+        Pos c = new Pos(10, 53, 2);
+        Map<Pos, Integer> tries = new HashMap<>();
+        RimPlan.Pick first = RimPlan.next(w, List.of(c), tries, 9.5, 54, 2.5);
+        assertNull(first.stand(), "first try: from where I stand");
+        tries.put(c, 1);
+        RimPlan.Pick second = RimPlan.next(w, List.of(c), tries, 9.5, 54, 2.5);
+        assertNotNull(second.stand(), "second try: a stand spot, not the same click again");
+        tries.put(c, 2);
+        assertNull(RimPlan.next(w, List.of(c), tries, 9.5, 54, 2.5), "two tries used up");
+    }
+
+    @Test void otherBlocksInTheShapeAreNotAFinishedFloor() {
+        FakeWorld w = new FakeWorld();
+        ClearBox b = ClearBox.of(0, 53, 0, 1, 53, 1);
+        List<Pos> cells = RimPlan.shapeCells("floor", b);
+        w.fill(0, 1, 53, 53, 0, 1, "oak_planks");
+        w.set(0, 53, 0, "dirt");
+        assertEquals(1, RimPlan.otherBlocks(w, cells, "minecraft:oak_planks"));
+        assertEquals("done: nothing to place in the floor area (1 cell holds other blocks)", RimPlan.nothingText("floor", "oak_planks", 1));
+        assertEquals("done: the floor of oak_planks already stands", RimPlan.nothingText("floor", "oak_planks", 0));
+    }
+
     @Test void aFarCellNeedsAWalk() {
         FakeWorld w = hillside();
         w.fill(5, 9, 53, 53, -2, 2, "oak_planks");
@@ -89,6 +114,20 @@ class RimPlanTest {
         Pos hang = new Pos(0, 60, 0);                          // air under it
         assertNull(RimPlan.next(w, List.of(hang), new HashMap<>(), 0.5, 53, 0.5));
         assertEquals(RimPlan.Why.NO_SUPPORT, RimPlan.whyLeft(w, hang, Map.of()));
+    }
+
+    @Test void aCellOverAOneBlockHoleGetsAFillerFirst() {
+        FakeWorld w = new FakeWorld();
+        w.set(0, 52, 0, "air");                              // the hole under the floor cell 0 53 0
+        Pos cell = new Pos(0, 53, 0);
+        RimPlan.Pick pk = RimPlan.next(w, List.of(cell), new HashMap<>(), 1.5, 53, 0.5);
+        assertNotNull(pk);
+        assertTrue(pk.filler());
+        assertEquals(new Pos(0, 52, 0), pk.cell());
+        assertEquals("minecraft:cobblestone", RimPlan.filler(Map.of("minecraft:cobblestone", 3, "minecraft:dirt", 9), "minecraft:oak_planks"));
+        assertEquals("minecraft:dirt", RimPlan.filler(Map.of("minecraft:dirt", 9), "minecraft:oak_planks"));
+        assertEquals("minecraft:oak_planks", RimPlan.filler(Map.of("minecraft:oak_planks", 1), "minecraft:oak_planks"));
+        assertNull(RimPlan.filler(Map.of(), "minecraft:oak_planks"));
     }
 
     @Test void lowestLayerFirst() {

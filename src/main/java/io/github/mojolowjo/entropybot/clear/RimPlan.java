@@ -108,16 +108,37 @@ public final class RimPlan {
     private static double sq(double v) { return v * v; }
 
     /** The next cell's plan: where to stand (null: place from where the bot stands), or why the cell is left. */
-    public record Pick(Pos cell, Pos stand, Why why) {}
+    public record Pick(Pos cell, Pos stand, Why why, boolean filler) {
+        public Pick(Pos cell, Pos stand, Why why) { this(cell, stand, why, false); }
+    }
+
+    /** Filler blocks for a hole under a cell, in order (then the build block itself). */
+    public static final List<String> FILLERS = List.of("minecraft:cobblestone", "minecraft:dirt");
+
+    /** The filler to use: cobblestone, dirt, else the build block; null when the bag has none. */
+    public static String filler(Map<String, Integer> bag, String block) {
+        for (String f : FILLERS) if (bag.getOrDefault(f, 0) > 0) return f;
+        return bag.getOrDefault(block, 0) > 0 ? block : null;
+    }
 
     /**
      * The next cell to place among {@code missing}: lowest layer first, then supported ones nearest the bot; a cell
      * tried {@link #MAX_TRIES} times is skipped. null when nothing is left to try. A cell in reach from the bot's feet
-     * needs no walk (stand null); one with no stand spot is a Pick with NO_STAND (the caller marks it tried out).
+     * needs no walk (stand null) on its first try only (a second try always walks to a stand spot); one with no stand spot is a Pick with NO_STAND (the caller marks it tried out).
      */
     public static Pick next(ClearWorld w, List<Pos> missing, Map<Pos, Integer> tries, double bx, double by, double bz) {
         List<Pos> open = new ArrayList<>();
         for (Pos c : missing) if (tries.getOrDefault(c, 0) < MAX_TRIES && supported(w, c)) open.add(c);
+        boolean filler = false;
+        if (open.isEmpty()) {
+            // package 4 (8): a cell over a one-block hole: fill the hole first (its own cell, with a block under it)
+            for (Pos c : missing) {
+                Pos below = new Pos(c.x(), c.y() - 1, c.z());
+                if (tries.getOrDefault(c, 0) < MAX_TRIES && !supported(w, c) && PlaceRules.free(w, below.x(), below.y(), below.z())
+                        && tries.getOrDefault(below, 0) < MAX_TRIES && supported(w, below)) open.add(below);
+            }
+            filler = true;
+        }
         if (open.isEmpty()) return null;
         int low = open.stream().mapToInt(Pos::y).min().getAsInt();
         open.removeIf(c -> c.y() != low);
@@ -125,9 +146,9 @@ public final class RimPlan {
         Pos c = open.get(0);
         // the feet are on a block of the cell's level (or higher) and the cell is not under the body: place from here
         int fx = (int) Math.floor(bx), fy = (int) Math.floor(by), fz = (int) Math.floor(bz);
-        if (fy > c.y() && !PlaceRules.bodyIn(fx, fy, fz, c) && reaches(c, bx, by, bz, PlaceRules.PLACE_REACH)) return new Pick(c, null, null);
+        if (tries.getOrDefault(c, 0) == 0 && fy > c.y() && !PlaceRules.bodyIn(fx, fy, fz, c) && reaches(c, bx, by, bz, PlaceRules.PLACE_REACH)) return new Pick(c, null, null, filler);
         Pos s = standFor(w, c, bx, by, bz);
-        return s == null ? new Pick(c, null, Why.NO_STAND) : new Pick(c, s, null);
+        return s == null ? new Pick(c, null, Why.NO_STAND, filler) : new Pick(c, s, null, filler);
     }
 
     /** Why a missing cell was left at the end (no support, else the reason it was given up with). */
@@ -142,6 +163,18 @@ public final class RimPlan {
         return "done: " + shape + " of " + block + " (Baritone placed " + baritone + ", I placed " + mine + ")";
     }
 
+    /** Cells of the shape that hold something other than block {@code id} (dirt, stone...: nothing to place there). */
+    public static int otherBlocks(ClearWorld w, List<Pos> cells, String id) {
+        int n = 0;
+        for (Pos c : cells) if (!PlaceRules.free(w, c.x(), c.y(), c.z()) && !id.equals(w.id(c.x(), c.y(), c.z()))) n++;
+        return n;
+    }
+
+    /** Nothing to place: "done: the floor of X already stands", or "done: nothing to place in the floor area (N cells hold other blocks)". */
+    public static String nothingText(String shape, String block, int other) {
+        return other == 0 ? standsText(shape, block)
+                : "done: nothing to place in the " + shape + " area (" + other + " cell" + (other == 1 ? " holds" : "s hold") + " other blocks)";
+    }
     /** "done: the floor of spruce_planks already stands" (a rerun of a finished step: nothing is started). */
     public static String standsText(String shape, String block) {
         return "done: the " + shape + " of " + block + " already stands";

@@ -28,6 +28,13 @@ class QuarrySlopeTest {
         assertTrue(p.cells().stream().anyMatch(c -> c[0] == 2 && c[1] == 64 && c[2] == 0));
     }
 
+    @Test void aChestOrWaterAtBodyHeightAheadIsLeftNotTheEnd() {
+        StonePit.Plan p = StonePit.plan((x, y, z) -> x == 1 && y == 64 && z == 0 ? StonePit.Cell.HARD
+                : x == 1 && y == 65 && z == 1 ? StonePit.Cell.LIQUID : slope(x, y, z), new int[]{0, 64, 0}, new int[]{1, 0}, 64);
+        assertNull(p.err(), String.valueOf(p.err()));
+        assertTrue(p.cells().stream().noneMatch(c -> c[0] == 1 && c[1] == 64 && c[2] == 0));
+    }
+
     @Test void flatGroundIsUnchanged() {
         // flat: everything above y 63 is air, so the room cells add nothing (column 1 starts at x 2, y 63)
         StonePit.Plan p = StonePit.plan((x, y, z) -> y >= 64 ? StonePit.Cell.AIR : StonePit.Cell.STONE, new int[]{0, 64, 0}, new int[]{1, 0}, 3);

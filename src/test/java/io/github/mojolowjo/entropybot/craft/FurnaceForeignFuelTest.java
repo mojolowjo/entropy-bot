@@ -45,6 +45,18 @@ class FurnaceForeignFuelTest {
         assertEquals(Put.BUSY, FurnaceJobs.check(s, PLANKS, null, 4).put());
     }
 
+    @Test void aLavaBucketSmeltsTheJobAsIs() {
+        // 100 items: never a top-up (the slot keeps the empty bucket afterwards, which would block our fuel)
+        var c = FurnaceJobs.check(fuel("minecraft:lava_bucket", 1), PLANKS, null, 64);
+        assertEquals(Put.FUEL_AS_IS, c.put());
+        assertEquals(1000, FurnaceJobs.burnSeconds("minecraft:lava_bucket", 1));
+    }
+
+    @Test void anEmptyBucketInTheFuelSlotIsNotFuel() {
+        // the left-over bucket: no burn time, counts as 1 smelt at most -> burned first, and the wait gives up (capped)
+        assertEquals(Put.FUEL_BURN_FIRST, FurnaceJobs.check(fuel("minecraft:bucket", 1), PLANKS, null, 8).put());
+    }
+
     @Test void planksSmeltOneAndAHalf() {
         assertEquals(1.5, FurnaceJobs.smeltsPer("minecraft:oak_planks"));
         assertEquals(1, FurnaceJobs.smeltsPer("modded:weird_fuel"));

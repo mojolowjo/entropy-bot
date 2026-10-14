@@ -45,6 +45,8 @@ public final class StonePit {
                 for (int y = top; y >= feet[1] - i && stop == null; y--) {
                     if (i == 0 && y < feet[1]) break;
                     Cell c = w.at(x, y, z);
+                    // column 0 is only walking room: a block I can't break or a fluid there is left, never the plan's end
+                    if (i == 0 && (c == Cell.LIQUID || c == Cell.HARD)) continue;
                     if (c == Cell.LIQUID) stop = "water or lava at " + x + " " + y + " " + z;
                     else if (c == Cell.HARD) stop = "a block I can't break at " + x + " " + y + " " + z;
                     else if (c != Cell.AIR) {
