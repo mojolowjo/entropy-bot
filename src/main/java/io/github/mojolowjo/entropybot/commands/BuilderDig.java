@@ -64,7 +64,7 @@ public final class BuilderDig {
     static final int MAX_RESTARTS = 5;
 
     static final class Saved {
-        boolean buildInLayers, layerOrder, breakFromAbove;
+        boolean buildInLayers, layerOrder, breakFromAbove, remainWithExistingLookDirection;
         int layerHeight;
     }
 
@@ -248,6 +248,7 @@ public final class BuilderDig {
             sv.layerOrder = st.layerOrder.value;
             sv.breakFromAbove = st.breakFromAbove.value;
             sv.layerHeight = st.layerHeight.value;
+            sv.remainWithExistingLookDirection = st.remainWithExistingLookDirection.value;
             s.saved = sv;
         }
         st.allowBreak.value = true;
@@ -258,6 +259,8 @@ public final class BuilderDig {
         st.breakFromAbove.value = true;
         st.buildIgnoreExisting.value = false;
         st.allowInventory.value = true;
+        // live check 2026-10-13: with it on, the in-place click on a block it already looks at never lands in this pack
+        st.remainWithExistingLookDirection.value = false;
     }
 
     /** Puts every setting this job changed back (safe travel settings, the builder's own as they were). */
@@ -272,6 +275,7 @@ public final class BuilderDig {
                 st.layerOrder.value = s.saved.layerOrder;
                 st.breakFromAbove.value = s.saved.breakFromAbove;
                 st.layerHeight.value = s.saved.layerHeight;
+                st.remainWithExistingLookDirection.value = s.saved.remainWithExistingLookDirection;
             }
         } catch (Throwable t) {
             LOG.warn("[entropybot] dig via baritone: couldn't restore settings: {}", t.toString());
