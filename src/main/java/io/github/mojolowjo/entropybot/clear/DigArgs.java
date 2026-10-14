@@ -32,6 +32,26 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
         this(n, force, ores, floor, floorBlock, junkDrop, water, large, surface, depth, false);
     }
 
+    /** 0.30.0: "dig stone [n] [via baritone|via engine]": n (default 64, 1..256) and the words' choice. */
+    public record Stone(int n, boolean viaBaritone, boolean viaEngine) {}
+
+    /** The "stone ..." words of dig, or null when the line is not one (rest: after "dig"). */
+    public static Stone stone(String rest) {
+        String[] w = rest == null ? new String[0] : rest.trim().toLowerCase().split("\\s+");
+        if (w.length < 1 || !w[0].equals("stone")) return null;
+        int i = 1, n = 64;
+        if (i < w.length && w[i].matches("\\d{1,6}")) n = Math.max(1, Math.min(256, Integer.parseInt(w[i++])));
+        boolean via = false, engine = false;
+        if (i < w.length) {
+            if (w[i].equals("via")) i++;
+            if (i != w.length - 1) return null;
+            if (w[i].equals("baritone")) via = true;
+            else if (w[i].equals("engine")) engine = true;
+            else return null;
+        }
+        return new Stone(n, via, engine);
+    }
+
     /** True for {@code dig x1 z1 x2 z2 +N|-N}. */
     public boolean surfaceForm() { return surface != null; }
 

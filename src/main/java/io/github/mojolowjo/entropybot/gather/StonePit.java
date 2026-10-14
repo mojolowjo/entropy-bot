@@ -65,4 +65,24 @@ public final class StonePit {
         String d = dir[0] > 0 ? "east" : dir[0] < 0 ? "west" : dir[1] > 0 ? "south" : "north";
         return "a staircase quarry " + d + ", " + p.columns() + " columns, about " + p.stone() + " stone" + (p.stone() < n ? " (less than " + n + ": run it again from the bottom for more)" : "");
     }
+
+    /** The items a quarry is for (its end text says how many of them it got). */
+    public static final List<String> COUNTED = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate");
+
+    /**
+     * 0.30.0 (P2): the clear options of "dig stone n": exactly the plan's cells (in the plan's order) as the only list, ores
+     * kept, water/lava ends it as "blocked by"; via: Baritone's builder breaks them (BuilderDig), else the engine.
+     */
+    public static io.github.mojolowjo.entropybot.clear.ClearJob.Options options(Plan p, int n, String label, boolean via) {
+        List<io.github.mojolowjo.entropybot.clear.Pos> only = new ArrayList<>();
+        for (int[] c : p.cells()) only.add(new io.github.mojolowjo.entropybot.clear.Pos(c[0], c[1], c[2]));
+        return new io.github.mojolowjo.entropybot.clear.ClearJob.Options().only(only).collect(false).label(label).liquidBlocks(true)
+                .line("dig stone " + n).viaBaritone(via);
+    }
+
+    /** "; got N cobblestone" for the end text (N: the counted items gained, never below 0). */
+    public static String gotText(int before, int after) {
+        int g = Math.max(0, after - before);
+        return "; got " + g + " cobblestone";
+    }
 }

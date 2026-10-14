@@ -98,6 +98,9 @@ public final class BuilderDig {
         int sweepInv, picked, dropsLeft, sweeps;
         /** a block left that no tool in the bag can harvest (the end says "needs a pickaxe for ..."), or null */
         String toolStop;
+        /** 0.30.0: items whose gain the end text names (the quarry: cobblestone), the bag's count at the builder's first start */
+        List<String> countIds;
+        int countStart = -1;
     }
 
     static Seq.Step step(ClearJob.Options o) {
@@ -165,6 +168,11 @@ public final class BuilderDig {
      * the reply), then the Seq [restock trips] [this step]. The builder starts at the step's first tick.
      */
     static String start(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before) {
+        return start(c, p, o, before, null);
+    }
+
+    /** countIds: the end text says how many of these it got (the quarry's cobblestone); null: not. */
+    static String start(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before, List<String> countIds) {
         String why = unavailable();
         if (why != null) {
             LOG.warn("[entropybot] dig via baritone: builder not available ({}), plain dig instead", why);
@@ -176,6 +184,7 @@ public final class BuilderDig {
         if (bad != null) return "error: dig via baritone needs Baritone's " + bad + " - b set it back (or dig without via baritone)";
         Seq.Step st = step(o);
         State s = (State) st.state;
+        s.countIds = countIds;
         String err = prepare(s, p, o, c);
         if (err != null) return err;
         Seq seq = new Seq(c.jobs, c.storage, s.job.label, List.of(), "always");
@@ -384,6 +393,7 @@ public final class BuilderDig {
             if (le != null) return end(seq, st, s, p, null, "the guard: " + le.replaceFirst("^error: ", ""));
             String nt = toolMissing(s, p);
             if (nt != null) return toolEnd(seq, st, s, p, nt);
+            if (s.countIds != null && s.countStart < 0) s.countStart = countOf(p, s.countIds);
             try {
                 startBuilder(s, now);
             } catch (Throwable t) {
@@ -552,6 +562,13 @@ public final class BuilderDig {
         }
     }
 
+    private static int countOf(LocalPlayer p, List<String> ids) {
+        Map<String, Integer> inv = io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
+        int n = 0;
+        for (String id : ids) n += inv.getOrDefault(id, 0);
+        return n;
+    }
+
     private static int invTotal(LocalPlayer p) {
         int n = 0;
         for (int c : io.github.mojolowjo.entropybot.gui.Gui.inventory(p).values()) n += c;
@@ -707,6 +724,7 @@ public final class BuilderDig {
         }
         if (s.toolStop != null && stop == null) msg = BuilderReport.noTool(s.job.label, broke, s.toolStop);
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
+        if (s.countIds != null && s.countStart >= 0) msg += io.github.mojolowjo.entropybot.gather.StonePit.gotText(s.countStart, countOf(p, s.countIds));
         s.job.broken = broke;
         if (left != null) s.job.skip.putAll(left.waterCells);
         int leftN = 0;

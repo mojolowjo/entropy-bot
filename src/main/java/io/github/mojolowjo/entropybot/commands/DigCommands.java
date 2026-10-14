@@ -247,7 +247,7 @@ final class DigCommands {
      * from my feet, long enough for n stone; one careful clear of exactly those cells (the areas, leases, tools, base
      * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
      */
-    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from) {
+    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from, boolean via) {
         int n = rest.isEmpty() ? 64 : Math.max(1, Math.min(256, Integer.parseInt(rest)));
         net.minecraft.world.level.Level lv = p.level();
         int[] here = Jobs.here(p);
@@ -264,18 +264,21 @@ final class DigCommands {
             if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN)
                 return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
         }
-        List<io.github.mojolowjo.entropybot.clear.Pos> only = new ArrayList<>();
-        for (int[] cell : plan.cells()) only.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2]));
         String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
-        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns", n, Jobs.fmt(feet), only.size(), plan.stone(), plan.columns());
-        ClearJob.Options o = new ClearJob.Options().only(only).collect(false).label(label).liquidBlocks(true).line("dig stone " + n);
-        return startClear(c, p, o, restockSteps(c, p, only.size()));
+        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns, {}", n, Jobs.fmt(feet), plan.cells().size(), plan.stone(), plan.columns(),
+                via ? "via baritone" : "via engine");
+        // 0.30.0 (P2): the same cells, broken by Baritone's builder (only those cells: the staircase keeps its shape)
+        ClearJob.Options o = io.github.mojolowjo.entropybot.gather.StonePit.options(plan, n, label, via);
+        List<Seq.Step> before = restockSteps(c, p, plan.cells().size());
+        if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.COUNTED);
+        return startClear(c, p, o, before);
     }
 
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
-        if (rest != null && rest.trim().toLowerCase().matches("^stone(\\s+\\d+)?$")) return stoneQuarry(c, p, rest.trim().substring(5).trim(), from);   // 0.28.2
+        DigArgs.Stone sw = DigArgs.stone(rest);                // 0.28.2; 0.30.0: [via baritone|via engine]
+        if (sw != null) return stoneQuarry(c, p, String.valueOf(sw.n()), from, sw.viaBaritone());
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);
