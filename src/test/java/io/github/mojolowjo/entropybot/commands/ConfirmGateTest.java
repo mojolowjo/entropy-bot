@@ -211,4 +211,14 @@ class ConfirmGateTest {
         assertTrue(c.gate(O, "deposit then dig 0 0 0 99 99 99", false, 0).reply().startsWith("error: that box is too big"));
         asks(c.gate(O, "dig 0 0 0 19 19 49", false, 0));                                    // 20000 exactly: asks
     }
-}
+
+    // 0.30.0: "stone" is the quarry's word, never an area (dig stone 24 answered "no area called stone")
+    @Test
+    void stoneIsNeverAnArea() {
+        assertNull(ConfirmGate.digArea(java.util.List.of("stone", "24")));
+        assertNull(ConfirmGate.digArea(java.util.List.of("stone")));
+        assertNull(ConfirmGate.digArea(java.util.List.of("stone", "8", "via", "engine")));
+        assertEquals("base", ConfirmGate.digArea(java.util.List.of("base", "-3")));
+        assertTrue(PolicyCommands.AREA_WORDS.contains("stone"), "no area may be named stone");
+        assertEquals(24, io.github.mojolowjo.entropybot.clear.DigArgs.stone("stone 24").n());
+    }}

@@ -30,7 +30,7 @@ public final class DigForms {
         for (int i = 1; i < words.size(); i++) {
             String w = words.get(i);
             if (!AREA_WORDS.contains(w) && !w.matches("^[+-]\\d{1,4}$") && !w.equals("confirm"))
-                return "usage: dig <area> [-N|+N] [ores] [junk drop] [water [large]] [via engine]";
+                return "usage: dig <area> [-N|+N] [ores] [junk drop] [water [large]] [via engine] (stone is not an area: dig stone [n] is the quarry)";
         }
         if (allY && signed(words) == null)
             return "error: " + name + " covers all heights: add -N for N below the surface (dig " + name + " -3) or +N above it";

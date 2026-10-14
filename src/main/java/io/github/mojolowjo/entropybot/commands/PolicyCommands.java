@@ -52,7 +52,8 @@ public final class PolicyCommands {
     /** The words "area" takes as subcommands (and the old ones, so an old line never makes an area): no area name. */
     static final java.util.Set<String> AREA_WORDS = java.util.Set.of("list", "show", "add", "corner1", "corner2", "grow", "remove",
             "protect", "unprotect", "near", "here", "confirm", "on", "off", "status", "change", "del", "name", "type",
-            "neutral", "destroy", "main", "safe", "all", "me", "candidates");
+            "neutral", "destroy", "main", "safe", "all", "me", "candidates",
+            "stone");     // 0.30.0: "dig stone [n]" is the quarry, so no area may be called stone
 
     private final JsonObject p;
     private final Guard guard;
