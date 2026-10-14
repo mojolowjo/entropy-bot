@@ -246,7 +246,7 @@ public final class PolicyCommands {
             + "| area change type <name> <type> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (types: neutral, destroy, main, safe)";
 
     /**
-     * Parses "here <r> <name> [type] [down up]" (r != null; y1/y2 = down/up) and "x z x2 z2 <name> [type]
+     * Parses "here &lt;r&gt; &lt;name&gt; [type] [down up]" (r != null; y1/y2 = down/up) and "x z x2 z2 &lt;name&gt; [type]
      * [y1 y2]" (xz != null). Pure, for {@code AreaNamesTest}.
      */
     static NewArea parseNew(List<String> w) {
@@ -291,7 +291,6 @@ public final class PolicyCommands {
             if (ints.size() != 2) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
             y1 = ints.get(0);
             y2 = ints.get(1);
-            if (r != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
         }
 
         String name;
@@ -319,6 +318,7 @@ public final class PolicyCommands {
 
         String bad = badName(name);
         if (bad != null) return NewArea.err(bad);
+        if (r != null && y1 != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
 
         return new NewArea(name, type, xz, r, y1, y2, null);
     }
