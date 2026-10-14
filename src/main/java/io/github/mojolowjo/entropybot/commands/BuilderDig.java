@@ -98,6 +98,9 @@ public final class BuilderDig {
         int sweepInv, picked, dropsLeft, sweeps;
         /** a block left that no tool in the bag can harvest (the end says "needs a pickaxe for ..."), or null */
         String toolStop;
+        /** 0.30.0: items whose gain the end text names (the quarry: cobblestone), the bag's count at the builder's first start */
+        List<String> countIds;
+        int countStart = -1;
     }
 
     static Seq.Step step(ClearJob.Options o) {
@@ -127,14 +130,14 @@ public final class BuilderDig {
     /** "builder: ok" or "builder: NOT available (why) - dig via baritone falls back to plain dig" (ready line, check). */
     public static String checkLine() {
         String why = unavailable();
-        return why == null ? "builder: ok" : "builder: NOT available (" + why + ") - dig via baritone falls back to plain dig";
+        return why == null ? "builder: ok" : "builder: NOT available (" + why + ") - dig falls back to my own engine";
     }
 
     /** The check finding when the builder is missing (empty when fine). */
     static List<SelfCheck.Finding> findings() {
         String why = unavailable();
         if (why == null) return List.of();
-        return List.of(new SelfCheck.Finding("builder", checkLine(), "dig without via baritone (the plain dig works without it)"));
+        return List.of(new SelfCheck.Finding("builder", checkLine(), "dig ... via engine (my own engine works without it)"));
     }
 
     /** The status/debug line: "builder: active|paused|idle, broke N, mask calls N, refused K, last change Ts ago". */
@@ -165,17 +168,23 @@ public final class BuilderDig {
      * the reply), then the Seq [restock trips] [this step]. The builder starts at the step's first tick.
      */
     static String start(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before) {
+        return start(c, p, o, before, null);
+    }
+
+    /** countIds: the end text says how many of these it got (the quarry's cobblestone); null: not. */
+    static String start(Commands c, LocalPlayer p, ClearJob.Options o, List<Seq.Step> before, List<String> countIds) {
         String why = unavailable();
         if (why != null) {
             LOG.warn("[entropybot] dig via baritone: builder not available ({}), plain dig instead", why);
             o.viaBaritone(false);
             String r = DigCommands.startClear(c, p, o, before);
-            return r + " - builder: NOT available (" + why + "), so the plain dig";
+            return r + " - Baritone's builder is NOT available (" + why + "), so my own engine digs";
         }
         String bad = settingsProblem();
-        if (bad != null) return "error: dig via baritone needs Baritone's " + bad + " - b set it back (or dig without via baritone)";
+        if (bad != null) return "error: dig via baritone needs Baritone's " + bad + " - b set it back (or dig ... via engine)";
         Seq.Step st = step(o);
         State s = (State) st.state;
+        s.countIds = countIds;
         String err = prepare(s, p, o, c);
         if (err != null) return err;
         Seq seq = new Seq(c.jobs, c.storage, s.job.label, List.of(), "always");
@@ -232,7 +241,10 @@ public final class BuilderDig {
             return "error: couldn't read the guard's protect boxes: " + e;
         }
         Set<Long> fenced = s.fenced;
-        s.mask = new BaritoneMask(box, s.job.force, s.job.keepOres, (x, y, z) -> fenced.contains(BaritoneMask.packed(x, y, z)) ? "protect box or safe area" : null);
+        // 0.30.0 (P2): an only list (the staircase quarry, a surface dig): the job's box is its bounding box, the mask
+        // takes only the listed cells
+        s.mask = new BaritoneMask(box, s.job.force, s.job.keepOres, (x, y, z) -> fenced.contains(BaritoneMask.packed(x, y, z)) ? "protect box or safe area" : null,
+                BaritoneMask.onlyCells(o.only));
         s.startCells = Set.copyOf(s.mask.digCells(s.world));
         s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();
@@ -381,6 +393,7 @@ public final class BuilderDig {
             if (le != null) return end(seq, st, s, p, null, "the guard: " + le.replaceFirst("^error: ", ""));
             String nt = toolMissing(s, p);
             if (nt != null) return toolEnd(seq, st, s, p, nt);
+            if (s.countIds != null && s.countStart < 0) s.countStart = countOf(p, s.countIds);
             try {
                 startBuilder(s, now);
             } catch (Throwable t) {
@@ -549,6 +562,13 @@ public final class BuilderDig {
         }
     }
 
+    private static int countOf(LocalPlayer p, List<String> ids) {
+        Map<String, Integer> inv = io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
+        int n = 0;
+        for (String id : ids) n += inv.getOrDefault(id, 0);
+        return n;
+    }
+
     private static int invTotal(LocalPlayer p) {
         int n = 0;
         for (int c : io.github.mojolowjo.entropybot.gui.Gui.inventory(p).values()) n += c;
@@ -704,6 +724,7 @@ public final class BuilderDig {
         }
         if (s.toolStop != null && stop == null) msg = BuilderReport.noTool(s.job.label, broke, s.toolStop);
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
+        if (s.countIds != null && s.countStart >= 0) msg += io.github.mojolowjo.entropybot.gather.StonePit.gotText(s.countStart, countOf(p, s.countIds));
         s.job.broken = broke;
         if (left != null) s.job.skip.putAll(left.waterCells);
         int leftN = 0;

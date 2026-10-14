@@ -247,7 +247,7 @@ final class DigCommands {
      * from my feet, long enough for n stone; one careful clear of exactly those cells (the areas, leases, tools, base
      * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
      */
-    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from) {
+    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from, boolean via) {
         int n = rest.isEmpty() ? 64 : Math.max(1, Math.min(256, Integer.parseInt(rest)));
         net.minecraft.world.level.Level lv = p.level();
         int[] here = Jobs.here(p);
@@ -264,25 +264,28 @@ final class DigCommands {
             if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN)
                 return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
         }
-        List<io.github.mojolowjo.entropybot.clear.Pos> only = new ArrayList<>();
-        for (int[] cell : plan.cells()) only.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2]));
         String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
-        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns", n, Jobs.fmt(feet), only.size(), plan.stone(), plan.columns());
-        ClearJob.Options o = new ClearJob.Options().only(only).collect(false).label(label).liquidBlocks(true).line("dig stone " + n);
-        return startClear(c, p, o, restockSteps(c, p, only.size()));
+        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns, {}", n, Jobs.fmt(feet), plan.cells().size(), plan.stone(), plan.columns(),
+                via ? "via baritone" : "via engine");
+        // 0.30.0 (P2): the same cells, broken by Baritone's builder (only those cells: the staircase keeps its shape)
+        ClearJob.Options o = io.github.mojolowjo.entropybot.gather.StonePit.options(plan, n, label, via);
+        List<Seq.Step> before = restockSteps(c, p, plan.cells().size());
+        if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.COUNTED);
+        return startClear(c, p, o, before);
     }
 
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
-        if (rest != null && rest.trim().toLowerCase().matches("^stone(\\s+\\d+)?$")) return stoneQuarry(c, p, rest.trim().substring(5).trim(), from);   // 0.28.2
+        DigArgs.Stone sw = DigArgs.stone(rest);                // 0.28.2; 0.30.0: [via baritone|via engine]
+        if (sw != null) return stoneQuarry(c, p, String.valueOf(sw.n()), from, DigArgs.useBuilder(sw.viaEngine(), false));
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);
         if (a == null) return DIG_USAGE;
-        // 0.29.0: "via baritone" is for the box form only (the surface form and areas come later)
-        if (a.viaBaritone() && a.surfaceForm()) return "error: via baritone works with a box dig only for now (dig x1 y1 z1 x2 y2 z2 ... via baritone)";
-        if (a.viaBaritone() && a.floor()) return "error: floor doesn't work with via baritone yet - dig the box via baritone, then the floor without it";
+        // 0.30.0 (P2): Baritone's builder is the default (box, surface form, area); "via engine" the old path; a floor dig
+        // stays on the engine (the fill follows its clear)
+        if (a.viaBaritone() && a.floor()) return "error: floor doesn't work with via baritone yet - dig the box first, then the floor (dig ... floor uses my own engine)";
         if (a.surfaceForm()) return digSurface(c, p, a, rest, from);
         int[] n = a.n();
         boolean force = a.force(), ores = a.ores();
@@ -313,8 +316,9 @@ final class DigCommands {
         ClearJob.Options o = new ClearJob.Options().box(box).force(force).collect(ores).label(label).junkDrop(a.junkDrop()).explainSpots(true)
                 .liquidBlocks(true)           // water plan item 1: water or lava in the way ends it as "blocked by ..."
                 .water(a.water(), a.large()).line("dig " + rest.trim());
-        // 0.29.0 (P1): Baritone's builder breaks the box, the same rules as its mask (BuilderDig, clear/BaritoneMask)
-        if (a.viaBaritone()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
+        // 0.29.0 (P1): Baritone's builder breaks the box, the same rules as its mask (BuilderDig, clear/BaritoneMask);
+        // 0.30.0 (P2): the default, "via engine" for the old path
+        if (a.builder()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
@@ -374,7 +378,11 @@ final class DigCommands {
         String label = "digging " + name + " (" + t.word() + ", " + box.volume() + " blocks)" + (destroy ? " (built blocks too)" : "") + (ores ? " (ores too)" : "");
         ClearJob.Options o = new ClearJob.Options().box(box).collect(ores).label(label).junkDrop(junk).liquidBlocks(true).water(water, large).line("dig " + rest.trim());
         if (destroy) o.destroyArea(name);
-        LOG.info("[entropybot] dig {}: {} area, destroy lease {}", name, t.word(), destroy);
+        // 0.30.0 (P2): Baritone's builder unless "via engine"; a destroy dig (built blocks too, a destroy lease) stays on
+        // the engine: the builder's mask keeps built blocks and takes a plain break lease
+        boolean builder = DigArgs.useBuilder(words.contains("engine"), false) && !destroy;
+        LOG.info("[entropybot] dig {}: {} area, destroy lease {}, {}", name, t.word(), destroy, builder ? "via baritone" : "via engine");
+        if (builder) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
     }
 
@@ -419,6 +427,8 @@ final class DigCommands {
                 + (a.water() ? " (water" + (a.large() ? ", large" : "") + ")" : "");
         ClearJob.Options o = new ClearJob.Options().only(plan.blocks()).force(force).collect(ores).label(label).junkDrop(a.junkDrop())
                 .liquidBlocks(true).water(a.water(), a.large()).line("dig " + rest.trim());
+        // 0.30.0 (P2): the per-column list through Baritone's builder (an only list), unless "via engine"
+        if (a.builder()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, plan.blocks().size()));
         return startClear(c, p, o, restockSteps(c, p, plan.blocks().size()));
     }
 

@@ -19,7 +19,7 @@ class WaterWordsTest {
         DigArgs c = DigArgs.parse("1 2 3 4 5 6 large floor");
         assertTrue(c.water() && c.large(), "large alone means water too");
         assertFalse(DigArgs.parse("1 2 3 4 5 6 ores").water());
-        assertTrue(DigArgs.USAGE.endsWith("[water [large]]"));
+        assertTrue(DigArgs.USAGE.endsWith("[water [large]] [via engine]"));
     }
 
     @Test

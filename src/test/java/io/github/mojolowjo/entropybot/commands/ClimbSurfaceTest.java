@@ -43,7 +43,7 @@ class ClimbSurfaceTest {
         ClimbPlan.Out o = ClimbPlan.walledIn(world(ring(), Set.of()), (x, y, z) -> true, 0, 64, 0, "east");
         assertNull(o.err());
         assertEquals("east", o.dir());
-        assertEquals("dig 1 64 0 1 65 0 force", ClimbPlan.outDig(o));
+        assertEquals("dig 1 64 0 1 65 0 force via engine", ClimbPlan.outDig(o));
     }
 
     @Test
@@ -63,7 +63,7 @@ class ClimbSurfaceTest {
         w.remove("0 65 1");          // south: only the feet cell is closed
         ClimbPlan.Out o = ClimbPlan.walledIn(world(w, Set.of()), (x, y, z) -> true, 0, 64, 0, "east");
         assertEquals("south", o.dir());
-        assertEquals("dig 0 64 1 0 64 1 force", ClimbPlan.outDig(o));
+        assertEquals("dig 0 64 1 0 64 1 force via engine", ClimbPlan.outDig(o));
     }
 
     @Test

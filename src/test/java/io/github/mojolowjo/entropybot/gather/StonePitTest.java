@@ -61,4 +61,30 @@ class StonePitTest {
         assertNull(GatherSources.resolve("stone", Map.of()));             // smelted from cobblestone
         assertEquals("dug", GatherSources.doneWord("dig stone 64"));
     }
-}
+
+    // 0.30.0 (P2): the quarry through Baritone's builder: the same cells, in the same order, nothing added
+    @Test
+    void builderOptionsKeepTheQuarryCells() {
+        StonePit.Plan p = StonePit.plan(StonePitTest::layered, new int[]{0, 64, 0}, new int[]{1, 0}, 64);
+        var o = StonePit.options(p, 64, "q", true);
+        assertTrue(o.viaBaritone);
+        assertEquals(p.cells().size(), o.only.size());
+        for (int i = 0; i < p.cells().size(); i++) {
+            int[] c = p.cells().get(i);
+            assertEquals(new io.github.mojolowjo.entropybot.clear.Pos(c[0], c[1], c[2]), o.only.get(i));
+        }
+        assertEquals("dig stone 64", o.line);
+        assertTrue(o.liquidBlocks);
+        assertFalse(o.collect, "ores stay for the owner");
+        assertFalse(StonePit.options(p, 64, "q", false).viaBaritone);
+        // the mask over that list takes exactly those cells (the step above the stairs is not listed)
+        var m = new io.github.mojolowjo.entropybot.clear.BaritoneMask(io.github.mojolowjo.entropybot.clear.BaritoneMask.onlyBox(o.only), false, true, null,
+                io.github.mojolowjo.entropybot.clear.BaritoneMask.onlyCells(o.only));
+        assertEquals(o.only.size(), m.only.size());
+    }
+
+    @Test
+    void gotText() {
+        assertEquals("; got 40 cobblestone", StonePit.gotText(3, 43));
+        assertEquals("; got 0 cobblestone", StonePit.gotText(10, 4));
+    }}
