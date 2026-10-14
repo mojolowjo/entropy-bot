@@ -534,8 +534,20 @@ final class DigCommands {
         if (b == null) return "error: baritone not loaded";
         ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
+        // 0.30.1: the shape's cells; a rerun of a finished step (house's chain) starts nothing
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells = io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box);
+        Clearing.LiveWorld lw = new Clearing.LiveWorld();
+        lw.set(p);
+        int missing0 = io.github.mojolowjo.entropybot.clear.RimPlan.missing(lw, cells).size();
+        if (missing0 == 0) return io.github.mojolowjo.entropybot.clear.RimPlan.standsText(shape, CraftPlanner.shortId(id));
         // the guard: Baritone's placements need a place lease for the zone (the bridge took none; strict mode refused them)
         Clearing.BuildState bs = new Clearing.BuildState();
+        bs.shape = shape;
+        bs.id = id;
+        bs.area = areaName;
+        bs.cells = cells;
+        bs.startMissing = missing0;
+        bs.lastMissing = missing0;
         String le = bs.leases.take("building " + shape + " of " + CraftPlanner.shortId(id), box, true, false);
         if (le != null) return le;
         Settings s = BaritoneAPI.getSettings();
@@ -543,6 +555,7 @@ final class DigCommands {
         s.allowBreak.value = false;
         s.buildIgnoreExisting.value = true;
         s.allowInventory.value = true;
+        Clearing.applyLook(bs);
         var cm = b.getCommandManager();
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();
@@ -554,6 +567,7 @@ final class DigCommands {
         cm.execute("sel " + ops.get(shape) + " " + id);
         bs.status = "building " + shape + " of " + CraftPlanner.shortId(id);
         bs.start = Core.INSTANCE.tick();
+        bs.lastChange = bs.start;
         Seq.Step st = Clearing.clearStep(new ClearJob.Options().box(box).label(bs.status));
         st.kind = Clearing.KIND_BUILD;
         st.state = bs;
