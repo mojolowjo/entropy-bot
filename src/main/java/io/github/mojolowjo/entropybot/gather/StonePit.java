@@ -80,10 +80,32 @@ public final class StonePit {
         return new int[]{Math.min(ax, bx), feet[1] - 1, Math.min(az, bz), Math.max(ax, bx), feet[1] + 1, Math.max(az, bz)};
     }
 
-    /** "dig x1 y1 z1 x2 y2 z2" for {@link #faceBox}. */
+    /**
+     * "dig x1 y1 z1 x2 y2 z2 via engine" for {@link #faceBox}. Through the engine: in the trial 8 retest the same box
+     * through Baritone's builder ended "gave up (Baritone found no way to reach the rest)" ("Unable to do it. Pausing.")
+     * beside 24 plain dirt/stone cells, cause unknown (open item: the builder's assemble found no breakable goals;
+     * possibly the 1-layer snow on top, which the mask treats as air).
+     */
     public static String faceDig(int[] feet, int[] dir) {
         int[] b = faceBox(feet, dir);
-        return "dig " + b[0] + " " + b[1] + " " + b[2] + " " + b[3] + " " + b[4] + " " + b[5];
+        return "dig " + b[0] + " " + b[1] + " " + b[2] + " " + b[3] + " " + b[4] + " " + b[5] + " via engine";
+    }
+
+    /**
+     * The face dig in the first of the four directions (dir first, then the others) whose box has no cell where
+     * {@code banned} (a main or safe area) is true; null when every one does.
+     */
+    public static String faceDigAvoiding(int[] feet, int[] dir, java.util.function.Predicate<int[]> banned) {
+        int[][] dirs = {dir, {1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+        for (int[] d : dirs) {
+            int[] b = faceBox(feet, d);
+            boolean ok = true;
+            for (int x = b[0]; x <= b[3] && ok; x++)
+                for (int y = b[1]; y <= b[4] && ok; y++)
+                    for (int z = b[2]; z <= b[5] && ok; z++) if (banned.test(new int[]{x, y, z})) ok = false;
+            if (ok) return faceDig(feet, d);
+        }
+        return null;
     }
 
     /** The started note: "a staircase quarry east, 9 columns, about 40 stone". */

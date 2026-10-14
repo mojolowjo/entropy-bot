@@ -46,7 +46,14 @@ class QuarrySlopeTest {
     @Test void faceBoxIsFiveWideThreeDeepThreeHighAhead() {
         int[] b = StonePit.faceBox(new int[]{10, 70, -5}, new int[]{0, -1});
         assertArrayEquals(new int[]{8, 69, -8, 12, 71, -6}, b);
-        assertEquals("dig 11 69 -2 13 71 2", StonePit.faceDig(new int[]{10, 70, 0}, new int[]{1, 0}));
+        assertEquals("dig 11 69 -2 13 71 2 via engine", StonePit.faceDig(new int[]{10, 70, 0}, new int[]{1, 0}));
+    }
+
+    @Test void theFaceBoxKeepsOutOfMainAndSafeAreas() {
+        // the house east of me (x >= 12): the east box would take 3 of its cells, so the next free direction is used
+        String d = StonePit.faceDigAvoiding(new int[]{10, 70, 0}, new int[]{1, 0}, c -> c[0] >= 12);
+        assertEquals("dig 7 69 -2 9 71 2 via engine", d, "east and south (x 8..12) touch it: west");
+        assertNull(StonePit.faceDigAvoiding(new int[]{10, 70, 0}, new int[]{1, 0}, c -> true));
     }
 
     @Test void twoGiveUpsInARowThenTheFaceDig() {

@@ -198,8 +198,17 @@ final class Gathering {
                 var lv = (net.minecraft.client.multiplayer.ClientLevel) p.level();
                 int[] me2 = Jobs.here(p);
                 int[] feet = Jobs.groundUnder(lv, me2[0], me2[1], me2[2]);
-                r.command = io.github.mojolowjo.entropybot.gather.StonePit.faceDig(feet, CampCommands.quarryDir(lv, feet));
-                whisper(r, "the quarry gave up twice here - digging the slope face in front of me instead (" + r.command + ")");
+                String dim = Storage.dim();
+                var g = Core.INSTANCE.guard.core;
+                String face = io.github.mojolowjo.entropybot.gather.StonePit.faceDigAvoiding(feet, CampCommands.quarryDir(lv, feet), cell -> {
+                    var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
+                    if (ar == null || ar.name == null) return false;
+                    var t = PolicyCommands.typeOf(commands.policyArea(ar.name));
+                    return t == io.github.mojolowjo.entropybot.guard.AreaType.MAIN || t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE;
+                });
+                if (face == null) throw new IllegalStateException("every face box around me touches a main or safe area");
+                r.command = face;
+                whisper(r,"the quarry gave up twice here - digging the slope face in front of me instead (" + r.command + ")");
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] gather: face dig plan failed: {}", e.toString());
             }
