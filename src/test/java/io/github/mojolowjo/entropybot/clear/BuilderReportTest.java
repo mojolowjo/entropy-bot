@@ -93,6 +93,15 @@ class BuilderReportTest {
     }
 
     @Test
+    void noToolUsesPlainDigsText() {
+        assertEquals("stopped: " + LABEL + " - needs a pickaxe for stone (broke 54 blocks) - next: craft wooden_pickaxe 1",
+                BuilderReport.noTool(LABEL, 54, "stone"));
+        assertEquals("stopped: " + LABEL + " - needs a better pickaxe for obsidian (broke 1 block) - next: craft stone_pickaxe 1 (iron_pickaxe for diamond, gold, redstone)",
+                BuilderReport.noTool(LABEL, 1, "obsidian"));
+        assertTrue(DigWhy.pickaxeText("deepslate").startsWith("needs a pickaxe for deepslate"));
+    }
+
+    @Test
     void watch() {
         assertEquals(End.IDLE, BuilderReport.watch(false, false, 0));
         assertEquals(End.PAUSED, BuilderReport.watch(true, true, 0));

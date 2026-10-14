@@ -71,6 +71,16 @@ public final class BuilderReport {
         return sb.toString();
     }
 
+    /**
+     * The end when the bag holds no tool that can harvest a block still to dig (a pickaxe broke mid-box): the builder
+     * would dig it by hand, slowly and with no drop. Plain dig's text ({@link DigWhy#pickaxeText}).
+     */
+    public static String noTool(String label, int broke, String block) {
+        String t = DigWhy.pickaxeText(block);
+        int i = t.indexOf(" - next: ");
+        return "stopped: " + label + " - " + t.substring(0, i) + " (broke " + broke + (broke == 1 ? " block" : " blocks") + ")" + t.substring(i);
+    }
+
     static String why(End end) {
         return switch (end) {
             case PAUSED -> "Baritone found no way to reach the rest";

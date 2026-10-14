@@ -96,6 +96,8 @@ public final class BuilderDig {
         BuilderReport.End afterSweep;
         boolean tripAfterSweep, sweptForTrip;
         int sweepInv, picked, dropsLeft, sweeps;
+        /** a block left that no tool in the bag can harvest (the end says "needs a pickaxe for ..."), or null */
+        String toolStop;
     }
 
     static Seq.Step step(ClearJob.Options o) {
@@ -377,6 +379,8 @@ public final class BuilderDig {
             }
             String le = beat(s, now, true);
             if (le != null) return end(seq, st, s, p, null, "the guard: " + le.replaceFirst("^error: ", ""));
+            String nt = toolMissing(s, p);
+            if (nt != null) return toolEnd(seq, st, s, p, nt);
             try {
                 startBuilder(s, now);
             } catch (Throwable t) {
@@ -409,6 +413,9 @@ public final class BuilderDig {
             s.restarts = 0;                                 // progress: the restart cap counts from here
         }
         s.brokeAtPoll = b;
+        // a pickaxe broke mid-box: the builder would dig stone by hand (slow, no drops); plain dig stops there too
+        String nt = toolMissing(s, p);
+        if (nt != null) return toolEnd(seq, st, s, p, nt);
         seq.setStatus(s.job.label + ": broke " + b + " of " + s.startCells.size() + " (via baritone; " + s.mask.counters() + ")");
         // the bag is full: the builder stops, junk is thrown or taken home, then it starts again
         if (!s.noDeposit && p.getInventory().getFreeSlot() < 0) {
@@ -435,6 +442,40 @@ public final class BuilderDig {
             }
         }
         return startSweep(seq, s, p, now, e, false);        // the drops first, then the report
+    }
+
+    /**
+     * A start cell still standing that needs the right tool when the bag holds none that can harvest it (plain dig's
+     * McBody.hold: Tools.choose, Tools.okWithout), by block name; null when every one can be dug properly.
+     */
+    static String toolMissing(State s, LocalPlayer p) {
+        io.github.mojolowjo.entropybot.clear.McClearWorld w = s.world.cur;
+        if (w == null) return null;
+        Map<String, Boolean> seen = new java.util.HashMap<>();
+        String toolOres = io.github.mojolowjo.entropybot.engine.Hotbar.toolOres();
+        for (long k : s.startCells) {
+            int x = (int) (k >> 38), z = (int) ((k << 26) >> 38), y = (int) ((k << 52) >> 52);
+            try {
+                if (w.air(x, y, z) || w.fluid(x, y, z)) continue;
+                String n = w.name(x, y, z);
+                Boolean bad = seen.get(n);
+                if (bad == null) {
+                    boolean need = w.needsCorrectTool(x, y, z);
+                    bad = need && !io.github.mojolowjo.entropybot.clear.Tools.okWithout(need, n)
+                            && io.github.mojolowjo.entropybot.clear.Tools.choose(w.toolSlots(p, x, y, z), need, w.ore(x, y, z), toolOres) < 0;
+                    seen.put(n, bad);
+                }
+                if (bad) return n;
+            } catch (RuntimeException ignored) {}
+        }
+        return null;
+    }
+
+    /** No tool for what is left: the drops first (as any end), then "stopped: ... needs a pickaxe for X (broke N) - next: ...". */
+    private static String toolEnd(Seq seq, Seq.Step st, State s, LocalPlayer p, String block) {
+        s.toolStop = block;
+        LOG.info("[entropybot] dig via baritone: no tool in the bag for {} - stopping", block);
+        return startSweep(seq, s, p, seq.now(), BuilderReport.End.IDLE, false);
     }
 
     // ---- the drop sweep (Baritone's builder never walks over its drops) ----
@@ -661,6 +702,7 @@ public final class BuilderDig {
         } else {
             msg = BuilderReport.text(s.job.label, broke, left, gave, s.mask.errors.get());
         }
+        if (s.toolStop != null && stop == null) msg = BuilderReport.noTool(s.job.label, broke, s.toolStop);
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
         s.job.broken = broke;
         if (left != null) s.job.skip.putAll(left.waterCells);
