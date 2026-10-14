@@ -15,21 +15,38 @@ import java.util.List;
  *
  * <p>0.29.0: {@code via baritone} (or just {@code baritone}) sets {@link #viaBaritone}: Baritone's builder breaks the box
  * and the mod's rules decide per cell ({@link BaritoneMask}). Box form only (the verb refuses it with the other forms).
+ *
+ * <p>0.30.0: the builder is the default ({@link #builder}); {@code via engine} (or {@code engine}) selects the old
+ * ClearEngine path ({@link #viaEngine}); both at once is not a dig.
  */
 public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large,
-                      String surface, int depth, boolean viaBaritone) {
+                      String surface, int depth, boolean viaBaritone, boolean viaEngine) {
     public static final String USAGE = "error: usage dig x1 z1 x2 z2 -N|+N [words below, no floor] (N down or up from the surface; any coordinate may be ~ or ~N, from my feet)"
-            + " | dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop] [water [large]]";
+            + " | dig x1 y1 z1 x2 y2 z2 [force] [ores] [floor [block]] [junk drop] [water [large]] [via engine]";
 
-    private static final List<String> WORDS = List.of("force", "ores", "floor", "junk", "drop", "water", "large", "via", "baritone");
+    private static final List<String> WORDS = List.of("force", "ores", "floor", "junk", "drop", "water", "large", "via", "baritone", "engine");
 
     public DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large) {
-        this(n, force, ores, floor, floorBlock, junkDrop, water, large, null, 0, false);
+        this(n, force, ores, floor, floorBlock, junkDrop, water, large, null, 0, false, false);
     }
 
     public DigArgs(int[] n, boolean force, boolean ores, boolean floor, String floorBlock, boolean junkDrop, boolean water, boolean large,
                    String surface, int depth) {
-        this(n, force, ores, floor, floorBlock, junkDrop, water, large, surface, depth, false);
+        this(n, force, ores, floor, floorBlock, junkDrop, water, large, surface, depth, false, false);
+    }
+
+    /**
+     * 0.30.0 (P2, the default flip): Baritone's builder digs unless the words say {@code via engine}; a {@code floor} dig
+     * stays on the engine (its fill follows the clear). Whether the builder is there at all is the verb's check
+     * (BuilderDig falls back to the engine and says so).
+     */
+    public static boolean useBuilder(boolean viaEngine, boolean floor) {
+        return !viaEngine && !floor;
+    }
+
+    /** {@link #useBuilder(boolean, boolean)} for these words. */
+    public boolean builder() {
+        return useBuilder(viaEngine, floor);
     }
 
     /** 0.30.0: "dig stone [n] [via baritone|via engine]": n (default 64, 1..256) and the words' choice. */
@@ -119,7 +136,7 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
             }
             from = 6;
         }
-        boolean force = false, ores = false, floor = false, junk = false, water = false, large = false, via = false;
+        boolean force = false, ores = false, floor = false, junk = false, water = false, large = false, via = false, engine = false;
         String block = null;
         for (int i = from; i < w.length; i++) {
             String t = w[i].toLowerCase();
@@ -141,14 +158,18 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
                 case "large" -> large = true;          // "water large" (or "large" anywhere: water too)
                 case "via" -> {
                     // 0.29.0: "via baritone" (also "baritone" alone, below)
-                    if (i + 1 >= w.length || !w[i + 1].equalsIgnoreCase("baritone")) return null;
-                    via = true;
+                    if (i + 1 >= w.length) return null;
+                    if (w[i + 1].equalsIgnoreCase("baritone")) via = true;
+                    else if (w[i + 1].equalsIgnoreCase("engine")) engine = true;       // 0.30.0
+                    else return null;
                     i++;
                 }
                 case "baritone" -> via = true;
+                case "engine" -> engine = true;
                 default -> { return null; }
             }
         }
-        return new DigArgs(n, force, ores, floor, block, junk, water || large, large, surface, depth, via);
+        if (via && engine) return null;                  // one or the other
+        return new DigArgs(n, force, ores, floor, block, junk, water || large, large, surface, depth, via, engine);
     }
 }

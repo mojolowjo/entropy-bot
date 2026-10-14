@@ -130,14 +130,14 @@ public final class BuilderDig {
     /** "builder: ok" or "builder: NOT available (why) - dig via baritone falls back to plain dig" (ready line, check). */
     public static String checkLine() {
         String why = unavailable();
-        return why == null ? "builder: ok" : "builder: NOT available (" + why + ") - dig via baritone falls back to plain dig";
+        return why == null ? "builder: ok" : "builder: NOT available (" + why + ") - dig falls back to my own engine";
     }
 
     /** The check finding when the builder is missing (empty when fine). */
     static List<SelfCheck.Finding> findings() {
         String why = unavailable();
         if (why == null) return List.of();
-        return List.of(new SelfCheck.Finding("builder", checkLine(), "dig without via baritone (the plain dig works without it)"));
+        return List.of(new SelfCheck.Finding("builder", checkLine(), "dig ... via engine (my own engine works without it)"));
     }
 
     /** The status/debug line: "builder: active|paused|idle, broke N, mask calls N, refused K, last change Ts ago". */
@@ -178,10 +178,10 @@ public final class BuilderDig {
             LOG.warn("[entropybot] dig via baritone: builder not available ({}), plain dig instead", why);
             o.viaBaritone(false);
             String r = DigCommands.startClear(c, p, o, before);
-            return r + " - builder: NOT available (" + why + "), so the plain dig";
+            return r + " - Baritone's builder is NOT available (" + why + "), so my own engine digs";
         }
         String bad = settingsProblem();
-        if (bad != null) return "error: dig via baritone needs Baritone's " + bad + " - b set it back (or dig without via baritone)";
+        if (bad != null) return "error: dig via baritone needs Baritone's " + bad + " - b set it back (or dig ... via engine)";
         Seq.Step st = step(o);
         State s = (State) st.state;
         s.countIds = countIds;

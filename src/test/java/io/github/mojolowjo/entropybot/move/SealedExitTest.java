@@ -90,7 +90,7 @@ class SealedExitTest {
         EscapePlan.Grid water = (x, y, z) -> (x == 0 && z == 0 && y <= 41) ? EscapePlan.Kind.OPEN : EscapePlan.Kind.BLOCKED;
         assertNull(EscapePlan.stairSide(water, f, null));
         List<String> s = StairPlanUpAccess.upSteps(0, 40, 0, 0, 1, 3);
-        assertEquals(List.of("dig 0 41 0 0 42 1", "goto 0 41 1", "dig 0 42 1 0 43 2", "goto 0 42 2", "dig 0 43 2 0 44 3", "goto 0 43 3"), s);
+        assertEquals(List.of("dig 0 41 0 0 42 1 via engine", "goto 0 41 1", "dig 0 42 1 0 43 2 via engine", "goto 0 42 2", "dig 0 43 2 0 44 3 via engine", "goto 0 43 3"), s);
         assertEquals(30, StairPlanUpAccess.upCount(40, 70));
         assertEquals(40, StairPlanUpAccess.upCount(-20, 70));
         assertEquals(0, StairPlanUpAccess.upCount(70, 70));

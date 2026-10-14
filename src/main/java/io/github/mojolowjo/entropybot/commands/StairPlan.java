@@ -16,6 +16,13 @@ public final class StairPlan {
 
     public static final int MAX = 40, TORCH_EVERY = 6, SHAFT_DROP = 3, SHAFT_SCAN = 64;
 
+    /**
+     * 0.30.0 (P2): the dig steps of a staircase (down, up, climb) stay on my own engine: each is a 2-3 block cut next to
+     * where I stand, dug and walked one at a time; Baritone's builder (the dig default now) digs top layer first and
+     * would path-dig toward the top of an up-staircase from the bottom.
+     */
+    public static final String VIA_ENGINE = " via engine";
+
     public interface Cells {
         /** No collision (air, a torch, water): a body passes. */
         boolean free(int x, int y, int z);
@@ -56,7 +63,7 @@ public final class StairPlan {
         List<String> out = new ArrayList<>();
         for (int i = 1; i <= n; i++) {
             int cx = x + dx * i, cz = z + dz * i;
-            out.add("dig " + cx + " " + (y - i) + " " + cz + " " + cx + " " + (y - i + 2) + " " + cz);
+            out.add("dig " + cx + " " + (y - i) + " " + cz + " " + cx + " " + (y - i + 2) + " " + cz + VIA_ENGINE);
             out.add("goto " + cx + " " + (y - i) + " " + cz);
             if (i % TORCH_EVERY == 0) out.add("place torch " + (x + dx * (i - 1)) + " " + (y - i + 1) + " " + (z + dz * (i - 1)));
         }
@@ -72,7 +79,7 @@ public final class StairPlan {
         List<String> out = new ArrayList<>();
         for (int i = 1; i <= n; i++) {
             int px = x + dx * (i - 1), pz = z + dz * (i - 1), cx = x + dx * i, cz = z + dz * i;
-            out.add("dig " + Math.min(px, cx) + " " + (y + i) + " " + Math.min(pz, cz) + " " + Math.max(px, cx) + " " + (y + i + 1) + " " + Math.max(pz, cz));
+            out.add("dig " + Math.min(px, cx) + " " + (y + i) + " " + Math.min(pz, cz) + " " + Math.max(px, cx) + " " + (y + i + 1) + " " + Math.max(pz, cz) + VIA_ENGINE);
             out.add("goto " + cx + " " + (y + i) + " " + cz);
         }
         return out;
@@ -112,7 +119,7 @@ public final class StairPlan {
         out.add("goto " + sx + " " + sy + " " + sz);
         out.addAll(steps(sx, sy, sz, dx, dz, n));
         int bx = sx + dx * n, by = sy - n, bz = sz + dz * n;
-        out.add("dig " + Math.min(bx, hx) + " " + by + " " + Math.min(bz, hz) + " " + Math.max(bx, hx) + " " + (by + 1) + " " + Math.max(bz, hz));
+        out.add("dig " + Math.min(bx, hx) + " " + by + " " + Math.min(bz, hz) + " " + Math.max(bx, hx) + " " + (by + 1) + " " + Math.max(bz, hz) + VIA_ENGINE);
         out.add("goto " + hx + " " + by + " " + hz);
         return out;
     }

@@ -24,7 +24,7 @@ class StairPlanTest {
     @Test
     void chainDigsWalksAndLightsEverySixth() {
         List<String> s = StairPlan.steps(10, 70, 5, 1, 0, 12);
-        assertEquals("dig 11 69 5 11 71 5", s.get(0));
+        assertEquals("dig 11 69 5 11 71 5 via engine", s.get(0));
         assertEquals("goto 11 69 5", s.get(1));
         assertEquals(12 * 2 + 2, s.size(), "two torches");
         assertTrue(s.contains("place torch 15 65 5"), s.toString());   // step 6: the torch in step 5's feet cell
