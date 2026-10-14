@@ -66,6 +66,7 @@ public final class BuilderDig {
     static final class Saved {
         boolean buildInLayers, layerOrder, breakFromAbove, remainWithExistingLookDirection;
         int layerHeight;
+        double randomLooking, randomLooking113;
     }
 
     /** The step's state. */
@@ -142,7 +143,8 @@ public final class BuilderDig {
         String line = "builder: " + state;
         if (s != null && s.mask != null) {
             long now = Core.INSTANCE.tick();
-            line += ", dig via baritone: broke " + s.brokeAtPoll + ", " + s.mask.counters() + ", last change " + Math.max(0, now - s.lastChange) / 20 + "s ago";
+            line += ", dig via baritone: broke " + s.brokeAtPoll + ", " + s.mask.counters() + ", last change " + Math.max(0, now - s.lastChange) / 20 + "s ago"
+                + (lastProbe.isEmpty() ? "" : ", look: " + lastProbe);
         } else if (lastEnd != null) {
             line += ", last dig via baritone: " + lastEnd;
         }
@@ -249,6 +251,8 @@ public final class BuilderDig {
             sv.breakFromAbove = st.breakFromAbove.value;
             sv.layerHeight = st.layerHeight.value;
             sv.remainWithExistingLookDirection = st.remainWithExistingLookDirection.value;
+            sv.randomLooking = st.randomLooking.value;
+            sv.randomLooking113 = st.randomLooking113.value;
             s.saved = sv;
         }
         st.allowBreak.value = true;
@@ -261,6 +265,11 @@ public final class BuilderDig {
         st.allowInventory.value = true;
         // live check 2026-10-13: with it on, the in-place click on a block it already looks at never lands in this pack
         st.remainWithExistingLookDirection.value = false;
+        // live probe 2026-10-13 (plan section 9): the aim jitter (randomLooking113, about 1 degree a tick) makes a block seen
+        // at a grazing angle reachable on one tick and not the next, so toBreakNearPlayer flips between two targets every
+        // few ticks and the break progress starts over each time; off for the job
+        st.randomLooking.value = 0d;
+        st.randomLooking113.value = 0d;
     }
 
     /** Puts every setting this job changed back (safe travel settings, the builder's own as they were). */
@@ -276,6 +285,8 @@ public final class BuilderDig {
                 st.breakFromAbove.value = s.saved.breakFromAbove;
                 st.layerHeight.value = s.saved.layerHeight;
                 st.remainWithExistingLookDirection.value = s.saved.remainWithExistingLookDirection;
+                st.randomLooking.value = s.saved.randomLooking;
+                st.randomLooking113.value = s.saved.randomLooking113;
             }
         } catch (Throwable t) {
             LOG.warn("[entropybot] dig via baritone: couldn't restore settings: {}", t.toString());
@@ -382,6 +393,7 @@ public final class BuilderDig {
             s.loggedErrors = errs;
             s.lastErrLog = now;
         }
+        probe(p, now - s.lastPoll >= 20);
         if (now - s.lastPoll < 20) return "wait";
         s.lastPoll = now;
         // the fallback count (block-change events may not come for our own breaks): the start cells that are air now
@@ -413,6 +425,84 @@ public final class BuilderDig {
             }
         }
         return end(seq, st, s, p, e, null);
+    }
+
+    /** Debug (DIG_VIA_BARITONE_PLAN section 9): the look/click state while the builder runs, every 20 ticks. */
+    /** Off: one sample every 20 ticks into {@link #lastProbe} (shown by debug baritone), no log. On: a log line per target change. */
+    public static volatile boolean probeOn = false;
+    public static volatile String lastProbe = "";
+
+    private static String lastProbeHit = "";
+
+    static void probe(LocalPlayer p, boolean periodic) {
+        if (!probeOn && !periodic) return;
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            IBaritone bar = Jobs.baritone();
+            boolean forced = bar != null && bar.getInputOverrideHandler().isInputForcedDown(baritone.api.utils.input.Input.CLICK_LEFT);
+            String hr = "null";
+            boolean veto = false;
+            if (mc.hitResult != null) {
+                hr = mc.hitResult.getType().toString();
+                if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bh) {
+                    BlockPos hp = bh.getBlockPos();
+                    hr += " " + hp.getX() + " " + hp.getY() + " " + hp.getZ() + " " + bh.getDirection()
+                        + " " + p.level().getBlockState(hp).getBlock().getDescriptionId();
+                    veto = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.vetoBreak(hp);
+                }
+            }
+            String target = "?";
+            if (bar != null) {
+                try {
+                    Object lb = bar.getLookBehavior();
+                    java.lang.reflect.Field f = lb.getClass().getDeclaredField("target");
+                    f.setAccessible(true);
+                    Object t = f.get(lb);
+                    target = String.valueOf(t);
+                    if (t != null) {
+                        java.lang.reflect.Field rf = t.getClass().getDeclaredField("rotation");
+                        rf.setAccessible(true);
+                        Object r = rf.get(t);
+                        if (r instanceof baritone.api.utils.Rotation rot) target = String.format("%.1f/%.1f", rot.getYaw(), rot.getPitch());
+                    }
+                } catch (Throwable ignored) {}
+            }
+            String btr = "?";
+            boolean bveto = false;
+            if (bar != null) {
+                try {
+                    net.minecraft.world.phys.HitResult t = bar.getPlayerContext().objectMouseOver();
+                    btr = t == null ? "null" : t.getType().toString();
+                    if (t instanceof net.minecraft.world.phys.BlockHitResult bh) {
+                        BlockPos hp = bh.getBlockPos();
+                        btr += " " + hp.getX() + " " + hp.getY() + " " + hp.getZ();
+                        String key = hp.toShortString();
+                        if (!periodic && key.equals(lastProbeHit)) return;
+                        lastProbeHit = key;
+                        bveto = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.vetoBreak(hp);
+                    }
+                    baritone.api.utils.Rotation er = bar.getPlayerContext().playerRotations();
+                    btr += String.format(" rot %.1f/%.1f", er.getYaw(), er.getPitch());
+                } catch (Throwable x) { btr = "err " + x; }
+            }
+            String prog = "?";
+            try {
+                java.lang.reflect.Field pf = net.minecraft.client.multiplayer.MultiPlayerGameMode.class.getDeclaredField("destroyProgress");
+                pf.setAccessible(true);
+                prog = String.format("%.2f", pf.getFloat(mc.gameMode));
+            } catch (Throwable ignored) {}
+            btr += " progress " + prog + " held " + p.getMainHandItem().getItem();
+            Settings st = BaritoneAPI.getSettings();
+            String line = String.format("yaw %.1f pitch %.1f feet %d %d %d ground %s target %s mcHit %s veto %s bHit %s bveto %s forcedLeft %s keyAttack %s destroying %s screen %s freeLook %s blockFreeLook %s anti %s",
+                p.getYRot(), p.getXRot(), p.blockPosition().getX(), p.blockPosition().getY(), p.blockPosition().getZ(), p.onGround(),
+                target, hr, veto, btr, bveto, forced, mc.options.keyAttack.isDown(), mc.gameMode != null && mc.gameMode.isDestroying(),
+                mc.screen == null ? "none" : mc.screen.getClass().getSimpleName(),
+                st.freeLook.value, st.blockFreeLook.value, st.antiCheatCompatibility.value);
+            lastProbe = line;
+            if (probeOn) LOG.info("[entropybot] dig via baritone probe: {}", line);
+        } catch (Throwable t) {
+            LOG.info("[entropybot] dig via baritone probe failed: {}", t.toString());
+        }
     }
 
     /**
