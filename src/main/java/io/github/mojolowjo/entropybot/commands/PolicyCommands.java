@@ -254,11 +254,23 @@ public final class PolicyCommands {
         int i;
         int[] xz = null;
         Integer r = null;
+        Integer y1 = null, y2 = null;
+        boolean yFromSix = false;
+
         if (!w.isEmpty() && w.get(0).equalsIgnoreCase("here")) {
             if (w.size() < 3 || !w.get(1).matches("^\\d{1,4}$")) return NewArea.err("usage: area here <r> <name> [type] [down up]  (r = blocks each way, 1..2000)");
             r = Integer.parseInt(w.get(1));
             if (r < 1 || r > 2000) return NewArea.err("error: r is 1..2000 blocks each way");
             i = 2;
+        } else if (w.size() >= 7 && allInts(w.subList(0, 6))) {
+            int[] six = new int[6];
+            for (int k = 0; k < 6; k++) six[k] = Integer.parseInt(w.get(k));
+            xz = new int[]{six[0], six[2], six[3], six[5]};
+            y1 = six[1];
+            y2 = six[4];
+            if (y1 > y2) { int t = y1; y1 = y2; y2 = t; }
+            yFromSix = true;
+            i = 6;
         } else if (w.size() >= 5 && allInts(w.subList(0, 4))) {
             xz = new int[4];
             for (int k = 0; k < 4; k++) xz[k] = Integer.parseInt(w.get(k));
@@ -266,25 +278,49 @@ public final class PolicyCommands {
         } else {
             return NewArea.err(USAGE);
         }
-        String name = w.get(i).toLowerCase();
-        String bad = badName(name);
-        if (bad != null) return NewArea.err(bad);
-        i++;
-        AreaType type = AreaType.NEUTRAL;
-        if (i < w.size() && !isInt(w.get(i))) {
-            type = AreaType.of(w.get(i));
-            if (type == null) return NewArea.err(AreaType.BAD);
-            i++;
+
+        List<String> rest = w.subList(i, w.size());
+        List<String> nonInts = new ArrayList<>();
+        List<Integer> ints = new ArrayList<>();
+        for (String s : rest) {
+            if (isInt(s)) ints.add(Integer.parseInt(s));
+            else nonInts.add(s.toLowerCase());
         }
-        Integer y1 = null, y2 = null;
-        int left = w.size() - i;
-        if (left == 2 && allInts(w.subList(i, w.size()))) {
-            y1 = Integer.parseInt(w.get(i));
-            y2 = Integer.parseInt(w.get(i + 1));
-            if (r != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
-        } else if (left != 0) {
+
+        if (!ints.isEmpty()) {
+            if (yFromSix) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+            if (ints.size() != 2) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+            y1 = ints.get(0);
+            y2 = ints.get(1);
+        }
+
+        String name;
+        AreaType type = AreaType.NEUTRAL;
+        if (nonInts.size() == 1) {
+            name = nonInts.get(0);
+        } else if (nonInts.size() == 2) {
+            AreaType t0 = AreaType.of(nonInts.get(0));
+            AreaType t1 = AreaType.of(nonInts.get(1));
+            if (t0 != null && t1 != null) {
+                name = nonInts.get(0);
+                type = t1;
+            } else if (t0 != null) {
+                type = t0;
+                name = nonInts.get(1);
+            } else if (t1 != null) {
+                type = t1;
+                name = nonInts.get(0);
+            } else {
+                return NewArea.err(AreaType.BAD);
+            }
+        } else {
             return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
         }
+
+        String bad = badName(name);
+        if (bad != null) return NewArea.err(bad);
+        if (r != null && y1 != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
+
         return new NewArea(name, type, xz, r, y1, y2, null);
     }
 

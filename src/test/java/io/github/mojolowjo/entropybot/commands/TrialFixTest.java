@@ -4,6 +4,7 @@ import io.github.mojolowjo.entropybot.camp.BootstrapPlan;
 import io.github.mojolowjo.entropybot.camp.BuildCount;
 import io.github.mojolowjo.entropybot.camp.JunkRules;
 import io.github.mojolowjo.entropybot.clear.Tools;
+import io.github.mojolowjo.entropybot.guard.AreaType;
 import io.github.mojolowjo.entropybot.world.SurfaceRule;
 import io.github.mojolowjo.entropybot.world.SurfaceRule.Cell;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,64 @@ class TrialFixTest {
         assertNull(PolicyCommands.parseNew(List.of("here", "48", "camp")).error());
         assertNull(PolicyCommands.parseNew(List.of("here", "48", "camp", "neutral")).error());
         assertEquals(List.of("area here 48 camp neutral", "bootstrap"), Texts.splitChain("area here 48 camp neutral then bootstrap"));
+    }
+
+    @Test
+    void anyOrderAfterCoordinates() {
+        // Expected: x -1..5, z -5..1, name 'house', type main, y 83..87
+        int[] expectedXz = new int[]{-1, -5, 5, 1};
+        AreaType expectedType = AreaType.MAIN;
+        String expectedName = "house";
+        Integer expectedY1 = 83, expectedY2 = 87;
+
+        // Five four-int coordinate forms
+        List<String>[] fourIntForms = new List[]{
+            List.of("-1", "-5", "5", "1", "house", "main", "83", "87"),
+            List.of("-1", "-5", "5", "1", "main", "house", "83", "87"),
+            List.of("-1", "-5", "5", "1", "house", "83", "87", "main"),
+            List.of("-1", "83", "-5", "5", "87", "1", "house", "main"),
+            List.of("-1", "83", "-5", "5", "87", "1", "main", "house")
+        };
+        for (List<String> words : fourIntForms) {
+            PolicyCommands.NewArea a = PolicyCommands.parseNew(words);
+            assertNull(a.error(), "no error for " + words + ": " + a.error());
+            assertEquals(expectedName, a.name(), "name for " + words);
+            assertEquals(expectedType, a.type(), "type for " + words);
+            assertArrayEquals(expectedXz, a.xz(), "xz for " + words);
+            assertNull(a.r(), "r for " + words);
+            assertEquals(expectedY1, a.y1(), "y1 for " + words);
+            assertEquals(expectedY2, a.y2(), "y2 for " + words);
+        }
+
+        // Three here forms
+        List<String>[] hereForms = new List[]{
+            List.of("here", "48", "camp", "neutral"),
+            List.of("here", "48", "neutral", "camp"),
+            List.of("here", "48", "camp", "8", "16", "neutral")
+        };
+        for (List<String> words : hereForms) {
+            PolicyCommands.NewArea a = PolicyCommands.parseNew(words);
+            assertNull(a.error(), "no error for " + words + ": " + a.error());
+            assertEquals("camp", a.name(), "name for " + words);
+            assertEquals(AreaType.NEUTRAL, a.type(), "type for " + words);
+            assertNull(a.xz(), "xz for " + words);
+            assertEquals(48, a.r(), "r for " + words);
+            if (words.size() == 6) {
+                assertEquals(8, a.y1(), "y1 for " + words);
+                assertEquals(16, a.y2(), "y2 for " + words);
+            } else {
+                assertNull(a.y1(), "y1 for " + words);
+                assertNull(a.y2(), "y2 for " + words);
+            }
+        }
+
+        // Two non-type words -> AreaType.BAD
+        PolicyCommands.NewArea bad = PolicyCommands.parseNew(List.of("-1", "-5", "5", "1", "house", "villa"));
+        assertEquals(AreaType.BAD, bad.error(), "two non-type words gives BAD");
+
+        // Lone int -> usage error
+        PolicyCommands.NewArea lone = PolicyCommands.parseNew(List.of("-1", "-5", "5", "1", "house", "main", "83"));
+        assertTrue(lone.error().startsWith("usage: area x z x2 z2"), "lone int gives usage error: " + lone.error());
     }
 
     // ---- A: surface snap ----
