@@ -32,14 +32,21 @@ public final class StonePit {
         List<int[]> cells = new ArrayList<>();
         int stone = 0, cols = 0;
         String stop = null;
-        for (int i = 1; i <= MAX_COLUMNS && stone < n; i++) {
+        for (int i = 0; i <= MAX_COLUMNS && stone < n; i++) {
             int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
             List<int[]> col = new ArrayList<>();
             int colStone = 0;
             for (int a = -1; a <= 1 && stop == null; a++) {
                 int x = cx + px * a, z = cz + pz * a;
-                for (int y = feet[1] - 1; y >= feet[1] - i && stop == null; y--) {
+                // 0.30.1 (package 4, trial 8): on a slope rising ahead, the face in front of me is solid at body height:
+                // the room to walk down into column i (feet-i+1 and feet-i+2, at most feet+1) is dug too; column 0 is the
+                // face one block ahead (only that room). On flat ground those cells are air and nothing changes.
+                int top = Math.max(feet[1] - 1, Math.min(feet[1] + 1, feet[1] - i + 2));
+                for (int y = top; y >= feet[1] - i && stop == null; y--) {
+                    if (i == 0 && y < feet[1]) break;
                     Cell c = w.at(x, y, z);
+                    // column 0 is only walking room: a block I can't break or a fluid there is left, never the plan's end
+                    if (i == 0 && (c == Cell.LIQUID || c == Cell.HARD)) continue;
                     if (c == Cell.LIQUID) stop = "water or lava at " + x + " " + y + " " + z;
                     else if (c == Cell.HARD) stop = "a block I can't break at " + x + " " + y + " " + z;
                     else if (c != Cell.AIR) {
@@ -51,13 +58,54 @@ public final class StonePit {
             if (stop != null) break;
             cells.addAll(col);
             stone += colStone;
-            cols = i;
+            if (i > 0) cols = i;
         }
         if (stone == 0) {
             String why = stop != null ? stop : "no stone within " + MAX_COLUMNS + " blocks down this way";
             return new Plan(List.of(), 0, cols, "error: no stone to quarry here (" + why + ") - next: goto a hillside or a cave mouth, then gather cobblestone again");
         }
         return new Plan(cells, stone, cols, null);
+    }
+
+    /**
+     * 0.30.1 (package 4): gather's fallback after the quarry gave up twice: the slope face in front of the bot, 5 wide
+     * (2 each side), 3 deep (1..3 ahead in dir), 3 high (feet-1 .. feet+1: the face at body height and one below, so the
+     * bot walks back out of the 1-deep cut), as "dig x1 y1 z1 x2 y2 z2" (Baritone's builder by default).
+     */
+    public static int[] faceBox(int[] feet, int[] dir) {
+        int dx = dir[0], dz = dir[1];
+        int px = dz != 0 ? 1 : 0, pz = dx != 0 ? 1 : 0;
+        int ax = feet[0] + dx - 2 * px, az = feet[2] + dz - 2 * pz;
+        int bx = feet[0] + 3 * dx + 2 * px, bz = feet[2] + 3 * dz + 2 * pz;
+        return new int[]{Math.min(ax, bx), feet[1] - 1, Math.min(az, bz), Math.max(ax, bx), feet[1] + 1, Math.max(az, bz)};
+    }
+
+    /**
+     * "dig x1 y1 z1 x2 y2 z2 via engine" for {@link #faceBox}. Through the engine: in the trial 8 retest the same box
+     * through Baritone's builder ended "gave up (Baritone found no way to reach the rest)" ("Unable to do it. Pausing.")
+     * beside 24 plain dirt/stone cells, cause unknown (open item: the builder's assemble found no breakable goals;
+     * possibly the 1-layer snow on top, which the mask treats as air).
+     */
+    public static String faceDig(int[] feet, int[] dir) {
+        int[] b = faceBox(feet, dir);
+        return "dig " + b[0] + " " + b[1] + " " + b[2] + " " + b[3] + " " + b[4] + " " + b[5] + " via engine";
+    }
+
+    /**
+     * The face dig in the first of the four directions (dir first, then the others) whose box has no cell where
+     * {@code banned} (a main or safe area) is true; null when every one does.
+     */
+    public static String faceDigAvoiding(int[] feet, int[] dir, java.util.function.Predicate<int[]> banned) {
+        int[][] dirs = {dir, {1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+        for (int[] d : dirs) {
+            int[] b = faceBox(feet, d);
+            boolean ok = true;
+            for (int x = b[0]; x <= b[3] && ok; x++)
+                for (int y = b[1]; y <= b[4] && ok; y++)
+                    for (int z = b[2]; z <= b[5] && ok; z++) if (banned.test(new int[]{x, y, z})) ok = false;
+            if (ok) return faceDig(feet, d);
+        }
+        return null;
     }
 
     /** The started note: "a staircase quarry east, 9 columns, about 40 stone". */

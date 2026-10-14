@@ -257,6 +257,19 @@ class CommandsTest {
     }
 
     @Test
+    void aStoppedFloorStepEndsTheHouseChain() {
+        // 0.30.1 (package 4): the rim placer's "stopped:" floor ends house's chain with its reason, the walls never start
+        Fake f = fake(new JsonObject());
+        f.chains.startChain("owner", "house", "build floor spruce_planks house then build walls spruce_planks house", 1);
+        f.run(5);
+        f.link.done(f.takeNext().id, "stopped: floor of spruce_planks (Baritone placed 0, I placed 5): 1 cell left, e.g. 10 128 -1 (no block under it) - next: x");
+        f.run(10);
+        assertFalse(f.chains.running());
+        assertEquals(1, f.ran.size(), "the walls never started");
+        assertTrue(f.whispers.get(f.whispers.size() - 1).startsWith("house: stopped at step 1 (build floor spruce_planks house): stopped: floor"), f.whispers.toString());
+    }
+
+    @Test
     void aStepCutShortByTheDisconnectEndsTheChainWithTheReason() {
         // B7e: with the bridge gone a job ends only through its own finish (no "the bridge script reloaded" re-run)
         Fake f = fake(new JsonObject());

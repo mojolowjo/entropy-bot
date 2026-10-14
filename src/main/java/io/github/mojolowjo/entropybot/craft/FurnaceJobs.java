@@ -363,9 +363,49 @@ public final class FurnaceJobs {
     }
 
     /** Before putting anything in: free, our own leftover to take out first, or busy. */
-    public enum Put { FREE, CLEAR_FIRST, BUSY }
+    public enum Put { FREE, CLEAR_FIRST, BUSY, FUEL_AS_IS, FUEL_BURN_FIRST }
 
     public record PutCheck(Put put, String why) {}
+
+    /** Most a foreign fuel may smelt before the bot tops up with its own (16 items = 160 s of burning to wait out). */
+    public static final double FOREIGN_FUEL_SMALL = 16;
+
+    /** Items one piece of {@code id} smelts (vanilla burn times / 200 ticks); 1 for an unknown fuel. */
+    public static double smeltsPer(String id) {
+        if (id == null) return 0;
+        String s = shortId(id);
+        if (s.equals("coal") || s.equals("charcoal")) return 8;
+        if (s.equals("coal_block")) return 80;
+        if (s.equals("lava_bucket")) return 100;
+        if (s.equals("blaze_rod")) return 12;
+        if (s.equals("dried_kelp_block")) return 20;
+        if (s.equals("stick") || s.endsWith("_sapling") || s.equals("bamboo")) return 0.5;
+        if (s.endsWith("_planks") || s.endsWith("_log") || s.endsWith("_wood") || s.endsWith("_stem") || s.endsWith("_hyphae")) return 1.5;
+        return 1;
+    }
+
+    /** Seconds a fuel slot of {@code n} {@code id} keeps burning (10 s per item smelted). */
+    public static int burnSeconds(String id, int n) {
+        return (int) Math.ceil(smeltsPer(id) * n * 10);
+    }
+
+    /**
+     * As {@link #check(Slots, String, Leftover)} for a job of {@code n} items, where a fuel slot holding another fuel is
+     * not a conflict: when it smelts the whole job FUEL_AS_IS (put the input only, our fuel stays in the bag); when it
+     * is small ({@link #FOREIGN_FUEL_SMALL}) FUEL_BURN_FIRST (put the input, let it burn, top up when the slot empties);
+     * else BUSY (wait for it as for an active smelt). A foreign input or output stays BUSY.
+     */
+    public static PutCheck check(Slots s, String fuel, Leftover lo, int n) {
+        boolean foreign = s.fuel() != null && s.fuelN() > 0 && !s.fuel().equals(fuel);
+        if (!foreign) return check(s, fuel, lo);
+        PutCheck rest = check(new Slots(s.input(), s.inputN(), null, 0, s.output(), s.outputN()), fuel, lo);
+        if (rest.put() != Put.FREE) return rest;
+        double covers = smeltsPer(s.fuel()) * s.fuelN();
+        String held = s.fuelN() + " " + shortId(s.fuel());
+        if (covers >= n) return new PutCheck(Put.FUEL_AS_IS, "its fuel slot holds " + held + ", enough for " + n);
+        if (covers <= FOREIGN_FUEL_SMALL) return new PutCheck(Put.FUEL_BURN_FIRST, "its fuel slot holds " + held + ", burning that first");
+        return new PutCheck(Put.BUSY, "its fuel slot holds " + held + ", not my " + (fuel == null ? "fuel" : shortId(fuel)));
+    }
 
     /**
      * Before putting anything in, with {@code fuel} the fuel the plan brings and {@code lo} our leftover in this furnace

@@ -912,6 +912,24 @@ final class Crafting {
             case "smeltpick": return smeltPick(s, st, p);
             case "smeltput": return smeltPut(s, st, p);
             case "smeltreg": return smeltReg(s, st);
+            case "smeltfuelwait": {
+                // the furnace stays open while the other fuel burns; go on when its slot is empty or holds ours
+                if (!Gui.open(p)) {
+                    // review: the furnace closed under us (a hit, a player): never run the top-up against no furnace
+                    addNote(s, "the furnace at " + Jobs.fmt(st.pos) + " closed while its other fuel burned; my fuel not added");
+                    if (s.idx + 1 < s.steps.size() && "ops".equals(s.steps.get(s.idx + 1).type)) s.steps.remove(s.idx + 1);
+                    return "next";
+                }
+                FurnaceJobs.Slots fs = furnaceSlots(p);
+                if (fs.fuel() == null || fs.fuelN() <= 0 || fs.fuel().equals(st.smelt.fuel())) return "next";
+                if (elapsed >= st.ticks) {
+                    addNote(s, "the other fuel in the furnace at " + Jobs.fmt(st.pos) + " still burns; topping up later");
+                    if (s.idx + 1 < s.steps.size() && "ops".equals(s.steps.get(s.idx + 1).type)) s.steps.remove(s.idx + 1);
+                    return "next";
+                }
+                s.setStatus(s.label + " - letting " + fs.fuelN() + " " + CraftPlanner.shortId(fs.fuel()) + " burn in the furnace first");
+                return "wait";
+            }
             case "smeltcollect": return smeltCollect(s, st, p);
             case "smeltopen": return smeltOpen(s, st, p);
             case "smelttake": return smeltTake(s, st, p);
@@ -1080,7 +1098,8 @@ final class Crafting {
         if (bad != null) return bad;
         if (!furnaceMenu(p)) return "the block at " + Jobs.fmt(st.pos) + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
         FurnaceJobs.Leftover lo = furnaces().leftover(st.pos, Storage.dim());
-        FurnaceJobs.PutCheck chk = FurnaceJobs.check(furnaceSlots(p), st.smelt.fuel(), lo);
+        FurnaceJobs.Slots slots = furnaceSlots(p);
+        FurnaceJobs.PutCheck chk = FurnaceJobs.check(slots, st.smelt.fuel(), lo, st.smelt.n());
         String busy = chk.put() == FurnaceJobs.Put.BUSY ? chk.why() : null;
         Step pick = (Step) st.state;
         if (chk.put() == FurnaceJobs.Put.CLEAR_FIRST) {
@@ -1107,7 +1126,9 @@ final class Crafting {
         // the fuel slot is empty or holds our fuel (else it was busy): top it up to the plan's count
         Map<String, Object> fuel = op("topup", st.smelt.fuel(), 0, List.of("fuel"));
         fuel.put("to", st.smelt.fuelCount());
-        ops.ops = List.of(op("put", st.smelt.input(), st.smelt.n(), List.of("input")), fuel);
+        Map<String, Object> input = op("put", st.smelt.input(), st.smelt.n(), List.of("input"));
+        boolean foreign = chk.put() == FurnaceJobs.Put.FUEL_AS_IS || chk.put() == FurnaceJobs.Put.FUEL_BURN_FIRST;
+        ops.ops = foreign ? List.of(input) : List.of(input, fuel);
         ops.expect = "Furnace";
         ops.expectName = "furnace";
         Step reg = new Step("smeltreg");
@@ -1117,6 +1138,21 @@ final class Crafting {
         reg.kind = st.kind;
         reg.text = st.text;
         reg.redo = st.redo;
+        if (foreign) commands.log("the furnace at " + Jobs.fmt(st.pos) + ": " + chk.why());
+        if (chk.put() == FurnaceJobs.Put.FUEL_BURN_FIRST) {
+            // the other fuel burns for our input; when its slot empties, top it up with ours
+            Step burn = new Step("smeltfuelwait");
+            burn.pos = st.pos;
+            burn.smelt = st.smelt;
+            burn.ticks = (FurnaceJobs.burnSeconds(slots.fuel(), slots.fuelN()) + 20) * 20;
+            Step top = new Step("ops");
+            top.pos = st.pos;
+            top.ops = List.of(fuel);
+            top.expect = "Furnace";
+            top.expectName = "furnace";
+            s.splice(s.idx + 1, List.of(ops, reg, burn, top, Step.close()));
+            return "next";
+        }
         s.splice(s.idx + 1, List.of(ops, reg, Step.close()));
         return "next";
     }

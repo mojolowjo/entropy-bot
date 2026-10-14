@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.commands;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -205,6 +206,29 @@ public final class Clearing {
         long start;
         String status;
         boolean done;
+        // 0.30.1 (package 4): the gave-up watch and the rim placer
+        String shape, id, area;
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells = List.of();
+        int startMissing, lastMissing, mine;
+        long lastChange;
+        boolean rim;
+        Boolean savedRemain;
+        Double savedRandom, savedRandom113;
+        final Map<io.github.mojolowjo.entropybot.clear.Pos, Integer> tries = new HashMap<>();
+        final Map<io.github.mojolowjo.entropybot.clear.Pos, io.github.mojolowjo.entropybot.clear.RimPlan.Why> gaveUp = new HashMap<>();
+        io.github.mojolowjo.entropybot.clear.RimPlan.Pick pick;
+        String stage;
+        long stageTick, layerStart;
+        int layerY = Integer.MIN_VALUE;
+        // review 1: the stall clock runs from the first placement or once I am near the zone (the walk there never counts)
+        ClearBox box;
+        boolean clockOn;
+        // review 4: the missing cells, recounted in pick/check and every 20 ticks otherwise
+        List<Pos> missing;
+        long missingAt = -1;
+        // (8) the block for the current pick (a filler under a hole, else the build block); (9) the not-moving watch
+        String placeId;
+        long lastFeet = Long.MIN_VALUE, stillSince;
     }
 
     /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
@@ -1017,17 +1041,228 @@ public final class Clearing {
             seq.jobs.finish("stopped: " + bs.status + " - " + le.replaceFirst("^error: ", "") + "; placing off again");
             return "wait";
         }
+        if (bs.rim) return rimTick(seq, bs, p, now);
         if (now - bs.start < 60 || now % 20 != 0) return "wait";
         IBaritone b = Jobs.baritone();
-        if (b == null || Jobs.idle(b)) {
-            endBuild(bs);
-            seq.jobs.finish("done: " + bs.status + " finished (or ran out of blocks); placing off again");
+        // 0.30.1: the dig step's watch: no cell placed for 60 s, or the builder paused itself = Baritone's part is over
+        LiveWorld w = new LiveWorld();
+        w.set(p);
+        int miss = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells).size();
+        if (!bs.clockOn && (miss < bs.lastMissing || bs.box == null || bs.box.distTo(p.getX(), p.getY(), p.getZ()) <= 8)) {
+            bs.clockOn = true;
+            bs.lastChange = now;
         }
+        if (miss < bs.lastMissing) bs.lastChange = now;
+        bs.lastMissing = miss;
+        if (!bs.clockOn) bs.lastChange = now;
+        io.github.mojolowjo.entropybot.clear.BuilderReport.End e = b == null ? io.github.mojolowjo.entropybot.clear.BuilderReport.End.IDLE
+                : io.github.mojolowjo.entropybot.clear.BuilderReport.watch(!Jobs.idle(b) && b.getBuilderProcess().isActive(),
+                b.getBuilderProcess().isPaused(), now - bs.lastChange);
+        if (miss == 0 && e == null) e = io.github.mojolowjo.entropybot.clear.BuilderReport.End.IDLE;
+        // (9) the fast path: the builder has goals but no path and I have not moved a block for 10 s = nothing it can do
+        long feet = p.blockPosition().asLong();
+        if (feet != bs.lastFeet) {
+            bs.lastFeet = feet;
+            bs.stillSince = now;
+        }
+        if (e == null && b != null && bs.clockOn) {
+            try {
+                var pb = b.getPathingBehavior();
+                if (b.getBuilderProcess().isActive() && !pb.isPathing() && pb.getGoal() != null && now - bs.stillSince >= 200) {
+                    LOG.info("[entropybot] build: Baritone has goals but no path and I stood still 10 s - placing the rest myself");
+                    e = io.github.mojolowjo.entropybot.clear.BuilderReport.End.STALLED;
+                }
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] build: the not-moving watch failed: {}", ex.toString());
+            }
+        }
+        if (e == null) return "wait";
+        LOG.info("[entropybot] build: Baritone's part ended ({}), {} of {} cells missing", e, miss, bs.cells.size());
+        stopBuilderPart(bs);
+        bs.rim = true;
+        bs.stage = "pick";
+        bs.stageTick = now;
+        return "wait";
+    }
+
+    /** Baritone's builder off (the selection cleared, the look settings back); the zone's place lease stays for the rim. */
+    static void stopBuilderPart(BuildState bs) {
+        placingOwned = false;
+        IBaritone b = Jobs.baritone();
+        if (b != null) {
+            Jobs.cancel(b);
+            try { b.getCommandManager().execute("sel clear"); } catch (Throwable ignored) {}
+        }
+        Jobs.safeSettings();
+        restoreLook(bs);
+    }
+
+    /** The dig job's look settings for the build (saved first): no kept look direction, no aim jitter. */
+    static void applyLook(BuildState bs) {
+        try {
+            baritone.api.Settings s = BaritoneAPI.getSettings();
+            if (bs.savedRemain == null) {
+                bs.savedRemain = s.remainWithExistingLookDirection.value;
+                bs.savedRandom = s.randomLooking.value;
+                bs.savedRandom113 = s.randomLooking113.value;
+            }
+            s.remainWithExistingLookDirection.value = false;
+            s.randomLooking.value = 0d;
+            s.randomLooking113.value = 0d;
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] build: couldn't set the look settings: {}", t.toString());
+        }
+    }
+
+    static void restoreLook(BuildState bs) {
+        if (bs.savedRemain == null) return;
+        try {
+            baritone.api.Settings s = BaritoneAPI.getSettings();
+            s.remainWithExistingLookDirection.value = bs.savedRemain;
+            s.randomLooking.value = bs.savedRandom;
+            s.randomLooking113.value = bs.savedRandom113;
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] build: couldn't restore the look settings: {}", t.toString());
+        }
+        bs.savedRemain = null;
+    }
+
+    /** The rim placer: one missing cell at a time, from on top (RimPlan decides, placeAt clicks). */
+    private static String rimTick(Seq seq, BuildState bs, LocalPlayer p, long now) {
+        LiveWorld w = new LiveWorld();
+        w.set(p);
+        boolean recount = bs.missing == null || bs.stage.equals("pick") || bs.stage.equals("check") || now - bs.missingAt >= 20;
+        if (recount) {
+            bs.missing = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells);
+            bs.missingAt = now;
+        }
+        List<Pos> missing = bs.missing;
+        if (bs.layerStart == 0) bs.layerStart = now;
+        String blk = GuiCore.shortId(bs.id);
+        int baritonePlaced = Math.max(0, bs.startMissing - missing.size() - bs.mine);
+        if (missing.isEmpty()) return rimEnd(seq, bs, io.github.mojolowjo.entropybot.clear.RimPlan.doneText(bs.shape, blk, baritonePlaced, bs.mine));
+        // review 3: 90 s without a placement of mine ends it, in every stage (a walk that never ends too)
+        if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.LAYER_CAP_TICKS) {
+            IBaritone wb = Jobs.baritone();
+            if (wb != null && !Jobs.idle(wb)) Jobs.cancel(wb);
+            return rimStop(seq, bs, w, missing, baritonePlaced, null);
+        }
+        switch (bs.stage) {
+            case "pick" -> {
+                if (Gui.inventory(p).getOrDefault(bs.id, 0) <= 0) return rimStop(seq, bs, w, missing, baritonePlaced, io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_BLOCKS);
+                var pk = io.github.mojolowjo.entropybot.clear.RimPlan.next(w, missing, bs.tries, p.getX(), p.getY(), p.getZ());
+                if (pk == null) return rimStop(seq, bs, w, missing, baritonePlaced, null);
+                // the 90 s cap counts per layer
+                if (pk.cell().y() != bs.layerY) {
+                    bs.layerY = pk.cell().y();
+                    bs.layerStart = now;
+                }
+                bs.pick = pk;
+                bs.placeId = bs.id;
+                if (pk.filler()) {
+                    String fid = io.github.mojolowjo.entropybot.clear.RimPlan.filler(Gui.inventory(p), bs.id);
+                    if (fid == null) {
+                        giveUpCell(bs, pk.cell(), io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_SUPPORT);
+                        return "wait";
+                    }
+                    bs.placeId = fid;
+                }
+                if (pk.why() != null) {
+                    giveUpCell(bs, pk.cell(), pk.why());
+                    return "wait";
+                }
+                seq.setStatus(bs.status + " - placing the rest myself (" + missing.size() + " left)");
+                if (pk.stand() == null) {
+                    bs.stage = "place";
+                    return "wait";
+                }
+                Pos s = pk.stand();
+                String fence = seq.jobs.goalAllowed(s.x(), s.y(), s.z());
+                IBaritone b = Jobs.baritone();
+                if (fence != null || b == null) {
+                    giveUpCell(bs, pk.cell(), io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
+                    return "wait";
+                }
+                Jobs.safeSettings();
+                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(s.x(), s.y(), s.z())));
+                bs.stage = "walking";
+                bs.stageTick = now;
+                return "wait";
+            }
+            case "walking" -> {
+                if (now - bs.stageTick < 20) return "wait";
+                IBaritone b = Jobs.baritone();
+                if (b != null && !Jobs.idle(b) && now - bs.stageTick < 30 * 20) return "wait";
+                if (b != null && !Jobs.idle(b)) Jobs.cancel(b);
+                bs.stage = "place";
+                return "wait";
+            }
+            case "place" -> {
+                Pos c = bs.pick.cell();
+                if (!PlaceRules.free(w, c.x(), c.y(), c.z())) {        // it went in meanwhile
+                    bs.stage = "pick";
+                    return "wait";
+                }
+                String r;
+                try {
+                    r = placeAt(p, bs.placeId != null ? bs.placeId : bs.id, c.x(), c.y(), c.z(), bs.leases);
+                } catch (RuntimeException ex) {
+                    r = "error: " + ex;
+                }
+                if (!r.startsWith("ok")) {
+                    LOG.info("[entropybot] build rim: {} at {}: {}", blk, c.key(), r);
+                    triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
+                    bs.stage = "pick";
+                    return "wait";
+                }
+                bs.stage = "check";
+                bs.stageTick = now;
+                return "wait";
+            }
+            default -> {                                            // check: placed blocks show up a tick or two later
+                if (now - bs.stageTick < 6) return "wait";
+                Pos c = bs.pick.cell();
+                if (PlaceRules.free(w, c.x(), c.y(), c.z())) triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
+                else {
+                    if (!bs.pick.filler()) bs.mine++;
+                    bs.layerStart = now;                            // progress: the 90 s count again
+                }
+                bs.stage = "pick";
+                return "wait";
+            }
+        }
+    }
+
+    private static void triedCell(BuildState bs, Pos c, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
+        bs.tries.merge(c, 1, Integer::sum);
+        bs.gaveUp.put(c, why);
+    }
+
+    private static void giveUpCell(BuildState bs, Pos c, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
+        bs.tries.put(c, io.github.mojolowjo.entropybot.clear.RimPlan.MAX_TRIES);
+        bs.gaveUp.put(c, why);
+    }
+
+    private static String rimStop(Seq seq, BuildState bs, ClearWorld w, List<Pos> missing, int baritonePlaced, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
+        // the example: a cell given up for a reason of its own first, else the first one left
+        Pos ex = missing.get(0);
+        for (Pos c : missing) if (bs.gaveUp.containsKey(c) || !io.github.mojolowjo.entropybot.clear.RimPlan.supported(w, c)) { ex = c; break; }
+        List<Pos> left = new ArrayList<>(missing);
+        left.remove(ex);
+        left.add(0, ex);
+        io.github.mojolowjo.entropybot.clear.RimPlan.Why y = why != null ? why : io.github.mojolowjo.entropybot.clear.RimPlan.whyLeft(w, ex, bs.gaveUp);
+        return rimEnd(seq, bs, io.github.mojolowjo.entropybot.clear.RimPlan.stoppedText(bs.shape, GuiCore.shortId(bs.id), baritonePlaced, bs.mine, left, y, bs.area));
+    }
+
+    private static String rimEnd(Seq seq, BuildState bs, String text) {
+        endBuild(bs);
+        seq.jobs.finish(text + "; placing off again");
         return "wait";
     }
 
     static void endBuild(BuildState bs) {
         bs.done = true;
+        restoreLook(bs);
         placingOwned = false;
         IBaritone b = Jobs.baritone();
         if (b != null) {

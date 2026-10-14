@@ -534,15 +534,32 @@ final class DigCommands {
         if (b == null) return "error: baritone not loaded";
         ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
+        // 0.30.1: the shape's cells; a rerun of a finished step (house's chain) starts nothing
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells = io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box);
+        Clearing.LiveWorld lw = new Clearing.LiveWorld();
+        lw.set(p);
+        int missing0 = io.github.mojolowjo.entropybot.clear.RimPlan.missing(lw, cells).size();
+        if (missing0 == 0) return io.github.mojolowjo.entropybot.clear.RimPlan.nothingText(shape, CraftPlanner.shortId(id),
+                io.github.mojolowjo.entropybot.clear.RimPlan.otherBlocks(lw, cells, id));
         // the guard: Baritone's placements need a place lease for the zone (the bridge took none; strict mode refused them)
         Clearing.BuildState bs = new Clearing.BuildState();
+        bs.shape = shape;
+        bs.id = id;
+        bs.area = areaName;
+        bs.cells = cells;
+        bs.startMissing = missing0;
+        bs.lastMissing = missing0;
         String le = bs.leases.take("building " + shape + " of " + CraftPlanner.shortId(id), box, true, false);
         if (le != null) return le;
+        bs.box = box;
+        // 0.30.1 review 5: a throw or a refused start before the job runs gives back the lease and the settings
+        try {
         Settings s = BaritoneAPI.getSettings();
         s.allowPlace.value = true;
         s.allowBreak.value = false;
         s.buildIgnoreExisting.value = true;
         s.allowInventory.value = true;
+        Clearing.applyLook(bs);
         var cm = b.getCommandManager();
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();
@@ -554,12 +571,22 @@ final class DigCommands {
         cm.execute("sel " + ops.get(shape) + " " + id);
         bs.status = "building " + shape + " of " + CraftPlanner.shortId(id);
         bs.start = Core.INSTANCE.tick();
+        bs.lastChange = bs.start;
         Seq.Step st = Clearing.clearStep(new ClearJob.Options().box(box).label(bs.status));
         st.kind = Clearing.KIND_BUILD;
         st.state = bs;
         Clearing.placingOwned = true;
-        c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
+        String started = c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
+        if (started == null || !started.startsWith("started") || c.jobs.job == null) {
+            Clearing.endBuild(bs);
+            return "error: the build did not start (" + started + ")";
+        }
         c.jobs.job.holdOnFight = true;
+        } catch (RuntimeException e) {
+            Clearing.endBuild(bs);
+            LOG.warn("[entropybot] build: could not start", e);
+            return "error: the build did not start (" + e + ")";
+        }
         return "started: " + bs.status + " (area " + areaName + ") " + io.github.mojolowjo.entropybot.camp.BuildCount.note(needN, haveN, CraftPlanner.shortId(id));
     }
 

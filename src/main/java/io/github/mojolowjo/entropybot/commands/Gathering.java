@@ -56,6 +56,8 @@ final class Gathering {
         /** 0.30.0: the pickaxe craft running after a quarry's no-tool stop (null: none), that stop's text, crafts so far */
         String fixing, toolText;
         int pickFixes;
+        /** 0.30.1: "dig stone" give-ups in a row (GatherRules.quarryGiveUps) */
+        int quarryGiveUps;
         final Map<String, Integer> leafFails = new HashMap<>();
         final GatherRules.Tally tally = new GatherRules.Tally();
     }
@@ -188,6 +190,29 @@ final class Gathering {
         if (r.step == null || !r.step.leaf().equals(s.leaf()) || r.step.kind() != s.kind()) r.leafFails.putIfAbsent(s.leaf(), 0);
         r.step = s;
         r.command = s.command(r.leafFails.getOrDefault(s.leaf(), 0));
+        // 0.30.1 (package 4, trial 8): the quarry gave up twice in a row (a snowy slope): dig the slope face in front
+        // of me instead (a plain box through the builder, the cobblestone counted the same), then plan again
+        if (r.command.startsWith("dig stone") && GatherRules.faceDigDue(r.quarryGiveUps)) {
+            r.quarryGiveUps = 0;
+            try {
+                var lv = (net.minecraft.client.multiplayer.ClientLevel) p.level();
+                int[] me2 = Jobs.here(p);
+                int[] feet = Jobs.groundUnder(lv, me2[0], me2[1], me2[2]);
+                String dim = Storage.dim();
+                var g = Core.INSTANCE.guard.core;
+                String face = io.github.mojolowjo.entropybot.gather.StonePit.faceDigAvoiding(feet, CampCommands.quarryDir(lv, feet), cell -> {
+                    var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
+                    if (ar == null || ar.name == null) return false;
+                    var t = PolicyCommands.typeOf(commands.policyArea(ar.name));
+                    return t == io.github.mojolowjo.entropybot.guard.AreaType.MAIN || t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE;
+                });
+                if (face == null) throw new IllegalStateException("every face box around me touches a main or safe area");
+                r.command = face;
+                whisper(r,"the quarry gave up twice here - digging the slope face in front of me instead (" + r.command + ")");
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] gather: face dig plan failed: {}", e.toString());
+            }
+        }
         r.beforeLeaf = measure(p, s.leaf());
         r.beforeBag = bag(p, s.leaf());
         r.steps++;
@@ -251,6 +276,7 @@ final class Gathering {
             fixDone(r, p, rep.text() == null ? "" : rep.text());
             return;
         }
+        r.quarryGiveUps = GatherRules.quarryGiveUps(r.quarryGiveUps, r.command, msg);
         GatherPlan.Step s = r.step;
         int gainLeaf = measure(p, s.leaf()) - r.beforeLeaf, gainBag = bag(p, s.leaf()) - r.beforeBag;
         switch (s.kind()) {
