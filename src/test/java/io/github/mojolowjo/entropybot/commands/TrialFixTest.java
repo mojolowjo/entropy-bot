@@ -178,6 +178,16 @@ class TrialFixTest {
                 BuildCount.refusal(170, 16, "cobblestone"));
     }
 
+    /** 0.30.2 (trial 8 rerun): the need is the missing cells; a finished 49-cell floor with 4 planks is no refusal. */
+    @org.junit.jupiter.api.Test
+    void buildNeedCountsTheMissingCells() {
+        assertEquals(0, BuildCount.needMissing(0));
+        assertNull(BuildCount.refusal(BuildCount.needMissing(0), 4, "spruce_planks"));
+        assertNull(BuildCount.refusal(BuildCount.needMissing(4), 4, "spruce_planks"));
+        org.junit.jupiter.api.Assertions.assertNotNull(BuildCount.refusal(BuildCount.needMissing(49), 4, "spruce_planks"));
+        assertEquals("(needs 3 spruce_planks, you have 4)", BuildCount.note(BuildCount.needMissing(3), 4, "spruce_planks"));
+    }
+
     // ---- C: climb ----
 
     /** Fake cells: solid (DIG) at or under y=9, OPEN above; extra cells by key "x y z". */

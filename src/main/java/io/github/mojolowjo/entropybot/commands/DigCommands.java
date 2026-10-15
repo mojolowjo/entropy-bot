@@ -524,14 +524,6 @@ final class DigCommands {
         Map<String, Integer> counts = Gui.inventory(p);
         String id = c.crafting.planner.resolveItem(parts[1], counts);
         if (id == null) return "error: I don't know a block called " + parts[1];
-        // 0.28.1 (trial fix G): the count it needs, said up front; under a tenth of it refuses with the gather hint
-        int needN = io.github.mojolowjo.entropybot.camp.BuildCount.need(shape, an[0], an[1], an[2], an[3], an[4], an[5]);
-        int haveN = counts.getOrDefault(id, 0);
-        String refuse = io.github.mojolowjo.entropybot.camp.BuildCount.refusal(needN, haveN, CraftPlanner.shortId(id));
-        if (refuse != null) return refuse;
-        if (counts.getOrDefault(id, 0) <= 0) return "error: I have no " + CraftPlanner.shortId(id) + " - next: get " + CraftPlanner.shortId(id) + " 64 (or give me some)";
-        IBaritone b = Jobs.baritone();
-        if (b == null) return "error: baritone not loaded";
         ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
         // 0.30.1: the shape's cells; a rerun of a finished step (house's chain) starts nothing
@@ -541,6 +533,15 @@ final class DigCommands {
         int missing0 = io.github.mojolowjo.entropybot.clear.RimPlan.missing(lw, cells).size();
         if (missing0 == 0) return io.github.mojolowjo.entropybot.clear.RimPlan.nothingText(shape, CraftPlanner.shortId(id),
                 io.github.mojolowjo.entropybot.clear.RimPlan.otherBlocks(lw, cells, id));
+        // 0.28.1 (trial fix G): the count it needs, said up front; under a tenth of it refuses with the gather hint.
+        // 0.30.2 (trial 8 rerun): counted over the MISSING cells, not the shape (a finished floor needs nothing)
+        int needN = io.github.mojolowjo.entropybot.camp.BuildCount.needMissing(missing0);
+        int haveN = counts.getOrDefault(id, 0);
+        String refuse = io.github.mojolowjo.entropybot.camp.BuildCount.refusal(needN, haveN, CraftPlanner.shortId(id));
+        if (refuse != null) return refuse;
+        if (haveN <= 0) return "error: I have no " + CraftPlanner.shortId(id) + " - next: get " + CraftPlanner.shortId(id) + " 64 (or give me some)";
+        IBaritone b = Jobs.baritone();
+        if (b == null) return "error: baritone not loaded";
         // the guard: Baritone's placements need a place lease for the zone (the bridge took none; strict mode refused them)
         Clearing.BuildState bs = new Clearing.BuildState();
         bs.shape = shape;
