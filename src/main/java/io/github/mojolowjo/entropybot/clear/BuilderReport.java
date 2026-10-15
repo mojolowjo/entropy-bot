@@ -59,7 +59,9 @@ public final class BuilderReport {
                     + String.join(", ", parts) + ")" + (gaveUp(end) ? "; " + why(end) : "") + maskNote(maskErrors)
                     + " - next: say the same dig with water to seal it off first";
         }
-        if (unreach == 0 && errs == 0 && !gaveUp(end)) {
+        // 0.30.2 (trial 8 door cut): nothing breakable left is a finished job, whatever the builder's state (a pause or
+        // a stall after the last block went is not a give-up)
+        if (unreach == 0 && errs == 0) {
             return "done: " + label + " - " + brokeText + (parts.isEmpty() ? "" : " (left " + String.join(", ", parts) + ")") + maskNote(maskErrors);
         }
         StringBuilder sb = new StringBuilder("stopped: ").append(label);

@@ -86,10 +86,19 @@ class BuilderReportTest {
     }
 
     @Test
-    void doneNeverOnGaveUp() {
-        String t = BuilderReport.text(LABEL, 48, left(empty()), End.PAUSED, 0);
-        assertTrue(t.startsWith("stopped: "), t);
-        assertTrue(t.contains("0 left"), t);
+    void aPauseOrStallWithNothingLeftIsDone() {
+        // 0.30.2 (trial 8 door cut: broke 2, 0 left, ended "gave up" and stopped the house chain)
+        assertEquals("done: " + LABEL + " - broke 2 blocks", BuilderReport.text(LABEL, 2, left(empty()), End.PAUSED, 0));
+        assertEquals("done: " + LABEL + " - broke 48 blocks", BuilderReport.text(LABEL, 48, left(empty()), End.STALLED, 0));
+    }
+
+    /** 0.30.2 (trial 8: a dirt block left in the house): an idle builder that left a plain diggable block is stopped. */
+    @Test
+    void idleWithADiggableBlockLeftIsStopped() {
+        FakeWorld w = empty();
+        w.set(2, 51, 2, "dirt");
+        String t = BuilderReport.text(LABEL, 40, left(w), End.IDLE, 0);
+        assertTrue(t.startsWith("stopped: " + LABEL + " - broke 40 blocks; 1 left (1 unreachable, e.g. 2 51 2)"), t);
     }
 
     @Test
