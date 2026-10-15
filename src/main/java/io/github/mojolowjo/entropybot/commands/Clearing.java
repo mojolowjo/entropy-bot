@@ -893,6 +893,19 @@ public final class Clearing {
 
     /** restore (P1): the cell is one the bot broke itself; its lease is LeaseSet.restoreLease (any mode, never a protect box). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore) {
+        return placeAt(p, id, x, y, z, leases, seal, restore, null);
+    }
+
+    /**
+     * 0.30.2 (package 5): place against the given neighbour (side: the offset from the cell to the clicked block; the
+     * clicked face is side.face(), the anchor's face that borders the cell, so the block goes into x y z). The lease
+     * logic is placeAt's. The anchor must still be clickable and its face in reach.
+     */
+    public static String placeAgainst(LocalPlayer p, String id, int x, int y, int z, PlaceRules.Side side, LeaseSet leases) {
+        return placeAt(p, id, x, y, z, leases, null, false, side);
+    }
+
+    private static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore, PlaceRules.Side forced) {
         Minecraft mc = Minecraft.getInstance();
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
@@ -901,7 +914,10 @@ public final class Clearing {
         }
         LiveWorld w = new LiveWorld();
         w.set(p);
-        PlaceRules.Side s = PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ());
+        PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
+                : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
+                        && io.github.mojolowjo.entropybot.clear.RimPlan.faceInReach(new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
+                        ? forced : null;
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
         // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
         String le = restore ? leases.restoreLease(x, y, z, "putting back " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
@@ -1205,7 +1221,15 @@ public final class Clearing {
                 }
                 String r;
                 try {
-                    r = placeAt(p, bs.placeId != null ? bs.placeId : bs.id, c.x(), c.y(), c.z(), bs.leases);
+                    String pid = bs.placeId != null ? bs.placeId : bs.id;
+                    // the side stance clicks its anchor's face (seen from the feet cell); the top stance lets placeAt pick
+                    PlaceRules.Side side = bs.pick.side();
+                    if (side != null) {
+                        PlaceRules.Side seen = io.github.mojolowjo.entropybot.clear.RimPlan.seenFrom(w, c, p.getX(), p.getEyeY(), p.getZ());
+                        if (seen != null) side = seen;
+                    }
+                    r = side != null ? placeAgainst(p, pid, c.x(), c.y(), c.z(), side, bs.leases)
+                            : placeAt(p, pid, c.x(), c.y(), c.z(), bs.leases);
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }
@@ -1246,7 +1270,8 @@ public final class Clearing {
     private static String rimStop(Seq seq, BuildState bs, ClearWorld w, List<Pos> missing, int baritonePlaced, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
         // the example: a cell given up for a reason of its own first, else the first one left
         Pos ex = missing.get(0);
-        for (Pos c : missing) if (bs.gaveUp.containsKey(c) || !io.github.mojolowjo.entropybot.clear.RimPlan.supported(w, c)) { ex = c; break; }
+        for (Pos c : missing) if (bs.gaveUp.containsKey(c) || (!io.github.mojolowjo.entropybot.clear.RimPlan.supported(w, c)
+                && !io.github.mojolowjo.entropybot.clear.RimPlan.anchored(w, c))) { ex = c; break; }
         List<Pos> left = new ArrayList<>(missing);
         left.remove(ex);
         left.add(0, ex);
