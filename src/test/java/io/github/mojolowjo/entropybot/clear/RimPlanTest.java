@@ -37,6 +37,19 @@ class RimPlanTest {
         assertEquals(49 - 25, RimPlan.missing(w, floor).size());
     }
 
+    /** 0.30.4 (live, open terrain): an air cell with solid on all six sides is sealed: not missing, nothing can reach it. */
+    @Test void aSealedCellIsNotMissing() {
+        FakeWorld w = new FakeWorld();
+        w.fill(0, 2, 60, 62, 0, 2, "cobblestone");
+        w.fill(1, 1, 61, 61, 1, 1, "air");
+        Pos c = new Pos(1, 61, 1);
+        assertTrue(RimPlan.sealed(w, c));
+        assertTrue(RimPlan.missing(w, List.of(c)).isEmpty());
+        w.fill(1, 1, 62, 62, 1, 1, "air");
+        assertFalse(RimPlan.sealed(w, c), "open above");
+        assertEquals(1, RimPlan.missing(w, List.of(c)).size());
+    }
+
     @Test void theWestRimStandsOnTheInsidePlanksNotTheHill() {
         FakeWorld w = hillside();
         w.fill(5, 9, 53, 53, -2, 2, "oak_planks");          // Baritone placed the inside

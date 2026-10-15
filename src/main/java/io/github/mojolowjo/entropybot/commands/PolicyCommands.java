@@ -206,6 +206,19 @@ public final class PolicyCommands {
         return g;
     }
 
+    /**
+     * 0.30.4 (house on open terrain): give an all-heights area the heights y1..y2 (saved, the guard told). Null when
+     * done, else why not.
+     */
+    String setHeights(String name, int y1, int y2) {
+        JsonObject b = findArea(name);
+        if (b == null) return "error: I have no area called " + name;
+        b.addProperty("y1", Math.min(y1, y2));
+        b.addProperty("y2", Math.max(y1, y2));
+        changed("", false);
+        return null;
+    }
+
     private String changed(String msg, boolean modeReply) {
         saved.run();
         String[] r = guard.apply(guardPolicy(), strict());

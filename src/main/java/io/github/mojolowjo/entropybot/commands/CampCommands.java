@@ -159,6 +159,27 @@ final class CampCommands {
         if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + area + " is a safe area - I never build there";
         String[] err = new String[1];
         int[] box = DigCommands.areaBox(c, area, err);
+        // 0.30.4 (trial 9, open terrain): an area without heights gets them from the ground: the floor at the lowest
+        // surface block of its columns (top solid block, snow layers and leaves skipped), 5 high; saved on the area
+        String floorNote = "";
+        if (box == null && err[0] != null && err[0].contains("covers every height") && !ab.has("round") && Minecraft.getInstance().level != null) {
+            int ax1 = Math.min(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2")), ax2 = Math.max(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2"));
+            int az1 = Math.min(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2")), az2 = Math.max(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2"));
+            if (ax2 - ax1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE || az2 - az1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE
+                    || (long) (ax2 - ax1 + 1) * (az2 - az1 + 1) > 4096)
+                return io.github.mojolowjo.entropybot.camp.HousePlan.TOO_SMALL;
+            int[] tops = surfaceTops(Minecraft.getInstance().level, ax1, az1, ax2, az2);
+            int fy = io.github.mojolowjo.entropybot.camp.HouseGround.floorY(tops);
+            for (int t : tops) if (t == io.github.mojolowjo.entropybot.camp.HouseGround.NONE) { fy = t; break; }
+            if (fy == io.github.mojolowjo.entropybot.camp.HouseGround.NONE)
+                return "error: I can't see the ground of " + area + " (not loaded) - next: goto " + (ax1 + ax2) / 2 + " ~ " + (az1 + az2) / 2 + ", then house " + area;
+            int fy2 = fy + io.github.mojolowjo.entropybot.camp.HouseGround.HEIGHT - 1;
+            String se = c.policySetHeights(area, fy, fy2);
+            if (se != null) return se;
+            LOG.info("[entropybot] house {}: no heights given, floor at y {} (lowest surface), y {}..{} saved on the area", area, fy, fy, fy2);
+            floorNote = "floor at y " + fy + " (the lowest ground in " + area + ", 5 high), ";
+            box = new int[]{ax1, fy, az1, ax2, fy2, az2};
+        }
         Map<String, Integer> inv = Gui.inventory(p);
         // 0.30.2: keep the block that already stands in the house's shell (built blocks and cobblestone, counted per id)
         Map<String, Integer> placed = new java.util.HashMap<>();
@@ -189,17 +210,63 @@ final class CampCommands {
         standing.put(io.github.mojolowjo.entropybot.camp.HousePlan.SHELL, placed.getOrDefault(blk, 0) > 0);
         JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
         int[] cp = camp != null && camp.has("x") ? Jobs.pos(camp) : null;
+        // 0.30.4: on a rerun the floor layer inside the wall line may still hold snow or dirt (a natural block is no floor):
+        // those cells are dug one by one before the fill (the cobblestone floor itself stays)
+        List<int[]> foreign = new java.util.ArrayList<>();
+        if (box != null && Boolean.TRUE.equals(standing.get(io.github.mojolowjo.entropybot.camp.HousePlan.SHELL))) {
+            try {
+                Clearing.LiveWorld lw = new Clearing.LiveWorld();
+                lw.set(p);
+                int fy = Math.min(box[1], box[4]);
+                for (int x = Math.min(box[0], box[3]) + 1; x <= Math.max(box[0], box[3]) - 1; x++) {
+                    for (int z = Math.min(box[2], box[5]) + 1; z <= Math.max(box[2], box[5]) - 1; z++) {
+                        String qid = lw.id(x, fy, z);
+                        if (qid == null || lw.air(x, fy, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, fy, z)) continue;
+                        if (qid.equals(blk) || lw.builtBlock(x, fy, z) || lw.blockEntity(x, fy, z)) continue;
+                        foreign.add(new int[]{x, fy, z});
+                    }
+                }
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] house {}: could not look at the floor layer: {}", area, ex.toString());
+            }
+        }
         var plan = io.github.mojolowjo.entropybot.camp.HousePlan.plan(new io.github.mojolowjo.entropybot.camp.HousePlan.Facts(
-                area, box, box != null, blk, inv, standing, cp));
+                area, box, box != null, blk, inv, standing, cp, foreign));
         if (plan.err() != null) return box == null && err[0] != null && !err[0].contains("covers every height") ? err[0] : plan.err();
         String text = String.join(" then ", plan.steps());
         LOG.info("[entropybot] house {}: {}", area, String.join(" > ", plan.steps()));
         if (splice) {
             String e = c.chainsRef().spliceNext(text);
-            return e == null ? "ok: " + plan.summary() + " - next in this chain" : "error: house: " + e;
+            return e == null ? "ok: " + floorNote + plan.summary() + " - next in this chain" : "error: house: " + e;
         }
         String r = c.chainsRef().startChain(from, "house", text, 1);
-        return r.startsWith("started") ? "started: " + plan.summary() + " - each step reports; run house " + area + " again after a stop, it skips what stands" : r;
+        return r.startsWith("started") ? "started: " + floorNote + plan.summary() + " - each step reports; run house " + area + " again after a stop, it skips what stands" : r;
+    }
+
+    /** 0.30.4: per column (x-major, then z) the y of the top solid block that is not a snow layer or leaves; NONE when not loaded. */
+    static int[] surfaceTops(ClientLevel lv, int x1, int z1, int x2, int z2) {
+        int[] out = new int[(x2 - x1 + 1) * (z2 - z1 + 1)];
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        int i = 0;
+        for (int x = x1; x <= x2; x++) {
+            for (int z = z1; z <= z2; z++) {
+                int top = io.github.mojolowjo.entropybot.camp.HouseGround.NONE;
+                m.set(x, lv.getMinBuildHeight(), z);
+                if (lv.isLoaded(m)) {
+                    int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+                    for (; y >= lv.getMinBuildHeight(); y--) {
+                        m.set(x, y, z);
+                        BlockState st = lv.getBlockState(m);
+                        if (st.isAir() || st.getBlock() instanceof net.minecraft.world.level.block.SnowLayerBlock || st.is(net.minecraft.tags.BlockTags.LEAVES)
+                                || !st.getFluidState().isEmpty() || st.getCollisionShape(lv, m).isEmpty()) continue;
+                        top = y;
+                        break;
+                    }
+                }
+                out[i++] = top;
+            }
+        }
+        return out;
     }
 
     /** A block whose id contains the word inside the area box's walls (x1+1..x2-1, y1+1..y2-1, z1+1..z2-1). */

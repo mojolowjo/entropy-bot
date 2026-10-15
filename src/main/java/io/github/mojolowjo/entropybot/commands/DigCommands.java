@@ -43,7 +43,7 @@ final class DigCommands {
 
     static final String NO_ZONE = "error: no work zone - PM \"zone corner1\" and \"zone corner2\" standing on opposite corners";
     static final String DIG_USAGE = DigArgs.USAGE;
-    static final String BUILD_USAGE = "error: usage build <floor|walls|roof|fill|shell|clear> <block> <area>";
+    static final String BUILD_USAGE = "error: usage build <floor|walls|roof|fill|shell|under|clear> <block> <area>";
     static final String PLACE_USAGE = "error: usage place <block item> x y z";
 
     // ---- the work zone ----
@@ -502,7 +502,7 @@ final class DigCommands {
     static String build(Commands c, LocalPlayer p, String rest, String from) {
         String[] parts = rest == null ? new String[0] : rest.trim().split("\\s+");
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
-        Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
+        Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea", "under", "fill");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
         int need = shape.equals("clear") ? 2 : 3;
@@ -534,10 +534,22 @@ final class DigCommands {
         ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
         // 0.30.1: the shape's cells; a rerun of a finished step (house's chain) starts nothing
-        List<io.github.mojolowjo.entropybot.clear.Pos> cells = io.github.mojolowjo.entropybot.clear.RimPlan.withoutDoor(
-                io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box), doorXz, box.y1());
         Clearing.LiveWorld lw = new Clearing.LiveWorld();
         lw.set(p);
+        boolean under = shape.equals("under");
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells;
+        if (under) {
+            // 0.30.4 (house on open terrain): pillars under the floor layer, down to the ground, at most 4 deep
+            var pl = io.github.mojolowjo.entropybot.camp.HouseGround.pillars(box.x1(), box.z1(), box.x2(), box.z2(), box.y1(),
+                    (x, y, zz) -> PlaceRules.free(lw, x, y, zz));
+            if (!pl.tooDeep().isEmpty()) return pl.stopText(areaName);
+            cells = new java.util.ArrayList<>();
+            for (int[] q : pl.cells()) cells.add(new io.github.mojolowjo.entropybot.clear.Pos(q[0], q[1], q[2]));
+            if (cells.isEmpty()) return "done: nothing to fill under the floor of " + areaName + " (the ground is right under it)";
+        } else {
+            cells = io.github.mojolowjo.entropybot.clear.RimPlan.withoutDoor(
+                    io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box), doorXz, box.y1());
+        }
         int missing0 = io.github.mojolowjo.entropybot.clear.RimPlan.missing(lw, cells).size();
         if (missing0 == 0) return io.github.mojolowjo.entropybot.clear.RimPlan.nothingText(shape, CraftPlanner.shortId(id),
                 io.github.mojolowjo.entropybot.clear.RimPlan.otherBlocks(lw, cells, id));
@@ -573,18 +585,25 @@ final class DigCommands {
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();
         cm.execute("sel clear");
+        if (under) {
+            // the pillars are scattered cells, not a box: the mod's own placer does them (lowest first), no Baritone builder
+            bs.rim = true;
+            bs.stage = "pick";
+            Jobs.safeSettings();
+        } else {
         int yLayer = shape.equals("roof") ? box.y2() : ylo;              // 0.28.2: roof = the top layer
         boolean layer = shape.equals("floor") || shape.equals("roof");
         cm.execute("sel pos1 " + x1 + " " + (layer ? yLayer : y1) + " " + z1);
         cm.execute("sel pos2 " + x2 + " " + (layer ? yLayer : y2) + " " + z2);
         cm.execute("sel " + ops.get(shape) + " " + id);
+        }
         bs.status = "building " + shape + " of " + CraftPlanner.shortId(id);
         bs.start = Core.INSTANCE.tick();
         bs.lastChange = bs.start;
         Seq.Step st = Clearing.clearStep(new ClearJob.Options().box(box).label(bs.status));
         st.kind = Clearing.KIND_BUILD;
         st.state = bs;
-        Clearing.placingOwned = true;
+        Clearing.placingOwned = !under;
         String started = c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
         if (started == null || !started.startsWith("started") || c.jobs.job == null) {
             Clearing.endBuild(bs);
