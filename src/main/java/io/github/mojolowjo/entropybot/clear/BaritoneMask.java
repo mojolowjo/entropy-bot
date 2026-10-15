@@ -150,6 +150,9 @@ public final class BaritoneMask {
     public Verdict verdict(ClearWorld w, int x, int y, int z) {
         if (!box.contains(x, y, z)) return Verdict.OUTSIDE;
         if (only != null && !only.contains(packed(x, y, z))) return Verdict.OUTSIDE;
+        // 0.30.2 (trial 8 snow): only true air (and cave air) is EMPTY; a 1-layer snow, grass or a flower (no collision,
+        // not air) falls through to DIG, as Baritone's own bsi sees it as a block to break. Checked: this was already so,
+        // so the surface face-box pause (outOfBounds -> assemble null) is not explained by snow layers being EMPTY here.
         if (w.air(x, y, z)) return Verdict.EMPTY;
         if (w.fluid(x, y, z)) return liquidBlock(w, x, y, z) ? Verdict.EMPTY : Verdict.WATER;      // waterlogged: a block stands there
         if (w.unbreakable(x, y, z)) return Verdict.UNBREAKABLE;
