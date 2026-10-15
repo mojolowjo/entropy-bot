@@ -19,7 +19,8 @@ class HousePlanTest {
         assertNull(p.err());
         assertEquals(List.of(
                 "build floor cobblestone house",
-                "build walls cobblestone house",
+                "dig 0 65 0 6 68 6",                       // 0.30.2: the whole box above the floor, before the walls
+                "build walls cobblestone house door 3 6",   // 0.30.2: the door's two cells stay open
                 "build roof cobblestone house",
                 "dig 3 65 6 3 66 6 force",                 // door south (no camp), middle of the side
                 "place chest 2 65 1",                      // back wall (north) inside
@@ -30,6 +31,7 @@ class HousePlanTest {
                 "scan base"), p.steps());
         assertTrue(p.summary().contains("needs about 168 cobblestone (you have 200)"), p.summary());
         assertTrue(p.summary().contains("door on the south side"));
+        assertTrue(p.summary().contains(": 11 steps"), p.summary());
     }
 
     @Test
@@ -71,6 +73,37 @@ class HousePlanTest {
         assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10)));
         assertEquals("minecraft:oak_planks", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10, "minecraft:oak_planks", 64)));
         assertEquals("minecraft:stone_bricks", HousePlan.chooseBlock("stone_bricks", Map.of()));
+    }
+
+    /** 0.30.2 review c: a rerun digs only the inside (a cobblestone shell stays); a big box goes per layer. */
+    @Test
+    void rerunDigsOnlyTheInsideAndBigBoxesGoPerLayer() {
+        Map<String, Integer> inv = Map.of("minecraft:cobblestone", 200, "minecraft:chest", 1, "minecraft:crafting_table", 1, "minecraft:furnace", 1);
+        HousePlan.Plan p = plan(new int[]{0, 64, 0, 6, 68, 6}, inv, Map.of(HousePlan.SHELL, true), null);
+        assertEquals("dig 1 65 1 5 67 5", p.steps().get(1), p.steps().toString());
+        HousePlan.Plan big = plan(new int[]{0, 64, 0, 20, 68, 20}, inv, Map.of(), null);
+        assertEquals("dig 0 68 0 20 68 20", big.steps().get(1), "441 x 4 > 1000: top layer first");
+        assertEquals("dig 0 65 0 20 65 20", big.steps().get(4));
+        assertTrue(big.steps().get(5).startsWith("build walls"));
+    }
+
+    @Test
+    void stationsAndBuildingBlocks() {
+        assertFalse(HousePlan.isStation("minecraft:ender_chest", "chest"));
+        assertTrue(HousePlan.buildingBlock("minecraft:spruce_planks"));
+        assertTrue(HousePlan.buildingBlock("minecraft:cobblestone"));
+        for (String s : new String[]{"minecraft:torch", "minecraft:oak_door", "minecraft:glass", "minecraft:ladder", "minecraft:oak_sign", "minecraft:oak_stairs"})
+            assertFalse(HousePlan.buildingBlock(s), s);
+    }
+
+    /** 0.30.2 (trial 8): 87 plank wall cells stand; the bag now holds more cobblestone: the planks are kept. */
+    @Test
+    void theBlockThatStandsIsKept() {
+        Map<String, Integer> bag = Map.of("minecraft:cobblestone", 49, "minecraft:spruce_planks", 36);
+        assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, bag, Map.of()));
+        assertEquals("minecraft:spruce_planks", HousePlan.chooseBlock(null, bag, Map.of("minecraft:spruce_planks", 87, "minecraft:cobblestone", 3)));
+        assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, bag, Map.of("minecraft:spruce_planks", 4, "minecraft:cobblestone", 4)), "a tie: the bag's choice");
+        assertEquals("minecraft:oak_planks", HousePlan.chooseBlock("oak_planks", bag, Map.of("minecraft:spruce_planks", 87)), "asked wins");
     }
 
     @Test

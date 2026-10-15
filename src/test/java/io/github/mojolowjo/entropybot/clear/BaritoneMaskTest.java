@@ -24,6 +24,18 @@ class BaritoneMaskTest {
         assertEquals(Verdict.DIG, mask(false, true).verdict(w, 1, 51, 1));
     }
 
+    /** 0.30.2 (trial 8 snow): a snow layer or grass (no collision, not air) is a block to break; only air is EMPTY. */
+    @Test
+    void snowLayerAndGrassAreDugAirIsEmpty() {
+        FakeWorld w = new FakeWorld();
+        w.set(1, 52, 1, "snow");
+        w.set(2, 52, 2, "short_grass");
+        w.set(3, 52, 3, "air");
+        assertEquals(Verdict.DIG, mask(false, true).verdict(w, 1, 52, 1));
+        assertEquals(Verdict.DIG, mask(false, true).verdict(w, 2, 52, 2));
+        assertEquals(Verdict.EMPTY, mask(false, true).verdict(w, 3, 52, 3));
+    }
+
     @Test
     void chestRefusedEvenWithForce() {
         FakeWorld w = new FakeWorld();

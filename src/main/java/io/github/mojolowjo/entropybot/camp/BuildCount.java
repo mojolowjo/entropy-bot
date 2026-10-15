@@ -33,6 +33,11 @@ public final class BuildCount {
         return "(needs " + need + " " + item + ", you have " + have + " - gather " + item + " " + (need - have) + " first)";
     }
 
+    /** 0.30.2: what a build step still needs: one block per missing cell of the shape (RimPlan.missing). */
+    public static int needMissing(int missingCells) {
+        return Math.max(0, missingCells);
+    }
+
     /** Null when it may start, else the refusal: fewer than 10% of the blocks it needs. */
     public static String refusal(int need, int have, String item) {
         if (need <= 0 || have * 10L >= need) return null;

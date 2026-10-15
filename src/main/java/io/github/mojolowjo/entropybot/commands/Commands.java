@@ -1492,7 +1492,7 @@ public final class Commands implements Chains.Env {
         for (int dx = -r; dx <= r; dx++) for (int dy = -Math.min(r, 8); dy <= Math.min(r, 8); dy++) for (int dz = -r; dz <= r; dz++) {
             q.set(pos.x() + dx, pos.y() + dy, pos.z() + dz);
             String id = mc.level.getBlockState(q).getBlock().getDescriptionId();
-            if (id.contains("ender_chest") || (!id.contains("chest") && !id.contains("barrel"))) continue;
+            if (!io.github.mojolowjo.entropybot.camp.HousePlan.isStation(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).toString(), "chest") && !id.contains("barrel")) continue;   // 0.30.2: one chest test (review e)
             long d = (long) dx * dx + (long) dy * dy + (long) dz * dz;
             if (d < bestD) {
                 bestD = d;

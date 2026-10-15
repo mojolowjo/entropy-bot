@@ -160,7 +160,25 @@ final class CampCommands {
         String[] err = new String[1];
         int[] box = DigCommands.areaBox(c, area, err);
         Map<String, Integer> inv = Gui.inventory(p);
-        String blk = io.github.mojolowjo.entropybot.camp.HousePlan.chooseBlock(w.size() > 1 ? w.get(1) : null, inv);
+        // 0.30.2: keep the block that already stands in the house's shell (built blocks and cobblestone, counted per id)
+        Map<String, Integer> placed = new java.util.HashMap<>();
+        if (box != null) {
+            try {
+                Clearing.LiveWorld lw = new Clearing.LiveWorld();
+                lw.set(p);
+                for (io.github.mojolowjo.entropybot.clear.Pos q : io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells("shell",
+                        io.github.mojolowjo.entropybot.clear.ClearBox.of(box[0], box[1], box[2], box[3], box[4], box[5]))) {
+                    String qid = lw.id(q.x(), q.y(), q.z());
+                    if (qid == null || lw.air(q.x(), q.y(), q.z())) continue;
+                    // review d: full building blocks only (no torches, doors, glass, ladders, signs, stairs)
+                    if (!lw.fullBlock(q.x(), q.y(), q.z()) || !io.github.mojolowjo.entropybot.camp.HousePlan.buildingBlock(qid)) continue;
+                    if (lw.builtBlock(q.x(), q.y(), q.z()) || qid.equals("minecraft:cobblestone")) placed.merge(qid, 1, Integer::sum);
+                }
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] house {}: could not count the standing blocks: {}", area, ex.toString());
+            }
+        }
+        String blk = io.github.mojolowjo.entropybot.camp.HousePlan.chooseBlock(w.size() > 1 ? w.get(1) : null, inv, placed);
         String rid = c.crafting.planner.resolveItem(blk.replaceFirst("^minecraft:", ""), inv);
         if (rid != null) blk = rid;
         ClientLevel lv = Minecraft.getInstance().level;
@@ -168,6 +186,7 @@ final class CampCommands {
         if (box != null && lv != null) {
             for (String s : io.github.mojolowjo.entropybot.camp.HousePlan.STATIONS) standing.put(s, insideHas(lv, box, s));
         }
+        standing.put(io.github.mojolowjo.entropybot.camp.HousePlan.SHELL, placed.getOrDefault(blk, 0) > 0);
         JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
         int[] cp = camp != null && camp.has("x") ? Jobs.pos(camp) : null;
         var plan = io.github.mojolowjo.entropybot.camp.HousePlan.plan(new io.github.mojolowjo.entropybot.camp.HousePlan.Facts(
@@ -190,7 +209,9 @@ final class CampCommands {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int x = x1; x <= x2; x++) for (int y = y1; y <= y2; y++) for (int z = z1; z <= z2; z++) {
             m.set(x, y, z);
-            if (lv.isLoaded(m) && net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(m).getBlock()).getPath().equals(word)) return true;
+            // 0.30.2: Visual Workbench's table is visualworkbench:minecraft/crafting_table: match the id's last part
+            if (lv.isLoaded(m) && io.github.mojolowjo.entropybot.camp.HousePlan.isStation(
+                    net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(m).getBlock()).toString(), word)) return true;
         }
         return false;
     }

@@ -34,6 +34,10 @@ public final class HousePlan {
     public record Plan(List<String> steps, String summary, String err) {}
 
     public static final String[] STATIONS = {"chest", "crafting_table", "furnace"};
+    /** standing key: the chosen block already stands in the house's shell (a rerun). */
+    public static final String SHELL = "shell";
+    /** A box dig over this many cells asks for confirm: the house splits it per layer instead. */
+    public static final int DIG_MAX = 1000;
 
     public static Plan plan(Facts f) {
         if (!f.hasHeights() || f.box() == null) return new Plan(List.of(), null, TOO_SMALL);
@@ -68,7 +72,21 @@ public final class HousePlan {
         List<String> out = new ArrayList<>();
         String b6 = shortId(blk);
         out.add("build floor " + b6 + " " + area);
-        out.add("build walls " + b6 + " " + area);
+        // 0.30.2 (trial 8 hillside): clear the whole box above the floor (wall line, interior, roof line) before the
+        // walls, so the builder and the rim placer find free wall cells and somewhere to stand. No force: dig ... force
+        // is capped at 64 blocks (DigCommands), and without it the hill's snow and dirt go while the walls and roof
+        // a former run built (planks) stay. A box with nothing left ends "ok: done ... broke 0 blocks" (the chain goes on).
+        // review c: on a rerun (the chosen block already stands in the shell, standing "shell") only the inside is dug,
+        // so a cobblestone shell (not a protected block) is never taken down; a box over 1000 cells goes per layer
+        boolean rerun = Boolean.TRUE.equals(f.standing().get(SHELL));
+        int dx1 = rerun ? x1 + 1 : x1, dx2 = rerun ? x2 - 1 : x2, dz1 = rerun ? z1 + 1 : z1, dz2 = rerun ? z2 - 1 : z2, dy2 = rerun ? y2 - 1 : y2;
+        if (dy2 >= iy) {
+            long vol = (long) (dx2 - dx1 + 1) * (dy2 - iy + 1) * (dz2 - dz1 + 1);
+            if (vol <= DIG_MAX) out.add("dig " + dx1 + " " + iy + " " + dz1 + " " + dx2 + " " + dy2 + " " + dz2);
+            else for (int y = dy2; y >= iy; y--) out.add("dig " + dx1 + " " + y + " " + dz1 + " " + dx2 + " " + y + " " + dz2);
+        }
+        // the door's two cells are left out of the walls (the door dig below cuts them once; a rerun leaves the gap)
+        out.add("build walls " + b6 + " " + area + " door " + door[0] + " " + door[1]);
         out.add("build roof " + b6 + " " + area);
         String d = door[0] + " " + iy + " " + door[1] + " " + door[0] + " " + (iy + 1) + " " + door[1];
         out.add("dig " + d + " force");
@@ -117,6 +135,23 @@ public final class HousePlan {
 
     /** The block for the house: the one asked for, else planks when it carries more planks than cobblestone. */
     public static String chooseBlock(String asked, Map<String, Integer> inv) {
+        return chooseBlock(asked, inv, Map.of());
+    }
+
+    /**
+     * 0.30.2 (trial 8: plank walls, then cobblestone walls on the rerun): with nothing asked, the block that already
+     * stands most in the house's shape (built blocks the caller counted: id -> cells) is kept; the bag decides only when
+     * nothing stands. Ties go to the bag's choice when it is among them, else the first by name.
+     */
+    public static String chooseBlock(String asked, Map<String, Integer> inv, Map<String, Integer> placed) {
+        if ((asked == null || asked.isBlank()) && placed != null && !placed.isEmpty()) {
+            String bag = chooseBlock(null, inv, null);
+            int top = placed.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+            if (top > 0) {
+                if (placed.getOrDefault(bag, 0) == top) return bag;
+                return placed.entrySet().stream().filter(e -> e.getValue() == top).map(Map.Entry::getKey).sorted().findFirst().get();
+            }
+        }
         if (asked != null && !asked.isBlank()) return asked.contains(":") ? asked : "minecraft:" + asked;
         String bestPlank = null;
         int planks = 0;
@@ -128,6 +163,26 @@ public final class HousePlan {
         }
         int cobble = inv.getOrDefault("minecraft:cobblestone", 0);
         return bestPlank != null && planks > cobble ? bestPlank : "minecraft:cobblestone";
+    }
+
+    /**
+     * 0.30.2: block id {@code id} is station {@code word} (crafting_table, furnace, chest) whatever mod replaced it:
+     * the part after the namespace and any path ("visualworkbench:minecraft/crafting_table") ends with the word.
+     */
+    public static boolean isStation(String id, String word) {
+        if (id == null || word == null) return false;
+        String s = id.substring(id.indexOf(':') + 1);
+        s = s.substring(s.lastIndexOf('/') + 1);
+        if (s.startsWith("ender_")) return false;                  // an ender chest is no storage of the base
+        return s.equals(word) || s.endsWith("_" + word);
+    }
+
+    private static final java.util.regex.Pattern NOT_BUILDING = java.util.regex.Pattern.compile(
+            "torch|door|glass|pane|ladder|sign|stairs|slab|fence|wall_|button|pressure_plate|carpet|bed|lantern|rail");
+
+    /** review d: a full building block by name (the caller checks the full collision shape): no torches, doors, glass... */
+    public static boolean buildingBlock(String id) {
+        return id != null && !NOT_BUILDING.matcher(id).find();
     }
 
     static String shortId(String id) {

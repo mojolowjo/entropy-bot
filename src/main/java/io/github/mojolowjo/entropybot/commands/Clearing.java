@@ -229,6 +229,8 @@ public final class Clearing {
         // (8) the block for the current pick (a filler under a hole, else the build block); (9) the not-moving watch
         String placeId;
         long lastFeet = Long.MIN_VALUE, stillSince;
+        // 0.30.2 (trial 8 snow): a refused click into a cell holding a no-collision block (a snow layer) breaks it first
+        boolean clearing, clearStarted;
     }
 
     /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
@@ -893,6 +895,19 @@ public final class Clearing {
 
     /** restore (P1): the cell is one the bot broke itself; its lease is LeaseSet.restoreLease (any mode, never a protect box). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore) {
+        return placeAt(p, id, x, y, z, leases, seal, restore, null);
+    }
+
+    /**
+     * 0.30.2 (package 5): place against the given neighbour (side: the offset from the cell to the clicked block; the
+     * clicked face is side.face(), the anchor's face that borders the cell, so the block goes into x y z). The lease
+     * logic is placeAt's. The anchor must still be clickable and its face in reach.
+     */
+    public static String placeAgainst(LocalPlayer p, String id, int x, int y, int z, PlaceRules.Side side, LeaseSet leases) {
+        return placeAt(p, id, x, y, z, leases, null, false, side);
+    }
+
+    private static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore, PlaceRules.Side forced) {
         Minecraft mc = Minecraft.getInstance();
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
@@ -901,7 +916,10 @@ public final class Clearing {
         }
         LiveWorld w = new LiveWorld();
         w.set(p);
-        PlaceRules.Side s = PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ());
+        PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
+                : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
+                        && io.github.mojolowjo.entropybot.clear.RimPlan.sees(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
+                        ? forced : null;
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
         // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
         String le = restore ? leases.restoreLease(x, y, z, "putting back " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
@@ -1158,6 +1176,7 @@ public final class Clearing {
                     bs.layerStart = now;
                 }
                 bs.pick = pk;
+                bs.clearing = false;
                 bs.placeId = bs.id;
                 if (pk.filler()) {
                     String fid = io.github.mojolowjo.entropybot.clear.RimPlan.filler(Gui.inventory(p), bs.id);
@@ -1205,18 +1224,67 @@ public final class Clearing {
                 }
                 String r;
                 try {
-                    r = placeAt(p, bs.placeId != null ? bs.placeId : bs.id, c.x(), c.y(), c.z(), bs.leases);
+                    String pid = bs.placeId != null ? bs.placeId : bs.id;
+                    // the side stance clicks its anchor's face (seen from the feet cell); the top stance lets placeAt pick
+                    PlaceRules.Side side = bs.pick.side();
+                    if (side != null) {
+                        PlaceRules.Side seen = io.github.mojolowjo.entropybot.clear.RimPlan.seenFrom(w, c, p.getX(), p.getEyeY(), p.getZ());
+                        if (seen != null) side = seen;
+                    }
+                    r = side != null ? placeAgainst(p, pid, c.x(), c.y(), c.z(), side, bs.leases)
+                            : placeAt(p, pid, c.x(), c.y(), c.z(), bs.leases);
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }
+                // review a: only a replaceable cover (snow layer, grass) is broken, never a built block or a block
+                // entity (torch, button, rail, crop...), and only in reach; else the click counts as a try
+                boolean coverOk = io.github.mojolowjo.entropybot.clear.RimPlan.replaceable(w, c.x(), c.y(), c.z())
+                        && ClearEngine.eyeDistSq(p.getX(), p.getEyeY(), p.getZ(), c.x(), c.y(), c.z()) <= PlaceRules.PLACE_REACH * PlaceRules.PLACE_REACH;
+                if (!r.startsWith("ok") && !bs.clearing && coverOk && !r.contains("nothing in reach")) {
+                    // a snow layer (grass...) in the cell: break it by hand first, then place (once per pick)
+                    LOG.info("[entropybot] build rim: {} at {}: {} - breaking the {} in it first", blk, c.key(), r, w.name(c.x(), c.y(), c.z()));
+                    String le = bs.leases.take("clearing " + c.key() + " for " + blk, ClearBox.of(c.x(), c.y(), c.z(), c.x(), c.y(), c.z()), false, false);
+                    if (le == null) {
+                        bs.clearing = true;
+                        bs.clearStarted = false;
+                        bs.stage = "clearcell";
+                        bs.stageTick = now;
+                        return "wait";
+                    }
+                    r = le;
+                }
                 if (!r.startsWith("ok")) {
                     LOG.info("[entropybot] build rim: {} at {}: {}", blk, c.key(), r);
-                    triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
+                    bs.clearing = false;
+                    // only a click with nothing in reach is "nowhere to stand"; a refused click counts as a try
+                    triedCell(bs, c, r.contains("nothing in reach") ? io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND
+                            : io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
                     bs.stage = "pick";
                     return "wait";
                 }
+                bs.clearing = false;
                 bs.stage = "check";
                 bs.stageTick = now;
+                return "wait";
+            }
+            case "clearcell" -> {
+                Pos c = bs.pick.cell();
+                Minecraft mc = Minecraft.getInstance();
+                if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > 5 * 20) {   // gone (or 5 s): place again
+                    try { mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+                    bs.stage = "place";
+                    return "wait";
+                }
+                BlockPos bp = new BlockPos(c.x(), c.y(), c.z());
+                Vec3 centre = Vec3.atCenterOf(bp);
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, centre); } catch (RuntimeException ignored) {}
+                Vec3 eye = p.getEyePosition();
+                net.minecraft.core.Direction face = net.minecraft.core.Direction.getNearest((float) (eye.x - centre.x), (float) (eye.y - centre.y), (float) (eye.z - centre.z));
+                if (!bs.clearStarted) {
+                    mc.gameMode.startDestroyBlock(bp, face);
+                    bs.clearStarted = true;
+                } else mc.gameMode.continueDestroyBlock(bp, face);
+                p.swing(InteractionHand.MAIN_HAND);
                 return "wait";
             }
             default -> {                                            // check: placed blocks show up a tick or two later
@@ -1246,7 +1314,8 @@ public final class Clearing {
     private static String rimStop(Seq seq, BuildState bs, ClearWorld w, List<Pos> missing, int baritonePlaced, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
         // the example: a cell given up for a reason of its own first, else the first one left
         Pos ex = missing.get(0);
-        for (Pos c : missing) if (bs.gaveUp.containsKey(c) || !io.github.mojolowjo.entropybot.clear.RimPlan.supported(w, c)) { ex = c; break; }
+        for (Pos c : missing) if (bs.gaveUp.containsKey(c) || (!io.github.mojolowjo.entropybot.clear.RimPlan.supported(w, c)
+                && !io.github.mojolowjo.entropybot.clear.RimPlan.anchored(w, c))) { ex = c; break; }
         List<Pos> left = new ArrayList<>(missing);
         left.remove(ex);
         left.add(0, ex);
@@ -1255,6 +1324,10 @@ public final class Clearing {
     }
 
     private static String rimEnd(Seq seq, BuildState bs, String text) {
+        if (bs.clearing) {                                   // review a: never leave a half-broken cover clicked
+            try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            bs.clearing = false;
+        }
         endBuild(bs);
         seq.jobs.finish(text + "; placing off again");
         return "wait";
