@@ -51,6 +51,26 @@ final class Hunting {
 
     boolean running() { return run != null; }
 
+    /** 0.30.5: the animals hunt may take within RANGE now (short kind -> count), the same filter as the hunt's pick. */
+    Map<String, Integer> animalsNear(LocalPlayer p) {
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        Minecraft mc = Minecraft.getInstance();
+        if (p == null || mc.level == null) return out;
+        List<String> allowed = c.vocab.expand("animals");
+        String dim = Storage.dim();
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (e == p || !e.isAlive() || p.distanceTo(e) > HuntRules.RANGE) continue;
+            String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+            if (!HuntRules.MEAT.containsKey(type)) continue;
+            boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
+            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
+                    || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
+            HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, false, false, e instanceof AgeableMob am && am.isBaby(), inAreas);
+            if (HuntRules.mayTake(t, allowed, null)) out.merge(type.substring(10), 1, Integer::sum);
+        }
+        return out;
+    }
+
     /** "hunting [on|off]". */
     String setting(String rest) {
         String r = rest == null ? "" : rest.trim().toLowerCase();

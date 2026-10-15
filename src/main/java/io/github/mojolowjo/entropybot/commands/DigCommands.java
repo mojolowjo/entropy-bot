@@ -148,6 +148,7 @@ final class DigCommands {
         if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
         net.minecraft.world.level.Level lv = p.level();
         int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
+        int[] here = {x, y, z};
         int surface;
         try {
             surface = Jobs.surfaceNoLeaves(lv, x, z);
@@ -155,11 +156,18 @@ final class DigCommands {
             LOG.warn("[entropybot] climb: surface at {} {}: {}", x, z, e.toString());
             return "error: I can't read the ground over me (" + e + ") - next: dig stairs up <dir> <n>";
         }
+        // 0.30.5 (trial 9, finding 4): two failed climbs here in a row - the third digs plain stairs up toward the camp
+        CLIMB_FAILS.ended(c.chainsRef().takeEnd("climb"));
+        if (ClimbFallback.fallback(CLIMB_FAILS.fails(here))) return climbFallback(c, p, here, surface, from);
         boolean pick = false;
         for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (e.getValue() > 0 && e.getKey().endsWith("_pickaxe")) pick = true;
         ClimbPlan.Plan plan = ClimbPlan.plan((cx, cy, cz) -> climbCell(lv, cx, cy, cz), x, y, z, surface, pick);
         if (plan.err() != null) {
             LOG.info("[entropybot] climb at {} {} {} (surface {}): {}", x, y, z, surface, plan.err());
+            if (pick) {
+                CLIMB_FAILS.failed(here);
+                if (ClimbFallback.fallback(CLIMB_FAILS.fails(here))) return plan.err() + " (the next climb digs plain stairs up toward the camp)";
+            }
             return plan.err();
         }
         if (plan.steps().isEmpty()) {
@@ -184,12 +192,61 @@ final class DigCommands {
             String dig = ClimbPlan.outDig(out);
             LOG.info("[entropybot] climb: walled in at {} {} {} - digging out to the {}: {}", x, y, z, out.dir(), dig);
             String r = c.chainsRef().startChain(from, "climb", dig, 1);
+            if (r.startsWith("started")) CLIMB_FAILS.started(here);
             return r.startsWith("started") ? "started: digging out to the " + out.dir() + " (walled in; " + out.cells().size() + " to break) - it ends ok: when the side is open" : r;
         }
         String text = ClimbPlan.startText(plan);
         LOG.info("[entropybot] climb at {} {} {}: {} - {}", x, y, z, text, String.join(" > ", plan.steps()));
         String r = c.chainsRef().startChain(from, "climb", String.join(" then ", plan.steps()), 1);
+        if (r.startsWith("started")) CLIMB_FAILS.started(here);
         return r.startsWith("started") ? "started: " + text + " - each step reports; a failed one says why" : r;
+    }
+
+    /** 0.30.5: climb's failures per spot (one bot, one game: a static is enough; a restart forgets them). */
+    static final ClimbFallback CLIMB_FAILS = new ClimbFallback();
+
+    /** 0.30.5: the third climb: "dig stairs up" toward the camp mark (same dimension), else north, via engine. */
+    static String climbFallback(Commands c, LocalPlayer p, int[] here, int surface, String from) {
+        int[] camp = null;
+        try {
+            JsonObject cp = Core.INSTANCE.knowledge.places().get("camp");
+            if (cp != null && cp.has("x") && Jobs.dimOf(cp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(p.level()))) camp = Jobs.pos(cp);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] climb fallback: the camp mark: {}", e.toString());
+        }
+        String dir = ClimbFallback.toward(here, camp);
+        boolean toCamp = dir != null;
+        if (dir == null) dir = "north";
+        int n = ClimbFallback.stepsUp(here[1], camp == null ? Integer.MIN_VALUE : camp[1], surface);
+        int[] d = StairPlan.dir(dir);
+        String text = ClimbFallback.startText(toCamp, dir, n);
+        LOG.info("[entropybot] {} from {} (camp {}, surface {})", text, Jobs.fmt(here), camp == null ? "none" : Jobs.fmt(camp), surface);
+        String r = c.chainsRef().startChain(from, "climb", String.join(" then ", StairPlan.upSteps(here[0], here[1], here[2], d[0], d[1], n)), 1);
+        if (!r.startsWith("started")) return r;
+        CLIMB_FAILS.started(here);
+        return "started: " + text + " - each step reports; a failed one says which block stopped it";
+    }
+
+    /** 0.30.5: the stair chains' honest end (Chains.endNote): which block stopped the walk, and the next verb. */
+    static String stairEndNote(String name, String msg) {
+        if (!ClimbFallback.needsNote(name, msg)) return null;
+        int[] g = ClimbFallback.gotoGoal(msg);
+        LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;
+        if (g == null || p == null) return null;
+        net.minecraft.world.level.Level lv = p.level();
+        String feet = solidId(lv, g[0], g[1], g[2]), head = solidId(lv, g[0], g[1] + 1, g[2]);
+        boolean floorOpen = climbCell(lv, g[0], g[1] - 1, g[2]) == ClimbPlan.Kind.OPEN;
+        return ClimbFallback.honestEnd(msg, g, feet, head, floorOpen);
+    }
+
+    /** The block id at a cell when it blocks a walk (solid or a fluid), else null. */
+    private static String solidId(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(bp)) return "an unloaded chunk";
+        net.minecraft.world.level.block.state.BlockState st = lv.getBlockState(bp);
+        if (!st.getFluidState().isEmpty()) return net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(st.getFluidState().getType()).getPath();
+        if (st.getCollisionShape(lv, bp).isEmpty()) return null;
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
     }
 
     /** 0.28.2 (D): a box of the guard's policy that is one of my main areas. */

@@ -61,7 +61,8 @@ final class CampCommands {
 
     String bootstrap(LocalPlayer p, String from, boolean internal, String rest) {
         boolean status = rest != null && rest.trim().equalsIgnoreCase("status");
-        if (rest != null && !rest.isBlank() && !status) return "usage: bootstrap | bootstrap status";
+        if (rest != null && rest.trim().equalsIgnoreCase("food")) return bootstrapFood(p, from, internal);   // 0.30.5
+        if (rest != null && !rest.isBlank() && !status) return "usage: bootstrap | bootstrap status | bootstrap food";
         // 0.24.3: inside a chain its steps go right after it (the chain "bootstrap then gather ..." stopped silently)
         boolean splice = !status && c.chainsRef().running() && internal;
         if (!status && !splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
@@ -113,9 +114,8 @@ final class CampCommands {
         BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
                 feet, table, furnace, chest, dir, snowy, quarryBlocked));
         if (plan.err() != null) return plan.err();
-        if (plan.steps().isEmpty()) return plan.summary();
         List<String> all = new ArrayList<>(pre);
-        all.addAll(plan.steps());
+        all.addAll(io.github.mojolowjo.entropybot.camp.FoodPlan.withFood(plan.steps()));      // 0.30.5: the food step last, always
         if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", all);
         LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", all));
         if (splice) {
@@ -126,6 +126,30 @@ final class CampCommands {
         String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", all), 1);
         lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
         return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
+    }
+
+    /**
+     * 0.30.5 (trial 9, finding 3): "bootstrap food", the bootstrap chain's last step (FoodPlan). Never fails: the hunt
+     * and the cook go in as soft steps. In a chain they go right after it; alone it starts a chain of its own.
+     */
+    String bootstrapFood(LocalPlayer p, String from, boolean internal) {
+        io.github.mojolowjo.entropybot.camp.FoodPlan.Decision d;
+        try {
+            d = io.github.mojolowjo.entropybot.camp.FoodPlan.decide(Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] bootstrap food: {}", e.toString());
+            return "ok: food skipped: couldn't look for food (" + e + ") - next: hunt 4 cow when you see some";
+        }
+        LOG.info("[entropybot] bootstrap food: {} {}", d.text(), d.steps());
+        if (d.steps().isEmpty()) return d.text();
+        String text = String.join(" then ", d.steps());
+        if (internal && c.chainsRef().running()) {
+            String err = c.chainsRef().spliceNext(text);
+            return err == null ? d.text() : "ok: food skipped: " + err + " - next: hunt 4 cow";
+        }
+        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+        String r = c.chainsRef().startChain(from, "bootstrap food", text, 1);
+        return r.startsWith("started") ? "started: " + d.text().replaceFirst("^ok: ", "") : r;
     }
 
     /** 0.28.2 (B3): ice, snow or water in a cell of the staircase quarry's dig boxes (BootstrapPlan.quarrySteps). */

@@ -583,6 +583,7 @@ public final class Commands implements Chains.Env {
         chains = new Chains(this, brainStore.data());
         brainRuntime = new BrainRuntime(this);                  // B1: the brain (the autominer retired into it)
         chains.endHook = brainRuntime::chainEnded;
+        chains.endNote = DigCommands::stairEndNote;                  // 0.30.5: honest stair-chain endings
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);
