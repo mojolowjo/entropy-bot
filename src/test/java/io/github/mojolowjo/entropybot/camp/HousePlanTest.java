@@ -19,6 +19,7 @@ class HousePlanTest {
         assertNull(p.err());
         assertEquals(List.of(
                 "build floor cobblestone house",
+                "dig 0 65 0 6 68 6",                       // 0.30.2: the whole box above the floor, before the walls
                 "build walls cobblestone house",
                 "build roof cobblestone house",
                 "dig 3 65 6 3 66 6 force",                 // door south (no camp), middle of the side
@@ -30,6 +31,7 @@ class HousePlanTest {
                 "scan base"), p.steps());
         assertTrue(p.summary().contains("needs about 168 cobblestone (you have 200)"), p.summary());
         assertTrue(p.summary().contains("door on the south side"));
+        assertTrue(p.summary().contains(": 11 steps"), p.summary());
     }
 
     @Test

@@ -68,6 +68,11 @@ public final class HousePlan {
         List<String> out = new ArrayList<>();
         String b6 = shortId(blk);
         out.add("build floor " + b6 + " " + area);
+        // 0.30.2 (trial 8 hillside): clear the whole box above the floor (wall line, interior, roof line) before the
+        // walls, so the builder and the rim placer find free wall cells and somewhere to stand. No force: dig ... force
+        // is capped at 64 blocks (DigCommands), and without it the hill's snow and dirt go while the walls and roof
+        // a former run built (planks) stay. A box with nothing left ends "ok: done ... broke 0 blocks" (the chain goes on).
+        out.add("dig " + x1 + " " + iy + " " + z1 + " " + x2 + " " + y2 + " " + z2);
         out.add("build walls " + b6 + " " + area);
         out.add("build roof " + b6 + " " + area);
         String d = door[0] + " " + iy + " " + door[1] + " " + door[0] + " " + (iy + 1) + " " + door[1];
