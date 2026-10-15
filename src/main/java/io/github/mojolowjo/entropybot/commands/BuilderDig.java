@@ -158,6 +158,7 @@ public final class BuilderDig {
         } else if (lastEnd != null) {
             line += ", last dig via baritone: " + lastEnd;
         }
+        if (!lastPause.isEmpty()) line += "; last pause: " + lastPause;
         return line;
     }
 
@@ -328,7 +329,9 @@ public final class BuilderDig {
             protected boolean partOfMask(int x, int y, int z, BlockState currentState) {
                 // Baritone calls this from its path thread too: only the client-thread snapshot is read, never the world;
                 // relative to the origin (Baritone subtracts it); fail-closed (BaritoneMask.partOf never throws)
-                return mask.partOf(ox, oy, oz, x, y, z);
+                // 0.30.3: an air cell of the area stays in (Baritone's own AirBlock test, as its valid() uses), so a
+                // broken cell leaves incorrectPositions and a finished layer moves on instead of pausing (plan section 12)
+                return mask.partOf(ox, oy, oz, x, y, z, currentState != null && currentState.getBlock() instanceof net.minecraft.world.level.block.AirBlock);
             }
         };
         applySettings(s);
@@ -442,6 +445,7 @@ public final class BuilderDig {
         if (now - s.startTick < 40) return "wait";              // let it plan its first path
         BuilderReport.End e = BuilderReport.watch(bp.isActive(), bp.isPaused(), now - s.lastChange);
         if (e == null) return "wait";
+        if (e != BuilderReport.End.IDLE) pauseProbe(s, bp, p, e);
         if (e == BuilderReport.End.IDLE) {
             // idle with blocks it may break still there: cancelled from outside (a fight hold), or it lost them; once it
             // broke something since its last start, it goes again (a few times)
@@ -573,6 +577,47 @@ public final class BuilderDig {
         int n = 0;
         for (int c : io.github.mojolowjo.entropybot.gui.Gui.inventory(p).values()) n += c;
         return n;
+    }
+
+    /** Debug (DIG_VIA_BARITONE_PLAN section 12): the builder's own state at the moment it paused or stalled (one log line). */
+    public static volatile String lastPause = "";
+
+    @SuppressWarnings("unchecked")
+    static void pauseProbe(State s, IBuilderProcess bp, LocalPlayer p, BuilderReport.End e) {
+        try {
+            Class<?> c = bp.getClass();
+            java.lang.reflect.Field fi = c.getDeclaredField("incorrectPositions"), fl = c.getDeclaredField("layer"), fo = c.getDeclaredField("origin");
+            fi.setAccessible(true);
+            fl.setAccessible(true);
+            fo.setAccessible(true);
+            Set<?> inc = (Set<?>) fi.get(bp);
+            int layer = fl.getInt(bp);
+            Object origin = fo.get(bp);
+            int air = 0, airInMask = 0, liquid = 0, solid = 0, solidInMask = 0;
+            StringBuilder ex = new StringBuilder();
+            Set<Long> snap = s.mask.snapshot();
+            if (inc != null) for (Object o : new ArrayList<>(inc)) {
+                BlockPos bpos = (BlockPos) o;
+                BlockState bs = p.level().getBlockState(bpos);
+                boolean in = snap.contains(BaritoneMask.packed(bpos.getX(), bpos.getY(), bpos.getZ()));
+                if (bs.getBlock() instanceof net.minecraft.world.level.block.AirBlock) { air++; if (in) airInMask++; }
+                else if (bs.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock) liquid++;
+                else { solid++; if (in) solidInMask++; }
+                if (ex.length() < 300) ex.append(' ').append(bpos.getX()).append(',').append(bpos.getY()).append(',').append(bpos.getZ()).append('=').append(bs.getBlock().getDescriptionId().replace("block.minecraft.", "")).append(in ? "*" : "");
+            }
+            // the DIG cells left now, by y
+            java.util.TreeMap<Integer, Integer> byY = new java.util.TreeMap<>();
+            for (long k : snap) byY.merge((int) ((k << 52) >> 52), 1, Integer::sum);
+            int h = s.job.box.y2() - s.job.box.y1() + 1;
+            String line = String.format("%s: layer %d (y %d..%d), incorrect %s: air %d (in mask %d), liquid %d, solid %d (in mask %d); mask DIG left by y %s; feet %d %d %d; origin %s; ex%s",
+                e, layer, s.job.box.y1() + h - layer, s.job.box.y2(), inc == null ? "null" : String.valueOf(inc.size()), air, airInMask, liquid, solid, solidInMask,
+                byY, p.blockPosition().getX(), p.blockPosition().getY(), p.blockPosition().getZ(), origin, ex);
+            lastPause = line;
+            LOG.info("[entropybot] dig via baritone pause probe: {}", line);
+        } catch (Throwable t) {
+            lastPause = "probe failed: " + t;
+            LOG.info("[entropybot] dig via baritone pause probe failed: {}", t.toString());
+        }
     }
 
     /** Debug (DIG_VIA_BARITONE_PLAN section 9): the look/click state while the builder runs, every 20 ticks. */

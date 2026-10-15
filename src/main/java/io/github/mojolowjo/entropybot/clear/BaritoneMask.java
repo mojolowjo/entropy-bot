@@ -93,6 +93,31 @@ public final class BaritoneMask {
         }
     }
 
+    /**
+     * 0.30.3 (plan section 12): Baritone's question with the state it sees. A cell of the dig area (the box, or the only
+     * list) that Baritone sees as air is always part of the schematic: the air fill wants air there, so it counts as done
+     * and is never clicked. Without this, a cell dropped from the snapshot once broken stays in the builder's
+     * incorrectPositions forever (recalcNearby skips cells outside the schematic), so at the end of a layer recalc still
+     * says "work left", assemble finds only air and the builder pauses ("Unable to do it") instead of starting the next
+     * layer. Any other state: the snapshot decides, as before.
+     */
+    public boolean partOf(int ox, int oy, int oz, int x, int y, int z, boolean currentAir) {
+        if (currentAir) {
+            try {
+                int ax = ox + x, ay = oy + y, az = oz + z;
+                if (box.contains(ax, ay, az) && (only == null || only.contains(packed(ax, ay, az)))) {
+                    calls.incrementAndGet();
+                    return true;
+                }
+            } catch (Throwable t) {
+                errors.incrementAndGet();
+                if (firstError == null) firstError = t.toString();
+                return false;
+            }
+        }
+        return partOf(ox, oy, oz, x, y, z);
+    }
+
     /** The size of the air fill over the box: {x2-x1+1, y2-y1+1, z2-z1+1}. */
     public static int[] size(ClearBox b) {
         return new int[]{b.x2() - b.x1() + 1, b.y2() - b.y1() + 1, b.z2() - b.z1() + 1};

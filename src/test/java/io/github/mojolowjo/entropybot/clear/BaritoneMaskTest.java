@@ -233,6 +233,32 @@ class BaritoneMaskTest {
         assertTrue(m.calls.get() == 7);
     }
 
+    /** 0.30.3 (plan section 12): a broken cell (air to Baritone) stays in the schematic, so the builder can mark it done. */
+    @Test
+    void airSeenByBaritoneStaysPartOfTheArea() {
+        FakeWorld w = new FakeWorld();
+        BaritoneMask m = mask(false, true);
+        m.refresh(w);
+        assertTrue(m.partOf(0, 50, 0, 1, 0, 1, false));
+        w.set(1, 50, 1, "air");
+        m.refresh(w);                                    // dropped from the snapshot
+        assertFalse(m.partOf(0, 50, 0, 1, 0, 1, false), "not air to Baritone: the snapshot decides");
+        assertTrue(m.partOf(0, 50, 0, 1, 0, 1, true), "air to Baritone: in (desired air, already correct)");
+        assertTrue(m.partOf(0, 50, 0, 3, 2, 3, true), "any air cell of the box");
+        assertFalse(m.partOf(0, 50, 0, 4, 0, 1, true), "air outside the box stays out");
+        assertFalse(m.partOf(0, 50, 0, 1, -1, 1, true));
+        w.set(2, 50, 3, "chest");
+        m.refresh(w);
+        assertFalse(m.partOf(0, 50, 0, 2, 0, 3, false), "a protected block is never in");
+    }
+
+    @Test
+    void airInOnlyListIsInUnlistedAirIsNot() {
+        BaritoneMask m = onlyMask();
+        assertTrue(m.partOf(0, 49, 0, 1, 1, 0, true), "1 50 0 is listed");
+        assertFalse(m.partOf(0, 49, 0, 0, 1, 0, true), "0 50 0 is in the bounding box but not listed");
+    }
+
     @Test
     void partOfNeverThrows() {
         BaritoneMask m = mask(false, true);
