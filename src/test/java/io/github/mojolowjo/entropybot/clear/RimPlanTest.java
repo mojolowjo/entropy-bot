@@ -54,6 +54,23 @@ class RimPlanTest {
         assertTrue(RimPlan.missing(w, List.of(c)).isEmpty());
     }
 
+    /** 0.30.4 (live, shed 18 128 8): a corner wall cell of the lowest layer, walls beside it, the hill outside. */
+    @Test void aCornerWallCellIsPlacedFromTheDiagonalInnerFloorCell() {
+        FakeWorld w = new FakeWorld();
+        w.fill(-3, 6, 60, 60, -3, 6, "cobblestone");             // the floor layer (and ground outside)
+        w.fill(-3, -1, 61, 64, -3, 6, "dirt");                   // the hill west
+        w.fill(-3, 6, 61, 64, -3, -1, "dirt");                   // and north
+        w.fill(1, 1, 61, 61, 0, 0, "cobblestone");               // the wall east of the corner
+        w.fill(0, 0, 61, 61, 1, 1, "cobblestone");               // the wall south of the corner
+        Pos c = new Pos(0, 61, 0);
+        assertFalse(RimPlan.sealed(w, c));
+        PlaceRules.Side below = RimPlan.anchors(w, c).get(0);
+        assertEquals(-1, below.dy(), "the floor under it is the first anchor");
+        assertTrue(RimPlan.clickableFrom(w, c, below, 1.5, 62.62, 1.5), "from the diagonal floor cell, in reach");
+        assertFalse(RimPlan.clickableFrom(w, c, below, 4.5, 62.62, 4.5), "too far");
+        assertNotNull(RimPlan.sideStand(w, c, 3.5, 61, 3.5));
+    }
+
     @Test void theWestRimStandsOnTheInsidePlanksNotTheHill() {
         FakeWorld w = hillside();
         w.fill(5, 9, 53, 53, -2, 2, "oak_planks");          // Baritone placed the inside

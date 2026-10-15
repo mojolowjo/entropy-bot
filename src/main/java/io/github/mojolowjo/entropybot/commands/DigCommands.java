@@ -581,6 +581,7 @@ final class DigCommands {
         s.buildIgnoreExisting.value = true;
         s.allowInventory.value = true;
         Clearing.applyLook(bs);
+        Clearing.fallOn(bs);
         var cm = b.getCommandManager();
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();

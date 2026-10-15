@@ -242,6 +242,16 @@ public final class RimPlan {
         return best != null ? best : blind;
     }
 
+    /**
+     * 0.30.4 (live: a corner wall cell of the lowest layer, reachable only from the diagonal inner floor cell, where the
+     * ray to the floor's top face runs along the edge of the two wall blocks): the server checks the reach of a click,
+     * not the line of sight, so a face in front of the eye and within place reach is clickable even when not seen.
+     */
+    public static boolean clickableFrom(ClearWorld w, Pos c, PlaceRules.Side s, double ex, double ey, double ez) {
+        return sees(w, c, s, ex, ey, ez, PlaceRules.PLACE_REACH)
+                || inFront(c, s, ex, ey, ez) && faceInReach(c, s, ex, ey, ez, PlaceRules.PLACE_REACH);
+    }
+
     /** An anchor face of cell c the eye at ex ey ez sees within place reach, or null. */
     public static PlaceRules.Side seenFrom(ClearWorld w, Pos c, double ex, double ey, double ez) {
         for (PlaceRules.Side s : anchors(w, c)) if (sees(w, c, s, ex, ey, ez, PlaceRules.PLACE_REACH)) return s;

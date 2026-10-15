@@ -29,7 +29,7 @@ class HousePlanTest {
                 "place furnace 4 65 1",
                 "place base 3 65 3",
                 "place food 2 65 1",
-                "scan base"), p.steps());
+                "scan base 4"), p.steps());
         assertTrue(p.summary().contains("needs about 168 cobblestone (you have 200)"), p.summary());
         assertTrue(p.summary().contains("door on the south side"));
         assertTrue(p.summary().contains(": 12 steps"), p.summary());

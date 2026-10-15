@@ -44,6 +44,8 @@ public final class HousePlan {
     public static final String SHELL = "shell";
     /** A box dig over this many cells asks for confirm: the house splits it per layer instead. */
     public static final int DIG_MAX = 1000;
+    /** The house's own scan: the stations stand within 3 of the base mark at the inside centre. */
+    public static final int SCAN_RADIUS = 4;
 
     public static Plan plan(Facts f) {
         if (!f.hasHeights() || f.box() == null) return new Plan(List.of(), null, TOO_SMALL);
@@ -114,7 +116,8 @@ public final class HousePlan {
         }
         out.add("place base " + cx + " " + iy + " " + cz);
         out.add("place food " + fmt(st[0]));
-        out.add("scan base");
+        // 0.30.4 (live: a second house 13 blocks away): only the chests of this house, never a walk to another one's
+        out.add("scan base " + SCAN_RADIUS);
         String summary = "house in " + area + ": " + out.size() + " steps, needs about " + need + " " + b6 + " (you have " + have + ")"
                 + (have < need ? " - gather " + b6 + " " + (need - have) + " if it runs out" : "")
                 + ", door on the " + sideName(side) + " side"

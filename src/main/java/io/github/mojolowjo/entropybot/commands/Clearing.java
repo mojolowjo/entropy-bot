@@ -213,6 +213,8 @@ public final class Clearing {
         long lastChange;
         boolean rim;
         Boolean savedRemain;
+        /** 0.30.4: Baritone's maxFallHeightNoWater before the build (raised to BUILD_FALL so the bot gets off a wall top). */
+        Integer savedFall;
         Double savedRandom, savedRandom113;
         final Map<io.github.mojolowjo.entropybot.clear.Pos, Integer> tries = new HashMap<>();
         final Map<io.github.mojolowjo.entropybot.clear.Pos, io.github.mojolowjo.entropybot.clear.RimPlan.Why> gaveUp = new HashMap<>();
@@ -919,7 +921,7 @@ public final class Clearing {
         w.set(p);
         PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
                 : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
-                        && io.github.mojolowjo.entropybot.clear.RimPlan.sees(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
+                        && io.github.mojolowjo.entropybot.clear.RimPlan.clickableFrom(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ())
                         ? forced : null;
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
         // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
@@ -1133,6 +1135,29 @@ public final class Clearing {
         }
     }
 
+    /** 0.30.4 (live: the bot left on a wall top 4 above the floor, Baritone's limit 3): a build may drop 4 (half a heart). */
+    static final int BUILD_FALL = 4;
+
+    static void fallOn(BuildState bs) {
+        try {
+            baritone.api.Settings s = BaritoneAPI.getSettings();
+            if (bs.savedFall == null) bs.savedFall = s.maxFallHeightNoWater.value;
+            s.maxFallHeightNoWater.value = Math.max(bs.savedFall, BUILD_FALL);
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] build: couldn't raise the fall height: {}", t.toString());
+        }
+    }
+
+    static void fallOff(BuildState bs) {
+        if (bs.savedFall == null) return;
+        try {
+            BaritoneAPI.getSettings().maxFallHeightNoWater.value = bs.savedFall;
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] build: couldn't restore the fall height: {}", t.toString());
+        }
+        bs.savedFall = null;
+    }
+
     static void restoreLook(BuildState bs) {
         if (bs.savedRemain == null) return;
         try {
@@ -1337,6 +1362,7 @@ public final class Clearing {
     static void endBuild(BuildState bs) {
         bs.done = true;
         restoreLook(bs);
+        fallOff(bs);
         placingOwned = false;
         IBaritone b = Jobs.baritone();
         if (b != null) {
