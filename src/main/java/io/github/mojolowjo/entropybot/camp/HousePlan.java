@@ -117,6 +117,23 @@ public final class HousePlan {
 
     /** The block for the house: the one asked for, else planks when it carries more planks than cobblestone. */
     public static String chooseBlock(String asked, Map<String, Integer> inv) {
+        return chooseBlock(asked, inv, Map.of());
+    }
+
+    /**
+     * 0.30.2 (trial 8: plank walls, then cobblestone walls on the rerun): with nothing asked, the block that already
+     * stands most in the house's shape (built blocks the caller counted: id -> cells) is kept; the bag decides only when
+     * nothing stands. Ties go to the bag's choice when it is among them, else the first by name.
+     */
+    public static String chooseBlock(String asked, Map<String, Integer> inv, Map<String, Integer> placed) {
+        if ((asked == null || asked.isBlank()) && placed != null && !placed.isEmpty()) {
+            String bag = chooseBlock(null, inv, null);
+            int top = placed.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+            if (top > 0) {
+                if (placed.getOrDefault(bag, 0) == top) return bag;
+                return placed.entrySet().stream().filter(e -> e.getValue() == top).map(Map.Entry::getKey).sorted().findFirst().get();
+            }
+        }
         if (asked != null && !asked.isBlank()) return asked.contains(":") ? asked : "minecraft:" + asked;
         String bestPlank = null;
         int planks = 0;

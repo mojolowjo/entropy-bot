@@ -160,7 +160,23 @@ final class CampCommands {
         String[] err = new String[1];
         int[] box = DigCommands.areaBox(c, area, err);
         Map<String, Integer> inv = Gui.inventory(p);
-        String blk = io.github.mojolowjo.entropybot.camp.HousePlan.chooseBlock(w.size() > 1 ? w.get(1) : null, inv);
+        // 0.30.2: keep the block that already stands in the house's shell (built blocks and cobblestone, counted per id)
+        Map<String, Integer> placed = new java.util.HashMap<>();
+        if (box != null && w.size() < 2) {
+            try {
+                Clearing.LiveWorld lw = new Clearing.LiveWorld();
+                lw.set(p);
+                for (io.github.mojolowjo.entropybot.clear.Pos q : io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells("shell",
+                        io.github.mojolowjo.entropybot.clear.ClearBox.of(box[0], box[1], box[2], box[3], box[4], box[5]))) {
+                    String qid = lw.id(q.x(), q.y(), q.z());
+                    if (qid == null || lw.air(q.x(), q.y(), q.z())) continue;
+                    if (lw.builtBlock(q.x(), q.y(), q.z()) || qid.equals("minecraft:cobblestone")) placed.merge(qid, 1, Integer::sum);
+                }
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] house {}: could not count the standing blocks: {}", area, ex.toString());
+            }
+        }
+        String blk = io.github.mojolowjo.entropybot.camp.HousePlan.chooseBlock(w.size() > 1 ? w.get(1) : null, inv, placed);
         String rid = c.crafting.planner.resolveItem(blk.replaceFirst("^minecraft:", ""), inv);
         if (rid != null) blk = rid;
         ClientLevel lv = Minecraft.getInstance().level;

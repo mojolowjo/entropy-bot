@@ -73,6 +73,16 @@ class HousePlanTest {
         assertEquals("minecraft:stone_bricks", HousePlan.chooseBlock("stone_bricks", Map.of()));
     }
 
+    /** 0.30.2 (trial 8): 87 plank wall cells stand; the bag now holds more cobblestone: the planks are kept. */
+    @Test
+    void theBlockThatStandsIsKept() {
+        Map<String, Integer> bag = Map.of("minecraft:cobblestone", 49, "minecraft:spruce_planks", 36);
+        assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, bag, Map.of()));
+        assertEquals("minecraft:spruce_planks", HousePlan.chooseBlock(null, bag, Map.of("minecraft:spruce_planks", 87, "minecraft:cobblestone", 3)));
+        assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, bag, Map.of("minecraft:spruce_planks", 4, "minecraft:cobblestone", 4)), "a tie: the bag's choice");
+        assertEquals("minecraft:oak_planks", HousePlan.chooseBlock("oak_planks", bag, Map.of("minecraft:spruce_planks", 87)), "asked wins");
+    }
+
     @Test
     void doorFacesTheCamp() {
         assertEquals("south", HousePlan.sideName(HousePlan.doorSide(10, 10, new int[]{10, 0, 40})));
