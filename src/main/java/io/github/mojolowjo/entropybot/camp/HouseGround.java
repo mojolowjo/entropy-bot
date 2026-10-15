@@ -35,6 +35,29 @@ public final class HouseGround {
         return low;
     }
 
+    /** What a block is to the floor-height search, top down. */
+    public enum Surface { SKIP, GROUND, WATER }
+
+    /**
+     * 0.30.4 review: the top-down floor search per block: air, snow layers, leaves and blocks with no collision
+     * (grass, flowers) are skipped; a fluid is WATER (the caller refuses: a lake bed is no floor); anything else is ground.
+     */
+    public static Surface surface(boolean air, boolean snowLayer, boolean leaves, boolean fluid, boolean noCollision) {
+        if (fluid) return Surface.WATER;
+        if (air || snowLayer || leaves || noCollision) return Surface.SKIP;
+        return Surface.GROUND;
+    }
+
+    /** A water column in the area: the floor y cannot be chosen. */
+    public static final int WATER = Integer.MIN_VALUE + 1;
+
+    public static String waterText(String area, int x1, int z1, int x2, int z2) {
+        return "error: water in " + area + ": I can't put a floor on it - next: give heights (area " + x1 + " " + z1 + " " + x2 + " " + z2
+                + " " + area + " house y1 y2), then house " + area;
+    }
+
+    public static final String TOO_LARGE = "error: that area is too large for a house (4096 columns max) - next: a smaller area, e.g. 7x7 (area x z x2 z2 house main), then house house";
+
     /** The pillars: cells to fill (lowest first per column) and the columns that are too deep ("x z (N deep)"). */
     public record Pillars(List<int[]> cells, List<String> tooDeep) {
         public String stopText(String area) {
@@ -53,7 +76,7 @@ public final class HouseGround {
                 int d = 0;
                 while (d <= MAX_DEPTH && w.free(x, floorY - 1 - d, z)) d++;
                 if (d > MAX_DEPTH) {
-                    deep.add(x + " " + z + " (" + d + "+ deep)");
+                    deep.add(x + " " + z + " (more than " + MAX_DEPTH + " deep)");
                     continue;
                 }
                 for (int i = d; i >= 1; i--) cells.add(new int[]{x, floorY - i, z});

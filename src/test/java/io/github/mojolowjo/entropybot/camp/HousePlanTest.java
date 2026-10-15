@@ -97,6 +97,11 @@ class HousePlanTest {
                 Map.of("minecraft:cobblestone", 200), Map.of(HousePlan.SHELL, true), null, List.of(new int[]{2, 64, 3})));
         assertEquals(List.of("dig 1 65 1 5 67 5", "dig 2 64 3 2 64 3", "build under cobblestone house", "build floor cobblestone house"),
                 p.steps().subList(0, 4));
+        // review 7: a natural block on the wall ring next to the door (door 3 6, floor layer y 64) is dug too
+        HousePlan.Plan d = HousePlan.plan(new HousePlan.Facts("house", new int[]{0, 64, 0, 6, 68, 6}, true, "minecraft:cobblestone",
+                Map.of("minecraft:cobblestone", 200), Map.of(HousePlan.SHELL, true), null, List.of(new int[]{4, 64, 6})));
+        assertEquals("dig 4 64 6 4 64 6", d.steps().get(1), d.steps().toString());
+        assertTrue(d.steps().contains("build walls cobblestone house door 3 6"));
     }
 
     @Test

@@ -260,6 +260,7 @@ public final class Clearing {
         @Override public boolean avoided(int x, int y, int z) { return cur.avoided(x, y, z); }
         @Override public boolean ore(int x, int y, int z) { return cur.ore(x, y, z); }
         @Override public boolean noCollision(int x, int y, int z) { return cur.noCollision(x, y, z); }
+        @Override public boolean loaded(int x, int y, int z) { return cur.loaded(x, y, z); }
         @Override public boolean fullBlock(int x, int y, int z) { return cur.fullBlock(x, y, z); }
         @Override public double collisionHeight(int x, int y, int z) { return cur.collisionHeight(x, y, z); }
         @Override public int blockLight(int x, int y, int z) { return cur.blockLight(x, y, z); }

@@ -29,9 +29,21 @@ class HouseGroundTest {
         assertArrayEquals(new int[]{1, 63, 1}, p.cells().get(1));
         HouseGround.Pillars d = HouseGround.pillars(0, 0, 2, 2, 64, w);
         assertEquals(1, d.tooDeep().size());
-        assertTrue(d.tooDeep().get(0).startsWith("2 2"));
+        assertEquals("2 2 (more than 4 deep)", d.tooDeep().get(0));
         assertTrue(d.stopText("house").startsWith("stopped: under the floor of house: 1 column is too deep"), d.stopText("house"));
         assertTrue(d.stopText("house").contains(" - next: "));
+    }
+
+    @Test
+    void surfaceSkipsSnowLayersLeavesAndGrassAndStopsAtWater() {
+        assertEquals(HouseGround.Surface.SKIP, HouseGround.surface(true, false, false, false, true), "air");
+        assertEquals(HouseGround.Surface.SKIP, HouseGround.surface(false, true, false, false, true), "snow layer");
+        assertEquals(HouseGround.Surface.SKIP, HouseGround.surface(false, false, true, false, false), "leaves");
+        assertEquals(HouseGround.Surface.SKIP, HouseGround.surface(false, false, false, false, true), "grass");
+        assertEquals(HouseGround.Surface.WATER, HouseGround.surface(false, false, false, true, true), "water");
+        assertEquals(HouseGround.Surface.GROUND, HouseGround.surface(false, false, false, false, false), "stone");
+        assertTrue(HouseGround.waterText("hut", 0, 0, 6, 6).contains("give heights (area 0 0 6 6 hut house y1 y2)"));
+        assertTrue(HouseGround.TOO_LARGE.contains("too large"));
     }
 
     @Test

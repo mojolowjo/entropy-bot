@@ -47,7 +47,11 @@ class RimPlanTest {
         assertTrue(RimPlan.missing(w, List.of(c)).isEmpty());
         w.fill(1, 1, 62, 62, 1, 1, "air");
         assertFalse(RimPlan.sealed(w, c), "open above");
-        assertEquals(1, RimPlan.missing(w, List.of(c)).size());
+        w.fill(1, 1, 62, 62, 1, 1, "cobblestone");
+        w.unloaded.add("2 1");
+        assertFalse(RimPlan.sealed(w, c), "an unloaded neighbour reads as unknown: not sealed");
+        w.unloaded.clear();
+        assertTrue(RimPlan.missing(w, List.of(c)).isEmpty());
     }
 
     @Test void theWestRimStandsOnTheInsidePlanksNotTheHill() {

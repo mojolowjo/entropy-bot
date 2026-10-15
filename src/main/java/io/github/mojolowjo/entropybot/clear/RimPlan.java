@@ -88,7 +88,7 @@ public final class RimPlan {
         int[][] six = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
         for (int[] d : six) {
             int x = c.x() + d[0], y = c.y() + d[1], z = c.z() + d[2];
-            if (w.noCollision(x, y, z) || w.fluid(x, y, z)) return false;
+            if (!w.loaded(x, y, z) || w.noCollision(x, y, z) || w.fluid(x, y, z)) return false;
         }
         return true;
     }
