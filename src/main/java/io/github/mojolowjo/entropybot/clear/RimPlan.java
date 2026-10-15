@@ -60,6 +60,18 @@ public final class RimPlan {
         return out;
     }
 
+    /**
+     * 0.30.2: the shape's cells less a door's two cells (x z at floor + 1 and + 2); door null: all of them. The missing
+     * count and the rim placer skip them (Baritone's own "sel walls" may still fill them: the house's door dig cuts them).
+     */
+    public static List<Pos> withoutDoor(List<Pos> cells, int[] doorXz, int floorY) {
+        if (doorXz == null) return cells;
+        List<Pos> out = new ArrayList<>(cells);
+        out.remove(new Pos(doorXz[0], floorY + 1, doorXz[1]));
+        out.remove(new Pos(doorXz[0], floorY + 2, doorXz[1]));
+        return out;
+    }
+
     /** The cells still to place: the ones that take a block now (air, grass, snow layers...). */
     public static List<Pos> missing(ClearWorld w, List<Pos> cells) {
         List<Pos> out = new ArrayList<>();
@@ -149,13 +161,21 @@ public final class RimPlan {
             ClearWorld.Hit h = w.clip(sx, sy, sz, hx, hy, hz);
             if (h == null) return false;
             if (h.x() == c.x() + s.dx() && h.y() == c.y() + s.dy() && h.z() == c.z() + s.dz()) return true;
-            if (w.air(h.x(), h.y(), h.z()) || !w.noCollision(h.x(), h.y(), h.z()) || w.fluid(h.x(), h.y(), h.z())) return false;
+            if (!replaceable(w, h.x(), h.y(), h.z())) return false;
             double t = exitT(sx, sy, sz, hx, hy, hz, h.x(), h.y(), h.z());
             if (t < 0 || t >= 1) return false;
             double nx = sx + (hx - sx) * t, ny = sy + (hy - sy) * t, nz = sz + (hz - sz) * t;
             sx = nx; sy = ny; sz = nz;
         }
         return false;
+    }
+
+    /**
+     * review b: a block a ray (and a placement) may pass: no collision, not air, no fluid, and neither a built block
+     * nor a block entity (a snow layer, grass, a fern; never a torch, a button, a rail or a crop).
+     */
+    public static boolean replaceable(ClearWorld w, int x, int y, int z) {
+        return !w.air(x, y, z) && w.noCollision(x, y, z) && !w.fluid(x, y, z) && !w.builtBlock(x, y, z) && !w.blockEntity(x, y, z);
     }
 
     /** The segment from a to b leaves the unit cube at x y z at parameter t (a little past it); -1 when it never does. */

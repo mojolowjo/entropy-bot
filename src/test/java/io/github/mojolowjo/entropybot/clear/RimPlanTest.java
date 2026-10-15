@@ -204,6 +204,27 @@ class RimPlanTest {
         assertTrue(RimPlan.sees(w, cell, pk.side(), pk.stand().x() + 0.5, 55.62, pk.stand().z() + 0.5, RimPlan.REACH));
     }
 
+    @Test void theDoorCellsAreNotPartOfTheWalls() {
+        List<Pos> walls = RimPlan.shapeCells("walls", HOUSE);
+        List<Pos> less = RimPlan.withoutDoor(walls, new int[]{7, 3}, 53);
+        assertEquals(walls.size() - 2, less.size());
+        assertFalse(less.contains(new Pos(7, 54, 3)));
+        assertFalse(less.contains(new Pos(7, 55, 3)));
+        assertTrue(less.contains(new Pos(7, 56, 3)));
+        assertSame(walls, RimPlan.withoutDoor(walls, null, 53));
+    }
+
+    @Test void theRayNeverPassesATorch() {
+        FakeWorld w = floorRow();
+        w.set(4, 54, 0, "torch");                               // no collision, but built: never passed or broken
+        w.set(5, 54, 0, "short_grass");
+        w.set(6, 54, 0, "chest");
+        assertFalse(RimPlan.replaceable(w, 4, 54, 0));
+        assertTrue(RimPlan.replaceable(w, 5, 54, 0));
+        assertFalse(RimPlan.replaceable(w, 6, 54, 0));
+        assertFalse(RimPlan.replaceable(w, 3, 55, 0), "air is not a cover");
+    }
+
     @Test void capsUnchanged() {
         assertEquals(2, RimPlan.MAX_TRIES);
         assertEquals(90 * 20, RimPlan.LAYER_CAP_TICKS);

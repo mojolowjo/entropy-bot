@@ -1236,7 +1236,11 @@ public final class Clearing {
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }
-                if (!r.startsWith("ok") && !bs.clearing && !w.air(c.x(), c.y(), c.z()) && !r.contains("nothing in reach")) {
+                // review a: only a replaceable cover (snow layer, grass) is broken, never a built block or a block
+                // entity (torch, button, rail, crop...), and only in reach; else the click counts as a try
+                boolean coverOk = io.github.mojolowjo.entropybot.clear.RimPlan.replaceable(w, c.x(), c.y(), c.z())
+                        && ClearEngine.eyeDistSq(p.getX(), p.getEyeY(), p.getZ(), c.x(), c.y(), c.z()) <= PlaceRules.PLACE_REACH * PlaceRules.PLACE_REACH;
+                if (!r.startsWith("ok") && !bs.clearing && coverOk && !r.contains("nothing in reach")) {
                     // a snow layer (grass...) in the cell: break it by hand first, then place (once per pick)
                     LOG.info("[entropybot] build rim: {} at {}: {} - breaking the {} in it first", blk, c.key(), r, w.name(c.x(), c.y(), c.z()));
                     String le = bs.leases.take("clearing " + c.key() + " for " + blk, ClearBox.of(c.x(), c.y(), c.z(), c.x(), c.y(), c.z()), false, false);
@@ -1267,7 +1271,7 @@ public final class Clearing {
                 Pos c = bs.pick.cell();
                 Minecraft mc = Minecraft.getInstance();
                 if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > 5 * 20) {   // gone (or 5 s): place again
-                    mc.options.keyAttack.setDown(false);
+                    try { mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
                     bs.stage = "place";
                     return "wait";
                 }
@@ -1320,6 +1324,10 @@ public final class Clearing {
     }
 
     private static String rimEnd(Seq seq, BuildState bs, String text) {
+        if (bs.clearing) {                                   // review a: never leave a half-broken cover clicked
+            try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            bs.clearing = false;
+        }
         endBuild(bs);
         seq.jobs.finish(text + "; placing off again");
         return "wait";
