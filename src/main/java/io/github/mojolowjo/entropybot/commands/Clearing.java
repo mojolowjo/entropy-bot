@@ -229,6 +229,8 @@ public final class Clearing {
         // (8) the block for the current pick (a filler under a hole, else the build block); (9) the not-moving watch
         String placeId;
         long lastFeet = Long.MIN_VALUE, stillSince;
+        // 0.30.2 (trial 8 snow): a refused click into a cell holding a no-collision block (a snow layer) breaks it first
+        boolean clearing, clearStarted;
     }
 
     /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
@@ -916,7 +918,7 @@ public final class Clearing {
         w.set(p);
         PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
                 : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
-                        && io.github.mojolowjo.entropybot.clear.RimPlan.faceInReach(new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
+                        && io.github.mojolowjo.entropybot.clear.RimPlan.sees(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
                         ? forced : null;
         if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
         // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
@@ -1174,6 +1176,7 @@ public final class Clearing {
                     bs.layerStart = now;
                 }
                 bs.pick = pk;
+                bs.clearing = false;
                 bs.placeId = bs.id;
                 if (pk.filler()) {
                     String fid = io.github.mojolowjo.entropybot.clear.RimPlan.filler(Gui.inventory(p), bs.id);
@@ -1233,14 +1236,51 @@ public final class Clearing {
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }
+                if (!r.startsWith("ok") && !bs.clearing && !w.air(c.x(), c.y(), c.z()) && !r.contains("nothing in reach")) {
+                    // a snow layer (grass...) in the cell: break it by hand first, then place (once per pick)
+                    LOG.info("[entropybot] build rim: {} at {}: {} - breaking the {} in it first", blk, c.key(), r, w.name(c.x(), c.y(), c.z()));
+                    String le = bs.leases.take("clearing " + c.key() + " for " + blk, ClearBox.of(c.x(), c.y(), c.z(), c.x(), c.y(), c.z()), false, false);
+                    if (le == null) {
+                        bs.clearing = true;
+                        bs.clearStarted = false;
+                        bs.stage = "clearcell";
+                        bs.stageTick = now;
+                        return "wait";
+                    }
+                    r = le;
+                }
                 if (!r.startsWith("ok")) {
                     LOG.info("[entropybot] build rim: {} at {}: {}", blk, c.key(), r);
-                    triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
+                    bs.clearing = false;
+                    // only a click with nothing in reach is "nowhere to stand"; a refused click counts as a try
+                    triedCell(bs, c, r.contains("nothing in reach") ? io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND
+                            : io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
                     bs.stage = "pick";
                     return "wait";
                 }
+                bs.clearing = false;
                 bs.stage = "check";
                 bs.stageTick = now;
+                return "wait";
+            }
+            case "clearcell" -> {
+                Pos c = bs.pick.cell();
+                Minecraft mc = Minecraft.getInstance();
+                if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > 5 * 20) {   // gone (or 5 s): place again
+                    mc.options.keyAttack.setDown(false);
+                    bs.stage = "place";
+                    return "wait";
+                }
+                BlockPos bp = new BlockPos(c.x(), c.y(), c.z());
+                Vec3 centre = Vec3.atCenterOf(bp);
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, centre); } catch (RuntimeException ignored) {}
+                Vec3 eye = p.getEyePosition();
+                net.minecraft.core.Direction face = net.minecraft.core.Direction.getNearest((float) (eye.x - centre.x), (float) (eye.y - centre.y), (float) (eye.z - centre.z));
+                if (!bs.clearStarted) {
+                    mc.gameMode.startDestroyBlock(bp, face);
+                    bs.clearStarted = true;
+                } else mc.gameMode.continueDestroyBlock(bp, face);
+                p.swing(InteractionHand.MAIN_HAND);
                 return "wait";
             }
             default -> {                                            // check: placed blocks show up a tick or two later

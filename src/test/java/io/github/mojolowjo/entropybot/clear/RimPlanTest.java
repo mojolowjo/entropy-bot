@@ -137,6 +137,7 @@ class RimPlanTest {
         assertFalse(PlaceRules.bodyIn(pk.stand().x(), pk.stand().y(), pk.stand().z(), cell));
         assertNotNull(pk.side());
         assertEquals(-1, pk.side().dy(), "the floor plank under the cell");
+        assertEquals(ClearWorld.Face.UP, pk.side().face(), "its top face borders the cell");
         double ex = pk.stand().x() + 0.5, ey = pk.stand().y() + 1.62, ez = pk.stand().z() + 0.5;
         assertTrue(RimPlan.sees(w, cell, pk.side(), ex, ey, ez, RimPlan.REACH));
     }
@@ -185,6 +186,22 @@ class RimPlanTest {
         w.fill(4, 4, 54, 56, -1, 1, "stone");                     // a pillar between the bot and the cell
         assertFalse(RimPlan.sees(w, cell, below, 5.5, 55.62, 0.5, RimPlan.REACH));
         assertFalse(RimPlan.sees(w, cell, below, 3.5, 52.0, 0.5, RimPlan.REACH), "behind the face");
+    }
+
+    /** Trial 8 snow: grass (no collision) in the feet cells and in the wall cell itself: standable, missing, seen. */
+    @Test void noCollisionBlocksInFeetAndTargetCells() {
+        FakeWorld w = floorRow();
+        w.fill(0, 6, 54, 54, -2, 2, "short_grass");             // a no-collision cover over the whole floor row
+        w.set(3, 55, 1, "short_grass");                         // and in a head cell
+        assertTrue(RimPlan.standable(w, 3, 54, 1));
+        Pos cell = new Pos(3, 54, 0);
+        assertEquals(1, RimPlan.missing(w, List.of(cell)).size(), "grass in the cell takes a block");
+        RimPlan.Pick pk = RimPlan.next(w, List.of(cell), new HashMap<>(), 20.5, 54, 0.5);
+        assertNotNull(pk.stand(), "not nowhere to stand");
+        assertEquals(54, pk.stand().y());
+        assertEquals(ClearWorld.Face.UP, pk.side().face());
+        // the ray to the plank's top face ends in the cell's own grass: that counts as seen (it is replaced)
+        assertTrue(RimPlan.sees(w, cell, pk.side(), pk.stand().x() + 0.5, 55.62, pk.stand().z() + 0.5, RimPlan.REACH));
     }
 
     @Test void capsUnchanged() {

@@ -142,8 +142,32 @@ public final class RimPlan {
     public static boolean sees(ClearWorld w, Pos c, PlaceRules.Side s, double ex, double ey, double ez, double reach) {
         if (!inFront(c, s, ex, ey, ez) || !faceInReach(c, s, ex, ey, ez, reach)) return false;
         double hx = c.x() + 0.5 + s.dx() * 0.55, hy = c.y() + 0.5 + s.dy() * 0.55, hz = c.z() + 0.5 + s.dz() * 0.55;
-        ClearWorld.Hit h = w.clip(ex, ey, ez, hx, hy, hz);
-        return h != null && h.x() == c.x() + s.dx() && h.y() == c.y() + s.dy() && h.z() == c.z() + s.dz();
+        // a snow layer or grass (no collision; the cell's own one is replaced by the placement) does not block the click:
+        // the ray goes on from where it leaves that block
+        double sx = ex, sy = ey, sz = ez;
+        for (int i = 0; i < 6; i++) {
+            ClearWorld.Hit h = w.clip(sx, sy, sz, hx, hy, hz);
+            if (h == null) return false;
+            if (h.x() == c.x() + s.dx() && h.y() == c.y() + s.dy() && h.z() == c.z() + s.dz()) return true;
+            if (w.air(h.x(), h.y(), h.z()) || !w.noCollision(h.x(), h.y(), h.z()) || w.fluid(h.x(), h.y(), h.z())) return false;
+            double t = exitT(sx, sy, sz, hx, hy, hz, h.x(), h.y(), h.z());
+            if (t < 0 || t >= 1) return false;
+            double nx = sx + (hx - sx) * t, ny = sy + (hy - sy) * t, nz = sz + (hz - sz) * t;
+            sx = nx; sy = ny; sz = nz;
+        }
+        return false;
+    }
+
+    /** The segment from a to b leaves the unit cube at x y z at parameter t (a little past it); -1 when it never does. */
+    static double exitT(double ax, double ay, double az, double bx, double by, double bz, int x, int y, int z) {
+        double t = Double.MAX_VALUE;
+        double[] a = {ax, ay, az}, d = {bx - ax, by - ay, bz - az};
+        int[] lo = {x, y, z};
+        for (int k = 0; k < 3; k++) {
+            if (d[k] > 1e-9) t = Math.min(t, (lo[k] + 1 - a[k]) / d[k]);
+            else if (d[k] < -1e-9) t = Math.min(t, (lo[k] - a[k]) / d[k]);
+        }
+        return t == Double.MAX_VALUE || t < 0 ? -1 : t + 1e-4;
     }
 
     /** The side stance: feet beside the cell and the anchor face to click from there. */
