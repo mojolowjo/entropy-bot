@@ -162,7 +162,7 @@ final class CampCommands {
         Map<String, Integer> inv = Gui.inventory(p);
         // 0.30.2: keep the block that already stands in the house's shell (built blocks and cobblestone, counted per id)
         Map<String, Integer> placed = new java.util.HashMap<>();
-        if (box != null && w.size() < 2) {
+        if (box != null) {
             try {
                 Clearing.LiveWorld lw = new Clearing.LiveWorld();
                 lw.set(p);
@@ -170,6 +170,8 @@ final class CampCommands {
                         io.github.mojolowjo.entropybot.clear.ClearBox.of(box[0], box[1], box[2], box[3], box[4], box[5]))) {
                     String qid = lw.id(q.x(), q.y(), q.z());
                     if (qid == null || lw.air(q.x(), q.y(), q.z())) continue;
+                    // review d: full building blocks only (no torches, doors, glass, ladders, signs, stairs)
+                    if (!lw.fullBlock(q.x(), q.y(), q.z()) || !io.github.mojolowjo.entropybot.camp.HousePlan.buildingBlock(qid)) continue;
                     if (lw.builtBlock(q.x(), q.y(), q.z()) || qid.equals("minecraft:cobblestone")) placed.merge(qid, 1, Integer::sum);
                 }
             } catch (RuntimeException ex) {
@@ -184,6 +186,7 @@ final class CampCommands {
         if (box != null && lv != null) {
             for (String s : io.github.mojolowjo.entropybot.camp.HousePlan.STATIONS) standing.put(s, insideHas(lv, box, s));
         }
+        standing.put(io.github.mojolowjo.entropybot.camp.HousePlan.SHELL, placed.getOrDefault(blk, 0) > 0);
         JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
         int[] cp = camp != null && camp.has("x") ? Jobs.pos(camp) : null;
         var plan = io.github.mojolowjo.entropybot.camp.HousePlan.plan(new io.github.mojolowjo.entropybot.camp.HousePlan.Facts(

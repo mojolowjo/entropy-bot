@@ -506,6 +506,13 @@ final class DigCommands {
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
         int need = shape.equals("clear") ? 2 : 3;
+        // 0.30.2: "build walls <block> <area> door x z": the door's two cells (the floor + 1 and + 2) stay open
+        int[] doorXz = null;
+        if (!shape.equals("clear") && parts.length == need + 3 && parts[need].equalsIgnoreCase("door")
+                && parts[need + 1].matches("-?\\d+") && parts[need + 2].matches("-?\\d+")) {
+            doorXz = new int[]{Integer.parseInt(parts[need + 1]), Integer.parseInt(parts[need + 2])};
+            parts = java.util.Arrays.copyOf(parts, need);
+        }
         if (parts.length != need) return shape.equals("clear") ? "usage: build clear <area>" : "usage: build " + shape + " <block> <area>  (e.g. build " + shape + " cobblestone yard)";
         String areaName = parts[need - 1].toLowerCase();
         String[] err = new String[1];
@@ -527,7 +534,8 @@ final class DigCommands {
         ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
         // 0.30.1: the shape's cells; a rerun of a finished step (house's chain) starts nothing
-        List<io.github.mojolowjo.entropybot.clear.Pos> cells = io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box);
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells = io.github.mojolowjo.entropybot.clear.RimPlan.withoutDoor(
+                io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box), doorXz, box.y1());
         Clearing.LiveWorld lw = new Clearing.LiveWorld();
         lw.set(p);
         int missing0 = io.github.mojolowjo.entropybot.clear.RimPlan.missing(lw, cells).size();

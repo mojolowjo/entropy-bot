@@ -194,7 +194,7 @@ public final class Storage {
                 for (int dz = -radius; dz <= radius; dz++) {
                     BlockState st = mc.level.getBlockState(new BlockPos(c[0] + dx, c[1] + dy, c[2] + dz));
                     String id = st.getBlock().getDescriptionId();
-                    if (id.contains("ender_chest") || (!id.contains("chest") && !id.contains("barrel"))) continue;
+                    if (!io.github.mojolowjo.entropybot.camp.HousePlan.isStation(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString(), "chest") && !id.contains("barrel")) continue;   // 0.30.2: one chest test (review e)
                     Found f = new Found(c[0] + dx, c[1] + dy, c[2] + dz, id, chestHalf(st));
                     // only the two halves of one double chest are the same container (a row of barrels is not)
                     boolean dup = false;
