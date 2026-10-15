@@ -152,6 +152,17 @@ public final class HousePlan {
         return bestPlank != null && planks > cobble ? bestPlank : "minecraft:cobblestone";
     }
 
+    /**
+     * 0.30.2: block id {@code id} is station {@code word} (crafting_table, furnace, chest) whatever mod replaced it:
+     * the part after the namespace and any path ("visualworkbench:minecraft/crafting_table") ends with the word.
+     */
+    public static boolean isStation(String id, String word) {
+        if (id == null || word == null) return false;
+        String s = id.substring(id.indexOf(':') + 1);
+        s = s.substring(s.lastIndexOf('/') + 1);
+        return s.equals(word) || s.endsWith("_" + word);
+    }
+
     static String shortId(String id) {
         return id.startsWith("minecraft:") ? id.substring(10) : id;
     }

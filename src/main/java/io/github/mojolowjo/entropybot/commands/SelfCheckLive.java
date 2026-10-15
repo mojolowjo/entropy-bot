@@ -126,7 +126,10 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
                 int x = me.getBlockX(), y = me.getBlockY(), z = me.getBlockZ();
                 int surface = Jobs.surfaceNoLeaves(me.level(), x, z);
                 boolean sky = me.level().canSeeSky(new net.minecraft.core.BlockPos(x, y + 1, z));
-                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.HINT_MAX) f.add(new SelfCheck.Finding("hole", "I'm in a hole (rim " + ClimbPlan.depth(y, surface) + " above me)", "climb"));
+                Clearing.LiveWorld lw = new Clearing.LiveWorld();
+                lw.set(me);
+                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.HINT_MAX
+                        && !ClimbPlan.indoors(lw, x, y, z, ClimbPlan.depth(y, surface))) f.add(new SelfCheck.Finding("hole", "I'm in a hole (rim " + ClimbPlan.depth(y, surface) + " above me)", "climb"));
                 com.google.gson.JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
                 if (camp != null && camp.has("x") && Jobs.dimOf(camp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(me.level()))) {
                     int[] cp = Jobs.pos(camp);

@@ -42,6 +42,20 @@ public final class ClimbPlan {
         return !sky && depth(feetY, surfaceY) >= HOLE;
     }
 
+    /**
+     * 0.30.2 (trial 8: "I'm in a hole" inside the roofed house, and climb would dig out through the roof): indoors when
+     * the first solid block over the head (up to depth + 1 above the feet) is a built block (planks, cobblestone... the
+     * protected set), not natural stone, dirt or snow.
+     */
+    public static boolean indoors(io.github.mojolowjo.entropybot.clear.ClearWorld w, int x, int y, int z, int depth) {
+        for (int yy = y + 2; yy <= y + 1 + Math.max(1, depth); yy++) {
+            if (w.noCollision(x, yy, z)) continue;
+            String id = w.id(x, yy, z);
+            return w.builtBlock(x, yy, z) || (id != null && id.endsWith("cobblestone"));   // a cobblestone house's roof too
+        }
+        return false;
+    }
+
     /** The cells step i (1..n) of a staircase up from me in (dx, dz) breaks: the 2x2 between column i-1 and i at y+i..y+i+1. */
     static List<int[]> stepCells(int x, int y, int z, int dx, int dz, int i) {
         List<int[]> out = new ArrayList<>();

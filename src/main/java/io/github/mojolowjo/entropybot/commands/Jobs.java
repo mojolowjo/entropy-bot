@@ -579,6 +579,9 @@ public final class Jobs {
                 return walled ? msg + " - I'm walled in on every side - next: climb" : msg;
             }
             if (ClimbPlan.depth(y, surface) > ClimbPlan.HINT_MAX) return msg;     // a deep mine is no hole
+            Clearing.LiveWorld lw = new Clearing.LiveWorld();
+            lw.set(p);
+            if (ClimbPlan.indoors(lw, x, y, z, ClimbPlan.depth(y, surface))) return msg;   // 0.30.2: under my own roof
             return msg + " - " + ClimbPlan.holeHint(ClimbPlan.depth(y, surface));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] hole note: {}", e.toString());

@@ -206,7 +206,9 @@ final class CampCommands {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int x = x1; x <= x2; x++) for (int y = y1; y <= y2; y++) for (int z = z1; z <= z2; z++) {
             m.set(x, y, z);
-            if (lv.isLoaded(m) && net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(m).getBlock()).getPath().equals(word)) return true;
+            // 0.30.2: Visual Workbench's table is visualworkbench:minecraft/crafting_table: match the id's last part
+            if (lv.isLoaded(m) && io.github.mojolowjo.entropybot.camp.HousePlan.isStation(
+                    net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(m).getBlock()).toString(), word)) return true;
         }
         return false;
     }
