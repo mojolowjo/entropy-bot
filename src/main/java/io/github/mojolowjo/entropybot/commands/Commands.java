@@ -658,6 +658,7 @@ public final class Commands implements Chains.Env {
             }
             worldTicks++;
             LocalPlayer player = mc.player;
+            if (tick % 20 == 11) io.github.mojolowjo.entropybot.view.ViewLive.tick(player);       // 0.32.0: the NEW line's observations
             boolean dead = player.isDeadOrDying();
             if (dead && !wasDead) noteDeath(mc, player);
             wasDead = dead;
@@ -858,7 +859,8 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
-        if (r.text() != null && !r.text().isEmpty()) whisper(pm.from(), r.text().replaceFirst("^ok: ", ""));
+        if (r.text() != null && !r.text().isEmpty())
+            whisper(pm.from(), pm.from().equalsIgnoreCase(owner()) ? shapeOut(Texts.verbAndRest(pm.body())[0], r.text()) : r.text().replaceFirst("^ok: ", ""));
     }
 
     /** A PM's job: its end is whispered to the sender (the answer itself was whispered when it started). */
@@ -869,11 +871,40 @@ public final class Commands implements Chains.Env {
     /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
     Listener notifyListener(String to) {
         return r -> {
-            if (!JobRequests.quiet(r.doneMsg)) whisper(to, r.doneMsg.replaceFirst("^ok: ", ""));
+            if (!JobRequests.quiet(r.doneMsg)) whisper(to, to.equalsIgnoreCase(owner()) ? shapeOut(null, r.doneMsg) : r.doneMsg.replaceFirst("^ok: ", ""));
         };
     }
 
     public void whisper(String to, String text) { whisperSent(to, text); }
+
+    /** 0.32.0: the reply shape (RESULT/HERE/NEW/OPTIONS) unless "reply full" is set. Never throws. */
+    String shapeOut(String verb, String text) {
+        try {
+            if (text == null || replyFull()) return text;
+            return io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.shape(verb, text,
+                    io.github.mojolowjo.entropybot.view.ViewLive.here(Minecraft.getInstance().player), io.github.mojolowjo.entropybot.view.ViewLive.NEWS.take());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] reply shaper: {}", e.toString());
+            return text;
+        }
+    }
+
+    boolean replyFull() {
+        JsonObject d = brainStore.data();
+        return d.has("replyFull") && d.get("replyFull").getAsBoolean();
+    }
+
+    /** "reply full|short": today's whole text, or the short shape (the default). */
+    String replyCommand(String rest) {
+        String a = rest == null ? "" : rest.trim().toLowerCase();
+        if (a.equals("full") || a.equals("short")) {
+            brainStore.data().addProperty("replyFull", a.equals("full"));
+            saved();
+            return "ok: replies are " + (a.equals("full") ? "the whole text now" : "short now (RESULT/HERE/NEW/OPTIONS; why = the last failure in full)");
+        }
+        if (a.isEmpty() || a.equals("status")) return "replies: " + (replyFull() ? "full" : "short") + " - reply full | reply short";
+        return "usage: reply full | reply short";
+    }
 
     /** Queues a whisper; false when the outbox dropped part of it (package H's caps). */
     boolean whisperSent(String to, String text) {
@@ -969,7 +1000,11 @@ public final class Commands implements Chains.Env {
             if (sup != null) return sup;
         }
         if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
-        if (verb.equals("check")) return Reply.now(selfCheck.command(player));
+        if (verb.equals("check")) return Reply.now(selfCheck.command(player) + "\n" + io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.counters() + "; " + io.github.mojolowjo.entropybot.view.ViewLive.NEWS.counters());
+        // 0.32.0 (operator view): the last failure in full, the text map, the reply setting
+        if (verb.equals("why")) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.why(System.currentTimeMillis()));
+        if (verb.equals("look")) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.look(player, rest));
+        if (verb.equals("reply")) return Reply.now(replyCommand(rest));
         if (verb.equals("summary")) return Reply.now(io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.now(core.files()));     // 0.23.6
         if (verb.equals("memory")) return Reply.now(MemoryCommand.command(core, this, rest));
         // V1b: the plumbing verbs live under debug ("debug autominer on" runs "autominer on" as before)
@@ -1930,6 +1965,7 @@ public final class Commands implements Chains.Env {
         saved();
         JsonObject r = core.reflexes.status();
         String target = r.has("target") ? r.get("target").getAsString() : null;
+        io.github.mojolowjo.entropybot.view.ViewLive.NEWS.push(io.github.mojolowjo.entropybot.view.News.DEATH, "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt());
         whisper(owner(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt() + (target != null ? " fighting " + target : "")
                 + ". Respawning - say \"death\" and I will go back for my stuff.");
     }
@@ -1954,13 +1990,18 @@ public final class Commands implements Chains.Env {
         String text = cmd.has("text") && !cmd.get("text").isJsonNull() ? cmd.get("text").getAsString() : "";
         String from = cmd.has("from") && !cmd.get("from").isJsonNull() && !cmd.get("from").getAsString().isEmpty() ? cmd.get("from").getAsString() : null;
         String notify = cmd.has("notify") && !cmd.get("notify").isJsonNull() && !cmd.get("notify").getAsString().isEmpty() ? cmd.get("notify").getAsString() : null;
+        // 0.32.0: "pm full <command>" (bridge.ps1 -Full) answers with the whole text; other pm answers are shaped
+        boolean raw = false;
+        if (type.equals("pm") && text.toLowerCase().startsWith("full ")) { raw = true; text = text.substring(5).trim(); }
         Reply r;
         try {
             r = runCommand(mc, cmd, type, text, from, notify, id);
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
-        cmdResult(id, type, text, r.text());
+        String out = r.text();
+        if (type.equals("pm") && !raw) out = shapeOut(Texts.verbAndRest(text)[0], out);
+        cmdResult(id, type, text, out);
     }
 
     private void cmdResult(String id, String type, String text, String result) {

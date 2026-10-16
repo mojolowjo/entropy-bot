@@ -148,6 +148,7 @@ public final class Chains {
         c.idx--;
         c.detour = craft;
         env.log("chain " + c.name + ": \"" + step + "\" stopped without a pickaxe - " + craft + ", then that step once more");
+        io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.DETOUR, "chain " + c.name + ": out of pickaxes, " + craft + ", then the step again");
         return true;
     }
 
