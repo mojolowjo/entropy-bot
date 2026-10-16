@@ -79,6 +79,29 @@ class HousePlanTest {
         assertTrue(p.summary().contains("skips under, floor, walls (already there)"), p.summary());
     }
 
+    private static HousePlan.Probe ground(java.util.function.Predicate<int[]> walk) {
+        return new HousePlan.Probe() {
+            @Override public boolean hasBlock(int x, int y, int z) { return false; }
+            @Override public boolean clear(int x, int y, int z) { return true; }
+            @Override public boolean walkable(int x, int y, int z) { return walk.test(new int[]{x, y, z}); }
+        };
+    }
+
+    @Test
+    void doorAvoidsRockOutside() {
+        // south (3 65 7) is rock, east (7 65 3) is open: the door goes east and says why
+        HousePlan.Plan p = rerun(ground(c -> c[0] == 7 && c[2] == 3), Map.of());
+        assertTrue(p.steps().contains("build walls cobblestone house door 6 3"), p.steps().toString());
+        assertTrue(p.summary().contains("door on the east side (the south side is blocked outside)"), p.summary());
+    }
+
+    @Test
+    void noOpenSideDigsTheStepOutside() {
+        HousePlan.Plan p = rerun(ground(c -> false), Map.of());
+        assertTrue(p.steps().contains("dig 3 65 7 3 66 7 force"), p.steps().toString());
+        assertTrue(p.summary().contains("digs the step outside it at 3 65 7"), p.summary());
+    }
+
     @Test
     void noProbeRunsEveryStep() {
         HousePlan.Plan p = rerun(null, Map.of("shell", true));

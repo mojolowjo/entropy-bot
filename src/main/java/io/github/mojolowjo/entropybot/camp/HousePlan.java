@@ -49,6 +49,28 @@ public final class HousePlan {
         boolean hasBlock(int x, int y, int z);
 
         boolean clear(int x, int y, int z);
+
+        /** 0.31.1: feet and head free at x y z and a full block under it (true when not known). */
+        default boolean walkable(int x, int y, int z) { return true; }
+    }
+
+    static int[] doorXz(char side, int cx, int cz, int x1, int z1, int x2, int z2) {
+        return switch (side) {
+            case 'n' -> new int[]{cx, z1};
+            case 'e' -> new int[]{x2, cz};
+            case 'w' -> new int[]{x1, cz};
+            default -> new int[]{cx, z2};
+        };
+    }
+
+    /** The cell just outside the door (one step out of the wall line). */
+    static int[] outsideXz(char side, int cx, int cz, int x1, int z1, int x2, int z2) {
+        return switch (side) {
+            case 'n' -> new int[]{cx, z1 - 1};
+            case 'e' -> new int[]{x2 + 1, cz};
+            case 'w' -> new int[]{x1 - 1, cz};
+            default -> new int[]{cx, z2 + 1};
+        };
     }
 
     /** The chain, the counts named up front, or why not. */
@@ -73,12 +95,30 @@ public final class HousePlan {
         int cx = (x1 + x2) / 2, cz = (z1 + z2) / 2, iy = y1 + 1;
         // the door side: toward the camp, else south (+z)
         char side = doorSide(cx, cz, f.camp());
-        int[] door = switch (side) {
-            case 'n' -> new int[]{cx, z1};
-            case 'e' -> new int[]{x2, cz};
-            case 'w' -> new int[]{x1, cz};
-            default -> new int[]{cx, z2};
-        };
+        // 0.31.1 (trial 11: the door opened onto rock in a sunken house): with a probe, a doorway already open is kept,
+        // else the first side (the camp's first) whose outside cell is walkable at floor + 1; none: the camp's side and
+        // the step outside it is dug (named in the summary)
+        String doorNote = "";
+        int[] outsideDig = null;
+        if (f.probe() != null) {
+            List<Character> order = new ArrayList<>(List.of(side));
+            for (char s : new char[]{'s', 'e', 'n', 'w'}) if (s != side) order.add(s);
+            Character pick = null;
+            if (Boolean.TRUE.equals(f.standing().get(SHELL))) for (char s : order) {
+                int[] d = doorXz(s, cx, cz, x1, z1, x2, z2);
+                if (f.probe().clear(d[0], iy, d[1]) && f.probe().clear(d[0], iy + 1, d[1])
+                        && !f.probe().hasBlock(d[0], iy, d[1])) { pick = s; doorNote = " (the doorway that is open)"; break; }
+            }
+            if (pick == null) for (char s : order) {
+                int[] o = outsideXz(s, cx, cz, x1, z1, x2, z2);
+                if (f.probe().walkable(o[0], iy, o[1])) { pick = s; if (s != side) doorNote = " (the " + sideName(side) + " side is blocked outside)"; break; }
+            }
+            if (pick == null) {
+                outsideDig = outsideXz(side, cx, cz, x1, z1, x2, z2);
+                doorNote = " (no side opens onto walkable ground: digs the step outside it at " + outsideDig[0] + " " + iy + " " + outsideDig[1] + ")";
+            } else side = pick;
+        }
+        int[] door = doorXz(side, cx, cz, x1, z1, x2, z2);
         // the stations against the back wall (opposite the door), side by side at the middle
         int[][] st = new int[3][];
         for (int i = 0; i < 3; i++) {
@@ -136,6 +176,7 @@ public final class HousePlan {
         String d = door[0] + " " + iy + " " + door[1] + " " + door[0] + " " + (iy + 1) + " " + door[1];
         if (doorDone && wallsDone) skipped.add("door");
         else out.add("dig " + d + " force");
+        if (outsideDig != null) out.add("dig " + outsideDig[0] + " " + iy + " " + outsideDig[1] + " " + outsideDig[0] + " " + (iy + 1) + " " + outsideDig[1] + " force");
         // 0.30.6 (live, shed2: "place chest ... nothing in reach" right after the door dig, the bot still outside): walk in
         // through the door to the middle of the room first; every station is within 3 blocks of it
         out.add("goto " + cx + " " + iy + " " + cz);
@@ -157,7 +198,7 @@ public final class HousePlan {
         String summary = "house in " + area + ": " + out.size() + " steps, "
                 + (shellDone ? "the shell stands (no " + b6 + " needed)" : "needs about " + need + " " + b6 + " (you have " + have + ")"
                 + (have < need ? " - gather " + b6 + " " + (need - have) + " if it runs out" : ""))
-                + ", door on the " + sideName(side) + " side"
+                + ", door on the " + sideName(side) + " side" + doorNote
                 + (missing.isEmpty() ? "" : ", crafts " + String.join(", ", missing) + " first")
                 + (skipped.isEmpty() ? "" : ", skips " + String.join(", ", skipped) + " (already there)");
         return new Plan(out, summary, null);

@@ -273,6 +273,13 @@ final class CampCommands {
                         return lw.air(x, y, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, y, z)
                                 || lw.builtBlock(x, y, z) || lw.blockEntity(x, y, z);
                     }
+
+                    @Override public boolean walkable(int x, int y, int z) {           // 0.31.1: the door's outside step
+                        if (lw.id(x, y, z) == null) return true;                        // not loaded: no opinion
+                        boolean feet = lw.air(x, y, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, y, z);
+                        boolean head = lw.air(x, y + 1, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, y + 1, z);
+                        return feet && head && lw.fullBlock(x, y - 1, z);
+                    }
                 };
             } catch (RuntimeException ex) {
                 LOG.warn("[entropybot] house {}: could not look at what stands (every step runs): {}", area, ex.toString());
