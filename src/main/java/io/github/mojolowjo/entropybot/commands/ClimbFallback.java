@@ -31,8 +31,10 @@ public final class ClimbFallback {
     }
 
     public void failed(int[] pos) {
+        // live 0.30.5: each failed climb gets a few blocks up before it stops, so the spot follows the latest failure
         if (at != null && near(at, pos)) fails++;
-        else { at = pos.clone(); fails = 1; }
+        else fails = 1;
+        at = pos.clone();
     }
 
     public void succeeded() { at = null; fails = 0; }
@@ -65,7 +67,7 @@ public final class ClimbFallback {
 
     /** The fallback's start line. */
     public static String startText(boolean toCamp, String dir, int n) {
-        return "climb: my own way failed twice, digging stairs up " + (toCamp ? "toward the camp" : dir) + " (" + n + " blocks up, " + dir + ")";
+        return "climb: my own way failed twice, digging stairs up " + (toCamp ? "toward the camp (" + n + " blocks up, " + dir + ")" : dir + " (" + n + " blocks up; no camp mark)");
     }
 
     private static final Pattern GOTO = Pattern.compile("\\(goto (-?\\d+) (-?\\d+) (-?\\d+)\\)");
@@ -91,6 +93,30 @@ public final class ClimbFallback {
      * floorOpen: nothing to stand on under g. A hole hint the walk added is dropped (the note says what to do).
      */
     public static String honestEnd(String msg, int[] g, String feet, String head, boolean floorOpen) {
+        return honestEnd(msg, g, feet, head, floorOpen, false);
+    }
+
+    /** hard: the block in the way can't be dug (bedrock, a fluid): then the next verb is climb (it goes another way). */
+    public static String honestEnd(String msg, int[] g, String feet, String head, boolean floorOpen, boolean hard) {
+        if (hard && (feet != null || head != null)) {
+            String m = cutHint(msg);
+            String id = feet != null ? feet : head;
+            int y = feet != null ? g[1] : g[1] + 1;
+            return m + " - in the way: " + id + " at " + g[0] + " " + y + " " + g[2] + " (I can't dig it) - next: climb (another way; after two fails it digs stairs up toward the camp)";
+        }
+        return honestSoft(msg, g, feet, head, floorOpen);
+    }
+
+    private static String cutHint(String msg) {
+        String m = msg;
+        for (String cut : new String[]{" - I'm in a hole", " - I'm walled in"}) {
+            int i = m.indexOf(cut);
+            if (i > 0) m = m.substring(0, i);
+        }
+        return m;
+    }
+
+    private static String honestSoft(String msg, int[] g, String feet, String head, boolean floorOpen) {
         String m = msg;
         for (String cut : new String[]{" - I'm in a hole", " - I'm walled in"}) {
             int i = m.indexOf(cut);

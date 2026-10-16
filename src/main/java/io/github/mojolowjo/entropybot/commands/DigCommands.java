@@ -236,7 +236,9 @@ final class DigCommands {
         net.minecraft.world.level.Level lv = p.level();
         String feet = solidId(lv, g[0], g[1], g[2]), head = solidId(lv, g[0], g[1] + 1, g[2]);
         boolean floorOpen = climbCell(lv, g[0], g[1] - 1, g[2]) == ClimbPlan.Kind.OPEN;
-        return ClimbFallback.honestEnd(msg, g, feet, head, floorOpen);
+        int hy = feet != null ? g[1] : g[1] + 1;
+        boolean hard = (feet != null || head != null) && climbCell(lv, g[0], hy, g[2]) == ClimbPlan.Kind.BLOCKED;
+        return ClimbFallback.honestEnd(msg, g, feet, head, floorOpen, hard);
     }
 
     /** The block id at a cell when it blocks a walk (solid or a fluid), else null. */

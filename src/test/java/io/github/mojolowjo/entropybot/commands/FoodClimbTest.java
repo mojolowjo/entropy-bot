@@ -141,5 +141,16 @@ class FoodClimbTest {
         String open = ClimbFallback.honestEnd(msg, g, null, null, false);
         assertTrue(open.contains("next: goto 23 77 14"), open);
         assertNull(ClimbFallback.gotoGoal("stopped at step 1 (dig 1 2 3 1 3 3): blocked"));
+        String hard = ClimbFallback.honestEnd(msg, g, "bedrock", null, false, true);
+        assertTrue(hard.contains("in the way: bedrock at 23 77 14 (I can't dig it) - next: climb"), hard);
+    }
+
+    @Test
+    void failSpotFollowsTheLatestFailure() {
+        // live 0.30.5: 22 100 14, then 20 102 14, then the third climb from 21 108 14 (8.1 from the first spot)
+        ClimbFallback fb = new ClimbFallback();
+        fb.failed(new int[]{22, 100, 14});
+        fb.failed(new int[]{20, 102, 14});
+        assertTrue(ClimbFallback.fallback(fb.fails(new int[]{21, 108, 14})));
     }
 }
