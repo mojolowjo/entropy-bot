@@ -193,6 +193,8 @@ public final class Clearing {
         String stage;
         long stageTick;
         int tries;
+        /** 0.30.6: walks to a fresh stand spot after a "nothing in reach" click (once) */
+        int walks;
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
@@ -1027,6 +1029,16 @@ public final class Clearing {
             // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
             ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
             if (!r.startsWith("ok")) {
+                // 0.30.6 (live, shed2: "place chest" right after the door dig, the bot still outside): nothing in reach
+                // from where the walk ended (or from where the bot stood when the step began and then moved on): walk to
+                // a stand spot picked afresh, once, before the three tries count
+                if (r.contains("nothing in reach") && ps.walks < 1) {
+                    ps.walks++;
+                    ps.stage = null;
+                    ps.from = null;
+                    LOG.info("[entropybot] place: {} at {} - nothing in reach from {}: walking to a stand spot", sid, Jobs.fmt(pos), Jobs.fmt(Jobs.here(p)));
+                    return "wait";
+                }
                 // a placement that fails 3 times ends the step and says why (it never stands there for good)
                 ps.tries++;
                 if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");

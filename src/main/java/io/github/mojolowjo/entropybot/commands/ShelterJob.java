@@ -441,7 +441,8 @@ public final class ShelterJob {
         Set<String> own = new HashSet<>();
         Set<String> stored = ownBlocks(c);
         for (int[] cell : ShelterPlan.allCells(f))
-            if (stored.contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2])) own.add(ShelterPlan.key(cell));
+            if ((stored.contains(ShelterPlan.key(cell)) || RestoreLive.INSTANCE.builtByMe(cell[0], cell[1], cell[2]))
+                    && !Jobs.houseCell(Storage.dim(), cell[0], cell[1], cell[2])) own.add(ShelterPlan.key(cell));     // 0.30.6: a house is not a shelter to open
         return own;
     }
 
@@ -519,6 +520,7 @@ public final class ShelterJob {
         try {
             BlockPos bp = new BlockPos(cell[0], cell[1], cell[2]);
             if (lv.canSeeSky(new BlockPos(f[0], f[1] + 1, f[2])) || !c.inAreas(Storage.dim(), cell[0], cell[2])) return false;
+            if (Jobs.houseCell(Storage.dim(), cell[0], cell[1], cell[2])) return false;       // 0.30.6
             var st = lv.getBlockState(bp);
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
             return io.github.mojolowjo.entropybot.restore.RestoreRules.natural(id) && !st.hasBlockEntity() && st.getFluidState().isEmpty()

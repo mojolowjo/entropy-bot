@@ -26,7 +26,7 @@ class CampRulesTest {
         assertNull(p.err());
         List<String> s = p.steps();
         assertEquals("setbase 10 64 20", s.get(0));
-        assertEquals("mark camp 10 64 20", s.get(1));
+        assertEquals("place camp 10 64 20", s.get(1));
         assertTrue(s.get(2).startsWith("chop "), s.toString());
         int chop = Integer.parseInt(s.get(2).split(" ")[1]);
         assertTrue(chop >= 12, "enough logs for table, chest, sticks, wooden pick and charcoal: " + chop);
