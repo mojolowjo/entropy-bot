@@ -67,6 +67,43 @@ public final class Storage {
     final Set<UUID> emptyCorpses = new HashSet<>();
     /** 0.30.7 (live, shed3): the corpses emptied (as emptyCorpses, for the static place check: one still there is waited for). */
     static final Set<UUID> EMPTIED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 0.31.1: EMPTIED is kept per world in corpses.json (the newest MAX_EMPTIED). */
+    static final String EMPTIED_FILE = "corpses.json";
+    static final int MAX_EMPTIED = 200;
+    private static final java.util.ArrayDeque<UUID> EMPTIED_ORDER = new java.util.ArrayDeque<>();
+
+    /** 0.31.1: a corpse I looted, remembered across restarts. */
+    static synchronized void markEmptied(UUID id) {
+        if (id == null || !EMPTIED.add(id)) return;
+        EMPTIED_ORDER.addLast(id);
+        while (EMPTIED_ORDER.size() > MAX_EMPTIED) EMPTIED.remove(EMPTIED_ORDER.removeFirst());
+        io.github.mojolowjo.entropybot.io.BotFiles f = Core.INSTANCE.files();
+        if (f == null) return;
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        for (UUID u : EMPTIED_ORDER) a.add(u.toString());
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.add("emptied", a);
+        String r = f.writeJson(EMPTIED_FILE, o.toString());
+        if (!r.startsWith("ok")) LOG.warn("[entropybot] corpses: couldn't write {}: {}", EMPTIED_FILE, r);
+    }
+
+    /** 0.31.1: at the first tick in a world and at a world switch. A line for the log. */
+    public static synchronized String loadEmptied(io.github.mojolowjo.entropybot.io.BotFiles f) {
+        EMPTIED.clear();
+        EMPTIED_ORDER.clear();
+        String text = f.readJson(EMPTIED_FILE);
+        if (text == null) return EMPTIED_FILE + ": none yet";
+        try {
+            for (com.google.gson.JsonElement e : com.google.gson.JsonParser.parseString(text).getAsJsonObject().getAsJsonArray("emptied")) {
+                UUID u = UUID.fromString(e.getAsString());
+                if (EMPTIED.add(u)) EMPTIED_ORDER.addLast(u);
+            }
+            return EMPTIED_FILE + ": " + EMPTIED.size() + " emptied corpses";
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] corpses: {} unreadable ({}), starting empty", EMPTIED_FILE, e.toString());
+            return EMPTIED_FILE + ": unreadable, starting empty";
+        }
+    }
     /** B7c: the crafting, farm and compact steps (Seq hands them over). */
     Crafting crafting;
 

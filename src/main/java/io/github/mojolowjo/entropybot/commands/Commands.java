@@ -526,6 +526,8 @@ public final class Commands implements Chains.Env {
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         sb.append("; policy: ").append(policy.apply());
+        sb.append("; ").append(Storage.loadEmptied(files));
+        pushPlaces();                                                          // 0.31.1: the reflexes' base/home at once
         return sb.toString();
     }
 
@@ -535,6 +537,7 @@ public final class Commands implements Chains.Env {
         StringBuilder sb = new StringBuilder();
         sb.append(pmStore.load(files)).append("; ").append(brainStore.load(files)).append("; ").append(areaStore.load(files));
         sb.append("; ").append(RestoreLive.INSTANCE.load(this, files));          // P1: the restore ledger
+        sb.append("; ").append(Storage.loadEmptied(files));                     // 0.31.1: looted corpses
         RouteCommand.syncRuntime(this);     // routing review M1: a stored "route off" keeps the map builder off too
         JsonObject memory = null;
         if (!pmStore.existed() || !brainStore.existed() || !areaStore.existed()) memory = readBridgeJson(mc, "memory.json");

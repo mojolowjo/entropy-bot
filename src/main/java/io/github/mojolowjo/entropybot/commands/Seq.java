@@ -773,7 +773,7 @@ public final class Seq {
             Gui.close(p);
             if (!pressed) Gui.wearArmor(p);
             storage.emptyCorpses.add(c.getUUID());
-            Storage.EMPTIED.add(c.getUUID());          // 0.30.7: looted by me: the place check waits for it to go
+            Storage.markEmptied(c.getUUID());          // 0.30.7: looted by me: the place check waits for it to go
             note = "got " + (Gui.totalItems(p) - lootBefore) + " items back from my corpse";
             return "next";
         }
