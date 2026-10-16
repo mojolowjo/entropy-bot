@@ -163,11 +163,19 @@ public final class HousePlan {
      */
     public static String chooseBlock(String asked, Map<String, Integer> inv, Map<String, Integer> placed) {
         if ((asked == null || asked.isBlank()) && placed != null && !placed.isEmpty()) {
+            // 0.30.8 (trial 10: "needs about 168 visualworkbench:minecraft/crafting_table"): the bootstrap's table inside
+            // the area was the only placed block counted; stations and non-building blocks never decide the house block
+            Map<String, Integer> walls = new java.util.HashMap<>();
+            for (Map.Entry<String, Integer> e : placed.entrySet()) {
+                String id = e.getKey();
+                if (!buildingBlock(id) || isStation(id, "crafting_table") || isStation(id, "furnace") || isStation(id, "chest")) continue;
+                walls.put(id, e.getValue());
+            }
             String bag = chooseBlock(null, inv, null);
-            int top = placed.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+            int top = walls.values().stream().mapToInt(Integer::intValue).max().orElse(0);
             if (top > 0) {
-                if (placed.getOrDefault(bag, 0) == top) return bag;
-                return placed.entrySet().stream().filter(e -> e.getValue() == top).map(Map.Entry::getKey).sorted().findFirst().get();
+                if (walls.getOrDefault(bag, 0) == top) return bag;
+                return walls.entrySet().stream().filter(e -> e.getValue() == top).map(Map.Entry::getKey).sorted().findFirst().get();
             }
         }
         if (asked != null && !asked.isBlank()) return asked.contains(":") ? asked : "minecraft:" + asked;

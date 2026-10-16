@@ -70,6 +70,15 @@ class HousePlanTest {
         assertEquals(HousePlan.TOO_SMALL, HousePlan.plan(new HousePlan.Facts("h", null, false, "minecraft:cobblestone", Map.of(), Map.of(), null)).err());
     }
 
+    /** 0.30.8 (trial 10): a station standing in the area never becomes the house block. */
+    @Test
+    void placedStationsNeverDecideTheBlock() {
+        assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 65, "minecraft:spruce_planks", 65),
+                Map.of("visualworkbench:minecraft/crafting_table", 1)));
+        assertEquals("minecraft:oak_planks", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10),
+                Map.of("minecraft:oak_planks", 40, "minecraft:chest", 1, "minecraft:furnace", 1, "minecraft:torch", 50)));
+    }
+
     @Test
     void blockChoice() {
         assertEquals("minecraft:cobblestone", HousePlan.chooseBlock(null, Map.of("minecraft:cobblestone", 10)));
