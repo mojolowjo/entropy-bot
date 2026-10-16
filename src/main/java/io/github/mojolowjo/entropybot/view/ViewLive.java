@@ -20,7 +20,8 @@ import java.util.List;
 
 /**
  * 0.32.0 (operator view): the game side of the reply shape's HERE and NEW lines and of {@code look}. Vanilla client
- * Level / Entity reads only (no loader events, no mixins). Never throws out (a failure is a line saying so).
+ * Level / Entity reads only (no loader events, no mixins). Heightmaps: MOTION_BLOCKING only (live: the client is never sent
+ * MOTION_BLOCKING_NO_LEAVES, which reads as the bottom of the world there). Never throws out (a failure is a line saying so).
  */
 public final class ViewLive {
     private ViewLive() {}
@@ -38,7 +39,7 @@ public final class ViewLive {
             StringBuilder sb = new StringBuilder().append(x).append(' ').append(y).append(' ').append(z);
             Box a = Core.INSTANCE.guard.core.policy().areaAt(Guard.dimOf(lv), x, y, z);
             sb.append(a == null ? ", outside my areas" : ", in " + a.name + " (" + a.type.name().toLowerCase() + ")");
-            int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
             if (top - y > 3 && !lv.canSeeSky(new BlockPos(x, y + 1, z))) sb.append(", under ground (surface ").append(top - y).append(" up)");
             sb.append(", hp ").append(Math.round(p.getHealth())).append(" food ").append(p.getFoodData().getFoodLevel());
             return sb.toString();
@@ -116,7 +117,7 @@ public final class ViewLive {
             }
 
             @Override public int topY(int x, int z) {
-                return lv.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                return lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
             }
 
             @Override public char at(int x, int y, int z) {
@@ -154,7 +155,7 @@ public final class ViewLive {
                 int r = Math.min(15, Math.max(7, Math.max(b.x2 - b.x1, b.z2 - b.z1) / 2 + 2));
                 return LookMap.overhead(cells(lv), cx, cz, me[1], r, me, mobs(p, 40), "area " + b.name);
             }
-            int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, me[0], me[2]);
+            int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
             if (top - me[1] > 3 && !lv.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])))
                 return LookMap.slices(cells(lv), me[0], me[1], me[2], 7, 3, mobs(p, 8));
             return LookMap.overhead(cells(lv), me[0], me[2], me[1], 7, me, mobs(p, 8), "around me");

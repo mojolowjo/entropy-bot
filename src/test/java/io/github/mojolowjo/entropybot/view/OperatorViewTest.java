@@ -58,6 +58,13 @@ class OperatorViewTest {
     }
 
     @Test
+    void outerNextWins() {
+        java.util.List<String> o = new java.util.ArrayList<>();
+        ReplyShaper.split("error: gather: 0/4 (last: chop: no trees; next: give me an axe, or put a cr...) - next: \"area here <r> <name>\" where trees grow, or put some oak_log in the base chests", o);
+        assertEquals(List.of("\"area here <r> <name>\" where trees grow", "put some oak_log in the base chests"), o);
+    }
+
+    @Test
     void newsHighestFirstOnce() {
         News n = new News();
         n.push(News.TIME, "night fell");

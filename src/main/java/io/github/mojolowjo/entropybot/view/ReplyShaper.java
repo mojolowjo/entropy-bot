@@ -39,10 +39,19 @@ public final class ReplyShaper {
 
     /** The RESULT text and the OPTIONS split out of a reply: "... - next: a or b; c" gives [a, b, c]. */
     static String[] split(String full, List<String> options) {
+        // live (gather): a "next:" inside "(last: ...)" was cut short; the last one outside brackets wins
         Matcher m = NEXT.matcher(full);
-        if (!m.find()) return new String[]{full.trim()};
-        String result = full.substring(0, m.start()).trim();
-        String rest = full.substring(m.end()).trim();
+        int s = -1, e = -1, ls = -1, le = -1;
+        while (m.find()) {
+            int depth = 0;
+            for (int i = 0; i < m.start(); i++) { char ch = full.charAt(i); if (ch == '(') depth++; else if (ch == ')') depth--; }
+            ls = m.start(); le = m.end();
+            if (depth <= 0) { s = m.start(); e = m.end(); }
+        }
+        if (ls < 0) return new String[]{full.trim()};
+        if (s < 0) { s = ls; e = le; }
+        String result = full.substring(0, s).trim();
+        String rest = full.substring(e).trim();
         int open = 0;
         int end = rest.length();
         for (int i = 0; i < rest.length(); i++) {                     // a ")" closing the "(next: ...)" ends it
