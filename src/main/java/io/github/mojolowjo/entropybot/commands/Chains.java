@@ -114,8 +114,6 @@ public final class Chains {
         /** Package D: the detour running is a furnace pickup (not the walk back before a retry); no new one before this tick. */
         boolean pickup;
         long pickupAfter;
-        /** 0.30.5: the running step is a soft one (FoodPlan.SOFT): its failure is reported and the chain goes on. */
-        boolean soft;
     }
 
     /** Wave 1 (item 9): a retry after a fight walks back first when the bot ended up further away than this. */
@@ -129,6 +127,8 @@ public final class Chains {
     private long aliveSince = -1, idleSince = -1, autominerLast = -100000;
     private String lastChainEnd;
     private final java.util.Map<String, String> endsByName = new java.util.HashMap<>();
+    /** 0.30.5: the chain names whose last end is kept (takeEnd). */
+    static final java.util.Set<String> TRACKED_ENDS = java.util.Set.of("climb");
 
     /** 0.30.5: how the last chain of that name ended (taken: the next call returns null until another one ends). */
     public String takeEnd(String name) { return endsByName.remove(name); }
@@ -244,7 +244,7 @@ public final class Chains {
         if (!quiet(chain.name)) env.whisper(chain.from, chain.name + ": " + msg);
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
-        endsByName.put(chain.name, msg);                              // 0.30.5: climb counts its own failures
+        if (TRACKED_ENDS.contains(chain.name)) endsByName.put(chain.name, msg);   // 0.30.5: climb counts its own failures
         if (endHook != null) endHook.accept(chain.name, msg);         // B1: the brain hears how its chain ended
         chain = null;
         clearRun();
@@ -354,7 +354,7 @@ public final class Chains {
                     c.pickup = false;
                     return;
                 }
-                if (Texts.stepFailed(p.reply) && c.soft) {
+                if (Texts.stepFailed(p.reply) && softStep(c)) {
                     c.pending = null;
                     softFailed(c, String.valueOf(p.reply));
                     return;
@@ -416,7 +416,7 @@ public final class Chains {
                     env.log("chain " + c.name + ": will retry \"" + c.steps.get(c.idx) + "\" after: " + st + (c.detour != null ? " (" + c.detour + " first)" : ""));
                     return;
                 }
-                if (c.soft) { c.retries = 0; softFailed(c, st); return; }
+                if (softStep(c)) { c.retries = 0; softFailed(c, st); return; }
                 endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + st);
                 return;
             }
@@ -456,8 +456,7 @@ public final class Chains {
         } else {
             step = c.steps.get(c.idx++);
             c.jobPos = null;
-            c.soft = step.startsWith(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT);
-            if (c.soft) step = step.substring(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT.length());
+            if (step.startsWith(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT)) step = step.substring(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT.length());
         }
         Reply r;
         try {
@@ -478,7 +477,7 @@ public final class Chains {
             c.pickup = false;
             return;
         }
-        if (Texts.stepFailed(r.text()) && c.soft) {
+        if (Texts.stepFailed(r.text()) && softStep(c)) {
             softFailed(c, String.valueOf(r.text()));
             return;
         }
@@ -489,6 +488,14 @@ public final class Chains {
         saveRun();                                             // where it is, for a resume after a restart
     }
 
+    /**
+     * 0.30.5: the running step is a soft one (FoodPlan.SOFT): its failure is reported and the chain goes on. Read from the
+     * step text itself (the prefix stays in the saved list), never for a detour, so a resume or a walk-back gets it right.
+     */
+    static boolean softStep(Chain c) {
+        return !c.inDetour && c.idx >= 1 && c.idx <= c.steps.size() && c.steps.get(c.idx - 1).startsWith(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT);
+    }
+
     /** 0.30.5: a soft step failed: say so (the chain's whisper and its last result) and go on with the next step. */
     private void softFailed(Chain c, String why) {
         String w = why == null ? "" : why.replaceFirst("^error: ", "");
@@ -496,7 +503,6 @@ public final class Chains {
         env.log("chain " + c.name + ": soft step \"" + step + "\" failed, going on: " + w);
         if (!quiet(c.name)) env.whisper(c.from, c.name + ": " + step + " didn't work (" + w + ") - going on");
         c.lastOk = step + " skipped: " + w;
-        c.soft = false;
         saveRun();
     }
 

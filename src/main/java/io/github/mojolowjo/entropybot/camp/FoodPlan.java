@@ -31,10 +31,11 @@ public final class FoodPlan {
     static final Set<String> EDIBLE = Set.of("cooked_beef", "cooked_porkchop", "cooked_chicken", "cooked_mutton", "cooked_rabbit",
             "cooked_cod", "cooked_salmon", "bread", "apple", "golden_apple", "carrot", "golden_carrot", "baked_potato", "potato",
             "beetroot", "beetroot_soup", "mushroom_stew", "rabbit_stew", "sweet_berries", "glow_berries", "melon_slice",
-            "pumpkin_pie", "cookie", "dried_kelp", "beef", "porkchop", "mutton", "rabbit", "cod", "salmon");
+            "pumpkin_pie", "cookie", "dried_kelp");          // ready food only: raw meat goes to the cook step
 
     /** Raw meat -> the word cook takes. */
-    static final Map<String, String> RAW = Map.of("beef", "beef", "porkchop", "porkchop", "chicken", "chicken", "mutton", "mutton");
+    static final Map<String, String> RAW = Map.of("beef", "beef", "porkchop", "porkchop", "chicken", "chicken", "mutton", "mutton",
+            "rabbit", "rabbit", "cod", "cod", "salmon", "salmon");
 
     /** Animal -> its meat. */
     static final Map<String, String> MEAT = Map.of("cow", "beef", "pig", "porkchop", "chicken", "chicken", "sheep", "mutton");
@@ -88,6 +89,12 @@ public final class FoodPlan {
         Map<String, Integer> raw = raw(inv);
         List<String> steps = new ArrayList<>();
         String kind = pick(near);
+        int rawN = 0;
+        for (int v : raw.values()) rawN += v;
+        if (rawN >= need) {                                       // enough raw meat: cook it, no hunt
+            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
+            return new Decision(steps, "ok: food: I carry " + have + " food and " + rawN + " raw - cooking it");
+        }
         if (!huntingOn) {
             for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
             String a = kind == null ? "cow" : kind;
@@ -125,7 +132,7 @@ public final class FoodPlan {
         Map<String, Integer> raw = raw(inv);
         if (!raw.isEmpty()) {
             Map.Entry<String, Integer> e = raw.entrySet().iterator().next();
-            return new String[]{"hunger", "food " + food + "/20 and only raw chicken to eat", "cook " + e.getKey() + " " + e.getValue()};
+            return new String[]{"hunger", "food " + food + "/20 and only raw meat to eat", "cook " + e.getKey() + " " + e.getValue()};
         }
         String k = pick(near);
         String a = k == null ? "cow" : k;

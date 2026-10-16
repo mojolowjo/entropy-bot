@@ -187,6 +187,7 @@ final class DigCommands {
                 LOG.warn("[entropybot] climb: walled-in check at {} {} {}: {}", x, y, z, e.toString());
                 return "error: couldn't check the walls around me (" + e + ") - next: status";
             }
+            if (out == null) CLIMB_FAILS.succeeded();                  // 0.30.5: up already: the count starts again
             if (out == null) return "ok: I'm not in a hole and not walled in (the surface here is at " + surface + ", I'm at " + y + ")";
             if (out.err() != null) return out.err();
             String dig = ClimbPlan.outDig(out);

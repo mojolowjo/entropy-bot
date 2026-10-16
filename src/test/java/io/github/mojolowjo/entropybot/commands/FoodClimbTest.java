@@ -146,6 +146,67 @@ class FoodClimbTest {
     }
 
     @Test
+    void rawMeatIsCookedNotEaten() {
+        assertEquals(0, FoodPlan.count(Map.of("minecraft:beef", 6)));
+        FoodPlan.Decision d = FoodPlan.decide(Map.of("minecraft:beef", 6), false, Map.of());
+        assertEquals(List.of("soft cook beef 6"), d.steps());
+        FoodPlan.Decision on = FoodPlan.decide(Map.of("minecraft:beef", 6), true, Map.of("cow", 4));
+        assertEquals(List.of("soft cook beef 6"), on.steps(), "enough raw: no hunt");
+        String[] h = FoodPlan.checkFinding(5, Map.of("minecraft:beef", 6), true, Map.of());
+        assertEquals("cook beef 6", h[2]);
+        assertNotEquals("eat", h[2]);
+    }
+
+    @Test
+    void aSoftStepFailsAndTheChainGoesOnButAHardOneStillEndsIt() {
+        CommandsTest.Fake f = CommandsTest.fake(new com.google.gson.JsonObject());
+        f.instant.put("craft", "error: can't craft 1 beacon");
+        f.instant.put("cook", "error: no furnace");
+        f.chains.startChain("owner", "chain", "soft craft beacon 1 then places then cook beef 2 then places", 1);
+        f.run(40);
+        assertEquals(List.of("craft beacon 1", "places", "cook beef 2"), f.ran);
+        assertTrue(f.whispers.stream().anyMatch(w -> w.contains("craft beacon 1 didn't work")), f.whispers.toString());
+        assertTrue(f.whispers.get(f.whispers.size() - 1).contains("stopped at step 3 (cook beef 2)"), f.whispers.toString());
+        assertFalse(f.chains.running());
+    }
+
+    @Test
+    void aSoftJobStepThatEndsBadlyGoesOn() {
+        CommandsTest.Fake f = CommandsTest.fake(new com.google.gson.JsonObject());
+        f.chains.startChain("owner", "chain", "soft hunt 4 cow then places", 1);
+        f.run(5);
+        JobRequests.Request r = f.takeNext();
+        assertEquals("hunt 4 cow", r.text);
+        f.link.done(r.id, "stopped: hunt: 1/4 after 10 min");
+        f.run(20);
+        assertEquals(List.of("hunt 4 cow", "places"), f.ran);
+        assertTrue(f.whispers.get(f.whispers.size() - 1).startsWith("chain: done"), f.whispers.toString());
+    }
+
+    @Test
+    void onlyRealFailuresCount() {
+        ClimbFallback fb = new ClimbFallback();
+        int[] a = {0, 70, 0};
+        fb.ended("stopped at step 2 (goto 0 71 -1): error: couldn't get there");   // started == null: ignored
+        assertEquals(0, fb.fails(a));
+        fb.started(a);
+        fb.ended("stopped at step 3 (goto 0 72 -2): stopped: attacked by zombie");
+        assertEquals(0, fb.fails(a), "a fight is no failed way up");
+        fb.started(a);
+        fb.ended("killed by a creeper");
+        assertEquals(0, fb.fails(a));
+        fb.started(a);
+        fb.ended("stopped at step 2 (goto 0 71 -1): error: couldn't get there");
+        assertEquals(1, fb.fails(a));
+        fb.started(a);
+        fb.ended("ok: out");
+        assertEquals(0, fb.fails(a));
+        assertEquals("north", ClimbFallback.toward(a, new int[]{1, 80, -20}));
+        assertEquals("south", ClimbFallback.toward(a, new int[]{-1, 80, 20}));
+        assertEquals(10, ClimbFallback.stepsUp(70, 40, 80), "a camp below me: up to the surface");
+    }
+
+    @Test
     void failSpotFollowsTheLatestFailure() {
         // live 0.30.5: 22 100 14, then 20 102 14, then the third climb from 21 108 14 (8.1 from the first spot)
         ClimbFallback fb = new ClimbFallback();

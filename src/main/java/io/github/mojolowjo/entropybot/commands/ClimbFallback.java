@@ -26,8 +26,16 @@ public final class ClimbFallback {
     public void ended(String end) {
         if (started == null || end == null) return;
         if (end.startsWith("done") || end.startsWith("ok")) succeeded();
-        else failed(started);
+        else if (countsAsFail(end)) failed(started);          // a stop, a fight or a death is no failed way up
         started = null;
+    }
+
+    /** A chain end that means the way up failed: a step stopped it, or a walk couldn't get there. */
+    public static boolean countsAsFail(String end) {
+        if (end == null) return false;
+        String low = end.toLowerCase();
+        if (low.matches("^stopped at step \\d+ .*: (stopped|interrupted): .*")) return false;   // the owner's stop, a fight, low health
+        return low.startsWith("stopped at step") || low.contains("couldn't get there");
     }
 
     public void failed(int[] pos) {
