@@ -197,6 +197,8 @@ public final class Clearing {
         int walks;
         /** 0.30.7: the tick a mob was first found in the cell (-1: none); it is waited for PlaceRules.MOB_WAIT_TICKS */
         long mobSince = -1;
+        /** 0.30.7 (review): the entity that wait is for (a new one starts its own wait) */
+        java.util.UUID mobId;
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
@@ -953,6 +955,10 @@ public final class Clearing {
      * Level.getEntities(Entity, AABB), Entity.blocksBuilding, BuiltInRegistries.ENTITY_TYPE (loader-neutral); the
      * corpse's owner via Storage.ownsCorpse (reflection on the Corpse mod).
      */
+    /** 0.30.7 (review): the entity entityInWay named last (game thread only), and the corpse it logged last. */
+    static volatile java.util.UUID lastInWay;
+    private static volatile String lastCorpseLogged;
+
     static String entityInWay(LocalPlayer p, int x, int y, int z) {
         try {
             net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(x, y, z, x + 1, y + 1, z + 1);
@@ -963,8 +969,14 @@ public final class Clearing {
                 boolean corpse = type.equals("corpse:corpse");
                 // only what the game's own check refuses (Level.isUnobstructed: Entity.blocksBuilding); a corpse is logged
                 // either way (live probe: does an emptied one still block?)
-                if (corpse && !Storage.EMPTIED.contains(e.getUUID())) LOG.info("[entropybot] place: a corpse at {} {} {} (blocks building: {}, emptied: {})", x, y, z, e.blocksBuilding, Storage.EMPTIED.contains(e.getUUID()));
+                // review: once per corpse and cell, not every retry
+                String key = e.getUUID() + "@" + x + " " + y + " " + z;
+                if (corpse && !key.equals(lastCorpseLogged)) {
+                    lastCorpseLogged = key;
+                    LOG.info("[entropybot] place: a corpse at {} {} {} (blocks building: {}, emptied: {})", x, y, z, e.blocksBuilding, Storage.EMPTIED.contains(e.getUUID()));
+                }
                 if (!e.blocksBuilding) continue;
+                lastInWay = e.getUUID();
                 PlaceRules.InWay kind = PlaceRules.inWayKind(type, corpse && Storage.ownsCorpse(e, p),
                         e instanceof net.minecraft.world.entity.LivingEntity);
                 // live probe (shed3): an emptied corpse is gone on the server ("execute if entity" fails) while the client
@@ -1065,13 +1077,17 @@ public final class Clearing {
             String r = placeAt(p, id, pos[0], pos[1], pos[2], ps.leases, ps.seal);
             // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
             ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
+            if (!r.endsWith("(waiting)")) ps.mobSince = -1;          // review: the wait is per entity in the way, from its first sight
             if (!r.startsWith("ok")) {
                 // 0.30.7 (live, shed3): a mob in the cell is waited for (10 s), not counted as a try; a corpse or
                 // another entity ends the step at once with its own next verb (three clicks would change nothing)
                 if (r.contains(" is in the way at ")) {
                     if (r.endsWith("(waiting)")) {
-                        if (ps.mobSince < 0) {
+                        // review: another entity (a second mob) gets its own wait
+                        java.util.UUID who = lastInWay;
+                        if (ps.mobSince < 0 || who != null && !who.equals(ps.mobId)) {
                             ps.mobSince = now;
+                            ps.mobId = who;
                             LOG.info("[entropybot] place: {} - waiting up to {} s", r, PlaceRules.waitTicks(r) / 20);
                         }
                         if (now - ps.mobSince < PlaceRules.waitTicks(r)) {
@@ -1084,7 +1100,6 @@ public final class Clearing {
                     }
                     return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
                 }
-                ps.mobSince = -1;
                 // 0.30.6 (live, shed2: "place chest" right after the door dig, the bot still outside): nothing in reach
                 // from where the walk ended (or from where the bot stood when the step began and then moved on): walk to
                 // a stand spot picked afresh, once, before the three tries count

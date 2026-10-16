@@ -236,7 +236,7 @@ final class DigCommands {
         if (dir == null) dir = "north";
         int n = ClimbFallback.stepsUp(here[1], goal == null ? Integer.MIN_VALUE : goal[1], surface);
         int[] d = StairPlan.dir(dir);
-        String text = ClimbFallback.startText(what, dir, n);
+        String text = t != null && what == null ? ClimbFallback.underText(t.what(), dir, n) : ClimbFallback.startText(what, dir, n);
         LOG.info("[entropybot] {} from {} (camp {}, base {}, area {}, surface {})", text, Jobs.fmt(here), camp == null ? "none" : Jobs.fmt(camp),
                 base == null ? "none" : Jobs.fmt(base), area == null ? "none" : Jobs.fmt(area), surface);
         String r = c.chainsRef().startChain(from, "climb", String.join(" then ", StairPlan.upSteps(here[0], here[1], here[2], d[0], d[1], n)), 1);

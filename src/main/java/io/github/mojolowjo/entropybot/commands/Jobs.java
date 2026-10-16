@@ -1505,11 +1505,21 @@ public final class Jobs {
             x1 = Math.min(x1, c[0]); y1 = Math.min(y1, c[1]); z1 = Math.min(z1, c[2]);
             x2 = Math.max(x2, c[0]); y2 = Math.max(y2, c[1]); z2 = Math.max(z2, c[2]);
         }
-        // 0.30.7: a placed block on the way out (the owner's rule in my own areas) needs a force lease, like my own blocks
-        boolean force = false;
-        for (int[] c : e.breaks()) force |= core.guard.isProtectedBlock(level.getBlockState(new BlockPos(c[0], c[1], c[2])).getBlock());
-        if (force) LOG.info("[entropybot] stuck at {}: the dig-out breaks placed blocks inside my own area (owner's rule): force lease", fmt(me));
-        String le = core.guard.core.lease(core.token, "escape dig-out", new io.github.mojolowjo.entropybot.guard.Box("escape", dim, x1, y1, z1, x2, y2, z2), false, force);
+        // 0.30.7 (review): a placed block on the way out that the owner's rule allows (digOutAny) gets a one-cell force
+        // lease, as the surface dig-out does; the box lease stays a plain one (no force over cells the rule doesn't cover)
+        io.github.mojolowjo.entropybot.clear.LeaseSet forced = null;
+        for (int[] c : e.breaks()) {
+            if (!core.guard.isProtectedBlock(level.getBlockState(new BlockPos(c[0], c[1], c[2])).getBlock()) || !digOutAny(level, pol, dim, c[0], c[1], c[2])) continue;
+            if (forced == null) forced = Clearing.newLeases();
+            String fl = forced.take("escape dig-out at " + fmt(c), new io.github.mojolowjo.entropybot.clear.ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, true);
+            LOG.info("[entropybot] stuck at {}: the dig-out breaks the placed block at {} inside my own area (owner's rule): one-cell force lease{}", fmt(me), fmt(c), fl == null ? "" : " refused (" + fl + ")");
+            if (fl != null && core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT) {
+                forced.releaseAll();
+                return false;
+            }
+        }
+        String le = core.guard.core.lease(core.token, "escape dig-out", new io.github.mojolowjo.entropybot.guard.Box("escape", dim, x1, y1, z1, x2, y2, z2), false, false);
+        if (le.startsWith("error") && core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && forced != null) forced.releaseAll();
         if (le.startsWith("error")) {
             if (core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT) {
                 LOG.info("[entropybot] stuck at {}: the guard refused the dig-out ({})", fmt(me), le);
@@ -1518,6 +1528,7 @@ public final class Jobs {
             le = null;
         }
         j.escapeLease = le;
+        j.escapeLeaseSet = forced;
         j.escapeBreaks = e.breaks();
         j.escapeIdx = 0;
         j.escapeHit = null;
@@ -1531,6 +1542,24 @@ public final class Jobs {
         LOG.info("[entropybot] stuck at {} underground with no free step: digging out {} block(s) ({}) to {}", fmt(me), e.breaks().size(), cells.toString().replaceAll("; $", ""), fmt(e.feet()));
         core.events.push("job", "escape: digging out " + e.breaks().size() + " block(s) at " + fmt(me), null);
         return true;
+    }
+
+    /**
+     * 0.30.7 (review): the stair side may run through placed blocks the owner's rule allows (digOutAny): each dig step
+     * whose box holds such a protected block gets " force" (StairPlan.withForce). Never throws (the steps unchanged).
+     */
+    private java.util.List<String> placedForce(java.util.List<String> steps) {
+        try {
+            net.minecraft.world.level.Level level = Minecraft.getInstance().level;
+            if (level == null) return steps;
+            io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
+            String dim = Guard.dimOf(level);
+            return StairPlan.withForce(steps, (x, y, z) -> core.guard.isProtectedBlock(level.getBlockState(new BlockPos(x, y, z)).getBlock())
+                    && digOutAny(level, pol, dim, x, y, z));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] stairs: the placed-block force check failed: {}", e.toString());
+            return steps;
+        }
     }
 
     /** 0.27.3 (d3): the staircase up a sealed underground spot gets (a chain started once this job has ended), or null. */
@@ -1550,6 +1579,7 @@ public final class Jobs {
         // an own shelter roof over the head (the pit's plank): the first dig may break my own block (force, never a chest)
         String roof = me[0] + " " + (me[1] + 2) + " " + me[2];
         if (ShelterJob.ownBlocks(commands).contains(roof) || RestoreLive.INSTANCE.builtByMe(me[0], me[1] + 2, me[2])) steps.set(0, steps.get(0) + " force");
+        steps = new java.util.ArrayList<>(placedForce(steps));          // 0.30.7 (review): placed blocks the owner's rule allows
         pendingStairs = String.join(" then ", steps);
         String msg = "I am sealed in underground at " + fmt(me) + " - digging a staircase up (" + n + " steps " + StairPlan.dirName(side[0], side[1]) + ")";
         LOG.info("[entropybot] {}", msg);
@@ -1594,6 +1624,7 @@ public final class Jobs {
             java.util.List<String> steps = new java.util.ArrayList<>(StairPlan.upSteps(me[0], me[1], me[2], side[0], side[1], n));
             String roof = me[0] + " " + (me[1] + 2) + " " + me[2];
             if (ShelterJob.ownBlocks(commands).contains(roof) || RestoreLive.INSTANCE.builtByMe(me[0], me[1] + 2, me[2])) steps.set(0, steps.get(0) + " force");
+            steps = new java.util.ArrayList<>(placedForce(steps));          // 0.30.7 (review): placed blocks the owner's rule allows
             steps.add("goto " + d[0] + " " + d[1] + " " + d[2]);
             pendingStairs = String.join(" then ", steps);
             stairCount++;

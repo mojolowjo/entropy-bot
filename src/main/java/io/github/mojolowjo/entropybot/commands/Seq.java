@@ -746,8 +746,7 @@ public final class Seq {
             Map<String, Integer> items = Gui.containerContents(p);
             if (items == null || items.isEmpty()) {
                 // an old, empty corpse: look for another one
-                storage.emptyCorpses.add(c.getUUID());
-                Storage.EMPTIED.add(c.getUUID());          // 0.30.7: the place check waits for it
+                storage.emptyCorpses.add(c.getUUID());     // (not Storage.EMPTIED: found empty, maybe a lasting one)
                 Gui.close(p);
                 lootEmpty = true;
                 corpse = null;
@@ -774,7 +773,7 @@ public final class Seq {
             Gui.close(p);
             if (!pressed) Gui.wearArmor(p);
             storage.emptyCorpses.add(c.getUUID());
-            Storage.EMPTIED.add(c.getUUID());          // 0.30.7: the place check waits for it
+            Storage.EMPTIED.add(c.getUUID());          // 0.30.7: looted by me: the place check waits for it to go
             note = "got " + (Gui.totalItems(p) - lootBefore) + " items back from my corpse";
             return "next";
         }

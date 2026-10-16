@@ -87,6 +87,11 @@ public final class ClimbFallback {
                 : dir + " (" + n + " blocks up; no camp, base or area known)");
     }
 
+    /** 0.30.7 (review): the start line when the target's column is mine already (the stairs go up, north). */
+    public static String underText(String what, String dir, int n) {
+        return "climb: my own way failed twice, digging stairs up " + dir + " (" + n + " blocks up; already under " + what + ", going straight up)";
+    }
+
     /** 0.30.7: where the fallback stairs head: a position and what it is (for the start line). */
     public record Target(int[] pos, String what) {}
 

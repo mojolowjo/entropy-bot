@@ -85,6 +85,36 @@ public final class StairPlan {
         return out;
     }
 
+    /** 0.30.7: a cell test for {@link #withForce}. */
+    public interface CellTest {
+        boolean test(int x, int y, int z);
+    }
+
+    /**
+     * 0.30.7 (review of package 8 item 3): the stair side may now run through placed blocks in my own areas
+     * (Jobs.digOutAny); the dig refuses built blocks without force, so every "dig x1 y1 z1 x2 y2 z2 ..." step whose box
+     * holds a cell with needsForce gets " force" (once). Other steps are kept as they are.
+     */
+    public static List<String> withForce(List<String> steps, CellTest needsForce) {
+        List<String> out = new ArrayList<>();
+        for (String s : steps) {
+            String[] w = s.split(" ");
+            boolean add = false;
+            if (w.length >= 7 && w[0].equals("dig") && !s.endsWith(" force")) {
+                try {
+                    int x1 = Integer.parseInt(w[1]), y1 = Integer.parseInt(w[2]), z1 = Integer.parseInt(w[3]);
+                    int x2 = Integer.parseInt(w[4]), y2 = Integer.parseInt(w[5]), z2 = Integer.parseInt(w[6]);
+                    for (int x = x1; x <= x2 && !add; x++) for (int y = y1; y <= y2 && !add; y++) for (int z = z1; z <= z2 && !add; z++)
+                        add = needsForce.test(x, y, z);
+                } catch (NumberFormatException ignored) {
+                    // not a box: leave the step as it is
+                }
+            }
+            out.add(add ? s + " force" : s);
+        }
+        return out;
+    }
+
     /** 0.27.3: the steps up from feet y to the surface (open sky from surface up), at most MAX; 0 when not below it. */
     public static int upCount(int y, int surface) {
         return Math.max(0, Math.min(MAX, surface - y));
