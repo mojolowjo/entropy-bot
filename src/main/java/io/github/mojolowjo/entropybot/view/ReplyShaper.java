@@ -74,6 +74,7 @@ public final class ReplyShaper {
      */
     public synchronized String shape(String verb, String full, String here, List<String> news) {
         if (full == null || full.isBlank()) return full;
+        if ("why".equalsIgnoreCase(verb)) return full;                       // live: why never answers with itself
         boolean fail = failure(full);
         lastFull = full;
         if (fail) { lastFailure = full; lastFailureAt = System.currentTimeMillis(); }

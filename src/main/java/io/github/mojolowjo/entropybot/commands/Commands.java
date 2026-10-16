@@ -860,7 +860,7 @@ public final class Commands implements Chains.Env {
             r = Reply.now("error: " + e);
         }
         if (r.text() != null && !r.text().isEmpty())
-            whisper(pm.from(), pm.from().equalsIgnoreCase(owner()) ? shapeOut(Texts.verbAndRest(pm.body())[0], r.text()) : r.text().replaceFirst("^ok: ", ""));
+            whisper(pm.from(), pm.from().equalsIgnoreCase(owner()) ? shapeOut(Texts.verbAndRest(pm.body())[0], r.text()) : r.text().replaceFirst("^ok: ", ""), true);
     }
 
     /** A PM's job: its end is whispered to the sender (the answer itself was whispered when it started). */
@@ -871,11 +871,17 @@ public final class Commands implements Chains.Env {
     /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
     Listener notifyListener(String to) {
         return r -> {
-            if (!JobRequests.quiet(r.doneMsg)) whisper(to, to.equalsIgnoreCase(owner()) ? shapeOut(null, r.doneMsg) : r.doneMsg.replaceFirst("^ok: ", ""));
+            if (!JobRequests.quiet(r.doneMsg)) whisper(to, r.doneMsg.replaceFirst("^ok: ", ""));
         };
     }
 
-    public void whisper(String to, String text) { whisperSent(to, text); }
+    /** 0.32.0: a whisper to the owner gets the reply shape (a chain's step report, a job's end, a notice) unless shaped already. */
+    public void whisper(String to, String text) { whisper(to, text, false); }
+
+    void whisper(String to, String text, boolean shaped) {
+        if (!shaped && to != null && to.equalsIgnoreCase(owner())) text = shapeOut(null, text);
+        whisperSent(to, text);
+    }
 
     /** 0.32.0: the reply shape (RESULT/HERE/NEW/OPTIONS) unless "reply full" is set. Never throws. */
     String shapeOut(String verb, String text) {
