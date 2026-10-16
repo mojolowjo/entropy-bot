@@ -103,6 +103,39 @@ class HousePlanTest {
     }
 
     @Test
+    void stepOutsideNotMineIsNotDug() {
+        HousePlan.Probe pr = new HousePlan.Probe() {
+            @Override public boolean hasBlock(int x, int y, int z) { return false; }
+            @Override public boolean clear(int x, int y, int z) { return true; }
+            @Override public boolean walkable(int x, int y, int z) { return false; }
+            @Override public boolean diggableStep(int x, int y, int z) { return x == 7; }      // only the east step is mine
+        };
+        HousePlan.Plan p = rerun(pr, Map.of());
+        assertTrue(p.steps().contains("dig 7 65 3 7 66 3 force"), p.steps().toString());
+        HousePlan.Probe none = new HousePlan.Probe() {
+            @Override public boolean hasBlock(int x, int y, int z) { return false; }
+            @Override public boolean clear(int x, int y, int z) { return true; }
+            @Override public boolean walkable(int x, int y, int z) { return false; }
+            @Override public boolean diggableStep(int x, int y, int z) { return false; }
+        };
+        HousePlan.Plan q = rerun(none, Map.of());
+        assertTrue(q.summary().contains("no step outside is mine to dig"), q.summary());
+        assertFalse(q.steps().stream().anyMatch(s -> s.startsWith("dig 3 65 7")), q.steps().toString());
+    }
+
+    @Test
+    void openDoorwayOntoRockIsNotKept() {
+        // a rerun: the south doorway is open but its outside step is rock; east is walkable
+        HousePlan.Probe pr = new HousePlan.Probe() {
+            @Override public boolean hasBlock(int x, int y, int z) { return false; }
+            @Override public boolean clear(int x, int y, int z) { return true; }
+            @Override public boolean walkable(int x, int y, int z) { return x == 7; }
+        };
+        HousePlan.Plan p = rerun(pr, Map.of("shell", true));
+        assertTrue(p.summary().contains("door on the east side"), p.summary());
+    }
+
+    @Test
     void noProbeRunsEveryStep() {
         HousePlan.Plan p = rerun(null, Map.of("shell", true));
         assertTrue(p.steps().contains("build floor cobblestone house"));

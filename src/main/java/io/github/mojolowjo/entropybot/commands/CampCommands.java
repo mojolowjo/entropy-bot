@@ -280,6 +280,19 @@ final class CampCommands {
                         boolean head = lw.air(x, y + 1, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, y + 1, z);
                         return feet && head && lw.fullBlock(x, y - 1, z);
                     }
+
+                    @Override public boolean diggableStep(int x, int y, int z) {       // review 4
+                        if (lw.id(x, y, z) == null || !lw.fullBlock(x, y - 1, z)) return false;
+                        try {
+                            var pol = Core.INSTANCE.guard.core.policy();
+                            String dim = Storage.dim();
+                            return pol.areaAt(dim, x, y, z) != null && pol.areaAt(dim, x, y + 1, z) != null
+                                    && pol.protectAt(dim, x, y, z) == null && pol.protectAt(dim, x, y + 1, z) == null
+                                    && !lw.blockEntity(x, y, z) && !lw.blockEntity(x, y + 1, z);
+                        } catch (RuntimeException ex) {
+                            return false;
+                        }
+                    }
                 };
             } catch (RuntimeException ex) {
                 LOG.warn("[entropybot] house {}: could not look at what stands (every step runs): {}", area, ex.toString());

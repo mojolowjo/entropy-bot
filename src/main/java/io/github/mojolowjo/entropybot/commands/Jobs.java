@@ -1442,17 +1442,34 @@ public final class Jobs {
             int z1 = Math.min(box[2], box[5]), z2 = Math.max(box[2], box[5]);
             if (x2 - x1 > 32 || z2 - z1 > 32 || y2 - y1 > 16) continue;                 // a house, not a base-sized area
             if (d[0] <= x1 || d[0] >= x2 || d[2] <= z1 || d[2] >= z2 || d[1] <= y1 || d[1] >= y2) continue;   // strictly inside the walls
+            if (!wallsStand(x1, y1 + 1, z1, x2, z2)) continue;          // review 2: a house stands there, not a dig box
             if (house != null) house[0] = name;
             return new int[]{x1, y1, z1, x2, y2, z2};
         }
         return null;
     }
 
+    /** review 2: at least 3/4 of the wall ring at y (corners included) holds a block with a collision shape. */
+    static boolean wallsStand(int x1, int y, int z1, int x2, int z2) {
+        net.minecraft.world.level.Level lv = Minecraft.getInstance().level;
+        if (lv == null) return false;
+        int ring = 0, solid = 0;
+        for (int x = x1; x <= x2; x++) for (int z = z1; z <= z2; z++) {
+            if (!(x == x1 || x == x2 || z == z1 || z == z2)) continue;
+            BlockPos q = new BlockPos(x, y, z);
+            if (!lv.isLoaded(q)) return false;
+            ring++;
+            if (!lv.getBlockState(q).getCollisionShape(lv, q).isEmpty()) solid++;
+        }
+        return ring > 0 && solid * 4 >= ring * 3;
+    }
+
     /** 0.31.1: d is inside a house box and me is not (a wall between them, whatever the distance). */
     boolean outsideHouseOf(int[] me, int[] d) {
         try {
             int[] b = houseBoxOf(d, null);
-            return b != null && !(me[0] > b[0] && me[0] < b[3] && me[2] > b[2] && me[2] < b[5] && me[1] > b[1] && me[1] < b[4]);
+            // review 2: the wall line counts as inside for me (only a doorway puts me there)
+            return b != null && !(me[0] >= b[0] && me[0] <= b[3] && me[2] >= b[2] && me[2] <= b[5] && me[1] > b[1] && me[1] < b[4]);
         } catch (RuntimeException ex) {
             return false;
         }

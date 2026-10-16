@@ -282,6 +282,7 @@ public final class Core {
                 }
             }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
+            if (tick % 100 == 50) io.github.mojolowjo.entropybot.commands.Clearing.fallWatch(commands.jobs.running());     // 0.31.1 review 1
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
             io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.tick(tick);      // camera v2: known air (never throws)

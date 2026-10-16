@@ -1225,16 +1225,37 @@ public final class Clearing {
         try {
             baritone.api.Settings s = BaritoneAPI.getSettings();
             if (bs.savedFall == null) bs.savedFall = s.maxFallHeightNoWater.value;
+            if (FALL_BASE == null) FALL_BASE = bs.savedFall;
             s.maxFallHeightNoWater.value = Math.max(bs.savedFall, BUILD_FALL);
         } catch (Throwable t) {
             LOG.warn("[entropybot] build: couldn't raise the fall height: {}", t.toString());
         }
     }
 
+    /** review 1: the fall height before a build raised it, while raised (null: not raised). */
+    static volatile Integer FALL_BASE;
+
+    /**
+     * review 1: Core, every 5 s: a raised fall height with no job running (an exit that missed endBuild: an exception,
+     * a disconnect, a world switch) goes back, logged. Never throws.
+     */
+    public static void fallWatch(boolean jobRunning) {
+        Integer base = FALL_BASE;
+        if (base == null || jobRunning) return;
+        try {
+            BaritoneAPI.getSettings().maxFallHeightNoWater.value = base;
+            LOG.warn("[entropybot] build: the fall height was still raised with no job running: back to {}", base);
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] build: couldn't restore the fall height: {}", t.toString());
+        }
+        FALL_BASE = null;
+    }
+
     static void fallOff(BuildState bs) {
         if (bs.savedFall == null) return;
         try {
             BaritoneAPI.getSettings().maxFallHeightNoWater.value = bs.savedFall;
+            FALL_BASE = null;
         } catch (Throwable t) {
             LOG.warn("[entropybot] build: couldn't restore the fall height: {}", t.toString());
         }

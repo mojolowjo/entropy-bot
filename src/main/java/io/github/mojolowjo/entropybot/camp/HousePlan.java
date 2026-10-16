@@ -52,6 +52,9 @@ public final class HousePlan {
 
         /** 0.31.1: feet and head free at x y z and a full block under it (true when not known). */
         default boolean walkable(int x, int y, int z) { return true; }
+
+        /** review 4: the cell may be dug by me (inside my own area, not protected) and has a full block under it. */
+        default boolean diggableStep(int x, int y, int z) { return true; }
     }
 
     static int[] doorXz(char side, int cx, int cz, int x1, int z1, int x2, int z2) {
@@ -106,16 +109,28 @@ public final class HousePlan {
             Character pick = null;
             if (Boolean.TRUE.equals(f.standing().get(SHELL))) for (char s : order) {
                 int[] d = doorXz(s, cx, cz, x1, z1, x2, z2);
+                int[] o = outsideXz(s, cx, cz, x1, z1, x2, z2);
                 if (f.probe().clear(d[0], iy, d[1]) && f.probe().clear(d[0], iy + 1, d[1])
-                        && !f.probe().hasBlock(d[0], iy, d[1])) { pick = s; doorNote = " (the doorway that is open)"; break; }
+                        && !f.probe().hasBlock(d[0], iy, d[1]) && f.probe().walkable(o[0], iy, o[1])) { pick = s; doorNote = " (the doorway that is open)"; break; }
             }
             if (pick == null) for (char s : order) {
                 int[] o = outsideXz(s, cx, cz, x1, z1, x2, z2);
                 if (f.probe().walkable(o[0], iy, o[1])) { pick = s; if (s != side) doorNote = " (the " + sideName(side) + " side is blocked outside)"; break; }
             }
+            // review 4: the step outside is dug only where it is mine to dig and has a floor; the camp's side first
+            if (pick == null) for (char s : order) {
+                int[] o = outsideXz(s, cx, cz, x1, z1, x2, z2);
+                if (f.probe().diggableStep(o[0], iy, o[1])) {
+                    pick = s;
+                    outsideDig = o;
+                    doorNote = " (no side opens onto walkable ground: digs the step outside it at " + o[0] + " " + iy + " " + o[1] + ")";
+                    break;
+                }
+            }
             if (pick == null) {
-                outsideDig = outsideXz(side, cx, cz, x1, z1, x2, z2);
-                doorNote = " (no side opens onto walkable ground: digs the step outside it at " + outsideDig[0] + " " + iy + " " + outsideDig[1] + ")";
+                int[] o = outsideXz(side, cx, cz, x1, z1, x2, z2);
+                doorNote = " (no side opens onto walkable ground and no step outside is mine to dig, e.g. " + o[0] + " " + iy + " " + o[1]
+                        + " - next: area a box around the house one block wider, then house " + area + " again)";
             } else side = pick;
         }
         int[] door = doorXz(side, cx, cz, x1, z1, x2, z2);
