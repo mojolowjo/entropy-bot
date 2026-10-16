@@ -724,7 +724,10 @@ final class DigCommands {
         String id = GuiCore.normId(pp[0]);
         Clearing.LiveWorld w = new Clearing.LiveWorld();
         w.set(p);
-        if (PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ()) != null || !PlaceRules.free(w, x, y, z)) {
+        // 0.30.7 (live): a mob in the cell: the place job waits for it (10 s) instead of the instant click's error
+        String inWay = PlaceRules.free(w, x, y, z) ? Clearing.entityInWay(p, x, y, z) : null;
+        boolean mobWait = inWay != null && inWay.endsWith("(waiting)");
+        if (!mobWait && (PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ()) != null || !PlaceRules.free(w, x, y, z))) {
             io.github.mojolowjo.entropybot.clear.LeaseSet leases = Clearing.newLeases();
             try {
                 return Clearing.placeAt(p, id, x, y, z, leases);
