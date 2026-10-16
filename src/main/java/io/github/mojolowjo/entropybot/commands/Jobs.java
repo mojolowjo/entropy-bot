@@ -1275,8 +1275,10 @@ public final class Jobs {
             // closest spot, or plans nothing from a sealed pit): the end position decides
             int[] d = travelDest(j), me = here(p);
             boolean moving = j.label != null && j.label.startsWith("following");
-            if (!j.reflex && !moving && d != null && !WalkEnd.arrived(me, d)) {
-                if (WalkEnd.retryShort(j.shortTries)) {
+            // 0.31.1 (live: "arrived near" 3 blocks off, a house wall between): a goal inside a house box counts only from inside
+            boolean wallBetween = d != null && !moving && !j.reflex && outsideHouseOf(me, d);
+            if (!j.reflex && !moving && d != null && (!WalkEnd.arrived(me, d) || wallBetween)) {
+                if (!wallBetween && WalkEnd.retryShort(j.shortTries)) {          // 0.31.1: never dig out through a house wall
                     j.shortTries++;
                     LOG.info("[entropybot] walk ended short at {} ({} from {}): stepping off or digging out, then again", fmt(me),
                             Math.round(Math.sqrt(distSq(me, d))), fmt(d));
@@ -1428,19 +1430,41 @@ public final class Jobs {
      * 0.31.1: d inside a house area (a box area with heights): the walkable cell just outside an open doorway (a 2-high
      * gap at floor + 1 in the wall ring), the one nearest the bot; house[0] names the area (null: d is in no such area).
      */
+    /** 0.31.1: the box (x1 y1 z1 x2 y2 z2, sorted) of a house-like area (a box with heights) whose walls d lies strictly inside; null: none. */
+    int[] houseBoxOf(int[] d, String[] house) {
+        for (com.google.gson.JsonElement e : commands.effectiveAreas()) {
+            if (!e.isJsonObject() || !e.getAsJsonObject().has("name")) continue;
+            String name = e.getAsJsonObject().get("name").getAsString();
+            String[] err = new String[1];
+            int[] box = DigCommands.areaBox(commands, name, err);
+            if (box == null) continue;
+            int x1 = Math.min(box[0], box[3]), x2 = Math.max(box[0], box[3]), y1 = Math.min(box[1], box[4]), y2 = Math.max(box[1], box[4]);
+            int z1 = Math.min(box[2], box[5]), z2 = Math.max(box[2], box[5]);
+            if (x2 - x1 > 32 || z2 - z1 > 32 || y2 - y1 > 16) continue;                 // a house, not a base-sized area
+            if (d[0] <= x1 || d[0] >= x2 || d[2] <= z1 || d[2] >= z2 || d[1] <= y1 || d[1] >= y2) continue;   // strictly inside the walls
+            if (house != null) house[0] = name;
+            return new int[]{x1, y1, z1, x2, y2, z2};
+        }
+        return null;
+    }
+
+    /** 0.31.1: d is inside a house box and me is not (a wall between them, whatever the distance). */
+    boolean outsideHouseOf(int[] me, int[] d) {
+        try {
+            int[] b = houseBoxOf(d, null);
+            return b != null && !(me[0] > b[0] && me[0] < b[3] && me[2] > b[2] && me[2] < b[5] && me[1] > b[1] && me[1] < b[4]);
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     int[] houseDoorStep(LocalPlayer p, int[] d, String[] house) {
         try {
             net.minecraft.world.level.Level lv = p.level();
-            for (com.google.gson.JsonElement e : commands.effectiveAreas()) {
-                if (!e.isJsonObject() || !e.getAsJsonObject().has("name")) continue;
-                String name = e.getAsJsonObject().get("name").getAsString();
-                String[] err = new String[1];
-                int[] box = DigCommands.areaBox(commands, name, err);
-                if (box == null) continue;
-                int x1 = Math.min(box[0], box[3]), x2 = Math.max(box[0], box[3]), y1 = Math.min(box[1], box[4]), y2 = Math.max(box[1], box[4]);
-                int z1 = Math.min(box[2], box[5]), z2 = Math.max(box[2], box[5]);
-                if (d[0] <= x1 || d[0] >= x2 || d[2] <= z1 || d[2] >= z2 || d[1] < y1 || d[1] > y2) continue;   // strictly inside the walls
-                house[0] = name;
+            {
+                int[] hb = houseBoxOf(d, house);
+                if (hb == null) return null;
+                int x1 = hb[0], y1 = hb[1], z1 = hb[2], x2 = hb[3], y2 = hb[4], z2 = hb[5];
                 int iy = y1 + 1;
                 int[] best = null;
                 double bd = Double.MAX_VALUE;
