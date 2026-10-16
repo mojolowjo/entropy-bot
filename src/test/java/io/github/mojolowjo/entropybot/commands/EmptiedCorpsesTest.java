@@ -21,13 +21,15 @@ class EmptiedCorpsesTest {
         Files.writeString(root.resolve("worlds/a/corpses.json"), "{\"emptied\":[\"" + u + "\"]}");
         BotFiles f = new BotFiles(root);
         f.setWorld(root.resolve("worlds/a"));
-        assertTrue(Storage.loadEmptied(f).contains("1 emptied"));
-        assertTrue(Storage.EMPTIED.contains(u));
+        assertTrue(EmptiedCorpses.load(f).contains("1 emptied"));
+        assertTrue(EmptiedCorpses.SET.contains(u));
         f.setWorld(root.resolve("worlds/b"));
-        assertTrue(Storage.loadEmptied(f).contains("none yet"));
-        assertFalse(Storage.EMPTIED.contains(u));
+        assertTrue(EmptiedCorpses.load(f).contains("none yet"));
+        assertFalse(EmptiedCorpses.SET.contains(u));
         Files.createDirectories(root.resolve("worlds/b"));
         Files.writeString(root.resolve("worlds/b/corpses.json"), "{broken");
-        assertTrue(Storage.loadEmptied(f).contains("unreadable"));
+        assertTrue(EmptiedCorpses.load(f).contains("unreadable"));
+        assertNull(EmptiedCorpses.mark(u, f));
+        assertTrue(Files.readString(root.resolve("worlds/b/corpses.json")).contains(u.toString()));
     }
 }
