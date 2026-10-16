@@ -303,6 +303,27 @@ public final class Jobs {
         }
     }
 
+    /**
+     * 0.30.7 (owner's rule 2026-10-11; live: stuck twice in the respawn pit at 0 136 9 inside the neutral area "arena"):
+     * a dig-out may break this cell whatever it is (placed blocks, persistent leaves): Policy.digOutAny (own neutral or
+     * destroy area, no safe area, no house cell), loaded, no fluid in or next to it, no block entity, breakable, no
+     * falling block on top. Vanilla Level/BlockState calls only. Never throws (false on any error, logged).
+     */
+    static boolean digOutAny(net.minecraft.world.level.Level level, io.github.mojolowjo.entropybot.guard.Policy pol, String dim, int x, int y, int z) {
+        try {
+            BlockPos bp = new BlockPos(x, y, z);
+            if (!level.isLoaded(bp)) return false;
+            var st = level.getBlockState(bp);
+            if (!st.getFluidState().isEmpty() || st.hasBlockEntity() || st.getDestroySpeed(level, bp) < 0) return false;
+            if (Guard.liquidNextTo(level, x, y, z) != null) return false;
+            if (level.getBlockState(bp.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
+            return pol.digOutAny(dim, x, y, z, RestoreLive.INSTANCE.builtByMe(x, y, z));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] dig-out any-block check at {} {} {}: {}", x, y, z, e.toString());
+            return false;
+        }
+    }
+
     /** The surface kind of one cell (SurfaceSeal), from the level. */
     SurfaceSeal.Kind surfaceKind(net.minecraft.world.level.Level level, int x, int y, int z) {
         BlockPos bp = new BlockPos(x, y, z);
@@ -330,7 +351,8 @@ public final class Jobs {
             SurfaceSeal.Kind k = surfaceKind(level, x, y, z);
             // leaves and plants need the guard's lease like any dig; own blocks get the one-cell force lease (shelter leave's way)
             boolean ok = k == SurfaceSeal.Kind.OWN || (k != SurfaceSeal.Kind.NO && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z));
-            if (ok) return EscapePlan.Kind.BREAKABLE;
+            // 0.30.7: the owner's rule: in my own neutral/destroy areas any block (placed, persistent leaves) may go
+            if (ok || digOutAny(level, pol, dim, x, y, z)) return EscapePlan.Kind.BREAKABLE;
             return st.isCollisionShapeFullBlock(level, bp) ? EscapePlan.Kind.FLOOR_ONLY : EscapePlan.Kind.BLOCKED;
         }, me, dest, towardGoal);
     }
@@ -365,7 +387,7 @@ public final class Jobs {
                 if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
                 SurfaceSeal.Kind k = surfaceKind(level, x, y, z);
                 boolean ok = k == SurfaceSeal.Kind.OWN || (k != SurfaceSeal.Kind.NO && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z));
-                if (ok) return EscapePlan.Kind.BREAKABLE;
+                if (ok || digOutAny(level, pol, dim, x, y, z)) return EscapePlan.Kind.BREAKABLE;
                 return st.isCollisionShapeFullBlock(level, bp) ? EscapePlan.Kind.FLOOR_ONLY : EscapePlan.Kind.BLOCKED;
             }, c -> surfaceWhat(level, dim, c), me);
         } catch (RuntimeException e) {
@@ -383,6 +405,7 @@ public final class Jobs {
             if (!st.getFluidState().isEmpty()) return id + " (a fluid)";
             if (st.getCollisionShape(level, bp).isEmpty()) return id + " (open)";
             if (houseCell(dim, c[0], c[1], c[2])) return id + " (my house: the door is the way out)";
+            if (digOutAny(level, core.guard.core.policy(), dim, c[0], c[1], c[2])) return id + " (in my own area: may go)";
             SurfaceSeal.Kind k = surfaceKind(level, c[0], c[1], c[2]);
             if (k == SurfaceSeal.Kind.NO) {
                 if (st.is(net.minecraft.tags.BlockTags.LEAVES)) return id + " (persistent: placed by a player, never broken)";
@@ -418,7 +441,10 @@ public final class Jobs {
         java.util.List<int[]> doors = new java.util.ArrayList<>();
         for (int[] c : e.breaks()) {
             SurfaceSeal.Kind k = surfaceKind(level, c[0], c[1], c[2]);
-            String le = ls.take("surface dig-out at " + fmt(c), new io.github.mojolowjo.entropybot.clear.ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, k == SurfaceSeal.Kind.OWN);
+            // 0.30.7: a placed block in my own area (the owner's rule) needs the one-cell force lease like my own blocks
+            boolean force = k == SurfaceSeal.Kind.OWN || core.guard.isProtectedBlock(level.getBlockState(new BlockPos(c[0], c[1], c[2])).getBlock())
+                    && digOutAny(level, core.guard.core.policy(), dim, c[0], c[1], c[2]);
+            String le = ls.take("surface dig-out at " + fmt(c), new io.github.mojolowjo.entropybot.clear.ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, force);
             if (le != null && core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT) {
                 ls.releaseAll();
                 LOG.info("[entropybot] stuck at {}: the guard refused the surface dig-out at {} ({})", fmt(me), fmt(c), le);
@@ -1407,6 +1433,8 @@ public final class Jobs {
         // 0.27.3 fix: my own shelter blocks (shelterBlocks / the ledger) are mine to open, not a stranger's build
         if ((ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
                 && !st.hasBlockEntity() && Guard.liquidNextTo(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;
+        // 0.30.7: the owner's rule (2026-10-11): in my own neutral/destroy areas any block may go (also for the stair side)
+        if (digOutAny(level, pol, dim, x, y, z)) return EscapePlan.Kind.BREAKABLE;
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         boolean ok = RestoreRules.natural(id) && !st.hasBlockEntity() && !core.guard.isProtectedBlock(st.getBlock())
                 && !st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && st.getDestroySpeed(level, bp) >= 0
@@ -1477,7 +1505,21 @@ public final class Jobs {
             x1 = Math.min(x1, c[0]); y1 = Math.min(y1, c[1]); z1 = Math.min(z1, c[2]);
             x2 = Math.max(x2, c[0]); y2 = Math.max(y2, c[1]); z2 = Math.max(z2, c[2]);
         }
+        // 0.30.7 (review): a placed block on the way out that the owner's rule allows (digOutAny) gets a one-cell force
+        // lease, as the surface dig-out does; the box lease stays a plain one (no force over cells the rule doesn't cover)
+        io.github.mojolowjo.entropybot.clear.LeaseSet forced = null;
+        for (int[] c : e.breaks()) {
+            if (!core.guard.isProtectedBlock(level.getBlockState(new BlockPos(c[0], c[1], c[2])).getBlock()) || !digOutAny(level, pol, dim, c[0], c[1], c[2])) continue;
+            if (forced == null) forced = Clearing.newLeases();
+            String fl = forced.take("escape dig-out at " + fmt(c), new io.github.mojolowjo.entropybot.clear.ClearBox(c[0], c[1], c[2], c[0], c[1], c[2]), false, true);
+            LOG.info("[entropybot] stuck at {}: the dig-out breaks the placed block at {} inside my own area (owner's rule): one-cell force lease{}", fmt(me), fmt(c), fl == null ? "" : " refused (" + fl + ")");
+            if (fl != null && core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT) {
+                forced.releaseAll();
+                return false;
+            }
+        }
         String le = core.guard.core.lease(core.token, "escape dig-out", new io.github.mojolowjo.entropybot.guard.Box("escape", dim, x1, y1, z1, x2, y2, z2), false, false);
+        if (le.startsWith("error") && core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && forced != null) forced.releaseAll();
         if (le.startsWith("error")) {
             if (core.guard.core.mode() == io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT) {
                 LOG.info("[entropybot] stuck at {}: the guard refused the dig-out ({})", fmt(me), le);
@@ -1486,6 +1528,7 @@ public final class Jobs {
             le = null;
         }
         j.escapeLease = le;
+        j.escapeLeaseSet = forced;
         j.escapeBreaks = e.breaks();
         j.escapeIdx = 0;
         j.escapeHit = null;
@@ -1499,6 +1542,24 @@ public final class Jobs {
         LOG.info("[entropybot] stuck at {} underground with no free step: digging out {} block(s) ({}) to {}", fmt(me), e.breaks().size(), cells.toString().replaceAll("; $", ""), fmt(e.feet()));
         core.events.push("job", "escape: digging out " + e.breaks().size() + " block(s) at " + fmt(me), null);
         return true;
+    }
+
+    /**
+     * 0.30.7 (review): the stair side may run through placed blocks the owner's rule allows (digOutAny): each dig step
+     * whose box holds such a protected block gets " force" (StairPlan.withForce). Never throws (the steps unchanged).
+     */
+    private java.util.List<String> placedForce(java.util.List<String> steps) {
+        try {
+            net.minecraft.world.level.Level level = Minecraft.getInstance().level;
+            if (level == null) return steps;
+            io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
+            String dim = Guard.dimOf(level);
+            return StairPlan.withForce(steps, (x, y, z) -> core.guard.isProtectedBlock(level.getBlockState(new BlockPos(x, y, z)).getBlock())
+                    && digOutAny(level, pol, dim, x, y, z));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] stairs: the placed-block force check failed: {}", e.toString());
+            return steps;
+        }
     }
 
     /** 0.27.3 (d3): the staircase up a sealed underground spot gets (a chain started once this job has ended), or null. */
@@ -1518,6 +1579,7 @@ public final class Jobs {
         // an own shelter roof over the head (the pit's plank): the first dig may break my own block (force, never a chest)
         String roof = me[0] + " " + (me[1] + 2) + " " + me[2];
         if (ShelterJob.ownBlocks(commands).contains(roof) || RestoreLive.INSTANCE.builtByMe(me[0], me[1] + 2, me[2])) steps.set(0, steps.get(0) + " force");
+        steps = new java.util.ArrayList<>(placedForce(steps));          // 0.30.7 (review): placed blocks the owner's rule allows
         pendingStairs = String.join(" then ", steps);
         String msg = "I am sealed in underground at " + fmt(me) + " - digging a staircase up (" + n + " steps " + StairPlan.dirName(side[0], side[1]) + ")";
         LOG.info("[entropybot] {}", msg);
@@ -1562,6 +1624,7 @@ public final class Jobs {
             java.util.List<String> steps = new java.util.ArrayList<>(StairPlan.upSteps(me[0], me[1], me[2], side[0], side[1], n));
             String roof = me[0] + " " + (me[1] + 2) + " " + me[2];
             if (ShelterJob.ownBlocks(commands).contains(roof) || RestoreLive.INSTANCE.builtByMe(me[0], me[1] + 2, me[2])) steps.set(0, steps.get(0) + " force");
+            steps = new java.util.ArrayList<>(placedForce(steps));          // 0.30.7 (review): placed blocks the owner's rule allows
             steps.add("goto " + d[0] + " " + d[1] + " " + d[2]);
             pendingStairs = String.join(" then ", steps);
             stairCount++;

@@ -190,6 +190,54 @@ public final class PlaceRules {
     /** placeAt's answer when the cell already holds the block (someone else's, as far as the bot knows). */
     public static final String ALREADY_THERE = "ok: already there";
 
+    /** 0.30.7: what stands in a cell the bot wants to place into. */
+    public enum InWay { MY_CORPSE, MY_EMPTY_CORPSE, MOB, OTHER }
+
+    /** 0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up. */
+    public static final long MOB_WAIT_TICKS = 200;
+    /** 0.30.7 (live probe): an emptied corpse the client still lists is waited for this long (90 s; it went in 10-50 s). */
+    public static final long EMPTY_CORPSE_WAIT_TICKS = 1800;
+
+    /** 0.30.7: how long a waiting text (entityText "... (waiting)") is waited for. */
+    public static long waitTicks(String entityText) {
+        return entityText != null && entityText.startsWith("error: my emptied corpse") ? EMPTY_CORPSE_WAIT_TICKS : MOB_WAIT_TICKS;
+    }
+
+    /** 0.30.7: the kind of an entity in the way (type id like "corpse:corpse"; mine: owned by the bot; living: a mob). */
+    public static InWay inWayKind(String typeId, boolean mine, boolean living) {
+        if ("corpse:corpse".equals(typeId) && mine) return InWay.MY_CORPSE;
+        if (living && !"corpse:corpse".equals(typeId)) return InWay.MOB;
+        return InWay.OTHER;
+    }
+
+    /**
+     * 0.30.7 (live, shed3: the first death's corpse at 35 131 23 made "place furnace 34 131 23" fail three times with
+     * "the game refused ..."): placeAt's error for an entity in the cell. name: the entity's short type ("cow", "boat").
+     * A mob's text ends "(waiting)": placeTick waits MOB_WAIT_TICKS for it before the step fails.
+     */
+    public static String entityText(InWay kind, String name, int x, int y, int z) {
+        String at = " at " + x + " " + y + " " + z;
+        return switch (kind) {
+            case MY_CORPSE -> "error: my corpse is in the way" + at + " - next: death";
+            // live probe (shed3): an emptied corpse is gone on the server at once, but the client lists it (and refuses
+            // the click) for 10-50 s more: waited for like a mob, longer (EMPTY_CORPSE_WAIT_TICKS)
+            case MY_EMPTY_CORPSE -> "error: my emptied corpse is in the way" + at + " (waiting)";
+            case MOB -> "error: a " + name + " is in the way" + at + " (waiting)";
+            case OTHER -> "error: a " + name + " is in the way" + at + " - next: move it, or place somewhere else";
+        };
+    }
+
+    /** 0.30.7: what a waiting text names ("a cow", "my emptied corpse"), from entityText's answer. */
+    public static String waitedFor(String entityText) {
+        return entityText.replaceFirst("^error: ", "").replaceFirst(" is in the way at .*$", "");
+    }
+
+    /** 0.30.7: the place step's end after waiting (waitTicks) for what did not move. what: "a cow". */
+    public static String mobStayedText(String what, int x, int y, int z) {
+        long s = (what.startsWith("my emptied corpse") ? EMPTY_CORPSE_WAIT_TICKS : MOB_WAIT_TICKS) / 20;
+        return what + " stayed in the way at " + x + " " + y + " " + z + " for " + s + " s - next: place again when it has moved";
+    }
+
     /**
      * B7d review 4b: a placement counts as the bot's own only when the cell was free (replaceable) just before its click
      * and the click really happened; "already there" never does.

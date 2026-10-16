@@ -83,6 +83,21 @@ public final class Policy {
         return false;
     }
 
+    /**
+     * 0.30.7 (owner's rule 2026-10-11; live: twice stuck in the respawn pit at 0 136 9 inside the neutral area "arena",
+     * the surface dig-out refused): a dig-out (the stuck escape, the surface dig-out, the stair side) may break any
+     * block in this cell, placed ones and persistent leaves included: it lies in a neutral or destroy area, in no safe
+     * area, and is not a main area's house cell (houseCell). The caller still refuses containers, blocks by water or
+     * lava, unbreakable and unloaded cells.
+     */
+    public boolean digOutAny(String dim, int x, int y, int z, boolean ownBuilt) {
+        if (protectAt(dim, x, y, z) != null || houseCell(dim, x, y, z, ownBuilt)) return false;
+        for (Box b : areas) {
+            if ((b.type == AreaType.NEUTRAL || b.type == AreaType.DESTROY) && b.contains(dim, x, y, z)) return true;
+        }
+        return false;
+    }
+
     public Box protectAt(String dim, int x, int y, int z) {
         for (Box b : protect) if (b.contains(dim, x, y, z)) return b;
         return null;

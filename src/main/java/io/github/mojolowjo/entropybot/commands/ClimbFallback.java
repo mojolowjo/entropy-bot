@@ -75,7 +75,53 @@ public final class ClimbFallback {
 
     /** The fallback's start line. */
     public static String startText(boolean toCamp, String dir, int n) {
-        return "climb: my own way failed twice, digging stairs up " + (toCamp ? "toward the camp (" + n + " blocks up, " + dir + ")" : dir + " (" + n + " blocks up; no camp mark)");
+        return startText(toCamp ? "the camp" : null, dir, n);
+    }
+
+    /**
+     * 0.30.7 (package 8 item 4): the start line with what the stairs head for ("the camp", "the base", "area arena (its
+     * column at x z)"); null: straight on (no camp, base or area known).
+     */
+    public static String startText(String what, String dir, int n) {
+        return "climb: my own way failed twice, digging stairs up " + (what != null ? "toward " + what + " (" + n + " blocks up, " + dir + ")"
+                : dir + " (" + n + " blocks up; no camp, base or area known)");
+    }
+
+    /** 0.30.7 (review): the start line when the target's column is mine already (the stairs go up, north). */
+    public static String underText(String what, String dir, int n) {
+        return "climb: my own way failed twice, digging stairs up " + dir + " (" + n + " blocks up; already under " + what + ", going straight up)";
+    }
+
+    /** 0.30.7: where the fallback stairs head: a position and what it is (for the start line). */
+    public record Target(int[] pos, String what) {}
+
+    /**
+     * 0.30.7 (live 0.30.5: no camp mark, the stairs went north): the camp mark, else the base place, else the nearest
+     * area's column (area: {x, y, z} with y Integer.MIN_VALUE when unknown, areaName its name); null when none.
+     */
+    public static Target target(int[] camp, int[] base, int[] area, String areaName) {
+        if (camp != null) return new Target(camp, "the camp");
+        if (base != null) return new Target(base, "the base");
+        if (area != null) return new Target(area, "area " + (areaName == null ? "?" : areaName) + " (its column at " + area[0] + " " + area[2] + ")");
+        return null;
+    }
+
+    /**
+     * 0.30.7: the nearest column of the nearest box (each {x1, z1, x2, z2}) to here, as {x, z} and the box's index; a
+     * box whose columns hold here is skipped (the stairs would go straight on anyway). null when none.
+     */
+    public static int[] nearestColumn(int[] here, java.util.List<int[]> boxes) {
+        int[] best = null;
+        long bestD = Long.MAX_VALUE;
+        for (int i = 0; i < boxes.size(); i++) {
+            int[] b = boxes.get(i);
+            int x1 = Math.min(b[0], b[2]), x2 = Math.max(b[0], b[2]), z1 = Math.min(b[1], b[3]), z2 = Math.max(b[1], b[3]);
+            int x = Math.max(x1, Math.min(x2, here[0])), z = Math.max(z1, Math.min(z2, here[2]));
+            if (x == here[0] && z == here[2]) continue;
+            long d = (long) (x - here[0]) * (x - here[0]) + (long) (z - here[2]) * (z - here[2]);
+            if (d < bestD) { bestD = d; best = new int[]{x, z, i}; }
+        }
+        return best;
     }
 
     private static final Pattern GOTO = Pattern.compile("\\(goto (-?\\d+) (-?\\d+) (-?\\d+)\\)");

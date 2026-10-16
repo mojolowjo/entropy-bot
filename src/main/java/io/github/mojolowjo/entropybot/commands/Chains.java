@@ -114,6 +114,29 @@ public final class Chains {
         /** Package D: the detour running is a furnace pickup (not the walk back before a retry); no new one before this tick. */
         boolean pickup;
         long pickupAfter;
+        /**
+         * 0.30.7: corpse fetches ("death") run for steps that found the bot's corpse in the way (at most 2: live, "death"
+         * emptied an older corpse nearby first, after a restart had forgotten that it was empty)
+         */
+        int corpseFetches;
+    }
+
+    /** 0.30.7 (live, shed3): a step's end that asks for the corpse fetch first (Clearing's place step, PlaceRules.entityText). */
+    static boolean corpseInWay(String text) {
+        return text != null && text.contains("my corpse is in the way") && text.contains("next: death");
+    }
+
+    /**
+     * 0.30.7 (live, shed3: the corpse in the furnace cell stopped the house chain): run "death" as a detour and the step
+     * once more (up to twice per chain). True when that was set up.
+     */
+    private boolean corpseDetour(Chain c, String text) {
+        if (c.corpseFetches >= 2 || c.inDetour || !corpseInWay(text) || c.idx < 1) return false;
+        c.corpseFetches++;
+        c.idx--;
+        c.detour = "death";
+        env.log("chain " + c.name + ": my corpse is in the way of \"" + c.steps.get(c.idx) + "\" - emptying it (death), then that step once more");
+        return true;
     }
 
     /** Wave 1 (item 9): a retry after a fight walks back first when the bot ended up further away than this. */
@@ -359,6 +382,10 @@ public final class Chains {
                     softFailed(c, String.valueOf(p.reply));
                     return;
                 }
+                if (Texts.stepFailed(p.reply) && corpseDetour(c, p.reply)) {
+                    c.pending = null;
+                    return;
+                }
                 if (Texts.stepFailed(p.reply)) {
                     c.pending = null;
                     endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + String.valueOf(p.reply).replaceFirst("^error: ", ""));
@@ -416,6 +443,7 @@ public final class Chains {
                     env.log("chain " + c.name + ": will retry \"" + c.steps.get(c.idx) + "\" after: " + st + (c.detour != null ? " (" + c.detour + " first)" : ""));
                     return;
                 }
+                if (corpseDetour(c, st)) return;
                 if (softStep(c)) { c.retries = 0; softFailed(c, st); return; }
                 endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + st);
                 return;
@@ -477,6 +505,7 @@ public final class Chains {
             c.pickup = false;
             return;
         }
+        if (Texts.stepFailed(r.text()) && corpseDetour(c, r.text())) return;
         if (Texts.stepFailed(r.text()) && softStep(c)) {
             softFailed(c, String.valueOf(r.text()));
             return;
