@@ -191,7 +191,7 @@ public final class PlaceRules {
     public static final String ALREADY_THERE = "ok: already there";
 
     /** 0.30.7: what stands in a cell the bot wants to place into. */
-    public enum InWay { MY_CORPSE, MOB, OTHER }
+    public enum InWay { MY_CORPSE, MY_EMPTY_CORPSE, MOB, OTHER }
 
     /** 0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up. */
     public static final long MOB_WAIT_TICKS = 200;
@@ -212,14 +212,21 @@ public final class PlaceRules {
         String at = " at " + x + " " + y + " " + z;
         return switch (kind) {
             case MY_CORPSE -> "error: my corpse is in the way" + at + " - next: death";
+            // live (shed3): an emptied corpse stays a few seconds before it vanishes: wait like for a mob
+            case MY_EMPTY_CORPSE -> "error: my emptied corpse is in the way" + at + " (waiting)";
             case MOB -> "error: a " + name + " is in the way" + at + " (waiting)";
             case OTHER -> "error: a " + name + " is in the way" + at + " - next: move it, or place somewhere else";
         };
     }
 
-    /** 0.30.7: the place step's end after waiting MOB_WAIT_TICKS for a mob that did not move. */
-    public static String mobStayedText(String name, int x, int y, int z) {
-        return "a " + name + " stayed in the way at " + x + " " + y + " " + z + " for 10 s - next: place again when it has moved";
+    /** 0.30.7: what a waiting text names ("a cow", "my emptied corpse"), from entityText's answer. */
+    public static String waitedFor(String entityText) {
+        return entityText.replaceFirst("^error: ", "").replaceFirst(" is in the way at .*$", "");
+    }
+
+    /** 0.30.7: the place step's end after waiting MOB_WAIT_TICKS for a mob that did not move. what: "a cow". */
+    public static String mobStayedText(String what, int x, int y, int z) {
+        return what + " stayed in the way at " + x + " " + y + " " + z + " for 10 s - next: place again when it has moved";
     }
 
     /**

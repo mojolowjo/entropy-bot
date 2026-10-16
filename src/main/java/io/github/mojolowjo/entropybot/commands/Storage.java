@@ -65,6 +65,8 @@ public final class Storage {
     private boolean containerSeen;
     /** Corpses already emptied (entity uuids). */
     final Set<UUID> emptyCorpses = new HashSet<>();
+    /** 0.30.7 (live, shed3): the corpses emptied (as emptyCorpses, for the static place check: one still there is waited for). */
+    static final Set<UUID> EMPTIED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** B7c: the crafting, farm and compact steps (Seq hands them over). */
     Crafting crafting;
 

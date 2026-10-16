@@ -964,6 +964,7 @@ public final class Clearing {
                 if (!corpse && !e.blocksBuilding) continue;
                 PlaceRules.InWay kind = PlaceRules.inWayKind(type, corpse && Storage.ownsCorpse(e, p),
                         e instanceof net.minecraft.world.entity.LivingEntity);
+                if (kind == PlaceRules.InWay.MY_CORPSE && Storage.EMPTIED.contains(e.getUUID())) kind = PlaceRules.InWay.MY_EMPTY_CORPSE;
                 String text = PlaceRules.entityText(kind, type.substring(type.indexOf(':') + 1).replace('_', ' '), x, y, z);
                 LOG.info("[entropybot] place: {}", text);
                 return text;
@@ -1071,8 +1072,7 @@ public final class Clearing {
                             ps.stageTick = now;
                             return "wait";
                         }
-                        String name = r.replaceFirst("^error: a ", "").replaceFirst(" is in the way at .*$", "");
-                        return ps.optional ? "next" : "couldn't place the " + sid + ": " + PlaceRules.mobStayedText(name, pos[0], pos[1], pos[2]);
+                        return ps.optional ? "next" : "couldn't place the " + sid + ": " + PlaceRules.mobStayedText(PlaceRules.waitedFor(r), pos[0], pos[1], pos[2]);
                     }
                     return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
                 }
