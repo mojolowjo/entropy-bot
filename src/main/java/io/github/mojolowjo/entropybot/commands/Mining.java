@@ -1683,6 +1683,11 @@ final class Mining {
         mineSettings(r);
         if (r.need != null) holdPick(p, r);
         if (knownStart(p, r)) return;                     // 0.28.0: known ore from the index first (walk + clear engine)
+        // 0.30.7 (item 5): the index is up and knows none: Baritone's mine would only wander; the first step ends the job
+        if (r.ore && r.knownWhy != null && indexReady()) {
+            LOG.info("[entropybot] mine: {} - not starting Baritone's mine (no walk on an empty ore index)", r.knownWhy);
+            return;
+        }
         IBaritone b = Jobs.baritone();
         if (b != null) b.getMineProcess().mine(r.count, r.block);
     }
@@ -1897,6 +1902,16 @@ final class Mining {
     private String seek(Seq s, LocalPlayer p, MineRun j, String why) {
         int[] me = Jobs.here(p);
         String d = dim();
+        // 0.30.7 (package 8 item 5): the ore index knows none of this family: no walk to random new land (it found
+        // nothing in trial runs); end now, saying what was walked
+        if (j.knownWhy != null && why.equals(j.knownWhy) && indexReady()) {
+            int[] from = j.trail.isEmpty() ? me : j.trail.get(0);
+            int walked = (int) Math.round(Math.sqrt(Math.pow(me[0] - from[0], 2) + Math.pow(me[2] - from[2], 2)));
+            if (walked > io.github.mojolowjo.entropybot.sense.KnownOre.NONE_WALK_CAP)
+                LOG.warn("[entropybot] mine: {} blocks from the start on an empty ore index (cap {})", walked, io.github.mojolowjo.entropybot.sense.KnownOre.NONE_WALK_CAP);
+            String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+            return end(s, j, io.github.mojolowjo.entropybot.sense.KnownOre.noneYetText(fam, mineCount(p, j), j.count, walked, gains(p, j)));
+        }
         j.seeks++;
         if (j.seeks > MineRules.SEEKS) return mineEnd(s, p, j, j.knownWhy != null && why.equals(j.knownWhy) ? knownEndText(p, j)
                 : why + ", also in " + MineRules.SEEKS + " more places I walked to");

@@ -195,6 +195,8 @@ public final class Clearing {
         int tries;
         /** 0.30.6: walks to a fresh stand spot after a "nothing in reach" click (once) */
         int walks;
+        /** 0.30.7: the tick a mob was first found in the cell (-1: none); it is waited for PlaceRules.MOB_WAIT_TICKS */
+        long mobSince = -1;
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
@@ -919,6 +921,8 @@ public final class Clearing {
         if (!target.canBeReplaced()) {
             return target.getBlock().getDescriptionId().contains(GuiCore.bareId(id)) ? PlaceRules.ALREADY_THERE : "error: something is in the way at " + x + " " + y + " " + z;
         }
+        String inWay = entityInWay(p, x, y, z);
+        if (inWay != null) return inWay;
         LiveWorld w = new LiveWorld();
         w.set(p);
         PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
@@ -941,6 +945,33 @@ public final class Clearing {
         // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
         if (r == InteractionResult.FAIL) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (no room for it, or the guard said no)";
         return "ok: " + r;
+    }
+
+    /**
+     * 0.30.7 (live, shed3: the bot's corpse in the furnace cell, three "the game refused" tries): the first entity that
+     * blocks building in cell x y z (not the bot, not item drops), as PlaceRules.entityText; null when free. Vanilla:
+     * Level.getEntities(Entity, AABB), Entity.blocksBuilding, BuiltInRegistries.ENTITY_TYPE (loader-neutral); the
+     * corpse's owner via Storage.ownsCorpse (reflection on the Corpse mod).
+     */
+    static String entityInWay(LocalPlayer p, int x, int y, int z) {
+        try {
+            net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(x, y, z, x + 1, y + 1, z + 1);
+            for (net.minecraft.world.entity.Entity e : Minecraft.getInstance().level.getEntities(p, box)) {
+                if (!e.isAlive() || e.isSpectator() || e instanceof net.minecraft.world.entity.item.ItemEntity
+                        || e instanceof net.minecraft.world.entity.ExperienceOrb) continue;
+                String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+                boolean corpse = type.equals("corpse:corpse");
+                if (!corpse && !e.blocksBuilding) continue;
+                PlaceRules.InWay kind = PlaceRules.inWayKind(type, corpse && Storage.ownsCorpse(e, p),
+                        e instanceof net.minecraft.world.entity.LivingEntity);
+                String text = PlaceRules.entityText(kind, type.substring(type.indexOf(':') + 1).replace('_', ' '), x, y, z);
+                LOG.info("[entropybot] place: {}", text);
+                return text;
+            }
+        } catch (RuntimeException ex) {
+            LOG.warn("[entropybot] place: entity check at {} {} {}: {}", x, y, z, ex.toString());
+        }
+        return null;
     }
 
     private static boolean isThere(int[] pos, String id) {
@@ -1029,6 +1060,23 @@ public final class Clearing {
             // 28c: a later try finding the block already there (it showed up after the 6-tick wait) must not undo our first click
             ps.clicked = ps.clicked || PlaceRules.ourClick(freeBefore, r);
             if (!r.startsWith("ok")) {
+                // 0.30.7 (live, shed3): a mob in the cell is waited for (10 s), not counted as a try; a corpse or
+                // another entity ends the step at once with its own next verb (three clicks would change nothing)
+                if (r.contains(" is in the way at ")) {
+                    if (r.endsWith("(waiting)")) {
+                        if (ps.mobSince < 0) ps.mobSince = now;
+                        if (now - ps.mobSince < PlaceRules.MOB_WAIT_TICKS) {
+                            seq.setStatus(seq.label + " - " + r.replaceFirst("^error: ", ""));
+                            ps.stage = "retry";
+                            ps.stageTick = now;
+                            return "wait";
+                        }
+                        String name = r.replaceFirst("^error: a ", "").replaceFirst(" is in the way at .*$", "");
+                        return ps.optional ? "next" : "couldn't place the " + sid + ": " + PlaceRules.mobStayedText(name, pos[0], pos[1], pos[2]);
+                    }
+                    return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
+                }
+                ps.mobSince = -1;
                 // 0.30.6 (live, shed2: "place chest" right after the door dig, the bot still outside): nothing in reach
                 // from where the walk ended (or from where the bot stood when the step began and then moved on): walk to
                 // a stand spot picked afresh, once, before the three tries count

@@ -216,9 +216,18 @@ public final class RimPlan {
     public static Stance sideStand(ClearWorld w, Pos c, double bx, double by, double bz) {
         List<PlaceRules.Side> an = anchors(w, c);
         if (an.isEmpty()) return null;
+        Stance st = sideStand(w, c, an, c.y(), c.y() - 1, bx, by, bz);
+        // 0.30.7 (live, shed3 5 high: 15 roof cells "nowhere to stand", the bot on the wall top at the roof's level):
+        // an inner roof cell has no floor in reach; stand on a placed roof cell (feet at the cell's level + 1) and click
+        // the side face of a placed neighbour. Only when nothing lower works (a wall is still built from the floor).
+        return st != null ? st : sideStand(w, c, an, c.y() + 1, c.y() + 1, bx, by, bz);
+    }
+
+    /** sideStand over the feet levels fyTop down to fyLow. */
+    private static Stance sideStand(ClearWorld w, Pos c, List<PlaceRules.Side> an, int fyTop, int fyLow, double bx, double by, double bz) {
         Stance best = null, blind = null;
         double bestD = Double.MAX_VALUE, blindD = Double.MAX_VALUE;
-        for (int fy = c.y(); fy >= c.y() - 1; fy--) {
+        for (int fy = fyTop; fy >= fyLow; fy--) {
             for (int dx = -2; dx <= 2; dx++) {
                 for (int dz = -2; dz <= 2; dz++) {
                     if (dx == 0 && dz == 0) continue;

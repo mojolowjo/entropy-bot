@@ -208,24 +208,52 @@ final class DigCommands {
 
     /** 0.30.5: the third climb: "dig stairs up" toward the camp mark (same dimension), else north, via engine. */
     static String climbFallback(Commands c, LocalPlayer p, int[] here, int surface, String from) {
-        int[] camp = null;
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(p.level());
+        int[] camp = place("camp", dim), base = place("base", dim), area = null;
+        String areaName = null;
+        // 0.30.7 (item 4): no camp or base: the nearest area's column (its surface height there when loaded)
         try {
-            JsonObject cp = Core.INSTANCE.knowledge.places().get("camp");
-            if (cp != null && cp.has("x") && Jobs.dimOf(cp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(p.level()))) camp = Jobs.pos(cp);
+            java.util.List<io.github.mojolowjo.entropybot.guard.Box> boxes = new java.util.ArrayList<>();
+            java.util.List<int[]> cols = new java.util.ArrayList<>();
+            for (var b : Core.INSTANCE.guard.core.policy().areas) {
+                if (!b.dim.equals(dim)) continue;
+                boxes.add(b);
+                cols.add(new int[]{b.x1, b.z1, b.x2, b.z2});
+            }
+            int[] nc = ClimbFallback.nearestColumn(here, cols);
+            if (nc != null) {
+                int y = p.level().isLoaded(new net.minecraft.core.BlockPos(nc[0], here[1], nc[1])) ? Jobs.surfaceNoLeaves(p.level(), nc[0], nc[1]) : Integer.MIN_VALUE;
+                area = new int[]{nc[0], y, nc[1]};
+                areaName = boxes.get(nc[2]).name;
+            }
         } catch (RuntimeException e) {
-            LOG.warn("[entropybot] climb fallback: the camp mark: {}", e.toString());
+            LOG.warn("[entropybot] climb fallback: the nearest area: {}", e.toString());
         }
-        String dir = ClimbFallback.toward(here, camp);
-        boolean toCamp = dir != null;
+        ClimbFallback.Target t = ClimbFallback.target(camp, base, area, areaName);
+        int[] goal = t == null ? null : t.pos();
+        String dir = ClimbFallback.toward(here, goal);
+        String what = dir != null ? t.what() : null;
         if (dir == null) dir = "north";
-        int n = ClimbFallback.stepsUp(here[1], camp == null ? Integer.MIN_VALUE : camp[1], surface);
+        int n = ClimbFallback.stepsUp(here[1], goal == null ? Integer.MIN_VALUE : goal[1], surface);
         int[] d = StairPlan.dir(dir);
-        String text = ClimbFallback.startText(toCamp, dir, n);
-        LOG.info("[entropybot] {} from {} (camp {}, surface {})", text, Jobs.fmt(here), camp == null ? "none" : Jobs.fmt(camp), surface);
+        String text = ClimbFallback.startText(what, dir, n);
+        LOG.info("[entropybot] {} from {} (camp {}, base {}, area {}, surface {})", text, Jobs.fmt(here), camp == null ? "none" : Jobs.fmt(camp),
+                base == null ? "none" : Jobs.fmt(base), area == null ? "none" : Jobs.fmt(area), surface);
         String r = c.chainsRef().startChain(from, "climb", String.join(" then ", StairPlan.upSteps(here[0], here[1], here[2], d[0], d[1], n)), 1);
         if (!r.startsWith("started")) return r;
         CLIMB_FAILS.started(here);
         return "started: " + text + " - each step reports; a failed one says which block stopped it";
+    }
+
+    /** A named place (knowledge places) in this dimension as {x, y, z}, or null (logged on error). */
+    private static int[] place(String name, String dim) {
+        try {
+            JsonObject cp = Core.INSTANCE.knowledge.places().get(name);
+            if (cp != null && cp.has("x") && Jobs.dimOf(cp).equals(dim)) return Jobs.pos(cp);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] climb fallback: the {} place: {}", name, e.toString());
+        }
+        return null;
     }
 
     /** 0.30.5: the stair chains' honest end (Chains.endNote): which block stopped the walk, and the next verb. */

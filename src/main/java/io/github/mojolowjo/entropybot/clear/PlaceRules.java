@@ -190,6 +190,38 @@ public final class PlaceRules {
     /** placeAt's answer when the cell already holds the block (someone else's, as far as the bot knows). */
     public static final String ALREADY_THERE = "ok: already there";
 
+    /** 0.30.7: what stands in a cell the bot wants to place into. */
+    public enum InWay { MY_CORPSE, MOB, OTHER }
+
+    /** 0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up. */
+    public static final long MOB_WAIT_TICKS = 200;
+
+    /** 0.30.7: the kind of an entity in the way (type id like "corpse:corpse"; mine: owned by the bot; living: a mob). */
+    public static InWay inWayKind(String typeId, boolean mine, boolean living) {
+        if ("corpse:corpse".equals(typeId) && mine) return InWay.MY_CORPSE;
+        if (living && !"corpse:corpse".equals(typeId)) return InWay.MOB;
+        return InWay.OTHER;
+    }
+
+    /**
+     * 0.30.7 (live, shed3: the first death's corpse at 35 131 23 made "place furnace 34 131 23" fail three times with
+     * "the game refused ..."): placeAt's error for an entity in the cell. name: the entity's short type ("cow", "boat").
+     * A mob's text ends "(waiting)": placeTick waits MOB_WAIT_TICKS for it before the step fails.
+     */
+    public static String entityText(InWay kind, String name, int x, int y, int z) {
+        String at = " at " + x + " " + y + " " + z;
+        return switch (kind) {
+            case MY_CORPSE -> "error: my corpse is in the way" + at + " - next: death";
+            case MOB -> "error: a " + name + " is in the way" + at + " (waiting)";
+            case OTHER -> "error: a " + name + " is in the way" + at + " - next: move it, or place somewhere else";
+        };
+    }
+
+    /** 0.30.7: the place step's end after waiting MOB_WAIT_TICKS for a mob that did not move. */
+    public static String mobStayedText(String name, int x, int y, int z) {
+        return "a " + name + " stayed in the way at " + x + " " + y + " " + z + " for 10 s - next: place again when it has moved";
+    }
+
     /**
      * B7d review 4b: a placement counts as the bot's own only when the cell was free (replaceable) just before its click
      * and the click really happened; "already there" never does.

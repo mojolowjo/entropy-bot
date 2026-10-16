@@ -569,6 +569,25 @@ public final class Storage {
         }
     }
 
+    /**
+     * 0.30.7: corpse entity e belongs to the bot (owner uuid or name via the Corpse mod's getters); one that won't say
+     * counts as the bot's (the "death" it suggests only ever empties the bot's own corpse).
+     */
+    static boolean ownsCorpse(Entity e, LocalPlayer p) {
+        String uuid = null, name = null;
+        try {
+            Object u = call(e, "getCorpseUUID");
+            if (u instanceof java.util.Optional<?> o) u = o.orElse(null);
+            if (u != null) uuid = u.toString();
+        } catch (RuntimeException ignored) {}
+        try {
+            Object n = call(e, "getCorpseName");
+            if (n != null && !n.toString().isEmpty()) name = n.toString();
+        } catch (RuntimeException ignored) {}
+        if (uuid == null && name == null) return true;
+        return p.getUUID().toString().equals(uuid) || p.getGameProfile().getName().equals(name);
+    }
+
     /** The bot's own corpse within radius (by owner uuid or name; a corpse that won't say counts only where the bot died). */
     Entity findOwnCorpse(LocalPlayer p, double radius) {
         Minecraft mc = Minecraft.getInstance();

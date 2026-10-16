@@ -60,6 +60,18 @@ public final class KnownOre {
         return "no " + family + " ore known in my areas (I have seen " + chunks + " chunk" + (chunks == 1 ? "" : "s") + " here) - explore or mine cave";
     }
 
+    /** 0.30.7: the most a mine on an empty ore index may have walked before it ends (it starts no seek walk of its own). */
+    public static final int NONE_WALK_CAP = 32;
+
+    /**
+     * 0.30.7 (package 8 item 5): the end of a mine whose index knows no ore of the family: no random seek, it says what
+     * was walked (straight-line blocks from where the job started) and the next verbs. gains: the usual tail ("" for none).
+     */
+    public static String noneYetText(String family, int got, int count, int walked, String gains) {
+        return "done: mining " + family + ": got " + got + " of " + count + " - no " + family + " ore known yet (walked " + walked
+                + " block" + (walked == 1 ? "" : "s") + ")" + (gains == null ? "" : gains) + " - next: sense (the chunk pass) or mine strip " + family;
+    }
+
     /** The seek's reason (shorter: the job walks on, then ends with {@link #noneText}). */
     public static String noneWhy(String family) {
         return "no " + family + " ore known near";
