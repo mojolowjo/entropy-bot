@@ -70,6 +70,19 @@ public final class Policy {
         return null;
     }
 
+    /**
+     * 0.30.6 (live, 0.30.4: the stuck dig-out opened a house's cobblestone wall): the cell is part of a house in a main
+     * area: on the area box's shell, or (ownBuilt) any cell in the area's columns the bot built itself (floor, pillars
+     * under it, stations). Such a cell is never a dig-out's way; the house's door is the way out.
+     */
+    public boolean houseCell(String dim, int x, int y, int z, boolean ownBuilt) {
+        for (Box b : areas) {
+            if (b.type != AreaType.MAIN || !b.dim.equals(dim) || !b.columnIn(x, z)) continue;
+            if (ownBuilt || b.onShell(dim, x, y, z)) return true;
+        }
+        return false;
+    }
+
     public Box protectAt(String dim, int x, int y, int z) {
         for (Box b : protect) if (b.contains(dim, x, y, z)) return b;
         return null;

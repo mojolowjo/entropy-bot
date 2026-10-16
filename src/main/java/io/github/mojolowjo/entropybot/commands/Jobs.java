@@ -289,6 +289,20 @@ public final class Jobs {
 
     // ---- 0.27.2: the surface dig-out ----
 
+    /**
+     * 0.30.6 (live, 0.30.4: a failed walk's dig-out opened the house's cobblestone wall): the cell belongs to a house in
+     * a main area (Policy.houseCell: the area box's shell, or my own block in its columns). Every dig-out and the
+     * shelter's own-wall exit leave it alone; the door is the way out. Never throws (false on any error).
+     */
+    static boolean houseCell(String dim, int x, int y, int z) {
+        try {
+            return io.github.mojolowjo.entropybot.Core.INSTANCE.guard.core.policy().houseCell(dim, x, y, z, RestoreLive.INSTANCE.builtByMe(x, y, z));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] house cell check at {} {} {}: {}", x, y, z, e.toString());
+            return false;
+        }
+    }
+
     /** The surface kind of one cell (SurfaceSeal), from the level. */
     SurfaceSeal.Kind surfaceKind(net.minecraft.world.level.Level level, int x, int y, int z) {
         BlockPos bp = new BlockPos(x, y, z);
@@ -299,7 +313,8 @@ public final class Jobs {
         boolean persistent = leaves && st.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
                 && st.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT);
         boolean plant = st.is(net.minecraft.tags.BlockTags.REPLACEABLE_BY_TREES) || st.is(net.minecraft.world.level.block.Blocks.SNOW);
-        boolean own = ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z);
+        boolean own = (ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
+                && !houseCell(Guard.dimOf(level), x, y, z);         // 0.30.6: a house wall is not a shelter wall
         return SurfaceSeal.kind(id, leaves, persistent && !own, plant, own, st.hasBlockEntity(), Guard.liquidNextTo(level, x, y, z) != null);
     }
 
@@ -367,6 +382,7 @@ public final class Jobs {
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
             if (!st.getFluidState().isEmpty()) return id + " (a fluid)";
             if (st.getCollisionShape(level, bp).isEmpty()) return id + " (open)";
+            if (houseCell(dim, c[0], c[1], c[2])) return id + " (my house: the door is the way out)";
             SurfaceSeal.Kind k = surfaceKind(level, c[0], c[1], c[2]);
             if (k == SurfaceSeal.Kind.NO) {
                 if (st.is(net.minecraft.tags.BlockTags.LEAVES)) return id + " (persistent: placed by a player, never broken)";
@@ -1387,6 +1403,7 @@ public final class Jobs {
         if (!st.getFluidState().isEmpty()) return EscapePlan.Kind.BLOCKED;
         if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
         if (!st.isCollisionShapeFullBlock(level, bp)) return EscapePlan.Kind.BLOCKED;
+        if (houseCell(dim, x, y, z)) return EscapePlan.Kind.FLOOR_ONLY;      // 0.30.6: never through a house's wall, floor or roof
         // 0.27.3 fix: my own shelter blocks (shelterBlocks / the ledger) are mine to open, not a stranger's build
         if ((ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
                 && !st.hasBlockEntity() && Guard.liquidNextTo(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;

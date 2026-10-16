@@ -24,6 +24,7 @@ class HousePlanTest {
                 "build walls cobblestone house door 3 6",   // 0.30.2: the door's two cells stay open
                 "build roof cobblestone house",
                 "dig 3 65 6 3 66 6 force",                 // door south (no camp), middle of the side
+                "goto 3 65 3",                             // 0.30.6: in through the door before the stations
                 "place chest 2 65 1",                      // back wall (north) inside
                 "place crafting_table 3 65 1",
                 "place furnace 4 65 1",
@@ -32,7 +33,7 @@ class HousePlanTest {
                 "scan base 4"), p.steps());
         assertTrue(p.summary().contains("needs about 168 cobblestone (you have 200)"), p.summary());
         assertTrue(p.summary().contains("door on the south side"));
-        assertTrue(p.summary().contains(": 12 steps"), p.summary());
+        assertTrue(p.summary().contains(": 13 steps"), p.summary());
     }
 
     @Test

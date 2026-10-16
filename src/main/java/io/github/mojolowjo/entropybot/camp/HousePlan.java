@@ -104,6 +104,9 @@ public final class HousePlan {
         out.add("build roof " + b6 + " " + area);
         String d = door[0] + " " + iy + " " + door[1] + " " + door[0] + " " + (iy + 1) + " " + door[1];
         out.add("dig " + d + " force");
+        // 0.30.6 (live, shed2: "place chest ... nothing in reach" right after the door dig, the bot still outside): walk in
+        // through the door to the middle of the room first; every station is within 3 blocks of it
+        out.add("goto " + cx + " " + iy + " " + cz);
         List<String> missing = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             String s = STATIONS[i];

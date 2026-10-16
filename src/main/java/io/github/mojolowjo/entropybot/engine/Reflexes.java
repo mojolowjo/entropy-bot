@@ -252,6 +252,9 @@ public final class Reflexes {
     /** 0.24.3: a forced attack (attack / hunt) is still on. */
     public boolean forcing() { return forcedId >= 0; }
 
+    /** 0.30.6: something in the bag the bot would eat now (raw beef counts; raw chicken does not). */
+    public boolean canEat(LocalPlayer p) { return p != null && bestFood(p) >= 0; }
+
     /** 0.24.1: a retreat to a lit spot (shelter / LIT verdict): the job is held, not stopped. */
     public boolean sheltering() { return reflex == Reflex.RETREATING && retreatLit; }
 
@@ -426,7 +429,12 @@ public final class Reflexes {
             target = t.id;
             targetDist = t.d;
             urgent = hurt || t.d < ReflexRules.URGENT;
-            if (hp <= ReflexRules.RETREAT_AT || t.strong) {
+            // 0.30.6 (live, 0.30.5: a hunt at food 0 starved to 1 health and "gave up on the cow"): a hunted farm animal
+            // does no harm, so low health is no reason to run from it; its meat is the way back up
+            // (review: Animal covers wolves, polar bears, goats, hoglins too: only the hunt's farm animals are harmless)
+            boolean harmless = ft != null && io.github.mojolowjo.entropybot.vocab.HuntRules.MEAT.containsKey(
+                    BuiltInRegistries.ENTITY_TYPE.getKey(t.e.getType()).toString());
+            if ((hp <= ReflexRules.RETREAT_AT && !harmless) || t.strong) {
                 io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.verdict(t.id + ": retreat home: "
                         + (t.strong ? "too strong to fight" : "health " + Math.round(hp) + " at or below " + Math.round(ReflexRules.RETREAT_AT)));
                 startRetreat(mc, p, t);

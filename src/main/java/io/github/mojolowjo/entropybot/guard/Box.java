@@ -153,6 +153,16 @@ public final class Box {
         return y1 <= ALL_Y_MIN && y2 >= ALL_Y_MAX;
     }
 
+    /**
+     * 0.30.6: the cell lies on this box's shell (a wall, floor or roof face of a house built in it): one of the x or z
+     * edges, or the top or bottom layer. A round box or a heightless one has no shell (review: a heightless area's
+     * edge columns are mostly terrain; the house's own blocks there are still known through the ledger). False outside.
+     */
+    public boolean onShell(String d, int x, int y, int z) {
+        if (round || allY() || !contains(d, x, y, z)) return false;
+        return x == x1 || x == x2 || z == z1 || z == z2 || y == y1 || y == y2;
+    }
+
     /** Parses {name?, dim?, x1, z1, x2, z2, y1?, y2?}; a missing y means all heights. */
     public static Box fromJson(JsonObject o, String defaultDim) {
         for (String k : new String[]{"x1", "z1", "x2", "z2"}) {

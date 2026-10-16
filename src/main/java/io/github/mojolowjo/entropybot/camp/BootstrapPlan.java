@@ -162,7 +162,7 @@ public final class BootstrapPlan {
         // the marks first: the furnace steps (gather charcoal) use a furnace near the base
         if (!f.campMarked()) {
             out.add("setbase " + fmt(f.feet()));
-            out.add("mark camp " + fmt(f.feet()));
+            out.add("place camp " + fmt(f.feet()));          // 0.30.6: "mark" is the old word
         } else skipped.add("camp mark");
         if (logs > 0) out.add("chop " + Math.max(logs + 2, 6));
         else skipped.add("wood");

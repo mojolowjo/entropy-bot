@@ -140,6 +140,16 @@ final class Hunting {
         }
         if (refl.hold() || refl.reflex() == io.github.mojolowjo.entropybot.engine.Reflexes.Reflex.FIGHTING) return;   // hostiles first
         if (c.jobs.running()) return;                                 // the walk to the drops
+        // 0.30.6: too hungry to sprint (food 6 or less) with something to eat in the bag (the last kill's raw beef, say):
+        // eat first, then the next animal; the reflexes' meal holds the hunt until it is done
+        if (p.getFoodData().getFoodLevel() <= 6 && refl.canEat(p)) {
+            String ate = refl.eat();
+            LOG.info("[entropybot] hunt: food {}/20, eating before the next animal: {}", p.getFoodData().getFoodLevel(), ate);
+            if (!ate.startsWith("error: busy") && !ate.startsWith("error: already")) {      // (review) a held reflex: hunt on
+                r.nextAt = now + (ate.startsWith("started") ? 40 : 100);
+                return;
+            }
+        }
         Minecraft mc = Minecraft.getInstance();
         if (r.targetId >= 0) {
             // the last one died (or got away): walk over where it was for the drops, once
