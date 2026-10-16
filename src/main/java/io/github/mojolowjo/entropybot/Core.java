@@ -61,6 +61,108 @@ public final class Core {
 
     public BotFiles files() { return files; }
 
+    private volatile String worldKey;
+
+    /** 0.31.0 (c): the current world's key (folder under entropybot/worlds), or null before the first world. */
+    public String worldKey() { return worldKey; }
+
+    /** 0.31.0: the current world is the main server (the root's old world-bound keys belong to it). */
+    public boolean isMainWorld() {
+        BotFiles f = files;
+        String k = worldKey;
+        return f != null && k != null && k.equals(io.github.mojolowjo.entropybot.io.WorldState.mainKey(f.root()));
+    }
+
+    /**
+     * 0.31.0 (c): the world's key from the game (vanilla: the integrated server's level folder, or the server address).
+     * Loader API: none (vanilla Minecraft client classes only).
+     */
+    private static String keyOf(Minecraft mc) {
+        try {
+            if (mc.hasSingleplayerServer() && mc.getSingleplayerServer() != null) {
+                java.nio.file.Path p = mc.getSingleplayerServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize();
+                return io.github.mojolowjo.entropybot.io.WorldState.key(false, p.getFileName() == null ? null : p.getFileName().toString(), null);
+            }
+            net.minecraft.client.multiplayer.ServerData sd = mc.getCurrentServer();
+            return sd == null ? null : io.github.mojolowjo.entropybot.io.WorldState.key(true, null, sd.ip);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] world: couldn't tell which world this is: {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * 0.31.0 (c): at a join. Points the files at entropybot/worlds/&lt;key&gt; (migrating the root's world files for the
+     * first multiplayer server) and, when the key changed after the first world, reloads every world store. Never throws.
+     */
+    private boolean keyPending;
+    private int keyWait;
+    /** review 2: ticks a join waits for the world's key before it falls back to worlds/unknown (5 s). */
+    static final int KEY_WAIT_TICKS = 100;
+
+    /** False while the key is not known yet (the caller tries again next tick). */
+    private boolean enterWorld(Minecraft mc, BotFiles f, boolean first) {
+        try {
+            boolean mp = !mc.hasSingleplayerServer();
+            String key = keyOf(mc);
+            if (key == null && ++keyWait < KEY_WAIT_TICKS) {
+                if (keyWait == 1) LOG.info("[entropybot] world: the world's key isn't known yet; waiting up to {} ticks", KEY_WAIT_TICKS);
+                return false;
+            }
+            if (key == null) {
+                key = "unknown";
+                LOG.error("[entropybot] world: NO world key (singleplayer={}, server={}); world files go to worlds/unknown",
+                        !mp, mc.getCurrentServer() == null ? "none" : "set");
+            }
+            if (!first && key.equals(worldKey)) {
+                LOG.info("[entropybot] world: back in {} (same folder)", key);
+                return true;
+            }
+            String old = worldKey;
+            if (!first) flushWorld();
+            for (String l : io.github.mojolowjo.entropybot.io.WorldState.enter(f.root(), key, mp)) LOG.info("[entropybot] world: {}", l);
+            f.setWorld(f.root().resolve(io.github.mojolowjo.entropybot.io.WorldState.WORLDS).resolve(key));
+            worldKey = key;
+            BotFiles.writeAtomicAnywhere(f.root().resolve(io.github.mojolowjo.entropybot.io.WorldState.POINTER),
+                    io.github.mojolowjo.entropybot.io.WorldState.pointerJson(key, mp));
+            LOG.info("[entropybot] world: re-rooted the world files {} -> worlds/{}", old == null ? "(start)" : "worlds/" + old, key);
+            if (!first) reloadWorld(f);
+        } catch (Throwable t) {
+            LOG.error("[entropybot] world: re-root FAILED ({}); world files stay in {}", t.toString(), f.worldRoot());
+            events.push("job", "world files: re-root failed: " + t, null);
+        }
+        return true;
+    }
+
+    /** 0.31.0 (c): everything world-bound written to the old folder before it changes. */
+    private void flushWorld() {
+        knowledge.flush();
+        pois.flushIfDue(Long.MAX_VALUE);
+        caves.flushIfDue(Long.MAX_VALUE);
+        mineNotes.flush();
+        commands.flushWorld();
+        io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true);
+        io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true);
+        io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
+        if (terrain != null) terrain.flushAll();
+    }
+
+    /** 0.31.0 (c): every world store loaded again from the new folder. */
+    private void reloadWorld(BotFiles f) {
+        LOG.info("[entropybot] world: knowledge: {}", knowledge.load(f));
+        LOG.info("[entropybot] world: points of interest: {}", pois.load(f));
+        LOG.info("[entropybot] world: caves: {}", caves.load(f));
+        LOG.info("[entropybot] world: mine notes: {}", mineNotes.load(f, null));
+        io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(f.worldRoot());
+        io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(f.worldRoot());
+        LOG.info("[entropybot] world: {}; {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote(),
+                io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
+        io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(f.worldRoot());
+        terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(f.worldRoot().resolve("map"));
+        io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.worldChanged();
+        LOG.info("[entropybot] world: commands: {}", commands.reloadWorld(f));
+    }
+
     /** C2: writes entropybot/stock.json (see {@link io.github.mojolowjo.entropybot.storage.Stock}) on change, at most every 5 s. */
     private final io.github.mojolowjo.entropybot.storage.Stock.Writer stockWriter = new io.github.mojolowjo.entropybot.storage.Stock.Writer(5000);
     private int stockErrors;
@@ -112,9 +214,17 @@ public final class Core {
                 inWorld = false;
                 return;
             }
+            boolean joined = !inWorld;
             inWorld = true;
+            if (joined) { keyPending = true; keyWait = 0; }
+            if (keyPending && ready) {                                   // 0.31.0 (c): another world: re-root and reload
+                if (!enterWorld(mc, files, false)) return;               // review 2: the key isn't known yet, next tick
+                keyPending = false;
+            }
             if (!ready) {
                 files = new BotFiles(mc.gameDirectory.toPath().resolve(MODID));
+                if (!enterWorld(mc, files, true)) return;
+                keyPending = false;
                 guard.ensureProtectedBlocks();
                 LOG.info("[entropybot] knowledge: {}", knowledge.load(files));
                 LOG.info("[entropybot] points of interest: {}", pois.load(files));
@@ -126,13 +236,13 @@ public final class Core {
                     try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
                     try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable ignored) {}
                 }, "entropybot-mine-notes"));
-                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(files.root());
+                io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(files.worldRoot());
                 LOG.info("[entropybot] watch tunnel: {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote());
-                io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(files.root());
+                io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(files.worldRoot());
                 LOG.info("[entropybot] watch seen: {}", io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
-                io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(files.root());       // 0.23.3
-                terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.root().resolve("map"));
+                io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(files.worldRoot());       // 0.23.3
+                terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.worldRoot().resolve("map"));
                 recorder = new io.github.mojolowjo.entropybot.recorder.FlightRecorder(files.root().resolve("recorder"), events);   // B7e E5
                 ready = true;
                 LOG.info("[entropybot] {} ready: guard {}, floor {}; mixins: click={} place={} astar={} watch={} camerapos={} restorehook={} (target present={}); folder {}",

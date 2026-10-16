@@ -128,6 +128,9 @@ public final class OreIndex {
     }
 
     /** Every summary of a dimension stale (the world was left, or the chunks went). */
+    /** 0.31.0 (c): another world: every summary forgotten (the files stay in the old world's folder). */
+    public synchronized void clear() { dims.clear(); }
+
     public void markAllStale() {
         for (Map<Long, ChunkSummary> m : dims.values()) for (ChunkSummary s : m.values()) s.stale = true;
     }

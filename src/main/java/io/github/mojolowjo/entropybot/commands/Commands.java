@@ -57,7 +57,8 @@ public final class Commands implements Chains.Env {
 
     private final Core core;
     public final JobRequests requests = new JobRequests();
-    private final JsonStore pmStore = new JsonStore("pm.json"), brainStore = new JsonStore("commands.json"), areaStore = new JsonStore("areas.json");
+    private final JsonStore pmStore = new JsonStore("pm.json"), brainStore = new JsonStore("commands.json", io.github.mojolowjo.entropybot.io.WorldState.COMMANDS_WORLD,
+            io.github.mojolowjo.entropybot.io.WorldState.COMMANDS_WORLD_KEYS, () -> Core.INSTANCE.isMainWorld()), areaStore = new JsonStore("areas.json");
     Chains chains;
     /** B1: the brain's game side (null until the world's stores are loaded). */
     BrainRuntime brainRuntime;
@@ -504,6 +505,28 @@ public final class Commands implements Chains.Env {
             LOG.warn("[entropybot] areas: {}", areaMigrationProblem);
             return "; " + areaMigrationProblem;
         }
+    }
+
+    /** 0.31.0 (c): the world-bound stores (areas, the restore ledger) written to the old world's folder. */
+    public void flushWorld() {
+        if (!ready) return;
+        String b = brainStore.flush();
+        if (!b.startsWith("ok")) LOG.warn("[entropybot] world: couldn't write commands.json before the world change: {}", b);
+        String r = areaStore.flush();
+        if (!r.startsWith("ok")) LOG.warn("[entropybot] world: couldn't write areas.json before the world change: {}", r);
+        RestoreLive.INSTANCE.flushNow();
+    }
+
+    /** 0.31.0 (c): another world: areas and the restore ledger load from its folder; the area policy is rebuilt. */
+    public String reloadWorld(BotFiles files) {
+        if (!ready) return "not ready yet";
+        StringBuilder sb = new StringBuilder();
+        sb.append(areaStore.load(files)).append("; ").append(RestoreLive.INSTANCE.load(this, files));
+        sb.append("; ").append(brainStore.loadWorldPart(files));               // 0.31.0: home, deaths, mines... of this world
+        sb.append(migrateAreas(files));
+        policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
+        sb.append("; policy: ").append(policy.apply());
+        return sb.toString();
     }
 
     /** Once, at the first tick in a world: the files, the move of the notes from the bridge's memory.json. */
@@ -1249,6 +1272,19 @@ public final class Commands implements Chains.Env {
                         int[] g = Jobs.groundUnder(player.level(), gx, gy, gz);
                         return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false, ownerWalker(from)),
                                 io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(g[0], g[1], g[2]));
+                    }
+                    String solidId = Jobs.solidAt(player.level(), gx, gy, gz);       // 0.31.0 (5): a target inside a block
+                    if (solidId != null) {
+                        int[] f = Jobs.freeSpotFor(player.level(), gx, gy, gz);
+                        String t = gx + " " + gy + " " + gz;
+                        if (f == null) {
+                            LOG.info("[entropybot] goto {}: inside {}, no free spot within {} blocks", t, solidId, WalkEnd.FREE_AROUND);
+                            return "error: " + t + " is inside " + solidId + " and there's no free spot within " + WalkEnd.FREE_AROUND
+                                    + " blocks - next: goto a spot next to it";
+                        }
+                        LOG.info("[entropybot] goto {}: inside {}, going to {} instead", t, solidId, Jobs.fmt(f));
+                        String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false, ownerWalker(from));
+                        return r != null && r.startsWith("error") ? r : Texts.withNote(r, t + " is inside " + solidId + ": going to " + Jobs.fmt(f) + " instead");
                     }
                 }
                 return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));

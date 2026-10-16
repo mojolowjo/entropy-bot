@@ -204,10 +204,33 @@ public final class GatherRules {
     public static String pickaxeFix(String command, String msg, Map<String, Integer> inv, int fixes) {
         if (command == null || msg == null || !command.startsWith("dig stone") || !msg.contains("needs a pickaxe")) return null;
         if (fixes >= MAX_PICK_FIXES) return null;
+        return pickaxeCraft(inv);
+    }
+
+    /** 0.31.0 (trial 11, item 2): pickaxe crafts a chain makes after a dig step's no-pickaxe stop before it gives up. */
+    public static final int MAX_CHAIN_PICK_FIXES = 2;
+
+    /**
+     * 0.31.0 (trial 11, item 2: the house chain's dig stopped "needs a pickaxe for stone" when the wooden pickaxe broke
+     * mid-dig, with cobblestone and sticks in the bag): a chain's "dig ..." step (never the gather's own "dig stone",
+     * which has {@link #pickaxeFix}) that ended without a pickaxe gets the craft (stone if it can, else wooden) and runs
+     * again, at most {@link #MAX_CHAIN_PICK_FIXES} times per chain. Null: not such an end, or nothing to make one from.
+     */
+    public static String chainPickaxeFix(String step, String msg, Map<String, Integer> inv, int fixes) {
+        if (step == null || msg == null || fixes >= MAX_CHAIN_PICK_FIXES) return null;
+        String s = step.trim().toLowerCase();
+        if (!s.startsWith("dig ") || s.startsWith("dig stone")) return null;
+        if (!msg.contains("needs a pickaxe") && !msg.contains("out of pickaxes")) return null;
+        return pickaxeCraft(inv);
+    }
+
+    /** The pickaxe craft the bag allows: "craft stone_pickaxe 1" (3 cobblestone + sticks or planks), else wooden, else null. */
+    public static String pickaxeCraft(Map<String, Integer> inv) {
+        if (inv == null) return null;
         int cobble = 0, sticks = 0, planks = 0, logs = 0;
         for (Map.Entry<String, Integer> e : inv.entrySet()) {
-            String k = e.getKey();
-            int n = Math.max(0, e.getValue());
+            String k = e.getKey() == null ? "" : e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
+            int n = e.getValue() == null ? 0 : Math.max(0, e.getValue());
             if (k.equals("minecraft:cobblestone") || k.equals("minecraft:cobbled_deepslate")) cobble += n;
             else if (k.equals("minecraft:stick")) sticks += n;
             else if (k.endsWith("_planks")) planks += n;

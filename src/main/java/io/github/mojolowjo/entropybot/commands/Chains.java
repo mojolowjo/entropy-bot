@@ -119,6 +119,36 @@ public final class Chains {
          * emptied an older corpse nearby first, after a restart had forgotten that it was empty)
          */
         int corpseFetches;
+        /** 0.31.0 (trial 11, item 2): pickaxe crafts run for dig steps that stopped without a pickaxe */
+        int pickFixes;
+    }
+
+    /**
+     * 0.31.0 (trial 11, item 2: the house chain's dig stopped "needs a pickaxe for stone" after the pickaxe broke): craft
+     * a pickaxe as a detour (GatherRules.chainPickaxeFix: stone if the bag allows, else wooden) and run the dig step once
+     * more, at most twice per chain. True when that was set up; a no-pickaxe end it can't fix is logged with why.
+     */
+    private boolean pickaxeDetour(Chain c, String text) {
+        if (c.inDetour || c.idx < 1 || c.idx > c.steps.size() || text == null) return false;
+        String step = c.steps.get(c.idx - 1);
+        String craft;
+        try {
+            craft = io.github.mojolowjo.entropybot.gather.GatherRules.chainPickaxeFix(step, text, env.inventory(), c.pickFixes);
+        } catch (RuntimeException e) {
+            env.log("chain " + c.name + ": the pickaxe check failed: " + e);
+            return false;
+        }
+        if (craft == null) {
+            if (text.contains("needs a pickaxe") && step.trim().toLowerCase().startsWith("dig "))
+                env.log("chain " + c.name + ": \"" + step + "\" needs a pickaxe - no craft (" + (c.pickFixes >= io.github.mojolowjo.entropybot.gather.GatherRules.MAX_CHAIN_PICK_FIXES
+                        ? c.pickFixes + " made already" : "nothing in the bag to make one from") + ")");
+            return false;
+        }
+        c.pickFixes++;
+        c.idx--;
+        c.detour = craft;
+        env.log("chain " + c.name + ": \"" + step + "\" stopped without a pickaxe - " + craft + ", then that step once more");
+        return true;
     }
 
     /** 0.30.7 (live, shed3): a step's end that asks for the corpse fetch first (Clearing's place step, PlaceRules.entityText). */
@@ -382,7 +412,7 @@ public final class Chains {
                     softFailed(c, String.valueOf(p.reply));
                     return;
                 }
-                if (Texts.stepFailed(p.reply) && corpseDetour(c, p.reply)) {
+                if (Texts.stepFailed(p.reply) && (corpseDetour(c, p.reply) || pickaxeDetour(c, p.reply))) {
                     c.pending = null;
                     return;
                 }
@@ -443,7 +473,7 @@ public final class Chains {
                     env.log("chain " + c.name + ": will retry \"" + c.steps.get(c.idx) + "\" after: " + st + (c.detour != null ? " (" + c.detour + " first)" : ""));
                     return;
                 }
-                if (corpseDetour(c, st)) return;
+                if (corpseDetour(c, st) || pickaxeDetour(c, st)) return;
                 if (softStep(c)) { c.retries = 0; softFailed(c, st); return; }
                 endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + st);
                 return;
@@ -505,7 +535,7 @@ public final class Chains {
             c.pickup = false;
             return;
         }
-        if (Texts.stepFailed(r.text()) && corpseDetour(c, r.text())) return;
+        if (Texts.stepFailed(r.text()) && (corpseDetour(c, r.text()) || pickaxeDetour(c, r.text()))) return;
         if (Texts.stepFailed(r.text()) && softStep(c)) {
             softFailed(c, String.valueOf(r.text()));
             return;

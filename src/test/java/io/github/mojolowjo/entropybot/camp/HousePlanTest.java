@@ -36,6 +36,56 @@ class HousePlanTest {
         assertTrue(p.summary().contains(": 13 steps"), p.summary());
     }
 
+    /** A world: the shell cells (less a south door at x 3) hold cobblestone when shell, the rest is clear unless listed. */
+    private static HousePlan.Probe world(boolean floor, boolean walls, boolean roof, boolean doorOpen, java.util.Set<String> blocked) {
+        return new HousePlan.Probe() {
+            boolean shell(int x, int y, int z) {
+                if (y == 64) return floor;
+                if (y == 68) return roof;
+                boolean edge = x == 0 || x == 6 || z == 0 || z == 6;
+                if (!edge) return false;
+                if (x == 3 && z == 6 && (y == 65 || y == 66)) return !doorOpen;
+                return walls;
+            }
+
+            @Override public boolean hasBlock(int x, int y, int z) { return shell(x, y, z); }
+
+            @Override public boolean clear(int x, int y, int z) { return !shell(x, y, z) && !blocked.contains(x + " " + y + " " + z); }
+        };
+    }
+
+    private static HousePlan.Plan rerun(HousePlan.Probe pr, Map<String, Boolean> standing) {
+        return HousePlan.plan(new HousePlan.Facts("house", new int[]{0, 64, 0, 6, 68, 6}, true, "minecraft:cobblestone",
+                Map.of("minecraft:cobblestone", 5), standing, null, List.of(), pr));
+    }
+
+    @Test
+    void rerunSkipsWhatStands() {
+        // trial 11: everything but the stations stands: no dig, no build, no door dig; the stations still come
+        HousePlan.Plan p = rerun(world(true, true, true, true, java.util.Set.of()), Map.of("shell", true, "chest", true));
+        assertEquals(List.of("goto 3 65 3", "craft crafting_table 1", "place crafting_table 3 65 1", "craft furnace 1", "place furnace 4 65 1",
+                "place base 3 65 3", "place food 2 65 1", "scan base 4"), p.steps());
+        assertTrue(p.summary().contains("skips dig, under, floor, walls, roof, door, chest (already there)"), p.summary());
+        assertTrue(p.summary().contains("the shell stands (no cobblestone needed)"), p.summary());
+    }
+
+    @Test
+    void rerunResumesAtTheRoof() {
+        // walls stand, the roof is short, one cobblestone left inside: dig the inside, then roof and door
+        HousePlan.Plan p = rerun(world(true, true, false, false, java.util.Set.of("2 66 2")), Map.of("shell", true));
+        assertEquals("dig 1 65 1 5 67 5", p.steps().get(0));
+        assertEquals("build roof cobblestone house", p.steps().get(1));
+        assertEquals("dig 3 65 6 3 66 6 force", p.steps().get(2));
+        assertTrue(p.summary().contains("skips under, floor, walls (already there)"), p.summary());
+    }
+
+    @Test
+    void noProbeRunsEveryStep() {
+        HousePlan.Plan p = rerun(null, Map.of("shell", true));
+        assertTrue(p.steps().contains("build floor cobblestone house"));
+        assertFalse(p.summary().contains("skips"), p.summary());
+    }
+
     @Test
     void counts() {
         assertEquals(170, BuildCount.need("shell", 0, 64, 0, 6, 68, 6));

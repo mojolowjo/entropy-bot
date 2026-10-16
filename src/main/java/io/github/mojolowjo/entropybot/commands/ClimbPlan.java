@@ -32,6 +32,17 @@ public final class ClimbPlan {
         Plan(List<String> steps, String dir, int up, int dig, String err) { this(steps, dir, up, dig, err, null); }
     }
 
+    /**
+     * 0.31.0 (trial 10: a snow pit "walled in on every side" with low snow in the way): snow layers a player walks
+     * through as feet cell. Snow's collision is (layers - 1) / 8 high and the player box 1.8: up to 2 layers fit under
+     * the block 2 above, 3 and 4 layers need that block clear (twoAboveClear), 5+ are a step up, never walked through.
+     * Same rule as our Baritone build's MovementHelper.canWalkThroughPosition.
+     */
+    public static boolean snowWalkable(int layers, boolean twoAboveClear) {
+        if (layers <= 2) return true;
+        return layers <= 4 && twoAboveClear;
+    }
+
     /** How far under the surface the feet are (0 when at or above it). */
     public static int depth(int feetY, int surfaceY) {
         return Math.max(0, surfaceY - feetY);

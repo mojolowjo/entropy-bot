@@ -137,8 +137,25 @@ final class DigCommands {
         if (!lv.isLoaded(bp)) return ClimbPlan.Kind.BLOCKED;
         var st = lv.getBlockState(bp);
         if (!st.getFluidState().isEmpty() || st.hasBlockEntity() || st.getDestroySpeed(lv, bp) < 0) return ClimbPlan.Kind.BLOCKED;
-        if (st.getCollisionShape(lv, bp).isEmpty()) return ClimbPlan.Kind.OPEN;
+        if (st.getCollisionShape(lv, bp).isEmpty() || lowSnow(lv, bp, st)) return ClimbPlan.Kind.OPEN;
         return ClimbPlan.Kind.DIG;
+    }
+
+    /**
+     * 0.31.0 (trial 10 snow pit): snow layers low enough to walk through as a feet cell (ClimbPlan.snowWalkable: up to
+     * 2 layers, 3-4 with the block 2 above clear). Vanilla SnowLayerBlock.LAYERS. False on any trouble.
+     */
+    static boolean lowSnow(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos bp, net.minecraft.world.level.block.state.BlockState st) {
+        try {
+            if (!(st.getBlock() instanceof net.minecraft.world.level.block.SnowLayerBlock)) return false;
+            int layers = st.getValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS);
+            net.minecraft.core.BlockPos up2 = bp.above(2);
+            boolean clear = lv.isLoaded(up2) && lv.getBlockState(up2).getCollisionShape(lv, up2).isEmpty();
+            return ClimbPlan.snowWalkable(layers, clear);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] snow check at {}: {}", bp.toShortString(), e.toString());
+            return false;
+        }
     }
 
     /** 0.28.1 "climb": out of a hole by a dug staircase up to the surface (ClimbPlan), run as a chain like "dig stairs up". */

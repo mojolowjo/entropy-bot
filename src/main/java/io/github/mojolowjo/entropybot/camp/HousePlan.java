@@ -28,12 +28,27 @@ public final class HousePlan {
      * crafting_table, furnace); camp: the camp mark (x y z) or null (the door faces it).
      */
     public record Facts(String area, int[] box, boolean hasHeights, String block, Map<String, Integer> inv,
-                        Map<String, Boolean> standing, int[] camp, List<int[]> floorForeign) {
+                        Map<String, Boolean> standing, int[] camp, List<int[]> floorForeign, Probe probe) {
+        public Facts(String area, int[] box, boolean hasHeights, String block, Map<String, Integer> inv,
+                     Map<String, Boolean> standing, int[] camp, List<int[]> floorForeign) {
+            this(area, box, hasHeights, block, inv, standing, camp, floorForeign, null);
+        }
+
         /** floorForeign (0.30.4): floor-layer cells inside the wall line that hold a natural block on a rerun (dug one by one). */
         public Facts(String area, int[] box, boolean hasHeights, String block, Map<String, Integer> inv,
                      Map<String, Boolean> standing, int[] camp) {
-            this(area, box, hasHeights, block, inv, standing, camp, List.of());
+            this(area, box, hasHeights, block, inv, standing, camp, List.of(), null);
         }
+    }
+
+    /**
+     * 0.31.0 (4): what stands in the world, for a rerun that resumes. hasBlock: the cell holds the house block;
+     * clear: nothing there a dig would break (free, or a built block / block entity the dig leaves alone).
+     */
+    public interface Probe {
+        boolean hasBlock(int x, int y, int z);
+
+        boolean clear(int x, int y, int z);
     }
 
     /** The chain, the counts named up front, or why not. */
@@ -89,28 +104,45 @@ public final class HousePlan {
         // floor is dug, so a cobblestone shell (not a protected block) is never taken down; the floor layer's natural
         // blocks inside the wall line go one by one (floorForeign); a box over 1000 cells goes per layer, top first
         boolean rerun = Boolean.TRUE.equals(f.standing().get(SHELL));
+        // 0.31.0 (4, trial 11: a rerun walked every step again): with a probe, the steps whose result already stands are
+        // left out and named (the dig when the inside is clear, under + floor when the floor is whole, walls, roof, door)
+        Probe pr = f.probe();
+        List<String> skipped = new ArrayList<>();
+        boolean floorDone = pr != null && all(pr, x1, y1, z1, x2, y1, z2, false, null, true);
+        boolean roofDone = pr != null && all(pr, x1, y2, z1, x2, y2, z2, false, null, true);
         int dx1 = rerun ? x1 + 1 : x1, dx2 = rerun ? x2 - 1 : x2, dz1 = rerun ? z1 + 1 : z1, dz2 = rerun ? z2 - 1 : z2, dy2 = rerun ? y2 - 1 : y2;
         int dy1 = rerun ? iy : y1;
-        if (dy2 >= dy1) {
+        boolean wallsDone = pr != null && all(pr, x1, iy, z1, x2, y2 - 1, z2, true, new int[]{door[0], iy, door[1]}, true);   // floor and roof rows: their own steps
+        boolean insideClear = pr != null && rerun && (f.floorForeign() == null || f.floorForeign().isEmpty())
+                && all(pr, dx1, dy1, dz1, dx2, dy2, dz2, false, null, false);
+        boolean doorDone = pr != null && pr.clear(door[0], iy, door[1]) && pr.clear(door[0], iy + 1, door[1]);
+        if (insideClear) skipped.add("dig");
+        else if (dy2 >= dy1) {
             long vol = (long) (dx2 - dx1 + 1) * (dy2 - dy1 + 1) * (dz2 - dz1 + 1);
             if (vol <= DIG_MAX) out.add("dig " + dx1 + " " + dy1 + " " + dz1 + " " + dx2 + " " + dy2 + " " + dz2);
             else for (int y = dy2; y >= dy1; y--) out.add("dig " + dx1 + " " + y + " " + dz1 + " " + dx2 + " " + y + " " + dz2);
         }
         if (rerun && f.floorForeign() != null) for (int[] c : f.floorForeign()) out.add("dig " + fmt(c) + " " + fmt(c));
-        out.add("build under " + b6 + " " + area);
-        out.add("build floor " + b6 + " " + area);
+        if (floorDone) skipped.add("under, floor");
+        else {
+            out.add("build under " + b6 + " " + area);
+            out.add("build floor " + b6 + " " + area);
+        }
         // the door's two cells are left out of the walls (the door dig below cuts them once; a rerun leaves the gap)
-        out.add("build walls " + b6 + " " + area + " door " + door[0] + " " + door[1]);
-        out.add("build roof " + b6 + " " + area);
+        if (wallsDone) skipped.add("walls");
+        else out.add("build walls " + b6 + " " + area + " door " + door[0] + " " + door[1]);
+        if (roofDone) skipped.add("roof");
+        else out.add("build roof " + b6 + " " + area);
         String d = door[0] + " " + iy + " " + door[1] + " " + door[0] + " " + (iy + 1) + " " + door[1];
-        out.add("dig " + d + " force");
+        if (doorDone && wallsDone) skipped.add("door");
+        else out.add("dig " + d + " force");
         // 0.30.6 (live, shed2: "place chest ... nothing in reach" right after the door dig, the bot still outside): walk in
         // through the door to the middle of the room first; every station is within 3 blocks of it
         out.add("goto " + cx + " " + iy + " " + cz);
         List<String> missing = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             String s = STATIONS[i];
-            if (Boolean.TRUE.equals(f.standing().get(s))) continue;
+            if (Boolean.TRUE.equals(f.standing().get(s))) { if (pr != null) skipped.add(s); continue; }
             if (f.inv().getOrDefault("minecraft:" + s, 0) <= 0) {
                 out.add("craft " + s + " 1");
                 missing.add(s);
@@ -121,11 +153,29 @@ public final class HousePlan {
         out.add("place food " + fmt(st[0]));
         // 0.30.4 (live: a second house 13 blocks away): only the chests of this house, never a walk to another one's
         out.add("scan base " + SCAN_RADIUS);
-        String summary = "house in " + area + ": " + out.size() + " steps, needs about " + need + " " + b6 + " (you have " + have + ")"
-                + (have < need ? " - gather " + b6 + " " + (need - have) + " if it runs out" : "")
+        boolean shellDone = floorDone && wallsDone && roofDone;            // 0.31.0 (4, live): no "gather 104" for a standing shell
+        String summary = "house in " + area + ": " + out.size() + " steps, "
+                + (shellDone ? "the shell stands (no " + b6 + " needed)" : "needs about " + need + " " + b6 + " (you have " + have + ")"
+                + (have < need ? " - gather " + b6 + " " + (need - have) + " if it runs out" : ""))
                 + ", door on the " + sideName(side) + " side"
-                + (missing.isEmpty() ? "" : ", crafts " + String.join(", ", missing) + " first");
+                + (missing.isEmpty() ? "" : ", crafts " + String.join(", ", missing) + " first")
+                + (skipped.isEmpty() ? "" : ", skips " + String.join(", ", skipped) + " (already there)");
         return new Plan(out, summary, null);
+    }
+
+    /**
+     * 0.31.0 (4): every cell of the box (edge only: the wall ring; skipDoor: that x z at y and y + 1 left out) holds the
+     * house block (block true) or is clear (block false).
+     */
+    static boolean all(Probe pr, int x1, int y1, int z1, int x2, int y2, int z2, boolean edge, int[] skipDoor, boolean block) {
+        for (int y = y1; y <= y2; y++)
+            for (int x = x1; x <= x2; x++)
+                for (int z = z1; z <= z2; z++) {
+                    if (edge && !(x == x1 || x == x2 || z == z1 || z == z2)) continue;
+                    if (skipDoor != null && x == skipDoor[0] && z == skipDoor[2] && (y == skipDoor[1] || y == skipDoor[1] + 1)) continue;
+                    if (block ? !pr.hasBlock(x, y, z) : !pr.clear(x, y, z)) return false;
+                }
+        return true;
     }
 
     /** Blocks for floor + walls + roof (the shell) less the two door cells. */

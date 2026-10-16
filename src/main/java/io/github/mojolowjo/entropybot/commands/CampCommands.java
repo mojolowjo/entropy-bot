@@ -257,8 +257,29 @@ final class CampCommands {
                 LOG.warn("[entropybot] house {}: could not look at the floor layer: {}", area, ex.toString());
             }
         }
+        // 0.31.0 (4): the world as it stands, so a rerun leaves out the steps already done (HousePlan names them)
+        io.github.mojolowjo.entropybot.camp.HousePlan.Probe probe = null;
+        if (box != null) {
+            try {
+                Clearing.LiveWorld lw = new Clearing.LiveWorld();
+                lw.set(p);
+                final String house = blk;
+                probe = new io.github.mojolowjo.entropybot.camp.HousePlan.Probe() {
+                    @Override public boolean hasBlock(int x, int y, int z) { return house.equals(lw.id(x, y, z)); }
+
+                    @Override public boolean clear(int x, int y, int z) {
+                        String id = lw.id(x, y, z);
+                        if (id == null) return false;                          // not loaded: never counted as done
+                        return lw.air(x, y, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, y, z)
+                                || lw.builtBlock(x, y, z) || lw.blockEntity(x, y, z);
+                    }
+                };
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] house {}: could not look at what stands (every step runs): {}", area, ex.toString());
+            }
+        }
         var plan = io.github.mojolowjo.entropybot.camp.HousePlan.plan(new io.github.mojolowjo.entropybot.camp.HousePlan.Facts(
-                area, box, box != null, blk, inv, standing, cp, foreign));
+                area, box, box != null, blk, inv, standing, cp, foreign, probe));
         if (plan.err() != null) return box == null && err[0] != null && !err[0].contains("covers every height") ? err[0] : plan.err();
         String text = String.join(" then ", plan.steps());
         LOG.info("[entropybot] house {}: {}", area, String.join(" > ", plan.steps()));

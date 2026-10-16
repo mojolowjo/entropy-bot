@@ -269,6 +269,7 @@ public final class TunnelView {
     /** Loads knownair.bin from the mod's folder (once, at the first tick in a world). A broken file is set aside. */
     public void load(Path root) {
         file = root.resolve(FILE);
+        known.clear();                       // 0.31.0 (c): another world's cells never carry over
         if (!Files.exists(file)) {
             fileNote = FILE + ": none yet";
             return;

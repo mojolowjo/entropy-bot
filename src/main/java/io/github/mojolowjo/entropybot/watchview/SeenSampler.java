@@ -123,6 +123,7 @@ public final class SeenSampler {
     /** Loads seenfaces.bin (once, at the first tick in a world). A broken file is set aside, the store starts empty. */
     public void load(Path root) {
         file = root.resolve(FILE);
+        store.clear();                       // 0.31.0 (c): another world's faces never carry over
         if (!Files.exists(file)) {
             fileNote = FILE + ": none yet";
             return;

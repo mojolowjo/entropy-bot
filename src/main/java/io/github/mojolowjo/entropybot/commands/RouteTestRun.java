@@ -61,7 +61,7 @@ final class RouteTestRun {
         this.posB = pb;
         this.plan = RouteTestPlan.trips(n);
         this.test = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMdd-HHmmss"));
-        this.csv = core.files().root().resolve("routes").resolve("trips.csv");
+        this.csv = core.files().worldRoot().resolve("routes").resolve("trips.csv");
     }
 
     /** "route test A B [n]": checks the places and starts the job. */

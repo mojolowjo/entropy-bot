@@ -220,13 +220,38 @@ public final class RimPlan {
         // 0.30.7 (live, shed3 5 high: 15 roof cells "nowhere to stand", the bot on the wall top at the roof's level):
         // an inner roof cell has no floor in reach; stand on a placed roof cell (feet at the cell's level + 1) and click
         // the side face of a placed neighbour. Only when nothing lower works (a wall is still built from the floor).
-        return st != null ? st : sideStand(w, c, an, c.y() + 1, c.y() + 1, bx, by, bz);
+        // a wall or floor cell (a block under it) keeps the old order; an overhang (a roof cell) skips a touching stance
+        if (st != null && (supported(w, c) || !touches(st.feet().x(), st.feet().y(), st.feet().z(), c))) return st;
+        Stance touching = st;
+        // live (0.31.0, the sunken house): a bot inside, under the roof layer, picked a wall-top stance over the roof it
+        // could not walk to ("nothing in reach" x2 per cell): from below the cell the floor stances come first
+        if (by < c.y()) {
+            st = sideStand(w, c, an, c.y() - 2, c.y() - 3, bx, by, bz);
+            if (st != null) return st;
+        }
+        st = sideStand(w, c, an, c.y() + 1, c.y() + 1, bx, by, bz);
+        if (st != null) return st;
+        // 0.31.0 (trial 11, item 3: a house dug into the ground, the roof at the pit's top under the earth around it: no
+        // floor beside the roof cell, no room on the wall tops; "nowhere to stand" for inner roof cells): stand on the
+        // floor inside, feet 2 or 3 below the cell, and click the side face of a wall top or a placed roof cell above.
+        // A stance beside the cell at body height (live: the bot ended with its body in the cell) only when none of these.
+        st = sideStand(w, c, an, c.y() - 2, c.y() - 3, bx, by, bz);
+        return st != null ? st : touching;
+    }
+
+    /** 0.31.0: the ranking cost added to a stance whose body is right beside the cell at its height. */
+    static final double TOUCH_PENALTY = 1000;
+
+    /** 0.31.0: feet x fy z put the body (fy, fy + 1) right beside cell c (a side or a corner) at the cell's height. */
+    static boolean touches(int x, int fy, int z, Pos c) {
+        return (c.y() == fy || c.y() == fy + 1) && Math.abs(x - c.x()) <= 1 && Math.abs(z - c.z()) <= 1;
     }
 
     /** sideStand over the feet levels fyTop down to fyLow. */
     private static Stance sideStand(ClearWorld w, Pos c, List<PlaceRules.Side> an, int fyTop, int fyLow, double bx, double by, double bz) {
         Stance best = null, blind = null;
         double bestD = Double.MAX_VALUE, blindD = Double.MAX_VALUE;
+        boolean overhang = !supported(w, c);
         for (int fy = fyTop; fy >= fyLow; fy--) {
             for (int dx = -2; dx <= 2; dx++) {
                 for (int dz = -2; dz <= 2; dz++) {
@@ -234,7 +259,10 @@ public final class RimPlan {
                     int x = c.x() + dx, z = c.z() + dz;
                     if (PlaceRules.bodyIn(x, fy, z, c) || !standable(w, x, fy, z)) continue;
                     double ex = x + 0.5, ey = fy + 1.62, ez = z + 0.5;
-                    double dd = sq(ex - bx) + sq(fy - by) + sq(ez - bz);
+                    // 0.31.0 (live, the sunken house: "the game refused placing" twice, the bot 0.4 off its stance's
+                    // centre with its body in the roof cell): a stance right beside the cell at body height ranks after
+                    // the ones the body can't reach into
+                    double dd = sq(ex - bx) + sq(fy - by) + sq(ez - bz) + (overhang && touches(x, fy, z, c) ? TOUCH_PENALTY : 0);
                     for (PlaceRules.Side s : an) {
                         if (sees(w, c, s, ex, ey, ez, REACH)) {
                             if (dd < bestD) { bestD = dd; best = new Stance(new Pos(x, fy, z), s); }

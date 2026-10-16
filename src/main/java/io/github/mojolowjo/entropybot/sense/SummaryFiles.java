@@ -154,6 +154,9 @@ public final class SummaryFiles {
 
         public void mark(String k, long now) { dirty.putIfAbsent(k, now); }
 
+        /** 0.31.0 (c): another world: nothing due. */
+        public void clear() { dirty.clear(); lastWrite.clear(); }
+
         public List<String> due(long now, int max) {
             List<String> out = new ArrayList<>();
             for (String k : dirty.keySet()) {

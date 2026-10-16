@@ -244,7 +244,7 @@ final class Chopping {
         }
         TreeFinder.Tree t = nextTree(r, p, w);
         if (t == null) {
-            String none = r.trees == 0 ? "no trees in my areas" + (r.looked > 0 ? " (" + r.looked + " log columns looked at; " + r.firstWhy + ")"
+            String none = r.trees == 0 ? "no trees in my areas" + (r.looked > 0 ? " (" + r.looked + " log columns looked at" + (r.firstWhy != null ? "; " + r.firstWhy : "") + ")"
                     : r.nearestOutside != null ? " (nearest log at " + r.nearestOutside + " is outside)" : "")
                     : "no more trees in my areas";
             return end(s, r, p, none);
@@ -342,6 +342,8 @@ final class Chopping {
             Seq.Step st = s.steps.get(i);
             if (st.cleared != null && st.cleared.message() != null) {
                 String m = st.cleared.message();
+                // 0.31.0: the walk ended where the trunk was not in sight ("couldn't reach it"): a reach failure too
+                if (m.contains(io.github.mojolowjo.entropybot.clear.ClearEngine.COULD_NOT_REACH)) return "not in sight from where I stood";
                 int k = m.indexOf("out of reach");
                 return k >= 0 ? m.substring(k).replaceFirst("^out of reach \\(", "").replaceFirst("\\)$", "") : null;
             }
@@ -415,7 +417,11 @@ final class Chopping {
             }
             TreeFinder.Tree t = res.tree();
             int[] b = t.base();
-            if (r.tried.contains(TreeFinder.key(b[0], b[1], b[2]))) continue;
+            if (r.tried.contains(TreeFinder.key(b[0], b[1], b[2]))) {
+                // 0.31.0 (trial 11: "1 log columns looked at; null"): the only tree was tried already this run
+                if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " was tried already";
+                continue;
+            }
             checked++;
             if (!ChopRules.matches(r.args.type(), t.logId())) {
                 if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " is " + ChopRules.shortId(t.logId());

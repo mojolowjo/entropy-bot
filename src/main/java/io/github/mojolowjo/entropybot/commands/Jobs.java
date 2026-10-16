@@ -264,6 +264,28 @@ public final class Jobs {
     }
 
     /** 0.28.1: a walk target whose cell and the one under it are open (a mark left in the air). */
+    /** 0.31.0 (5): the short id of the block filling x y z (it has a collision shape), null when free or not loaded. */
+    static String solidAt(net.minecraft.world.level.Level level, int x, int y, int z) {
+        if (level == null) return null;
+        BlockPos g = new BlockPos(x, y, z);
+        if (!level.isLoaded(g)) return null;
+        var st = level.getBlockState(g);
+        if (st.getCollisionShape(level, g).isEmpty()) return null;
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+    }
+
+    /** 0.31.0 (5): {@link WalkEnd#freeSpotFor} on the level (feet and head free, a full block below, no fluid). */
+    static int[] freeSpotFor(net.minecraft.world.level.Level level, int x, int y, int z) {
+        return WalkEnd.freeSpotFor(x, y, z, c -> {
+            BlockPos f = new BlockPos(c[0], c[1], c[2]);
+            return level.isLoaded(f)
+                    && level.getBlockState(f).getCollisionShape(level, f).isEmpty()
+                    && level.getBlockState(f.above()).getCollisionShape(level, f.above()).isEmpty()
+                    && level.getBlockState(f.below()).isCollisionShapeFullBlock(level, f.below())
+                    && level.getFluidState(f).isEmpty();
+        });
+    }
+
     static boolean targetInAir(net.minecraft.world.level.Level level, int x, int y, int z) {
         if (level == null || !level.isLoaded(new BlockPos(x, y - 1, z))) return false;
         return io.github.mojolowjo.entropybot.world.SurfaceRule.inAir(yy -> surfaceCell(level, x, yy, z), y);
@@ -333,7 +355,9 @@ public final class Jobs {
         boolean leaves = st.is(net.minecraft.tags.BlockTags.LEAVES);
         boolean persistent = leaves && st.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
                 && st.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT);
-        boolean plant = st.is(net.minecraft.tags.BlockTags.REPLACEABLE_BY_TREES) || st.is(net.minecraft.world.level.block.Blocks.SNOW);
+        // 0.31.0 (trial 10 snow pit): snow blocks go like snow layers (natural, a shovel's or a hand's work; still needs the lease)
+        boolean plant = st.is(net.minecraft.tags.BlockTags.REPLACEABLE_BY_TREES) || st.is(net.minecraft.world.level.block.Blocks.SNOW)
+                || st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK);
         boolean own = (ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
                 && !houseCell(Guard.dimOf(level), x, y, z);         // 0.30.6: a house wall is not a shelter wall
         return SurfaceSeal.kind(id, leaves, persistent && !own, plant, own, st.hasBlockEntity(), Guard.liquidNextTo(level, x, y, z) != null);
@@ -347,7 +371,7 @@ public final class Jobs {
             if (!level.isLoaded(bp)) return EscapePlan.Kind.BLOCKED;
             var st = level.getBlockState(bp);
             if (!st.getFluidState().isEmpty()) return EscapePlan.Kind.BLOCKED;
-            if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
+            if (st.getCollisionShape(level, bp).isEmpty() || DigCommands.lowSnow(level, bp, st)) return EscapePlan.Kind.OPEN;   // 0.31.0: low snow is walked through
             SurfaceSeal.Kind k = surfaceKind(level, x, y, z);
             // leaves and plants need the guard's lease like any dig; own blocks get the one-cell force lease (shelter leave's way)
             boolean ok = k == SurfaceSeal.Kind.OWN || (k != SurfaceSeal.Kind.NO && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z));
@@ -384,7 +408,7 @@ public final class Jobs {
                 if (!level.isLoaded(bp)) return EscapePlan.Kind.BLOCKED;
                 var st = level.getBlockState(bp);
                 if (!st.getFluidState().isEmpty()) return EscapePlan.Kind.BLOCKED;
-                if (st.getCollisionShape(level, bp).isEmpty()) return EscapePlan.Kind.OPEN;
+                if (st.getCollisionShape(level, bp).isEmpty() || DigCommands.lowSnow(level, bp, st)) return EscapePlan.Kind.OPEN;   // 0.31.0: low snow is walked through
                 SurfaceSeal.Kind k = surfaceKind(level, x, y, z);
                 boolean ok = k == SurfaceSeal.Kind.OWN || (k != SurfaceSeal.Kind.NO && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z));
                 if (ok || digOutAny(level, pol, dim, x, y, z)) return EscapePlan.Kind.BREAKABLE;
@@ -617,6 +641,17 @@ public final class Jobs {
                 for (String n : new String[]{"north", "south", "east", "west"}) {
                     int[] d = StairPlan.dir(n);
                     if (DigCommands.climbCell(lv, x + d[0], y, z + d[1]) == ClimbPlan.Kind.OPEN && DigCommands.climbCell(lv, x + d[0], y + 1, z + d[1]) == ClimbPlan.Kind.OPEN) walled = false;
+                }
+                if (walled) {
+                    // 0.31.0: say why each side counts as closed (the trial 10 snow pit had an open side the log never named)
+                    StringBuilder why = new StringBuilder();
+                    for (String n : new String[]{"north", "south", "east", "west"}) {
+                        int[] d = StairPlan.dir(n);
+                        why.append(n).append(": feet ").append(DigCommands.climbCell(lv, x + d[0], y, z + d[1])).append(" ")
+                                .append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new BlockPos(x + d[0], y, z + d[1])).getBlock()).getPath())
+                                .append(", head ").append(DigCommands.climbCell(lv, x + d[0], y + 1, z + d[1])).append("; ");
+                    }
+                    LOG.info("[entropybot] walled in at {} {} {}: {}", x, y, z, why);
                 }
                 return walled ? msg + " - I'm walled in on every side - next: climb" : msg;
             }

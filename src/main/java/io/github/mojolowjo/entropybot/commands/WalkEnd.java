@@ -29,6 +29,36 @@ final class WalkEnd {
         static final GoalCell OPEN = new GoalCell(null, false, null);
     }
 
+    /** 0.31.0 (5): how far up the same column, and how far around, a goto into a solid block looks for a free spot. */
+    static final int FREE_UP = 4, FREE_AROUND = 3;
+
+    /**
+     * 0.31.0 (5): a goto whose target is inside a block goes to the nearest standable cell instead: first the same column
+     * upward (up to {@link #FREE_UP}), then the nearest cell within {@link #FREE_AROUND} (straight distance; a tie
+     * prefers higher, then the lower x, z). Null when there is none.
+     */
+    static int[] freeSpotFor(int x, int y, int z, java.util.function.Predicate<int[]> standable) {
+        for (int dy = 1; dy <= FREE_UP; dy++) {
+            int[] c = {x, y + dy, z};
+            if (standable.test(c)) return c;
+        }
+        int[] best = null;
+        long bd = Long.MAX_VALUE;
+        for (int dx = -FREE_AROUND; dx <= FREE_AROUND; dx++)
+            for (int dy = FREE_AROUND; dy >= -FREE_AROUND; dy--)
+                for (int dz = -FREE_AROUND; dz <= FREE_AROUND; dz++) {
+                    if ((dx | dy | dz) == 0) continue;
+                    long d = (long) dx * dx + (long) dy * dy + (long) dz * dz;
+                    if (d > (long) FREE_AROUND * FREE_AROUND || d > bd) continue;
+                    int[] c = {x + dx, y + dy, z + dz};
+                    if (d == bd && best != null && (c[1] < best[1] || (c[1] == best[1] && (c[0] > best[0] || (c[0] == best[0] && c[2] >= best[2]))))) continue;
+                    if (!standable.test(c)) continue;
+                    bd = d;
+                    best = c;
+                }
+        return best;
+    }
+
     /** Within this straight distance of the goal the walk counts as at it, whatever the goal cell is. */
     static final double AT_GOAL = 1.0;
 

@@ -398,7 +398,7 @@ public final class RouteRuntime implements RoutePlanner {
             unavailable = why;
             return;
         }
-        Path root = Core.INSTANCE.files() == null ? mc.gameDirectory.toPath().resolve(Core.MODID) : Core.INSTANCE.files().root();
+        Path root = Core.INSTANCE.files() == null ? mc.gameDirectory.toPath().resolve(Core.MODID) : Core.INSTANCE.files().worldRoot();
         RouteTiles t = new RouteTiles(root.resolve("routes"), d -> d == OVERWORLD ? "overworld" : null,
                 RouteTiles.TileIo.files(), e.counters, log);
         Level lvl = mc.level;
@@ -637,7 +637,7 @@ public final class RouteRuntime implements RoutePlanner {
             String note = "made " + LocalDateTime.now().withNano(0) + " at " + x + " " + y + " " + z
                     + (m.walkingOnly() ? "" : "; NOT walking-only: breaking or placing was on")
                     + (m.sprintAsSettings(setting("allowSprint", true)) ? "" : "; the bot could not sprint (hungry)");
-            Path root = Core.INSTANCE.files() == null ? mc.gameDirectory.toPath().resolve(Core.MODID) : Core.INSTANCE.files().root();
+            Path root = Core.INSTANCE.files() == null ? mc.gameDirectory.toPath().resolve(Core.MODID) : Core.INSTANCE.files().worldRoot();
             Path file = (outDir != null ? outDir : root.resolve("routes").resolve("dumps"))
                     .resolve(DumpFixture.fileName(k, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))));
             return CompletableFuture.supplyAsync(() -> {

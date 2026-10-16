@@ -44,6 +44,34 @@ public final class DebugVerbs {
         }
     }
 
+    /**
+     * 0.31.0: "debug world": the world's key and folder; "debug world open &lt;save folder&gt;" (singleplayer only, a test
+     * tool): leaves this world to the title screen and opens that save in the same game (vanilla WorldOpenFlows).
+     */
+    private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
+
+    private static String world(Core core, List<String> w) {
+        String where = "world " + core.worldKey() + " (folder " + (core.files() == null ? "none" : core.files().worldRoot()) + ")";
+        if (w.size() < 2) return where;
+        if (w.size() != 3 || !w.get(1).equalsIgnoreCase("open")) return "usage: debug world | debug world open <save folder>";
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (!mc.hasSingleplayerServer()) return "error: debug world open works from a singleplayer world only";
+        String save = w.get(2);
+        if (!mc.getLevelSource().levelExists(save)) return "error: no save folder " + save;
+        mc.execute(() -> {
+            try {
+                LOG.info("[entropybot] debug world open {}: leaving {}", save, core.worldKey());
+                if (mc.level != null) mc.level.disconnect();
+                mc.disconnect(new net.minecraft.client.gui.screens.GenericMessageScreen(net.minecraft.network.chat.Component.literal("Saving world")));
+                mc.setScreen(new net.minecraft.client.gui.screens.TitleScreen());
+                mc.createWorldOpenFlows().openWorld(save, () -> mc.setScreen(new net.minecraft.client.gui.screens.TitleScreen()));
+            } catch (Throwable t) {
+                LOG.error("[entropybot] debug world open {} failed: {}", save, t.toString());
+            }
+        });
+        return "ok: leaving " + where + " for the save " + save + " (watch the log's world: lines)";
+    }
+
     private static String run(Core core, List<String> w) {
         String verb = w.get(0).toLowerCase();
         Recorder rec = core.recorder;
@@ -53,6 +81,7 @@ public final class DebugVerbs {
         switch (verb) {
             case "trail" -> { return trail(rec, w, now, zone); }
             case "incident", "incidents" -> { return incident(rec, w, now, zone); }
+            case "world" -> { return world(core, w); }
             case "events" -> {
                 int n = DebugRules.optInt(w, 1, DebugRules.EVENTS_DEFAULT, 1, DebugRules.EVENTS_MAX, "usage: debug events [n]");
                 return core.events.since(Math.max(0, core.events.lastSeq() - n), n);

@@ -1300,6 +1300,9 @@ public final class Clearing {
                     return "wait";
                 }
                 seq.setStatus(bs.status + " - placing the rest myself (" + missing.size() + " left)");
+                // 0.31.0: the pick in the log (cell, stance, face, from where), for "nowhere to stand" reports
+                LOG.info("[entropybot] build rim: pick {} stand {} side {} (try {}) from {} {} {}", pk.cell().key(), pk.stand() == null ? "here" : pk.stand().key(),
+                        pk.side(), bs.tries.getOrDefault(pk.cell(), 0) + 1, String.format("%.1f", p.getX()), String.format("%.1f", p.getY()), String.format("%.1f", p.getZ()));
                 if (pk.stand() == null) {
                     bs.stage = "place";
                     return "wait";
@@ -1363,7 +1366,7 @@ public final class Clearing {
                     r = le;
                 }
                 if (!r.startsWith("ok")) {
-                    LOG.info("[entropybot] build rim: {} at {}: {}", blk, c.key(), r);
+                    LOG.info("[entropybot] build rim: {} at {}: {} (I stand at {} {} {})", blk, c.key(), r, String.format("%.2f", p.getX()), String.format("%.2f", p.getY()), String.format("%.2f", p.getZ()));
                     bs.clearing = false;
                     // only a click with nothing in reach is "nowhere to stand"; a refused click counts as a try
                     triedCell(bs, c, r.contains("nothing in reach") ? io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND

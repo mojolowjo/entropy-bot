@@ -151,7 +151,7 @@ final class RouteCommand {
         if (at == null) return "usage: route dump x y z";
         int d = RoutePlannerHolder.dimId(Guard.dimOf(p.level()));
         if (d != 0) return "error: routing is for the overworld only";
-        Path out = Core.INSTANCE.files().root().resolve("routes").resolve("dumps");
+        Path out = Core.INSTANCE.files().worldRoot().resolve("routes").resolve("dumps");
         try {
             boolean ok = RoutePlannerHolder.dumper().dump(d, at[0], at[1], at[2], out);
             return ok ? "ok: dumping the box at " + Jobs.fmt(at) + " to " + out : "error: the route dump isn't available (planner not running, or that box can't be read)";

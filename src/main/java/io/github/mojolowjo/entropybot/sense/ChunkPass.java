@@ -228,9 +228,11 @@ public final class ChunkPass {
                 return;
             }
             Path dir = root.resolve(SummaryFiles.FOLDER).resolve(SummaryFiles.dimFolder(d));
+            int g = gen.get();
             worker().execute(() -> {
                 try {
                     SummaryFiles.Loaded l = SummaryFiles.loadDir(dir);
+                    if (g != gen.get()) return;                  // 0.31.0 (c): the world changed meanwhile
                     filesNote = l.list().size() + " summaries from " + dir.getFileName() + (l.broken() > 0 ? ", " + l.broken() + " broken skipped" : "");
                     fromFiles.add(l);
                 } catch (Throwable t) {
@@ -240,6 +242,30 @@ public final class ChunkPass {
             });
         }
     }
+
+    /**
+     * 0.31.0 (c): Core, after re-rooting the files to another world's folder (leftWorld already wrote the dirty
+     * summaries to the old folder): the index forgets every summary and each dimension's files load again from the
+     * new folder. Never throws.
+     */
+    public void worldChanged() {
+        try {
+            gen.incrementAndGet();
+            schedule.clear();
+            live.clear();
+            index.clear();
+            dirty.clear();
+            failedWrites.clear();
+            fromFiles.clear();
+            filesLoaded.clear();
+            dim = null;
+            LOG.info("[entropybot] sense: world changed: ore index cleared, summaries load from {}", root());
+        } catch (Throwable t) {
+            error("world change", t);
+        }
+    }
+
+    private final java.util.concurrent.atomic.AtomicInteger gen = new java.util.concurrent.atomic.AtomicInteger();
 
     /** Core: the bot left the world. Everything goes stale; dirty summaries are written. Never throws. */
     public void leftWorld() {
@@ -387,7 +413,7 @@ public final class ChunkPass {
 
     private static Path root() {
         io.github.mojolowjo.entropybot.io.BotFiles f = Core.INSTANCE.files();
-        return f == null ? null : f.root();
+        return f == null ? null : f.worldRoot();
     }
 
     private void writeDue(long now, boolean all) {
@@ -404,7 +430,7 @@ public final class ChunkPass {
             }
             if (s == null) continue;                  // left memory: its file has the last written state
             String json = SummaryFiles.toJson(s);
-            Path target = SummaryFiles.file(files.root(), s);
+            Path target = SummaryFiles.file(files.worldRoot(), s);
             dirty.written(k, now);
             worker().execute(() -> {
                 try {

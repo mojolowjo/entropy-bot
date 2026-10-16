@@ -27,6 +27,27 @@ public final class BotFiles {
 
     public Path root() { return root; }
 
+    private volatile Path world;
+
+    /** 0.31.0 (c): the current world's folder (under the root); world files ({@link WorldState#isWorldName}) go there. */
+    public void setWorld(Path dir) {
+        Path d = dir == null ? null : dir.toAbsolutePath().normalize();
+        if (d != null && !d.startsWith(root)) throw new IllegalArgumentException("world folder not under " + root + ": " + d);
+        world = d;
+    }
+
+    /** The current world's folder, the root while none is set. */
+    public Path worldRoot() {
+        Path w = world;
+        return w == null ? root : w;
+    }
+
+    /** The folder a name lives in: the world's for a world file, else the root. */
+    public Path dirFor(String name) {
+        Path w = world;
+        return w != null && WorldState.isWorldName(name) ? w : root;
+    }
+
     /** Null when the name is fine, else the problem. */
     public static String validate(String name) {
         if (name == null || !NAME.matcher(name).matches()) return "bad file name (use letters, digits, _ - . and / and end in .json)";
@@ -44,8 +65,8 @@ public final class BotFiles {
         } catch (RuntimeException e) {
             return "error: not valid JSON (" + e.getMessage() + ")";
         }
-        Path target = root.resolve(name).normalize();
-        if (!target.startsWith(root)) return "error: bad file name";
+        Path base = dirFor(name), target = base.resolve(name).normalize();
+        if (!target.startsWith(base)) return "error: bad file name";
         Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
         try {
             Files.createDirectories(target.getParent());
@@ -95,8 +116,8 @@ public final class BotFiles {
     public String readJson(String name) {
         String bad = validate(name);
         if (bad != null) return "error: " + bad;
-        Path target = root.resolve(name).normalize();
-        if (!target.startsWith(root)) return "error: bad file name";
+        Path base = dirFor(name), target = base.resolve(name).normalize();
+        if (!target.startsWith(base)) return "error: bad file name";
         if (!Files.exists(target)) return null;
         try {
             return Files.readString(target, StandardCharsets.UTF_8);

@@ -69,6 +69,9 @@ public final class RestoreLive {
     public synchronized String load(Commands commands, BotFiles f) {
         c = commands;
         files = f;
+        readOnly = false;                    // 0.31.0 (c): loaded again for another world
+        dirtySince = -1;
+        expected.clear();
         String text = f.readJson(FILE);
         if (text == null) {
             book = new RestoreBook();
@@ -95,6 +98,11 @@ public final class RestoreLive {
 
     private void changed() {
         if (dirtySince < 0) dirtySince = Core.INSTANCE.tick();
+    }
+
+    /** 0.31.0 (c): written now, before the folder changes to another world's. */
+    public synchronized void flushNow() {
+        if (dirtySince >= 0) flush();
     }
 
     private synchronized void flush() {

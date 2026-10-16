@@ -127,10 +127,30 @@ public final class McClearWorld implements ClearWorld {
 
     @Override public Hit clip(double fx, double fy, double fz, double tx, double ty, double tz) {
         CollisionContext ctx = viewer == null ? CollisionContext.empty() : CollisionContext.of(viewer);
-        BlockHitResult hit = level.clip(new ClipContext(new Vec3(fx, fy, fz), new Vec3(tx, ty, tz), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, ctx));
+        // 0.31.0 (trial 11, item 1: "couldn't reach it" x3 on an oak 2 blocks away, by hand; the operator's goto next to
+        // it worked): grass, flowers, ferns between the eye and the block stopped the OUTLINE ray, so the bot never saw
+        // the log. A plant that breaks at once and has no collision (destroy speed 0) is looked through, unless it is the
+        // cell aimed at. The server checks only the distance of a block break, never the ray. Vanilla ClipContext.
+        final BlockPos aim = BlockPos.containing(tx, ty, tz);
+        ClipContext cc = new ClipContext(new Vec3(fx, fy, fz), new Vec3(tx, ty, tz), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, ctx) {
+            @Override public VoxelShape getBlockShape(BlockState st, net.minecraft.world.level.BlockGetter g, BlockPos p) {
+                if (!p.equals(aim) && seeThroughPlant(st, g, p)) return net.minecraft.world.phys.shapes.Shapes.empty();
+                return super.getBlockShape(st, g, p);
+            }
+        };
+        BlockHitResult hit = level.clip(cc);
         if (hit.getType() != HitResult.Type.BLOCK) return null;
         BlockPos p = hit.getBlockPos();
         return new Hit(p.getX(), p.getY(), p.getZ(), Face.values()[hit.getDirection().ordinal()]);
+    }
+
+    /** 0.31.0: a plant the ray looks through: no collision, no fluid, breaks at once (grass, flowers, ferns, saplings). */
+    static boolean seeThroughPlant(BlockState st, net.minecraft.world.level.BlockGetter g, BlockPos p) {
+        try {
+            return !st.isAir() && st.getFluidState().isEmpty() && st.getDestroySpeed(g, p) == 0 && st.getCollisionShape(g, p).isEmpty();
+        } catch (RuntimeException e) {
+            return false;                               // a modded block that throws here: keep the plain outline ray
+        }
     }
 
     /** The game's face for an engine face (to click the block with). */

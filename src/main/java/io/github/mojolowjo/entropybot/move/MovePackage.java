@@ -318,6 +318,7 @@ public final class MovePackage {
     public void loadPenalties(Path root) {
         try {
             penaltiesFile = root.resolve("route").resolve("penalties.json");
+            EdgePenalties.GLOBAL.clear();        // 0.31.0 (c): per world
             if (Files.exists(penaltiesFile)) EdgePenalties.GLOBAL.loadJson(Files.readString(penaltiesFile, StandardCharsets.UTF_8));
             LOG.info("[entropybot] path: {} penalised route edges", EdgePenalties.GLOBAL.count(System.currentTimeMillis()));
         } catch (Throwable t) {

@@ -6,6 +6,19 @@ import org.junit.jupiter.api.Test;
 
 class WalkEndTest {
     @Test
+    void freeSpotPrefersColumnUpThenNearest() {
+        // the column up: the first free cell above
+        assertArrayEquals(new int[]{0, 62, 0}, WalkEnd.freeSpotFor(0, 60, 0, c -> c[0] == 0 && c[2] == 0 && c[1] == 62 || c[0] == 1 && c[1] == 60));
+        // no column: the nearest around (a side cell beats a diagonal)
+        assertArrayEquals(new int[]{1, 60, 0}, WalkEnd.freeSpotFor(0, 60, 0, c -> (c[0] == 1 && c[1] == 60 && c[2] == 0) || (c[0] == 1 && c[1] == 61 && c[2] == 1)));
+        // a tie prefers higher
+        assertArrayEquals(new int[]{0, 59, 1}, WalkEnd.freeSpotFor(0, 60, 0, c -> c[1] == 59 && c[0] == 0 && c[2] == 1));
+        assertArrayEquals(new int[]{1, 61, 0}, WalkEnd.freeSpotFor(0, 60, 0, c -> (c[0] == 1 && c[1] == 61 && c[2] == 0) || (c[0] == 1 && c[1] == 59 && c[2] == 0)));
+        // nothing within reach
+        assertNull(WalkEnd.freeSpotFor(0, 60, 0, c -> Math.abs(c[0]) > 3));
+    }
+
+    @Test
     void arrivedWithinTolerance() {
         assertTrue(WalkEnd.arrived(new int[]{10, 79, 40}, new int[]{10, 79, 40}));
         assertTrue(WalkEnd.arrived(new int[]{12, 79, 41}, new int[]{10, 79, 40}));
