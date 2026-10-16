@@ -63,6 +63,9 @@ public final class Jobs {
         int unstickLeft, unstickTries;
         /** P1 fix: how often a walk that Baritone ended short of its goal tried again (WalkEnd). */
         int shortTries;
+        /** 0.31.1: a goto into a house that ended short walks to the doorway's outside step once (doorFinal: the real goal). */
+        boolean doorTried;
+        int[] doorFinal;
         double[] unstickTo;
         // B7b part 2: a job made of steps, the goal object of its walk (unsticking plans it again), and whether the
         // open menu is closed when it ends ("always", or "fail" = unless it ended ok)
@@ -1280,7 +1283,40 @@ public final class Jobs {
                     // a free step: step there and plan again; none: the escape dig-out (underground, inside the areas)
                     if (recoverShort(p, j)) return;
                 }
-                finish(WalkEnd.shortResult(me, d));
+                if (!j.doorTried && j.doorFinal == null && b != null) {
+                    j.doorTried = true;
+                    String[] house = new String[1];
+                    int[] step = houseDoorStep(p, d, house);
+                    if (step != null) {
+                        LOG.info("[entropybot] walk ended short of {} in house {}: once more through the door, from {}", fmt(d), house[0], fmt(step));
+                        j.doorFinal = d;
+                        j.dest = step;
+                        j.shortTries = 0;
+                        j.startTick = core.tick();
+                        j.lastStepTick = -1;
+                        walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(step[0], step[1], step[2]));
+                        watch(j);
+                        return;
+                    }
+                    if (house[0] != null) {
+                        finish(WalkEnd.shortResult(me, d) + " - " + fmt(d) + " is in house " + house[0] + ", which has no open doorway I can reach - next: house "
+                                + house[0] + " (it digs the door), or let me in");
+                        return;
+                    }
+                }
+                finish(WalkEnd.shortResult(me, d) + (j.doorFinal != null ? " (via the door of the house too)" : "") + " - next: goto a spot next to it, or come get me");
+                return;
+            }
+            if (j.doorFinal != null) {                    // 0.31.1: at the doorway's outside step: on to the real goal
+                int[] fin = j.doorFinal;
+                j.doorFinal = null;
+                j.dest = fin;
+                j.shortTries = 0;
+                j.startTick = core.tick();
+                j.lastStepTick = -1;
+                LOG.info("[entropybot] at the door step {}: on to {}", fmt(here(p)), fmt(fin));
+                walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(fin[0], fin[1], fin[2]));
+                watch(j);
                 return;
             }
             String v = moving ? null : goalVerdict(p, j);
@@ -1388,6 +1424,47 @@ public final class Jobs {
      * P1 fix (0.19.7): a walk that Baritone ended short of its goal. A free step that brings the bot closer: step there
      * and plan again; none (a sealed pit, or a pocket whose only free cell leads back): the escape dig-out.
      */
+    /**
+     * 0.31.1: d inside a house area (a box area with heights): the walkable cell just outside an open doorway (a 2-high
+     * gap at floor + 1 in the wall ring), the one nearest the bot; house[0] names the area (null: d is in no such area).
+     */
+    int[] houseDoorStep(LocalPlayer p, int[] d, String[] house) {
+        try {
+            net.minecraft.world.level.Level lv = p.level();
+            for (com.google.gson.JsonElement e : commands.effectiveAreas()) {
+                if (!e.isJsonObject() || !e.getAsJsonObject().has("name")) continue;
+                String name = e.getAsJsonObject().get("name").getAsString();
+                String[] err = new String[1];
+                int[] box = DigCommands.areaBox(commands, name, err);
+                if (box == null) continue;
+                int x1 = Math.min(box[0], box[3]), x2 = Math.max(box[0], box[3]), y1 = Math.min(box[1], box[4]), y2 = Math.max(box[1], box[4]);
+                int z1 = Math.min(box[2], box[5]), z2 = Math.max(box[2], box[5]);
+                if (d[0] <= x1 || d[0] >= x2 || d[2] <= z1 || d[2] >= z2 || d[1] < y1 || d[1] > y2) continue;   // strictly inside the walls
+                house[0] = name;
+                int iy = y1 + 1;
+                int[] best = null;
+                double bd = Double.MAX_VALUE;
+                int[] me = here(p);
+                for (int x = x1; x <= x2; x++) for (int z = z1; z <= z2; z++) {
+                    boolean edge = x == x1 || x == x2 || z == z1 || z == z2;
+                    if (!edge) continue;
+                    BlockPos a = new BlockPos(x, iy, z);
+                    if (!lv.getBlockState(a).getCollisionShape(lv, a).isEmpty() || !lv.getBlockState(a.above()).getCollisionShape(lv, a.above()).isEmpty()) continue;
+                    int ox = x == x1 ? x - 1 : x == x2 ? x + 1 : x, oz = z == z1 ? z - 1 : z == z2 ? z + 1 : z;
+                    if ((x == x1 || x == x2) && (z == z1 || z == z2)) continue;          // corners are no door
+                    BlockPos o = new BlockPos(ox, iy, oz);
+                    if (!standable(Minecraft.getInstance(), o)) continue;
+                    double s = distSq(new int[]{ox, iy, oz}, me);
+                    if (s < bd) { bd = s; best = new int[]{ox, iy, oz}; }
+                }
+                return best;
+            }
+        } catch (RuntimeException ex) {
+            LOG.warn("[entropybot] house door step for {}: {}", fmt(d), ex.toString());
+        }
+        return null;
+    }
+
     boolean recoverShort(LocalPlayer p, Job j) {
         int[] me = here(p), d = travelDest(j);
         BlockPos best = bestFreeStep(p, d);
