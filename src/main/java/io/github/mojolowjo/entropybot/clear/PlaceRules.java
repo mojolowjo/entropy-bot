@@ -191,10 +191,17 @@ public final class PlaceRules {
     public static final String ALREADY_THERE = "ok: already there";
 
     /** 0.30.7: what stands in a cell the bot wants to place into. */
-    public enum InWay { MY_CORPSE, MOB, OTHER }
+    public enum InWay { MY_CORPSE, MY_EMPTY_CORPSE, MOB, OTHER }
 
     /** 0.30.7: a mob in the cell is waited for this long (ticks, 10 s) before the place step gives up. */
     public static final long MOB_WAIT_TICKS = 200;
+    /** 0.30.7 (live probe): an emptied corpse the client still lists is waited for this long (90 s; it went in 10-50 s). */
+    public static final long EMPTY_CORPSE_WAIT_TICKS = 1800;
+
+    /** 0.30.7: how long a waiting text (entityText "... (waiting)") is waited for. */
+    public static long waitTicks(String entityText) {
+        return entityText != null && entityText.startsWith("error: my emptied corpse") ? EMPTY_CORPSE_WAIT_TICKS : MOB_WAIT_TICKS;
+    }
 
     /** 0.30.7: the kind of an entity in the way (type id like "corpse:corpse"; mine: owned by the bot; living: a mob). */
     public static InWay inWayKind(String typeId, boolean mine, boolean living) {
@@ -212,6 +219,9 @@ public final class PlaceRules {
         String at = " at " + x + " " + y + " " + z;
         return switch (kind) {
             case MY_CORPSE -> "error: my corpse is in the way" + at + " - next: death";
+            // live probe (shed3): an emptied corpse is gone on the server at once, but the client lists it (and refuses
+            // the click) for 10-50 s more: waited for like a mob, longer (EMPTY_CORPSE_WAIT_TICKS)
+            case MY_EMPTY_CORPSE -> "error: my emptied corpse is in the way" + at + " (waiting)";
             case MOB -> "error: a " + name + " is in the way" + at + " (waiting)";
             case OTHER -> "error: a " + name + " is in the way" + at + " - next: move it, or place somewhere else";
         };
@@ -222,9 +232,10 @@ public final class PlaceRules {
         return entityText.replaceFirst("^error: ", "").replaceFirst(" is in the way at .*$", "");
     }
 
-    /** 0.30.7: the place step's end after waiting MOB_WAIT_TICKS for a mob that did not move. what: "a cow". */
+    /** 0.30.7: the place step's end after waiting (waitTicks) for what did not move. what: "a cow". */
     public static String mobStayedText(String what, int x, int y, int z) {
-        return what + " stayed in the way at " + x + " " + y + " " + z + " for 10 s - next: place again when it has moved";
+        long s = (what.startsWith("my emptied corpse") ? EMPTY_CORPSE_WAIT_TICKS : MOB_WAIT_TICKS) / 20;
+        return what + " stayed in the way at " + x + " " + y + " " + z + " for " + s + " s - next: place again when it has moved";
     }
 
     /**

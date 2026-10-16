@@ -963,15 +963,15 @@ public final class Clearing {
                 boolean corpse = type.equals("corpse:corpse");
                 // only what the game's own check refuses (Level.isUnobstructed: Entity.blocksBuilding); a corpse is logged
                 // either way (live probe: does an emptied one still block?)
-                if (corpse) LOG.info("[entropybot] place: a corpse at {} {} {} (blocks building: {}, emptied: {})", x, y, z, e.blocksBuilding, Storage.EMPTIED.contains(e.getUUID()));
+                if (corpse && !Storage.EMPTIED.contains(e.getUUID())) LOG.info("[entropybot] place: a corpse at {} {} {} (blocks building: {}, emptied: {})", x, y, z, e.blocksBuilding, Storage.EMPTIED.contains(e.getUUID()));
                 if (!e.blocksBuilding) continue;
                 PlaceRules.InWay kind = PlaceRules.inWayKind(type, corpse && Storage.ownsCorpse(e, p),
                         e instanceof net.minecraft.world.entity.LivingEntity);
                 // live probe (shed3): an emptied corpse is gone on the server ("execute if entity" fails) while the client
-                // still lists it, blocking building, for a minute or more: no reason to stop; the click goes ahead
-                if (kind == PlaceRules.InWay.MY_CORPSE && Storage.EMPTIED.contains(e.getUUID())) continue;
+                // still lists it and refuses the click for 10-50 s: waited for (PlaceRules.waitTicks)
+                if (kind == PlaceRules.InWay.MY_CORPSE && Storage.EMPTIED.contains(e.getUUID())) kind = PlaceRules.InWay.MY_EMPTY_CORPSE;
                 String text = PlaceRules.entityText(kind, type.substring(type.indexOf(':') + 1).replace('_', ' '), x, y, z);
-                LOG.info("[entropybot] place: {}", text);
+                if (!text.endsWith("(waiting)")) LOG.info("[entropybot] place: {}", text);      // a wait is logged once by placeTick
                 return text;
             }
         } catch (RuntimeException ex) {
@@ -1070,8 +1070,11 @@ public final class Clearing {
                 // another entity ends the step at once with its own next verb (three clicks would change nothing)
                 if (r.contains(" is in the way at ")) {
                     if (r.endsWith("(waiting)")) {
-                        if (ps.mobSince < 0) ps.mobSince = now;
-                        if (now - ps.mobSince < PlaceRules.MOB_WAIT_TICKS) {
+                        if (ps.mobSince < 0) {
+                            ps.mobSince = now;
+                            LOG.info("[entropybot] place: {} - waiting up to {} s", r, PlaceRules.waitTicks(r) / 20);
+                        }
+                        if (now - ps.mobSince < PlaceRules.waitTicks(r)) {
                             seq.setStatus(seq.label + " - " + r.replaceFirst("^error: ", ""));
                             ps.stage = "retry";
                             ps.stageTick = now;
