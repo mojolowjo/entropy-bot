@@ -18,8 +18,9 @@ class HousePlanTest {
                 "minecraft:crafting_table", 1, "minecraft:furnace", 1), Map.of(), null);
         assertNull(p.err());
         assertEquals(List.of(
+                "dig 0 64 0 6 68 6",                       // 0.30.4: the whole box, floor layer included, first
+                "build under cobblestone house",           // 0.30.4: pillars under the floor
                 "build floor cobblestone house",
-                "dig 0 65 0 6 68 6",                       // 0.30.2: the whole box above the floor, before the walls
                 "build walls cobblestone house door 3 6",   // 0.30.2: the door's two cells stay open
                 "build roof cobblestone house",
                 "dig 3 65 6 3 66 6 force",                 // door south (no camp), middle of the side
@@ -28,10 +29,10 @@ class HousePlanTest {
                 "place furnace 4 65 1",
                 "place base 3 65 3",
                 "place food 2 65 1",
-                "scan base"), p.steps());
+                "scan base 4"), p.steps());
         assertTrue(p.summary().contains("needs about 168 cobblestone (you have 200)"), p.summary());
         assertTrue(p.summary().contains("door on the south side"));
-        assertTrue(p.summary().contains(": 11 steps"), p.summary());
+        assertTrue(p.summary().contains(": 12 steps"), p.summary());
     }
 
     @Test
@@ -80,11 +81,27 @@ class HousePlanTest {
     void rerunDigsOnlyTheInsideAndBigBoxesGoPerLayer() {
         Map<String, Integer> inv = Map.of("minecraft:cobblestone", 200, "minecraft:chest", 1, "minecraft:crafting_table", 1, "minecraft:furnace", 1);
         HousePlan.Plan p = plan(new int[]{0, 64, 0, 6, 68, 6}, inv, Map.of(HousePlan.SHELL, true), null);
-        assertEquals("dig 1 65 1 5 67 5", p.steps().get(1), p.steps().toString());
+        assertEquals("dig 1 65 1 5 67 5", p.steps().get(0), p.steps().toString());
+        assertEquals("build under cobblestone house", p.steps().get(1));
         HousePlan.Plan big = plan(new int[]{0, 64, 0, 20, 68, 20}, inv, Map.of(), null);
-        assertEquals("dig 0 68 0 20 68 20", big.steps().get(1), "441 x 4 > 1000: top layer first");
-        assertEquals("dig 0 65 0 20 65 20", big.steps().get(4));
-        assertTrue(big.steps().get(5).startsWith("build walls"));
+        assertEquals("dig 0 68 0 20 68 20", big.steps().get(0), "441 x 5 > 1000: top layer first");
+        assertEquals("dig 0 64 0 20 64 20", big.steps().get(4), "the floor layer last");
+        assertEquals(List.of("build under cobblestone house", "build floor cobblestone house"), big.steps().subList(5, 7));
+        assertTrue(big.steps().get(7).startsWith("build walls"));
+    }
+
+    /** 0.30.4: on a rerun the floor layer's natural blocks are dug one by one before the fill, the shell stays. */
+    @Test
+    void rerunDigsForeignFloorCells() {
+        HousePlan.Plan p = HousePlan.plan(new HousePlan.Facts("house", new int[]{0, 64, 0, 6, 68, 6}, true, "minecraft:cobblestone",
+                Map.of("minecraft:cobblestone", 200), Map.of(HousePlan.SHELL, true), null, List.of(new int[]{2, 64, 3})));
+        assertEquals(List.of("dig 1 65 1 5 67 5", "dig 2 64 3 2 64 3", "build under cobblestone house", "build floor cobblestone house"),
+                p.steps().subList(0, 4));
+        // review 7: a natural block on the wall ring next to the door (door 3 6, floor layer y 64) is dug too
+        HousePlan.Plan d = HousePlan.plan(new HousePlan.Facts("house", new int[]{0, 64, 0, 6, 68, 6}, true, "minecraft:cobblestone",
+                Map.of("minecraft:cobblestone", 200), Map.of(HousePlan.SHELL, true), null, List.of(new int[]{4, 64, 6})));
+        assertEquals("dig 4 64 6 4 64 6", d.steps().get(1), d.steps().toString());
+        assertTrue(d.steps().contains("build walls cobblestone house door 3 6"));
     }
 
     @Test

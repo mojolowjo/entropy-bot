@@ -30,6 +30,9 @@ final class FakeWorld implements ClearWorld {
 
     final Map<Long, String> blocks = new HashMap<>();
     final Set<String> avoid = new HashSet<>();
+    /** 0.30.4: columns "x z" whose chunk is not loaded. */
+    final Set<String> unloaded = new HashSet<>();
+    @Override public boolean loaded(int x, int y, int z) { return !unloaded.contains(x + " " + z); }
     final Set<Long> lit = new HashSet<>();
     /** Water plan: the fluid state of a "water"/"lava" cell that isn't a source (none: a source). */
     final Map<Long, FluidCell> flows = new HashMap<>();

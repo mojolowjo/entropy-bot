@@ -28,7 +28,13 @@ public final class HousePlan {
      * crafting_table, furnace); camp: the camp mark (x y z) or null (the door faces it).
      */
     public record Facts(String area, int[] box, boolean hasHeights, String block, Map<String, Integer> inv,
-                        Map<String, Boolean> standing, int[] camp) {}
+                        Map<String, Boolean> standing, int[] camp, List<int[]> floorForeign) {
+        /** floorForeign (0.30.4): floor-layer cells inside the wall line that hold a natural block on a rerun (dug one by one). */
+        public Facts(String area, int[] box, boolean hasHeights, String block, Map<String, Integer> inv,
+                     Map<String, Boolean> standing, int[] camp) {
+            this(area, box, hasHeights, block, inv, standing, camp, List.of());
+        }
+    }
 
     /** The chain, the counts named up front, or why not. */
     public record Plan(List<String> steps, String summary, String err) {}
@@ -38,6 +44,8 @@ public final class HousePlan {
     public static final String SHELL = "shell";
     /** A box dig over this many cells asks for confirm: the house splits it per layer instead. */
     public static final int DIG_MAX = 1000;
+    /** The house's own scan: the stations stand within 3 of the base mark at the inside centre. */
+    public static final int SCAN_RADIUS = 4;
 
     public static Plan plan(Facts f) {
         if (!f.hasHeights() || f.box() == null) return new Plan(List.of(), null, TOO_SMALL);
@@ -71,20 +79,26 @@ public final class HousePlan {
         int have = f.inv().getOrDefault(blk, 0);
         List<String> out = new ArrayList<>();
         String b6 = shortId(blk);
-        out.add("build floor " + b6 + " " + area);
-        // 0.30.2 (trial 8 hillside): clear the whole box above the floor (wall line, interior, roof line) before the
-        // walls, so the builder and the rim placer find free wall cells and somewhere to stand. No force: dig ... force
-        // is capped at 64 blocks (DigCommands), and without it the hill's snow and dirt go while the walls and roof
-        // a former run built (planks) stay. A box with nothing left ends "ok: done ... broke 0 blocks" (the chain goes on).
-        // review c: on a rerun (the chosen block already stands in the shell, standing "shell") only the inside is dug,
-        // so a cobblestone shell (not a protected block) is never taken down; a box over 1000 cells goes per layer
+        // 0.30.4 (trial 9, open terrain): FIRST dig the whole box, the floor layer included, so the floor, wall and roof
+        // cells are free (a snow or dirt block in the floor layer no longer counts as standing), then fill under the
+        // floor (pillars down to the ground, at most HouseGround.MAX_DEPTH), then floor, walls, roof.
+        // 0.30.2 (trial 8 hillside): no force: dig ... force is capped at 64 blocks (DigCommands), and without it the
+        // hill's snow and dirt go while the walls and roof a former run built (planks) stay. A box with nothing left ends
+        // "ok: done ... broke 0 blocks" (the chain goes on).
+        // review c: on a rerun (the chosen block already stands in the shell, standing "shell") only the inside above the
+        // floor is dug, so a cobblestone shell (not a protected block) is never taken down; the floor layer's natural
+        // blocks inside the wall line go one by one (floorForeign); a box over 1000 cells goes per layer, top first
         boolean rerun = Boolean.TRUE.equals(f.standing().get(SHELL));
         int dx1 = rerun ? x1 + 1 : x1, dx2 = rerun ? x2 - 1 : x2, dz1 = rerun ? z1 + 1 : z1, dz2 = rerun ? z2 - 1 : z2, dy2 = rerun ? y2 - 1 : y2;
-        if (dy2 >= iy) {
-            long vol = (long) (dx2 - dx1 + 1) * (dy2 - iy + 1) * (dz2 - dz1 + 1);
-            if (vol <= DIG_MAX) out.add("dig " + dx1 + " " + iy + " " + dz1 + " " + dx2 + " " + dy2 + " " + dz2);
-            else for (int y = dy2; y >= iy; y--) out.add("dig " + dx1 + " " + y + " " + dz1 + " " + dx2 + " " + y + " " + dz2);
+        int dy1 = rerun ? iy : y1;
+        if (dy2 >= dy1) {
+            long vol = (long) (dx2 - dx1 + 1) * (dy2 - dy1 + 1) * (dz2 - dz1 + 1);
+            if (vol <= DIG_MAX) out.add("dig " + dx1 + " " + dy1 + " " + dz1 + " " + dx2 + " " + dy2 + " " + dz2);
+            else for (int y = dy2; y >= dy1; y--) out.add("dig " + dx1 + " " + y + " " + dz1 + " " + dx2 + " " + y + " " + dz2);
         }
+        if (rerun && f.floorForeign() != null) for (int[] c : f.floorForeign()) out.add("dig " + fmt(c) + " " + fmt(c));
+        out.add("build under " + b6 + " " + area);
+        out.add("build floor " + b6 + " " + area);
         // the door's two cells are left out of the walls (the door dig below cuts them once; a rerun leaves the gap)
         out.add("build walls " + b6 + " " + area + " door " + door[0] + " " + door[1]);
         out.add("build roof " + b6 + " " + area);
@@ -102,7 +116,8 @@ public final class HousePlan {
         }
         out.add("place base " + cx + " " + iy + " " + cz);
         out.add("place food " + fmt(st[0]));
-        out.add("scan base");
+        // 0.30.4 (live: a second house 13 blocks away): only the chests of this house, never a walk to another one's
+        out.add("scan base " + SCAN_RADIUS);
         String summary = "house in " + area + ": " + out.size() + " steps, needs about " + need + " " + b6 + " (you have " + have + ")"
                 + (have < need ? " - gather " + b6 + " " + (need - have) + " if it runs out" : "")
                 + ", door on the " + sideName(side) + " side"

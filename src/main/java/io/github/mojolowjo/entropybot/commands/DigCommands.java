@@ -43,7 +43,7 @@ final class DigCommands {
 
     static final String NO_ZONE = "error: no work zone - PM \"zone corner1\" and \"zone corner2\" standing on opposite corners";
     static final String DIG_USAGE = DigArgs.USAGE;
-    static final String BUILD_USAGE = "error: usage build <floor|walls|roof|fill|shell|clear> <block> <area>";
+    static final String BUILD_USAGE = "error: usage build <floor|walls|roof|fill|shell|under|clear> <block> <area>";
     static final String PLACE_USAGE = "error: usage place <block item> x y z";
 
     // ---- the work zone ----
@@ -148,6 +148,7 @@ final class DigCommands {
         if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (pm \"stop\" first)";
         net.minecraft.world.level.Level lv = p.level();
         int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
+        int[] here = {x, y, z};
         int surface;
         try {
             surface = Jobs.surfaceNoLeaves(lv, x, z);
@@ -155,11 +156,18 @@ final class DigCommands {
             LOG.warn("[entropybot] climb: surface at {} {}: {}", x, z, e.toString());
             return "error: I can't read the ground over me (" + e + ") - next: dig stairs up <dir> <n>";
         }
+        // 0.30.5 (trial 9, finding 4): two failed climbs here in a row - the third digs plain stairs up toward the camp
+        CLIMB_FAILS.ended(c.chainsRef().takeEnd("climb"));
+        if (ClimbFallback.fallback(CLIMB_FAILS.fails(here))) return climbFallback(c, p, here, surface, from);
         boolean pick = false;
         for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (e.getValue() > 0 && e.getKey().endsWith("_pickaxe")) pick = true;
         ClimbPlan.Plan plan = ClimbPlan.plan((cx, cy, cz) -> climbCell(lv, cx, cy, cz), x, y, z, surface, pick);
         if (plan.err() != null) {
             LOG.info("[entropybot] climb at {} {} {} (surface {}): {}", x, y, z, surface, plan.err());
+            if (pick) {
+                CLIMB_FAILS.failed(here);
+                if (ClimbFallback.fallback(CLIMB_FAILS.fails(here))) return plan.err() + " (the next climb digs plain stairs up toward the camp)";
+            }
             return plan.err();
         }
         if (plan.steps().isEmpty()) {
@@ -179,17 +187,69 @@ final class DigCommands {
                 LOG.warn("[entropybot] climb: walled-in check at {} {} {}: {}", x, y, z, e.toString());
                 return "error: couldn't check the walls around me (" + e + ") - next: status";
             }
+            if (out == null) CLIMB_FAILS.succeeded();                  // 0.30.5: up already: the count starts again
             if (out == null) return "ok: I'm not in a hole and not walled in (the surface here is at " + surface + ", I'm at " + y + ")";
             if (out.err() != null) return out.err();
             String dig = ClimbPlan.outDig(out);
             LOG.info("[entropybot] climb: walled in at {} {} {} - digging out to the {}: {}", x, y, z, out.dir(), dig);
             String r = c.chainsRef().startChain(from, "climb", dig, 1);
+            if (r.startsWith("started")) CLIMB_FAILS.started(here);
             return r.startsWith("started") ? "started: digging out to the " + out.dir() + " (walled in; " + out.cells().size() + " to break) - it ends ok: when the side is open" : r;
         }
         String text = ClimbPlan.startText(plan);
         LOG.info("[entropybot] climb at {} {} {}: {} - {}", x, y, z, text, String.join(" > ", plan.steps()));
         String r = c.chainsRef().startChain(from, "climb", String.join(" then ", plan.steps()), 1);
+        if (r.startsWith("started")) CLIMB_FAILS.started(here);
         return r.startsWith("started") ? "started: " + text + " - each step reports; a failed one says why" : r;
+    }
+
+    /** 0.30.5: climb's failures per spot (one bot, one game: a static is enough; a restart forgets them). */
+    static final ClimbFallback CLIMB_FAILS = new ClimbFallback();
+
+    /** 0.30.5: the third climb: "dig stairs up" toward the camp mark (same dimension), else north, via engine. */
+    static String climbFallback(Commands c, LocalPlayer p, int[] here, int surface, String from) {
+        int[] camp = null;
+        try {
+            JsonObject cp = Core.INSTANCE.knowledge.places().get("camp");
+            if (cp != null && cp.has("x") && Jobs.dimOf(cp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(p.level()))) camp = Jobs.pos(cp);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] climb fallback: the camp mark: {}", e.toString());
+        }
+        String dir = ClimbFallback.toward(here, camp);
+        boolean toCamp = dir != null;
+        if (dir == null) dir = "north";
+        int n = ClimbFallback.stepsUp(here[1], camp == null ? Integer.MIN_VALUE : camp[1], surface);
+        int[] d = StairPlan.dir(dir);
+        String text = ClimbFallback.startText(toCamp, dir, n);
+        LOG.info("[entropybot] {} from {} (camp {}, surface {})", text, Jobs.fmt(here), camp == null ? "none" : Jobs.fmt(camp), surface);
+        String r = c.chainsRef().startChain(from, "climb", String.join(" then ", StairPlan.upSteps(here[0], here[1], here[2], d[0], d[1], n)), 1);
+        if (!r.startsWith("started")) return r;
+        CLIMB_FAILS.started(here);
+        return "started: " + text + " - each step reports; a failed one says which block stopped it";
+    }
+
+    /** 0.30.5: the stair chains' honest end (Chains.endNote): which block stopped the walk, and the next verb. */
+    static String stairEndNote(String name, String msg) {
+        if (!ClimbFallback.needsNote(name, msg)) return null;
+        int[] g = ClimbFallback.gotoGoal(msg);
+        LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;
+        if (g == null || p == null) return null;
+        net.minecraft.world.level.Level lv = p.level();
+        String feet = solidId(lv, g[0], g[1], g[2]), head = solidId(lv, g[0], g[1] + 1, g[2]);
+        boolean floorOpen = climbCell(lv, g[0], g[1] - 1, g[2]) == ClimbPlan.Kind.OPEN;
+        int hy = feet != null ? g[1] : g[1] + 1;
+        boolean hard = (feet != null || head != null) && climbCell(lv, g[0], hy, g[2]) == ClimbPlan.Kind.BLOCKED;
+        return ClimbFallback.honestEnd(msg, g, feet, head, floorOpen, hard);
+    }
+
+    /** The block id at a cell when it blocks a walk (solid or a fluid), else null. */
+    private static String solidId(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(bp)) return "an unloaded chunk";
+        net.minecraft.world.level.block.state.BlockState st = lv.getBlockState(bp);
+        if (!st.getFluidState().isEmpty()) return net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(st.getFluidState().getType()).getPath();
+        if (st.getCollisionShape(lv, bp).isEmpty()) return null;
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
     }
 
     /** 0.28.2 (D): a box of the guard's policy that is one of my main areas. */
@@ -502,7 +562,7 @@ final class DigCommands {
     static String build(Commands c, LocalPlayer p, String rest, String from) {
         String[] parts = rest == null ? new String[0] : rest.trim().split("\\s+");
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
-        Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea");
+        Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea", "under", "fill");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
         int need = shape.equals("clear") ? 2 : 3;
@@ -534,10 +594,22 @@ final class DigCommands {
         ClearBox box = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
         int ylo = box.y1();
         // 0.30.1: the shape's cells; a rerun of a finished step (house's chain) starts nothing
-        List<io.github.mojolowjo.entropybot.clear.Pos> cells = io.github.mojolowjo.entropybot.clear.RimPlan.withoutDoor(
-                io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box), doorXz, box.y1());
         Clearing.LiveWorld lw = new Clearing.LiveWorld();
         lw.set(p);
+        boolean under = shape.equals("under");
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells;
+        if (under) {
+            // 0.30.4 (house on open terrain): pillars under the floor layer, down to the ground, at most 4 deep
+            var pl = io.github.mojolowjo.entropybot.camp.HouseGround.pillars(box.x1(), box.z1(), box.x2(), box.z2(), box.y1(),
+                    (x, y, zz) -> PlaceRules.free(lw, x, y, zz));
+            if (!pl.tooDeep().isEmpty()) return pl.stopText(areaName);
+            cells = new java.util.ArrayList<>();
+            for (int[] q : pl.cells()) cells.add(new io.github.mojolowjo.entropybot.clear.Pos(q[0], q[1], q[2]));
+            if (cells.isEmpty()) return "done: nothing to fill under the floor of " + areaName + " (the ground is right under it)";
+        } else {
+            cells = io.github.mojolowjo.entropybot.clear.RimPlan.withoutDoor(
+                    io.github.mojolowjo.entropybot.clear.RimPlan.shapeCells(shape, box), doorXz, box.y1());
+        }
         int missing0 = io.github.mojolowjo.entropybot.clear.RimPlan.missing(lw, cells).size();
         if (missing0 == 0) return io.github.mojolowjo.entropybot.clear.RimPlan.nothingText(shape, CraftPlanner.shortId(id),
                 io.github.mojolowjo.entropybot.clear.RimPlan.otherBlocks(lw, cells, id));
@@ -569,22 +641,30 @@ final class DigCommands {
         s.buildIgnoreExisting.value = true;
         s.allowInventory.value = true;
         Clearing.applyLook(bs);
+        Clearing.fallOn(bs);
         var cm = b.getCommandManager();
         int x1 = z.get("x1").getAsInt(), y1 = z.get("y1").getAsInt(), z1 = z.get("z1").getAsInt();
         int x2 = z.get("x2").getAsInt(), y2 = z.get("y2").getAsInt(), z2 = z.get("z2").getAsInt();
         cm.execute("sel clear");
+        if (under) {
+            // the pillars are scattered cells, not a box: the mod's own placer does them (lowest first), no Baritone builder
+            bs.rim = true;
+            bs.stage = "pick";
+            Jobs.safeSettings();
+        } else {
         int yLayer = shape.equals("roof") ? box.y2() : ylo;              // 0.28.2: roof = the top layer
         boolean layer = shape.equals("floor") || shape.equals("roof");
         cm.execute("sel pos1 " + x1 + " " + (layer ? yLayer : y1) + " " + z1);
         cm.execute("sel pos2 " + x2 + " " + (layer ? yLayer : y2) + " " + z2);
         cm.execute("sel " + ops.get(shape) + " " + id);
+        }
         bs.status = "building " + shape + " of " + CraftPlanner.shortId(id);
         bs.start = Core.INSTANCE.tick();
         bs.lastChange = bs.start;
         Seq.Step st = Clearing.clearStep(new ClearJob.Options().box(box).label(bs.status));
         st.kind = Clearing.KIND_BUILD;
         st.state = bs;
-        Clearing.placingOwned = true;
+        Clearing.placingOwned = !under;
         String started = c.jobs.startSeq(new Seq(c.jobs, c.storage, bs.status, List.of(st), "fail"), "fail");
         if (started == null || !started.startsWith("started") || c.jobs.job == null) {
             Clearing.endBuild(bs);

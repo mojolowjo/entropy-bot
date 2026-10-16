@@ -39,6 +39,8 @@ public final class McClearWorld implements ClearWorld {
      * @param viewer  the bot (for the ray's collision context); may be null
      * @param avoided Baritone's blocksToAvoidBreaking (null: none)
      */
+    @Override public boolean loaded(int x, int y, int z) { return level.isLoaded(new net.minecraft.core.BlockPos(x, y, z)); }
+
     public McClearWorld(Level level, Entity viewer, Predicate<Block> avoided) {
         this.level = level;
         this.viewer = viewer;

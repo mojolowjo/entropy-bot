@@ -471,6 +471,9 @@ public final class Commands implements Chains.Env {
     /** V1a: an area of any type by name (its areas.json entry), or null. */
     JsonObject policyArea(String name) { return policy == null ? null : policy.findArea(name); }
 
+    /** 0.30.4: give an all-heights area heights (house on open terrain); null when done, else why not. */
+    String policySetHeights(String name, int y1, int y2) { return policy == null ? "error: no area policy loaded" : policy.setHeights(name, y1, y2); }
+
     /** V1a: why the areas.json migration failed (null: fine); {@code check} reports it. */
     volatile String areaMigrationProblem;
     /** V1a: the migration's whisper for the owner (sent once when the bot is up), or null. */
@@ -580,6 +583,7 @@ public final class Commands implements Chains.Env {
         chains = new Chains(this, brainStore.data());
         brainRuntime = new BrainRuntime(this);                  // B1: the brain (the autominer retired into it)
         chains.endHook = brainRuntime::chainEnded;
+        chains.endNote = DigCommands::stairEndNote;                  // 0.30.5: honest stair-chain endings
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);

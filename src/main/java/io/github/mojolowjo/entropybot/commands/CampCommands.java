@@ -61,7 +61,8 @@ final class CampCommands {
 
     String bootstrap(LocalPlayer p, String from, boolean internal, String rest) {
         boolean status = rest != null && rest.trim().equalsIgnoreCase("status");
-        if (rest != null && !rest.isBlank() && !status) return "usage: bootstrap | bootstrap status";
+        if (rest != null && rest.trim().equalsIgnoreCase("food")) return bootstrapFood(p, from, internal);   // 0.30.5
+        if (rest != null && !rest.isBlank() && !status) return "usage: bootstrap | bootstrap status | bootstrap food";
         // 0.24.3: inside a chain its steps go right after it (the chain "bootstrap then gather ..." stopped silently)
         boolean splice = !status && c.chainsRef().running() && internal;
         if (!status && !splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
@@ -113,9 +114,8 @@ final class CampCommands {
         BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
                 feet, table, furnace, chest, dir, snowy, quarryBlocked));
         if (plan.err() != null) return plan.err();
-        if (plan.steps().isEmpty()) return plan.summary();
         List<String> all = new ArrayList<>(pre);
-        all.addAll(plan.steps());
+        all.addAll(io.github.mojolowjo.entropybot.camp.FoodPlan.withFood(plan.steps()));      // 0.30.5: the food step last, always
         if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", all);
         LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", all));
         if (splice) {
@@ -126,6 +126,30 @@ final class CampCommands {
         String r = c.chainsRef().startChain(from, "bootstrap", String.join(" then ", all), 1);
         lastRun = (r.startsWith("started") ? "started " : "refused: ") + plan.summary();
         return r.startsWith("started") ? "started: bootstrap (" + plan.summary() + ") - each step reports; a failed one says what is missing" : r;
+    }
+
+    /**
+     * 0.30.5 (trial 9, finding 3): "bootstrap food", the bootstrap chain's last step (FoodPlan). Never fails: the hunt
+     * and the cook go in as soft steps. In a chain they go right after it; alone it starts a chain of its own.
+     */
+    String bootstrapFood(LocalPlayer p, String from, boolean internal) {
+        io.github.mojolowjo.entropybot.camp.FoodPlan.Decision d;
+        try {
+            d = io.github.mojolowjo.entropybot.camp.FoodPlan.decide(Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] bootstrap food: {}", e.toString());
+            return "ok: food skipped: couldn't look for food (" + e + ") - next: hunt 4 cow when you see some";
+        }
+        LOG.info("[entropybot] bootstrap food: {} {}", d.text(), d.steps());
+        if (d.steps().isEmpty()) return d.text();
+        String text = String.join(" then ", d.steps());
+        if (internal && c.chainsRef().running()) {
+            String err = c.chainsRef().spliceNext(text);
+            return err == null ? d.text() : "ok: food skipped: " + err + " - next: hunt 4 cow";
+        }
+        if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
+        String r = c.chainsRef().startChain(from, "bootstrap food", text, 1);
+        return r.startsWith("started") ? "started: " + d.text().replaceFirst("^ok: ", "") : r;
     }
 
     /** 0.28.2 (B3): ice, snow or water in a cell of the staircase quarry's dig boxes (BootstrapPlan.quarrySteps). */
@@ -159,6 +183,29 @@ final class CampCommands {
         if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + area + " is a safe area - I never build there";
         String[] err = new String[1];
         int[] box = DigCommands.areaBox(c, area, err);
+        // 0.30.4 (trial 9, open terrain): an area without heights gets them from the ground: the floor at the lowest
+        // surface block of its columns (top solid block, snow layers and leaves skipped), 5 high; saved on the area
+        String floorNote = "";
+        int[] autoY = null;                       // review 1: saved on the area only once the chain started
+        if (box == null && err[0] != null && err[0].contains("covers every height") && !ab.has("round") && Minecraft.getInstance().level != null) {
+            int ax1 = Math.min(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2")), ax2 = Math.max(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2"));
+            int az1 = Math.min(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2")), az2 = Math.max(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2"));
+            if (ax2 - ax1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE || az2 - az1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE)
+                return io.github.mojolowjo.entropybot.camp.HousePlan.TOO_SMALL;
+            if ((long) (ax2 - ax1 + 1) * (az2 - az1 + 1) > 4096) return io.github.mojolowjo.entropybot.camp.HouseGround.TOO_LARGE;
+            int[] tops = surfaceTops(Minecraft.getInstance().level, ax1, az1, ax2, az2);
+            for (int t : tops) if (t == io.github.mojolowjo.entropybot.camp.HouseGround.WATER)
+                return io.github.mojolowjo.entropybot.camp.HouseGround.waterText(area, ax1, az1, ax2, az2);
+            int fy = io.github.mojolowjo.entropybot.camp.HouseGround.floorY(tops);
+            for (int t : tops) if (t == io.github.mojolowjo.entropybot.camp.HouseGround.NONE) { fy = t; break; }
+            if (fy == io.github.mojolowjo.entropybot.camp.HouseGround.NONE)
+                return "error: I can't see the ground of " + area + " (not loaded) - next: goto " + (ax1 + ax2) / 2 + " ~ " + (az1 + az2) / 2 + ", then house " + area;
+            int fy2 = fy + io.github.mojolowjo.entropybot.camp.HouseGround.HEIGHT - 1;
+            autoY = new int[]{fy, fy2};
+            LOG.info("[entropybot] house {}: no heights given, floor at y {} (lowest surface), y {}..{}", area, fy, fy, fy2);
+            floorNote = "floor at y " + fy + " (the lowest ground in " + area + ", 5 high), ";
+            box = new int[]{ax1, fy, az1, ax2, fy2, az2};
+        }
         Map<String, Integer> inv = Gui.inventory(p);
         // 0.30.2: keep the block that already stands in the house's shell (built blocks and cobblestone, counted per id)
         Map<String, Integer> placed = new java.util.HashMap<>();
@@ -189,17 +236,74 @@ final class CampCommands {
         standing.put(io.github.mojolowjo.entropybot.camp.HousePlan.SHELL, placed.getOrDefault(blk, 0) > 0);
         JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
         int[] cp = camp != null && camp.has("x") ? Jobs.pos(camp) : null;
+        // 0.30.4: on a rerun the floor layer inside the wall line may still hold snow or dirt (a natural block is no floor):
+        // those cells are dug one by one before the fill (the cobblestone floor itself stays)
+        List<int[]> foreign = new java.util.ArrayList<>();
+        if (box != null && Boolean.TRUE.equals(standing.get(io.github.mojolowjo.entropybot.camp.HousePlan.SHELL))) {
+            try {
+                Clearing.LiveWorld lw = new Clearing.LiveWorld();
+                lw.set(p);
+                int fy = Math.min(box[1], box[4]);
+                // review 4: the whole floor layer, the wall ring too (the door cells are above it; built blocks are skipped)
+                for (int x = Math.min(box[0], box[3]); x <= Math.max(box[0], box[3]); x++) {
+                    for (int z = Math.min(box[2], box[5]); z <= Math.max(box[2], box[5]); z++) {
+                        String qid = lw.id(x, fy, z);
+                        if (qid == null || lw.air(x, fy, z) || io.github.mojolowjo.entropybot.clear.PlaceRules.free(lw, x, fy, z)) continue;
+                        if (qid.equals(blk) || lw.builtBlock(x, fy, z) || lw.blockEntity(x, fy, z)) continue;
+                        foreign.add(new int[]{x, fy, z});
+                    }
+                }
+            } catch (RuntimeException ex) {
+                LOG.warn("[entropybot] house {}: could not look at the floor layer: {}", area, ex.toString());
+            }
+        }
         var plan = io.github.mojolowjo.entropybot.camp.HousePlan.plan(new io.github.mojolowjo.entropybot.camp.HousePlan.Facts(
-                area, box, box != null, blk, inv, standing, cp));
+                area, box, box != null, blk, inv, standing, cp, foreign));
         if (plan.err() != null) return box == null && err[0] != null && !err[0].contains("covers every height") ? err[0] : plan.err();
         String text = String.join(" then ", plan.steps());
         LOG.info("[entropybot] house {}: {}", area, String.join(" > ", plan.steps()));
         if (splice) {
             String e = c.chainsRef().spliceNext(text);
-            return e == null ? "ok: " + plan.summary() + " - next in this chain" : "error: house: " + e;
+            if (e == null && autoY != null) {
+                String se = c.policySetHeights(area, autoY[0], autoY[1]);
+                if (se != null) LOG.warn("[entropybot] house {}: could not save the heights: {}", area, se);
+            }
+            return e == null ? "ok: " + floorNote + plan.summary() + " - next in this chain" : "error: house: " + e;
         }
         String r = c.chainsRef().startChain(from, "house", text, 1);
-        return r.startsWith("started") ? "started: " + plan.summary() + " - each step reports; run house " + area + " again after a stop, it skips what stands" : r;
+        if (r.startsWith("started") && autoY != null) {
+            String se = c.policySetHeights(area, autoY[0], autoY[1]);
+            if (se != null) LOG.warn("[entropybot] house {}: could not save the heights: {}", area, se);
+        }
+        return r.startsWith("started") ? "started: " + floorNote + plan.summary() + " - each step reports; run house " + area + " again after a stop, it skips what stands" : r;
+    }
+
+    /** 0.30.4: per column (x-major, then z) the y of the top solid block that is not a snow layer or leaves; NONE when not loaded. */
+    static int[] surfaceTops(ClientLevel lv, int x1, int z1, int x2, int z2) {
+        int[] out = new int[(x2 - x1 + 1) * (z2 - z1 + 1)];
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        int i = 0;
+        for (int x = x1; x <= x2; x++) {
+            for (int z = z1; z <= z2; z++) {
+                int top = io.github.mojolowjo.entropybot.camp.HouseGround.NONE;
+                m.set(x, lv.getMinBuildHeight(), z);
+                if (lv.isLoaded(m)) {
+                    int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+                    for (; y >= lv.getMinBuildHeight(); y--) {
+                        m.set(x, y, z);
+                        BlockState st = lv.getBlockState(m);
+                        var k = io.github.mojolowjo.entropybot.camp.HouseGround.surface(st.isAir(),
+                                st.getBlock() instanceof net.minecraft.world.level.block.SnowLayerBlock, st.is(net.minecraft.tags.BlockTags.LEAVES),
+                                !st.getFluidState().isEmpty(), st.getCollisionShape(lv, m).isEmpty());
+                        if (k == io.github.mojolowjo.entropybot.camp.HouseGround.Surface.SKIP) continue;
+                        top = k == io.github.mojolowjo.entropybot.camp.HouseGround.Surface.WATER ? io.github.mojolowjo.entropybot.camp.HouseGround.WATER : y;
+                        break;
+                    }
+                }
+                out[i++] = top;
+            }
+        }
+        return out;
     }
 
     /** A block whose id contains the word inside the area box's walls (x1+1..x2-1, y1+1..y2-1, z1+1..z2-1). */

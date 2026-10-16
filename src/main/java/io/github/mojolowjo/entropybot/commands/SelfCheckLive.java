@@ -53,6 +53,16 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         List<SelfCheck.Finding> f = new java.util.ArrayList<>(SelfCheck.run(state(p)));
         // V1a: the areas.json migration failed (the old file still loads; its protect boxes count as safe areas)
         if (c.areaMigrationProblem != null) f.add(0, new SelfCheck.Finding("areasv1", c.areaMigrationProblem, "fix the file, then restart the game"));
+        // 0.30.5 (trial 9, finding 3): low food comes first, with what to do about it
+        try {
+            if (p != null) {
+                String[] h = io.github.mojolowjo.entropybot.camp.FoodPlan.checkFinding(p.getFoodData().getFoodLevel(),
+                        io.github.mojolowjo.entropybot.gui.Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
+                if (h != null) f.add(0, new SelfCheck.Finding(h[0], h[1], h[2]));
+            }
+        } catch (RuntimeException e) {
+            f.add(0, new SelfCheck.Finding("hungercheck", "couldn't check my food: " + e, "status"));
+        }
         // C5 tool care: a worn or broken tool that nothing could replace
         for (String id : c.camp.careFindings()) f.add(new SelfCheck.Finding("toolcare:" + id, "my " + id + " is nearly broken or gone, and nothing can replace it (none in the chests, nothing to craft one from)",
                 "put a " + id + " (or its materials) in the base chests"));

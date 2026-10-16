@@ -71,6 +71,9 @@ public interface ClearWorld {
     /** The collision shape is empty (air, grass, torches, fluids, crops). */
     boolean noCollision(int x, int y, int z);
 
+    /** 0.30.4: the cell's chunk is loaded (an unloaded one reads as air). Default: always. */
+    default boolean loaded(int x, int y, int z) { return true; }
+
     /** The collision shape is a full cube (a face against it can't be seen). */
     boolean fullBlock(int x, int y, int z);
 
