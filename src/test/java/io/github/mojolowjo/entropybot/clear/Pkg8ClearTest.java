@@ -83,9 +83,6 @@ class Pkg8ClearTest {
                 PlaceRules.entityText(PlaceRules.InWay.OTHER, "boat", 1, 2, 3));
         assertEquals("a cow stayed in the way at 1 2 3 for 10 s - next: place again when it has moved",
                 PlaceRules.mobStayedText(PlaceRules.waitedFor("error: a cow is in the way at 1 2 3 (waiting)"), 1, 2, 3));
-        String empty = PlaceRules.entityText(PlaceRules.InWay.MY_EMPTY_CORPSE, "corpse", 1, 2, 3);
-        assertEquals("error: my emptied corpse is in the way at 1 2 3 (waiting)", empty);
-        assertEquals("my emptied corpse", PlaceRules.waitedFor(empty));
         assertEquals(200, PlaceRules.MOB_WAIT_TICKS);
     }
 }

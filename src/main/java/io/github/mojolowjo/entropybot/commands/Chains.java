@@ -114,8 +114,11 @@ public final class Chains {
         /** Package D: the detour running is a furnace pickup (not the walk back before a retry); no new one before this tick. */
         boolean pickup;
         long pickupAfter;
-        /** 0.30.7: the corpse fetch ("death") already ran once for a step that found the bot's corpse in the way */
-        boolean corpseFetched;
+        /**
+         * 0.30.7: corpse fetches ("death") run for steps that found the bot's corpse in the way (at most 2: live, "death"
+         * emptied an older corpse nearby first, after a restart had forgotten that it was empty)
+         */
+        int corpseFetches;
     }
 
     /** 0.30.7 (live, shed3): a step's end that asks for the corpse fetch first (Clearing's place step, PlaceRules.entityText). */
@@ -125,11 +128,11 @@ public final class Chains {
 
     /**
      * 0.30.7 (live, shed3: the corpse in the furnace cell stopped the house chain): run "death" as a detour and the step
-     * once more (once per chain). True when that was set up.
+     * once more (up to twice per chain). True when that was set up.
      */
     private boolean corpseDetour(Chain c, String text) {
-        if (c.corpseFetched || c.inDetour || !corpseInWay(text) || c.idx < 1) return false;
-        c.corpseFetched = true;
+        if (c.corpseFetches >= 2 || c.inDetour || !corpseInWay(text) || c.idx < 1) return false;
+        c.corpseFetches++;
         c.idx--;
         c.detour = "death";
         env.log("chain " + c.name + ": my corpse is in the way of \"" + c.steps.get(c.idx) + "\" - emptying it (death), then that step once more");

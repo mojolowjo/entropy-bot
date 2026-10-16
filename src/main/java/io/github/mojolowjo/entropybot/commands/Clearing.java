@@ -961,10 +961,15 @@ public final class Clearing {
                         || e instanceof net.minecraft.world.entity.ExperienceOrb) continue;
                 String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
                 boolean corpse = type.equals("corpse:corpse");
-                if (!corpse && !e.blocksBuilding) continue;
+                // only what the game's own check refuses (Level.isUnobstructed: Entity.blocksBuilding); a corpse is logged
+                // either way (live probe: does an emptied one still block?)
+                if (corpse) LOG.info("[entropybot] place: a corpse at {} {} {} (blocks building: {}, emptied: {})", x, y, z, e.blocksBuilding, Storage.EMPTIED.contains(e.getUUID()));
+                if (!e.blocksBuilding) continue;
                 PlaceRules.InWay kind = PlaceRules.inWayKind(type, corpse && Storage.ownsCorpse(e, p),
                         e instanceof net.minecraft.world.entity.LivingEntity);
-                if (kind == PlaceRules.InWay.MY_CORPSE && Storage.EMPTIED.contains(e.getUUID())) kind = PlaceRules.InWay.MY_EMPTY_CORPSE;
+                // live probe (shed3): an emptied corpse is gone on the server ("execute if entity" fails) while the client
+                // still lists it, blocking building, for a minute or more: no reason to stop; the click goes ahead
+                if (kind == PlaceRules.InWay.MY_CORPSE && Storage.EMPTIED.contains(e.getUUID())) continue;
                 String text = PlaceRules.entityText(kind, type.substring(type.indexOf(':') + 1).replace('_', ' '), x, y, z);
                 LOG.info("[entropybot] place: {}", text);
                 return text;
