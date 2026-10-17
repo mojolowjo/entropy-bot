@@ -1032,6 +1032,11 @@ public final class Commands implements Chains.Env {
             return Reply.now(rest.isBlank() && brainRuntime != null ? n + "\n" + brainRuntime.brain.scoresLine() : n);     // B1: the brain's scores
         }
         if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // B3: the planner
+        // 0.32.3 (PATHS_PLAN P3): paper planning: plan path ... / plan go / plan last; the result is whispered when done
+        if (verb.equals("plan") && rest.trim().toLowerCase().matches("^(path\\b.*|go|last)$")) {
+            String to = from;
+            return Reply.now(PaperPlan.INSTANCE.command(this, player, rest, from, r -> whisper(to, r)));
+        }
         if (verb.equals("plan")) return Reply.now(planning.plan(from, player, rest));
         if (verb.equals("actions")) return Reply.now(planning.actions(rest));
         if (verb.equals("goals")) return Reply.now(vocab.goals(rest));

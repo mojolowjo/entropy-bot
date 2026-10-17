@@ -602,8 +602,9 @@ public final class Jobs {
     /** A walk never breaks or places (the bridge's restoreSafeSettings, for Baritone's part). */
     static void safeSettings() {
         try {
-            BaritoneAPI.getSettings().allowBreak.value = false;
-            BaritoneAPI.getSettings().allowPlace.value = false;
+            // 0.32.3: a plan-go job keeps the breaking/placing its plan needs (PaperPlan owns them for that job only)
+            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak();
+            BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace();
         } catch (Throwable ignored) {}
     }
 
@@ -1555,6 +1556,7 @@ public final class Jobs {
         boolean near = d != null && distSq(me, d) <= 16;
         if (!near && ++j.retraceSkips > 4) {
             LOG.info("[entropybot] retrace: gave up after {} unreachable hops ({}) at {}", j.retraceSkips - 1, why, fmt(me));
+            PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: plan from the highest point reached
             return false;
         }
         int[] nx = j.retraceHops != null && !j.retraceHops.isEmpty() ? j.retraceHops.pollFirst() : null;
@@ -1587,6 +1589,7 @@ public final class Jobs {
             java.util.List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(Guard.dimOf(lv), me[0], me[1], me[2], 8, 8, 400);
             if (hops.isEmpty()) {
                 LOG.info("[entropybot] retrace ({}): no trail back to open sky from {}", why, fmt(me));
+                PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: a long search, then a plan with digging
                 return false;
             }
             j.retraceHops = new java.util.ArrayDeque<>(hops);
@@ -1605,6 +1608,25 @@ public final class Jobs {
             LOG.warn("[entropybot] retrace failed (the old escape runs): {}", e.toString());
             return false;
         }
+    }
+
+    /** 0.32.3: "plan go": a plain walk (never the long route) to the plan's end; onJob gets the job id before the goal is set. */
+    String startPlanGo(int[] e, boolean brk, boolean plc, String from, java.util.function.LongConsumer onJob) {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return "error: not in a world";
+        String r = startTravel("goto " + fmt(e), "plan go to " + fmt(e), e, Guard.dimOf(p.level()), false,
+                io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OWNER_ORDER);
+        Job j = job;
+        if (r == null || r.startsWith("error") || r.startsWith("busy") || j == null || j.done) return r;
+        onJob.accept(j.id);
+        if (j.longRoute && io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.walkId() == j.id) {
+            io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
+            j.longRoute = false;
+        }
+        IBaritone b = baritone();
+        j.retraceTried = true;                       // the plan is the way: no trail retrace inside it
+        if (b != null) walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(e[0], e[1], e[2]));
+        return r + (brk || plc ? " (breaking " + (brk ? "on" : "off") + ", placing " + (plc ? "on" : "off") + " for this walk only)" : "");
     }
 
     boolean recoverShort(LocalPlayer p, Job j) {

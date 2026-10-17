@@ -144,6 +144,7 @@ public final class SafetyNet {
     /** A mod job turned Baritone's breaking on and Baritone's mine really runs (S1: not during its walks or holds). */
     static boolean breakingOwned(IBaritone b) {
         if (builderBreakingOwned(b)) return true;
+        if (io.github.mojolowjo.entropybot.commands.PaperPlan.ownsBreak()) return true;                      // 0.32.3: the fourth owner, a plan-go walk
         try {
             var j = Core.INSTANCE.commands.jobs.job;
             if (j == null || j.done || !j.ownsBreaking) return false;
@@ -170,7 +171,7 @@ public final class SafetyNet {
 
     /** A mod job runs Baritone's builder (build floor|walls|fill|shell). */
     static boolean placingOwned() {
-        try { return io.github.mojolowjo.entropybot.commands.Clearing.placingOwned(); } catch (Throwable t) { return false; }
+        try { return io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace(); } catch (Throwable t) { return false; }
     }
 
     public static IBaritone primary() {
