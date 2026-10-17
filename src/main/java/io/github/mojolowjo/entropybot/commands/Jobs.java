@@ -1635,7 +1635,7 @@ public final class Jobs {
 
     /** 0.33.0 (A1): the walk's end once the paper escape runs: no staircase, no dig-out; the plans' answer is whispered. */
     String paperEscapeEnd(LocalPlayer p) {
-        String s = "error: stuck under ground at " + fmt(here(p)) + " - no walk back along my trail; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
+        String s = "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
         LOG.info("[entropybot] escape: {}", s);
         return s;
     }

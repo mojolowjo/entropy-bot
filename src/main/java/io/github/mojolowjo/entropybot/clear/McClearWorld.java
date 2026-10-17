@@ -102,7 +102,10 @@ public final class McClearWorld implements ClearWorld {
     }
 
     @Override public boolean avoided(int x, int y, int z) {
-        return avoided != null && avoided.test(at(x, y, z).getBlock());
+        if (avoided == null || !avoided.test(at(x, y, z).getBlock())) return false;
+        // 0.33.0 (A3, live: "left 1 built block alone" on my own table with force): Baritone's never-break list holds
+        // every station; one I placed myself inside my areas is not avoided by my engine
+        return !(OwnStations.station(id(x, y, z)) && OwnStations.mineAt(x, y, z));
     }
 
     @Override public boolean ore(int x, int y, int z) { return at(x, y, z).is(Tags.Blocks.ORES); }
