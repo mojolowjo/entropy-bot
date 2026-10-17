@@ -203,6 +203,18 @@ public final class Chains {
 
     public boolean running() { return chain != null; }
 
+    /**
+     * 0.33.0 review (bridge wait ran to its limit beside an idle chain): the chain runs but does nothing now: no step
+     * open and it waits for health or a fight to end before a retry. Null when it is doing something (or there is none).
+     */
+    public String idleWait() {
+        Chain c = chain;
+        if (c == null) return null;
+        if (c.pending != null && !c.pending.finished) return null;
+        if (c.retryAt > 0 && (env.tick() >= c.retryAt)) return env.fighting() ? "waits for the fight to end" : env.health() < 14 ? "waits for health 14" : null;
+        return null;
+    }
+
     /** The running chain's name, or null (0.24.2: assist knows its own). */
     public String runningName() { Chain c = chain; return c == null ? null : c.name; }
 
@@ -288,7 +300,11 @@ public final class Chains {
         return stepsRefusal(expandSteps(Texts.splitChain(body), 0).size());
     }
 
-    void endChain(String msg) {
+    /** A chain's end; failed unless msg is the "done" end (the callers below say which). */
+    void endChain(String msg) { endChain(msg, !msg.startsWith("done")); }
+
+    /** 0.33.0 review: the end with its own status (the end note may rewrite the text, never the status). */
+    void endChain(String msg, boolean failed) {
         if (chain == null) return;
         if (endNote != null) {
             try {
@@ -298,7 +314,7 @@ public final class Chains {
                 env.log("chain " + chain.name + ": the end note failed: " + e);
             }
         }
-        if (!quiet(chain.name)) env.whisperEnd(chain.from, chain.name + ": " + msg, io.github.mojolowjo.entropybot.view.ReplyShaper.endFailed(msg));
+        if (!quiet(chain.name)) env.whisperEnd(chain.from, chain.name + ": " + msg, failed);
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
         if (TRACKED_ENDS.contains(chain.name)) endsByName.put(chain.name, msg);   // 0.30.5: climb counts its own failures
@@ -422,7 +438,7 @@ public final class Chains {
                 }
                 if (Texts.stepFailed(p.reply)) {
                     c.pending = null;
-                    endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + String.valueOf(p.reply).replaceFirst("^error: ", ""));
+                    endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + String.valueOf(p.reply).replaceFirst("^error: ", ""), true);
                     return;
                 }
                 if (!p.started) {                              // an instant step: the next one on the next call
@@ -449,7 +465,7 @@ public final class Chains {
                 }
                 if (st.matches("^(stopped|interrupted): (attacked by|low health).*")) {
                     if (c.retries >= 3) {
-                        endChain("stopped at step " + (c.idx + 1) + " (" + c.steps.get(c.idx) + "): the walk back was cut short too: " + st);
+                        endChain("stopped at step " + (c.idx + 1) + " (" + c.steps.get(c.idx) + "): the walk back was cut short too: " + st, true);
                         return;
                     }
                     c.retries++;
@@ -479,7 +495,7 @@ public final class Chains {
                 }
                 if (corpseDetour(c, st) || pickaxeDetour(c, st)) return;
                 if (softStep(c)) { c.retries = 0; softFailed(c, st); return; }
-                endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + st);
+                endChain("stopped at step " + c.idx + " (" + c.steps.get(c.idx - 1) + "): " + st, true);
                 return;
             }
             c.retries = 0;
@@ -493,7 +509,7 @@ public final class Chains {
         String said = c.lastOk != null ? " - " + (c.lastOk.length() > 160 && !c.name.equals("autominer") ? c.lastOk.substring(0, 160) + "..." : c.lastOk) : "";
         if (c.idx >= c.steps.size()) {
             if (c.round >= c.rounds) {
-                endChain("done" + (c.rounds > 1 ? " (" + c.rounds + " rounds)" : "") + said);
+                endChain("done" + (c.rounds > 1 ? " (" + c.rounds + " rounds)" : "") + said, false);
                 return;
             }
             if (env.tick() - c.roundStart < 200) return;      // a round of instant steps: not faster than every 10 s
@@ -545,7 +561,7 @@ public final class Chains {
             return;
         }
         if (Texts.stepFailed(r.text())) {
-            endChain("stopped at step " + c.idx + " (" + step + "): " + String.valueOf(r.text()).replaceFirst("^error: ", ""));
+            endChain("stopped at step " + c.idx + " (" + step + "): " + String.valueOf(r.text()).replaceFirst("^error: ", ""), true);
             return;
         }
         saveRun();                                             // where it is, for a resume after a restart

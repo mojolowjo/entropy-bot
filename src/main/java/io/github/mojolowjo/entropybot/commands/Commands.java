@@ -881,7 +881,7 @@ public final class Commands implements Chains.Env {
     /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
     Listener notifyListener(String to) {
         return r -> {
-            if (!JobRequests.quiet(r.doneMsg)) whisperEnd(to, r.doneMsg.replaceFirst("^ok: ", ""), io.github.mojolowjo.entropybot.view.ReplyShaper.endFailed(r.doneMsg));
+            if (!JobRequests.quiet(r.doneMsg)) whisperEnd(to, r.doneMsg.replaceFirst("^ok: ", ""), r.failed);     // the status the job set, not the stripped text
         };
     }
 
@@ -2097,7 +2097,7 @@ public final class Commands implements Chains.Env {
             // 0.33.0 (Haiku run: "wait 180" came back after 1 s mid-hunt): the hunt runs between its walks with no job
             String hunt = hunting.statusText(mc.player);
             if (hunt != null) return hunt;
-            if (withChain && chains != null && chains.running()) return "chain " + chains.chainStatus();
+            if (withChain && chains != null && chains.running() && chains.idleWait() == null) return "chain " + chains.chainStatus();
             if (withChain && gathering.running()) return "chain " + gathering.statusText();
             if (withChain && mule.running()) return "chain " + mule.statusText();
             baritone.api.IBaritone b = Jobs.baritone();
@@ -2475,6 +2475,8 @@ public final class Commands implements Chains.Env {
                 : mule.running() ? new com.google.gson.JsonPrimitive(mule.statusText()) : JsonNull.INSTANCE);
         String huntNow = hunting.statusText(Minecraft.getInstance().player);       // 0.33.0: bridge wait's fallback reads it
         s.add("hunt", huntNow == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(huntNow));
+        // 0.33.0 review: the bridge's wait counts a chain only while it does something (null: no chain)
+        s.add("chainIdle", chains.running() && chains.idleWait() != null ? new com.google.gson.JsonPrimitive(chains.idleWait()) : JsonNull.INSTANCE);
         // package A: the autominer's last decision, so one "status" shows what it decided and why
         try {
             JsonObject am = chains.autominerState();

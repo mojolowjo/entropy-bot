@@ -552,10 +552,18 @@ public final class Jobs {
                 lr.stop();
                 j.longRoute = false;
                 if (startRetrace(p, j, baritone(), "sealed at the start")) return "wait";
+                // review: no retrace started: the long walk was stopped for nothing - it goes on (the dig-out or the
+                // plans below decide), and the retrace counts as tried so the paper plans may follow
                 j.longRoute = true;
-                if (j.paperEscape) return "error: " + paperEscapeEnd(p).replaceFirst("^error: ", "");
+                j.retraceTried = true;
+                lr.resume(here(p), "no trail back to retrace");
+                LOG.info("[entropybot] long walk: sealed under ground at {}, no trail back - the paper plans next", fmt(here(p)));
             }
-            if (j.paperEscape) return "error: " + paperEscapeEnd(p).replaceFirst("^error: ", "");
+            // review: with no trail (or after it) under ground, the paper plans (walk plan, then digging plan), never the blind dig-out
+            if (j.paperEscape || paperAfterRetrace(p, j)) {
+                lr.stop();
+                return "error: " + paperEscapeEnd(p).replaceFirst("^error: ", "");
+            }
             if (startEscape(p, j, true)) {
                 io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());     // 0.23.4: counted in path status
                 return "wait";
@@ -689,7 +697,13 @@ public final class Jobs {
         }
     }
 
+    /** The job's end; its status is the status word the job put first ("ok: ..." = done its job), read before any note is added. */
     public void finish(String msg) {
+        finish(msg, io.github.mojolowjo.entropybot.view.ReplyShaper.endFailed(msg));
+    }
+
+    /** 0.33.0 review: the end with the status the job itself knows (failed: it did not do its job). */
+    public void finish(String msg, boolean failed) {
         Job j = job;
         if (j == null || j.done) return;
         msg = restoreGate(j, msg);
@@ -720,7 +734,7 @@ public final class Jobs {
         }
         LOG.info("[entropybot] job finished: {}", msg);
         try { core.recorder.jobEnded(j.type, j.label, msg); } catch (RuntimeException e) { LOG.warn("[entropybot] recorder job end: {}", e.toString()); }
-        if (j.req != null) commands.requests.done(j.req.id, msg);
+        if (j.req != null) commands.requests.done(j.req.id, msg, failed);
     }
 
     // ---- P1: the restore before the end line ----

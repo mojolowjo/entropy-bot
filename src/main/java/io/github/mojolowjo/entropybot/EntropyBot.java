@@ -48,7 +48,13 @@ public final class EntropyBot {
             io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.blockChanged(level, pos, to);   // 0.23.2: patch the reach grid (never throws)
         };
         // 0.28.0: the one chunk pass hears every block change first (before the recorder's filters); no new mixin
-        io.github.mojolowjo.entropybot.recorder.FlightRecorder.chunkPassListener = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE::blockChanged;
+        io.github.mojolowjo.entropybot.recorder.FlightRecorder.chunkPassListener = (level, pos, from, to) -> {
+            io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.blockChanged(level, pos, from, to);
+            // 0.33.0 review: a station of mine that loses its block is not mine when a same-kind block comes back
+            if (from != null && to != null && from.getBlock() != to.getBlock())
+                io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.blockChanged(io.github.mojolowjo.entropybot.guard.Guard.dimOf(level), pos.getX(), pos.getY(), pos.getZ(),
+                        net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(from.getBlock()).getPath(), net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(to.getBlock()).getPath());
+        };
         // 0.16.1: the tunnel view's cutaway shaders (mod bus; the listener catches every failure, the view then draws without the cut)
         modBus.addListener(net.neoforged.neoforge.client.event.RegisterShadersEvent.class,
                 io.github.mojolowjo.entropybot.watchview.CutShaders::onRegister);

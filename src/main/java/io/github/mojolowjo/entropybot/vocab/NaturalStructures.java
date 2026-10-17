@@ -15,14 +15,39 @@ import java.util.function.Predicate;
  *
  * <p>A scan is natural when a structure's clue blocks are there AND nothing is left over: no player-only marker (signs,
  * shulker boxes, hoppers, redstone, an ender chest, concrete...) and fewer than {@link ExploreWords#BASE_BUILT} built
- * blocks outside that structure's palette. A village always explains its own houses (its palette is everything but the
- * markers), so a player base IN a village is only caught by its markers. Plain Java; loader API: none.
+ * blocks outside that structure's palette. Containers count as explained only up to what the found structure places
+ * itself (a village 3, a mineshaft none: its chests ride minecarts), so a player's storage in or next to a village stays a
+ * base; a villager alone is no village. Plain Java; loader API: none.
  */
 public final class NaturalStructures {
     private NaturalStructures() {}
 
     /** What a scan saw. blocks: id path to count (built blocks and the clue blocks); wet: built blocks holding water. */
-    public record Seen(Map<String, Integer> blocks, int villagers, int wet) {}
+    /** open: built blocks under the open sky (-1: not known); a mineshaft is underground. */
+    public record Seen(Map<String, Integer> blocks, int villagers, int wet, int open) {
+        public Seen(Map<String, Integer> blocks, int villagers, int wet) { this(blocks, villagers, wet, -1); }
+    }
+
+    /** Containers: a structure explains only as many as it places itself ({@link Kind#chests}); more are a player's storage. */
+    static boolean container(String id) {
+        return id.equals("chest") || id.equals("trapped_chest") || id.equals("barrel");
+    }
+
+    static int built(Seen s) { return sum(s, id -> !neutral(id)); }
+
+    static boolean underground(Seen s) { return s.open() < 0 || s.open() * 4 <= built(s); }
+
+    /** The village's own blocks (plains, desert, savanna, taiga, snowy): wood of the biome, cobble, panes, beds, crops, job sites. */
+    static boolean villageBlock(String id) {
+        return wood(id) || id.contains("cobblestone") || id.equals("glass_pane") || id.endsWith("_bed") || id.endsWith("_wool") || id.endsWith("_carpet")
+                || id.equals("hay_block") || id.equals("dirt_path") || id.equals("farmland") || id.equals("wheat") || id.equals("carrots")
+                || id.equals("potatoes") || id.equals("beetroots") || JOB_SITES.contains(id) || id.equals("bell") || id.equals("chest")
+                || id.contains("terracotta") || id.contains("sandstone") || id.equals("smooth_stone") || id.equals("smooth_stone_slab")
+                || id.equals("bricks") || id.equals("ladder") || id.equals("flower_pot") || id.startsWith("potted_") || id.endsWith("_pressure_plate")
+                || id.equals("bookshelf") || id.equals("packed_ice") || id.equals("snow_block") || id.equals("ice") || id.startsWith("stripped_")
+                || id.equals("water_cauldron") || id.equals("lava_cauldron") || id.equals("iron_bars") || id.equals("cobblestone_wall")
+                || id.endsWith("_button") || id.equals("lantern") || id.equals("melon") || id.equals("pumpkin") || id.equals("anvil");
+    }
 
     /** Blocks no world structure places: one of them means a player was here. */
     public static boolean playerMarker(String id) {
@@ -39,7 +64,10 @@ public final class NaturalStructures {
         return id.equals("torch") || id.equals("wall_torch") || id.equals("lantern") || id.equals("soul_torch") || id.equals("soul_wall_torch");
     }
 
-    record Kind(String name, Predicate<Seen> clue, Predicate<String> palette) {}
+    /** chests: how many containers (chests, barrels) the structure places itself in one scan. */
+    record Kind(String name, Predicate<Seen> clue, Predicate<String> palette, int chests) {
+        Kind(String name, Predicate<Seen> clue, Predicate<String> palette) { this(name, clue, palette, 2); }
+    }
 
     static int n(Seen s, String id) { return s.blocks().getOrDefault(id, 0); }
 
@@ -64,12 +92,15 @@ public final class NaturalStructures {
 
     static final List<Kind> KINDS = List.of(
             new Kind("a village",
-                    s -> s.villagers() > 0 || n(s, "bell") > 0 || (n(s, "dirt_path") >= 3 && sum(s, JOB_SITES::contains) > 0)
-                            || (n(s, "hay_block") >= 3 && sum(s, JOB_SITES::contains) > 0),
-                    id -> true),
+                    // review: a villager alone is not a village (a player's base next to one): its bell, job sites, paths, beds
+                    s -> n(s, "bell") > 0 || (n(s, "dirt_path") >= 3 && sum(s, JOB_SITES::contains) > 0)
+                            || (s.villagers() > 0 && (sum(s, JOB_SITES::contains) > 0 || n(s, "dirt_path") >= 3 || sum(s, id -> id.endsWith("_bed")) > 0)),
+                    NaturalStructures::villageBlock, 3),
             new Kind("a mineshaft",
-                    s -> (n(s, "rail") > 0 && sum(s, id -> id.endsWith("_fence")) >= 2) || (n(s, "cobweb") >= 2 && sum(s, id -> id.endsWith("_fence") || id.endsWith("_planks")) >= 2),
-                    id -> id.endsWith("_planks") || id.endsWith("_fence") || id.equals("rail") || id.equals("cobweb") || id.equals("spawner") || id.endsWith("_log")),
+                    // review: the corridor's own set underground: fence posts under planks, and rails or cobwebs
+                    s -> underground(s) && sum(s, id -> id.endsWith("_fence")) >= 2 && sum(s, id -> id.endsWith("_planks")) >= 2
+                            && (n(s, "rail") >= 2 || n(s, "cobweb") >= 3),
+                    id -> id.endsWith("_planks") || id.endsWith("_fence") || id.equals("rail") || id.equals("cobweb") || id.equals("spawner") || id.endsWith("_log"), 0),
             new Kind("a ruined portal",
                     s -> n(s, "obsidian") + n(s, "crying_obsidian") >= 2 && n(s, "netherrack") + n(s, "magma_block") + n(s, "gold_block") > 0,
                     id -> id.equals("obsidian") || id.equals("crying_obsidian") || id.equals("netherrack") || id.equals("magma_block") || id.equals("gold_block")
@@ -110,8 +141,9 @@ public final class NaturalStructures {
             new Kind("a witch hut", s -> n(s, "cauldron") > 0 && sum(s, id -> id.startsWith("spruce_")) >= 6 && n(s, "potted_red_mushroom") + n(s, "crafting_table") > 0,
                     id -> id.startsWith("spruce_") || id.startsWith("oak_") || id.equals("cauldron") || id.equals("crafting_table") || id.startsWith("potted_")
                             || id.equals("flower_pot") || id.equals("glass_pane")),
-            new Kind("a shipwreck", s -> s.wet() >= 4,
-                    id -> wood(id) || id.equals("chest") || id.equals("barrel") || id.equals("iron_bars")));
+            // review: sunk = most of its wood holds water (a dock's few wet posts are not), and a ship has its loot chest
+            new Kind("a shipwreck", s -> s.wet() >= 6 && s.wet() * 2 >= sum(s, NaturalStructures::wood) && n(s, "chest") > 0,
+                    id -> wood(id) || id.equals("chest") || id.equals("iron_bars"), 3));
 
     /** Every structure name, for the docs and tests. */
     public static List<String> names() {
@@ -135,9 +167,13 @@ public final class NaturalStructures {
             String id = raw.toLowerCase(Locale.ROOT);
             if (!playerMarker(id)) continue;
             boolean placed = false;
-            for (Kind k : found) if (k != KINDS.get(0) && k.palette.test(id)) { placed = true; break; }
+            for (Kind k : found) if (k.palette.test(id)) { placed = true; break; }
             if (!placed) return null;
         }
+        // review: containers are explained only up to what the found structures place themselves
+        int allow = 0;
+        for (Kind k : found) if (sum(s, id -> container(id) && k.palette.test(id)) > 0) allow += k.chests;
+        if (sum(s, NaturalStructures::container) > allow) return null;
         int left = 0;
         for (var e : s.blocks().entrySet()) {
             String id = e.getKey().toLowerCase(Locale.ROOT);

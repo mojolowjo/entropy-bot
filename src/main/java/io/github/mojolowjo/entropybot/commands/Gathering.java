@@ -332,7 +332,9 @@ final class Gathering {
         run = null;
         lastEnd = text;
         LOG.info("[entropybot] gather: {}", text);
-        commands.requests.done(r.req.id, text);
+        boolean failed;                                   // 0.33.0 review: the gather's own status: it has what was asked for, or not
+        try { failed = p == null || bag(p, r.item) < r.want; } catch (RuntimeException e) { failed = true; LOG.warn("[entropybot] gather end status: {}", e.toString()); }
+        commands.requests.done(r.req.id, text, failed);
     }
 
     /** "stop" (and a death): the run ends now; its request hears it (a PM's whisper; a chain set aside by a death doesn't). */

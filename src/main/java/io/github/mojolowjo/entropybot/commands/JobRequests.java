@@ -32,6 +32,8 @@ public final class JobRequests {
         /** Always true for a job's request (it started and was answered when it was made); kept for the chains' checks. */
         public boolean replied = true, started = true, finished;
         public String reply, doneMsg;
+        /** 0.33.0 review: the job's own end status (true = it did not do its job), set with doneMsg. */
+        public boolean failed;
 
         Request(long id, String kind, String from, String text, String reply, Listener listener) {
             this.id = id;
@@ -60,12 +62,18 @@ public final class JobRequests {
 
     /** The job request id started has ended with msg. */
     public void done(long id, String msg) {
+        done(id, msg, io.github.mojolowjo.entropybot.view.ReplyShaper.endFailed(msg));
+    }
+
+    /** 0.33.0 review: the end with its status passed by the job itself (failed: it did not do its job). */
+    public void done(long id, String msg, boolean failed) {
         Request r;
         synchronized (this) {
             r = open.remove(id);
             if (r == null || r.finished) return;
             r.finished = true;
             r.doneMsg = msg;
+            r.failed = failed;
         }
         if (r.listener != null) r.listener.finished(r);
     }

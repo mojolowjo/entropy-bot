@@ -25,6 +25,23 @@ class NaturalStructuresTest {
         assertNull(NaturalStructures.explains(seen(Map.of("oak_planks", 60, "white_shulker_box", 1), 2, 0)));
     }
 
+    /** review 1: a player's base in or next to a village, a wooden dock and a surface build with fences stay builds. */
+    @Test
+    void playerBuildsNearOrInsideStructuresStayBuilds() {
+        // storage room in a village: 6 chests is more than a village places
+        assertNull(NaturalStructures.explains(seen(Map.of("oak_planks", 60, "bell", 1, "dirt_path", 20, "white_bed", 3, "chest", 6), 3, 0)));
+        // a cobble/wood house with chests and a villager wandering by: no bell, no job site, no path, no bed = no village
+        assertNull(NaturalStructures.explains(seen(Map.of("cobblestone", 40, "oak_planks", 30, "chest", 2, "glass", 6), 1, 0)));
+        // a wood-and-glass house in a village: glass blocks, a crafting table, a furnace... more than the village's own
+        assertNull(NaturalStructures.explains(seen(Map.of("oak_planks", 60, "bell", 1, "glass", 12, "crafting_table", 1, "furnace", 2, "stone_bricks", 10), 2, 0)));
+        // a dock: planks with a few wet posts and a chest is no shipwreck
+        assertNull(NaturalStructures.explains(seen(Map.of("oak_planks", 40, "oak_fence", 12, "chest", 1), 0, 6)));
+        // fences and planks with 2 cobwebs on the surface (a player's farm shed) is no mineshaft
+        assertNull(NaturalStructures.explains(new NaturalStructures.Seen(Map.of("oak_planks", 20, "oak_fence", 10, "rail", 4), 0, 0, 25)));
+        // a mineshaft has no chest blocks (its chests ride minecarts): a chest there is a player's
+        assertNull(NaturalStructures.explains(seen(Map.of("oak_planks", 12, "oak_fence", 8, "rail", 6, "chest", 1), 0, 0)));
+    }
+
     @Test
     void mineshaft() {
         assertEquals("a mineshaft", NaturalStructures.explains(seen(Map.of("oak_planks", 12, "oak_fence", 8, "rail", 6, "cobweb", 5), 0, 0)));
@@ -37,7 +54,7 @@ class NaturalStructuresTest {
     void otherStructures() {
         assertEquals("a ruined portal", NaturalStructures.explains(seen(Map.of("obsidian", 7, "crying_obsidian", 2, "netherrack", 5, "chest", 1, "stone_bricks", 4), 0, 0)));
         assertEquals("a dungeon", NaturalStructures.explains(seen(Map.of("spawner", 1, "chest", 2, "mossy_cobblestone", 20), 0, 0)));
-        assertEquals("a shipwreck", NaturalStructures.explains(seen(Map.of("spruce_planks", 30, "spruce_stairs", 10, "chest", 2), 0, 12)));
+        assertEquals("a shipwreck", NaturalStructures.explains(seen(Map.of("spruce_planks", 30, "spruce_stairs", 10, "chest", 2), 0, 25)));
         assertEquals("a dig site (trail ruins, desert temple, ocean ruins)",
                 NaturalStructures.explains(seen(Map.of("suspicious_gravel", 2, "mud_bricks", 30, "red_terracotta", 6), 0, 0)));
         assertNotNull(NaturalStructures.explains(seen(Map.of("reinforced_deepslate", 20, "deepslate_bricks", 80, "sculk_shrieker", 2, "chest", 1), 0, 0)));

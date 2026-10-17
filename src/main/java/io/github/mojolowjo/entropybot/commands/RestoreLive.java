@@ -70,6 +70,8 @@ public final class RestoreLive {
         c = commands;
         files = f;
         io.github.mojolowjo.entropybot.clear.OwnStations.mine = this::stationOfMine;     // 0.33.0 (A3)
+        io.github.mojolowjo.entropybot.clear.OwnStations.cells = this::stationCells;     // 0.33.0 review: recorded cells only
+        io.github.mojolowjo.entropybot.clear.OwnStations.why = this::stationRefusal;
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
         expected.clear();
@@ -192,16 +194,61 @@ public final class RestoreLive {
         return e != null && e.why != null && e.why.startsWith("built:");
     }
 
-    /** 0.33.0 (A3): a station I placed myself (ledger "built: station"), inside my own areas. */
+    /** 0.33.0 (A3): a station I placed myself (ledger "built: station"), inside my own areas, that may be picked up. */
     boolean stationOfMine(int x, int y, int z) {
+        return stationRefusal(x, y, z) == null;
+    }
+
+    /**
+     * 0.33.0 review: why the cell's station is not one of mine to pick up (null: it is). Matched by position, kind and
+     * placement (a removal heard since the placement makes it someone's), and a container only when read empty since.
+     */
+    String stationRefusal(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || c == null) return false;
+        if (mc.level == null || c == null) return "not in a world";
         String dim = Guard.dimOf(mc.level);
         io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
-        if (e == null || !"built: station".equals(e.why) || !c.inAreas(dim, x, z)) return false;
-        // the same kind of block still stands there (not one someone else put in the cell since)
+        if (e == null || !"built: station".equals(e.why)) return "I didn't place a station at " + x + " " + y + " " + z;
+        if (!c.inAreas(dim, x, z)) return "the station at " + x + " " + y + " " + z + " is outside my areas";
         String now = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(new net.minecraft.core.BlockPos(x, y, z)).getBlock()).getPath();
-        return e.block != null && e.block.replaceFirst("^minecraft:", "").equals(now);
+        if (!io.github.mojolowjo.entropybot.clear.OwnStations.station(now)) return "no station at " + x + " " + y + " " + z + " any more";
+        Long gone = stationRemoved.get(dim + " " + x + " " + y + " " + z);
+        Integer contents = null;
+        com.google.gson.JsonObject note = Core.INSTANCE.knowledge.chests().get(x + " " + y + " " + z);
+        if (note != null && note.has("items") && note.has("seen") && note.get("seen").getAsLong() >= e.at) {
+            int n = 0;
+            for (var it : note.getAsJsonObject("items").entrySet()) n += it.getValue().getAsInt();
+            contents = n;
+        }
+        return io.github.mojolowjo.entropybot.clear.OwnStations.pickUp(e.block, now, gone != null && gone >= e.at, now, contents, x, y, z);
+    }
+
+    /** 0.33.0 review: station cells of mine whose block was removed (ms), from the block-change hook; a new placement clears it. */
+    private final java.util.Map<String, Long> stationRemoved = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** The block-change hook (any thread, never throws): a recorded station cell lost its block. */
+    public void blockChanged(String dim, int x, int y, int z, String fromId, String toId) {
+        try {
+            if (fromId == null || fromId.equals(toId) || !io.github.mojolowjo.entropybot.clear.OwnStations.station(fromId)) return;
+            io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
+            if (e != null && "built: station".equals(e.why)) stationRemoved.put(dim + " " + x + " " + y + " " + z, System.currentTimeMillis());
+        } catch (RuntimeException ex) {
+            LOG.warn("[entropybot] station change hook: {}", ex.toString());
+        }
+    }
+
+    /** 0.33.0 review: my recorded station cells inside the box (the ledger's entries, not every cell of the box). */
+    List<int[]> stationCells(int x1, int y1, int z1, int x2, int y2, int z2) {
+        Minecraft mc = Minecraft.getInstance();
+        List<int[]> out = new ArrayList<>();
+        if (mc.level == null) return out;
+        String dim = Guard.dimOf(mc.level);
+        for (io.github.mojolowjo.entropybot.restore.Ledger.Entry e : book.ledger.all()) {
+            if (!"built: station".equals(e.why) || !dim.equals(e.dim)) continue;
+            int[] q = e.pos();
+            if (q[0] >= x1 && q[0] <= x2 && q[1] >= y1 && q[1] <= y2 && q[2] >= z1 && q[2] <= z2) out.add(q);
+        }
+        return out;
     }
 
     /** 0.24.3: blocks the bot placed itself (a shelter): ledger entries never re-placed, its own spot for the build hint. */
@@ -214,6 +261,7 @@ public final class RestoreLive {
         String label = cm != null && cm.jobs.running() ? cm.jobs.job.label : "shelter";
         int n = 0;
         for (int[] p : cells) {
+            stationRemoved.remove(dim + " " + p[0] + " " + p[1] + " " + p[2]);     // 0.33.0 review: a new placement of mine
             if (book.ledger.add(p[0], p[1], p[2], dim, block, block, List.of(), why, job, label, why, Core.INSTANCE.tick(), System.currentTimeMillis()) != null) n++;
         }
         if (n > 0) {
@@ -494,7 +542,7 @@ public final class RestoreLive {
         List<int[]> built = new ArrayList<>();
         java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();   // 0.19.7: what the count is made of, in the log
         java.util.Map<String, Integer> clues = new java.util.TreeMap<>();
-        int wet = 0;
+        int wet = 0, open = 0;
         int r = BuildSpotter.RADIUS;
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) {
@@ -511,6 +559,7 @@ public final class RestoreLive {
                         continue;
                     }
                     if (!st.getFluidState().isEmpty()) wet++;
+                    if (level.canSeeSky(m.above())) open++;
                     if (BuildSpotter.ownKind(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) continue;
                     boolean covered = false;
                     for (Box b : protect) if (b.contains(dim, x, y, z)) { covered = true; break; }
@@ -535,7 +584,7 @@ public final class RestoreLive {
                     e -> e instanceof net.minecraft.world.entity.npc.AbstractVillager || e instanceof net.minecraft.world.entity.animal.IronGolem).size();
             String natural = null;
             try {
-                natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(new io.github.mojolowjo.entropybot.vocab.NaturalStructures.Seen(all, villagers, wet));
+                natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(new io.github.mojolowjo.entropybot.vocab.NaturalStructures.Seen(all, villagers, wet, open));
             } catch (RuntimeException ex) {
                 LOG.warn("[entropybot] natural structure check: {}", ex.toString());
             }

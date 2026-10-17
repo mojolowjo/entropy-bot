@@ -805,7 +805,7 @@ final class Mining {
     private io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan baseScan(LocalPlayer p) {
         Level level = p.level();
         int[] me = Jobs.here(p);
-        int built = 0, be = 0, named = 0, villagers = 0, wet = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_R;
+        int built = 0, be = 0, named = 0, villagers = 0, wet = 0, open = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_R;
         java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
         io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
@@ -821,6 +821,7 @@ final class Mining {
             if (prot || level.getBlockEntity(q) != null || io.github.mojolowjo.entropybot.vocab.NaturalStructures.clue(id)) {
                 kinds.merge(id, 1, Integer::sum);
                 if (prot && !st.getFluidState().isEmpty()) wet++;
+                if (prot && level.canSeeSky(q.above())) open++;
             }
         }
         for (net.minecraft.world.entity.Entity e : level.getEntities(p, p.getBoundingBox().inflate(r))) {
@@ -831,7 +832,7 @@ final class Mining {
         // 0.33.0: the world's own structures (a village's loot chests, beds, hay) are not someone's base
         String natural = null;
         try {
-            natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(new io.github.mojolowjo.entropybot.vocab.NaturalStructures.Seen(kinds, villagers, wet));
+            natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(new io.github.mojolowjo.entropybot.vocab.NaturalStructures.Seen(kinds, villagers, wet, open));
         } catch (RuntimeException ex) {
             LOG.warn("[entropybot] natural structure check: {}", ex.toString());
         }

@@ -427,6 +427,12 @@ final class DigCommands {
         // entity on its never-break list)
         boolean ownStation = force && hasOwnStation(p, box);
         if (ownStation) LOG.info("[entropybot] dig: a station of mine in {}: picked up via my engine", label);
+        // 0.33.0 review: a station of mine that is not picked up (it holds items, or was replaced) is said, not skipped silently
+        String keep = force ? keptStations(box) : null;
+        if (keep != null) {
+            LOG.info("[entropybot] dig {}: {}", label, keep);
+            c.whisper(c.owner(), "dig " + label + ": " + keep);
+        }
         if (a.builder() && !ownStation) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
@@ -435,12 +441,23 @@ final class DigCommands {
 
     /** 0.33.0 (A3): the box holds a station I placed myself inside my areas (OwnStations). */
     static boolean hasOwnStation(LocalPlayer p, ClearBox box) {
+        // 0.33.0 review: only my recorded station cells in the box are read, not every cell of a large box
         net.minecraft.world.level.Level lv = p.level();
-        for (int x = box.x1(); x <= box.x2(); x++) for (int y = box.y1(); y <= box.y2(); y++) for (int z = box.z1(); z <= box.z2(); z++) {
-            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new net.minecraft.core.BlockPos(x, y, z)).getBlock()).toString();
-            if (io.github.mojolowjo.entropybot.clear.OwnStations.station(id) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(x, y, z)) return true;
+        for (int[] q : io.github.mojolowjo.entropybot.clear.OwnStations.cellsIn(box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2())) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new net.minecraft.core.BlockPos(q[0], q[1], q[2])).getBlock()).toString();
+            if (io.github.mojolowjo.entropybot.clear.OwnStations.station(id) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(q[0], q[1], q[2])) return true;
         }
         return false;
+    }
+
+    /** 0.33.0 review: my recorded stations in the box a force dig leaves standing, and why ("; "-joined), or null. */
+    static String keptStations(ClearBox box) {
+        List<String> why = new ArrayList<>();
+        for (int[] q : io.github.mojolowjo.entropybot.clear.OwnStations.cellsIn(box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2())) {
+            String w = io.github.mojolowjo.entropybot.clear.OwnStations.whyNot(q[0], q[1], q[2]);
+            if (w != null && !w.startsWith("no station") && why.size() < 3) why.add("left " + w);
+        }
+        return why.isEmpty() ? null : String.join("; ", why);
     }
 
     /**
