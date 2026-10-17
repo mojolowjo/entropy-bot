@@ -26,6 +26,13 @@ class WalkEndTest {
     }
 
     @Test
+    void twoNumberGoalChecksXzOnly() {
+        assertTrue(WalkEnd.arrivedXZ(new int[]{-56, 120, -398}, new int[]{-56, -400}));
+        assertFalse(WalkEnd.arrivedXZ(new int[]{-56, 40, -9}, new int[]{-56, -400}));
+        assertTrue(WalkEnd.shortResultXZ(new int[]{-56, 40, -9}, new int[]{-56, -400}).startsWith("error: couldn't get to -56 -400 (391 blocks away"));
+    }
+
+    @Test
     void endedShortIsNotArrived() {
         // live check 1 (0.19.6): sealed pit at 0 75 40, goto 10 79 40 said "ok: arrived"
         assertFalse(WalkEnd.arrived(new int[]{0, 75, 40}, new int[]{10, 79, 40}));

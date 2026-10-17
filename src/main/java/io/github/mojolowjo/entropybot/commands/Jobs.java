@@ -1154,6 +1154,12 @@ public final class Jobs {
         return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))} : null;
     }
 
+    /** 0.33.1: "goto x z" (no y): {x, z}, else null. */
+    static int[] travelXZ(Job j) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^goto (-?\\d+) (-?\\d+)$").matcher(j.goal == null ? "" : j.goal);
+        return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))} : null;
+    }
+
     static String noPathResult(Player p, Job j) {
         int[] d = travelDest(j), me = here(p);
         String text = "error: no path to " + (d != null ? fmt(d) : String.valueOf(j.goal).replaceFirst("^goto ", "")) + " - stuck at " + fmt(me);
@@ -1366,6 +1372,16 @@ public final class Jobs {
                     }
                 }
                 finish(WalkEnd.shortResult(me, d) + (j.doorFinal != null ? " (via the door of the house too)" : "") + " - next: goto a spot next to it, or come get me");
+                return;
+            }
+            // 0.33.1 (live: "goto x z" from a sealed pocket under ground ended "ok: arrived near" where it started): a
+            // two-number goal has no dest, so the end checks x z alone; short under ground: trail back, then the paper plans
+            int[] xz = d == null && j.retraceFinal == null && !j.reflex && !moving ? travelXZ(j) : null;
+            if (xz != null && !WalkEnd.arrivedXZ(me, xz)) {
+                if (startRetrace(p, j, b, "ended short")) return;
+                j.retraceTried = true;
+                if (j.paperEscape || paperAfterRetrace(p, j)) { finish(paperEscapeEnd(p)); return; }
+                finish(WalkEnd.shortResultXZ(me, xz) + " - next: goto a spot next to it, or come get me");
                 return;
             }
             if (j.retraceFinal != null) {                 // 0.32.2: at a trail hop: the next one, else the real goal
