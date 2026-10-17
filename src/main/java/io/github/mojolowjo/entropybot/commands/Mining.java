@@ -333,7 +333,7 @@ final class Mining {
     /** The mine starts (or goes on) from the index: phase "known". False: the index has none near (today's path runs). */
     private boolean knownStart(LocalPlayer p, MineRun j) {
         if (!j.ore || !indexReady()) return false;
-        if (knownHits(p, j, 1).isEmpty()) {
+        if (knownHits(p, j, 1).isEmpty() && farOres(p, j).isEmpty()) {
             j.knownWhy = io.github.mojolowjo.entropybot.sense.KnownOre.noneWhy(io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target));
             return false;
         }
@@ -347,6 +347,49 @@ final class Mining {
         j.kTarget = null;
         LOG.info("[entropybot] mine: {} known in the index - walking to it (no Baritone search; {})", sid(j),
                 j.familyWord ? "any " + io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target) + " ore block, deepslate or not" : "exactly " + sid(j));
+        return true;
+    }
+
+    /** 0.34.0: at most this many walks to ore Baritone remembers per mine. */
+    static final int FAR_TRIPS = 3;
+
+    /** 0.34.0: ore of the mine's block (or family) Baritone's cache remembers, in my areas, not tried, live-checked when loaded. */
+    private List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> farOres(LocalPlayer p, MineRun j) {
+        if (j.kFarTrips >= FAR_TRIPS) return List.of();
+        String d = dim();
+        String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+        boolean exact = !j.familyWord;
+        List<String> ids = new ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : BuiltInRegistries.BLOCK.keySet()) {
+            String id = k.toString();
+            if (!k.getPath().endsWith("_ore") && !k.getPath().equals("ancient_debris")) continue;
+            if (exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam)) ids.add(id);
+        }
+        if (ids.isEmpty()) return List.of();
+        List<Box> prot = boxes(policy(), "protect");
+        return io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
+                !j.knownTried.contains(BlockPos.asLong(x, y, z)) && commands.inAreas(d, x, z)
+                        && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null, 1, "mine");
+    }
+
+    /** 0.34.0: walk to the nearest remembered ore (Baritone's memory); false when none. */
+    private boolean farOreWalk(Seq s, LocalPlayer p, MineRun j) {
+        List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> far = farOres(p, j);
+        if (far.isEmpty()) return false;
+        io.github.mojolowjo.entropybot.sense.MemoryPick.Spot o = far.get(0);
+        int[] me = Jobs.here(p);
+        int[] t = {o.x(), o.y(), o.z()};
+        j.kFarTrips++;
+        j.kFarId = o.id();
+        j.kFarText = io.github.mojolowjo.entropybot.sense.MemoryPick.text(o, me);
+        j.knownTried.add(BlockPos.asLong(t[0], t[1], t[2]));
+        j.kTarget = t;
+        j.kVein = new ArrayList<>(List.of(new Pos(t[0], t[1], t[2])));   // the rest of the vein shows in the index once loaded
+        Seq.Step w = Seq.Step.walk(t.clone(), true);
+        w.optional = true;
+        LOG.info("[entropybot] mine: none in view or in the index - {} (Baritone's memory), walking there ({}/{})", j.kFarText, j.kFarTrips, FAR_TRIPS);
+        s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - " + j.kFarText + ", walking there");
+        spliceHere(s, List.of(w));
         return true;
     }
 
@@ -402,7 +445,16 @@ final class Mining {
             String failed = j.kFailed;
             j.kTarget = null;
             j.kFailed = null;
+            if (j.kFarId != null && io.github.mojolowjo.entropybot.sense.BaritoneMemory.check(p.level()).at(j.kFarId, t[0], t[1], t[2])
+                    == io.github.mojolowjo.entropybot.sense.MemoryPick.Live.LOADED_GONE) {
+                // 0.34.0: the remembered ore is gone now that its chunk is loaded: dropped, no try spent
+                LOG.info("[entropybot] mine: Baritone remembered {} at {}, it's gone now (chunk loaded) - dropped", j.kFarId, Jobs.fmt(t));
+                j.kFarId = null;
+                j.kWalks = 0;
+                return "wait";
+            }
             if (failed == null && Jobs.distSq(me, t) <= 20) {
+                j.kFarId = null;
                 j.kWalks = 0;
                 return knownClear(s, j, t);
             }
@@ -422,6 +474,7 @@ final class Mining {
         }
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> hits = knownHits(p, j, 64);
         if (hits.isEmpty()) {
+            if (farOreWalk(s, p, j)) return "wait";          // 0.34.0: Baritone remembers one further out
             if (j.kTries > 0 || j.kKnown > 0) {
                 int left = knownCount(p, fam);
                 String veins = j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + " mined" + (j.kDug > 0 ? " (dug to " + j.kDug + " of them)" : "") + (j.kBlocks.isEmpty() ? "" : " (" + blocksText(j) + ")");
@@ -542,6 +595,7 @@ final class Mining {
         }
         if (Jobs.distSq(me, t) <= 16) return knownClear(s, j, t);
         j.kTarget = t;
+        j.kFarId = null;
         Seq.Step w = Seq.Step.walk(t.clone(), true);
         w.optional = true;
         s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - walking to known ore at " + Jobs.fmt(t) + " (" + (int) Math.round(Math.sqrt(best.d2())) + " blocks)");
@@ -1509,6 +1563,10 @@ final class Mining {
         /** 0.28.0 phase "known": positions tried, the walk to the next vein, its cells, the clear spliced, veins done, the index's none-reason. */
         final Set<Long> knownTried = new HashSet<>();
         int[] kTarget;
+        /** 0.34.0: kTarget came from Baritone's memory (this block id); trips made. */
+        String kFarId;
+        int kFarTrips;
+        String kFarText;
         String kFailed;
         int kTries, kKnown, kWalks;
         boolean familyWord, kDigging;
