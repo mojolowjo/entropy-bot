@@ -90,10 +90,16 @@ public final class ExploreWords {
     public static final int BASE_BUILT = 6, BASE_R = 16;
 
     /** What a scan within 16 blocks saw: built blocks (the floor's list), block entities (containers, beds, signs), named mobs. */
-    public record Scan(int built, int blockEntities, int named) {}
+    public record Scan(int built, int blockEntities, int named, String natural) {
+        public Scan(int built, int blockEntities, int named) { this(built, blockEntities, named, null); }
+    }
 
-    /** Someone's base: at least 6 built blocks, or any block entity, or a named mob. */
+    /**
+     * Someone's base: at least 6 built blocks, or any block entity, or a named mob. 0.33.0: not when the world's own
+     * structure explains all of it (natural: a village, a mineshaft... - {@link NaturalStructures}) and no mob is named.
+     */
     public static boolean isBase(Scan s) {
+        if (s.natural() != null && s.named() == 0) return false;
         return s.built() >= BASE_BUILT || s.blockEntities() > 0 || s.named() > 0;
     }
 

@@ -248,20 +248,30 @@ class FloorFillTest {
      */
     @Test
     void oneDecisionTakesUnderFiveMilliseconds() {
+        // 0.33.0: robust under load (a game on the same laptop pre-empts the test thread for ms at a time): the fill is
+        // deterministic, so each decision is timed in several rounds after the warm-up and its BEST time counts. A pause
+        // that hits one round is gone; a decision that is slow every time (what this guards) still fails.
         long worst = 0;
         String what = null;
-        for (int round = 0; round < 6; round++) {
-            for (Bot start : List.of(Bot.at(265.5, -49, 854.5), Bot.at(258.5, -46, 854.5))) {
+        for (Bot start : List.of(Bot.at(265.5, -49, 854.5), Bot.at(258.5, -46, 854.5))) {
+            long[] best = null;
+            List<String> labels = null;
+            for (int round = 0; round < 8; round++) {
                 FakeWorld w = cave();
                 FillDriver d = new FillDriver(w, start);
                 d.bag.put(CD, 200);
                 d.timed = true;
                 d.fill(new FloorFill.Run(w, BOX, null, AREA_ONLY, IN_AREA, false));
-                if (round >= 3) {
-                    if (d.worstTickNanos > worst) what = d.worstWhat;
-                    worst = Math.max(worst, d.worstTickNanos);
+                if (round < 3) continue;                                    // warm-up (the JIT)
+                if (best == null) {
+                    best = new long[d.tickNanos.size()];
+                    java.util.Arrays.fill(best, Long.MAX_VALUE);
+                    labels = d.tickWhat;
                 }
+                assertEquals(best.length, d.tickNanos.size(), "the fill is deterministic");
+                for (int i = 0; i < best.length; i++) best[i] = Math.min(best[i], d.tickNanos.get(i));
             }
+            for (int i = 0; i < best.length; i++) if (best[i] > worst) { worst = best[i]; what = labels.get(i); }
         }
         System.out.println("[FloorFillTest] worst fill decision after warm-up: " + worst / 1000 + " us (" + what + ")");
         assertTrue(worst < 5_000_000L, "worst decision " + worst / 1000 + " us");
@@ -278,7 +288,18 @@ class FloorFillTest {
         d.timed = true;
         FloorFill.Run r = d.fill(new FloorFill.Run(w, longBox, null, AREA_ONLY, IN_AREA, false));
         assertEquals("filled 30 floor cells with cobbled_deepslate", r.report());
-        assertTrue(d.worstTickNanos < 50_000_000L, "no decision maps the whole box: " + d.worstTickNanos / 1000 + " us");
+        // 0.33.0: under load one run can be pre-empted; the best of three runs' worst decisions counts
+        long worst = d.worstTickNanos;
+        for (int k = 0; k < 2 && worst >= 50_000_000L; k++) {
+            FakeWorld w2 = cave();
+            w2.fill(311, 2246, -46, -44, 853, 855, "air");
+            FillDriver d2 = new FillDriver(w2, Bot.at(258.5, -46, 854.5));
+            d2.bag.put(CD, 200);
+            d2.timed = true;
+            d2.fill(new FloorFill.Run(w2, longBox, null, AREA_ONLY, IN_AREA, false));
+            worst = Math.min(worst, d2.worstTickNanos);
+        }
+        assertTrue(worst < 50_000_000L, "no decision maps the whole box: " + worst / 1000 + " us");
     }
 
     @Test

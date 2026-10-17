@@ -70,6 +70,15 @@ public final class Policy {
         return null;
     }
 
+    /** 0.33.0: the smallest area holding the spot (a house inside the camp names the house), or null. For HERE. */
+    public Box innermostAreaAt(String dim, int x, int y, int z) {
+        Box best = null;
+        for (Box b : areas) {
+            if (b.contains(dim, x, y, z) && (best == null || b.volume() < best.volume())) best = b;
+        }
+        return best;
+    }
+
     /**
      * 0.30.6 (live, 0.30.4: the stuck dig-out opened a house's cobblestone wall): the cell is part of a house in a main
      * area: on the area box's shell, or (ownBuilt) any cell in the area's columns the bot built itself (floor, pillars

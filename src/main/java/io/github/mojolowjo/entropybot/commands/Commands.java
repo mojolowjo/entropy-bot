@@ -881,12 +881,19 @@ public final class Commands implements Chains.Env {
     /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
     Listener notifyListener(String to) {
         return r -> {
-            if (!JobRequests.quiet(r.doneMsg)) whisper(to, r.doneMsg.replaceFirst("^ok: ", ""));
+            if (!JobRequests.quiet(r.doneMsg)) whisperEnd(to, r.doneMsg.replaceFirst("^ok: ", ""), io.github.mojolowjo.entropybot.view.ReplyShaper.endFailed(r.doneMsg));
         };
     }
 
     /** 0.32.0: a whisper to the owner gets the reply shape (a chain's step report, a job's end, a notice) unless shaped already. */
     public void whisper(String to, String text) { whisper(to, text, false); }
+
+    /** 0.33.0: a job's or chain's end: the shape takes failed from the job's own end status, not from the text. */
+    @Override
+    public void whisperEnd(String to, String text, boolean failed) {
+        if (to != null && to.equalsIgnoreCase(owner())) text = shapeOut(null, text, failed);
+        whisper(to, text, true);
+    }
 
     void whisper(String to, String text, boolean shaped) {
         if (!shaped && to != null && to.equalsIgnoreCase(owner())) text = shapeOut(null, text);
@@ -895,10 +902,13 @@ public final class Commands implements Chains.Env {
     }
 
     /** 0.32.0: the reply shape (RESULT/HERE/NEW/OPTIONS) unless "reply full" is set. Never throws. */
-    String shapeOut(String verb, String text) {
+    String shapeOut(String verb, String text) { return shapeOut(verb, text, null); }
+
+    /** failed: the job's own end status (null: decided from the text). */
+    String shapeOut(String verb, String text, Boolean failed) {
         try {
             if (text == null || replyFull()) return text;
-            return io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.shapeLazy(verb, text,
+            return io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.shapeLazy(verb, text, failed,
                     io.github.mojolowjo.entropybot.view.ViewLive.here(Minecraft.getInstance().player), io.github.mojolowjo.entropybot.view.ViewLive.NEWS::take);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] reply shaper: {}", e.toString());

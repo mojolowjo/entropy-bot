@@ -802,7 +802,8 @@ final class Mining {
     private io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan baseScan(LocalPlayer p) {
         Level level = p.level();
         int[] me = Jobs.here(p);
-        int built = 0, be = 0, named = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_R;
+        int built = 0, be = 0, named = 0, villagers = 0, wet = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_R;
+        java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
         io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
         for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -6; dy <= 6; dy++) {
@@ -810,14 +811,30 @@ final class Mining {
             if (!level.isLoaded(q)) continue;
             BlockState st = level.getBlockState(q);
             if (st.isAir()) continue;
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+            boolean prot = g.isProtectedBlock(st.getBlock());
             if (level.getBlockEntity(q) != null) be++;
-            else if (g.isProtectedBlock(st.getBlock())) built++;
+            else if (prot) built++;
+            if (prot || level.getBlockEntity(q) != null || io.github.mojolowjo.entropybot.vocab.NaturalStructures.clue(id)) {
+                kinds.merge(id, 1, Integer::sum);
+                if (prot && !st.getFluidState().isEmpty()) wet++;
+            }
         }
         for (net.minecraft.world.entity.Entity e : level.getEntities(p, p.getBoundingBox().inflate(r))) {
+            if (e instanceof net.minecraft.world.entity.npc.AbstractVillager || e instanceof net.minecraft.world.entity.animal.IronGolem) villagers++;
             if (!(e instanceof net.minecraft.world.entity.player.Player) && e.hasCustomName() && e.getCustomName() != null
                     && io.github.mojolowjo.entropybot.vocab.AttackRules.isName(e.getCustomName().getString())) named++;
         }
-        return new io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan(built, be, named);
+        // 0.33.0: the world's own structures (a village's loot chests, beds, hay) are not someone's base
+        String natural = null;
+        try {
+            natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(new io.github.mojolowjo.entropybot.vocab.NaturalStructures.Seen(kinds, villagers, wet));
+        } catch (RuntimeException ex) {
+            LOG.warn("[entropybot] natural structure check: {}", ex.toString());
+        }
+        if (natural != null && (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || be > 0))
+            LOG.info("[entropybot] base scan: {} built, {} block entities near {} - {} (the world's own), not a base; kinds {}", built, be, Jobs.fmt(me), natural, kinds);
+        return new io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan(built, be, named, natural);
     }
 
     /** V1b find: dark air below the surface within 8 blocks (a cave under the bot). */

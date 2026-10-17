@@ -39,6 +39,17 @@ public final class ReplyShaper {
     private long lastFailureAt;
     private long shaped, cut, folded;
 
+    /**
+     * 0.33.0: a job's, chain's or gather's end status from its end line's status word (the job sets it: "ok"/"done"
+     * = it did its job; "stopped", "error", "failed", "blocked", anything else = it did not). Unlike {@link #failure},
+     * a later "couldn't" or "no path" inside an ok end does not make it a failure, and an end that is not "ok" always is.
+     */
+    public static boolean endFailed(String endMsg) {
+        if (endMsg == null) return false;
+        String t = endMsg.trim().toLowerCase(Locale.ROOT);
+        return !(t.startsWith("ok") || t.startsWith("done") || t.startsWith("finished"));
+    }
+
     public static boolean failure(String text) {
         return text != null && FAIL.matcher(text.trim()).find();
     }
@@ -84,9 +95,14 @@ public final class ReplyShaper {
 
     /** review 1: news is taken only when the shaped reply prints it (a PASS reply leaves it for the next one). */
     public synchronized String shapeLazy(String verb, String full, String here, java.util.function.Supplier<List<String>> newsSource) {
+        return shapeLazy(verb, full, null, here, newsSource);
+    }
+
+    /** 0.33.0: failed = the job's own end status (jobs, chains, gathers); null = decided from the text (the fallback). */
+    public synchronized String shapeLazy(String verb, String full, Boolean failed, String here, java.util.function.Supplier<List<String>> newsSource) {
         if (full == null || full.isBlank()) return full;
         if ("why".equalsIgnoreCase(verb)) return full;                       // live: why never answers with itself
-        boolean fail = failure(full);
+        boolean fail = failed != null ? failed : failure(full);
         lastFull = full;
         if (fail) { lastFailure = full; lastFailureAt = System.currentTimeMillis(); }
         if ((verb != null && PASS.contains(verb.toLowerCase(Locale.ROOT))) || full.indexOf('\n') >= 0) {

@@ -120,6 +120,20 @@ class VerbTableTest {
         }
     }
 
+    /**
+     * 0.33.0: the V1b old words (docs/COMMANDS.md "Removed in 0.22", the 33 words a tree check listed as missing) are
+     * not verbs: none is in the table (V1b: no aliases), and help names each one's new form.
+     */
+    @Test
+    void oldWordsAreNotVerbsAndHelpNamesTheNewForm() {
+        assertTrue(OldWords.REMOVED.size() >= 30, "the V1b list");
+        for (String w : OldWords.REMOVED) {
+            assertNull(VerbTable.of(w), "an old word in the verb table: " + w);
+            String h = HelpCommand.answer(w, true, OWNER);
+            assertTrue(h.contains("is an old word") && (h.contains("that is now") || h.contains("removed in 0.22") || h.contains("is gone")), "help " + w + ": " + h);
+        }
+    }
+
     @Test
     void suggestions() {
         assertEquals("mine", VerbTable.suggest("minee"));

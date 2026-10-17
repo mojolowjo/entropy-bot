@@ -40,6 +40,9 @@ public final class Chains {
 
         void whisper(String to, String text);
 
+        /** 0.33.0: a chain's end, with its own status (failed or not) for the reply shape. */
+        default void whisperEnd(String to, String text, boolean failed) { whisper(to, text); }
+
         void log(String line);
 
         /** Runs one command line; a step that starts a job comes back pending (its request). */
@@ -295,7 +298,7 @@ public final class Chains {
                 env.log("chain " + chain.name + ": the end note failed: " + e);
             }
         }
-        if (!quiet(chain.name)) env.whisper(chain.from, chain.name + ": " + msg);
+        if (!quiet(chain.name)) env.whisperEnd(chain.from, chain.name + ": " + msg, io.github.mojolowjo.entropybot.view.ReplyShaper.endFailed(msg));
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
         if (TRACKED_ENDS.contains(chain.name)) endsByName.put(chain.name, msg);   // 0.30.5: climb counts its own failures

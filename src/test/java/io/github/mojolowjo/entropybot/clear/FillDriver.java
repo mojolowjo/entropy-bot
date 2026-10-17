@@ -19,6 +19,9 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
     boolean timed;
     long worstTickNanos, walkNanos;
     String worstWhat;
+    /** 0.33.0: every decision's time and label, in order (the fill is deterministic, so round n's i-th is the same decision). */
+    final List<Long> tickNanos = new ArrayList<>();
+    final List<String> tickWhat = new ArrayList<>();
     double maxZ = -Double.MAX_VALUE, minZ = Double.MAX_VALUE;
 
     FillDriver(FakeWorld w, Bot start) {
@@ -86,6 +89,7 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
             boolean end = r.tick(this);
             // the decision alone: the driver's own walk physics (its path check) doesn't count
             long dt = System.nanoTime() - t0 - walkNanos;
+            if (timed) { tickNanos.add(dt); tickWhat.add(before + " -> " + r.phase()); }
             if (timed && dt > worstTickNanos) {
                 worstTickNanos = dt;
                 worstWhat = before + " -> " + r.phase();
