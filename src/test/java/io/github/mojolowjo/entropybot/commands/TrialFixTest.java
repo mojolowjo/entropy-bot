@@ -204,7 +204,7 @@ class TrialFixTest {
         assertNull(p.err());
         assertEquals(4, p.up());
         assertEquals("north", p.dir(), "all sides equal: the first");
-        assertEquals("dig 0 7 -1 0 8 0 via engine", p.steps().get(0));
+        assertEquals("dig 0 7 -1 0 8 0 ores via engine", p.steps().get(0));
         assertEquals("goto 0 7 -1", p.steps().get(1));
         assertEquals("goto 0 10 -4", p.steps().get(p.steps().size() - 1));
         assertEquals("climb 4 up (a staircase north, " + p.dig() + " blocks to dig) to 0 10 -4", ClimbPlan.startText(p));

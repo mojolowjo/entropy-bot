@@ -117,6 +117,7 @@ final class Chopping {
         final List<String> notes = new ArrayList<>();
         int skippedBuilt;
         String firstBuilt, nearestOutside, axeNote, firstWhy;
+        int notLogs;            // 0.32.1: wood/stripped column tops skipped
         int looked;
         TreeFinder.Tree tree;
         Map<String, Integer> before;
@@ -383,6 +384,9 @@ final class Chopping {
             for (int z = me[2] - ChopRules.RADIUS; z <= me[2] + ChopRules.RADIUS; z++) {
                 int y = ChopRules.logTop(src, x, z, me[1] + 40, me[1] - 24);
                 if (y == ChopRules.NONE) continue;
+                // 0.32.1 (P1, Haiku run: "no log at -249 71 123" three runs in a row): the column source counts stripped
+                // logs and 6-sided wood as LOG, the tree finder doesn't: only a column whose top is a real log is a candidate
+                if (!w.log(x, y, z)) { r.notLogs++; continue; }
                 if (commands.inAreas(dim, x, z)) inside.add(new int[]{x, y, z});
                 else {
                     long d = (long) (x - me[0]) * (x - me[0]) + (long) (z - me[2]) * (z - me[2]);
@@ -393,9 +397,7 @@ final class Chopping {
                 }
             }
         r.looked = inside.size();
-        LOG.info("[entropybot] chop: {} log columns in my areas within {} (nearest outside: {})", inside.size(), ChopRules.RADIUS, r.nearestOutside);
-        r.looked = inside.size();
-        LOG.info("[entropybot] chop: {} log columns in my areas within {} (nearest outside: {})", inside.size(), ChopRules.RADIUS, r.nearestOutside);
+        LOG.info("[entropybot] chop: {} log columns in my areas within {} (nearest outside: {}; {} wood/stripped tops skipped)", inside.size(), ChopRules.RADIUS, r.nearestOutside, r.notLogs);
         int checked = 0;
         List<ChopLoop.Cand> cands = new ArrayList<>();
         Map<String, TreeFinder.Tree> found = new java.util.HashMap<>();

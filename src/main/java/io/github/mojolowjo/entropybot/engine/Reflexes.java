@@ -385,6 +385,17 @@ public final class Reflexes {
         }
         Threat ft = forcedThreat(p, mc);
         Threat t = ft != null ? ft : defence ? nearestThreat(mc, p, hurt, true) : null;
+        // 0.32.1 (P1, the owner's creeper rule; Haiku run: cover from a spider walked the bot into a creeper 13 NE): a
+        // creeper within CREEPER_OVERRIDE beats any other target, cover, high ground or job: it is the target now
+        Threat cr = defence ? nearestCreeper(mc, p, CREEPER_OVERRIDE) : null;
+        if (cr != null && (t == null || !t.creeper)) {
+            if (spot != null) clearSpot();
+            t = cr;
+            if (cr.d < ReflexRules.CREEPER_RUN_TO) forceFleeUntil = Math.max(forceFleeUntil, now + 20);
+        }
+        if (creeperProbe && cr != null) LOG.info("[entropybot] creeper probe: tick {} creeper {} at {} | target {} {} | reflex {} | spot {} | hp {}",
+                now, cr.e.getId(), Math.round(cr.d * 10) / 10.0, t == null ? "none" : t.id, t == null ? "" : Math.round(t.d * 10) / 10.0,
+                reflex, spot == null ? "none" : spot[0] + " " + spot[1] + " " + spot[2], Math.round(hp));
         // C7 escort: what threatens the guarded player comes first, unless something is at the bot's own throat
         // (or the owner pointed at a target with `attack`, C1)
         if (escort.active()) escort.watch(mc);
@@ -504,6 +515,32 @@ public final class Reflexes {
             best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
         }
         return best;
+    }
+
+    /** 0.32.1: a creeper this close is the target whatever else is near (the owner's rule). */
+    static final double CREEPER_OVERRIDE = 10;
+    /** 0.32.1: cover and high-ground spots keep this far from every creeper. */
+    static final double CREEPER_SPOT_CLEAR = 8;
+    /** 0.32.1: "debug creeper probe on|off": a log line every tick a creeper is within CREEPER_OVERRIDE. */
+    public volatile boolean creeperProbe;
+
+    /** The nearest live creeper within r (any line of sight: it hisses through walls too), or null. */
+    private Threat nearestCreeper(Minecraft mc, LocalPlayer p, double r) {
+        Threat best = null;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (!(e instanceof Creeper c) || !c.isAlive()) continue;
+            double d = p.distanceTo(e);
+            if (d > r || (best != null && d >= best.d)) continue;
+            best = new Threat(e, d, "creeper", true, HostileRules.Kind.ENEMY, false);
+        }
+        return best;
+    }
+
+    /** True when a creeper is within CREEPER_SPOT_CLEAR of x y z. */
+    private boolean creeperNear(Minecraft mc, double x, double y, double z) {
+        for (Entity e : mc.level.entitiesForRendering())
+            if (e instanceof Creeper c && c.isAlive() && e.distanceToSqr(x + 0.5, y, z + 0.5) < CREEPER_SPOT_CLEAR * CREEPER_SPOT_CLEAR) return true;
+        return false;
     }
 
     private Threat threatOf(LocalPlayer p, Entity e, boolean hurt) {
@@ -893,6 +930,11 @@ public final class Reflexes {
     private boolean spotTick(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
         try {
             io.github.mojolowjo.entropybot.brain.BrainConfig cfg = io.github.mojolowjo.entropybot.brain.BrainConfig.current();
+            if (spot != null && creeperNear(mc, spot[0], spot[1], spot[2])) {          // 0.32.1: never toward a creeper
+                ThreatRuntime.INSTANCE.verdict(t.id + ": leaving the " + (spotCover ? "cover" : "high ground") + " spot: a creeper is near it");
+                clearSpot();
+                return false;
+            }
             if (spot != null && spotCover) {
                 int close = cfg.i("threat.coverCloseAt"), wait = cfg.i("threat.coverWait");
                 if (spotMob == t.e.getId() && !io.github.mojolowjo.entropybot.threat.Cover.over(t.d, now - spotStart, close, wait)) {
@@ -926,6 +968,10 @@ public final class Reflexes {
                     && io.github.mojolowjo.entropybot.threat.Cover.wanted(io.github.mojolowjo.entropybot.threat.Cover.ranged(t.id,
                     io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(10), System.currentTimeMillis()), t.d, range)) {
                 io.github.mojolowjo.entropybot.threat.Cover.Spot c = ThreatRuntime.INSTANCE.cover(p, t.e);
+                if (c != null && creeperNear(mc, c.x(), c.y(), c.z())) {
+                    ThreatRuntime.INSTANCE.verdict(t.id + ": no cover at " + c.x() + " " + c.y() + " " + c.z() + ": a creeper is near it");
+                    c = null;
+                }
                 if (c != null) {
                     spot = new int[]{c.x(), c.y(), c.z()};
                     spotCover = true;
@@ -990,7 +1036,8 @@ public final class Reflexes {
             // committed: keep fighting while not losing (the lit-spot walk is only for the start)
             if (fighting && verdict == FightOrFlee.Verdict.LIT) verdict = FightOrFlee.Verdict.FIGHT;
             if (!fighting || verdict != FightOrFlee.Verdict.FIGHT) ThreatRuntime.INSTANCE.verdict(t.id + ": " + v.why());
-            if (verdict == FightOrFlee.Verdict.HOLD && hg != null && io.github.mojolowjo.entropybot.threat.HighGround.isHighGround(v)) {
+            if (verdict == FightOrFlee.Verdict.HOLD && hg != null && io.github.mojolowjo.entropybot.threat.HighGround.isHighGround(v)
+                    && !creeperNear(mc, hg.x(), hg.y(), hg.z())) {          // 0.32.1: no high ground beside a creeper
                 spot = new int[]{hg.x(), hg.y(), hg.z()};
                 spotCover = false;
                 spotMob = -1;
@@ -1240,8 +1287,31 @@ public final class Reflexes {
     }
 
     private boolean startFetch(Minecraft mc, LocalPlayer p) {
-        fetchTargets = foodTargets(mc, p);
         fetchCooldownUntil = now + 2400;            // whatever happens, the next run waits 2 minutes
+        // 0.32.1 (P1, cave test: "fetching food from -255 67 128" walked the bot 110 blocks out of a running job under
+        // ground): never a silent takeover. A job running or the bot under ground: no run; very hungry with a job: the
+        // job stops with the reason. An owner's "eat" still fetches.
+        try {
+            var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
+            boolean busy = cmds.jobs.running() || cmds.chainRunning();
+            int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, p.getBlockX(), p.getBlockZ());
+            boolean under = top - p.getBlockY() > 3 && !mc.level.canSeeSky(p.blockPosition().above());
+            if (!eatRequested && (busy || under)) {
+                int food = p.getFoodData().getFoodLevel();
+                fetchNote = busy ? "a job is running: no food run during it" : "under ground: no food run from here";
+                if (busy && food <= 4 && cmds.jobs.running()) {
+                    cmds.jobs.finish("stopped: out of food (food " + food + "/20) and none on me - next: eat (fetches food from the chests), or bring me food");
+                    io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.DAMAGE, "out of food: stopped the job");
+                } else if (!noFood) {
+                    io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.TIME, "hungry (food " + food + "), no food on me: " + fetchNote);
+                }
+                return false;
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] food run check failed (no run): {}", e.toString());
+            return false;
+        }
+        fetchTargets = foodTargets(mc, p);
         if (fetchTargets.isEmpty()) {
             fetchNote = "no chest I know holds food (place food at one, or scan the base)";
             return false;

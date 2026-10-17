@@ -21,6 +21,8 @@ public final class StairPlan {
      * where I stand, dug and walked one at a time; Baritone's builder (the dig default now) digs top layer first and
      * would path-dig toward the top of an up-staircase from the bottom.
      */
+    /** 0.32.1 (P1): stairs and climbs break an ore in their way (the "ores left in place" rule is for jobs, not escapes). */
+    public static final String ORES = " ores";
     public static final String VIA_ENGINE = " via engine";
 
     public interface Cells {
@@ -63,7 +65,7 @@ public final class StairPlan {
         List<String> out = new ArrayList<>();
         for (int i = 1; i <= n; i++) {
             int cx = x + dx * i, cz = z + dz * i;
-            out.add("dig " + cx + " " + (y - i) + " " + cz + " " + cx + " " + (y - i + 2) + " " + cz + VIA_ENGINE);
+            out.add("dig " + cx + " " + (y - i) + " " + cz + " " + cx + " " + (y - i + 2) + " " + cz + ORES + VIA_ENGINE);
             out.add("goto " + cx + " " + (y - i) + " " + cz);
             if (i % TORCH_EVERY == 0) out.add("place torch " + (x + dx * (i - 1)) + " " + (y - i + 1) + " " + (z + dz * (i - 1)));
         }
@@ -79,7 +81,7 @@ public final class StairPlan {
         List<String> out = new ArrayList<>();
         for (int i = 1; i <= n; i++) {
             int px = x + dx * (i - 1), pz = z + dz * (i - 1), cx = x + dx * i, cz = z + dz * i;
-            out.add("dig " + Math.min(px, cx) + " " + (y + i) + " " + Math.min(pz, cz) + " " + Math.max(px, cx) + " " + (y + i + 1) + " " + Math.max(pz, cz) + VIA_ENGINE);
+            out.add("dig " + Math.min(px, cx) + " " + (y + i) + " " + Math.min(pz, cz) + " " + Math.max(px, cx) + " " + (y + i + 1) + " " + Math.max(pz, cz) + ORES + VIA_ENGINE);
             out.add("goto " + cx + " " + (y + i) + " " + cz);
         }
         return out;
@@ -149,7 +151,7 @@ public final class StairPlan {
         out.add("goto " + sx + " " + sy + " " + sz);
         out.addAll(steps(sx, sy, sz, dx, dz, n));
         int bx = sx + dx * n, by = sy - n, bz = sz + dz * n;
-        out.add("dig " + Math.min(bx, hx) + " " + by + " " + Math.min(bz, hz) + " " + Math.max(bx, hx) + " " + (by + 1) + " " + Math.max(bz, hz) + VIA_ENGINE);
+        out.add("dig " + Math.min(bx, hx) + " " + by + " " + Math.min(bz, hz) + " " + Math.max(bx, hx) + " " + (by + 1) + " " + Math.max(bz, hz) + ORES + VIA_ENGINE);
         out.add("goto " + hx + " " + by + " " + hz);
         return out;
     }

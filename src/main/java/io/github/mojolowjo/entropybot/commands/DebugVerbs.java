@@ -82,6 +82,12 @@ public final class DebugVerbs {
             case "trail" -> { return trail(rec, w, now, zone); }
             case "incident", "incidents" -> { return incident(rec, w, now, zone); }
             case "world" -> { return world(core, w); }
+            case "creeper" -> {            // 0.32.1: debug creeper probe on|off (a log line per tick near a creeper)
+                boolean on = w.size() >= 3 && w.get(2).equalsIgnoreCase("on");
+                if (w.size() < 3 || !w.get(1).equalsIgnoreCase("probe")) return "usage: debug creeper probe on|off (now " + (core.reflexes.creeperProbe ? "on" : "off") + ")";
+                core.reflexes.creeperProbe = on;
+                return "ok: creeper probe " + (on ? "on: a log line each tick a creeper is within 10" : "off");
+            }
             case "events" -> {
                 int n = DebugRules.optInt(w, 1, DebugRules.EVENTS_DEFAULT, 1, DebugRules.EVENTS_MAX, "usage: debug events [n]");
                 return core.events.since(Math.max(0, core.events.lastSeq() - n), n);

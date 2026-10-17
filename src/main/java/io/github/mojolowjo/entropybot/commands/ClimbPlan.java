@@ -186,7 +186,7 @@ public final class ClimbPlan {
     /** The dig for {@link #walledIn}'s cells: "dig x y z x y2 z force" (force: my own planks are built blocks). */
     public static String outDig(Out o) {
         int[] a = o.cells().get(0), b = o.cells().get(o.cells().size() - 1);
-        return "dig " + a[0] + " " + a[1] + " " + a[2] + " " + b[0] + " " + b[1] + " " + b[2] + " force" + StairPlan.VIA_ENGINE;
+        return "dig " + a[0] + " " + a[1] + " " + a[2] + " " + b[0] + " " + b[1] + " " + b[2] + " force" + StairPlan.ORES + StairPlan.VIA_ENGINE;
     }
 
     /** The start reply: "started: climb 6 up (a staircase east, 14 blocks to dig) to 3 70 -2". */

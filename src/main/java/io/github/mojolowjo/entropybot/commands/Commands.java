@@ -210,6 +210,9 @@ public final class Commands implements Chains.Env {
 
     Chains chainsRef() { return chains; }
 
+    /** 0.32.1: a chain is running (the food run stays out of it). */
+    public boolean chainRunning() { return chains != null && chains.running(); }
+
     /** 0.24.4: the shaft test over the client level (loaded cells only; an unloaded one counts as not free). */
     static StairPlan.Cells cells(net.minecraft.world.level.Level level) {
         return (x, y, z) -> {
@@ -880,6 +883,7 @@ public final class Commands implements Chains.Env {
 
     void whisper(String to, String text, boolean shaped) {
         if (!shaped && to != null && to.equalsIgnoreCase(owner())) text = shapeOut(null, text);
+        text = io.github.mojolowjo.entropybot.view.ReplyShaper.oneLine(text);          // 0.32.1: one chat line
         whisperSent(to, text);
     }
 
@@ -1973,8 +1977,20 @@ public final class Commands implements Chains.Env {
         JsonObject r = core.reflexes.status();
         String target = r.has("target") ? r.get("target").getAsString() : null;
         io.github.mojolowjo.entropybot.view.ViewLive.NEWS.push(io.github.mojolowjo.entropybot.view.News.DEATH, "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt());
-        whisper(owner(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt() + (target != null ? " fighting " + target : "")
+        whisper(owner(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt() + deathCause(target)
                 + ". Respawning - say \"death\" and I will go back for my stuff.");
+    }
+
+    /** 0.32.1 (P1: the Haiku death named the spider, a creeper killed it): the last hit's source names the killer. */
+    static String deathCause(String target) {
+        try {
+            var hits = io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(1);
+            String killer = !hits.isEmpty() && System.currentTimeMillis() - hits.get(0).atMs() < 10000 ? hits.get(0).source() : null;
+            if (killer == null) return target != null ? " fighting " + target : "";
+            return " - killed by " + killer + (target != null && !killer.contains(target) ? " (while fighting " + target + ")" : "");
+        } catch (RuntimeException e) {
+            return target != null ? " fighting " + target : "";
+        }
     }
 
     // ---- cmd.json (bridge.ps1, the dashboard) ----

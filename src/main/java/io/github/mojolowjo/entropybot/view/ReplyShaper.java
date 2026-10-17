@@ -28,6 +28,7 @@ public final class ReplyShaper {
     private static final Pattern FAIL = Pattern.compile("^(error|stopped|failed|can't|couldn't|cannot|busy|sorry|no path|refused|blocked|usage:|unknown|i have no|i don't|i didn't|didn't|nothing to|not in a world)"
             + "|^\\S+: (stopped|error|failed|blocked)\\b|\\bblocked by (water|lava)\\b",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern PLACEHOLDER = Pattern.compile("<[a-z][^<>]{0,20}>", Pattern.CASE_INSENSITIVE);
     private static final Pattern NEXT = Pattern.compile("(?:\\s*[-(;,]\\s*)?\\bnext:\\s*", Pattern.CASE_INSENSITIVE);
 
     private String lastResult;
@@ -96,6 +97,13 @@ public final class ReplyShaper {
         List<String> news = newsSource == null ? null : newsSource.get();
         List<String> opts = new ArrayList<>();
         String result = split(full, opts)[0];
+        // 0.32.1 (P1): a usage or help text ("that is now cut <n>", "usage: ...") is passed whole; an option with a
+        // <placeholder> is left out (the operator copied "<r>" literally)
+        if (full.trim().toLowerCase(Locale.ROOT).startsWith("usage:") || PLACEHOLDER.matcher(result).find()) {
+            lastResult = null;
+            return full;
+        }
+        opts.removeIf(o -> PLACEHOLDER.matcher(o).find());
         String v = verb == null ? "" : verb.toLowerCase(Locale.ROOT);
         if (result.equals(lastResult) && v.equals(lastVerb)) {          // review 4: same verb and same text only
             repeats++;
@@ -138,6 +146,19 @@ public final class ReplyShaper {
             return lastCut == null ? "no reply was cut yet" : "last cut reply (" + Math.max(0, (now - lastCutAt) / 1000) + " s ago): " + lastCut;
         if (lastFailure == null) return lastFull == null ? "nothing has gone wrong yet" : "no failure yet; the last reply was: " + lastFull;
         return "last failure (" + Math.max(0, (now - lastFailureAt) / 1000) + " s ago): " + lastFailure;
+    }
+
+    /** 0.32.1 (P1): a chat whisper is one line: "result | here | new | options". */
+    public static String oneLine(String shaped) {
+        if (shaped == null || shaped.indexOf('\n') < 0 || !shaped.startsWith("RESULT  ")) return shaped;
+        StringBuilder sb = new StringBuilder();
+        for (String l : shaped.split("\n")) {
+            String t = l.startsWith("RESULT  ") ? l.substring(8) : l.startsWith("HERE    ") ? "at " + l.substring(8)
+                    : l.startsWith("NEW     ") ? "new: " + l.substring(8) : l.startsWith("OPTIONS ") ? "next: " + l.substring(8) : l;
+            if (sb.length() > 0) sb.append(" | ");
+            sb.append(t.trim());
+        }
+        return sb.toString();
     }
 
     public synchronized String counters() {

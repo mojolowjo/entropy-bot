@@ -82,6 +82,17 @@ class OperatorViewTest {
     }
 
     @Test
+    void p1Shapes() {
+        ReplyShaper s = new ReplyShaper();
+        assertEquals("that is now cut <n>", s.shape("chop", "that is now cut <n>", "h", null));
+        assertEquals("usage: goto x y z", s.shape("goto", "usage: goto x y z", "h", null));
+        String r = s.shape("chop", "error: chopped nothing - next: \"area here <r> <name>\" where trees grow, or put some oak_log in the base chests", "1 2 3", null);
+        assertFalse(r.contains("<r>"), r);
+        assertTrue(r.contains("1) put some oak_log in the base chests  2) why"), r);
+        assertEquals("error: x | at 1 2 3 | next: 1) why", ReplyShaper.oneLine(new ReplyShaper().shape(null, "error: x", "1 2 3", null)));
+    }
+
+    @Test
     void newsHighestFirstOnce() {
         News n = new News();
         n.push(News.TIME, "night fell");
