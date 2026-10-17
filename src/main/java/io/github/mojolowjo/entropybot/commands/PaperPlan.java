@@ -41,7 +41,7 @@ public final class PaperPlan {
     private PaperPlan() {}
 
     public record Result(String rules, String target, boolean reachable, String type, List<int[]> cells, int breaks, int places,
-                         int highest, long ms, String why) {
+                         int highest, long ms, String why, String dim, int[] start) {
         public String text() {
             if (cells.isEmpty()) return "plan path " + target + " (" + rules + "): no way found (" + type + ", " + ms + " ms" + (why == null ? "" : "; " + why) + ")";
             int[] e = cells.get(cells.size() - 1);
@@ -65,6 +65,8 @@ public final class PaperPlan {
     });
     private volatile Result last;
     private volatile boolean running;
+    /** review 3: the plan-go job itself (not its id): a new job never matches a stale owner. */
+    private volatile Object goJobObj;
     private volatile long goJob = -1;
     private volatile boolean goBreak, goPlace;
 
@@ -73,10 +75,11 @@ public final class PaperPlan {
     /** The plan-go job runs and owns breaking/placing (SafetyNet's fourth owner). */
     public static boolean owned() {
         PaperPlan pp = INSTANCE;
-        if (pp.goJob < 0) return false;
+        Object o = pp.goJobObj;
+        if (o == null) return false;
         try {
             var j = Core.INSTANCE.commands.jobs.job;
-            return j != null && !j.done && j.id == pp.goJob;
+            return j != null && !j.done && j == o;
         } catch (Throwable t) {
             return false;
         }
@@ -88,7 +91,8 @@ public final class PaperPlan {
 
     /** Core tick: a plan-go job that ended gives breaking/placing back at once (the safety net is the backstop). */
     public void tick() {
-        if (goJob >= 0 && !owned()) {
+        if (goJobObj != null && !owned()) {
+            goJobObj = null;
             goJob = -1;
             try {
                 io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore();
@@ -99,10 +103,22 @@ public final class PaperPlan {
         }
     }
 
+    /** review 3: leaving or switching the world: no owner, no plan (its cells belong to the old world). */
+    public void reset(String why) {
+        boolean was = goJobObj != null;
+        goJobObj = null;
+        goJob = -1;
+        last = null;
+        if (was) {
+            try { io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore(); } catch (Throwable ignored) {}
+            LOG.info("[entropybot] plan go: {}: breaking/placing off, plan dropped", why);
+        }
+    }
+
     /** "plan path ..." / "plan go" / "plan last". */
     String command(Commands c, LocalPlayer p, String rest, String from, Consumer<String> report) {
         String[] w = rest.trim().toLowerCase().split("\\s+");
-        if (w[0].equals("go")) return go(c, p, from);
+        if (w[0].equals("go")) return go(c, p, from, w.length > 1 && w[1].equals("anyway"));
         if (w[0].equals("last")) return last == null ? "no plan yet - plan path <x y z | surface | place> [walk|place|break]" : last.text();
         String args = rest.trim().replaceFirst("(?i)^path\\s*", "");
         String rules = "walk";
@@ -157,6 +173,7 @@ public final class PaperPlan {
         final Goal g = goal;
         final baritone.pathing.movement.CalculationContext cx = ctx;
         BetterBlockPos start = new BetterBlockPos(me[0], me[1], me[2]);
+        final String worldAt = Core.INSTANCE.worldKey(), dimAt = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
         running = true;
         LOG.info("[entropybot] plan path {} ({}) from {}: searching (up to {} s)", tg, rl, Jobs.fmt(me), FAILURE_MS / 1000);
         worker.submit(() -> {
@@ -164,6 +181,7 @@ public final class PaperPlan {
             List<int[]> cells = new ArrayList<>();
             String type = "?", why = null;
             boolean reach = false;
+            IPath found = null;
             try {
                 baritone.pathing.calc.AStarPathFinder pf = new baritone.pathing.calc.AStarPathFinder(start, me[0], me[1], me[2], g,
                         new baritone.utils.pathing.Favoring(null, cx), cx);
@@ -171,6 +189,7 @@ public final class PaperPlan {
                 PathCalculationResult r = pf.calculate(rl.equals("walk") ? PRIMARY_MS : FAILURE_MS, FAILURE_MS);
                 type = r.getType().name().toLowerCase();
                 IPath path = r.getPath().orElse(null);
+                found = path;
                 if (path != null) for (BetterBlockPos q : path.positions()) cells.add(new int[]{q.x, q.y, q.z});
                 reach = path != null && r.getType() == PathCalculationResult.Type.SUCCESS_TO_GOAL;
             } catch (Throwable t) {
@@ -181,10 +200,16 @@ public final class PaperPlan {
             long ms = System.currentTimeMillis() - t0;
             final boolean rc = reach;
             final String ty = type, wy = why;
+            final IPath fp = found;
             Minecraft.getInstance().execute(() -> {
                 Result res;
                 try {
-                    res = count(rl, tg, rc, ty, cells, ms, wy);
+                    // review 6: a plan made for another world (or with no world now) is dropped
+                    if (Minecraft.getInstance().level == null || !java.util.Objects.equals(worldAt, Core.INSTANCE.worldKey())) {
+                        LOG.info("[entropybot] plan path {}: dropped, the world changed meanwhile", tg);
+                        return;
+                    }
+                    res = count(rl, tg, rc, ty, cells, ms, wy, fp, cx, dimAt, me);
                     last = res;
                     LOG.info("[entropybot] {}", res.text());
                 } finally {
@@ -197,18 +222,37 @@ public final class PaperPlan {
     }
 
     /** Breaks: a feet or head cell on the path that is solid now; places: a path cell with no solid block under it. */
-    private static Result count(String rules, String target, boolean reach, String type, List<int[]> cells, long ms, String why) {
+    /**
+     * Breaks and places from Baritone's own movements (toBreak/toPlace, live: the cell count said "breaks 0" on a path that
+     * dug); the old cell count only when the movements can't be read.
+     */
+    private static Result count(String rules, String target, boolean reach, String type, List<int[]> cells, long ms, String why,
+                                IPath path, baritone.pathing.movement.CalculationContext cx, String dim, int[] start) {
         int br = 0, pl = 0, hi = Integer.MIN_VALUE;
+        for (int[] c : cells) hi = Math.max(hi, c[1]);
+        boolean counted = false;
+        if (path != null) {
+            try {
+                for (baritone.api.pathing.movement.IMovement mv : path.movements()) {
+                    if (mv instanceof baritone.pathing.movement.Movement m) {
+                        br += m.toBreak(cx.bsi).size();
+                        pl += m.toPlace(cx.bsi).size();
+                    }
+                }
+                counted = true;
+            } catch (Throwable t) {
+                LOG.info("[entropybot] plan: movements unreadable ({}), counting cells", t.toString());
+                br = pl = 0;
+            }
+        }
         Level lv = Minecraft.getInstance().level;
-        for (int[] c : cells) {
-            hi = Math.max(hi, c[1]);
-            if (lv == null) continue;
+        if (!counted && lv != null) for (int[] c : cells) {
             BlockPos f = new BlockPos(c[0], c[1], c[2]);
             if (!lv.getBlockState(f).getCollisionShape(lv, f).isEmpty()) br++;
             if (!lv.getBlockState(f.above()).getCollisionShape(lv, f.above()).isEmpty()) br++;
             if (lv.getBlockState(f.below()).getCollisionShape(lv, f.below()).isEmpty() && lv.getFluidState(f.below()).isEmpty()) pl++;
         }
-        return new Result(rules, target, reach, type, cells, br, pl, cells.isEmpty() ? 0 : hi, ms, why);
+        return new Result(rules, target, reach, type, cells, br, pl, cells.isEmpty() ? 0 : hi, ms, why, dim, start);
     }
 
     /** "Out to open sky": standing on a column's top within SURFACE_R (precomputed here, on the game thread). */
@@ -277,16 +321,24 @@ public final class PaperPlan {
     }
 
     /** "plan go": the last reachable plan, walked with its rules' breaking/placing on for this job only. */
-    String go(Commands c, LocalPlayer p, String from) {
+    String go(Commands c, LocalPlayer p, String from, boolean anyway) {
+        // review 2: every check first; the rules change only for a walk that starts
+        if (running) return "busy: a plan is being made (plan last when it ends)";
+        if (owned()) return "busy: a plan go is walking - next: stop, then plan go";
         Result r = last;
         if (r == null) return "error: no plan yet - next: plan path surface break";
-        if (r.cells().isEmpty()) return "error: the last plan found no way - next: why";
-        if (running) return "busy: a plan is being made";
+        if (r.cells().isEmpty()) return "error: the last plan found no way - next: plan path surface break";
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(p.level());
+        if (r.dim() != null && !r.dim().equals(dim)) return "error: the last plan is for " + r.dim() + " - next: plan path again here";
+        int[] me = Jobs.here(p);
+        if (r.start() != null && Jobs.distSq(me, r.start()) > 36)
+            return "error: the last plan starts at " + Jobs.fmt(r.start()) + ", I am at " + Jobs.fmt(me) + " - next: plan path again from here";
         int[] e = r.cells().get(r.cells().size() - 1);
+        if (!r.reachable() && !anyway) return "the last plan is partial: it ends at " + Jobs.fmt(e) + ", not at " + r.target() + " - next: plan go anyway (walks to its end), or plan path again";
         boolean brk = r.rules().equals("break"), plc = brk || r.rules().equals("place");
         goBreak = brk;
         goPlace = plc;
-        String s = c.jobs.startPlanGo(e, brk, plc, from, id -> goJob = id);
+        String s = c.jobs.startPlanGo(e, brk, plc, from, id -> { goJob = id; goJobObj = c.jobs.job; });
         LOG.info("[entropybot] plan go: to {} ({}), job {}: {}", Jobs.fmt(e), r.rules(), goJob, s);
         return s;
     }

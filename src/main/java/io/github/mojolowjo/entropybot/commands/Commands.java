@@ -210,6 +210,13 @@ public final class Commands implements Chains.Env {
 
     Chains chainsRef() { return chains; }
 
+    /** 0.32.3 review: out of food with no run allowed: everything stops (job, chain, gather, autominer held), and the owner hears why. */
+    public void stopForFood(String why) {
+        String r = stopAll();
+        LOG.info("[entropybot] food: {} ({})", why, r);
+        whisper(owner(), why);
+    }
+
     /** 0.32.1: a chain is running (the food run stays out of it). */
     public boolean chainRunning() { return chains != null && chains.running(); }
 
@@ -1033,7 +1040,7 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("goal")) return Reply.now(planning.goal(from, player, rest));         // B3: the planner
         // 0.32.3 (PATHS_PLAN P3): paper planning: plan path ... / plan go / plan last; the result is whispered when done
-        if (verb.equals("plan") && rest.trim().toLowerCase().matches("^(path\\b.*|go|last)$")) {
+        if (verb.equals("plan") && rest.trim().toLowerCase().matches("^(path\\b.*|go( anyway)?|last)$")) {
             String to = from;
             return Reply.now(PaperPlan.INSTANCE.command(this, player, rest, from, r -> whisper(to, r)));
         }

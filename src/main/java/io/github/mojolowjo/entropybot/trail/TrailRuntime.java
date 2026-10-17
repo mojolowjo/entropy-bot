@@ -47,12 +47,33 @@ public final class TrailRuntime {
         }
     }
 
+    /** review 7: the text is made and written on the io thread (one file at a time, in order). */
+    private final java.util.concurrent.ExecutorService io = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "entropybot-trail-io");
+        t.setDaemon(true);
+        return t;
+    });
+
     public synchronized void save() {
+        if (file == null || !trail.takeDirty()) return;
+        Path f = file;
+        java.util.List<Trail.P> pts = trail.snapshot();
+        io.execute(() -> {
+            try {
+                BotFiles.writeAtomicAnywhere(f, Trail.toText(pts));
+            } catch (Exception e) {
+                if (errors++ < 5) LOG.warn("[entropybot] trail: couldn't write {}: {}", f, e.toString());
+            }
+        });
+    }
+
+    /** At quit (the shutdown hook): written on this thread, the io thread may be gone. */
+    public synchronized void saveNow() {
         if (file == null || !trail.takeDirty()) return;
         try {
             BotFiles.writeAtomicAnywhere(file, trail.toText());
         } catch (Exception e) {
-            if (errors++ < 5) LOG.warn("[entropybot] trail: couldn't write {}: {}", file, e.toString());
+            LOG.warn("[entropybot] trail: couldn't write {} at quit: {}", file, e.toString());
         }
     }
 

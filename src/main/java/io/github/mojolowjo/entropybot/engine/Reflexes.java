@@ -388,6 +388,9 @@ public final class Reflexes {
         // 0.32.1 (P1, the owner's creeper rule; Haiku run: cover from a spider walked the bot into a creeper 13 NE): a
         // creeper within CREEPER_OVERRIDE beats any other target, cover, high ground or job: it is the target now
         Threat cr = defence ? nearestCreeper(mc, p, CREEPER_OVERRIDE) : null;
+        // review 4: a creeper behind a wall or in a pit (no sight) or one that hasn't come closer in 8 s doesn't override
+        // (the flee loop); within 4 it always does. The flee itself keeps off drops, lava and fire (sprint check, Baritone).
+        if (cr != null && cr.d > 4 && (!p.hasLineOfSight(cr.e) || !creeperClosing(cr))) cr = null;
         if (cr != null && (t == null || !t.creeper)) {
             if (spot != null) clearSpot();
             t = cr;
@@ -534,6 +537,25 @@ public final class Reflexes {
             best = new Threat(e, d, "creeper", true, HostileRules.Kind.ENEMY, false);
         }
         return best;
+    }
+
+    private int watchCreeper = -1;
+    private double watchCreeperBest;
+    private long watchCreeperAt;
+
+    /** review 4: the creeper came at least 0.5 closer within the last 8 s (a new one counts as closing). */
+    private boolean creeperClosing(Threat cr) {
+        if (cr.e.getId() != watchCreeper) {
+            watchCreeper = cr.e.getId();
+            watchCreeperBest = cr.d;
+            watchCreeperAt = now;
+            return true;
+        }
+        if (cr.d < watchCreeperBest - 0.5) {
+            watchCreeperBest = cr.d;
+            watchCreeperAt = now;
+        }
+        return now - watchCreeperAt <= 160;
     }
 
     /** True when a creeper is within CREEPER_SPOT_CLEAR of x y z. */
@@ -1299,9 +1321,15 @@ public final class Reflexes {
             if (!eatRequested && (busy || under)) {
                 int food = p.getFoodData().getFoodLevel();
                 fetchNote = busy ? "a job is running: no food run during it" : "under ground: no food run from here";
-                if (busy && food <= 4 && cmds.jobs.running()) {
-                    cmds.jobs.finish("stopped: out of food (food " + food + "/20) and none on me - next: eat (fetches food from the chests), or bring me food");
-                    io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.DAMAGE, "out of food: stopped the job");
+                // review 1: very hungry and nothing on board (startFetch only runs then): a job, a chain or the autominer
+                // would starve the bot: everything stops with the reason; idle under ground: the owner hears it; out in the
+                // open again (or after "eat"), the run is allowed
+                if (food <= 6 && (busy || cmds.jobs.running())) {
+                    cmds.stopForFood("stopped: out of food (food " + food + "/20) and none on me" + (under ? " under ground" : "")
+                            + " - next: eat (fetches food from the chests), or bring me food");
+                    io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.DAMAGE, "out of food: stopped everything");
+                } else if (food <= 6 && under && !noFood) {
+                    cmds.whisper(cmds.owner(), "hungry (food " + food + "/20) under ground with no food on me - next: eat (walks to the food chests), or bring me food");
                 } else if (!noFood) {
                     io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.TIME, "hungry (food " + food + "), no food on me: " + fetchNote);
                 }

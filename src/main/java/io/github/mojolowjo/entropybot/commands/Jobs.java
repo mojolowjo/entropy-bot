@@ -1556,6 +1556,10 @@ public final class Jobs {
         boolean near = d != null && distSq(me, d) <= 16;
         if (!near && ++j.retraceSkips > 4) {
             LOG.info("[entropybot] retrace: gave up after {} unreachable hops ({}) at {}", j.retraceSkips - 1, why, fmt(me));
+            // review 5: the retrace is over: the real goal back as the walk's goal (its end text), no second escape
+            j.dest = j.retraceFinal;
+            j.retraceFinal = null;
+            j.retraceHops = null;
             PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: plan from the highest point reached
             return false;
         }

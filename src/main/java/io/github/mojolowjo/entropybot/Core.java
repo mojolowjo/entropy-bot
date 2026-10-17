@@ -120,6 +120,7 @@ public final class Core {
             }
             String old = worldKey;
             if (!first) flushWorld();
+            if (!first) io.github.mojolowjo.entropybot.commands.PaperPlan.INSTANCE.reset("world change");
             for (String l : io.github.mojolowjo.entropybot.io.WorldState.enter(f.root(), key, mp)) LOG.info("[entropybot] world: {}", l);
             f.setWorld(f.root().resolve(io.github.mojolowjo.entropybot.io.WorldState.WORLDS).resolve(key));
             worldKey = key;
@@ -213,7 +214,8 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.leftWorld();   // 0.19.3: the surface export's files wiped
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
                 if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
-                if (inWorld) io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();             // 0.32.2         // 0.23.3: edge penalties saved
+                if (inWorld) io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();             // 0.32.2
+                if (inWorld) io.github.mojolowjo.entropybot.commands.PaperPlan.INSTANCE.reset("left the world");     // review 3         // 0.23.3: edge penalties saved
                 inWorld = false;
                 return;
             }
@@ -236,7 +238,7 @@ public final class Core {
                 // S1: and when the game quits from inside a world (no tick runs after that)
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try { mineNotes.flush(); } catch (Throwable ignored) {}
-                    try { io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save(); } catch (Throwable ignored) {}
+                    try { io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.saveNow(); } catch (Throwable ignored) {}
                     try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
                     try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable ignored) {}
                 }, "entropybot-mine-notes"));

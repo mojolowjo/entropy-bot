@@ -49,6 +49,15 @@ public final class Trail {
 
     public synchronized String counters() { return "trail: " + points.size() + " points (" + added + " added this session)"; }
 
+    /** review 7: the points to write, copied (cheap: records) so the text is made off the game thread. */
+    public synchronized List<P> snapshot() { return new ArrayList<>(points); }
+
+    public static String toText(List<P> pts) {
+        StringBuilder sb = new StringBuilder(pts.size() * 24);
+        for (P p : pts) sb.append(p.line()).append('\n');
+        return sb.toString();
+    }
+
     public synchronized String toText() {
         StringBuilder sb = new StringBuilder();
         for (P p : points) sb.append(p.line()).append('\n');
@@ -78,20 +87,22 @@ public final class Trail {
      * bot is nowhere near its trail, or the trail never had sky.
      */
     public synchronized List<int[]> retrace(String dim, int x, int y, int z, int near, int hop, int maxBack) {
-        List<P> l = new ArrayList<>(points);
-        int start = -1;
-        for (int i = l.size() - 1; i >= 0 && i >= l.size() - 2000; i--) {
-            P p = l.get(i);
+        // review 7: walked newest-first in place (no copy of up to 20000 points)
+        List<int[]> out = new ArrayList<>();
+        Iterator<P> it = points.descendingIterator();
+        P lastHop = null;
+        int looked = 0;
+        while (it.hasNext() && looked < 2000) {
+            P p = it.next();
+            looked++;
             if (!p.dim.equals(dim)) continue;
             long dx = p.x - x, dy = p.y - y, dz = p.z - z;
-            if (dx * dx + dy * dy + dz * dz <= (long) near * near) { start = i; break; }
+            if (dx * dx + dy * dy + dz * dz <= (long) near * near) { lastHop = p; break; }
         }
-        List<int[]> out = new ArrayList<>();
-        if (start < 0) return out;
-        P lastHop = l.get(start);
+        if (lastHop == null) return out;
         boolean sky = false;
-        for (int i = start - 1, n = 0; i >= 0 && n < maxBack; i--, n++) {
-            P p = l.get(i);
+        for (int n = 0; it.hasNext() && n < maxBack; n++) {
+            P p = it.next();
             if (!p.dim.equals(dim)) break;
             long dx = p.x - lastHop.x, dy = p.y - lastHop.y, dz = p.z - lastHop.z;
             if (p.sky || dx * dx + dy * dy + dz * dz >= (long) hop * hop) {
@@ -103,7 +114,6 @@ public final class Trail {
         if (!sky) out.clear();
         return out;
     }
-
     /**
      * Boxes along the trail for the route map: the trail's points in one dimension grouped into {@code size} x size
      * column squares (x1 z1 x2 z2 y1 y2, y = the points' range +- 8), the most visited first, at most {@code max}.
