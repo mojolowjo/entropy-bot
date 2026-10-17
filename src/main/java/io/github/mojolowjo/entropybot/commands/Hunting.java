@@ -28,13 +28,16 @@ import java.util.Map;
 final class Hunting {
     private static final Logger LOG = LogUtils.getLogger();
     static final long MAX_TICKS = 10 * 60 * 20;
+    /** 0.33.0: a minute with nothing I may take ends the hunt with the reason (it sat idle 6 min before). */
+    static final long IDLE_END = 60 * 20;
 
     private final Commands c;
 
     private static final class Run {
         String from, want;
         int n;
-        long started, nextAt;
+        long started, nextAt, idleSince = -1;
+        String why;
         int targetId = -1;
         int[] dropAt;
         JobRequests.Request req;
@@ -99,10 +102,13 @@ final class Hunting {
         return new Chains.Reply(reply, r.req);
     }
 
+    /** 0.33.0: for /wait's busy line; null when no hunt runs. */
+    String statusText(LocalPlayer p) { return run == null ? null : status(p); }
+
     private String status(LocalPlayer p) {
         Run r = run;
         int have = p == null ? 0 : HuntRules.meat(Gui.inventory(p), r.want);
-        return "hunt: " + have + "/" + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10));
+        return "hunt: " + have + "/" + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + (r.why != null ? " - waiting: " + r.why : "");
     }
 
     String stop(String why) {
@@ -163,28 +169,50 @@ final class Hunting {
             }
         }
         List<String> allowed = c.vocab.expand("animals");
-        Entity best = null;
-        double bestD = Double.MAX_VALUE;
+        Entity best = null, outside = null;
+        double bestD = Double.MAX_VALUE, outD = Double.MAX_VALUE;
+        int seen = 0;
         String dim = Storage.dim();
+        // 0.33.0 (Haiku run 2026-10-16: "hunt 3 cow" sat at 0/3 for 6 min, the cows just outside the small grove area):
+        // every animal the client sees counts (no 32-block cap: the bot walks to it), and the nearest one I could take
+        // but for the areas is kept for the reason
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !e.isAlive()) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             if (!HuntRules.MEAT.containsKey(type) && !(e instanceof Player) && !(e instanceof AbstractVillager)) continue;
             double d = p.distanceTo(e);
-            if (d > HuntRules.RANGE) continue;
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
             boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
                     || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, e instanceof Player, e instanceof AbstractVillager,
                     e instanceof AgeableMob am && am.isBaby(), inAreas);
-            if (!HuntRules.mayTake(t, allowed, r.want)) continue;
+            if (HuntRules.MEAT.containsKey(type) && (r.want == null || r.want.equals(type))) seen++;
+            if (!HuntRules.mayTake(t, allowed, r.want)) {
+                HuntRules.Target in = new HuntRules.Target(t.type(), t.tamed(), t.named(), t.owned(), t.player(), t.villager(), t.baby(), true);
+                if (!inAreas && HuntRules.mayTake(in, allowed, r.want) && d < outD) { outD = d; outside = e; }
+                continue;
+            }
             if (d < bestD) { bestD = d; best = e; }
         }
         if (best == null) {
+            String what = r.want == null ? "animal" : r.want.substring(10);
+            int[] me = Jobs.here(p);
+            r.why = outside != null
+                    ? "the nearest " + BuiltInRegistries.ENTITY_TYPE.getKey(outside.getType()).getPath() + " I could take is at " + outside.getBlockX() + " " + outside.getBlockY() + " "
+                      + outside.getBlockZ() + ", outside my areas - " + io.github.mojolowjo.entropybot.chop.ChopRules.areaCover(me[0], me[2], outside.getBlockX(), outside.getBlockZ(), 8, "pasture", c.areaNames()) + " takes it in"
+                    : seen > 0 ? "I see " + seen + " " + what + (seen > 1 ? "s" : "") + " but none I may take (babies, named or tamed ones, or not in the animals kind)"
+                    : "I see no " + what + " (I see about " + Minecraft.getInstance().options.getEffectiveRenderDistance() * 16 + " blocks around me) - walk me to some";
+            if (r.idleSince < 0) r.idleSince = now;
             r.nextAt = now + 100;
-            if ((now - r.started) % 1200 < 100) LOG.info("[entropybot] hunt: no animal I may take within {}", HuntRules.RANGE);
+            if (now - r.idleSince >= IDLE_END) {
+                end(r, "stopped: hunt: " + HuntRules.meat(bag, r.want) + "/" + r.n + " - " + r.why);
+                return;
+            }
+            if ((now - r.idleSince) % 600 < 100) LOG.info("[entropybot] hunt: nothing to take: {}", r.why);
             return;
         }
+        r.idleSince = -1;
+        r.why = null;
         String name = BuiltInRegistries.ENTITY_TYPE.getKey(best.getType()).getPath();
         if (bestD > 20) {
             c.handle(r.from, "goto " + best.getBlockX() + " " + best.getBlockY() + " " + best.getBlockZ(), true, null);

@@ -166,6 +166,16 @@ class MineNotesTest {
         assertEquals("error: I explore only inside my areas, and there are none - area here <r> <name>", ExploreRules.NO_AREAS + "area here <r> <name>");
     }
 
+    /** 0.33.0: the report says how far the walk went and where it ended (Haiku run: -43 -18 to -268 117). */
+    @Test
+    void exploreTravel() {
+        assertEquals("explored 37 chunks in 2 min (the time is up); went 262 blocks southwest, ended at -268 63 117; nothing new to note",
+                ExploreRules.note(37, 2400, "the time is up", List.of(), new int[]{-43, 68, -18}, new int[]{-268, 63, 117}));
+        assertEquals("went 100 blocks north, ended at 0 70 -100", ExploreRules.travel(new int[]{0, 64, 0}, new int[]{0, 70, -100}));
+        assertEquals("went 50 blocks east, ended at 50 64 0", ExploreRules.travel(new int[]{0, 64, 0}, new int[]{50, 64, 0}));
+        assertEquals("ended where I started, at 1 64 2", ExploreRules.travel(new int[]{0, 64, 0}, new int[]{1, 64, 2}));
+    }
+
     /** The cave records "mine cave" leans on: a new cave here, carrying on in a known one, closing one with nothing in it. */
     @Test
     void caveMemoryForTheMoves(@TempDir Path dir) {

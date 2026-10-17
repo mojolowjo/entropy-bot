@@ -213,6 +213,21 @@ public final class ChopRules {
         return out;
     }
 
+    /**
+     * 0.33.0 (Haiku run 2026-10-16, "nearest log at -74 69 -21 is outside"): the exact area command that covers a spot
+     * outside my areas, from where I stand: "area here R name neutral" with R = the farther of |dx|,|dz| plus margin
+     * (a tree's canopy, an animal that wanders), never placeholders. The name is base, then base2, base3... skipping
+     * taken names (case-insensitive). Pure.
+     */
+    public static String areaCover(int meX, int meZ, int x, int z, int margin, String base, java.util.Collection<String> taken) {
+        int r = Math.max(Math.abs(x - meX), Math.abs(z - meZ)) + margin;
+        java.util.Set<String> t = new java.util.HashSet<>();
+        if (taken != null) for (String s : taken) if (s != null) t.add(s.toLowerCase());
+        String name = base;
+        for (int i = 2; t.contains(name.toLowerCase()); i++) name = base + i;
+        return "area here " + r + " " + name + " neutral";
+    }
+
     public static String shortId(String id) {
         return id != null && id.startsWith("minecraft:") ? id.substring(10) : id;
     }

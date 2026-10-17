@@ -214,4 +214,12 @@ class ChopTest {
         Map<String, Integer> before = Map.of("minecraft:oak_log", 5), after = Map.of("minecraft:oak_log", 9, "minecraft:stick", 3);
         assertEquals(Map.of("minecraft:oak_log", 4), ChopRules.gained(before, after, id -> id.endsWith("_log")));
     }
+
+    /** 0.33.0: the filled-in area offer for a tree just outside (Haiku run: me -43 -18, log -74 -21). */
+    @Test
+    void areaCover() {
+        assertEquals("area here 37 trees neutral", ChopRules.areaCover(-43, -18, -74, -21, 6, "trees", List.of("base")));
+        assertEquals("area here 37 trees3 neutral", ChopRules.areaCover(-43, -18, -74, -21, 6, "trees", List.of("Trees", "trees2")));
+        assertEquals("area here 8 pasture neutral", ChopRules.areaCover(0, 0, 0, 0, 8, "pasture", null));
+    }
 }

@@ -2084,6 +2084,9 @@ public final class Commands implements Chains.Env {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null || mc.player == null) return null;
             if (jobs.running()) return "job " + jobs.job.status;
+            // 0.33.0 (Haiku run: "wait 180" came back after 1 s mid-hunt): the hunt runs between its walks with no job
+            String hunt = hunting.statusText(mc.player);
+            if (hunt != null) return hunt;
             if (withChain && chains != null && chains.running()) return "chain " + chains.chainStatus();
             if (withChain && gathering.running()) return "chain " + gathering.statusText();
             if (withChain && mule.running()) return "chain " + mule.statusText();
@@ -2460,6 +2463,8 @@ public final class Commands implements Chains.Env {
         s.add("chain", chains.running() ? new com.google.gson.JsonPrimitive(chains.chainStatus())
                 : gathering.running() ? new com.google.gson.JsonPrimitive(gathering.statusText())
                 : mule.running() ? new com.google.gson.JsonPrimitive(mule.statusText()) : JsonNull.INSTANCE);
+        String huntNow = hunting.statusText(Minecraft.getInstance().player);       // 0.33.0: bridge wait's fallback reads it
+        s.add("hunt", huntNow == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(huntNow));
         // package A: the autominer's last decision, so one "status" shows what it decided and why
         try {
             JsonObject am = chains.autominerState();
@@ -2544,6 +2549,14 @@ public final class Commands implements Chains.Env {
         SettingsBlock.Live live = new SettingsBlock.Live(policy.strict(), mode, core.reflexes.defence(), core.reconnect.on(), orePrefer(),
                 chains.running() ? chains.name() : null, chains.running() ? chains.chainStatus() : null);
         return SettingsBlock.build(brainStore.data(), areaStore.data(), live);
+    }
+
+    /** 0.33.0: the names of my areas (for a filled-in "area here R name" offer that doesn't clash). */
+    List<String> areaNames() {
+        List<String> out = new ArrayList<>();
+        if (policy == null) return out;
+        for (var e : policy.areas()) if (e.isJsonObject()) out.add(PolicyCommands.nameOf(e.getAsJsonObject()));
+        return out;
     }
 
     /** The policy as areas.json holds it: {areas, protect, strict, corner1} (the miner's area checks read it). */
