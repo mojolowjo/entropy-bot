@@ -631,6 +631,8 @@ final class Mining {
     static final class ExRun {
         long until, start, targetAt, scanAt;
         int chunks, sx, sz;
+        /** 0.33.0: where the walk started (the report says how far it went). */
+        int[] from;
         String dir;
         /** V1b find: what to look for (null: a plain explore). */
         io.github.mojolowjo.entropybot.vocab.ExploreWords.Find find;
@@ -694,6 +696,7 @@ final class Mining {
         int[] me = Jobs.here(p);
         ex.sx = me[0] >> 4;
         ex.sz = me[2] >> 4;
+        ex.from = me.clone();
         for (ExploreRules.Poi q : pois()) ex.poiIds.add(q.id());
         String label = find != null ? "looking for a " + find.what().replaceFirst("^minecraft:", "") + " (" + minutes + " min at most)"
                 : "exploring " + (dir != null ? dir + " " : "") + "for " + minutes + " min";
@@ -974,7 +977,7 @@ final class Mining {
         if (ex.target == null) {
             List<ExploreRules.Poi> fresh = new ArrayList<>();
             for (ExploreRules.Poi q : pois()) if (!ex.poiIds.contains(q.id())) fresh.add(q);
-            s.note = ExploreRules.note(ex.chunks, now() - ex.start, done != null ? done : "nothing left to explore in reach", fresh);
+            s.note = ExploreRules.note(ex.chunks, now() - ex.start, done != null ? done : "nothing left to explore in reach", fresh, ex.from, Jobs.here(p));
             if (ex.find != null) s.note = "no " + ex.find.what().replaceFirst("^minecraft:", "") + " found (" + (done != null ? done : "nothing left in reach") + "); " + s.note;
             s.note += tookText(ex.took);
             io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.endRoam("explore");

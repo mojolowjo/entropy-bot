@@ -246,7 +246,7 @@ final class Chopping {
         TreeFinder.Tree t = nextTree(r, p, w);
         if (t == null) {
             String none = r.trees == 0 ? "no trees in my areas" + (r.looked > 0 ? " (" + r.looked + " log columns looked at" + (r.firstWhy != null ? "; " + r.firstWhy : "") + ")"
-                    : r.nearestOutside != null ? " (nearest log at " + r.nearestOutside + " is outside)" : "")
+                    : r.nearestOutside != null ? " (nearest log at " + r.nearestOutside + " is outside; " + coverOutside(r.nearestOutside, p) + ")" : "")
                     : "no more trees in my areas";
             return end(s, r, p, none);
         }
@@ -725,7 +725,8 @@ final class Chopping {
         if (r.skippedBuilt > 0) notes.add(r.skippedBuilt + " skipped: " + r.firstBuilt.replaceFirst("^the tree at \\S+ \\S+ \\S+ is ", "")
                 + (r.skippedBuilt > 1 ? " and more" : ""));
         notes.addAll(r.notes.size() > 4 ? r.notes.subList(0, 4) : r.notes);
-        String next = r.trees == 0 ? (r.skippedBuilt > 0 ? "make that build a safe area (area here <r> <name> safe), or an area with trees away from builds" : "\"area here <r> <name>\" where trees grow") : null;
+        String next = r.trees == 0 ? (r.skippedBuilt > 0 ? "make that build a safe area (area here <r> <name> safe), or an area with trees away from builds"
+                : r.nearestOutside != null ? null : "\"area here <r> <name>\" where trees grow") : null;
         String text = ChopRules.endText(r.trees, r.got, r.replanted, why, notes, next);
         treesTotal += r.trees;
         logsTotal += ChopRules.total(r.got);
@@ -734,6 +735,14 @@ final class Chopping {
         LOG.info("[entropybot] chop: {}", text);
         jobs.finish(text);
         return "wait";
+    }
+
+    /** 0.33.0: the exact area command that takes in the nearest log outside ("x y z"), from where I stand. */
+    private String coverOutside(String at, LocalPlayer p) {
+        String[] a = at.split(" ");
+        int[] me = Jobs.here(p);
+        return ChopRules.areaCover(me[0], me[2], Integer.parseInt(a[0]), Integer.parseInt(a[2]), 6, "trees", commands.areaNames())
+                + " takes it in, then ask again";
     }
 
     /** The base chests trip (like the clear's), or null when there is nothing to put away / no chests known. */

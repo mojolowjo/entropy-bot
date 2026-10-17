@@ -90,7 +90,16 @@ public final class ExploreRules {
      * "; nothing new to note". fresh: the points first seen during the walk, oldest first.
      */
     public static String note(int chunks, long ticks, String why, List<Poi> fresh) {
+        return note(chunks, ticks, why, fresh, null, null);
+    }
+
+    /**
+     * 0.33.0 (Haiku run 2026-10-16: the operator had to work out "about 225 blocks west"): with the start and end spots,
+     * "; went 225 blocks west, ended at -268 63 117" right after the time, before the finds (a cut reply keeps it).
+     */
+    public static String note(int chunks, long ticks, String why, List<Poi> fresh, int[] from, int[] to) {
         StringBuilder sb = new StringBuilder("explored " + chunks + " chunks in " + Math.round(ticks / 1200.0) + " min (" + why + ")");
+        if (from != null && to != null) sb.append("; ").append(travel(from, to));
         if (fresh.isEmpty()) return sb.append("; nothing new to note").toString();
         List<String> parts = new ArrayList<>();
         for (int i = 0; i < Math.min(6, fresh.size()); i++) {
@@ -100,6 +109,18 @@ public final class ExploreRules {
         sb.append("; new: ").append(String.join(", ", parts));
         if (fresh.size() > 6) sb.append(" (+").append(fresh.size() - 6).append(" more, \"poi\")");
         return sb.toString();
+    }
+
+    /** "went N blocks <direction>, ended at x y z" (straight-line, flat), or "ended where I started, at x y z". Pure. */
+    public static String travel(int[] from, int[] to) {
+        int dx = to[0] - from[0], dz = to[2] - from[2];
+        long d = Math.round(Math.sqrt((double) dx * dx + (double) dz * dz));
+        String at = "ended at " + to[0] + " " + to[1] + " " + to[2];
+        if (d < 4) return "ended where I started, at " + to[0] + " " + to[1] + " " + to[2];
+        String[] names = {"east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"};
+        double deg = Math.toDegrees(Math.atan2(dz, dx));                 // +z is south in Minecraft
+        int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);
+        return "went " + d + " blocks " + names[i] + ", " + at;
     }
 
     public static final String NO_AREAS = "error: I explore only inside my areas, and there are none - ";
