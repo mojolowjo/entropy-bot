@@ -9,7 +9,7 @@ import java.util.List;
  * night/day, a chain's detour. Highest priority first, the same text once. Plain Java. Loader API: none.
  */
 public final class News {
-    public static final int DEATH = 4, DAMAGE = 3, DETOUR = 2, HOSTILE = 2, TIME = 1;
+    public static final int DEATH = 4, DAMAGE = 3, TOOL = 3, DETOUR = 2, HOSTILE = 2, TIME = 1;
     static final int CAP = 20;
     /** The bot's one news buffer (plain Java, so the chain runner can push to it). */
     public static final News GLOBAL = new News();

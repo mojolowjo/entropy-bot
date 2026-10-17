@@ -37,7 +37,7 @@ public final class ViewLive {
             Level lv = p.level();
             int x = (int) Math.floor(p.getX()), y = (int) Math.floor(p.getY()), z = (int) Math.floor(p.getZ());
             StringBuilder sb = new StringBuilder().append(x).append(' ').append(y).append(' ').append(z);
-            Box a = Core.INSTANCE.guard.core.policy().areaAt(Guard.dimOf(lv), x, y, z);
+            Box a = Core.INSTANCE.guard.core.policy().innermostAreaAt(Guard.dimOf(lv), x, y, z);
             sb.append(a == null ? ", outside my areas" : ", in " + a.name + " (" + a.type.name().toLowerCase() + ")");
             int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
             if (top - y > 3 && !lv.canSeeSky(new BlockPos(x, y + 1, z))) sb.append(", under ground (surface ").append(top - y).append(" up)");
@@ -53,6 +53,7 @@ public final class ViewLive {
     private static float lastHp = -1;
     private static long lastHostileMs;
     private static Boolean lastNight;
+    static final ToolWear WEAR = new ToolWear();
 
     public static void tick(LocalPlayer p) {
         try {
@@ -60,6 +61,14 @@ public final class ViewLive {
             float hp = p.getHealth();
             if (lastHp >= 0 && lastHp - hp >= 2) NEWS.push(News.DAMAGE, "lost " + Math.round(lastHp - hp) + " hp (now " + Math.round(hp) + ")");
             lastHp = hp;
+            java.util.Map<Integer, ToolWear.Worn> worn = new java.util.HashMap<>();
+            var inv = p.getInventory();
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                var st = inv.getItem(i);
+                if (!st.isEmpty() && st.isDamageableItem())
+                    worn.put(i, new ToolWear.Worn(BuiltInRegistries.ITEM.getKey(st.getItem()).getPath(), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
+            }
+            for (String n : WEAR.update(worn)) NEWS.push(News.TOOL, n);
             Level lv = p.level();
             long t = lv.getDayTime() % 24000;
             boolean night = t >= 13000 && t < 23000;

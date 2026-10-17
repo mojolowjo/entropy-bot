@@ -71,6 +71,13 @@ public final class HelpCommand {
 
     /** "I don't know ..." with the nearest word, if any. */
     static String unknownWord(String word) {
+        // 0.33.0: an old word (V1b, docs/COMMANDS.md "Removed in 0.22") is not a verb any more: help names its new form
+        String lw = word.toLowerCase(java.util.Locale.ROOT);
+        if (OldWords.REMOVED.contains(lw)) {
+            String h = OldWords.v1b(lw, "");
+            if (h == null) h = OldWords.hint(lw, "");
+            if (h != null) return "\"" + lw + "\" is an old word, not a command any more: " + h;
+        }
         String s = VerbTable.suggest(word);
         return "I don't know \"" + word + "\"" + (s != null ? " - did you mean " + s + "? (help " + s + ")" : " - help lists the pages");
     }
