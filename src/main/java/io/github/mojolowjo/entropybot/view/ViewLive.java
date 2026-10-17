@@ -153,7 +153,9 @@ public final class ViewLive {
                 if (b == null) return "error: I have no area called " + a + " - next: area list";
                 int cx = (b.x1 + b.x2) / 2, cz = (b.z1 + b.z2) / 2;
                 int r = Math.min(15, Math.max(7, Math.max(b.x2 - b.x1, b.z2 - b.z1) / 2 + 2));
-                return LookMap.overhead(cells(lv), cx, cz, me[1], r, me, mobs(p, 40), "area " + b.name);
+                // live: from under ground every column read "^": an area map is levelled at its floor (or its centre's ground)
+                int ref = b.y1 > Box.ALL_Y_MIN ? b.y1 + 1 : lv.getHeight(Heightmap.Types.MOTION_BLOCKING, cx, cz);
+                return LookMap.overhead(cells(lv), cx, cz, ref, r, me, mobs(p, 40), "area " + b.name);
             }
             int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
             if (top - me[1] > 3 && !lv.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])))
