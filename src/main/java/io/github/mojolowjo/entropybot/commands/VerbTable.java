@@ -150,8 +150,10 @@ public final class VerbTable {
         v("confirm", "", "jobs", O, "confirm", "run the big job I just asked about (within 30 s; anything else cancels it)", "confirm", "status");
         v("summary", "", "jobs", O, "summary", "the day so far: items gathered and deposited, jobs done and failed, deaths, needs met, blocks put back, distance walked, the brain's top picks (also whispered at dawn, and in summary.json)", "summary", "check");
         v("check", "", "jobs", O, "check", "a self-test: what I miss to work on my own, each with the command that fixes it", "check", "check");
-        v("why", "", "jobs", G, "why | why threats", "the brain's last decision: the branch, each need's score, what was skipped (and why), the stage; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
-                "why|why threats", "status");
+        v("look", "", "jobs", O, "look | look <area>", "a text map around me (top-down; under ground the feet layer and two side slices) or of an area, with a legend", "look|look <area>", "where");
+        v("reply", "", "jobs", O, "reply full | reply short", "answers short (RESULT/HERE/NEW/OPTIONS, about 600 characters) or the whole text", "reply full|reply short", "why");
+        v("why", "", "jobs", G, "why | why cut | why brain | why threats", "the last failure in full; why cut: the last answer the short shape cut; why brain: the brain's last decision: the branch, each need's score, what was skipped (and why), the stage; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
+                "why|why cut|why brain|why threats", "status");
         v("deaths", "", "jobs", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not (5 deaths an hour park me at base)", "deaths", "resume", "deaths");
         v("resume", "", "jobs", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "status");
         // ---- kinds and tools (VOCABULARY 6)

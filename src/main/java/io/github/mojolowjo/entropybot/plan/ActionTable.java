@@ -81,7 +81,7 @@ public final class ActionTable {
         v("a:chest", "open", "take", "put", "close");
         v("a:area", "area");
         v("a:camp", "camp");
-        v("n:answers only (no change in the world)", "places", "fence", "needs", "goals", "have", "stock", "status", "inv", "queue", "why", "check", "summary", "deaths",
+        v("n:answers only (no change in the world)", "places", "fence", "needs", "goals", "have", "stock", "status", "inv", "queue", "why", "look", "reply", "check", "summary", "deaths",
                 "kinds", "recipe", "help", "plan", "actions");
         v("n:a setting or a note, not a step toward a thing", "marker", "need", "supplies", "junk", "defence", "tools", "hotbar", "brain", "idle", "done", "routine",
                 "rule", "trust", "untrust", "allow", "deny", "restart", "surface", "sense", "blind", "path", "server", "confirm", "goal", "dayplan");

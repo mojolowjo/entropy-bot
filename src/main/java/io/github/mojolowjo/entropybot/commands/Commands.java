@@ -887,8 +887,8 @@ public final class Commands implements Chains.Env {
     String shapeOut(String verb, String text) {
         try {
             if (text == null || replyFull()) return text;
-            return io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.shape(verb, text,
-                    io.github.mojolowjo.entropybot.view.ViewLive.here(Minecraft.getInstance().player), io.github.mojolowjo.entropybot.view.ViewLive.NEWS.take());
+            return io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.shapeLazy(verb, text,
+                    io.github.mojolowjo.entropybot.view.ViewLive.here(Minecraft.getInstance().player), io.github.mojolowjo.entropybot.view.ViewLive.NEWS::take);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] reply shaper: {}", e.toString());
             return text;
@@ -1008,7 +1008,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
         if (verb.equals("check")) return Reply.now(selfCheck.command(player) + "\n" + io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.counters() + "; " + io.github.mojolowjo.entropybot.view.ViewLive.NEWS.counters());
         // 0.32.0 (operator view): the last failure in full, the text map, the reply setting
-        if (verb.equals("why")) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.why(System.currentTimeMillis()));
+        // review: "why" and "why cut" are the operator view's; "why brain" / "why threats" stay the brain's
+        if (verb.equals("why") && (rest.isBlank() || rest.trim().equalsIgnoreCase("cut"))) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.why(System.currentTimeMillis(), rest));
         if (verb.equals("look")) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.look(player, rest));
         if (verb.equals("reply")) return Reply.now(replyCommand(rest));
         if (verb.equals("summary")) return Reply.now(io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.now(core.files()));     // 0.23.6
@@ -1102,7 +1103,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("idle")) return Reply.now(brainRuntime.brain.idle(rest));
         if (verb.equals("dayplan")) return Reply.now(brainRuntime.brain.dayplan(rest));      // 0.26.3: the day plan
         if (verb.equals("why") && rest.trim().equalsIgnoreCase("threats")) return Reply.now(io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.why());   // B2
-        if (verb.equals("why")) return Reply.now(brainRuntime.brain.on() || brainRuntime.brain.lastDecision() != null || chains.autominerLastText() == null
+        if (verb.equals("why") && rest.trim().toLowerCase().matches("^(brain)?$")) return Reply.now(brainRuntime.brain.on() || brainRuntime.brain.lastDecision() != null || chains.autominerLastText() == null
                 ? brainRuntime.brain.why() : chains.whyCommand());
         if (verb.equals("resume")) return Reply.now(chains.resumeCommand());
         if (verb.equals("deaths") || (verb.equals("death") && rest.trim().toLowerCase().matches("^policy\\b.*"))) return Reply.now(chains.deathsCommand(rest));

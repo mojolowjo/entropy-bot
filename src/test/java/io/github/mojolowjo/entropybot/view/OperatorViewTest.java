@@ -37,8 +37,9 @@ class OperatorViewTest {
         ReplyShaper s = new ReplyShaper();
         String r = s.shape(null, "ok: " + "x".repeat(900), "here", null);
         assertTrue(r.length() <= ReplyShaper.BUDGET + 20, String.valueOf(r.length()));
-        assertTrue(r.contains("(more: why)"), r);
-        assertTrue(s.why(0).contains("x".repeat(900)));
+        assertTrue(r.contains("(more: why cut)"), r);
+        assertTrue(s.why(0, "cut").contains("x".repeat(900)));
+        assertEquals("nothing has gone wrong yet", s.why(0).startsWith("no failure yet") ? "nothing has gone wrong yet" : s.why(0));   // an ok cut is no failure
     }
 
     @Test
@@ -62,6 +63,22 @@ class OperatorViewTest {
         java.util.List<String> o = new java.util.ArrayList<>();
         ReplyShaper.split("error: gather: 0/4 (last: chop: no trees; next: give me an axe, or put a cr...) - next: \"area here <r> <name>\" where trees grow, or put some oak_log in the base chests", o);
         assertEquals(List.of("\"area here <r> <name>\" where trees grow", "put some oak_log in the base chests"), o);
+    }
+
+    @Test
+    void reviewFixes() {
+        ReplyShaper s = new ReplyShaper();
+        java.util.concurrent.atomic.AtomicInteger taken = new java.util.concurrent.atomic.AtomicInteger();
+        s.shapeLazy("look", "map", null, () -> { taken.incrementAndGet(); return List.of("x"); });
+        assertEquals(0, taken.get());                                // a PASS reply leaves the news
+        assertTrue(ReplyShaper.failure("blocked by water at 1 2 3"));
+        assertTrue(ReplyShaper.failure("usage: goto x y z"));
+        assertTrue(ReplyShaper.failure("dig: blocked by water at 1 2 3 - next: dig ... water"));
+        s.shape("goto", "ok: going to 1 2 3", null, null);
+        assertFalse(s.shape("come", "ok: going to 1 2 3", null, null).contains("same as last time"));   // other verb
+        s.shape("status", "x", null, null);
+        assertFalse(s.shape("come", "ok: going to 1 2 3", null, null).contains("same as last time"));   // reset by another reply
+        assertEquals("where: 1 2 3", s.shape("where", "where: 1 2 3", "h", null));
     }
 
     @Test
