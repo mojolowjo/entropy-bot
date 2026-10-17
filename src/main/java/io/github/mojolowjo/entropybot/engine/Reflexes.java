@@ -353,6 +353,7 @@ public final class Reflexes {
         }
         deadTicks = 0;
         dimensionWatch(mc, p);
+        airWatch(mc, p);
         Hostility.INSTANCE.ensureLoaded();             // 0.19.1: defence.json, once (never throws)
         float hp = p.getHealth();
         if (hp < lastHealth - 0.5f) hurtTick = now;
@@ -474,6 +475,26 @@ public final class Reflexes {
     }
 
     /** Every reflex ends here: keys up, Baritone back to whatever it was doing. */
+    /** 0.33.1: holding jump because of the air reflex (released when it ends). */
+    private boolean swimming;
+    private long swimLogAt = -1000;
+
+    /** 0.33.1: head under water and sinking with nothing driving, or the air low: hold jump to reach the surface. */
+    private void airWatch(Minecraft mc, LocalPlayer p) {
+        IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
+        boolean drives = reflex != Reflex.NONE || (b != null && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
+        boolean up = ReflexRules.swimUp(p.isUnderWater(), p.getAirSupply(), p.getMaxAirSupply(), drives);
+        if (up) {
+            if (!swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{}{} - swimming up",
+                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), drives ? " (low, overriding)" : "");
+            swimming = true;
+            mc.options.keyJump.setDown(true);
+        } else if (swimming) {
+            swimming = false;
+            mc.options.keyJump.setDown(false);
+        }
+    }
+
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();
         duel.abort(why);

@@ -646,6 +646,9 @@ final class Mining {
         final List<int[]> baseSpots = new java.util.concurrent.CopyOnWriteArrayList<>();
         long gatherAt;
         int gathers, gatherMisses;
+        /** 0.33.1: ticks spent gathering, the gather in progress's start (0: none), the chunk count at the last gather. */
+        long gatherTicks, gatherStart;
+        int chunksAtGather;
         Map<String, Integer> before;
         final Map<String, Integer> took = new LinkedHashMap<>();
     }
@@ -791,6 +794,10 @@ final class Mining {
     /** 0.23.1: after a gather, what came into the bag goes into the run's tally (the report's "took ..."). */
     private String tallyStep(Seq s, LocalPlayer p) {
         ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
+        if (ex != null && ex.gatherStart > 0) {
+            ex.gatherTicks += now() - ex.gatherStart;
+            ex.gatherStart = 0;
+        }
         if (ex == null || ex.before == null) return "next";
         Map<String, Integer> now = Gui.inventory(p);
         for (Map.Entry<String, Integer> e : now.entrySet()) {
@@ -949,7 +956,9 @@ final class Mining {
             }
         }
         // 0.23.1 (VOCABULARY 6b): outside the areas, off any base, take what keeps it going: a tree, an exposed ore vein
-        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY && !commands.inAreas(d, me[0], me[2])) {
+        // 0.33.1: only as a side effect of the walk (ExploreRules.gatherAllowed), so a short explore still walks
+        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY && !commands.inAreas(d, me[0], me[2])
+                && ExploreRules.gatherAllowed(now() - ex.start, ex.until - now(), ex.gatherTicks, ex.chunks, ex.chunksAtGather)) {
             ex.gatherAt = now();
             try {
                 if (!io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(baseScan(p))) {
@@ -958,6 +967,9 @@ final class Mining {
                         if (b != null) Jobs.cancel(b);
                         ex.target = null;
                         ex.gathers++;
+                        ex.chunksAtGather = ex.chunks;
+                        ex.gatherStart = now();
+                        LOG.info("[entropybot] explore: gather {} after {} chunks ({} of {} ticks spent gathering)", ex.gathers, ex.chunks, ex.gatherTicks, now() - ex.start);
                         ex.before = Gui.inventory(p);
                         add = new ArrayList<>(add);
                         add.add(new Seq.Step("exploretally"));

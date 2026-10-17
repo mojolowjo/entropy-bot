@@ -23,6 +23,16 @@ public final class ReflexRules {
     public static final int LOOK = 8;               // monsters within this many blocks count
     public static final int LOOK_HURT = 24;         // ... or this many after a hit
     public static final int HURT_TICKS = 100;       // "after a hit" lasts this long
+    /**
+     * 0.33.1: the air reflex. Head under water: swim up when nothing else drives the bot (a stopped job left it sinking
+     * in the ocean and it drowned, 0.33.0 agent C), and always once the air is below a third, whoever drives.
+     */
+    public static boolean swimUp(boolean eyesInWater, int air, int maxAir, boolean somethingDrives) {
+        if (!eyesInWater) return false;
+        if (air * 3 < maxAir) return true;
+        return !somethingDrives;
+    }
+
     public static final double REACH = 2.8;         // attack from this close
     public static final double CREEPER_RUN = 6;     // run from a creeper this close
     public static final int CREEPER_RUN_TO = 12;    // ... to a spot this far away

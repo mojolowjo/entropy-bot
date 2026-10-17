@@ -82,6 +82,21 @@ public final class ExploreRules {
         return Math.abs(x - t.x()) + Math.abs(z - t.z()) <= ARRIVED;
     }
 
+    /** 0.33.1: new chunks walked between two gathers; the share of the run gathering may take; no gather this near the end. */
+    public static final int GATHER_GAP_CHUNKS = 2, GATHER_SHARE = 3;
+    public static final long GATHER_END_TICKS = 600;
+
+    /**
+     * 0.33.1: may explore stop for a gather now? Gathering is a side effect of the walk, never the walk itself: only
+     * after GATHER_GAP_CHUNKS new chunks since the last gather (or since the start), while gathering has taken at most
+     * 1/GATHER_SHARE of the run so far, and not in the run's last 30 s.
+     */
+    public static boolean gatherAllowed(long elapsed, long remaining, long gatherTicks, int chunks, int chunksAtLastGather) {
+        if (remaining < GATHER_END_TICKS) return false;
+        if (chunks - chunksAtLastGather < GATHER_GAP_CHUNKS) return false;
+        return gatherTicks * GATHER_SHARE <= elapsed;
+    }
+
     /** A point of interest for the report. */
     public record Poi(int id, String kind, int x, int y, int z) {}
 
