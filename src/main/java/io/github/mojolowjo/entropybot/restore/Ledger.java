@@ -183,7 +183,22 @@ public final class Ledger {
         int changed = 0;
         for (var it = list.iterator(); it.hasNext(); ) {
             Entry e = it.next();
-            if (!e.pending || now - e.tick < CONFIRM_AFTER) continue;
+            if (now - e.tick < CONFIRM_AFTER) continue;
+            // 0.33.0 (A3, live: the station's "built:" note was dropped within minutes as "the server kept the block"):
+            // a block I placed is noted (confirmed, so it is saved) while it stands; once its cell is empty (picked up,
+            // broken) the note goes: there is nothing to put back
+            if (e.why != null && e.why.startsWith("built:")) {
+                Cell bc = r.at(e.dim, e.x, e.y, e.z);
+                if (bc == Cell.EMPTY) {
+                    it.remove();
+                    changed++;
+                } else if (e.pending && bc == Cell.FULL) {
+                    e.pending = false;
+                    changed++;
+                }
+                continue;
+            }
+            if (!e.pending) continue;
             Cell c = r.at(e.dim, e.x, e.y, e.z);
             if (c == Cell.EMPTY) {
                 e.pending = false;

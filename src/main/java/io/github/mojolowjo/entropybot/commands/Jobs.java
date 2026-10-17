@@ -546,6 +546,16 @@ public final class Jobs {
         var lr = io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE;
         if (lr.walkId() != j.id) return "error: the long walk was replaced";
         if (lr.takeDigOut()) {
+            // 0.33.0 (A1, live: a sealed start under ground dug out before the trail retrace): the retrace first, and
+            // after it (or with no trail) the paper plans; the dig-out only where neither applies
+            if (!j.retraceTried && underGround(p)) {
+                lr.stop();
+                j.longRoute = false;
+                if (startRetrace(p, j, baritone(), "sealed at the start")) return "wait";
+                j.longRoute = true;
+                if (j.paperEscape) return "error: " + paperEscapeEnd(p).replaceFirst("^error: ", "");
+            }
+            if (j.paperEscape) return "error: " + paperEscapeEnd(p).replaceFirst("^error: ", "");
             if (startEscape(p, j, true)) {
                 io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());     // 0.23.4: counted in path status
                 return "wait";
@@ -1220,7 +1230,7 @@ public final class Jobs {
                             if (startRetrace(p, j, baritone(), "long walk: " + r)) return;
                             j.longRoute = true;
                         }
-                        if (j.paperEscape) { finish(paperEscapeEnd(p)); return; }
+                        if (j.paperEscape || paperAfterRetrace(p, j)) { finish(paperEscapeEnd(p)); return; }
                         if (j.retraceTried) {                                     // 0.33.0 (A1): retrace first, then the staircase
                             int[] d2 = travelDest(j) != null ? travelDest(j) : j.dest;
                             String st = sealedStairs(p, here(p), d2);
@@ -1274,7 +1284,7 @@ public final class Jobs {
         // 0.27.3 (d1): a short walk with no path and no free step (its tries spent) still gets the dig-out
         if ((stuck || "nopath".equals(ev)) && j.retraceFinal != null && retraceNext(p, j, b, stuck ? "stuck" : "no path")) return;   // 0.32.2 live: a hop it can't reach is skipped
         if ("nopath".equals(ev) && startRetrace(p, j, b, "no path")) return;          // 0.32.2: the trail back first
-        if ((stuck || "nopath".equals(ev)) && j.paperEscape) {                         // 0.33.0 (A1): the plans decide, no dig-out
+        if ((stuck || "nopath".equals(ev)) && (j.paperEscape || paperAfterRetrace(p, j))) {    // 0.33.0 (A1): the plans decide, no dig-out
             if (b != null) cancel(b);
             finish(paperEscapeEnd(p));
             return;
@@ -1312,7 +1322,7 @@ public final class Jobs {
             if (!j.reflex && !moving && d != null && (!WalkEnd.arrived(me, d) || wallBetween)) {
                 if (j.retraceFinal != null && retraceNext(p, j, b, "ended short")) return;
                 if (!wallBetween && startRetrace(p, j, b, "ended short")) return;      // 0.32.2: the trail back first
-                if (j.paperEscape) { finish(paperEscapeEnd(p)); return; }              // 0.33.0 (A1): no dig-out after the plans started
+                if (j.paperEscape || paperAfterRetrace(p, j)) { finish(paperEscapeEnd(p)); return; }   // 0.33.0 (A1): no dig-out after the plans started
                 if (!wallBetween && WalkEnd.retryShort(j.shortTries)) {          // 0.31.1: never dig out through a house wall
                     j.shortTries++;
                     LOG.info("[entropybot] walk ended short at {} ({} from {}): stepping off or digging out, then again", fmt(me),
@@ -1596,6 +1606,31 @@ public final class Jobs {
         walkGoal(b, j, j.retraceFinal != null ? new baritone.api.pathing.goals.GoalNear(new BlockPos(nx[0], nx[1], nx[2]), 2) : new baritone.api.pathing.goals.GoalBlock(nx[0], nx[1], nx[2]));
         watch(j);
         return true;
+    }
+
+    /** The retrace's under-ground test: more than 3 below the top and no sky over the head. */
+    static boolean underGround(LocalPlayer p) {
+        int[] me = here(p);
+        net.minecraft.world.level.Level lv = p.level();
+        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
+        return top - me[1] > 3 && !lv.canSeeSky(p.blockPosition().above());
+    }
+
+    /**
+     * 0.33.0 (A1/A2, live: a 1-hop retrace skipped its hop, then the dig-out climbed blindly): the retrace was tried and
+     * the walk still ends under ground: the paper escape once (walk plan, then digging plan, whispered). True: started.
+     */
+    private boolean paperAfterRetrace(LocalPlayer p, Job j) {
+        try {
+            if (!j.retraceTried || j.paperEscape || j.retraceFinal != null || !j.type.equals("travel") || !underGround(p)) return false;
+            j.paperEscape = true;
+            LOG.info("[entropybot] escape: the trail back didn't get me out from {}: walk plan, then a digging plan", fmt(here(p)));
+            PaperPlan.INSTANCE.escape(commands, p, commands.owner());
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] escape: paper plan failed to start: {}", e.toString());
+            return false;
+        }
     }
 
     /** 0.33.0 (A1): the walk's end once the paper escape runs: no staircase, no dig-out; the plans' answer is whispered. */

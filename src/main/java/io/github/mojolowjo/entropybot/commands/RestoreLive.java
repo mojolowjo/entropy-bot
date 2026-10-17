@@ -198,7 +198,10 @@ public final class RestoreLive {
         if (mc.level == null || c == null) return false;
         String dim = Guard.dimOf(mc.level);
         io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
-        return e != null && "built: station".equals(e.why) && c.inAreas(dim, x, z);
+        if (e == null || !"built: station".equals(e.why) || !c.inAreas(dim, x, z)) return false;
+        // the same kind of block still stands there (not one someone else put in the cell since)
+        String now = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(new net.minecraft.core.BlockPos(x, y, z)).getBlock()).getPath();
+        return e.block != null && e.block.replaceFirst("^minecraft:", "").equals(now);
     }
 
     /** 0.24.3: blocks the bot placed itself (a shelter): ledger entries never re-placed, its own spot for the build hint. */

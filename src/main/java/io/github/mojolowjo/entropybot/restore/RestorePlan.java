@@ -32,6 +32,7 @@ public final class RestorePlan {
         long max2 = (long) maxDist * maxDist;
         for (Ledger.Entry e : order) {
             if (e.pending) continue;
+            if (e.why != null && e.why.startsWith("built:")) continue;       // 0.33.0: a note of what I placed, not a break
             if (!e.restorable()) {
                 left.add(new Left(e, e.why == null ? "not terrain" : e.why));
                 continue;
