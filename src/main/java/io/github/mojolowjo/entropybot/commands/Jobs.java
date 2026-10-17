@@ -70,6 +70,7 @@ public final class Jobs {
         boolean retraceTried;
         java.util.ArrayDeque<int[]> retraceHops;
         int[] retraceFinal;
+        int retraceSkips;
         double[] unstickTo;
         // B7b part 2: a job made of steps, the goal object of its walk (unsticking plans it again), and whether the
         // open menu is closed when it ends ("always", or "fail" = unless it ended ok)
@@ -1260,6 +1261,7 @@ public final class Jobs {
                 && !onFullBlock(p) && core.tick() - j.bestTick > UNSTICK_EARLY;
         if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < UNSTICK_TRIES && startUnstick(p, j)) return;
         // 0.27.3 (d1): a short walk with no path and no free step (its tries spent) still gets the dig-out
+        if ((stuck || "nopath".equals(ev)) && j.retraceFinal != null && retraceNext(p, j, b, stuck ? "stuck" : "no path")) return;   // 0.32.2 live: a hop it can't reach is skipped
         if ("nopath".equals(ev) && startRetrace(p, j, b, "no path")) return;          // 0.32.2: the trail back first
         if ("nopath".equals(ev) && bestFreeStep(p, null) == null && startEscape(p, j, false)) {
             io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());
@@ -1292,6 +1294,7 @@ public final class Jobs {
             // 0.31.1 (live: "arrived near" 3 blocks off, a house wall between): a goal inside a house box counts only from inside
             boolean wallBetween = d != null && !moving && !j.reflex && outsideHouseOf(me, d);
             if (!j.reflex && !moving && d != null && (!WalkEnd.arrived(me, d) || wallBetween)) {
+                if (j.retraceFinal != null && retraceNext(p, j, b, "ended short")) return;
                 if (!wallBetween && startRetrace(p, j, b, "ended short")) return;      // 0.32.2: the trail back first
                 if (!wallBetween && WalkEnd.retryShort(j.shortTries)) {          // 0.31.1: never dig out through a house wall
                     j.shortTries++;
@@ -1336,7 +1339,7 @@ public final class Jobs {
                 j.shortTries = 0;
                 j.startTick = core.tick();
                 j.lastStepTick = -1;
-                walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(nx[0], nx[1], nx[2]));
+                walkGoal(b, j, j.retraceFinal != null ? new baritone.api.pathing.goals.GoalNear(new BlockPos(nx[0], nx[1], nx[2]), 2) : new baritone.api.pathing.goals.GoalBlock(nx[0], nx[1], nx[2]));
                 watch(j);
                 return;
             }
@@ -1542,6 +1545,36 @@ public final class Jobs {
      * at most 400 trail points), once per walk; then the real goal again. False when not under ground, no trail near,
      * or tried already (the old escape runs). Never throws.
      */
+    /**
+     * 0.32.2 (live: "no path to -156 -5 155 - stuck 1 blocks short" ended the retrace at its first hop): a hop it is
+     * within 4 of counts as reached; one it can't reach is skipped (at most 4 skips); the hops done: the real goal.
+     */
+    private boolean retraceNext(LocalPlayer p, Job j, IBaritone b, String why) {
+        if (b == null) return false;
+        int[] me = here(p), d = travelDest(j);
+        boolean near = d != null && distSq(me, d) <= 16;
+        if (!near && ++j.retraceSkips > 4) {
+            LOG.info("[entropybot] retrace: gave up after {} unreachable hops ({}) at {}", j.retraceSkips - 1, why, fmt(me));
+            return false;
+        }
+        int[] nx = j.retraceHops != null && !j.retraceHops.isEmpty() ? j.retraceHops.pollFirst() : null;
+        if (nx == null) {
+            nx = j.retraceFinal;
+            j.retraceFinal = null;
+            j.retraceHops = null;
+        }
+        LOG.info("[entropybot] retrace: hop {} ({}{}): on to {}", d == null ? "?" : fmt(d), why, near ? ", near enough" : ", skipped", fmt(nx));
+        if (b != null) cancel(b);
+        j.dest = nx;
+        j.shortTries = 0;
+        j.startTick = core.tick();
+        j.lastStepTick = -1;
+        j.bestTick = core.tick();
+        walkGoal(b, j, j.retraceFinal != null ? new baritone.api.pathing.goals.GoalNear(new BlockPos(nx[0], nx[1], nx[2]), 2) : new baritone.api.pathing.goals.GoalBlock(nx[0], nx[1], nx[2]));
+        watch(j);
+        return true;
+    }
+
     private boolean startRetrace(LocalPlayer p, Job j, IBaritone b, String why) {
         try {
             if (j.retraceTried || j.retraceFinal != null || j.doorFinal != null || b == null || !j.type.equals("travel")) return false;
@@ -1565,7 +1598,7 @@ public final class Jobs {
             j.shortTries = 0;
             j.startTick = core.tick();
             j.lastStepTick = -1;
-            walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(h[0], h[1], h[2]));
+            walkGoal(b, j, new baritone.api.pathing.goals.GoalNear(new BlockPos(h[0], h[1], h[2]), 2));
             watch(j);
             return true;
         } catch (RuntimeException e) {
