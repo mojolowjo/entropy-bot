@@ -767,7 +767,16 @@ public final class BuilderDig {
         } else {
             msg = BuilderReport.text(s.job.label, broke, left, gave, s.mask.errors.get());
         }
-        if (s.toolStop != null && stop == null) msg = BuilderReport.noTool(s.job.label, broke, s.toolStop);
+        if (s.toolStop != null && stop == null) {
+            msg = BuilderReport.noTool(s.job.label, broke, s.toolStop);
+            // 0.33.1 (live: 10 cobblestone and sticks in the bag, the hint said "craft wooden_pickaxe 1"): the craft the bag allows
+            try {
+                String craft = io.github.mojolowjo.entropybot.gather.GatherRules.pickaxeCraft(io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
+                if (craft != null && msg.contains(" - next: craft wooden_pickaxe 1")) msg = msg.replace(" - next: craft wooden_pickaxe 1", " - next: " + craft);
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] dig via baritone: the pickaxe hint failed: {}", e.toString());
+            }
+        }
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
         if (s.countIds != null && s.countStart >= 0) msg += io.github.mojolowjo.entropybot.gather.StonePit.gotText(s.countStart, countOf(p, s.countIds));
         s.job.broken = broke;
