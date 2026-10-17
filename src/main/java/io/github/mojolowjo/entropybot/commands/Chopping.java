@@ -296,9 +296,12 @@ final class Chopping {
             if (!commands.inAreas(dim, x, z) || jobs.goalAllowed(x, y, z) != null) return false;
             long dx = x - me[0], dz = z - me[2];
             return dx * dx + dz * dz > (long) near * near || !p.level().isLoaded(new BlockPos(x, y, z));
-        }, 1, "chop");
+        }, 64, "chop");
         if (got.isEmpty()) return null;
+        // the nearest remembered log may be high up the trunk: walk to the lowest one of that column
         io.github.mojolowjo.entropybot.sense.MemoryPick.Spot t = got.get(0);
+        for (io.github.mojolowjo.entropybot.sense.MemoryPick.Spot o : got)
+            if (o.x() == t.x() && o.z() == t.z() && o.y() < t.y()) t = o;
         // the trip spends the column (any log of that tree is the same trip)
         for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) r.tried.add("far " + (t.x() + dx) + " " + (t.z() + dz));
         r.farTrips++;
@@ -307,7 +310,7 @@ final class Chopping {
         LOG.info("[entropybot] chop: no tree in view - {} (Baritone's memory), walking there ({}/{})", text, r.farTrips, FAR_TRIPS);
         s.setStatus(s.label + " - " + text + ", walking there");
         Seq.Step w = Seq.Step.walk(new int[]{t.x(), t.y(), t.z()}, true);
-        w.optional = true;
+        w.key = "chopfar";              // a failed walk goes on to the next scan (caught), not the end of the run
         spliceHere(s, new ArrayList<>(List.of(w)));
         return "wait";
     }
@@ -728,6 +731,14 @@ final class Chopping {
     static boolean caught(Seq s, String why, LocalPlayer p) {
         Chopping c = instance;
         if (c == null || !c.runs.containsKey(s)) return false;
+        if (s.idx < s.steps.size() && "chopfar".equals(s.steps.get(s.idx).key)) {
+            // 0.34.0 live: the walk to a remembered tree ended short (7 blocks off, on the slope): look from here
+            LOG.info("[entropybot] chop: the walk to the remembered tree ended short ({}) - looking from {}", why, p == null ? "?" : Jobs.fmt(Jobs.here(p)));
+            s.idx++;
+            s.stepStart = c.now();
+            s.stage = null;
+            return true;
+        }
         int j = ChopRules.axeCheckAfter(s.steps.stream().map(x -> x.type).toList(), s.idx);
         if (j < 0) return false;
         Seq.Step check = s.steps.get(j);
