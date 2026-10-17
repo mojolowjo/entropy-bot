@@ -813,7 +813,7 @@ final class Mining {
             if (st.isAir()) continue;
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
             boolean prot = g.isProtectedBlock(st.getBlock());
-            if (level.getBlockEntity(q) != null) be++;
+            if (level.getBlockEntity(q) != null) { if (!io.github.mojolowjo.entropybot.vocab.NaturalStructures.wildBlockEntity(id)) be++; }
             else if (prot) built++;
             if (prot || level.getBlockEntity(q) != null || io.github.mojolowjo.entropybot.vocab.NaturalStructures.clue(id)) {
                 kinds.merge(id, 1, Integer::sum);
@@ -834,6 +834,8 @@ final class Mining {
         }
         if (natural != null && (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || be > 0))
             LOG.info("[entropybot] base scan: {} built, {} block entities near {} - {} (the world's own), not a base; kinds {}", built, be, Jobs.fmt(me), natural, kinds);
+        else if (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || be > 0)
+            LOG.info("[entropybot] base scan: {} built, {} block entities near {} - no world structure explains it; kinds {}", built, be, Jobs.fmt(me), kinds);
         return new io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan(built, be, named, natural);
     }
 

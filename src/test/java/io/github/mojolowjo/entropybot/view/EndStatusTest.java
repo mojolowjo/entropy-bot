@@ -16,6 +16,8 @@ class EndStatusTest {
         assertTrue(ReplyShaper.endFailed("blocked by water at 1 2 3"));
         assertTrue(ReplyShaper.endFailed("walked 40 blocks, ran out of time"));
         assertFalse(ReplyShaper.endFailed(null));
+        assertFalse(ReplyShaper.failure("ok: stopped everything, breaking off"), "live: ok + stopped");
+        assertTrue(ReplyShaper.failure("mine: stopped by a creeper"));
     }
 
     @Test

@@ -54,5 +54,8 @@ class NaturalStructuresTest {
         // a named mob is always a base
         assertTrue(ExploreWords.isBase(new ExploreWords.Scan(50, 3, 1, "a village")));
         assertNull(NaturalStructures.explains(seen(Map.of(), 0, 0)));
+        // live: a lone block entity in the wild (a bee nest) was "someone's base"
+        assertTrue(NaturalStructures.wildBlockEntity("bee_nest"));
+        assertFalse(NaturalStructures.wildBlockEntity("chest"));
     }
 }

@@ -152,6 +152,12 @@ public final class NaturalStructures {
         return String.join(" and ", names);
     }
 
+    /** 0.33.0: block entities that grow in the wild (a bee nest in a tree, sculk, a lone spawner): never a base by themselves. */
+    public static boolean wildBlockEntity(String id) {
+        return id.equals("bee_nest") || id.equals("sculk_sensor") || id.equals("sculk_shrieker")
+                || id.equals("sculk_catalyst") || id.startsWith("suspicious_") || id.equals("spawner") || id.equals("trial_spawner") || id.equals("vault");
+    }
+
     /** Clue blocks a scan should count even though they are not "built" blocks (cobwebs, obsidian, netherrack...). */
     public static boolean clue(String id) {
         return id.equals("cobweb") || id.equals("obsidian") || id.equals("crying_obsidian") || id.equals("netherrack") || id.equals("magma_block")

@@ -51,7 +51,11 @@ public final class ReplyShaper {
     }
 
     public static boolean failure(String text) {
-        return text != null && FAIL.matcher(text.trim()).find();
+        if (text == null) return false;
+        String t = text.trim();
+        // 0.33.0 (live: "ok: stopped everything" got a why): an answer that says ok is not a failure ("ok: stopped" matched "^\S+: stopped")
+        if (t.regionMatches(true, 0, "ok:", 0, 3) || t.regionMatches(true, 0, "ok ", 0, 3) || t.equalsIgnoreCase("ok")) return false;
+        return FAIL.matcher(t).find();
     }
 
     /** The RESULT text and the OPTIONS split out of a reply: "... - next: a or b; c" gives [a, b, c]. */
