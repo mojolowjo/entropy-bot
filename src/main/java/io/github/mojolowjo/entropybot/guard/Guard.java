@@ -110,7 +110,10 @@ public final class Guard {
         Set<Block> s = protectedBlocks;
         if (s == null || level == null) return GuardCore.BlockInfo.UNKNOWN;
         BlockState st = level.getBlockState(pos);
-        boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());
+        String bid = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+        boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(bid)
+                // 0.33.0 (A3): my own station inside my areas is a built block here (a force lease may take it), not floor
+                && !(io.github.mojolowjo.entropybot.clear.OwnStations.station(bid) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(pos.getX(), pos.getY(), pos.getZ()));
         return GuardCore.BlockInfo.of(true, be, s.contains(st.getBlock()));
     }
 

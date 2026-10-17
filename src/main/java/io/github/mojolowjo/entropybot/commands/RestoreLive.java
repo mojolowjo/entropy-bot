@@ -69,6 +69,7 @@ public final class RestoreLive {
     public synchronized String load(Commands commands, BotFiles f) {
         c = commands;
         files = f;
+        io.github.mojolowjo.entropybot.clear.OwnStations.mine = this::stationOfMine;     // 0.33.0 (A3)
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
         expected.clear();
@@ -189,6 +190,15 @@ public final class RestoreLive {
         if (mc.level == null) return false;
         io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(Guard.dimOf(mc.level), x, y, z);
         return e != null && e.why != null && e.why.startsWith("built:");
+    }
+
+    /** 0.33.0 (A3): a station I placed myself (ledger "built: station"), inside my own areas. */
+    boolean stationOfMine(int x, int y, int z) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || c == null) return false;
+        String dim = Guard.dimOf(mc.level);
+        io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
+        return e != null && "built: station".equals(e.why) && c.inAreas(dim, x, z);
     }
 
     /** 0.24.3: blocks the bot placed itself (a shelter): ledger entries never re-placed, its own spot for the build hint. */

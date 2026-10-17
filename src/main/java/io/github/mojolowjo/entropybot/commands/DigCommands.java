@@ -423,10 +423,24 @@ final class DigCommands {
                 .water(a.water(), a.large()).line("dig " + rest.trim());
         // 0.29.0 (P1): Baritone's builder breaks the box, the same rules as its mask (BuilderDig, clear/BaritoneMask);
         // 0.30.0 (P2): the default, "via engine" for the old path
-        if (a.builder()) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
+        // 0.33.0 (A3): a force dig over a station of mine goes through my engine (Baritone's builder keeps every block
+        // entity on its never-break list)
+        boolean ownStation = force && hasOwnStation(p, box);
+        if (ownStation) LOG.info("[entropybot] dig: a station of mine in {}: picked up via my engine", label);
+        if (a.builder() && !ownStation) return BuilderDig.start(c, p, o.viaBaritone(true), restockSteps(c, p, box.volume()));
         // B7e F: a floor dig stays on the walkway (it never stands in the cave it bridges; the fill's next round digs on)
         if (a.floor()) o.floor(true, floorId).minStandY(box.y1());
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
+    }
+
+    /** 0.33.0 (A3): the box holds a station I placed myself inside my areas (OwnStations). */
+    static boolean hasOwnStation(LocalPlayer p, ClearBox box) {
+        net.minecraft.world.level.Level lv = p.level();
+        for (int x = box.x1(); x <= box.x2(); x++) for (int y = box.y1(); y <= box.y2(); y++) for (int z = box.z1(); z <= box.z2(); z++) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lv.getBlockState(new net.minecraft.core.BlockPos(x, y, z)).getBlock()).toString();
+            if (io.github.mojolowjo.entropybot.clear.OwnStations.station(id) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(x, y, z)) return true;
+        }
+        return false;
     }
 
     /**

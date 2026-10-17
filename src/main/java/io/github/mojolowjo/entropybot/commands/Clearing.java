@@ -946,6 +946,14 @@ public final class Clearing {
         p.swing(InteractionHand.MAIN_HAND);
         // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
         if (r == InteractionResult.FAIL) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (no room for it, or the guard said no)";
+        // 0.33.0 (A3): a station I place is noted as mine (ledger "built: station"), so I may pick it up again later
+        if (r.consumesAction() && !restore && io.github.mojolowjo.entropybot.clear.OwnStations.station(id)) {
+            try {
+                RestoreLive.INSTANCE.noteBuilt(java.util.List.of(new int[]{x, y, z}), id, "built: station");
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] place: couldn't note {} at {} {} {} as mine: {}", id, x, y, z, e.toString());
+            }
+        }
         return "ok: " + r;
     }
 

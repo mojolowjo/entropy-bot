@@ -68,6 +68,8 @@ public final class Jobs {
         int[] doorFinal;
         /** 0.32.2 (P2): stuck under ground: the walked trail back in hops (retraceFinal: the real goal after them). */
         boolean retraceTried;
+        /** 0.33.0 (A1): the paper escape (walk plan, then digging plan) was started for this walk: no staircase or dig-out after it. */
+        boolean paperEscape;
         java.util.ArrayDeque<int[]> retraceHops;
         int[] retraceFinal;
         int retraceSkips;
@@ -554,7 +556,9 @@ public final class Jobs {
         if (lr.failure() != null) {
             int[] d = travelDest(j) != null ? travelDest(j) : j.dest;
             if (d != null && WalkEnd.arrived(here(p), d)) return "ok";       // the goal block itself is unreachable but I'm there (goalVerdict judges it)
-            String st = sealedStairs(p, here(p), d);
+            // 0.33.0 (A1, live: the staircase fired before the retrace inside an area): the trail retrace and the paper
+            // escape come first; the staircase only for a walk whose retrace was tried and no paper escape runs
+            String st = j.retraceTried && !j.paperEscape ? sealedStairs(p, here(p), d) : null;
             if (st != null) return "ok: " + st;                               // 0.27.4: the job ends with the whisper; the staircase runs next
             return lr.failure();
         }
@@ -1216,6 +1220,12 @@ public final class Jobs {
                             if (startRetrace(p, j, baritone(), "long walk: " + r)) return;
                             j.longRoute = true;
                         }
+                        if (j.paperEscape) { finish(paperEscapeEnd(p)); return; }
+                        if (j.retraceTried) {                                     // 0.33.0 (A1): retrace first, then the staircase
+                            int[] d2 = travelDest(j) != null ? travelDest(j) : j.dest;
+                            String st = sealedStairs(p, here(p), d2);
+                            if (st != null) { finish("ok: " + st); return; }
+                        }
                         finish(r.startsWith("error") ? r : "error: " + r);
                     }
                     return;
@@ -1264,6 +1274,11 @@ public final class Jobs {
         // 0.27.3 (d1): a short walk with no path and no free step (its tries spent) still gets the dig-out
         if ((stuck || "nopath".equals(ev)) && j.retraceFinal != null && retraceNext(p, j, b, stuck ? "stuck" : "no path")) return;   // 0.32.2 live: a hop it can't reach is skipped
         if ("nopath".equals(ev) && startRetrace(p, j, b, "no path")) return;          // 0.32.2: the trail back first
+        if ((stuck || "nopath".equals(ev)) && j.paperEscape) {                         // 0.33.0 (A1): the plans decide, no dig-out
+            if (b != null) cancel(b);
+            finish(paperEscapeEnd(p));
+            return;
+        }
         if ("nopath".equals(ev) && bestFreeStep(p, null) == null && startEscape(p, j, false)) {
             io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());
             return;
@@ -1297,6 +1312,7 @@ public final class Jobs {
             if (!j.reflex && !moving && d != null && (!WalkEnd.arrived(me, d) || wallBetween)) {
                 if (j.retraceFinal != null && retraceNext(p, j, b, "ended short")) return;
                 if (!wallBetween && startRetrace(p, j, b, "ended short")) return;      // 0.32.2: the trail back first
+                if (j.paperEscape) { finish(paperEscapeEnd(p)); return; }              // 0.33.0 (A1): no dig-out after the plans started
                 if (!wallBetween && WalkEnd.retryShort(j.shortTries)) {          // 0.31.1: never dig out through a house wall
                     j.shortTries++;
                     LOG.info("[entropybot] walk ended short at {} ({} from {}): stepping off or digging out, then again", fmt(me),
@@ -1560,6 +1576,7 @@ public final class Jobs {
             j.dest = j.retraceFinal;
             j.retraceFinal = null;
             j.retraceHops = null;
+            j.paperEscape = true;
             PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: plan from the highest point reached
             return false;
         }
@@ -1581,6 +1598,13 @@ public final class Jobs {
         return true;
     }
 
+    /** 0.33.0 (A1): the walk's end once the paper escape runs: no staircase, no dig-out; the plans' answer is whispered. */
+    String paperEscapeEnd(LocalPlayer p) {
+        String s = "error: stuck under ground at " + fmt(here(p)) + " - no walk back along my trail; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
+        LOG.info("[entropybot] escape: {}", s);
+        return s;
+    }
+
     private boolean startRetrace(LocalPlayer p, Job j, IBaritone b, String why) {
         try {
             if (j.retraceTried || j.retraceFinal != null || j.doorFinal != null || b == null || !j.type.equals("travel")) return false;
@@ -1593,6 +1617,7 @@ public final class Jobs {
             java.util.List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(Guard.dimOf(lv), me[0], me[1], me[2], 8, 8, 400);
             if (hops.isEmpty()) {
                 LOG.info("[entropybot] retrace ({}): no trail back to open sky from {}", why, fmt(me));
+                j.paperEscape = true;
                 PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: a long search, then a plan with digging
                 return false;
             }

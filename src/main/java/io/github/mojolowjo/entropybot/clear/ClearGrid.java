@@ -278,6 +278,19 @@ public final class ClearGrid {
             if (ClearEngine.sightOf(w, s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z()) != null) return s;
             job.noSpotWhy.merge("no sight", 1, Integer::sum);
         }
+        // 0.33.0 (A1, live: escape stairs ended "no block could be started", "no sight=61" in a cave): the 24 cheapest
+        // walk spots were cave cells facing rock, while the step's own stance (not walkable until dug) never got a try.
+        // Then the spots nearest the block, up to 8 more.
+        if (cands.size() > 24) {
+            List<Spot> near = new ArrayList<>(cands.subList(24, cands.size()));
+            near.sort(Comparator.comparingDouble(s -> ClearEngine.eyeDistSq(s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z())));
+            for (int i = 0; i < near.size() && i < 8 && job.sightBudget > 0; i++) {
+                job.sightBudget--;
+                Spot s = near.get(i);
+                if (ClearEngine.sightOf(w, s.eyeX(), s.eyeY(), s.eyeZ(), t.x(), t.y(), t.z()) != null) return s;
+                job.noSpotWhy.merge("no sight (near)", 1, Integer::sum);
+            }
+        }
         if (cands.isEmpty()) job.noSpotWhy.merge("no standable cell in reach", 1, Integer::sum);
         return null;
     }

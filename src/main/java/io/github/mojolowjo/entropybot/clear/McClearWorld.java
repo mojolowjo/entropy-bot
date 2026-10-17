@@ -84,7 +84,9 @@ public final class McClearWorld implements ClearWorld {
 
     @Override public boolean blockEntity(int x, int y, int z) {
         BlockState st = at(x, y, z);
-        return st.hasBlockEntity() && !ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());     // P3: TreeChop's log
+        if (!st.hasBlockEntity() || ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) return false;     // P3: TreeChop's log
+        // 0.33.0 (A3): a station I placed myself inside my areas counts as a built block (force picks it up), not a block entity
+        return !(OwnStations.station(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString()) && OwnStations.mineAt(x, y, z));
     }
 
     @Override public boolean unbreakable(int x, int y, int z) {
