@@ -36,7 +36,7 @@ public final class PaperPlan {
     private static final Logger LOG = LogUtils.getLogger();
     public static final PaperPlan INSTANCE = new PaperPlan();
     static final long PRIMARY_MS = 4000, FAILURE_MS = 20000;
-    static final int SURFACE_R = 48;
+    static final int SURFACE_R = 96;
 
     private PaperPlan() {}
 
@@ -167,7 +167,8 @@ public final class PaperPlan {
             try {
                 baritone.pathing.calc.AStarPathFinder pf = new baritone.pathing.calc.AStarPathFinder(start, me[0], me[1], me[2], g,
                         new baritone.utils.pathing.Favoring(null, cx), cx);
-                PathCalculationResult r = pf.calculate(PRIMARY_MS, FAILURE_MS);
+                // live: a break plan returned a 24-move segment at the 4 s primary timeout: digging plans use the whole budget
+                PathCalculationResult r = pf.calculate(rl.equals("walk") ? PRIMARY_MS : FAILURE_MS, FAILURE_MS);
                 type = r.getType().name().toLowerCase();
                 IPath path = r.getPath().orElse(null);
                 if (path != null) for (BetterBlockPos q : path.positions()) cells.add(new int[]{q.x, q.y, q.z});
@@ -254,6 +255,14 @@ public final class PaperPlan {
                 Result res = last;
                 if (res != null && res.reachable()) {
                     c.whisper(to, "stuck under ground: " + res.text());
+                    return;
+                }
+                // P2's open case: on foot only part of the way (a trail walked down by falling): walk to the highest
+                // point first, then dig from there
+                int[] here = Jobs.here(Minecraft.getInstance().player);
+                if (res != null && !res.cells().isEmpty() && res.highest() > here[1] + 4) {
+                    int[] e = res.cells().get(res.cells().size() - 1);
+                    c.whisper(to, "stuck under ground: on foot I get up to y " + res.highest() + " (" + Jobs.fmt(e) + ") - next: plan go, then plan path surface break");
                     return;
                 }
                 LocalPlayer q = Minecraft.getInstance().player;
