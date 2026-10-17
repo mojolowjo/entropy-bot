@@ -29,7 +29,7 @@ public final class WorldState {
 
     /** Base names (before the first dot) of the world's files at the root. */
     static final Set<String> FILES = Set.of("areas", "places", "chests", "rs", "pois", "caves", "ores", "explored",
-            "restore", "knownair", "seenfaces", "commands-world", "corpses");
+            "restore", "knownair", "seenfaces", "commands-world", "corpses", "trail");
     /** 0.31.0: commands.json's world-bound keys (they live in the world's commands-world.json). */
     public static final Set<String> COMMANDS_WORLD_KEYS = Set.of("home", "mine", "mines", "minesMoved", "deaths", "lastDeath",
             "parked", "zone", "farm", "furnaces", "released", "releasedAt", "run");

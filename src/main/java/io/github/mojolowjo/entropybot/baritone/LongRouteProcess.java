@@ -254,7 +254,9 @@ public final class LongRouteProcess implements IBaritoneProcess {
         stats.replans++;
         planning = null;
         try {
+            RouteRuntime.LOOKUPS.incrementAndGet();                                        // 0.32.2: counted
             if (RouteRuntime.INSTANCE.available()) planning = RouteRuntime.INSTANCE.plan(RouteRuntime.OVERWORLD, start, goal, radius);
+            else RouteRuntime.LOOKUP_NOT_BUILT.incrementAndGet();
         } catch (Throwable t) {
             LOG.warn("[entropybot] long walk: route map plan failed ({}): straight legs", t.toString());
         }
@@ -269,6 +271,7 @@ public final class LongRouteProcess implements IBaritoneProcess {
         try {
             RoutePlan p = f.getNow(null);
             if (p == null || p.status() != RoutePlan.Status.OK || p.path().isEmpty()) {
+                RouteRuntime.LOOKUP_NO_WAY.incrementAndGet();
                 LOG.info("[entropybot] long walk: route map has no way ({}): straight legs", p == null ? "none" : p.reason());
                 return;
             }
@@ -283,6 +286,7 @@ public final class LongRouteProcess implements IBaritoneProcess {
             idx = 0;
             legStart = me.clone();
             legWalked = 0;
+            RouteRuntime.LOOKUP_GAVE.incrementAndGet();
             LOG.info("[entropybot] long walk: route map gave {} doors -> {} legs", doors.size(), legs.size());
         } catch (Throwable t) {
             LOG.warn("[entropybot] long walk: reading the plan: {}", t.toString());

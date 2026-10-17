@@ -144,6 +144,7 @@ public final class Core {
         io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true);
         io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true);
         io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
+        io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();
         if (terrain != null) terrain.flushAll();
     }
 
@@ -158,6 +159,7 @@ public final class Core {
         LOG.info("[entropybot] world: {}; {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote(),
                 io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
         io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(f.worldRoot());
+        LOG.info("[entropybot] world: {}", io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.load(f.worldRoot()));
         terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(f.worldRoot().resolve("map"));
         io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.worldChanged();
         LOG.info("[entropybot] world: commands: {}", commands.reloadWorld(f));
@@ -210,7 +212,8 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.leftWorld();         // 0.28.0: summaries written, all stale
                 if (inWorld) io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.leftWorld();   // 0.19.3: the surface export's files wiped
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
-                if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();         // 0.23.3: edge penalties saved
+                if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
+                if (inWorld) io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();             // 0.32.2         // 0.23.3: edge penalties saved
                 inWorld = false;
                 return;
             }
@@ -233,6 +236,7 @@ public final class Core {
                 // S1: and when the game quits from inside a world (no tick runs after that)
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try { mineNotes.flush(); } catch (Throwable ignored) {}
+                    try { io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save(); } catch (Throwable ignored) {}
                     try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
                     try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable ignored) {}
                 }, "entropybot-mine-notes"));
@@ -240,6 +244,7 @@ public final class Core {
                 LOG.info("[entropybot] watch tunnel: {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote());
                 io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.load(files.worldRoot());
                 LOG.info("[entropybot] watch seen: {}", io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.fileNote());
+                LOG.info("[entropybot] trail: {}", io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.load(files.worldRoot()));     // 0.32.2
                 LOG.info("[entropybot] commands: {}", commands.init(mc, files));
                 io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.loadPenalties(files.worldRoot());       // 0.23.3
                 terrain = new io.github.mojolowjo.entropybot.map.TerrainMap(files.worldRoot().resolve("map"));
@@ -289,6 +294,7 @@ public final class Core {
             io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.tick(tick);     // watch seen: the visible-faces sampler (never throws)
             io.github.mojolowjo.entropybot.watchview.SkyScanner.INSTANCE.tick(tick);      // 0.17.1: the tunnel view's surface scan (never throws)
             io.github.mojolowjo.entropybot.surface.SurfaceExport.INSTANCE.tick();      // 0.19.3: the surface export for the dashboard (never throws)
+            io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.tick(tick);                  // 0.32.2: the walked trail (never throws)
             io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.tick(tick);     // routing R2: the map builder (never throws)
             if (mc.player != null) commands.jobs.movementTick(mc.player);                 // 0.23.3: the movement package (never throws)
         } catch (Throwable t) {

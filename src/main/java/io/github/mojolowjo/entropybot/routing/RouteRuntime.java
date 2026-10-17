@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.routing;
 
+import io.github.mojolowjo.entropybot.trail.Trail;
+import io.github.mojolowjo.entropybot.trail.TrailRuntime;
 import io.github.mojolowjo.entropybot.surface.SurfaceColumns;
 import io.github.mojolowjo.entropybot.route.CellMoves;
 import baritone.api.BaritoneAPI;
@@ -279,6 +281,7 @@ public final class RouteRuntime implements RoutePlanner {
             sb.append(why == null ? "route map: on" : "route map: not available (" + why + ")");
             RouteEngine e = engine;
             sb.append("; ").append(stats().line());
+            sb.append("; ").append(lookupLine());                // 0.32.2
             if (e != null) sb.append("; ").append(e.line());
             RouteTiles t = tiles;
             if (t != null) sb.append("; ").append(t.line());
@@ -800,7 +803,59 @@ public final class RouteRuntime implements RoutePlanner {
         }
         int minY = lvl == null ? -64 : lvl.getMinBuildHeight();
         int maxY = lvl == null ? 319 : lvl.getMaxBuildHeight() - 1;
+        out.addAll(extraBoxes(out, minY, maxY));
         return new AreaBoxes(out, minY, maxY);
+    }
+
+    // ---- 0.32.2 (PATHS_PLAN P2): boxes along the walked trail and corridors between areas, so walks between areas and
+    // back out of caves find a way (30 of 34 long-walk lookups found none: the map held only the areas' boxes) ----
+    static final int TRAIL_BOX = 32, TRAIL_BOXES = 40, CORRIDOR = 16, CORRIDORS = 40;
+    static final long EXTRA_EVERY_MS = 300_000;
+    private static volatile List<int[]> extra = List.of();
+    private static volatile long extraAt;
+    private static volatile String extraNote = "trail/corridor boxes: none yet";
+
+    /** Recomputed every 5 minutes (a steady areas hash in between); never throws. */
+    static List<int[]> extraBoxes(List<int[]> areas, int minY, int maxY) {
+        long now = System.currentTimeMillis();
+        if (now - extraAt < EXTRA_EVERY_MS) return extra;
+        extraAt = now;
+        try {
+            List<int[]> xz = new ArrayList<>();
+            int ylo = Integer.MAX_VALUE, yhi = Integer.MIN_VALUE;
+            for (int[] a : areas) {
+                xz.add(new int[]{a[1], a[2], a[3], a[4]});
+                ylo = Math.min(ylo, Math.max(a[5], minY));
+                yhi = Math.max(yhi, Math.min(a[6], maxY));
+            }
+            int cy1 = ylo == Integer.MAX_VALUE || ylo < 40 ? 40 : ylo, cy2 = yhi == Integer.MIN_VALUE || yhi > 140 ? 140 : yhi;
+            List<int[]> out = new ArrayList<>();
+            int corr = 0, trail = 0;
+            for (int[] b : Trail.corridors(xz, CORRIDOR, cy1, cy2, CORRIDORS)) {
+                out.add(new int[]{OVERWORLD, b[0], b[1], b[2], b[3], b[4], b[5]});
+                corr++;
+            }
+            for (int[] b : TrailRuntime.INSTANCE.trail().boxes(OVERWORLD_ID, TRAIL_BOX, TRAIL_BOXES)) {
+                out.add(new int[]{OVERWORLD, b[0], b[1], b[2], b[3], Math.max(minY, b[4]), Math.min(maxY, b[5])});
+                trail++;
+            }
+            extra = out;
+            extraNote = "trail/corridor boxes: " + trail + " along the trail, " + corr + " between areas";
+            LOG.info("[entropybot] route map: {}", extraNote);
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] route map: trail/corridor boxes failed: {}", t.toString());
+        }
+        return extra;
+    }
+
+    // ---- 0.32.2: long-walk lookups (LongRouteProcess.takePlan) ----
+    public static final java.util.concurrent.atomic.AtomicLong LOOKUPS = new java.util.concurrent.atomic.AtomicLong(),
+            LOOKUP_GAVE = new java.util.concurrent.atomic.AtomicLong(), LOOKUP_NO_WAY = new java.util.concurrent.atomic.AtomicLong(),
+            LOOKUP_NOT_BUILT = new java.util.concurrent.atomic.AtomicLong();
+
+    static String lookupLine() {
+        return "long-walk lookups: " + LOOKUPS.get() + " (gave a way " + LOOKUP_GAVE.get() + ", no way " + LOOKUP_NO_WAY.get()
+                + ", map not available " + LOOKUP_NOT_BUILT.get() + "); " + extraNote;
     }
 
     /** The marked places in the overworld, {x, y, z}. */

@@ -66,6 +66,10 @@ public final class Jobs {
         /** 0.31.1: a goto into a house that ended short walks to the doorway's outside step once (doorFinal: the real goal). */
         boolean doorTried;
         int[] doorFinal;
+        /** 0.32.2 (P2): stuck under ground: the walked trail back in hops (retraceFinal: the real goal after them). */
+        boolean retraceTried;
+        java.util.ArrayDeque<int[]> retraceHops;
+        int[] retraceFinal;
         double[] unstickTo;
         // B7b part 2: a job made of steps, the goal object of its walk (unsticking plans it again), and whether the
         // open menu is closed when it ends ("always", or "fail" = unless it ended ok)
@@ -1202,7 +1206,16 @@ public final class Jobs {
                         String v = goalVerdict(p, j);
                         finish(v != null ? v : "ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
                     } else if (r.startsWith("ok: ")) finish(r);                    // 0.27.4: sealed underground, digging a staircase up
-                    else finish(r.startsWith("error") ? r : "error: " + r);
+                    else {
+                        // 0.32.2 (P2): a long walk that gave up under ground walks the trail back first (plain hops)
+                        if (!j.retraceTried && io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.walkId() == j.id) {
+                            io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
+                            j.longRoute = false;
+                            if (startRetrace(p, j, baritone(), "long walk: " + r)) return;
+                            j.longRoute = true;
+                        }
+                        finish(r.startsWith("error") ? r : "error: " + r);
+                    }
                     return;
                 }
                 if (j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) routeTravelPoll(j);
@@ -1247,6 +1260,7 @@ public final class Jobs {
                 && !onFullBlock(p) && core.tick() - j.bestTick > UNSTICK_EARLY;
         if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < UNSTICK_TRIES && startUnstick(p, j)) return;
         // 0.27.3 (d1): a short walk with no path and no free step (its tries spent) still gets the dig-out
+        if ("nopath".equals(ev) && startRetrace(p, j, b, "no path")) return;          // 0.32.2: the trail back first
         if ("nopath".equals(ev) && bestFreeStep(p, null) == null && startEscape(p, j, false)) {
             io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());
             return;
@@ -1278,6 +1292,7 @@ public final class Jobs {
             // 0.31.1 (live: "arrived near" 3 blocks off, a house wall between): a goal inside a house box counts only from inside
             boolean wallBetween = d != null && !moving && !j.reflex && outsideHouseOf(me, d);
             if (!j.reflex && !moving && d != null && (!WalkEnd.arrived(me, d) || wallBetween)) {
+                if (!wallBetween && startRetrace(p, j, b, "ended short")) return;      // 0.32.2: the trail back first
                 if (!wallBetween && WalkEnd.retryShort(j.shortTries)) {          // 0.31.1: never dig out through a house wall
                     j.shortTries++;
                     LOG.info("[entropybot] walk ended short at {} ({} from {}): stepping off or digging out, then again", fmt(me),
@@ -1307,6 +1322,22 @@ public final class Jobs {
                     }
                 }
                 finish(WalkEnd.shortResult(me, d) + (j.doorFinal != null ? " (via the door of the house too)" : "") + " - next: goto a spot next to it, or come get me");
+                return;
+            }
+            if (j.retraceFinal != null) {                 // 0.32.2: at a trail hop: the next one, else the real goal
+                int[] nx = j.retraceHops != null && !j.retraceHops.isEmpty() ? j.retraceHops.pollFirst() : null;
+                if (nx == null) {
+                    nx = j.retraceFinal;
+                    j.retraceFinal = null;
+                    j.retraceHops = null;
+                    LOG.info("[entropybot] retrace: back at {} along my trail: on to {}", fmt(here(p)), fmt(nx));
+                }
+                j.dest = nx;
+                j.shortTries = 0;
+                j.startTick = core.tick();
+                j.lastStepTick = -1;
+                walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(nx[0], nx[1], nx[2]));
+                watch(j);
                 return;
             }
             if (j.doorFinal != null) {                    // 0.31.1: at the doorway's outside step: on to the real goal
@@ -1504,6 +1535,43 @@ public final class Jobs {
             LOG.warn("[entropybot] house door step for {}: {}", fmt(d), ex.toString());
         }
         return null;
+    }
+
+    /**
+     * 0.32.2 (PATHS_PLAN P2): under ground with no way on, walk the trail back (hops of 8, up to where the sky was open,
+     * at most 400 trail points), once per walk; then the real goal again. False when not under ground, no trail near,
+     * or tried already (the old escape runs). Never throws.
+     */
+    private boolean startRetrace(LocalPlayer p, Job j, IBaritone b, String why) {
+        try {
+            if (j.retraceTried || j.retraceFinal != null || j.doorFinal != null || b == null || !j.type.equals("travel")) return false;
+            int[] me = here(p), d = travelDest(j);
+            if (d == null) return false;
+            net.minecraft.world.level.Level lv = p.level();
+            int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
+            if (top - me[1] <= 3 || lv.canSeeSky(p.blockPosition().above())) return false;
+            j.retraceTried = true;
+            java.util.List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(Guard.dimOf(lv), me[0], me[1], me[2], 8, 8, 400);
+            if (hops.isEmpty()) {
+                LOG.info("[entropybot] retrace ({}): no trail back to open sky from {}", why, fmt(me));
+                return false;
+            }
+            j.retraceHops = new java.util.ArrayDeque<>(hops);
+            j.retraceFinal = d;
+            int[] h = j.retraceHops.pollFirst();
+            LOG.info("[entropybot] retrace ({}): {} hops back along my trail to {} (open sky), then {}", why, hops.size(), fmt(hops.get(hops.size() - 1)), fmt(d));
+            core.events.push("job", "retrace: " + hops.size() + " hops back along my trail", null);
+            j.dest = h;
+            j.shortTries = 0;
+            j.startTick = core.tick();
+            j.lastStepTick = -1;
+            walkGoal(b, j, new baritone.api.pathing.goals.GoalBlock(h[0], h[1], h[2]));
+            watch(j);
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] retrace failed (the old escape runs): {}", e.toString());
+            return false;
+        }
     }
 
     boolean recoverShort(LocalPlayer p, Job j) {
