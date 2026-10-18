@@ -238,8 +238,24 @@ public final class Chains {
 
     public String name() { return chain == null ? null : chain.name; }
 
-    /** B1: told how every chain ends (name, message). */
-    java.util.function.BiConsumer<String, String> endHook;
+    /** B1: told how every chain ends (name, message); 0.36.0 (AA P2): a fan-out, the brain and AA both listen. */
+    private final List<java.util.function.BiConsumer<String, String>> endHooks = new ArrayList<>();
+
+    /** Adds a listener for every chain's end (name, message). A listener that throws is logged, the others still run. */
+    public void onEnd(java.util.function.BiConsumer<String, String> hook) { endHooks.add(hook); }
+
+    /** For tests: how many end listeners are set. */
+    int endHookCount() { return endHooks.size(); }
+
+    private void fireEnd(String name, String msg) {
+        for (java.util.function.BiConsumer<String, String> h : endHooks) {
+            try {
+                h.accept(name, msg);
+            } catch (RuntimeException e) {
+                env.log("chain " + name + ": an end listener failed: " + e);
+            }
+        }
+    }
 
     /** B1: a corpse trip is due or runs (the brain starts nothing before it). */
     public boolean corpseBusy() { return corpsePending || corpseRun; }
@@ -318,7 +334,7 @@ public final class Chains {
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
         if (TRACKED_ENDS.contains(chain.name)) endsByName.put(chain.name, msg);   // 0.30.5: climb counts its own failures
-        if (endHook != null) endHook.accept(chain.name, msg);         // B1: the brain hears how its chain ended
+        fireEnd(chain.name, msg);                                      // B1: the brain (and AA) hear how the chain ended
         chain = null;
         clearRun();
     }

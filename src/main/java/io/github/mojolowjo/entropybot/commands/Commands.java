@@ -618,7 +618,7 @@ public final class Commands implements Chains.Env {
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
         brainRuntime = new BrainRuntime(this);                  // B1: the brain (the autominer retired into it)
-        chains.endHook = brainRuntime::chainEnded;
+        chains.onEnd(brainRuntime::chainEnded);
         chains.endNote = DigCommands::stairEndNote;                  // 0.30.5: honest stair-chain endings
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
