@@ -88,6 +88,8 @@ public final class BuilderDig {
         final java.util.concurrent.atomic.AtomicInteger events = new java.util.concurrent.atomic.AtomicInteger();
         /** 0.34.3: solid cells round the box (outside it, OUTSIDE_NEAR deep) at the start: those gone at the end were the way in */
         Set<Long> outside = Set.of();
+        /** 0.34.4: the look round the box hit its cap (OUTSIDE_CAP cells): the count says so */
+        boolean outsideCapped;
         long startTick, lastPoll, lastBeat = -1000, lastErrLog = -10000, loggedErrors, lastRefresh = -1000;
         int brokeAtPoll, brokeAtStart, restarts;
         boolean holdSeen;
@@ -250,6 +252,7 @@ public final class BuilderDig {
                 BaritoneMask.onlyCells(o.only));
         s.startCells = Set.copyOf(s.mask.digCells(s.world));
         s.outside = solidAround(s.world, box);
+        s.outsideCapped = s.outside.size() >= OUTSIDE_CAP;
         s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();
         String le = s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
@@ -368,7 +371,7 @@ public final class BuilderDig {
         for (int x = b.x1() - OUTSIDE_NEAR; x <= b.x2() + OUTSIDE_NEAR; x++)
             for (int y = b.y1() - OUTSIDE_NEAR; y <= b.y2() + OUTSIDE_NEAR; y++)
                 for (int z = b.z1() - OUTSIDE_NEAR; z <= b.z2() + OUTSIDE_NEAR; z++) {
-                    if (b.contains(x, y, z) || out.size() >= 20000) continue;
+                    if (b.contains(x, y, z) || out.size() >= OUTSIDE_CAP) continue;
                     try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException ignored) {}
                 }
         return out;
@@ -801,7 +804,7 @@ public final class BuilderDig {
                 LOG.warn("[entropybot] dig via baritone: the pickaxe hint failed: {}", e.toString());
             }
         }
-        msg = BuilderReport.withWayIn(msg, goneOf(s.world, s.outside));
+        msg = BuilderReport.withWayIn(msg, goneOf(s.world, s.outside), s.outsideCapped);
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
         if (s.countIds != null && s.countStart >= 0) msg += io.github.mojolowjo.entropybot.gather.StonePit.gotText(s.countStart, countOf(p, s.countIds));
         s.job.broken = broke;
@@ -867,6 +870,7 @@ public final class BuilderDig {
      */
     /** How far outside the box a break still counts as the way in. */
     static final int OUTSIDE_NEAR = 2;
+    static final int OUTSIDE_CAP = 20000;
 
     public static void blockChanged(int x, int y, int z, boolean air) {
         State s = current;

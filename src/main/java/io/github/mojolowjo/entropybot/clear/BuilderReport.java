@@ -78,9 +78,17 @@ public final class BuilderReport {
      * would dig it by hand, slowly and with no drop. Plain dig's text ({@link DigWhy#pickaxeText}).
      */
     /** 0.34.3: "... (broke 0 blocks); 2 more on the way in (outside the box) - next: ...": the way-in count before the next part. */
-    public static String withWayIn(String msg, int outside) {
+    public static String withWayIn(String msg, int outside) { return withWayIn(msg, outside, false); }
+
+    /**
+     * 0.34.4 (review): the cells round the box that turned to air while the dig ran: most likely the bot's way in, but a
+     * player, leaf decay or falling gravel count too, so the words say "round the box", not "I broke". capped: the look
+     * round the box stopped at its cap.
+     */
+    public static String withWayIn(String msg, int outside, boolean capped) {
         if (msg == null || outside <= 0) return msg;
-        String add = "; " + outside + " more on the way in (outside the box)";
+        String add = "; " + outside + " block" + (outside == 1 ? "" : "s") + " round the box turned to air too (most likely my way in)"
+                + (capped ? " - counted only the first 20000 cells round the box" : "");
         int i = msg.indexOf(" - next: ");
         return i < 0 ? msg + add : msg.substring(0, i) + add + msg.substring(i);
     }
