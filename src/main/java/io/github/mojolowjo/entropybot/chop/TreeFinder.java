@@ -81,6 +81,17 @@ public final class TreeFinder {
         public boolean ok() { return tree != null; }
     }
 
+    /** Soil 2 to 4 cells under the base with only air (not loaded, built, log or leaves) between. */
+    static boolean hangsOverSoil(World w, int[] b) {
+        for (int k = 1; k <= 4; k++) {
+            int yy = b[1] - k;
+            if (k > 1 && w.soil(b[0], yy, b[2])) return true;
+            String id = w.id(b[0], yy, b[2]);
+            if (id == null || !id.endsWith(":air") || w.built(b[0], yy, b[2])) return false;
+        }
+        return false;
+    }
+
     public static Result find(World w, int x, int y, int z) {
         if (!w.log(x, y, z)) return new Result(null, "no log at " + x + " " + y + " " + z);
         int y0 = y;
@@ -100,8 +111,10 @@ public final class TreeFinder {
                 if (seenBase.add(key(nx, y0, nz)) && w.log(nx, y0, nz) && !w.log(nx, y0 - 1, nz)) q.add(new int[]{nx, y0, nz});
             }
         }
+        // 0.36.1: a trunk whose lowest logs are gone (a chop cut short, the stump taken) hangs up to 3 air cells above
+        // its soil: still a tree, not a log pile (AA's owner preempt left one, and bootstrap then "chopped nothing")
         List<int[]> onSoil = new ArrayList<>();
-        for (int[] b : bases) if (w.soil(b[0], b[1] - 1, b[2])) onSoil.add(b);
+        for (int[] b : bases) if (w.soil(b[0], b[1] - 1, b[2]) || hangsOverSoil(w, b)) onSoil.add(b);
         String at = x + " " + y0 + " " + z;
         if (onSoil.isEmpty()) return new Result(null, "the logs at " + at + " don't stand on dirt (a log pile or a build)");
         // the logs: 26-connected from the base, near it, up to the height cap

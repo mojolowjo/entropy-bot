@@ -71,6 +71,25 @@ class ChopTest {
         assertTrue(r.why().contains("no leaves"), r.why());
     }
 
+    /** 0.36.1: a trunk whose stump was already taken (a chop cut short) hangs over its soil and is still a tree. */
+    @Test
+    void aTrunkHangingOverItsSoilIsStillATree() {
+        Fake w = new Fake();
+        w.oak(0, 0, "minecraft:oak_leaves");
+        w.set(0, 64, 0, "minecraft:air");
+        w.set(0, 65, 0, "minecraft:air");
+        TreeFinder.Result r = TreeFinder.find(w, 0, 67, 0);
+        assertTrue(r.ok(), r.why());
+        assertArrayEquals(new int[]{0, 66, 0}, r.tree().base());
+        // but not over planks, and not from too high up
+        w.set(0, 63, 0, "minecraft:oak_planks");
+        assertFalse(TreeFinder.find(w, 0, 67, 0).ok());
+        Fake w2 = new Fake();
+        for (int y = 70; y <= 72; y++) w2.set(0, y, 0, "minecraft:oak_log");
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) w2.set(dx, 73, dz, "minecraft:oak_leaves");
+        assertTrue(TreeFinder.find(w2, 0, 71, 0).why().contains("don't stand on dirt"));
+    }
+
     @Test
     void logsOnPlanksAreNoTree() {
         Fake w = new Fake();
