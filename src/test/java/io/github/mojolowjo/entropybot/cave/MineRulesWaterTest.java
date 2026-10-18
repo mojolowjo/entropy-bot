@@ -14,4 +14,19 @@ class MineRulesWaterTest {
         assertFalse(MineRules.waterDownSkip(true, 60, 62, false));   // above
         assertTrue(MineRules.waterDownSkip(true, 60, 58, false));
     }
+
+    @Test
+    void waterDigDown() {
+        assertTrue(MineRules.waterDigDown(true, true, 59, 60));     // in water, breaking under the feet
+        assertFalse(MineRules.waterDigDown(true, true, 60, 60));    // breaking beside: a tunnel, fine
+        assertFalse(MineRules.waterDigDown(false, true, 59, 60));   // dry: digging down is fine
+        assertFalse(MineRules.waterDigDown(true, false, 59, 60));   // not breaking
+    }
+
+    @Test
+    void skipHolds() {
+        assertFalse(MineRules.skipHolds(null, 100));
+        assertTrue(MineRules.skipHolds(200L, 100));
+        assertFalse(MineRules.skipHolds(200L, 200));                // expired: a candidate again
+    }
 }

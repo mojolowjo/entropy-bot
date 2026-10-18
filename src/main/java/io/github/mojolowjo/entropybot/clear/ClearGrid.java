@@ -336,7 +336,7 @@ public final class ClearGrid {
             // F: past the nearest 40 only while nothing (or only a spot it can't walk to) was found
             if ((best != null && i >= 40 && best.spot().cost() < 1000) || job.sightBudget <= 0) break;
             Pos t = list.get(order[i]);
-            if (ClearEngine.nextToLiquid(w, t.x(), t.y(), t.z())) {
+            if (ClearEngine.liquidForbids(w, job, t.x(), t.y(), t.z())) {
                 job.skip.put(t.key(), ClearEngine.NEXT_TO_LIQUID);
                 continue;
             }

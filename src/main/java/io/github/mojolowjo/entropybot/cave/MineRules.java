@@ -380,4 +380,20 @@ public final class MineRules {
     public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater) {
         return inWater && oreY <= meY - 2 && !oreTouchesWater;
     }
+
+    /**
+     * 0.36.a3 (aa370: the walk to a cave ore 15 below dug down from the pool and ran out of air): the walk is digging
+     * down from in the water - in water, breaking a block below the feet. Pure.
+     */
+    public static boolean waterDigDown(boolean inWater, boolean breaking, int breakY, int feetY) {
+        return inWater && breaking && breakY < feetY;
+    }
+
+    /** 0.36.a3: how long (ticks) a known ore dropped for the water stays out of the pick; then it is a candidate again. */
+    public static final long WATER_SKIP_TICKS = 1200;
+
+    /** 0.36.a3: a timed skip still holds (until: the tick it ends, null: none). Pure. */
+    public static boolean skipHolds(Long until, long now) {
+        return until != null && now < until;
+    }
 }

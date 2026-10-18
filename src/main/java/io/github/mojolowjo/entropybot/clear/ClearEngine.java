@@ -104,6 +104,21 @@ public final class ClearEngine {
         return w.fluid(x, y + 1, z) || w.fluid(x + 1, y, z) || w.fluid(x - 1, y, z) || w.fluid(x, y, z + 1) || w.fluid(x, y, z - 1);
     }
 
+    /** 0.36.a3: lava (or any fluid but water) above it or beside it. */
+    public static boolean lavaNextTo(ClearWorld w, int x, int y, int z) {
+        int[][] c = {{x, y + 1, z}, {x + 1, y, z}, {x - 1, y, z}, {x, y, z + 1}, {x, y, z - 1}};
+        for (int[] k : c) {
+            String f = w.fluidKind(k[0], k[1], k[2]);
+            if (f != null && !f.equals("water")) return true;
+        }
+        return false;
+    }
+
+    /** 0.36.a3: the liquid next to x y z forbids breaking it for this job (a {@link ClearJob#waterOk} job: lava only). */
+    public static boolean liquidForbids(ClearWorld w, ClearJob job, int x, int y, int z) {
+        return job != null && job.waterOk ? lavaNextTo(w, x, y, z) : nextToLiquid(w, x, y, z);
+    }
+
     /** Why a block shouldn't be broken: {@code perm} (never) or {@code temp} (not from where the bot stands now). */
     public record Hazard(String perm, String temp) {
         static Hazard perm(String why) { return new Hazard(why, null); }
@@ -114,7 +129,7 @@ public final class ClearEngine {
 
     /** breakHazard: null when breaking x y z from where the bot stands is fine. */
     public static Hazard breakHazard(ClearWorld w, Bot bot, ClearJob job, int x, int y, int z) {
-        if (nextToLiquid(w, x, y, z)) return Hazard.perm(NEXT_TO_LIQUID);
+        if (liquidForbids(w, job, x, y, z)) return Hazard.perm(NEXT_TO_LIQUID);
         double px = bot.x(), pz = bot.z();
         int supY = floor(bot.y() - 0.01);
         if (x < floor(px - 0.3) || x > floor(px + 0.3) || z < floor(pz - 0.3) || z > floor(pz + 0.3)) return null;
