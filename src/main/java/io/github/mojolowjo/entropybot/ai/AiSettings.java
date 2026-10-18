@@ -45,6 +45,8 @@ public final class AiSettings {
     public int maxOutputTokens = 400;
     /** 0.35.2: the model's thinking: off (the default: one line needs none), low, on. Sent the OpenRouter way; dropped for local. */
     public String reasoning = "off";
+    /** 0.35.3: model calls per request; the mod ends the request at this many (0 = no cap). */
+    public int maxThinksPerGoal = 25;
     public double temperature = 0.2;
     /** compact (name + usage, for small models) or full. */
     public String promptSize = "compact";
@@ -104,6 +106,7 @@ public final class AiSettings {
         if (maxOutputTokens < 16 || maxOutputTokens > 4000) p.add("max output tokens must be 16..4000");
         if (minGapMs < 0) p.add("the gap between commands can't be negative");
         if (maxFailures < 1) p.add("max failures must be at least 1");
+        if (maxThinksPerGoal < 0) p.add("thinks per request can't be negative (0 = no cap)");
         if (!REASONING.contains(reasoning)) p.add("reasoning is off, low or on");
         if (!promptSize.equals("compact") && !promptSize.equals("full")) p.add("promptSize is compact or full");
         if (!baseUrl.isEmpty()) {

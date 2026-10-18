@@ -31,8 +31,8 @@ public final class AiConfigScreen extends Screen {
     private AiSettings s;
     private int page = 1;
     // the fields' texts survive a page switch (the widgets are rebuilt)
-    private String vModel, vUrl, vKey = "", vUsd, vTokens, vRequests, vMaxOut;
-    private EditBox model, baseUrl, key, usdDay, tokensDay, requestsHour, maxOut;
+    private String vModel, vUrl, vKey = "", vUsd, vTokens, vRequests, vMaxOut, vThinks;
+    private EditBox model, baseUrl, key, usdDay, tokensDay, requestsHour, maxOut, thinks;
     private boolean showKey;
     private String error, note;
 
@@ -55,8 +55,9 @@ public final class AiConfigScreen extends Screen {
             vTokens = String.valueOf(s.tokensPerDay);
             vRequests = String.valueOf(s.requestsPerHour);
             vMaxOut = String.valueOf(s.maxOutputTokens);
+            vThinks = String.valueOf(s.maxThinksPerGoal);
         }
-        model = baseUrl = key = usdDay = tokensDay = requestsHour = maxOut = null;
+        model = baseUrl = key = usdDay = tokensDay = requestsHour = maxOut = thinks = null;
         int x0 = x0(), c = col(), half = (c - 4) / 2, y = 28, by = height - AiScreenText.BUTTONS_FROM_BOTTOM;
         if (page == 1) {
             addRenderableWidget(Button.builder(onLabel(), b -> { s.enabled = !s.enabled; b.setMessage(onLabel()); }).bounds(x0, y, half, 20).build());
@@ -94,6 +95,8 @@ public final class AiConfigScreen extends Screen {
                 b.setMessage(reasoningLabel());
             }).bounds(x0, y, half, 20).build());
             maxOut = box(x0 + c - 50, y, 50, 4, vMaxOut, "400");
+            y += 24;
+            thinks = box(x0 + 70, y, 50, 4, vThinks, "25");     // 0.35.3
             addRenderableWidget(Button.builder(Component.literal("Save"), b -> save()).bounds(x0, by, c, 20).build());
             addRenderableWidget(Button.builder(Component.literal("< Back"), b -> switchTo(1)).bounds(x0, by + 24, half, 20).build());
         }
@@ -102,7 +105,7 @@ public final class AiConfigScreen extends Screen {
 
     private void keep() {
         if (model != null) { vModel = model.getValue(); vUrl = baseUrl.getValue(); vKey = key.getValue(); }
-        if (usdDay != null) { vUsd = usdDay.getValue(); vTokens = tokensDay.getValue(); vRequests = requestsHour.getValue(); vMaxOut = maxOut.getValue(); }
+        if (usdDay != null) { vUsd = usdDay.getValue(); vTokens = tokensDay.getValue(); vRequests = requestsHour.getValue(); vMaxOut = maxOut.getValue(); vThinks = thinks.getValue(); }
     }
 
     private void switchTo(int p) {
@@ -161,6 +164,7 @@ public final class AiConfigScreen extends Screen {
             t.tokensPerDay = Long.parseLong(vTokens.trim());
             t.requestsPerHour = Integer.parseInt(vRequests.trim());
             t.maxOutputTokens = Integer.parseInt(vMaxOut.trim());
+            t.maxThinksPerGoal = Integer.parseInt(vThinks.trim());
         } catch (NumberFormatException e) {
             error = "a number is wrong (page 2): USD like 0.50, the others whole numbers, 0 = no cap";
             return null;
@@ -215,6 +219,8 @@ public final class AiConfigScreen extends Screen {
             g.drawString(font, "Req/hour", x0 + c - 50 - 48, y + 5, 0xCCCCCC);
             y += 24;
             g.drawString(font, "Max output", x0 + c - 50 - 64, y + 5, 0xCCCCCC);
+            y += 24;
+            g.drawString(font, "Thinks/goal", x0, y + 5, 0xCCCCCC);
             top = AiScreenText.TEXT_TOP_P2;
             text.add(new Object[]{AiScreenText.HELP_2, 0xAAAAAA});
         }

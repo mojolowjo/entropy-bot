@@ -179,7 +179,7 @@ class AiLoopTest {
         assertNull(poll(IDLE));
         now += AiLoop.OUTAGE_RETRY_MS;
         assertNotNull(poll(IDLE), "retried after 5 min");
-        assertEquals("ok", loop.onCompletion(said("say ok"), now).substring(4));
+        assertEquals("inv", loop.onCompletion(said("inv"), now));
         assertEquals(0, loop.failureStreak(), "a success resets the streak");
     }
 
@@ -213,19 +213,72 @@ class AiLoopTest {
     }
 
     @Test
-    void sameCommandThreeTimesIsRefused() {
+    void sameCommandTwiceInARowEndsTheRequest() {
         loop.ownerRequest("x", now);
-        for (int i = 0; i < 2; i++) {
-            poll(IDLE);
-            assertEquals("status", loop.onCompletion(said("status"), now));
-            loop.onCommandResult("status", "RESULT status: same", false, now);
-            now += s.minGapMs;
-        }
         poll(IDLE);
-        assertNull(loop.onCompletion(said("status"), now), "the third identical one is not run");
+        assertEquals("status", loop.onCompletion(said("status"), now));
+        loop.onCommandResult("status", "RESULT status: same", false, now);
         now += s.minGapMs;
-        Provider.Request r = poll(IDLE);
-        assertTrue(r.messages().get(r.messages().size() - 1).content().contains("same command"));
+        poll(IDLE);
+        assertNull(loop.onCompletion(said("status"), now), "the second identical one in a row is not run");
+        assertNull(loop.goal(), "0.35.3: the mod ends the request");
+        assertTrue(notices.get(notices.size() - 1).contains("twice in a row"));
+    }
+
+    @Test
+    void sameLineThreeTimesInARequestEndsIt() {
+        loop.ownerRequest("x", now);
+        for (String c : List.of("status", "inv", "status", "inv")) {
+            now += s.minGapMs;
+            poll(IDLE);
+            String ran = loop.onCompletion(said(c), now);
+            if (ran != null) loop.onCommandResult(c, "r " + c, false, now);
+        }
+        now += s.minGapMs;
+        assertNotNull(poll(IDLE));
+        assertNull(loop.onCompletion(said("status"), now));
+        assertTrue(notices.get(notices.size() - 1).contains("3 times"), notices.toString());
+    }
+
+    @Test
+    void sayToReportIsRefusedButAllowedWhenAsked() {
+        loop.ownerRequest("cut 3 logs", now);
+        poll(IDLE);
+        assertNull(loop.onCompletion(said("say I have 3 oak_log"), now));
+        assertTrue(loop.lastError().contains("say to report"));
+        loop.ownerRequest("tell Steve hello", now);
+        poll(IDLE);
+        assertEquals("say hello Steve", loop.onCompletion(said("say hello Steve"), now));
+    }
+
+    @Test
+    void thinksPerGoalCap() {
+        s.maxThinksPerGoal = 2;
+        loop.ownerRequest("x", now);
+        for (String c : List.of("status", "inv")) {
+            now += s.minGapMs;
+            poll(IDLE);
+            loop.onCompletion(said(c), now);
+            loop.onCommandResult(c, "r", false, now);
+        }
+        now += s.minGapMs;
+        assertNull(poll(IDLE));
+        assertNull(loop.goal());
+        assertTrue(notices.get(notices.size() - 1).contains("model calls"));
+    }
+
+    @Test
+    void goalMetHintAndSummary() {
+        loop.ownerRequest("cut 3 logs", now);
+        assertNotNull(loop.poll(now, new AiLoop.World(true, false, false, java.util.Map.of("oak_log", 2))));
+        loop.onCompletion(said("cut 3"), now);
+        loop.onCommandResult("cut 3", "RESULT cut: 3 oak_log", false, now);
+        now += s.minGapMs;
+        Provider.Request r = loop.poll(now, new AiLoop.World(true, false, false, java.util.Map.of("oak_log", 5)));
+        assertTrue(r.messages().get(r.messages().size() - 1).content().contains("the request looks done"));
+        loop.onCompletion(said("finished"), now);
+        String done = notices.get(notices.size() - 1);
+        assertTrue(done.startsWith("done: cut 3 logs - ran cut 3"), done);
     }
 
     @Test

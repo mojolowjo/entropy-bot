@@ -105,7 +105,7 @@ public final class PromptBuilder {
         return t;
     }
 
-    static String cut(String s, int max) {
+    public static String cut(String s, int max) {
         if (s == null) return "";
         return s.length() <= max ? s : s.substring(0, Math.max(0, max - 3)) + "...";
     }

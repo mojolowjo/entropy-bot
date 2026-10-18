@@ -210,12 +210,25 @@ public final class AiRuntime {
             }
             Minecraft mc = Minecraft.getInstance();
             boolean dead = mc.player == null || mc.player.isDeadOrDying();
-            Provider.Request req = loop.poll(now, new AiLoop.World(mc.player != null, c.aiBusy(), dead));
+            Provider.Request req = loop.poll(now, new AiLoop.World(mc.player != null, c.aiBusy(), dead, inventory(mc)));
             if (req != null) send(req, now);
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] ai tick error #{}: {}", errors, scrub(t.toString()));
         }
+    }
+
+    /** 0.35.3: the bag (item path -> count) for the goal-met check; null without a player. */
+    private static java.util.Map<String, Integer> inventory(Minecraft mc) {
+        if (mc.player == null) return null;
+        java.util.Map<String, Integer> m = new java.util.HashMap<>();
+        var inv = mc.player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.isEmpty()) continue;
+            m.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).getPath(), st.getCount(), Integer::sum);
+        }
+        return m;
     }
 
     private void send(Provider.Request req, long now) {
@@ -246,7 +259,11 @@ public final class AiRuntime {
             final String line = cmd;
             JobRequests.Listener l = req -> {
                 try {
-                    if (!JobRequests.quiet(req.doneMsg) && loop != null) loop.onJobEnd(c.aiShape(line, req.doneMsg), System.currentTimeMillis());
+                    if (!JobRequests.quiet(req.doneMsg) && loop != null) {
+                        String end = c.aiShape(line, req.doneMsg);
+                        c.aiNotice(PromptBuilder.cut(line, 40) + ": " + PromptBuilder.cut(io.github.mojolowjo.entropybot.view.ReplyShaper.oneLine(end), 160));   // 0.35.3: the mod reports, not the model
+                        loop.onJobEnd(end, System.currentTimeMillis());
+                    }
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] ai job end: {}", e.toString());
                 }

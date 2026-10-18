@@ -15,7 +15,7 @@ public final class AiScreenText {
 
     public static final int COLUMN = 300, CHAR_PX = 6, LINE_PX = 10, MIN_W = 427, MIN_H = 240;
     /** Top of the text area under the widget rows, and the top of the bottom buttons (from the screen's bottom). */
-    public static final int TEXT_TOP_P1 = 120, TEXT_TOP_P2 = 104, BUTTONS_FROM_BOTTOM = 52;
+    public static final int TEXT_TOP_P1 = 120, TEXT_TOP_P2 = 128, BUTTONS_FROM_BOTTOM = 52;
 
     // page 1: connection
     public static final String TITLE_1 = "AI operator (1/2): connection";
@@ -23,13 +23,12 @@ public final class AiScreenText {
             + "The key stays in this game's entropybot folder.";
     // page 2: limits
     public static final String TITLE_2 = "AI operator (2/2): limits";
-    public static final String HELP_2 = "Tokens: bits of text the model reads and writes (about 4 letters). Tokens/day stops the AI for the day; "
-            + "free models cost nothing. Paid on: it also stops at USD/day. Requests/hour: how often it may ask. "
-            + "Reasoning off: answers at once (cheapest). Max output: longest answer; raise it if status says it ran out.";
+    public static final String HELP_2 = "Tokens: bits of text (about 4 letters). Tokens/day stops the AI for the day; free models cost nothing; "
+            + "paid on: also USD/day. Reasoning off answers at once. Max output: longest answer. Thinks/goal: model calls per request.";
     /** Labels drawn left of a box, with the box's x offset in the column (the label must end before it). */
     public static final List<Object[]> LABELS = List.of(
             new Object[]{"Model id", 70}, new Object[]{"Base URL", 70}, new Object[]{"API key", 70},
-            new Object[]{"USD/day", 46}, new Object[]{"Tokens/day", 64}, new Object[]{"Req/hour", 48}, new Object[]{"Max output", 64});
+            new Object[]{"USD/day", 46}, new Object[]{"Tokens/day", 64}, new Object[]{"Req/hour", 48}, new Object[]{"Max output", 64}, new Object[]{"Thinks/goal", 70});
     /** Button labels and their widths. */
     public static final List<Object[]> BUTTONS = List.of(
             new Object[]{"AI operator: off", 148}, new Object[]{"OpenAI-compatible", 148}, new Object[]{"Demo (no network)", 148}, new Object[]{"Paid models: off", 148},

@@ -34,7 +34,9 @@ public final class AiLoop {
     }
 
     /** The game as the loop sees it this tick. busy: a job, chain, gather... is running. */
-    public record World(boolean inWorld, boolean busy, boolean dead) {}
+    public record World(boolean inWorld, boolean busy, boolean dead, java.util.Map<String, Integer> inv) {
+        public World(boolean inWorld, boolean busy, boolean dead) { this(inWorld, busy, dead, null); }
+    }
 
     static final long HEARTBEAT_MS = 60_000, EVENT_GAP_MS = 30_000, CONFIRM_WAIT_MS = 60_000, OUTAGE_RETRY_MS = 300_000, CAP_RETRY_MS = 300_000,
             WATCHDOG_EXTRA_MS = 15_000;
@@ -54,6 +56,11 @@ public final class AiLoop {
     private boolean want, busyAtSend, nudged, prevBusy, prevDead, autoGoal;
     private long nextAt, lastThinkAt = Long.MIN_VALUE / 2, lastEventAt = Long.MIN_VALUE / 2, sentAt, confirmUntil;
     private long reserved;
+    // 0.35.3: per goal: model calls, the bag at the start, each command line's count
+    private int goalThinks;
+    private java.util.Map<String, Integer> goalStartInv, lastInv;
+    private final java.util.Map<String, Integer> goalLines = new java.util.HashMap<>();
+    private static final java.util.regex.Pattern ASKS_TO_SAY = java.util.regex.Pattern.compile("(?i)\\b(say|tell|chat|greet|announce|ask|talk|reply|answer|message)\\b");
     private int failureStreak, waitStreak, sameCount, lastStatus;
     private final Deque<PromptBuilder.Turn> history = new ArrayDeque<>();
     private final Deque<Long> minute = new ArrayDeque<>();
@@ -127,6 +134,7 @@ public final class AiLoop {
         if (state == State.OFF) return false;
         goal = PromptBuilder.cut(text.trim(), PromptBuilder.GOAL_MAX);
         autoGoal = false;
+        newGoal();
         if (state != State.THINKING && state != State.RUNNING && state != State.WAIT_CONFIRM) state = State.IDLE;
         stopReason = null;
         failureStreak = 0;
@@ -173,6 +181,8 @@ public final class AiLoop {
         boolean wasBusy = prevBusy, wasDead = prevDead;
         prevBusy = w.busy();
         prevDead = w.dead();
+        if (w.inv() != null) lastInv = w.inv();
+        if (goal != null && goalStartInv == null && w.inv() != null) goalStartInv = new java.util.HashMap<>(w.inv());
         if (state == State.OFF || state == State.STOPPED || state == State.PAUSED || state == State.THINKING) return null;
         if (!w.inWorld() || w.dead()) return null;
         if (wasDead) onNews("the bot died and respawned: run death first", now);
@@ -196,6 +206,7 @@ public final class AiLoop {
             if (!s.autonomous || w.busy()) return null;
             goal = AUTO_GOAL;
             autoGoal = true;
+            newGoal();
             trigger("autonomous");
         }
         if (!want && !w.busy() && now - lastThinkAt >= HEARTBEAT_MS) trigger("heartbeat");
@@ -205,6 +216,10 @@ public final class AiLoop {
         String sp = budget.startProblem();
         if (sp != null) {
             stop(sp, now);
+            return null;
+        }
+        if (s.maxThinksPerGoal > 0 && goalThinks >= s.maxThinksPerGoal) {
+            endGoal("it used " + goalThinks + " model calls, the cap per request (Thinks/goal on the AI screen)", now);
             return null;
         }
         Provider.Request r = prompt.build(goal, notes(), lastState, history, s.maxOutputTokens, s.temperature, Duration.ofSeconds(s.timeoutSeconds()));
@@ -223,6 +238,7 @@ public final class AiLoop {
         lastThinkAt = now;
         minute.addLast(now);
         reserved = est;
+        goalThinks++;
         budget.ledger().record(now, est, 0, 1);          // 0.35.1 review: counted when sent (a timeout or a failure costs too)
         return r;
     }
@@ -232,6 +248,8 @@ public final class AiLoop {
         if (failureStreak > 0) n.add(failureStreak + " failure(s) in a row");
         if (waitStreak > 0) n.add("you answered wait " + waitStreak + "x while the bot was idle");
         if (sameCount >= 2) n.add("the last command gave the same result " + sameCount + "x");
+        String met = GoalMet.hint(goal, goalStartInv, lastInv);
+        if (met != null) n.add(met);
         return String.join("; ", n);
     }
 
@@ -274,7 +292,7 @@ public final class AiLoop {
                 return null;
             }
             case FINISHED -> {
-                sink.notice("done: " + (autoGoal ? "the autonomous goal" : goal));
+                sink.notice(summary());
                 sink.trial(now, goal, "finished", "");
                 goal = null;
                 autoGoal = false;
@@ -297,6 +315,21 @@ public final class AiLoop {
                 return null;
             }
             default -> {
+                // 0.35.3: say only when the owner asked to talk to players (the mod tells the owner results itself)
+                if (!ASKS_TO_SAY.matcher(goal == null ? "" : goal).find() && saysSomething(v.line())) {
+                    String e = "error: say is only for talking to other players when the owner asked for it; the mod tells the owner results itself - when the request is met reply finished";
+                    lastState = e;
+                    addTurn(v.line(), e);
+                    failure("the model used say to report: " + PromptBuilder.cut(v.line(), 60), now, true, false);
+                    return null;
+                }
+                // 0.35.3: a stronger loop guard: twice in a row, or 3 times in one request, ends the request
+                String key = v.line().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+                int times = goalLines.merge(key, 1, Integer::sum);
+                if (v.line().equalsIgnoreCase(lastCmd) || times >= SAME_LIMIT) {
+                    endGoal("the model repeated \"" + PromptBuilder.cut(v.line(), 60) + "\"" + (v.line().equalsIgnoreCase(lastCmd) ? " twice in a row" : " " + times + " times"), now);
+                    return null;
+                }
                 if (v.line().equalsIgnoreCase(lastCmd) && sameCount >= SAME_LIMIT - 1) {
                     String e = "error: the same command " + SAME_LIMIT + "x in a row and nothing changed: try something else";
                     lastState = e;
@@ -317,6 +350,38 @@ public final class AiLoop {
                 return v.line();
             }
         }
+    }
+
+    private static boolean saysSomething(String line) {
+        for (String st : io.github.mojolowjo.entropybot.commands.Texts.splitChain(line))
+            if (io.github.mojolowjo.entropybot.commands.Texts.verbAndRest(st)[0].equals("say")) return true;
+        return false;
+    }
+
+    private void newGoal() {
+        goalThinks = 0;
+        goalLines.clear();
+        goalStartInv = lastInv == null ? null : new java.util.HashMap<>(lastInv);
+        lastCmd = null;
+    }
+
+    /** The one line the owner gets when a request is done: what it was, what ran, the last result. */
+    String summary() {
+        String g = autoGoal ? "the autonomous goal" : PromptBuilder.cut(goal, 60);
+        String ran = recentCommands.isEmpty() ? "nothing" : String.join(", ", recentCommands);
+        String last = lastState == null ? "" : lastState.split("\n")[0];
+        return "done: " + g + " - ran " + PromptBuilder.cut(ran, 80) + (last.isBlank() ? "" : " - last: " + PromptBuilder.cut(last, 90));
+    }
+
+    /** 0.35.3: the mod ends the request itself (a loop, the thinks cap), with one line to the owner. */
+    private void endGoal(String reason, long now) {
+        sink.notice("I stopped working on \"" + PromptBuilder.cut(goal, 60) + "\": " + reason);
+        sink.log(now, "goal ended: " + reason);
+        sink.trial(now, goal, "(goal ended)", reason);
+        goal = null;
+        autoGoal = false;
+        want = false;
+        if (state != State.RUNNING) state = State.IDLE;
     }
 
     private void handleWait(long now) {
