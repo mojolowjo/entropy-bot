@@ -56,9 +56,11 @@ public final class AaLadder {
         Rung hunger = new Rung("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && food.update(bb.in.food),
                 bb -> null, bb -> "goal food 8");
+        // a table or furnace in the bag counts (live 2026-10-18: "goal table" with one in the bag is "nothing to do",
+        // which the planner hook reports as no plan; the near-block fact is false as soon as the bot walks away)
         Rung tableFurnace = new Rung("needs.tableFurnace", TaskKind.TABLE_FURNACE,
-                bb -> !bb.in.tableKnown || !bb.in.furnaceKnown,
-                bb -> null, bb -> !bb.in.tableKnown ? "goal table" : "goal furnace");
+                bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag),
+                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : "goal furnace");
         Rung torch = new Rung("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
                 bb -> null, bb -> "goal torch 16");

@@ -19,7 +19,7 @@ public final class Inputs {
     public int freeSlots = 36, foodItems, torches, wood, cobble, coal, ironIngots, wool;
     /** The best pickaxe: tier 0 none, 1 wood/gold, 2 stone, 3 iron, 4 diamond+; its durability left in %; count. */
     public int pickTier, pickPct, pickaxes;
-    public boolean bedKnown, bedInBag, tableKnown, furnaceKnown, baseChests, baseKnown, shelterBuilt, areaKnown;
+    public boolean bedKnown, bedInBag, tableKnown, furnaceKnown, tableInBag, furnaceInBag, baseChests, baseKnown, shelterBuilt, areaKnown;
     /** The level's day time (ticks), -1 unknown. */
     public long dayTime = -1;
     public boolean night, thunder, underGround, inArea = true, ownerOnline;

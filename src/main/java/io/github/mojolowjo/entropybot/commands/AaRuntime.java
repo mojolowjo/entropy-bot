@@ -257,6 +257,8 @@ public final class AaRuntime implements JobPort {
         in.bedInBag = s.bedInBag;
         in.tableKnown = s.feas.table;
         in.furnaceKnown = s.feas.furnace;
+        in.tableInBag = bag.getOrDefault("crafting_table", 0) > 0;
+        in.furnaceInBag = bag.getOrDefault("furnace", 0) > 0;
         in.baseChests = s.feas.baseChests;
         in.baseKnown = s.basePos != null;
         in.shelterBuilt = bb.flag(AaLadder.SHELTER_FACT);
@@ -472,8 +474,9 @@ public final class AaRuntime implements JobPort {
         return out;
     }
 
+    /** entropybot/worlds/&lt;world&gt;/aa (per world, like the map: a fresh test copy starts with empty files). */
     private Path dir() {
-        return Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root().resolve("aa");
+        return Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().worldRoot().resolve("aa");
     }
 
     private void snapshot(long now, String driver) {

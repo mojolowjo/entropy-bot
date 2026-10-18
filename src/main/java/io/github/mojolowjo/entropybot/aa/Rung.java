@@ -91,7 +91,14 @@ public final class Rung extends Node {
         planningSince = -1;
         bb.fact(PLANNING_FACT, null);
         String inf = bb.port.infeasible(chain);
-        if (inf != null) return fail(kind + " skipped: " + inf);
+        if (inf != null) {
+            // live 2026-10-18: the verdict can disagree with the planner's saved routine (a fetch of an item that is in
+            // the bag); checked every tick it spun forever, so it is remembered like a failed plan and logged once
+            planFailed = inf;
+            planFailedAt = now;
+            bb.port.log(kind + " " + chain + " skipped " + Cooldown.BASE_MS / 60000 + " min: " + inf);
+            return fail(kind + " skipped: " + inf);
+        }
         resolved = chain;
         settledGoal = g;
         bb.pendingReason("needs: " + kind + " unmet -> " + g);
