@@ -138,10 +138,17 @@ public final class AaTree {
 
     public String dangerWhy() { return dangerLatch.active() ? dangerWhy : "calm"; }
 
-    /** The owner's order may preempt a needs or idle task (AA_PLAN 14 Q1 yes); AI requests never do. */
+    /**
+     * The owner's order may preempt a needs, idle or AI task (AA_PLAN 14 Q1 yes; 0.36.1 review 4: an AI task too, its
+     * request goes back to the front of the board); AI requests never preempt anything.
+     */
     public boolean preemptForOwner(Blackboard bb, String verb) {
         Node r = slot.runningChild();
-        if (r == null || !(r.id.equals("needs") || r.id.equals("idle"))) return false;
+        if (r == null || r.id.equals("owner")) return false;
+        if (r.id.equals("ai") && bb.task() != null && bb.task().spec() != null) {
+            JobPort.TaskSpec t = bb.task().spec();
+            bb.postFirst(new Request("ai", TaskKind.AI, t.chain(), t.priority(), bb.clock.now(), 0, "the AI asked (again after the owner's " + verb + "): " + t.chain()));
+        }
         slot.preempt("preempted by owner: " + verb);
         bb.tracer.counts.preempts++;
         bb.port.log("preempted for the owner's " + verb);

@@ -224,6 +224,32 @@ class AaTreeTest {
         assertTrue(d.contains("\"branch\":\"ai\"") && d.contains("the AI asked: cut 8"), d);
     }
 
+    /** 0.36.1 review 4: the owner's order preempts an AI task too; the AI's request goes back to the front of the board. */
+    @Test
+    void theOwnerPreemptsAnAiTaskAndItsRequestReturnsToTheBoard() {
+        freshStart();
+        pick(3);
+        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
+        bb.in.torches = 16;
+        bb.post(new Request("ai", TaskKind.AI, "cut 8", 1, clock.now(), 0, "the AI asked: cut 8"));
+        bb.post(new Request("ai", TaskKind.AI, "dig stone 16", 1, clock.now(), 0, "the AI asked: dig stone 16"));
+        tree.tick(bb);
+        assertEquals("ai", tree.driver());
+        assertEquals("cut 8", bb.task().spec().chain());
+        assertTrue(tree.preemptForOwner(bb, "come"));
+        assertNull(bb.task());
+        assertEquals("cut 8", bb.peek("ai").chain(), "the preempted request is first again");
+        assertEquals(2, bb.requests().size());
+        bb.in.otherJob = "travel";
+        tree.tick(bb);
+        assertEquals("owner", tree.driver());
+        bb.in.otherJob = null;
+        tree.tick(bb);
+        tree.tick(bb);
+        assertEquals("cut 8", bb.task().spec().chain(), "the AI's task runs again after the owner's");
+        assertEquals(1, tracer.counts.preempts);
+    }
+
     @Test
     void aGoalStillPlanningIsWaitedForThenSkipped() {
         freshStart();

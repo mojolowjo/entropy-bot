@@ -732,7 +732,10 @@ public final class Commands implements Chains.Env {
                     if (errors++ < 5) LOG.warn("[entropybot] respawn check: {}", e.toString());
                 }
             }
-            if (!chains.resumeChecked() && worldTicks > 200) chains.resumeRun();
+            if (!chains.resumeChecked() && worldTicks > 200) {
+                if (aaOn()) chains.dropRun("aa is on: it chooses by itself");     // 0.36.1: no saved run resumes under AA
+                else chains.resumeRun();
+            }
             if (tick % 100 == 55 && worldTicks > 400 && !aaOn()) {
                 chains.rulesTick();                            // 0.36.0: off while AA runs (AA_PLAN 4: a poster later)
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
@@ -793,7 +796,7 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 7) nearTick(mc, player);         // 0.21.2: the near-me zone follows the owner
-            if (tick % 20 == 12) {
+            if (tick % 20 == 12 && !aaOn()) {                   // 0.36.1: escort and assist are off under AA (aa on ends them)
                 try {
                     escortTick();
                 } catch (RuntimeException e) {
@@ -812,7 +815,7 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] hold: {}", e.toString());
                 }
             }
-            if (tick % 20 == 17) {
+            if (tick % 20 == 17 && !aaOn()) {                   // 0.36.1: under AA the queue is drained by AA's slot (an owner order)
                 try {
                     vocab.tick();                       // V1b: the queue
                 } catch (RuntimeException e) {
@@ -1152,7 +1155,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("stop")) {
             // 0.35.0: the owner's stop pauses the AI operator until the next request (the AI's own stop does not)
             String aiNote = isOwner && !internal && !auto ? io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerStopped() : "";
-            String aaNote = aaRuntime != null && !internal ? aaRuntime.ownerStopped() : "";      // 0.36.0: AA's task ends, the slot waits
+            // 0.36.0: AA's task ends, the slot waits; 0.36.1: only the owner's own stop holds it (not the AI's, not a guest's)
+            String aaNote = aaRuntime != null && !internal && isOwner && !io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling() ? aaRuntime.ownerStopped() : "";
             return Reply.now(stopAll() + aiNote + aaNote);
         }
         if (verb.equals("defence") || verb.equals("defense")) {                     // V1b: the self-defence setting

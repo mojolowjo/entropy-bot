@@ -348,8 +348,11 @@ public final class Chains {
         return n;
     }
 
+    /** 0.36.1: AA's chain is never saved or resumed (AA chooses again after a restart). */
+    static final String AA_CHAIN = "aa";
+
     void saveRun() {
-        if (chain == null || quiet(chain.name)) return;
+        if (chain == null || quiet(chain.name) || AA_CHAIN.equals(chain.name)) return;
         JsonObject r = new JsonObject();
         r.addProperty("name", chain.name);
         r.addProperty("text", chain.text);
@@ -403,6 +406,17 @@ public final class Chains {
     public void rearmResume() { runResumeChecked = false; }
 
     public boolean resumeChecked() { return runResumeChecked; }
+
+    /** 0.36.1: with AA on, a saved run is dropped with a line instead of resumed (AA's slot decides what runs). */
+    public void dropRun(String why) {
+        runResumeChecked = true;
+        JsonObject r = obj(mem, "run");
+        if (r == null) return;
+        String name = str(r, "name", "run");
+        env.log("chain " + name + ": the saved run is dropped (" + why + ")");
+        if (!AA_CHAIN.equals(name)) env.whisper(str(r, "from", env.owner()), "I won't carry on with \"" + name + "\" after the restart: " + why + " (PM it again)");
+        clearRun();
+    }
 
     /** Every 5 ticks: starts the next step once the last one has finished. */
     /**

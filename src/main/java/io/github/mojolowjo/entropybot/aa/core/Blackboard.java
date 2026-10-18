@@ -33,6 +33,9 @@ public final class Blackboard {
 
     public void post(Request r) { requests.addLast(r); }
 
+    /** Back to the front of the board (a task the owner preempted). */
+    public void postFirst(Request r) { requests.addFirst(r); }
+
     /** The oldest unexpired request of this source, left on the board (null: none). */
     public Request peek(String source) {
         long now = clock.now();

@@ -94,8 +94,22 @@ public final class AaRuntime implements JobPort {
         offReason = null;
         heldUntil = 0;
         c.saved();
-        LOG.info("[entropybot] aa: on");
-        return "ok: aa on - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives";
+        // 0.36.1 (review 1): assist and escort end now (their ticks are off under AA; they could start and cancel jobs)
+        String ended = "";
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (c.assist.on() && p != null) {
+            c.assist.end(p);
+            ended += "; assist ended";
+        }
+        if (Core.INSTANCE.reflexes.escort.active()) {
+            Core.INSTANCE.reflexes.escort.stop("aa on");
+            c.endEscortFollow();
+            ended += "; escort ended";
+        }
+        int queued = c.vocab.queued.size();
+        if (queued > 0) ended += "; " + queued + " queued task(s) run as your orders when my slot is free";
+        LOG.info("[entropybot] aa: on{}", ended);
+        return "ok: aa on - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives" + ended;
     }
 
     String turnOff(String why) {
@@ -183,6 +197,12 @@ public final class AaRuntime implements JobPort {
                 }
                 heldUntil = 0;        // the owner's order lifts the hold
             }
+            // 0.36.1 (review 1): the owner's queue ("queue <task>") is an owner order: the next queued line starts
+            // when the slot is free and is adopted as the owner's job on the next tick
+            if (bb.in.otherJob == null && bb.task() == null && !c.vocab.queued.isEmpty() && (tick % 20) == 2) {
+                c.vocab.tick();
+                return;
+            }
             Status s = tree.tick(bb);
             if (tree.ladder.last() == Status.SUCCESS && !data().has(AaLadder.SHELTER_FACT) && bb.flag(AaLadder.SHELTER_FACT)) {
                 data().addProperty(AaLadder.SHELTER_FACT, true);
@@ -237,7 +257,7 @@ public final class AaRuntime implements JobPort {
         Reflexes.Reflex r = Core.INSTANCE.reflexes.reflex();
         in.danger = r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING || r == Reflexes.Reflex.RETREATING ? 2 : Core.INSTANCE.reflexes.hold() ? 1 : 0;
         in.dangerWhy = in.danger > 0 ? r.name().toLowerCase() : "";
-        in.creeperClose = false;                  // Peaceful: never; Easy package reads Reflexes' creeper watch
+        in.creeperClose = creeperClose();
         in.air = p.getAirSupply();
         in.inLavaOrFire = p.isInLava() || p.isOnFire();
         in.freeSlots = s.freeSlots;
@@ -284,6 +304,19 @@ public final class AaRuntime implements JobPort {
         in.aiRequestPending = bb.peek("ai") != null;
     }
 
+    /** 0.36.1 (review 6): the reflexes' target is a creeper within 10 (Reflexes.CREEPER_OVERRIDE), or a creeper duel runs. */
+    private boolean creeperClose() {
+        try {
+            JsonObject r = Core.INSTANCE.reflexes.status();
+            if (r.has("duel")) return true;
+            if (!r.has("target")) return false;
+            String t = r.get("target").getAsString();
+            return t != null && t.contains("creeper") && (!r.has("dist") || r.get("dist").getAsDouble() <= 10);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     /** {@code house} takes a box of 7x7 up to 4096 blocks (CampCommands.house); a round area or a bigger box does not fit. */
     private static boolean houseFits(JsonObject a) {
         try {
@@ -306,7 +339,11 @@ public final class AaRuntime implements JobPort {
         return null;
     }
 
-    /** The activity counter: a chain step, a job status change, a bag change or a block moved each count one. */
+    /**
+     * The activity counter (0.36.1, review 7: task-specific first): a chain step done, the job's status text changing
+     * (it carries "N broken", "picking up"...), items gained, a walk's distance to its goal shrinking; the position only
+     * as a fallback, and then only a move of 8+ blocks from the last counted spot (standing and shuffling is no progress).
+     */
     private void progressTick(LocalPlayer p) {
         String step = chainRunning() ? c.chains.stepText() : null;
         if (step != null && !step.equals(lastStep)) progress++;
@@ -316,12 +353,22 @@ public final class AaRuntime implements JobPort {
         lastJobStatus = js;
         int bagTotal = 0;
         for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();
-        if (lastBag >= 0 && bagTotal != lastBag) progress++;
+        if (lastBag >= 0 && bagTotal > lastBag) progress++;          // gained (a deposit's drop is no progress by itself)
         lastBag = bagTotal;
         int[] pos = Jobs.here(p);
-        if (lastPos != null && (pos[0] != lastPos[0] || pos[1] != lastPos[1] || pos[2] != lastPos[2])) progress++;
-        lastPos = pos;
+        int[] dest = c.jobs.running() ? Jobs.travelDest(c.jobs.job) : null;
+        if (dest != null) {
+            double d = Math.abs(dest[0] - pos[0]) + Math.abs(dest[1] - pos[1]) + Math.abs(dest[2] - pos[2]);
+            if (lastGoalDist >= 0 && d < lastGoalDist - 1) progress++;
+            lastGoalDist = d;
+        } else lastGoalDist = -1;
+        if (lastPos == null || Math.abs(pos[0] - lastPos[0]) + Math.abs(pos[1] - lastPos[1]) + Math.abs(pos[2] - lastPos[2]) >= 8) {
+            if (lastPos != null) progress++;
+            lastPos = pos;
+        }
     }
+
+    private double lastGoalDist = -1;
 
     // ---- JobPort ----
 
@@ -330,7 +377,7 @@ public final class AaRuntime implements JobPort {
     @Override public long start(TaskSpec t) {
         refusal = null;
         if (c.chains.running()) { refusal = "busy: " + c.chains.chainStatus(); return -1; }
-        if (c.jobs.running() && !c.jobs.walking()) { refusal = "busy: " + c.jobs.job.status; return -1; }
+        if (c.jobs.running()) { refusal = "busy: " + c.jobs.job.status; return -1; }      // 0.36.1: any job, as otherJob() sees it
         if (c.gathering.running()) { refusal = "busy: " + c.gathering.statusText(); return -1; }
         if (c.hunting.running()) { refusal = "busy: a hunt runs"; return -1; }
         if (c.mule.running()) { refusal = "busy: " + c.mule.statusText(); return -1; }
@@ -376,6 +423,17 @@ public final class AaRuntime implements JobPort {
 
     @Override public long progress(long taskId) { return progress; }
 
+    /**
+     * 0.36.1 (review 6): a real pause: the chain's running step ends as "interrupted: low health ..." so Chains retries
+     * that step (up to 3 times) once the reflexes are calm and health is back (Chains.stepChain's fight retry); the chain
+     * itself stays, so the task is still RUNNING for AA. Resume needs nothing: the chain's own retry clock goes on.
+     */
+    @Override public void pause(long taskId, String why) {
+        if (taskId != current || !chainRunning()) return;
+        if (c.jobs.running()) c.jobs.finish("interrupted: low health or danger - aa paused the step (" + why + ")");
+        if (c.gathering.running()) c.gathering.stop("interrupted: low health or danger - aa paused (" + why + ")");
+    }
+
     @Override public String resolve(String chain) {
         if (chain == null || !chain.startsWith("goal ")) return chain;
         return c.planning.chainFor(chain.substring(5));
@@ -385,7 +443,14 @@ public final class AaRuntime implements JobPort {
         if (sensed == null || !sensed.feas.known) return null;
         try {
             Feasibility.Verdict v = Feasibility.check(expand(chain), sensed);
-            return v.infeasible() ? "infeasible: " + v.missing() + (v.stepText() == null ? "" : " for " + v.stepText()) : null;
+            if (!v.infeasible()) return null;
+            // 0.36.1: a saved goal routine the facts no longer support is deleted, so the planner plans the goal afresh
+            // next time (GoalPlanning keeps a saved routine otherwise; the hook cache forgets it within a minute)
+            if (chain.startsWith("goal_") && c.chains.isRoutine(chain)) {
+                String r = c.chains.routineCommand("delete " + chain);
+                LOG.info("[entropybot] aa: routine {} dropped as infeasible ({}): {}", chain, v.missing(), r);
+            }
+            return "infeasible: " + v.missing() + (v.stepText() == null ? "" : " for " + v.stepText());
         } catch (RuntimeException e) {
             return null;
         }
@@ -437,6 +502,7 @@ public final class AaRuntime implements JobPort {
         Tracer.Counts k = tracer.counts;
         return "switches " + k.switches + " (pointless " + k.pointless + "), preempts " + k.preempts + ", fails " + k.fails + ", lost " + k.lost
                 + ", ticks " + k.ticks + ", last tick " + k.tickUs + " us, errors " + errors + (lastError != null ? " (last: " + lastError + ")" : "")
+                + (writeErrors > 0 ? ", file write errors " + writeErrors : "")
                 + ", AI requests " + aiRequests + " (" + bb.requests().size() + " waiting)";
     }
 
@@ -479,39 +545,56 @@ public final class AaRuntime implements JobPort {
         return Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().worldRoot().resolve("aa");
     }
 
+    /** 0.36.1 (review 8): the file writes run on one background thread (the JSON text is built on the game thread). */
+    private static final java.util.concurrent.ExecutorService WRITER = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "entropybot-aa-writer");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile long writeErrors, lastWriteErrorAt;
+
     private void snapshot(long now, String driver) {
         if (now - lastSnapshotAt < 1000) return;
         lastSnapshotAt = now;
         Path d = dir();
         if (d == null) return;
-        try {
-            Files.createDirectories(d);
-            Path tmp = d.resolve("snapshot.json.tmp"), f = d.resolve("snapshot.json");
-            Files.writeString(tmp, tracer.snapshot(now, on(), driver, bb.taskJson(now), bb.in), StandardCharsets.UTF_8);
-            Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException | RuntimeException e) {
-            if (now - lastErrorAt > 60_000) {
-                lastErrorAt = now;
-                LOG.warn("[entropybot] aa: snapshot write failed: {}", e.toString());
+        String json = tracer.snapshot(now, on(), driver, bb.taskJson(now), bb.in);
+        WRITER.submit(() -> {
+            try {
+                Files.createDirectories(d);
+                Path tmp = d.resolve("snapshot.json.tmp"), f = d.resolve("snapshot.json");
+                Files.writeString(tmp, json, StandardCharsets.UTF_8);
+                Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException | RuntimeException e) {
+                writeFailed("snapshot", e);
             }
-        }
+        });
     }
 
     private void appendDecision(String line) {
         Path d = dir();
         if (d == null) return;
-        try {
-            Files.createDirectories(d);
-            Path f = d.resolve("decisions.jsonl");
-            if (++decisionLines > 2 * Tracer.KEEP_DECISIONS) {
-                // keep the file short: the last 200 lines the tracer holds
-                Files.writeString(f, String.join("\n", tracer.decisions()) + "\n", StandardCharsets.UTF_8);
-                decisionLines = tracer.decisions().size();
-                return;
+        boolean rewrite = ++decisionLines > 2 * Tracer.KEEP_DECISIONS;
+        String text = rewrite ? String.join("\n", tracer.decisions()) + "\n" : line + "\n";
+        if (rewrite) decisionLines = tracer.decisions().size();
+        WRITER.submit(() -> {
+            try {
+                Files.createDirectories(d);
+                Path f = d.resolve("decisions.jsonl");
+                if (rewrite) Files.writeString(f, text, StandardCharsets.UTF_8);      // keep the file short: the last 200 lines
+                else Files.writeString(f, text, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } catch (IOException | RuntimeException e) {
+                writeFailed("decisions", e);
             }
-            Files.writeString(f, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException | RuntimeException e) {
-            LOG.warn("[entropybot] aa: decisions write failed: {}", e.toString());
+        });
+    }
+
+    private void writeFailed(String what, Exception e) {
+        writeErrors++;
+        long now = System.currentTimeMillis();
+        if (now - lastWriteErrorAt > 60_000) {
+            lastWriteErrorAt = now;
+            LOG.warn("[entropybot] aa: {} write failed ({} so far): {}", what, writeErrors, e.toString());
         }
     }
 }
