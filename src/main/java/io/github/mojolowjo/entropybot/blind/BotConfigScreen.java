@@ -77,6 +77,10 @@ public final class BotConfigScreen extends Screen {
         }).bounds(cx - 100, y, 200, 20).build());
         startButton = addRenderableWidget(Button.builder(Component.literal("Start dashboard"), b -> run(false)).bounds(cx - 100, y + 28, 98, 20).build());
         stopButton = addRenderableWidget(Button.builder(Component.literal("Stop dashboard"), b -> run(true)).bounds(cx + 2, y + 28, 98, 20).build());
+        // 0.35.0: the AI operator's own screen (off by default)
+        addRenderableWidget(Button.builder(Component.literal("AI operator..."), b -> {
+            if (minecraft != null) minecraft.setScreen(new io.github.mojolowjo.entropybot.ai.live.AiConfigScreen(this));
+        }).bounds(cx - 100, height - 54, 200, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose()).bounds(cx - 100, height - 30, 200, 20).build());
         refreshButtons();
         checkPort(0);
