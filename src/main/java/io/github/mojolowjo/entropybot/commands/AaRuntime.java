@@ -127,7 +127,14 @@ public final class AaRuntime implements JobPort {
             swimming = false;
         }
         if (chainRunning()) c.chains.clear();
-        LOG.info("[entropybot] aa: off ({})", why);
+        // 0.36.5 (review 6): nothing of this run carries into the next aa on (queued AI requests, the last task's state)
+        int dropped = bb.drop("ai");
+        current = -1;
+        lastEnd = null;
+        myChain = CHAIN;
+        progress = 0;
+        lastBag = -1;
+        LOG.info("[entropybot] aa: off ({}){}", why, dropped > 0 ? "; " + dropped + " AI request(s) dropped" : "");
         return "ok: aa off" + (stopped != null ? " - stopped my task " + stopped : "") + "; your jobs run on";
     }
 
@@ -185,6 +192,10 @@ public final class AaRuntime implements JobPort {
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) return;
             long now = System.currentTimeMillis();
+            if (c.brainRuntime != null && c.brainRuntime.brain.on()) {     // 0.36.5 (review 1): both saved on (an old save): AA wins
+                c.brainRuntime.brain.command("off");
+                LOG.info("[entropybot] aa: the brain was on next to aa - brain off");
+            }
             if (p.isDeadOrDying()) {
                 if (bb.task() != null) {
                     tree.root.halt("died");

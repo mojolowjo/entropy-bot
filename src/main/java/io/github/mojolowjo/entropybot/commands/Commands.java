@@ -740,7 +740,7 @@ public final class Commands implements Chains.Env {
                 chains.rulesTick();                            // 0.36.0: off while AA runs (AA_PLAN 4: a poster later)
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
-            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null) brainRuntime.brain.tick();     // B1: every 2 s, never throws
+            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null && !aaOn()) brainRuntime.brain.tick();     // B1: every 2 s, never throws; 0.36.5: never next to AA
             if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) aaRuntime.tick(tick);             // 0.36.0: AA at 4 Hz, never throws
         planning.drainSearches();                                                                    // 0.23.1: the planner's answers from the worker
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
@@ -1202,6 +1202,7 @@ public final class Commands implements Chains.Env {
             return Reply.now("the autominer is the brain's idle list now: " + brainRuntime.brain.status());
         }
         String copyAsAssist = verb.equals("brain") ? io.github.mojolowjo.entropybot.assist.AssistRules.fromBrainCopy(rest) : null;
+        if (copyAsAssist != null && aaOn()) return Reply.now("aa is on - assist is off while AA runs (aa off first)");   // 0.36.5
         if (copyAsAssist != null) return Reply.now(assist.command(from, copyAsAssist, player));     // 0.24.2: brain copy = assist
         if (verb.equals("brain") && rest.trim().equalsIgnoreCase("on") && aaOn()) return Reply.now("aa is on - aa off first (aa and brain exclude each other)");   // 0.36.0
         if (verb.equals("brain")) return Reply.now(brainRuntime.brain.command(rest));

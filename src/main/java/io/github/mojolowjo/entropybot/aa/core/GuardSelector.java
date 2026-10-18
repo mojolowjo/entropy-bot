@@ -65,6 +65,7 @@ public final class GuardSelector extends Node {
 
     @Override public void halt(String why) {
         if (active >= 0) branches.get(active).child.halt(why);
+        if (paused >= 0 && paused != active) branches.get(paused).child.halt(why);     // 0.36.5 (review 2): a paused job ends too
         active = -1;
         paused = -1;
     }
