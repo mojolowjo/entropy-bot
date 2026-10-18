@@ -306,6 +306,7 @@ final class Chopping {
         int near = ChopRules.RADIUS - 4;
         List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> got = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) -> {
             if (r.tried.contains("far " + x + " " + z)) return false;
+            if (io.github.mojolowjo.entropybot.chop.Unreachable.blocked(x, z, System.currentTimeMillis())) return false;      // 0.36.3
             if (!commands.inAreas(dim, x, z) || jobs.goalAllowed(x, y, z) != null) return false;
             // 0.34.1 (review): never toward a protect box (margin as the mine's), nor a loaded log the tree finder
             // judges built (a log house) or not a tree; unloaded ones are judged by the scan on arrival
@@ -373,6 +374,8 @@ final class Chopping {
             // not one log came down and no chop: no spot to stand within reach (low leaves all around a short trunk), a guard refusal...
             String clr = lastClear(s);
             r.notes.add(ChopLoop.skipNote(r.tree.at(), false, clr));      // 0.27.1: "couldn't get at" only for a reach failure
+            // 0.36.3: remembered 30 min per world: the next pick, the far pick and the planner's trees fact leave it out
+            io.github.mojolowjo.entropybot.chop.Unreachable.mark(r.tree.base()[0], r.tree.base()[2], System.currentTimeMillis());
             LOG.info("[entropybot] chop: nothing came down at {} - skipped", r.tree.at());
             r.failsInRow++;
             r.reachFails++;
@@ -485,6 +488,10 @@ final class Chopping {
             }
             TreeFinder.Tree t = res.tree();
             int[] b = t.base();
+            if (io.github.mojolowjo.entropybot.chop.Unreachable.blocked(b[0], b[2], System.currentTimeMillis())) {
+                if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " is one I couldn't get at (remembered 30 min)";
+                continue;
+            }
             if (r.tried.contains(TreeFinder.key(b[0], b[1], b[2]))) {
                 // 0.31.0 (trial 11: "1 log columns looked at; null"): the only tree was tried already this run
                 if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " was tried already";
@@ -658,6 +665,7 @@ final class Chopping {
             TreeFinder.Tree t = res.tree();
             int[] b = t.base();
             if (!tried.add(TreeFinder.key(b[0], b[1], b[2]))) continue;
+            if (io.github.mojolowjo.entropybot.chop.Unreachable.blocked(b[0], b[2], System.currentTimeMillis())) continue;      // 0.36.3
             boolean ok = true;
             for (int[] l : t.logs()) if (!allowed.test(l)) { ok = false; break; }
             if (!ok) continue;
