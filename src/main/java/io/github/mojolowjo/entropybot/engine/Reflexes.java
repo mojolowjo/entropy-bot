@@ -1364,8 +1364,7 @@ public final class Reflexes {
         try {
             var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
             boolean busy = cmds.jobs.running() || cmds.chainRunning();
-            int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, p.getBlockX(), p.getBlockZ());
-            boolean under = top - p.getBlockY() > 3 && !mc.level.canSeeSky(p.blockPosition().above());
+            boolean under = io.github.mojolowjo.entropybot.commands.Jobs.underDepth(mc.level, p.getBlockX(), p.getBlockY(), p.getBlockZ()) > 0;   // 0.34.3: shared rule
             if (!eatRequested && (busy || under)) {
                 int food = p.getFoodData().getFoodLevel();
                 fetchNote = busy ? "a job is running: no food run during it" : "under ground: no food run from here";

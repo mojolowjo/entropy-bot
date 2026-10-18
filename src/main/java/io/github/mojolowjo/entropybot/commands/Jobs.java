@@ -1646,9 +1646,13 @@ public final class Jobs {
         net.minecraft.world.level.Level lv = p.level();
         // 0.34.2 (lead's live check: "sealed under ground" while the dig-out check said underground false, surface 67):
         // the dig-out check's own rule - the surface without leaves (a canopy is no roof), sky or open above
-        int surface = surfaceNoLeaves(lv, me[0], me[2]);
-        boolean sky = lv.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
-        return RestoreRules.underground(sky, surface, me[1]);
+        return underDepth(lv, me[0], me[1], me[2]) > 0;
+    }
+
+    /** 0.34.3: the shared under-ground rule at a cell (RestoreRules.underDepth over the leaf-free surface): depth or 0. */
+    public static int underDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        int surface = surfaceNoLeaves(lv, x, z);
+        return RestoreRules.underDepth(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
     }
 
     /**
@@ -1681,8 +1685,7 @@ public final class Jobs {
             int[] me = here(p), d = travelDest(j);
             if (d == null) return false;
             net.minecraft.world.level.Level lv = p.level();
-            int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
-            if (top - me[1] <= 3 || lv.canSeeSky(p.blockPosition().above())) return false;
+            if (underDepth(lv, me[0], me[1], me[2]) == 0) return false;      // 0.34.3: the shared rule
             j.retraceTried = true;
             java.util.List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(Guard.dimOf(lv), me[0], me[1], me[2], 8, 8, 400);
             if (hops.isEmpty()) {
