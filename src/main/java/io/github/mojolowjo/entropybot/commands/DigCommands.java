@@ -720,6 +720,7 @@ final class DigCommands {
         Settings s = BaritoneAPI.getSettings();
         s.allowPlace.value = true;
         s.allowBreak.value = false;
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "build");
         s.buildIgnoreExisting.value = true;
         s.allowInventory.value = true;
         Clearing.applyLook(bs);

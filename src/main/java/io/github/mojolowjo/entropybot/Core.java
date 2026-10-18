@@ -256,11 +256,15 @@ public final class Core {
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
                         MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.watchApplied, MixinFlags.cameraPosApplied,
                         MixinFlags.restoreApplied, MixinFlags.astarTargetPresent, files.root());
-                LOG.info("[entropybot] rules: {} - cost hook: {}", io.github.mojolowjo.entropybot.guard.PolicyRuntime.LIVE ? "phase 1 (travel live)" : "phase 0 (shadow mode)",
-                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.hookText());
+                LOG.info("[entropybot] rules: {} (the cost hook is installed once Baritone is hooked; see its own line, check, fence rules)",
+                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.LIVE ? "phase 1 (travel live)" : "phase 0 (shadow mode)");
                 events.push("job", "mod ready " + version(), null);
             }
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
+            if (baritone.hooked() && !advisorInstalled) {                               // mining plan phase 1: the cost hook, once
+                advisorInstalled = true;
+                io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.install();
+            }
             reflexes.tick(tick);
             if (tick % 20 == 7) io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.tick(mc, mc.player, files, s -> commands.whisper(commands.owner(), s));     // 0.23.6
             knowledge.flushIfDue(tick);
@@ -292,6 +296,7 @@ public final class Core {
             }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.tick(mc, guard.core);     // mining plan: the rule snapshot (never throws)
+            try { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setCurrentJob(commands.jobs.running() ? commands.jobs.job.id : -1); } catch (Throwable ignored) {}
             if (tick % 100 == 50) io.github.mojolowjo.entropybot.commands.Clearing.fallWatch(commands.jobs.running());     // 0.31.1 review 1
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
@@ -309,8 +314,12 @@ public final class Core {
         }
     }
 
+    private boolean advisorInstalled;
+
     public JsonArray features() {
         JsonArray a = new JsonArray();
+        String hook = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.hook();
+        if (!"none".equals(hook)) a.add("policy:" + hook);
         a.add("files");
         if (baritone.hooked()) a.add("events");
         a.add("guard:" + guard.core.mode().name().toLowerCase());
@@ -346,6 +355,7 @@ public final class Core {
     public JsonObject guardStatus() {
         JsonObject o = guard.core.status(guard.floorSize(), MixinFlags.astarApplied, MixinFlags.clickApplied && MixinFlags.placeApplied);
         o.addProperty("floorReady", guard.floorReady());
+        o.addProperty("costHook", io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.hook());
         o.addProperty("baritoneHooked", baritone.hooked());
         if (baritone.lastError() != null) o.addProperty("baritoneError", baritone.lastError());
         return o;

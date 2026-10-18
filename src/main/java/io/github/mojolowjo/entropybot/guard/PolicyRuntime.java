@@ -35,7 +35,7 @@ public final class PolicyRuntime {
     public static final PolicyRuntime INSTANCE = new PolicyRuntime();
 
     /** Phase 1 switch: the TRAVEL intent decides breaks (with a cost hook running). Phase 0 keeps it off: shadow only. */
-    public static final boolean LIVE = false;
+    public static final boolean LIVE = true;
 
     /**
      * A block state by cell on whatever thread the caller is on ({@code bsi.get0} on the pathfinder thread, which reads
@@ -133,6 +133,24 @@ public final class PolicyRuntime {
     /** Phase 1 is live: a cost hook runs and the switch is on. Without a hook the old rules hold (fail safe). */
     public boolean travelLive() { return LIVE && !"none".equals(hook); }
 
+    /**
+     * A walk may turn Baritone's breaking on: the policy is live, has a snapshot, and the outside rule set lets travel
+     * break at all (both connection presets do; the cost hook does the limiting, the click veto the floor).
+     */
+    public boolean travelMayBreak() {
+        Snapshot s = snapshot;
+        return travelLive() && s != null && s.outside().breakNatural() != BreakPolicy.Natural.NEVER;
+    }
+
+    /**
+     * Baritone's allowBreak is on only because of the travel policy (no build, dig or mine job owns it): for the route
+     * map (review R5) that is still a walking-only world when the fork hook runs, because its contexts are built under
+     * the NONE intent ({@link #withIntent}); the mixin fallback reads the live intent and cannot promise that.
+     */
+    public boolean travelOnlyBreaking() {
+        return travelMayBreak() && "fork".equals(hook) && intent == Intent.TRAVEL;
+    }
+
     // ---- the facts ----
 
     /** Client thread: what the guard knows about the block at pos, from the level. Unknown when not loaded. */
@@ -193,7 +211,7 @@ public final class PolicyRuntime {
 
     /** Where the bot is, as of the last client tick (the pathfinder thread never touches the player). */
     public Where where() {
-        return new Where(inWater, travelBreaks);
+        return new Where(inWater, travelBreaks(currentJob));
     }
 
     private volatile boolean inWater;
@@ -233,9 +251,27 @@ public final class PolicyRuntime {
 
     // ---- travel breaks (phase 1) ----
 
-    /** A travel break was let through at this key ("dim x y z") for this job: counted toward the cap; the ledger takes it. */
-    public void markTravelBreak(long jobId, String key) {
-        if (jobId != travelJob) { travelJob = jobId; travelBreaks = 0; }
+    /** The running job (set each client tick, -1 when none): the cap and the ledger marks belong to it. */
+    private volatile long currentJob = -1;
+    private volatile String lastMarkedKey;
+
+    /** Client tick: the running job's id, or -1. A new job starts with an empty cap and no stale ledger mark. */
+    public void setCurrentJob(long id) {
+        if (id == currentJob) return;
+        currentJob = id;
+        travelJob = id;
+        travelBreaks = 0;
+        lastTravelBreak = null;
+        lastMarkedKey = null;
+    }
+
+    /**
+     * A travel break was let through at this key ("dim x y z"): counted once toward the cap (the click veto fires every
+     * tick of a multi-tick break; a repeat of the same cell is not a new break) and handed to the ledger.
+     */
+    public void markTravelBreak(String key) {
+        if (key.equals(lastMarkedKey)) return;
+        lastMarkedKey = key;
         travelBreaks++;
         lastTravelBreak = key;
     }
@@ -289,12 +325,14 @@ public final class PolicyRuntime {
     public String why(Level level, String dim, int x, int y, int z, Action action, Intent in) {
         Snapshot s = snapshot;
         if (s == null) return "rules: no snapshot yet";
-        BlockFacts f = facts(level, new BlockPos(x, y, z), false);
+        BlockPos pos = new BlockPos(x, y, z);
+        BlockFacts f = facts(level, pos, false);
         BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(action, in, dim, x, y, z, f, where()));
         BreakPolicy.RuleSet r = s.ruleSetAt(dim, x, y, z);
+        String id = f.loaded() && level != null ? BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString() : null;
         return "rules " + action.name().toLowerCase() + " " + in.name().toLowerCase() + " at " + x + " " + y + " " + z + ": " + v.text()
                 + " | rule set " + r.describe()
-                + " | block " + (f.loaded() ? f.id() + (f.ore() ? " (ore)" : "") + (f.builtBlock() ? " (built)" : "") + (f.blockEntity() ? " (block entity)" : "")
+                + " | block " + (f.loaded() ? id + (f.ore() ? " (ore)" : "") + (f.builtBlock() ? " (built)" : "") + (f.blockEntity() ? " (block entity)" : "")
                 + ", in cell " + f.inCell().name().toLowerCase() + ", above " + f.above().name().toLowerCase() + (f.fallingAbove() ? " (falling)" : "")
                 + ", sides " + f.sides().name().toLowerCase() : "not loaded");
     }

@@ -161,7 +161,10 @@ public final class PaperPlan {
             s.allowPlace.value = plc;
             s.blockBreakAdditionalPenalty.value = Math.max(obp, 6.0);     // owner: a walk keeps breaking/placing expensive
             s.blockPlacementPenalty.value = Math.max(opp, 20.0);
-            ctx = new baritone.pathing.movement.CalculationContext(b, true);
+            // mining plan phase 1: a plan's own context: BUILD (no travel cap) when it may break or place, else walking only
+            ctx = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.withIntent(
+                    brk || plc ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.NONE,
+                    () -> new baritone.pathing.movement.CalculationContext(b, true));
         } finally {
             s.allowBreak.value = ob;
             s.allowPlace.value = op;

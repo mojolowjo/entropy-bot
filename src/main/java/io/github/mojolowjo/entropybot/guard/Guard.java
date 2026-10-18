@@ -167,10 +167,43 @@ public final class Guard {
         Level level = Minecraft.getInstance().level;
         if (level == null) return false;
         String dim = dimOf(level);
+        PolicyRuntime pr = PolicyRuntime.INSTANCE;
+        if (pr.travelLive() && pr.intent() == BreakPolicy.Intent.TRAVEL) return vetoTravelBreak(level, pos, dim, pr);
         GuardCore.Verdict v = core.check(dim, pos.getX(), pos.getY(), pos.getZ(), "break", infoFor(level, pos));
         shadowClick(level, pos, dim, v);
         return refuse(level, pos, "break", v);
     }
+
+    /**
+     * Mining plan phase 1: a break while a walk runs (TRAVEL intent). The floor and the fence's boxes as before; where
+     * only a box rule would refuse (outside every area, no lease), the policy decides (GuardCore.checkTravelBreak). A
+     * break let through is a travel break: counted toward the cap and handed to the restore ledger as a path break.
+     */
+    private boolean vetoTravelBreak(Level level, BlockPos pos, String dim, PolicyRuntime pr) {
+        int x = pos.getX(), y = pos.getY(), z = pos.getZ();
+        GuardCore.TravelCheck t = core.checkTravelBreak(dim, x, y, z, infoFor(level, pos), pr.snapshot(), pr.facts(level, pos, false), pr.where());
+        GuardCore.Verdict v = t.guard();
+        if (t.travel() == null) {
+            // the fence decided alone (allowed, or the floor): exactly as before
+            if (!v.allowed() || v.wouldVeto()) core.log().record(core.tick(), "break", dim, x, y, z, v.reason(), v.floor(), !v.allowed());
+            return refuse(level, pos, "break", v);
+        }
+        pr.stats.ask(PolicyStats.SITE_CLICK);
+        // the exemption needs a running job (the same condition under which safeSettings/SafetyNet keep A* breaking on,
+        // so the plan and the click agree) and a terrain block (what the ledger can put back; logs and crops keep the fence)
+        boolean jobRunning = false;
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());
+        if (t.travel().allowed() && jobRunning && terrain) {
+            pr.logTravelOverride(PolicyStats.SITE_CLICK, x, y, z, t.travel(), v.reason());
+            pr.markTravelBreak(dim + " " + x + " " + y + " " + z);
+            return false;
+        }
+        pr.stats.deny(PolicyStats.SITE_CLICK, t.travel().reason());
+        if (!v.allowed() || v.wouldVeto()) core.log().record(core.tick(), "break", dim, x, y, z, v.reason(), v.floor(), !v.allowed());
+        return refuse(level, pos, "break", v);
+    }
+
 
     /** Mining plan phase 0: the policy's answer next to the fence's, counted and logged when they differ. Never throws. */
     private void shadowClick(Level level, BlockPos pos, String dim, GuardCore.Verdict v) {
@@ -298,6 +331,16 @@ public final class Guard {
      */
     public boolean astarDenied(Level world, PolicyRuntime.StateAt at, int x, int y, int z) {
         String dim = dimOf(world);
+        PolicyRuntime pr = PolicyRuntime.INSTANCE;
+        BreakPolicy.Intent in = pr.intentNow();
+        if (pr.travelLive() && (in == BreakPolicy.Intent.TRAVEL || in == BreakPolicy.Intent.NONE)) {
+            // phase 1: a walk's A* plans by the policy: denied dims, protect boxes, no-break areas here (facts-free); the
+            // cost hook (CostAdvisorHook) adds the block facts and the multiplier. Leases are not a walk's business.
+            pr.stats.ask(PolicyStats.SITE_ASTAR_BOXES);
+            BreakPolicy.Verdict pv = BreakPolicy.boxes(pr.snapshot(), in, dim, x, y, z);
+            if (!pv.allowed()) pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, pv.reason());
+            return !pv.allowed();
+        }
         GuardCore.Verdict v = core.checkBoxes(dim, x, y, z, "break");
         shadowAstar(dim, at, x, y, z, v);
         if (!v.allowed()) return true;

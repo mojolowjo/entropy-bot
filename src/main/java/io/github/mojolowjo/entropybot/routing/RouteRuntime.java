@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.routing;
 
+import io.github.mojolowjo.entropybot.guard.PolicyRuntime;
 import io.github.mojolowjo.entropybot.trail.Trail;
 import io.github.mojolowjo.entropybot.trail.TrailRuntime;
 import io.github.mojolowjo.entropybot.surface.SurfaceColumns;
@@ -752,7 +753,10 @@ public final class RouteRuntime implements RoutePlanner {
     static boolean breakingOn() {
         try {
             Settings s = BaritoneAPI.getSettings();
-            return s.allowBreak.value || s.allowPlace.value;
+            // mining plan phase 1: breaking on for a walk's travel policy alone is still a walking-only world for the map
+            // (its contexts are built under the NONE intent, BaritoneCellMoves.create)
+            boolean brk = s.allowBreak.value && !PolicyRuntime.INSTANCE.travelOnlyBreaking();
+            return brk || s.allowPlace.value;
         } catch (Throwable t) {
             return true;
         }

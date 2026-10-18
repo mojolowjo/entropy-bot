@@ -506,6 +506,7 @@ public final class PolicyCommands {
                 List<String> hooks = new ArrayList<>();
                 if (g.has("click") && g.get("click").getAsBoolean()) hooks.add("click");
                 if (g.has("astar") && g.get("astar").getAsBoolean()) hooks.add("astar");
+                if (g.has("costHook") && !g.get("costHook").getAsString().equals("none")) hooks.add("cost:" + g.get("costHook").getAsString());
                 return "fence: " + mode + " mode" + (!mode.equals(strict() ? "strict" : "log") ? " (my notes say " + (strict() ? "strict" : "log") + ")" : "")
                         + " | " + listText().replaceFirst(" \\| near me.*$", "")
                         + " | leases: " + tasks.size() + (tasks.isEmpty() ? "" : " (" + String.join("; ", tasks.subList(0, Math.min(3, tasks.size()))) + ")")

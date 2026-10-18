@@ -198,7 +198,8 @@ public final class Jobs {
             IBaritone b = baritone();
             boolean walk = running() && (walking() || (job.seq != null && job.status != null && job.status.contains("walking")));
             boolean breaking = false;
-            try { breaking = BaritoneAPI.getSettings().allowBreak.value; } catch (Throwable ignored) {}
+            // mining plan phase 1: breaking on for the travel policy alone is still a plain walk for the movement package
+            try { breaking = BaritoneAPI.getSettings().allowBreak.value && !io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelOnlyBreaking(); } catch (Throwable ignored) {}
             boolean fleeing = core.reflexes.reflex() == Reflexes.Reflex.FLEEING || core.reflexes.reflex() == Reflexes.Reflex.RETREATING;
             boolean idle = !commands.busyForQueue() && b != null && idle(b) && !core.reflexes.hold();
             if (running() && job.longRoute && core.reflexes.reflex() != Reflexes.Reflex.NONE) walkReflex = core.reflexes.reflex().name();
@@ -625,13 +626,26 @@ public final class Jobs {
         try { b.getPathingBehavior().cancelEverything(); } catch (Throwable ignored) {}
     }
 
-    /** A walk never breaks or places (the bridge's restoreSafeSettings, for Baritone's part). */
+    /**
+     * A walk's Baritone settings (the bridge's restoreSafeSettings, for Baritone's part). Mining plan phase 1: a walk
+     * runs under the TRAVEL intent; with the cost hook live, breaking stays ON and the policy's costs (x6 outside, x10
+     * in the camp, never under water from in the water, cap 24 a walk) do the limiting; breaking next to water is
+     * Baritone's setting the policy needs for that. Without the hook: as before, no breaking.
+     */
     static void safeSettings() {
         try {
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            boolean build = PaperPlan.ownsBreak() || PaperPlan.ownsPlace();
+            // a mine job's mid-job walks keep the MINE intent (its Baritone mine and vein clear are not travel)
+            boolean mine = false;
+            try { var j = Core.INSTANCE.commands.jobs.job; mine = j != null && !j.done && j.ownsBreaking; } catch (Throwable ignored) {}
+            pr.setIntent(build ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : mine ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE
+                    : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, build ? "plan go" : mine ? "mine walk" : "walk");
+            boolean travel = pr.travelMayBreak();
             // 0.32.3: a plan-go job keeps the breaking/placing its plan needs (PaperPlan owns them for that job only)
             // 0.36.8: a mine job's walk to a known ore may dig (MineWater: inside my areas; next to water too, never lava)
-            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig();
-            MineWater.set(MineWater.active());
+            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig() || travel;
+            MineWater.set(MineWater.active() || travel);
             BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace();
         } catch (Throwable ignored) {}
     }

@@ -118,6 +118,7 @@ public final class SafetyNet {
                 if (st != null) st.reset();
             }
             for (String name : SafetyRules.RESTORE_FALSE_IF_PRESENT) setFalse(s, name);
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "restore");
             if (Guard.INSTANCE.floorReady()) putProtected(s);
             Core.INSTANCE.baritone.enforceSettings();
         } catch (Throwable t) {
@@ -147,6 +148,8 @@ public final class SafetyNet {
         if (io.github.mojolowjo.entropybot.commands.PaperPlan.ownsBreak()) return true;                      // 0.32.3: the fourth owner, a plan-go walk
         if (io.github.mojolowjo.entropybot.commands.MineWater.walkDig()) return true;                        // 0.36.8: a mine job's walk to a known ore
         try {
+            // mining plan phase 1: a running job's walk keeps breaking on under the policy's costs; idle = off again
+            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayBreak() && Core.INSTANCE.commands.jobs.running()) return true;
             var j = Core.INSTANCE.commands.jobs.job;
             if (j == null || j.done || !j.ownsBreaking) return false;
             return b != null && b.getMineProcess().isActive();
