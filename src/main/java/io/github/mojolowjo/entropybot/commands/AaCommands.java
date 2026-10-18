@@ -25,7 +25,9 @@ final class AaCommands {
                 List<String> d = aa.decisions();
                 if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (ladder: " + aa.ladderLine() + ")" : " (aa is off)");
                 List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
-                return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nladder: " + aa.ladderLine() : "");
+                String iron = aa.ironOptions();        // 0.36.a8: the IRON rung's option scorer
+                return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nladder: " + aa.ladderLine() : "")
+                        + (iron == null ? "" : "\niron options: " + iron);
             }
             case "tree" -> { return aa.tree.mermaid(); }
             default -> { return USAGE; }

@@ -7,6 +7,7 @@ import io.github.mojolowjo.entropybot.aa.AaEscape;
 import io.github.mojolowjo.entropybot.aa.AaScorer;
 import io.github.mojolowjo.entropybot.aa.AaTree;
 import io.github.mojolowjo.entropybot.aa.AaLadder;
+import io.github.mojolowjo.entropybot.aa.IronOptions;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
 import io.github.mojolowjo.entropybot.aa.core.JobPort;
@@ -80,7 +81,49 @@ public final class AaRuntime implements JobPort {
         tracer.sink(this::appendDecision);
         JsonObject d = data();
         if (d.has(AaLadder.SHELTER_FACT) && d.get(AaLadder.SHELTER_FACT).getAsBoolean()) AaLadder.noteShelter(bb);
+        bb.fact(IronOptions.FACTS, (java.util.function.Supplier<IronOptions.Facts>) this::ironFacts);
         c.chains.onEnd(this::chainEnded);
+    }
+
+    /**
+     * 0.36.a8 (MINING_PLAN 3.6): the facts the IRON rung's option scorer reads, read once per pick (not per tick): the
+     * nearest known iron with its faces, depth, water and policy verdict (Mining.aaOres), the nearest known cave, strip
+     * preconditions, the camp furnace's distance and the bag. Null (the planner's chain runs as it is) when nothing can
+     * be read; never throws.
+     */
+    IronOptions.Facts ironFacts() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null || sensed == null) return null;
+            int[] me = Jobs.here(p);
+            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
+            List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, IRON_ORES);
+            var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
+            int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
+            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;      // review: "mine cave" picks only within 64, else it starts a new cave here
+            Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
+            boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
+            String stripWhy = !mineMarked ? "no mine marked (place mine)" : !sensed.areasHere ? "outside my areas" : null;
+            int[] furnace = c.crafting.findFurnace(p);
+            int furnaceDist = furnace == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace)));
+            return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
+                    furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
+                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** The nearest known iron positions the scorer weighs. */
+    static final int IRON_ORES = 8;
+
+    /** The IRON rung's options line ("aa why"), or null. */
+    String ironOptions() {
+        for (var r : AaLadder.rungs(tree.ladder)) if (r.kind == TaskKind.IRON) return r.options();
+        return null;
     }
 
     // ---- the switch (brainData "aa": {on, since, heldUntil, shelterBuilt}) ----
@@ -546,10 +589,19 @@ public final class AaRuntime implements JobPort {
         return c.planning.chainFor(chain.substring(5));
     }
 
+    /** 0.36.a8: a routine name (the planner's goal_...) or chain text as its plain steps, for the option scorer. */
+    @Override public String expand(String chain) {
+        try {
+            return String.join(" then ", c.chains.expandSteps(Texts.splitChain(chain), 0));
+        } catch (RuntimeException e) {
+            return chain;
+        }
+    }
+
     @Override public String infeasible(String chain) {
         if (sensed == null || !sensed.feas.known) return null;
         try {
-            Feasibility.Verdict v = Feasibility.check(expand(chain), sensed);
+            Feasibility.Verdict v = Feasibility.check(routineSteps(chain), sensed);
             if (!v.infeasible()) return null;
             // 0.36.1: a saved goal routine the facts no longer support is deleted, so the planner plans the goal afresh
             // next time (GoalPlanning keeps a saved routine otherwise; the hook cache forgets it within a minute)
@@ -566,7 +618,7 @@ public final class AaRuntime implements JobPort {
     }
 
     /** A routine name -> its steps joined with "then" (Feasibility reads the steps). */
-    private String expand(String chain) {
+    private String routineSteps(String chain) {
         if (c.chains.isRoutine(chain)) return c.chains.routines().get(chain.toLowerCase()).getAsString();
         return chain;
     }

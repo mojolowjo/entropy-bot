@@ -346,6 +346,58 @@ final class Mining {
         return m.hits();
     }
 
+    /**
+     * 0.36.a8 (AA's iron option scorer, MINING_PLAN 3.6): the nearest known ore of a family with the facts the scorer
+     * reads: loaded, a dry open face, sky-open, the dig depth from the surface, the water rule (a dig down from in the
+     * water), and the break policy's MINE verdict at the cell. Same fence as the mine's own pick (my areas, the protect
+     * margin, the guard); no tried-set (the scorer keeps its own memory). Never throws; empty when the index is not ready.
+     */
+    List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n) {
+        List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> out = new ArrayList<>();
+        try {
+            if (!indexReady()) return out;
+            String d = dim();
+            int[] me = Jobs.here(p);
+            Level level = p.level();
+            List<Box> prot = boxes(policy(), "protect");
+            java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> commands.inAreas(d, x, z)
+                    && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null;
+            var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, n, ok)) {
+                BlockPos q = new BlockPos(h.x(), h.y(), h.z());
+                boolean loaded = level.isLoaded(q);
+                double dist = Math.sqrt(h.d2());
+                if (!loaded) {
+                    out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, false, true, false, -1, false, null, false));
+                    continue;
+                }
+                if (!idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())) continue;     // gone
+                boolean open = airFace(level, h.x(), h.y(), h.z());
+                boolean sky = open && skyOpen(level, q);
+                int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, h.x(), h.z()) - 1;
+                boolean touchesWater = io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null || !level.getFluidState(q.below()).isEmpty();
+                boolean wet = !open && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(), touchesWater);
+                String deny = null;
+                boolean floor = false;
+                try {
+                    var v = rt.judge("aa-iron", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE,
+                            d, h.x(), h.y(), h.z(), rt.facts(level, q, false), rt.where());
+                    if (!v.allowed()) {
+                        deny = v.reason();
+                        floor = v.floor();
+                    }
+                } catch (RuntimeException e) {
+                    deny = "policy error: " + e;
+                }
+                out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, true, open, sky, Math.max(1, top - h.y() + 1), wet, deny, floor));
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa iron: the known-ore facts could not be read: {}", e.toString());
+        }
+        return out;
+    }
+
     /** 0.36.a5: Baritone's live scan for the job's block(s) near me, kept a few seconds (one scan per pick, cheap on the tick). */
     private List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> liveOres(LocalPlayer p, MineRun j, long tick) {
         if (j.kLive != null && tick - j.kLiveAt < 60) return j.kLive;

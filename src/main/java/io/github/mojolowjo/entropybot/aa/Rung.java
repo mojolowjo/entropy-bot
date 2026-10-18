@@ -23,12 +23,27 @@ public final class Rung extends Node {
     /** The blackboard fact "what is being planned" (the status line shows it while the slot waits). */
     public static final String PLANNING_FACT = "planning";
 
+    /**
+     * 0.36.a8 (MINING_PLAN 3.6): a rung's option scorer. The planner's chain (expanded to its steps) goes in, the chain to
+     * run comes out (null: no option can run, {@link #why()} says why); a failed task is offered back: {@code true} means
+     * another option may start at once (the rung picks again, no cooldown) instead of the rung failing.
+     */
+    public interface Picker {
+        String pick(Blackboard bb, String planned);
+
+        boolean failed(Blackboard bb, String end);
+
+        /** The options line for {@code aa why}. */
+        String why();
+    }
+
     public final TaskKind kind;
     private final Predicate<Blackboard> unmet;
     private final Function<Blackboard, String> skip, goal;
     private final RunJob job;
     private final Cooldown cooldown;
-    private String resolved;
+    private final Picker picker;
+    private String resolved, planned;
     private long planningSince = -1, settledAt = -1;
     private String planFailed;
     private long planFailedAt = -1;
@@ -39,11 +54,17 @@ public final class Rung extends Node {
      * @param goal  the text to run: "goal torch 16", "deposit", "house main"...
      */
     public Rung(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> skip, Function<Blackboard, String> goal) {
+        this(id, kind, unmet, skip, goal, null);
+    }
+
+    /** With a {@link Picker} choosing how the planner's chain runs (the IRON rung). */
+    public Rung(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> skip, Function<Blackboard, String> goal, Picker picker) {
         super(id, "rung " + kind);
         this.kind = kind;
         this.unmet = unmet;
         this.skip = skip;
         this.goal = goal;
+        this.picker = picker;
         this.job = new RunJob(id + ".job", kind, bb -> resolved == null ? null : JobPort.TaskSpec.of(kind, resolved, "needs"));
         this.cooldown = new Cooldown(id + ".cd", job);
     }
@@ -53,7 +74,7 @@ public final class Rung extends Node {
         if (job.running()) {
             Status s = cooldown.tick(bb);
             if (s == Status.SUCCESS) settledAt = now;
-            if (s == Status.FAILURE) return fail(cooldown.reason());
+            if (s == Status.FAILURE) return jobFailed(bb, cooldown.reason());
             return s;
         }
         if (!unmet.test(bb)) return fail(kind + " met");
@@ -105,12 +126,49 @@ public final class Rung extends Node {
             return fail(kind + " skipped: " + inf);
         }
         resolved = chain;
+        if (picker != null) {
+            planned = bb.port.expand(chain);
+            String p = picker.pick(bb, planned);
+            if (p == null) {
+                // nothing the scorer can run: remembered like a failed plan (else it would ask every tick)
+                planFailed = picker.why();
+                planFailedAt = now;
+                bb.port.log(kind + " has no option: " + planFailed);
+                return fail(kind + " skipped: " + planFailed);
+            }
+            resolved = p;
+            bb.port.log(kind + " options: " + picker.why());
+        }
         settledGoal = g;
-        bb.pendingReason("needs: " + kind + " unmet -> " + g);
+        bb.pendingReason("needs: " + kind + " unmet -> " + g + (picker == null ? "" : " as " + resolved));
         Status s = cooldown.tick(bb);
         if (s == Status.SUCCESS) settledAt = now;
-        return s == Status.FAILURE ? fail(cooldown.reason()) : s;
+        return s == Status.FAILURE ? jobFailed(bb, cooldown.reason()) : s;
     }
+
+    /**
+     * 0.36.a8: the task failed. With a picker that takes the failure as a reason to switch, the next option starts at once
+     * (the cooldown the failure set is forgotten; the rung stays RUNNING); without one, or with nothing left, the rung
+     * fails as before and the options line goes with the reason.
+     */
+    private Status jobFailed(Blackboard bb, String why) {
+        if (picker == null) return fail(why);
+        if (planned != null && picker.failed(bb, why)) {
+            String next = picker.pick(bb, planned);
+            if (next != null && !job.running()) {
+                cooldown.forget();
+                resolved = next;
+                bb.port.log(kind + ": " + why + " -> switching: " + picker.why());
+                bb.pendingReason("needs: " + kind + " switched after \"" + why + "\" -> " + next);
+                Status s = cooldown.tick(bb);
+                return s == Status.FAILURE ? fail(cooldown.reason() + " | options: " + picker.why()) : s;
+            }
+        }
+        return fail(why + " | options: " + picker.why());
+    }
+
+    /** The picker's options line (null without a picker). */
+    public String options() { return picker == null ? null : picker.why(); }
 
     private String settledGoal, planningGoal;
     private long lastPlanAsk = -1;

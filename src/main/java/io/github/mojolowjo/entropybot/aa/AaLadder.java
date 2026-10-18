@@ -121,10 +121,11 @@ public final class AaLadder {
                 bb -> bag.update(bb.in.freeSlots),
                 bb -> bb.in.baseChests ? null : "no base chests scanned (scan base)",
                 bb -> "deposit");
+        // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
         Rung iron = new Rung("needs.iron", TaskKind.IRON,
                 bb -> bb.in.pickTier < 3,
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet",
-                bb -> "goal iron tools");
+                bb -> "goal iron tools", new IronOptions.Picker());
         // a memory node (live check 2026-10-18: as a reactive Fallback, an earlier rung that started *planning* while a
         // lower rung's job ran outranked it and cancelled the job: a pointless switch)
         return new MemoryFallback("needs", "basic needs", area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);

@@ -63,6 +63,9 @@ public interface JobPort {
      */
     default String resolve(String chain) { return chain; }
 
+    /** 0.36.a8: a chain (a routine name, or text with routines in it) as its plain steps joined with "then"; default: as it is. */
+    default String expand(String chain) { return chain; }
+
     /** Feasibility (AA_PLAN 9): why the chain cannot start now (brain/Feasibility's verdict), or null when it can. */
     default String infeasible(String chain) { return null; }
 
