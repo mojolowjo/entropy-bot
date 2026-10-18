@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.core.Band;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Condition;
+import io.github.mojolowjo.entropybot.aa.core.Cooldown;
 import io.github.mojolowjo.entropybot.aa.core.Fallback;
 import io.github.mojolowjo.entropybot.aa.core.GuardSelector;
 import io.github.mojolowjo.entropybot.aa.core.JobPort;
@@ -100,9 +101,11 @@ public final class AaTree {
         // [2c] the ladder, [2d] idle
         Node ladder = AaLadder.build();
         UtilitySelector idle = new UtilitySelector("idle", "idle", scorer, UtilitySelector.BONUS,
-                new UtilitySelector.Option(TaskKind.STOCK_WOOD, goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood 64")),
-                new UtilitySelector.Option(TaskKind.STOCK_STONE, goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone 64")),
-                new UtilitySelector.Option(TaskKind.WAIT, RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")));
+                // 0.36.2 (40-min run: STOCK_WOOD restarted 0.25 s after each failure, 17 times): a failed idle task
+                // cools down like a rung (2 min doubling); planning and busy refusals do not count
+                new UtilitySelector.Option(TaskKind.STOCK_WOOD, new Cooldown("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood 64")).ranOnly()),
+                new UtilitySelector.Option(TaskKind.STOCK_STONE, new Cooldown("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone 64")).ranOnly()),
+                new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("idle.wait.cd", RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
         MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, ladder, idle);
         GuardSelector root = new GuardSelector("root", "AA",
                 new GuardSelector.Branch(dangerGuard, dangerBranch),

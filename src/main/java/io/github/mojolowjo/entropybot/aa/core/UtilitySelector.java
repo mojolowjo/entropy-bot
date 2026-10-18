@@ -38,9 +38,12 @@ public final class UtilitySelector extends Node {
         lastScores = sc;
         int best = -1;
         double bestV = Double.NEGATIVE_INFINITY;
+        long now = bb.clock.now();
         for (int i = 0; i < options.size(); i++) {
             double v = sc[options.get(i).kind().ordinal()];
             if (v < 0) continue;
+            // 0.36.2: an option cooling down after a failed task is skipped (the next best runs meanwhile)
+            if (options.get(i).child() instanceof Cooldown cd && cd.cooling(now)) continue;
             if (i == lastWinner) v += bonus;
             if (v > bestV) {
                 bestV = v;

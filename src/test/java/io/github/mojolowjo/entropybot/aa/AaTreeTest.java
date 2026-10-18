@@ -290,6 +290,23 @@ class AaTreeTest {
         assertEquals("goal cobblestone 64", lastChain());
     }
 
+    /** 0.36.2, the 40-minute run: a failed idle task cools down; the next idle option runs meanwhile. */
+    @Test
+    void aFailedIdleTaskCoolsDown() {
+        freshStart();
+        pick(3);
+        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
+        bb.in.torches = 16;
+        tree.tick(bb);
+        assertEquals("goal wood 64", lastChain());
+        port.fail(1, "error: chopped nothing");
+        tree.tick(bb);
+        clock.advance(250);
+        tree.tick(bb);
+        assertNotEquals("goal wood 64", lastChain(), "no restart 0.25 s after the failure");
+        assertEquals(2, port.started.size());
+    }
+
     /** Live 2026-10-18: an earlier rung that starts planning while a lower rung's job runs must not cancel the job. */
     @Test
     void anEarlierRungPlanningNeverOutranksARunningJob() {

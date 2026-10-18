@@ -14,6 +14,7 @@ public final class Cooldown extends Node {
     private long until = -1, lastFailAt = -1;
     private int fails;
     private String lastWhy;
+    private boolean ranOnly, ran;
 
     public Cooldown(String id, Node child) { this(id, child, BASE_MS, MAX_MS); }
 
@@ -24,16 +25,29 @@ public final class Cooldown extends Node {
         this.maxMs = maxMs;
     }
 
+    /**
+     * 0.36.2 (the idle leak): only a failure after the child ran (a task that started and then failed) counts; a child
+     * that fails at once (a planner still searching, a busy refusal) is passed through without a cooldown.
+     */
+    public Cooldown ranOnly() {
+        ranOnly = true;
+        return this;
+    }
+
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
         if (until > now) return fail("cooling down " + (until - now + 999) / 1000 + "s after: " + lastWhy);
         Status s = child.tick(bb);
+        if (s == Status.RUNNING) ran = true;
         if (s == Status.SUCCESS) {
             fails = 0;
             until = -1;
+            ran = false;
             return s;
         }
+        if (s == Status.FAILURE && ranOnly && !ran) return fail(child.reason());
         if (s == Status.FAILURE) {
+            ran = false;
             fails++;
             lastFailAt = now;
             lastWhy = child.reason();
@@ -55,6 +69,11 @@ public final class Cooldown extends Node {
     public int fails() { return fails; }
 
     public long lastFailAt() { return lastFailAt; }
+
+    @Override public void halt(String why) {
+        child.halt(why);
+        ran = false;
+    }
 
     @Override public List<Node> children() { return List.of(child); }
 }
