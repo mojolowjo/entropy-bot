@@ -480,6 +480,8 @@ public final class Reflexes {
     /** 0.33.1: holding jump because of the air reflex (released when it ends). */
     private boolean swimming;
     private long swimLogAt = -1000;
+    /** 0.36.a1: the air reflex took over from Baritone (engine hold); deferred to it (logged once per dive). */
+    private boolean airHeld, airDeferred;
 
     /** 0.33.1: head under water and sinking with nothing driving, or the air low: hold jump to reach the surface. */
     private void airWatch(Minecraft mc, LocalPlayer p) {
@@ -506,10 +508,22 @@ public final class Reflexes {
             floatSince = -1;
             return;
         }
-        boolean up = ReflexRules.swimUp(p.isUnderWater(), p.getAirSupply(), p.getMaxAirSupply(), drives);
-        if (up) {
-            if (!swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{}{} - swimming up",
-                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), drives ? " (low, overriding)" : "");
+        // 0.36.a1: our own EngineProcess hold (the takeover) counts as driving, so the takeover is kept until it ends
+        ReflexRules.Air a = ReflexRules.air(p.isUnderWater(), p.isInWater(), p.getAirSupply(), p.getMaxAirSupply(), drives, airHeld);
+        if (a == ReflexRules.Air.DEFER) {
+            if (!airDeferred) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - Baritone drives, leaving jump to it until air < {}",
+                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), p.getMaxAirSupply() / 3);
+            airDeferred = true;
+        } else if (!p.isUnderWater()) airDeferred = false;
+        if (a == ReflexRules.Air.SWIM || a == ReflexRules.Air.TAKEOVER) {
+            boolean take = a == ReflexRules.Air.TAKEOVER;
+            if (take && !airHeld) {
+                LOG.info("[entropybot] air reflex: air {}/{} at {} {} {} - taking over: Baritone paused, swimming up until the air is full",
+                        p.getAirSupply(), p.getMaxAirSupply(), (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()));
+            } else if (!take && !swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - swimming up",
+                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply());
+            if (take && reflex == Reflex.NONE) engine.hold();   // Baritone stops digging/walking: no fight over jump or look
+            airHeld = take;
             swimming = true;
             mc.options.keyJump.setDown(true);
         } else releaseSwim(mc);
@@ -599,10 +613,19 @@ public final class Reflexes {
 
     /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
     private void releaseSwim(Minecraft mc) {
+        if (airHeld) {
+            airHeld = false;
+            // 0.36.a1: our takeover's hold only (a reflex that holds/overrides Baritone keeps its own)
+            if (reflex == Reflex.NONE && engine.mode() == EngineProcess.Mode.HOLD) engine.release();
+            LOG.info("[entropybot] air reflex: air back ({}) - Baritone resumes", mc != null && mc.player != null ? mc.player.getAirSupply() : -1);
+        }
         if (!swimming) return;
         swimming = false;
         if (mc != null) mc.options.keyJump.setDown(false);
     }
+
+    /** 0.36.a1: the air reflex holds jump (AA leaves the key alone then). */
+    public boolean airSwimming() { return swimming; }
 
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();

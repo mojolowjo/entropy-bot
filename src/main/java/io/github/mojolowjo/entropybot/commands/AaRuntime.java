@@ -231,9 +231,11 @@ public final class AaRuntime implements JobPort {
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
             // 0.36.4 (aa40d: AA paused the iron job for "drowning" 10+ min while nothing moved the bot): under water with
             // air short and danger driving, AA holds jump (swim up) until the air is full again or the danger ends
-            boolean swim = "danger".equals(tree.driver()) && p.isInWater() && p.getAirSupply() < p.getMaxAirSupply();
+            // 0.36.a1: not while the air reflex holds jump itself (one owner of the key; it also pauses Baritone)
+            boolean swim = "danger".equals(tree.driver()) && p.isInWater() && p.getAirSupply() < p.getMaxAirSupply()
+                    && !Core.INSTANCE.reflexes.airSwimming();
             if (swim != swimming) {
-                mc.options.keyJump.setDown(swim);
+                if (swim || !Core.INSTANCE.reflexes.airSwimming()) mc.options.keyJump.setDown(swim);
                 swimming = swim;
                 if (swim) LOG.info("[entropybot] aa: under water with air {} - swimming up", p.getAirSupply());
             }
