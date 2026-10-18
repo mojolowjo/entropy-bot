@@ -36,8 +36,9 @@ public final class MineWater {
         if (set(true)) LOG.info("[entropybot] mine: breaking next to water allowed while this mine job runs (lava never)");
     }
 
-    /** The mine job ended or was held (every end path: Mining's onEnd; SafetyNet.restore resets the setting too). */
-    static void end() {
+    /** The mine job {@code ending} ended (Mining's onEnd; SafetyNet.restore resets the setting too). A newer job is left alone. */
+    static void end(Jobs.Job ending) {
+        if (job != ending) return;
         boolean was = job != null;
         job = null;
         walking = () -> false;

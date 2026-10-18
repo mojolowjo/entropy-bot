@@ -1797,7 +1797,7 @@ final class Mining {
             restoreSettings();
         };
         job.onEnd = () -> {
-            MineWater.end();
+            MineWater.end(job);
             restoreSettings();
             releaseLeases(j);
         };
