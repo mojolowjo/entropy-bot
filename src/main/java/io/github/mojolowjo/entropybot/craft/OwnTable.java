@@ -47,6 +47,24 @@ public final class OwnTable {
         return dist != null && dist <= REACH_NEAR && dy > -PIT_DEPTH;
     }
 
+    /**
+     * Look-ahead at the craft's own table pickup: keep the table down when the very next chain step is a craft that
+     * needs a table (back-to-back tool crafts), so it is placed once and taken back after the last craft.
+     * @param craftFailed the craft just failed (the table always comes back then)
+     * @param nextStep    the chain's next step text (null: none)
+     * @param needsTable  whether a craft step text wants a 3x3 table
+     */
+    public static boolean keepForNext(boolean craftFailed, String nextStep, java.util.function.Predicate<String> needsTable) {
+        if (craftFailed || nextStep == null) return false;
+        String t = nextStep.trim().toLowerCase(java.util.Locale.ROOT);
+        return t.startsWith("craft ") && needsTable.test(nextStep.trim());
+    }
+
+    /** Log line when the pickup is skipped. */
+    public static final String KEPT_LOG = "table kept for the next craft";
+    /** Log line when no further craft needs the table. */
+    public static final String PICKED_LOG = "table picked up: no more crafts";
+
     /** The job's end note once the table was taken back. */
     public static String takenBack(String pos) {
         return "used my own table at " + pos + ", taken back";

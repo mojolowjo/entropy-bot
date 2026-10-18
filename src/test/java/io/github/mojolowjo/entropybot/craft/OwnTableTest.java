@@ -6,6 +6,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class OwnTableTest {
     @Test
+    void tableKeptOnlyWhenTheNextStepIsATableCraft() {
+        java.util.function.Predicate<String> yes = s -> true, no = s -> false;
+        assertTrue(OwnTable.keepForNext(false, "craft stone_axe 1", yes));
+        assertTrue(OwnTable.keepForNext(false, "  Craft stone_hoe 1 ", yes));
+        assertFalse(OwnTable.keepForNext(false, "craft stone_axe 1", no));
+        assertFalse(OwnTable.keepForNext(false, "goto 10 64 10", yes));
+        assertFalse(OwnTable.keepForNext(false, null, yes));
+        assertFalse(OwnTable.keepForNext(true, "craft stone_axe 1", yes));
+    }
+
+    @Test
     void nearReachableTableIsUsed() {
         assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(5.0, 0, true, true));
         assertEquals(OwnTable.Choice.USE_KNOWN, OwnTable.choose(12.0, -2, false, false));

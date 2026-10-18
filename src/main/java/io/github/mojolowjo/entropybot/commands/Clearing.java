@@ -459,6 +459,11 @@ public final class Clearing {
             st.cleared = new Outcome(true, 0, 0, Map.of(), List.of(), "ok: no crafting table of mine to pick up");
             return "next";
         }
+        if (KIND_TABLE.equals(st.kind) && WHY_OWN_TABLE.equals(st.why) && !(st.state instanceof ClearState)
+                && keepTableForNext(seq, st, p)) {
+            st.cleared = new Outcome(true, 0, 0, Map.of(), List.of(), "ok: table kept for the next craft");
+            return "next";
+        }
         if (!(st.state instanceof ClearState s0) || s0.run == null) {
             String err = prepare(st, p, c);
             if (err != null) return err.replaceFirst("^error: ", "");
@@ -643,14 +648,7 @@ public final class Clearing {
             out.add(mk);
         }
         int[] at = {spot.x(), spot.y(), spot.z()};
-        // force (a table is a built block), but only exactly a crafting table and only while armed, on every attempt
-        ClearJob.Options po = new ClearJob.Options().only(List.of(spot)).force(true).soft(true).keepOres(false)
-                .label(PlaceRules.pickupLabel(spot)).exactId(PlaceRules.TABLE_ID);
-        Seq.Step pickup = clearStep(po);
-        po.armed(() -> armedPickup(pickup));
-        pickup.kind = KIND_TABLE;
-        pickup.pos = at;
-        pickup.why = why;
+        Seq.Step pickup = pickupStep(spot, why);
         Seq.Step place = placeStep(at, "minecraft:crafting_table", null, false);
         ((PlaceState) place.state).pickup = pickup;
         out.add(place);
@@ -659,11 +657,59 @@ public final class Clearing {
         return out;
     }
 
+    /** The armed-on-place pickup of the table at spot. */
+    private static Seq.Step pickupStep(Pos spot, String why) {
+        // force (a table is a built block), but only exactly a crafting table and only while armed, on every attempt
+        ClearJob.Options po = new ClearJob.Options().only(List.of(spot)).force(true).soft(true).keepOres(false)
+                .label(PlaceRules.pickupLabel(spot)).exactId(PlaceRules.TABLE_ID);
+        Seq.Step pickup = clearStep(po);
+        po.armed(() -> armedPickup(pickup));
+        pickup.kind = KIND_TABLE;
+        pickup.pos = new int[]{spot.x(), spot.y(), spot.z()};
+        pickup.why = why;
+        return pickup;
+    }
+
+    /** A craft's own table left standing for the next back-to-back craft (x y z), or null. */
+    static int[] keptOwnTable;
+
+    /**
+     * Back-to-back crafts: at the own-table pickup, keep the table down when the chain's next step is another table
+     * craft. True: the pickup is skipped (the cell stays recorded so the next craft picks it up after its own craft).
+     */
+    private static boolean keepTableForNext(Seq seq, Seq.Step st, LocalPlayer p) {
+        Chains ch = seq.jobs.core().commands.chainsRef();
+        String next = ch == null ? null : ch.nextStep();
+        Crafting crafting = seq.storage.crafting;
+        boolean keep = io.github.mojolowjo.entropybot.craft.OwnTable.keepForNext(seq.afterPickupError != null, next,
+                t -> crafting.craftWantsTable(p, t));
+        if (keep) {
+            keptOwnTable = st.pos;
+            LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));      // safety net: named by check if the chain never gets back to it
+            LOG.info("[entropybot] craft: {} at {}", io.github.mojolowjo.entropybot.craft.OwnTable.KEPT_LOG, Jobs.fmt(st.pos));
+        } else {
+            LOG.info("[entropybot] craft: {}", io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG);
+        }
+        return keep;
+    }
+
     /**
      * 0.28.2 (A): the craft verb's own table. Null when the craft uses a known table as before (or there is no spot);
      * else the steps around {@code craftSteps}. {@code choice[0]} gets what was decided (for the started reply).
      */
     static List<Seq.Step> ownTableSteps(LocalPlayer p, int[] known, List<Seq.Step> craftSteps, io.github.mojolowjo.entropybot.craft.OwnTable.Choice[] choice) {
+        // a table the previous back-to-back craft left standing: use it, and this craft's end takes it back (or keeps it again)
+        int[] kept = keptOwnTable;
+        keptOwnTable = null;
+        if (kept != null && known != null && java.util.Arrays.equals(kept, known)
+                && PlaceRules.TABLE_ID.equals(blockId(kept))) {
+            Seq.Step pick = pickupStep(new Pos(kept[0], kept[1], kept[2]), WHY_OWN_TABLE);
+            pick.got = KIND_PLACED_TABLE;
+            choice[0] = io.github.mojolowjo.entropybot.craft.OwnTable.Choice.USE_KNOWN;
+            List<Seq.Step> out = new ArrayList<>(craftSteps);
+            out.add(pick);
+            return out;
+        }
         Double dist = known == null ? null : p.getEyePosition().distanceTo(new Vec3(known[0] + 0.5, known[1] + 0.5, known[2] + 0.5));
         int dy = known == null ? 0 : known[1] - (int) Math.floor(p.getY() + 0.01);
         Map<String, Integer> inv = Gui.inventory(p);

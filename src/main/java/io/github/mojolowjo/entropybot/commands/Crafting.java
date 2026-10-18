@@ -544,6 +544,18 @@ final class Crafting {
         return spot == null ? null : new int[]{spot.x(), spot.y(), spot.z()};
     }
 
+    /** Look-ahead for the own-table pickup: the craft text plans now and wants a 3x3 grid. */
+    boolean craftWantsTable(LocalPlayer p, String text) {
+        try {
+            String t = text.trim();
+            if (t.regionMatches(true, 0, "craft ", 0, 6)) t = t.substring(6);
+            Prepared r = prepareCraft(p, t, null);
+            return r.err() == null && needsTable(r.steps());
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     /** 0.28.2: a plan whose crafting steps want a 3x3 grid. */
     private boolean needsTable(List<Step> steps) {
         for (Step s : steps) {
