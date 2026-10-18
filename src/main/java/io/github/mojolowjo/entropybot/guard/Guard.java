@@ -166,7 +166,57 @@ public final class Guard {
     public boolean vetoBreak(BlockPos pos) {
         Level level = Minecraft.getInstance().level;
         if (level == null) return false;
-        return refuse(level, pos, "break", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "break", infoFor(level, pos)));
+        String dim = dimOf(level);
+        PolicyRuntime pr = PolicyRuntime.INSTANCE;
+        if (pr.travelLive() && pr.intent() == BreakPolicy.Intent.TRAVEL) return vetoTravelBreak(level, pos, dim, pr);
+        GuardCore.Verdict v = core.check(dim, pos.getX(), pos.getY(), pos.getZ(), "break", infoFor(level, pos));
+        shadowClick(level, pos, dim, v);
+        return refuse(level, pos, "break", v);
+    }
+
+    /**
+     * Mining plan phase 1: a break while a walk runs (TRAVEL intent). The floor and the fence's boxes as before; where
+     * only a box rule would refuse (outside every area, no lease), the policy decides (GuardCore.checkTravelBreak). A
+     * break let through is a travel break: counted toward the cap and handed to the restore ledger as a path break.
+     */
+    private boolean vetoTravelBreak(Level level, BlockPos pos, String dim, PolicyRuntime pr) {
+        int x = pos.getX(), y = pos.getY(), z = pos.getZ();
+        GuardCore.TravelCheck t = core.checkTravelBreak(dim, x, y, z, infoFor(level, pos), pr.snapshot(), pr.facts(level, pos, false), pr.where());
+        GuardCore.Verdict v = t.guard();
+        if (t.travel() == null) {
+            // the fence decided alone (allowed, or the floor): exactly as before
+            if (!v.allowed() || v.wouldVeto()) core.log().record(core.tick(), "break", dim, x, y, z, v.reason(), v.floor(), !v.allowed());
+            return refuse(level, pos, "break", v);
+        }
+        pr.stats.ask(PolicyStats.SITE_CLICK);
+        // the exemption needs a running job (the same condition under which safeSettings/SafetyNet keep A* breaking on,
+        // so the plan and the click agree) and a terrain block (what the ledger can put back; logs and crops keep the fence)
+        boolean jobRunning = false;
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());
+        if (t.travel().allowed() && jobRunning && terrain) {
+            pr.logTravelOverride(PolicyStats.SITE_CLICK, x, y, z, t.travel(), v.reason());
+            pr.markTravelBreak(dim + " " + x + " " + y + " " + z);
+            return false;
+        }
+        pr.stats.deny(PolicyStats.SITE_CLICK, t.travel().reason());
+        if (!v.allowed() || v.wouldVeto()) core.log().record(core.tick(), "break", dim, x, y, z, v.reason(), v.floor(), !v.allowed());
+        return refuse(level, pos, "break", v);
+    }
+
+
+    /** Mining plan phase 0: the policy's answer next to the fence's, counted and logged when they differ. Never throws. */
+    private void shadowClick(Level level, BlockPos pos, String dim, GuardCore.Verdict v) {
+        try {
+            PolicyRuntime pr = PolicyRuntime.INSTANCE;
+            BreakPolicy.Intent in = pr.intent();
+            BreakPolicy.Verdict pv = pr.judge(PolicyStats.SITE_CLICK, BreakPolicy.Action.BREAK, in, dim, pos.getX(), pos.getY(), pos.getZ(),
+                    pr.facts(level, pos, false), pr.where());
+            // in log mode the fence lets a would-be veto through; the comparison is against what it WOULD do
+            pr.shadow(PolicyStats.SITE_CLICK, v.allowed() && !v.wouldVeto(), v.reason(), pv, in, pos.getX(), pos.getY(), pos.getZ());
+        } catch (Throwable t) {
+            PolicyRuntime.INSTANCE.stats.error("click shadow: " + t);
+        }
     }
 
     /** Every block placement (BlockItem.place) and every liquid, fire, egg or entity put down. True = refuse. */
@@ -273,8 +323,26 @@ public final class Guard {
      * Baritone's A* asks this for every block it might break or place (pathfinder thread). Box rules
      * only: no block lookups, no logging beyond one line per 100 ticks in log mode.
      */
-    public boolean astarDenied(Level world, int x, int y, int z) {
-        GuardCore.Verdict v = core.checkBoxes(dimOf(world), x, y, z, "break");
+    public boolean astarDenied(Level world, int x, int y, int z) { return astarDenied(world, null, x, y, z); }
+
+    /**
+     * @param at the context's {@code BlockStateInterface} (bsi.get0) when the mixin could shadow it, for the policy's
+     *           block facts on this thread; null = box rules only.
+     */
+    public boolean astarDenied(Level world, PolicyRuntime.StateAt at, int x, int y, int z) {
+        String dim = dimOf(world);
+        PolicyRuntime pr = PolicyRuntime.INSTANCE;
+        BreakPolicy.Intent in = pr.intentNow();
+        if (pr.travelLive() && (in == BreakPolicy.Intent.TRAVEL || in == BreakPolicy.Intent.NONE)) {
+            // phase 1: a walk's A* plans by the policy: denied dims, protect boxes, no-break areas here (facts-free); the
+            // cost hook (CostAdvisorHook) adds the block facts and the multiplier. Leases are not a walk's business.
+            pr.stats.ask(PolicyStats.SITE_ASTAR_BOXES);
+            BreakPolicy.Verdict pv = BreakPolicy.boxes(pr.snapshot(), in, dim, x, y, z);
+            if (!pv.allowed()) pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, pv.reason());
+            return !pv.allowed();
+        }
+        GuardCore.Verdict v = core.checkBoxes(dim, x, y, z, "break");
+        shadowAstar(dim, at, x, y, z, v);
         if (!v.allowed()) return true;
         if (v.wouldVeto()) {
             long t = core.tick();
@@ -285,5 +353,32 @@ public final class Guard {
             }
         }
         return false;
+    }
+
+    /**
+     * Mining plan phase 0: the policy's answer (boxes, and with the bsi the block facts too) next to the A* hook's.
+     * Pathfinder thread: snapshot and bsi reads only. Never throws.
+     */
+    private void shadowAstar(String dim, PolicyRuntime.StateAt at, int x, int y, int z, GuardCore.Verdict v) {
+        try {
+            PolicyRuntime pr = PolicyRuntime.INSTANCE;
+            BreakPolicy.Intent in = pr.intentNow();
+            boolean today = v.allowed() && !v.wouldVeto();
+            BreakPolicy.Verdict pv;
+            if (at == null) {
+                pr.stats.ask(PolicyStats.SITE_ASTAR_BOXES);
+                pv = BreakPolicy.boxes(pr.snapshot(), in, dim, x, y, z);
+                if (!pv.allowed()) pr.stats.deny(PolicyStats.SITE_ASTAR_BOXES, pv.reason());
+                pr.shadow(PolicyStats.SITE_ASTAR_BOXES, today, v.reason(), pv, in, x, y, z);
+            } else {
+                BreakPolicy.BlockFacts f = pr.facts(at, x, y, z, false);
+                // isPossiblyProtected is asked for placements too (an air or water cell): no break verdict to compare there
+                if (f.loaded() && f.inCell() != BreakPolicy.Fluid.NONE) return;
+                pv = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, f, pr.where());
+                pr.shadow(PolicyStats.SITE_ASTAR_COST, today, v.reason(), pv, in, x, y, z);
+            }
+        } catch (Throwable t) {
+            PolicyRuntime.INSTANCE.stats.error("astar shadow: " + t);
+        }
     }
 }

@@ -2808,6 +2808,17 @@ public final class Commands implements Chains.Env {
         public String vetoes(int max) { return core.guard.core.log().recent(max); }
 
         @Override
+        public String rules() { return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.status(); }
+
+        @Override
+        public String why(String dim, int x, int y, int z, String action, String intent) {
+            var in = io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.of(intent);
+            var act = "place".equals(action) ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.PLACE : io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK;
+            return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.why(Minecraft.getInstance().level, dim, x, y, z, act,
+                    in == null ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL : in);
+        }
+
+        @Override
         public String check(String dim, int x, int y, int z, String action) {
             String r = io.github.mojolowjo.entropybot.api.BotAPI.check(dim, x, y, z, action);
             // wave 1 (item 3): the guard only knows boxes; the digging never breaks a block next to water or lava

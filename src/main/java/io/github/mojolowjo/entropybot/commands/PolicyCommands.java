@@ -47,6 +47,12 @@ public final class PolicyCommands {
 
         /** 0.21.2: "near me: 16 blocks (on, ...)", or null without a guard. */
         default String nearStatus() { return null; }
+
+        /** Mining plan: "fence rules" (the policy snapshot, intent, hook, counters), or null without the mod. */
+        default String rules() { return null; }
+
+        /** Mining plan: "fence why x y z [break|place] [travel|mine|dig_out|build]": the policy's verdict for one cell. */
+        default String why(String dim, int x, int y, int z, String action, String intent) { return null; }
     }
 
     /** The words "area" takes as subcommands (and the old ones, so an old line never makes an area): no area name. */
@@ -500,6 +506,7 @@ public final class PolicyCommands {
                 List<String> hooks = new ArrayList<>();
                 if (g.has("click") && g.get("click").getAsBoolean()) hooks.add("click");
                 if (g.has("astar") && g.get("astar").getAsBoolean()) hooks.add("astar");
+                if (g.has("costHook") && !g.get("costHook").getAsString().equals("none")) hooks.add("cost:" + g.get("costHook").getAsString());
                 return "fence: " + mode + " mode" + (!mode.equals(strict() ? "strict" : "log") ? " (my notes say " + (strict() ? "strict" : "log") + ")" : "")
                         + " | " + listText().replaceFirst(" \\| near me.*$", "")
                         + " | leases: " + tasks.size() + (tasks.isEmpty() ? "" : " (" + String.join("; ", tasks.subList(0, Math.min(3, tasks.size()))) + ")")
@@ -520,6 +527,22 @@ public final class PolicyCommands {
                     out.add(num(v, "tick") + " " + v.get("action").getAsString() + " " + v.get("pos").getAsString() + ": " + v.get("reason").getAsString());
                 }
                 return "vetoes: " + String.join(" | ", out);
+            }
+            if (sub.equals("rules")) {
+                String r = guard.rules();
+                return r == null ? "rules: mod not loaded" : r;
+            }
+            if (sub.equals("why")) {
+                if (parts.size() < 4 || !allInts(parts.subList(1, 4))) return "usage: fence why x y z [break|place] [travel|mine|dig_out|build]";
+                String action = "break", intent = "travel";
+                for (String w : parts.subList(4, parts.size())) {
+                    String lw = w.toLowerCase();
+                    if (lw.equals("break") || lw.equals("place")) action = lw;
+                    else if (io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.of(lw) != null) intent = lw;
+                    else return "usage: fence why x y z [break|place] [travel|mine|dig_out|build]";
+                }
+                String r = guard.why(me.dim(), Integer.parseInt(parts.get(1)), Integer.parseInt(parts.get(2)), Integer.parseInt(parts.get(3)), action, intent);
+                return r == null ? "rules: mod not loaded" : r;
             }
             if (!isOwner) return notOwner;
             if (sub.equals("check")) {

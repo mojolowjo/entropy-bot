@@ -283,6 +283,7 @@ public final class BuilderDig {
         }
         st.allowBreak.value = true;
         st.allowPlace.value = false;
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD, "builder dig");
         st.buildInLayers.value = true;
         st.layerOrder.value = true;
         st.layerHeight.value = 1;

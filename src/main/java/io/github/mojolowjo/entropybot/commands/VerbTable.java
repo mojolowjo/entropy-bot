@@ -59,8 +59,8 @@ public final class VerbTable {
                         + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
                         + "and the near-me zone (16 blocks around you, on by default; safe areas always win); candidates: the bases explore and find noted, accept makes one a safe area",
                 "area here 60 base main|area here 8 house safe|area 0 0 30 30 pit destroy 40 70|area change type pit neutral|area list", "fence", "area list");
-        v("fence", "", "space", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
-                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
+        v("fence", "", "space", P, "fence | fence vetoes | fence check x y z break|place|go | fence rules | fence why x y z [break|place] [travel|mine|dig_out] | fence mode strict | fence mode log confirm",
+                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type); rules = the break policy (intent, cost hook, counters), why = its verdict for one cell",
                 "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
         // ---- stock (VOCABULARY 2)
         v("fetch", "", "stocking", O, "fetch <item|kind> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32|fetch logs 16", "inv");

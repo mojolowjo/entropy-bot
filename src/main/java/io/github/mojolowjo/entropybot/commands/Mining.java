@@ -186,6 +186,7 @@ final class Mining {
             s.allowBreak.value = false;
             s.allowPlace.value = false;
             s.allowBreakAnyway.value = new ArrayList<>();
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "mine ended");
         } catch (Throwable ignored) {}
     }
 
@@ -1889,6 +1890,8 @@ final class Mining {
             list.add(j.block);
             s.allowBreakAnyway.value = list;
             s.allowBreak.value = j.dig;
+            // mining plan phase 1: Baritone's mine digs under the MINE intent (its own rules, plus: never down from in the water)
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "mine");
         } catch (Throwable ignored) {}
     }
 

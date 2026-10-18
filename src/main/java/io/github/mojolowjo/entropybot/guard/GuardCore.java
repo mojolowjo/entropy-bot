@@ -432,6 +432,23 @@ public final class GuardCore {
     }
 
     /**
+     * Mining plan phase 1: a real break click under the TRAVEL intent. The floor and the box rules as before; when only
+     * a box rule (no areas, outside every area, no lease here) would refuse and {@link BreakPolicy} allows the break
+     * for travel, the click goes through: travel breaks need no lease, the rule set and the cost decide. Returns the
+     * policy's verdict in {@code travel} when it decided (null otherwise), so the caller can log it. Never logs.
+     */
+    public record TravelCheck(Verdict guard, BreakPolicy.Verdict travel, boolean allowed) {}
+
+    public TravelCheck checkTravelBreak(String dim, int x, int y, int z, BlockInfo block, BreakPolicy.Snapshot s,
+                                        BreakPolicy.BlockFacts facts, BreakPolicy.Where me) {
+        Verdict v = checkUnlogged(dim, x, y, z, "break", block);
+        if (v.allowed() && !v.wouldVeto()) return new TravelCheck(v, null, true);
+        if (v.floor()) return new TravelCheck(v, null, false);
+        BreakPolicy.Verdict pv = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.BREAK, BreakPolicy.Intent.TRAVEL, dim, x, y, z, facts, me));
+        return new TravelCheck(v, pv, pv.allowed() || v.allowed());
+    }
+
+    /**
      * Wave 1 (item 3): the tail "guard check ... break" adds when the block is next to a liquid ("lava" / "water",
      * Guard.liquidNextTo), "" for none: the guard only knows boxes, the digging never breaks such a block.
      */
