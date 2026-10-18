@@ -318,7 +318,7 @@ final class Mining {
         io.github.mojolowjo.entropybot.clear.ClearJob.StandCheck stand = Clearing.standCheck(commands);
         boolean exact = !j.familyWord;      // the owner: "mine iron" = the family, deepslate or not; "mine iron_ore" = exactly that block
         java.util.function.Predicate<String> idOk = id -> exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
-        return pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, (x, y, z) -> {
+        io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
             if (MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), tick)) return false;   // 0.36.a3: timed, not for good
             if (!commands.inAreas(d, x, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
@@ -329,7 +329,35 @@ final class Mining {
             if (!level.isLoaded(q)) return true;              // known from before: go and look
             return idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())
                     && (j.dig || exposed(level, q));
-        });
+        };
+        List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> idx = pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, ok);
+        // 0.36.a5 (owner test: iron placed 2 blocks away was ignored): Baritone's live scan of the loaded chunks joins the index
+        List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> live = new ArrayList<>();
+        for (io.github.mojolowjo.entropybot.sense.MemoryPick.Spot s : liveOres(p, j, tick)) {
+            if (!ok.test(s.x(), s.y(), s.z())) continue;
+            long dx = s.x() - me[0], dy = s.y() - me[1], dz = s.z() - me[2];
+            live.add(new io.github.mojolowjo.entropybot.sense.OreIndex.Hit(s.x(), s.y(), s.z(), s.id(), io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(s.id()), dx * dx + dy * dy + dz * dz, false));
+        }
+        io.github.mojolowjo.entropybot.sense.OreMerge.Merged m = io.github.mojolowjo.entropybot.sense.OreMerge.merge(idx, live, n);
+        j.kIdxKeys = new java.util.HashSet<>();
+        for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : idx) j.kIdxKeys.add(io.github.mojolowjo.entropybot.sense.OreMerge.key(h.x(), h.y(), h.z()));
+        j.kMerged = m;
+        return m.hits();
+    }
+
+    /** 0.36.a5: Baritone's live scan for the job's block(s) near me, kept a few seconds (one scan per pick, cheap on the tick). */
+    private List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> liveOres(LocalPlayer p, MineRun j, long tick) {
+        if (j.kLive != null && tick - j.kLiveAt < 60) return j.kLive;
+        String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+        List<String> ids = new ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : BuiltInRegistries.BLOCK.keySet()) {
+            String id = k.toString();
+            if (!k.getPath().endsWith("_ore") && !k.getPath().equals("ancient_debris")) continue;
+            if (!j.familyWord ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam)) ids.add(id);
+        }
+        j.kLive = io.github.mojolowjo.entropybot.sense.BaritoneMemory.live(p, ids, 64, 6);
+        j.kLiveAt = tick;
+        return j.kLive;
     }
 
     /** The mine starts (or goes on) from the index: phase "known". False: the index has none near (today's path runs). */
@@ -661,7 +689,12 @@ final class Mining {
         j.anchor = me;
         MineRules.trail(j.trail, me);
         int[] t = {best.x(), best.y(), best.z()};
-        LOG.info("[entropybot] mine: next known {} at {} ({}, {} blocks; try {}/{}; {} buried ones skipped)", sid(j), Jobs.fmt(t),
+        if (j.kMerged != null) {
+            int mem = j.kFarCache == null ? 0 : j.kFarCache.size();
+            LOG.info("[entropybot] mine: pick sources for {}: {} from the index, {} from the live scan only, {} remembered by Baritone; chosen {} from {}", sid(j),
+                    j.kMerged.fromIndex(), j.kMerged.liveOnly(), mem, Jobs.fmt(t), j.kMerged.sourceOf(t[0], t[1], t[2], j.kIdxKeys));
+        }
+        LOG.info("[entropybot] mine: next known {} at {} ({},{} blocks; try {}/{}; {} buried ones skipped)", sid(j), Jobs.fmt(t),
                 skyOpen(level, new BlockPos(t[0], t[1], t[2])) ? "open to the sky" : "in a cave", (int) Math.round(Math.sqrt(best.d2())),
                 j.kTries + 1, io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS, buried);
         if (bestTun != null) {
@@ -1711,6 +1744,11 @@ final class Mining {
         /** 0.34.1: this job's one recall of Baritone's memory (nearest first), or null before it. */
         List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> kFarCache;
         int kFarRecalls;
+        /** 0.36.a5: the live scan's last answer and when; the last merged pick list and the index's positions in it. */
+        List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> kLive;
+        long kLiveAt;
+        io.github.mojolowjo.entropybot.sense.OreMerge.Merged kMerged;
+        java.util.Set<Long> kIdxKeys;
         String kFailed;
         int kTries, kKnown, kWalks;
         boolean familyWord, kDigging;
