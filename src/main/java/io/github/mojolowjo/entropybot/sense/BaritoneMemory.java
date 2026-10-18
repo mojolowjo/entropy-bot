@@ -110,6 +110,32 @@ public final class BaritoneMemory {
         return out;
     }
 
+    /**
+     * 0.34.1 live (a trip to an emerald 68 blocks under the surface hung): an open face in Baritone's cached terrain -
+     * one of the 6 neighbours cached as air. Reads an existing region only (getRegion never creates one); false when
+     * the region or the chunk isn't cached.
+     */
+    public static boolean exposedInCache(int x, int y, int z) {
+        IBaritone b = baritone();
+        if (b == null) return false;
+        try {
+            IWorldData wd = b.getWorldProvider().getCurrentWorld();
+            if (wd == null) return false;
+            ICachedWorld cw = wd.getCachedWorld();
+            int[][] d = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+            for (int[] o : d) {
+                int nx = x + o[0], ny = y + o[1], nz = z + o[2];
+                baritone.api.cache.ICachedRegion r = cw.getRegion(nx >> 9, nz >> 9);
+                if (r == null || !r.isCached(nx & 511, nz & 511)) continue;
+                net.minecraft.world.level.block.state.BlockState st = r.getBlock(nx & 511, ny, nz & 511);
+                if (st != null && st.isAir()) return true;
+            }
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] memory: Baritone's cached terrain failed: {}", t.toString());
+        }
+        return false;
+    }
+
     /** The live check of a remembered spot: loaded and the same block / loaded and gone / not loaded. */
     public static MemoryPick.Check check(Level level) {
         return (id, x, y, z) -> {

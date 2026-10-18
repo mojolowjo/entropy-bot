@@ -377,7 +377,8 @@ final class Mining {
         List<Box> prot = boxes(policy(), "protect");
         j.kFarCache = new ArrayList<>(io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
                 !j.knownTried.contains(BlockPos.asLong(x, y, z)) && commands.inAreas(d, x, z)
-                        && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null, 8, "mine"));
+                        && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null
+                        && (j.dig || io.github.mojolowjo.entropybot.sense.BaritoneMemory.exposedInCache(x, y, z)), 8, "mine"));   // 0.34.1: walkable faces only
         return j.kFarCache.isEmpty() ? List.of() : List.of(j.kFarCache.get(0));
     }
 
