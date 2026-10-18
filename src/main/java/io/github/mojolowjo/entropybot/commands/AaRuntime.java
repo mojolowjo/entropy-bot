@@ -122,6 +122,10 @@ public final class AaRuntime implements JobPort {
             stopped = bb.task().spec().chain();
         }
         tree.root.halt("aa off: " + why);
+        if (swimming) {
+            Minecraft.getInstance().options.keyJump.setDown(false);
+            swimming = false;
+        }
         if (chainRunning()) c.chains.clear();
         LOG.info("[entropybot] aa: off ({})", why);
         return "ok: aa off" + (stopped != null ? " - stopped my task " + stopped : "") + "; your jobs run on";
@@ -142,6 +146,7 @@ public final class AaRuntime implements JobPort {
 
     /** 0.36.3: the chain name of AA's task: "aa", or "climb" (climb runs as a chain of its own, never inside one). */
     private String myChain = CHAIN;
+    private boolean swimming;
 
     /** The owner's order while AA's needs/idle task runs: the task is preempted (logged), the order runs (AA_PLAN 4). */
     void yieldToOwner(String verb) {
@@ -213,6 +218,14 @@ public final class AaRuntime implements JobPort {
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
+            // 0.36.4 (aa40d: AA paused the iron job for "drowning" 10+ min while nothing moved the bot): under water with
+            // air short and danger driving, AA holds jump (swim up) until the air is full again or the danger ends
+            boolean swim = "danger".equals(tree.driver()) && p.isInWater() && p.getAirSupply() < p.getMaxAirSupply();
+            if (swim != swimming) {
+                mc.options.keyJump.setDown(swim);
+                swimming = swim;
+                if (swim) LOG.info("[entropybot] aa: under water with air {} - swimming up", p.getAirSupply());
+            }
             if (tree.ladder.last() == Status.SUCCESS && !data().has(AaLadder.SHELTER_FACT) && bb.flag(AaLadder.SHELTER_FACT)) {
                 data().addProperty(AaLadder.SHELTER_FACT, true);
                 c.saved();
