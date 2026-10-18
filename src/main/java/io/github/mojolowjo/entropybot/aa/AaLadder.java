@@ -14,7 +14,11 @@ import java.util.List;
  * through {@code JobPort.resolve}.
  *
  * <ol>
- * <li>TOOLS: no stone (or better) pickaxe, or the best is under 15 % with no spare -> {@code goal stone tools}.</li>
+ * <li value="0">AREA (live check 2026-10-18: a fresh world has no area and every gathering verb and the planner work
+ *     inside areas only): no area -> {@value #AREA_COMMAND} (instant). A radius-48 area is too large for {@code house}
+ *     (4096 blocks at most), so the base rung builds a shelter unless the owner made a smaller area.</li>
+ * <li>TOOLS: no pickaxe at all -> {@code bootstrap} (the from-nothing job); a wooden one, or the best under 15 % with
+ *     no spare -> {@code goal stone tools}.</li>
  * <li>FOOD: on a hungry difficulty only (Peaceful: the bar never drains): food under 10 until 18 -> {@code goal food 8}.</li>
  * <li>TABLE_FURNACE: no table known -> {@code goal table}; no furnace -> {@code goal furnace}.</li>
  * <li>TORCHES: under 8 until 16 -> {@code goal torch 16} (planner: coal or charcoal).</li>
@@ -32,11 +36,23 @@ public final class AaLadder {
 
     public static final String SHELTER_FACT = "shelterBuilt";
 
+    /** The work area AA makes itself on a fresh world (the mod's own check hint; every gathering verb works inside areas). */
+    public static final String AREA_COMMAND = "area here 48 work neutral";
+    /**
+     * The from-nothing job (live check 2026-10-18: the planner's "trees" fact scans 16 blocks around the bot, so from a
+     * spawn with the nearest oak 52 blocks away {@code goal stone tools} has no plan; {@code bootstrap} fells trees
+     * anywhere in the areas and makes the table, wooden then stone tools, furnace, chest, charcoal, torches, base, camp).
+     */
+    public static final String BOOTSTRAP = "bootstrap";
+
     public static Node build() {
         Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
+        Rung area = new Rung("needs.area", TaskKind.TOOLS,
+                bb -> !bb.in.areaKnown,
+                bb -> null, bb -> AREA_COMMAND);
         Rung tools = new Rung("needs.tools", TaskKind.TOOLS,
                 bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2),
-                bb -> null, bb -> "goal stone tools");
+                bb -> null, bb -> bb.in.pickTier == 0 ? BOOTSTRAP : "goal stone tools");
         Rung hunger = new Rung("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && food.update(bb.in.food),
                 bb -> null, bb -> "goal food 8");
@@ -62,7 +78,7 @@ public final class AaLadder {
                 bb -> bb.in.pickTier < 3,
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet",
                 bb -> "goal iron tools");
-        return new Fallback("needs", "basic needs", tools, hunger, tableFurnace, torch, base, bed, deposit, iron);
+        return new Fallback("needs", "basic needs", area, tools, hunger, tableFurnace, torch, base, bed, deposit, iron);
     }
 
     /** The rungs under a built ladder, in order (for tests and the status line). */

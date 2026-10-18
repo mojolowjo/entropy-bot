@@ -20,6 +20,8 @@ import java.util.function.Predicate;
  */
 public final class Rung extends Node {
     public static final long PLAN_WAIT_MS = 45_000, SETTLE_MS = 75_000;
+    /** The blackboard fact "what is being planned" (the status line shows it while the slot waits). */
+    public static final String PLANNING_FACT = "planning";
 
     public final TaskKind kind;
     private final Predicate<Blackboard> unmet;
@@ -69,17 +71,25 @@ public final class Rung extends Node {
         planFailed = null;
         String chain = bb.port.resolve(g);
         if (chain == null) {
-            if (planningSince < 0) planningSince = now;
+            // the planner searches on its worker: the slot waits on this rung (RUNNING, so lower rungs don't all plan
+            // at once) up to PLAN_WAIT_MS, then the rung is skipped for a while
+            if (planningSince < 0) {
+                planningSince = now;
+                bb.port.log("planning " + g + " for " + kind);
+            }
             if (now - planningSince > PLAN_WAIT_MS) {
                 planningSince = -1;
+                bb.fact(PLANNING_FACT, null);
                 planFailed = "no plan for " + g + " (the planner found none in " + PLAN_WAIT_MS / 1000 + "s)";
                 planFailedAt = now;
                 bb.port.log("no plan for " + g + ": skipped " + Cooldown.BASE_MS / 60000 + " min");
                 return fail(kind + " skipped: " + planFailed);
             }
-            return fail(kind + " planning " + g + " (" + (now - planningSince) / 1000 + "s)");
+            bb.fact(PLANNING_FACT, kind + ": " + g + " (" + (now - planningSince) / 1000 + "s)");
+            return Status.RUNNING;
         }
         planningSince = -1;
+        bb.fact(PLANNING_FACT, null);
         String inf = bb.port.infeasible(chain);
         if (inf != null) return fail(kind + " skipped: " + inf);
         resolved = chain;
@@ -91,6 +101,12 @@ public final class Rung extends Node {
     }
 
     private String settledGoal;
+
+    @Override public void halt(String why) {
+        if (planningSince >= 0 && board != null) board.fact(PLANNING_FACT, null);
+        planningSince = -1;
+        cooldown.halt(why);
+    }
 
     @Override public List<Node> children() { return List.of(cooldown); }
 

@@ -32,7 +32,21 @@ class AaTreeTest {
         bb.in.freeSlots = 36;
         bb.in.wool = 0;
         bb.in.areaName = null;
+        bb.in.areaKnown = true;
         bb.in.hungerDrains = false;
+    }
+
+    @Test
+    void aFreshWorldGetsAnAreaFirst() {
+        freshStart();
+        bb.in.areaKnown = false;
+        assertEquals(Status.RUNNING, tree.tick(bb));
+        assertEquals(AaLadder.AREA_COMMAND, lastChain());
+        port.done(1, "done");
+        tree.tick(bb);
+        bb.in.areaKnown = true;
+        tree.tick(bb);
+        assertEquals(AaLadder.BOOTSTRAP, lastChain());
     }
 
     /** One pickaxe of this tier, fresh. */
@@ -48,36 +62,41 @@ class AaTreeTest {
     void theLadderRunsTheFirstUnmetRungAndCommitsToIt() {
         freshStart();
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("goal stone tools", lastChain());
+        assertEquals(AaLadder.BOOTSTRAP, lastChain(), "no pickaxe at all: the from-nothing job");
         assertEquals("needs", tree.driver());
         assertEquals(TaskKind.TOOLS, bb.task().kind);
         // the bag changes meanwhile: no re-choice
         bb.in.torches = 0;
-        pick(2);
+        pick(1);
         assertEquals(Status.RUNNING, tree.tick(bb));
         assertEquals(1, port.started.size());
         port.done(1, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertNull(bb.task());
-        // the tools rung settles (the facts refresh at most once a minute); the next unmet rung is the table
+        // a wooden pickaxe now: the tools rung is still unmet, with another goal (no settle for a different goal)
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("goal table", lastChain());
+        assertEquals("goal stone tools", lastChain());
         port.done(2, "done");
+        tree.tick(bb);
+        pick(2);
+        tree.tick(bb);
+        assertEquals("goal table", lastChain());
+        port.done(3, "done");
         tree.tick(bb);
         bb.in.tableKnown = true;
         tree.tick(bb);
         assertEquals("goal furnace", lastChain());
-        port.done(3, "done");
+        port.done(4, "done");
         tree.tick(bb);
         bb.in.furnaceKnown = true;
         tree.tick(bb);
         assertEquals("goal torch 16", lastChain());
-        port.done(4, "done");
+        port.done(5, "done");
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
         assertEquals("goal shelter", lastChain(), "no area: a shelter, not a house");
-        port.done(5, "done");
+        port.done(6, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
         tree.tick(bb);
@@ -164,7 +183,7 @@ class AaTreeTest {
         assertFalse(bb.task().paused());
         assertEquals(1, port.resumed);
         assertEquals(0, tracer.counts.switches);
-        assertEquals("goal stone tools", bb.task().spec().chain(), "the same task goes on");
+        assertEquals(AaLadder.BOOTSTRAP, bb.task().spec().chain(), "the same task goes on");
     }
 
     @Test
@@ -208,17 +227,21 @@ class AaTreeTest {
     @Test
     void aGoalStillPlanningIsWaitedForThenSkipped() {
         freshStart();
+        pick(1);
         port.resolveTo = null;
-        assertEquals(Status.FAILURE, tree.ladder.tick(bb));
-        assertTrue(tree.ladder.reason().contains("TOOLS planning goal stone tools (0s)"), tree.ladder.reason());
+        assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the rung that plans");
+        assertEquals("needs>planning TOOLS: goal stone tools (0s)", tree.driver() + ">" + bb.taskText(clock.now()));
+        assertEquals(0, port.started.size());
+        Rung tools = AaLadder.rungs(tree.ladder).get(1);
         clock.advance(Rung.PLAN_WAIT_MS + 1);
-        tree.ladder.tick(bb);
-        assertTrue(tree.ladder.reason().contains("TOOLS skipped: no plan for goal stone tools"), tree.ladder.reason());
+        assertEquals(Status.FAILURE, tools.tick(bb));
+        assertTrue(tools.reason().contains("TOOLS skipped: no plan for goal stone tools"), tools.reason());
+        assertEquals("no task", bb.taskText(clock.now()));
         port.resolveTo = "goal_stone_tools";
-        tree.ladder.tick(bb);
-        assertTrue(tree.ladder.reason().contains("TOOLS skipped: no plan"), "skipped for a while even though a plan exists now");
+        tools.tick(bb);
+        assertTrue(tools.reason().contains("TOOLS skipped: no plan"), "skipped for a while even though a plan exists now");
         clock.advance(2 * 60_000 + 1);
-        assertEquals(Status.RUNNING, tree.ladder.tick(bb));
+        assertEquals(Status.RUNNING, tools.tick(bb));
         assertEquals("goal_stone_tools", lastChain(), "the planner's routine is what runs");
     }
 
@@ -248,6 +271,7 @@ class AaTreeTest {
         assertTrue(m.contains("root --> slot"), m);
         assertTrue(m.contains("needs --> needs_torches"), m);
         assertTrue(tree.nodes().size() > 25, "nodes: " + tree.nodes().size());
+        freshStart();
         tree.tick(bb);
         String s = tracer.snapshot(clock.now(), true, tree.driver(), bb.taskJson(clock.now()), bb.in);
         assertTrue(s.contains("{\"id\":\"root\",\"s\":\"RUNNING\"}"), s);

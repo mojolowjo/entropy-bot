@@ -260,8 +260,14 @@ public final class AaRuntime implements JobPort {
         in.baseChests = s.feas.baseChests;
         in.baseKnown = s.basePos != null;
         in.shelterBuilt = bb.flag(AaLadder.SHELTER_FACT);
-        in.areaName = buildArea();
-        in.areaKnown = in.areaName != null;
+        in.areaKnown = false;
+        in.areaName = null;
+        for (String n : c.areaNames()) {
+            JsonObject a = c.policyArea(n);
+            if (a == null || PolicyCommands.typeOf(a) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) continue;
+            in.areaKnown = true;
+            if (in.areaName == null && houseFits(a)) in.areaName = n;
+        }
         in.dayTime = s.dayTime;
         in.night = s.night;
         in.thunder = s.thundering;
@@ -276,13 +282,15 @@ public final class AaRuntime implements JobPort {
         in.aiRequestPending = bb.peek("ai") != null;
     }
 
-    /** The first area that is not a safe one (house builds there), else null. */
-    private String buildArea() {
-        for (String n : c.areaNames()) {
-            JsonObject a = c.policyArea(n);
-            if (a != null && PolicyCommands.typeOf(a) != io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return n;
+    /** {@code house} takes a box of 7x7 up to 4096 blocks (CampCommands.house); a round area or a bigger box does not fit. */
+    private static boolean houseFits(JsonObject a) {
+        try {
+            if (a.has("round")) return false;
+            long w = Math.abs(PolicyCommands.n(a, "x2") - PolicyCommands.n(a, "x1")) + 1, d = Math.abs(PolicyCommands.n(a, "z2") - PolicyCommands.n(a, "z1")) + 1;
+            return w >= 7 && d >= 7 && w * d <= 4096;
+        } catch (RuntimeException e) {
+            return false;
         }
-        return null;
     }
 
     /** Something that is not AA's runs: the owner's chain, a job, a gather, a hunt, a carry, a request; else null. */

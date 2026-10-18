@@ -97,7 +97,7 @@ public final class Blackboard {
 
     /** "slot>needs>NeedTorches>RunJob(goal torch 16) RUNNING 34s by needs" or "idle". */
     public String taskText(long now) {
-        if (task == null) return "no task";
+        if (task == null) return facts.get("planning") != null ? "planning " + facts.get("planning") : "no task";
         return task.id + "(" + task.spec().chain() + ") " + (task.paused() ? "PAUSED" : "RUNNING") + " " + task.ageS(now) + "s by " + task.source();
     }
 
