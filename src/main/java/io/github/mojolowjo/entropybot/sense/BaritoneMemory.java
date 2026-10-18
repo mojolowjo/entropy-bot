@@ -29,7 +29,7 @@ public final class BaritoneMemory {
     /** Regions (512 blocks) around the bot, squared: 4 = two regions out, ~1000 blocks. */
     public static final int REGIONS_SQ = 2;            // 0.34.1: the bot's region and its 8 neighbours
     /** 0.34.1: spots asked of the cache per block id. */
-    public static final int PER_ID = 48;
+    public static final int PER_ID = 256;              // 0.34.2 (review): 48 could all come from one chunk (64 a chunk)
     private static boolean warned;
 
     private BaritoneMemory() {}
@@ -89,6 +89,25 @@ public final class BaritoneMemory {
         return out;
     }
 
+    private static java.lang.reflect.Method regionRead;
+    private static boolean regionReadMissing;
+
+    /** Our build's CachedRegion.getLocationsOf(block, cap, x, z) (capped, nearest chunks first); none: nothing. */
+    @SuppressWarnings("unchecked")
+    private static List<BlockPos> regionRead(Object region, String name, int cap, int x, int z) throws ReflectiveOperationException {
+        if (regionReadMissing) return List.of();
+        if (regionRead == null) {
+            try {
+                regionRead = region.getClass().getMethod("getLocationsOf", String.class, int.class, int.class, int.class);
+            } catch (NoSuchMethodException e) {
+                regionReadMissing = true;
+                LOG.info("[entropybot] memory: this Baritone build has no capped region read - nothing from memory");
+                return List.of();
+            }
+        }
+        return (List<BlockPos>) regionRead.invoke(region, name, cap, x, z);
+    }
+
     /** Spots Baritone's chunk cache remembers (only tracked blocks answer), unchecked. */
     public static List<MemoryPick.Spot> remembered(LocalPlayer p, Collection<String> ids, int maxEach) {
         List<MemoryPick.Spot> out = new ArrayList<>();
@@ -99,10 +118,24 @@ public final class BaritoneMemory {
             if (wd == null) return out;
             ICachedWorld cw = wd.getCachedWorld();
             int x = p.getBlockX(), z = p.getBlockZ();
+            // 0.34.2 (review): the bot's region and its 8 neighbours, nearest first, only regions Baritone has in memory
+            // already (getRegion never loads one from disk), each read capped through our build's region read
+            List<int[]> regions = new ArrayList<>();
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) regions.add(new int[]{(x >> 9) + dx, (z >> 9) + dz, dx * dx + dz * dz});
+            regions.sort(java.util.Comparator.comparingInt(r -> r[2]));
             for (String id : ids) {
                 String full = id.contains(":") ? id : "minecraft:" + id;
-                for (BlockPos q : cw.getLocationsOf(MemoryPick.cacheName(full), maxEach, x, z, REGIONS_SQ))
-                    out.add(new MemoryPick.Spot(full, q.getX(), q.getY(), q.getZ(), MemoryPick.Source.BARITONE));
+                String name = MemoryPick.cacheName(full);
+                int got = 0;
+                for (int[] rr : regions) {
+                    if (got >= maxEach) break;
+                    Object region = cw.getRegion(rr[0], rr[1]);
+                    if (region == null) continue;
+                    for (BlockPos q : regionRead(region, name, maxEach - got, x, z)) {
+                        out.add(new MemoryPick.Spot(full, q.getX(), q.getY(), q.getZ(), MemoryPick.Source.BARITONE));
+                        got++;
+                    }
+                }
             }
         } catch (Throwable t) {
             LOG.warn("[entropybot] memory: Baritone's cache failed: {}", t.toString());

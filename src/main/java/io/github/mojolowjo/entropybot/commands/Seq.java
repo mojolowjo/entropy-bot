@@ -32,6 +32,8 @@ public final class Seq {
         public final String type;
         public int[] pos;
         public boolean near, optional, keepNote;
+        /** 0.34.2: checked every tick of a walk; true ends the walk at once ("next"), the job decides (a remembered target gone). */
+        public java.util.function.BooleanSupplier watch;
         public String why, machine = "no", kind, key, to, got, op, id, expect, expectName;
         public List<Map<String, Object>> ops;
         public Map<String, Integer> items, keep;
@@ -233,6 +235,25 @@ public final class Seq {
         long elapsed = now() - stepStart;
         switch (st.type) {
             case "walk": {
+                if (st.watch != null && elapsed % 10 == 0) {
+                    boolean stop;
+                    try {
+                        stop = st.watch.getAsBoolean();
+                    } catch (RuntimeException e) {
+                        com.mojang.logging.LogUtils.getLogger().warn("[entropybot] walk watch failed: {}", e.toString());
+                        stop = false;
+                    }
+                    if (stop) {
+                        IBaritone wb = Jobs.baritone();
+                        if (wb != null) Jobs.cancel(wb);
+                        endWalkRoute(false);
+                        if (jobs.job != null && jobs.job.longRoute) {
+                            io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
+                            jobs.job.longRoute = false;
+                        }
+                        return "next";
+                    }
+                }
                 String r = walkStep(st, p, elapsed);
                 if (!"wait".equals(r)) endWalkRoute(!"next".equals(r));
                 return r;

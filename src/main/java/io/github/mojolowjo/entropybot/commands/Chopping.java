@@ -311,12 +311,10 @@ final class Chopping {
             // judges built (a log house) or not a tree; unloaded ones are judged by the scan on arrival
             if (MineRules.protectNear(prot, dim, x, y, z, MineRules.PROTECT_MARGIN) != null) return false;
             BlockPos q = new BlockPos(x, y, z);
-            if (p.level().isLoaded(q)) {
-                TreeFinder.Result tr = TreeFinder.find(lw, x, y, z);
-                if (!tr.ok()) return false;
-            }
+            boolean loaded = p.level().isLoaded(q);
             long dx = x - me[0], dz = z - me[2];
-            return dx * dx + dz * dz > (long) near * near || !p.level().isLoaded(q);
+            if (loaded && dx * dx + dz * dz <= (long) near * near) return false;     // 0.34.2 (review): the cheap check first
+            return !loaded || TreeFinder.find(lw, x, y, z).ok();
         }, 64, "chop", farMax);
         if (got.isEmpty()) return null;
         // the nearest remembered log may be high up the trunk: walk to the lowest one of that column

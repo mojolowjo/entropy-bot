@@ -1644,8 +1644,11 @@ public final class Jobs {
     static boolean underGround(LocalPlayer p) {
         int[] me = here(p);
         net.minecraft.world.level.Level lv = p.level();
-        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
-        return top - me[1] > 3 && !lv.canSeeSky(p.blockPosition().above());
+        // 0.34.2 (lead's live check: "sealed under ground" while the dig-out check said underground false, surface 67):
+        // the dig-out check's own rule - the surface without leaves (a canopy is no roof), sky or open above
+        int surface = surfaceNoLeaves(lv, me[0], me[2]);
+        boolean sky = lv.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
+        return RestoreRules.underground(sky, surface, me[1]);
     }
 
     /**
