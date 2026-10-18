@@ -531,6 +531,11 @@ final class Crafting {
                 if (ch[0] == OwnTable.Choice.NONE) return craftNoTable(steps);
             }
         }
+        Step stray = Clearing.takeStrayKept();
+        if (stray != null) {
+            steps = new ArrayList<>(steps);
+            steps.add(0, stray);
+        }
         boolean opens = steps.stream().anyMatch(s -> s.type.equals("open") || s.type.equals("craft"));
         String started = startSeq(r.label(), steps, opens ? "always" : "fail");
         return started.startsWith("started") ? started + tail : started;

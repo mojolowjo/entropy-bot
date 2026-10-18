@@ -6,6 +6,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class OwnTableTest {
     @Test
+    void keptTableIsReapedOnlyWhenIdle() {
+        assertTrue(OwnTable.reapKept(true, false));
+        assertFalse(OwnTable.reapKept(true, true));
+        assertFalse(OwnTable.reapKept(false, false));
+    }
+
+    @Test
     void tableKeptOnlyWhenTheNextStepIsATableCraft() {
         java.util.function.Predicate<String> yes = s -> true, no = s -> false;
         assertTrue(OwnTable.keepForNext(false, "craft stone_axe 1", yes));

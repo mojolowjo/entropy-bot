@@ -60,6 +60,11 @@ public final class OwnTable {
         return t.startsWith("craft ") && needsTable.test(nextStep.trim());
     }
 
+    /** A kept table is taken back as soon as nothing runs (the chain stopped or was preempted), or by the next craft that does not use it. */
+    public static boolean reapKept(boolean tableKept, boolean busy) {
+        return tableKept && !busy;
+    }
+
     /** Log line when the pickup is skipped. */
     public static final String KEPT_LOG = "table kept for the next craft";
     /** Log line when no further craft needs the table. */

@@ -673,6 +673,27 @@ public final class Clearing {
     /** A craft's own table left standing for the next back-to-back craft (x y z), or null. */
     static int[] keptOwnTable;
 
+    /** The pickup of a kept table the starting craft does not use (a different table, or no table needed); null when none. */
+    static Seq.Step takeStrayKept() {
+        int[] k = keptOwnTable;
+        keptOwnTable = null;
+        if (k == null || !PlaceRules.TABLE_ID.equals(blockId(k))) return null;
+        Seq.Step pick = pickupStep(new Pos(k[0], k[1], k[2]), WHY_OWN_TABLE);
+        pick.got = KIND_PLACED_TABLE;
+        LOG.info("[entropybot] craft: {}: the next craft uses another table, taking {} back first",
+                io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG, Jobs.fmt(k));
+        return pick;
+    }
+
+    /** Each few ticks from Commands: nothing runs and a table is still kept (the chain stopped): go and take it back. */
+    static void keptTick(Commands c) {
+        if (!io.github.mojolowjo.entropybot.craft.OwnTable.reapKept(keptOwnTable != null, c.busyForQueue())) return;
+        Seq.Step pick = takeStrayKept();
+        if (pick == null) return;
+        LOG.info("[entropybot] craft: the chain ended with my table still down - taking it back");
+        c.jobs.startSeq(new Seq(c.jobs, c.storage, "pick up my table", new ArrayList<>(List.of(pick)), "fail"), "fail");
+    }
+
     /**
      * Back-to-back crafts: at the own-table pickup, keep the table down when the chain's next step is another table
      * craft. True: the pickup is skipped (the cell stays recorded so the next craft picks it up after its own craft).
@@ -700,9 +721,9 @@ public final class Clearing {
     static List<Seq.Step> ownTableSteps(LocalPlayer p, int[] known, List<Seq.Step> craftSteps, io.github.mojolowjo.entropybot.craft.OwnTable.Choice[] choice) {
         // a table the previous back-to-back craft left standing: use it, and this craft's end takes it back (or keeps it again)
         int[] kept = keptOwnTable;
-        keptOwnTable = null;
         if (kept != null && known != null && java.util.Arrays.equals(kept, known)
                 && PlaceRules.TABLE_ID.equals(blockId(kept))) {
+            keptOwnTable = null;
             Seq.Step pick = pickupStep(new Pos(kept[0], kept[1], kept[2]), WHY_OWN_TABLE);
             pick.got = KIND_PLACED_TABLE;
             choice[0] = io.github.mojolowjo.entropybot.craft.OwnTable.Choice.USE_KNOWN;

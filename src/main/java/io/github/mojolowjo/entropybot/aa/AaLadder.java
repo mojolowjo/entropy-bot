@@ -55,6 +55,11 @@ public final class AaLadder {
         return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT)) || (bb.in.pickTier >= 2 && bb.in.pickTier < 3);
     }
 
+    /** No table in the bag and planks for one (4): make the spare. */
+    public static boolean spareTableWanted(boolean tableInBag, int planks) {
+        return !tableInBag && planks >= 4;
+    }
+
     public static Node build() {
         Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
         Rung area = new Rung("needs.area", TaskKind.TOOLS,
@@ -81,6 +86,10 @@ public final class AaLadder {
         Rung tableFurnace = new Rung("needs.tableFurnace", TaskKind.TABLE_FURNACE,
                 bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag),
                 bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : "goal furnace");
+        // a spare table in the bag at all times (owner 2026-10-18): crafts away from the camp never walk back to it
+        Rung spare = new Rung("needs.spareTable", TaskKind.TABLE_FURNACE,
+                bb -> spareTableWanted(bb.in.tableInBag, bb.in.planks),
+                bb -> null, bb -> "craft crafting_table 1");
         Rung torch = new Rung("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
                 bb -> null, bb -> "goal torch 16");
@@ -102,7 +111,7 @@ public final class AaLadder {
                 bb -> "goal iron tools");
         // a memory node (live check 2026-10-18: as a reactive Fallback, an earlier rung that started *planning* while a
         // lower rung's job ran outranked it and cancelled the job: a pointless switch)
-        return new MemoryFallback("needs", "basic needs", area, woodArea, tools, surface, hunger, tableFurnace, torch, base, bed, deposit, iron);
+        return new MemoryFallback("needs", "basic needs", area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
     }
 
     /** The rungs under a built ladder, in order (for tests and the status line). */

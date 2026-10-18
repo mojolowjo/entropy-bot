@@ -323,6 +323,8 @@ public final class AaRuntime implements JobPort {
         in.tableKnown = s.feas.table;
         in.furnaceKnown = s.feas.furnace;
         in.tableInBag = bag.getOrDefault("crafting_table", 0) > 0;
+        in.planks = 0;
+        for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_planks")) in.planks += e.getValue();
         in.furnaceInBag = bag.getOrDefault("furnace", 0) > 0;
         in.baseChests = s.feas.baseChests;
         in.baseKnown = s.basePos != null;

@@ -697,6 +697,7 @@ public final class Commands implements Chains.Env {
                     chains.endChain("stopped: " + e);
                 }
             }
+            if (tick % 20 == 7) Clearing.keptTick(this);                     // a kept craft table the chain never came back for
             if (tick % 5 == 1 && !chains.running()) jobs.stairsTick();      // 0.27.3 (d3): a sealed pit's staircase up
             if (tick % 5 == 4) {
                 try {
