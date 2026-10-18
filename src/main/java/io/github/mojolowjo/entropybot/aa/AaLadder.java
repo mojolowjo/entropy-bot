@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.core.Band;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
-import io.github.mojolowjo.entropybot.aa.core.Fallback;
+import io.github.mojolowjo.entropybot.aa.core.MemoryFallback;
 import io.github.mojolowjo.entropybot.aa.core.Node;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
 
@@ -78,7 +78,9 @@ public final class AaLadder {
                 bb -> bb.in.pickTier < 3,
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet",
                 bb -> "goal iron tools");
-        return new Fallback("needs", "basic needs", area, tools, hunger, tableFurnace, torch, base, bed, deposit, iron);
+        // a memory node (live check 2026-10-18: as a reactive Fallback, an earlier rung that started *planning* while a
+        // lower rung's job ran outranked it and cancelled the job: a pointless switch)
+        return new MemoryFallback("needs", "basic needs", area, tools, hunger, tableFurnace, torch, base, bed, deposit, iron);
     }
 
     /** The rungs under a built ladder, in order (for tests and the status line). */

@@ -264,6 +264,27 @@ class AaTreeTest {
         assertEquals("goal cobblestone 64", lastChain());
     }
 
+    /** Live 2026-10-18: an earlier rung that starts planning while a lower rung's job runs must not cancel the job. */
+    @Test
+    void anEarlierRungPlanningNeverOutranksARunningJob() {
+        freshStart();
+        pick(2);
+        bb.in.tableKnown = bb.in.furnaceKnown = true;
+        tree.tick(bb);
+        assertEquals("goal torch 16", lastChain());
+        bb.in.furnaceKnown = false;          // the furnace rung becomes unmet (and would plan) while torches run
+        port.resolveTo = null;
+        for (int i = 0; i < 5; i++) assertEquals(Status.RUNNING, tree.tick(bb));
+        assertEquals("goal torch 16", bb.task().spec().chain(), "the torches job still runs");
+        assertEquals(0, port.cancelled.size());
+        assertEquals(0, tracer.counts.switches);
+        port.resolveTo = "*";
+        port.done(1, "done");
+        tree.tick(bb);
+        tree.tick(bb);
+        assertEquals("goal furnace", lastChain(), "then the furnace rung gets its turn");
+    }
+
     @Test
     void mermaidAndNodeIds() {
         String m = tree.mermaid();
