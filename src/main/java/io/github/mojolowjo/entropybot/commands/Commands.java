@@ -898,7 +898,10 @@ public final class Commands implements Chains.Env {
     /** 0.33.0: a job's or chain's end: the shape takes failed from the job's own end status, not from the text. */
     @Override
     public void whisperEnd(String to, String text, boolean failed) {
-        if (to != null && to.equalsIgnoreCase(owner())) text = shapeOut(null, text, failed);
+        if (to != null && to.equalsIgnoreCase(owner())) {
+            text = shapeOut(null, text, failed);
+            io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.endSeen(text);     // 0.35.2: a chain's end (ok or failed) wakes the AI with its text
+        }
         whisper(to, text, true);
     }
 
@@ -969,6 +972,17 @@ public final class Commands implements Chains.Env {
 
     /** The reply shape the owner gets for this command line's answer (RESULT/HERE/NEW/OPTIONS). */
     public String aiShape(String line, String text) { return shapeOut(line == null ? null : Texts.verbAndRest(line)[0], text); }
+
+    /**
+     * 0.35.2: a line typed in the bot's own window (/bot, /ai): queued exactly like a PM from the owner (same gate,
+     * same owner rights, the answer shown in this window when the owner isn't online). Never sent to the server.
+     */
+    public void localLine(String text) {
+        if (text == null || text.isBlank()) return;
+        synchronized (pmQueue) {
+            pmQueue.add(new ChatParse.Pm(owner(), text.trim(), true));
+        }
+    }
 
     /** A notice from the AI operator to the owner ("AI: ..."). */
     public void aiNotice(String text) { whisper(owner(), "AI: " + text, true); }

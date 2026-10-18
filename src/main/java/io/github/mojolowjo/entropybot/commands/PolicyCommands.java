@@ -17,7 +17,7 @@ import java.util.List;
  */
 public final class PolicyCommands {
     /** V1a: the short form. */
-    public static final String AREA_HINT = "area here <r> <name>";
+    public static final String AREA_HINT = "area here 48 work neutral";   // 0.35.2: a runnable hint (radius, name, type), no placeholders
     static final String NAME_RE = "^[a-z0-9_-]{1,24}$";
     static final String DEFAULT_DIM = "minecraft:overworld";
     /** areas.json's format: 2 = typed areas (V1a). */
@@ -393,7 +393,7 @@ public final class PolicyCommands {
     String listText() {
         String nearLine = guard.nearStatus();
         String tail = nearLine == null ? "" : " | " + nearLine;
-        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - " + AREA_HINT + " [type]" + tail;
+        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - " + AREA_HINT + tail;
         List<String> out = new ArrayList<>();
         for (JsonElement e : areas()) out.add(areaText(e.getAsJsonObject()));
         for (JsonElement e : protect()) out.add(areaText(e.getAsJsonObject()));

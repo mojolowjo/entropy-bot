@@ -135,7 +135,7 @@ public final class Planner {
     /** World facts no action gives, with the hint for the owner. */
     static final Map<String, String> WORLD = new LinkedHashMap<>();
     static {
-        WORLD.put("trees", "trees in my areas (area here <r> <name> where trees grow)");
+        WORLD.put("trees", "trees in my areas (area here 48 woods neutral where trees grow)");
         WORLD.put("stone", "stone under me to quarry (go to stony ground, or put cobblestone in a chest)");
         WORLD.put("quarry", "solid ground beside me to quarry");
         WORLD.put("spot:table", "a free spot next to me for the crafting table (goto a flat, open spot)");

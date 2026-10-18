@@ -86,7 +86,7 @@ public final class LeaseSet {
         return null;
     }
 
-    public static final String AREA_HINT = "area here <r> <name>";
+    public static final String AREA_HINT = "area here 48 work neutral";   // 0.35.2: a runnable hint (radius, name, type), no placeholders
 
     /** placeLease for a block item: the cell alone (T1), once per cell while this set lives. */
     public String placeLease(int x, int y, int z, String task) {

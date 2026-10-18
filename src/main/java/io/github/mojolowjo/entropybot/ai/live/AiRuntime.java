@@ -282,6 +282,15 @@ public final class AiRuntime {
         }
     }
 
+    /** 0.35.2: a job's or chain's end told to the owner (a chain the AI started ends here, not in the AI's listener). */
+    public void endSeen(String text) {
+        try {
+            if (on() && loop.goal() != null && text != null && !text.isBlank()) loop.onJobEnd(text, System.currentTimeMillis());
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] ai end seen: {}", e.toString());
+        }
+    }
+
     /** The owner's plain stop: the AI pauses until the next request. Returns the note for the stop reply ("" when not on). */
     public String ownerStopped() {
         if (calling || !on()) return "";

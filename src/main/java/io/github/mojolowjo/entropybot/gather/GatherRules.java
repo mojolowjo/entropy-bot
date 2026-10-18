@@ -152,7 +152,7 @@ public final class GatherRules {
         return switch (s.kind()) {
             case ORE -> "place a mine (stand at its start facing the way to dig: place mine) so I can strip-mine, take me near exposed " + s.family()
                     + " ore, or " + put;
-            case LOG -> "\"area here <r> <name>\" where trees grow, or " + put;
+            case LOG -> "\"area here 48 woods neutral\" where trees grow, or " + put;
             case CROP -> "check the farm has " + x + " crops (\"farm here\" by it), or " + put;
             case BLOCK -> "take me near some " + GatherSources.shortId(s.block()) + " inside my areas, or " + put;
             case OVERRIDE -> "check your source (gather source " + x + " ...: \"" + s.command() + "\"), or " + put;

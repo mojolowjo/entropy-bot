@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class FenceTest {
     static final String OW = "minecraft:overworld";
-    static final String HINT = "area here <r> <name>";
+    static final String HINT = "area here 48 work neutral";
     /** The sim's area "zone": -40 125 to 12 180, any height. */
     static final JsonArray AREAS = JsonParser.parseString("[{\"name\":\"zone\",\"dim\":\"minecraft:overworld\",\"x1\":-40,\"z1\":125,\"x2\":12,\"z2\":180},"
             + "{\"name\":\"deep\",\"x1\":100,\"z1\":100,\"x2\":110,\"z2\":110,\"y1\":-60,\"y2\":20},"

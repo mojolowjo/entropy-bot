@@ -421,7 +421,7 @@ class CommandsTest {
         FakeGuard g = new FakeGuard();
         PolicyCommands pc = new PolicyCommands(p, g, () -> {});
         PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
-        assertEquals("no areas set - area here <r> <name> [type]", pc.command("area", "list", true, "owner", here, here));
+        assertEquals("no areas set - area here 48 work neutral", pc.command("area", "list", true, "owner", here, here));
         assertEquals("ok: area home (neutral, white: -20 -10 to 40 50) added | mod: ok: 1 areas", pc.command("area", "here 30 home", true, "owner", here, here));
         assertTrue(pc.inAreas("minecraft:overworld", 0, 0));
         assertFalse(pc.inAreas("minecraft:overworld", 100, 0));

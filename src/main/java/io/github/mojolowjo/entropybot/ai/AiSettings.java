@@ -25,6 +25,7 @@ import java.util.Set;
 public final class AiSettings {
     public static final Set<String> PROVIDERS = Set.of("openrouter", "openai", "local", "demo");
     public static final List<String> PROVIDER_ORDER = List.of("openrouter", "openai", "local", "demo");
+    public static final List<String> REASONING = List.of("off", "low", "on");
     public static final String DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
     public boolean enabled = false;
@@ -40,7 +41,10 @@ public final class AiSettings {
     public long tokensPerDay = 200_000;
     public long tokensPerHour = 0;
     public int requestsPerHour = 120;
-    public int maxOutputTokens = 120;
+    /** 0.35.2: 400 (a reasoning model spent 120 on thinking and answered nothing). */
+    public int maxOutputTokens = 400;
+    /** 0.35.2: the model's thinking: off (the default: one line needs none), low, on. Sent the OpenRouter way; dropped for local. */
+    public String reasoning = "off";
     public double temperature = 0.2;
     /** compact (name + usage, for small models) or full. */
     public String promptSize = "compact";
@@ -80,6 +84,8 @@ public final class AiSettings {
         if (baseUrl == null) baseUrl = "";
         baseUrl = baseUrl.trim();
         if (promptSize == null) promptSize = "compact";
+        if (reasoning == null) reasoning = "off";
+        reasoning = reasoning.trim().toLowerCase(Locale.ROOT);
         if (extraAllow == null) extraAllow = new ArrayList<>();
         if (extraDeny == null) extraDeny = new ArrayList<>();
         if (prices == null) prices = new LinkedHashMap<>();
@@ -98,6 +104,7 @@ public final class AiSettings {
         if (maxOutputTokens < 16 || maxOutputTokens > 4000) p.add("max output tokens must be 16..4000");
         if (minGapMs < 0) p.add("the gap between commands can't be negative");
         if (maxFailures < 1) p.add("max failures must be at least 1");
+        if (!REASONING.contains(reasoning)) p.add("reasoning is off, low or on");
         if (!promptSize.equals("compact") && !promptSize.equals("full")) p.add("promptSize is compact or full");
         if (!baseUrl.isEmpty()) {
             String why = io.github.mojolowjo.entropybot.ai.provider.ChatCompletionsProvider.urlProblem(baseUrl);

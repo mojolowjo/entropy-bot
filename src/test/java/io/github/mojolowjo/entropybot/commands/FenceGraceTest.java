@@ -30,9 +30,9 @@ class FenceGraceTest {
 
     @Test
     void theStopMessageSaysWhy() {
-        assertEquals("stopped: I am outside my areas at 260 -48 852 - area here <r> <name>",
+        assertEquals("stopped: I am outside my areas at 260 -48 852 - area here 48 work neutral",
                 FenceGrace.stopMessage("260 -48 852", false));
-        assertEquals("stopped: I am outside my areas at 260 -48 852 (and didn't get back in within 15 s) - area here <r> <name>",
+        assertEquals("stopped: I am outside my areas at 260 -48 852 (and didn't get back in within 15 s) - area here 48 work neutral",
                 FenceGrace.stopMessage("260 -48 852", true));
     }
 }

@@ -38,6 +38,11 @@ public final class ChatCompletionsProvider implements Provider {
     /** 0.35.1: told about every retry post (each one is a request for the caps). */
     private volatile Runnable onRetry = () -> {};
 
+    private String reasoning = "off";
+
+    /** 0.35.2: off | low | on. */
+    public ChatCompletionsProvider reasoning(String r) { reasoning = r == null ? "off" : r; return this; }
+
     public ChatCompletionsProvider onRetry(Runnable r) { onRetry = r == null ? () -> {} : r; return this; }
 
     public ChatCompletionsProvider(String kind, String baseUrl, String model, Secret key, HttpTransport http, Sleeper sleeper) throws ProviderException {
@@ -106,6 +111,17 @@ public final class ChatCompletionsProvider implements Provider {
         o.addProperty("max_tokens", r.maxTokens());
         o.addProperty("temperature", r.temperature());
         o.addProperty("stream", false);
+        // 0.35.2: reasoning, the OpenRouter way (reasoning: {enabled:false} | {effort:"low"} | {enabled:true}); an
+        // OpenAI-compatible service gets reasoning_effort only for low (off/on: its default); local servers get nothing
+        if (kind.equals("openrouter")) {
+            JsonObject rs = new JsonObject();
+            switch (reasoning) {
+                case "low" -> rs.addProperty("effort", "low");
+                case "on" -> rs.addProperty("enabled", true);
+                default -> rs.addProperty("enabled", false);
+            }
+            o.add("reasoning", rs);
+        } else if (kind.equals("openai") && reasoning.equals("low")) o.addProperty("reasoning_effort", "low");
         if (kind.equals("openrouter")) {
             JsonObject u = new JsonObject();
             u.addProperty("include", true);

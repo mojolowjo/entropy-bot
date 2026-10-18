@@ -61,8 +61,8 @@ class OperatorViewTest {
     @Test
     void outerNextWins() {
         java.util.List<String> o = new java.util.ArrayList<>();
-        ReplyShaper.split("error: gather: 0/4 (last: chop: no trees; next: give me an axe, or put a cr...) - next: \"area here <r> <name>\" where trees grow, or put some oak_log in the base chests", o);
-        assertEquals(List.of("\"area here <r> <name>\" where trees grow", "put some oak_log in the base chests"), o);
+        ReplyShaper.split("error: gather: 0/4 (last: chop: no trees; next: give me an axe, or put a cr...) - next: \"area here 48 woods neutral\" where trees grow, or put some oak_log in the base chests", o);
+        assertEquals(List.of("\"area here 48 woods neutral\" where trees grow", "put some oak_log in the base chests"), o);
     }
 
     @Test
@@ -86,9 +86,9 @@ class OperatorViewTest {
         ReplyShaper s = new ReplyShaper();
         assertEquals("that is now cut <n>", s.shape("chop", "that is now cut <n>", "h", null));
         assertEquals("usage: goto x y z", s.shape("goto", "usage: goto x y z", "h", null));
-        String r = s.shape("chop", "error: chopped nothing - next: \"area here <r> <name>\" where trees grow, or put some oak_log in the base chests", "1 2 3", null);
+        String r = s.shape("chop", "error: chopped nothing - next: \"area here 48 woods neutral\" where trees grow, or put some oak_log in the base chests", "1 2 3", null);
         assertFalse(r.contains("<r>"), r);
-        assertTrue(r.contains("1) put some oak_log in the base chests  2) why"), r);
+        assertTrue(r.contains("1) \"area here 48 woods neutral\" where trees grow  2) put some oak_log in the base chests"), r);     // 0.35.2: a real hint is an option now
         assertEquals("error: x | at 1 2 3 | next: 1) why", ReplyShaper.oneLine(new ReplyShaper().shape(null, "error: x", "1 2 3", null)));
     }
 

@@ -12,7 +12,7 @@ public final class StripTexts {
 
     public static final String NO_MINE = "error: no mine marked - stand where it should start, face the way to dig, and say \"place mine\"";
     public static final String TURN_USAGE = "usage: stripmine turn left|right";
-    public static final String AREA_HINT = "area here <r> <name>";
+    public static final String AREA_HINT = "area here 48 work neutral";   // 0.35.2: a runnable hint (radius, name, type), no placeholders
 
     public static String noMine(String name) {
         return name.equals("mine") ? NO_MINE

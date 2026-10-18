@@ -264,7 +264,9 @@ public final class AiLoop {
         switch (v.kind()) {
             case EMPTY -> {
                 empties++;
-                failure("the model returned nothing", now, false, false);
+                // 0.35.2: a reasoning model that spent the whole answer on thinking says so
+                failure("length".equals(c.finish()) ? "the model ran out of tokens while thinking - raise max output tokens or turn reasoning off"
+                        : "the model returned nothing", now, false, false);
                 return null;
             }
             case WAIT -> {
