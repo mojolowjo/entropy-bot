@@ -45,6 +45,16 @@ public final class AaLadder {
      */
     public static final String BOOTSTRAP = "bootstrap";
 
+    public static final String CLIMB = "climb", TREE_AREA_FACT = "treeArea";
+    /** Under this much ground the table/furnace/house/iron rungs climb out first (a tree's leaves never count). */
+    public static final int SURFACE_DEPTH = 3;
+
+    /** A later rung that places a table or furnace, builds the base or plans iron (it places a table and furnace). */
+    static boolean needsOpenGround(Blackboard bb) {
+        boolean table = bb.in.tableKnown || bb.in.tableInBag, furnace = bb.in.furnaceKnown || bb.in.furnaceInBag;
+        return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT)) || (bb.in.pickTier >= 2 && bb.in.pickTier < 3);
+    }
+
     public static Node build() {
         Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
         Rung area = new Rung("needs.area", TaskKind.TOOLS,
@@ -53,7 +63,17 @@ public final class AaLadder {
         Rung tools = new Rung("needs.tools", TaskKind.TOOLS,
                 bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2),
                 bb -> null, bb -> bb.in.pickTier == 0 ? BOOTSTRAP : "goal stone tools");
-        Rung hunger = new Rung("needs.food", TaskKind.FOOD,
+        // 0.36.3 (aa40b: bootstrap left the bot in its quarry hole, 9 under the surface, and "goal table" / "goal iron
+        // tools" had no free spot for the table for 30 minutes): a rung that needs open ground waits for a climb first
+        Rung surface = new Rung("needs.surface", TaskKind.TABLE_FURNACE,
+                bb -> bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb),
+                bb -> null, bb -> CLIMB);
+        // 0.36.3: no tree the chopper can get at in my areas: a second work area around the nearest reachable tree
+        // (AaRuntime puts the area command in the fact; it is cleared after the area is made)
+        Rung woodArea = new Rung("needs.woodArea", TaskKind.STOCK_WOOD,
+                bb -> bb.fact(TREE_AREA_FACT) instanceof String,
+                bb -> null, bb -> (String) bb.fact(TREE_AREA_FACT));
+        Rung hunger =new Rung("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && food.update(bb.in.food),
                 bb -> null, bb -> "goal food 8");
         // a table or furnace in the bag counts (live 2026-10-18: "goal table" with one in the bag is "nothing to do",
@@ -82,7 +102,7 @@ public final class AaLadder {
                 bb -> "goal iron tools");
         // a memory node (live check 2026-10-18: as a reactive Fallback, an earlier rung that started *planning* while a
         // lower rung's job ran outranked it and cancelled the job: a pointless switch)
-        return new MemoryFallback("needs", "basic needs", area, tools, hunger, tableFurnace, torch, base, bed, deposit, iron);
+        return new MemoryFallback("needs", "basic needs", area, woodArea, tools, surface, hunger, tableFurnace, torch, base, bed, deposit, iron);
     }
 
     /** The rungs under a built ladder, in order (for tests and the status line). */

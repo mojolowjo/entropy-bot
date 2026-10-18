@@ -258,7 +258,7 @@ class AaTreeTest {
         assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the rung that plans");
         assertEquals("needs>planning TOOLS: goal stone tools (0s)", tree.driver() + ">" + bb.taskText(clock.now()));
         assertEquals(0, port.started.size());
-        Rung tools = AaLadder.rungs(tree.ladder).get(1);
+        Rung tools = AaLadder.rungs(tree.ladder).stream().filter(r -> r.id.equals("needs.tools")).findFirst().orElseThrow();
         clock.advance(Rung.PLAN_WAIT_MS + 1);
         assertEquals(Status.FAILURE, tools.tick(bb));
         assertTrue(tools.reason().contains("TOOLS skipped: no plan for goal stone tools"), tools.reason());
@@ -288,6 +288,46 @@ class AaTreeTest {
         bb.in.wood = 40;          // wood now scores 60 - 31 = 29 (+15 inertia) vs stone 50
         tree.tick(bb);
         assertEquals("goal cobblestone 64", lastChain());
+    }
+
+    /** 0.36.3 (aa40b): in the quarry hole with no table, the ladder climbs first; at the surface it plans the table. */
+    @Test
+    void underGroundWithNoTableClimbsFirst() {
+        freshStart();
+        pick(2);
+        bb.in.torches = 16;
+        bb.in.underDepth = 9;
+        tree.tick(bb);
+        assertEquals(AaLadder.CLIMB, lastChain());
+        port.done(1, "done");
+        tree.tick(bb);
+        bb.in.underDepth = 0;
+        tree.tick(bb);
+        assertEquals("goal table", lastChain());
+    }
+
+    /** 0.36.3: no reachable tree: the woodArea rung runs the area command the adapter found. */
+    @Test
+    void noReachableTreeMakesATreeArea() {
+        freshStart();
+        pick(3);
+        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
+        bb.in.torches = 16;
+        bb.fact(AaLadder.TREE_AREA_FACT, "area 0 0 40 40 trees1 work neutral");
+        tree.tick(bb);
+        assertEquals("area 0 0 40 40 trees1 work neutral", lastChain());
+    }
+
+    /** 0.36.3 (Peaceful, no wool): a shelter is the base, the bed is skipped, IRON gets its turn. */
+    @Test
+    void noWoolStillReachesIron() {
+        freshStart();
+        pick(2);
+        bb.in.tableKnown = bb.in.furnaceKnown = true;
+        bb.in.torches = 16;
+        AaLadder.noteShelter(bb);
+        tree.tick(bb);
+        assertEquals("goal iron tools", lastChain());
     }
 
     /** 0.36.2, the 40-minute run: a failed idle task cools down; the next idle option runs meanwhile. */

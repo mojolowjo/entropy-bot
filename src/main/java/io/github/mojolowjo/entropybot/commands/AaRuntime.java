@@ -122,7 +122,7 @@ public final class AaRuntime implements JobPort {
             stopped = bb.task().spec().chain();
         }
         tree.root.halt("aa off: " + why);
-        if (CHAIN.equals(c.chains.name())) c.chains.clear();
+        if (chainRunning()) c.chains.clear();
         LOG.info("[entropybot] aa: off ({})", why);
         return "ok: aa off" + (stopped != null ? " - stopped my task " + stopped : "") + "; your jobs run on";
     }
@@ -138,7 +138,10 @@ public final class AaRuntime implements JobPort {
     }
 
     /** AA's chain runs (its task). */
-    boolean chainRunning() { return c.chains.running() && CHAIN.equals(c.chains.name()); }
+    boolean chainRunning() { return c.chains.running() && (CHAIN.equals(c.chains.name()) || myChain.equals(c.chains.name())); }
+
+    /** 0.36.3: the chain name of AA's task: "aa", or "climb" (climb runs as a chain of its own, never inside one). */
+    private String myChain = CHAIN;
 
     /** The owner's order while AA's needs/idle task runs: the task is preempted (logged), the order runs (AA_PLAN 4). */
     void yieldToOwner(String verb) {
@@ -204,7 +207,9 @@ public final class AaRuntime implements JobPort {
                 c.vocab.tick();
                 return;
             }
+            io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString());
             Status s = tree.tick(bb);
+            for (var r : AaLadder.rungs(tree.ladder)) if (r.id.equals("needs.woodArea") && r.last() == Status.SUCCESS) bb.fact(AaLadder.TREE_AREA_FACT, null);
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
@@ -298,6 +303,8 @@ public final class AaRuntime implements JobPort {
         in.night = s.night;
         in.thunder = s.thundering;
         in.underGround = !s.skyAbove;
+        int[] me = Jobs.here(p);
+        in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
         in.inArea = s.areasHere;
         in.ownerOnline = s.ownerOnline;
         in.hungerDrains = mc.level.getDifficulty() != net.minecraft.world.Difficulty.PEACEFUL;
@@ -334,7 +341,7 @@ public final class AaRuntime implements JobPort {
 
     /** Something that is not AA's runs: the owner's chain, a job, a gather, a hunt, a carry, a request; else null. */
     private String otherJob() {
-        if (c.chains.running()) return CHAIN.equals(c.chains.name()) ? null : "chain " + c.chains.name();
+        if (c.chains.running()) return chainRunning() ? null : "chain " + c.chains.name();
         if (c.jobs.running()) return c.jobs.job.type + " (" + c.jobs.job.status + ")";
         if (c.gathering.running()) return "gather";
         if (c.hunting.running()) return "hunt";
@@ -387,6 +394,26 @@ public final class AaRuntime implements JobPort {
         if (c.mule.running()) { refusal = "busy: " + c.mule.statusText(); return -1; }
         if (c.requests.busy()) { refusal = "busy: a request is open"; return -1; }
         lastEnd = null;
+        myChain = CHAIN;
+        if (AaLadder.CLIMB.equals(t.chain())) {
+            // 0.36.3: climb plans its own staircase and runs it as its own chain "climb"; "ok: I'm not in a hole" = done
+            LocalPlayer p = Minecraft.getInstance().player;
+            String cr = p == null ? "error: no player" : DigCommands.climb(c, p, "", c.owner());
+            if (cr != null && cr.startsWith("ok")) {
+                current = ++seq;
+                currentChain = t.chain();
+                lastEnd = "done - " + cr;
+                return current;
+            }
+            if (cr == null || !cr.startsWith("started")) {
+                refusal = cr == null ? "error: no answer" : cr;
+                return -1;
+            }
+            myChain = "climb";
+            current = ++seq;
+            currentChain = t.chain();
+            return current;
+        }
         String r = c.chains.startChain(c.owner(), CHAIN, t.chain(), 1);
         if (r == null || !r.startsWith("started")) {
             refusal = r == null ? "error: no answer" : r;
@@ -480,7 +507,62 @@ public final class AaRuntime implements JobPort {
 
     /** Chains tells every listener how a chain ended; AA keeps its own. */
     void chainEnded(String name, String msg) {
-        if (CHAIN.equals(name)) lastEnd = msg;
+        boolean mine = CHAIN.equals(name) || (current >= 0 && myChain.equals(name));
+        if (mine) lastEnd = msg;
+        // 0.36.3: no tree I can get at in my areas: the woodArea rung makes an area around the nearest reachable one
+        if (mine && msg != null && (msg.contains("no trees in my areas") || msg.contains("couldn't get at its trunk"))) treeAreaFact();
+    }
+
+    /** At most this many tree areas AA adds itself ("trees1".."trees3"), each a box of 2*TREE_AREA_R+1. */
+    static final int TREE_AREAS = 3, TREE_AREA_R = 20, TREE_SEARCH_R = 96;
+
+    /**
+     * 0.36.3: the nearest log column outside my areas (loaded, within 96, not a remembered unreachable trunk, no protect
+     * box within 8 of the box) -> "area x z x2 z2 treesN work neutral" in the blackboard fact; none -> a log line only.
+     * The owner's rule (2026-10-11): the bot works inside its own areas; it never boxes in a protected build.
+     */
+    void treeAreaFact() {
+        try {
+            if (bb.fact(AaLadder.TREE_AREA_FACT) != null) return;
+            int n = 0;
+            for (String a : c.areaNames()) if (a.startsWith("trees")) n++;
+            if (n >= TREE_AREAS) {
+                LOG.info("[entropybot] aa: no tree I can get at in my areas, and {} tree areas made already - not growing further", n);
+                return;
+            }
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null) return;
+            String dim = Storage.dim();
+            var prot = io.github.mojolowjo.entropybot.cave.MineRules.policyBoxes(io.github.mojolowjo.entropybot.cave.MineRules.parsePolicy(c.policyJson()), "protect", PolicyCommands.DEFAULT_DIM);
+            int[] me = Jobs.here(p);
+            long now = System.currentTimeMillis(), best = Long.MAX_VALUE;
+            int[] at = null;
+            net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+            for (int x = me[0] - TREE_SEARCH_R; x <= me[0] + TREE_SEARCH_R; x += 2)
+                for (int z = me[2] - TREE_SEARCH_R; z <= me[2] + TREE_SEARCH_R; z += 2) {
+                    long d = (long) (x - me[0]) * (x - me[0]) + (long) (z - me[2]) * (z - me[2]);
+                    if (d >= best || c.inAreas(dim, x, z)) continue;
+                    m.set(x, 0, z);
+                    if (!mc.level.isLoaded(m)) continue;
+                    int y = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                    m.set(x, y, z);
+                    if (!mc.level.getBlockState(m).is(net.minecraft.tags.BlockTags.LOGS)) continue;
+                    if (io.github.mojolowjo.entropybot.chop.Unreachable.blocked(x, z, now)) continue;
+                    if (io.github.mojolowjo.entropybot.cave.MineRules.protectNear(prot, dim, x, y, z, TREE_AREA_R + 8) != null) continue;
+                    best = d;
+                    at = new int[]{x, y, z};
+                }
+            if (at == null) {
+                LOG.info("[entropybot] aa: no tree I can get at in my areas, and none loaded within {} outside them", TREE_SEARCH_R);
+                return;
+            }
+            String cmd = "area " + (at[0] - TREE_AREA_R) + " " + (at[2] - TREE_AREA_R) + " " + (at[0] + TREE_AREA_R) + " " + (at[2] + TREE_AREA_R) + " trees" + (n + 1) + " work neutral";
+            bb.fact(AaLadder.TREE_AREA_FACT, cmd);
+            LOG.info("[entropybot] aa: no tree I can get at in my areas: the nearest reachable one is at {} {} {} ({} away) - {}", at[0], at[1], at[2], Math.round(Math.sqrt(best)), cmd);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: tree area: {}", e.toString());
+        }
     }
 
     // ---- status, files ----

@@ -23,6 +23,8 @@ public final class Inputs {
     /** The level's day time (ticks), -1 unknown. */
     public long dayTime = -1;
     public boolean night, thunder, underGround, inArea = true, ownerOnline;
+    /** 0.36.3: blocks of ground over the bot (Jobs.underDepth, leaves not counted; 0 = at the surface). Not in the vector. */
+    public int underDepth;
     public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;
