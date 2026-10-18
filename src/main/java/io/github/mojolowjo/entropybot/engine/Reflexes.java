@@ -343,16 +343,19 @@ public final class Reflexes {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) {
+            releaseSwim(mc);
             if (reflex != Reflex.NONE) settle("left the world");
             return;
         }
         io.github.mojolowjo.entropybot.threat.HitWatch.INSTANCE.observe(p);     // 0.24.4 damage log
         if (p.isDeadOrDying()) {
+            releaseSwim(mc);
             death(mc, p);
             return;
         }
         deadTicks = 0;
         dimensionWatch(mc, p);
+        airWatch(mc, p);
         Hostility.INSTANCE.ensureLoaded();             // 0.19.1: defence.json, once (never throws)
         float hp = p.getHealth();
         if (hp < lastHealth - 0.5f) hurtTick = now;
@@ -474,8 +477,136 @@ public final class Reflexes {
     }
 
     /** Every reflex ends here: keys up, Baritone back to whatever it was doing. */
+    /** 0.33.1: holding jump because of the air reflex (released when it ends). */
+    private boolean swimming;
+    private long swimLogAt = -1000;
+
+    /** 0.33.1: head under water and sinking with nothing driving, or the air low: hold jump to reach the surface. */
+    private void airWatch(Minecraft mc, LocalPlayer p) {
+        // a screen open (chest, inventory): no input of ours; let go of a held jump
+        if (mc.screen != null) { releaseSwim(mc); floatSince = -1; return; }
+        IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
+        boolean drives = reflex != Reflex.NONE || (b != null && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
+        // review: an underwater dig/build/chest job sits between Baritone legs for a tick: it drives too (a plain walk doesn't)
+        if (!drives) {
+            try {
+                var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
+                drives = cmds != null && (cmds.chainRunning() || cmds.jobs.running() && !"travel".equals(cmds.jobs.job.type));
+            } catch (RuntimeException e) {
+                drives = false;
+            }
+        }
+        // riding (a boat sunk, a mount under water): isUnderWater is false then; get off when the eyes are in water
+        if (p.isPassenger()) {
+            if (p.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) && p.getAirSupply() < p.getMaxAirSupply()) {
+                LOG.info("[entropybot] air reflex: riding with my head under water (air {}/{}) - getting off", p.getAirSupply(), p.getMaxAirSupply());
+                p.stopRiding();
+            }
+            releaseSwim(mc);
+            floatSince = -1;
+            return;
+        }
+        boolean up = ReflexRules.swimUp(p.isUnderWater(), p.getAirSupply(), p.getMaxAirSupply(), drives);
+        if (up) {
+            if (!swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{}{} - swimming up",
+                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), drives ? " (low, overriding)" : "");
+            swimming = true;
+            mc.options.keyJump.setDown(true);
+        } else releaseSwim(mc);
+        shoreWatch(p, b, drives);
+    }
+
+    /** 0.34.3: since when the bot floats with its head above water and nothing driving (-1: not now); the next look. */
+    private long floatSince = -1, shoreNext = -1;
+    /** 0.34.4: the shore cell it is walking to (null: none), the cells it couldn't reach, tries, given up (reset out of the water). */
+    private int[] shoreTarget;
+    private final java.util.Set<Long> shoreFailed = new java.util.HashSet<>();
+    private int shoreTries;
+    private boolean shoreGaveUp, shoreSaid;
+    static final int SHORE_TRIES = 4;
+
+    /**
+     * 0.34.3 (after the air reflex surfaced it, the bot trod water there forever): 5 s afloat with no job, no reflex and
+     * Baritone idle: a short walk to the nearest dry standable cell (ReflexRules.nearestShore, 32 blocks), said once.
+     * None in reach: said once, looked for again in a minute. Never while a job or a reflex drives it.
+     */
+    private void shoreWatch(LocalPlayer p, IBaritone b, boolean drives) {
+        try {
+            if (b == null || !p.isInWater()) {
+                floatSince = -1;
+                shoreTarget = null; shoreFailed.clear(); shoreTries = 0; shoreGaveUp = false; shoreSaid = false;
+                return;
+            }
+            if (drives) { floatSince = -1; shoreTarget = null; return; }
+            // 0.34.4 (review): standing on the bottom of shallow water is not afloat
+            if (p.onGround()) { floatSince = -1; return; }
+            if (p.isUnderWater()) return;            // bobbing at the surface: the clock runs on
+            if (floatSince < 0) floatSince = now;
+            if (now - floatSince < 100 || now < shoreNext || shoreGaveUp) return;
+            if (shoreTarget != null) {
+                // 0.34.4 (review): afloat again with Baritone idle: that cell couldn't be reached; the next nearest
+                shoreFailed.add(net.minecraft.core.BlockPos.asLong(shoreTarget[0], shoreTarget[1], shoreTarget[2]));
+                LOG.info("[entropybot] shore: couldn't reach {} {} {} (try {})", shoreTarget[0], shoreTarget[1], shoreTarget[2], shoreTries + 1);
+                shoreTarget = null;
+                if (++shoreTries >= SHORE_TRIES) {
+                    shoreGaveUp = true;
+                    String g = "afloat at " + (int) Math.floor(p.getX()) + " " + (int) Math.floor(p.getY()) + " " + (int) Math.floor(p.getZ())
+                            + ": I couldn't reach the " + shoreTries + " nearest shores - next: goto x y z (a shore), or come get me";
+                    LOG.info("[entropybot] shore: {}", g);
+                    whisper(g);
+                    return;
+                }
+            }
+            var lv = p.level();
+            int x = (int) Math.floor(p.getX()), y = (int) Math.floor(p.getY()), z = (int) Math.floor(p.getZ());
+            int[] s = ReflexRules.nearestShore(x, y, z, ReflexRules.SHORE_RADIUS, (cx, cy, cz) -> {
+                net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(cx, cy, cz);
+                if (!lv.isLoaded(at)) return false;
+                // 0.34.4: not next to a shore cell it couldn't reach (live: 4 tries spent on one wall top)
+                for (long f : shoreFailed) {
+                    net.minecraft.core.BlockPos fp = net.minecraft.core.BlockPos.of(f);
+                    if (Math.abs(fp.getX() - cx) <= 2 && Math.abs(fp.getZ() - cz) <= 2 && Math.abs(fp.getY() - cy) <= 3) return false;
+                }
+                var below = lv.getBlockState(at.below());
+                if (!below.getFluidState().isEmpty() || !below.isFaceSturdy(lv, at.below(), net.minecraft.core.Direction.UP)) return false;
+                for (net.minecraft.core.BlockPos c : new net.minecraft.core.BlockPos[]{at, at.above()}) {
+                    var st = lv.getBlockState(c);
+                    if (!st.getFluidState().isEmpty() || !st.getCollisionShape(lv, c).isEmpty()) return false;
+                }
+                return true;
+            });
+            if (s == null) {
+                shoreNext = now + 1200;
+                if (shoreTries > 0) shoreGaveUp = true;        // the unreachable ones were all there was: said once
+                String t = "afloat at " + x + " " + y + " " + z + " with no dry ground within " + ReflexRules.SHORE_RADIUS + " blocks - next: goto x y z (a shore), or come get me";
+                LOG.info("[entropybot] shore: {}", t);
+                if (!shoreSaid) whisper(t);                    // 0.34.4: once while afloat (the log has every look)
+                shoreSaid = true;
+                return;
+            }
+            shoreNext = now + 200;
+            shoreTarget = s;
+            b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(s[0], s[1], s[2]));
+            String t = "afloat with nothing to do: swimming to the nearest shore at " + s[0] + " " + s[1] + " " + s[2];
+            LOG.info("[entropybot] shore: {} (from {} {} {})", t, x, y, z);
+            if (!shoreSaid) whisper(t);                        // 0.34.4: the first target only; the next ones are logged
+            shoreSaid = true;
+        } catch (RuntimeException e) {
+            shoreNext = now + 1200;
+            LOG.warn("[entropybot] shore: the look for dry ground failed: {}", e.toString());
+        }
+    }
+
+    /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
+    private void releaseSwim(Minecraft mc) {
+        if (!swimming) return;
+        swimming = false;
+        if (mc != null) mc.options.keyJump.setDown(false);
+    }
+
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();
+        releaseSwim(mc);
         duel.abort(why);
         cspr.abort(why);
         if (reflex == Reflex.FLEEING || reflex == Reflex.RETREATING) stopMoving(mc);     // 0.23.2: safe, stop sprinting
@@ -1316,8 +1447,7 @@ public final class Reflexes {
         try {
             var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
             boolean busy = cmds.jobs.running() || cmds.chainRunning();
-            int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, p.getBlockX(), p.getBlockZ());
-            boolean under = top - p.getBlockY() > 3 && !mc.level.canSeeSky(p.blockPosition().above());
+            boolean under = io.github.mojolowjo.entropybot.commands.Jobs.underDepth(mc.level, p.getBlockX(), p.getBlockY(), p.getBlockZ()) > 0;   // 0.34.3: shared rule
             if (!eatRequested && (busy || under)) {
                 int food = p.getFoodData().getFoodLevel();
                 fetchNote = busy ? "a job is running: no food run during it" : "under ground: no food run from here";

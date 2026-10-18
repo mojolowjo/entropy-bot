@@ -39,8 +39,8 @@ public final class ViewLive {
             StringBuilder sb = new StringBuilder().append(x).append(' ').append(y).append(' ').append(z);
             Box a = Core.INSTANCE.guard.core.policy().innermostAreaAt(Guard.dimOf(lv), x, y, z);
             sb.append(a == null ? ", outside my areas" : ", in " + a.name + " (" + a.type.name().toLowerCase() + ")");
-            int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-            if (top - y > 3 && !lv.canSeeSky(new BlockPos(x, y + 1, z))) sb.append(", under ground (surface ").append(top - y).append(" up)");
+            int depth = io.github.mojolowjo.entropybot.commands.Jobs.underDepth(lv, x, y, z);      // 0.34.3: the shared rule (leaves ignored)
+            if (depth > 0) sb.append(", under ground (surface ").append(depth).append(" up)");
             sb.append(", hp ").append(Math.round(p.getHealth())).append(" food ").append(p.getFoodData().getFoodLevel());
             return sb.toString();
         } catch (RuntimeException e) {
@@ -166,8 +166,7 @@ public final class ViewLive {
                 int ref = b.y1 > Box.ALL_Y_MIN ? b.y1 + 1 : lv.getHeight(Heightmap.Types.MOTION_BLOCKING, cx, cz);
                 return LookMap.overhead(cells(lv), cx, cz, ref, r, me, mobs(p, 40), "area " + b.name);
             }
-            int top = lv.getHeight(Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
-            if (top - me[1] > 3 && !lv.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])))
+            if (io.github.mojolowjo.entropybot.commands.Jobs.underDepth(lv, me[0], me[1], me[2]) > 0)      // 0.34.3: the shared rule
                 return LookMap.slices(cells(lv), me[0], me[1], me[2], 7, 3, mobs(p, 8));
             return LookMap.overhead(cells(lv), me[0], me[2], me[1], 7, me, mobs(p, 8), "around me");
         } catch (RuntimeException e) {

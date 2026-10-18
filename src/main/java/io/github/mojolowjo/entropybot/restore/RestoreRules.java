@@ -89,4 +89,14 @@ public final class RestoreRules {
     public static boolean underground(boolean skyVisible, int surfaceY, int feetY) {
         return !skyVisible && feetY <= surfaceY - 3;
     }
+
+    /**
+     * 0.34.3: the one under-ground rule (HERE, look, the food run, the retrace, the dig-out): surfaceY is the top
+     * non-leaf block over the column; sky seen or open just above = not under ground. Returns how far the first air over
+     * the surface is above the feet ("surface N up"), or 0 when not under ground.
+     */
+    public static int underDepth(boolean skyVisible, int surfaceY, int feetY) {
+        boolean sky = skyVisible || openAbove(surfaceY, feetY);
+        return underground(sky, surfaceY, feetY) ? surfaceY + 1 - feetY : 0;
+    }
 }

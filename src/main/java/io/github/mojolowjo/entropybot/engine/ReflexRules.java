@@ -23,6 +23,47 @@ public final class ReflexRules {
     public static final int LOOK = 8;               // monsters within this many blocks count
     public static final int LOOK_HURT = 24;         // ... or this many after a hit
     public static final int HURT_TICKS = 100;       // "after a hit" lasts this long
+    /**
+     * 0.33.1: the air reflex. Head under water: swim up when nothing else drives the bot (a stopped job left it sinking
+     * in the ocean and it drowned, 0.33.0 agent C), and always once the air is below a third, whoever drives.
+     */
+    public static boolean swimUp(boolean eyesInWater, int air, int maxAir, boolean somethingDrives) {
+        if (!eyesInWater) return false;
+        if (air * 3 < maxAir) return true;
+        return !somethingDrives;
+    }
+
+    /** 0.34.3: a dry cell to stand on (solid ground under it, feet and head free of blocks and fluid). */
+    public interface Dry { boolean standable(int x, int y, int z); }
+
+    /** 0.34.3: how far the swim to the shore looks, and how far up or down from the water line. */
+    public static final int SHORE_RADIUS = 32, SHORE_DY = 4;
+
+    /**
+     * 0.34.3 (the bot trod water forever where the air reflex surfaced it): the nearest dry standable cell, ring by ring
+     * out to {@code radius} (within a ring the nearest by straight line; the same height first), or null.
+     */
+    public static int[] nearestShore(int x, int y, int z, int radius, Dry dry) {
+        for (int r = 1; r <= radius; r++) {
+            int[] best = null;
+            double bestD = Double.MAX_VALUE;
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.abs(dx) != r && Math.abs(dz) != r) continue;       // the ring only
+                    for (int dy = 0; dy <= SHORE_DY; dy = dy <= 0 ? -dy + 1 : -dy) {
+                        if (dy < -SHORE_DY) break;
+                        if (!dry.standable(x + dx, y + dy, z + dz)) continue;
+                        double d = dx * dx + dz * dz + dy * dy * 0.5;
+                        if (d < bestD) { bestD = d; best = new int[]{x + dx, y + dy, z + dz}; }
+                        break;
+                    }
+                }
+            }
+            if (best != null) return best;
+        }
+        return null;
+    }
+
     public static final double REACH = 2.8;         // attack from this close
     public static final double CREEPER_RUN = 6;     // run from a creeper this close
     public static final int CREEPER_RUN_TO = 12;    // ... to a spot this far away

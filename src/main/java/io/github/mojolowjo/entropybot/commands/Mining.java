@@ -333,7 +333,7 @@ final class Mining {
     /** The mine starts (or goes on) from the index: phase "known". False: the index has none near (today's path runs). */
     private boolean knownStart(LocalPlayer p, MineRun j) {
         if (!j.ore || !indexReady()) return false;
-        if (knownHits(p, j, 1).isEmpty()) {
+        if (knownHits(p, j, 1).isEmpty() && farOres(p, j).isEmpty()) {
             j.knownWhy = io.github.mojolowjo.entropybot.sense.KnownOre.noneWhy(io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target));
             return false;
         }
@@ -345,9 +345,103 @@ final class Mining {
         // (live: each try put a cobblestone back over the owner's ore). Baritone's own path breaks get it again in mineGo.
         if (jobs.job != null) RestoreLive.INSTANCE.endPathContext(jobs.job.id);
         j.kTarget = null;
-        LOG.info("[entropybot] mine: {} known in the index - walking to it (no Baritone search; {})", sid(j),
+        LOG.info("[entropybot] mine: {} {} - walking to it (no Baritone search; {})", sid(j),
+                knownHits(p, j, 1).isEmpty() ? "remembered by Baritone (not in the index)" : "known in the index",
                 j.familyWord ? "any " + io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target) + " ore block, deepslate or not" : "exactly " + sid(j));
         return true;
+    }
+
+    /** 0.34.0: at most this many walks to ore Baritone remembers per mine. */
+    static final int FAR_TRIPS = 3;
+
+    /** 0.34.0: ore of the mine's block (or family) Baritone's cache remembers, in my areas, not tried, live-checked when loaded. */
+    private List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> farOres(LocalPlayer p, MineRun j) {
+        if (j.kFarTrips >= FAR_TRIPS) return List.of();
+        // 0.34.1 (review): one recall per job; later asks reuse its list (tried and now-gone spots taken out)
+        if (j.kFarCache != null) {
+            io.github.mojolowjo.entropybot.sense.MemoryPick.Check live = io.github.mojolowjo.entropybot.sense.BaritoneMemory.check(p.level());
+            j.kFarCache.removeIf(o -> j.knownTried.contains(BlockPos.asLong(o.x(), o.y(), o.z()))
+                    || live.at(o.id(), o.x(), o.y(), o.z()) == io.github.mojolowjo.entropybot.sense.MemoryPick.Live.LOADED_GONE);
+            // 0.34.2 (review): nearest from where I stand now; an empty list recalls once more
+            int[] here = Jobs.here(p);
+            j.kFarCache.sort(java.util.Comparator.comparingLong(o -> o.d2(here)));
+            if (!j.kFarCache.isEmpty()) return List.of(j.kFarCache.get(0));
+            if (j.kFarRecalls >= 2) return List.of();
+        }
+        j.kFarRecalls++;
+        String d = dim();
+        String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+        boolean exact = !j.familyWord;
+        List<String> ids = new ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : BuiltInRegistries.BLOCK.keySet()) {
+            String id = k.toString();
+            if (!k.getPath().endsWith("_ore") && !k.getPath().equals("ancient_debris")) continue;
+            if (exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam)) ids.add(id);
+        }
+        if (ids.isEmpty()) return List.of();
+        List<Box> prot = boxes(policy(), "protect");
+        j.kFarCache = new ArrayList<>(io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
+                !j.knownTried.contains(BlockPos.asLong(x, y, z)) && commands.inAreas(d, x, z)
+                        && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null
+                        && (j.dig || io.github.mojolowjo.entropybot.sense.BaritoneMemory.exposedInCache(x, y, z)), 8, "mine"));   // 0.34.1: walkable faces only
+        return j.kFarCache.isEmpty() ? List.of() : List.of(j.kFarCache.get(0));
+    }
+
+    /** 0.34.0: walk to the nearest remembered ore (Baritone's memory); false when none. */
+    private boolean farOreWalk(Seq s, LocalPlayer p, MineRun j) {
+        List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> far = farOres(p, j);
+        if (far.isEmpty()) return false;
+        io.github.mojolowjo.entropybot.sense.MemoryPick.Spot o = far.get(0);
+        int[] me = Jobs.here(p);
+        int[] t = {o.x(), o.y(), o.z()};
+        j.kFarTrips++;
+        j.kFarId = o.id();
+        j.kFarText = io.github.mojolowjo.entropybot.sense.MemoryPick.text(o, me);
+        j.knownTried.add(BlockPos.asLong(t[0], t[1], t[2]));
+        j.kTarget = t;
+        j.kVein = new ArrayList<>(List.of(new Pos(t[0], t[1], t[2])));   // the rest of the vein shows in the index once loaded
+        Seq.Step w = Seq.Step.walk(t.clone(), true);
+        w.optional = true;
+        // 0.34.2 (lead's live check: the walk went on at a removed spot after its chunk loaded): checked every half second
+        // of the walk; gone ends the walk, knownStep drops it (no trip) and picks the next
+        w.watch = farWatch(o.id(), t);
+        LOG.info("[entropybot] mine: none in view or in the index - {} (Baritone's memory), walking there ({}/{})", j.kFarText, j.kFarTrips, FAR_TRIPS);
+        s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - " + j.kFarText + ", walking there");
+        spliceHere(s, List.of(w));
+        return true;
+    }
+
+    /** 0.34.2: the walk watch for a remembered target (null id: none). */
+    private static java.util.function.BooleanSupplier farWatch(String id, int[] t) {
+        if (id == null) return null;
+        return () -> {
+            net.minecraft.client.multiplayer.ClientLevel lv = net.minecraft.client.Minecraft.getInstance().level;
+            return lv != null && io.github.mojolowjo.entropybot.sense.BaritoneMemory.check(lv).at(id, t[0], t[1], t[2])
+                    == io.github.mojolowjo.entropybot.sense.MemoryPick.Live.LOADED_GONE;
+        };
+    }
+
+    /**
+     * 0.34.2 (lead's live check: every walk ended in a hollow 6 below the ores; walks never place): a paper plan with
+     * placing to the cell above the ore, reported (log + whisper) as the next step; the mine goes on to the next target.
+     */
+    private void farPlan(LocalPlayer p, int[] t, int[] me) {
+        try {
+            String to = t[0] + " " + (t[1] + 1) + " " + t[2];
+            String s = PaperPlan.INSTANCE.start(commands, p, to, "place", r -> {
+                LOG.info("[entropybot] mine: the remembered ore at {} was out of reach from {}: {}", Jobs.fmt(t), Jobs.fmt(me), r);
+                commands.whisper(commands.owner(), "ore at " + Jobs.fmt(t) + " out of reach on foot: " + r);
+            });
+            if (s != null && (s.startsWith("busy") || s.startsWith("error"))) {
+                // 0.34.3 (review): no plan started, so no whisper will follow - say so now and go on
+                LOG.info("[entropybot] mine: ended {} below the remembered ore at {} - no placing plan ({}), going on", t[1] - me[1], Jobs.fmt(t), s);
+                commands.whisper(commands.owner(), "ore at " + Jobs.fmt(t) + " out of reach on foot; no placing plan (" + s + ") - next: plan path " + to + " place");
+                return;
+            }
+            LOG.info("[entropybot] mine: ended {} below the remembered ore at {} - plan path {} place: {}", t[1] - me[1], Jobs.fmt(t), to, s);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] mine: the placing plan to {} failed to start: {}", Jobs.fmt(t), e.toString());
+        }
     }
 
     /** The end line of a mine whose index had nothing (never "ran out of ore in view" then). */
@@ -402,7 +496,17 @@ final class Mining {
             String failed = j.kFailed;
             j.kTarget = null;
             j.kFailed = null;
+            if (j.kFarId != null && io.github.mojolowjo.entropybot.sense.BaritoneMemory.check(p.level()).at(j.kFarId, t[0], t[1], t[2])
+                    == io.github.mojolowjo.entropybot.sense.MemoryPick.Live.LOADED_GONE) {
+                // 0.34.0: the remembered ore is gone now that its chunk is loaded: dropped, no try spent
+                LOG.info("[entropybot] mine: Baritone remembered {} at {}, it's gone now (chunk loaded) - dropped", j.kFarId, Jobs.fmt(t));
+                j.kFarId = null;
+                j.kWalks = 0;
+                if (j.kFarTrips > 0) j.kFarTrips--;          // 0.34.1: a spot found gone costs no trip
+                return "wait";
+            }
             if (failed == null && Jobs.distSq(me, t) <= 20) {
+                j.kFarId = null;
                 j.kWalks = 0;
                 return knownClear(s, j, t);
             }
@@ -412,16 +516,20 @@ final class Mining {
                 j.kTarget = t;
                 Seq.Step w = Seq.Step.walk(t.clone(), true);
                 w.optional = true;
+                w.watch = farWatch(j.kFarId, t);              // 0.34.2: every leg of a remembered target is watched
                 LOG.info("[entropybot] mine: the walk to the known {} at {} ended short at {}{} - walking again ({}/2)", sid(j), Jobs.fmt(t), Jobs.fmt(me),
                         failed != null ? " (" + failed + ")" : "", j.kWalks);
                 spliceHere(s, List.of(w));
                 return "wait";
             }
             j.kWalks = 0;
+            if (j.kFarId != null && me[1] < t[1] - 2) farPlan(p, t, me);   // 0.34.2: below a remembered ore: what placing would do
+            j.kFarId = null;
             return knownMiss(s, p, j, t, failed != null ? failed : "the walk ended at " + Jobs.fmt(me) + ", out of reach");
         }
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> hits = knownHits(p, j, 64);
         if (hits.isEmpty()) {
+            if (farOreWalk(s, p, j)) return "wait";          // 0.34.0: Baritone remembers one further out
             if (j.kTries > 0 || j.kKnown > 0) {
                 int left = knownCount(p, fam);
                 String veins = j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + " mined" + (j.kDug > 0 ? " (dug to " + j.kDug + " of them)" : "") + (j.kBlocks.isEmpty() ? "" : " (" + blocksText(j) + ")");
@@ -542,6 +650,7 @@ final class Mining {
         }
         if (Jobs.distSq(me, t) <= 16) return knownClear(s, j, t);
         j.kTarget = t;
+        j.kFarId = null;
         Seq.Step w = Seq.Step.walk(t.clone(), true);
         w.optional = true;
         s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - walking to known ore at " + Jobs.fmt(t) + " (" + (int) Math.round(Math.sqrt(best.d2())) + " blocks)");
@@ -646,6 +755,9 @@ final class Mining {
         final List<int[]> baseSpots = new java.util.concurrent.CopyOnWriteArrayList<>();
         long gatherAt;
         int gathers, gatherMisses;
+        /** 0.33.1: ticks spent gathering, the gather in progress's start (0: none), the chunk count at the last gather. */
+        long gatherTicks, gatherStart;
+        int chunksAtGather;
         Map<String, Integer> before;
         final Map<String, Integer> took = new LinkedHashMap<>();
     }
@@ -791,6 +903,10 @@ final class Mining {
     /** 0.23.1: after a gather, what came into the bag goes into the run's tally (the report's "took ..."). */
     private String tallyStep(Seq s, LocalPlayer p) {
         ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
+        if (ex != null && ex.gatherStart > 0) {
+            ex.gatherTicks += now() - ex.gatherStart;
+            ex.gatherStart = 0;
+        }
         if (ex == null || ex.before == null) return "next";
         Map<String, Integer> now = Gui.inventory(p);
         for (Map.Entry<String, Integer> e : now.entrySet()) {
@@ -900,6 +1016,13 @@ final class Mining {
     private String exploreStep(Seq s, LocalPlayer p) {
         ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
         if (ex == null) return "the explore run is gone";
+        // review 0.33.2: a gather that ended without its tally step (failed, skipped) is closed here, never left open
+        if (ex.gatherStart > 0) {
+            LOG.info("[entropybot] explore: gather {} ended without its tally ({} ticks)", ex.gathers, now() - ex.gatherStart);
+            ex.gatherTicks += now() - ex.gatherStart;
+            ex.gatherStart = 0;
+            ex.before = null;
+        }
         IBaritone b = Jobs.baritone();
         int[] me = Jobs.here(p);
         String d = dim();
@@ -949,7 +1072,9 @@ final class Mining {
             }
         }
         // 0.23.1 (VOCABULARY 6b): outside the areas, off any base, take what keeps it going: a tree, an exposed ore vein
-        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY && !commands.inAreas(d, me[0], me[2])) {
+        // 0.33.1: only as a side effect of the walk (ExploreRules.gatherAllowed), so a short explore still walks
+        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY && !commands.inAreas(d, me[0], me[2])
+                && ExploreRules.gatherAllowed(now() - ex.start, ex.until - now(), ex.gatherTicks, ex.chunks, ex.chunksAtGather)) {
             ex.gatherAt = now();
             try {
                 if (!io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(baseScan(p))) {
@@ -958,6 +1083,9 @@ final class Mining {
                         if (b != null) Jobs.cancel(b);
                         ex.target = null;
                         ex.gathers++;
+                        ex.chunksAtGather = ex.chunks;
+                        ex.gatherStart = now();
+                        LOG.info("[entropybot] explore: gather {} after {} chunks ({} of {} ticks spent gathering)", ex.gathers, ex.chunks, ex.gatherTicks, now() - ex.start);
                         ex.before = Gui.inventory(p);
                         add = new ArrayList<>(add);
                         add.add(new Seq.Step("exploretally"));
@@ -1509,6 +1637,13 @@ final class Mining {
         /** 0.28.0 phase "known": positions tried, the walk to the next vein, its cells, the clear spliced, veins done, the index's none-reason. */
         final Set<Long> knownTried = new HashSet<>();
         int[] kTarget;
+        /** 0.34.0: kTarget came from Baritone's memory (this block id); trips made. */
+        String kFarId;
+        int kFarTrips;
+        String kFarText;
+        /** 0.34.1: this job's one recall of Baritone's memory (nearest first), or null before it. */
+        List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> kFarCache;
+        int kFarRecalls;
         String kFailed;
         int kTries, kKnown, kWalks;
         boolean familyWord, kDigging;

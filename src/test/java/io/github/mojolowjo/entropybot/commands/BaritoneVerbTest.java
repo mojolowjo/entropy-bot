@@ -27,6 +27,16 @@ class BaritoneVerbTest {
     }
 
     @Test
+    void rawMineRefused() {
+        List<String> ran = new ArrayList<>();
+        assertEquals(BaritoneVerb.RAW_MINE, BaritoneVerb.reply("mine diamond_ore", true, "o", t -> ran.add(t)));
+        assertEquals(BaritoneVerb.RAW_MINE, BaritoneVerb.reply("#MINE 64 iron_ore", true, "o", t -> ran.add(t)));
+        assertTrue(ran.isEmpty());
+        BaritoneVerb.reply("minewalk", true, "o", t -> ran.add(t));
+        assertEquals(List.of("minewalk"), ran, "only the mine command itself");
+    }
+
+    @Test
     void usageAndThePrefix() {
         assertEquals(BaritoneVerb.USAGE, BaritoneVerb.reply("  ", true, "o", t -> true));
         assertEquals(BaritoneVerb.USAGE, BaritoneVerb.reply(null, true, "o", t -> true));

@@ -68,6 +68,8 @@ public final class Jobs {
         int[] doorFinal;
         /** 0.32.2 (P2): stuck under ground: the walked trail back in hops (retraceFinal: the real goal after them). */
         boolean retraceTried;
+        /** 0.33.1: an owner/operator "goto x z" (not a chain, a reflex or a leg): only these get the ended-short check. */
+        boolean xzOrder;
         /** 0.33.0 (A1): the paper escape (walk plan, then digging plan) was started for this walk: no staircase or dig-out after it. */
         boolean paperEscape;
         java.util.ArrayDeque<int[]> retraceHops;
@@ -1154,6 +1156,12 @@ public final class Jobs {
         return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))} : null;
     }
 
+    /** 0.33.1: "goto x z" (no y): {x, z}, else null. */
+    static int[] travelXZ(Job j) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^goto (-?\\d+) (-?\\d+)$").matcher(j.goal == null ? "" : j.goal);
+        return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))} : null;
+    }
+
     static String noPathResult(Player p, Job j) {
         int[] d = travelDest(j), me = here(p);
         String text = "error: no path to " + (d != null ? fmt(d) : String.valueOf(j.goal).replaceFirst("^goto ", "")) + " - stuck at " + fmt(me);
@@ -1366,6 +1374,16 @@ public final class Jobs {
                     }
                 }
                 finish(WalkEnd.shortResult(me, d) + (j.doorFinal != null ? " (via the door of the house too)" : "") + " - next: goto a spot next to it, or come get me");
+                return;
+            }
+            // 0.33.1 (live: "goto x z" from a sealed pocket under ground ended "ok: arrived near" where it started): a
+            // two-number goal has no dest, so the end checks x z alone; short under ground: trail back, then the paper plans
+            int[] xz = d == null && j.xzOrder && j.retraceFinal == null && !j.reflex && !moving ? travelXZ(j) : null;
+            if (xz != null && !WalkEnd.arrivedXZ(me, xz)) {
+                if (startRetrace(p, j, b, "ended short")) return;
+                j.retraceTried = true;
+                if (j.paperEscape || paperAfterRetrace(p, j)) { finish(paperEscapeEnd(p)); return; }
+                finish(WalkEnd.shortResultXZ(me, xz) + " - next: goto a spot next to it, or come get me");
                 return;
             }
             if (j.retraceFinal != null) {                 // 0.32.2: at a trail hop: the next one, else the real goal
@@ -1626,8 +1644,15 @@ public final class Jobs {
     static boolean underGround(LocalPlayer p) {
         int[] me = here(p);
         net.minecraft.world.level.Level lv = p.level();
-        int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
-        return top - me[1] > 3 && !lv.canSeeSky(p.blockPosition().above());
+        // 0.34.2 (lead's live check: "sealed under ground" while the dig-out check said underground false, surface 67):
+        // the dig-out check's own rule - the surface without leaves (a canopy is no roof), sky or open above
+        return underDepth(lv, me[0], me[1], me[2]) > 0;
+    }
+
+    /** 0.34.3: the shared under-ground rule at a cell (RestoreRules.underDepth over the leaf-free surface): depth or 0. */
+    public static int underDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        int surface = surfaceNoLeaves(lv, x, z);
+        return RestoreRules.underDepth(lv.canSeeSky(new BlockPos(x, y + 1, z)), surface, y);
     }
 
     /**
@@ -1660,8 +1685,7 @@ public final class Jobs {
             int[] me = here(p), d = travelDest(j);
             if (d == null) return false;
             net.minecraft.world.level.Level lv = p.level();
-            int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, me[0], me[2]);
-            if (top - me[1] <= 3 || lv.canSeeSky(p.blockPosition().above())) return false;
+            if (underDepth(lv, me[0], me[1], me[2]) == 0) return false;      // 0.34.3: the shared rule
             j.retraceTried = true;
             java.util.List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(Guard.dimOf(lv), me[0], me[1], me[2], 8, 8, 400);
             if (hops.isEmpty()) {
@@ -2302,7 +2326,28 @@ public final class Jobs {
                 }
             }
         }
-        return best != null ? "found " + best + " dist " + Math.round(Math.sqrt(bestDist)) : "none within " + radius;
+        if (best != null) return "found " + best + " dist " + Math.round(Math.sqrt(bestDist));
+        return findFar(p, needle, radius);
+    }
+
+    /**
+     * 0.34.0: nothing within the radius - Baritone's live scanner (loaded chunks), then its chunk cache (our build
+     * remembers logs and ores besides chests and the like), then the mod's ore notes. The reply says which one answered.
+     */
+    static String findFar(LocalPlayer p, String needle, int radius) {
+        java.util.List<String> all = new java.util.ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) all.add(k.toString());
+        java.util.List<String> ids = io.github.mojolowjo.entropybot.sense.MemoryPick.ids(needle, all, 16);   // 0.34.1: exact ids first
+        if (ids.isEmpty()) return "none within " + radius;
+        int[] me = here(p);
+        java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> live = io.github.mojolowjo.entropybot.sense.BaritoneMemory.live(p, ids, 8, 8);
+        io.github.mojolowjo.entropybot.sense.MemoryPick.Result lr = io.github.mojolowjo.entropybot.sense.MemoryPick.pick(live, me, null, null, 1);
+        if (!lr.kept().isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(lr.kept().get(0), me) + " (loaded chunks)";
+        java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> rem = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, null, 1, "find");
+        if (!rem.isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(rem.get(0), me) + " (Baritone's memory)";
+        String idx = Mining.get().findNearest(p, needle);
+        if (idx != null && idx.startsWith("nearest ")) return idx + " (my notes)";
+        return "none within " + radius + ", in loaded chunks or remembered";
     }
 
     /** Right-clicks the block at "x y z" (within reach). */
