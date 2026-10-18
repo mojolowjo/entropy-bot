@@ -84,25 +84,49 @@ public final class ClimbPlan {
      * above: an empty plan and no error ("not in a hole").
      */
     public static Plan plan(Cells c, int x, int y, int z, int surfaceY, boolean hasPickaxe) {
-        int up = StairPlan.upCount(y, surfaceY);
-        if (up <= 0) return new Plan(List.of(), null, 0, 0, null);
+        return plan(c, (fx, fy, fz) -> false, x, y, z, surfaceY, hasPickaxe);
+    }
+
+    /** A cell holding a fluid (water, lava; flowing too). Cells calls these BLOCKED, which a floor check can't tell from stone. */
+    public interface Fluid { boolean at(int x, int y, int z); }
+
+    /**
+     * 0.36.a2 (aa367-369: "no way up ... a gap under step 1/2" three times in a flooded cave, while an open staircase
+     * stood 4 blocks away one higher): a cave has open floors and water on most sides of the bot, and the start search
+     * only looked one block around at the same height. Starts now come from {@link #START_R} around and one up or down
+     * (standable: feet and head open, a floor that is neither open nor fluid), cost = blocks to dig + blocks to walk.
+     * A fluid floor under a step or a start is refused like a gap (it was let through as "not open" before).
+     */
+    public static final int START_R = 4;
+
+    public static Plan plan(Cells c, Fluid fluid, int x, int y, int z, int surfaceY, boolean hasPickaxe) {
+        int up0 = StairPlan.upCount(y, surfaceY);
+        if (up0 <= 0) return new Plan(List.of(), null, 0, 0, null);
         String[] names = {"north", "south", "east", "west"};
         int bestK = -1, bestDig = Integer.MAX_VALUE;
         int[] bestStart = null;
         String firstWhy = null;
-        for (int sx = -1; sx <= 1; sx++) for (int sz = -1; sz <= 1; sz++) {
+        for (int sy : new int[]{y, y + 1, y - 1})
+        for (int r = 0; r <= START_R; r++)
+        for (int sx = -r; sx <= r; sx++) for (int sz = -r; sz <= r; sz++) {
+            if (Math.max(Math.abs(sx), Math.abs(sz)) != r) continue;   // ring by ring: nearer starts first on a tie
             int ox = x + sx, oz = z + sz;
-            boolean here = sx == 0 && sz == 0;
-            if (!here && !(c.at(ox, y, oz) == Kind.OPEN && c.at(ox, y + 1, oz) == Kind.OPEN && c.at(ox, y - 1, oz) != Kind.OPEN)) continue;
-            int move = here ? 0 : 1;
+            boolean here = sx == 0 && sz == 0 && sy == y;
+            if (!here && !(c.at(ox, sy, oz) == Kind.OPEN && c.at(ox, sy + 1, oz) == Kind.OPEN
+                    && c.at(ox, sy - 1, oz) != Kind.OPEN && !fluid.at(ox, sy - 1, oz))) continue;
+            int up = StairPlan.upCount(sy, surfaceY);
+            if (up <= 0) continue;
+            int move = Math.abs(sx) + Math.abs(sz) + Math.abs(sy - y);
             for (int k = 0; k < names.length; k++) {
                 int[] d = StairPlan.dir(names[k]);
                 int dig = 0;
                 String why = null;
                 for (int i = 1; i <= up && why == null; i++) {
-                    // the floor under each new step must hold (an open one is a gap that would need a block)
-                    if (c.at(ox + d[0] * i, y + i - 1, oz + d[1] * i) == Kind.OPEN) why = "a gap under step " + i;
-                    for (int[] cell : stepCells(ox, y, oz, d[0], d[1], i)) {
+                    // the floor under each new step must hold (an open one is a gap that would need a block; water too)
+                    int fx = ox + d[0] * i, fy = sy + i - 1, fz = oz + d[1] * i;
+                    if (c.at(fx, fy, fz) == Kind.OPEN) why = "a gap under step " + i;
+                    else if (fluid.at(fx, fy, fz)) why = "water or lava under step " + i;
+                    for (int[] cell : stepCells(ox, sy, oz, d[0], d[1], i)) {
                         Kind kk = c.at(cell[0], cell[1], cell[2]);
                         if (kk == Kind.BLOCKED) { why = "a block I may not break at " + cell[0] + " " + cell[1] + " " + cell[2]; break; }
                         if (kk == Kind.DIG) dig++;
@@ -112,26 +136,28 @@ public final class ClimbPlan {
                     if (firstWhy == null && here) firstWhy = names[k] + ": " + why;
                     continue;
                 }
-                if (dig + move < bestDig) { bestK = k; bestDig = dig + move; bestStart = new int[]{ox, y, oz, move}; }
+                if (dig + move < bestDig) { bestK = k; bestDig = dig + move; bestStart = new int[]{ox, sy, oz, move}; }
             }
         }
-        if (bestK < 0) return new Plan(List.of(), null, up, 0, "error: no way up from " + x + " " + y + " " + z + " ("
-                + (firstWhy == null ? "every side is blocked" : firstWhy) + ") - next: dig stairs up <dir> <n> another way, or ask the owner");
+        if (bestK < 0) return new Plan(List.of(), null, up0, 0, "error: no way up from " + x + " " + y + " " + z + " ("
+                + (firstWhy == null ? "every side is blocked" : firstWhy) + "; no other start within " + START_R
+                + " blocks either) - next: dig stairs up <dir> <n> another way, or ask the owner");
         int digN = bestDig - bestStart[3];
+        int sy = bestStart[1], up = StairPlan.upCount(sy, surfaceY);
         if (digN > 0 && !hasPickaxe) return new Plan(List.of(), names[bestK], up, digN,
                 "error: climbing " + up + " up needs " + digN + " blocks dug and I have no pickaxe - next: craft wooden_pickaxe 1, then climb");
         int[] d = StairPlan.dir(names[bestK]);
         int ox = bestStart[0], oz = bestStart[2];
         List<String> steps = new ArrayList<>();
-        if (bestStart[3] > 0) steps.add("goto " + ox + " " + y + " " + oz);
-        List<String> all = StairPlan.upSteps(ox, y, oz, d[0], d[1], up);
+        if (bestStart[3] > 0) steps.add("goto " + ox + " " + sy + " " + oz);
+        List<String> all = StairPlan.upSteps(ox, sy, oz, d[0], d[1], up);
         for (int i = 1; i <= up; i++) {
             boolean anyDig = false;
-            for (int[] cell : stepCells(ox, y, oz, d[0], d[1], i)) if (c.at(cell[0], cell[1], cell[2]) == Kind.DIG) anyDig = true;
+            for (int[] cell : stepCells(ox, sy, oz, d[0], d[1], i)) if (c.at(cell[0], cell[1], cell[2]) == Kind.DIG) anyDig = true;
             if (anyDig) steps.add(all.get(2 * (i - 1)));
             steps.add(all.get(2 * (i - 1) + 1));
         }
-        return new Plan(steps, names[bestK], up, digN, null, new int[]{ox + d[0] * up, y + up, oz + d[1] * up});
+        return new Plan(steps, names[bestK], up, digN, null, new int[]{ox + d[0] * up, sy + up, oz + d[1] * up});
     }
     /** 0.28.2 (D): a cell that is one of my own blocks (the restore/build ledger, my shelter) or inside my main area. */
     public interface Own { boolean at(int x, int y, int z); }
