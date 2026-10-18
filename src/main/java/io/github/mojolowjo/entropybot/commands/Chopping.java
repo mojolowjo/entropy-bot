@@ -130,6 +130,7 @@ final class Chopping {
         int[] trunk;
         String trunkId, trunkSig;
         int chopsTotal, reachFails;
+        int farTrips;           // 0.34.0: walks to trees Baritone remembers
         String nearestReachable;
         boolean treeChop;
     }
@@ -245,6 +246,8 @@ final class Chopping {
         }
         TreeFinder.Tree t = nextTree(r, p, w);
         if (t == null) {
+            String far = farTree(s, r, p);
+            if (far != null) return far;
             String none = r.trees == 0 ? "no trees in my areas" + (r.looked > 0 ? " (" + r.looked + " log columns looked at" + (r.firstWhy != null ? "; " + r.firstWhy : "") + ")"
                     : r.nearestOutside != null ? " (nearest log at " + r.nearestOutside + " is outside; " + coverOutside(r.nearestOutside, p) + ")" : "")
                     : "no more trees in my areas";
@@ -267,6 +270,48 @@ final class Chopping {
         add.add(Seq.Step.walk(t.base().clone(), true));
         add.addAll(breakSteps(r, TreeFinder.lowest(t.logs())));
         spliceHere(s, add);
+        return "wait";
+    }
+
+    /** 0.34.0: at most this many walks to remembered trees per run. */
+    static final int FAR_TRIPS = 3;
+
+    /**
+     * 0.34.0: no tree in the live scan - ask Baritone's chunk cache (our build remembers logs) for the nearest log in my
+     * areas beyond what the scan saw, walk there and look again. A remembered log whose chunk is loaded and gone is
+     * dropped (BaritoneMemory logs it). Null: nothing remembered (the run ends as before).
+     */
+    private String farTree(Seq s, Run r, LocalPlayer p) {
+        if (r.farTrips >= FAR_TRIPS) return null;
+        int[] me = Jobs.here(p);
+        String dim = Storage.dim();
+        List<String> ids = new ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) {
+            String id = k.toString(), path = k.getPath();
+            if (path.endsWith("_log") && !path.startsWith("stripped_") && ChopRules.matches(r.args.type(), id)) ids.add(id);
+        }
+        int near = ChopRules.RADIUS - 4;
+        List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> got = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) -> {
+            if (r.tried.contains("far " + x + " " + z)) return false;
+            if (!commands.inAreas(dim, x, z) || jobs.goalAllowed(x, y, z) != null) return false;
+            long dx = x - me[0], dz = z - me[2];
+            return dx * dx + dz * dz > (long) near * near || !p.level().isLoaded(new BlockPos(x, y, z));
+        }, 64, "chop");
+        if (got.isEmpty()) return null;
+        // the nearest remembered log may be high up the trunk: walk to the lowest one of that column
+        io.github.mojolowjo.entropybot.sense.MemoryPick.Spot t = got.get(0);
+        for (io.github.mojolowjo.entropybot.sense.MemoryPick.Spot o : got)
+            if (o.x() == t.x() && o.z() == t.z() && o.y() < t.y()) t = o;
+        // the trip spends the column (any log of that tree is the same trip)
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) r.tried.add("far " + (t.x() + dx) + " " + (t.z() + dz));
+        r.farTrips++;
+        String text = io.github.mojolowjo.entropybot.sense.MemoryPick.text(t, me);
+        if (r.notes.stream().noneMatch(n -> n.startsWith("remembered "))) r.notes.add(text);
+        LOG.info("[entropybot] chop: no tree in view - {} (Baritone's memory), walking there ({}/{})", text, r.farTrips, FAR_TRIPS);
+        s.setStatus(s.label + " - " + text + ", walking there");
+        Seq.Step w = Seq.Step.walk(new int[]{t.x(), t.y(), t.z()}, true);
+        w.key = "chopfar";              // a failed walk goes on to the next scan (caught), not the end of the run
+        spliceHere(s, new ArrayList<>(List.of(w)));
         return "wait";
     }
 
@@ -686,6 +731,14 @@ final class Chopping {
     static boolean caught(Seq s, String why, LocalPlayer p) {
         Chopping c = instance;
         if (c == null || !c.runs.containsKey(s)) return false;
+        if (s.idx < s.steps.size() && "chopfar".equals(s.steps.get(s.idx).key)) {
+            // 0.34.0 live: the walk to a remembered tree ended short (7 blocks off, on the slope): look from here
+            LOG.info("[entropybot] chop: the walk to the remembered tree ended short ({}) - looking from {}", why, p == null ? "?" : Jobs.fmt(Jobs.here(p)));
+            s.idx++;
+            s.stepStart = c.now();
+            s.stage = null;
+            return true;
+        }
         int j = ChopRules.axeCheckAfter(s.steps.stream().map(x -> x.type).toList(), s.idx);
         if (j < 0) return false;
         Seq.Step check = s.steps.get(j);

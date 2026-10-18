@@ -2320,7 +2320,30 @@ public final class Jobs {
                 }
             }
         }
-        return best != null ? "found " + best + " dist " + Math.round(Math.sqrt(bestDist)) : "none within " + radius;
+        if (best != null) return "found " + best + " dist " + Math.round(Math.sqrt(bestDist));
+        return findFar(p, needle, radius);
+    }
+
+    /**
+     * 0.34.0: nothing within the radius - Baritone's live scanner (loaded chunks), then its chunk cache (our build
+     * remembers logs and ores besides chests and the like), then the mod's ore notes. The reply says which one answered.
+     */
+    static String findFar(LocalPlayer p, String needle, int radius) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) {
+            if (k.getPath().contains(needle) && !k.getPath().endsWith("air")) ids.add(k.toString());
+            if (ids.size() >= 16) break;
+        }
+        if (ids.isEmpty()) return "none within " + radius;
+        int[] me = here(p);
+        java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> live = io.github.mojolowjo.entropybot.sense.BaritoneMemory.live(p, ids, 8, 8);
+        io.github.mojolowjo.entropybot.sense.MemoryPick.Result lr = io.github.mojolowjo.entropybot.sense.MemoryPick.pick(live, me, null, null, 1);
+        if (!lr.kept().isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(lr.kept().get(0), me) + " (loaded chunks)";
+        java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> rem = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, null, 1, "find");
+        if (!rem.isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(rem.get(0), me) + " (Baritone's memory)";
+        String idx = Mining.get().findNearest(p, needle);
+        if (idx != null && idx.startsWith("nearest ")) return idx + " (my notes)";
+        return "none within " + radius + ", in loaded chunks or remembered";
     }
 
     /** Right-clicks the block at "x y z" (within reach). */
