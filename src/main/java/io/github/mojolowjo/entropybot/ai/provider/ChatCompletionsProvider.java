@@ -39,6 +39,12 @@ public final class ChatCompletionsProvider implements Provider {
     private volatile Runnable onRetry = () -> {};
 
     private String reasoning = "off";
+    /** 0.35.4 review: models that refused the reasoning field (400) this session: sent without it. */
+    static final java.util.Set<String> NO_REASONING = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile java.util.function.Consumer<String> onNote = s -> {};
+
+    /** 0.35.4: notes for ai.log (a field dropped after a 400). */
+    public ChatCompletionsProvider onNote(java.util.function.Consumer<String> n) { onNote = n == null ? s -> {} : n; return this; }
 
     /** 0.35.2: off | low | on. */
     public ChatCompletionsProvider reasoning(String r) { reasoning = r == null ? "off" : r; return this; }
@@ -113,7 +119,8 @@ public final class ChatCompletionsProvider implements Provider {
         o.addProperty("stream", false);
         // 0.35.2: reasoning, the OpenRouter way (reasoning: {enabled:false} | {effort:"low"} | {enabled:true}); an
         // OpenAI-compatible service gets reasoning_effort only for low (off/on: its default); local servers get nothing
-        if (kind.equals("openrouter")) {
+        boolean sendReasoning = !NO_REASONING.contains(kind + " " + model);
+        if (kind.equals("openrouter") && sendReasoning) {
             JsonObject rs = new JsonObject();
             switch (reasoning) {
                 case "low" -> rs.addProperty("effort", "low");
@@ -121,7 +128,7 @@ public final class ChatCompletionsProvider implements Provider {
                 default -> rs.addProperty("enabled", false);
             }
             o.add("reasoning", rs);
-        } else if (kind.equals("openai") && reasoning.equals("low")) o.addProperty("reasoning_effort", "low");
+        } else if (kind.equals("openai") && sendReasoning && reasoning.equals("low")) o.addProperty("reasoning_effort", "low");
         if (kind.equals("openrouter")) {
             JsonObject u = new JsonObject();
             u.addProperty("include", true);
@@ -145,6 +152,7 @@ public final class ChatCompletionsProvider implements Provider {
     public Completion complete(Request r) throws ProviderException {
         String url = base + "/chat/completions";
         String body = body(r);
+        boolean droppedReasoning = false;
         long t0 = System.currentTimeMillis();
         ProviderException last = null;
         for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
@@ -171,6 +179,17 @@ public final class ChatCompletionsProvider implements Provider {
             if (st == 429 || st >= 500) {
                 last = new Retryable(st == 429 ? ProviderException.Kind.RATE : ProviderException.Kind.SERVER, st,
                         (st == 429 ? "rate limited" : "the service failed") + (why.isEmpty() ? "" : ": " + why), retryAfter(resp.headers()));
+                continue;
+            }
+            // 0.35.4 review: a model that can't take the reasoning field answers 400: once more without it, remembered for the session
+            if (st == 400 && !droppedReasoning && why.toLowerCase(Locale.ROOT).contains("reason") && (body.contains("\"reasoning\"") || body.contains("\"reasoning_effort\""))) {
+                droppedReasoning = true;
+                NO_REASONING.add(kind + " " + model);
+                body = body(r);
+                onNote.accept(model + " refused the reasoning setting (400: " + why + "); sent again without it for this session");
+                onRetry.run();                         // another post: one more request for the caps
+                attempt--;
+                last = null;
                 continue;
             }
             throw new ProviderException(kindOf(st), st, explain(st) + (why.isEmpty() ? "" : " (" + why + ")"));

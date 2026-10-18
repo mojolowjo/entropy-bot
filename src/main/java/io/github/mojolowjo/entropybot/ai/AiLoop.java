@@ -60,7 +60,11 @@ public final class AiLoop {
     private int goalThinks;
     private java.util.Map<String, Integer> goalStartInv, lastInv;
     private final java.util.Map<String, Integer> goalLines = new java.util.HashMap<>();
-    private static final java.util.regex.Pattern ASKS_TO_SAY = java.util.regex.Pattern.compile("(?i)\\b(say|tell|chat|greet|announce|ask|talk|reply|answer|message)\\b");
+    private final java.util.Map<String, String> goalReplies = new java.util.HashMap<>();
+    private static final java.util.regex.Pattern ASKS_TO_SAY = java.util.regex.Pattern.compile("(?i)\\bchat\\b|\\b(?:say|tell|announce|greet)\\s+(?:to\\s+)?(?!me\\b|us\\b|the owner\\b)\\S+");
+    /** 0.35.4 review: read-only verbs are never a "repeat". */
+    static final Set<String> READ_ONLY = Set.of("status", "inv", "look", "why", "check", "have", "help", "where", "stock", "places", "kinds", "needs",
+            "recipe", "supplies", "summary", "deaths", "goals", "actions", "night");
     private int failureStreak, waitStreak, sameCount, lastStatus;
     private final Deque<PromptBuilder.Turn> history = new ArrayDeque<>();
     private final Deque<Long> minute = new ArrayDeque<>();
@@ -324,10 +328,12 @@ public final class AiLoop {
                     return null;
                 }
                 // 0.35.3: a stronger loop guard: twice in a row, or 3 times in one request, ends the request
+                // 0.35.4 review: only a repeat whose result did not change counts (same command AND same reply); read-only verbs never
                 String key = v.line().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
-                int times = goalLines.merge(key, 1, Integer::sum);
-                if (v.line().equalsIgnoreCase(lastCmd) || times >= SAME_LIMIT) {
-                    endGoal("the model repeated \"" + PromptBuilder.cut(v.line(), 60) + "\"" + (v.line().equalsIgnoreCase(lastCmd) ? " twice in a row" : " " + times + " times"), now);
+                int same = goalLines.getOrDefault(key, 0);
+                boolean inRow = v.line().equalsIgnoreCase(lastCmd);
+                if (!readOnly(v.line()) && ((inRow && same >= 2) || same >= SAME_LIMIT)) {
+                    endGoal("the model repeated \"" + PromptBuilder.cut(v.line(), 60) + "\" and nothing changed" + (inRow ? " (in a row)" : " (" + same + " times)"), now);
                     return null;
                 }
                 if (v.line().equalsIgnoreCase(lastCmd) && sameCount >= SAME_LIMIT - 1) {
@@ -352,15 +358,30 @@ public final class AiLoop {
         }
     }
 
+    private static boolean isVerb(String word, String name) {
+        io.github.mojolowjo.entropybot.commands.VerbTable.Verb v = io.github.mojolowjo.entropybot.commands.VerbTable.of(word);
+        return (v == null ? word : v.name()).equals(name);
+    }
+
+    static boolean readOnly(String line) {
+        for (String st : io.github.mojolowjo.entropybot.commands.Texts.splitChain(line)) {
+            String w = io.github.mojolowjo.entropybot.commands.Texts.verbAndRest(st)[0];
+            io.github.mojolowjo.entropybot.commands.VerbTable.Verb v = io.github.mojolowjo.entropybot.commands.VerbTable.of(w);
+            if (!READ_ONLY.contains(v == null ? w : v.name())) return false;
+        }
+        return true;
+    }
+
     private static boolean saysSomething(String line) {
         for (String st : io.github.mojolowjo.entropybot.commands.Texts.splitChain(line))
-            if (io.github.mojolowjo.entropybot.commands.Texts.verbAndRest(st)[0].equals("say")) return true;
+            if (isVerb(io.github.mojolowjo.entropybot.commands.Texts.verbAndRest(st)[0], "say")) return true;
         return false;
     }
 
     private void newGoal() {
         goalThinks = 0;
         goalLines.clear();
+        goalReplies.clear();
         goalStartInv = lastInv == null ? null : new java.util.HashMap<>(lastInv);
         lastCmd = null;
     }
@@ -441,6 +462,10 @@ public final class AiLoop {
         else sameCount = 1;
         prevCmd = command;
         prevReply = r;
+        // 0.35.4: how many runs of this line in this request gave the same reply as the run before (1 = first run or a changed reply)
+        String key = command.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+        String before = goalReplies.put(key, r);
+        goalLines.put(key, before != null && before.equals(r) ? goalLines.getOrDefault(key, 1) + 1 : 1);
         addTurn(command, r);
         lastState = r;
         sink.trial(now, goal, command, r);

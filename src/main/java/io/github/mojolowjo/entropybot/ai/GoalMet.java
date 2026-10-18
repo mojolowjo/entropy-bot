@@ -29,6 +29,20 @@ public final class GoalMet {
         return new Want(Integer.parseInt(m.group(1)), w);
     }
 
+    /**
+     * 0.35.4 review: a kind word (log: every *_log / *_stem, not stripped ones; plank: *_planks; ore: *_ore; wool,
+     * bed, sapling, leaves the same way) or else the exact id ("iron" alone matches nothing: say raw_iron or iron_ingot).
+     */
+    static boolean matches(String id, String word) {
+        switch (word) {
+            case "log" -> { return (id.endsWith("_log") || id.endsWith("_stem")) && !id.startsWith("stripped_"); }
+            case "plank" -> { return id.endsWith("_planks"); }
+            case "ore" -> { return id.endsWith("_ore"); }
+            case "wool", "bed", "sapling", "leaves", "carpet" -> { return id.endsWith("_" + word); }
+            default -> { return id.equals(word) || id.equals(word + "s"); }
+        }
+    }
+
     static int count(Map<String, Integer> inv, String word) {
         int n = 0;
         if (inv == null) return 0;
@@ -36,7 +50,7 @@ public final class GoalMet {
             String id = e.getKey().toLowerCase(Locale.ROOT);
             int c = id.indexOf(':');
             if (c >= 0) id = id.substring(c + 1);
-            if (id.equals(word) || id.endsWith("_" + word) || id.startsWith(word + "_") || id.contains(word)) n += e.getValue();
+            if (matches(id, word)) n += e.getValue();
         }
         return n;
     }
@@ -44,7 +58,7 @@ public final class GoalMet {
     /** The hint for the model when the bag has gained what was asked, else null. */
     public static String hint(String goal, Map<String, Integer> start, Map<String, Integer> now) {
         Want w = parse(goal);
-        if (w == null || now == null) return null;
+        if (w == null || now == null || start == null) return null;      // 0.35.4: no start, no hint
         int gained = count(now, w.word()) - count(start, w.word());
         if (gained < w.n()) return null;
         return "the request looks done (" + w.word() + " +" + gained + " of " + w.n() + "): reply finished unless something is left";

@@ -140,7 +140,7 @@ public final class AiRuntime {
                 provider = Providers.create(settings, keys.key(settings.provider), HTTP);
                 final UsageLedger lg = ledger;
                 if (provider instanceof io.github.mojolowjo.entropybot.ai.provider.ChatCompletionsProvider cp)
-                    cp.onRetry(() -> lg.record(System.currentTimeMillis(), 0, 0, 1));     // 0.35.1: each retry is a request
+                    cp.onRetry(() -> lg.record(System.currentTimeMillis(), 0, 0, 1)).onNote(n -> log.line(System.currentTimeMillis(), scrub(n)));     // 0.35.1: each retry is a request; 0.35.4 notes
             } catch (ProviderException e) {
                 startError = scrub(e.reason());
             }

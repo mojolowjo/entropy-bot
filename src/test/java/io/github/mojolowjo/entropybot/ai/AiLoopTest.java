@@ -213,22 +213,43 @@ class AiLoopTest {
     }
 
     @Test
-    void sameCommandTwiceInARowEndsTheRequest() {
+    void sameCommandAndSameReplyInARowEndsTheRequest() {
         loop.ownerRequest("x", now);
-        poll(IDLE);
-        assertEquals("status", loop.onCompletion(said("status"), now));
-        loop.onCommandResult("status", "RESULT status: same", false, now);
+        for (int i = 0; i < 2; i++) {
+            now += s.minGapMs;
+            poll(IDLE);
+            assertEquals("cut 3", loop.onCompletion(said("cut 3"), now), "run " + i);
+            loop.onCommandResult("cut 3", "error: no trees", false, now);
+        }
         now += s.minGapMs;
         poll(IDLE);
-        assertNull(loop.onCompletion(said("status"), now), "the second identical one in a row is not run");
-        assertNull(loop.goal(), "0.35.3: the mod ends the request");
-        assertTrue(notices.get(notices.size() - 1).contains("twice in a row"));
+        assertNull(loop.onCompletion(said("cut 3"), now), "the third one with an unchanged result is not run");
+        assertNull(loop.goal(), "the mod ends the request");
+        assertTrue(notices.get(notices.size() - 1).contains("nothing changed"));
+    }
+
+    @Test
+    void aRepeatWithANewResultOrAReadOnlyVerbIsFine() {
+        loop.ownerRequest("x", now);
+        for (int i = 0; i < 4; i++) {
+            now += s.minGapMs;
+            poll(IDLE);
+            assertEquals("cut 3", loop.onCompletion(said("cut 3"), now), "run " + i);
+            loop.onCommandResult("cut 3", "cut: " + i + " logs", false, now);
+        }
+        for (int i = 0; i < 2; i++) {
+            now += s.minGapMs;
+            poll(IDLE);
+            assertEquals("inv", loop.onCompletion(said("inv"), now));
+            loop.onCommandResult("inv", "same bag", false, now);
+        }
+        assertNotNull(loop.goal());
     }
 
     @Test
     void sameLineThreeTimesInARequestEndsIt() {
         loop.ownerRequest("x", now);
-        for (String c : List.of("status", "inv", "status", "inv")) {
+        for (String c : List.of("cut 3", "deposit", "cut 3", "deposit", "cut 3", "deposit")) {
             now += s.minGapMs;
             poll(IDLE);
             String ran = loop.onCompletion(said(c), now);
@@ -236,7 +257,7 @@ class AiLoopTest {
         }
         now += s.minGapMs;
         assertNotNull(poll(IDLE));
-        assertNull(loop.onCompletion(said("status"), now));
+        assertNull(loop.onCompletion(said("cut 3"), now));
         assertTrue(notices.get(notices.size() - 1).contains("3 times"), notices.toString());
     }
 
