@@ -53,6 +53,7 @@ public final class AiLoop {
     private String stopReason, goal, lastState, lastError, trigger, lastCmd, prevCmd, prevReply, cooldownNoticed;
     private boolean want, busyAtSend, nudged, prevBusy, prevDead, autoGoal;
     private long nextAt, lastThinkAt = Long.MIN_VALUE / 2, lastEventAt = Long.MIN_VALUE / 2, sentAt, confirmUntil;
+    private long reserved;
     private int failureStreak, waitStreak, sameCount, lastStatus;
     private final Deque<PromptBuilder.Turn> history = new ArrayDeque<>();
     private final Deque<Long> minute = new ArrayDeque<>();
@@ -207,7 +208,8 @@ public final class AiLoop {
             return null;
         }
         Provider.Request r = prompt.build(goal, notes(), lastState, history, s.maxOutputTokens, s.temperature, Duration.ofSeconds(s.timeoutSeconds()));
-        Budget.Cap cap = budget.refuse(now, PromptBuilder.estimate(r));
+        long est = PromptBuilder.estimate(r);
+        Budget.Cap cap = budget.refuse(now, est);
         if (cap != null) {
             if (cap.hourly() || s.resumeAfterCap) cooldown(cap.reason(), CAP_RETRY_MS, now);
             else stop(cap.reason(), now);
@@ -220,6 +222,8 @@ public final class AiLoop {
         thinks++;
         lastThinkAt = now;
         minute.addLast(now);
+        reserved = est;
+        budget.ledger().record(now, est, 0, 1);          // 0.35.1 review: counted when sent (a timeout or a failure costs too)
         return r;
     }
 
@@ -248,7 +252,7 @@ public final class AiLoop {
         latencyMs += c.millis();
         double cost = budget.cost(c.costUsd(), c.inTokens(), c.outTokens());
         usd += cost;
-        budget.ledger().record(now, c.inTokens() + c.outTokens(), cost);
+        budget.ledger().record(now, c.inTokens() + c.outTokens() - reserved, cost, 0);   // the estimate made exact
         if (!s.paid && !Budget.freeService(s) && cost > 0) {
             stop(String.format(Locale.ROOT, "a paid answer ($%.5f) while paid models are off", cost), now);
             return null;

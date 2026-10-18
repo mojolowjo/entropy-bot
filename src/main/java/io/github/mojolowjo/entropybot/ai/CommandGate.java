@@ -34,6 +34,8 @@ public final class CommandGate {
             "area change", "mine strip reset", "defence players", "defense players");
     /** Words never in the table that must never pass either. */
     public static final Set<String> DENY_NOT_IN_TABLE = Set.of("ai", "recorder", "dashboard", "jar", "launch", "stripmine", "b", "baritone", "run", "reconnect");
+    /** Verbs whose rest is another command line (queued for later): the rest is gated too. */
+    static final Set<String> QUEUES = Set.of("queue", "repeat", "routine", "rule");
     /** ai.json's extraAllow can't open these. */
     public static final Set<String> HARD_DENY = Set.of("ai", "restart", "server", "allow", "deny", "trust", "untrust", "fence mode", "blind",
             "confirm", "defence players", "defense players", "debug");
@@ -109,7 +111,20 @@ public final class CommandGate {
         String name = v == null ? verb : v.name();
         Decision dec = DECISIONS.get(name);
         if (dec == null) return name;                                 // a verb with no decision is denied
+        String canonForm = sub.isEmpty() ? name : name + " " + sub;   // 0.35.1 review: aliases can't dodge the hard set
+        if (HARD_DENY.contains(name)) return name;
+        if (HARD_DENY.contains(canonForm)) return canonForm;
         if (dec == Decision.DENY && !extraAllow.contains(name)) return name;
+        // 0.35.1 review: a queued line is a command too ("queue give ...", "queue then restart"): every word that is a verb is checked
+        if (QUEUES.contains(name) && rest != null && !rest.isBlank()) {
+            List<String> w = List.of(rest.trim().toLowerCase(Locale.ROOT).split("\\s+"));
+            for (int i = 0; i < w.size(); i++) {
+                String t = w.get(i);
+                if (QUEUES.contains(t) || (VerbTable.of(t) == null && !DENY_NOT_IN_TABLE.contains(t) && !HARD_DENY.contains(t))) continue;
+                String inner = denied(t, String.join(" ", w.subList(i + 1, w.size())));
+                if (inner != null) return name + " " + inner;
+            }
+        }
         if (name.equals("mine") && rest != null && rest.trim().toLowerCase(Locale.ROOT).matches("^strip\\s+reset\\b.*")) return extraAllow.contains("mine strip reset") ? null : "mine strip reset";
         String nameForm = sub.isEmpty() ? name : name + " " + sub;
         if (dec == Decision.FORMS && DENIED_FORMS.contains(nameForm) && !extraAllow.contains(nameForm)) return nameForm;

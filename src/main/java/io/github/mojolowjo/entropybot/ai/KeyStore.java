@@ -104,6 +104,9 @@ public final class KeyStore {
             Files.writeString(file, "{}", StandardCharsets.UTF_8);
         }
         tighten(file);                                     // before the key is in it
+        // 0.35.1 review: a key is only written into an owner-only file (removing one is always fine)
+        if (permsNote != null && !k.isEmpty())
+            throw new IOException("the key was not saved: the key file's permissions couldn't be made owner-only (" + permsNote + "); use the environment variable instead");
         Files.writeString(file, o.toString(), StandardCharsets.UTF_8);
         return permsNote;
     }

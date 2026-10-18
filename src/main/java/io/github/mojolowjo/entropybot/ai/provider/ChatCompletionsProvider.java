@@ -35,6 +35,10 @@ public final class ChatCompletionsProvider implements Provider {
     private final Secret key;
     private final HttpTransport http;
     private final Sleeper sleeper;
+    /** 0.35.1: told about every retry post (each one is a request for the caps). */
+    private volatile Runnable onRetry = () -> {};
+
+    public ChatCompletionsProvider onRetry(Runnable r) { onRetry = r == null ? () -> {} : r; return this; }
 
     public ChatCompletionsProvider(String kind, String baseUrl, String model, Secret key, HttpTransport http, Sleeper sleeper) throws ProviderException {
         this.kind = kind;
@@ -74,7 +78,8 @@ public final class ChatCompletionsProvider implements Provider {
             String h = URI.create(url).getHost();
             if (h == null) return false;
             h = h.toLowerCase(Locale.ROOT);
-            return h.equals("localhost") || h.equals("127.0.0.1") || h.equals("[::1]") || h.equals("::1") || h.startsWith("127.");
+            // 0.35.1 review: an IP literal only (http://127.evil.com is a remote name, not loopback)
+            return h.equals("localhost") || h.equals("[::1]") || h.equals("::1") || h.matches("^127(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$");
         } catch (IllegalArgumentException e) {
             return false;
         }
@@ -132,6 +137,7 @@ public final class ChatCompletionsProvider implements Provider {
             try {
                 if (last != null && last.retryAfterMs > 0) wait = Math.max(wait, Math.min(RETRY_AFTER_CAP_MS, last.retryAfterMs));
                 if (wait > 0) sleeper.sleep(wait);
+                if (attempt > 0) onRetry.run();
                 resp = http.post(url, headers(), body, r.timeout());
             } catch (HttpTimeoutException e) {
                 last = new Retryable(ProviderException.Kind.TIMEOUT, 0, "no answer within " + r.timeout().toSeconds() + " s", 0);

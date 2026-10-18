@@ -138,6 +138,9 @@ public final class AiRuntime {
         else {
             try {
                 provider = Providers.create(settings, keys.key(settings.provider), HTTP);
+                final UsageLedger lg = ledger;
+                if (provider instanceof io.github.mojolowjo.entropybot.ai.provider.ChatCompletionsProvider cp)
+                    cp.onRetry(() -> lg.record(System.currentTimeMillis(), 0, 0, 1));     // 0.35.1: each retry is a request
             } catch (ProviderException e) {
                 startError = scrub(e.reason());
             }
@@ -382,6 +385,7 @@ public final class AiRuntime {
         l.add("key: " + (keys == null ? "?" : keys.source(settings.provider)) + (keys != null && keys.permsNote() != null ? "; key file permissions: " + keys.permsNote() : "")
                 + "; http client " + (HTTP == null ? "MISSING" : "ok"));
         if (ledger != null && ledger.saveError() != null) l.add(ledger.saveError());
+        if (ledger != null && ledger.corrupt() != null) l.add("caps closed: " + ledger.corrupt());
         if (log != null && log.error() != null) l.add(log.error());
         String t = testResult;
         if (t != null) l.add("last test: " + t);
@@ -467,13 +471,24 @@ public final class AiRuntime {
         testing = true;
         testResult = "testing...";
         Secret key = typedKey != null && !typedKey.isBlank() ? Secret.of(typedKey) : keys.key(s.provider);
+        final UsageLedger lg = ledger;
         Thread t = new Thread(() -> {
             String res;
             try {
                 if (HTTP == null && !s.provider.equals("demo")) throw new ProviderException(ProviderException.Kind.CONFIG, 0, JdkTransport.missing());
+                // 0.35.1 review: the test obeys the free/paid rule and the caps, and is counted
+                Budget b = new Budget(s, lg);
+                String sp = b.startProblem();
+                if (sp != null) throw new ProviderException(ProviderException.Kind.CONFIG, 0, sp);
+                Provider.Request rq = new Provider.Request("Answer with one word.", List.of(new Provider.Message("user", "reply with the word ok")),
+                        16, 0, Duration.ofSeconds(s.timeoutSeconds()));
+                long est = PromptBuilder.estimate(rq);
+                Budget.Cap cap = b.refuse(System.currentTimeMillis(), est);
+                if (cap != null) throw new ProviderException(ProviderException.Kind.CONFIG, 0, cap.reason());
                 Provider p = Providers.create(s, key, HTTP);
-                Provider.Completion c = p.complete(new Provider.Request("Answer with one word.", List.of(new Provider.Message("user", "reply with the word ok")),
-                        16, 0, Duration.ofSeconds(s.timeoutSeconds())));
+                lg.record(System.currentTimeMillis(), est, 0, 1);
+                Provider.Completion c = p.complete(rq);
+                lg.record(System.currentTimeMillis(), c.inTokens() + c.outTokens() - est, b.cost(c.costUsd(), c.inTokens(), c.outTokens()), 0);
                 String text = c.text() == null ? "" : c.text().trim();
                 res = String.format(Locale.ROOT, "ok in %.1f s, %d tokens, $%.4f: \"%s\"", c.millis() / 1000.0, c.inTokens() + c.outTokens(),
                         c.costUsd() == null ? 0 : c.costUsd(), text.length() > 20 ? text.substring(0, 20) + "..." : text);

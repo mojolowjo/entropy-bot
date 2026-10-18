@@ -20,7 +20,7 @@ import java.util.Deque;
  * Saved to {@code ai-usage.json} after each call, so a game restart does not reset the day's cap. Plain Java.
  */
 public final class UsageLedger {
-    record Entry(long at, long tokens, double usd) {}
+    record Entry(long at, long tokens, double usd, int requests) {}
 
     static final long HOUR_MS = 3_600_000L;
 
@@ -30,7 +30,7 @@ public final class UsageLedger {
     private String day = "";
     private long dayTokens, dayRequests;
     private double dayUsd;
-    private String saveError;
+    private String saveError, corrupt;
 
     public UsageLedger(Path file, ZoneId zone) {
         this.file = file;
@@ -51,20 +51,30 @@ public final class UsageLedger {
         while (!hour.isEmpty() && now - hour.peekFirst().at() >= HOUR_MS) hour.pollFirst();
     }
 
-    public synchronized void record(long now, long tokens, double usd) {
+    public synchronized void record(long now, long tokens, double usd) { record(now, tokens, usd, 1); }
+
+    /** 0.35.1: requests 0 = a correction of a request already counted (tokens may be negative: the estimate was too high). */
+    public synchronized void record(long now, long tokens, double usd, int requests) {
         roll(now);
-        hour.addLast(new Entry(now, Math.max(0, tokens), Math.max(0, usd)));
-        dayTokens += Math.max(0, tokens);
+        if (requests > 0 || hour.isEmpty()) hour.addLast(new Entry(now, Math.max(0, tokens), Math.max(0, usd), Math.max(0, requests)));
+        else {
+            Entry last = hour.pollLast();
+            hour.addLast(new Entry(last.at(), Math.max(0, last.tokens() + tokens), last.usd() + Math.max(0, usd), last.requests()));
+        }
+        dayTokens = Math.max(0, dayTokens + tokens);
         dayUsd += Math.max(0, usd);
-        dayRequests++;
-        save();
+        dayRequests += Math.max(0, requests);
+        if (corrupt == null) save();                       // never overwrite the unreadable file
     }
+
+    /** null: fine; else why the ledger can't be trusted (the caps count as reached). */
+    public String corrupt() { return corrupt; }
 
     public synchronized long hourTokens(long now) { roll(now); long t = 0; for (Entry e : hour) t += e.tokens(); return t; }
 
     public synchronized double hourUsd(long now) { roll(now); double t = 0; for (Entry e : hour) t += e.usd(); return t; }
 
-    public synchronized int hourRequests(long now) { roll(now); return hour.size(); }
+    public synchronized int hourRequests(long now) { roll(now); int n = 0; for (Entry e : hour) n += e.requests(); return n; }
 
     public synchronized long dayTokens(long now) { roll(now); return dayTokens; }
 
@@ -85,10 +95,11 @@ public final class UsageLedger {
             dayRequests = o.has("dayRequests") ? o.get("dayRequests").getAsLong() : 0;
             if (o.has("hour")) for (JsonElement e : o.getAsJsonArray("hour")) {
                 JsonArray a = e.getAsJsonArray();
-                hour.addLast(new Entry(a.get(0).getAsLong(), a.get(1).getAsLong(), a.get(2).getAsDouble()));
+                hour.addLast(new Entry(a.get(0).getAsLong(), a.get(1).getAsLong(), a.get(2).getAsDouble(), a.size() > 3 ? a.get(3).getAsInt() : 1));
             }
         } catch (IOException | RuntimeException e) {
-            saveError = "ai-usage.json unreadable, started from zero: " + e.getMessage();
+            // 0.35.1 review: fail closed: an unreadable ledger is a reached cap until the owner deletes the file
+            corrupt = "ai-usage.json is unreadable (" + e.getMessage() + "): delete entropybot/ai-usage.json, then ai reload";
         }
     }
 
@@ -105,6 +116,7 @@ public final class UsageLedger {
             a.add(e.at());
             a.add(e.tokens());
             a.add(e.usd());
+            a.add(e.requests());
             h.add(a);
         }
         o.add("hour", h);

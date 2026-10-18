@@ -28,7 +28,10 @@ public final class Budget {
 
     /** Whether the provider is free by its nature (local, demo, a loopback URL). */
     public static boolean freeService(AiSettings s) {
-        return s.provider.equals("local") || s.provider.equals("demo") || (!s.baseUrl.isEmpty() && ChatCompletionsProvider.isLoopback(s.baseUrl));
+        // 0.35.1 review: free only when the host really is this computer (local with a remote baseUrl is not)
+        if (s.provider.equals("demo")) return true;
+        if (s.baseUrl.isEmpty()) return s.provider.equals("local");      // local's default is 127.0.0.1
+        return ChatCompletionsProvider.isLoopback(s.baseUrl);
     }
 
     /** null: the settings may run; else why not (checked when the operator starts and before each call). */
@@ -37,7 +40,7 @@ public final class Budget {
         if (!s.paid) {
             if (s.provider.equals("openrouter") && !s.model.toLowerCase(Locale.ROOT).endsWith(":free"))
                 return "model " + s.model + " is not a free model (no :free at the end): pick a :free model, or switch paid models on";
-            if (s.provider.equals("openai")) return "an OpenAI-compatible service costs money: switch paid models on (USD cap), or use local";
+            if (!s.provider.equals("openrouter")) return "a service on another computer may cost money: switch paid models on (USD cap), or use local on 127.0.0.1";
             return null;
         }
         if (s.usdPerDay <= 0 && s.usdPerHour <= 0) return "paid models are on but there is no USD cap: set USD per day";
@@ -60,6 +63,7 @@ public final class Budget {
 
     /** null: the next call may go; else the cap that was hit. estimate: input + output tokens. */
     public Cap refuse(long now, long estimate) {
+        if (ledger.corrupt() != null) return new Cap("cap: " + ledger.corrupt(), false);       // 0.35.1 review: fail closed
         if (estimate > MAX_INPUT_TOKENS) return new Cap("the prompt is too big (about " + estimate + " tokens)", false);
         if (s.requestsPerHour > 0 && ledger.hourRequests(now) >= s.requestsPerHour) return new Cap("cap: requests/hour " + s.requestsPerHour + " reached", true);
         if (s.tokensPerHour > 0 && ledger.hourTokens(now) + estimate > s.tokensPerHour) return new Cap("cap: tokens/hour " + s.tokensPerHour + " reached", true);

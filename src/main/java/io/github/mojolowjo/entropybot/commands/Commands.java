@@ -2265,7 +2265,10 @@ public final class Commands implements Chains.Env {
                 player.connection.sendCommand(text.replaceFirst("^/", ""));
                 return Reply.now("ok");
             }
-            case "stop" -> { return Reply.now(stopAll()); }
+            case "stop" -> {      // 0.35.1: the bridge's stop is the owner's stop: it pauses the AI operator too
+                String aiNote = io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerStopped();
+                return Reply.now(stopAll() + aiNote);
+            }
             // B7e E1: answered by the mod itself
             case "noop" -> { return Reply.now("ok"); }
             case "recorder" -> { return Reply.now(io.github.mojolowjo.entropybot.recorder.RecorderCommand.handle(core.recorder, text, true, owner())); }
