@@ -83,15 +83,12 @@ final class GoalPlanning {
         return f;
     }
 
-    /** The stock view counts the bag too: only the rest is "in storage". */
-    static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) {
-        Map<String, Integer> out = new HashMap<>();
-        for (Map.Entry<String, Integer> e : totals.entrySet()) {
-            int n = e.getValue() - bag.getOrDefault(e.getKey(), 0);
-            if (n > 0) out.put(e.getKey(), n);
-        }
-        return out;
-    }
+    /**
+     * The stock view counts the bag too: only the rest is "in storage". 0.36.2: the stock's ids are short ("oak_log"),
+     * the bag's namespaced ("minecraft:oak_log"): both are compared short, else nothing was taken off and the planner
+     * planned "get coal 1" / "get planks 3" for what the bag already held (aa-v0 open point h).
+     */
+    static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) { return PlanFacts.minusBag(totals, bag); }
 
     /** Logs, stone and ores within 16 blocks (8 up and down): the trees, stone and ore:<family> facts. */
     static void scan(ClientLevel lv, int[] c, PlanFacts f) {
@@ -308,7 +305,8 @@ final class GoalPlanning {
         try {
             Object[] hit = hookCache.get(goalText);
             long now = System.currentTimeMillis();
-            if (hit != null && now - (Long) hit[0] < 60_000) return (String) hit[1];
+            // 0.36.2: a cached routine name that was deleted since (AA drops a stale, infeasible one) is planned afresh
+            if (hit != null && now - (Long) hit[0] < 60_000 && (hit[1] == null || !((String) hit[1]).startsWith("goal_") || routineText((String) hit[1]) != null)) return (String) hit[1];
             String chain = null;
             LocalPlayer p = Minecraft.getInstance().player;
             GoalGrammar.Goal g = GoalGrammar.parse(goalText, n -> c.policyArea(n) != null);

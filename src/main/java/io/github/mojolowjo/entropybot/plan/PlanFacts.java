@@ -43,6 +43,20 @@ public final class PlanFacts {
         return this;
     }
 
+    /** 0.36.2: stock totals minus the bag, ids compared without "minecraft:" (the stock's are short, the bag's long). */
+    public static Map<String, Integer> minusBag(Map<String, Integer> totals, Map<String, Integer> bag) {
+        Map<String, Integer> shortBag = new java.util.HashMap<>();
+        for (Map.Entry<String, Integer> e : bag.entrySet()) shortBag.merge(shortId(e.getKey()), e.getValue(), Integer::sum);
+        Map<String, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<String, Integer> e : totals.entrySet()) {
+            int n = e.getValue() - shortBag.getOrDefault(shortId(e.getKey()), 0);
+            if (n > 0) out.put(e.getKey(), n);
+        }
+        return out;
+    }
+
+    private static String shortId(String id) { return id == null ? "" : id.startsWith("minecraft:") ? id.substring(10) : id; }
+
     public PlanFacts addStock(Map<String, Integer> totals, Set<String> foodIds) {
         add(stock, totals, foodIds);
         return this;
