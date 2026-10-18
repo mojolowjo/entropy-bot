@@ -238,6 +238,11 @@ public final class Chains {
 
     public String name() { return chain == null ? null : chain.name; }
 
+    /** 0.36.2 (AA review 6): no next step (or retry) for the next {@code ticks} ticks: AA's danger pause holds the chain. */
+    public void holdFor(long ticks) {
+        if (chain != null) chain.retryAt = Math.max(chain.retryAt, env.tick() + ticks);
+    }
+
     /** B1: told how every chain ends (name, message); 0.36.0 (AA P2): a fan-out, the brain and AA both listen. */
     private final List<java.util.function.BiConsumer<String, String>> endHooks = new ArrayList<>();
 

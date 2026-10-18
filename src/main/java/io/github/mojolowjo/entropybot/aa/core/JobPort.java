@@ -7,7 +7,13 @@ package io.github.mojolowjo.entropybot.aa.core;
 public interface JobPort {
     /** What a task asks for: the chain text, who asked, a priority, its time limits (ms). */
     record TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs) {
-        public static final long TIMEOUT_MS = 20 * 60_000, NO_PROGRESS_MS = 180_000;
+        public static final long TIMEOUT_MS = 20 * 60_000, NO_PROGRESS_MS = 180_000, MAX_MS = 60 * 60_000;
+
+        /** 0.36.2 (review 7): every limit is finite: 0, negative or over an hour (MAX_VALUE) becomes the default. */
+        public TaskSpec {
+            if (timeoutMs <= 0 || timeoutMs > MAX_MS) timeoutMs = TIMEOUT_MS;
+            if (noProgressMs <= 0 || noProgressMs > MAX_MS) noProgressMs = NO_PROGRESS_MS;
+        }
 
         public static TaskSpec of(TaskKind kind, String chain, String source) {
             return new TaskSpec(kind, chain, source, 1, TIMEOUT_MS, NO_PROGRESS_MS);
@@ -38,9 +44,13 @@ public interface JobPort {
     /** Ends AA's own task (never anyone else's). */
     void cancel(long taskId, String why);
 
-    /** The danger guard took the bot; v0: the reflex holds the job, nothing to do but note it. */
+    /**
+     * The danger guard took the bot: the running step stops (the adapter ends it as "interrupted", so the chain retries it
+     * once calm); the task stays AA's and its clocks stand still (RunJob).
+     */
     default void pause(long taskId, String why) {}
 
+    /** Danger is over: the chain's own retry restarts the interrupted step. */
     default void resume(long taskId) {}
 
     /** A monotonic activity counter (steps done + blocks moved + bag changes): the no-progress watch. */

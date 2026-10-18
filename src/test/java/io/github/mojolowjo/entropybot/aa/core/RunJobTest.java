@@ -14,6 +14,15 @@ class RunJobTest {
     final RunJob job = new RunJob("needs.torches", TaskKind.TORCHES,
             b -> new JobPort.TaskSpec(TaskKind.TORCHES, "goal torch 16", "needs", 1, 100_000, 40_000));
 
+    /** 0.36.2 (review 7): every TaskSpec limit is finite. */
+    @Test
+    void taskSpecLimitsAreAlwaysFinite() {
+        JobPort.TaskSpec t = new JobPort.TaskSpec(TaskKind.WAIT, "wait 60", "idle", 1, Long.MAX_VALUE, 0);
+        assertEquals(JobPort.TaskSpec.TIMEOUT_MS, t.timeoutMs());
+        assertEquals(JobPort.TaskSpec.NO_PROGRESS_MS, t.noProgressMs());
+        assertEquals(100_000, new JobPort.TaskSpec(TaskKind.WAIT, "x", "idle", 1, 100_000, -5).timeoutMs());
+    }
+
     @Test
     void startRefusedIsAFailureWithTheRefusal() {
         port.refuse = "busy: the owner's chain runs";

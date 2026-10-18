@@ -16,6 +16,7 @@ import io.github.mojolowjo.entropybot.aa.core.Tracer;
 import io.github.mojolowjo.entropybot.brain.BrainState;
 import io.github.mojolowjo.entropybot.brain.Feasibility;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
+import io.github.mojolowjo.entropybot.plan.RoutineRule;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import org.slf4j.Logger;
@@ -204,6 +205,9 @@ public final class AaRuntime implements JobPort {
                 return;
             }
             Status s = tree.tick(bb);
+            // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
+            // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
+            if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
             if (tree.ladder.last() == Status.SUCCESS && !data().has(AaLadder.SHELTER_FACT) && bb.flag(AaLadder.SHELTER_FACT)) {
                 data().addProperty(AaLadder.SHELTER_FACT, true);
                 c.saved();
@@ -446,7 +450,9 @@ public final class AaRuntime implements JobPort {
             if (!v.infeasible()) return null;
             // 0.36.1: a saved goal routine the facts no longer support is deleted, so the planner plans the goal afresh
             // next time (GoalPlanning keeps a saved routine otherwise; the hook cache forgets it within a minute)
-            if (chain.startsWith("goal_") && c.chains.isRoutine(chain)) {
+            // 0.36.2: only the planner's own text (RoutineRule OVERWRITE); a routine the owner edited is theirs, kept
+            if (chain.startsWith("goal_") && c.chains.isRoutine(chain)
+                    && RoutineRule.decide(c.planning.routineText(chain), c.planning.plannedText(chain)) == RoutineRule.Decision.OVERWRITE) {
                 String r = c.chains.routineCommand("delete " + chain);
                 LOG.info("[entropybot] aa: routine {} dropped as infeasible ({}): {}", chain, v.missing(), r);
             }
@@ -551,6 +557,23 @@ public final class AaRuntime implements JobPort {
         t.setDaemon(true);
         return t;
     });
+    /** 0.36.2 (review 8): on quit the queued writes still land (the writer is a daemon; the JVM would drop them). */
+    static {
+        try {
+            Runtime.getRuntime().addShutdownHook(new Thread(AaRuntime::flushWrites, "entropybot-aa-flush"));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: no shutdown flush: {}", e.toString());
+        }
+    }
+
+    /** Lets the queued writes finish (at most 3 s; each write carries its own path, so a world change is safe). */
+    static void flushWrites() {
+        try {
+            WRITER.submit(() -> { }).get(3, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            LOG.warn("[entropybot] aa: flush of the aa files: {}", e.toString());
+        }
+    }
     private volatile long writeErrors, lastWriteErrorAt;
 
     private void snapshot(long now, String driver) {
