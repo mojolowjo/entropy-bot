@@ -22,7 +22,7 @@ public final class SafetyRules {
      */
     public static final List<String> RESTORE_FALSE = List.of("allowBreak", "allowPlace", "allowInventory", "buildIgnoreExisting");
     public static final List<String> RESTORE_RESET = List.of("allowBreakAnyway");
-    public static final List<String> RESTORE_FALSE_IF_PRESENT = List.of("backfill");
+    public static final List<String> RESTORE_FALSE_IF_PRESENT = List.of("backfill", "allowBreakNextToWater");   // 0.36.8: our fork's mine-job setting
 
     /** A Baritone command that saves settings.txt ("set", "setting", "settings" and their forms). */
     private static final Pattern SAVES = Pattern.compile("^(set|setting|settings)\\b", Pattern.CASE_INSENSITIVE);

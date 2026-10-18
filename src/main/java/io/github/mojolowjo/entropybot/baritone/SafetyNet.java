@@ -145,6 +145,7 @@ public final class SafetyNet {
     static boolean breakingOwned(IBaritone b) {
         if (builderBreakingOwned(b)) return true;
         if (io.github.mojolowjo.entropybot.commands.PaperPlan.ownsBreak()) return true;                      // 0.32.3: the fourth owner, a plan-go walk
+        if (io.github.mojolowjo.entropybot.commands.MineWater.walkDig()) return true;                        // 0.36.8: a mine job's walk to a known ore
         try {
             var j = Core.INSTANCE.commands.jobs.job;
             if (j == null || j.done || !j.ownsBreaking) return false;

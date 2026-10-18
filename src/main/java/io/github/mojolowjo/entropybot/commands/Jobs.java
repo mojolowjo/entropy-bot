@@ -351,7 +351,7 @@ public final class Jobs {
             if (!level.isLoaded(bp)) return false;
             var st = level.getBlockState(bp);
             if (!st.getFluidState().isEmpty() || st.hasBlockEntity() || st.getDestroySpeed(level, bp) < 0) return false;
-            if (Guard.liquidNextTo(level, x, y, z) != null) return false;
+            if (Guard.breakLiquid(level, x, y, z) != null) return false;
             if (level.getBlockState(bp.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
             return pol.digOutAny(dim, x, y, z, RestoreLive.INSTANCE.builtByMe(x, y, z));
         } catch (RuntimeException e) {
@@ -374,7 +374,7 @@ public final class Jobs {
                 || st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK);
         boolean own = (ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
                 && !houseCell(Guard.dimOf(level), x, y, z);         // 0.30.6: a house wall is not a shelter wall
-        return SurfaceSeal.kind(id, leaves, persistent && !own, plant, own, st.hasBlockEntity(), Guard.liquidNextTo(level, x, y, z) != null);
+        return SurfaceSeal.kind(id, leaves, persistent && !own, plant, own, st.hasBlockEntity(), Guard.breakLiquid(level, x, y, z) != null);
     }
 
     /** The surface escape plan: EscapePlan over the surface kinds (breakable: leaves, plants, own blocks), or null. */
@@ -448,7 +448,7 @@ public final class Jobs {
             if (k == SurfaceSeal.Kind.NO) {
                 if (st.is(net.minecraft.tags.BlockTags.LEAVES)) return id + " (persistent: placed by a player, never broken)";
                 if (st.hasBlockEntity()) return id + " (a container or machine)";
-                if (Guard.liquidNextTo(level, c[0], c[1], c[2]) != null) return id + " (next to water or lava)";
+                if (Guard.breakLiquid(level, c[0], c[1], c[2]) != null) return id + " (next to water or lava)";
                 return id + " (not leaves, a plant or my own block)";
             }
             if (k != SurfaceSeal.Kind.OWN && !io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(core.guard.core.policy(), dim, c[0], c[1], c[2]))
@@ -629,7 +629,9 @@ public final class Jobs {
     static void safeSettings() {
         try {
             // 0.32.3: a plan-go job keeps the breaking/placing its plan needs (PaperPlan owns them for that job only)
-            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak();
+            // 0.36.8: a mine job's walk to a known ore may dig (MineWater: inside my areas; next to water too, never lava)
+            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig();
+            MineWater.set(MineWater.active());
             BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace();
         } catch (Throwable ignored) {}
     }
@@ -1812,13 +1814,13 @@ public final class Jobs {
         if (houseCell(dim, x, y, z)) return EscapePlan.Kind.FLOOR_ONLY;      // 0.30.6: never through a house's wall, floor or roof
         // 0.27.3 fix: my own shelter blocks (shelterBlocks / the ledger) are mine to open, not a stranger's build
         if ((ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
-                && !st.hasBlockEntity() && Guard.liquidNextTo(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;
+                && !st.hasBlockEntity() && Guard.breakLiquid(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;
         // 0.30.7: the owner's rule (2026-10-11): in my own neutral/destroy areas any block may go (also for the stair side)
         if (digOutAny(level, pol, dim, x, y, z)) return EscapePlan.Kind.BREAKABLE;
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         boolean ok = RestoreRules.natural(id) && !st.hasBlockEntity() && !core.guard.isProtectedBlock(st.getBlock())
                 && !st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && st.getDestroySpeed(level, bp) >= 0
-                && Guard.liquidNextTo(level, x, y, z) == null
+                && Guard.breakLiquid(level, x, y, z) == null
                 && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z)
                 && !(level.getBlockState(bp.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
         return ok ? EscapePlan.Kind.BREAKABLE : EscapePlan.Kind.FLOOR_ONLY;

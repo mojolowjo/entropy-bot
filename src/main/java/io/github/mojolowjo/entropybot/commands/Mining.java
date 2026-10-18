@@ -1780,7 +1780,15 @@ final class Mining {
         job.holdOnFight = true;
         job.ownsBreaking = true;
         // P1: with dig, every block but the target that Baritone breaks is a path break the restore ledger puts back
-        if (j.dig) RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
+        // 0.36.8: the known-ore walk may dig now too, so the path context is set for every mine job (without dig and
+        // outside that walk Baritone breaks only the target, which is never a path break)
+        RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
+        // 0.36.8: while this job runs, breaking next to water is allowed; its known-ore walk may dig inside my areas
+        MineWater.start(job, () -> {
+            if (j.kTarget == null) return false;
+            var pl = net.minecraft.client.Minecraft.getInstance().player;
+            return pl != null && core.commands.inAreas(Storage.dim(), (int) Math.floor(pl.getX()), (int) Math.floor(pl.getZ()));
+        });
         job.onHold = () -> {
             j.held = true;
             j.heldBy = core.reflexes.reflex().name().toLowerCase();
@@ -1789,6 +1797,7 @@ final class Mining {
             restoreSettings();
         };
         job.onEnd = () -> {
+            MineWater.end();
             restoreSettings();
             releaseLeases(j);
         };

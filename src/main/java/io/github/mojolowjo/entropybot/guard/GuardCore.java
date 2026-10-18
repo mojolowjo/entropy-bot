@@ -456,6 +456,14 @@ public final class GuardCore {
         return water ? "water" : null;
     }
 
+    /**
+     * 0.36.8 (owner 2026-10-18): the liquid that forbids breaking a block, given {@link #liquidNextTo}'s answer. While a
+     * mine job runs ({@code waterOk}) water no longer forbids it; lava always does. Pure.
+     */
+    public static String breakLiquid(String liquid, boolean waterOk) {
+        return waterOk && "water".equals(liquid) ? null : liquid;
+    }
+
     /** "guard check x y z <action>": the guard's answer, plus the liquid note for a break (not for an error). */
     public static String checkReply(String answer, String action, String liquid) {
         if (answer == null || !"break".equalsIgnoreCase(action) || answer.startsWith("error")) return answer;

@@ -152,6 +152,14 @@ public final class Guard {
         }, x, y, z);
     }
 
+    /**
+     * 0.36.8: the liquid next to x y z that forbids our own dig-out/escape breaking: lava always, water only outside a
+     * mine job (commands.MineWater). Loaded chunks only.
+     */
+    public static String breakLiquid(Level level, int x, int y, int z) {
+        return GuardCore.breakLiquid(liquidNextTo(level, x, y, z), io.github.mojolowjo.entropybot.commands.MineWater.active());
+    }
+
     // ---- entry points for the Mixins (client thread unless noted) ----
 
     /** Every block break this client starts or continues. True = refuse. */

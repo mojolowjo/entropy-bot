@@ -32,7 +32,7 @@ class SafetyNetTest {
     void theRestoreListIsTheBridges() {
         assertEquals(List.of("allowBreak", "allowPlace", "allowInventory", "buildIgnoreExisting"), SafetyRules.RESTORE_FALSE);
         assertEquals(List.of("allowBreakAnyway"), SafetyRules.RESTORE_RESET);
-        assertEquals(List.of("backfill"), SafetyRules.RESTORE_FALSE_IF_PRESENT);
+        assertEquals(List.of("backfill", "allowBreakNextToWater"), SafetyRules.RESTORE_FALSE_IF_PRESENT);
     }
 
     @Test

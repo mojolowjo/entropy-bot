@@ -185,4 +185,17 @@ class GuardCoreTest {
         assertTrue(s.contains("\"floorBlocks\":3548"));
         assertTrue(s.contains("minecraft:the_end"));
     }
+
+    @Test
+    void breakLiquidAllowsWaterOnlyInMineJobsNeverLava() {
+        assertNull(GuardCore.breakLiquid(null, false));
+        assertNull(GuardCore.breakLiquid(null, true));
+        assertEquals("water", GuardCore.breakLiquid("water", false));
+        assertNull(GuardCore.breakLiquid("water", true));
+        assertEquals("lava", GuardCore.breakLiquid("lava", false));
+        assertEquals("lava", GuardCore.breakLiquid("lava", true));
+        // lava wins over water in liquidNextTo, so a cell by both stays forbidden in a mine job
+        GuardCore.FluidAt both = (x, y, z) -> x == 1 ? "water" : x == -1 ? "lava" : null;
+        assertEquals("lava", GuardCore.breakLiquid(GuardCore.liquidNextTo(both, 0, 0, 0), true));
+    }
 }
