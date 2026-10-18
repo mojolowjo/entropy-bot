@@ -41,6 +41,7 @@ public final class GuardSelector extends Node {
         if (active >= 0 && active != pick) {
             Node was = branches.get(active).child;
             if (pick < active && was.last() == Status.RUNNING) {
+                if (paused >= 0 && paused != active) branches.get(paused).child.halt("a second pause");     // 0.36.5 (review): one paused child at most
                 was.pause(branches.get(pick).guard.label);
                 paused = active;
                 bb.tracer.event("paused " + was.id + ": " + branches.get(pick).guard.label);
