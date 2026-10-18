@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.commands;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
+import io.github.mojolowjo.entropybot.aa.AaEscape;
 import io.github.mojolowjo.entropybot.aa.AaScorer;
 import io.github.mojolowjo.entropybot.aa.AaTree;
 import io.github.mojolowjo.entropybot.aa.AaLadder;
@@ -58,6 +59,15 @@ public final class AaRuntime implements JobPort {
     private String lastStep, lastJobStatus;
     private int lastBag = -1;
     private int[] lastPos;
+    /**
+     * 0.36.a6: the escape from under ground inside AA's task (AaEscape): pending (the stuck walk's end is settling), the
+     * way that runs ("pillar" job / "climb" chain), the chain to go on with afterwards, the stuck end (the task's
+     * failure text if no way out works), escapes in this task.
+     */
+    private boolean escapePending;
+    private String escapeWay, escapeResume, escapeFail;
+    private Object escapeJob;
+    private int escapes;
     private long heldUntil, lastSnapshotAt, lastErrorAt, errorsThisMinute, minuteStart, errors;
     private String lastError, offReason;
     private int decisionLines;
@@ -126,6 +136,7 @@ public final class AaRuntime implements JobPort {
         if (chainRunning()) c.chains.clear();
         // 0.36.5 (review 6): nothing of this run carries into the next aa on (queued AI requests, the last task's state)
         int dropped = bb.drop("ai");
+        clearEscape();
         current = -1;
         lastEnd = null;
         myChain = CHAIN;
@@ -213,6 +224,7 @@ public final class AaRuntime implements JobPort {
                 sensed = c.brainRuntime.sense();
                 sensedTick = tick;
             }
+            escapeTick(p, mc);
             fill(bb.in, sensed, p, mc);
             progressTick(p);
             if (now < heldUntil) {
@@ -320,8 +332,16 @@ public final class AaRuntime implements JobPort {
         in.pickaxes = s.pickaxes;
         in.bedKnown = s.bedNear;
         in.bedInBag = s.bedInBag;
-        in.tableKnown = s.feas.table;
-        in.furnaceKnown = s.feas.furnace;
+        // 0.36.a6: a table/furnace seen at the camp or base counts wherever the bot is (AaLadder.campLatch, saved)
+        double camp = -1;
+        for (int[] m : new int[][]{s.campPos, s.basePos}) {
+            if (m == null) continue;
+            double d = Math.sqrt(Jobs.distSq(s.botPos, m));
+            camp = camp < 0 ? d : Math.min(camp, d);
+        }
+        boolean tLatch = latch("tableAtCamp", s.feas.table, camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
+        in.tableKnown = s.feas.table || tLatch;
+        in.furnaceKnown = s.feas.furnace || fLatch;
         in.tableInBag = bag.getOrDefault("crafting_table", 0) > 0;
         in.planks = 0;
         for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_planks")) in.planks += e.getValue();
@@ -353,6 +373,19 @@ public final class AaRuntime implements JobPort {
         in.aiRequestPending = bb.peek("ai") != null;
     }
 
+    /** A camp latch from brainData "aa" (AaLadder.campLatch); saved and logged once when it changes. */
+    private boolean latch(String key, boolean seen, double distToCamp) {
+        JsonObject d = data();
+        boolean was = d.has(key) && d.get(key).getAsBoolean();
+        boolean now = AaLadder.campLatch(was, seen, distToCamp);
+        if (now != was) {
+            d.addProperty(key, now);
+            c.saved();
+            LOG.info("[entropybot] aa: {} {}", key, now ? "noted (seen within " + AaLadder.CAMP_R + " of the camp/base): it counts away from the camp too" : "dropped (no camp or base known)");
+        }
+        return now;
+    }
+
     /** 0.36.1 (review 6): the reflexes' target is a creeper within 10 (Reflexes.CREEPER_OVERRIDE), or a creeper duel runs. */
     private boolean creeperClose() {
         try {
@@ -379,6 +412,7 @@ public final class AaRuntime implements JobPort {
 
     /** Something that is not AA's runs: the owner's chain, a job, a gather, a hunt, a carry, a request; else null. */
     private String otherJob() {
+        if (escapePending || escapeWay != null) return null;       // 0.36.a6: AA's own way out (pillar job / climb chain)
         if (c.chains.running()) return chainRunning() ? null : "chain " + c.chains.name();
         if (c.jobs.running()) return c.jobs.job.type + " (" + c.jobs.job.status + ")";
         if (c.gathering.running()) return "gather";
@@ -433,6 +467,8 @@ public final class AaRuntime implements JobPort {
         if (c.requests.busy()) { refusal = "busy: a request is open"; return -1; }
         lastEnd = null;
         myChain = CHAIN;
+        clearEscape();
+        escapes = 0;
         if (AaLadder.CLIMB.equals(t.chain())) {
             // 0.36.3: climb plans its own staircase and runs it as its own chain "climb"; "ok: I'm not in a hole" = done
             LocalPlayer p = Minecraft.getInstance().player;
@@ -472,6 +508,7 @@ public final class AaRuntime implements JobPort {
             current = -1;
             return e.startsWith("done") ? JobState.done(e) : JobState.failed(e);
         }
+        if (escapePending || escapeWay != null) return JobState.RUNNING;      // 0.36.a6: getting out, then the task goes on
         if (!chainRunning()) {
             current = -1;
             String who = c.chains.running() ? "chain " + c.chains.name() : c.jobs.running() ? "job " + c.jobs.job.type : "someone (stop or a clear)";
@@ -483,6 +520,7 @@ public final class AaRuntime implements JobPort {
     @Override public void cancel(long taskId, String why) {
         if (taskId != current) return;
         current = -1;
+        clearEscape();
         if (chainRunning()) c.chains.clear();
         if (c.jobs.running()) c.jobs.finish("stopped: aa " + why);
         if (c.gathering.running()) c.gathering.stop("stopped: aa " + why);
@@ -546,9 +584,141 @@ public final class AaRuntime implements JobPort {
     /** Chains tells every listener how a chain ended; AA keeps its own. */
     void chainEnded(String name, String msg) {
         boolean mine = CHAIN.equals(name) || (current >= 0 && myChain.equals(name));
+        if (mine && current >= 0 && "climb".equals(escapeWay)) {         // 0.36.a6: the escape's climb ended
+            escapeWay = null;
+            myChain = CHAIN;
+            if (msg != null && msg.startsWith("done")) {
+                escapePending = true;           // review: the chain starts from escapeTick, not inside the end callback
+                escapeWay = "resume";
+            }
+            else escapeFailNow("climbing out failed too: " + msg);
+            return;
+        }
+        if (mine && current >= 0 && escapeWay == null && !escapePending && on() && AaEscape.stuck(msg) && escapes < AaEscape.MAX_PER_TASK) {
+            String resume = null;
+            try {
+                resume = AaEscape.resume(c.chains.expandSteps(Texts.splitChain(currentChain), 0), AaEscape.failedStep(msg));
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] aa: the stuck step's chain could not be read: {}", e.toString());
+            }
+            if (resume != null) {
+                escapes++;
+                escapePending = true;
+                escapeResume = resume;
+                escapeFail = msg;
+                LOG.info("[entropybot] aa: the walk ended stuck under ground - getting out myself (escape {} of this task), then: {}", escapes, resume);
+                return;
+            }
+        }
         if (mine) lastEnd = msg;
         // 0.36.3: no tree I can get at in my areas: the woodArea rung makes an area around the nearest reachable one
         if (mine && msg != null && (msg.contains("no trees in my areas") || msg.contains("couldn't get at its trunk"))) treeAreaFact();
+    }
+
+    /** AA's escape from under ground runs or waits to start (Jobs: then no paper plan, no whisper). */
+    boolean ownsEscape() {
+        return on() && current >= 0 && (escapePending || escapeWay != null
+                || (chainRunning() && CHAIN.equals(myChain) && escapes < AaEscape.MAX_PER_TASK));
+    }
+
+    private void clearEscape() {
+        escapePending = false;
+        escapeWay = null;
+        escapeResume = null;
+        escapeFail = null;
+        escapeJob = null;
+        myChain = CHAIN;
+    }
+
+    /** 0.36.a6: starts the pending escape once the stuck walk has settled; a pillar job's end -> go on, or climb. */
+    private void escapeTick(LocalPlayer p, Minecraft mc) {
+        if (current < 0) {
+            if (escapePending || escapeWay != null) clearEscape();
+            return;
+        }
+        if (escapePending) {
+            if (c.chains.running() || c.jobs.running()) return;
+            escapePending = false;
+            if ("resume".equals(escapeWay)) {
+                escapeWay = null;
+                escapeResumeNow("climbed out");
+            } else startEscape(p, mc, false);
+        } else if ("pillar".equals(escapeWay) && !(c.jobs.running() && c.jobs.job == escapeJob) && !PaperPlan.owned()) {
+            escapeWay = null;
+            escapeJob = null;
+            int[] me = Jobs.here(p);
+            if (Jobs.underDepth(mc.level, me[0], me[1], me[2]) == 0) escapeResumeNow("pillared up");
+            else {
+                LOG.info("[entropybot] aa: the pillar ended still under ground at {} - trying the staircase", Jobs.fmt(me));
+                startEscape(p, mc, true);
+            }
+        }
+    }
+
+    private void startEscape(LocalPlayer p, Minecraft mc, boolean noPillar) {
+        try {
+            int[] me = Jobs.here(p);
+            net.minecraft.world.level.Level lv = mc.level;
+            int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+            boolean shaft = !noPillar && depth > 0;
+            for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) {
+                net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(me[0], y, me[2]);
+                var st = lv.getBlockState(q);
+                if (!st.getCollisionShape(lv, q).isEmpty() || !st.getFluidState().isEmpty()) shaft = false;
+            }
+            Map<String, Integer> bag = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
+            AaEscape.Choice ch = AaEscape.choose(depth, shaft, AaEscape.throwaway(bag), bb.in.pickaxes > 0);
+            LOG.info("[entropybot] aa: stuck under ground at {} (surface {} up): {} - {}", Jobs.fmt(me), depth, ch.way().name().toLowerCase(), ch.why());
+            switch (ch.way()) {
+                case OUT -> escapeResumeNow("already out");
+                case PILLAR -> {
+                    String r = PaperPlan.INSTANCE.pillar(c, new int[]{me[0], me[1] + depth, me[2]}, c.owner());
+                    if (r != null && !r.startsWith("error") && !r.startsWith("busy") && c.jobs.running()) {
+                        escapeWay = "pillar";
+                        escapeJob = c.jobs.job;
+                    } else {
+                        LOG.info("[entropybot] aa: the pillar did not start ({}) - trying the staircase", r);
+                        startEscape(p, mc, true);
+                    }
+                }
+                case CLIMB -> {
+                    String cr = DigCommands.climb(c, p, "", c.owner());
+                    if (cr != null && cr.startsWith("ok")) escapeResumeNow("climb: " + cr);
+                    else if (cr != null && cr.startsWith("started")) {
+                        escapeWay = "climb";
+                        myChain = "climb";
+                    } else escapeFailNow("the staircase did not start: " + cr);
+                }
+                case NONE -> escapeFailNow(ch.why());
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: escape failed: {}", e.toString());
+            escapeFailNow("escape error: " + e);
+        }
+    }
+
+    /** Out: the task goes on with the step that ended stuck (same task, no failure, no cooldown). */
+    private void escapeResumeNow(String how) {
+        String resume = escapeResume;
+        String fail = escapeFail;
+        escapeResume = null;
+        myChain = CHAIN;
+        String r = resume == null ? null : c.chains.startChain(c.owner(), CHAIN, resume, 1);
+        if (r != null && r.startsWith("started")) {
+            escapeFail = null;
+            LOG.info("[entropybot] aa: out from under ground ({}) - going on with: {}", how, resume);
+        } else {
+            escapeFail = fail;
+            escapeFailNow("out (" + how + "), but the task did not go on: " + r);
+        }
+    }
+
+    /** No way out worked: the task fails with the stuck walk's end and why. */
+    private void escapeFailNow(String why) {
+        String fail = escapeFail;
+        clearEscape();
+        lastEnd = (fail == null ? "error: stuck under ground" : fail) + " (getting out: " + why + ")";
+        LOG.info("[entropybot] aa: no way out from under ground: {}", why);
     }
 
     /** At most this many tree areas AA adds itself ("trees1".."trees3"), each a box of 2*TREE_AREA_R+1. */

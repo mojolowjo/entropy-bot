@@ -259,7 +259,11 @@ class AaTreeTest {
         assertEquals("needs>planning TOOLS: goal stone tools (0s)", tree.driver() + ">" + bb.taskText(clock.now()));
         assertEquals(0, port.started.size());
         Rung tools = AaLadder.rungs(tree.ladder).stream().filter(r -> r.id.equals("needs.tools")).findFirst().orElseThrow();
-        clock.advance(Rung.PLAN_WAIT_MS + 1);
+        for (int i = 0; i < Rung.PLAN_WAIT_MS / 1000; i++) {
+            clock.advance(1000);
+            assertEquals(Status.RUNNING, tools.tick(bb));
+        }
+        clock.advance(1);
         assertEquals(Status.FAILURE, tools.tick(bb));
         assertTrue(tools.reason().contains("TOOLS skipped: no plan for goal stone tools"), tools.reason());
         assertEquals("no task", bb.taskText(clock.now()));

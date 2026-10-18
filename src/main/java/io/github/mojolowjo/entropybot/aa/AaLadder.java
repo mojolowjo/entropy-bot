@@ -60,6 +60,22 @@ public final class AaLadder {
         return !tableInBag && planks >= 4;
     }
 
+    /** Seen within this many blocks of the camp or base mark, a table/furnace counts as the camp's (latched). */
+    public static final int CAMP_R = 24;
+
+    /**
+     * 0.36.a6 (aa371: under ground, away from the camp, the table/furnace rung planned a new furnace: "no a free spot
+     * next to me for the furnace"): the near-block sense is true only near the block, so a table/furnace seen within
+     * {@link #CAMP_R} of the camp or base mark is latched and counts wherever the bot is. Cleared only when neither a
+     * camp nor a base is known any more.
+     *
+     * @param distToCamp blocks to the nearer of the camp and base marks, -1 when neither is known
+     */
+    public static boolean campLatch(boolean latched, boolean seenNear, double distToCamp) {
+        if (distToCamp < 0) return false;
+        return latched || (seenNear && distToCamp <= CAMP_R);
+    }
+
     public static Node build() {
         Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
         Rung area = new Rung("needs.area", TaskKind.TOOLS,

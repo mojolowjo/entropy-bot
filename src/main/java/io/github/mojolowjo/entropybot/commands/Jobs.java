@@ -1623,7 +1623,7 @@ public final class Jobs {
             j.retraceFinal = null;
             j.retraceHops = null;
             j.paperEscape = true;
-            PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: plan from the highest point reached
+            paperEscape(p);        // P3.4: plan from the highest point reached
             return false;
         }
         int[] nx = j.retraceHops != null && !j.retraceHops.isEmpty() ? j.retraceHops.pollFirst() : null;
@@ -1668,7 +1668,7 @@ public final class Jobs {
             if (!j.retraceTried || j.paperEscape || j.retraceFinal != null || !j.type.equals("travel") || !underGround(p)) return false;
             j.paperEscape = true;
             LOG.info("[entropybot] escape: the trail back didn't get me out from {}: walk plan, then a digging plan", fmt(here(p)));
-            PaperPlan.INSTANCE.escape(commands, p, commands.owner());
+            paperEscape(p);
             return true;
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] escape: paper plan failed to start: {}", e.toString());
@@ -1676,9 +1676,25 @@ public final class Jobs {
         }
     }
 
+    /** 0.36.a6: under AA the bot gets itself out (AaRuntime's escape: pillar or climb) - no plan, no whisper to wait for. */
+    private boolean aaEscapes() {
+        return commands.aaRuntime != null && commands.aaRuntime.ownsEscape();
+    }
+
+    /** P3.4's paper escape (walk plan, then digging plan, whispered), unless AA gets the bot out itself. */
+    private void paperEscape(LocalPlayer p) {
+        if (aaEscapes()) {
+            LOG.info("[entropybot] escape: aa drives - no paper plan, aa gets me out");
+            return;
+        }
+        PaperPlan.INSTANCE.escape(commands, p, commands.owner());
+    }
+
     /** 0.33.0 (A1): the walk's end once the paper escape runs: no staircase, no dig-out; the plans' answer is whispered. */
     String paperEscapeEnd(LocalPlayer p) {
-        String s = "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
+        String s = aaEscapes()
+                ? "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; aa gets me out next"
+                : "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
         LOG.info("[entropybot] escape: {}", s);
         return s;
     }
@@ -1695,7 +1711,7 @@ public final class Jobs {
             if (hops.isEmpty()) {
                 LOG.info("[entropybot] retrace ({}): no trail back to open sky from {}", why, fmt(me));
                 j.paperEscape = true;
-                PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: a long search, then a plan with digging
+                paperEscape(p);        // P3.4: a long search, then a plan with digging
                 return false;
             }
             j.retraceHops = new java.util.ArrayDeque<>(hops);

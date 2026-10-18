@@ -73,10 +73,15 @@ public final class Rung extends Node {
         if (chain == null) {
             // the planner searches on its worker: the slot waits on this rung (RUNNING, so lower rungs don't all plan
             // at once) up to PLAN_WAIT_MS, then the rung is skipped for a while
-            if (planningSince < 0) {
+            // 0.36.a6 (aa371 14:47:45: the planner answered "goal furnace" in 0 ms, the rung said "found none in 45s" the
+            // same second): the wait counts only while this rung keeps asking for this goal; a clock left from an
+            // earlier wait (another rung or a job ran in between, or the goal changed) starts afresh
+            if (planningSince < 0 || !g.equals(planningGoal) || now - lastPlanAsk > PLAN_GAP_MS) {
                 planningSince = now;
+                planningGoal = g;
                 bb.port.log("planning " + g + " for " + kind);
             }
+            lastPlanAsk = now;
             if (now - planningSince > PLAN_WAIT_MS) {
                 planningSince = -1;
                 bb.fact(PLANNING_FACT, null);
@@ -107,7 +112,10 @@ public final class Rung extends Node {
         return s == Status.FAILURE ? fail(cooldown.reason()) : s;
     }
 
-    private String settledGoal;
+    private String settledGoal, planningGoal;
+    private long lastPlanAsk = -1;
+    /** A gap this long between two asks for a plan means the earlier wait is over (AA ticks at 4 Hz). */
+    public static final long PLAN_GAP_MS = 5_000;
 
     @Override public void halt(String why) {
         if (planningSince >= 0 && board != null) board.fact(PLANNING_FACT, null);

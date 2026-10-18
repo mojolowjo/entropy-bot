@@ -320,6 +320,21 @@ public final class PaperPlan {
         }
     }
 
+    /**
+     * 0.36.a6: AA's pillar out of a shaft: a plain walk to {@code e} (straight above) with placing on for this job only
+     * (no breaking), so Baritone pillars up with its throwaway blocks. The same ownership as "plan go": placing goes
+     * off again when the job ends (tick, SafetyNet backstop).
+     */
+    String pillar(Commands c, int[] e, String from) {
+        if (running) return "busy: a plan is being made";
+        if (owned()) return "busy: a plan go is walking";
+        goBreak = false;
+        goPlace = true;
+        String s = c.jobs.startPlanGo(e, false, true, from, id -> { goJob = id; goJobObj = c.jobs.job; });
+        LOG.info("[entropybot] pillar: to {} (placing on), job {}: {}", Jobs.fmt(e), goJob, s);
+        return s;
+    }
+
     /** "plan go": the last reachable plan, walked with its rules' breaking/placing on for this job only. */
     String go(Commands c, LocalPlayer p, String from, boolean anyway) {
         // review 2: every check first; the rules change only for a walk that starts
