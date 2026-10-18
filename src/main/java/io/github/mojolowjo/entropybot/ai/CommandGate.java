@@ -53,7 +53,7 @@ public final class CommandGate {
         for (String v : List.of("area", "fence", "mine", "brain", "defence")) d.put(v, Decision.FORMS);
         // owner's answer 4 (2026-10-17): the proposed deny list, except say
         for (String v : List.of("give", "routine", "rule", "repeat", "confirm", "reply", "twerk", "spawn", "allow", "deny", "restart", "blind", "debug",
-                "server", "trust", "untrust", "ai"))
+                "server", "trust", "untrust", "ai", "aa"))                 // 0.36.0: the AI never flips the brains
             d.put(v, Decision.DENY);
         DECISIONS = java.util.Collections.unmodifiableMap(d);
     }

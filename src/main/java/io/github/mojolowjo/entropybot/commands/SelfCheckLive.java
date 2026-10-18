@@ -117,6 +117,11 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("braincheck", "couldn't check the brain: " + e, "brain status"));
         }
         try {
+            if (c.aaRuntime != null) for (String[] t : c.aaRuntime.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // 0.36.0 AA
+        } catch (RuntimeException e) {
+            f.add(new SelfCheck.Finding("aacheck", "couldn't check aa: " + e, "aa status"));
+        }
+        try {
             f.addAll(io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.findings());   // 0.26.0 blind mode
             f.addAll(io.github.mojolowjo.entropybot.blind.BotConfigScreen.findings());          // 0.26.0 the config screen's dashboard buttons
             f.addAll(io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.findings());     // 0.35.0 the AI operator (never touches the network)
