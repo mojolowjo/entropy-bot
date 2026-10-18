@@ -557,7 +557,8 @@ final class Mining {
             // the water touches is fine (sink to it). Skipped here, no try spent; the next known ore is picked.
             if (level.isLoaded(q) && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(),
                     io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null
-                            || !level.getFluidState(q.below()).isEmpty())) {
+                            || !level.getFluidState(q.below()).isEmpty())
+                    && !airFace(level, h.x(), h.y(), h.z())) {         // 0.36.9: an ore with a dry open face is walked to (a cave beside it)
                 underWater++;
                 continue;
             }
@@ -601,8 +602,12 @@ final class Mining {
         if (underWater > 0) LOG.info("[entropybot] mine: skipped {} known {} below me that I'd have to dig down to from in the water (no air down there; ore the water touches is fine)", underWater, sid(j));
         if (best == null && tooDeep > 0) LOG.info("[entropybot] mine: {} known {} too deep for a dig ({} blocks), use mine strip", tooDeep, sid(j), deepest);
         if (best == null) {
-            LOG.info("[entropybot] mine: the {} nearest known {} are all buried or not loaded (I walk only to ore with an open face)", hits.size(), sid(j));
             for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) j.knownTried.add(BlockPos.asLong(h.x(), h.y(), h.z()));
+            if (underWater == hits.size()) {          // 0.36.9: every one skipped by the water rule - say so, not "buried"
+                LOG.info("[entropybot] mine: all {} nearest known {} are below me and I'm in the water - out of the water first", hits.size(), sid(j));
+                return mineEnd(s, p, j, "all " + hits.size() + " nearest known " + sid(j) + " are below me and I'm in the water (I don't dig down from in the water) - out of the water first");
+            }
+            LOG.info("[entropybot] mine: the {} nearest known {} are all buried or not loaded (I walk only to ore with an open face)", hits.size(), sid(j));
             return mineEnd(s, p, j, io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, j.kKnown, j.kTries) + (tooDeep > 0 ? " (" + tooDeep + " too deep for a dig (" + deepest + " blocks), use mine strip)" : " (" + buried + " nearest are buried; mine ... dig digs to them)"));
         }
         j.kVein = new ArrayList<>();
@@ -1770,6 +1775,18 @@ final class Mining {
     private void releaseLeases(MineRun j) {
         for (String id : j.leases) core.guard.core.release(id);
         j.leases.clear();
+    }
+
+    /** 0.36.9: a dry open cell (air, no fluid) beside x y z: the ore has a face a walk can reach without digging. */
+    private static boolean airFace(Level level, int x, int y, int z) {
+        int[][] sides = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (int[] d : sides) {
+            BlockPos c = new BlockPos(x + d[0], y + d[1], z + d[2]);
+            if (!level.isLoaded(c)) continue;
+            var st = level.getBlockState(c);
+            if (st.getFluidState().isEmpty() && st.getCollisionShape(level, c).isEmpty()) return true;
+        }
+        return false;
     }
 
     /** Only the job's block may be broken (with dig: tunnelling too; the protected blocks never). */
