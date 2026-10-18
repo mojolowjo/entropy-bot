@@ -141,6 +141,12 @@ final class DigCommands {
         return ClimbPlan.Kind.DIG;
     }
 
+    /** 0.36.a2: a loaded cell holding a fluid (ClimbPlan.Fluid: a water floor is no step); not loaded counts as fluid (refused). */
+    static boolean fluidCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+        return !lv.isLoaded(bp) || !lv.getBlockState(bp).getFluidState().isEmpty();
+    }
+
     /**
      * 0.31.0 (trial 10 snow pit): snow layers low enough to walk through as a feet cell (ClimbPlan.snowWalkable: up to
      * 2 layers, 3-4 with the block 2 above clear). Vanilla SnowLayerBlock.LAYERS. False on any trouble.
@@ -178,7 +184,7 @@ final class DigCommands {
         if (ClimbFallback.fallback(CLIMB_FAILS.fails(here))) return climbFallback(c, p, here, surface, from);
         boolean pick = false;
         for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (e.getValue() > 0 && e.getKey().endsWith("_pickaxe")) pick = true;
-        ClimbPlan.Plan plan = ClimbPlan.plan((cx, cy, cz) -> climbCell(lv, cx, cy, cz), x, y, z, surface, pick);
+        ClimbPlan.Plan plan = ClimbPlan.plan((cx, cy, cz) -> climbCell(lv, cx, cy, cz), (cx, cy, cz) -> fluidCell(lv, cx, cy, cz), x, y, z, surface, pick);
         if (plan.err() != null) {
             LOG.info("[entropybot] climb at {} {} {} (surface {}): {}", x, y, z, surface, plan.err());
             if (pick) {
