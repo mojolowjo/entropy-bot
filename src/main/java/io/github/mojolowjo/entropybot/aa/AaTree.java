@@ -26,7 +26,8 @@ import java.util.List;
  * {@link #mermaid()} exports the static tree for the docs; node ids are stable for the snapshot.
  */
 public final class AaTree {
-    public static final long CALM_MS = 3000;
+    public static final long CALM_MS = 3000, AIR_HOLD_MS = 30_000;
+    private long airSince = -1;
 
     public final GuardSelector root;
     public final MemoryFallback slot;
@@ -55,8 +56,16 @@ public final class AaTree {
         // [1] DANGER: the guard with the band (enter at once, leave after 3 s calm with health >= 12 and air full)
         Condition dangerGuard = new Condition("danger", "danger", bb -> {
             AaTree t = self[0];
-            boolean urgent = bb.in.danger >= 2 || bb.in.health <= 8 || bb.in.air < 100 || bb.in.inLavaOrFire || bb.in.creeperClose;
-            boolean notCalm = t.dangerLatch.active() && (bb.in.health < 12 || bb.in.air < 300 || bb.in.danger > 0);
+            // 0.36.4 (aa40d/e: under a water ceiling the air stayed short and AA's job sat paused 10+ min, nothing moving
+            // the bot): air alone holds the guard at most AIR_HOLD_MS; then the job resumes (its walk gets the bot out),
+            // and real drowning still comes back through health <= 8
+            long now0 = bb.clock.now();
+            boolean airShort = bb.in.air < 300;
+            if (!airShort) t.airSince = -1;
+            else if (t.airSince < 0) t.airSince = now0;
+            boolean airCounts = airShort && now0 - t.airSince < AIR_HOLD_MS;
+            boolean urgent = bb.in.danger >= 2 || bb.in.health <= 8 || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
+            boolean notCalm = t.dangerLatch.active() && (bb.in.health < 12 || airCounts || bb.in.danger > 0);
             boolean on = t.dangerLatch.update(urgent || notCalm, bb.clock.now());
             if (on) t.dangerWhy = bb.in.air < 100 ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : bb.in.health <= 8 ? "low health " + Math.round(bb.in.health)
                     : bb.in.creeperClose ? "creeper close" : bb.in.danger >= 2 ? bb.in.dangerWhy : "calming down";

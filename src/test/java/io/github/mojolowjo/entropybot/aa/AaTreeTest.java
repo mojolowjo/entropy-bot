@@ -290,6 +290,24 @@ class AaTreeTest {
         assertEquals("goal cobblestone 64", lastChain());
     }
 
+    /** 0.36.4 (aa40d): short air alone holds the danger guard at most 30 s; then the task runs again. */
+    @Test
+    void shortAirAloneDoesNotHoldTheTaskForever() {
+        freshStart();
+        bb.in.health = 20;
+        bb.in.air = 300;
+        tree.tick(bb);
+        assertEquals("needs", tree.driver());
+        bb.in.air = 50;
+        tree.tick(bb);
+        assertEquals("danger", tree.driver());
+        for (int i = 0; i < 40; i++) {
+            clock.advance(1000);
+            tree.tick(bb);
+        }
+        assertEquals("needs", tree.driver(), "the job resumes after 30 s + the calm time");
+    }
+
     /** 0.36.3 (aa40b): in the quarry hole with no table, the ladder climbs first; at the surface it plans the table. */
     @Test
     void underGroundWithNoTableClimbsFirst() {
