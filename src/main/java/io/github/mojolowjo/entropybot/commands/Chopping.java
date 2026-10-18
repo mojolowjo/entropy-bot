@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.commands;
 
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalNear;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.cave.MineRules;
@@ -134,6 +135,8 @@ final class Chopping {
         int[] farAt;            // 0.34.1: the last trip's target
         String nearestReachable;
         boolean treeChop;
+        int pickBag, pickGot;   // 0.35.5: the pickup's bag count and items gained
+        long pickGainAt;        // 0.35.5: the pickup step's tick of the last gain
     }
 
     // ==== the verb ====
@@ -562,42 +565,90 @@ final class Chopping {
         return false;
     }
 
-    /** Walks over the drops near the tree for up to 10 s (Falling Trees drops them where the trunk lands). */
+    static final int PICK_RADIUS = 16, PICK_NEAR_LOG = 4;
+    static final long PICK_NO_GAIN = 100, PICK_MAX = 600;     // 5 s without a gain ends it; 30 s at most
+
+    /**
+     * 0.35.5 (to-do 12c, like Baritone's mine pickup): walks next to the drops within 16 of the trunk or near a broken
+     * log (anticipated drops), its own drops (the log, saplings, sticks, apples) first; goes on while the bag grows,
+     * ends 5 s after the last gain (30 s at most) and logs what it got and left.
+     */
     private String pickup(Seq s, Seq.Step st, Run r, LocalPlayer p, long elapsed) {
         IBaritone b = Jobs.baritone();
         if (r.tree == null || b == null) return "next";
-        if (elapsed > 200) {
-            Jobs.cancel(b);
-            return "next";
-        }
         int[] base = r.tree.base();
-        if (elapsed > 200 || elapsed == 0) pickupProbe(p, base, elapsed == 0 ? "start" : "timed out");
+        int bag = bagCount(p);
+        if (elapsed == 0) {
+            pickupProbe(p, base, "start");
+            r.pickBag = bag;
+            r.pickGot = 0;
+            r.pickGainAt = 0;
+        } else if (bag > r.pickBag) {
+            r.pickGot += bag - r.pickBag;
+            r.pickGainAt = elapsed;
+        }
+        r.pickBag = bag;
         ItemEntity best = null;
         double bd = Double.MAX_VALUE;
+        int left = 0;
         for (Entity e : p.clientLevel.entitiesForRendering()) {
             if (!(e instanceof ItemEntity ie) || !e.isAlive()) continue;
-            if (Math.abs(e.getX() - base[0]) > 9 || Math.abs(e.getZ() - base[2]) > 9 || Math.abs(e.getY() - base[1]) > 8) continue;
+            if (!nearTree(r.tree, e.getX(), e.getY(), e.getZ())) continue;
             int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
             if (jobs.goalAllowed(x, y, z) != null) continue;
             if (p.getInventory().getFreeSlot() < 0 && p.getInventory().getSlotWithRemainingSpace(ie.getItem()) < 0) continue;
-            double d = e.distanceTo(p);
+            left++;
+            double d = e.distanceTo(p) - (ownDrop(r.tree, BuiltInRegistries.ITEM.getKey(ie.getItem().getItem()).toString()) ? 8 : 0);
             if (d < bd) {
                 bd = d;
                 best = ie;
             }
         }
-        if (best == null) {
-            if (elapsed < 30) return "wait";          // the drops of a fall land a moment later
+        String end = null;
+        if (best == null && elapsed >= 30) end = "no drops left";          // the drops of a fall land a moment later
+        else if (best != null && elapsed - r.pickGainAt > PICK_NO_GAIN) end = "no gain for " + PICK_NO_GAIN / 20 + " s";
+        else if (elapsed > PICK_MAX) end = "the " + PICK_MAX / 20 + " s cap";
+        if (end != null) {
             Jobs.cancel(b);
+            LOG.info("[entropybot] chop: pickup done at {}: {} item(s) picked up, {} drop(s) left near the tree, after {} s ({})",
+                    r.tree.at(), r.pickGot, best == null ? 0 : left, elapsed / 20, end);
+            if (best != null) pickupProbe(p, base, "left");
             return "next";
         }
-        if (st.pos == null || st.pos[0] != (int) Math.floor(best.getX()) || st.pos[2] != (int) Math.floor(best.getZ()) || Jobs.idle(b)) {
+        if (best == null) return "wait";
+        boolean same = st.pos != null && st.pos[0] == (int) Math.floor(best.getX()) && st.pos[2] == (int) Math.floor(best.getZ());
+        if (!same || Jobs.idle(b)) {
+            if (!same) r.pickGainAt = Math.max(r.pickGainAt, elapsed - PICK_NO_GAIN / 2);     // a new drop gets its walk (review: a long first walk)
             st.pos = new int[]{(int) Math.floor(best.getX()), (int) Math.floor(best.getY() + 0.01), (int) Math.floor(best.getZ())};
             Jobs.safeSettings();
-            b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(st.pos[0], st.pos[1], st.pos[2])));
-            s.setStatus(s.label + " - picking up the logs");
+            // next to the drop, not onto it (a drop in leaves or a hole no longer stalls the path); arrived and still there:
+            // onto it (GoalNear's 1 is 3D, the pickup reach ~1.3 from the centre, so a corner drop can stay out of reach)
+            BlockPos at = new BlockPos(st.pos[0], st.pos[1], st.pos[2]);
+            b.getCustomGoalProcess().setGoalAndPath(same ? new GoalBlock(at) : new GoalNear(at, 1));
+            s.setStatus(s.label + " - picking up the drops");
         }
         return "wait";
+    }
+
+    /** Within 16 of the trunk's base, or within 4 of one of its logs (where a broken log drops). */
+    static boolean nearTree(TreeFinder.Tree t, double x, double y, double z) {
+        int[] base = t.base();
+        if (Math.abs(x - base[0]) <= PICK_RADIUS && Math.abs(z - base[2]) <= PICK_RADIUS && Math.abs(y - base[1]) <= PICK_RADIUS) return true;
+        for (int[] l : t.logs()) {
+            if (Math.abs(x - l[0]) <= PICK_NEAR_LOG && Math.abs(z - l[2]) <= PICK_NEAR_LOG && Math.abs(y - l[1]) <= PICK_NEAR_LOG) return true;
+        }
+        return false;
+    }
+
+    /** The tree's own drops: its log, saplings, sticks, apples. */
+    static boolean ownDrop(TreeFinder.Tree t, String itemId) {
+        return itemId.equals(t.logId()) || itemId.endsWith("sapling") || itemId.equals("minecraft:stick") || itemId.equals("minecraft:apple");
+    }
+
+    private static int bagCount(LocalPlayer p) {
+        int n = 0;
+        for (var st : p.getInventory().items) n += st.getCount();
+        return n;
     }
 
     /** 0.34.1 probe (live: 1 of 3 broken logs came home): every dropped item within 16 of the trunk, offset from the base. */
