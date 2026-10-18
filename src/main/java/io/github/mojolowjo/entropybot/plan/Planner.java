@@ -492,7 +492,7 @@ public final class Planner {
                 case "mine" -> {
                     String fam = (String) PlanRecipes.ORES.get(s.item)[0];
                     yield switch (s.extra == null ? "strip" : s.extra) {
-                        case "ore" -> "mine " + fam + "_ore " + s.amount;
+                        case "ore" -> "mine " + fam + "_ore " + s.amount + " dig";     // 0.36.a4 (owner): buried known ore is dug to from dry ground
                         case "cave" -> "mine cave " + fam + " " + s.amount;
                         default -> "mine strip " + fam + " " + s.amount;
                     };
