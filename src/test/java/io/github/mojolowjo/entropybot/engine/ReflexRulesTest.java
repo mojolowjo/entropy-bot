@@ -5,6 +5,16 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ReflexRulesTest {
+
+    @Test
+    void nearestShoreIsTheClosestDryCell() {
+        // a lake round 0 62 0: dry ground east from x 7 (at y 62) and north from z -5 (one up, y 63)
+        ReflexRules.Dry dry = (x, y, z) -> (x >= 7 && y == 62) || (z <= -5 && y == 63);
+        assertArrayEquals(new int[]{0, 63, -5}, ReflexRules.nearestShore(0, 62, 0, 32, dry));
+        assertArrayEquals(new int[]{7, 62, 0}, ReflexRules.nearestShore(2, 62, 0, 32, dry));
+        assertNull(ReflexRules.nearestShore(0, 62, 0, 4, dry), "none within 4");
+        assertNull(ReflexRules.nearestShore(0, 62, 0, 32, (x, y, z) -> y == 70), "too far up");
+    }
     @Test
     void eatsAtFourteenOrWhenHurtBelowEighteen() {
         assertTrue(ReflexRules.wantsMeal(14, 20));

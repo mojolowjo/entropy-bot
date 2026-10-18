@@ -77,6 +77,14 @@ public final class BuilderReport {
      * The end when the bag holds no tool that can harvest a block still to dig (a pickaxe broke mid-box): the builder
      * would dig it by hand, slowly and with no drop. Plain dig's text ({@link DigWhy#pickaxeText}).
      */
+    /** 0.34.3: "... (broke 0 blocks); 2 more on the way in (outside the box) - next: ...": the way-in count before the next part. */
+    public static String withWayIn(String msg, int outside) {
+        if (msg == null || outside <= 0) return msg;
+        String add = "; " + outside + " more on the way in (outside the box)";
+        int i = msg.indexOf(" - next: ");
+        return i < 0 ? msg + add : msg.substring(0, i) + add + msg.substring(i);
+    }
+
     public static String noTool(String label, int broke, String block) {
         String t = DigWhy.pickaxeText(block);
         int i = t.indexOf(" - next: ");

@@ -13,6 +13,14 @@ class BuilderReportTest {
     static final ClearBox BOX = ClearBox.of(0, 50, 0, 3, 52, 3);
     static final String LABEL = "digging 0 50 0 to 3 52 3";
 
+    @Test
+    void wayInBreaksAreNamedBeforeTheNextPart() {
+        assertEquals("stopped: x - needs a pickaxe for stone (broke 0 blocks); 2 more on the way in (outside the box) - next: craft stone_pickaxe 1",
+                BuilderReport.withWayIn("stopped: x - needs a pickaxe for stone (broke 0 blocks) - next: craft stone_pickaxe 1", 2));
+        assertEquals("ok: done; 1 more on the way in (outside the box)", BuilderReport.withWayIn("ok: done", 1));
+        assertEquals("ok: done", BuilderReport.withWayIn("ok: done", 0));
+    }
+
     static FakeWorld empty() {
         FakeWorld w = new FakeWorld();
         w.fill(0, 3, 50, 52, 0, 3, "air");

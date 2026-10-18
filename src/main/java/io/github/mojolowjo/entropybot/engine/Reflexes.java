@@ -512,6 +512,52 @@ public final class Reflexes {
             swimming = true;
             mc.options.keyJump.setDown(true);
         } else releaseSwim(mc);
+        shoreWatch(p, b, drives);
+    }
+
+    /** 0.34.3: since when the bot floats with its head above water and nothing driving (-1: not now); the next look. */
+    private long floatSince = -1, shoreNext = -1;
+
+    /**
+     * 0.34.3 (after the air reflex surfaced it, the bot trod water there forever): 5 s afloat with no job, no reflex and
+     * Baritone idle: a short walk to the nearest dry standable cell (ReflexRules.nearestShore, 32 blocks), said once.
+     * None in reach: said once, looked for again in a minute. Never while a job or a reflex drives it.
+     */
+    private void shoreWatch(LocalPlayer p, IBaritone b, boolean drives) {
+        try {
+            if (drives || b == null || !p.isInWater()) { floatSince = -1; return; }
+            if (p.isUnderWater()) return;            // bobbing at the surface: the clock runs on
+            if (floatSince < 0) floatSince = now;
+            if (now - floatSince < 100 || now < shoreNext) return;
+            var lv = p.level();
+            int x = (int) Math.floor(p.getX()), y = (int) Math.floor(p.getY()), z = (int) Math.floor(p.getZ());
+            int[] s = ReflexRules.nearestShore(x, y, z, ReflexRules.SHORE_RADIUS, (cx, cy, cz) -> {
+                net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(cx, cy, cz);
+                if (!lv.isLoaded(at)) return false;
+                var below = lv.getBlockState(at.below());
+                if (!below.getFluidState().isEmpty() || !below.isFaceSturdy(lv, at.below(), net.minecraft.core.Direction.UP)) return false;
+                for (net.minecraft.core.BlockPos c : new net.minecraft.core.BlockPos[]{at, at.above()}) {
+                    var st = lv.getBlockState(c);
+                    if (!st.getFluidState().isEmpty() || !st.getCollisionShape(lv, c).isEmpty()) return false;
+                }
+                return true;
+            });
+            if (s == null) {
+                shoreNext = now + 1200;
+                String t = "afloat at " + x + " " + y + " " + z + " with no dry ground within " + ReflexRules.SHORE_RADIUS + " blocks - next: goto x y z (a shore), or come get me";
+                LOG.info("[entropybot] shore: {}", t);
+                whisper(t);
+                return;
+            }
+            shoreNext = now + 600;
+            b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(s[0], s[1], s[2]));
+            String t = "afloat with nothing to do: swimming to the nearest shore at " + s[0] + " " + s[1] + " " + s[2];
+            LOG.info("[entropybot] shore: {} (from {} {} {})", t, x, y, z);
+            whisper(t);
+        } catch (RuntimeException e) {
+            shoreNext = now + 1200;
+            LOG.warn("[entropybot] shore: the look for dry ground failed: {}", e.toString());
+        }
     }
 
     /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
