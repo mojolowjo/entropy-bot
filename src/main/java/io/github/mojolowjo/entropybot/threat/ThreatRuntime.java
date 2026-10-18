@@ -291,6 +291,8 @@ public final class ThreatRuntime {
      */
     public RunGuard.Verdict runGuard(LocalPlayer p, double dx, double dz) {
         try {
+            // 0.36.7 (owner, aa366: stopped in a flooded cave): already in water, water ahead is no hazard - swim on
+            if (p.isInWater()) return new RunGuard.Verdict("go", dx, dz, "in water");
             Level level = p.level();
             BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
             RunGuard.Fire fire = (x, y, z) -> level.getBlockState(m.set(x, y, z)).is(net.minecraft.tags.BlockTags.FIRE);

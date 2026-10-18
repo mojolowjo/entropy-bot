@@ -156,7 +156,9 @@ public final class Jobs {
             @Override
             public boolean boxedIn(int[] me) {
                 LocalPlayer p = Minecraft.getInstance().player;
-                return p != null && bestFreeStep(p, null) == null;
+                // 0.36.7 (owner, aa366): in water it is never sealed in - Baritone swims; the dig-out refused every
+                // side by the water and ended the walk "no path" while the iron was reachable
+                return p != null && !p.isInWater() && bestFreeStep(p, null) == null;
             }
 
             @Override
