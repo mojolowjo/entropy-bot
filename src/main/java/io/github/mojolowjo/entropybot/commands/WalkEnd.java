@@ -10,6 +10,8 @@ final class WalkEnd {
 
     /** Blocks (straight line) from the goal a walk may end and still count as arrived. */
     static final int TOLERANCE = 3;
+    /** 0.33.1: a two-number goto may end on top of a wall column or drift in a water column: a little more room. */
+    static final int XZ_TOLERANCE = 5;
     /** How often a walk that ended short tries to step off / dig out and walk again before it gives up. */
     static final int SHORT_TRIES = 6;
 
@@ -24,7 +26,7 @@ final class WalkEnd {
     static boolean arrivedXZ(int[] me, int[] xz) {
         if (xz == null || me == null) return true;
         long dx = me[0] - xz[0], dz = me[2] - xz[1];
-        return dx * dx + dz * dz <= (long) TOLERANCE * TOLERANCE;
+        return dx * dx + dz * dz <= (long) XZ_TOLERANCE * XZ_TOLERANCE;
     }
 
     static String shortResultXZ(int[] me, int[] xz) {

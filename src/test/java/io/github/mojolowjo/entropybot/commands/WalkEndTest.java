@@ -29,6 +29,9 @@ class WalkEndTest {
     void twoNumberGoalChecksXzOnly() {
         assertTrue(WalkEnd.arrivedXZ(new int[]{-56, 120, -398}, new int[]{-56, -400}));
         assertFalse(WalkEnd.arrivedXZ(new int[]{-56, 40, -9}, new int[]{-56, -400}));
+        // 0.33.2: on top of a wall column or drifting in water a few blocks off still counts
+        assertTrue(WalkEnd.arrivedXZ(new int[]{-52, 70, -397}, new int[]{-56, -400}));
+        assertFalse(WalkEnd.arrivedXZ(new int[]{-50, 70, -400}, new int[]{-56, -400}));
         assertTrue(WalkEnd.shortResultXZ(new int[]{-56, 40, -9}, new int[]{-56, -400}).startsWith("error: couldn't get to -56 -400 (391 blocks away"));
     }
 

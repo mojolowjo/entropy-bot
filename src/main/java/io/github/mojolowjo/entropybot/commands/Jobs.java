@@ -68,6 +68,8 @@ public final class Jobs {
         int[] doorFinal;
         /** 0.32.2 (P2): stuck under ground: the walked trail back in hops (retraceFinal: the real goal after them). */
         boolean retraceTried;
+        /** 0.33.1: an owner/operator "goto x z" (not a chain, a reflex or a leg): only these get the ended-short check. */
+        boolean xzOrder;
         /** 0.33.0 (A1): the paper escape (walk plan, then digging plan) was started for this walk: no staircase or dig-out after it. */
         boolean paperEscape;
         java.util.ArrayDeque<int[]> retraceHops;
@@ -1376,7 +1378,7 @@ public final class Jobs {
             }
             // 0.33.1 (live: "goto x z" from a sealed pocket under ground ended "ok: arrived near" where it started): a
             // two-number goal has no dest, so the end checks x z alone; short under ground: trail back, then the paper plans
-            int[] xz = d == null && j.retraceFinal == null && !j.reflex && !moving ? travelXZ(j) : null;
+            int[] xz = d == null && j.xzOrder && j.retraceFinal == null && !j.reflex && !moving ? travelXZ(j) : null;
             if (xz != null && !WalkEnd.arrivedXZ(me, xz)) {
                 if (startRetrace(p, j, b, "ended short")) return;
                 j.retraceTried = true;

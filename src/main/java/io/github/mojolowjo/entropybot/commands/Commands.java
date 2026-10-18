@@ -1358,7 +1358,11 @@ public final class Commands implements Chains.Env {
                         return r != null && r.startsWith("error") ? r : Texts.withNote(r, t + " is inside " + solidId + ": going to " + Jobs.fmt(f) + " instead");
                     }
                 }
-                return jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));
+                String gr = jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));
+                // 0.33.1: the ended-short retrace/paper plans only for an order typed by the owner or operator, not a chain's leg
+                if (gr != null && gr.startsWith("ok") && jobs.job != null && !chainRunning() && rest.trim().matches("-?\\d+ -?\\d+"))
+                    jobs.job.xzOrder = true;
+                return gr;
             }
             case "spawn", "bed" -> { return jobs.startSetSpawn(player); }
             case "sleep" -> { return SleepJob.start(this, player, rest); }              // C4: in bed until morning

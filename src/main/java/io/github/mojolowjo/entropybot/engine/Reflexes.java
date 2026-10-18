@@ -343,11 +343,13 @@ public final class Reflexes {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) {
+            releaseSwim(mc);
             if (reflex != Reflex.NONE) settle("left the world");
             return;
         }
         io.github.mojolowjo.entropybot.threat.HitWatch.INSTANCE.observe(p);     // 0.24.4 damage log
         if (p.isDeadOrDying()) {
+            releaseSwim(mc);
             death(mc, p);
             return;
         }
@@ -481,22 +483,47 @@ public final class Reflexes {
 
     /** 0.33.1: head under water and sinking with nothing driving, or the air low: hold jump to reach the surface. */
     private void airWatch(Minecraft mc, LocalPlayer p) {
+        // a screen open (chest, inventory): no input of ours; let go of a held jump
+        if (mc.screen != null) { releaseSwim(mc); return; }
         IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
         boolean drives = reflex != Reflex.NONE || (b != null && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
+        // review: an underwater dig/build/chest job sits between Baritone legs for a tick: it drives too (a plain walk doesn't)
+        if (!drives) {
+            try {
+                var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
+                drives = cmds != null && (cmds.chainRunning() || cmds.jobs.running() && !"travel".equals(cmds.jobs.job.type));
+            } catch (RuntimeException e) {
+                drives = false;
+            }
+        }
+        // riding (a boat sunk, a mount under water): isUnderWater is false then; get off when the eyes are in water
+        if (p.isPassenger()) {
+            if (p.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) && p.getAirSupply() < p.getMaxAirSupply()) {
+                LOG.info("[entropybot] air reflex: riding with my head under water (air {}/{}) - getting off", p.getAirSupply(), p.getMaxAirSupply());
+                p.stopRiding();
+            }
+            releaseSwim(mc);
+            return;
+        }
         boolean up = ReflexRules.swimUp(p.isUnderWater(), p.getAirSupply(), p.getMaxAirSupply(), drives);
         if (up) {
             if (!swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{}{} - swimming up",
                     (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), drives ? " (low, overriding)" : "");
             swimming = true;
             mc.options.keyJump.setDown(true);
-        } else if (swimming) {
-            swimming = false;
-            mc.options.keyJump.setDown(false);
-        }
+        } else releaseSwim(mc);
+    }
+
+    /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
+    private void releaseSwim(Minecraft mc) {
+        if (!swimming) return;
+        swimming = false;
+        if (mc != null) mc.options.keyJump.setDown(false);
     }
 
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();
+        releaseSwim(mc);
         duel.abort(why);
         cspr.abort(why);
         if (reflex == Reflex.FLEEING || reflex == Reflex.RETREATING) stopMoving(mc);     // 0.23.2: safe, stop sprinting

@@ -907,6 +907,13 @@ final class Mining {
     private String exploreStep(Seq s, LocalPlayer p) {
         ExRun ex = runs.get(s) instanceof ExRun x ? x : null;
         if (ex == null) return "the explore run is gone";
+        // review 0.33.2: a gather that ended without its tally step (failed, skipped) is closed here, never left open
+        if (ex.gatherStart > 0) {
+            LOG.info("[entropybot] explore: gather {} ended without its tally ({} ticks)", ex.gathers, now() - ex.gatherStart);
+            ex.gatherTicks += now() - ex.gatherStart;
+            ex.gatherStart = 0;
+            ex.before = null;
+        }
         IBaritone b = Jobs.baritone();
         int[] me = Jobs.here(p);
         String d = dim();
