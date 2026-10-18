@@ -432,6 +432,12 @@ final class Mining {
                 LOG.info("[entropybot] mine: the remembered ore at {} was out of reach from {}: {}", Jobs.fmt(t), Jobs.fmt(me), r);
                 commands.whisper(commands.owner(), "ore at " + Jobs.fmt(t) + " out of reach on foot: " + r);
             });
+            if (s != null && (s.startsWith("busy") || s.startsWith("error"))) {
+                // 0.34.3 (review): no plan started, so no whisper will follow - say so now and go on
+                LOG.info("[entropybot] mine: ended {} below the remembered ore at {} - no placing plan ({}), going on", t[1] - me[1], Jobs.fmt(t), s);
+                commands.whisper(commands.owner(), "ore at " + Jobs.fmt(t) + " out of reach on foot; no placing plan (" + s + ") - next: plan path " + to + " place");
+                return;
+            }
             LOG.info("[entropybot] mine: ended {} below the remembered ore at {} - plan path {} place: {}", t[1] - me[1], Jobs.fmt(t), to, s);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] mine: the placing plan to {} failed to start: {}", Jobs.fmt(t), e.toString());

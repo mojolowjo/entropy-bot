@@ -11,7 +11,8 @@ import java.util.function.Predicate;
 public final class BaritoneVerb {
     private BaritoneVerb() {}
 
-    public static final String USAGE = "usage: b <baritone command> (e.g. b set allowSprint true)";
+    public static final String RAW_MINE = "error: raw Baritone mine is off (no stuck watchdog, no areas or protect rules) - use mine <ore> [n] (or mine <ore> dig)";
+    public static final String USAGE ="usage: b <baritone command> (e.g. b set allowSprint true)";
 
     /** The game side: Baritone's primary instance, through the safety net. */
     public static String run(String text, boolean isOwner, String owner) {
@@ -28,6 +29,9 @@ public final class BaritoneVerb {
         String t = text == null ? "" : text.trim();
         if (t.startsWith("#")) t = t.substring(1).trim();
         if (t.isEmpty()) return USAGE;
+        // 0.34.3: Baritone's own #mine has no stuck/no-progress watchdog, no areas, protect boxes or built-block rules;
+        // the mod's mine has all of them, so the raw form is refused with the way to it
+        if (t.toLowerCase(java.util.Locale.ROOT).matches("^mine(\\s.*)?$")) return RAW_MINE;
         try {
             return execute.test(t) ? "ok (check chat for Baritone errors)" : "error: baritone rejected command";
         } catch (IllegalStateException e) {
