@@ -75,6 +75,17 @@ final class GoalPlanning {
         if (CampCommands.near(lv, feet, "furnace")) f.flag("furnace");
         f.dir = CampCommands.quarryDir(lv, feet);
         List<int[]> free = CampCommands.freeRing(lv, feet, f.dir);
+        if (free.size() < 2) {
+            // 0.36.4 (aa40c: at the top of a climb no cell by the feet was free for 30 min): the nearest standable cell
+            // inside my areas with two free cells by it, within 6 first, then 24; the place steps walk there first
+            int[] s = openSpot(lv, feet, f.dir, 6, 1);
+            if (s == null) s = openSpot(lv, feet, f.dir, 24, 2);
+            if (s != null) {
+                LOG.info("[entropybot] plan: no free spot by my feet at {} - using {} {} {} (the place steps walk there first)", Jobs.fmt(feet), s[0], s[1], s[2]);
+                f.feet = s;
+                free = CampCommands.freeRing(lv, s, f.dir);
+            }
+        }
         if (free.size() > 0) { f.table = free.get(0); f.flag("spot:table"); }
         if (free.size() > 1) { f.furnace = free.get(1); f.flag("spot:furnace"); }
         f.flag("quarry");
@@ -89,6 +100,25 @@ final class GoalPlanning {
      * the bag's namespaced ("minecraft:oak_log"): both are compared short, else nothing was taken off and the planner
      * planned "get coal 1" / "get planks 3" for what the bag already held (aa-v0 open point h).
      */
+    /** 0.36.4: the nearest cell within r (step) where the bot can stand, sky open, inside my areas, 2+ free cells by it. */
+    private int[] openSpot(ClientLevel lv, int[] f, int[] dir, int r, int step) {
+        String dim = Storage.dim();
+        int[] best = null;
+        long bestD = Long.MAX_VALUE;
+        for (int dx = -r; dx <= r; dx += step) for (int dz = -r; dz <= r; dz += step) for (int dy = -4; dy <= 4; dy++) {
+            long d = (long) dx * dx + (long) dz * dz + (long) dy * dy;
+            if (d == 0 || d >= bestD) continue;
+            int[] cell = {f[0] + dx, f[1] + dy, f[2] + dz};
+            BlockPos b = new BlockPos(cell[0], cell[1], cell[2]);
+            if (!c.inAreas(dim, cell[0], cell[2]) || !lv.isLoaded(b)) continue;
+            if (!CampCommands.placeable(lv, b) || !lv.getBlockState(b.above()).canBeReplaced() || !lv.canSeeSky(b.above())) continue;
+            if (CampCommands.freeRing(lv, cell, dir).size() < 2) continue;
+            best = cell;
+            bestD = d;
+        }
+        return best;
+    }
+
     static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) { return PlanFacts.minusBag(totals, bag); }
 
     /** Logs, stone and ores within 16 blocks (8 up and down): the trees, stone and ore:<family> facts. */
