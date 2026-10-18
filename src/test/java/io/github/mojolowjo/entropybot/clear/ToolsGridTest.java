@@ -185,6 +185,28 @@ class ToolsGridTest {
     }
 
     @Test
+    void hardToReachBlockGetsTheNearSpotsAfterTheCheapest() {
+        // 0.34.3: proof for 0.33.0's extra spots. A block on the floor in a stone shell (four sides and the top): every
+        // cheap floor spot in reach faces the shell; only a sealed pocket under it (not walkable, cost 1000+) sees it
+        FakeWorld w = new FakeWorld();
+        Pos t = new Pos(0, 53, 0);
+        w.set(0, 53, 0, "stone"); w.set(1, 53, 0, "stone"); w.set(-1, 53, 0, "stone"); w.set(0, 53, 1, "stone"); w.set(0, 53, -1, "stone");
+        w.set(0, 54, 0, "stone");
+        w.set(0, 51, 0, "air"); w.set(0, 52, 0, "air");
+        ClearBox box = ClearBox.of(0, 53, 0, 0, 53, 0);
+        ClearJob j = ClearJob.start(new ClearJob.Options().box(box), null, null);
+        Bot bot = Bot.at(3.5, 53, 3.5);
+        ClearGrid g = ClearGrid.build(w, box, bot, j);
+        int[] d = g.walkDistances(bot);
+        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        ClearGrid.Spot s = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
+        assertNotNull(s, "the near spots find the pocket: " + j.noSpotWhy);
+        assertEquals(new Pos(0, 51, 0), new Pos(s.x(), s.y(), s.z()));
+        assertTrue(s.cost() >= 1000, "not walkable: one of the extra spots");
+        assertEquals(Integer.valueOf(24), j.noSpotWhy.get("no sight"), "the 24 cheapest were tried first");
+    }
+
+    @Test
     void notUnderSandAndNotInWater() {
         FakeWorld w = new FakeWorld();
         // a block in a 1-wide shaft's wall with gravel on top: never stand under it, and never in water

@@ -86,6 +86,8 @@ public final class BuilderDig {
         /** a start cell turned to air since the last snapshot: refresh it at the next tick */
         volatile boolean dirty;
         final java.util.concurrent.atomic.AtomicInteger events = new java.util.concurrent.atomic.AtomicInteger();
+        /** 0.34.3: solid cells round the box (outside it, OUTSIDE_NEAR deep) at the start: those gone at the end were the way in */
+        Set<Long> outside = Set.of();
         long startTick, lastPoll, lastBeat = -1000, lastErrLog = -10000, loggedErrors, lastRefresh = -1000;
         int brokeAtPoll, brokeAtStart, restarts;
         boolean holdSeen;
@@ -247,6 +249,7 @@ public final class BuilderDig {
         s.mask = new BaritoneMask(box, s.job.force, s.job.keepOres, (x, y, z) -> fenced.contains(BaritoneMask.packed(x, y, z)) ? "protect box or safe area" : null,
                 BaritoneMask.onlyCells(o.only));
         s.startCells = Set.copyOf(s.mask.digCells(s.world));
+        s.outside = solidAround(s.world, box);
         s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();
         String le = s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
@@ -359,6 +362,27 @@ public final class BuilderDig {
     }
 
     /** Blocks of the start snapshot that are air (or liquid) now. */
+    /** 0.34.3 (live: "broke 0 blocks" while cobblestone came in: Baritone broke its way in, outside the box; our own breaks send no change event). */
+    static Set<Long> solidAround(Clearing.LiveWorld w, ClearBox b) {
+        Set<Long> out = new HashSet<>();
+        for (int x = b.x1() - OUTSIDE_NEAR; x <= b.x2() + OUTSIDE_NEAR; x++)
+            for (int y = b.y1() - OUTSIDE_NEAR; y <= b.y2() + OUTSIDE_NEAR; y++)
+                for (int z = b.z1() - OUTSIDE_NEAR; z <= b.z2() + OUTSIDE_NEAR; z++) {
+                    if (b.contains(x, y, z) || out.size() >= 20000) continue;
+                    try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException ignored) {}
+                }
+        return out;
+    }
+
+    static int goneOf(Clearing.LiveWorld w, Set<Long> cells) {
+        int n = 0;
+        for (long k : cells) {
+            int x = (int) (k >> 38), z = (int) ((k << 26) >> 38), y = (int) ((k << 52) >> 52);
+            try { if (w.air(x, y, z)) n++; } catch (RuntimeException ignored) {}
+        }
+        return n;
+    }
+
     static int broke(State s) {
         int n = 0;
         for (long k : s.startCells) {
@@ -777,6 +801,7 @@ public final class BuilderDig {
                 LOG.warn("[entropybot] dig via baritone: the pickaxe hint failed: {}", e.toString());
             }
         }
+        msg = BuilderReport.withWayIn(msg, goneOf(s.world, s.outside));
         if (s.sweeps > 0) msg += "; " + io.github.mojolowjo.entropybot.clear.DropSweep.text(s.picked, s.dropsLeft);
         if (s.countIds != null && s.countStart >= 0) msg += io.github.mojolowjo.entropybot.gather.StonePit.gotText(s.countStart, countOf(p, s.countIds));
         s.job.broken = broke;
@@ -840,9 +865,13 @@ public final class BuilderDig {
      * BaritoneHook.onBlockChange (Baritone's event thread): a start cell of the running dig turned to air (the stall
      * clock starts again, the snapshot is refreshed). Water flowing or gravel falling is no progress.
      */
+    /** How far outside the box a break still counts as the way in. */
+    static final int OUTSIDE_NEAR = 2;
+
     public static void blockChanged(int x, int y, int z, boolean air) {
         State s = current;
-        if (s == null || !air || !s.startCells.contains(BaritoneMask.packed(x, y, z))) return;
+        if (s == null || !air) return;
+        if (!s.startCells.contains(BaritoneMask.packed(x, y, z))) return;
         s.events.incrementAndGet();
         s.dirty = true;
         try { s.lastChange = Core.INSTANCE.tick(); } catch (Throwable ignored) {}
