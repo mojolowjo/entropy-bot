@@ -646,7 +646,11 @@ public final class Jobs {
             // 0.36.8: a mine job's walk to a known ore may dig (MineWater: inside my areas; next to water too, never lava)
             BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig() || travel;
             MineWater.set(MineWater.active() || travel);
-            BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace();
+            // owner's place rule (aa372): a walk may place under the policy's costs (x3 travel, a refill of its own dug
+            // cell about free, COST_INF where the rule set places nothing); the click veto asks the same policy
+            // (review: TRAVEL walks only - a mine job's walk keeps Mining's allowPlace=false, and the route map's
+            // travelOnlyPlacing holds)
+            BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace() || (pr.travelMayPlace() && !build && !mine);
         } catch (Throwable ignored) {}
     }
 

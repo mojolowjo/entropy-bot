@@ -56,6 +56,11 @@ public final class BreakPolicy {
         public static final double MINE_ORE = 0.5;
         /** TRAVEL placing: x3 (place cost 60 + walk). */
         public static final double TRAVEL_PLACE = 3;
+        /**
+         * Owner (aa372): placing into a cell the bot itself broke (the restore ledger, this walk's dug cells) costs
+         * about nothing: it puts the world back while getting out (pillar up its own shaft, refill a staircase).
+         */
+        public static final double REFILL = 0.05;
         /** Travel breaks per walk, all restored by the ledger (owner's default); the multiplier grows toward it. */
         public static final int TRAVEL_CAP = 24;
     }
@@ -95,24 +100,31 @@ public final class BreakPolicy {
 
     /**
      * What the caller knows about the cell. {@code loaded} false = unknown: fail closed. {@code builtBlock} = in the
-     * guard's protected set (block types that never generate naturally); {@code torch} = the item being placed is a torch.
+     * guard's protected set (block types that never generate naturally); {@code torch} = the item being placed is a torch;
+     * {@code dugByMe} = the bot itself broke this cell (the restore ledger or this job's breaks): a placement there is a refill.
      */
     public record BlockFacts(boolean loaded, String id, boolean blockEntity, boolean builtBlock, boolean ore, boolean unbreakable,
-                             Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch) {
+                             Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch, boolean dugByMe) {
+        public BlockFacts(boolean loaded, String id, boolean blockEntity, boolean builtBlock, boolean ore, boolean unbreakable,
+                          Fluid inCell, Fluid above, Fluid sides, Fluid below, boolean fallingAbove, boolean torch) {
+            this(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, false);
+        }
+
         public static final BlockFacts UNKNOWN = new BlockFacts(false, null, false, false, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
         /** Plain stone with nothing around it. */
         public static final BlockFacts STONE = new BlockFacts(true, "minecraft:stone", false, false, false, false, Fluid.NONE, Fluid.NONE, Fluid.NONE, Fluid.NONE, false, false);
 
-        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch); }
-        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, f, below, fallingAbove, torch); }
-        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch); }
-        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, f, above, sides, below, fallingAbove, torch); }
-        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, blockEntity, builtBlock, o, unbreakable, inCell, above, sides, below, fallingAbove, torch); }
-        public BlockFacts withBuilt(boolean b) { return new BlockFacts(loaded, id, blockEntity, b, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch); }
-        public BlockFacts withBlockEntity(boolean b) { return new BlockFacts(loaded, id, b, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch); }
-        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, f, torch); }
-        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, u, inCell, above, sides, below, fallingAbove, torch); }
-        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, t); }
+        public BlockFacts withAbove(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, f, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withSides(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, f, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withBelow(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, f, fallingAbove, torch, dugByMe); }
+        public BlockFacts withInCell(Fluid f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, f, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withOre(boolean o) { return new BlockFacts(loaded, id, blockEntity, builtBlock, o, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withBuilt(boolean b) { return new BlockFacts(loaded, id, blockEntity, b, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withBlockEntity(boolean b) { return new BlockFacts(loaded, id, b, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withFallingAbove(boolean f) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, f, torch, dugByMe); }
+        public BlockFacts withUnbreakable(boolean u) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, u, inCell, above, sides, below, fallingAbove, torch, dugByMe); }
+        public BlockFacts withTorch(boolean t) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, t, dugByMe); }
+        public BlockFacts withDug(boolean d) { return new BlockFacts(loaded, id, blockEntity, builtBlock, ore, unbreakable, inCell, above, sides, below, fallingAbove, torch, d); }
     }
 
     /**
@@ -240,6 +252,9 @@ public final class BreakPolicy {
             // the ledger fills only what it broke: air or water (the restore lease says the same)
             return Verdict.ok(1, "restore");
         }
+        // the owner's rule (aa372): a cell I broke myself is refilled for about nothing, wherever it is: the break was
+        // allowed there, so putting the block back is too (the rule set's place rule is for new blocks)
+        if (f.dugByMe()) return Verdict.ok(Costs.REFILL, a.intent().name().toLowerCase(Locale.ROOT) + "+refill");
         if (r.place() == PlaceRule.NEVER) return Verdict.deny("no placing in " + r.name(), "area");
         if (r.place() == PlaceRule.TORCHES && !f.torch()) return Verdict.deny("nothing but torches placed in " + r.name(), "area");
         double mult = a.intent() == Intent.TRAVEL ? Costs.TRAVEL_PLACE : 1;

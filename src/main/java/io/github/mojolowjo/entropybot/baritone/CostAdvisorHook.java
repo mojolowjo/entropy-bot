@@ -136,13 +136,37 @@ public final class CostAdvisorHook {
         }
     }
 
-    /** Placing: phase 1 leaves Baritone's own cost (placing stays owned by the plan/build jobs); counted only. */
+    /**
+     * Placing (the owner's rule, aa372): every placement costs, travel x3, and a placement into a cell the bot dug
+     * itself about nothing ({@link BreakPolicy.Costs#REFILL}), so A* prefers pillaring up its own shaft or refilling its
+     * staircase to digging a new way. TRAVEL takes the policy's whole verdict (COST_INF where the rule set places
+     * nothing: the click veto would refuse it too); MINE / DIG_OUT / BUILD keep Baritone's cost except for the refill.
+     */
     public static double placeCost(Object token, int x, int y, int z, BlockState current, PolicyRuntime.StateAt at, double baritoneCost) {
+        return placeCost(token, null, x, y, z, current, at, baritoneCost);
+    }
+
+    public static double placeCost(Object token, String dimIfNoToken, int x, int y, int z, BlockState current, PolicyRuntime.StateAt at, double baritoneCost) {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         pr.stats.ask(PolicyStats.SITE_ASTAR_PLACE);
+        if (!PolicyRuntime.LIVE) return Double.NaN;
         Token t = token instanceof Token tk ? tk : null;
         Intent in = t != null ? t.intent() : pr.intentNow();
-        if (PolicyRuntime.LIVE && (in == null || in == Intent.NONE)) return COST_INF;
-        return Double.NaN;
+        if (in == null || in == Intent.NONE) return COST_INF;
+        if (in == Intent.RESTORE) return Double.NaN;
+        try {
+            String dim = t != null ? t.dim() : dimIfNoToken;
+            BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
+            BreakPolicy.Where me = t != null ? t.me() : pr.where();
+            if (dim == null || s == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;      // fail closed for travel
+            BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
+            // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
+            if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return COST_INF; }
+            return baritoneCost * v.multiplier();
+        } catch (Throwable e) {
+            // review: the mixin fallback swallows a throw (Baritone's cost would apply: fail open); travel fails closed
+            pr.stats.error("advisor placeCost: " + e);
+            return in == Intent.TRAVEL ? COST_INF : Double.NaN;
+        }
     }
 }

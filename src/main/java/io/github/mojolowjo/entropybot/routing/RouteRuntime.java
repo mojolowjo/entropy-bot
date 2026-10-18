@@ -756,7 +756,8 @@ public final class RouteRuntime implements RoutePlanner {
             // mining plan phase 1: breaking on for a walk's travel policy alone is still a walking-only world for the map
             // (its contexts are built under the NONE intent, BaritoneCellMoves.create)
             boolean brk = s.allowBreak.value && !PolicyRuntime.INSTANCE.travelOnlyBreaking();
-            return brk || s.allowPlace.value;
+            boolean plc = s.allowPlace.value && !PolicyRuntime.INSTANCE.travelOnlyPlacing();
+            return brk || plc;
         } catch (Throwable t) {
             return true;
         }

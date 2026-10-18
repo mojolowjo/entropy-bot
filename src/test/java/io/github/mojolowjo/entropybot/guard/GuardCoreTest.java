@@ -65,6 +65,28 @@ class GuardCoreTest {
     }
 
     @Test
+    void refillPlacementGoesThroughWhereOnlyABoxRuleRefuses() {
+        // owner's place rule (aa372): a walk refills a cell it dug itself outside every area (no place lease): through
+        GuardCore g = withPolicy();
+        BreakPolicy.Snapshot s = BreakPolicy.Snapshot.of(g.policy(), false);
+        GuardCore.BlockInfo air = GuardCore.BlockInfo.placing(true, false);
+        BreakPolicy.BlockFacts dug = BreakPolicy.BlockFacts.STONE.withDug(true);
+        GuardCore.TravelCheck t = g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
+        assertTrue(t.allowed());
+        assertEquals("travel+refill", t.travel().rule());
+        assertEquals("outside every area", t.guard().reason());
+        // the same cell, not dug: the rule set places nothing but torches outside, so the click is refused
+        GuardCore.TravelCheck fresh = g.checkPolicyPlace(OW, 500, 60, 500, air, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
+        assertFalse(fresh.allowed());
+        assertEquals("nothing but torches placed in outside (singleplayer, lenient)", fresh.travel().reason());
+        // under a mine walk the same refill passes; a protect box stays floor and the policy is not asked
+        assertTrue(g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.MINE).allowed());
+        GuardCore.TravelCheck box = g.checkPolicyPlace(OW, -20, 60, 180, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
+        assertFalse(box.allowed());
+        assertNull(box.travel());
+    }
+
+    @Test
     void startsInLogModeDuringB0() {
         GuardCore g = new GuardCore();
         assertEquals(GuardCore.DEFAULT_MODE, g.mode());

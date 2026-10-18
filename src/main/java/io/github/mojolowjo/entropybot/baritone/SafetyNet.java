@@ -175,7 +175,12 @@ public final class SafetyNet {
 
     /** A mod job runs Baritone's builder (build floor|walls|fill|shell). */
     static boolean placingOwned() {
-        try { return io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace(); } catch (Throwable t) { return false; }
+        try {
+            if (io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace()) return true;
+            // owner's place rule (aa372): a running job's walk keeps placing on under the policy's costs; idle = off again
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            return pr.travelMayPlace() && pr.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL && Core.INSTANCE.commands.jobs.running();
+        } catch (Throwable t) { return false; }
     }
 
     public static IBaritone primary() {

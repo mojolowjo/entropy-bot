@@ -441,10 +441,27 @@ public final class GuardCore {
 
     public TravelCheck checkTravelBreak(String dim, int x, int y, int z, BlockInfo block, BreakPolicy.Snapshot s,
                                         BreakPolicy.BlockFacts facts, BreakPolicy.Where me) {
-        Verdict v = checkUnlogged(dim, x, y, z, "break", block);
+        return checkPolicy(dim, x, y, z, "break", block, s, facts, me, BreakPolicy.Intent.TRAVEL);
+    }
+
+    /**
+     * The owner's place rule (aa372): a real placement click while a job walks under the policy ({@code intent} TRAVEL,
+     * MINE, DIG_OUT or BUILD). The floor and the box rules as before; where only a box rule (no place lease here, outside
+     * every area) would refuse and the policy allows the placement (a refill of a cell the bot dug itself anywhere, a new
+     * block where the rule set is lenient), the click goes through. {@code facts} carries {@code dugByMe}.
+     */
+    public TravelCheck checkPolicyPlace(String dim, int x, int y, int z, BlockInfo block, BreakPolicy.Snapshot s,
+                                        BreakPolicy.BlockFacts facts, BreakPolicy.Where me, BreakPolicy.Intent intent) {
+        return checkPolicy(dim, x, y, z, "place", block, s, facts, me, intent);
+    }
+
+    private TravelCheck checkPolicy(String dim, int x, int y, int z, String action, BlockInfo block, BreakPolicy.Snapshot s,
+                                    BreakPolicy.BlockFacts facts, BreakPolicy.Where me, BreakPolicy.Intent intent) {
+        Verdict v = checkUnlogged(dim, x, y, z, action, block);
         if (v.allowed() && !v.wouldVeto()) return new TravelCheck(v, null, true);
         if (v.floor()) return new TravelCheck(v, null, false);
-        BreakPolicy.Verdict pv = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.BREAK, BreakPolicy.Intent.TRAVEL, dim, x, y, z, facts, me));
+        BreakPolicy.Action a = "place".equals(action) ? BreakPolicy.Action.PLACE : BreakPolicy.Action.BREAK;
+        BreakPolicy.Verdict pv = BreakPolicy.judge(s, new BreakPolicy.Ask(a, intent, dim, x, y, z, facts, me));
         return new TravelCheck(v, pv, pv.allowed() || v.allowed());
     }
 

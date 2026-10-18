@@ -233,7 +233,38 @@ public final class Guard {
             boolean airOrWater = st.isAir() || (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.canBeReplaced());
             info = GuardCore.BlockInfo.placing(airOrWater, torch);
         }
-        return refuse(level, pos, "place", core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", info));
+        String dim = dimOf(level);
+        PolicyRuntime pr = PolicyRuntime.INSTANCE;
+        BreakPolicy.Intent in = pr.intent();
+        if (pr.travelMayPlace() && in != null && in != BreakPolicy.Intent.NONE && in != BreakPolicy.Intent.RESTORE) return vetoPolicyPlace(level, pos, dim, pr, in, info, torch);
+        return refuse(level, pos, "place", core.check(dim, pos.getX(), pos.getY(), pos.getZ(), "place", info));
+    }
+
+    /**
+     * The owner's place rule (aa372): a placement while a job walks under the policy. The floor and the fence's boxes as
+     * before; where only a box rule would refuse, the policy decides with the walk's intent (GuardCore.checkPolicyPlace):
+     * a refill of a cell the bot dug itself goes through anywhere, a new block only where the rule set is lenient. The
+     * same condition A* planned with (a job runs), so the plan and the click agree.
+     */
+    private boolean vetoPolicyPlace(Level level, BlockPos pos, String dim, PolicyRuntime pr, BreakPolicy.Intent in, GuardCore.BlockInfo info, boolean torch) {
+        int x = pos.getX(), y = pos.getY(), z = pos.getZ();
+        BreakPolicy.BlockFacts f = pr.facts(level, pos, torch).withDug(pr.dug(dim, x, y, z));
+        GuardCore.TravelCheck t = core.checkPolicyPlace(dim, x, y, z, info, pr.snapshot(), f, pr.where(), in);
+        GuardCore.Verdict v = t.guard();
+        if (t.travel() == null) {
+            if (!v.allowed() || v.wouldVeto()) core.log().record(core.tick(), "place", dim, x, y, z, v.reason(), v.floor(), !v.allowed());
+            return refuse(level, pos, "place", v);
+        }
+        pr.stats.ask(PolicyStats.SITE_CLICK);
+        boolean jobRunning = false;
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        if (t.travel().allowed() && jobRunning) {
+            pr.logOverride(PolicyStats.SITE_CLICK, in.name().toLowerCase(java.util.Locale.ROOT) + " may place", x, y, z, t.travel(), v.reason());
+            return false;
+        }
+        pr.stats.deny(PolicyStats.SITE_CLICK, t.travel().reason());
+        if (!v.allowed() || v.wouldVeto()) core.log().record(core.tick(), "place", dim, x, y, z, v.reason(), v.floor(), !v.allowed());
+        return refuse(level, pos, "place", v);
     }
 
     /**

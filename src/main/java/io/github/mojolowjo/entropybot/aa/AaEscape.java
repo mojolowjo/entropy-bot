@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntPredicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,9 +33,50 @@ public final class AaEscape {
     public static final List<String> THROWAWAY = List.of("cobblestone", "dirt", "netherrack", "stone");
 
     private static final Pattern STEP = Pattern.compile("^stopped at step (\\d+) \\(");
+    private static final Pattern NO_PATH = Pattern.compile("no path to (-?\\d+) (-?\\d+) (-?\\d+)");
+
+    /** How far up the hole scan looks for a way out sideways. */
+    public static final int HOLE_MAX_UP = 48;
 
     public static boolean stuck(String chainEnd) {
         return chainEnd != null && chainEnd.contains("stuck under ground");
+    }
+
+    /** A walk that did not get there: no path, stuck, or the under-ground end. */
+    public static boolean walkFailed(String chainEnd) {
+        return chainEnd != null && (stuck(chainEnd) || chainEnd.contains("no path") || chainEnd.contains("stuck at"));
+    }
+
+    /** "... no path to x y z ..." -> the destination; else null. */
+    public static int[] destOf(String chainEnd) {
+        if (chainEnd == null) return null;
+        Matcher m = NO_PATH.matcher(chainEnd);
+        return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))} : null;
+    }
+
+    /**
+     * aa372 gap (the shared under-ground rule calls a 1x1 shaft open to the sky "not under ground", so the way out never
+     * fired at its bottom): the height of the hole the bot stands in. Scanning up from the feet, {@code dy} is the first
+     * level where it could step out sideways ({@code stepOut}: a side cell with room for feet and head); the column above
+     * the head must be open all the way ({@code columnOpen(dy)}: the cell dy above the feet). 0 = it can step out here
+     * (no hole); -1 = no way out within {@code maxUp} (a roof, or walls all the way up).
+     */
+    public static int holeExit(int maxUp, IntPredicate columnOpen, IntPredicate stepOut) {
+        for (int dy = 0; dy <= maxUp; dy++) {
+            if (stepOut.test(dy)) return dy;
+            if (!columnOpen.test(dy + 2)) return -1;        // the cell above the head at this level: a roof
+        }
+        return -1;
+    }
+
+    /**
+     * The trigger (owner, aa372): the way out fires on "the walk failed and the goal is above me / I'm in a hole I dug",
+     * not on "under a roof". {@code exitUp} from {@link #holeExit} (> 0: there is a hole with a way out above);
+     * {@code inDugCell}: the feet stand in a cell the bot broke itself (the policy's dug set).
+     */
+    public static boolean holeStuck(String chainEnd, int meY, int[] dest, boolean inDugCell, int exitUp) {
+        if (!walkFailed(chainEnd) || exitUp <= 0) return false;
+        return inDugCell || (dest != null && dest[1] > meY + 1);
     }
 
     /** "stopped at step 5 (goto ...): ..." -> 5; anything else -1. */
@@ -57,7 +99,8 @@ public final class AaEscape {
     }
 
     /**
-     * @param depth     blocks of ground over the bot (Jobs.underDepth; 0 = out)
+     * @param depth     blocks of ground over the bot (Jobs.underDepth), or for a hole open to the sky the levels up to
+     *                  where it can step out ({@link #holeExit}); 0 = out
      * @param shaftOpen every cell from above the head up to the surface is open (no block, no fluid)
      * @param throwaway throwaway blocks in the bag
      * @param pickaxe   a pickaxe in the bag

@@ -151,6 +151,50 @@ public final class PolicyRuntime {
         return travelMayBreak() && "fork".equals(hook) && intent == Intent.TRAVEL;
     }
 
+    /** The same for placing: allowPlace is on only because of the travel policy (no plan-go or build owns it). */
+    public boolean travelOnlyPlacing() {
+        return travelMayPlace() && "fork".equals(hook) && intent == Intent.TRAVEL;
+    }
+
+    /**
+     * Owner's place rule (aa372): a walk may turn Baritone's placing on: the policy is live with a cost hook and has a
+     * snapshot. The cost hook prices every placement (x3 for travel, about nothing into a cell the bot dug itself, COST_INF
+     * where the rule set places nothing) and the click veto asks the same policy, so A* and the click agree.
+     */
+    public boolean travelMayPlace() {
+        return travelLive() && snapshot != null;
+    }
+
+    // ---- the cells the bot dug itself (the refill rule) ----
+
+    /** Keys "dim x y z" of cells the bot broke itself (the ledger at load, every job break since). Read on the pathfinder thread. */
+    private final java.util.Set<String> dug = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** More than this and the set starts over from the ledger (a bound, not a policy; the ledger itself is capped). */
+    static final int DUG_CAP = 8192;
+
+    /** A new world's ledger: the dug set starts over with its entries' keys (null: nothing). */
+    public void resetDug(java.util.Collection<String> keys) {
+        dug.clear();
+        if (keys != null) for (String k : keys) if (dug.size() < DUG_CAP) dug.add(k);
+    }
+
+    /** The bot broke this cell (any job's break, recorded by the ledger or not): placing there is a refill. */
+    public void markDug(String key) {
+        if (dug.size() >= DUG_CAP) dug.clear();
+        dug.add(key);
+    }
+
+    public boolean dug(String dim, int x, int y, int z) {
+        return dim != null && dug.contains(dim + " " + x + " " + y + " " + z);
+    }
+
+    public int dugCount() { return dug.size(); }
+
+    /** The facts for a placement at the cell: {@link #facts} plus whether the bot dug the cell itself. */
+    public BlockFacts placeFacts(StateAt at, String dim, int x, int y, int z) {
+        return facts(at, x, y, z, false).withDug(dug(dim, x, y, z));
+    }
+
     // ---- the facts ----
 
     /** Client thread: what the guard knows about the block at pos, from the level. Unknown when not loaded. */
@@ -288,12 +332,17 @@ public final class PolicyRuntime {
 
     /** Phase 1: a TRAVEL click or plan the box rules would have refused went through; one log line per 10 s after the first 5. */
     public void logTravelOverride(String site, int x, int y, int z, BreakPolicy.Verdict v, String todayReason) {
+        logOverride(site, "travel may break", x, y, z, v, todayReason);
+    }
+
+    /** The same for a placement the policy let through ("may place": a refill or a lenient rule set). */
+    public void logOverride(String site, String what, int x, int y, int z, BreakPolicy.Verdict v, String todayReason) {
         stats.travelOverride(site);
         long now = System.currentTimeMillis();
         if (overrideLogged < 5 || now - lastOverrideLogMs >= PolicyStats.LOG_EVERY_MS) {
             overrideLogged++;
             lastOverrideLogMs = now;
-            LOG.info("[entropybot] rules: travel may break at {} {} {} ({}; the fence alone said: {})", x, y, z, v.text(), todayReason);
+            LOG.info("[entropybot] rules: {} at {} {} {} ({}; the fence alone said: {})", what, x, y, z, v.text(), todayReason);
         }
     }
 
@@ -308,7 +357,8 @@ public final class PolicyRuntime {
         sb.append(" | intent ").append(intent.name().toLowerCase()).append(" (").append(intentBy).append(")");
         if (s == null) sb.append(" | no snapshot yet");
         else sb.append(" | outside: ").append(s.outside().describe()).append(" | areas ").append(s.policy().areas.size()).append(", protect ").append(s.policy().protect.size())
-                .append(" | travel cap ").append(s.travelCap()).append(" (this walk: ").append(travelBreaks).append(")");
+                .append(" | travel cap ").append(s.travelCap()).append(" (this walk: ").append(travelBreaks).append(")")
+                .append(" | dug cells ").append(dug.size()).append(" (refill x").append(BreakPolicy.fmt(BreakPolicy.Costs.REFILL)).append(")");
         sb.append(" | ").append(stats.summary());
         return sb.toString();
     }
@@ -326,7 +376,7 @@ public final class PolicyRuntime {
         Snapshot s = snapshot;
         if (s == null) return "rules: no snapshot yet";
         BlockPos pos = new BlockPos(x, y, z);
-        BlockFacts f = facts(level, pos, false);
+        BlockFacts f = facts(level, pos, false).withDug(dug(dim, x, y, z));
         BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(action, in, dim, x, y, z, f, where()));
         BreakPolicy.RuleSet r = s.ruleSetAt(dim, x, y, z);
         String id = f.loaded() && level != null ? BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString() : null;
@@ -334,6 +384,6 @@ public final class PolicyRuntime {
                 + " | rule set " + r.describe()
                 + " | block " + (f.loaded() ? id + (f.ore() ? " (ore)" : "") + (f.builtBlock() ? " (built)" : "") + (f.blockEntity() ? " (block entity)" : "")
                 + ", in cell " + f.inCell().name().toLowerCase() + ", above " + f.above().name().toLowerCase() + (f.fallingAbove() ? " (falling)" : "")
-                + ", sides " + f.sides().name().toLowerCase() : "not loaded");
+                + ", sides " + f.sides().name().toLowerCase() + (f.dugByMe() ? ", dug by me" : "") : "not loaded");
     }
 }

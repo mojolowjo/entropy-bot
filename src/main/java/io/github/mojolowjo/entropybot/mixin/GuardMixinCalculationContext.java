@@ -62,7 +62,7 @@ public abstract class GuardMixinCalculationContext {
             if (CostAdvisorHook.fork() || world == null || bsi == null) return;
             double was = cir.getReturnValueD();
             if (was >= ActionCosts.COST_INF) return;
-            double c = CostAdvisorHook.placeCost(null, x, y, z, current, PolicyRuntime.StateAt.of(bsi), was);
+            double c = CostAdvisorHook.placeCost(null, Guard.dimOf(world), x, y, z, current, PolicyRuntime.StateAt.of(bsi), was);
             if (!Double.isNaN(c)) cir.setReturnValue(c);
         } catch (Throwable ignored) {}
     }

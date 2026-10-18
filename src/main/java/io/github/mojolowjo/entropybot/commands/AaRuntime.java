@@ -594,7 +594,7 @@ public final class AaRuntime implements JobPort {
             else escapeFailNow("climbing out failed too: " + msg);
             return;
         }
-        if (mine && current >= 0 && escapeWay == null && !escapePending && on() && AaEscape.stuck(msg) && escapes < AaEscape.MAX_PER_TASK) {
+        if (mine && current >= 0 && escapeWay == null && !escapePending && on() && (AaEscape.stuck(msg) || holeStuckNow(msg)) && escapes < AaEscape.MAX_PER_TASK) {
             String resume = null;
             try {
                 resume = AaEscape.resume(c.chains.expandSteps(Texts.splitChain(currentChain), 0), AaEscape.failedStep(msg));
@@ -613,6 +613,50 @@ public final class AaRuntime implements JobPort {
         if (mine) lastEnd = msg;
         // 0.36.3: no tree I can get at in my areas: the woodArea rung makes an area around the nearest reachable one
         if (mine && msg != null && (msg.contains("no trees in my areas") || msg.contains("couldn't get at its trunk"))) treeAreaFact();
+    }
+
+    /**
+     * aa372 gap: the walk failed at the bottom of a hole open to the sky (a 1x1 shaft the bot dug: "not under ground" by
+     * the shared rule, so the under-ground end never came). The trigger is the owner's: the walk failed and the goal is
+     * above me, or I stand in a cell I dug myself; and there is a way out above (AaEscape.holeStuck). Never throws.
+     */
+    private boolean holeStuckNow(String msg) {
+        try {
+            if (!AaEscape.walkFailed(msg)) return false;
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null) return false;
+            int[] me = Jobs.here(p);
+            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
+            boolean dug = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, me[0], me[1], me[2]);
+            return AaEscape.holeStuck(msg, me[1], AaEscape.destOf(msg), dug, holeUp(mc.level, me));
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: hole check failed: {}", e.toString());
+            return false;
+        }
+    }
+
+    /** The levels up from the feet to where the bot can step out sideways (AaEscape.holeExit): 0 = here, -1 = none. */
+    private static int holeUp(net.minecraft.world.level.Level lv, int[] me) {
+        java.util.function.IntPredicate open = dy -> openCell(lv, me[0], me[1] + dy, me[2]);
+        java.util.function.IntPredicate stepOut = dy -> {
+            for (int[] s : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}})
+                if (openCell(lv, me[0] + s[0], me[1] + dy, me[2] + s[1]) && openCell(lv, me[0] + s[0], me[1] + dy + 1, me[2] + s[1])) return true;
+            return false;
+        };
+        return AaEscape.holeExit(AaEscape.HOLE_MAX_UP, open, stepOut);
+    }
+
+    private static boolean openCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(q)) return false;
+        var st = lv.getBlockState(q);
+        return st.getCollisionShape(lv, q).isEmpty() && st.getFluidState().isEmpty();
+    }
+
+    /** Out of the ground and out of any hole (the under-ground rule and the hole scan both say so). */
+    private static boolean outNow(net.minecraft.world.level.Level lv, int[] me) {
+        return Jobs.underDepth(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;     // review: -1 (walled in) is not out
     }
 
     /** AA's escape from under ground runs or waits to start (Jobs: then no paper plan, no whisper). */
@@ -647,9 +691,9 @@ public final class AaRuntime implements JobPort {
             escapeWay = null;
             escapeJob = null;
             int[] me = Jobs.here(p);
-            if (Jobs.underDepth(mc.level, me[0], me[1], me[2]) == 0) escapeResumeNow("pillared up");
+            if (outNow(mc.level, me)) escapeResumeNow("pillared up");
             else {
-                LOG.info("[entropybot] aa: the pillar ended still under ground at {} - trying the staircase", Jobs.fmt(me));
+                LOG.info("[entropybot] aa: the pillar ended still in the hole at {} - trying the staircase", Jobs.fmt(me));
                 startEscape(p, mc, true);
             }
         }
@@ -660,15 +704,14 @@ public final class AaRuntime implements JobPort {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
             int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+            boolean hole = depth == 0;                   // aa372 gap: open to the sky, but at the bottom of a hole
+            if (hole) depth = Math.max(0, holeUp(lv, me));
             boolean shaft = !noPillar && depth > 0;
-            for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) {
-                net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(me[0], y, me[2]);
-                var st = lv.getBlockState(q);
-                if (!st.getCollisionShape(lv, q).isEmpty() || !st.getFluidState().isEmpty()) shaft = false;
-            }
+            for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
             Map<String, Integer> bag = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
             AaEscape.Choice ch = AaEscape.choose(depth, shaft, AaEscape.throwaway(bag), bb.in.pickaxes > 0);
-            LOG.info("[entropybot] aa: stuck under ground at {} (surface {} up): {} - {}", Jobs.fmt(me), depth, ch.way().name().toLowerCase(), ch.why());
+            LOG.info("[entropybot] aa: stuck {} at {} ({} {} up): {} - {}", hole ? "in a hole" : "under ground", Jobs.fmt(me), hole ? "the way out" : "surface", depth,
+                    ch.way().name().toLowerCase(), ch.why());
             switch (ch.way()) {
                 case OUT -> escapeResumeNow("already out");
                 case PILLAR -> {

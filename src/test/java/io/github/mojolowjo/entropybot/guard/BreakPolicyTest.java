@@ -206,6 +206,28 @@ class BreakPolicyTest {
         assertTrue(place(SP, Intent.RESTORE, 1000, 60, 1000, BlockFacts.STONE).allowed(), "the ledger puts back anywhere but the floor");
     }
 
+    /** The owner's rule (aa372): a place into a cell the bot dug itself costs about nothing, wherever it is. */
+    @Test
+    void refillingMyOwnDugCellIsNearlyFree() {
+        BlockFacts dug = BlockFacts.STONE.withDug(true);
+        Verdict out = place(SP, Intent.TRAVEL, 1000, 60, 1000, dug);
+        assertTrue(out.allowed(), "outside every area a refill passes the torches-only rule");
+        assertEquals(BreakPolicy.Costs.REFILL, out.multiplier());
+        assertEquals("travel+refill", out.rule());
+        assertEquals(BreakPolicy.Costs.REFILL, place(SP, Intent.MINE, 120, 60, 120, dug).multiplier());
+        assertEquals("dig_out+refill", place(SP, Intent.DIG_OUT, 1000, 60, 1000, dug).rule());
+        assertEquals("build+refill", place(MP, Intent.BUILD, 1000, 60, 1000, dug).rule(), "on a server too");
+        assertTrue(BreakPolicy.Costs.REFILL < 0.1 && BreakPolicy.Costs.REFILL > 0, "near zero, never zero (A* still needs an order)");
+        // the floor stays the floor
+        assertEquals("next to lava", place(SP, Intent.TRAVEL, 1000, 60, 1000, dug.withBelow(Fluid.LAVA)).reason());
+        assertTrue(place(SP, Intent.TRAVEL, 305, 60, 305, dug).floor(), "a protect box: nothing placed, dug or not");
+        assertEquals("walking only", place(SP, Intent.NONE, 1000, 60, 1000, dug).reason());
+        // a new block in travel still costs x3 (torch) or is refused (anything else, outside)
+        assertEquals(3, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withTorch(true)).multiplier());
+        assertFalse(place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).allowed());
+        assertFalse(BlockFacts.STONE.dugByMe(), "the 12-argument facts are not dug");
+    }
+
     // ---- the facts-free part
 
     @Test

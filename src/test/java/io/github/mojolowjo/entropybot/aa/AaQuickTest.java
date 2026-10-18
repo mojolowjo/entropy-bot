@@ -72,4 +72,39 @@ class AaQuickTest {
         assertNull(AaEscape.resume(steps, 7));
         assertEquals(12, AaEscape.throwaway(Map.of("cobblestone", 10, "dirt", 2, "cobbled_deepslate", 5)));
     }
+
+    /** aa372 gap: a 1x1 shaft open to the sky is "not under ground", but still a hole to get out of. */
+    @Test
+    void holeExit() {
+        // a shaft 7 deep: walls all the way, the column open, step-out at the top
+        assertEquals(7, AaEscape.holeExit(48, dy -> true, dy -> dy >= 7));
+        // standing on open ground: out right here
+        assertEquals(0, AaEscape.holeExit(48, dy -> true, dy -> true));
+        // a roof 3 above the head before any way out: none
+        assertEquals(-1, AaEscape.holeExit(48, dy -> dy < 4, dy -> dy >= 7));
+        // walls higher than the scan looks: none
+        assertEquals(-1, AaEscape.holeExit(10, dy -> true, dy -> dy >= 11));
+    }
+
+    @Test
+    void holeStuckTrigger() {
+        String noPath = "stopped at step 3 (goto -53 67 -7): error: no path to -53 67 -7 - stuck at -60 52 -9";
+        assertArrayEquals(new int[]{-53, 67, -7}, AaEscape.destOf(noPath));
+        assertNull(AaEscape.destOf("done"));
+        assertTrue(AaEscape.walkFailed(noPath));
+        assertFalse(AaEscape.walkFailed("done: arrived"));
+        // the goal is above me and there is a hole with a way out above: fire
+        assertTrue(AaEscape.holeStuck(noPath, 52, new int[]{-53, 67, -7}, false, 7));
+        // in a cell I dug myself: fire even with the goal at my level
+        assertTrue(AaEscape.holeStuck(noPath, 52, new int[]{-53, 52, -7}, true, 7));
+        // the goal at my level, not my own hole: a plain no-path, no escape
+        assertFalse(AaEscape.holeStuck(noPath, 52, new int[]{-53, 53, -7}, false, 7));
+        // no hole (out here, or no way out above): nothing to pillar out of
+        assertFalse(AaEscape.holeStuck(noPath, 52, new int[]{-53, 67, -7}, true, 0));
+        assertFalse(AaEscape.holeStuck(noPath, 52, new int[]{-53, 67, -7}, true, -1));
+        // a walk that arrived never triggers
+        assertFalse(AaEscape.holeStuck("done", 52, new int[]{-53, 67, -7}, true, 7));
+        // the hole's height feeds the same choice: pillar with enough blocks
+        assertEquals(AaEscape.Way.PILLAR, AaEscape.choose(7, true, 9, true).way());
+    }
 }
