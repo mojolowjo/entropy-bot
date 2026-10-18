@@ -1835,6 +1835,22 @@ public final class Jobs {
         return startEscape(p, j, false);
     }
 
+    /**
+     * 0.36.a3 (aa370: the same two "stuck ... underground" lines every second for 25 s while the bot bobbed in water at
+     * one x z): the same kind at the same x z logs once per 10 s.
+     */
+    private final java.util.Map<String, String> stuckLogKey = new java.util.HashMap<>();
+    private final java.util.Map<String, Long> stuckLogAt = new java.util.HashMap<>();
+    private boolean stuckLogDue(String kind, int[] me) {
+        String k = me[0] + " " + me[2];
+        long n = System.currentTimeMillis();
+        Long at = stuckLogAt.get(kind);
+        if (k.equals(stuckLogKey.get(kind)) && at != null && n - at < 10_000) return false;
+        stuckLogKey.put(kind, k);
+        stuckLogAt.put(kind, n);
+        return true;
+    }
+
     /** towardGoal: a walk that ended short (only steps closer to the goal; EscapePlan). */
     boolean startEscape(LocalPlayer p, Job j, boolean towardGoal) {
         if (j.escapes >= ESCAPE_MAX || j.reflex) return false;
@@ -1866,7 +1882,7 @@ public final class Jobs {
         io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
         EscapePlan.Escape e = EscapePlan.plan((x, y, z) -> escapeKind(level, pol, dim, x, y, z), me, travelDest(j), towardGoal);
         if (e == null) {
-            LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}: {}", fmt(me), EscapePlan.MAX_BREAKS,
+            if (stuckLogDue("noway", me)) LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}: {}", fmt(me), EscapePlan.MAX_BREAKS,
                     EscapePlan.explain((x, y, z) -> escapeKind(level, pol, dim, x, y, z), c -> surfaceWhat(level, dim, c), me));
             core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);
             // 0.27.3 (d3): underground inside the areas: a staircase up toward the surface instead (after this job ends)
@@ -1954,7 +1970,8 @@ public final class Jobs {
         if (n <= 0) return;
         int[] side = EscapePlan.stairSide(g, me, dest);
         if (side == null) {
-            LOG.info("[entropybot] stuck at {} underground: no side to dig a staircase up from (built blocks, fluid or a protect box next to me)", fmt(me));
+            if (stuckLogDue("stairs", me))
+                LOG.info("[entropybot] stuck at {} underground: no side to dig a staircase up from (built blocks, fluid or a protect box next to me)", fmt(me));
             return;
         }
         java.util.List<String> steps = new java.util.ArrayList<>(StairPlan.upSteps(me[0], me[1], me[2], side[0], side[1], n));
