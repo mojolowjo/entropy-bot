@@ -537,7 +537,7 @@ public final class Reflexes {
                 shoreTarget = null; shoreFailed.clear(); shoreTries = 0; shoreGaveUp = false; shoreSaid = false;
                 return;
             }
-            if (drives) { floatSince = -1; return; }
+            if (drives) { floatSince = -1; shoreTarget = null; return; }
             // 0.34.4 (review): standing on the bottom of shallow water is not afloat
             if (p.onGround()) { floatSince = -1; return; }
             if (p.isUnderWater()) return;            // bobbing at the surface: the clock runs on
