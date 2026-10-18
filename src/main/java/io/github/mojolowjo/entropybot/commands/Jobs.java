@@ -2329,11 +2329,9 @@ public final class Jobs {
      * remembers logs and ores besides chests and the like), then the mod's ore notes. The reply says which one answered.
      */
     static String findFar(LocalPlayer p, String needle, int radius) {
-        java.util.List<String> ids = new java.util.ArrayList<>();
-        for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) {
-            if (k.getPath().contains(needle) && !k.getPath().endsWith("air")) ids.add(k.toString());
-            if (ids.size() >= 16) break;
-        }
+        java.util.List<String> all = new java.util.ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) all.add(k.toString());
+        java.util.List<String> ids = io.github.mojolowjo.entropybot.sense.MemoryPick.ids(needle, all, 16);   // 0.34.1: exact ids first
         if (ids.isEmpty()) return "none within " + radius;
         int[] me = here(p);
         java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> live = io.github.mojolowjo.entropybot.sense.BaritoneMemory.live(p, ids, 8, 8);

@@ -26,6 +26,14 @@ class MemoryPickTest {
     }
 
     @Test
+    void findIdsExactFirst() {
+        List<String> all = List.of("minecraft:stripped_oak_log", "minecraft:oak_log_x", "minecraft:logger", "minecraft:oak_log", "minecraft:cave_air");
+        assertEquals(List.of("minecraft:oak_log", "minecraft:stripped_oak_log", "minecraft:oak_log_x"), MemoryPick.ids("oak_log", all, 3));
+        assertEquals("minecraft:stripped_oak_log", MemoryPick.ids("log", all, 16).get(0));
+        assertEquals(List.of(), MemoryPick.ids("air", all, 16));
+    }
+
+    @Test
     void textSaysWhereItCameFrom() {
         assertEquals("remembered oak at 180 64 0, 180 blocks", MemoryPick.text(s(180, 0), new int[]{0, 64, 0}));
         assertEquals("found iron_ore at 3 60 4, 5 blocks",

@@ -131,6 +131,7 @@ final class Chopping {
         String trunkId, trunkSig;
         int chopsTotal, reachFails;
         int farTrips;           // 0.34.0: walks to trees Baritone remembers
+        int[] farAt;            // 0.34.1: the last trip's target
         String nearestReachable;
         boolean treeChop;
     }
@@ -275,6 +276,8 @@ final class Chopping {
 
     /** 0.34.0: at most this many walks to remembered trees per run. */
     static final int FAR_TRIPS = 3;
+    /** 0.34.1: remembered trees at most this far (blocks, horizontal); brain setting chop.farMax. */
+    static final int FAR_MAX = 256;
 
     /**
      * 0.34.0: no tree in the live scan - ask Baritone's chunk cache (our build remembers logs) for the nearest log in my
@@ -282,9 +285,19 @@ final class Chopping {
      * dropped (BaritoneMemory logs it). Null: nothing remembered (the run ends as before).
      */
     private String farTree(Seq s, Run r, LocalPlayer p) {
-        if (r.farTrips >= FAR_TRIPS) return null;
         int[] me = Jobs.here(p);
+        Live lw = new Live(p.clientLevel);
+        if (r.farAt != null) {
+            // 0.34.1: the last trip's tree (its chunk was unloaded when picked): say so when it turned out gone
+            int[] a = r.farAt;
+            r.farAt = null;
+            if (p.level().isLoaded(new BlockPos(a[0], a[1], a[2])) && !lw.log(a[0], a[1], a[2]))
+                LOG.info("[entropybot] chop: the remembered tree at {} {} {} is gone (its chunk is loaded now) - dropped", a[0], a[1], a[2]);
+        }
+        if (r.farTrips >= FAR_TRIPS) return null;
         String dim = Storage.dim();
+        List<Box> prot = MineRules.policyBoxes(MineRules.parsePolicy(commands.policyJson()), "protect", PolicyCommands.DEFAULT_DIM);
+        int farMax = setting("chop.farMax", FAR_MAX);
         List<String> ids = new ArrayList<>();
         for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) {
             String id = k.toString(), path = k.getPath();
@@ -294,9 +307,17 @@ final class Chopping {
         List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> got = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) -> {
             if (r.tried.contains("far " + x + " " + z)) return false;
             if (!commands.inAreas(dim, x, z) || jobs.goalAllowed(x, y, z) != null) return false;
+            // 0.34.1 (review): never toward a protect box (margin as the mine's), nor a loaded log the tree finder
+            // judges built (a log house) or not a tree; unloaded ones are judged by the scan on arrival
+            if (MineRules.protectNear(prot, dim, x, y, z, MineRules.PROTECT_MARGIN) != null) return false;
+            BlockPos q = new BlockPos(x, y, z);
+            if (p.level().isLoaded(q)) {
+                TreeFinder.Result tr = TreeFinder.find(lw, x, y, z);
+                if (!tr.ok()) return false;
+            }
             long dx = x - me[0], dz = z - me[2];
-            return dx * dx + dz * dz > (long) near * near || !p.level().isLoaded(new BlockPos(x, y, z));
-        }, 64, "chop");
+            return dx * dx + dz * dz > (long) near * near || !p.level().isLoaded(q);
+        }, 64, "chop", farMax);
         if (got.isEmpty()) return null;
         // the nearest remembered log may be high up the trunk: walk to the lowest one of that column
         io.github.mojolowjo.entropybot.sense.MemoryPick.Spot t = got.get(0);
@@ -305,10 +326,12 @@ final class Chopping {
         // the trip spends the column (any log of that tree is the same trip)
         for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) r.tried.add("far " + (t.x() + dx) + " " + (t.z() + dz));
         r.farTrips++;
+        r.farAt = new int[]{t.x(), t.y(), t.z()};
         String text = io.github.mojolowjo.entropybot.sense.MemoryPick.text(t, me);
         if (r.notes.stream().noneMatch(n -> n.startsWith("remembered "))) r.notes.add(text);
         LOG.info("[entropybot] chop: no tree in view - {} (Baritone's memory), walking there ({}/{})", text, r.farTrips, FAR_TRIPS);
         s.setStatus(s.label + " - " + text + ", walking there");
+        // the walk is a GoalNear(2) around the trunk's lowest remembered log: Baritone picks a standable cell beside it
         Seq.Step w = Seq.Step.walk(new int[]{t.x(), t.y(), t.z()}, true);
         w.key = "chopfar";              // a failed walk goes on to the next scan (caught), not the end of the run
         spliceHere(s, new ArrayList<>(List.of(w)));
@@ -543,6 +566,7 @@ final class Chopping {
             return "next";
         }
         int[] base = r.tree.base();
+        if (elapsed > 200 || elapsed == 0) pickupProbe(p, base, elapsed == 0 ? "start" : "timed out");
         ItemEntity best = null;
         double bd = Double.MAX_VALUE;
         for (Entity e : p.clientLevel.entitiesForRendering()) {
@@ -569,6 +593,19 @@ final class Chopping {
             s.setStatus(s.label + " - picking up the logs");
         }
         return "wait";
+    }
+
+    /** 0.34.1 probe (live: 1 of 3 broken logs came home): every dropped item within 16 of the trunk, offset from the base. */
+    private static void pickupProbe(LocalPlayer p, int[] base, String when) {
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (Entity e : p.clientLevel.entitiesForRendering()) {
+            if (!(e instanceof ItemEntity ie) || !e.isAlive()) continue;
+            double dx = e.getX() - base[0], dy = e.getY() - base[1], dz = e.getZ() - base[2];
+            if (Math.abs(dx) > 16 || Math.abs(dz) > 16 || Math.abs(dy) > 16) continue;
+            if (n++ < 8) sb.append(String.format(java.util.Locale.ROOT, " %s %.0f/%.0f/%.0f", ie.getItem().getItem(), dx, dy, dz));
+        }
+        LOG.info("[entropybot] chop: pickup {}: {} drops within 16 of the base {} {} {} (dx/dy/dz):{}", when, n, base[0], base[1], base[2], sb);
     }
 
     /** The saplings where the trunk stood (from the bag, after the pickup). */

@@ -60,6 +60,27 @@ public final class MemoryPick {
         return n;
     }
 
+    /**
+     * 0.34.1: block ids for a find word, best first: the exact id ("oak_log"), then whole-word matches ("log" ->
+     * oak_log, birch_log...), then any id containing it; air never; at most max.
+     */
+    public static List<String> ids(String needle, List<String> all, int max) {
+        String n = needle.toLowerCase(java.util.Locale.ROOT);
+        if (n.startsWith("minecraft:")) n = n.substring(10);
+        List<String> exact = new ArrayList<>(), word = new ArrayList<>(), part = new ArrayList<>();
+        for (String id : all) {
+            String path = id.substring(id.indexOf(':') + 1);
+            if (path.endsWith("air") || !path.contains(n)) continue;
+            if (path.equals(n)) exact.add(id);
+            else if (path.endsWith("_" + n) || path.startsWith(n + "_") || path.contains("_" + n + "_")) word.add(id);
+            else part.add(id);
+        }
+        List<String> out = new ArrayList<>(exact);
+        out.addAll(word);
+        out.addAll(part);
+        return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
+    }
+
     /** Baritone's cache spells vanilla blocks without the namespace. */
     public static String cacheName(String id) {
         return id.startsWith("minecraft:") ? id.substring(10) : id;

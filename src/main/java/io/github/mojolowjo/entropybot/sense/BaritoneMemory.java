@@ -27,7 +27,9 @@ import java.util.List;
 public final class BaritoneMemory {
     private static final Logger LOG = LogUtils.getLogger();
     /** Regions (512 blocks) around the bot, squared: 4 = two regions out, ~1000 blocks. */
-    public static final int REGIONS_SQ = 4;
+    public static final int REGIONS_SQ = 2;            // 0.34.1: the bot's region and its 8 neighbours
+    /** 0.34.1: spots asked of the cache per block id. */
+    public static final int PER_ID = 48;
     private static boolean warned;
 
     private BaritoneMemory() {}
@@ -44,7 +46,8 @@ public final class BaritoneMemory {
     public static boolean tracksLogsAndOres() {
         try {
             Settings.Setting<?> s = BaritoneAPI.getSettings().byLowerName.get("cachelogsandores");
-            if (s == null) {
+            // 0.34.1: only the build with capped, non-creating cache reads (it has the per-chunk cap setting)
+            if (s == null || BaritoneAPI.getSettings().byLowerName.get("cachelogsandoresperchunk") == null) {
                 if (!warned) {
                     warned = true;
                     LOG.info("[entropybot] memory: this Baritone build doesn't remember logs or ores (no cacheLogsAndOres) - only the mod's index");
@@ -119,12 +122,27 @@ public final class BaritoneMemory {
 
     /** Remembered spots, nearest first, filtered, each loaded one checked; stale ones dropped with a log line. */
     public static List<MemoryPick.Spot> recall(LocalPlayer p, Collection<String> ids, MemoryPick.Filter filter, int max, String why) {
+        return recall(p, ids, filter, max, why, Integer.MAX_VALUE);
+    }
+
+    /**
+     * 0.34.1: as above, only spots within maxDist blocks (horizontal). The cache answers at most {@link #PER_ID} spots an
+     * id, nearest chunks first (our Baritone build caps the read and never creates a region), so this stays cheap on the
+     * game thread; only counts are logged, plus one line per stale spot (at most 3).
+     */
+    public static List<MemoryPick.Spot> recall(LocalPlayer p, Collection<String> ids, MemoryPick.Filter filter, int max, String why, int maxDist) {
         if (!tracksLogsAndOres()) return List.of();
-        List<MemoryPick.Spot> all = remembered(p, ids, 256);
+        List<MemoryPick.Spot> all = remembered(p, ids, PER_ID);
         int[] me = {p.getBlockX(), p.getBlockY(), p.getBlockZ()};
-        MemoryPick.Result r = MemoryPick.pick(all, me, filter, check(p.level()), max);
+        long cap = (long) maxDist * maxDist;
+        MemoryPick.Filter f = (x, y, z) -> {
+            long dx = x - me[0], dz = z - me[2];
+            return dx * dx + dz * dz <= cap && (filter == null || filter.ok(x, y, z));
+        };
+        MemoryPick.Result r = MemoryPick.pick(all, me, f, check(p.level()), max);
+        int shown = 0;
         for (MemoryPick.Spot s : r.dropped())
-            LOG.info("[entropybot] memory: {}: Baritone remembered {} at {}, it's gone now (chunk loaded) - dropped", why, s.id(), s.at());
+            if (shown++ < 3) LOG.info("[entropybot] memory: {}: Baritone remembered {} at {}, it's gone now (chunk loaded) - dropped", why, s.id(), s.at());
         LOG.info("[entropybot] memory: {}: {} spots remembered, {} kept, {} stale", why, all.size(), r.kept().size(), r.dropped().size());
         return r.kept();
     }
