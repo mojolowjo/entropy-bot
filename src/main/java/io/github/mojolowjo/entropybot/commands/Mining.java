@@ -546,13 +546,21 @@ final class Mining {
         Level level = p.level();
         io.github.mojolowjo.entropybot.sense.OreIndex.Hit best = null;
         double bestCost = Double.MAX_VALUE;
-        int buried = 0, tooDeep = 0, deepest = 0;
+        int buried = 0, tooDeep = 0, deepest = 0, underWater = 0;
         int bestTop = Integer.MIN_VALUE;          // with dig: the surface block over a buried ore (the dig box runs from the ore up to it)
         int[] bestTun = null;                     // with dig: the side tunnel (KnownOre.sideTunnel) to the best one
         for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) {
             BlockPos q = new BlockPos(h.x(), h.y(), h.z());
             double cost;
             int top = Integer.MIN_VALUE;
+            // 0.36.8 (owner's rule): in water, never dig down through solid blocks to an ore (no air down there); an ore
+            // the water touches is fine (sink to it). Skipped here, no try spent; the next known ore is picked.
+            if (level.isLoaded(q) && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(),
+                    io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null
+                            || !level.getFluidState(q.below()).isEmpty())) {
+                underWater++;
+                continue;
+            }
             // 0.28.0 live (the owner's shells one over the floor): with dig, a 2-high side tunnel at the ore's level first
             int[] tun = j.dig && level.isLoaded(q) ? io.github.mojolowjo.entropybot.sense.KnownOre.sideTunnel(me[0], me[2], h.x(), h.y(), h.z(), (x, y, z) -> {
                 BlockPos c = new BlockPos(x, y, z);
@@ -590,6 +598,7 @@ final class Mining {
                 bestTun = null;
             }
         }
+        if (underWater > 0) LOG.info("[entropybot] mine: skipped {} known {} below me that I'd have to dig down to from in the water (no air down there; ore the water touches is fine)", underWater, sid(j));
         if (best == null && tooDeep > 0) LOG.info("[entropybot] mine: {} known {} too deep for a dig ({} blocks), use mine strip", tooDeep, sid(j), deepest);
         if (best == null) {
             LOG.info("[entropybot] mine: the {} nearest known {} are all buried or not loaded (I walk only to ore with an open face)", hits.size(), sid(j));

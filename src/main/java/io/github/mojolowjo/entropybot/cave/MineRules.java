@@ -372,4 +372,12 @@ public final class MineRules {
     static int safeInt(String s) {
         return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
     }
+
+    /**
+     * 0.36.8 (owner's rule 2026-10-18): skip a known ore as a target when I'm in water and it lies two or more below me
+     * without water touching it (reaching it means digging down through solid blocks with no air). Pure.
+     */
+    public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater) {
+        return inWater && oreY <= meY - 2 && !oreTouchesWater;
+    }
 }
