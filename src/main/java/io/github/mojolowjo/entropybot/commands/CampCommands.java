@@ -110,6 +110,7 @@ final class CampCommands {
         }
         boolean snowy = snowNear(lv, feet);
         boolean quarryBlocked = quarryBlocked(lv, feet, dir);
+        LOG.info("[entropybot] bootstrap: {}", BootstrapPlan.planLine(feet, dir));
         if (quarryBlocked) LOG.info("[entropybot] bootstrap: ice, snow or water in the staircase quarry at {} - the stone step uses gather cobblestone", Jobs.fmt(feet));
         BootstrapPlan.Plan plan = BootstrapPlan.plan(new BootstrapPlan.Facts(Gui.inventory(p), tableNear, furnaceNear, chestNear, campMarked,
                 feet, table, furnace, chest, dir, snowy, quarryBlocked));
@@ -158,7 +159,7 @@ final class CampCommands {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int i = 1; i <= BootstrapPlan.QUARRY_LEN; i++) {
             int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
-            for (int a = -1; a <= 1; a++) for (int y = feet[1] - i; y <= feet[1]; y++) {
+            for (int a = -1; a <= 1; a++) for (int y = BootstrapPlan.stepBottom(feet[1], i); y <= BootstrapPlan.stepTop(feet[1], i); y++) {
                 m.set(cx + px * a, y, cz + pz * a);
                 if (!lv.isLoaded(m)) continue;
                 BlockState st = lv.getBlockState(m);
