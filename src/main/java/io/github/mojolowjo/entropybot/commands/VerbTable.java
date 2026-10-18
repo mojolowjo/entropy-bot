@@ -233,6 +233,11 @@ public final class VerbTable {
         v("infuse", "", "crafting", O, "infuse <seed> [n]", "make seeds on the infusion altar (never touches what isn't mine)", "infuse silicon 2", "inv");
         v("upgrade", "", "crafting", O, "upgrade <essence> [n]", "climb the essence tiers with the infusion crystal", "upgrade imperium 4", "inv");
         // ---- other
+        // 0.35.0 the AI operator (off by default; the owner only; the model itself can never send ai)
+        v("ai", "", "brain", O, "ai on|off|status|stop [all]|log [n]|test|reload | ai <request>",
+                "the AI operator: a model you choose (Mods > Entropy Bot > Config > AI operator) runs my commands for your request until it is done; "
+                        + "off by default, your stop pauses it, caps on tokens and money",
+                "ai status|ai build a small house and get iron tools|ai log 10", "ai status");
         v("help", "", "other", G, "help | help <verb> | help <page> | help all", "this guide: one verb, one page of it, or all", "help mine|help 2", "status");
         v("say", "", "other", O, "say <text>", "say it in public chat (never a command)", "say hello", "status");
         v("twerk", "", "other", O, "twerk | twerk <seconds>", "crouch on and off (again to stop)", "twerk|twerk 15", "stop");

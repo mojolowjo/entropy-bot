@@ -673,6 +673,7 @@ public final class Commands implements Chains.Env {
             if (dead && !wasDead) noteDeath(mc, player);
             wasDead = dead;
             if (tick % 5 == 0) processPms();
+            io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.tick(this);     // 0.35.0 the AI operator (never throws; HTTP is on its own thread)
             if (tick % 5 == 0) pollCommand(mc, tick);
             // 0.23.3: a chain whose step's job just ended goes on the next tick (no gap between walks), else every 5 ticks
             if (tick % 5 == 3 || (chains.running() && !jobs.running() && !requests.busy())) {
@@ -863,12 +864,18 @@ public final class Commands implements Chains.Env {
         if (pm == null) return;
         LOG.info("[entropybot] pm from {}{}: {}", pm.from(), pm.verified() ? " (verified)" : " (name from the chat text)", pm.body());
         core.events.push("pm", pm.from() + ": " + pm.body(), null);
+        // 0.35.0: with the AI operator on, the owner's line that is no command is a request for it
+        boolean fromOwner = pm.from().equalsIgnoreCase(owner());
+        if (fromOwner && io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerText(this, pm.body(), false)) return;
         Reply r;
         try {
             r = handle(pm.from(), pm.body(), false, pmListener(pm.from()));
         } catch (RuntimeException e) {
             r = Reply.now("error: " + e);
         }
+        // 0.35.0: "build a nice house" answers usage (nothing ran): a sentence of 3+ words goes to the AI instead
+        if (fromOwner && r.pending() == null && r.text() != null && r.text().startsWith("usage:") && Texts.words(pm.body()).size() >= 3
+                && io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerText(this, pm.body(), true)) return;
         if (r.text() != null && !r.text().isEmpty())
             whisper(pm.from(), pm.from().equalsIgnoreCase(owner()) ? shapeOut(Texts.verbAndRest(pm.body())[0], r.text()) : r.text().replaceFirst("^ok: ", ""), true);
     }
@@ -951,6 +958,27 @@ public final class Commands implements Chains.Env {
         for (net.minecraft.client.multiplayer.PlayerInfo i : player.connection.getOnlinePlayers()) online.add(i.getProfile().getName());
         if (Outbox.canMsg(m[0], online)) player.connection.sendCommand("msg " + m[0] + " " + m[1]);
         else player.displayClientMessage(net.minecraft.network.chat.Component.literal("[to " + m[0] + "] " + m[1]), false);
+    }
+
+    // ---- 0.35.0 the AI operator's hooks (ai.live.AiRuntime) ----
+
+    /** A job, chain, gather, hunt or mule run is on (the AI waits for its end). */
+    public boolean aiBusy() {
+        return requests.busy() || jobs.running() || (chains != null && chains.running()) || gathering.running() || hunting.running() || mule.running();
+    }
+
+    /** The reply shape the owner gets for this command line's answer (RESULT/HERE/NEW/OPTIONS). */
+    public String aiShape(String line, String text) { return shapeOut(line == null ? null : Texts.verbAndRest(line)[0], text); }
+
+    /** A notice from the AI operator to the owner ("AI: ..."). */
+    public void aiNotice(String text) { whisper(owner(), "AI: " + text, true); }
+
+    /** The word starts a command (a verb, an alias, a removed word with its hint, a routine, the raw words): not a request for the AI. */
+    public boolean aiKnownWord(String word) {
+        if (word == null || word.isEmpty()) return true;
+        return VerbTable.of(word) != null || OldWords.REMOVED.contains(word) || Texts.MOD_VERBS.contains(word) || Texts.MOD_JOB_VERBS.contains(word)
+                || (chains != null && chains.isRoutine(word)) || java.util.Set.of("ai", "b", "baritone", "run", "stripmine", "autominer", "reconnect", "pos",
+                "inventory", "?", "defense", "allowed", "zone", "poi", "pois", "caves", "bed", "base").contains(word);
     }
 
     public String owner() {
@@ -1073,6 +1101,8 @@ public final class Commands implements Chains.Env {
         }
         if (verb.equals("allow") && rest.isBlank()) return Reply.now(allowCommand("allowed", "", isOwner));
         if (verb.equals("places") && !isOwner && !rest.isBlank()) return Reply.now("sorry, only " + owner() + " can forget places");
+        if (verb.equals("ai")) return Reply.now(isOwner ? io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.command(this, rest)
+                : "sorry, only " + owner() + " can use ai");                                                        // 0.35.0: never busy
         if (verb.equals("blind")) return Reply.now(io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.command(rest));          // 0.26.0: never busy
         if (verb.equals("watch")) return Reply.now(io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.command(rest));           // camera v1: never busy
         if (verb.equals("path")) return Reply.now(PathCommand.run(this, player, rest));
@@ -1082,7 +1112,11 @@ public final class Commands implements Chains.Env {
         if (verb.equals("mouse")) return Reply.now(io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.mouseCommand(rest));     // B7e E1: never busy
         if (verb.equals("status") || verb.equals("pos")) return Reply.now(statusLine(player));
         if (verb.equals("inv") || verb.equals("inventory")) return Reply.now(inventorySummary(player));
-        if (verb.equals("stop")) return Reply.now(stopAll());
+        if (verb.equals("stop")) {
+            // 0.35.0: the owner's stop pauses the AI operator until the next request (the AI's own stop does not)
+            String aiNote = isOwner && !internal && !auto ? io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerStopped() : "";
+            return Reply.now(stopAll() + aiNote);
+        }
         if (verb.equals("defence") || verb.equals("defense")) {                     // V1b: the self-defence setting
             Boolean pl = io.github.mojolowjo.entropybot.vocab.AttackRules.playersSetting(rest);
             if (pl != null) {
