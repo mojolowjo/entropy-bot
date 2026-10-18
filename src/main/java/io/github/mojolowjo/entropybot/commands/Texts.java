@@ -90,7 +90,7 @@ public final class Texts {
         if (verb.equals("stock") && isStockTargetsForm(r)) return "sorry, stock targets|set|clear are " + owner + "'s - you can use stock [filter]";
         if (GUEST_VERBS.contains(verb)) return null;
         if (verb.equals("guard") && (r.isEmpty() || r.equals("vetoes"))) return OldWords.hint(verb, r);       // V1a: the cut word, its new form
-        if (verb.equals("fence") && (r.isEmpty() || r.equals("vetoes") || r.equals("status"))) return null;
+        if (verb.equals("fence") && (r.isEmpty() || r.equals("vetoes") || r.equals("status") || r.equals("rules") || r.startsWith("why "))) return null;
         if (verb.equals("escort") && r.matches("^(|status|me(\\s+\\d+)?)$")) return null;     // C7: guests escort only themselves
         if (verb.equals("area") && r.equals("list")) return null;
         if (verb.equals("deaths") && r.isEmpty()) return null;

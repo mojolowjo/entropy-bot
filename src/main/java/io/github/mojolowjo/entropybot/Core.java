@@ -256,6 +256,8 @@ public final class Core {
                         version(), guard.core.mode().name().toLowerCase(), guard.floorInfo(),
                         MixinFlags.clickApplied, MixinFlags.placeApplied, MixinFlags.astarApplied, MixinFlags.watchApplied, MixinFlags.cameraPosApplied,
                         MixinFlags.restoreApplied, MixinFlags.astarTargetPresent, files.root());
+                LOG.info("[entropybot] rules: {} - cost hook: {}", io.github.mojolowjo.entropybot.guard.PolicyRuntime.LIVE ? "phase 1 (travel live)" : "phase 0 (shadow mode)",
+                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.hookText());
                 events.push("job", "mod ready " + version(), null);
             }
             if (!baritone.hooked() && tick % 20 == 0) baritone.tryHook(events, engine);
@@ -289,6 +291,7 @@ public final class Core {
                 }
             }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.tick(mc, guard.core);     // mining plan: the rule snapshot (never throws)
             if (tick % 100 == 50) io.github.mojolowjo.entropybot.commands.Clearing.fallWatch(commands.jobs.running());     // 0.31.1 review 1
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();

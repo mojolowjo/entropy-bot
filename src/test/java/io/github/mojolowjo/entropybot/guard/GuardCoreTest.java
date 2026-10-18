@@ -39,6 +39,32 @@ class GuardCoreTest {
     }
 
     @Test
+    void travelBreakGoesThroughWhereOnlyABoxRuleRefuses() {
+        // mining plan phase 1: a walk's break outside every area, no lease: the policy (lenient outside) lets it through
+        GuardCore g = withPolicy();
+        BreakPolicy.Snapshot s = BreakPolicy.Snapshot.of(g.policy(), false);
+        GuardCore.TravelCheck t = g.checkTravelBreak(OW, 500, 60, 500, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY);
+        assertTrue(t.allowed());
+        assertNotNull(t.travel());
+        assertEquals("outside every area", t.guard().reason());
+        // inside an area with no lease: the same
+        assertTrue(g.checkTravelBreak(OW, 0, 60, 300, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
+        // the floor stays the floor
+        GuardCore.TravelCheck chest = g.checkTravelBreak(OW, 500, 60, 500, CHEST, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY);
+        assertFalse(chest.allowed());
+        assertNull(chest.travel(), "the policy is not even asked");
+        // the policy's own denies hold: digging down from in the water
+        GuardCore.TravelCheck down = g.checkTravelBreak(OW, 500, 60, 500, PLAIN, s, BreakPolicy.BlockFacts.STONE.withAbove(BreakPolicy.Fluid.WATER), BreakPolicy.Where.WET);
+        assertFalse(down.allowed());
+        assertEquals("digging down from in the water", down.travel().reason());
+        // a protect box is floor in both
+        assertFalse(g.checkTravelBreak(OW, -20, 60, 180, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
+        // a break the fence allows anyway (a lease) is not the policy's business
+        lease(g, false);
+        assertNull(g.checkTravelBreak(OW, -45, 16, 396, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).travel());
+    }
+
+    @Test
     void startsInLogModeDuringB0() {
         GuardCore g = new GuardCore();
         assertEquals(GuardCore.DEFAULT_MODE, g.mode());
