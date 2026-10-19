@@ -62,6 +62,15 @@ public final class Rung extends Node {
 
         /** A facts supplier failed at or after this time (aa status goes red). */
         default boolean factsFailedSince(long since) { return false; }
+
+        /** AA_ROUND2 1: the chosen option's cost in seconds from the last pick or rescore (NaN: unknown). */
+        default double lastCostS() { return Double.NaN; }
+
+        /** AA_ROUND2 1: re-score from fresh facts without picking (updates {@link #lastCostS}); no-op by default. */
+        default void refresh(Blackboard bb) {}
+
+        /** AA_ROUND2 2: why no option can run after the last refresh (null: one can, or not known). */
+        default String noOption() { return null; }
     }
 
     public final TaskKind kind;
@@ -287,6 +296,36 @@ public final class Rung extends Node {
 
     /** BRAIN_PLAN B1: the need is on now (its band updated; the brain scores a met rung below 0). */
     public boolean unmet(Blackboard bb) { return unmet.test(bb); }
+
+    /**
+     * AA_ROUND2 2: could this rung start a task now? Null when it can (or a task already runs), else the reason: met,
+     * skipped, cooling, a remembered failed plan, the planner searching or answering NONE, or (a picker rung, after a
+     * rescore) no option. Touches no state but the picker's last cost; the brain asks before an interrupt.
+     */
+    public String probe(Blackboard bb) {
+        if (job.running()) return null;
+        long now = bb.clock.now();
+        AaManual man = AaManual.of(bb);
+        boolean forced = id.equals(man.doRung);
+        if (!forced && !unmet.test(bb)) return kind + " met";
+        String why = skip.apply(bb);
+        if (why != null) return kind + " skipped: " + why;
+        String g = goal.apply(bb);
+        if (g == null) return kind + " has nothing to run";
+        if (forced) return null;
+        if (cooldown.cooling(now)) return kind + " cooling down";
+        if (planFailed != null && now - planFailedAt < Cooldown.BASE_MS) return kind + " skipped: " + planFailed;
+        JobPort.Resolved r = bb.port.resolveState(g);
+        if (r.state() == JobPort.PlanState.SEARCHING && picker == null) return "the planner still searches " + g;
+        boolean none = r.state() == JobPort.PlanState.NONE;
+        if (picker == null) return none ? "no plan for " + g + ": " + r.why() : null;
+        picker.refresh(bb);
+        String no = picker.noOption();
+        if (no != null) return no;
+        // a picker with no fresh ranking and no planner chain has nothing known to run
+        if (none && Double.isNaN(picker.lastCostS())) return "no plan for " + g + ": " + r.why();
+        return null;
+    }
 
     /** The skip reason now (null: it may start). */
     public String skipWhy(Blackboard bb) { return skip.apply(bb); }

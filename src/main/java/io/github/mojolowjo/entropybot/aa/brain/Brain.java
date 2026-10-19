@@ -122,14 +122,21 @@ public final class Brain extends Node {
         Long cu = coolUntil.get(d.id);
         if (skip == null && cu != null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + streak.getOrDefault(d.id, 0) + " fails)";
         String parts = String.valueOf(Math.round(v));
+        double live = liveCost(bb, d);
         if (d.kind == Desire.Kind.PROGRESS && v >= 0 && v < 100) {
-            // B2 (2.2, 2.9): value x P(success) / (1 + cost / C), cost and P measured after 3 runs
+            // B2 (2.2, 2.9): value x P(success) / (1 + cost / C), cost and P measured after 3 runs; AA_ROUND2 1: the
+            // picker's live cost first
             double p = Curves.pSuccess(streak.getOrDefault(d.id, 0), stats.n(d.id), stats.ok(d.id));
-            double c = stats.cost(d.id, d.handCostS);
+            double c = Double.isNaN(live) ? stats.cost(d.id, d.handCostS) : live;
             double value = v;
             v = Curves.progress(value, p, c);
-            parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s"
-                    + (stats.n(d.id) >= BrainStats.MIN_RUNS ? " measured" : "");
+            parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s "
+                    + (!Double.isNaN(live) ? "live" : stats.n(d.id) >= BrainStats.MIN_RUNS ? "measured" : "hand");
+        } else if (d.kind == Desire.Kind.UPKEEP && v >= 0 && v < URGENT && !Double.isNaN(live)) {
+            // AA_ROUND2 1: a far source does not pull the bot off a task it is close to finishing; urgent is never divided
+            double value = v;
+            v = value / (1 + live / Curves.COST_C);
+            parts = "value " + Math.round(value) + " / cost " + Math.round(live) + "s live";
         }
         if (v >= 0 && v < 100 && d.night != 0 && Night.hostile(bb)) {   // B3 (2.10): mining by night, surface work by day
             double n = d.night * Personality.of(bb).get("night");
@@ -138,6 +145,18 @@ public final class Brain extends Node {
         }
         double rank = v + (urgent(d, v) ? 1000 : 0);
         return new Scored(d, v, rank, parts, skip);
+    }
+
+    /** The desire's live cost in seconds, NaN when it has none (or it failed: logged). */
+    private static double liveCost(Blackboard bb, Desire d) {
+        if (d.liveCost == null) return Double.NaN;
+        try {
+            Double c = d.liveCost.apply(bb);
+            return c == null || c < 0 ? Double.NaN : c;
+        } catch (RuntimeException e) {
+            bb.port.log("brain: " + d.id + " live cost failed: " + e);
+            return Double.NaN;
+        }
     }
 
     static boolean urgent(Desire d, double v) { return d.kind == Desire.Kind.UPKEEP && v >= URGENT; }
@@ -208,6 +227,8 @@ public final class Brain extends Node {
             Scored beat = challenger(bb, cur, now);
             if (beat != null) {
                 interrupts++;
+                interruptTimes.addLast(now);
+                interrupter = beat.d();
                 interruptsByKind.merge(beat.d().kind, 1L, Long::sum);
                 String why = (beat.d().kind == Desire.Kind.OWNER ? "urgent: the owner's new goal " : "urgent: ") + beat.d().id + " "
                         + Math.round(beat.score()) + " beat " + cur.id + " " + Math.round(curScore) + " + " + Math.round(bonus);
@@ -236,7 +257,8 @@ public final class Brain extends Node {
         lastScored = all;
         Scored c = all.get(running);
         curScore = Math.max(0, c.score());
-        Scored best = null;
+        wouldNote.clear();
+        List<Scored> cands = new ArrayList<>();
         for (Scored s : all) {
             // 100 is the owner's aa do (its command preempts by itself): never an interrupt here
             boolean canUrge = s.d() != cur && s.skip() == null && s.score() < 100 && urgent(s.d(), s.own());
@@ -253,20 +275,71 @@ public final class Brain extends Node {
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus
             boolean overOwner = urgent(s.d(), s.own()) && cur.kind == Desire.Kind.OWNER;
             if (!overOwner && s.score() <= curScore + bonus) continue;
-            if (best == null || s.rank() > best.rank()) best = s;
+            cands.add(s);
         }
-        return best;
+        if (cands.isEmpty()) return null;
+        cands.sort((a, b) -> Double.compare(b.rank(), a.rank()));
+        // AA_ROUND2 2: at most MAX_INTERRUPTS_PER_MIN; over the cap a challenger waits
+        while (!interruptTimes.isEmpty() && now - interruptTimes.peekFirst() >= 60_000) interruptTimes.removeFirst();
+        if (interruptTimes.size() >= MAX_INTERRUPTS_PER_MIN) {
+            for (Scored s : cands) wouldNote.put(s.d().id, "interrupt cap");
+            return null;
+        }
+        // AA_ROUND2 2: only a challenger that can start a task may halt the running one
+        for (Scored s : cands) {
+            // a "cannot start" answer is kept PROBE_HOLD_MS (a rung probe asks the planner and re-scores options)
+            Held held = probeHeld.get(s.d().id);
+            String why;
+            if (held != null && now - held.at() < PROBE_HOLD_MS) why = held.why();
+            else {
+                why = canStart(bb, s.d());
+                if (why == null) probeHeld.remove(s.d().id);
+                else probeHeld.put(s.d().id, new Held(why, now));
+            }
+            if (why == null) return s;
+            wouldNote.put(s.d().id, why);
+        }
+        return null;
+    }
+
+    /** AA_ROUND2 2: a challenger's "cannot start" is re-asked at most this often. */
+    public static final long PROBE_HOLD_MS = 5_000;
+    public static final int MAX_INTERRUPTS_PER_MIN = 2;
+    private record Held(String why, long at) {}
+    private final Map<String, Held> probeHeld = new HashMap<>();
+    private final java.util.ArrayDeque<Long> interruptTimes = new java.util.ArrayDeque<>();
+    /** Per challenger id: why it would interrupt but does not (aa why). */
+    private final Map<String, String> wouldNote = new HashMap<>();
+    /** The last interrupt's challenger (checked on the choose right after the halt), or null. */
+    private Desire interrupter;
+    /** Counters for aa status: interrupts whose challenger failed at once. */
+    public long falseInterrupts;
+
+    /** AA_ROUND2 2: null when the desire could start now, else why not (infeasible, then its probe). */
+    static String canStart(Blackboard bb, Desire d) {
+        try {
+            String why = d.infeasible.apply(bb);
+            if (why != null) return why;
+            return d.probe == null ? null : d.probe.apply(bb);
+        } catch (RuntimeException e) {
+            bb.port.log("brain: " + d.id + " probe failed: " + e);
+            return "probe failed: " + e;
+        }
     }
 
     /** @param not a desire just interrupted (not picked again this tick) */
     private Status choose(Blackboard bb, long now, Desire not) {
         List<Scored> all = scoreAll(bb);
         lastScored = all;
+        wouldNote.clear();
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < all.size(); i++) if (all.get(i).skip() == null && all.get(i).d() != not) order.add(i);
         order.sort((a, b) -> Double.compare(rankOf(all, b), rankOf(all, a)));     // stable: a tie keeps list order
         StringBuilder why = new StringBuilder();
-        for (int i : order) {
+        Desire checkFalse = interrupter;
+        interrupter = null;
+        for (int k = 0; k < order.size(); k++) {
+            int i = order.get(k);
             Desire d = desires.get(i);
             Scored sc = all.get(i);
             bb.pickNote("brain: " + d.id + " " + Math.round(sc.score()) + (i == lastWinner ? "+" + Math.round(bonus) : "") + " [" + sc.parts() + "]" + top3(all, i));
@@ -291,6 +364,20 @@ public final class Brain extends Node {
             }
             if (why.length() > 0) why.append("; ");
             why.append(d.node.reason());
+            if (d == checkFalse && taskSeen) ended(bb, d, s, now);     // it started a task: a real run, not a false interrupt
+            else if (d == checkFalse) {
+                // AA_ROUND2 2: the interrupter could not even start: a false interrupt. It cools down (its own streak),
+                // and the interrupted desire is tried next (its commitment bonus kept: lastWinner untouched)
+                falseInterrupts++;
+                bb.tracer.counts.pointless++;
+                failed(d.id, now);
+                bb.port.log("brain: false interrupt by " + d.id + ": " + d.node.reason());
+                if (not != null) {
+                    int ni = desires.indexOf(not);
+                    if (ni >= 0 && all.get(ni).skip() == null) order.add(k + 1, ni);
+                }
+                continue;
+            }
             if (d.lastTry) break;
         }
         bb.pickNote(null);
@@ -368,9 +455,8 @@ public final class Brain extends Node {
         var in = bb.in;
         StringBuilder b = new StringBuilder();
         if (in.pos != null) b.append(in.pos[0]).append(',').append(in.pos[1]).append(',').append(in.pos[2]);
-        b.append('|').append(in.freeSlots).append(',').append(in.wood).append(',').append(in.cobble).append(',').append(in.coal)
-                .append(',').append(in.ironIngots).append(',').append(in.torches).append(',').append(in.planks).append(',')
-                .append(in.pickTier).append(',').append(in.pickaxes).append(',').append(in.foodItems);
+        // AA_ROUND2 6: the whole bag map (any item, modded too), not a list of named counts
+        b.append('|').append(in.bag == null ? 0 : in.bag.hashCode());
         b.append('|').append(bb.taskId()).append(',').append(bb.task() == null ? -1 : bb.task().progressValue());
         return b.toString();
     }
@@ -393,7 +479,9 @@ public final class Brain extends Node {
         List<String> out = new ArrayList<>();
         for (Scored x : s) {
             if (out.size() >= n) break;
+            String would = wouldNote.get(x.d().id);
             out.add(x.d().id + " " + x.d().kind + " " + Math.round(x.score()) + " [" + x.parts() + "]" + (x.skip() != null ? " - " + x.skip() : "")
+                    + (would != null ? " - would interrupt, but: " + would : "")
                     + (runningDesire() == x.d() ? " (running)" : ""));
         }
         return out;
@@ -405,7 +493,7 @@ public final class Brain extends Node {
     public String counters(long now) {
         double min = Math.max(1, (now - Math.max(0, bornAt)) / 60000.0);
         return "brain: picks " + picks + " (" + Math.round(picks / min * 10) / 10.0 + "/min), interrupts " + interrupts
-                + (interruptsByKind.isEmpty() ? "" : " " + interruptsByKind) + ", stuck halts " + stuck;
+                + (interruptsByKind.isEmpty() ? "" : " " + interruptsByKind) + " (false " + falseInterrupts + "), stuck halts " + stuck;
     }
 
     @Override public void halt(String why) {

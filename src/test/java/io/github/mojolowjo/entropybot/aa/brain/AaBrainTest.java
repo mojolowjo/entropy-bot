@@ -145,6 +145,32 @@ class AaBrainTest {
         assertEquals(75, br.scoreAll(bb).get(0).score(), 1e-9, "already worth more: no lift");
     }
 
+    /** AA_ROUND2 6: a modded item in the bag is progress, and its rise clears a NO_ITEM failure. */
+    @Test
+    void aModdedItemInTheBagIsProgressAndClearsNoItem() {
+        // a node with no task (only the brain's watchdog looks at it)
+        io.github.mojolowjo.entropybot.aa.core.Node busy = new io.github.mojolowjo.entropybot.aa.core.Node("a.busy", "busy") {
+            @Override protected Status run(Blackboard b) { return Status.RUNNING; }
+        };
+        Brain br = new Brain("brain", "t", new Desire("a", Desire.Kind.PROGRESS, busy, b -> s[0]));
+        s[0] = 40;
+        bb.in.pos = new int[]{0, 64, 0};
+        br.tick(bb);
+        for (int i = 0; i < 400; i++) {
+            clock.advance(1000);
+            bb.in.bag = java.util.Map.of("osmium_ore", i);       // only the modded count moves
+            assertEquals(Status.RUNNING, br.tick(bb));
+        }
+        assertEquals(0, br.stuck);
+        var m = new io.github.mojolowjo.entropybot.aa.Options.OptionMemory();
+        bb.in.bag = java.util.Map.of("dirt", 3);
+        m.failed("k", "I have no osmium", clock.now(), bb.in);
+        assertTrue(m.blocked("k", clock.now()));
+        bb.in.bag = java.util.Map.of("dirt", 3, "osmium_ingot", 1);
+        assertEquals(1, m.sweep(bb.in).size());
+        assertFalse(m.blocked("k", clock.now()));
+    }
+
     @Test
     void failuresInARowLowerP() {
         Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS));

@@ -125,7 +125,30 @@ public final class AaDesires {
                     .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null).night(+1);
             default -> new Desire(r.id, kindOf(r.id), r, bb -> rungScore(r, bb, b -> 30));
         };
-        return d;
+        return wire(d, r);
+    }
+
+    /** AA_ROUND2 1+2: a rung desire's probe (may it start?) and, with a picker, its live cost. */
+    public static final long RESCORE_MS = 10_000;
+
+    public static Desire wire(Desire d, Rung r) {
+        d.probe(r::probe);
+        Rung.Picker p = r.picker();
+        if (p == null) return d;
+        String key = "aa.rescoreAt." + r.id;
+        return d.liveCost(bb -> {
+            // while not running the picker is re-scored at most every RESCORE_MS (a near ore raises iron before it runs);
+            // while running aa-replan re-scores it every 5 s
+            if (!r.job().running()) {
+                long now = bb.clock.now();
+                Object at = bb.fact(key);
+                if (!(at instanceof Long t) || now >= t) {
+                    bb.fact(key, now + RESCORE_MS);
+                    p.refresh(bb);
+                }
+            }
+            return p.lastCostS();
+        });
     }
 
     public static Desire idle(TaskKind kind, Node node, Scorer scorer) {

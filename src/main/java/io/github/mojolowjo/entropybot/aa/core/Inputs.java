@@ -19,7 +19,10 @@ public final class Inputs {
     public int air = 300;
     public boolean inLavaOrFire;
     public int freeSlots = 36, foodItems, torches, wood, cobble, coal, ironIngots, wool, string;
-    /** B4: the bag by item path ("raw_iron" -> 3) and the bot's dimension id. Not in the vector. */
+    /**
+     * B4: the bag by item path ("raw_iron" -> 3) and the bot's dimension id. Not in the vector. AA_ROUND2 6: the source of
+     * truth for progress and failure sweeps (Brain.progressSig, OptionMemory.items); the named counts stay for the curves.
+     */
     public java.util.Map<String, Integer> bag = java.util.Map.of();
     public String dimension = "minecraft:overworld";
     /** A sheep has been seen (latched by the adapter): a wool source. */

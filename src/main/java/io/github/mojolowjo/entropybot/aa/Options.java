@@ -57,6 +57,9 @@ public final class Options {
         /** aa-replan: the round trip, go + do + return. */
         public double total() { return cost + ret.cost(); }
 
+        /** AA_ROUND2 0: the round trip in seconds (the brain's unit). */
+        public double seconds() { return io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(total()); }
+
         public String text() { return id + " " + Math.round(total()) + " (" + why + (ret.leg() == Replan.Leg.NONE ? "" : "; " + ret.text()) + ")"; }
     }
 
@@ -143,7 +146,15 @@ public final class Options {
             return out;
         }
 
-        static int items(Inputs in) { return in.wood + in.cobble + in.coal + in.ironIngots + in.torches + in.planks + in.foodItems + in.wool + in.pickaxes; }
+        /** AA_ROUND2 6: the bag's total count (any item, modded too); the named counts only when no bag map was filled. */
+        static int items(Inputs in) {
+            if (in.bag != null && !in.bag.isEmpty()) {
+                int n = 0;
+                for (Integer v : in.bag.values()) n += v == null ? 0 : v;
+                return n;
+            }
+            return in.wood + in.cobble + in.coal + in.ironIngots + in.torches + in.planks + in.foodItems + in.wool + in.pickaxes;
+        }
 
         static double moved(int[] a, int[] b) {
             double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
@@ -296,6 +307,7 @@ public final class Options {
          * (no counters, no memory sweep, no manual use). Null when no facts can be read or nothing was picked.
          */
         public Choice rescore(Blackboard bb) {
+            lastRescore = null;                       // review: an early return never leaves a stale "no option"
             if (last == null || ran == null) return null;
             Object sup = bb.fact(factsKey);
             if (!(sup instanceof Supplier<?> s)) return null;
@@ -306,7 +318,23 @@ public final class Options {
                 return null;
             }
             if (!type.isInstance(fo)) return null;
-            return set.choose(type.cast(fo), memory, bb.clock.now(), lastPlanned, lastPlannedCost, lastPlannerWhy, null);
+            Choice c = set.choose(type.cast(fo), memory, bb.clock.now(), lastPlanned, lastPlannedCost, lastPlannerWhy, null);
+            if (c != null) lastCostS = c.best() == null ? Double.NaN : c.best().seconds();
+            lastRescore = c;
+            return c;
+        }
+
+        private double lastCostS = Double.NaN;
+        private Choice lastRescore;
+
+        /** AA_ROUND2 1: the chosen option's round trip in seconds from the last pick or rescore (NaN: no choice yet). */
+        @Override public double lastCostS() { return lastCostS; }
+
+        @Override public void refresh(Blackboard bb) { rescore(bb); }
+
+        /** AA_ROUND2 2: "no option" when the last rescore ranked nothing that can run (null: one can, or not known). */
+        @Override public String noOption() {
+            return lastRescore != null && lastRescore.best() == null ? "no option (" + lastRescore.why() + ")" : null;
         }
 
         /** aa-replan: a switch: the fresh ranking is the last one and {@code o} the option that runs now. */
@@ -314,6 +342,7 @@ public final class Options {
             last = fresh;
             ran = o;
             why = fresh.why();
+            lastCostS = o == null ? Double.NaN : o.seconds();
         }
 
         private String pick0(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
@@ -366,6 +395,8 @@ public final class Options {
                 man.used(rung, forced == null ? null : forced.id(), ran == null ? "none" : ran.id(), bb.port::log);
                 if (forced != null) ran = forced;
             }
+            lastRescore = null;
+            lastCostS = ran == null ? Double.NaN : ran.seconds();
             if (ran == null) {
                 counters.none++;
                 return null;

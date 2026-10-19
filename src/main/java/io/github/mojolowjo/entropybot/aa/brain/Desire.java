@@ -59,6 +59,22 @@ public final class Desire {
         return this;
     }
 
+    /** AA_ROUND2 1: the live cost in seconds (a rung picker's chosen option), NaN = unknown: the hand/measured cost. */
+    Function<Blackboard, Double> liveCost;
+
+    public Desire liveCost(Function<Blackboard, Double> f) {
+        liveCost = f;
+        return this;
+    }
+
+    /** AA_ROUND2 2: why this desire could not start a task now (null: it can); asked before it may interrupt. */
+    Function<Blackboard, String> probe;
+
+    public Desire probe(Function<Blackboard, String> f) {
+        probe = f;
+        return this;
+    }
+
     /** A failed try ends this tick's picking (the idle options: one try per tick, as the idle chooser did). */
     boolean lastTry;
 
