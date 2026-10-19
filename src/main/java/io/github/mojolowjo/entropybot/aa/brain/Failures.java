@@ -110,7 +110,7 @@ public final class Failures {
             Rec r = e.getValue();
             boolean gone = r.cause() == Cause.NO_ITEM && r.items() >= 0 && items(in) > r.items()
                     || r.cause() == Cause.NO_PATH && r.pos() != null && in.pos != null && moved(r.pos(), in.pos) >= MOVED;
-            if (gone && r.until() > 0) {
+            if (gone && r.until() > 0 && r.option() != null) {          // review: a desire's own hold only runs out
                 out.add(r.desire() + (r.option() == null ? "" : "/" + r.option()) + " " + r.cause());
                 e.setValue(new Rec(r.desire(), r.option(), null, r.pos(), r.items(), r.fails(), 0, r.reason()));
             }

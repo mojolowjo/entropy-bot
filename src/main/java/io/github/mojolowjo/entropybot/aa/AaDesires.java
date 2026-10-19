@@ -118,7 +118,7 @@ public final class AaDesires {
                         String no = foodInfeasible(b);
                         if (no != null || b.in.food <= 6) return no;
                         return gateWhy(b);
-                    });
+                    }).prereq(b -> b.in.food <= 6 ? null : AaLadder.openGate(b));      // review: urgent food gives no gate its value
             case "needs.torches" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches")))),
                     b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace", b -> null);
             case "needs.bag" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag")))), b -> null, b -> null);
@@ -194,7 +194,6 @@ public final class AaDesires {
                 bb -> {
                     // a cooling option is left out (the idle chooser's rule), so the next one gets its turn
                     double s = scorer.score(bb.in)[kind.ordinal()];
-                    if (s > 0 && exposureOf(kind) == Desire.Exposure.UNDER) bb.fact(UNDER_WANTED_FACT, bb.clock.now());
                     return s < 0 ? -1 : s * IDLE_SCALE;
                 }).exposure(exposureOf(kind)).cools(kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS, kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS)
                 .infeasible(AaDesires::gateWhy).prereq(AaLadder::openGate).lastTry();
@@ -414,7 +413,7 @@ public final class AaDesires {
     }
 
     /** Blackboard fact: when a mining stock-up (UNDER) last scored wanted (ms); the shelter yields to it for 10 s after. */
-    public static final String UNDER_WANTED_FACT = "aa.underWantedAt";
+    public static final String UNDER_WANTED_FACT = Brain.UNDER_WANTED_FACT;
 
     /** In the shell at a hostile night, night work to do (NightWork.pick) and an UNDER stock-up wanted just now. */
     static boolean nightWorkReady(Blackboard bb) {

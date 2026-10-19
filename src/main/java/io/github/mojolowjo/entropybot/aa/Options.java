@@ -107,6 +107,7 @@ public final class Options {
 
         /** Joins the brain's record (what was remembered so far moves along). */
         public void bind(Failures to, String desire) {
+            if (to == f) return;
             for (Failures.Rec r : f.of(this.desire))
                 for (int i = 0; i < r.fails(); i++) to.counted(desire, r.option(), r.reason());
             this.f = to;

@@ -144,10 +144,10 @@ public final class Brain extends Node {
         if (v >= 0 && v < 100 && d.exposure != Desire.Exposure.ANY && Night.hostile(bb)) {
             // AA_ROUND2 4 (was B3's +/-10): the night's danger makes surface work dearer and work under ground cheaper
             double danger = danger(bb), m = exposureFactor(d.exposure, danger);
-            v *= m;
+            v = v >= URGENT ? v * m : Math.min(URGENT - 1, v * m);      // review: the night never makes a desire urgent
             parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";
         }
-        if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, Math.max(0, v));
+        if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, cu > now ? 0 : Math.max(0, v));
         double rank = v + (urgent(d, v) ? 1000 : 0);
         return new Scored(d, v, rank, parts, skip);
     }
@@ -195,6 +195,9 @@ public final class Brain extends Node {
         for (Desire d : desires) out.add(score(bb, d, now));
         Map<String, Integer> at = new HashMap<>();
         for (int i = 0; i < out.size(); i++) at.put(out.get(i).d().id, i);
+        // AA_ROUND2 4: an under-ground stock-up that could run now (not held, not parked): the night shelter may yield to it
+        for (Scored s : out)
+            if (s.d().kind == Desire.Kind.UPKEEP && s.d().exposure == Desire.Exposure.UNDER && s.skip() == null && s.score() > 0) bb.fact(UNDER_WANTED_FACT, now);
         double[] own = new double[out.size()], flow = new double[out.size()];
         String[] from = new String[out.size()];
         for (int i = 0; i < own.length; i++) own[i] = out.get(i).score();
@@ -333,6 +336,8 @@ public final class Brain extends Node {
     /** AA_ROUND2 2: a challenger's "cannot start" is re-asked at most this often. */
     public static final long PROBE_HOLD_MS = 5_000;
     public static final int MAX_INTERRUPTS_PER_MIN = 2;
+    /** Blackboard fact: when an UNDER upkeep desire last could run (ms). */
+    public static final String UNDER_WANTED_FACT = "aa.underWantedAt";
     /** Upkeep this urgent is exempt from the cap (probe and false-interrupt cooldown still apply). */
     public static final double CAP_EXEMPT = 90;
     private record Held(String why, long at) {}
