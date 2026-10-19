@@ -25,28 +25,36 @@ class NightWorkTest {
     }
 
     @Test
-    void desireIsRegistered() {
+    void nightWorkIsNoDesireAnyMore() {
         night();
-        assertTrue(AaDesires.night().stream().anyMatch(x -> x.id.equals("night.work")));
+        assertTrue(AaDesires.night().stream().noneMatch(x -> x.id.equals("night.work")), "AA_ROUND2 4: the stock-ups' UNDER option");
     }
 
     @Test
-    void scoreOnlyWhenShelteredAtHostileNightWithWork() {
+    void activeOnlyWhenShelteredAtHostileNight() {
         night();
-        assertEquals(NightWork.SCORE, NightWork.score(bb));
-        assertTrue(NightWork.SCORE > Brain.URGENT, "ends the shelter's wait");
+        assertTrue(NightWork.active(bb));
         bb.in.sheltered = false;
-        assertEquals(-1, NightWork.score(bb), "not in a shell");
+        assertFalse(NightWork.active(bb), "not in a shell");
         night();
         bb.in.dayTime = 6000;
-        assertEquals(-1, NightWork.score(bb), "dawn: climb out, carry on");
+        assertFalse(NightWork.active(bb), "dawn: climb out, carry on");
         night();
         bb.in.hungerDrains = false;
-        assertEquals(-1, NightWork.score(bb), "Peaceful");
+        assertFalse(NightWork.active(bb), "Peaceful");
         night();
         bb.in.pickTier = 0;
-        assertEquals(NightWork.Work.NONE, NightWork.pick(bb.in));
-        assertEquals(-1, NightWork.score(bb), "no pickaxe, nothing to do: it waits");
+        assertEquals(NightWork.Work.NONE, NightWork.pick(bb.in), "no pickaxe, nothing to do: it waits");
+    }
+
+    @Test
+    void theShelterYieldsOnlyWhenAnUnderStockUpIsWanted() {
+        night();
+        assertFalse(AaDesires.nightWorkReady(bb), "no stock-up wanted");
+        bb.fact(AaDesires.UNDER_WANTED_FACT, bb.clock.now());
+        assertTrue(AaDesires.nightWorkReady(bb));
+        bb.in.pickTier = 0;
+        assertFalse(AaDesires.nightWorkReady(bb), "nothing to do from the shell: it waits");
     }
 
     @Test

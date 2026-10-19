@@ -31,8 +31,11 @@ public final class Brain extends Node {
             GAP_MS = 5_000, PROBE_MS = 60_000;
 
     /** One scored desire for {@code aa why}. */
-    public record Scored(Desire d, double score, double rank, String parts, String skip, double own) {
-        Scored(Desire d, double score, double rank, String parts, String skip) { this(d, score, rank, parts, skip, score); }
+    /** @param parked AA_ROUND2 4: the value a parked desire would have (it flows to a GATE prerequisite), else 0 */
+    public record Scored(Desire d, double score, double rank, String parts, String skip, double own, double parked) {
+        Scored(Desire d, double score, double rank, String parts, String skip) { this(d, score, rank, parts, skip, score, 0); }
+
+        Scored(Desire d, double score, double rank, String parts, String skip, double own) { this(d, score, rank, parts, skip, own, 0); }
     }
 
     private final List<Desire> desires = new ArrayList<>();
@@ -40,8 +43,8 @@ public final class Brain extends Node {
     private long startedAt, lastProgressAt, lastTickAt = -1;
     private boolean taskSeen;
     private String sig;
-    private final Map<String, Long> coolUntil = new HashMap<>();
-    private final Map<String, Integer> streak = new HashMap<>();
+    /** AA_ROUND2 3: the one failure record (desire holds and fails in a row; the rung pickers' option memories bind to it). */
+    public final Failures failures = new Failures();
     private List<Scored> lastScored = List.of();
     /** Counters for aa status. */
     public long picks, interrupts, stuck;
@@ -82,6 +85,7 @@ public final class Brain extends Node {
             if (lastWinner == i) lastWinner = -1;
             else if (lastWinner > i) lastWinner--;
             desires.remove(i);
+            failures.forget(id);
             List<Scored> keep = new ArrayList<>();
             for (Scored s : lastScored) if (!s.d().id.equals(id)) keep.add(s);
             lastScored = keep;
@@ -109,24 +113,23 @@ public final class Brain extends Node {
             bb.port.log("brain: " + d.id + " score failed: " + e);
             return new Scored(d, -1, -1, "score failed", "score failed: " + e);
         }
+        String parkedWhy = null;
         if (v >= 0 && v < 100) {                       // feasibility: no source for a required input = parked, not worth 38
-            String why = null;
             try {
-                why = d.infeasible.apply(bb);
+                parkedWhy = d.infeasible.apply(bb);
             } catch (RuntimeException e) {
                 bb.port.log("brain: " + d.id + " feasibility failed: " + e);
             }
-            if (why != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + why);
         }
         String skip = v < 0 ? "not wanted" : null;
-        Long cu = coolUntil.get(d.id);
-        if (skip == null && cu != null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + streak.getOrDefault(d.id, 0) + " fails)";
+        long cu = failures.until(d.id, null);
+        if (skip == null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + failures.fails(d.id, null) + " fails)";
         String parts = String.valueOf(Math.round(v));
-        double live = liveCost(bb, d);
+        double live = parkedWhy != null ? Double.NaN : liveCost(bb, d);
         if (d.kind == Desire.Kind.PROGRESS && v >= 0 && v < 100) {
             // B2 (2.2, 2.9): value x P(success) / (1 + cost / C), cost and P measured after 3 runs; AA_ROUND2 1: the
             // picker's live cost first
-            double p = Curves.pSuccess(streak.getOrDefault(d.id, 0), stats.n(d.id), stats.ok(d.id));
+            double p = Curves.pSuccess(failures.fails(d.id, null), stats.n(d.id), stats.ok(d.id));
             double c = Double.isNaN(live) ? stats.cost(d.id, d.handCostS) : live;
             double value = v;
             v = Curves.progress(value, p, c);
@@ -138,13 +141,31 @@ public final class Brain extends Node {
             v = value / (1 + live / Curves.COST_C);
             parts = "value " + Math.round(value) + " / cost " + Math.round(live) + "s live";
         }
-        if (v >= 0 && v < 100 && d.night != 0 && Night.hostile(bb)) {   // B3 (2.10): mining by night, surface work by day
-            double n = d.night * Personality.of(bb).get("night");
-            v = Math.max(0, v + n);
-            parts += " night " + (n >= 0 ? "+" : "") + Math.round(n);
+        if (v >= 0 && v < 100 && d.exposure != Desire.Exposure.ANY && Night.hostile(bb)) {
+            // AA_ROUND2 4 (was B3's +/-10): the night's danger makes surface work dearer and work under ground cheaper
+            double danger = danger(bb), m = exposureFactor(d.exposure, danger);
+            v *= m;
+            parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";
         }
+        if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, Math.max(0, v));
         double rank = v + (urgent(d, v) ? 1000 : 0);
         return new Scored(d, v, rank, parts, skip);
+    }
+
+    /** The night's danger now (Costs.nightDanger at the current facts); 0 when monsters do not spawn (day, Peaceful). */
+    public static double danger(Blackboard bb) {
+        if (!Night.hostile(bb)) return 0;
+        var in = bb.in;
+        return Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.light, in.hostilesNear, in.bedKnown || in.bedInBag);
+    }
+
+    /** SURFACE 1 / (1 + danger), UNDER 1 + danger / 2, ANY 1. */
+    public static double exposureFactor(Desire.Exposure e, double danger) {
+        return switch (e) {
+            case SURFACE -> 1 / (1 + danger);
+            case UNDER -> 1 + danger / 2;
+            case ANY -> 1;
+        };
     }
 
     /** The desire's live cost in seconds, NaN when it has none (or it failed: logged). */
@@ -190,8 +211,10 @@ public final class Brain extends Node {
                 }
                 Integer j = p == null ? null : at.get(p);
                 if (j == null || j == i || own[j] < 0) continue;
+                // AA_ROUND2 4: a desire parked by a gate gives the value it would have to that gate
+                double base = out.get(j).d().kind == Desire.Kind.GATE ? Math.max(own[i], out.get(i).parked()) : own[i];
                 // a prerequisite is worth at least FLOW of what it unlocks (the best giver; values never add up past it)
-                double give = Curves.FLOW * Math.max(own[i], own[i] + flow[i]) - own[j];
+                double give = Curves.FLOW * Math.max(base, base + flow[i]) - own[j];
                 if (give <= next[j]) continue;
                 next[j] = give;
                 nf[j] = null;
@@ -204,7 +227,7 @@ public final class Brain extends Node {
             if (flow[i] <= 0) continue;
             Scored s = out.get(i);
             double v = s.score() + flow[i];
-            out.set(i, new Scored(s.d(), v, s.rank() + flow[i], s.parts() + " " + from[i], s.skip(), s.own()));
+            out.set(i, new Scored(s.d(), v, s.rank() + flow[i], s.parts() + " " + from[i], s.skip(), s.own(), s.parked()));
         }
         return out;
     }
@@ -372,12 +395,13 @@ public final class Brain extends Node {
             if (why.length() > 0) why.append("; ");
             why.append(d.node.reason());
             if (d == checkFalse && taskSeen) ended(bb, d, s, now);     // it started a task: a real run, not a false interrupt
-            else if (d == checkFalse) {
+            else if (d.selfCool && d != checkFalse) ended(bb, d, s, now);
+            if (d == checkFalse && !taskSeen) {
                 // AA_ROUND2 2: the interrupter could not even start: a false interrupt. It cools down (its own streak),
                 // and the interrupted desire is tried next (its commitment bonus kept: lastWinner untouched)
                 falseInterrupts++;
                 bb.tracer.counts.pointless++;
-                failed(d.id, now);
+                failed(bb, d.id, "false interrupt: " + d.node.reason(), now);
                 bb.port.log("brain: false interrupt by " + d.id + ": " + d.node.reason());
                 if (not != null) {
                     int ni = desires.indexOf(not);
@@ -411,13 +435,18 @@ public final class Brain extends Node {
     /** A run ended: counted, a failure after a real task lowers P and cools the desire down. */
     private void ended(Blackboard bb, Desire d, Status s, long now) {
         if (s == Status.SUCCESS) {
-            streak.remove(d.id);
-            coolUntil.remove(d.id);
+            failures.succeeded(d.id);
+            if (d.selfCool && d.restMs > 0) failures.rest(d.id, d.restMs, now, "done just now (a rest before it runs again)");
             if (d.kind == Desire.Kind.WANT) Wants.done(bb, d.id, now);   // B3: boredom starts over
             onEnd(d, true, taskSeen, now - startedAt);
         } else if (taskSeen) {
-            streak.merge(d.id, 1, Integer::sum);      // P(success) drops; the node's own cooldown holds it off
+            // P(success) drops; a self-cooling desire is held here (2 min doubling), a rung by its own cooldown
+            if (d.selfCool) failures.failed(d.id, null, d.node.reason(), now, bb.in);
+            else failures.counted(d.id, null, d.node.reason());
             onEnd(d, false, true, now - startedAt);
+        } else if (d.selfCool && d.noRunMs > 0) {
+            // AA_ROUND2 3 (was the idle Cooldown's ranOnly): a failure before any task rests it, the next option gets its turn
+            failures.rest(d.id, d.noRunMs, now, d.node.reason());
         }
         taskSeen = false;
     }
@@ -442,7 +471,7 @@ public final class Brain extends Node {
         bb.port.log("brain " + why + " - halted, cooling down, the next desire runs");
         bb.port.incident("aa " + why);
         cur.node.halt(why);
-        failed(cur.id, now);
+        failed(bb, cur.id, why, now);
         if (taskSeen) onEnd(cur, false, true, now - startedAt);
         taskSeen = false;
         running = -1;
@@ -450,12 +479,9 @@ public final class Brain extends Node {
     }
 
     /** A failure in a row: the desire cools down 2 min, doubling to 16 min. */
-    void failed(String id, long now) {
-        int n = streak.merge(id, 1, Integer::sum);
-        coolUntil.put(id, now + Math.min(CD_MAX_MS, CD_BASE_MS << Math.min(n - 1, 20)));
-    }
+    void failed(Blackboard bb, String id, String why, long now) { failures.failed(id, null, why, now, bb.in); }
 
-    public int streak(String id) { return streak.getOrDefault(id, 0); }
+    public int streak(String id) { return failures.fails(id, null); }
 
     /** What counts as progress: the position, the bag, the task and its progress, the planner working. */
     static String progressSig(Blackboard bb) {
@@ -496,11 +522,14 @@ public final class Brain extends Node {
 
     public List<Scored> lastScored() { return lastScored; }
 
+    /** AA_ROUND2 3: "held: desire/option reason (n min)" per failure record holding now (aa why). */
+    public List<String> heldLines(long now) { return failures.describe(now); }
+
     /** "picks 12 (3.1/min), interrupts 0, stuck 0" for aa status. */
     public String counters(long now) {
         double min = Math.max(1, (now - Math.max(0, bornAt)) / 60000.0);
         return "brain: picks " + picks + " (" + Math.round(picks / min * 10) / 10.0 + "/min), interrupts " + interrupts
-                + (interruptsByKind.isEmpty() ? "" : " " + interruptsByKind) + " (false " + falseInterrupts + "), stuck halts " + stuck;
+                + (interruptsByKind.isEmpty() ? "" : " " + interruptsByKind) + " (false " + falseInterrupts + "), stuck halts " + stuck + ", held " + failures.heldCount(now);
     }
 
     @Override public void halt(String why) {

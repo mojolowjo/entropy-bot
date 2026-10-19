@@ -764,7 +764,8 @@ final class Mining {
                 // 0.28.0 (the owner): "mine ... dig" digs down to a covered ore, as "dig x1 y1 z1 x2 y2 z2 ores" would: the column over it
                 top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, h.x(), h.z()) - 1;
                 int depth = top - h.y() + 1;
-                if (depth > 16) {
+                // AA round 2 wave 2: the at form (AA picked this ore and costed its depth) digs to IronOptions.DIG_HARD
+                if (depth > (j.at != null ? io.github.mojolowjo.entropybot.aa.IronOptions.DIG_HARD : 16)) {
                     tooDeep++;
                     deepest = Math.max(deepest, depth);
                     continue;

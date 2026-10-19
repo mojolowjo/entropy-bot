@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
-import io.github.mojolowjo.entropybot.brain.FailMemory;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -93,78 +93,53 @@ public final class Options {
 
     // ---- the memory of what failed here ----
 
-    /** memoryKey -> failures, skipped until, the last reason, and what would clear it. In memory only. */
+    /**
+     * memoryKey -> failures, skipped until, the last reason, and what would clear it. AA_ROUND2 3: a view over the brain's
+     * one {@link Failures} record, filtered by the rung (desire) id; standalone (tests, noSource) it keeps its own.
+     */
     public static final class OptionMemory {
-        record Rec(int fails, long until, String reason, FailMemory.Reason cause, int items, int[] pos) {}
+        private Failures f = new Failures();
+        private String desire = "rung";
 
-        private final Map<String, Rec> map = new LinkedHashMap<>();
+        public OptionMemory() {}
+
+        public OptionMemory(Failures f, String desire) { bind(f, desire); }
+
+        /** Joins the brain's record (what was remembered so far moves along). */
+        public void bind(Failures to, String desire) {
+            for (Failures.Rec r : f.of(this.desire))
+                for (int i = 0; i < r.fails(); i++) to.counted(desire, r.option(), r.reason());
+            this.f = to;
+            this.desire = desire;
+        }
 
         public void failed(String key, String reason, long now) { failed(key, reason, now, null); }
 
         /** @param in the inputs when it failed (for {@link #sweep}); null: only the time clears it */
-        public void failed(String key, String reason, long now, Inputs in) {
-            Rec r = map.get(key);
-            int n = r == null ? 1 : r.fails + 1;
-            map.put(key, new Rec(n, now + Math.min(RETRY_MAX_MS, RETRY_MS * n), reason, FailMemory.classify(reason),
-                    in == null ? -1 : items(in), in == null || in.pos == null ? null : in.pos.clone()));
-        }
+        public void failed(String key, String reason, long now, Inputs in) { f.failed(desire, key, reason, now, in); }
 
-        public int fails(String key) {
-            Rec r = map.get(key);
-            return r == null ? 0 : r.fails;
-        }
+        public int fails(String key) { return f.fails(desire, key); }
 
-        public boolean blocked(String key, long now) {
-            Rec r = map.get(key);
-            return r != null && r.until > now;
-        }
+        public boolean blocked(String key, long now) { return f.blocked(desire, key, now); }
 
-        public String reason(String key) {
-            Rec r = map.get(key);
-            return r == null ? null : r.reason;
-        }
+        public String reason(String key) { return f.reason(desire, key); }
 
-        public int size() { return map.size(); }
+        public int size() { return f.of(desire).size(); }
 
-        /**
-         * Drops a record whose cause is gone (FailMemory.causeGone's two rules on the inputs): NO_ITEM when the bag's
-         * counted items rose, NO_PATH when the bot moved 16+ blocks. The dropped keys.
-         */
+        /** Lifts holds whose cause is gone (Failures.sweep: bag total rose, moved 16+); the lifted texts. */
         public List<String> sweep(Inputs in) {
             List<String> out = new ArrayList<>();
-            for (var it = map.entrySet().iterator(); it.hasNext(); ) {
-                var e = it.next();
-                Rec r = e.getValue();
-                boolean gone = r.cause == FailMemory.Reason.NO_ITEM && r.items >= 0 && items(in) > r.items
-                        || r.cause == FailMemory.Reason.NO_PATH && r.pos != null && in.pos != null && moved(r.pos, in.pos) >= 16;
-                if (gone && r.until > 0) {
-                    // review: the block lifts, the failure count stays (it keeps weighing, as 10.1 says)
-                    out.add(e.getKey() + " " + r.cause);
-                    e.setValue(new Rec(r.fails, 0, r.reason, null, r.items, r.pos));
-                }
-            }
+            String pre = desire + "/";
+            for (String s : f.sweep(in)) if (s.startsWith(pre)) out.add(s.substring(pre.length()));
             return out;
         }
 
-        /** AA_ROUND2 6: the bag's total count (any item, modded too); the named counts only when no bag map was filled. */
-        static int items(Inputs in) {
-            if (in.bag != null && !in.bag.isEmpty()) {
-                int n = 0;
-                for (Integer v : in.bag.values()) n += v == null ? 0 : v;
-                return n;
-            }
-            return in.wood + in.cobble + in.coal + in.ironIngots + in.torches + in.planks + in.foodItems + in.wool + in.pickaxes;
-        }
-
-        static double moved(int[] a, int[] b) {
-            double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
-            return Math.sqrt(dx * dx + dy * dy + dz * dz);
-        }
+        static int items(Inputs in) { return Failures.items(in); }
 
         public String describe(long now) {
             List<String> w = new ArrayList<>();
-            for (Map.Entry<String, Rec> e : map.entrySet())
-                w.add(e.getKey() + " x" + e.getValue().fails + (e.getValue().until > now ? " (" + Math.max(1, (e.getValue().until - now + 59_999) / 60_000) + " min left)" : ""));
+            for (Failures.Rec r : f.of(desire))
+                w.add(r.option() + " x" + r.fails() + (r.until() > now ? " (" + Math.max(1, (r.until() - now + 59_999) / 60_000) + " min left)" : ""));
             return String.join(", ", w);
         }
     }

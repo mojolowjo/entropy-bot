@@ -77,6 +77,7 @@ class BrainCostPathTest {
     void aRungDesireTakesThePickersCostAndRescoresEveryTenSecondsWhileIdle() {
         FakePicker p = new FakePicker();
         p.cost = 30;
+        bb.in.areaKnown = true;                     // AA_ROUND2 4: no area = parked by the needs.area gate
         Rung r = new Rung("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> "goal iron 3", p);
         Desire d = AaDesires.rung(r);
         Brain br = new Brain("brain", "t", d);

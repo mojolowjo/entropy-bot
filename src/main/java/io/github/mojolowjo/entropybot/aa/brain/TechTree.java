@@ -47,6 +47,23 @@ public final class TechTree {
 
     public int size() { return recipes.size(); }
 
+    /**
+     * AA_ROUND2 4 (Worth): the weighted share (0..1) of the recipes not yet had whose result needs {@code needs} (a 3x3
+     * grid for the table). Each result counts once, with its {@link #weight}.
+     */
+    public synchronized double share(java.util.function.Predicate<Recipe> needs, Set<String> have) {
+        Set<String> h = norm(have);
+        double all = 0, of = 0;
+        Set<String> seen = new HashSet<>();
+        for (Recipe r : recipes) {
+            if (h.contains(r.result()) || !seen.add(r.result())) continue;
+            double w = weight(r.result());
+            all += w;
+            if (needs.test(r)) of += w;
+        }
+        return all <= 0 ? 0 : of / all;
+    }
+
     private Set<String> bestFor;
     private double bestV;
 

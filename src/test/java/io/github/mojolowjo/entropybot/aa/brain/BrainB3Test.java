@@ -54,18 +54,21 @@ class BrainB3Test {
         assertEquals(1, Night.dusk(-1, true), "unknown time: the flag");
     }
 
-    Desire d(String id, Desire.Kind k, double v, int night) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).night(night);
+    Desire d(String id, Desire.Kind k, double v, Desire.Exposure e) {
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).exposure(e);
     }
 
     @Test
     void nightShiftsMiningUpAndSurfaceDownButNotInPeaceful() {
-        Brain br = new Brain("brain", "t", d("mine", Desire.Kind.UPKEEP, 30, +1), d("wood", Desire.Kind.UPKEEP, 35, -1));
+        Brain br = new Brain("brain", "t", d("mine", Desire.Kind.UPKEEP, 30, Desire.Exposure.UNDER), d("wood", Desire.Kind.UPKEEP, 35, Desire.Exposure.SURFACE));
         bb.in.dayTime = 18000;
         bb.in.hungerDrains = true;
+        bb.in.difficulty = 2;
+        double danger = Brain.danger(bb);
+        assertTrue(danger > 0.5, "Normal, no armour: " + danger);
         var s = br.scoreAll(bb);
-        assertEquals(40, s.get(0).score(), 1e-9);
-        assertEquals(25, s.get(1).score(), 1e-9);
+        assertEquals(30 * (1 + danger / 2), s.get(0).score(), 1e-9);
+        assertEquals(35 / (1 + danger), s.get(1).score(), 1e-9);
         assertEquals(Status.RUNNING, br.tick(bb));
         assertEquals("do mine", port.started.get(0).chain());
         bb.in.hungerDrains = false;                      // Peaceful: no shift

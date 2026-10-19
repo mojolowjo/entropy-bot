@@ -9,25 +9,20 @@ import java.util.List;
 /**
  * to-do 1d (nightwork): sheltered at night the bot used to wait till morning. From inside the shell it may do the work
  * that needs no surface: smelt and craft where it stands, or dig down from the shelter floor (a 2-deep shaft, then a
- * staircase from its bottom: the shell and its roof stay closed to the surface). Mining desires keep their night bonus
- * (Brain.score); once the bot is under ground ({@code sheltered} false) they run as they do for any dug-in bot. At dawn
+ * staircase from its bottom: the shell and its roof stay closed to the surface). AA_ROUND2 4: this is the mining
+ * stock-ups' UNDER option (AaTree.underGoal; was a desire at 78), and UNDER work gains by the night's danger (Brain.score); once the bot is under ground ({@code sheltered} false) they run as they do for any dug-in bot. At dawn
  * {@link Night#hostile} turns false, this desire goes and the ladder's surface gate climbs out. Sorting the bag has no
  * command that works without chests, so it is not offered. Pure.
  */
 public final class NightWork {
     private NightWork() {}
 
-    /** Over {@link Brain#URGENT} (75) so it ends the shelter's wait, under the shelter's own 80 and the owner's 100. */
-    public static final double SCORE = 78;
     public static final int SHAFT = 2, STAIRS = 24, MIN_PICK_PCT = 10;
 
     public enum Work { NONE, SMELT, CRAFT, STAIRS }
 
     /** In a shell of its own, built and waiting, with monsters about (night, not Peaceful). */
     public static boolean active(Blackboard bb) { return bb.in.sheltered && Night.hostile(bb); }
-
-    /** Score of the night-work desire: {@link #SCORE} when there is something to do from inside, else -1. */
-    public static double score(Blackboard bb) { return active(bb) && pick(bb.in) != Work.NONE ? SCORE : -1; }
 
     /** What to do now, in order: smelt the raw iron, craft the next tool or torches, else dig down. */
     public static Work pick(Inputs in) {

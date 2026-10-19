@@ -117,13 +117,13 @@ public final class AaTree {
                 // S1 (MINING_PLAN 12): the owner's targets; a planner-null option cools down 30 s (Cooldown.NO_RUN_MS) so the
                 // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
                 java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood " + AaScorer.WOOD_HI))),
-                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
-                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", goal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
-                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", goal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
+                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
+                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", underGoal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
+                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
                 java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
                 java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
                 java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
-                java.util.Map.entry(TaskKind.WAIT, (Node) new Cooldown("idle.wait.cd", RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
+                java.util.Map.entry(TaskKind.WAIT, (Node) RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")));
         io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaLadder.build(), idle, scorer);
         MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, brain);
         GuardSelector root = new GuardSelector("root", "AA",
@@ -141,8 +141,32 @@ public final class AaTree {
         });
     }
 
-    /** S1: an idle option's cooldown: 2 min doubling after a task that ran and failed, 30 s after one that never ran. */
-    static Cooldown idleCd(String id, Node child) { return new Cooldown(id, child).ranOnly(Cooldown.NO_RUN_MS).restAfterSuccess(Cooldown.NO_RUN_MS); }
+    /**
+     * S1: an idle option's cooldown: 2 min doubling after a task that ran and failed, 30 s after one that never ran.
+     * AA_ROUND2 3: the brain holds it now (Desire.cools over Failures); the node is the bare job.
+     */
+    static Node idleCd(String id, Node child) { return child; }
+
+    /**
+     * AA_ROUND2 4 (was the night.work desire at 78): a mining stock-up's UNDER option. Sheltered at a hostile night with
+     * night work to do (NightWork.pick: smelt, craft, else a shaft and stairs from the shell floor), that runs instead
+     * of the planner's goal: the work is cheaper under ground, the brain's exposure factor says so.
+     */
+    private static RunJob underGoal(String id, TaskKind kind, String text) {
+        return new RunJob(id, kind, bb -> {
+            if (io.github.mojolowjo.entropybot.aa.brain.NightWork.active(bb)) {
+                var w = io.github.mojolowjo.entropybot.aa.brain.NightWork.pick(bb.in);
+                if (w != io.github.mojolowjo.entropybot.aa.brain.NightWork.Work.NONE) {
+                    int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
+                    io.github.mojolowjo.entropybot.aa.brain.NightWork.noteDug(bb, w);
+                    return new JobPort.TaskSpec(kind, io.github.mojolowjo.entropybot.aa.brain.NightWork.chain(bb.in, w, p[0], p[1], p[2], 1, 0),
+                            "night", 1, JobPort.TaskSpec.TIMEOUT_MS, AaDesires.SHELTER_PATIENCE_MS);
+                }
+            }
+            String chain = bb.port.resolve(text);
+            return chain == null ? null : JobPort.TaskSpec.of(kind, chain, "idle");
+        });
+    }
 
     /** S1: lighting the spot runs once per night (a SUCCESS holds it until the day). */
     static Node oncePerNight(Node child) {

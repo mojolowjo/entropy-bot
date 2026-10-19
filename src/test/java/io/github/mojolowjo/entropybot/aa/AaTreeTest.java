@@ -57,6 +57,15 @@ class AaTreeTest {
         bb.in.pickPct = 100;
     }
 
+    /** AA_ROUND2 4: every idle stock band met (a Peaceful base, worth 16, comes after them). */
+    void stocked() {
+        bb.in.wood = AaScorer.WOOD_HI;
+        bb.in.cobble = AaScorer.STONE_HI;
+        bb.in.coal = AaScorer.COAL_HI;
+        bb.in.ironIngots = AaScorer.IRON_HI;
+        bb.in.torches = AaScorer.TORCH_HI;
+    }
+
     String lastChain() { return port.started.get(port.started.size() - 1).chain(); }
 
     @Test
@@ -98,12 +107,17 @@ class AaTreeTest {
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
-        assertEquals("goal shelter", lastChain(), "no area: a shelter, not a house");
+        // AA_ROUND2 4: Peaceful (danger 0): a base is worth 16 (Worth.base), so iron (70) comes first
+        assertEquals("goal iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
         port.done(6, "done");
+        tree.tick(bb);
+        pick(3);
+        stocked();                                // Peaceful base (16): after the idle stock-ups
+        tree.tick(bb);
+        assertEquals("goal shelter", lastChain(), "no area: a shelter, not a house");
+        port.done(7, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
-        tree.tick(bb);
-        assertEquals("goal iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
         assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bed PROGRESS 0") && l.contains("parked: no wool source")), "parked, not scored: " + tree.brain.whyLines(20));
         assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bag UPKEEP -1")), "BRAIN B1: a met rung scores -1: " + tree.brain.whyLines(20));
         assertEquals(0, tracer.counts.switches, "no task replaced another");
@@ -119,9 +133,9 @@ class AaTreeTest {
     @Test
     void housePrefersAnAreaAndTheBagRungNeedsChests() {
         freshStart();
-        pick(2);
+        pick(3);                                  // AA_ROUND2 4: Peaceful base (16) comes after iron
+        stocked();
         bb.in.tableKnown = bb.in.furnaceKnown = true;
-        bb.in.torches = 16;
         bb.in.areaName = "main";
         tree.tick(bb);
         assertEquals("house main", lastChain());
@@ -130,15 +144,14 @@ class AaTreeTest {
         bb.in.baseKnown = true;
         bb.in.freeSlots = 2;
         tree.tick(bb);
-        assertEquals("goal iron tools", lastChain(), "the bag rung is skipped without base chests");
         assertTrue(String.join("|", reasons()).contains("BAG skipped: no base chests scanned (scan base)"), reasons().toString());
-        port.done(2, "done");
+        if (bb.task() != null) port.done(port.started.size(), "done");
         tree.tick(bb);
         bb.in.baseChests = true;
-        pick(3);
+        clock.advance(Rung.SETTLE_MS + 1);
         tree.tick(bb);
         assertEquals("deposit", lastChain());
-        port.done(3, "done");
+        port.done(port.started.size(), "done");
         tree.tick(bb);
         bb.in.freeSlots = 8;
         clock.advance(Rung.SETTLE_MS + 1);
@@ -256,6 +269,7 @@ class AaTreeTest {
     void aGoalStillPlanningIsWaitedForThenSkipped() {
         freshStart();
         pick(1);
+        bb.in.tableKnown = bb.in.furnaceKnown = true;      // AA_ROUND2 4: with no tech tree a table is worth 80, over the wooden pickaxe's tools
         port.resolveTo = null;
         assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the rung that plans");
         assertEquals("needs>planning TOOLS: goal stone tools (0s)", tree.driver() + ">" + bb.taskText(clock.now()));

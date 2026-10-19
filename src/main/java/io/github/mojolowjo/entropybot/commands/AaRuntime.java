@@ -109,6 +109,22 @@ public final class AaRuntime implements JobPort {
      * {@link #FOOD_R} (y +-{@link #FOOD_DY}): oak/dark-oak logs, ripe berry bushes, mushrooms, water, kelp, a grass patch.
      * Null when nothing can be read; a throw is caught by the picker (logged, counted) and by the desire's park check.
      */
+    /**
+     * A field spot by the water source at (x, y, z): a neighbour at the water's level that is grass or dirt with air (or a
+     * plant) above it, inside my areas: the bot stands on it (y + 1) and "farm plant wheat here 4" has the water in reach.
+     */
+    private int[] fieldSpot(net.minecraft.world.level.Level lv, int x, int y, int z, String dim) {
+        int[][] side = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] s : side) {
+            int nx = x + s[0], nz = z + s[1];
+            var g = lv.getBlockState(new net.minecraft.core.BlockPos(nx, y, nz));
+            var up = lv.getBlockState(new net.minecraft.core.BlockPos(nx, y + 1, nz));
+            boolean soil = g.is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK) || g.is(net.minecraft.world.level.block.Blocks.DIRT);
+            if (soil && (up.isAir() || up.canBeReplaced()) && up.getFluidState().isEmpty() && c.inAreas(dim, nx, nz)) return new int[]{nx, y + 1, nz};
+        }
+        return null;
+    }
+
     io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts foodFacts() {
         long now = System.currentTimeMillis();
         // review: the cache holds only while the bag, the bar and the furnace are unchanged (a hunt/cook/eat refreshes it)
@@ -129,15 +145,17 @@ public final class AaRuntime implements JobPort {
         }
         // the director (2026-10-19): allowed animals outside my areas within 48, for an urgent "hunt ... out"
         Map<String, Integer> animalsOut = new java.util.HashMap<>();
-        double outDist = io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R;
+        // owner's rule 2026-10-19: any hunger may walk out (costed); seen up to twice the hunt's reach, the nearest's place kept
+        double outDist = 2 * io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R;
+        int[] outAt = null;
         String hdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
-        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R))) {
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(2 * io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R))) {
             String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
             if (!io.github.mojolowjo.entropybot.aa.FoodOptions.MEAT_ANIMALS.contains(type) || e.isBaby() || e.hasCustomName()
                     || io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e) || c.inAreas(hdim, e.getBlockX(), e.getBlockZ())
-                    || p.distanceTo(e) > io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R) continue;
+                    || p.distanceTo(e) > 2 * io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R) continue;
             animalsOut.merge(type, 1, Integer::sum);
-            outDist = Math.min(outDist, p.distanceTo(e));
+            if (p.distanceTo(e) < outDist) { outDist = p.distanceTo(e); outAt = new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()}; }
         }
         int inside = 0;
         for (int n : animals.values()) inside += n;
@@ -146,6 +164,9 @@ public final class AaRuntime implements JobPort {
         String oakType = "oak";
         double oakD = Double.MAX_VALUE, berryD = Double.MAX_VALUE, redD = Double.MAX_VALUE, brownD = Double.MAX_VALUE;
         boolean water = false, kelp = false;
+        int[] waterSpot = null;
+        double waterSpotD = Double.MAX_VALUE;
+        String wdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
         Map<Long, Integer> grassCells = new java.util.HashMap<>();
         var m = new net.minecraft.core.BlockPos.MutableBlockPos();
         for (int x = me[0] - FOOD_R; x <= me[0] + FOOD_R; x++)
@@ -170,7 +191,14 @@ public final class AaRuntime implements JobPort {
                     } else if (b == net.minecraft.world.level.block.Blocks.SHORT_GRASS || b == net.minecraft.world.level.block.Blocks.TALL_GRASS) {
                         grassCells.merge(((long) (x >> 3) << 32) | ((z >> 3) & 0xffffffffL), 1, Integer::sum);
                     }
-                    if (!water && d <= 12 && st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.getFluidState().isSource()) water = true;
+                    if (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.getFluidState().isSource()) {
+                        if (d <= 12) water = true;
+                        // aa383 (a field "no water within 4"): a dry cell beside the water to stand on and plant around
+                        if (d < waterSpotD) {
+                            int[] s = fieldSpot(lv, x, y, z, wdim);
+                            if (s != null) { waterSpotD = d; waterSpot = s; }
+                        }
+                    }
                 }
         // a grass patch: the 8x8 cell with the most grass (10 at least), inside my areas
         int[] grass = null;
@@ -200,7 +228,7 @@ public final class AaRuntime implements JobPort {
                 io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb), bb.in.furnaceKnown || bb.in.furnaceInBag,
                 animals, outside, c.hunting.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
                 oak, oakType, oak == null ? -1 : oakD, berry, berry == null ? -1 : berryD, red, brown, grass, water, farm,
-                Math.max(0, stored), kelp, me, animalsOut, p.getHealth(), outDist);
+                Math.max(0, stored), kelp, me, animalsOut, p.getHealth(), outDist, outAt, waterSpot);
         foodCacheAt = now;
         return foodCache;
     }
@@ -378,6 +406,7 @@ public final class AaRuntime implements JobPort {
         List<String> out = new ArrayList<>();
         for (var r : AaLadder.rungs(tree.ladder)) if (r.picker() != null) out.add(r.id.substring(6) + " options: " + r.options());
         out.addAll(io.github.mojolowjo.entropybot.aa.brain.Costs.lines(bb));      // aa-costs: the cost terms
+        out.addAll(tree.brain.heldLines(bb.clock.now()));                          // AA_ROUND2 3: the failure holds
         return out;
     }
 

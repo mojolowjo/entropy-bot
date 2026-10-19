@@ -11,7 +11,8 @@ import java.util.function.ToDoubleFunction;
  * option under its cooldown...); {@code score} answers 0..100, below 0 = not wanted now. Pure.
  *
  * <ul>
- * <li>GATE: a hard limit (no area, under ground for a surface task); scored high but never interrupts a running task.</li>
+ * <li>GATE: a hard limit (no area, under ground for a surface task); scores what it blocks (AA_ROUND2 4: the parked
+ *     desires' value flows to it), never interrupts a running task.</li>
  * <li>UPKEEP: stock and state; at {@link Brain#URGENT} or more it may interrupt (food near empty).</li>
  * <li>PROGRESS: worth what it unlocks; B2 scales it by P(success) and cost.</li>
  * <li>WANT: personality x boredom (B3).</li>
@@ -89,11 +90,32 @@ public final class Desire {
         return this;
     }
 
-    /** B3 (2.10): +1 mining (a night bonus), -1 surface work (a night malus), 0 neither; applied when monsters spawn. */
-    int night;
+    /**
+     * AA_ROUND2 4 (was B3's +/-10 night sign): where the work is done. While monsters spawn the brain multiplies the
+     * score by the night's danger (Costs.nightDanger): SURFACE x 1 / (1 + danger), UNDER x (1 + danger / 2), ANY as is.
+     */
+    public enum Exposure { SURFACE, UNDER, ANY }
 
-    public Desire night(int sign) {
-        night = Integer.signum(sign);
+    Exposure exposure = Exposure.ANY;
+
+    public Desire exposure(Exposure e) {
+        exposure = e == null ? Exposure.ANY : e;
+        return this;
+    }
+
+    public Exposure exposure() { return exposure; }
+
+    /**
+     * AA_ROUND2 3: the brain holds this desire itself (its node has no Cooldown): a failure after a started task cools it
+     * (2 min doubling, Failures), a failure before any task rests it {@code noRunMs}, a success rests it {@code restMs}.
+     */
+    boolean selfCool;
+    long noRunMs, restMs;
+
+    public Desire cools(long noRunMs, long restMs) {
+        selfCool = true;
+        this.noRunMs = noRunMs;
+        this.restMs = restMs;
         return this;
     }
 

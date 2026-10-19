@@ -83,16 +83,54 @@ class FoodOptionsTest {
         Options.Choice c = choose(f);
         java.util.Set<String> ids = new java.util.HashSet<>();
         c.ranked().forEach(o -> ids.add(o.id()));
-        assertTrue(ids.containsAll(java.util.List.of("berries", "stew", "apples", "wheat field")), c.why());
+        assertTrue(ids.containsAll(java.util.List.of("berries", "stew", "apples")), c.why());
         assertTrue(c.why().contains("kelp: seen in the water"), c.why());
-        Options.Option field = c.ranked().stream().filter(o -> o.id().equals("wheat field")).findFirst().orElseThrow();
-        assertEquals("farm plant wheat here 4 then place farm 0 64 0", field.command());
+        assertTrue(c.why().contains("wheat by water: no dry spot next to water"), "aa383: no field here just because water is 12 away: " + c.why());
         Options.Option stew = c.ranked().stream().filter(o -> o.id().equals("stew")).findFirst().orElseThrow();
         assertEquals("dig 1 64 1 1 64 1 then dig 2 64 2 2 64 2 then craft bowl 1 then craft mushroom_stew 1", stew.command());
         // hungry: no field (too slow)
         FoodOptions.FoodFacts hungry = new FoodOptions.FoodFacts(5, 0, f.bag(), 24, true, Map.of(), 0, null,
                 null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME);
         assertTrue(choose(hungry).why().contains("wheat: too slow while hungry"), choose(hungry).why());
+    }
+
+    /** aa383 (c): the field goes by the water, or here with a water bucket; both costed. */
+    @Test
+    void wheatFieldByTheWaterOrWithABucket() {
+        int[] spot = {8, 64, 0};
+        FoodOptions.FoodFacts byWater = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5), 24, true, Map.of(), 0, null,
+                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, Map.of(), 20, 24, null, spot);
+        Options.Choice c = choose(byWater);
+        Options.Option w = c.ranked().stream().filter(o -> o.id().equals("wheat by water")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
+        assertEquals("goto 8 64 0 then farm plant wheat here 4 then place farm 8 64 0", w.command());
+        assertTrue(c.why().contains("wheat with a bucket: no water bucket"), c.why());
+        FoodOptions.FoodFacts bucket = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), 0, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of(), 20, 24, null, null);
+        Options.Choice b = choose(bucket);
+        Options.Option here = b.ranked().stream().filter(o -> o.id().equals("wheat with a bucket")).findFirst().orElseThrow(() -> new AssertionError(b.why()));
+        assertEquals("farm plant wheat here 4 then place farm 0 64 0", here.command());
+        // both: the walk to the water is weighed against the bucket's extra minute
+        FoodOptions.FoodFacts both = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), 0, null,
+                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, Map.of(), 20, 24, null, spot);
+        assertEquals("wheat by water", choose(both).best().id(), choose(both).why());
+    }
+
+    /** Owner's rule 2026-10-19 (b): a food stock may walk out to animals at any hunger, beside the hunt inside; costed. */
+    @Test
+    void walkingOutIsACostedOptionBesideTheHuntInside() {
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(19, 5, Map.of(), 24, true, Map.of("chicken", 1), 0, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 4), 20, 30, new int[]{30, 64, 0}, null);
+        Options.Choice c = choose(f);
+        assertTrue(c.ranked().stream().anyMatch(o -> o.id().equals("hunt chicken")), c.why());
+        Options.Option out = c.ranked().stream().filter(o -> o.id().equals("hunt out cow")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
+        assertTrue(out.command().startsWith("hunt 2 cow out"), out.command());
+        assertTrue(c.ranked().indexOf(out) > 0, "not hungry: the walk out is dear, the hunt inside wins: " + c.why());
+        // far (past the hunt's reach): walk there first
+        FoodOptions.FoodFacts far = new FoodOptions.FoodFacts(19, 5, Map.of(), 24, true, Map.of(), 0, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 4), 20, 70, new int[]{70, 64, 0}, null);
+        Options.Choice fc = choose(far);
+        assertEquals("hunt out cow", fc.best().id(), "the only way: taken at its cost: " + fc.why());
+        assertTrue(fc.best().command().startsWith("goto 70 64 0 then hunt 2 cow out"), fc.best().command());
     }
 
     @Test

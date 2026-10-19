@@ -47,6 +47,22 @@ class IronOptionsTest {
         assertEquals("mine iron 1 at 5 56 0 dig", c.command(3));
     }
 
+    /** Owner's rule 2026-10-19 (live r2b: iron 17-18 deep never picked): depth is a cost, not a limit. */
+    @Test
+    void aDeepOreIsACostlierDigNotADrop() {
+        Choice c = IronOptions.choose(facts(List.of(buried(5, 40, 0, 6, 18, false)), 60), new Memory(), 0);
+        assertEquals(Way.DIG_KNOWN, c.way(), c.why());
+        assertEquals("mine iron 1 at 5 40 0 dig", c.command(3));
+        assertTrue(c.why().contains("past 16"), c.why());
+        assertEquals(16 * IronOptions.DIG_BLOCK + 2 * IronOptions.DIG_DEEP_BLOCK, IronOptions.digCost(18), 1e-9);
+        // a shallower ore a little farther still wins over the deep one near
+        Choice two = IronOptions.choose(facts(List.of(buried(5, 40, 0, 6, 18, false), buried(20, 55, 0, 20, 6, false)), 60), new Memory(), 0);
+        assertEquals("20 55 0", two.target().key(), two.why());
+        Choice past = IronOptions.choose(facts(List.of(buried(5, 10, 0, 6, IronOptions.DIG_HARD + 1, false)), 60), new Memory(), 0);
+        assertNull(past.way());
+        assertTrue(past.why().contains("the dig verb reaches " + IronOptions.DIG_HARD), past.why());
+    }
+
     @Test
     void theWaterRuleAndTheFloorDropOptionsWithTheirReason() {
         Ore wet = buried(0, 50, 0, 10, 8, true);

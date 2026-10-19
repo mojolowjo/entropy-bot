@@ -77,6 +77,20 @@ public final class IronOptions {
                         boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble) {}
 
     public static final double CLEAR = 10, DIG_BLOCK = 3, PLACE_BLOCK = 5, CAVE_TIME = 120, STRIP_TIME = 200, STALE = 1.5, CAVE_FACE = 2;
+    /**
+     * Owner's rule 2026-10-19 (live r2b: iron 17-18 deep never picked): depth is a cost, not a limit. Up to {@link #DIG_MAX}
+     * a block costs {@link #DIG_BLOCK}; each block past it {@link #DIG_DEEP_BLOCK} (a deep column: the climb back, the fall
+     * and water risk). {@link #DIG_HARD} is the dig verb's own reach (Mining's column dig for the {@code at} form).
+     */
+    public static final double DIG_DEEP_BLOCK = 6;
+    public static final int DIG_HARD = 40;
+
+    /** The dig's cost for an ore {@code depth} blocks under the surface (walk-blocks). */
+    public static double digCost(int depth) {
+        int d = Math.max(1, depth);
+        return Math.min(d, DIG_MAX) * DIG_BLOCK + Math.max(0, d - DIG_MAX) * DIG_DEEP_BLOCK;
+    }
+
     public static final int DIG_MAX = 16, PILLAR_MIN_UP = 3, SMELT_WALK = 24, FURNACE_COBBLE = 8, SMELT_HERE_COST = 10, DEFAULT_N = 3;
     /** Switches within one task before the rung fails as before. */
     public static final int MAX_SWITCHES = Options.MAX_SWITCHES;
@@ -171,9 +185,10 @@ public final class IronOptions {
                         o.loaded() ? (o.skyOpen() ? "open to the sky" : "an open face in a cave") : "known from before, not loaded", m));
             } else if (o.wetDigDown()) dropped.add("dig " + o.key() + ": digging down from in the water" + (o.drownWhy() == null ? "" : " (" + o.drownWhy() + ")"));
             else if (!o.loaded()) dropped.add("dig " + o.key() + ": buried, not loaded");
-            else if (o.depth() > DIG_MAX) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (dig up to " + DIG_MAX + ")");
+            else if (o.depth() > DIG_HARD) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (the dig verb reaches " + DIG_HARD + ")");
             else if (m.blocked(Way.DIG_KNOWN, o, now)) dropped.add("dig " + o.key() + ": " + m.reason(Way.DIG_KNOWN, o));
-            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + Math.max(1, o.depth()) * DIG_BLOCK + CLEAR + o.drown(), "buried " + o.depth() + " deep"
+            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth()) + CLEAR + o.drown(), "buried " + o.depth() + " deep"
+                    + (o.depth() > DIG_MAX ? " (+" + Math.round(digCost(o.depth()) - DIG_MAX * DIG_BLOCK) + " past " + DIG_MAX + ")" : "")
                     + (o.drownWhy() == null ? "" : ", " + o.drownWhy() + " +" + Math.round(o.drown())), m));
             int up = o.y() - f.meY();
             if (up >= PILLAR_MIN_UP && above == null) above = o;

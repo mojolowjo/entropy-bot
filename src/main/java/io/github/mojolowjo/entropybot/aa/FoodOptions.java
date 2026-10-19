@@ -52,12 +52,24 @@ public final class FoodOptions {
      * @param storedFood    food items known in storage
      * @param kelpNear      kelp seen in water near
      * @param me            the bot's position
+     * @param outAt         the nearest allowed animal outside my areas (within twice the hunt's reach), or null
+     * @param waterSpot     a dry standing cell next to a water source inside my areas (a field spot by water), or null
      */
     public record FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
                             Map<String, Integer> animals, int animalsOutside, String huntWhy,
                             int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
                             int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
-                            Map<String, Integer> animalsOut, float health, double outDist) {
+                            Map<String, Integer> animalsOut, float health, double outDist, int[] outAt, int[] waterSpot) {
+        /** Without the nearest outside animal's place and a field spot by water. */
+        public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
+                         Map<String, Integer> animals, int animalsOutside, String huntWhy,
+                         int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
+                         int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
+                         Map<String, Integer> animalsOut, float health, double outDist) {
+            this(food, saturation, bag, target, furnace, animals, animalsOutside, huntWhy, oak, oakType, oakDist, berry, berryDist, red, brown,
+                    grass, waterNear, farmKnown, storedFood, kelpNear, me, animalsOut, health, outDist, null, null);
+        }
+
         /** Without the nearest outside animal's distance (half the hunt's reach). */
         public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
                          Map<String, Integer> animals, int animalsOutside, String huntWhy,
@@ -90,7 +102,7 @@ public final class FoodOptions {
     private static final Pattern END = Pattern.compile("no path|no progress|timeout|stuck|couldn't|can't|missing|no animal|nothing|outside|no furnace|no seeds|no water|not found|none");
 
     /** Ways that may end "done" with nothing gained (a tree without apples, a field still growing). */
-    static final java.util.Set<String> SLOW = java.util.Set.of("berries", "stew", "apples", "wheat");
+    static final java.util.Set<String> SLOW = java.util.Set.of("berries", "stew", "apples", "wheat", "wheat bucket");
 
     public static final class Food implements Options.OptionSet<FoodFacts> {
         private String lastKey;
@@ -165,37 +177,43 @@ public final class FoodOptions {
 
     static void hunt(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {
         if (f.huntWhy() != null) { dropped.add("hunt: " + f.huntWhy()); return; }
+        String animal = most(f.animals(), f.furnace());
+        if (animal == null) dropped.add("hunt: no animal in reach inside my areas" + (f.animalsOutside() > 0 ? " (" + f.animalsOutside() + " outside them)" : "")
+                + (f.furnace() || f.animals() == null || f.animals().getOrDefault("chicken", 0) == 0 ? "" : " (chickens only, no furnace)"));
+        else huntRow(f, m, now, rows, dropped, short_, animal, f.animals().get(animal), false);
+        // owner's rule 2026-10-19 (aa383: a food stock never walked out to animals): walking out is a costed option at any
+        // hunger, beside the hunt inside: the travel (there and back) divided by the food urgency (Costs.huntOutTravel)
+        String outside = most(f.animalsOut(), f.furnace());
+        if (outside != null) huntRow(f, m, now, rows, dropped, short_, outside, f.animalsOut().get(outside), true);
+    }
+
+    /** The animal with the most head (the meatiest first on a tie; no chicken without a furnace: raw chicken poisons). */
+    static String most(Map<String, Integer> animals, boolean furnace) {
+        if (animals == null) return null;
         String animal = null;
         int most = 0;
-        for (String a : List.of("cow", "pig", "sheep", "chicken")) {          // the meatiest first on a tie
-            int n = f.animals() == null ? 0 : f.animals().getOrDefault(a, 0);
-            if (a.equals("chicken") && !f.furnace()) continue;               // raw chicken poisons
+        for (String a : List.of("cow", "pig", "sheep", "chicken")) {
+            int n = animals.getOrDefault(a, 0);
+            if (a.equals("chicken") && !furnace) continue;
             if (n > most) { animal = a; most = n; }
         }
-        boolean out = false;
-        if (animal == null && f.animalsOut() != null && !f.animalsOut().isEmpty()) {
-            // aa-costs (was: only when urgent): none in my areas: the ones outside (within the hunt's reach, HuntRules.OUT_R;
-            // the outside rule set still applies) at their travel cost divided by the food urgency (Costs.huntOutTravel)
-            for (String a : List.of("cow", "pig", "sheep", "chicken")) {
-                int n = f.animalsOut().getOrDefault(a, 0);
-                if (a.equals("chicken") && !f.furnace()) continue;
-                if (n > most) { animal = a; most = n; }
-            }
-            out = animal != null;
-        }
-        if (animal == null) {
-            dropped.add("hunt: no animal in reach inside my areas" + (f.animalsOutside() > 0 ? " (" + f.animalsOutside() + " outside them)" : "")
-                    + (f.furnace() || f.animals() == null || f.animals().getOrDefault("chicken", 0) == 0 ? "" : " (chickens only, no furnace)"));
-            return;
-        }
+        return animal;
+    }
+
+    private static void huntRow(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_,
+                                String animal, int most, boolean out) {
         String meat = MEAT.get(animal), cooked = FoodModel.COOKS.get(meat);
         double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
-        String chain = "hunt " + n + " " + animal + (out ? " out" : "") + (f.furnace() ? " then cook " + meat + " " + n : "");
+        // an animal past the hunt's own reach (HuntRules.OUT_R from where the hunt starts): walk to it first
+        boolean far = out && f.outAt() != null && f.outDist() > io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R;
+        String chain = (far ? "goto " + RungOptions.xyz(f.outAt()) + " then " : "") + "hunt " + n + " " + animal + (out ? " out" : "")
+                + (f.furnace() ? " then cook " + meat + " " + n : "");
         double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0)
                 + (out ? io.github.mojolowjo.entropybot.aa.brain.Costs.huntOutTravel(f.outDist(), f.food(), f.health()) : 0);      // there and back / urgency
         RungOptions.add(rows, dropped, m, now, Options.scored(out ? "hunt out " + animal : "hunt " + animal, "hunt", chain, cost,
-                most + " " + animal + (out ? " outside my areas (" + io.github.mojolowjo.entropybot.aa.brain.Costs.huntOutTerms(f.outDist(), f.food(), f.health()) + ")" : " in reach") + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", false, m));
+                most + " " + animal + (out ? " outside my areas (" + io.github.mojolowjo.entropybot.aa.brain.Costs.huntOutTerms(f.outDist(), f.food(), f.health()) + ")" : " in reach")
+                        + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), out ? "hunt out" : "hunt", false, m));
     }
 
     static void stew(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {
@@ -218,18 +236,29 @@ public final class FoodOptions {
     static void wheat(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, boolean urgent) {
         if (f.farmKnown()) return;                          // the planner's bread has its source
         if (urgent) { dropped.add("wheat: too slow while hungry (8 min to grow)"); return; }
-        if (!f.waterNear()) { dropped.add("wheat: no water near for a field"); return; }
         int seeds = f.has("wheat_seeds");
-        String mark = f.me() == null ? "place farm" : "place farm " + RungOptions.xyz(f.me());
-        if (seeds >= 4) {
-            RungOptions.add(rows, dropped, m, now, Options.scored("wheat field", "farm", "farm plant wheat here 4 then " + mark,
-                    Options.MINUTE * 6, seeds + " seeds and water: a field (slow, endless)", "wheat", false, m));
-        } else if (f.grass() != null) {
+        String seedsStep;
+        double seedsCost;
+        if (seeds >= 4) { seedsStep = ""; seedsCost = 0; }
+        else if (f.grass() != null) {
             int[] g = f.grass();
-            RungOptions.add(rows, dropped, m, now, Options.scored("wheat from grass", "farm",
-                    "dig " + g[0] + " " + g[1] + " " + g[2] + " " + g[3] + " +1 then farm plant wheat here 4 then " + mark,
-                    Options.MINUTE * 9, "seeds from a grass patch, then a field (slow, endless)", "wheat", false, m));
-        } else dropped.add("wheat: " + seeds + "/4 seeds and no grass patch near");
+            seedsStep = "dig " + g[0] + " " + g[1] + " " + g[2] + " " + g[3] + " +1 then ";
+            seedsCost = Options.MINUTE * 3;
+        } else { dropped.add("wheat: " + seeds + "/4 seeds and no grass patch near"); return; }
+        String seedWhy = seeds >= 4 ? seeds + " seeds" : "seeds from a grass patch";
+        // aa383 (the field failed "no water within 4 - give me a water bucket"): the field goes where water is (a dry cell
+        // next to a water source, AaRuntime.foodFacts), or here with a water bucket from the bag; each costed
+        if (f.waterSpot() != null) {
+            int[] w = f.waterSpot();
+            RungOptions.add(rows, dropped, m, now, Options.scored("wheat by water", "farm",
+                    seedsStep + "goto " + RungOptions.xyz(w) + " then farm plant wheat here 4 then place farm " + RungOptions.xyz(w),
+                    Options.MINUTE * 6 + seedsCost + dist(f.me(), w), seedWhy + ", a field by the water at " + RungOptions.xyz(w) + " (slow, endless)", "wheat", false, m));
+        } else dropped.add("wheat by water: no dry spot next to water in my areas near");
+        if (f.has("water_bucket") > 0) {
+            String mark = f.me() == null ? "place farm" : "place farm " + RungOptions.xyz(f.me());
+            RungOptions.add(rows, dropped, m, now, Options.scored("wheat with a bucket", "farm", seedsStep + "farm plant wheat here 4 then " + mark,
+                    Options.MINUTE * 7 + seedsCost, seedWhy + ", water from my bucket: a field here (slow, endless)", "wheat bucket", false, m));
+        } else dropped.add("wheat with a bucket: no water bucket" + (f.has("bucket") > 0 ? " (an empty one: no verb fills it yet)" : ""));
     }
 
     /** The rounds a way that yields {@code each} needs for the shortfall (1..8). */
