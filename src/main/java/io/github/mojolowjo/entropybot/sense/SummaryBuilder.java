@@ -69,7 +69,10 @@ public final class SummaryBuilder {
 
     private static void add(ChunkSummary s, int x, int y, int z, Cls c, List<ChunkDiff.Change> out) {
         if (c.family() != null) {
-            s.ores.computeIfAbsent(c.family(), k -> new ChunkSummary.Group()).add(new ChunkSummary.Spot(x, y, z, c.id()));
+            ChunkSummary.Group g = s.ores.computeIfAbsent(c.family(), k -> new ChunkSummary.Group());
+            ChunkSummary.Spot spot = new ChunkSummary.Spot(x, y, z, c.id());
+            if (out != null) g.addPatched(spot);          // a patch (placed or uncovered ore): listed even past the cap
+            else g.add(spot);
             if (out != null) out.add(new ChunkDiff.Change(ChunkDiff.Type.ORE_ADD, c.family(), c.id(), x, y, z));
         }
         if (poiKept(c.poi(), y)) {

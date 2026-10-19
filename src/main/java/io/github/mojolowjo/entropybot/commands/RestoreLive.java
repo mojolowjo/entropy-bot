@@ -226,13 +226,26 @@ public final class RestoreLive {
         if (!io.github.mojolowjo.entropybot.clear.OwnStations.station(now)) return "no station at " + x + " " + y + " " + z + " any more";
         Long gone = stationRemoved.get(dim + " " + x + " " + y + " " + z);
         Integer contents = null;
+        long seen = 0;
         com.google.gson.JsonObject note = Core.INSTANCE.knowledge.chests().get(x + " " + y + " " + z);
         if (note != null && note.has("items") && note.has("seen") && note.get("seen").getAsLong() >= e.at) {
             int n = 0;
             for (var it : note.getAsJsonObject("items").entrySet()) n += it.getValue().getAsInt();
             contents = n;
+            seen = note.get("seen").getAsLong();
         }
+        // a furnace the bot took everything out of itself is never kept as a chest note: its own record says so
+        contents = io.github.mojolowjo.entropybot.clear.OwnStations.contentsKnown(contents, seen, stationEmptied.get(dim + " " + x + " " + y + " " + z), e.at);
         return io.github.mojolowjo.entropybot.clear.OwnStations.pickUp(e.block, now, gone != null && gone >= e.at, now, contents, x, y, z);
+    }
+
+    /** "smelt ... here": a station of mine (a furnace) the bot took everything out of, at this ms; the pickup may then break it. */
+    private final java.util.Map<String, Long> stationEmptied = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void noteStationEmptied(int x, int y, int z) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+        stationEmptied.put(Guard.dimOf(mc.level) + " " + x + " " + y + " " + z, System.currentTimeMillis());
     }
 
     /** 0.33.0 review: station cells of mine whose block was removed (ms), from the block-change hook; a new placement clears it. */

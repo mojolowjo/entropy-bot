@@ -59,6 +59,15 @@ public final class ChunkSummary {
             if (spots.size() < Limits.SENSE_SPOTS) spots.add(s);
         }
 
+        /** Spots a patch may list beyond the cap: an ore that appears (placed, uncovered) is wanted even in a full chunk. */
+        public static final int PATCH_EXTRA = 32;
+
+        /** A patch's add: listed past the cap too (up to {@link #PATCH_EXTRA} more; a full read lists the cap again). */
+        public void addPatched(Spot s) {
+            n++;
+            if (spots.size() < Limits.SENSE_SPOTS + PATCH_EXTRA) spots.add(s);
+        }
+
         public Removed remove(int x, int y, int z) {
             for (int i = 0; i < spots.size(); i++) {
                 if (spots.get(i).at(x, y, z)) {

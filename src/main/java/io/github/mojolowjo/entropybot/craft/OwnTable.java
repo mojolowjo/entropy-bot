@@ -89,6 +89,24 @@ public final class OwnTable {
         };
     }
 
+    /** "smelt ... here": the furnace it put down goes back in the bag after the smelt (the camp's own never does). */
+    public static String furnacePlacedHere(String pos) {
+        return "put my furnace down at " + pos + " (I take it back after the smelt)";
+    }
+
+    public static String furnaceTakenBack(String pos) {
+        return "smelted in my own furnace at " + pos + ", taken back";
+    }
+
+    public static String furnaceLeftAt(String pos) {
+        return "my furnace is still at " + pos + " - next: dig " + pos + " " + pos + " force";
+    }
+
+    /** The note when the furnace could not be emptied, so it stays (breaking it would throw its items out). */
+    public static String furnaceNotEmpty(String pos, int items) {
+        return "my furnace at " + pos + " still holds " + items + " items (bag full?), so it stays - next: take all " + pos;
+    }
+
     /** The smelt's note when it put its own furnace down (the furnace stays: it holds the job). */
     public static String furnacePlaced(String pos) {
         return "put my furnace down at " + pos + " (it stays there)";

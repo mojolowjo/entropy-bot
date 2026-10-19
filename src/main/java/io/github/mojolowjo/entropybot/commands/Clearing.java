@@ -367,20 +367,32 @@ public final class Clearing {
             if (st.state instanceof ClearState s) tables.addAll(s.tablesLeft);
             if (armedPickup(st)) tables.add(st);
         }
-        Set<String> left = new LinkedHashSet<>();
+        Set<String> left = new LinkedHashSet<>(), leftFurnaces = new LinkedHashSet<>();
         for (Seq.Step t : tables) {
             if (t.pos == null) continue;
             String id = blockId(t.pos);
             t.got = null;                            // disarmed: nothing picks it up after the job
             // gone (picked up, broken by someone) or something else now: not ours to mention
-            if (id != null && !PlaceRules.TABLE_ID.equals(id)) continue;
+            if (id != null && !PlaceRules.pickupBlock(t.id).equals(id)) continue;
+            if (PlaceRules.FURNACE_ID.equals(t.id)) {
+                leftFurnaces.add(Jobs.fmt(t.pos));
+                continue;
+            }
             left.add(Jobs.fmt(t.pos));
             if (WHY_OWN_TABLE.equals(t.why)) LEFT_OWN_TABLES.add(Jobs.fmt(t.pos));       // 0.28.2: a check finding
         }
-        if (left.isEmpty()) return msg;
-        String where = String.join(", ", left);
-        LOG.info("[entropybot] clear: the job ended ({}) and left my crafting table at {}", msg, where);
-        return msg + " - left my crafting table at " + where;
+        String out = msg;
+        if (!left.isEmpty()) {
+            String where = String.join(", ", left);
+            LOG.info("[entropybot] clear: the job ended ({}) and left my crafting table at {}", msg, where);
+            out = out + " - left my crafting table at " + where;
+        }
+        if (!leftFurnaces.isEmpty()) {
+            String where = String.join(", ", leftFurnaces);
+            LOG.info("[entropybot] clear: the job ended ({}) and left my furnace at {}", msg, where);
+            out = out + " - left my furnace at " + where;
+        }
+        return out;
     }
 
     private static String join(String a, String b) {
@@ -547,18 +559,24 @@ public final class Clearing {
         if (KIND_TABLE.equals(st.kind)) {
             // picked up (or gone): disarmed; still standing there: stays armed, so the job's end names it
             String id = blockId(st.pos);
-            if (id != null && !PlaceRules.TABLE_ID.equals(id)) {
-                if (WHY_OWN_TABLE.equals(st.why) && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.takenBack(Jobs.fmt(st.pos)));
+            String want = PlaceRules.pickupBlock(st.id), name = PlaceRules.pickupName(want);
+            boolean furnace = WHY_OWN_FURNACE.equals(st.why);
+            if (id != null && !want.equals(id)) {
+                if (furnace && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.furnaceTakenBack(Jobs.fmt(st.pos)));
+                else if (WHY_OWN_TABLE.equals(st.why) && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.takenBack(Jobs.fmt(st.pos)));
                 st.got = null;
             } else if (armedPickup(st)) {
-                LOG.info("[entropybot] clear: couldn't pick up my crafting table at {}", Jobs.fmt(st.pos));
-                if (WHY_OWN_TABLE.equals(st.why)) {
+                LOG.info("[entropybot] clear: couldn't pick up my {} at {}", name, Jobs.fmt(st.pos));
+                if (furnace) {
+                    seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.furnaceLeftAt(Jobs.fmt(st.pos)));
+                    st.got = null;
+                } else if (WHY_OWN_TABLE.equals(st.why)) {
                     LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));
                     seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.leftAt(Jobs.fmt(st.pos)));
                     st.got = null;              // named in the note already
                 }
             }
-            if (WHY_OWN_TABLE.equals(st.why)) return "next";
+            if (WHY_OWN_TABLE.equals(st.why) || furnace) return "next";
         }
         if (KIND_FINISH.equals(st.kind)) {
             seq.jobs.finish(msg);
@@ -659,15 +677,41 @@ public final class Clearing {
 
     /** The armed-on-place pickup of the table at spot. */
     private static Seq.Step pickupStep(Pos spot, String why) {
-        // force (a table is a built block), but only exactly a crafting table and only while armed, on every attempt
+        return pickupStep(spot, why, PlaceRules.TABLE_ID);
+    }
+
+    /**
+     * The armed-on-place pickup of a station of mine at spot: force (a station is a built block), but only exactly
+     * {@code block} and only while armed, on every attempt. The step's {@code id} says which block ({@link PlaceRules#pickupBlock}).
+     */
+    private static Seq.Step pickupStep(Pos spot, String why, String block) {
+        boolean table = PlaceRules.TABLE_ID.equals(block);
         ClearJob.Options po = new ClearJob.Options().only(List.of(spot)).force(true).soft(true).keepOres(false)
-                .label(PlaceRules.pickupLabel(spot)).exactId(PlaceRules.TABLE_ID);
+                .label(table ? PlaceRules.pickupLabel(spot) : PlaceRules.furnacePickupLabel(spot)).exactId(block);
         Seq.Step pickup = clearStep(po);
         po.armed(() -> armedPickup(pickup));
         pickup.kind = KIND_TABLE;
         pickup.pos = new int[]{spot.x(), spot.y(), spot.z()};
         pickup.why = why;
+        pickup.id = table ? null : block;
         return pickup;
+    }
+
+    /** 0.36.a9: the pickup steps of the furnace "smelt ... here" put down itself (its {@code why}). */
+    static final String WHY_OWN_FURNACE = "ownfurnace";
+
+    /**
+     * 0.36.a9 ("smelt <item> here", mining-policy Phase 4 open item): the place step of the furnace from the bag at spot,
+     * with the armed pickup that takes exactly that furnace back after the smelt. The pickup is armed only by our own
+     * click on a free cell (placeTick) and only breaks a furnace the ledger holds as mine and the bot emptied
+     * (RestoreLive.stationRefusal); the camp's own furnace is never touched. Returns {place, pickup}.
+     */
+    static Seq.Step[] furnaceHere(int[] spot) {
+        Pos at = new Pos(spot[0], spot[1], spot[2]);
+        Seq.Step pickup = pickupStep(at, WHY_OWN_FURNACE, PlaceRules.FURNACE_ID);
+        Seq.Step place = placeStep(spot, PlaceRules.FURNACE_ID, null, false);
+        ((PlaceState) place.state).pickup = pickup;
+        return new Seq.Step[]{place, pickup};
     }
 
     /** A craft's own table left standing for the next back-to-back craft (x y z), or null. */
@@ -821,7 +865,7 @@ public final class Clearing {
 
     /** The pickup only takes the table it put down (the place step armed it) and only while it is still a crafting table. */
     static boolean tablePickupWanted(Seq.Step st, LocalPlayer p) {
-        return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos));
+        return st.pos != null && PlaceRules.pickupMayBreak(armedPickup(st), blockId(st.pos), PlaceRules.pickupBlock(st.id));
     }
 
     /**
@@ -829,12 +873,13 @@ public final class Clearing {
      * or already open: it was broken and the drop is being picked up), else why it is dropped.
      */
     static String pickupLost(Seq.Step st) {
-        if (!armedPickup(st)) return "no crafting table of mine to pick up at " + Jobs.fmt(st.pos);
+        String want = PlaceRules.pickupBlock(st.id), name = PlaceRules.pickupName(want);
+        if (!armedPickup(st)) return "no " + name + " of mine to pick up at " + Jobs.fmt(st.pos);
         String id = blockId(st.pos);
-        if (id == null || PlaceRules.TABLE_ID.equals(id)) return null;
+        if (id == null || want.equals(id)) return null;
         var level = Minecraft.getInstance().level;
         if (level.getBlockState(new BlockPos(st.pos[0], st.pos[1], st.pos[2])).isAir()) return null;
-        return "the block at " + Jobs.fmt(st.pos) + " is " + id + " now, not my crafting table - left it alone";
+        return "the block at " + Jobs.fmt(st.pos) + " is " + id + " now, not my " + name + " - left it alone";
     }
 
     /** The bag is full: the base chests (or the clear's dump chests), valuables kept when collecting. */
@@ -1101,11 +1146,12 @@ public final class Clearing {
         if (isThere(pos, id)) {
             if (ps.pickup != null) {
                 // B7d review 4b: armed only after our own click on a free cell, with exactly a crafting table there now
-                if (PlaceRules.armsTable(ps.clicked, blockId(pos))) {
+                String what = PlaceRules.pickupName(PlaceRules.pickupBlock(ps.pickup.id));
+                if (PlaceRules.armsStation(ps.clicked, blockId(pos), PlaceRules.pickupBlock(ps.pickup.id))) {
                     ps.pickup.got = KIND_PLACED_TABLE;      // it went down: the pickup may take it
-                    LOG.info("[entropybot] place: my crafting table is down at {}", Jobs.fmt(pos));
+                    LOG.info("[entropybot] place: my {} is down at {}", what, Jobs.fmt(pos));
                 } else {
-                    LOG.info("[entropybot] place: a table at {} I didn't just put down - I won't pick it up", Jobs.fmt(pos));
+                    LOG.info("[entropybot] place: a {} at {} I didn't just put down - I won't pick it up", what, Jobs.fmt(pos));
                 }
             }
             return "next";

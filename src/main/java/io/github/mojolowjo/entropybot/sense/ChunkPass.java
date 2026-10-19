@@ -74,10 +74,11 @@ public final class ChunkPass {
     private final ConcurrentLinkedQueue<String> failedWrites = new ConcurrentLinkedQueue<>();
     private ExecutorService worker;
     private String dim;
-    private long startMs, lastAuditMs, auditCursor;
+    private long startMs, lastAuditMs, auditCursor, nearCursor;
 
     // counters (sense status)
     private long heard, patches, beforeRead, dropUnsure, dropError, readsLoad, readsResend, readsMissed, readsRetry, readErrors;
+    private long nearAudits, nearFixes, oreHeard;
     private long audits, disagreements, errors, lastErrLogMs, lastAuditLogMs, filesBroken, filesLoadedCount;
     private final ArrayDeque<Long> disagreeAt = new ArrayDeque<>();
     private String lastError, lastDisagreement, filesNote = "not loaded yet";
@@ -137,12 +138,13 @@ public final class ChunkPass {
             int cx = x >> 4, cz = z >> 4;
             long k = ChunkSummary.key(cx, cz);
             ChunkSummary s = index.get(dim, cx, cz);
+            SummaryBuilder.Cls cf = reader.cls(from), ct = reader.cls(to);
+            if (ct.family() != null) oreHeard++;       // an ore block appeared (sense status counts them: the hook is alive)
             if (s == null || !live.contains(k)) {
                 beforeRead++;              // its read is pending (or it is not loaded): the read covers this change
                 if (!schedule.isPending(cx, cz)) schedule.missed(cx, cz, System.currentTimeMillis());
                 return;
             }
-            SummaryBuilder.Cls cf = reader.cls(from), ct = reader.cls(to);
             boolean nearTop = ColumnPatch.nearTop(s.tops, x, y, z);
             if (cf.none() && ct.none() && !nearTop) return;           // nothing the summary holds: O(1) and done
             LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
@@ -199,6 +201,7 @@ public final class ChunkPass {
                 lastAuditMs = now;
                 audit(level, now);
             }
+            if (tick % NearAudit.EVERY_TICKS == 5 && System.nanoTime() - t0 < Limits.SENSE_BUDGET_NS / 2) nearAudit(level, p, now);
             if (tick % 20 == 3) writeDue(now, false);
         } catch (Throwable t) {
             error("tick", t);
@@ -317,21 +320,38 @@ public final class ChunkPass {
         if (keys.isEmpty()) return;
         keys.sort(Long::compare);
         long k = keys.get((int) (auditCursor++ % keys.size()));
-        int cx = ChunkSummary.cx(k), cz = ChunkSummary.cz(k);
+        auditChunk(level, ChunkSummary.cx(k), ChunkSummary.cz(k), now, false);
+    }
+
+    /**
+     * 0.36.a9 (to-do vanilla 1b): the 3 x 3 chunks round the bot are read again in turn, one every
+     * {@link NearAudit#EVERY_TICKS} ticks, and compared with their patched summaries: a new or uncovered ore the patch path
+     * missed reaches the ore index within seconds (the minute-long round over every loaded chunk took far longer). A
+     * disagreement here means a patch did not take; it is counted and logged ("sense status": near fixes).
+     */
+    private void nearAudit(ClientLevel level, BlockPos p, long now) {
+        int[] c = NearAudit.pick(p.getX() >> 4, p.getZ() >> 4, nearCursor++);
+        auditChunk(level, c[0], c[1], now, true);
+    }
+
+    private void auditChunk(ClientLevel level, int cx, int cz, long now, boolean near) {
         LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
         ChunkSummary s = index.get(dim, cx, cz);
-        if (chunk == null || s == null || schedule.isPending(cx, cz)) return;
+        if (chunk == null || s == null || !live.contains(ChunkSummary.key(cx, cz)) || schedule.isPending(cx, cz)) return;
         ChunkSummary fresh = reader.read(dim, chunk, now);
-        audits++;
+        if (near) nearAudits++;
+        else audits++;
         List<String> diff = ChunkDiff.disagreements(s, fresh);
         if (diff.isEmpty()) return;
-        disagreements++;
+        if (near) nearFixes++;
+        else disagreements++;
         disagreeAt.add(now);
         while (!disagreeAt.isEmpty() && now - disagreeAt.peekFirst() > 3_600_000) disagreeAt.pollFirst();
-        lastDisagreement = "chunk " + cx + " " + cz + ": " + String.join(", ", diff);
+        lastDisagreement = (near ? "near " : "") + "chunk " + cx + " " + cz + ": " + String.join(", ", diff);
         if (now - lastAuditLogMs >= LOG_EVERY_MS) {
             lastAuditLogMs = now;
-            LOG.warn("[entropybot] sense: self-audit disagreement #{} at {} - summary replaced", disagreements, lastDisagreement);
+            LOG.warn("[entropybot] sense: {} disagreement #{} at {} - summary replaced",
+                    near ? "near-bot check" : "self-audit", near ? nearFixes : disagreements, lastDisagreement);
         }
         List<ChunkDiff.Change> changes = ChunkDiff.between(s, fresh);
         index.put(fresh);
@@ -539,6 +559,8 @@ public final class ChunkPass {
         sb.append(" | files: ").append(written.get()).append(" written, ").append(dirty.pending()).append(" waiting, ").append(filesLoadedCount).append(" loaded (")
                 .append(filesNote).append(")").append(filesBroken > 0 ? ", " + filesBroken + " broken skipped" : "");
         if (lastWriteError != null) sb.append(", last write error ").append(lastWriteError).append(" (").append(writeErrors.get()).append(")");
+        sb.append(" | ore blocks heard appear ").append(oreHeard);
+        sb.append(" | near-bot check ").append(nearAudits).append(" reads, ").append(nearFixes).append(" fixes (a fix = a patch that did not take)");
         sb.append(" | self-audit ").append(audits).append(" chunks, ").append(disagreements).append(" disagreements");
         if (lastDisagreement != null) sb.append(" (last: ").append(lastDisagreement).append(")");
         if (lastError != null) sb.append(" | errors ").append(errors).append(", last ").append(lastError);
