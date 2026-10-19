@@ -338,6 +338,17 @@ public final class PaperPlan {
         return s;
     }
 
+    /** aa-replan 2: tunnel up + pillar to {@code e} (straight over me): breaking and placing on for this job only. */
+    String tunnelUp(Commands c, int[] e, String from) {
+        if (running) return "busy: a plan is being made";
+        if (owned()) return "busy: a plan go is walking";
+        goBreak = true;
+        goPlace = true;
+        String s = c.jobs.startPlanGo(e, true, true, from, id -> { goJob = id; goJobObj = c.jobs.job; });
+        LOG.info("[entropybot] tunnel up: to {} (breaking and placing on), job {}: {}", Jobs.fmt(e), goJob, s);
+        return s;
+    }
+
     /** "plan go": the last reachable plan, walked with its rules' breaking/placing on for this job only. */
     String go(Commands c, LocalPlayer p, String from, boolean anyway) {
         // review 2: every check first; the rules change only for a walk that starts

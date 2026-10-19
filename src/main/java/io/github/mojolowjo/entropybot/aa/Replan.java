@@ -30,7 +30,89 @@ public final class Replan {
     public static final double CHEAPER = 0.30, MIN_SAVE = 3;
     public static final long EVERY_MS = 5_000, LONG_STEP_MS = 15_000, LOCK_MS = 20_000;
 
-    public enum Leg { NONE, PILLAR, WALK }
+    public enum Leg { NONE, PILLAR, TUNNEL, WALK }
+
+    // ---- aa-replan 2 (director, aa381): the real way back, chosen where the ore step ends ----
+    //
+    // The leg stored at plan time is only the scoring estimate. At the ore step's end the runtime scans the column over
+    // the head up to the sky and prices every way back as a cost the chooser compares (no "if X then walk" rules):
+    // tunnel up + pillar = breaks overhead (x1 a cell I dug, x6 a foreign one, x the BreakPolicy multiplier) + places x0.05;
+    // an open own shaft is its cheapest case (no breaks). Hazards and the cap are costs too: lava/water/falling blocks in
+    // the column, levels over 40, blocks I lack. Tunnel/pillar wins only when >= 20% cheaper than the walk.
+
+    public static final int TUNNEL_CAP = 40;
+    public static final double OWN_BREAK = 1, FOREIGN_BREAK = 6, UP_PLACE = 0.05, TUNNEL_BETTER = 0.20;
+    /** Hazard costs per cell (walk-blocks): lava (burns, flows onto me), water (flows down the shaft), a falling block. */
+    public static final double LAVA = 1000, WATER = 60, FALLING = 40, OVER_CAP = 25, NO_BLOCK = 30;
+
+    /** One cell of the column over the head, bottom up. {@code mult} = the BreakPolicy multiplier, infinite = denied. */
+    public record Cell(boolean open, boolean ownDug, double mult, boolean lava, boolean water, boolean falling) {
+        public static Cell air() { return new Cell(true, false, 1, false, false, false); }
+        public static Cell stone(boolean own) { return new Cell(false, own, 1, false, false, false); }
+    }
+
+    /** A priced way back. */
+    public record Way(Leg leg, double cost, String why) {}
+
+    /** Tunnel up + pillar through {@code column} ({@code levels} up); PILLAR when nothing needs breaking. */
+    public static Way tunnelUp(List<Cell> column, int levels, int throwaway) {
+        double brk = 0, haz = 0;
+        int breaks = 0, own = 0;
+        List<String> notes = new ArrayList<>();
+        for (Cell c : column) {
+            if (c.lava()) haz += LAVA;
+            if (c.water()) haz += WATER;
+            if (c.falling()) haz += FALLING;
+            if (!c.open() && !c.water() && !c.lava()) {
+                double m = c.mult();
+                if (Double.isInfinite(m) || Double.isNaN(m)) { brk = Double.POSITIVE_INFINITY; notes.add("a cell may not be broken"); break; }
+                brk += (c.ownDug() ? OWN_BREAK : FOREIGN_BREAK) * m;
+                breaks++;
+                if (c.ownDug()) own++;
+            }
+        }
+        if (haz > 0) notes.add("hazards " + Math.round(haz));
+        double over = Math.max(0, levels - TUNNEL_CAP) * OVER_CAP;
+        if (over > 0) notes.add((levels - TUNNEL_CAP) + " over the " + TUNNEL_CAP + " cap " + Math.round(over));
+        double lack = Math.max(0, levels - throwaway) * NO_BLOCK;
+        if (lack > 0) notes.add((levels - Math.max(0, throwaway)) + " blocks short " + Math.round(lack));
+        double cost = brk + levels * UP_PLACE + haz + over + lack;
+        Leg leg = breaks == 0 ? Leg.PILLAR : Leg.TUNNEL;
+        String why = levels + " up, " + breaks + " breaks (" + own + " mine)" + (notes.isEmpty() ? "" : ", " + String.join(", ", notes));
+        return new Way(leg, cost, why);
+    }
+
+    /** The choice at the ore step's end: tunnel/pillar when >= 20% cheaper than the walk, else walk. Both priced. */
+    public static Way chooseNow(List<Cell> column, int levels, int throwaway, double walk) {
+        if (levels <= 0) return new Way(Leg.NONE, 0, "already out");
+        Way t = tunnelUp(column, levels, throwaway);
+        String both = t.leg().name().toLowerCase(Locale.ROOT) + " " + fmt(t.cost()) + " (" + t.why() + ") vs walk " + fmt(walk);
+        if (t.cost() <= walk * (1 - TUNNEL_BETTER)) return new Way(t.leg(), t.cost(), both);
+        return new Way(Leg.WALK, walk, both + ": walking");
+    }
+
+    private static String fmt(double d) { return Double.isInfinite(d) ? "inf" : d < 10 ? String.format(Locale.ROOT, "%.1f", d) : String.valueOf(Math.round(d)); }
+
+    /** The target cell in an option id like "dig_known -65 57 -10" (the last three ints), or null. */
+    public static int[] targetOf(String id) {
+        if (id == null) return null;
+        String[] w = id.trim().split("\\s+");
+        if (w.length != 4 || !w[0].endsWith("_known")) return null;
+        try {
+            return new int[]{Integer.parseInt(w[w.length - 3]), Integer.parseInt(w[w.length - 2]), Integer.parseInt(w[w.length - 1])};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Wandered farther than this from the planned target during the ore step: re-plan. */
+    public static final int WANDER = 24;
+
+    public static boolean wandered(int[] target, int[] me) {
+        if (target == null || me == null) return false;
+        long dx = target[0] - me[0], dz = target[2] - me[2];        // horizontal: a dig straight down is not a wander
+        return dx * dx + dz * dz > (long) WANDER * WANDER;
+    }
 
     /** The stored way back: the leg, its cost (walk-blocks), why, and the step it follows (0-based; -1 = the chain's end). */
     public record Ret(Leg leg, double cost, String why, int afterStep) {
@@ -139,20 +221,30 @@ public final class Replan {
      * @param midDigOrPillar a dig down or a pillar runs right now
      */
     public static Decision decide(Options.Option running, List<Options.Option> fresh, int stepIdx, long now, long lastSwitchAt, boolean midDigOrPillar) {
+        return decide(running, fresh, stepIdx, now, lastSwitchAt, midDigOrPillar, false);
+    }
+
+    /**
+     * @param wandered the ore step went more than {@link #WANDER} from the planned target (aa381: cave to cave): the
+     *                 dig-down hold does not apply (it is not digging down there), and a running option missing from the
+     *                 new ranking counts as infinitely dear (its target is gone or out of reach).
+     */
+    public static Decision decide(Options.Option running, List<Options.Option> fresh, int stepIdx, long now, long lastSwitchAt, boolean midDigOrPillar, boolean wandered) {
+        if (wandered) midDigOrPillar = false;
         if (running == null || fresh == null || fresh.isEmpty()) return new Decision(null, -1, 0, 0, "nothing to compare");
         Options.Option cur = null;
         for (Options.Option o : fresh) if (same(o.command(), running.command())) { cur = o; break; }
         if (cur == null) for (Options.Option o : fresh) if (o.id().equals(running.id())) { cur = o; break; }
-        if (cur == null) return new Decision(null, -1, 0, 0, "the running option is not in the new ranking");
+        if (cur == null && !wandered) return new Decision(null, -1, 0, 0, "the running option is not in the new ranking");
         Options.Option alt = null;
         for (Options.Option o : fresh) {
-            if (o == cur || same(o.command(), cur.command()) || Options.NOTHING.equals(o.command())) continue;
+            if (o == cur || same(o.command(), running.command()) || Options.NOTHING.equals(o.command())) continue;
             if (alt == null || o.total() < alt.total()) alt = o;
         }
-        double c = cur.total();
+        double c = cur == null ? Double.POSITIVE_INFINITY : cur.total();
         if (alt == null) return new Decision(null, -1, c, 0, "no other option");
         double a = alt.total();
-        String scores = cur.id() + " " + Math.round(c) + " vs " + alt.id() + " " + Math.round(a);
+        String scores = (wandered ? "wandered >" + WANDER + " from the target: " : "") + (cur == null ? running.id() + " gone" : cur.id() + " " + Math.round(c)) + " vs " + alt.id() + " " + Math.round(a);
         if (!(a <= c * (1 - CHEAPER) && c - a >= MIN_SAVE)) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
         if (lastSwitchAt >= 0 && now - lastSwitchAt < LOCK_MS) return new Decision(null, -1, c, a, scores + ": locked " + (LOCK_MS - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");
         if (midDigOrPillar) return new Decision(null, -1, c, a, scores + ": mid dig-down or pillar");

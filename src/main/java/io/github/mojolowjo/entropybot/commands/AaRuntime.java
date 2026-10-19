@@ -877,11 +877,13 @@ public final class AaRuntime implements JobPort {
     /** The option AA's task runs (null: not an option's chain), the step its chain started at, the stored way back. */
     private io.github.mojolowjo.entropybot.aa.Options.Option runningOpt;
     private int stepOffset;
+    /** Where the option's chain started (the walk-back estimate at the ore step's end). */
+    private int[] startPos;
     /** The steps after the ore step, held while the return leg runs ("" none); null: no return leg pending. */
     private String pendingReturn, returnDone;
     private final io.github.mojolowjo.entropybot.aa.Replan.Timer replanTimer = new io.github.mojolowjo.entropybot.aa.Replan.Timer();
     final io.github.mojolowjo.entropybot.aa.Replan.Log replanLog = new io.github.mojolowjo.entropybot.aa.Replan.Log();
-    private long lastSwitchAt = -1;
+    private long lastSwitchAt = -1, lastWanderAt = -1;
 
     /** aa replan on|off (saved; default on on this branch). */
     boolean replanOn() {
@@ -902,6 +904,8 @@ public final class AaRuntime implements JobPort {
         for (var r : AaLadder.rungs(tree.ladder))
             if (r.picker() instanceof io.github.mojolowjo.entropybot.aa.Options.Picker<?> op && op.ran() != null && op.ran().command().equals(chain)) {
                 runningOpt = op.ran();
+                LocalPlayer pl = Minecraft.getInstance().player;
+                startPos = pl == null ? null : Jobs.here(pl);
                 stepOffset = 0;
                 replanTimer.reset();
                 return runningOpt;
@@ -926,7 +930,9 @@ public final class AaRuntime implements JobPort {
         pendingReturn = null;
         var ret = o.ret();
         int a = ret.afterStep();
-        if (ret.leg() == io.github.mojolowjo.entropybot.aa.Replan.Leg.PILLAR && a >= from && a < steps.size()) {
+        // aa-replan 2: any stored leg is only the scoring estimate; the chain stops after the ore step and the real way
+        // back is priced where that step ends (startReturn)
+        if (ret.leg() != io.github.mojolowjo.entropybot.aa.Replan.Leg.NONE && a >= from && a < steps.size()) {
             pendingReturn = String.join(" then ", steps.subList(a + 1, steps.size()));
             return String.join(" then ", steps.subList(from, a + 1));
         }
@@ -938,23 +944,49 @@ public final class AaRuntime implements JobPort {
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
-            if (depth == 0) depth = Math.max(0, holeUp(lv, me));
-            boolean shaft = depth > 0;
-            for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
+            boolean out = Jobs.underDepth(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;
+            // aa-replan 2: the column over the head up to the first sky cell (feet there), priced cell by cell
+            String dim = lv.dimension().location().toString();
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            List<io.github.mojolowjo.entropybot.aa.Replan.Cell> col = new java.util.ArrayList<>();
+            int top = -1, maxY = Math.min(lv.getMaxBuildHeight() - 2, me[1] + 2 * io.github.mojolowjo.entropybot.aa.Replan.TUNNEL_CAP);
+            for (int y = me[1] + 1; y <= maxY && !out; y++) {
+                net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(me[0], y, me[2]);
+                if (y > me[1] + 1 && openCell(lv, me[0], y - 1, me[2]) && openCell(lv, me[0], y, me[2]) && lv.canSeeSky(q)) { top = y - 1; break; }
+                if (y == me[1] + 1) continue;                      // my head cell is open
+                var st = lv.getBlockState(q);
+                var fl = io.github.mojolowjo.entropybot.guard.PolicyRuntime.fluidOf(st);
+                boolean open = openCell(lv, me[0], y, me[2]);
+                double mult = 1;
+                boolean own = pr.dug(dim, me[0], y, me[2]);
+                if (!open && fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.NONE) {
+                    var f = pr.facts(lv, q, false).withDug(own);
+                    var v = pr.judge("aa-return", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, dim, me[0], y, me[2], f, pr.where());
+                    mult = v.allowed() ? v.multiplier() : Double.POSITIVE_INFINITY;
+                }
+                col.add(new io.github.mojolowjo.entropybot.aa.Replan.Cell(open, own, mult,
+                        fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.LAVA, fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.WATER,
+                        st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock));
+            }
+            int levels = out ? 0 : top < 0 ? maxY - me[1] : top - me[1];
+            if (top < 0 && !out) top = maxY;
+            double back = startPos == null ? 0 : Math.sqrt(Math.pow(startPos[0] - me[0], 2) + Math.pow(startPos[2] - me[2], 2));
+            double walk = io.github.mojolowjo.entropybot.aa.Replan.walkCost(levels, back);
             Map<String, Integer> bag = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
             int tw = AaEscape.throwaway(bag);
-            var leg = io.github.mojolowjo.entropybot.aa.Replan.returnNow(runningOpt == null ? null : runningOpt.ret(), depth, shaft, tw);
-            String why = io.github.mojolowjo.entropybot.aa.Replan.returnNowWhy(depth, shaft, tw);
-            LOG.info("[entropybot] aa: way back at {}: {} - {}", Jobs.fmt(me), leg.name().toLowerCase(), why);
-            if (leg == io.github.mojolowjo.entropybot.aa.Replan.Leg.PILLAR) {
-                String r = PaperPlan.INSTANCE.pillar(c, new int[]{me[0], me[1] + depth, me[2]}, c.owner());
+            var way = io.github.mojolowjo.entropybot.aa.Replan.chooseNow(col, levels, tw, walk);
+            String why = way.why() + (runningOpt == null ? "" : "; planned " + runningOpt.ret().text());
+            LOG.info("[entropybot] aa: way back at {}: {} - {}", Jobs.fmt(me), way.leg().name().toLowerCase(), why);
+            var leg = way.leg();
+            if (leg == io.github.mojolowjo.entropybot.aa.Replan.Leg.PILLAR || leg == io.github.mojolowjo.entropybot.aa.Replan.Leg.TUNNEL) {
+                int[] e = {me[0], top, me[2]};
+                String r = leg == io.github.mojolowjo.entropybot.aa.Replan.Leg.PILLAR ? PaperPlan.INSTANCE.pillar(c, e, c.owner()) : PaperPlan.INSTANCE.tunnelUp(c, e, c.owner());
                 if (r != null && !r.startsWith("error") && !r.startsWith("busy") && c.jobs.running()) {
                     escapeWay = "pillar";
                     escapeJob = c.jobs.job;
                     return;
                 }
-                LOG.info("[entropybot] aa: the pillar back did not start ({}) - walking", r);
+                LOG.info("[entropybot] aa: the {} back did not start ({}) - walking", leg.name().toLowerCase(), r);
             }
             escapeResumeNow("way back: " + why);
         } catch (RuntimeException e) {
@@ -973,18 +1005,25 @@ public final class AaRuntime implements JobPort {
         if (!replanOn() || runningOpt == null || !chainRunning() || !CHAIN.equals(myChain) || escapePending || escapeWay != null
                 || "danger".equals(tree.driver())) return;
         String st = c.chains.stepText();
-        if (!replanTimer.due(st, now)) return;
+        int[] me = Jobs.here(p);
+        String body = io.github.mojolowjo.entropybot.aa.Replan.stepBody(st);
+        // aa-replan 2 (aa381): the ore step went cave to cave far from the planned target: re-plan (every 5 s while so)
+        boolean wandered = body != null && body.trim().toLowerCase().startsWith("mine ")
+                && io.github.mojolowjo.entropybot.aa.Replan.wandered(io.github.mojolowjo.entropybot.aa.Replan.targetOf(runningOpt.id()), me);
+        boolean due = replanTimer.due(st, now);
+        if (!due && wandered && now - lastWanderAt >= io.github.mojolowjo.entropybot.aa.Replan.EVERY_MS) due = true;
+        if (!due) return;
+        if (wandered) lastWanderAt = now;
         var op = pickerOf(runningOpt);
         if (op == null) return;
         var fresh = op.rescore(bb);
         if (fresh == null) return;
         replanLog.checks++;
         int idx = stepOffset + io.github.mojolowjo.entropybot.aa.Replan.stepIndex(st);
-        int[] me = Jobs.here(p);
-        String body = io.github.mojolowjo.entropybot.aa.Replan.stepBody(st);
         boolean mid = io.github.mojolowjo.entropybot.aa.Replan.digOrPillarStep(body, me)
                 && (body.trim().toLowerCase().startsWith("goto") || bb.in.underDepth > 0 || bb.in.underGround);
-        var d = io.github.mojolowjo.entropybot.aa.Replan.decide(runningOpt, fresh.ranked(), idx, now, lastSwitchAt, mid);
+        var d = io.github.mojolowjo.entropybot.aa.Replan.decide(runningOpt, fresh.ranked(), idx, now, lastSwitchAt, mid, wandered);
+        if (wandered) LOG.info("[entropybot] aa: replan check, wandered from {} to {}: {}", runningOpt.id(), Jobs.fmt(me), d.why());
         if (!d.switches()) {
             if (d.why().contains("locked") || d.why().contains("mid dig")) replanLog.held++;
             return;

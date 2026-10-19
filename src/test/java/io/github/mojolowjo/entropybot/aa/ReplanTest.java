@@ -67,6 +67,51 @@ class ReplanTest {
         assertFalse(Replan.decide(opt("a", "x", 4), List.of(opt("b", "y", 2), opt("a", "x", 4)), 0, 100_000, -1, false).switches());               // saves < 3 s
     }
 
+    private static List<Replan.Cell> col(int n, Replan.Cell c) { return java.util.Collections.nCopies(n, c); }
+
+    @Test void returnChosenAtTheEndByCost() {
+        // open own shaft 6 up: pillar 0.3 vs walk 28
+        Replan.Way w = Replan.chooseNow(col(6, Replan.Cell.air()), 6, 20, 28);
+        assertEquals(Replan.Leg.PILLAR, w.leg());
+        assertEquals(0.3, w.cost(), 1e-9);
+        assertTrue(w.why().contains("walk 28"));
+        // aa381: the shaft broken by a block above: tunnel up, 1 foreign break = 6 + 0.3
+        List<Replan.Cell> c = new java.util.ArrayList<>(col(5, Replan.Cell.air()));
+        c.add(Replan.Cell.stone(false));
+        assertEquals(Replan.Leg.TUNNEL, Replan.chooseNow(c, 6, 20, 28).leg());
+        assertEquals(6.3, Replan.tunnelUp(c, 6, 20).cost(), 1e-9);
+        // 30 foreign breaks (180) vs walk 100: walk
+        assertEquals(Replan.Leg.WALK, Replan.chooseNow(col(30, Replan.Cell.stone(false)), 30, 64, 100).leg());
+        // own dug cells are x1: 30 + 1.5 vs 100
+        assertEquals(Replan.Leg.TUNNEL, Replan.chooseNow(col(30, Replan.Cell.stone(true)), 30, 64, 100).leg());
+        // only 20% better wins: 6.3 vs 7.5 (16% cheaper) walks
+        assertEquals(Replan.Leg.WALK, Replan.chooseNow(c, 6, 20, 7.5).leg());
+        assertEquals(Replan.Leg.NONE, Replan.chooseNow(List.of(), 0, 0, 0).leg());
+    }
+
+    @Test void hazardsAndCapAreCosts() {
+        List<Replan.Cell> lava = List.of(Replan.Cell.air(), new Replan.Cell(false, false, 1, true, false, false));
+        assertEquals(Replan.Leg.WALK, Replan.chooseNow(lava, 2, 20, 50).leg());
+        List<Replan.Cell> gravel = List.of(new Replan.Cell(false, false, 1, false, false, true));
+        assertEquals(Replan.Leg.WALK, Replan.chooseNow(gravel, 1, 20, 40).leg());
+        assertEquals(Replan.Leg.WALK, Replan.chooseNow(List.of(new Replan.Cell(false, false, Double.POSITIVE_INFINITY, false, false, false)), 1, 20, 40).leg());
+        assertTrue(Replan.tunnelUp(col(50, Replan.Cell.air()), 50, 64).cost() > 10 * Replan.OVER_CAP - 1);
+        assertTrue(Replan.tunnelUp(col(10, Replan.Cell.air()), 10, 2).why().contains("short"));
+    }
+
+    @Test void wanderTriggersReplan() {
+        assertArrayEquals(new int[]{-65, 57, -10}, Replan.targetOf("dig_known -65 57 -10"));
+        assertNull(Replan.targetOf("cave"));
+        assertTrue(Replan.wandered(new int[]{-65, 57, -10}, new int[]{-87, 40, -44}));
+        assertFalse(Replan.wandered(new int[]{-65, 57, -10}, new int[]{-60, 50, -10}));
+        Options.Option run = opt("dig_known -65 57 -10", "mine iron 3 dig then smelt raw_iron 3", 50);
+        List<Options.Option> fresh = List.of(opt("cave", "mine cave iron 3 then smelt raw_iron 3", 60));
+        assertFalse(Replan.decide(run, fresh, 0, 100_000, -1, true, false).switches());
+        Replan.Decision d = Replan.decide(run, fresh, 0, 100_000, -1, true, true);
+        assertTrue(d.switches());
+        assertTrue(d.why().contains("wandered"));
+    }
+
     @Test void stepHelpers() {
         assertEquals(2, Replan.stepIndex("3/7 craft iron_pickaxe 1"));
         assertEquals("craft iron_pickaxe 1", Replan.stepBody("3/7 craft iron_pickaxe 1"));
