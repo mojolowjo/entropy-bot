@@ -234,20 +234,36 @@ public final class AaDesires {
 
     /** 2.10 shelter: no bed, at the surface, from dusk; off in Peaceful and under ground (dug in already). */
     static double shelterScore(Blackboard bb) {
-        if (!bb.in.hungerDrains || bb.in.bedKnown || bb.in.bedInBag || bb.in.underGround) return -1;
+        if (!bb.in.hungerDrains || bb.in.underGround) return -1;
         double d = Night.dusk(bb.in.dayTime, bb.in.night);
-        return d <= 0 ? -1 : Personality.of(bb).get("shelter") * d;
+        if (d <= 0) return -1;
+        // live aa377: 55 at night lost to tools 74 all night. Full night at the surface: above the urgent line, higher
+        // early game (no armour, no bed); the grace lets the running step finish first
+        if (d >= 1) return SHELTER_NIGHT + (bb.in.armorPoints <= 0 ? SHELTER_EARLY : 0) + (bb.in.bedKnown || bb.in.bedInBag ? 0 : SHELTER_EARLY);
+        if (bb.in.bedKnown || bb.in.bedInBag) return -1;      // dusk with a bed: night.sleep waits its turn
+        return Personality.of(bb).get("shelter") * d;
+    }
+
+    /** Full-night shelter score (over {@link Brain#URGENT}), the early-game bonus each, the step grace. */
+    static final double SHELTER_NIGHT = 80, SHELTER_EARLY = 5;
+    static final long SHELTER_GRACE_MS = 8_000;
+
+    /** Where to shelter: the bed if known, else the base (house), else a shell right here (dug or built, sealed). */
+    static String shelterChain(Blackboard bb) {
+        if (bb.in.bedKnown || bb.in.bedInBag) return "sleep";
+        if (bb.in.baseKnown) return "go base then shelter";
+        return "shelter";
     }
 
     /** 2.10: sleep and shelter (UPKEEP under 75: they wait for the running task, then win by number). */
     public static List<Desire> night() {
         Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, "sleep", "night"));
         Node shelter = AaTree.idleCd("night.shelter.cd", new RunJob("night.shelter.job", TaskKind.BASE_BED,
-                bb -> new JobPort.TaskSpec(TaskKind.BASE_BED, "shelter", "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS)));
+                bb -> new JobPort.TaskSpec(TaskKind.BASE_BED, shelterChain(bb), "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS)));
         return List.of(
                 new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, bb -> cooling(sleep, bb) ? -1 : sleepScore(bb)).lastTry(),
                 new Desire("night.shelter", Desire.Kind.UPKEEP, shelter, bb -> cooling(shelter, bb) ? -1 : shelterScore(bb))
-                        .patient(SHELTER_PATIENCE_MS).lastTry());
+                        .patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).lastTry());
     }
 
     static boolean cooling(Node n, Blackboard bb) { return n instanceof Cooldown cd && cd.cooling(bb.clock.now()); }

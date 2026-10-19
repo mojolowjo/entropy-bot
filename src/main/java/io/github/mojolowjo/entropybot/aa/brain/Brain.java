@@ -218,7 +218,14 @@ public final class Brain extends Node {
         Scored best = null;
         for (Scored s : all) {
             // 100 is the owner's aa do (its command preempts by itself): never an interrupt here
+            boolean canUrge = s.d() != cur && s.skip() == null && s.score() < 100 && urgent(s.d(), s.own());
+            if (!canUrge) s.d().urgentSince = -1;          // review: the grace starts afresh every time
             if (s.d() == cur || s.skip() != null || s.score() >= 100) continue;
+            // grace: an urgent challenger with a grace waits that long after it turned urgent (the running step finishes)
+            if (canUrge) {
+                if (s.d().urgentSince < 0) s.d().urgentSince = now;
+                if (now - s.d().urgentSince < s.d().graceMs) continue;
+            }
             boolean owner = s.d().kind == Desire.Kind.OWNER && s.d().freshUntil > now && now - startedAt >= MIN_RUN_MS;
             if (!urgent(s.d(), s.own()) && !owner) continue;
             if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep

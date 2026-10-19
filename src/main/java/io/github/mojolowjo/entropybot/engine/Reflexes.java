@@ -915,7 +915,8 @@ public final class Reflexes {
         begin(Reflex.FLEEING, mc, "avoiding a " + t.id);
         // one escape spot for 3 seconds: picking a new one every tick makes Baritone re-plan non-stop
         if ((t.d < ReflexRules.CREEPER_RUN || now < forceFleeUntil) && now >= fleeUntil) {
-            int[] a = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), ReflexRules.CREEPER_RUN_TO);
+            int[] a = fleeHeading(mc, p, t.e, ReflexRules.CREEPER_RUN_TO);
+            if (a == null) a = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), ReflexRules.CREEPER_RUN_TO);   // cornered: straight away as before
             fleeGoal = new GoalXZ(a[0], a[1]);
             engine.override(fleeGoal);
             fleeUntil = now + 60;
@@ -1251,6 +1252,26 @@ public final class Reflexes {
         fight(mc, p, t);
     }
 
+    /** Live aa376: the run end on the heading with the least threat over every nearby hostile (FleeHeading), null = cornered. Never throws. */
+    private int[] fleeHeading(Minecraft mc, LocalPlayer p, Entity from, double dist) {
+        try {
+            List<io.github.mojolowjo.entropybot.threat.FleeHeading.Mob> mobs = new java.util.ArrayList<>();
+            Hostility h = Hostility.INSTANCE;
+            boolean seenFrom = false;
+            for (Entity e : mc.level.entitiesForRendering()) {
+                if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
+                if (e != from && (p.distanceTo(e) > ReflexRules.lookRadius(true) || !h.kind(e, true).counts())) continue;
+                seenFrom |= e == from;
+                mobs.add(new io.github.mojolowjo.entropybot.threat.FleeHeading.Mob(e.getX(), e.getZ(), e instanceof Creeper ? 2 : 1));
+            }
+            if (!seenFrom && from != null) mobs.add(new io.github.mojolowjo.entropybot.threat.FleeHeading.Mob(from.getX(), from.getZ(), from instanceof Creeper ? 2 : 1));
+            return io.github.mojolowjo.entropybot.threat.FleeHeading.choose(p.getX(), p.getZ(), mobs, dist);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: flee heading failed, straight away instead: {}", e.toString());
+            return from == null ? null : ReflexRules.awayFrom(p.getX(), p.getZ(), from.getX(), from.getZ(), dist);
+        }
+    }
+
     private FightOrFlee.Result assess(Minecraft mc, LocalPlayer p, boolean hurt) {
         List<FightOrFlee.Foe> foes = new java.util.ArrayList<>();
         Hostility h = Hostility.INSTANCE;
@@ -1286,6 +1307,17 @@ public final class Reflexes {
     }
 
     private void startRetreat(Minecraft mc, LocalPlayer p, Threat t) {
+        // live aa376: weigh every hostile; no base to run to and no safe heading (cornered) = fight the closest
+        Place b0 = base;
+        boolean toBase = b0 != null && b0.dim.equals(Guard.dimOf(mc.level)) && dist2(p, b0) > 64
+                && dist2(p, b0) <= (double) io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk() * io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk();
+        int[] heading = toBase ? null : fleeHeading(mc, p, t.e, 16);
+        if (!toBase && heading == null) {
+            events.push("reflex", "cornered by " + t.id + ": no heading clear of mobs, fighting the closest", null);
+            retreatWhy = null;
+            fight(mc, p, t);
+            return;
+        }
         retreatLit = false;
         if (reflex == Reflex.EATING) stopEating(mc, "retreating");
         reflex = Reflex.RETREATING;
@@ -1301,7 +1333,7 @@ public final class Reflexes {
             retreatTo = b;
             retreatGoal = new GoalNear(new BlockPos(b.x, b.y, b.z), 2);
         } else {
-            fleeTo = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), 16);
+            fleeTo = heading;
             retreatGoal = new GoalXZ(fleeTo[0], fleeTo[1]);
         }
         engine.override(retreatGoal);

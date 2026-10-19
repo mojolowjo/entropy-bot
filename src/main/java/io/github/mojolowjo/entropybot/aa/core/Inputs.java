@@ -27,6 +27,8 @@ public final class Inputs {
     public boolean night, thunder, underGround, inArea = true, ownerOnline;
     /** 0.36.3: blocks of ground over the bot (Jobs.underDepth, leaves not counted; 0 = at the surface). Not in the vector. */
     public int underDepth;
+    /** Night fix: the bot's armour points (0 = none; early game). Not in the vector. */
+    public int armorPoints;
     /** S0: the bot's block position (null unknown; OptionMemory's NO_PATH sweep). Not in the vector. */
     public int[] pos;
     /** S1: the spot was lit this night (AaTree keeps it; the idle LIGHT option scores -1 then). Not in the vector. */

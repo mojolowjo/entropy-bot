@@ -89,5 +89,15 @@ public final class Desire {
         return this;
     }
 
+    /** 0.37.x night fix: an urgent interrupt waits this long after the desire first turned urgent (the running step finishes: one log, one block). */
+    long graceMs;
+    /** When this desire's own score last turned urgent (-1 not urgent now). */
+    long urgentSince = -1;
+
+    public Desire grace(long ms) {
+        graceMs = ms;
+        return this;
+    }
+
     @Override public String toString() { return id; }
 }
