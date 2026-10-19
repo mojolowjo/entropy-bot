@@ -440,6 +440,7 @@ public final class AaRuntime implements JobPort {
             escapeTick(p, mc);
             fill(bb.in, sensed, p, mc);
             progressTick(p);
+            brainFacts(mc, now);
             if (now < heldUntil) {
                 releaseSwim(mc);
                 if (bb.in.otherJob == null) {
@@ -1083,6 +1084,107 @@ public final class AaRuntime implements JobPort {
         }
         return b.toString();
     }
+
+    // ---- BRAIN_PLAN B2: the recipe tech tree, what is had, measured costs ----
+
+    private int treeRecipes = -1;
+    private long treeCheckedAt = -60_000, statsSavedAt, haveAt = -10_000;
+    private boolean statsLoaded;
+    private String treeError;
+
+    /**
+     * Once a minute: the tech tree from the client's RecipeManager (rebuilt when the recipe count changes; 2.8), the
+     * set of items had (bag + known table/furnace), the stats file loaded once and saved when changed (2.9). Never
+     * throws; a failure is logged once and shown by aa stats.
+     */
+    private void brainFacts(Minecraft mc, long now) {
+        if (!statsLoaded && statsFile() != null) {      // review: only once the files are known
+            statsLoaded = true;
+            loadStats();
+        }
+        // review: the bag set at most every 10 s (the tech tree's caches are per bag; mining changes it all the time)
+        if (now - haveAt >= 10_000) {
+            haveAt = now;
+            java.util.Set<String> have = new java.util.HashSet<>();
+            if (sensed != null && sensed.feas != null) for (var e : sensed.feas.bag.entrySet()) if (e.getValue() > 0) have.add(e.getKey());
+            if (bb.in.tableKnown) have.add("crafting_table");
+            if (bb.in.furnaceKnown) have.add("furnace");
+            if (!have.equals(bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT))) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT, java.util.Set.copyOf(have));
+        }
+        if (now - treeCheckedAt >= 60_000) {
+            treeCheckedAt = now;
+            try {
+                var rm = mc.level.getRecipeManager();
+                var all = rm.getRecipes();
+                if (all.size() != treeRecipes) {
+                    List<io.github.mojolowjo.entropybot.aa.brain.TechTree.Recipe> rs = new ArrayList<>();
+                    for (var h : all) {
+                        var r = h.value();
+                        var out = r.getResultItem(mc.level.registryAccess());
+                        if (out == null || out.isEmpty()) continue;
+                        List<java.util.Set<String>> slots = new ArrayList<>();
+                        for (var ing : r.getIngredients()) {
+                            java.util.Set<String> s = new java.util.HashSet<>();
+                            for (var st : ing.getItems()) s.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+                            if (!s.isEmpty()) slots.add(s);
+                        }
+                        rs.add(new io.github.mojolowjo.entropybot.aa.brain.TechTree.Recipe(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(out.getItem()).toString(), slots));
+                    }
+                    var t = new io.github.mojolowjo.entropybot.aa.brain.TechTree(rs);
+                    bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT, t);
+                    treeRecipes = all.size();
+                    treeError = null;
+                    LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable)", all.size(), t.size());
+                }
+            } catch (RuntimeException e) {
+                if (treeError == null) LOG.warn("[entropybot] aa: tech tree: {}", e.toString());
+                treeError = e.toString();
+            }
+        }
+        Path f = statsFile();
+        if (f != null && now - statsSavedAt >= 60_000 && tree.brain.stats.takeDirty()) {
+            statsSavedAt = now;
+            String json = tree.brain.stats.toJson();
+            WRITER.submit(() -> {
+                try {
+                    Files.createDirectories(f.getParent());
+                    Path tmp = f.resolveSibling("aa-stats.json.tmp");
+                    Files.writeString(tmp, json, StandardCharsets.UTF_8);
+                    Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    LOG.warn("[entropybot] aa: stats write: {}", e.toString());
+                }
+            });
+        }
+    }
+
+    /** entropybot/aa-stats.json (all worlds: measured costs carry over to a fresh test world). */
+    private static Path statsFile() {
+        return Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root().resolve("aa-stats.json");
+    }
+
+    private void loadStats() {
+        Path f = statsFile();
+        if (f == null || !Files.exists(f)) return;
+        try {
+            var o = com.google.gson.JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
+            for (var e : o.entrySet()) {
+                var s = e.getValue().getAsJsonObject();
+                tree.brain.stats.put(e.getKey(), s.get("n").getAsInt(), s.get("ok").getAsInt(), s.get("avgS").getAsDouble());
+            }
+            LOG.info("[entropybot] aa: measured costs loaded for {} desires", o.size());
+        } catch (Exception e) {
+            LOG.warn("[entropybot] aa: {} unreadable, hand costs used: {}", f, e.toString());
+            treeError = "stats file unreadable: " + e;
+        }
+    }
+
+    /** aa stats: measured runs, the tech tree and its ideas. */
+    String statsText() {
+        return tree.brain.stats.text() + "\n" + io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 8) + (treeError != null ? "\n!! " + treeError : "");
+    }
+
+    String ideasLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 5); }
 
     /** BRAIN_PLAN B1: the top desires with their scores (aa why / aa status). */
     List<String> brainLines(int n) { return tree.brain.whyLines(n); }

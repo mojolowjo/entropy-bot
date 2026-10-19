@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -25,12 +25,13 @@ final class AaCommands {
             }
             case "why" -> {
                 List<String> d = aa.decisions();
-                String opts = aa.on() ? "\ndesires (top 5):\n" + String.join("\n", aa.brainLines(5)) + "\n" + String.join("\n", aa.optionLines()) : "";
+                String opts = aa.on() ? "\ndesires (top 5):\n" + String.join("\n", aa.brainLines(5)) + "\n" + aa.ideasLine() + "\n" + String.join("\n", aa.optionLines()) : "";
                 if (d.isEmpty()) return "aa why: no decisions yet" + (aa.on() ? " (rungs: " + aa.ladderLine() + ")" + opts : " (aa is off)");
                 List<String> last = d.subList(Math.max(0, d.size() - 10), d.size());
                 return "aa why (last " + last.size() + " of " + d.size() + "):\n" + String.join("\n", last) + (aa.on() ? "\nrungs: " + aa.ladderLine() : "") + opts;
             }
-            case "tree" -> { return aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) : ""); }
+            case "tree" -> { return aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""); }
+            case "stats" -> { return aa.statsText(); }
             case "ask", "pick", "do", "skip", "use" -> {
                 if (!aa.on()) return "aa is off (aa on first)";
                 return aa.manual(verb, arg);

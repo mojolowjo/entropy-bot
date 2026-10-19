@@ -20,7 +20,7 @@ class AaBrainTest {
     final double[] s = new double[4];
 
     Desire d(int i, String id, Desire.Kind k) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> s[i]);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> s[i]).cost(0);
     }
 
     String last() { return port.started.get(port.started.size() - 1).chain(); }
@@ -127,6 +127,36 @@ class AaBrainTest {
             assertEquals(Status.RUNNING, br.tick(bb));
         }
         assertEquals(0, br.stuck);
+    }
+
+    /** B2 (2.2): a blocked goal lifts its prerequisite to 90 % of its own score; interrupts ignore the lift. */
+    @Test
+    void valueFlowsToThePrerequisite() {
+        Brain br = new Brain("brain", "t", d(0, "iron", Desire.Kind.PROGRESS), d(1, "osmium", Desire.Kind.OWNER).prereq(b -> "iron"),
+                d(2, "wood", Desire.Kind.UPKEEP));
+        s[0] = 20;
+        s[1] = 80;
+        s[2] = 50;
+        var all = br.scoreAll(bb);
+        assertEquals(72, all.get(0).score(), 1e-9, all.get(0).parts());
+        assertEquals(20, all.get(0).own(), 1e-9);
+        assertTrue(all.get(0).parts().contains("osmium"), all.get(0).parts());
+        s[0] = 75;
+        assertEquals(75, br.scoreAll(bb).get(0).score(), 1e-9, "already worth more: no lift");
+    }
+
+    @Test
+    void failuresInARowLowerP() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS));
+        s[0] = 40;
+        for (int k = 0; k < 2; k++) {
+            br.tick(bb);
+            port.fail(port.nextId - 1, "error: no");
+            br.tick(bb);
+        }
+        assertEquals(2, br.streak("a"));
+        assertEquals(20, br.scoreAll(bb).get(0).score(), 1e-9, "P 0.5");
+        assertEquals(2, br.stats.n("a"));
     }
 
     @Test

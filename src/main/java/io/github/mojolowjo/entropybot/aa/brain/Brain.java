@@ -31,7 +31,9 @@ public final class Brain extends Node {
             GAP_MS = 5_000, PROBE_MS = 60_000;
 
     /** One scored desire for {@code aa why}. */
-    public record Scored(Desire d, double score, double rank, String parts, String skip) {}
+    public record Scored(Desire d, double score, double rank, String parts, String skip, double own) {
+        Scored(Desire d, double score, double rank, String parts, String skip) { this(d, score, rank, parts, skip, score); }
+    }
 
     private final List<Desire> desires = new ArrayList<>();
     private int running = -1, lastWinner = -1;
@@ -89,17 +91,67 @@ public final class Brain extends Node {
         String skip = v < 0 ? "not wanted" : null;
         Long cu = coolUntil.get(d.id);
         if (skip == null && cu != null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + streak.getOrDefault(d.id, 0) + " fails)";
+        String parts = String.valueOf(Math.round(v));
+        if (d.kind == Desire.Kind.PROGRESS && v >= 0 && v < 100) {
+            // B2 (2.2, 2.9): value x P(success) / (1 + cost / C), cost and P measured after 3 runs
+            double p = Curves.pSuccess(streak.getOrDefault(d.id, 0), stats.n(d.id), stats.ok(d.id));
+            double c = stats.cost(d.id, d.handCostS);
+            double value = v;
+            v = Curves.progress(value, p, c);
+            parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s"
+                    + (stats.n(d.id) >= BrainStats.MIN_RUNS ? " measured" : "");
+        }
         double rank = v + (urgent(d, v) ? 1000 : 0);
-        return new Scored(d, v, rank, String.valueOf(Math.round(v)), skip);
+        return new Scored(d, v, rank, parts, skip);
     }
 
     static boolean urgent(Desire d, double v) { return d.kind == Desire.Kind.UPKEEP && v >= URGENT; }
 
-    /** Every desire scored now, in list order. */
+    /** B2 (2.9): measured runs per desire (the adapter loads and saves them). */
+    public final BrainStats stats = new BrainStats();
+
+    /**
+     * Every desire scored now, in list order. B2 (2.2): a wanted desire whose {@code prereq} names another wanted desire
+     * lifts it to at least {@link Curves#FLOW} of its score (two rounds, so a chain flows); interrupts use the own score only.
+     */
     public List<Scored> scoreAll(Blackboard bb) {
         long now = bb.clock.now();
         List<Scored> out = new ArrayList<>();
         for (Desire d : desires) out.add(score(bb, d, now));
+        Map<String, Integer> at = new HashMap<>();
+        for (int i = 0; i < out.size(); i++) at.put(out.get(i).d().id, i);
+        double[] own = new double[out.size()], flow = new double[out.size()];
+        String[] from = new String[out.size()];
+        for (int i = 0; i < own.length; i++) own[i] = out.get(i).score();
+        for (int round = 0; round < 2; round++) {
+            double[] next = new double[own.length];
+            String[] nf = new String[own.length];
+            for (int i = 0; i < own.length; i++) {
+                if (own[i] < 0) continue;
+                String p;
+                try {
+                    p = out.get(i).d().prereq.apply(bb);
+                } catch (RuntimeException e) {
+                    p = null;
+                }
+                Integer j = p == null ? null : at.get(p);
+                if (j == null || j == i || own[j] < 0) continue;
+                // a prerequisite is worth at least FLOW of what it unlocks (the best giver; values never add up past it)
+                double give = Curves.FLOW * Math.max(own[i], own[i] + flow[i]) - own[j];
+                if (give <= next[j]) continue;
+                next[j] = give;
+                nf[j] = null;
+                nf[j] = "(at least " + Math.round(Curves.FLOW * 100) + "% of " + out.get(i).d().id + ": +" + Math.round(give) + ")";
+            }
+            flow = next;
+            from = nf;
+        }
+        for (int i = 0; i < out.size(); i++) {
+            if (flow[i] <= 0) continue;
+            Scored s = out.get(i);
+            double v = s.score() + flow[i];
+            out.set(i, new Scored(s.d(), v, s.rank() + flow[i], s.parts() + " " + from[i], s.skip(), s.own()));
+        }
         return out;
     }
 
@@ -151,10 +203,10 @@ public final class Brain extends Node {
             // 100 is the owner's aa do (its command preempts by itself): never an interrupt here
             if (s.d() == cur || s.skip() != null || s.score() >= 100) continue;
             boolean owner = s.d().kind == Desire.Kind.OWNER && s.d().freshUntil > now && now - startedAt >= MIN_RUN_MS;
-            if (!urgent(s.d(), s.score()) && !owner) continue;
-            if (urgent(cur, c.score()) && !urgent(s.d(), s.score())) continue;     // an owner goal never breaks urgent upkeep
+            if (!urgent(s.d(), s.own()) && !owner) continue;
+            if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus
-            boolean overOwner = urgent(s.d(), s.score()) && cur.kind == Desire.Kind.OWNER;
+            boolean overOwner = urgent(s.d(), s.own()) && cur.kind == Desire.Kind.OWNER;
             if (!overOwner && s.score() <= curScore + BONUS) continue;
             if (best == null || s.rank() > best.rank()) best = s;
         }
@@ -230,8 +282,10 @@ public final class Brain extends Node {
         taskSeen = false;
     }
 
-    /** B2 hook (measured costs); B1 does nothing more. */
-    void onEnd(Desire d, boolean ok, boolean ran, long ms) {}
+    /** B2: a measured run. */
+    void onEnd(Desire d, boolean ok, boolean ran, long ms) {
+        if (ran) stats.record(d.id, ok, ms / 1000.0);       // B2 (2.9): only runs that started a task are measured
+    }
 
     private Status watchdog(Blackboard bb, Desire cur, long now) {
         String s = progressSig(bb);
