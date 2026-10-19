@@ -1,4 +1,4 @@
-﻿package io.github.mojolowjo.entropybot.gather;
+package io.github.mojolowjo.entropybot.gather;
 
 /**
  * aa385: the gather's step ended the same way (no progress) {@link #TIMES} times in a row, each within {@link #WINDOW_TICKS} of the last:
