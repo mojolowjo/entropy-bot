@@ -90,6 +90,19 @@ public final class ReflexRules {
         return food <= EAT_FOOD || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);
     }
 
+    /** aa-food: at or below this the bar is urgent: eat whatever the bag has. */
+    public static final int EAT_URGENT = 6;
+
+    /**
+     * aa-food (owner): no waste. With food in the bag ({@code bestNutrition} > 0, the best food's nutrition): eat once the
+     * bar is down by at least what it restores, at {@link #EAT_URGENT} or under, or below 18 while hurt (healing needs
+     * 18). Without food the old rule (14) stands, so the food run still starts in time.
+     */
+    public static boolean wantsMeal(int food, float health, int bestNutrition) {
+        if (bestNutrition <= 0) return wantsMeal(food, health);
+        return food <= EAT_URGENT || 20 - food >= bestNutrition || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);
+    }
+
     /**
      * How good a food is to eat now; -1 = never. harmful: it has a harmful effect (poison, hunger,
      * nausea...), which also catches modded foods the blacklist doesn't name.

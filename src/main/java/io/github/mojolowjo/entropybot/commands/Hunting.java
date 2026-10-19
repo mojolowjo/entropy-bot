@@ -47,9 +47,20 @@ final class Hunting {
 
     Hunting(Commands c) { this.c = c; }
 
+    /**
+     * The owner's setting; aa-food (live aaep1: 16 animals near, never hunted): never set (the default) counts as on
+     * while AA plays, so its food options may hunt. The owner's explicit "hunting off" always wins.
+     */
     boolean on() {
         JsonObject b = c.brainData();
-        return b.has("hunting") && b.get("hunting").getAsBoolean();
+        if (b.has("hunting")) return b.get("hunting").getAsBoolean();
+        return c.aaRuntime != null && c.aaRuntime.on();
+    }
+
+    /** The owner said "hunting off" (AA's hunt option says so instead of hunting). */
+    boolean ownerOff() {
+        JsonObject b = c.brainData();
+        return b.has("hunting") && !b.get("hunting").getAsBoolean();
     }
 
     boolean running() { return run != null; }
@@ -77,7 +88,7 @@ final class Hunting {
     /** "hunting [on|off]". */
     String setting(String rest) {
         String r = rest == null ? "" : rest.trim().toLowerCase();
-        if (r.isEmpty()) return "hunting is " + (on() ? "on" : "off") + " - hunting on|off (the animals: kinds animals)";
+        if (r.isEmpty()) return "hunting is " + (on() ? "on" : "off") + (c.brainData().has("hunting") ? "" : " (not set: on while aa plays)") + " - hunting on|off (the animals: kinds animals)";
         if (!r.equals("on") && !r.equals("off")) return "usage: hunting on|off";
         c.brainData().addProperty("hunting", r.equals("on"));
         c.saved();

@@ -471,7 +471,7 @@ public final class Reflexes {
         }
         if (escort.active()) escort.idle(mc, p, engine, now);
         if (now >= eatCooldownUntil && mc.screen == null && p.containerMenu == p.inventoryMenu &&
-                ((eatRequested && p.getFoodData().needsFood()) || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), hp))) {
+                ((eatRequested && p.getFoodData().needsFood()) || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), hp, bestNutrition(p)))) {
             startEating(mc, p);
         }
     }
@@ -1402,6 +1402,14 @@ public final class Reflexes {
         return bestScore < 0 ? -1 : best;
     }
 
+    /** aa-food: the nutrition of the food the eat reflex would pick (0: none). */
+    private int bestNutrition(LocalPlayer p) {
+        int slot = bestFood(p);
+        if (slot < 0) return 0;
+        FoodProperties f = p.getInventory().getItem(slot).get(DataComponents.FOOD);
+        return f == null ? 0 : f.nutrition();
+    }
+
     static int foodScore(ItemStack s, float health) {
         if (s.isEmpty()) return -1;
         FoodProperties f = s.get(DataComponents.FOOD);
@@ -1455,7 +1463,8 @@ public final class Reflexes {
         mc.options.keyUse.setDown(eatTicks >= 2 && eatTicks < 50);
         if (eatTicks > 6 && !p.isUsingItem()) {
             bites++;
-            if (p.getFoodData().needsFood() && bites < 10) {
+            // aa-food: the next bite only while it is not wasted (or the owner asked)
+            if (p.getFoodData().needsFood() && bites < 10 && (eatRequested || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), p.getHealth(), bestNutrition(p)))) {
                 eatTicks = 0;
                 return;
             }

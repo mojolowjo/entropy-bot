@@ -60,6 +60,49 @@ public final class BrainStats {
 
     public synchronized Map<String, Stat> all() { return new LinkedHashMap<>(stats); }
 
+    // ---- aa-food: the measured food drain per task kind (FoodModel) ----
+
+    /** Samples before a kind's measured drain replaces the hand rate; the shortest sample (minutes). */
+    public static final int DRAIN_MIN_N = 2;
+    public static final double DRAIN_MIN_MINUTES = 1;
+    /** Saved as "drain.KIND" next to the desires (n/ok/avgS too, so an older loader reads it as a harmless row). */
+    public static final String DRAIN_PREFIX = "drain.";
+
+    /** kind -> {samples, energy per minute (exponential, ALPHA)}. */
+    private final Map<String, double[]> drain = new LinkedHashMap<>();
+
+    /** One sample: {@code points} of food + saturation spent over {@code minutes} of one kind of work. False: too short. */
+    public synchronized boolean recordDrain(String kind, double points, double minutes) {
+        if (kind == null || minutes < DRAIN_MIN_MINUTES || points < 0 || Double.isNaN(points)) return false;
+        double rate = points / minutes;
+        double[] d = drain.computeIfAbsent(kind, k -> new double[]{0, -1});
+        d[1] = d[1] < 0 ? rate : d[1] + ALPHA * (rate - d[1]);
+        d[0]++;
+        dirty = true;
+        return true;
+    }
+
+    /** The measured drain (energy per minute) after DRAIN_MIN_N samples, else {@code hand}. */
+    public synchronized double drain(String kind, double hand) {
+        double[] d = drain.get(kind);
+        return d != null && d[0] >= DRAIN_MIN_N && d[1] >= 0 ? d[1] : hand;
+    }
+
+    /** The sample-weighted mean of the measured kinds (DRAIN_MIN_N+ samples), else {@code hand}. */
+    public synchronized double meanDrain(double hand) {
+        double sum = 0, n = 0;
+        for (double[] d : drain.values()) if (d[0] >= DRAIN_MIN_N && d[1] >= 0) { sum += d[0] * d[1]; n += d[0]; }
+        return n == 0 ? hand : sum / n;
+    }
+
+    public synchronized int drainN(String kind) { double[] d = drain.get(kind); return d == null ? 0 : (int) d[0]; }
+
+    /** From the file; a late load never overwrites this session's samples. */
+    public synchronized void putDrain(String kind, int n, double perMin) {
+        if (kind == null || n <= 0 || perMin < 0 || Double.isNaN(perMin)) return;
+        drain.putIfAbsent(kind, new double[]{n, perMin});
+    }
+
     public synchronized String toJson() {
         StringBuilder b = new StringBuilder("{");
         for (var e : stats.entrySet()) {
@@ -67,16 +110,25 @@ public final class BrainStats {
             b.append("\n  \"").append(e.getKey().replace("\"", "")).append("\":{\"n\":").append(e.getValue().n).append(",\"ok\":")
                     .append(e.getValue().ok).append(",\"avgS\":").append(String.format(Locale.ROOT, "%.1f", e.getValue().avgS)).append('}');
         }
+        for (var e : drain.entrySet()) {
+            if (b.length() > 1) b.append(',');
+            int n = (int) e.getValue()[0];
+            b.append("\n  \"").append(DRAIN_PREFIX).append(e.getKey().replace("\"", "")).append("\":{\"n\":").append(n).append(",\"ok\":").append(n)
+                    .append(",\"avgS\":-1.0,\"perMin\":").append(String.format(Locale.ROOT, "%.3f", e.getValue()[1])).append('}');
+        }
         return b.append("\n}\n").toString();
     }
 
     /** "needs.iron 4 runs, 3 ok, 412 s" lines for aa stats. */
     public synchronized String text() {
-        if (stats.isEmpty()) return "aa stats: nothing measured yet";
+        if (stats.isEmpty() && drain.isEmpty()) return "aa stats: nothing measured yet";
         StringBuilder b = new StringBuilder("aa stats (runs, ok, avg s of a success):");
         for (var e : stats.entrySet())
             b.append('\n').append(e.getKey()).append(' ').append(e.getValue().n).append(" runs, ").append(e.getValue().ok).append(" ok, ")
                     .append(e.getValue().avgS < 0 ? "-" : Math.round(e.getValue().avgS) + " s");
+        for (var e : drain.entrySet())
+            b.append("\nfood drain ").append(e.getKey()).append(' ').append((int) e.getValue()[0]).append(" samples, ")
+                    .append(String.format(Locale.ROOT, "%.2f", e.getValue()[1])).append(" per min");
         return b.toString();
     }
 }

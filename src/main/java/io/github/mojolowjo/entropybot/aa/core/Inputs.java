@@ -8,6 +8,8 @@ package io.github.mojolowjo.entropybot.aa.core;
 public final class Inputs {
     public float health = 20, maxHealth = 20;
     public int food = 20;
+    /** aa-food: the food saturation (synced to the client). Not in the vector. */
+    public float saturation = 5;
     public boolean hurtRecently;
     /** 0 calm, 1 a reflex holds, 2 a fight/flee/retreat runs (urgent). */
     public int danger;
