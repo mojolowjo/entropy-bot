@@ -76,6 +76,34 @@ public final class HuntRules {
         return new Object[]{n, a};
     }
 
+    /**
+     * Loot data: "hunt &lt;n&gt; &lt;mob&gt; for &lt;item&gt; [want]": {kills n, mob id, item id, item count to stop at}; null = bad.
+     * The stop count defaults to n.
+     */
+    public static Object[] parseFor(String rest) {
+        String[] w = (rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT)).split("\\s+");
+        if (w.length < 4 || w.length > 5 || !w[2].equals("for") || !w[0].matches("^\\d{1,3}$")) return null;
+        int n = Integer.parseInt(w[0]), want = n;
+        if (w.length == 5) {
+            if (!w[4].matches("^\\d{1,4}$")) return null;
+            want = Integer.parseInt(w[4]);
+        }
+        if (n < 1 || want < 1) return null;
+        String mob = w[1].indexOf(':') >= 0 ? w[1] : "minecraft:" + w[1];
+        String item = w[3].indexOf(':') >= 0 ? w[3] : "minecraft:" + w[3];
+        return new Object[]{n, mob, item, want};
+    }
+
+    /**
+     * Loot data: may a "hunt ... for" take it? The same protections as {@link #mayTake}; the mob must be the wanted one
+     * and either friendly (not a monster) or in the owner's animals kind (owner-allowed).
+     */
+    public static boolean mayTakeFor(Target t, boolean friendly, List<String> allowed, String want) {
+        if (t == null || t.player() || t.villager() || t.tamed() || t.named() || t.owned() || t.baby() || !t.inAreas()) return false;
+        if (!t.type().equals(want)) return false;
+        return friendly || (allowed != null && allowed.contains(t.type()));
+    }
+
     /** gather's source for a raw meat while hunting is on: "hunt {n} <animal>"; null for anything else. */
     public static String source(String rawId) {
         for (Map.Entry<String, String> e : MEAT.entrySet())

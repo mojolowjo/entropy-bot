@@ -109,7 +109,10 @@ public final class Goals {
     public static String chain(Blackboard bb, Goal g) {
         int left = g.n - have(bb.in.bag, g);
         if (left <= 0 || bb.in.pickTier < g.r.tier()) return null;
-        if (!g.r.ore()) return "goal " + g.r.key() + " " + left;
+        if (!g.r.ore()) {
+            LootBook.Plan lp = loot(bb, g, left);
+            return lp != null && lp.command() != null ? lp.command() : "goal " + g.r.key() + " " + left;
+        }
         String w = g.r.key().replaceFirst("^.*:", "");
         // round 2 item 5: the nearest known ore by name (that cell and its vein); the goal picks again for the next one
         int[] at = nearest(bb, g.r.key());
@@ -162,9 +165,32 @@ public final class Goals {
         return null;
     }
 
+    /**
+     * Loot data: an item no recipe makes, with a drop source the bot can work ("mine gravel 30", "hunt 3 cow for
+     * leather 3"), else the reason; null when the book has nothing (or a recipe makes it: the planner goes first).
+     */
+    public static LootBook.Plan loot(Blackboard bb, Goal g, int left) {
+        if (g.r.ore() || !(bb.fact(LootBook.FACT) instanceof LootBook book) || book.isEmpty()) return null;
+        String id = g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0);
+        if (bb.fact(TechTree.FACT) instanceof TechTree t && t.makes(id)) return null;
+        LootBook.Ctx ctx = bb.fact(LootBook.CTX_FACT) instanceof LootBook.Ctx c ? c : LootBook.Ctx.NONE;
+        LootBook.Plan p = book.plan(id, Math.max(1, left), g.n, ctx, fightOk(bb, ctx));     // review: hunt stops at the bag total
+        return p.command() == null && p.text() == null ? null : p;
+    }
+
+    /** The brain's fight rule for a hunt of a hostile mob: armed, health 14+, no danger or creeper near. */
+    public static boolean fightOk(Blackboard bb, LootBook.Ctx ctx) {
+        return ctx.armed() && bb.in.health >= 14 && bb.in.danger == 0 && !bb.in.creeperClose && !bb.in.hurtRecently;
+    }
+
     /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */
     public static int known(Blackboard bb, String key) {
         return bb.fact(KNOWN_FACT) instanceof Map<?, ?> m && m.get(key) instanceof Integer i ? i : 0;
+    }
+
+    private static String lootNote(Blackboard bb, Goal g) {
+        LootBook.Plan lp = loot(bb, g, Math.max(1, g.n - have(bb.in.bag, g)));
+        return lp == null || lp.text() == null ? "" : " (" + lp.text() + ")";
     }
 
     /** The goals reached now (removed from the list); the adapter drops their desires and tells the owner. */
@@ -182,6 +208,7 @@ public final class Goals {
         String p = b == null && c == null ? prereq(bb, g) : null;
         return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + ": " + scoreText
                 + (b != null ? " - parked: " + b : c != null ? " - next: " + c : p != null ? " - first " + p : "")
+                + lootNote(bb, g)
                 + " [" + g.r.text() + (known(bb, g.r.key()) > 0 ? "; " + known(bb, g.r.key()) + " known near" : "") + "]";
     }
 }
