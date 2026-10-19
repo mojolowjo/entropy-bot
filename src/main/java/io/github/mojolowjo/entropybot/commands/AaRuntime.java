@@ -53,6 +53,11 @@ public final class AaRuntime implements JobPort {
     final AaTree tree;
     final Blackboard bb;
     private final Tracer tracer = new Tracer();
+    // AA round 2 C: the run ledger (runs.csv): one row per run, written when aa turns off or the world unloads
+    private long runStartMs = -1, runPicks, runStuckHalts, runDeaths;
+    private boolean runDead;
+    private io.github.mojolowjo.entropybot.aa.brain.RunLedger.Marks runMarks = new io.github.mojolowjo.entropybot.aa.brain.RunLedger.Marks();
+    private long runSwitches0, runPointless0, runPreempts0;
     private BrainState sensed;
     private long sensedTick = -1;
     private long seq, current = -1;
@@ -509,11 +514,20 @@ public final class AaRuntime implements JobPort {
         }
         int queued = c.vocab.queued.size();
         if (queued > 0) ended += "; " + queued + " queued task(s) run as your orders when my slot is free";
+        runStartMs = System.currentTimeMillis();
+        runPicks = runStuckHalts = runDeaths = 0;
+        runDead = false;
+        runMarks = new io.github.mojolowjo.entropybot.aa.brain.RunLedger.Marks();
+        runSwitches0 = tracer.counts.switches;
+        runPointless0 = tracer.counts.pointless;
+        runPreempts0 = tracer.counts.preempts;
         LOG.info("[entropybot] aa: on{}", ended);
+        LOG.info("[entropybot] aa: ready ({} desires)", tree.brain.lastScored().size());
         return "ok: aa on - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives" + ended;
     }
 
     String turnOff(String why) {
+        appendRun();
         JsonObject d = data();
         d.addProperty("on", false);
         c.saved();
@@ -597,13 +611,17 @@ public final class AaRuntime implements JobPort {
         try {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
-            if (p == null || mc.level == null) return;
+            if (p == null || mc.level == null) {
+                appendRun();                // the world unloaded: the run ends here
+                return;
+            }
             long now = System.currentTimeMillis();
             if (c.brainRuntime != null && c.brainRuntime.brain.on()) {     // 0.36.5 (review 1): both saved on (an old save): AA wins
                 c.brainRuntime.brain.command("off");
                 LOG.info("[entropybot] aa: the brain was on next to aa - brain off");
             }
             if (p.isDeadOrDying()) {
+                if (!runDead) { runDead = true; runDeaths++; }
                 releaseSwim(mc);
                 if (bb.task() != null) {
                     tree.root.halt("died");
@@ -617,6 +635,8 @@ public final class AaRuntime implements JobPort {
             }
             escapeTick(p, mc);
             fill(bb.in, sensed, p, mc);
+            runDead = false;
+            if (runStartMs >= 0) runMarks.tick(now - runStartMs, bb.in.pickTier, bb.in.tableKnown || bb.in.tableInBag, bb.in.furnaceKnown || bb.in.furnaceInBag, bb.in.food);
             drainTick(now);
             conserveTick(now);
             progressTick(p);
@@ -1188,7 +1208,10 @@ public final class AaRuntime implements JobPort {
         return chain;
     }
 
-    @Override public void log(String line) { LOG.info("[entropybot] aa: {}", line); }
+    @Override public void log(String line) {
+        if (line.startsWith("brain picked ")) runPicks++;
+        LOG.info("[entropybot] aa: {}", line);
+    }
 
     @Override public void incident(String what) {
         try {
@@ -1221,6 +1244,7 @@ public final class AaRuntime implements JobPort {
             if (resume != null) {
                 stepOffset += Math.max(0, AaEscape.failedStep(msg) - 1);
                 escapes++;
+                runStuckHalts++;
                 escapePending = true;
                 escapeResume = resume;
                 escapeFail = msg;
@@ -1916,7 +1940,7 @@ public final class AaRuntime implements JobPort {
 
     /** aa stats: measured runs, the tech tree and its ideas. */
     String statsText() {
-        return tree.brain.stats.text() + "\n" + io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 8) + (treeError != null ? "\n!! " + treeError : "");
+        return runsText() + "\n" + tree.brain.stats.text() + "\n" + io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 8) + (treeError != null ? "\n!! " + treeError : "");
     }
 
     String ideasLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 5); }
@@ -2014,6 +2038,49 @@ public final class AaRuntime implements JobPort {
                 writeFailed("decisions", e);
             }
         });
+    }
+
+    /** The last 5 rows of runs.csv (aa stats). */
+    private String runsText() {
+        try {
+            Path f = runsFile();
+            return io.github.mojolowjo.entropybot.aa.brain.RunLedger.statsText(f != null && Files.exists(f) ? Files.readString(f, StandardCharsets.UTF_8) : "", 5);
+        } catch (IOException | RuntimeException e) {
+            return "runs: could not read runs.csv: " + e;
+        }
+    }
+
+    private Path runsFile() { return Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root().resolve("runs.csv"); }
+
+    /** AA round 2 C: appends this run's row to entropybot/runs.csv (header once). A no-op when no run is open. Never throws. */
+    void appendRun() {
+        if (runStartMs < 0) return;
+        long start = runStartMs;
+        runStartMs = -1;
+        try {
+            Path f = runsFile();
+            if (f == null) return;
+            Minecraft mc = Minecraft.getInstance();
+            String diff = mc.level == null ? "?" : mc.level.getDifficulty().getKey();
+            String world = Core.INSTANCE.files().worldRoot().getFileName().toString();
+            var r = new io.github.mojolowjo.entropybot.aa.brain.RunLedger.Row(Core.INSTANCE.version(), world, diff,
+                    runMarks.stoneMin(), runMarks.tableFurnaceMin(), runMarks.ironMin(), runPicks,
+                    tracer.counts.switches - runSwitches0, tracer.counts.pointless - runPointless0, tracer.counts.preempts - runPreempts0,
+                    runStuckHalts, runDeaths, runMarks.foodEvents(), (System.currentTimeMillis() - start) / 60000.0);
+            boolean has = Files.exists(f) && Files.size(f) > 0;
+            String text = io.github.mojolowjo.entropybot.aa.brain.RunLedger.append(has, r);
+            WRITER.submit(() -> {
+                try {
+                    Files.createDirectories(f.getParent());
+                    Files.writeString(f, text, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                } catch (IOException | RuntimeException e) {
+                    writeFailed("runs.csv", e);
+                }
+            });
+            LOG.info("[entropybot] aa: run row -> runs.csv ({} min)", String.format(java.util.Locale.ROOT, "%.1f", r.totalMin()));
+        } catch (IOException | RuntimeException e) {
+            writeFailed("runs.csv", e);
+        }
     }
 
     private void writeFailed(String what, Exception e) {
