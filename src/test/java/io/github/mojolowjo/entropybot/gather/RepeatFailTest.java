@@ -1,4 +1,4 @@
-﻿package io.github.mojolowjo.entropybot.gather;
+package io.github.mojolowjo.entropybot.gather;
 
 import io.github.mojolowjo.entropybot.cave.ExploreRules;
 import org.junit.jupiter.api.Test;
