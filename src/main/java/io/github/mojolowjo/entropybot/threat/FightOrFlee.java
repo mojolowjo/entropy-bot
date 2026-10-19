@@ -6,7 +6,8 @@ import java.util.Map;
 /**
  * B2: the fight-or-flee assessment over the mobs that count (docs/COMBAT_PLAN.md 4-5, a first cut of its ThreatModel
  * and Verdict with vanilla numbers): expected health lost killing them one by one, against the health above the
- * retreat line. "Only safer, never braver": it can turn a fight into a retreat, never the other way round. Pure Java.
+ * retreat line. "Only safer, never braver": it can turn a fight into a retreat, never the other way round (one
+ * exception, brain-b1: a lone weak mob against an armed bot that isn't losing is fought). Pure Java.
  *
  * <ul>
  * <li>FIGHT: margin at least the buffer (max(4, 20% of max health)), or tight but in the light.</li>
@@ -57,6 +58,16 @@ public final class FightOrFlee {
         String at = d.mouth() == null ? "here" : d.mouth()[0] + " " + d.mouth()[1] + " " + d.mouth()[2];
         return new Result(Verdict.HOLD, r.margin(), r.loss(), "hold the corridor mouth at " + at + ": a dead end behind me (" + d.cells()
                 + " free cells within " + DeadEnd.RANGE + ", under " + DeadEnd.MIN_CELLS + "), instead of: " + r.why());
+    }
+
+    /** A weapon hit at least this (a wooden sword) counts as armed. */
+    public static final double ARMED = 4;
+
+    /** One foe, no creeper, a known kind with at most 4 raw damage and 20 health. */
+    static boolean loneWeak(List<Foe> foes) {
+        if (foes.size() != 1 || foes.get(0).creeper()) return false;
+        double[] m = MOBS.get(ThreatRules.path(foes.get(0).kind()));
+        return m != null && m[0] <= 4 && m[1] <= 20;
     }
 
     /** Damage after armour (vanilla, no toughness). */
@@ -138,6 +149,10 @@ public final class FightOrFlee {
         if (me.light() >= LIT) return new Result(Verdict.FIGHT, margin, high, "fight (tight, but lit here): " + num);
         if (me.litDist() >= 0 && me.litDist() <= LIT_MAX_DIST)
             return new Result(Verdict.LIT, margin, high, "retreat to a lit spot " + me.litDist() + " blocks away (tight, dark here): " + num);
+        // brain-b1: a lone weak mob (a zombie, a skeleton...) against an armed bot that isn't losing: fight it; running
+        // through the dark from one draws more and drags the job off for nothing
+        if (margin >= 0 && loneWeak(foes) && me.weaponHit() >= ARMED)
+            return new Result(Verdict.FIGHT, margin, high, "fight (a lone weak mob, armed): " + num);
         return new Result(Verdict.HOME, margin, high, "retreat home: tight, dark, no lit spot near: " + num);
     }
 }
