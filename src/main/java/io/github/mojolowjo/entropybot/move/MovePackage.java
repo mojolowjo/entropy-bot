@@ -173,6 +173,8 @@ public final class MovePackage {
             // profiles
             Profiles.Profile want = Profiles.choose(walking, breaking, fleeing);
             if (profiles.apply(want, SETTINGS)) LOG.info("[entropybot] path: profile {}", want.name().toLowerCase());
+            // hunger conserving (aa-sprint): no sprint, no parkour, except while fleeing
+            profiles.conserve(io.github.mojolowjo.entropybot.aa.brain.HungerConserve.active(System.currentTimeMillis()), fleeing, SETTINGS);
             // ready paths: when idle, or for a chain's next walk while the current step finishes
             ready.setPriority(chainNext);
             if ((idle || chainNext != null) && b != null && tick % 10 == 3) {
@@ -262,7 +264,7 @@ public final class MovePackage {
         } else lastGuard = null;
         p.setYRot((float) (Math.toDegrees(Math.atan2(-dx, dz))));
         mc.options.keyUp.setDown(true);
-        boolean sprint = p.getFoodData().getFoodLevel() > 6;
+        boolean sprint = p.getFoodData().getFoodLevel() > 6 && !profiles.conserving();
         mc.options.keySprint.setDown(sprint);
         if (sprint && !p.isSprinting()) p.setSprinting(true);
         rawDown = true;
