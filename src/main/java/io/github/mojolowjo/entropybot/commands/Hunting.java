@@ -35,6 +35,9 @@ final class Hunting {
 
     private static final class Run {
         String from, want;
+        /** Loot data ("hunt n mob for item [want]"): the item to stop at, its count; null = the raw-meat hunt. */
+        String item;
+        int itemWant;
         int n;
         long started, nextAt, idleSince = -1;
         String why;
@@ -87,9 +90,31 @@ final class Hunting {
     Chains.Reply command(String from, String rest, String raw, JobRequests.Listener l, LocalPlayer p) {
         if (rest != null && rest.trim().equalsIgnoreCase("status")) return Chains.Reply.now(run == null ? "hunt: not running; hunting is " + (on() ? "on" : "off") : status(p));
         if (!on()) return Chains.Reply.now(Hints.next("error: hunting is off", "hunting on (then hunt <n> [animal])"));
-        Object[] a = HuntRules.parse(rest);
-        if (a == null) return Chains.Reply.now("usage: hunt <n> [cow|pig|chicken|sheep] | hunt status");
+        Object[] f = rest != null && rest.contains(" for ") ? HuntRules.parseFor(rest) : null;
+        if (rest != null && rest.contains(" for ") && f == null) return Chains.Reply.now("usage: hunt <n> <mob> for <item> [count]");
         if (run != null) return Chains.Reply.now("busy: " + status(p));
+        if (f != null) {
+            String mob = (String) f[1];
+            var type = BuiltInRegistries.ENTITY_TYPE.getOptional(net.minecraft.resources.ResourceLocation.tryParse(mob)).orElse(null);
+            if (type == null) return Chains.Reply.now("error: no mob " + mob);
+            boolean friendly = type.getCategory().isFriendly();
+            if (!friendly && !c.vocab.expand("animals").contains(mob))
+                return Chains.Reply.now(Hints.next("error: " + mob.replaceFirst("^minecraft:", "") + " is hostile and not in the animals kind", "kinds animals add " + mob.replaceFirst("^minecraft:", "")));
+            Run r = new Run();
+            r.from = from;
+            r.n = (Integer) f[0];
+            r.want = mob;
+            r.item = (String) f[2];
+            r.itemWant = (Integer) f[3];
+            r.started = Core.INSTANCE.tick();
+            String reply = "started: hunting " + mob.replaceFirst("^minecraft:", "") + " until I have " + r.itemWant + " " + r.item.replaceFirst("^minecraft:", "") + " (hunt status)";
+            r.req = c.requests.local("hunt", from, raw, reply, l);
+            run = r;
+            LOG.info("[entropybot] hunt: {} {} for {} x{} ({})", r.n, mob, r.item, r.itemWant, from);
+            return new Chains.Reply(reply, r.req);
+        }
+        Object[] a = HuntRules.parse(rest);
+        if (a == null) return Chains.Reply.now("usage: hunt <n> [cow|pig|chicken|sheep] | hunt <n> <mob> for <item> [count] | hunt status");
         Run r = new Run();
         r.from = from;
         r.n = (Integer) a[0];
@@ -107,8 +132,19 @@ final class Hunting {
 
     private String status(LocalPlayer p) {
         Run r = run;
-        int have = p == null ? 0 : HuntRules.meat(Gui.inventory(p), r.want);
-        return "hunt: " + have + "/" + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + (r.why != null ? " - waiting: " + r.why : "");
+        int have = p == null ? 0 : have(r, Gui.inventory(p));
+        return "hunt: " + have + "/" + goal(r) + " " + what(r) + (r.why != null ? " - waiting: " + r.why : "");
+    }
+
+    /** What the run counts: the loot item, else the raw meat. */
+    private static int have(Run r, Map<String, Integer> bag) {
+        return r.item != null ? bag.getOrDefault(r.item, 0) : HuntRules.meat(bag, r.want);
+    }
+
+    private static int goal(Run r) { return r.item != null ? r.itemWant : r.n; }
+
+    private static String what(Run r) {
+        return r.item != null ? r.item.replaceFirst("^minecraft:", "") + " from " + r.want.replaceFirst("^minecraft:", "") : "raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10));
     }
 
     String stop(String why) {
@@ -131,12 +167,12 @@ final class Hunting {
         if (r == null) return;
         long now = Core.INSTANCE.tick();
         Map<String, Integer> bag = Gui.inventory(p);
-        if (HuntRules.done(bag, r.n, r.want)) {
-            end(r, "ok: hunted " + HuntRules.meat(bag, r.want) + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + " - next: cook beef " + r.n);
+        if (have(r, bag) >= goal(r)) {
+            end(r, "ok: hunted " + have(r, bag) + " " + what(r) + (r.item == null ? " - next: cook beef " + r.n : ""));
             return;
         }
         if (!on()) { end(r, "stopped: hunting was switched off"); return; }
-        if (now - r.started > MAX_TICKS) { end(r, "stopped: hunt: " + HuntRules.meat(bag, r.want) + "/" + r.n + " after 10 min (no more animals I may take?)"); return; }
+        if (now - r.started > MAX_TICKS) { end(r, "stopped: hunt: " + have(r, bag) + "/" + goal(r) + " after 10 min (no more animals I may take?)"); return; }
         if (now < r.nextAt || p.isDeadOrDying()) return;
         var refl = Core.INSTANCE.reflexes;
         if (refl.forcing()) {                                         // the fight on the animal still runs: follow its spot
@@ -144,6 +180,9 @@ final class Hunting {
             if (tg != null) r.dropAt = new int[]{tg.getBlockX(), tg.getBlockY(), tg.getBlockZ()};
             return;
         }
+        // loot hunt of a hostile mob (owner-allowed): the fight rule holds for the whole run, not only at the plan
+        if (r.item != null && !BuiltInRegistries.ENTITY_TYPE.getOptional(net.minecraft.resources.ResourceLocation.tryParse(r.want)).map(t -> t.getCategory().isFriendly()).orElse(true)
+                && p.getHealth() < 14) { end(r, "stopped: hunt: health " + Math.round(p.getHealth()) + " - too low to fight " + r.want.replaceFirst("^minecraft:", "")); return; }
         if (refl.hold() || refl.reflex() == io.github.mojolowjo.entropybot.engine.Reflexes.Reflex.FIGHTING) return;   // hostiles first
         if (c.jobs.running()) return;                                 // the walk to the drops
         // 0.30.6: too hungry to sprint (food 6 or less) with something to eat in the bag (the last kill's raw beef, say):
@@ -179,17 +218,20 @@ final class Hunting {
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !e.isAlive()) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
-            if (!HuntRules.MEAT.containsKey(type) && !(e instanceof Player) && !(e instanceof AbstractVillager)) continue;
+            boolean target = r.item != null ? type.equals(r.want) : HuntRules.MEAT.containsKey(type);
+            if (!target && !(e instanceof Player) && !(e instanceof AbstractVillager)) continue;
             double d = p.distanceTo(e);
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
             boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
                     || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, e instanceof Player, e instanceof AbstractVillager,
                     e instanceof AgeableMob am && am.isBaby(), inAreas);
-            if (HuntRules.MEAT.containsKey(type) && (r.want == null || r.want.equals(type))) seen++;
-            if (!HuntRules.mayTake(t, allowed, r.want)) {
+            if (target && (r.want == null || r.want.equals(type))) seen++;
+            boolean friendly = e.getType().getCategory().isFriendly();
+            if (!(r.item != null ? HuntRules.mayTakeFor(t, friendly, allowed, r.want) : HuntRules.mayTake(t, allowed, r.want))) {
                 HuntRules.Target in = new HuntRules.Target(t.type(), t.tamed(), t.named(), t.owned(), t.player(), t.villager(), t.baby(), true);
-                if (!inAreas && HuntRules.mayTake(in, allowed, r.want) && d < outD) { outD = d; outside = e; }
+                boolean couldIn = r.item != null ? HuntRules.mayTakeFor(in, friendly, allowed, r.want) : HuntRules.mayTake(in, allowed, r.want);
+                if (!inAreas && couldIn && d < outD) { outD = d; outside = e; }
                 continue;
             }
             if (d < bestD) { bestD = d; best = e; }
@@ -205,7 +247,7 @@ final class Hunting {
             if (r.idleSince < 0) r.idleSince = now;
             r.nextAt = now + 100;
             if (now - r.idleSince >= IDLE_END) {
-                end(r, "stopped: hunt: " + HuntRules.meat(bag, r.want) + "/" + r.n + " - " + r.why);
+                end(r, "stopped: hunt: " + have(r, bag) + "/" + goal(r) + " - " + r.why);
                 return;
             }
             if ((now - r.idleSince) % 600 < 100) LOG.info("[entropybot] hunt: nothing to take: {}", r.why);

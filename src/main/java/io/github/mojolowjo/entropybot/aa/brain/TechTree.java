@@ -47,6 +47,16 @@ public final class TechTree {
 
     public int size() { return recipes.size(); }
 
+    /** The blackboard fact (AaDesires.TECH_FACT). */
+    public static final String FACT = "aa.techTree";
+
+    /** Does any recipe make this item? */
+    public boolean makes(String item) {
+        String id = id(item);
+        for (Recipe r : recipes) if (r.result().equals(id)) return true;
+        return false;
+    }
+
     private Set<String> bestFor;
     private double bestV;
 
