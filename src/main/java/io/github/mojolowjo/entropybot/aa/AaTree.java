@@ -33,17 +33,18 @@ public final class AaTree {
 
     public final GuardSelector root;
     public final MemoryFallback slot;
-    public final Node danger, ladder;
-    public final UtilitySelector idle;
+    public final Node danger;
+    /** BRAIN_PLAN B1: the scored desire list (the ladder's rungs and the idle options); {@code ladder} is the same node. */
+    public final io.github.mojolowjo.entropybot.aa.brain.Brain brain, ladder;
     public final Band.CalmLatch dangerLatch = new Band.CalmLatch(CALM_MS);
     private String dangerWhy = "";
 
-    private AaTree(GuardSelector root, MemoryFallback slot, Node danger, Node ladder, UtilitySelector idle) {
+    private AaTree(GuardSelector root, MemoryFallback slot, Node danger, io.github.mojolowjo.entropybot.aa.brain.Brain brain) {
         this.root = root;
         this.slot = slot;
         this.danger = danger;
-        this.ladder = ladder;
-        this.idle = idle;
+        this.brain = brain;
+        this.ladder = brain;
     }
 
     /** A leaf that only observes: RUNNING while its condition holds (the reflexes do the moving). */
@@ -109,26 +110,26 @@ public final class AaTree {
             return new JobPort.TaskSpec(TaskKind.AI, r.chain(), "ai", r.priority(), JobPort.TaskSpec.TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
         });
         Node ai = new Seq("ai", "an AI request", new Condition("ai?", "an AI request waits", bb -> bb.peek("ai") != null), aiJob);
-        // [2c] the ladder, [2d] idle
-        Node ladder = AaLadder.build();
-        UtilitySelector idle = new UtilitySelector("idle", "idle", scorer, UtilitySelector.BONUS,
+        // [2c] BRAIN_PLAN B1: one scored list (the ladder's rungs and the idle options as desires)
+        List<java.util.Map.Entry<TaskKind, Node>> idle = List.of(
                 // 0.36.2 (40-min run: STOCK_WOOD restarted 0.25 s after each failure, 17 times): a failed idle task
                 // cools down like a rung (2 min doubling); planning and busy refusals do not count
                 // S1 (MINING_PLAN 12): the owner's targets; a planner-null option cools down 30 s (Cooldown.NO_RUN_MS) so the
                 // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
-                new UtilitySelector.Option(TaskKind.STOCK_WOOD, idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood " + AaScorer.WOOD_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_STONE, idleCd("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_COAL, idleCd("idle.coal.cd", goal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_IRON, idleCd("idle.iron.cd", goal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
-                new UtilitySelector.Option(TaskKind.STOCK_TORCHES, idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
-                new UtilitySelector.Option(TaskKind.DEPOSIT, idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
-                new UtilitySelector.Option(TaskKind.LIGHT, idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
-                new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("idle.wait.cd", RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
-        MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, ladder, idle);
+                java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood " + AaScorer.WOOD_HI))),
+                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
+                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", goal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
+                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", goal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
+                java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
+                java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
+                java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
+                java.util.Map.entry(TaskKind.WAIT, (Node) new Cooldown("idle.wait.cd", RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
+        io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaLadder.build(), idle, scorer);
+        MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, brain);
         GuardSelector root = new GuardSelector("root", "AA",
                 new GuardSelector.Branch(dangerGuard, dangerBranch),
                 new GuardSelector.Branch(new Condition("slot?", "always", bb -> true), slot));
-        self[0] = new AaTree(root, slot, dangerBranch, ladder, idle);
+        self[0] = new AaTree(root, slot, dangerBranch, brain);
         return self[0];
     }
 
@@ -173,6 +174,11 @@ public final class AaTree {
         if (root.active() == 0) return "danger";
         Node r = slot.runningChild();
         if (r == null) return "none";
+        // BRAIN_PLAN B1: the brain drives as "needs" (a rung) or "idle" (an idle option), as the ladder and idle did
+        if (r == brain) {
+            var d = brain.runningDesire();
+            return d == null ? "none" : d.id.startsWith("needs.") ? "needs" : "idle";
+        }
         return r.id;
     }
 

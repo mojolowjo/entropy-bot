@@ -285,6 +285,12 @@ public final class Rung extends Node {
         return fail(why + " | options: " + picker.why());
     }
 
+    /** BRAIN_PLAN B1: the need is on now (its band updated; the brain scores a met rung below 0). */
+    public boolean unmet(Blackboard bb) { return unmet.test(bb); }
+
+    /** The skip reason now (null: it may start). */
+    public String skipWhy(Blackboard bb) { return skip.apply(bb); }
+
     /** The picker's options line (null without a picker). */
     public String options() { return picker == null ? null : picker.why(); }
 

@@ -216,7 +216,7 @@ public final class AaRuntime implements JobPort {
     /** The rung AA works on now (the ladder's running rung), else the one that picked last; null none. */
     private String currentRung() {
         Node n = tree.slot.runningChild();
-        if (n == tree.ladder && tree.ladder instanceof io.github.mojolowjo.entropybot.aa.core.MemoryFallback mf && mf.runningChild() != null) return mf.runningChild().id;
+        if (n == tree.brain && tree.brain.runningChild() instanceof io.github.mojolowjo.entropybot.aa.Rung rr) return rr.id;
         // review: the last picker only while it still runs (a stale one would preempt an unrelated task)
         Object o = bb.fact(io.github.mojolowjo.entropybot.aa.Rung.CURRENT_RUNG);
         for (var r : AaLadder.rungs(tree.ladder)) if (r.id.equals(o) && r.last() == Status.RUNNING) return r.id;
@@ -1083,6 +1083,11 @@ public final class AaRuntime implements JobPort {
         }
         return b.toString();
     }
+
+    /** BRAIN_PLAN B1: the top desires with their scores (aa why / aa status). */
+    List<String> brainLines(int n) { return tree.brain.whyLines(n); }
+
+    String brainCounters() { return tree.brain.counters(System.currentTimeMillis()); }
 
     List<String> decisions() { return tracer.decisions(); }
 

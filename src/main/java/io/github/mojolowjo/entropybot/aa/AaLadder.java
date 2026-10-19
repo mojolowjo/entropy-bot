@@ -76,7 +76,8 @@ public final class AaLadder {
         return latched || (seenNear && distToCamp <= CAMP_R);
     }
 
-    public static Node build() {
+    /** BRAIN_PLAN B1: the rungs in ladder order; the brain (AaDesires) scores them instead of trying them in order. */
+    public static List<Rung> build() {
         Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
         Rung area = new Rung("needs.area", TaskKind.TOOLS,
                 bb -> !bb.in.areaKnown,
@@ -129,12 +130,12 @@ public final class AaLadder {
                 bb -> bb.in.pickTier < 3,
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet",
                 bb -> "goal iron tools", new IronOptions.Picker());
-        // a memory node (live check 2026-10-18: as a reactive Fallback, an earlier rung that started *planning* while a
-        // lower rung's job ran outranked it and cancelled the job: a pointless switch)
-        return new MemoryFallback("needs", "basic needs", area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
+        // the brain runs a started desire to its end (live check 2026-10-18: a reactive Fallback let an earlier rung that
+        // started *planning* cancel a lower rung's job: a pointless switch)
+        return List.of(area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
     }
 
-    /** The rungs under a built ladder, in order (for tests and the status line). */
+    /** The rungs under the brain (or any node), in order (for tests and the status line). */
     public static List<Rung> rungs(Node ladder) {
         List<Rung> out = new java.util.ArrayList<>();
         for (Node n : ladder.children()) if (n instanceof Rung r) out.add(r);

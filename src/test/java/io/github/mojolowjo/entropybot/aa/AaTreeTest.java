@@ -106,7 +106,7 @@ class AaTreeTest {
         assertEquals("goal iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
         String reasons = String.join(" | ", reasons());
         assertTrue(reasons.contains("BASE_BED skipped: no wool for a bed (0/3"), reasons);
-        assertTrue(reasons.contains("BAG met"), reasons);
+        assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bag UPKEEP -1")), "BRAIN B1: a met rung scores -1: " + tree.brain.whyLines(20));
         assertEquals(0, tracer.counts.switches, "no task replaced another");
         assertEquals(0, tracer.counts.pointless);
     }
@@ -398,7 +398,7 @@ class AaTreeTest {
         String m = tree.mermaid();
         assertTrue(m.startsWith("graph TD\n"));
         assertTrue(m.contains("root --> slot"), m);
-        assertTrue(m.contains("needs --> needs_torches"), m);
+        assertTrue(m.contains("brain --> needs_torches"), m);
         assertTrue(tree.nodes().size() > 25, "nodes: " + tree.nodes().size());
         freshStart();
         tree.tick(bb);

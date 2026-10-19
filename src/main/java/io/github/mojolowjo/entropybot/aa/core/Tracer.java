@@ -74,7 +74,8 @@ public final class Tracer {
 
     /** AA_PLAN 10: a switch replaced a live task; justified only by danger, the owner's order or aa off. */
     public static boolean justified(String why) {
-        return why != null && (why.startsWith("danger") || why.startsWith("preempted by owner") || why.startsWith("aa off") || why.startsWith("the owner's stop"));
+        // BRAIN_PLAN B1: the brain's urgent-upkeep interrupt and the stuck watchdog's halt are deliberate, never pointless
+        return why != null && (why.startsWith("danger") || why.startsWith("urgent:") || why.startsWith("stuck:") || why.startsWith("preempted by owner") || why.startsWith("aa off") || why.startsWith("the owner's stop"));
     }
 
     private void countSwitch(long now, String why, String text) {

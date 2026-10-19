@@ -1,0 +1,141 @@
+package io.github.mojolowjo.entropybot.aa.brain;
+
+import io.github.mojolowjo.entropybot.aa.core.Blackboard;
+import io.github.mojolowjo.entropybot.aa.core.Clock;
+import io.github.mojolowjo.entropybot.aa.core.FakePort;
+import io.github.mojolowjo.entropybot.aa.core.RunJob;
+import io.github.mojolowjo.entropybot.aa.core.Status;
+import io.github.mojolowjo.entropybot.aa.core.TaskKind;
+import io.github.mojolowjo.entropybot.aa.core.Tracer;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/** BRAIN_PLAN B1: the scored list: pick order, commitment, interrupts, the stuck watchdog. */
+class AaBrainTest {
+    final Clock.Fake clock = new Clock.Fake(10_000_000);
+    final FakePort port = new FakePort();
+    final Tracer tracer = new Tracer();
+    final Blackboard bb = new Blackboard(clock, port, tracer);
+    final double[] s = new double[4];
+
+    Desire d(int i, String id, Desire.Kind k) {
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> s[i]);
+    }
+
+    String last() { return port.started.get(port.started.size() - 1).chain(); }
+
+    @Test
+    void highestRunsAndACloseChallengerWaits() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "b", Desire.Kind.UPKEEP));
+        s[0] = 40;
+        s[1] = 30;
+        assertEquals(Status.RUNNING, br.tick(bb));
+        assertEquals("do a", last());
+        s[1] = 70;                       // not urgent: waits however high
+        for (int i = 0; i < 5; i++) br.tick(bb);
+        assertEquals(1, port.started.size());
+        assertEquals(0, br.interrupts);
+        port.done(1, "done");
+        br.tick(bb);
+        br.tick(bb);
+        assertEquals("do b", last());
+    }
+
+    @Test
+    void urgentUpkeepInterruptsAndIsNotPointless() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "food", Desire.Kind.UPKEEP));
+        s[0] = 40;
+        br.tick(bb);
+        s[1] = 80;
+        br.tick(bb);
+        assertEquals("do food", last());
+        assertEquals(1, br.interrupts);
+        assertEquals(0, tracer.counts.pointless, tracer.lastSwitchText(clock.now()));
+    }
+
+    @Test
+    void urgentUnderTheMarginStillWaits() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.UPKEEP), d(1, "b", Desire.Kind.UPKEEP));
+        s[0] = 70;
+        br.tick(bb);
+        s[1] = 80;                       // 80 <= 70 + 15
+        br.tick(bb);
+        assertEquals(1, port.started.size());
+    }
+
+    @Test
+    void ownerGoalWaitsTheMinimumRunAndNeverBeatsUrgentUpkeep() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "food", Desire.Kind.UPKEEP));
+        s[0] = 40;
+        br.tick(bb);
+        Desire goal = d(2, "osmium", Desire.Kind.OWNER).fresh(clock.now() + 600_000);
+        s[2] = 90;
+        br.add(goal);
+        br.tick(bb);
+        assertEquals(1, port.started.size(), "under the 60 s minimum run");
+        for (int i = 0; i < Brain.MIN_RUN_MS / 1000; i++) {      // ticked all along (a gap would be paused time)
+            clock.advance(1000);
+            port.progress.put(1L, (long) i);
+            br.tick(bb);
+        }
+        assertEquals("do osmium", last());
+        s[1] = 76;                       // urgent upkeep beats the owner's 90
+        br.tick(bb);
+        assertEquals("do food", last());
+        // with nothing running, urgent upkeep still ranks over the owner's goal
+        port.done(3, "done");
+        br.tick(bb);
+        br.tick(bb);
+        assertEquals("do food", last());
+    }
+
+    @Test
+    void stuckWatchdogHaltsCoolsDownAndTheNextRuns() {
+        // a node that answers RUNNING with no task (a planner wait that never ends): only the brain's watchdog sees it
+        io.github.mojolowjo.entropybot.aa.core.Node hang = new io.github.mojolowjo.entropybot.aa.core.Node("a.hang", "hangs") {
+            @Override protected Status run(Blackboard b) { return Status.RUNNING; }
+        };
+        Brain br = new Brain("brain", "t", new Desire("a", Desire.Kind.PROGRESS, hang, b -> s[0]), d(1, "b", Desire.Kind.PROGRESS));
+        s[0] = 40;
+        s[1] = 20;
+        br.tick(bb);
+        for (int i = 0; i < 180; i++) {
+            clock.advance(1000);
+            br.tick(bb);
+        }
+        clock.advance(1000);
+        assertEquals(Status.FAILURE, br.tick(bb));
+        assertTrue(br.reason().startsWith("stuck: a"), br.reason());
+        assertEquals(1, br.stuck);
+        assertEquals(1, port.incidents.size());
+        assertEquals(1, br.streak("a"));
+        br.tick(bb);
+        assertEquals("do b", last(), "a cools down; b runs");
+        assertEquals(0, tracer.counts.pointless);
+    }
+
+    @Test
+    void progressKeepsTheWatchdogQuiet() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS));
+        s[0] = 40;
+        br.tick(bb);
+        for (int i = 0; i < 400; i++) {
+            clock.advance(1000);
+            bb.in.pos = new int[]{i, 64, 0};
+            port.progress.put(1L, (long) i);
+            assertEquals(Status.RUNNING, br.tick(bb));
+        }
+        assertEquals(0, br.stuck);
+    }
+
+    @Test
+    void whyLinesShowScores() {
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "b", Desire.Kind.UPKEEP));
+        s[0] = 40;
+        s[1] = -1;
+        br.tick(bb);
+        assertTrue(br.whyLines(5).get(0).startsWith("a PROGRESS 40"), br.whyLines(5).toString());
+        assertTrue(br.whyLines(5).get(1).contains("not wanted"), br.whyLines(5).toString());
+    }
+}
