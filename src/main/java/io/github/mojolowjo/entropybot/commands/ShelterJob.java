@@ -60,6 +60,13 @@ public final class ShelterJob {
 
     static volatile State current;
 
+    /** nightwork: true when a shelter of mine waits (WAIT stage) and me (block x, y, z) stands in its cell. */
+    static boolean waitingAt(int[] me) {
+        State s = current;
+        return s != null && me != null && s.feet != null && s.stage == ShelterPlan.Stage.WAIT
+                && Math.abs(me[0] - s.feet[0]) <= 1 && Math.abs(me[2] - s.feet[2]) <= 1 && Math.abs(me[1] - s.feet[1]) <= 1;
+    }
+
     static String status() {
         State s = current;
         if (s == null) return "shelter: not in one - shelter (until day) | shelter 5m | shelter keep";

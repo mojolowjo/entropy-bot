@@ -4,6 +4,7 @@ import io.github.mojolowjo.entropybot.aa.brain.Brain;
 import io.github.mojolowjo.entropybot.aa.brain.Curves;
 import io.github.mojolowjo.entropybot.aa.brain.Desire;
 import io.github.mojolowjo.entropybot.aa.brain.Night;
+import io.github.mojolowjo.entropybot.aa.brain.NightWork;
 import io.github.mojolowjo.entropybot.aa.brain.Personality;
 import io.github.mojolowjo.entropybot.aa.brain.Wants;
 import io.github.mojolowjo.entropybot.aa.brain.TechTree;
