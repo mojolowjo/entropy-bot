@@ -404,7 +404,7 @@ final class Mining {
         w.optional = true;
         // 0.34.2 (lead's live check: the walk went on at a removed spot after its chunk loaded): checked every half second
         // of the walk; gone ends the walk, knownStep drops it (no trip) and picks the next
-        w.watch = farWatch(o.id(), t);
+        w.watch = walkWatch(j, o.id(), t);
         LOG.info("[entropybot] mine: none in view or in the index - {} (Baritone's memory), walking there ({}/{})", j.kFarText, j.kFarTrips, FAR_TRIPS);
         s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - " + j.kFarText + ", walking there");
         spliceHere(s, List.of(w));
@@ -516,7 +516,7 @@ final class Mining {
                 j.kTarget = t;
                 Seq.Step w = Seq.Step.walk(t.clone(), true);
                 w.optional = true;
-                w.watch = farWatch(j.kFarId, t);              // 0.34.2: every leg of a remembered target is watched
+                w.watch = walkWatch(j, j.kFarId, t);              // 0.34.2: every leg of a remembered target is watched
                 LOG.info("[entropybot] mine: the walk to the known {} at {} ended short at {}{} - walking again ({}/2)", sid(j), Jobs.fmt(t), Jobs.fmt(me),
                         failed != null ? " (" + failed + ")" : "", j.kWalks);
                 spliceHere(s, List.of(w));
