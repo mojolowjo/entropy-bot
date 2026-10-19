@@ -1072,7 +1072,7 @@ public final class AaRuntime implements JobPort {
         boolean mid = io.github.mojolowjo.entropybot.aa.Replan.digOrPillarStep(body, me)
                 && (body.trim().toLowerCase().startsWith("goto") || bb.in.underDepth > 0 || bb.in.underGround);
         var d = io.github.mojolowjo.entropybot.aa.Replan.decide(runningOpt, fresh.ranked(), idx, now, lastSwitchAt, mid, wandered);
-        if (wandered) LOG.info("[entropybot] aa: replan check, wandered from {} to {}: {}", runningOpt.id(), Jobs.fmt(me), d.why());
+        if (wandered) LOG.warn("[entropybot] aa: bug signal: replan check, wandered from {} to {}: {}", runningOpt.id(), Jobs.fmt(me), d.why());
         if (!d.switches()) {
             if (d.why().contains("locked") || d.why().contains("mid dig")) replanLog.held++;
             return;
@@ -1817,6 +1817,15 @@ public final class AaRuntime implements JobPort {
             known.put(g.r.key(), n);
         }
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.KNOWN_FACT, known);
+        // round 2 item 5: each ore goal's nearest takeable ore, for its "mine <ore> 1 at x y z" step
+        Map<String, int[]> nearest = new java.util.HashMap<>();
+        for (var g : goals) {
+            if (!g.r.ore() || known.getOrDefault(g.r.key(), 0) == 0) continue;
+            int[] at = io.github.mojolowjo.entropybot.aa.brain.Goals.pickOre(Mining.get().aaOres(p,
+                    io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), IRON_ORES), IronOptions.DIG_MAX);
+            if (at != null) nearest.put(g.r.key(), at);
+        }
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NEAREST_FACT, nearest);
         if (sensed != null && Minecraft.getInstance().level != null) {
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(Minecraft.getInstance().level);
             var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);

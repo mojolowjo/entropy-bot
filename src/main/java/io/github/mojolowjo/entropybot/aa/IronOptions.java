@@ -102,8 +102,15 @@ public final class IronOptions {
             return b.toString();
         }
 
-        /** The ore step for the chosen way. */
+        /**
+         * The ore step for the chosen way. AA round 2 item 5: a known ore is one target ({@code mine iron 1 at x y z
+         * dig|walk}: that cell and its vein, then the step ends); the rung re-picks for the next one.
+         */
         public String command(int n) {
+            if (target != null && (way == Way.WALK_KNOWN || way == Way.DIG_KNOWN || way == Way.PILLAR_KNOWN)) {
+                String at = "mine " + FAMILY + " 1 at " + target.key() + (way == Way.WALK_KNOWN ? " walk" : " dig");
+                return way == Way.PILLAR_KNOWN ? "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then " + at : at;
+            }
             return switch (way) {
                 case WALK_KNOWN -> "mine " + FAMILY + " " + n;
                 case DIG_KNOWN -> "mine " + FAMILY + " " + n + " dig";
@@ -125,12 +132,12 @@ public final class IronOptions {
         public Memory(Options.OptionMemory m) { this.m = m; }
 
         /**
-         * Review: {@code mine iron N} (walk or dig) picks its own ore, so a failure of those two ways counts against the
-         * way, not the scorer's guessed target; the pillar's goto names its ore, so it is remembered per ore.
+         * Round 2 item 5: walk, dig and pillar name their ore ({@code mine iron 1 at x y z}), so a failure is remembered
+         * against that ore and the next ore is the next option (was: per way, when {@code mine iron N} picked its own).
          */
         static String key(Way w, Ore o) {
             if (w == null) return "smelt here";
-            return w + (o == null || w == Way.WALK_KNOWN || w == Way.DIG_KNOWN ? "" : " " + o.key());
+            return w + (o == null ? "" : " " + o.key());
         }
 
         public void failed(Way w, Ore o, String reason, long now) { m.failed(key(w, o), reason, now); }
@@ -224,10 +231,18 @@ public final class IronOptions {
             if (c.way() != null && mm.matches()) {
                 int n = mm.group(1) == null ? DEFAULT_N : Integer.parseInt(mm.group(1));
                 out.add(c.command(n));
+                // round 2 item 5: one ore is not the planner's N: the chain ends after it, the rung picks again
+                // (the next ore, or the smelt once the bag has enough)
+                if (n > 1 && perOre(c)) break;
             } else if (c.smelt() == Smelt.HERE && SMELT_STEP.matcher(t.toLowerCase(Locale.ROOT)).matches()) out.add(t + " here");
             else out.add(t);
         }
         return String.join(" then ", out);
+    }
+
+    /** The choice mines one named ore ({@code mine iron 1 at ...}). */
+    static boolean perOre(Choice c) {
+        return c.target() != null && (c.way() == Way.WALK_KNOWN || c.way() == Way.DIG_KNOWN || c.way() == Way.PILLAR_KNOWN);
     }
 
     /** The chain holds an ore step (else the scorer has nothing to choose, the smelt choice still applies). */

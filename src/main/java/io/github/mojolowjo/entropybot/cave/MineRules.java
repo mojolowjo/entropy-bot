@@ -75,6 +75,8 @@ public final class MineRules {
     public record Args(String id, String word, int count, boolean dig) {}
 
     public static Args args(String text) {
+        At at = parseAt(text);
+        if (at != null && at.error() == null) text = at.plain();
         String[] p = String.valueOf(text).trim().split("\\s+");
         String w = p[0].toLowerCase();
         String id = w.contains(":") ? w : "minecraft:" + w;
@@ -82,6 +84,71 @@ public final class MineRules {
         boolean dig = false;
         for (String s : p) if (s.equals("dig")) dig = true;
         return new Args(id, p[0], count, dig);
+    }
+
+    // ---- AA round 2 item 5: "mine <ore> [n] at x y z [dig|walk]", one named target and its vein ----
+
+    /**
+     * The at form: the ore word, the count (1 without; shown only, the job mines the target's vein), the cell, dig (walk
+     * without the word). {@code error} set (the rest unset) when the text has "at" but is not this form.
+     */
+    public record At(String word, int count, int x, int y, int z, boolean dig, String error) {
+        /** The plain mine text for the rest of the job ("iron 1 dig"). */
+        public String plain() { return word + " " + count + (dig ? " dig" : ""); }
+
+        public String cell() { return x + " " + y + " " + z; }
+    }
+
+    public static final String AT_FORM = "mine <ore> 1 at x y z dig|walk";
+    private static final Pattern AT = Pattern.compile("^(\\S+)(?:\\s+(\\d+))?\\s+at\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)(?:\\s+(dig|walk))?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern HAS_AT = Pattern.compile("(?i)(^|\\s)at(\\s|$)");
+
+    /** The at form of the text after "mine", or null when it has no "at" word (or is "mine cave/strip ..."). Pure. */
+    public static At parseAt(String text) {
+        String t = String.valueOf(text).trim();
+        if (!HAS_AT.matcher(t).find() || t.matches("(?i)^(cave|strip)\\b.*")) return null;
+        java.util.regex.Matcher m = AT.matcher(t);
+        if (!m.matches()) return new At(null, 0, 0, 0, 0, false, "error: the at form is \"" + AT_FORM + "\"");
+        int n = m.group(2) == null ? 1 : safeInt(m.group(2));
+        if (n < 1) return new At(null, 0, 0, 0, 0, false, "error: the count must be 1 or more (\"" + AT_FORM + "\")");
+        try {
+            return new At(m.group(1).toLowerCase(), n, Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)), Integer.parseInt(m.group(5)),
+                    "dig".equalsIgnoreCase(m.group(6)), null);
+        } catch (NumberFormatException e) {
+            return new At(null, 0, 0, 0, 0, false, "error: a coordinate is out of range (\"" + AT_FORM + "\")");
+        }
+    }
+
+    /** The at form's vein: at most this many cells, the target included. */
+    public static final int AT_VEIN = 8;
+
+    /** The vein from start: start, then face-touching cells {@code sameOre} accepts, breadth first, at most max. Pure. */
+    public static List<int[]> vein(int[] start, java.util.function.Predicate<int[]> sameOre, int max) {
+        List<int[]> out = new ArrayList<>();
+        java.util.ArrayDeque<int[]> todo = new java.util.ArrayDeque<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        todo.add(start.clone());
+        seen.add(start[0] + " " + start[1] + " " + start[2]);
+        int[][] sides = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        while (!todo.isEmpty() && out.size() < max) {
+            int[] c = todo.poll();
+            out.add(c);
+            for (int[] d : sides) {
+                int[] n = {c[0] + d[0], c[1] + d[1], c[2] + d[2]};
+                if (seen.add(n[0] + " " + n[1] + " " + n[2]) && sameOre.test(n)) todo.add(n);
+            }
+        }
+        return out;
+    }
+
+    /** The at job's end: "done: mined 3 iron at 1 2 3" (+ gains). */
+    public static String atDoneText(int n, String family, String cell, String gains) {
+        return "done: mined " + n + " " + family + " at " + cell + gains;
+    }
+
+    /** The at job's failure; the words keep it a mining end AA may switch on ("couldn't get to"). */
+    public static String atFailText(String id, String cell, String why, String gains) {
+        return "stopped: couldn't get to the " + shortId(id) + " at " + cell + " (" + why + ")" + gains;
     }
 
     public static String notABlock(String word) { return "error: \"" + word + "\" is not a block id"; }
