@@ -44,6 +44,18 @@ public final class FakePort implements JobPort {
 
     @Override public String resolve(String chain) { return "*".equals(resolveTo) ? chain : resolveTo; }
 
+    /** Non-null: the planner answers NONE with this reason. */
+    public String noPlan;
+    public double planCost;
+    public int resolveCalls;
+
+    @Override public Resolved resolveState(String text) {
+        resolveCalls++;
+        if (noPlan != null) return Resolved.none(noPlan);
+        String c = resolve(text);
+        return c == null ? Resolved.searching() : Resolved.ready(c, planCost);
+    }
+
     @Override public long progress(long taskId) { return progress.getOrDefault(taskId, 0L); }
 
     @Override public void log(String line) { log.add(line); }

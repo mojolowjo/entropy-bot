@@ -14,27 +14,54 @@ import java.util.function.Predicate;
 
 /**
  * AA v0 (AA_PLAN 9): one rung of the basic-needs ladder: unmet? -> may it start (a skip reason)? -> the goal text ->
- * the planner's chain (null while it plans, "no plan" after {@link #PLAN_WAIT_MS}) -> feasible? -> the RunJob under a
- * Cooldown. Every "no" is a FAILURE with a readable reason, so the ladder's reason line says why each rung was passed.
- * After a SUCCESS the rung counts as met for {@link #SETTLE_MS} (the sense facts refresh at most once a minute).
+ * the planner's answer -> feasible? -> the RunJob under a Cooldown. Every "no" is a FAILURE with a readable reason, so
+ * the ladder's reason line says why each rung was passed. After a SUCCESS the rung counts as met for {@link #SETTLE_MS}
+ * (the sense facts refresh at most once a minute).
+ *
+ * <p>S0 (MINING_PLAN 10.1): the planner answers in three states ({@link JobPort.Resolved}): NONE is taken at once (no
+ * more "found none in 45s" when it had answered), SEARCHING is waited for (at most {@link #PLAN_WAIT_MS}) only when no
+ * other option of the rung's {@link Picker} can run. The owner's manual driving ({@link AaManual}: ask/pick, do, skip,
+ * use) is checked here before a task starts.
  */
 public final class Rung extends Node {
     public static final long PLAN_WAIT_MS = 45_000, SETTLE_MS = 75_000;
+    /** S0: a picker with a ready planner-free option still gives the planner this long (it answers in ms as a rule). */
+    public static final long PLAN_PEEK_MS = 3_000;
     /** The blackboard fact "what is being planned" (the status line shows it while the slot waits). */
     public static final String PLANNING_FACT = "planning";
+    /** S0: the id of the rung that picked last ({@code aa use} applies to it). */
+    public static final String CURRENT_RUNG = "aa.currentRung";
 
     /**
-     * 0.36.a8 (MINING_PLAN 3.6): a rung's option scorer. The planner's chain (expanded to its steps) goes in, the chain to
-     * run comes out (null: no option can run, {@link #why()} says why); a failed task is offered back: {@code true} means
-     * another option may start at once (the rung picks again, no cooldown) instead of the rung failing.
+     * 0.36.a8 (MINING_PLAN 3.6): a rung's option scorer. The planner's chain (expanded to its steps; null when it has
+     * none) goes in, the chain to run comes out (null: no option can run, {@link #why()} says why; {@link Options#NOTHING}:
+     * the rung passes); a failed task is offered back: {@code true} means another option may start at once.
      */
     public interface Picker {
         String pick(Blackboard bb, String planned);
+
+        /** S0: with the planner's cost and, when it has no chain, why not. */
+        default String pick(Blackboard bb, String planned, double plannedCost, String plannerWhy) { return pick(bb, planned); }
 
         boolean failed(Blackboard bb, String end);
 
         /** The options line for {@code aa why}. */
         String why();
+
+        /** The owner chose another ranked option (aa pick): failures are charged to it. */
+        default void chose(String command) {}
+
+        /** The ranked options, the chosen one first (for aa ask). */
+        default List<AaManual.Row> rows() { return List.of(); }
+
+        /** The chosen option's id (the decision log), or null. */
+        default String chosenId() { return null; }
+
+        /** Counters for aa status (null: none). */
+        default String counters(long now) { return null; }
+
+        /** A facts supplier failed at or after this time (aa status goes red). */
+        default boolean factsFailedSince(long since) { return false; }
     }
 
     public final TaskKind kind;
@@ -44,7 +71,8 @@ public final class Rung extends Node {
     private final Cooldown cooldown;
     private final Picker picker;
     private String resolved, planned;
-    private long planningSince = -1, settledAt = -1;
+    private double plannedCost;
+    private long planningSince = -1, settledAt = -1, lastSearchPick = -1;
     private String planFailed;
     private long planFailedAt = -1;
 
@@ -70,6 +98,16 @@ public final class Rung extends Node {
     }
 
     @Override protected Status run(Blackboard bb) {
+        Status s = run0(bb);
+        AaManual man = AaManual.of(bb);
+        if (s != Status.RUNNING && id.equals(man.doRung)) {
+            man.doRung = null;
+            bb.port.log("aa do " + kind + " ended: " + (s == Status.FAILURE ? reason : s.name()));
+        }
+        return s;
+    }
+
+    private Status run0(Blackboard bb) {
         long now = bb.clock.now();
         if (job.running()) {
             Status s = cooldown.tick(bb);
@@ -77,73 +115,141 @@ public final class Rung extends Node {
             if (s == Status.FAILURE) return jobFailed(bb, cooldown.reason());
             return s;
         }
-        if (!unmet.test(bb)) return fail(kind + " met");
+        AaManual man = AaManual.of(bb);
+        if (man.skipped(id)) return fail(kind + " skipped: the owner's aa skip");
+        if (man.doRung != null && man.doSince >= 0 && now - man.doSince > AaManual.DO_MAX_MS) {
+            bb.port.log("aa do " + man.doRung + " dropped: it did not run within " + AaManual.DO_MAX_MS / 60000 + " min");
+            man.doRung = null;
+        }
+        boolean forced = id.equals(man.doRung);
+        if (man.doRung != null && !forced) return fail(kind + " waits: the owner's aa do " + man.doRung.substring(man.doRung.indexOf('.') + 1));
+        if (!forced && !unmet.test(bb)) return fail(kind + " met");
         String why = skip.apply(bb);
         if (why != null) return fail(kind + " skipped: " + why);
         String g = goal.apply(bb);
         if (g == null) return fail(kind + " has nothing to run");
-        if (settledAt >= 0 && now - settledAt < SETTLE_MS && g.equals(settledGoal)) return fail(kind + " just done (" + g + "), waiting for the facts");
+        if (!forced && settledAt >= 0 && now - settledAt < SETTLE_MS && g.equals(settledGoal)) return fail(kind + " just done (" + g + "), waiting for the facts");
         settledAt = -1;
+        if (forced && (cooldown.cooling(now) || planFailed != null)) {
+            cooldown.forget();
+            planFailed = null;
+        }
         if (cooldown.cooling(now)) {
             cooldown.tick(bb);                  // answers the cooldown reason without touching the job
             return fail(cooldown.reason());
         }
         if (planFailed != null && now - planFailedAt < Cooldown.BASE_MS) return fail(kind + " skipped: " + planFailed);
         planFailed = null;
-        String chain = bb.port.resolve(g);
-        if (chain == null) {
-            // the planner searches on its worker: the slot waits on this rung (RUNNING, so lower rungs don't all plan
-            // at once) up to PLAN_WAIT_MS, then the rung is skipped for a while
-            // 0.36.a6 (aa371 14:47:45: the planner answered "goal furnace" in 0 ms, the rung said "found none in 45s" the
-            // same second): the wait counts only while this rung keeps asking for this goal; a clock left from an
-            // earlier wait (another rung or a job ran in between, or the goal changed) starts afresh
-            if (planningSince < 0 || !g.equals(planningGoal) || now - lastPlanAsk > PLAN_GAP_MS) {
-                planningSince = now;
-                planningGoal = g;
-                bb.port.log("planning " + g + " for " + kind);
-            }
-            lastPlanAsk = now;
-            if (now - planningSince > PLAN_WAIT_MS) {
-                planningSince = -1;
-                bb.fact(PLANNING_FACT, null);
-                planFailed = "no plan for " + g + " (the planner found none in " + PLAN_WAIT_MS / 1000 + "s)";
-                planFailedAt = now;
-                bb.port.log("no plan for " + g + ": skipped " + Cooldown.BASE_MS / 60000 + " min");
-                return fail(kind + " skipped: " + planFailed);
-            }
-            bb.fact(PLANNING_FACT, kind + ": " + g + " (" + (now - planningSince) / 1000 + "s)");
-            return Status.RUNNING;
+        // review: an ask already waits for this rung: no new pick per tick, the frozen rows decide
+        if (man.ask && man.pending != null && man.pending.rung().equals(id)) {
+            String go = man.gate(id, man.pending.rows(), now, bb.port::log);
+            if (go == null) return Status.RUNNING;
+            if (picker != null) picker.chose(go);
+            resolved = go;
+            settledGoal = g;
+            bb.pendingReason("needs: " + kind + " unmet -> " + g + " as " + go + " [the owner's ask]");
+            Status s = cooldown.tick(bb);
+            if (s == Status.SUCCESS) settledAt = now;
+            return s == Status.FAILURE ? jobFailed(bb, cooldown.reason()) : s;
         }
-        planningSince = -1;
-        bb.fact(PLANNING_FACT, null);
-        String inf = bb.port.infeasible(chain);
-        if (inf != null) {
-            // live 2026-10-18: the verdict can disagree with the planner's saved routine (a fetch of an item that is in
-            // the bag); checked every tick it spun forever, so it is remembered like a failed plan and logged once
-            planFailed = inf;
-            planFailedAt = now;
-            bb.port.log(kind + " " + chain + " skipped " + Cooldown.BASE_MS / 60000 + " min: " + inf);
-            return fail(kind + " skipped: " + inf);
+        JobPort.Resolved r = bb.port.resolveState(g);
+        boolean searching = r.state() == JobPort.PlanState.SEARCHING;
+        String chain = r.chain(), plannerWhy = null;
+        if (r.state() == JobPort.PlanState.NONE) plannerWhy = "no plan for " + g + ": " + r.why();
+        if (chain != null) {
+            String inf = bb.port.infeasible(chain);
+            if (inf != null) {
+                // live 2026-10-18: the verdict can disagree with the planner's saved routine (a fetch of an item that is
+                // in the bag); checked every tick it spun forever, so it is remembered like a failed plan and logged once
+                plannerWhy = inf;
+                chain = null;
+                if (picker == null) bb.port.log(kind + " " + r.chain() + " skipped " + Cooldown.BASE_MS / 60000 + " min: " + inf);
+            }
         }
-        resolved = chain;
-        if (picker != null) {
-            planned = bb.port.expand(chain);
-            String p = picker.pick(bb, planned);
+        if (picker == null) {
+            if (searching) return waitPlan(bb, g, now);
+            if (chain == null) return planFailed(bb, now, plannerWhy, r.state() == JobPort.PlanState.NONE);
+            resolved = chain;
+        } else {
+            // the planner still searches: give it PLAN_PEEK_MS, then the best planner-free option may run; re-picked at
+            // most every PLAN_PEEK_MS while it searches (the facts are read once per pick, never per tick)
+            if (searching) {
+                if (planningSince < 0 || !g.equals(planningGoal) || now - planningSince < PLAN_PEEK_MS || (lastSearchPick >= 0 && now - lastSearchPick < PLAN_PEEK_MS))
+                    return waitPlan(bb, g, now);
+                lastSearchPick = now;
+            }
+            planned = chain == null ? null : bb.port.expand(chain);
+            bb.fact(CURRENT_RUNG, id);
+            plannedCost = r.cost();
+            String p = picker.pick(bb, planned, plannedCost, searching ? "still searching" : plannerWhy);
+            if (p == null && searching) return waitPlan(bb, g, now);
             if (p == null) {
                 // nothing the scorer can run: remembered like a failed plan (else it would ask every tick)
-                planFailed = picker.why();
+                return planFailed(bb, now, picker.why() + (plannerWhy == null || picker.why().contains(plannerWhy) ? "" : "; planner: " + plannerWhy), false);
+            }
+            if (Options.NOTHING.equals(p)) {
+                clearPlanning(bb);
+                planFailed = "passed (" + picker.why() + ")";
                 planFailedAt = now;
-                bb.port.log(kind + " has no option: " + planFailed);
-                return fail(kind + " skipped: " + planFailed);
+                bb.port.log(kind + " passes: " + picker.why());
+                return fail(kind + " " + planFailed);
             }
             resolved = p;
             bb.port.log(kind + " options: " + picker.why());
         }
+        clearPlanning(bb);
+        lastSearchPick = -1;
+        // the owner's ask: wait for aa pick (RUNNING), or the timeout's first choice
+        List<AaManual.Row> rows = picker == null || picker.rows().isEmpty() ? List.of(new AaManual.Row(resolved, resolved)) : picker.rows();
+        String go = man.gate(id, rows, now, bb.port::log);
+        if (go == null) {
+            bb.fact(PLANNING_FACT, kind + ": asking the owner (aa pick)");
+            return Status.RUNNING;
+        }
+        if (!go.equals(resolved) && picker != null) picker.chose(go);
+        resolved = go;
         settledGoal = g;
-        bb.pendingReason("needs: " + kind + " unmet -> " + g + (picker == null ? "" : " as " + resolved));
+        String opt = picker == null ? null : picker.chosenId();
+        bb.pendingReason("needs: " + kind + " unmet -> " + g + (picker == null ? "" : " as " + resolved + " [option " + opt + "; options: " + picker.why() + "]"));
         Status s = cooldown.tick(bb);
         if (s == Status.SUCCESS) settledAt = now;
         return s == Status.FAILURE ? jobFailed(bb, cooldown.reason()) : s;
+    }
+
+    /** The planner searches on its worker: the slot waits on this rung (RUNNING) up to PLAN_WAIT_MS, then a skip. */
+    private Status waitPlan(Blackboard bb, String g, long now) {
+        // 0.36.a6 (aa371): the wait counts only while this rung keeps asking for this goal; a clock left from an
+        // earlier wait (another rung or a job ran in between, or the goal changed) starts afresh
+        if (planningSince < 0 || !g.equals(planningGoal) || now - lastPlanAsk > PLAN_GAP_MS) {
+            planningSince = now;
+            planningGoal = g;
+            lastSearchPick = -1;
+            bb.port.log("planning " + g + " for " + kind);
+        }
+        lastPlanAsk = now;
+        if (now - planningSince > PLAN_WAIT_MS) {
+            planningSince = -1;
+            bb.fact(PLANNING_FACT, null);
+            planFailed = "no plan for " + g + " (the planner still searched after " + PLAN_WAIT_MS / 1000 + "s)";
+            planFailedAt = now;
+            bb.port.log("no plan for " + g + ": skipped " + Cooldown.BASE_MS / 60000 + " min");
+            return fail(kind + " skipped: " + planFailed);
+        }
+        bb.fact(PLANNING_FACT, kind + ": " + g + " (" + (now - planningSince) / 1000 + "s)");
+        return Status.RUNNING;
+    }
+
+    private Status planFailed(Blackboard bb, long now, String why, boolean none) {
+        clearPlanning(bb);
+        planFailed = why;
+        planFailedAt = now;
+        bb.port.log(kind + (none ? " skipped at once (the planner said no plan) " : " has no option ") + Cooldown.BASE_MS / 60000 + " min: " + why);
+        return fail(kind + " skipped: " + why);
+    }
+
+    private void clearPlanning(Blackboard bb) {
+        planningSince = -1;
+        bb.fact(PLANNING_FACT, null);
     }
 
     /**
@@ -153,13 +259,14 @@ public final class Rung extends Node {
      */
     private Status jobFailed(Blackboard bb, String why) {
         if (picker == null) return fail(why);
-        if (planned != null && picker.failed(bb, why)) {
-            String next = picker.pick(bb, planned);
-            if (next != null && !job.running()) {
+        if (picker.failed(bb, why)) {
+            bb.fact(CURRENT_RUNG, id);
+            String next = picker.pick(bb, planned, plannedCost, planned == null ? "no planner chain" : null);
+            if (next != null && !Options.NOTHING.equals(next) && !job.running()) {
                 cooldown.forget();
                 resolved = next;
                 bb.port.log(kind + ": " + why + " -> switching: " + picker.why());
-                bb.pendingReason("needs: " + kind + " switched after \"" + why + "\" -> " + next);
+                bb.pendingReason("needs: " + kind + " switched after \"" + why + "\" -> " + next + " [option " + picker.chosenId() + "]");
                 Status s = cooldown.tick(bb);
                 return s == Status.FAILURE ? fail(cooldown.reason() + " | options: " + picker.why()) : s;
             }
@@ -170,6 +277,8 @@ public final class Rung extends Node {
     /** The picker's options line (null without a picker). */
     public String options() { return picker == null ? null : picker.why(); }
 
+    public Picker picker() { return picker; }
+
     private String settledGoal, planningGoal;
     private long lastPlanAsk = -1;
     /** A gap this long between two asks for a plan means the earlier wait is over (AA ticks at 4 Hz). */
@@ -178,6 +287,7 @@ public final class Rung extends Node {
     @Override public void halt(String why) {
         if (planningSince >= 0 && board != null) board.fact(PLANNING_FACT, null);
         planningSince = -1;
+        if (board != null) AaManual.of(board).dropAsk(id);
         cooldown.halt(why);
     }
 

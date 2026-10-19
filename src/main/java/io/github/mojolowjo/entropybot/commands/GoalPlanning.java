@@ -362,17 +362,42 @@ final class GoalPlanning {
                             c.saved();
                             ch = g.routine();
                         }
-                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch});
+                        // S0 (MINING_PLAN 10.1): why there is no chain, for AA's NONE
+                        String why = ch != null ? null : r == null ? "the search threw" : !r.ok() ? (r.missing() != null ? "missing " + r.missing() : String.valueOf(r.error()))
+                                : r.steps().isEmpty() ? "nothing to do - I have it" : "the plan could not be saved";
+                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch, why});
                     });
                     return null;
                 }
             }
-            hookCache.put(goalText, new Object[]{now, chain});
+            hookCache.put(goalText, new Object[]{now, chain, chain != null ? null : p == null ? "not in a world" : g.error()});
             return chain;
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] plan: brain hook: {}", e.toString());
             return null;
         }
+    }
+
+    /**
+     * S0 (MINING_PLAN 10.1): {@link #chainFor} with its state: READY (the chain and the planner's cost from the plans
+     * store, 0 when unknown), NONE (a fresh "no plan" answer in the cache, with why), else SEARCHING (the worker runs).
+     */
+    io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved chainState(String goalText) {
+        String ch = chainFor(goalText);
+        if (ch != null) {
+            double cost = 0;
+            try {
+                JsonObject pl = plansStore();
+                if (pl.has(ch) && pl.get(ch).isJsonObject() && pl.getAsJsonObject(ch).has("cost")) cost = pl.getAsJsonObject(ch).get("cost").getAsDouble();
+            } catch (RuntimeException ignored) {
+                // the cost is a ranking hint only; 0 when the store cannot say
+            }
+            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.ready(ch, cost);
+        }
+        Object[] hit = hookCache.get(goalText);
+        if (hit != null && System.currentTimeMillis() - (Long) hit[0] < 60_000 && hit[1] == null)
+            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.none(hit.length > 2 ? (String) hit[2] : null);
+        return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.searching();
     }
 
     String actions(String rest) { return ActionTable.shortText(rest); }

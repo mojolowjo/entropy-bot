@@ -25,6 +25,8 @@ public final class Inputs {
     public boolean night, thunder, underGround, inArea = true, ownerOnline;
     /** 0.36.3: blocks of ground over the bot (Jobs.underDepth, leaves not counted; 0 = at the surface). Not in the vector. */
     public int underDepth;
+    /** S0: the bot's block position (null unknown; OptionMemory's NO_PATH sweep). Not in the vector. */
+    public int[] pos;
     public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;

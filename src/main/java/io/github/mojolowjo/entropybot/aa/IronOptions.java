@@ -73,9 +73,9 @@ public final class IronOptions {
     public static final double CLEAR = 10, DIG_BLOCK = 3, PLACE_BLOCK = 5, CAVE_TIME = 120, STRIP_TIME = 200, STALE = 1.5, CAVE_FACE = 2;
     public static final int DIG_MAX = 16, PILLAR_MIN_UP = 3, SMELT_WALK = 24, FURNACE_COBBLE = 8, SMELT_HERE_COST = 10, DEFAULT_N = 3;
     /** Switches within one task before the rung fails as before. */
-    public static final int MAX_SWITCHES = 4;
+    public static final int MAX_SWITCHES = Options.MAX_SWITCHES;
     /** A failed option is skipped this long per failure (at most an hour). */
-    public static final long RETRY_MS = 10 * 60_000, RETRY_MAX_MS = 60 * 60_000;
+    public static final long RETRY_MS = Options.RETRY_MS, RETRY_MAX_MS = Options.RETRY_MAX_MS;
 
     public record Scored(Way way, Ore target, double cost, String why) {
         String text() { return way.name().toLowerCase(Locale.ROOT) + (target == null ? "" : " " + target.key()) + " " + Math.round(cost) + " (" + why + ")"; }
@@ -110,11 +110,13 @@ public final class IronOptions {
 
     // ---- the memory of what failed here ----
 
-    /** (way, target) -> failures, skipped until, the last reason. In memory only. */
+    /** (way, target) -> failures, skipped until, the last reason: a view of the generic {@link Options.OptionMemory}. */
     public static final class Memory {
-        record Rec(int fails, long until, String reason) {}
+        private final Options.OptionMemory m;
 
-        private final Map<String, Rec> map = new LinkedHashMap<>();
+        public Memory() { this(new Options.OptionMemory()); }
+
+        public Memory(Options.OptionMemory m) { this.m = m; }
 
         /**
          * Review: {@code mine iron N} (walk or dig) picks its own ore, so a failure of those two ways counts against the
@@ -125,38 +127,20 @@ public final class IronOptions {
             return w + (o == null || w == Way.WALK_KNOWN || w == Way.DIG_KNOWN ? "" : " " + o.key());
         }
 
-        public void failed(Way w, Ore o, String reason, long now) {
-            Rec r = map.get(key(w, o));
-            int n = r == null ? 1 : r.fails + 1;
-            map.put(key(w, o), new Rec(n, now + Math.min(RETRY_MAX_MS, RETRY_MS * n), reason));
-        }
+        public void failed(Way w, Ore o, String reason, long now) { m.failed(key(w, o), reason, now); }
 
         /** Smelting on the spot failed: back to the camp for a while. */
         public void smeltHereFailed(String reason, long now) { failed(null, null, reason, now); }
 
-        public int fails(Way w, Ore o) {
-            Rec r = map.get(key(w, o));
-            return r == null ? 0 : r.fails;
-        }
+        public int fails(Way w, Ore o) { return m.fails(key(w, o)); }
 
-        public boolean blocked(Way w, Ore o, long now) {
-            Rec r = map.get(key(w, o));
-            return r != null && r.until > now;
-        }
+        public boolean blocked(Way w, Ore o, long now) { return m.blocked(key(w, o), now); }
 
-        public String reason(Way w, Ore o) {
-            Rec r = map.get(key(w, o));
-            return r == null ? null : r.reason;
-        }
+        public String reason(Way w, Ore o) { return m.reason(key(w, o)); }
 
-        public int size() { return map.size(); }
+        public int size() { return m.size(); }
 
-        public String describe(long now) {
-            List<String> w = new ArrayList<>();
-            for (Map.Entry<String, Rec> e : map.entrySet())
-                w.add(e.getKey() + " x" + e.getValue().fails + (e.getValue().until > now ? " (" + Math.max(1, (e.getValue().until - now + 59_999) / 60_000) + " min left)" : ""));
-            return String.join(", ", w);
-        }
+        public String describe(long now) { return m.describe(now); }
     }
 
     // ---- the scorer ----
@@ -245,24 +229,15 @@ public final class IronOptions {
         return false;
     }
 
-    public static List<String> split(String chain) {
-        List<String> out = new ArrayList<>();
-        for (String s : (chain == null ? "" : chain).split("(?i)\\s+then\\s+")) if (!s.isBlank()) out.add(s.trim());
-        return out;
-    }
+    public static List<String> split(String chain) { return Options.Chains.split(chain); }
 
     // ---- what failed, and may the rung switch ----
 
-    private static final Pattern STEP = Pattern.compile("^stopped at step \\d+ \\(([^)]*)\\)");
     private static final Pattern MINE_END = Pattern.compile("none i could reach|out of reach|buried|in the water|too deep|no progress|no path|stuck|couldn't get to|"
             + "no known cave|no mine marked|ore known|nothing but water|walked \\d+ block|no .* ore (known|listed)|try \\d+/\\d+|cave .* (done|finished|explored)");
 
     /** The step the chain stopped at ("stopped at step 2 (mine iron 3 dig): ..."), or null. */
-    public static String failedStep(String end) {
-        if (end == null) return null;
-        Matcher m = STEP.matcher(end);
-        return m.find() ? m.group(1).trim() : null;
-    }
+    public static String failedStep(String end) { return Options.Chains.failedStep(end); }
 
     /** "ore" (the mine/goto step or no step named), "smelt", or "other" (a craft, a fetch...). */
     public static String failedPart(String end) {
@@ -280,71 +255,59 @@ public final class IronOptions {
         String part = failedPart(end);
         if (part.equals("other")) return false;        // a craft or fetch step: no other way mines it
         String t = end.toLowerCase(Locale.ROOT);
-        if (t.contains("stopped: your") || t.contains("overridden") || t.contains("interrupted") || t.contains("attacked") || t.contains("low health") || t.contains("died")) return false;
+        if (Options.ownerOrDanger(end)) return false;
         if (part.equals("smelt")) return true;         // the smelt on the spot did not work out: the camp furnace is the other way
         return FailMemory.classify(end) != null || MINE_END.matcher(t).find();
     }
 
-    // ---- the rung's picker ----
 
-    /** The IRON rung's {@link Rung.Picker}: facts in, the rewritten chain out; failures feed the memory. */
-    public static final class Picker implements Rung.Picker {
-        final Memory memory = new Memory();
-        private Choice last;
-        private String why = "no choice yet";
-        private int switches;
-        private boolean switching, afterOre;
+    // ---- the rung's option set and picker (S0: on the generic Options framework) ----
 
-        @Override public String pick(Blackboard bb, String planned) {
-            Object sup = bb.fact(FACTS);
-            if (!switching) switches = 0;
-            boolean skipOre = switching && afterOre;        // the smelt on the spot failed: the ore is mined, go on with the camp
-            switching = false;
-            afterOre = false;
-            if (!(sup instanceof Supplier<?> s)) {
-                why = "no iron facts from the adapter: the planner's chain as it is";
-                last = null;
-                return planned;
-            }
-            Object fo = s.get();
-            if (!(fo instanceof Facts f)) {
-                why = "iron facts not readable now: the planner's chain as it is";
-                last = null;
-                return planned;
-            }
+    /**
+     * IRON's {@link Options.OptionSet}: every ranked way becomes an option whose command is the planner's chain with the
+     * ore step (and the smelt step) rewritten; a smelt-on-the-spot failure goes on at the camp without the ore step.
+     */
+    public static final class Set implements Options.OptionSet<Facts> {
+        private Smelt lastSmelt = Smelt.CAMP;
+
+        @Override public Options.Choice choose(Facts f, Options.OptionMemory om, long now, String planned, double plannedCost, String plannerWhy, String afterFail) {
+            if (planned == null) return new Options.Choice(null, List.of(), List.of(), "no plan for iron" + (plannerWhy == null ? "" : ": " + plannerWhy));
             List<String> steps = split(planned);
-            Choice c = choose(f, memory, bb.clock.now());
-            last = c;
-            why = c.why();
-            if (skipOre) {
+            Choice c = IronOptions.choose(f, new Memory(om), now);
+            lastSmelt = c.smelt();
+            if (afterFail != null && failedPart(afterFail).equals("smelt")) {       // the ore is mined: the camp smelts
                 String rest = rewrite(steps, c, true);
-                return rest.isEmpty() ? null : rest;
+                Options.Option o = rest.isEmpty() ? null : new Options.Option("camp smelt", "smelt", rest, 0, "the ore is mined; on at the camp", "smelt camp", true);
+                return new Options.Choice(o, o == null ? List.of() : List.of(o), c.dropped(), c.why());
             }
-            if (c.way() == null && hasMineStep(steps)) return null;
-            return rewrite(steps, c);
+            if (c.way() == null) {
+                if (hasMineStep(steps)) return new Options.Choice(null, List.of(), c.dropped(), c.why());
+                Options.Option o = new Options.Option("planner", "planner", rewrite(steps, c), plannedCost * Options.PLAN_UNIT, "the planner's chain, no ore step", "planner", true);
+                return new Options.Choice(o, List.of(o), c.dropped(), c.why());
+            }
+            List<Options.Option> rows = new ArrayList<>();
+            for (Scored s : c.ranked()) {
+                Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped());
+                String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
+                rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), rewrite(steps, one), s.cost(), s.why(), Memory.key(s.way(), s.target()), true));
+            }
+            return new Options.Choice(rows.get(0), rows, c.dropped(), c.why());
         }
 
-        @Override public boolean failed(Blackboard bb, String end) {
-            if (last == null || !switchable(end) || switches >= MAX_SWITCHES) return false;
-            long now = bb.clock.now();
+        @Override public boolean switchable(String end) { return IronOptions.switchable(end); }
+
+        @Override public String blame(Options.Choice last, Options.Option ran, String end) {
             String part = failedPart(end);
-            if (part.equals("smelt")) {
-                if (last.smelt() != Smelt.HERE) return false;
-                memory.smeltHereFailed(end, now);
-                afterOre = true;
-            } else if (part.equals("ore")) {
-                if (last.way() == null) return false;
-                memory.failed(last.way(), last.target(), end, now);
-            } else return false;
-            switches++;
-            switching = true;
-            return true;
+            if (part.equals("smelt")) return lastSmelt == Smelt.HERE ? Memory.key(null, null) : null;
+            if (part.equals("ore")) return ran == null || ran.way().equals("planner") || ran.way().equals("smelt") ? null : ran.memoryKey();
+            return null;
         }
+    }
 
-        @Override public String why() { return why; }
+    /** The IRON rung's {@link Rung.Picker}: the generic picker over {@link Set}. */
+    public static final class Picker extends Options.Picker<Facts> {
+        public Picker() { super("IRON", FACTS, Facts.class, new Set()); }
 
-        public Choice last() { return last; }
-
-        public int switches() { return switches; }
+        public Picker(java.util.function.Consumer<String> errors) { super("IRON", FACTS, Facts.class, new Set(), errors); }
     }
 }

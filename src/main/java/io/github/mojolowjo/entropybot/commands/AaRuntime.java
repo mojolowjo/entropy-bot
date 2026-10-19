@@ -11,6 +11,7 @@ import io.github.mojolowjo.entropybot.aa.IronOptions;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
 import io.github.mojolowjo.entropybot.aa.core.JobPort;
+import io.github.mojolowjo.entropybot.aa.core.Node;
 import io.github.mojolowjo.entropybot.aa.core.Request;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
@@ -126,6 +127,111 @@ public final class AaRuntime implements JobPort {
         return null;
     }
 
+    // ---- S0: options lines, counters and the owner's manual driving (AaManual) ----
+
+    /** One "options <rung>: <line>" per rung with a picker (aa why). */
+    List<String> optionLines() {
+        List<String> out = new ArrayList<>();
+        for (var r : AaLadder.rungs(tree.ladder)) if (r.picker() != null) out.add(r.id.substring(6) + " options: " + r.options());
+        return out;
+    }
+
+    /** Per-rung picker counters and the manual state (aa status); "!!" first when a facts supplier failed in the last minute. */
+    String optionStatus() {
+        long now = System.currentTimeMillis();
+        StringBuilder b = new StringBuilder();
+        boolean red = false;
+        for (var r : AaLadder.rungs(tree.ladder)) {
+            if (r.picker() == null) continue;
+            red |= r.picker().factsFailedSince(now - 60_000);
+            String k = r.picker().counters(now);
+            if (k != null) b.append('\n').append(r.id.substring(6)).append(": ").append(k);
+        }
+        return (red ? "!! a facts supplier failed in the last minute (see the log: aa: <RUNG> facts:)\n" : "") + io.github.mojolowjo.entropybot.aa.AaManual.of(bb).describe(now) + b;
+    }
+
+    /** The rung AA works on now (the ladder's running rung), else the one that picked last; null none. */
+    private String currentRung() {
+        Node n = tree.slot.runningChild();
+        if (n == tree.ladder && tree.ladder instanceof io.github.mojolowjo.entropybot.aa.core.MemoryFallback mf && mf.runningChild() != null) return mf.runningChild().id;
+        // review: the last picker only while it still runs (a stale one would preempt an unrelated task)
+        Object o = bb.fact(io.github.mojolowjo.entropybot.aa.Rung.CURRENT_RUNG);
+        for (var r : AaLadder.rungs(tree.ladder)) if (r.id.equals(o) && r.last() == Status.RUNNING) return r.id;
+        return null;
+    }
+
+    /** AA's own needs/idle task (not the owner's, not the AI's) is halted so the ladder chooses again now. */
+    private boolean preemptOwnTask(String why) {
+        Node n = tree.slot.runningChild();
+        if (n == null || n.id.equals("owner") || n.id.equals("ai")) return false;
+        tree.slot.preempt(why);
+        LOG.info("[entropybot] aa: {}", why);
+        return true;
+    }
+
+    /** aa ask on|off | pick n | do need | skip need|none | use option. */
+    String manual(String verb, String arg) {
+        var man = io.github.mojolowjo.entropybot.aa.AaManual.of(bb);
+        String a = arg == null ? "" : arg.trim();
+        switch (verb) {
+            case "ask" -> {
+                if (!a.equals("on") && !a.equals("off")) return "usage: aa ask on|off (now " + (man.ask ? "on" : "off") + ")";
+                man.ask = a.equals("on");
+                if (!man.ask) man.pending = null;
+                LOG.info("[entropybot] aa: ask {}", a);
+                return "ok: aa ask " + a + (man.ask ? " - before each task I show my options and wait " + io.github.mojolowjo.entropybot.aa.AaManual.ASK_MS / 1000 + " s for aa pick <n>, then take my first" : "");
+            }
+            case "pick" -> {
+                if (man.pending == null) return "nothing to pick: no rung is asking now (aa ask on makes them ask)";
+                int n;
+                try { n = Integer.parseInt(a); } catch (NumberFormatException e) { n = -1; }
+                if (n < 1 || n > man.pending.rows().size()) return "usage: aa pick 1.." + man.pending.rows().size() + " - " + io.github.mojolowjo.entropybot.aa.AaManual.rowsText(man.pending.rows());
+                man.pick = n;
+                return "ok: " + man.pending.rung() + " runs " + n + ") " + man.pending.rows().get(n - 1).label();
+            }
+            case "do" -> {
+                if (a.equals("none")) { man.doRung = null; return "ok: aa do cleared"; }
+                String id = io.github.mojolowjo.entropybot.aa.AaManual.rungId(a);
+                if (id == null) return "usage: aa do <need>|none - needs: " + String.join(", ", io.github.mojolowjo.entropybot.aa.AaManual.NEEDS);
+                man.doRung = id;
+                man.doSince = bb.clock.now();
+                man.skipped.remove(id);
+                boolean pre = preemptOwnTask("aa do " + a + ": my task stops, " + id + " runs now");
+                return "ok: " + id + " runs now" + (pre ? " (my task stopped)" : "") + "; the other rungs wait until it ends";
+            }
+            case "skip" -> {
+                if (a.equals("none") || a.isEmpty()) {
+                    String was = String.join(", ", man.skipped);
+                    man.skipped.clear();
+                    return a.isEmpty() && !was.isEmpty() ? "skipped this run: " + was + " (aa skip none clears)" : "ok: nothing skipped" + (was.isEmpty() ? "" : " (was: " + was + ")");
+                }
+                String id = io.github.mojolowjo.entropybot.aa.AaManual.rungId(a);
+                if (id == null) return "usage: aa skip <need>|none - needs: " + String.join(", ", io.github.mojolowjo.entropybot.aa.AaManual.NEEDS);
+                man.skipped.add(id);
+                if (id.equals(man.doRung)) man.doRung = null;
+                boolean pre = id.equals(currentRung()) && preemptOwnTask("aa skip " + a + ": its task stops");
+                return "ok: " + id + " left out this run" + (pre ? " (its task stopped)" : "") + "; aa skip none brings it back";
+            }
+            case "use" -> {
+                if (a.isEmpty()) return "usage: aa use <option> (an option of the current rung, as aa why names it, e.g. pillar, smelt here)";
+                String rung = currentRung();
+                man.use = a.toLowerCase(java.util.Locale.ROOT);
+                man.useRung = rung;
+                io.github.mojolowjo.entropybot.aa.Rung r = null;
+                for (var x : AaLadder.rungs(tree.ladder)) if (x.id.equals(rung)) r = x;
+                if (r != null && r.picker() == null) {
+                    man.use = null;
+                    man.useRung = null;
+                    return rung + " has one option (its plan): nothing to choose";
+                }
+                boolean pre = rung != null && preemptOwnTask("aa use " + a + ": " + rung + " picks again");
+                return "ok: " + (rung == null ? "the next rung that picks" : rung) + " runs \"" + a + "\" if it is a ranked option" + (pre ? " (its task stopped, picking again)" : "")
+                        + (r != null ? "; options now: " + r.options() : "");
+            }
+            default -> { return AaCommands.USAGE; }
+        }
+    }
+
     // ---- the switch (brainData "aa": {on, since, heldUntil, shelterBuilt}) ----
 
     JsonObject data() {
@@ -179,6 +285,7 @@ public final class AaRuntime implements JobPort {
         if (chainRunning()) c.chains.clear();
         // 0.36.5 (review 6): nothing of this run carries into the next aa on (queued AI requests, the last task's state)
         int dropped = bb.drop("ai");
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaManual.FACT, null);     // S0: ask/do/skip/use are per run
         clearEscape();
         current = -1;
         lastEnd = null;
@@ -406,6 +513,7 @@ public final class AaRuntime implements JobPort {
         in.underGround = !s.skyAbove;
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
+        in.pos = me;
         in.inArea = s.areasHere;
         in.ownerOnline = s.ownerOnline;
         in.hungerDrains = mc.level.getDifficulty() != net.minecraft.world.Difficulty.PEACEFUL;
@@ -587,6 +695,12 @@ public final class AaRuntime implements JobPort {
     @Override public String resolve(String chain) {
         if (chain == null || !chain.startsWith("goal ")) return chain;
         return c.planning.chainFor(chain.substring(5));
+    }
+
+    /** S0 (MINING_PLAN 10.1): the planner's tri-state; a text that is not a goal is READY as it is. */
+    @Override public Resolved resolveState(String chain) {
+        if (chain == null || !chain.startsWith("goal ")) return chain == null ? Resolved.none("nothing to run") : Resolved.ready(chain, 0);
+        return c.planning.chainState(chain.substring(5));
     }
 
     /** 0.36.a8: a routine name (the planner's goal_...) or chain text as its plain steps, for the option scorer. */

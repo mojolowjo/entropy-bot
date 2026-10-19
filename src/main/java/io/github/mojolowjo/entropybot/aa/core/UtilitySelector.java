@@ -50,12 +50,32 @@ public final class UtilitySelector extends Node {
                 best = i;
             }
         }
-        if (best < 0) return fail("no idle option can run");
+        if (best < 0) {
+            probe(bb, "nothing", "no idle option can run" + scoresText(sc));
+            return fail("no idle option can run");
+        }
         lastWinner = best;
         bb.pendingReason("idle: " + options.get(best).kind() + " scored " + Math.round(bestV) + scoresText(sc));
         Status s = options.get(best).child().tick(bb);
         if (s == Status.RUNNING) running = best;
+        probe(bb, options.get(best).kind().name(), (s == Status.FAILURE ? "failed at once: " + options.get(best).child().reason() : s.name())
+                + " (scored " + Math.round(bestV) + scoresText(sc) + ")");
         return s == Status.FAILURE ? fail(options.get(best).child().reason()) : s;
+    }
+
+    /** S0 (MINING_PLAN 12, the probe): one line per idle pick, a repeat at most once a minute. */
+    public static final long PROBE_MS = 60_000;
+    private String probeLast;
+    private long probeAt = -1;
+
+    private void probe(Blackboard bb, String kind, String reason) {
+        String line = "idle picked " + kind + " -> " + reason;
+        String key = kind + " " + reason.replaceAll("\\d+", "#");
+        long now = bb.clock.now();
+        if (key.equals(probeLast) && now - probeAt < PROBE_MS) return;
+        probeLast = key;
+        probeAt = now;
+        bb.port.log(line);
     }
 
     private String scoresText(double[] sc) {

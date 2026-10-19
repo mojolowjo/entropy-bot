@@ -63,6 +63,27 @@ public interface JobPort {
      */
     default String resolve(String chain) { return chain; }
 
+    /** MINING_PLAN 10.1 (S0): what the planner said about a goal: still SEARCHING, NONE (no plan, {@code why}), or READY. */
+    enum PlanState { SEARCHING, NONE, READY }
+
+    /**
+     * The planner's answer with its state and cost (the planner's own step-cost sum; 0 for a text that is not a goal).
+     * Ends the 45 s freeze (aa371): a rung can tell "no plan" from "still searching".
+     */
+    record Resolved(String chain, double cost, PlanState state, String why) {
+        public static Resolved ready(String chain, double cost) { return new Resolved(chain, cost, PlanState.READY, null); }
+
+        public static Resolved searching() { return new Resolved(null, 0, PlanState.SEARCHING, null); }
+
+        public static Resolved none(String why) { return new Resolved(null, 0, PlanState.NONE, why == null ? "the planner found no plan" : why); }
+    }
+
+    /** The tri-state answer; default: {@link #resolve}'s null is SEARCHING (an adapter that can tell NONE overrides it). */
+    default Resolved resolveState(String text) {
+        String c = resolve(text);
+        return c == null ? Resolved.searching() : Resolved.ready(c, 0);
+    }
+
     /** 0.36.a8: a chain (a routine name, or text with routines in it) as its plain steps joined with "then"; default: as it is. */
     default String expand(String chain) { return chain; }
 

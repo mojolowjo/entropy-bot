@@ -37,6 +37,8 @@ public final class RunJob extends Node {
                 String r = bb.port.lastRefusal();
                 bb.port.log("refused " + t.kind() + " \"" + t.chain() + "\": " + r);
                 bb.tracer.decision(now, t.source(), t.kind(), t.chain(), "refused: " + r);
+                // S0 (MINING_PLAN 10.2): a scorer that names a command which does not exist is a build bug, never silent
+                if (r != null && r.toLowerCase(java.util.Locale.ROOT).contains("unknown")) bb.port.incident("aa unknown command " + t.kind() + " \"" + t.chain() + "\": " + r);
                 return fail(r == null ? "refused" : r);
             }
             taskId = id;
