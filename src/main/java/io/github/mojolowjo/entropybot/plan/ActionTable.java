@@ -74,7 +74,7 @@ public final class ActionTable {
         v("a:light", "light");
         v("a:sleep", "sleep");
         v("a:build", "shelter");
-        v("a:gather", "hunt");
+        v("a:gather", "hunt", "fish");
         v("a:deposit", "deposit", "unload");
         v("a:attack", "attack");
         v("a:eat", "eat");

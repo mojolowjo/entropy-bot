@@ -45,7 +45,7 @@ public final class CommandGate {
         for (String v : List.of("place", "marker", "places", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get", "supplies", "deposit", "restock",
                 "hold", "carry", "unload", "dig", "build", "house", "climb", "cut", "gather", "light", "junk", "defend", "guard", "escort", "assist",
                 "dismiss", "attack", "queue", "status", "inv", "stop", "wait", "summary", "check", "look", "why", "deaths", "resume", "kinds", "tools",
-                "hotbar", "explore", "find", "scout", "idle", "dayplan", "plan", "actions", "done", "sleep", "shelter", "hunting", "hunt", "camp",
+                "hotbar", "explore", "find", "scout", "idle", "dayplan", "plan", "actions", "done", "sleep", "shelter", "hunting", "hunt", "fish", "camp",
                 "bootstrap", "restore", "come", "follow", "goto", "go", "path", "home", "death", "corpse", "open", "take", "put", "close", "drop",
                 "wear", "scan", "rs", "pots", "craft", "kit", "recipe", "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "say",
                 "sense", "surface"))

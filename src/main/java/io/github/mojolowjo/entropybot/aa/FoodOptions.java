@@ -102,7 +102,7 @@ public final class FoodOptions {
     private static final Pattern END = Pattern.compile("no path|no progress|timeout|stuck|couldn't|can't|missing|no animal|nothing|outside|no furnace|no seeds|no water|not found|none");
 
     /** Ways that may end "done" with nothing gained (a tree without apples, a field still growing). */
-    static final java.util.Set<String> SLOW = java.util.Set.of("berries", "stew", "apples", "wheat", "wheat bucket");
+    static final java.util.Set<String> SLOW = java.util.Set.of("berries", "stew", "apples", "wheat", "wheat bucket", "kelp", "fish");
 
     public static final class Food implements Options.OptionSet<FoodFacts> {
         private String lastKey;
@@ -160,8 +160,13 @@ public final class FoodOptions {
 
             wheat(f, m, now, rows, dropped, urgent);
 
-            if (f.kelpNear() && f.has("kelp") == 0) dropped.add("kelp: seen in the water, no under-water harvest verb yet");
-            if (f.has("string") >= 2 || f.has("fishing_rod") > 0) dropped.add("fishing: no fishing verb yet");
+            // water ways (aa-kelpfish): kelp columns -> dried kelp, a rod -> fish; costed per round like the other slow ways
+            for (var w : io.github.mojolowjo.entropybot.camp.FoodPlan.waterWays(f.bag() == null ? Map.of() : f.bag(), f.kelpNear(), f.waterNear(), f.furnace(), dropped)) {
+                boolean kelp = w.name().equals("kelp");
+                double each = kelp ? 8 * FoodModel.energyOf("dried_kelp") : 4 * FoodModel.energyOf(f.furnace() ? "cooked_cod" : "cod");
+                RungOptions.add(rows, dropped, m, now, Options.scored(w.name(), "water", w.chain(),
+                        Options.MINUTE * (kelp ? 4 : 5) * rounds(short_, each), w.why(), w.name(), false, m));
+            }
 
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
             else RungOptions.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, pc * Options.PLAN_UNIT,

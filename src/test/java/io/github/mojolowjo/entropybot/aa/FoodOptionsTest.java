@@ -84,7 +84,8 @@ class FoodOptionsTest {
         java.util.Set<String> ids = new java.util.HashSet<>();
         c.ranked().forEach(o -> ids.add(o.id()));
         assertTrue(ids.containsAll(java.util.List.of("berries", "stew", "apples")), c.why());
-        assertTrue(c.why().contains("kelp: seen in the water"), c.why());
+        assertTrue(ids.contains("kelp"), "aa-kelpfish: kelp seen + a furnace is a costed way: " + c.why());
+        assertTrue(c.why().contains("fishing: no fishing rod"), c.why());
         assertTrue(c.why().contains("wheat by water: no dry spot next to water"), "aa383: no field here just because water is 12 away: " + c.why());
         Options.Option stew = c.ranked().stream().filter(o -> o.id().equals("stew")).findFirst().orElseThrow();
         assertEquals("dig 1 64 1 1 64 1 then dig 2 64 2 2 64 2 then craft bowl 1 then craft mushroom_stew 1", stew.command());

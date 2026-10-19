@@ -141,4 +141,26 @@ public final class FoodPlan {
         if (k == null) next += " when you see some";
         return new String[]{"hunger", "food " + food + "/20 and nothing to eat", next};
     }
+
+    /** One water food way for the FOOD options (aa/FoodOptions on aa-food): name, the command chain, why; or why not. */
+    public record Way(String name, String chain, String why) {}
+
+    /**
+     * aa-kelpfish: the two water ways. kelp: kelp seen in water near -> {@code gather kelp 8} (+ {@code cook} with a furnace:
+     * dried kelp); fishing: water near and a rod in the bag or sticks + string for one -> {@code fish 4}. The reasons for
+     * the ways that can't run go to {@code dropped} (so the options line says why, not nothing).
+     */
+    public static List<Way> waterWays(Map<String, Integer> inv, boolean kelpNear, boolean waterNear, boolean furnace, List<String> dropped) {
+        List<Way> out = new ArrayList<>();
+        if (kelpNear && furnace) out.add(new Way("kelp", "gather kelp 8 cook", "kelp columns seen in the water, smelted to dried kelp"));
+        else if (dropped != null) dropped.add(kelpNear ? "kelp: seen, but raw kelp is no food and there is no furnace" : "kelp: none seen in the water near");
+        int rod = inv.getOrDefault("minecraft:fishing_rod", 0) + inv.getOrDefault("fishing_rod", 0);
+        int sticks = inv.getOrDefault("minecraft:stick", 0) + inv.getOrDefault("stick", 0);
+        int string = inv.getOrDefault("minecraft:string", 0) + inv.getOrDefault("string", 0);
+        String why = io.github.mojolowjo.entropybot.vocab.FishRules.rodWhy(rod > 0, sticks, string);
+        if (!waterNear) { if (dropped != null) dropped.add("fishing: no water near"); }
+        else if (why != null) { if (dropped != null) dropped.add("fishing: " + why); }
+        else out.add(new Way("fish", "fish 4", "water near and " + (rod > 0 ? "a rod in the bag" : "sticks and string for a rod")));
+        return out;
+    }
 }

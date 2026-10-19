@@ -176,6 +176,8 @@ public final class Commands implements Chains.Env {
         storage.crafting = crafting;
         this.gathering = new Gathering(core, this);
         this.hunting = new Hunting(this);
+        this.kelping = new Kelping(this);
+        this.fishing = new Fishing(this);
         this.mule = new Mule(core, this);
     }
 
@@ -183,6 +185,8 @@ public final class Commands implements Chains.Env {
     final Gathering gathering;
     /** 0.24.3: hunting on|off and hunt <n> [animal]. */
     final Hunting hunting;
+    final Kelping kelping;
+    final Fishing fishing;
     /** 0.24.3: the join/respawn-outside-the-areas check, and where it respawned (no build hints there). */
     final io.github.mojolowjo.entropybot.camp.RespawnRule respawn = new io.github.mojolowjo.entropybot.camp.RespawnRule();
     /** C6: hold this, give, carry, unload, fetch. */
@@ -713,6 +717,18 @@ public final class Commands implements Chains.Env {
                     hunting.stop("error: " + e);
                 }
                 try {
+                    kelping.tick(player);                      // aa-kelpfish: the next kelp column
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] gather kelp: {}", e.toString());
+                    kelping.stop("error: " + e);
+                }
+                try {
+                    fishing.tick(player);                      // aa-kelpfish: cast, wait, reel
+                } catch (RuntimeException e) {
+                    LOG.warn("[entropybot] fish: {}", e.toString());
+                    fishing.stop("error: " + e);
+                }
+                try {
                     mule.tick(player);                         // C6: hold this, give, carry, unload, fetch
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] mule: {}", e.toString());
@@ -985,7 +1001,7 @@ public final class Commands implements Chains.Env {
 
     /** A job, chain, gather, hunt or mule run is on (the AI waits for its end). */
     public boolean aiBusy() {
-        return requests.busy() || jobs.running() || (chains != null && chains.running()) || gathering.running() || hunting.running() || mule.running();
+        return requests.busy() || jobs.running() || (chains != null && chains.running()) || gathering.running() || hunting.running() || kelping.running() || fishing.running() || mule.running();
     }
 
     /** The reply shape the owner gets for this command line's answer (RESULT/HERE/NEW/OPTIONS). */
@@ -1333,6 +1349,8 @@ public final class Commands implements Chains.Env {
             return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
         }
         // P2: gather (its status and sources answer at once; a running gather owns the bot between its steps too)
+        if (verb.equals("gather") && io.github.mojolowjo.entropybot.vocab.KelpRules.isKelp(rest)) return kelping.command(from, rest, raw, l, player);
+        if (verb.equals("fish")) return fishing.command(from, rest, raw, l, player);
         if (verb.equals("gather")) return gathering.command(from, rest, raw, l, player);
         if (verb.equals("hunt")) return hunting.command(from, rest, raw, l, player);
         if (verb.equals("hunting")) return Reply.now(hunting.setting(rest));
@@ -1814,6 +1832,8 @@ public final class Commands implements Chains.Env {
         String routine = chains.clear();
         String gathered = gathering.stop("stopped by \"stop\"");
         hunting.stop("stopped by \"stop\"");
+        kelping.stop("stopped by \"stop\"");
+        fishing.stop("stopped by \"stop\"");
         if (routine == null && gathered != null) routine = "gather " + gathered;
         String muled = mule.stop("stopped by \"stop\"");
         if (routine == null && muled != null) routine = muled;
@@ -2073,6 +2093,8 @@ public final class Commands implements Chains.Env {
         jobs.finish("stopped: the bot died");
         mule.stop("the bot died");
         hunting.stop("the bot died");
+        kelping.stop("the bot died");
+        fishing.stop("the bot died");
         gathering.stop("the bot died");                    // P2: a chain set aside by the death runs the gather again after the corpse
         JsonObject d = new JsonObject();
         d.addProperty("x", (int) Math.floor(p.getX()));
@@ -2183,6 +2205,8 @@ public final class Commands implements Chains.Env {
             // 0.33.0 (Haiku run: "wait 180" came back after 1 s mid-hunt): the hunt runs between its walks with no job
             String hunt = hunting.statusText(mc.player);
             if (hunt != null) return hunt;
+            String kf = kelping.statusText(mc.player) != null ? kelping.statusText(mc.player) : fishing.statusText(mc.player);
+            if (kf != null) return kf;
             if (withChain && chains != null && chains.running() && chains.idleWait() == null) return "chain " + chains.chainStatus();
             if (withChain && gathering.running()) return "chain " + gathering.statusText();
             if (withChain && mule.running()) return "chain " + mule.statusText();
@@ -2562,7 +2586,9 @@ public final class Commands implements Chains.Env {
         s.add("chain", chains.running() ? new com.google.gson.JsonPrimitive(chains.chainStatus())
                 : gathering.running() ? new com.google.gson.JsonPrimitive(gathering.statusText())
                 : mule.running() ? new com.google.gson.JsonPrimitive(mule.statusText()) : JsonNull.INSTANCE);
-        String huntNow = hunting.statusText(Minecraft.getInstance().player);       // 0.33.0: bridge wait's fallback reads it
+        String huntNow = hunting.statusText(Minecraft.getInstance().player);
+        if (huntNow == null) huntNow = kelping.statusText(Minecraft.getInstance().player);
+        if (huntNow == null) huntNow = fishing.statusText(Minecraft.getInstance().player);       // 0.33.0: bridge wait's fallback reads it
         s.add("hunt", huntNow == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(huntNow));
         // 0.33.0 review: the bridge's wait counts a chain only while it does something (null: no chain)
         s.add("chainIdle", chains.running() && chains.idleWait() != null ? new com.google.gson.JsonPrimitive(chains.idleWait()) : JsonNull.INSTANCE);
