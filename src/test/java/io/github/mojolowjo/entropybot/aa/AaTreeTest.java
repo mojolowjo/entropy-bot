@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
+import io.github.mojolowjo.entropybot.aa.core.Cooldown;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
 import io.github.mojolowjo.entropybot.aa.core.Request;
 import io.github.mojolowjo.entropybot.aa.core.Status;
@@ -286,11 +287,11 @@ class AaTreeTest {
         assertTrue(tree.root.reason().contains("busy: a hunt runs"), tree.root.reason());
         port.refuse = null;
         tree.tick(bb);
-        assertEquals("goal wood 64", lastChain(), "idle re-chooses at once (no cooldown on idle)");
+        assertEquals("goal cobblestone 64", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
         port.done(1, "done");
         tree.tick(bb);
-        bb.in.wood = 40;          // wood now scores 60 - 31 = 29 (+15 inertia) vs stone 50
-        tree.tick(bb);
+        clock.advance(Cooldown.NO_RUN_MS + 1);
+        tree.tick(bb);            // wood 100 vs stone 100 + 15 inertia
         assertEquals("goal cobblestone 64", lastChain());
     }
 

@@ -27,6 +27,8 @@ import java.util.List;
  */
 public final class AaTree {
     public static final long CALM_MS = 3000, AIR_HOLD_MS = 30_000;
+    /** S1: the spot was lit this night. */
+    public static final String LIT_FACT = "litTonight";
     private long airSince = -1;
 
     public final GuardSelector root;
@@ -112,8 +114,15 @@ public final class AaTree {
         UtilitySelector idle = new UtilitySelector("idle", "idle", scorer, UtilitySelector.BONUS,
                 // 0.36.2 (40-min run: STOCK_WOOD restarted 0.25 s after each failure, 17 times): a failed idle task
                 // cools down like a rung (2 min doubling); planning and busy refusals do not count
-                new UtilitySelector.Option(TaskKind.STOCK_WOOD, new Cooldown("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood 64")).ranOnly()),
-                new UtilitySelector.Option(TaskKind.STOCK_STONE, new Cooldown("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone 64")).ranOnly()),
+                // S1 (MINING_PLAN 12): the owner's targets; a planner-null option cools down 30 s (Cooldown.NO_RUN_MS) so the
+                // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
+                new UtilitySelector.Option(TaskKind.STOCK_WOOD, idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood " + AaScorer.WOOD_HI))),
+                new UtilitySelector.Option(TaskKind.STOCK_STONE, idleCd("idle.stone.cd", goal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
+                new UtilitySelector.Option(TaskKind.STOCK_COAL, idleCd("idle.coal.cd", goal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
+                new UtilitySelector.Option(TaskKind.STOCK_IRON, idleCd("idle.iron.cd", goal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
+                new UtilitySelector.Option(TaskKind.STOCK_TORCHES, idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
+                new UtilitySelector.Option(TaskKind.DEPOSIT, idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
+                new UtilitySelector.Option(TaskKind.LIGHT, idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
                 new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("idle.wait.cd", RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")).ranOnly()));
         MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, ladder, idle);
         GuardSelector root = new GuardSelector("root", "AA",
@@ -123,7 +132,7 @@ public final class AaTree {
         return self[0];
     }
 
-    /** An idle goal through the planner (null while it plans: the option fails this tick and idle re-chooses). */
+    /** An idle goal through the planner (none or still searching: the option fails this tick and cools down 30 s). */
     private static RunJob goal(String id, TaskKind kind, String text) {
         return new RunJob(id, kind, bb -> {
             String chain = bb.port.resolve(text);
@@ -131,9 +140,28 @@ public final class AaTree {
         });
     }
 
+    /** S1: an idle option's cooldown: 2 min doubling after a task that ran and failed, 30 s after one that never ran. */
+    static Cooldown idleCd(String id, Node child) { return new Cooldown(id, child).ranOnly(Cooldown.NO_RUN_MS).restAfterSuccess(Cooldown.NO_RUN_MS); }
+
+    /** S1: lighting the spot runs once per night (a SUCCESS holds it until the day). */
+    static Node oncePerNight(Node child) {
+        return new Node(child.id + ".night", "once per night") {
+            @Override protected Status run(Blackboard bb) {
+                if (bb.flag(LIT_FACT)) return fail("lit already tonight");
+                Status s = child.tick(bb);
+                if (s == Status.SUCCESS) bb.fact(LIT_FACT, Boolean.TRUE);
+                return s == Status.FAILURE ? fail(child.reason()) : s;
+            }
+
+            @Override public List<Node> children() { return List.of(child); }
+        };
+    }
+
     /** One tick from the root; the ladder's SUCCESS of the shelter rung is remembered. */
     public Status tick(Blackboard bb) {
         bb.tracer.beginTick();
+        if (!bb.in.night) bb.fact(LIT_FACT, null);         // review: reset by the tree each day (the node is not ticked by day)
+        bb.in.litTonight = bb.flag(LIT_FACT);
         Status s = root.tick(bb);
         for (Rung r : AaLadder.rungs(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.areaName == null) AaLadder.noteShelter(bb);
         bb.tracer.counts.ticks++;

@@ -34,6 +34,26 @@ public final class Cooldown extends Node {
         return this;
     }
 
+    /** S1 (MINING_PLAN 12): the idle starvation fix: a child that fails without running waits this long (no doubling). */
+    public static final long NO_RUN_MS = 30_000;
+    private long noRunMs, restMs;
+
+    /** S1 review: an idle task that ended done rests this long (a band its success did not clear never loops). */
+    public Cooldown restAfterSuccess(long ms) {
+        restMs = ms;
+        return this;
+    }
+
+    /**
+     * S1: as {@link #ranOnly()}, but a failure without a run (the planner had no chain, a busy refusal) cools down
+     * {@code noRunMs} so the next idle option gets its turn instead of the same one failing every tick.
+     */
+    public Cooldown ranOnly(long noRunMs) {
+        ranOnly = true;
+        this.noRunMs = noRunMs;
+        return this;
+    }
+
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
         if (until > now) return fail("cooling down " + (until - now + 999) / 1000 + "s after: " + lastWhy);
@@ -41,11 +61,18 @@ public final class Cooldown extends Node {
         if (s == Status.RUNNING) ran = true;
         if (s == Status.SUCCESS) {
             fails = 0;
-            until = -1;
+            until = restMs > 0 ? now + restMs : -1;
+            if (restMs > 0) lastWhy = "done just now (a rest before it runs again)";
             ran = false;
             return s;
         }
-        if (s == Status.FAILURE && ranOnly && !ran) return fail(child.reason());
+        if (s == Status.FAILURE && ranOnly && !ran) {
+            if (noRunMs > 0) {
+                lastWhy = child.reason();
+                until = now + noRunMs;
+            }
+            return fail(child.reason());
+        }
         if (s == Status.FAILURE) {
             ran = false;
             fails++;
