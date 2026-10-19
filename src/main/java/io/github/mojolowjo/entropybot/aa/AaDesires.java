@@ -29,9 +29,9 @@ import java.util.function.ToDoubleFunction;
  * <p>B2 scores (0..100; a met rung -1; the owner's {@code aa do} 100):
  * <ul>
  * <li>GATE: area 100, tree area 95, surface 90 (hard limits; never interrupt).</li>
- * <li>UPKEEP: tools (no pickaxe 74, wooden 65, worn 40 + curve), food {@code 175 x shortfall^2} of 18 (aa-food:
+ * <li>UPKEEP: tools (aa-costs: no pickaxe 55 + 30 x blocked share, wooden 55 + 20 x it, worn 40 + curve; no cap), food {@code 175 x shortfall^2} of 18 (aa-food:
  *     10 -> 35, 6 -> 78 urgent, 4 -> 100) or its stock score (25..60) under the stock target, parked with no source, torches 30 + {@code 30 x shortfall^2} of 16, bag 20 + {@code 60 x shortfall^2} of 10 free.
- *     Tools stay under 75 on purpose: a pickaxe count that flickers in a craft must not break a running task.</li>
+ *     A pickaxe count that flickers in a craft must not break a running task: the adapter smooths the tier (Costs.ToolSmoother).</li>
  * <li>PROGRESS (value, hand cost s; the brain applies P and cost): table/furnace 70/60, spare table 50/10, base 55/240,
  *     bed 45/120, iron 40 + 30 x the tech tree's iron share / 600. Iron gives its value to tools while it has no stone
  *     pickaxe; torches to table/furnace while no table is known; ideas to iron while under an iron pickaxe.</li>
@@ -64,10 +64,22 @@ public final class AaDesires {
         return r.unmet(bb) ? f.applyAsDouble(bb) : -1;
     }
 
+    /**
+     * aa-costs (was: no pickaxe 74, wooden 65, capped under 75): the tool's real value, what it blocks next
+     * (Costs.tools); the anti-flicker is the adapter's smoothed pickaxe tier (Costs.ToolSmoother), not a cap.
+     */
     static double tools(Blackboard bb) {
-        if (bb.in.pickTier == 0) return 74;
-        if (bb.in.pickTier < 2) return 65;
-        return 40 + Curves.upkeep(30, bb.in.pickPct, 15);
+        double blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(bb.in.pickTier, bb.in.furnaceKnown || bb.in.furnaceInBag,
+                bb.in.coal, bb.in.torches, ownerOreGoal(bb));
+        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "tools", io.github.mojolowjo.entropybot.aa.brain.Costs.toolsTerms(bb.in.pickTier, bb.in.pickPct, blocked));
+        return io.github.mojolowjo.entropybot.aa.brain.Costs.tools(bb.in.pickTier, bb.in.pickPct, blocked);
+    }
+
+    /** An owner goal that needs a pickaxe is open. */
+    static boolean ownerOreGoal(Blackboard bb) {
+        if (!(bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.FACT) instanceof List<?>)) return false;
+        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) if (g.r.ore() || g.r.tier() >= 1) return true;
+        return false;
     }
 
     @SuppressWarnings("unchecked")
@@ -98,7 +110,8 @@ public final class AaDesires {
             case "needs.area" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 100));
             case "needs.woodArea" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 95));
             case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 90));
-            case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.min(74, factor(b, "tools") * tools(b))));
+            case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.min(99, factor(b, "tools") * tools(b))))
+                    .infeasible(b -> { String g = AaLadder.openGate(b); return g == null ? null : g + " first"; });
             case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore))
                     .infeasible(AaDesires::foodInfeasible);
             case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches"))))
@@ -300,13 +313,20 @@ public final class AaDesires {
         if (d <= 0) return -1;
         // live aa377: 55 at night lost to tools 74 all night. Full night at the surface: above the urgent line, higher
         // early game (no armour, no bed); the grace lets the running step finish first
-        if (d >= 1) return SHELTER_NIGHT + (bb.in.armorPoints <= 0 ? SHELTER_EARLY : 0) + (bb.in.bedKnown || bb.in.bedInBag ? 0 : SHELTER_EARLY);
+        // aa-costs (was a fixed 80 + 5 no armour + 5 no bed): the danger of staying out (Costs.nightDanger)
+        if (d >= 1) {
+            boolean bed = bb.in.bedKnown || bb.in.bedInBag;
+            double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
+                    bb.in.light, bb.in.hostilesNear, bed);
+            io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "shelter", io.github.mojolowjo.entropybot.aa.brain.Costs.nightTerms(bb.in.difficulty,
+                    bb.in.armorPoints, bb.in.health, bb.in.light, bb.in.hostilesNear, bed, danger));
+            return io.github.mojolowjo.entropybot.aa.brain.Costs.shelterScore(danger);
+        }
         if (bb.in.bedKnown || bb.in.bedInBag) return -1;      // dusk with a bed: night.sleep waits its turn
         return Personality.of(bb).get("shelter") * d;
     }
 
-    /** Full-night shelter score (over {@link Brain#URGENT}), the early-game bonus each, the step grace. */
-    static final double SHELTER_NIGHT = 80, SHELTER_EARLY = 5;
+    /** The step grace before the shelter interrupts. */
     static final long SHELTER_GRACE_MS = 8_000;
 
     /** Where to shelter: the bed if known, else the base (house), else a shell right here (dug or built, sealed). */

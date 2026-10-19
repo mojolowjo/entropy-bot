@@ -51,6 +51,17 @@ public final class AaLadder {
     public static final int SURFACE_DEPTH = 3;
 
     /** A later rung that places a table or furnace, builds the base or plans iron (it places a table and furnace). */
+    /**
+     * aa-costs: the gate rung still open (needs.area, needs.woodArea, needs.surface), else null. An upkeep that may now
+     * score urgent (tools) waits for it: nothing it runs can work before the gate is met.
+     */
+    public static String openGate(Blackboard bb) {
+        if (!bb.in.areaKnown) return "needs.area";
+        if (bb.fact(TREE_AREA_FACT) instanceof String) return "needs.woodArea";
+        if (io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb))) return "needs.surface";
+        return null;
+    }
+
     static boolean needsOpenGround(Blackboard bb) {
         boolean table = bb.in.tableKnown || bb.in.tableInBag, furnace = bb.in.furnaceKnown || bb.in.furnaceInBag;
         return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT)) || (bb.in.pickTier >= 2 && bb.in.pickTier < 3);
@@ -116,7 +127,7 @@ public final class AaLadder {
                 bb -> null, bb -> "craft crafting_table 1");
         Rung torch = new Rung("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
-                bb -> bb.in.torchCoal() ? null : "coal kept for the coal goal (" + bb.in.coal + "/" + bb.in.coalReserve + " reserve)", bb -> "goal torch 16");
+                bb -> bb.in.torchCoal() ? null : "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")", bb -> "goal torch 16");
         Rung base = new Rung("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(SHELTER_FACT),
                 bb -> null,

@@ -377,7 +377,12 @@ final class Mining {
                 boolean sky = open && skyOpen(level, q);
                 int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, h.x(), h.z()) - 1;
                 boolean touchesWater = io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null || !level.getFluidState(q.below()).isEmpty();
-                boolean wet = !open && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(), touchesWater);
+                // aa-costs: the drowning risk of the dig (DrownRisk); fatal = dropped, else a cost the scorer weighs
+                boolean wetDown = !open && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(), touchesWater);
+                int wAbove = wetDown ? io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(level, p.blockPosition()) : 0;
+                double risk = wetDown ? io.github.mojolowjo.entropybot.guard.DrownRisk.risk(me[1] - h.y(), wAbove, p.getAirSupply()) : 0;
+                boolean wet = io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(risk);
+                String drownWhy = wetDown ? io.github.mojolowjo.entropybot.guard.DrownRisk.terms(me[1] - h.y(), wAbove, p.getAirSupply()) : null;
                 String deny = null;
                 boolean floor = false;
                 try {
@@ -390,7 +395,8 @@ final class Mining {
                 } catch (RuntimeException e) {
                     deny = "policy error: " + e;
                 }
-                out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, true, open, sky, Math.max(1, top - h.y() + 1), wet, deny, floor));
+                out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, true, open, sky, Math.max(1, top - h.y() + 1), wet, deny, floor,
+                        wet ? 0 : io.github.mojolowjo.entropybot.guard.DrownRisk.cost(risk), drownWhy));
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa iron: the known-ore facts could not be read: {}", e.toString());
@@ -512,7 +518,12 @@ final class Mining {
             int breakY = Integer.MAX_VALUE;
             if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bh && bh.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK)
                 breakY = bh.getBlockPos().getY();
-            if (MineRules.waterDigDown(pl.isInWater(), mc.gameMode.isDestroying(), breakY, pl.blockPosition().getY())) {
+            // aa-costs: stopped only when the dig still ahead leaves no air to come back (DrownRisk)
+            int feet = pl.blockPosition().getY(), ty = t == null ? feet - 1 : t[1];
+            if (MineRules.waterDigDown(pl.isInWater(), mc.gameMode.isDestroying(), breakY, feet, ty, pl.getAirSupply(),
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(pl.level(), pl.blockPosition()))) {
+                LOG.info("[entropybot] mine: walk stopped, {}", io.github.mojolowjo.entropybot.guard.DrownRisk.terms(Math.max(1, feet - ty),
+                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(pl.level(), pl.blockPosition()), pl.getAirSupply()));
                 j.kWaterDown = true;
                 return true;
             }
@@ -672,6 +683,7 @@ final class Mining {
         double bestCost = Double.MAX_VALUE;
         int buried = 0, tooDeep = 0, deepest = 0, underWater = 0;
         List<String> wetAt = new ArrayList<>();
+        int wAbove = p.isInWater() ? io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(level, p.blockPosition()) : 0;
         int bestTop = Integer.MIN_VALUE;          // with dig: the surface block over a buried ore (the dig box runs from the ore up to it)
         int[] bestTun = null;                     // with dig: the side tunnel (KnownOre.sideTunnel) to the best one
         for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) {
@@ -680,9 +692,10 @@ final class Mining {
             int top = Integer.MIN_VALUE;
             // 0.36.8 (owner's rule): in water, never dig down through solid blocks to an ore (no air down there); an ore
             // the water touches is fine (sink to it). Skipped here, no try spent; the next known ore is picked.
+            // aa-costs: skipped only when the drowning risk of the dig is fatal (DrownRisk: air, depth, water above)
             if (level.isLoaded(q) && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(),
                     io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null
-                            || !level.getFluidState(q.below()).isEmpty())
+                            || !level.getFluidState(q.below()).isEmpty(), p.getAirSupply(), wAbove)
                     && !airFace(level, h.x(), h.y(), h.z())) {         // 0.36.9: an ore with a dry open face is walked to (a cave beside it)
                 underWater++;
                 if (wetAt.size() < 5) wetAt.add(h.x() + " " + h.y() + " " + h.z());

@@ -22,11 +22,14 @@ class NightShelterTest {
     void fullNightSurfaceIsUrgentHigherEarlyAndOffInPeacefulOrUnderground() {
         bb.in.hungerDrains = true;
         bb.in.dayTime = 18000;
-        assertEquals(90, AaDesires.shelterScore(bb), 1e-9, "no armour, no bed");
+        assertEquals(85 * 1.05, AaDesires.shelterScore(bb), 1e-9, "aa-costs: Normal, no armour, no bed, dark");
+        assertTrue(AaDesires.shelterScore(bb) >= Brain.URGENT);
         bb.in.armorPoints = 8;
         bb.in.bedKnown = true;
-        assertEquals(80, AaDesires.shelterScore(bb), 1e-9);
-        assertTrue(AaDesires.shelterScore(bb) >= Brain.URGENT);
+        assertEquals(85 * 0.76, AaDesires.shelterScore(bb), 1e-9, "armour 8 lowers the danger under the urgent line");
+        bb.in.hostilesNear = 3;
+        assertEquals(85 * 0.76 * 1.45, AaDesires.shelterScore(bb), 1e-9, "three hostiles near: urgent again");
+        bb.in.hostilesNear = 0;
         assertEquals("sleep", AaDesires.shelterChain(bb));
         bb.in.bedKnown = false;
         bb.in.baseKnown = true;

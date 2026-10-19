@@ -127,8 +127,14 @@ public final class CostAdvisorHook {
                 pr.stats.ask(PolicyStats.SITE_ASTAR_COST);
                 BlockState up = at.at(x, y + 1, z);
                 if (up != null && PolicyRuntime.fluidOf(up) == BreakPolicy.Fluid.WATER) {
-                    pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
-                    return COST_INF;
+                    // aa-costs: in the water, the drowning risk of the cell (DrownRisk): no air to come back = never, else
+                    // a cost; from dry ground a cell under water stays forbidden (it floods the tunnel), as before
+                    double r = me == null || !me.inWater() ? Double.POSITIVE_INFINITY : me.diveRisk(y);
+                    if (io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(r)) {
+                        pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
+                        return COST_INF;
+                    }
+                    return 1 + 4 * r * r;
                 }
                 return Double.NaN;
             }

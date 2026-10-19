@@ -81,7 +81,11 @@ public final class PolicyRuntime {
         try {
             boolean mp = mc != null && !mc.hasSingleplayerServer();      // a LAN host counts as singleplayer, a LAN guest as a server
             var pl = mc == null ? null : mc.player;
-            inWater = pl != null && pl.isInWater();
+            boolean wet = pl != null && pl.isInWater();
+            // review: one snapshot, one volatile write (the pathfinder thread never sees a torn mix)
+            body = new Where(wet, 0, pl == null ? 300 : pl.getAirSupply(),
+                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY());
+            inWater = wet;
             Policy p = core.policy();
             if (snapshot == null || p != snapshotOf || mp != multiplayer) {
                 multiplayer = mp;
@@ -255,10 +259,22 @@ public final class PolicyRuntime {
 
     /** Where the bot is, as of the last client tick (the pathfinder thread never touches the player). */
     public Where where() {
-        return new Where(inWater, travelBreaks(currentJob));
+        return body.withBreaks(travelBreaks(currentJob));
     }
 
     private volatile boolean inWater;
+    private volatile Where body = new Where(false, 0, 300, 0, Integer.MIN_VALUE);
+
+    /** aa-costs (DrownRisk): water cells from the feet up (at most 32), the swim back to air. */
+    public static int waterAbove(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos feet) {
+        int n = 0;
+        var m = feet.mutable();
+        while (n < 32 && fluidOf(lv.getBlockState(m)) == Fluid.WATER) {
+            n++;
+            m.move(0, 1, 0);
+        }
+        return n;
+    }
 
     // ---- asks ----
 

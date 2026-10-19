@@ -204,7 +204,7 @@ final class Hunting {
                 inAreas = true;
                 if (!r.saidOut && HuntRules.MEAT.containsKey(type)) {
                     r.saidOut = true;
-                    LOG.info("[entropybot] hunt: food urgent, hunting outside my areas (up to {} from {})", HuntRules.OUT_R, Jobs.fmt(r.start));
+                    LOG.info("[entropybot] hunt: hunting outside my areas (up to {} from {})", HuntRules.OUT_R, Jobs.fmt(r.start));
                 }
             }
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, e instanceof Player, e instanceof AbstractVillager,

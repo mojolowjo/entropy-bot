@@ -131,9 +131,23 @@ public final class BreakPolicy {
      * The bot: in water now (the drowning rule: no digging down with water over the cell while the bot itself is in
      * the water; from dry ground a cell under a pond is a wet side, not a dive); travel breaks made on this walk so far.
      */
-    public record Where(boolean inWater, int travelBreaks) {
+    public record Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) {
         public static final Where DRY = new Where(false, 0);
         public static final Where WET = new Where(true, 0);
+
+        /** Air unknown (0): a dive is never allowed (the old rule). */
+        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE); }
+
+        /** aa-costs: the drowning risk of digging one block down from here (DrownRisk). */
+        public double diveRisk() { return DrownRisk.risk(1, waterAbove, air); }
+
+        /** aa-costs (review): the risk of digging down to the cell at {@code y}: the whole depth from my feet counts. */
+        public double diveRisk(int y) {
+            int d = feetY == Integer.MIN_VALUE ? 1 : Math.max(1, feetY - y);
+            return DrownRisk.risk(d, waterAbove, air);
+        }
+
+        public Where withBreaks(int n) { return new Where(inWater, n, air, waterAbove, feetY); }
     }
 
     public record Ask(Action action, Intent intent, String dim, int x, int y, int z, BlockFacts block, Where me) {}
@@ -207,7 +221,10 @@ public final class BreakPolicy {
         // ---- the rule set (ores only until phase 3 adds logs and crops)
         if (f.ore() && !r.useResources() && a.intent() == Intent.MINE) return Verdict.deny("no resources taken in " + r.name(), "resources");
         // the owner's rule (0.36.9, aa367: drowned digging down under a pool): water over the cell while I am in the water
-        boolean dive = f.above() == Fluid.WATER && me.inWater();
+        // aa-costs: a dive is denied only while one more block down leaves no air to come back (DrownRisk); else it costs
+        double diveRisk = f.above() == Fluid.WATER && me.inWater() ? me.diveRisk(a.y()) : 0;
+        boolean dive = DrownRisk.fatal(diveRisk);
+        double diveMult = 1 + diveRisk * diveRisk * 4;
         boolean wet = f.above() == Fluid.WATER || f.sides() == Fluid.WATER;
         // ---- the intent model (3.3)
         double mult;
@@ -240,6 +257,7 @@ public final class BreakPolicy {
             case RESTORE -> { return Verdict.deny("a restore only places", rule); }
             default -> { return Verdict.deny("walking only", rule); }
         }
+        if (diveRisk > 0) { mult *= diveMult; rule += "+drown"; }       // aa-costs: x(1 + 4 risk^2)
         return Verdict.ok(mult, rule);
     }
 

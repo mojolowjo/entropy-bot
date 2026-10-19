@@ -56,20 +56,22 @@ class AaFix3Test {
     }
 
     @Test
-    void coalGoalKeepsFourCoalFromTorches() {
+    void coalGoalWeighsCoalAgainstTorches() {
         var cat = BrainB5Test.withLearned(null, 80);
-        assertEquals(0, Goals.coalReserve(bb));
+        assertEquals(0, Goals.coalGoal(bb)[1]);
         Goals.add(bb, Thing.resolve("iron", cat), 8, 0, clock.now());
-        assertEquals(0, Goals.coalReserve(bb), "not a coal goal");
+        assertEquals(0, Goals.coalGoal(bb)[1], "not a coal goal");
         Goals.add(bb, COAL, 16, 0, clock.now());
-        assertEquals(Goals.COAL_RESERVE, Goals.coalReserve(bb));
-        bb.in.coalReserve = Goals.coalReserve(bb);
+        double[] cg = Goals.coalGoal(bb);
+        assertEquals(16, cg[1]);
+        bb.in.coalGoalScore = cg[0];
+        bb.in.coalGoalN = (int) cg[1];
         bb.in.coal = 4;
-        assertFalse(bb.in.torchCoal());
-        bb.in.torches = 0; bb.in.planks = 4; bb.in.tableInBag = true;
-        assertNull(NightWork.craft(bb.in), "no torches from the reserve");
-        bb.in.coal = 5;
-        assertTrue(bb.in.torchCoal());
+        bb.in.torches = 14;
+        assertFalse(bb.in.torchCoal(), "14 torches: the coal goes to the goal: " + bb.in.torchCoalTerms());
+        bb.in.planks = 4; bb.in.tableInBag = true;
+        bb.in.torches = 0;
+        assertTrue(bb.in.torchCoal(), "no torches: 4 torches are worth more than 1 of 16 coal: " + bb.in.torchCoalTerms());
         assertEquals("craft torch 16", NightWork.craft(bb.in));
     }
 

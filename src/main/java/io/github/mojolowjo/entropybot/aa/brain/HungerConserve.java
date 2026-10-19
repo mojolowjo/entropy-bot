@@ -24,6 +24,14 @@ public final class HungerConserve {
         return drains && noSource && bagEnergy < target;
     }
 
+    /**
+     * aa-costs (replaces the yes/no rule above in the AA tick): sprinting's hunger cost (measured drain) against the
+     * time it saves, weighted by food scarcity (Costs.sprint); its terms say why.
+     */
+    public static Costs.Sprint weigh(boolean drains, boolean noSource, double bagEnergy, double target, double drainScale) {
+        return Costs.sprint(drains, noSource, bagEnergy, target, drainScale);
+    }
+
     /** True when the bag already covers the predicted need (the cheap pre-check before asking for a source). */
     public static boolean covered(double bagEnergy, double target) { return bagEnergy >= target; }
 

@@ -702,16 +702,51 @@ public final class Clearing {
         Chains ch = seq.jobs.core().commands.chainsRef();
         String next = ch == null ? null : ch.nextStep();
         Crafting crafting = seq.storage.crafting;
-        boolean keep = io.github.mojolowjo.entropybot.craft.OwnTable.keepForNext(seq.afterPickupError != null, next,
-                t -> crafting.craftWantsTable(p, t));
-        if (keep) {
-            keptOwnTable = st.pos;
-            LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));      // safety net: named by check if the chain never gets back to it
-            LOG.info("[entropybot] craft: {} at {}", io.github.mojolowjo.entropybot.craft.OwnTable.KEPT_LOG, Jobs.fmt(st.pos));
-        } else {
-            LOG.info("[entropybot] craft: {}", io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG);
+        boolean failed = seq.afterPickupError != null;
+        boolean nextCrafts = io.github.mojolowjo.entropybot.craft.OwnTable.keepForNext(false, next, t -> crafting.craftWantsTable(p, t));
+        // aa-costs: pick-up + re-place against leaving it (the camp/base context gives leaving a value)
+        boolean nearCamp = false, campHasTable = false;
+        int[] at = st.pos;
+        try {
+            for (String mark : new String[]{"camp", "base"}) {
+                com.google.gson.JsonObject o = Core.INSTANCE.knowledge.places().get(mark);
+                if (o == null || !o.has("x") || at == null || !Jobs.dimOf(o).equals(Storage.dim())) continue;
+                int[] cp = Jobs.pos(o);
+                if (Jobs.distSq(cp, at) > (double) io.github.mojolowjo.entropybot.aa.AaLadder.CAMP_R * io.github.mojolowjo.entropybot.aa.AaLadder.CAMP_R) continue;
+                nearCamp = true;
+                campHasTable |= otherTableNear(p.level(), cp, at);
+            }
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] craft: table end: no camp view: {}", e.toString());
         }
-        return keep;
+        Map<String, Integer> inv = Gui.inventory(p);
+        int planks = 0;
+        for (var e : inv.entrySet()) if (e.getKey().endsWith("_planks") || e.getKey().endsWith("_log")) planks += e.getValue();
+        boolean remake = planks >= 4 || inv.getOrDefault("minecraft:crafting_table", 0) > 0;
+        var end = io.github.mojolowjo.entropybot.craft.OwnTable.decide(failed, nextCrafts, nearCamp, campHasTable, remake);
+        String terms = io.github.mojolowjo.entropybot.craft.OwnTable.terms(failed, nextCrafts, nearCamp, campHasTable, remake);
+        switch (end) {
+            case KEEP_FOR_NEXT -> {
+                keptOwnTable = st.pos;
+                LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));      // safety net: named by check if the chain never gets back to it
+                LOG.info("[entropybot] craft: {} at {} ({})", io.github.mojolowjo.entropybot.craft.OwnTable.KEPT_LOG, Jobs.fmt(st.pos), terms);
+            }
+            case LEAVE_AT_CAMP -> LOG.info("[entropybot] craft: table left at {} as the camp's ({})", Jobs.fmt(st.pos), terms);
+            default -> LOG.info("[entropybot] craft: {} ({})", io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG, terms);
+        }
+        return end != io.github.mojolowjo.entropybot.craft.OwnTable.End.TAKE;
+    }
+
+    /** aa-costs: a crafting table other than {@code own} within the camp radius of {@code camp} (y +-3). */
+    private static boolean otherTableNear(net.minecraft.world.level.Level lv, int[] camp, int[] own) {
+        int r = io.github.mojolowjo.entropybot.aa.AaLadder.CAMP_R;
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) for (int dy = -3; dy <= 3; dy++) for (int dz = -r; dz <= r; dz++) {
+            m.set(camp[0] + dx, camp[1] + dy, camp[2] + dz);
+            if (own != null && m.getX() == own[0] && m.getY() == own[1] && m.getZ() == own[2]) continue;
+            if (lv.isLoaded(m) && lv.getBlockState(m).is(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)) return true;
+        }
+        return false;
     }
 
     /**

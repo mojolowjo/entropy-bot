@@ -40,11 +40,16 @@ public final class Inputs {
     public boolean litTonight;
     /** nightwork: inside a shell of its own that is built and waiting (ShelterJob WAIT, at its cell). Not in the vector. */
     public boolean sheltered;
-    /** overnight 2026-10-19: coal kept back from torches for an open coal goal (Goals.coalReserve). Not in the vector. */
-    public int coalReserve;
+    /** aa-costs: an open coal goal's score and size (0 none; Goals.coalGoal). Not in the vector. */
+    public double coalGoalScore;
+    public int coalGoalN;
+    /** aa-costs (night): difficulty 0..3, block light at the feet, hostiles within 24. Not in the vector. */
+    public int difficulty = 2, light, hostilesNear;
 
-    /** Torches may burn coal: no reserve, or coal over it. */
-    public boolean torchCoal() { return coalReserve <= 0 || coal > coalReserve; }
+    /** Torches may burn coal: the torches' gain per coal over the coal goal's loss per coal (Costs.torchCoal). */
+    public boolean torchCoal() { return io.github.mojolowjo.entropybot.aa.brain.Costs.torchCoal(coal, torches, coalGoalScore, coalGoalN); }
+
+    public String torchCoalTerms() { return io.github.mojolowjo.entropybot.aa.brain.Costs.coalTerms(coal, torches, coalGoalScore, coalGoalN); }
     public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;

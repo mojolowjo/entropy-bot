@@ -57,7 +57,17 @@ public final class FoodOptions {
                             Map<String, Integer> animals, int animalsOutside, String huntWhy,
                             int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
                             int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
-                            Map<String, Integer> animalsOut, float health) {
+                            Map<String, Integer> animalsOut, float health, double outDist) {
+        /** Without the nearest outside animal's distance (half the hunt's reach). */
+        public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
+                         Map<String, Integer> animals, int animalsOutside, String huntWhy,
+                         int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
+                         int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
+                         Map<String, Integer> animalsOut, float health) {
+            this(food, saturation, bag, target, furnace, animals, animalsOutside, huntWhy, oak, oakType, oakDist, berry, berryDist, red, brown,
+                    grass, waterNear, farmKnown, storedFood, kelpNear, me, animalsOut, health, io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R / 2.0);
+        }
+
         /** Without the outside-areas facts (none seen, health 20). */
         public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
                          Map<String, Integer> animals, int animalsOutside, String huntWhy,
@@ -163,8 +173,9 @@ public final class FoodOptions {
             if (n > most) { animal = a; most = n; }
         }
         boolean out = false;
-        if (animal == null && f.animalsOut() != null && io.github.mojolowjo.entropybot.vocab.HuntRules.urgentOut(f.food(), f.health())) {
-            // the director (2026-10-19): food urgent, none in my areas: up to 48 outside them ("hunt ... out")
+        if (animal == null && f.animalsOut() != null && !f.animalsOut().isEmpty()) {
+            // aa-costs (was: only when urgent): none in my areas: the ones outside (within the hunt's reach, HuntRules.OUT_R;
+            // the outside rule set still applies) at their travel cost divided by the food urgency (Costs.huntOutTravel)
             for (String a : List.of("cow", "pig", "sheep", "chicken")) {
                 int n = f.animalsOut().getOrDefault(a, 0);
                 if (a.equals("chicken") && !f.furnace()) continue;
@@ -182,9 +193,9 @@ public final class FoodOptions {
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
         String chain = "hunt " + n + " " + animal + (out ? " out" : "") + (f.furnace() ? " then cook " + meat + " " + n : "");
         double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0)
-                + (out ? 2 * io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R : 0);      // there and back
+                + (out ? io.github.mojolowjo.entropybot.aa.brain.Costs.huntOutTravel(f.outDist(), f.food(), f.health()) : 0);      // there and back / urgency
         RungOptions.add(rows, dropped, m, now, Options.scored(out ? "hunt out " + animal : "hunt " + animal, "hunt", chain, cost,
-                most + " " + animal + (out ? " outside my areas (food urgent)" : " in reach") + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", false, m));
+                most + " " + animal + (out ? " outside my areas (" + io.github.mojolowjo.entropybot.aa.brain.Costs.huntOutTerms(f.outDist(), f.food(), f.health()) + ")" : " in reach") + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", false, m));
     }
 
     static void stew(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {

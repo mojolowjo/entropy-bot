@@ -42,7 +42,12 @@ class FoodOptionsTest {
         assertTrue(c.best().command().startsWith("hunt 2 cow out then cook beef"), c.best().command());
         FoodOptions.FoodFacts calm = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of(), 3, null,
                 null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20);
-        assertNull(choose(calm).best(), "not urgent: stays in the areas");
+        Options.Choice cc = choose(calm);
+        assertEquals("hunt out cow", cc.best().id(), "aa-costs: not urgent, still the only way, at a dearer travel");
+        assertTrue(cc.best().cost() > c.best().cost(), cc.why());
+        FoodOptions.FoodFacts calmBerry = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of(), 3, null,
+                null, "oak", -1, new int[]{5, 64, 5}, 5, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20, 40);
+        assertEquals("berries", choose(calmBerry).best().id(), "a berry bush near beats a far hunt when not urgent: " + choose(calmBerry).why());
     }
 
     @Test

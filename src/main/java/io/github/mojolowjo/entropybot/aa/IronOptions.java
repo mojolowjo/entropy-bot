@@ -58,7 +58,13 @@ public final class IronOptions {
      * @param wetDigDown the water rule: I am in water and would have to dig down to it
      * @param deny       the policy's reason against breaking it under MINE (null = allowed); floor = never
      */
-    public record Ore(int x, int y, int z, double dist, boolean loaded, boolean openFace, boolean skyOpen, int depth, boolean wetDigDown, String deny, boolean floor) {
+    public record Ore(int x, int y, int z, double dist, boolean loaded, boolean openFace, boolean skyOpen, int depth, boolean wetDigDown, String deny, boolean floor,
+                      double drown, String drownWhy) {
+        /** aa-costs: wetDigDown now means the drowning risk is fatal; drown is the dig's drowning cost (walk-blocks), drownWhy its terms. */
+        public Ore(int x, int y, int z, double dist, boolean loaded, boolean openFace, boolean skyOpen, int depth, boolean wetDigDown, String deny, boolean floor) {
+            this(x, y, z, dist, loaded, openFace, skyOpen, depth, wetDigDown, deny, floor, 0, null);
+        }
+
         public String key() { return x + " " + y + " " + z; }
     }
 
@@ -156,11 +162,12 @@ public final class IronOptions {
                 if (m.blocked(Way.WALK_KNOWN, o, now)) dropped.add("walk " + o.key() + ": " + m.reason(Way.WALK_KNOWN, o));
                 else ranked.add(scored(Way.WALK_KNOWN, o, o.dist() * (o.skyOpen() ? 1 : CAVE_FACE) * (o.loaded() ? 1 : STALE) + CLEAR,
                         o.loaded() ? (o.skyOpen() ? "open to the sky" : "an open face in a cave") : "known from before, not loaded", m));
-            } else if (o.wetDigDown()) dropped.add("dig " + o.key() + ": digging down from in the water");
+            } else if (o.wetDigDown()) dropped.add("dig " + o.key() + ": digging down from in the water" + (o.drownWhy() == null ? "" : " (" + o.drownWhy() + ")"));
             else if (!o.loaded()) dropped.add("dig " + o.key() + ": buried, not loaded");
             else if (o.depth() > DIG_MAX) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (dig up to " + DIG_MAX + ")");
             else if (m.blocked(Way.DIG_KNOWN, o, now)) dropped.add("dig " + o.key() + ": " + m.reason(Way.DIG_KNOWN, o));
-            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + Math.max(1, o.depth()) * DIG_BLOCK + CLEAR, "buried " + o.depth() + " deep", m));
+            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + Math.max(1, o.depth()) * DIG_BLOCK + CLEAR + o.drown(), "buried " + o.depth() + " deep"
+                    + (o.drownWhy() == null ? "" : ", " + o.drownWhy() + " +" + Math.round(o.drown())), m));
             int up = o.y() - f.meY();
             if (up >= PILLAR_MIN_UP && above == null) above = o;
             if (up >= PILLAR_MIN_UP && !m.blocked(Way.PILLAR_KNOWN, o, now)) {

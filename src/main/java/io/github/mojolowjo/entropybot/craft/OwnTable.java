@@ -60,6 +60,39 @@ public final class OwnTable {
         return t.startsWith("craft ") && needsTable.test(nextStep.trim());
     }
 
+    // ---- aa-costs (item 7; was: always taken back unless the next step crafts) ----
+
+    public enum End { KEEP_FOR_NEXT, LEAVE_AT_CAMP, TAKE }
+
+    /** Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one. */
+    public static final double PICK_S = 4, PLACE_S = 2, REMAKE_S = 8, REMAKE_NONE_S = 60, LITTER_S = 10, CAMP_VALUE_S = 15;
+
+    /** Taking it back: the pickup, plus placing it again when the next step crafts at a table. */
+    public static double takeCost(boolean nextNeedsTable) { return PICK_S + (nextNeedsTable ? PLACE_S : 0); }
+
+    /**
+     * Leaving it: nothing now when the next step uses it (it is taken after that); else the table lost (remade later)
+     * and a stray block, less its value as the camp's table (near the camp or base, none there yet).
+     */
+    public static double leaveCost(boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
+        if (nextNeedsTable) return 0;
+        return (canRemake ? REMAKE_S : REMAKE_NONE_S) + LITTER_S - (nearCamp && !campHasTable ? CAMP_VALUE_S : 0);
+    }
+
+    /** The cheaper end; a failed craft always takes it back (the chain stops, nothing uses it). */
+    public static End decide(boolean craftFailed, boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
+        if (craftFailed) return End.TAKE;
+        double take = takeCost(nextNeedsTable), leave = leaveCost(nextNeedsTable, nearCamp, campHasTable, canRemake);
+        if (leave >= take) return End.TAKE;
+        return nextNeedsTable ? End.KEEP_FOR_NEXT : End.LEAVE_AT_CAMP;
+    }
+
+    public static String terms(boolean craftFailed, boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
+        return "take " + Math.round(takeCost(nextNeedsTable)) + " s vs leave " + Math.round(leaveCost(nextNeedsTable, nearCamp, campHasTable, canRemake)) + " s"
+                + (nextNeedsTable ? " (next step crafts)" : "") + (nearCamp ? campHasTable ? " (camp has a table)" : " (camp without a table)" : "")
+                + (craftFailed ? " (craft failed)" : "") + " -> " + decide(craftFailed, nextNeedsTable, nearCamp, campHasTable, canRemake).name().toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** A kept table is taken back as soon as nothing runs (the chain stopped or was preempted), or by the next craft that does not use it. */
     public static boolean reapKept(boolean tableKept, boolean busy) {
         return tableKept && !busy;

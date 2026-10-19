@@ -129,14 +129,14 @@ public final class Goals {
 
     public record Ways(int caveDist, boolean mineMarked, boolean inAreas) {}
 
-    /** Coal kept back from torches while a coal goal is open (the director, 2026-10-19). */
-    public static final int COAL_RESERVE = 4;
-
-    /** {@link #COAL_RESERVE} while a coal goal is not reached yet, else 0. */
-    public static int coalReserve(Blackboard bb) {
-        if (!(bb.fact(FACT) instanceof List<?>)) return 0;
-        for (Goal g : of(bb)) if (g.r.key().replaceFirst("^.*:", "").matches("(deepslate_)?coal(_ore)?") && have(bb.in.bag, g) < g.n) return COAL_RESERVE;
-        return 0;
+    /**
+     * aa-costs (was: 4 coal kept back while a coal goal is open): the open coal goal's score and size, {score, n}
+     * ({0, 0} none); torches weigh their gain per coal against score / n (Costs.torchCoal).
+     */
+    public static double[] coalGoal(Blackboard bb) {
+        if (!(bb.fact(FACT) instanceof List<?>)) return new double[]{0, 0};
+        for (Goal g : of(bb)) if (g.r.key().replaceFirst("^.*:", "").matches("(deepslate_)?coal(_ore)?") && have(bb.in.bag, g) < g.n) return new double[]{score(bb, g), g.n};
+        return new double[]{0, 0};
     }
 
     /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */

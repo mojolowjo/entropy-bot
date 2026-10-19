@@ -124,6 +124,7 @@ public final class AaRuntime implements JobPort {
         }
         // the director (2026-10-19): allowed animals outside my areas within 48, for an urgent "hunt ... out"
         Map<String, Integer> animalsOut = new java.util.HashMap<>();
+        double outDist = io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R;
         String hdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
         for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R))) {
             String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
@@ -131,6 +132,7 @@ public final class AaRuntime implements JobPort {
                     || io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e) || c.inAreas(hdim, e.getBlockX(), e.getBlockZ())
                     || p.distanceTo(e) > io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R) continue;
             animalsOut.merge(type, 1, Integer::sum);
+            outDist = Math.min(outDist, p.distanceTo(e));
         }
         int inside = 0;
         for (int n : animals.values()) inside += n;
@@ -193,7 +195,7 @@ public final class AaRuntime implements JobPort {
                 io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb), bb.in.furnaceKnown || bb.in.furnaceInBag,
                 animals, outside, c.hunting.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
                 oak, oakType, oak == null ? -1 : oakD, berry, berry == null ? -1 : berryD, red, brown, grass, water, farm,
-                Math.max(0, stored), kelp, me, animalsOut, p.getHealth());
+                Math.max(0, stored), kelp, me, animalsOut, p.getHealth(), outDist);
         foodCacheAt = now;
         return foodCache;
     }
@@ -213,9 +215,14 @@ public final class AaRuntime implements JobPort {
             double target = io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb);
             if (bb.in.hungerDrains && !io.github.mojolowjo.entropybot.aa.brain.HungerConserve.covered(bagE, target)) {
                 String park = io.github.mojolowjo.entropybot.aa.FoodOptions.noSource(foodFacts());
-                on = io.github.mojolowjo.entropybot.aa.brain.HungerConserve.decide(true, park != null, bagE, target);
-                if (on) why = String.format(java.util.Locale.ROOT, "bag %.0f of %.0f food points, %s", bagE, target, park);
-            }
+                // aa-costs: sprint's measured hunger cost vs the time it saves, weighted by scarcity
+                double hand = io.github.mojolowjo.entropybot.aa.brain.FoodModel.handRate(io.github.mojolowjo.entropybot.aa.core.TaskKind.EXPLORE);
+                double scale = tree.brain.stats.drain(io.github.mojolowjo.entropybot.aa.core.TaskKind.EXPLORE.name(), hand) / hand;
+                var w = io.github.mojolowjo.entropybot.aa.brain.HungerConserve.weigh(true, park != null, bagE, target, scale);
+                on = w.conserve();
+                io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "sprint", w.terms());
+                if (on) why = String.format(java.util.Locale.ROOT, "bag %.0f of %.0f food points, %s; %s", bagE, target, park == null ? "a food source known" : park, w.terms());
+            } else io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "sprint", "the bag covers the need -> sprint");
         } catch (RuntimeException e) {
             LOG.debug("[entropybot] aa: conserve check: {}", e.toString());
             on = conserving;                      // keep the last answer on a read error
@@ -365,6 +372,7 @@ public final class AaRuntime implements JobPort {
     List<String> optionLines() {
         List<String> out = new ArrayList<>();
         for (var r : AaLadder.rungs(tree.ladder)) if (r.picker() != null) out.add(r.id.substring(6) + " options: " + r.options());
+        out.addAll(io.github.mojolowjo.entropybot.aa.brain.Costs.lines(bb));      // aa-costs: the cost terms
         return out;
     }
 
@@ -694,6 +702,7 @@ public final class AaRuntime implements JobPort {
 
     /** The fixed inputs (AA_PLAN 7) from the sense snapshot plus a few direct reads. */
     private boolean sheepLatch;
+    private final io.github.mojolowjo.entropybot.aa.brain.Costs.ToolSmoother toolSmoother = new io.github.mojolowjo.entropybot.aa.brain.Costs.ToolSmoother();
 
     private void fill(Inputs in, BrainState s, LocalPlayer p, Minecraft mc) {
         in.inWorld = s.inWorld;
@@ -723,7 +732,8 @@ public final class AaRuntime implements JobPort {
         if (mc.level != null) in.dimension = mc.level.dimension().location().toString();
         if (!sheepLatch && mc.level != null && !mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(48)).isEmpty()) sheepLatch = true;
         in.sheepSeen = sheepLatch;
-        in.pickTier = s.feas.known ? s.feas.pickTier : (s.pickaxes > 0 ? 1 : 0);
+        // aa-costs: the tier smoothed (a drop counts after 4 s held) in place of the tools score's old cap at 74
+        in.pickTier = toolSmoother.update(s.feas.known ? s.feas.pickTier : (s.pickaxes > 0 ? 1 : 0), System.currentTimeMillis());
         in.pickPct = s.pickaxes == 0 ? 0 : s.pickPct;
         in.pickaxes = s.pickaxes;
         in.bedKnown = s.bedNear;
@@ -757,7 +767,13 @@ public final class AaRuntime implements JobPort {
         in.night = s.night;
         in.thunder = s.thundering;
         in.underGround = !s.skyAbove;
-        in.coalReserve = io.github.mojolowjo.entropybot.aa.brain.Goals.coalReserve(bb);
+        double[] cg = io.github.mojolowjo.entropybot.aa.brain.Goals.coalGoal(bb);
+        in.coalGoalScore = cg[0];
+        in.coalGoalN = (int) cg[1];
+        if (in.coalGoalN > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "coal", in.torchCoalTerms());
+        in.difficulty = mc.level.getDifficulty().getId();
+        in.light = mc.level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p.blockPosition());
+        in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size();
         in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
         int[] me = Jobs.here(p);
