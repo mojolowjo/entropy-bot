@@ -194,6 +194,26 @@ public final class AaDesires {
                 + (out.isEmpty() ? "none" : String.join(", ", out));
     }
 
+    // ---- B4: the owner's goals (2.5) ----
+
+    /** An owner goal (aa want): ownerBase +/- 20, fresh for 5 min (may interrupt once), parked when blocked. */
+    public static Desire ownerGoal(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
+        String id = g.id();
+        RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
+            String c = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
+            if (c == null) return null;
+            String chain = c.startsWith("goal ") ? bb.port.resolve(c) : c;
+            if (chain == null) bb.port.log("aa goal " + g.r.key() + ": no plan for \"" + c + "\"");
+            return chain == null ? null : JobPort.TaskSpec.of(TaskKind.EXPLORE, chain, "owner goal");
+        });
+        Node node = AaTree.idleCd(id + ".cd", job);
+        return new Desire(id, Desire.Kind.OWNER, node, bb -> cooling(node, bb) ? -1 : io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))
+                .infeasible(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g))
+                .prereq(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.prereq(bb, g))
+                .fresh(g.given + io.github.mojolowjo.entropybot.aa.brain.Goals.FRESH_MS)
+                .cost(600).night(g.r.ore() ? +1 : 0).lastTry();
+    }
+
     // ---- B3: wants (2.2, 2.4) and the night (2.10) ----
 
     /** A want: personality weight x boredom; its job cools down like an idle option. */

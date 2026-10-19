@@ -17,6 +17,9 @@ public final class Inputs {
     public int air = 300;
     public boolean inLavaOrFire;
     public int freeSlots = 36, foodItems, torches, wood, cobble, coal, ironIngots, wool, string;
+    /** B4: the bag by item path ("raw_iron" -> 3) and the bot's dimension id. Not in the vector. */
+    public java.util.Map<String, Integer> bag = java.util.Map.of();
+    public String dimension = "minecraft:overworld";
     /** A sheep has been seen (latched by the adapter): a wool source. */
     public boolean sheepSeen;
     /** The best pickaxe: tier 0 none, 1 wood/gold, 2 stone, 3 iron, 4 diamond+; its durability left in %; count. */

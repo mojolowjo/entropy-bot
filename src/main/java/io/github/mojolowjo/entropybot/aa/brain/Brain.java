@@ -69,6 +69,27 @@ public final class Brain extends Node {
         desires.add(d);
     }
 
+    /** B4 (aa drop / a goal reached): the desire leaves the list (halted if it runs); false when no such id. */
+    public boolean remove(String id, String why) {
+        for (int i = 0; i < desires.size(); i++) {
+            if (!desires.get(i).id.equals(id)) continue;
+            if (i == running) {
+                desires.get(i).node.halt(why);
+                running = -1;
+                sig = null;
+                taskSeen = false;
+            } else if (running > i) running--;
+            if (lastWinner == i) lastWinner = -1;
+            else if (lastWinner > i) lastWinner--;
+            desires.remove(i);
+            List<Scored> keep = new ArrayList<>();
+            for (Scored s : lastScored) if (!s.d().id.equals(id)) keep.add(s);
+            lastScored = keep;
+            return true;
+        }
+        return false;
+    }
+
     public List<Desire> desires() { return desires; }
 
     /** The running desire, or null. */

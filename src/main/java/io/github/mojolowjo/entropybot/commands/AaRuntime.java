@@ -441,6 +441,7 @@ public final class AaRuntime implements JobPort {
             fill(bb.in, sensed, p, mc);
             progressTick(p);
             brainFacts(mc, now);
+            goalsTick(p, tick);
             if (now < heldUntil) {
                 releaseSwim(mc);
                 if (bb.in.otherJob == null) {
@@ -544,6 +545,8 @@ public final class AaRuntime implements JobPort {
         in.wool = 0;
         for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_wool")) in.wool += e.getValue();
         in.string = bag.getOrDefault("string", 0);
+        in.bag = bag;
+        if (mc.level != null) in.dimension = mc.level.dimension().location().toString();
         if (!sheepLatch && mc.level != null && !mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(48)).isEmpty()) sheepLatch = true;
         in.sheepSeen = sheepLatch;
         in.pickTier = s.feas.known ? s.feas.pickTier : (s.pickaxes > 0 ? 1 : 0);
@@ -1256,6 +1259,221 @@ public final class AaRuntime implements JobPort {
         if (err != null) return "error: " + err;
         savePersonality(p);
         return "ok: " + w[0] + " " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(v) + " (saved)";
+    }
+
+    // ---- B4 (BRAIN_PLAN 2.5): aa want / drop / goals ----
+
+    private io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog catalog;
+    private String catalogWorld;
+
+    /** The registries for the resolver, read once per world: ids, names (client language), pickaxe tiers, worldgen. */
+    private io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog catalog(Minecraft mc) {
+        String world = Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString();
+        if (catalog != null && world.equals(catalogWorld)) return catalog;
+        List<String> items = new ArrayList<>(), blocks = new ArrayList<>();
+        Map<String, String> names = new java.util.HashMap<>();
+        Map<String, Integer> tiers = new java.util.HashMap<>();
+        for (var e : net.minecraft.core.registries.BuiltInRegistries.ITEM.entrySet()) {
+            String id = e.getKey().location().toString();
+            items.add(id);
+            try {
+                names.put(id, e.getValue().getDescription().getString().toLowerCase(java.util.Locale.ROOT));
+            } catch (RuntimeException ignored) {}
+        }
+        for (var e : net.minecraft.core.registries.BuiltInRegistries.BLOCK.entrySet()) {
+            String id = e.getKey().location().toString();
+            blocks.add(id);
+            var st = e.getValue().defaultBlockState();
+            tiers.put(id, io.github.mojolowjo.entropybot.aa.brain.Thing.tier(st.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE),
+                    st.is(net.minecraft.tags.BlockTags.NEEDS_STONE_TOOL), st.is(net.minecraft.tags.BlockTags.NEEDS_IRON_TOOL),
+                    st.is(net.minecraft.tags.BlockTags.NEEDS_DIAMOND_TOOL)));
+            names.putIfAbsent(id, e.getValue().getName().getString().toLowerCase(java.util.Locale.ROOT));
+        }
+        Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> gen = worldgen(mc);
+        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen);
+        catalogWorld = world;
+        LOG.info("[entropybot] aa: resolver catalog: {} items, {} blocks, worldgen {}", items.size(), blocks.size(),
+                gen == null ? "none (multiplayer)" : gen.size() + " ore blocks");
+        return catalog;
+    }
+
+    /**
+     * Singleplayer only: every ore feature (OreConfiguration targets) in each level's possible biomes (NeoForge biome
+     * modifiers included), with the Y range from its height_range placement (encoded to JSON: the anchors). Null when
+     * there is no integrated server; a failure is logged and gives null (the vanilla table / guess take over).
+     */
+    private static Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> worldgen(Minecraft mc) {
+        var server = mc.getSingleplayerServer();
+        if (server == null) return null;
+        Map<String, java.util.Set<String>> dims = new java.util.HashMap<>();
+        Map<String, int[]> ys = new java.util.HashMap<>();
+        try {
+            for (var lvl : server.getAllLevels()) {
+                String dim = lvl.dimension().location().toString();
+                int bottom = lvl.getMinBuildHeight(), top = lvl.getMaxBuildHeight();
+                java.util.Set<Object> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                for (var biome : lvl.getChunkSource().getGenerator().getBiomeSource().possibleBiomes())
+                    for (var set : biome.value().getGenerationSettings().features())
+                        for (var pf : set) {
+                            var placed = pf.value();
+                            if (!seen.add(placed)) continue;
+                            if (!(placed.feature().value().config() instanceof net.minecraft.world.level.levelgen.feature.configurations.OreConfiguration oc)) continue;
+                            int[] y = heights(placed.placement(), bottom, top);
+                            for (var t : oc.targetStates) {
+                                String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(t.state.getBlock()).toString();
+                                dims.computeIfAbsent(id, k -> new java.util.TreeSet<>()).add(dim);
+                                if (y != null) ys.merge(id, y, (a, b) -> new int[]{Math.min(a[0], b[0]), Math.max(a[1], b[1])});
+                            }
+                        }
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: worldgen read failed ({}) - the vanilla table and name guesses are used", e.toString());
+            return null;
+        }
+        Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> out = new java.util.HashMap<>();
+        for (var e : dims.entrySet()) {
+            int[] y = ys.get(e.getKey());
+            int u = io.github.mojolowjo.entropybot.aa.brain.Thing.UNKNOWN_Y;
+            out.put(e.getKey(), new io.github.mojolowjo.entropybot.aa.brain.Thing.Gen(e.getValue(), y == null ? u : y[0], y == null ? u : y[1]));
+        }
+        return out;
+    }
+
+    /** The min/max Y of the anchors in a placement list's height_range (null when none). */
+    private static int[] heights(List<net.minecraft.world.level.levelgen.placement.PlacementModifier> mods, int bottom, int top) {
+        int[] r = null;
+        for (var m : mods) {
+            if (!(m instanceof net.minecraft.world.level.levelgen.placement.HeightRangePlacement)) continue;
+            var json = net.minecraft.world.level.levelgen.placement.PlacementModifier.CODEC
+                    .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, m).result().orElse(null);
+            if (json == null) continue;
+            List<Integer> vals = new ArrayList<>();
+            anchors(json, bottom, top, vals);
+            for (int v : vals) r = r == null ? new int[]{v, v} : new int[]{Math.min(r[0], v), Math.max(r[1], v)};
+        }
+        return r;
+    }
+
+    private static void anchors(com.google.gson.JsonElement j, int bottom, int top, List<Integer> out) {
+        if (j.isJsonArray()) for (var x : j.getAsJsonArray()) anchors(x, bottom, top, out);
+        if (!j.isJsonObject()) return;
+        for (var e : j.getAsJsonObject().entrySet()) {
+            String k = e.getKey();
+            if ((k.equals("absolute") || k.equals("above_bottom") || k.equals("below_top")) && e.getValue().isJsonPrimitive())
+                out.add(io.github.mojolowjo.entropybot.aa.brain.Thing.anchorY(k, e.getValue().getAsInt(), bottom, top));
+            else anchors(e.getValue(), bottom, top, out);
+        }
+    }
+
+    /** Every 10 s while goals exist: known positions per family (OreIndex, 256 around), reached goals said and dropped. */
+    private boolean knownDue;
+
+    private void goalsTick(LocalPlayer p, long tick) {
+        var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
+        if (goals.isEmpty() || (tick % 200 != 7 && !knownDue)) return;
+        knownDue = false;
+        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.done(bb)) {
+            tree.brain.remove(g.id(), "goal reached");
+            String msg = "got " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + " " + g.r.key() + " (goal " + g.n + " done)";
+            LOG.info("[entropybot] aa: {}", msg);
+            c.whisper(c.owner(), "aa: " + msg);
+        }
+        Map<String, Integer> known = new java.util.HashMap<>();
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        int[] me = Jobs.here(p);
+        Map<String, io.github.mojolowjo.entropybot.sense.OreIndex.Count> within = pass.index().within(bb.in.dimension, me[0], me[1], me[2], 256);
+        for (var g : goals) {
+            if (!g.r.ore()) continue;
+            int n = 0;
+            for (var e : within.entrySet()) if (g.r.ids().contains(e.getKey())) n += e.getValue().n();
+            known.put(g.r.key(), n);
+        }
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.KNOWN_FACT, known);
+    }
+
+    /** aa want <thing> [n] [high|low] (also the wants by name: house/build, explore, tidy). */
+    String want(String arg) {
+        var a = io.github.mojolowjo.entropybot.aa.brain.Goals.parse(arg);
+        if (a.err() != null) return a.err();
+        String w = a.word();
+        String wantKey = switch (w) {
+            case "house", "build" -> "build";
+            case "explore", "tidy" -> w;
+            default -> null;
+        };
+        long now = System.currentTimeMillis();
+        if (wantKey != null) {         // a want by name: bored now (it wins by its weight when nothing more urgent runs)
+            io.github.mojolowjo.entropybot.aa.brain.Wants.done(bb, "want." + wantKey, now - (long) (100 * io.github.mojolowjo.entropybot.aa.brain.Wants.DAY_MS));
+            return "ok: want." + wantKey + " is bored now (weight " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(io.github.mojolowjo.entropybot.aa.brain.Personality.of(bb).get(wantKey))
+                    + "; aa like " + wantKey + " <n> to raise it)";
+        }
+        for (var d : tree.brain.desires())
+            if (d.id.equals("needs." + w)) return w + " is one of my needs: aa do " + w + " runs it now";
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return "error: no world";
+        var r = io.github.mojolowjo.entropybot.aa.brain.Thing.resolve(w, catalog(mc));
+        if (r.err() != null) {
+            for (var d : tree.brain.desires())       // review: an ore/item word wins; a need name only when nothing resolves
+                if (d.id.equals("needs." + w)) return w + " is one of my needs: aa do " + w + " runs it now";
+            return "aa want: " + r.err();
+        }
+        var g = io.github.mojolowjo.entropybot.aa.brain.Goals.add(bb, r, a.n(), a.prio(), now);
+        tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
+        knownDue = true;                              // review: known positions now, not in up to 10 s
+        String blocked = io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g);
+        LOG.info("[entropybot] aa: owner goal {} x{} prio {}: {}{}", r.key(), g.n, g.prio, r.text(), blocked == null ? "" : " - parked: " + blocked);
+        return "ok: goal " + r.key() + " x" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + " (score "
+                + Math.round(io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g)) + "): " + r.text()
+                + (blocked != null ? " - parked: " + blocked : "") + (on() ? "" : " (aa is off: aa on to work on it)");
+    }
+
+    /** aa drop <thing|all>. */
+    String drop(String arg) {
+        var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
+        String w = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "_");
+        if (w.isEmpty()) return "usage: aa drop <thing>|all";
+        if (goals.isEmpty()) return "no owner goals";
+        List<String> gone = new ArrayList<>();
+        for (var g : new ArrayList<>(goals)) {
+            boolean hit = w.equals("all") || g.r.key().equals(w) || g.r.key().endsWith(":" + w) || g.r.word().trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "_").equals(w)
+                    || g.r.ids().contains(w.contains(":") ? w : "minecraft:" + w);
+            if (!hit) continue;
+            goals.remove(g);
+            tree.brain.remove(g.id(), "aa drop");
+            gone.add(g.r.key());
+        }
+        if (gone.isEmpty()) {
+            List<String> keys = new ArrayList<>();
+            for (var g : goals) keys.add(g.r.key());
+            return "no goal " + w + " (goals: " + String.join(", ", keys) + ")";
+        }
+        LOG.info("[entropybot] aa: dropped goals {}", gone);
+        return "ok: dropped " + String.join(", ", gone);
+    }
+
+    /** aa goals: each goal with its count, score and next step, then the top ideas. */
+    String goalsText() {
+        var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
+        List<String> out = new ArrayList<>();
+        for (var g : goals) out.add(io.github.mojolowjo.entropybot.aa.brain.Goals.line(bb, g, scoreOf(g.id())));
+        return "owner goals" + (goals.isEmpty() ? ": none (aa want <thing> [n] [high|low])" : " (" + goals.size() + "):\n" + String.join("\n", out))
+                + "\n" + ideasLine();
+    }
+
+    /** "goals: iron_ore 0/5 70" for aa status (empty when none). */
+    String goalsLine() {
+        var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
+        if (goals.isEmpty()) return "goals: none";
+        List<String> out = new ArrayList<>();
+        for (var g : goals) out.add(g.r.key() + " " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + "/" + g.n + " " + scoreOf(g.id()));
+        return "goals: " + String.join(", ", out);
+    }
+
+    private String scoreOf(String id) {
+        for (var s : tree.brain.lastScored())
+            if (s.d().id.equals(id)) return "score " + Math.round(s.score()) + (s.skip() != null ? " (" + s.skip() + ")" : "")
+                    + (tree.brain.runningDesire() == s.d() ? " running" : "");
+        return "score - (not scored yet)";
     }
 
     String wantsLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.wantsLine(bb, tree.brain.lastScored()); }

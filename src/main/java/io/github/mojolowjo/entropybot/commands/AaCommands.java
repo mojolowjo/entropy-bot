@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -21,7 +21,7 @@ final class AaCommands {
             case "on" -> { return aa.turnOn(); }
             case "off" -> { return aa.turnOff("aa off"); }
             case "", "status" -> {
-                return aa.statusLine() + "\n" + aa.counts() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : "");
+                return aa.statusLine() + "\n" + aa.counts() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : "");
             }
             case "why" -> {
                 List<String> d = aa.decisions();
@@ -33,6 +33,9 @@ final class AaCommands {
             case "tree" -> { return aa.tree.mermaid() + (aa.on() ? "\n%% desires now: " + String.join(" | ", aa.brainLines(30)) + "\n%% " + aa.ideasLine() : ""); }
             case "stats" -> { return aa.statsText(); }
             case "like" -> { return aa.like(arg); }
+            case "want" -> { return aa.want(arg); }
+            case "drop" -> { return aa.drop(arg); }
+            case "goals" -> { return aa.goalsText(); }
             case "ask", "pick", "do", "skip", "use" -> {
                 if (!aa.on()) return "aa is off (aa on first)";
                 return aa.manual(verb, arg);
