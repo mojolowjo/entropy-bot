@@ -519,6 +519,8 @@ public final class AaRuntime implements JobPort {
     }
 
     /** The fixed inputs (AA_PLAN 7) from the sense snapshot plus a few direct reads. */
+    private boolean sheepLatch;
+
     private void fill(Inputs in, BrainState s, LocalPlayer p, Minecraft mc) {
         in.inWorld = s.inWorld;
         in.health = p.getHealth();
@@ -541,6 +543,9 @@ public final class AaRuntime implements JobPort {
         in.ironIngots = bag.getOrDefault("iron_ingot", 0);
         in.wool = 0;
         for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_wool")) in.wool += e.getValue();
+        in.string = bag.getOrDefault("string", 0);
+        if (!sheepLatch && mc.level != null && !mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(48)).isEmpty()) sheepLatch = true;
+        in.sheepSeen = sheepLatch;
         in.pickTier = s.feas.known ? s.feas.pickTier : (s.pickaxes > 0 ? 1 : 0);
         in.pickPct = s.pickaxes == 0 ? 0 : s.pickPct;
         in.pickaxes = s.pickaxes;

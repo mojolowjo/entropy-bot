@@ -50,6 +50,15 @@ public final class Desire {
         return this;
     }
 
+    /** Feasibility: the reason no path exists now (a required input has no source), else null. Parks the desire. */
+    Function<Blackboard, String> infeasible = bb -> null;
+
+    /** A wanted desire with no feasible path scores ~0 (parked, reason in aa status); re-checked on every scoring. */
+    public Desire infeasible(Function<Blackboard, String> f) {
+        infeasible = f;
+        return this;
+    }
+
     /** A failed try ends this tick's picking (the idle options: one try per tick, as the idle chooser did). */
     boolean lastTry;
 

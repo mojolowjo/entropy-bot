@@ -88,6 +88,15 @@ public final class Brain extends Node {
             bb.port.log("brain: " + d.id + " score failed: " + e);
             return new Scored(d, -1, -1, "score failed", "score failed: " + e);
         }
+        if (v >= 0 && v < 100) {                       // feasibility: no source for a required input = parked, not worth 38
+            String why = null;
+            try {
+                why = d.infeasible.apply(bb);
+            } catch (RuntimeException e) {
+                bb.port.log("brain: " + d.id + " feasibility failed: " + e);
+            }
+            if (why != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + why);
+        }
         String skip = v < 0 ? "not wanted" : null;
         Long cu = coolUntil.get(d.id);
         if (skip == null && cu != null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + streak.getOrDefault(d.id, 0) + " fails)";

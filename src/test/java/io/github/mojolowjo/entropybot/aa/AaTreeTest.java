@@ -104,8 +104,7 @@ class AaTreeTest {
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
         tree.tick(bb);
         assertEquals("goal iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
-        String reasons = String.join(" | ", reasons());
-        assertTrue(reasons.contains("BASE_BED skipped: no wool for a bed (0/3"), reasons);
+        assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bed PROGRESS 0") && l.contains("parked: no wool source")), "parked, not scored: " + tree.brain.whyLines(20));
         assertTrue(tree.brain.whyLines(20).stream().anyMatch(l -> l.startsWith("needs.bag UPKEEP -1")), "BRAIN B1: a met rung scores -1: " + tree.brain.whyLines(20));
         assertEquals(0, tracer.counts.switches, "no task replaced another");
         assertEquals(0, tracer.counts.pointless);

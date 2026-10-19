@@ -71,6 +71,15 @@ public final class AaDesires {
         return o instanceof Set<?> s ? (Set<String>) s : Set.of();
     }
 
+    /** Wool for a bed (3) needs a source: wool or 12 string had, or a sheep seen. Null = feasible. */
+    public static String woolSource(int wool, int string, boolean sheepSeen) {
+        return wool >= 3 || string >= 12 || sheepSeen ? null : "no wool source (" + wool + "/3 wool, " + string + "/12 string, no sheep seen)";
+    }
+
+    static String bedInfeasible(Blackboard bb) {
+        return bb.in.bedKnown || bb.in.bedInBag ? null : woolSource(bb.in.wool, bb.in.string, bb.in.sheepSeen);
+    }
+
     static TechTree tree(Blackboard bb) { return bb.fact(TECH_FACT) instanceof TechTree t ? t : null; }
 
     /** Iron's value: 40 + 30 x the tech tree's share of iron ingots (no tree yet: the full 30). */
@@ -92,7 +101,7 @@ public final class AaDesires {
             case "needs.tableFurnace" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 70)).cost(60);
             case "needs.spareTable" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 50)).cost(10);
             case "needs.base" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 55)).cost(240);
-            case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 45)).cost(120);
+            case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 45)).cost(120).infeasible(AaDesires::bedInfeasible);
             case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600)
                     .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null);
             default -> new Desire(r.id, kindOf(r.id), r, bb -> rungScore(r, bb, b -> 30));
