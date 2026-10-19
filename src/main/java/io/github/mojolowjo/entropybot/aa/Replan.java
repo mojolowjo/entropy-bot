@@ -244,7 +244,7 @@ public final class Replan {
         double c = cur == null ? Double.POSITIVE_INFINITY : cur.total();
         if (alt == null) return new Decision(null, -1, c, 0, "no other option");
         double a = alt.total();
-        String scores = (wandered ? "wandered >" + WANDER + " from the target: " : "") + (cur == null ? running.id() + " gone" : cur.id() + " " + Math.round(c)) + " vs " + alt.id() + " " + Math.round(a);
+        String scores = (wandered ? "bug signal: wandered >" + WANDER + " from the target (a per-ore mine never should): " : "") + (cur == null ? running.id() + " gone" : cur.id() + " " + Math.round(c)) + " vs " + alt.id() + " " + Math.round(a);
         if (!(a <= c * (1 - CHEAPER) && c - a >= MIN_SAVE)) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
         if (lastSwitchAt >= 0 && now - lastSwitchAt < LOCK_MS) return new Decision(null, -1, c, a, scores + ": locked " + (LOCK_MS - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");
         if (midDigOrPillar) return new Decision(null, -1, c, a, scores + ": mid dig-down or pillar");

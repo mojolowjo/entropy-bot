@@ -111,6 +111,9 @@ public final class Goals {
         if (left <= 0 || bb.in.pickTier < g.r.tier()) return null;
         if (!g.r.ore()) return "goal " + g.r.key() + " " + left;
         String w = g.r.key().replaceFirst("^.*:", "");
+        // round 2 item 5: the nearest known ore by name (that cell and its vein); the goal picks again for the next one
+        int[] at = nearest(bb, g.r.key());
+        if (at != null) return "mine " + w + " 1 at " + at[0] + " " + at[1] + " " + at[2] + (at.length > 3 && at[3] == 0 ? " walk" : " dig");
         if (known(bb, g.r.key()) > 0) return "mine " + w + " " + left + " dig";
         // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
         if (g.r.where() != null && !g.r.where().yKnown()) return "explore 5";
@@ -137,6 +140,26 @@ public final class Goals {
         if (!(bb.fact(FACT) instanceof List<?>)) return new double[]{0, 0};
         for (Goal g : of(bb)) if (g.r.key().replaceFirst("^.*:", "").matches("(deepslate_)?coal(_ore)?") && have(bb.in.bag, g) < g.n) return new double[]{score(bb, g), g.n};
         return new double[]{0, 0};
+    }
+
+    /** Round 2 item 5: goal key -> the nearest known ore AA can take, {x, y, z, dig 1 | walk 0} (the adapter refreshes it). */
+    public static final String NEAREST_FACT = "aa.oreNearest";
+
+    public static int[] nearest(Blackboard bb, String key) {
+        return bb.fact(NEAREST_FACT) instanceof Map<?, ?> m && m.get(key) instanceof int[] a && a.length >= 3 ? a : null;
+    }
+
+    /**
+     * The first ore of the scorer's facts (nearest first) that may be taken: not denied, not a fatal wet dig, an open
+     * face (walk) or loaded and at most {@code digMax} deep (dig); null none. Pure.
+     */
+    public static int[] pickOre(List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores, int digMax) {
+        for (var o : ores) {
+            if (o.deny() != null || o.floor()) continue;
+            if (o.openFace()) return new int[]{o.x(), o.y(), o.z(), o.loaded() ? 0 : 1};
+            if (o.loaded() && !o.wetDigDown() && o.depth() <= digMax) return new int[]{o.x(), o.y(), o.z(), 1};
+        }
+        return null;
     }
 
     /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */
