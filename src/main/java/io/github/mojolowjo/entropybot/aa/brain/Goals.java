@@ -111,7 +111,10 @@ public final class Goals {
         if (left <= 0 || bb.in.pickTier < g.r.tier()) return null;
         if (!g.r.ore()) return "goal " + g.r.key() + " " + left;
         String w = g.r.key().replaceFirst("^.*:", "");
-        return known(bb, g.r.key()) > 0 ? "mine " + w + " " + left + " dig" : "mine strip " + w + " " + left;
+        if (known(bb, g.r.key()) > 0) return "mine " + w + " " + left + " dig";
+        // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
+        if (g.r.where() != null && !g.r.where().yKnown()) return "explore 5";
+        return "mine strip " + w + " " + left;
     }
 
     /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */

@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option>";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -36,6 +36,7 @@ final class AaCommands {
             case "want" -> { return aa.want(arg); }
             case "drop" -> { return aa.drop(arg); }
             case "goals" -> { return aa.goalsText(); }
+            case "ore" -> { return aa.oreInfo(arg); }
             case "ask", "pick", "do", "skip", "use" -> {
                 if (!aa.on()) return "aa is off (aa on first)";
                 return aa.manual(verb, arg);
