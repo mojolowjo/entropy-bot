@@ -329,6 +329,31 @@ public final class AaDesires {
                 .cost(600).exposure(g.r.ore() ? Desire.Exposure.UNDER : Desire.Exposure.ANY).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
     }
 
+    // ---- B7: schematic builds (2.12) ----
+
+    /** A build goal (aa build): as an owner goal; the chain gathers what the current layer lacks, else builds. */
+    public static Desire ownerBuild(io.github.mojolowjo.entropybot.aa.brain.Blueprint.Build b) {
+        String id = b.id();
+        RunJob job = new RunJob(id + ".job", TaskKind.BASE_BED, bb -> {
+            String c = io.github.mojolowjo.entropybot.aa.brain.Blueprint.chain(bb, b);
+            if (c == null) return null;
+            if (c.startsWith("goal ")) {
+                String chain = bb.port.resolve(c);
+                if (chain == null) {                     // review 1: skip it next pick; Baritone builds the rest
+                    bb.port.log("aa build " + b.name + ": no plan for \"" + c + "\" - building without it");
+                    b.unresolved.add(c.split(" ")[1]);
+                }
+                return chain == null ? null : JobPort.TaskSpec.of(TaskKind.EXPLORE, chain, "owner build");
+            }
+            return new JobPort.TaskSpec(TaskKind.BASE_BED, c, "owner build", 1, 40 * 60_000L, JobPort.TaskSpec.NO_PROGRESS_MS);
+        });
+        Node node = AaTree.idleCd(id + ".cd", job);
+        return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Blueprint.score(bb, b))
+                .infeasible(bb -> io.github.mojolowjo.entropybot.aa.brain.Blueprint.blocked(bb, b))
+                .fresh(b.given + io.github.mojolowjo.entropybot.aa.brain.Goals.FRESH_MS)
+                .cost(1200).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+    }
+
     // ---- B3: wants (2.2, 2.4) and the night (2.10) ----
 
     /** A want: personality weight x boredom; its job cools down like an idle option. */

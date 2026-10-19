@@ -644,6 +644,7 @@ final class DigCommands {
     static String build(Commands c, LocalPlayer p, String rest, String from) {
         String[] parts = rest == null ? new String[0] : rest.trim().split("\\s+");
         String shape = parts.length > 0 ? parts[0].toLowerCase() : "";
+        if (shape.equals("schematic")) return SchematicBuild.start(c, p, parts);       // B7 (BRAIN_PLAN 2.12)
         Map<String, String> ops = Map.of("floor", "fill", "roof", "fill", "fill", "fill", "walls", "walls", "shell", "shell", "clear", "cleararea", "under", "fill");
         if (!ops.containsKey(shape)) return BUILD_USAGE;
         // V1a: the zone is an area now, named last: "build floor cobblestone <area>", "build clear <area>"
