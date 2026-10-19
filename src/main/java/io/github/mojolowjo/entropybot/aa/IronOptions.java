@@ -286,12 +286,16 @@ public final class IronOptions {
                 return new Options.Choice(o, List.of(o), c.dropped(), c.why());
             }
             List<Options.Option> rows = new ArrayList<>();
+            int oreIdx = mineStepIndex(steps);
             for (Scored s : c.ranked()) {
                 Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped());
                 String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
-                rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), rewrite(steps, one), s.cost(), s.why(), Memory.key(s.way(), s.target()), true));
+                rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), rewrite(steps, one), s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
+                        returnLeg(s, f, oreIdx)));
             }
-            return new Options.Choice(rows.get(0), rows, c.dropped(), c.why());
+            // aa-replan: ranked by the round trip (go + do + return)
+            rows.sort(java.util.Comparator.comparingDouble(Options.Option::total));
+            return new Options.Choice(rows.get(0), rows, c.dropped(), Options.Choice.line(rows, c.dropped(), "no way to iron") + "; smelt " + c.smelt().name().toLowerCase(Locale.ROOT));
         }
 
         @Override public boolean switchable(String end) { return IronOptions.switchable(end); }
@@ -302,6 +306,28 @@ public final class IronOptions {
             if (part.equals("ore")) return ran == null || ran.way().equals("planner") || ran.way().equals("smelt") ? null : ran.memoryKey();
             return null;
         }
+    }
+
+    /** The first ore step's index in the steps (0-based), -1 none. */
+    static int mineStepIndex(List<String> steps) {
+        for (int i = 0; i < steps.size(); i++) if (MINE_STEP.matcher(steps.get(i).trim().toLowerCase(Locale.ROOT)).matches()) return i;
+        return -1;
+    }
+
+    /**
+     * aa-replan: the way back after the ore step. A dig to a buried ore digs its own shaft down (aa380: straight down):
+     * pillar it (refill x0.05) when the bag has a block per level, else the stairs/walk; an open face in a cave or a cave
+     * walks back its distance; a pillar up drops back down; an ore open to the sky and a strip mine need none here.
+     */
+    static Replan.Ret returnLeg(Scored s, Facts f, int oreIdx) {
+        Ore o = s.target();
+        return switch (s.way()) {
+            case DIG_KNOWN -> o == null || oreIdx < 0 ? Replan.Ret.NONE : Replan.chooseReturn(Math.max(1, o.depth()), true, f.throwaway(), f.placeAllowed(), 0, oreIdx);
+            case WALK_KNOWN -> o == null || o.skyOpen() ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), o.dist(), oreIdx);
+            case PILLAR_KNOWN -> o == null ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), Math.max(0, o.y() - f.meY()), oreIdx < 0 ? -1 : oreIdx + 1);
+            case CAVE -> Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), Math.max(0, f.caveDist()), oreIdx);
+            case STRIP -> Replan.Ret.NONE;
+        };
     }
 
     /** The IRON rung's {@link Rung.Picker}: the generic picker over {@link Set}. */

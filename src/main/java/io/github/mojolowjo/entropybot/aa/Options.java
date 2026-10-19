@@ -44,8 +44,20 @@ public final class Options {
      * @param memoryKey    what a failure of it is remembered under
      * @param needsPlanner it is the planner's chain (or a rewrite of it)
      */
-    public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner) {
-        public String text() { return id + " " + Math.round(cost) + " (" + why + ")"; }
+    public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret) {
+        public Option {
+            if (ret == null) ret = Replan.Ret.NONE;
+        }
+
+        /** An option with no way back to weigh (aa-replan: the return leg is {@link Replan.Ret#NONE}). */
+        public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner) {
+            this(id, way, command, cost, why, memoryKey, needsPlanner, Replan.Ret.NONE);
+        }
+
+        /** aa-replan: the round trip, go + do + return. */
+        public double total() { return cost + ret.cost(); }
+
+        public String text() { return id + " " + Math.round(total()) + " (" + why + (ret.leg() == Replan.Leg.NONE ? "" : "; " + ret.text()) + ")"; }
     }
 
     /** The best option (null: none can run), the ranking, the dropped rows with their reasons, the {@code aa why} line. */
@@ -55,7 +67,7 @@ public final class Options {
         /** Sorts by cost (stable: a tie keeps the earlier option) and writes the standard line. */
         public static Choice of(List<Option> rows, List<String> dropped, String none) {
             List<Option> ranked = new ArrayList<>(rows);
-            ranked.sort(Comparator.comparingDouble(Option::cost));
+            ranked.sort(Comparator.comparingDouble(Option::total));
             return new Choice(ranked.isEmpty() ? null : ranked.get(0), ranked, dropped, line(ranked, dropped, none));
         }
 
@@ -276,7 +288,38 @@ public final class Options {
             }
         }
 
+        private String lastPlanned, lastPlannerWhy;
+        private double lastPlannedCost;
+
+        /**
+         * aa-replan: the options again from fresh facts and the last planner chain, without touching the pick's state
+         * (no counters, no memory sweep, no manual use). Null when no facts can be read or nothing was picked.
+         */
+        public Choice rescore(Blackboard bb) {
+            if (last == null || ran == null) return null;
+            Object sup = bb.fact(factsKey);
+            if (!(sup instanceof Supplier<?> s)) return null;
+            Object fo;
+            try {
+                fo = s.get();
+            } catch (RuntimeException e) {
+                return null;
+            }
+            if (!type.isInstance(fo)) return null;
+            return set.choose(type.cast(fo), memory, bb.clock.now(), lastPlanned, lastPlannedCost, lastPlannerWhy, null);
+        }
+
+        /** aa-replan: a switch: the fresh ranking is the last one and {@code o} the option that runs now. */
+        public void adopt(Choice fresh, Option o) {
+            last = fresh;
+            ran = o;
+            why = fresh.why();
+        }
+
         private String pick0(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+            lastPlanned = planned;
+            lastPlannedCost = plannedCost;
+            lastPlannerWhy = plannerWhy;
             Object sup = bb.fact(factsKey);
             if (!switching) switches = 0;
             String after = switching ? lastEnd : null;

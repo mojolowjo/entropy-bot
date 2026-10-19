@@ -347,7 +347,8 @@ public final class AaRuntime implements JobPort {
             String k = r.picker().counters(now);
             if (k != null) b.append('\n').append(r.id.substring(6)).append(": ").append(k);
         }
-        return (red ? "!! a facts supplier failed in the last minute (see the log: aa: <RUNG> facts:)\n" : "") + io.github.mojolowjo.entropybot.aa.AaManual.of(bb).describe(now) + b;
+        return (red ? "!! a facts supplier failed in the last minute (see the log: aa: <RUNG> facts:)\n" : "") + io.github.mojolowjo.entropybot.aa.AaManual.of(bb).describe(now) + b
+                + "\n" + replanLog.text(replanOn()) + (runningOpt == null ? "" : "; running " + runningOpt.id() + (runningOpt.ret().leg() == io.github.mojolowjo.entropybot.aa.Replan.Leg.NONE ? "" : ", " + runningOpt.ret().text()));
     }
 
     /** The rung AA works on now (the ladder's running rung), else the one that picked last; null none. */
@@ -597,6 +598,7 @@ public final class AaRuntime implements JobPort {
             }
             io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString());
             Status s = tree.tick(bb);
+            replanTick(p, now);
             for (var r : AaLadder.rungs(tree.ladder)) if (r.id.equals("needs.woodArea") && r.last() == Status.SUCCESS) bb.fact(AaLadder.TREE_AREA_FACT, null);
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
@@ -834,6 +836,9 @@ public final class AaRuntime implements JobPort {
         myChain = CHAIN;
         clearEscape();
         escapes = 0;
+        runningOpt = null;
+        pendingReturn = null;
+        returnDone = null;
         if (AaLadder.CLIMB.equals(t.chain())) {
             // 0.36.3: climb plans its own staircase and runs it as its own chain "climb"; "ok: I'm not in a hole" = done
             LocalPlayer p = Minecraft.getInstance().player;
@@ -853,14 +858,158 @@ public final class AaRuntime implements JobPort {
             currentChain = t.chain();
             return current;
         }
-        String r = c.chains.startChain(c.owner(), CHAIN, t.chain(), 1);
+        io.github.mojolowjo.entropybot.aa.Options.Option opt = optionFor(t.chain());
+        String head = opt == null ? t.chain() : chainFrom(opt, 0);
+        String r = c.chains.startChain(c.owner(), CHAIN, head, 1);
         if (r == null || !r.startsWith("started")) {
             refusal = r == null ? "error: no answer" : r;
+            runningOpt = null;
+            pendingReturn = null;
             return -1;
         }
         current = ++seq;
-        currentChain = t.chain();
+        currentChain = head;
         return current;
+    }
+
+    // ---- aa-replan: the stored return leg and the rolling re-score (aa/Replan) ----
+
+    /** The option AA's task runs (null: not an option's chain), the step its chain started at, the stored way back. */
+    private io.github.mojolowjo.entropybot.aa.Options.Option runningOpt;
+    private int stepOffset;
+    /** The steps after the ore step, held while the return leg runs ("" none); null: no return leg pending. */
+    private String pendingReturn, returnDone;
+    private final io.github.mojolowjo.entropybot.aa.Replan.Timer replanTimer = new io.github.mojolowjo.entropybot.aa.Replan.Timer();
+    final io.github.mojolowjo.entropybot.aa.Replan.Log replanLog = new io.github.mojolowjo.entropybot.aa.Replan.Log();
+    private long lastSwitchAt = -1;
+
+    /** aa replan on|off (saved; default on on this branch). */
+    boolean replanOn() {
+        JsonObject d = data();
+        return !d.has("replan") || d.get("replan").getAsBoolean();
+    }
+
+    String replan(String arg) {
+        String a = arg == null ? "" : arg.trim();
+        if (!a.equals("on") && !a.equals("off")) return "usage: aa replan on|off (now " + (replanOn() ? "on" : "off") + "); " + replanLog.text(replanOn());
+        data().addProperty("replan", a.equals("on"));
+        c.saved();
+        return "ok: replan " + a + (a.equals("on") ? " (re-score at each step and every 5 s on a long step; switch at 30% and 3 s cheaper)" : " (the chosen option runs to its end)");
+    }
+
+    /** The picked option whose command is this chain (a rung's picker chose it just now), or null. */
+    private io.github.mojolowjo.entropybot.aa.Options.Option optionFor(String chain) {
+        for (var r : AaLadder.rungs(tree.ladder))
+            if (r.picker() instanceof io.github.mojolowjo.entropybot.aa.Options.Picker<?> op && op.ran() != null && op.ran().command().equals(chain)) {
+                runningOpt = op.ran();
+                stepOffset = 0;
+                replanTimer.reset();
+                return runningOpt;
+            }
+        runningOpt = null;
+        return null;
+    }
+
+    private io.github.mojolowjo.entropybot.aa.Options.Picker<?> pickerOf(io.github.mojolowjo.entropybot.aa.Options.Option o) {
+        for (var r : AaLadder.rungs(tree.ladder))
+            if (r.picker() instanceof io.github.mojolowjo.entropybot.aa.Options.Picker<?> op && op.ran() == o) return op;
+        return null;
+    }
+
+    /**
+     * The option's steps from {@code from}: with a pillar way back after its ore step, only up to that step (the rest
+     * waits in {@link #pendingReturn} and runs after the return leg).
+     */
+    private String chainFrom(io.github.mojolowjo.entropybot.aa.Options.Option o, int from) {
+        List<String> steps = io.github.mojolowjo.entropybot.aa.Options.Chains.split(o.command());
+        stepOffset = from;
+        pendingReturn = null;
+        var ret = o.ret();
+        int a = ret.afterStep();
+        if (ret.leg() == io.github.mojolowjo.entropybot.aa.Replan.Leg.PILLAR && a >= from && a < steps.size()) {
+            pendingReturn = String.join(" then ", steps.subList(a + 1, steps.size()));
+            return String.join(" then ", steps.subList(from, a + 1));
+        }
+        return String.join(" then ", steps.subList(Math.min(from, steps.size()), steps.size()));
+    }
+
+    /** The ore step is done and a pillar way back is stored: check the shaft and the blocks again, pillar or walk. */
+    private void startReturn(LocalPlayer p, Minecraft mc) {
+        try {
+            int[] me = Jobs.here(p);
+            net.minecraft.world.level.Level lv = mc.level;
+            int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+            if (depth == 0) depth = Math.max(0, holeUp(lv, me));
+            boolean shaft = depth > 0;
+            for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
+            Map<String, Integer> bag = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
+            int tw = AaEscape.throwaway(bag);
+            var leg = io.github.mojolowjo.entropybot.aa.Replan.returnNow(runningOpt == null ? null : runningOpt.ret(), depth, shaft, tw);
+            String why = io.github.mojolowjo.entropybot.aa.Replan.returnNowWhy(depth, shaft, tw);
+            LOG.info("[entropybot] aa: way back at {}: {} - {}", Jobs.fmt(me), leg.name().toLowerCase(), why);
+            if (leg == io.github.mojolowjo.entropybot.aa.Replan.Leg.PILLAR) {
+                String r = PaperPlan.INSTANCE.pillar(c, new int[]{me[0], me[1] + depth, me[2]}, c.owner());
+                if (r != null && !r.startsWith("error") && !r.startsWith("busy") && c.jobs.running()) {
+                    escapeWay = "pillar";
+                    escapeJob = c.jobs.job;
+                    return;
+                }
+                LOG.info("[entropybot] aa: the pillar back did not start ({}) - walking", r);
+            }
+            escapeResumeNow("way back: " + why);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: way back failed: {}", e.toString());
+            escapeResumeNow("way back error, walking: " + e);
+        }
+    }
+
+    /**
+     * aa-replan: at each step boundary, and every 5 s on a step older than 15 s, the running option's rung re-scores
+     * its options from here; a switch (30% and 3 s cheaper, not within 20 s of the last, not mid dig-down or pillar)
+     * stops the running step and starts the other option from the step where they differ. Logged with both scores.
+     */
+    private void replanTick(LocalPlayer p, long now) {
+        if (current < 0) { replanTimer.reset(); return; }
+        if (!replanOn() || runningOpt == null || !chainRunning() || !CHAIN.equals(myChain) || escapePending || escapeWay != null
+                || "danger".equals(tree.driver())) return;
+        String st = c.chains.stepText();
+        if (!replanTimer.due(st, now)) return;
+        var op = pickerOf(runningOpt);
+        if (op == null) return;
+        var fresh = op.rescore(bb);
+        if (fresh == null) return;
+        replanLog.checks++;
+        int idx = stepOffset + io.github.mojolowjo.entropybot.aa.Replan.stepIndex(st);
+        int[] me = Jobs.here(p);
+        String body = io.github.mojolowjo.entropybot.aa.Replan.stepBody(st);
+        boolean mid = io.github.mojolowjo.entropybot.aa.Replan.digOrPillarStep(body, me)
+                && (body.trim().toLowerCase().startsWith("goto") || bb.in.underDepth > 0 || bb.in.underGround);
+        var d = io.github.mojolowjo.entropybot.aa.Replan.decide(runningOpt, fresh.ranked(), idx, now, lastSwitchAt, mid);
+        if (!d.switches()) {
+            if (d.why().contains("locked") || d.why().contains("mid dig")) replanLog.held++;
+            return;
+        }
+        String from = runningOpt.id();
+        String line = "replan: " + d.why() + " at step " + (idx + 1) + " (" + body + ") -> " + d.to().id();
+        LOG.info("[entropybot] aa: {}", line);
+        tracer.decision(now, "replan", bb.task() == null ? TaskKind.NONE : bb.task().kind, d.to().command(), line);
+        c.chains.clear();                    // first: a step's end then reaches no chain (clear fires no end)
+        if (c.jobs.running()) c.jobs.finish("stopped: aa replan");
+        if (c.gathering.running()) c.gathering.stop("stopped: aa replan");
+        if (c.hunting.running()) c.hunting.stop("stopped: aa replan");
+        String head = chainFrom(d.to(), d.from());
+        String r = c.chains.startChain(c.owner(), CHAIN, head, 1);
+        op.adopt(fresh, d.to());
+        runningOpt = d.to();
+        lastSwitchAt = now;
+        replanTimer.reset();
+        replanLog.switches++;
+        replanLog.add(new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date(now)) + " " + from + " " + Math.round(d.cur()) + " -> " + d.to().id() + " " + Math.round(d.alt()));
+        if (r == null || !r.startsWith("started")) {
+            lastEnd = "error: the replan switch to " + d.to().id() + " did not start: " + r;
+            return;
+        }
+        currentChain = head;
     }
 
     @Override public String lastRefusal() { return refusal; }
@@ -982,6 +1131,7 @@ public final class AaRuntime implements JobPort {
                 LOG.warn("[entropybot] aa: the stuck step's chain could not be read: {}", e.toString());
             }
             if (resume != null) {
+                stepOffset += Math.max(0, AaEscape.failedStep(msg) - 1);
                 escapes++;
                 escapePending = true;
                 escapeResume = resume;
@@ -990,7 +1140,16 @@ public final class AaRuntime implements JobPort {
                 return;
             }
         }
-        if (mine) lastEnd = msg;
+        // aa-replan: the ore step is done and a pillar way back is stored: the return leg runs, then the rest
+        if (mine && current >= 0 && escapeWay == null && !escapePending && pendingReturn != null && msg != null && msg.startsWith("done") && on()) {
+            returnDone = msg;
+            escapeResume = pendingReturn.isEmpty() ? null : pendingReturn;
+            pendingReturn = null;
+            escapeWay = "return";
+            escapePending = true;
+            return;
+        }
+        if (mine) { lastEnd = msg; pendingReturn = null; }
         // 0.36.3: no tree I can get at in my areas: the woodArea rung makes an area around the nearest reachable one
         if (mine && msg != null && (msg.contains("no trees in my areas") || msg.contains("couldn't get at its trunk"))) treeAreaFact();
     }
@@ -1052,6 +1211,7 @@ public final class AaRuntime implements JobPort {
         escapeFail = null;
         escapeJob = null;
         myChain = CHAIN;
+        returnDone = null;
     }
 
     /** 0.36.a6: starts the pending escape once the stuck walk has settled; a pillar job's end -> go on, or climb. */
@@ -1063,7 +1223,10 @@ public final class AaRuntime implements JobPort {
         if (escapePending) {
             if (c.chains.running() || c.jobs.running()) return;
             escapePending = false;
-            if ("resume".equals(escapeWay)) {
+            if ("return".equals(escapeWay)) {
+                escapeWay = null;
+                startReturn(p, mc);
+            } else if ("resume".equals(escapeWay)) {
                 escapeWay = null;
                 escapeResumeNow("climbed out");
             } else startEscape(p, mc, false);
@@ -1126,6 +1289,17 @@ public final class AaRuntime implements JobPort {
         String fail = escapeFail;
         escapeResume = null;
         myChain = CHAIN;
+        String back = returnDone;
+        returnDone = null;
+        if (back != null) {                  // aa-replan: the way back after the ore step is over
+            if (runningOpt != null) stepOffset = runningOpt.ret().afterStep() + 1;
+            if (resume == null) {
+                escapeFail = null;
+                lastEnd = back + " (back: " + how + ")";
+                LOG.info("[entropybot] aa: back up ({}) - the task is done", how);
+                return;
+            }
+        }
         String r = resume == null ? null : c.chains.startChain(c.owner(), CHAIN, resume, 1);
         if (r != null && r.startsWith("started")) {
             escapeFail = null;
