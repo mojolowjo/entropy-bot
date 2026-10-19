@@ -110,6 +110,11 @@ public final class Brain extends Node {
             parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s"
                     + (stats.n(d.id) >= BrainStats.MIN_RUNS ? " measured" : "");
         }
+        if (v >= 0 && v < 100 && d.night != 0 && Night.hostile(bb)) {   // B3 (2.10): mining by night, surface work by day
+            double n = d.night * Personality.of(bb).get("night");
+            v = Math.max(0, v + n);
+            parts += " night " + (n >= 0 ? "+" : "") + Math.round(n);
+        }
         double rank = v + (urgent(d, v) ? 1000 : 0);
         return new Scored(d, v, rank, parts, skip);
     }
@@ -168,6 +173,7 @@ public final class Brain extends Node {
 
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
+        bonus = Personality.of(bb).get("margin");          // B3 (2.4): the commitment margin is the personality's
         if (bornAt < 0) bornAt = now;
         boolean gap = lastTickAt >= 0 && now - lastTickAt > GAP_MS;
         long prevTick = lastTickAt;
@@ -183,7 +189,7 @@ public final class Brain extends Node {
                 interrupts++;
                 interruptsByKind.merge(beat.d().kind, 1L, Long::sum);
                 String why = (beat.d().kind == Desire.Kind.OWNER ? "urgent: the owner's new goal " : "urgent: ") + beat.d().id + " "
-                        + Math.round(beat.score()) + " beat " + cur.id + " " + Math.round(curScore) + " + " + Math.round(BONUS);
+                        + Math.round(beat.score()) + " beat " + cur.id + " " + Math.round(curScore) + " + " + Math.round(bonus);
                 bb.port.log("brain switch: " + why);
                 cur.node.halt(why);
                 if (beat.d().kind == Desire.Kind.OWNER) beat.d().freshUntil = -1;
@@ -201,6 +207,8 @@ public final class Brain extends Node {
     }
 
     private double curScore;
+    /** The commitment bonus now (the personality's margin, default {@link #BONUS}). */
+    private double bonus = BONUS;
 
     private Scored challenger(Blackboard bb, Desire cur, long now) {
         List<Scored> all = scoreAll(bb);
@@ -216,7 +224,7 @@ public final class Brain extends Node {
             if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus
             boolean overOwner = urgent(s.d(), s.own()) && cur.kind == Desire.Kind.OWNER;
-            if (!overOwner && s.score() <= curScore + BONUS) continue;
+            if (!overOwner && s.score() <= curScore + bonus) continue;
             if (best == null || s.rank() > best.rank()) best = s;
         }
         return best;
@@ -233,7 +241,7 @@ public final class Brain extends Node {
         for (int i : order) {
             Desire d = desires.get(i);
             Scored sc = all.get(i);
-            bb.pickNote("brain: " + d.id + " " + Math.round(sc.score()) + (i == lastWinner ? "+" + Math.round(BONUS) : "") + " [" + sc.parts() + "]" + top3(all, i));
+            bb.pickNote("brain: " + d.id + " " + Math.round(sc.score()) + (i == lastWinner ? "+" + Math.round(bonus) : "") + " [" + sc.parts() + "]" + top3(all, i));
             taskSeen = false;
             Status s = d.node.tick(bb);
             if (bb.task() != null) taskSeen = true;
@@ -266,7 +274,7 @@ public final class Brain extends Node {
     }
 
     private double rankOf(List<Scored> all, int i) {
-        return all.get(i).rank() + (i == lastWinner ? BONUS : 0);
+        return all.get(i).rank() + (i == lastWinner ? bonus : 0);
     }
 
     private String top3(List<Scored> all, int skip) {
@@ -283,6 +291,7 @@ public final class Brain extends Node {
         if (s == Status.SUCCESS) {
             streak.remove(d.id);
             coolUntil.remove(d.id);
+            if (d.kind == Desire.Kind.WANT) Wants.done(bb, d.id, now);   // B3: boredom starts over
             onEnd(d, true, taskSeen, now - startedAt);
         } else if (taskSeen) {
             streak.merge(d.id, 1, Integer::sum);      // P(success) drops; the node's own cooldown holds it off
@@ -305,7 +314,7 @@ public final class Brain extends Node {
             lastProgressAt = now;
             return Status.RUNNING;
         }
-        if (now - lastProgressAt < STUCK_MS) return Status.RUNNING;
+        if (now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
         stuck++;
         String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s";
         bb.port.log("brain " + why + " - halted, cooling down, the next desire runs");

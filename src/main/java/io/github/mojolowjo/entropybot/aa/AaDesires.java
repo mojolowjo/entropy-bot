@@ -3,6 +3,9 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.brain.Brain;
 import io.github.mojolowjo.entropybot.aa.brain.Curves;
 import io.github.mojolowjo.entropybot.aa.brain.Desire;
+import io.github.mojolowjo.entropybot.aa.brain.Night;
+import io.github.mojolowjo.entropybot.aa.brain.Personality;
+import io.github.mojolowjo.entropybot.aa.brain.Wants;
 import io.github.mojolowjo.entropybot.aa.brain.TechTree;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Cooldown;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
 
 /**
@@ -93,17 +97,17 @@ public final class AaDesires {
             case "needs.area" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 100));
             case "needs.woodArea" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 95));
             case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 90));
-            case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::tools));
-            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.max(1, Curves.upkeep(125, b.in.food, 18))));
-            case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> 30 + Curves.upkeep(30, b.in.torches, 16)))
+            case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.min(74, factor(b, "tools") * tools(b))));
+            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.max(1, factor(b, "food") * Curves.upkeep(125, b.in.food, 18))));
+            case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches"))))
                     .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
-            case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> 20 + Curves.upkeep(60, b.in.freeSlots, 10)));
+            case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag"))));
             case "needs.tableFurnace" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 70)).cost(60);
             case "needs.spareTable" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 50)).cost(10);
             case "needs.base" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 55)).cost(240);
             case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 45)).cost(120).infeasible(AaDesires::bedInfeasible);
             case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600)
-                    .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null);
+                    .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null).night(+1);
             default -> new Desire(r.id, kindOf(r.id), r, bb -> rungScore(r, bb, b -> 30));
         };
         return d;
@@ -116,7 +120,22 @@ public final class AaDesires {
                     if (node instanceof Cooldown cd && cd.cooling(bb.clock.now())) return -1;
                     double s = scorer.score(bb.in)[kind.ordinal()];
                     return s < 0 ? -1 : s * IDLE_SCALE;
-                }).lastTry();
+                }).night(nightSign(kind)).lastTry();
+    }
+
+    /** B3 (2.4): the personality's upkeep factor (1 by default). */
+    static double factor(Blackboard bb, String key) { return Personality.of(bb).get(key); }
+
+    /** review: a factor never makes a non-urgent score urgent (only food's curve may); an urgent one stays urgent. */
+    static double scaled(double base, double f) { return base >= Brain.URGENT ? base : Math.min(Brain.URGENT - 1, f * base); }
+
+    /** B3 (2.10): mining stock-ups get the night bonus, wood (surface) the malus. */
+    static int nightSign(TaskKind k) {
+        return switch (k) {
+            case STOCK_STONE, STOCK_COAL, STOCK_IRON -> +1;
+            case STOCK_WOOD -> -1;
+            default -> 0;
+        };
     }
 
     /** The idea the ideas desire works on now (null none), with its share 0..1. */
@@ -175,11 +194,90 @@ public final class AaDesires {
                 + (out.isEmpty() ? "none" : String.join(", ", out));
     }
 
+    // ---- B3: wants (2.2, 2.4) and the night (2.10) ----
+
+    /** A want: personality weight x boredom; its job cools down like an idle option. */
+    static Desire want(String key, TaskKind kind, Function<Blackboard, String> chain, Function<Blackboard, String> infeasible, int night) {
+        String id = "want." + key;
+        RunJob job = new RunJob(id + ".job", kind, bb -> {
+            String c = chain.apply(bb);
+            return c == null ? null : JobPort.TaskSpec.of(kind, c, "want");
+        });
+        Node node = AaTree.idleCd(id + ".cd", job);
+        return new Desire(id, Desire.Kind.WANT, node, bb -> cooling(node, bb) ? -1 : Wants.score(bb, id, key))
+                .infeasible(infeasible).night(night).lastTry();
+    }
+
+    static String buildInfeasible(Blackboard bb) {
+        if (bb.in.areaName == null) return "no area fits a house (7x7 or more)";
+        if (bb.in.baseKnown) return "a house stands already (base known)";
+        if (!bb.flag(AaLadder.SHELTER_FACT)) return "needs.base builds the first one";
+        return null;
+    }
+
+    /** Owner default (Q3): build a house (where only a shelter stands), explore, tidy the bag into the chests. */
+    public static List<Desire> wants() {
+        return List.of(
+                want("build", TaskKind.BASE_BED, bb -> bb.in.areaName == null ? null : "house " + bb.in.areaName, AaDesires::buildInfeasible, -1),
+                want("explore", TaskKind.EXPLORE, bb -> "explore 5", bb -> null, -1),
+                want("tidy", TaskKind.DEPOSIT, bb -> "deposit", bb -> bb.in.baseChests ? null : "no base chests to put things in", 0));
+    }
+
+    public static final long SHELTER_PATIENCE_MS = 12 * 60_000;
+
+    /** 2.10 sleep: a bed known (or in the bag), rising from dusk; off in Peaceful. Never urgent (waits its turn). */
+    static double sleepScore(Blackboard bb) {
+        if (!bb.in.hungerDrains || !(bb.in.bedKnown || bb.in.bedInBag)) return -1;
+        double d = Night.dusk(bb.in.dayTime, bb.in.night);
+        return d <= 0 ? -1 : Personality.of(bb).get("sleep") * d;
+    }
+
+    /** 2.10 shelter: no bed, at the surface, from dusk; off in Peaceful and under ground (dug in already). */
+    static double shelterScore(Blackboard bb) {
+        if (!bb.in.hungerDrains || bb.in.bedKnown || bb.in.bedInBag || bb.in.underGround) return -1;
+        double d = Night.dusk(bb.in.dayTime, bb.in.night);
+        return d <= 0 ? -1 : Personality.of(bb).get("shelter") * d;
+    }
+
+    /** 2.10: sleep and shelter (UPKEEP under 75: they wait for the running task, then win by number). */
+    public static List<Desire> night() {
+        Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, "sleep", "night"));
+        Node shelter = AaTree.idleCd("night.shelter.cd", new RunJob("night.shelter.job", TaskKind.BASE_BED,
+                bb -> new JobPort.TaskSpec(TaskKind.BASE_BED, "shelter", "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS)));
+        return List.of(
+                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, bb -> cooling(sleep, bb) ? -1 : sleepScore(bb)).lastTry(),
+                new Desire("night.shelter", Desire.Kind.UPKEEP, shelter, bb -> cooling(shelter, bb) ? -1 : shelterScore(bb))
+                        .patient(SHELTER_PATIENCE_MS).lastTry());
+    }
+
+    static boolean cooling(Node n, Blackboard bb) { return n instanceof Cooldown cd && cd.cooling(bb.clock.now()); }
+
+    /** aa status: "wants: build parked (...), explore 4 (weight 15, bored 0.27), tidy - | day: sleep -, shelter -". */
+    public static String wantsLine(Blackboard bb, List<Brain.Scored> scored) {
+        Personality p = Personality.of(bb);
+        List<String> w = new ArrayList<>(), n = new ArrayList<>();
+        for (Brain.Scored s : scored) {
+            String id = s.d().id;
+            String v = s.skip() == null ? String.valueOf(Math.round(s.score())) : s.skip().equals("not wanted") ? "-" : s.skip();
+            if (s.d().kind == Desire.Kind.WANT) {
+                String key = id.substring(5);
+                w.add(key + " " + v + " (weight " + Personality.fmt(p.get(key)) + ", bored "
+                        + Math.round(Wants.boredom(bb, id, p.get("boredomDays")) * 100) / 100.0 + ")");
+            } else if (id.startsWith("night.")) n.add(id.substring(6) + " " + v);
+        }
+        double d = Night.dusk(bb.in.dayTime, bb.in.night);
+        String time = !bb.in.hungerDrains ? "Peaceful (night desires off)" : d >= 1 ? "night (mining +" + Personality.fmt(p.get("night")) + ", surface -)" : d > 0 ? "dusk" : "day";
+        return "wants: " + (w.isEmpty() ? "none" : String.join(", ", w)) + " | " + time + ": " + String.join(", ", n)
+                + (p.errors.isEmpty() ? "" : " | !! personality: " + String.join("; ", p.errors) + " (defaults used)");
+    }
+
     /** The brain over the rungs, the idle options and the ideas. */
     public static Brain build(List<Rung> rungs, List<Map.Entry<TaskKind, Node>> idle, Scorer scorer) {
         List<Desire> ds = new ArrayList<>();
         for (Rung r : rungs) ds.add(rung(r));
         ds.add(ideas());
+        ds.addAll(night());
+        ds.addAll(wants());
         for (var e : idle) ds.add(idle(e.getKey(), e.getValue(), scorer));
         return new Brain("brain", "the scored desires", ds.toArray(new Desire[0]));
     }

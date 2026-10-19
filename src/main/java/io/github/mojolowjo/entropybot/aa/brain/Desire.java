@@ -73,5 +73,21 @@ public final class Desire {
         return this;
     }
 
+    /** B3 (2.10): +1 mining (a night bonus), -1 surface work (a night malus), 0 neither; applied when monsters spawn. */
+    int night;
+
+    public Desire night(int sign) {
+        night = Integer.signum(sign);
+        return this;
+    }
+
+    /** B3: how long the stuck watchdog waits without progress (a shelter waits out the night). */
+    long stuckMs = Brain.STUCK_MS;
+
+    public Desire patient(long ms) {
+        stuckMs = ms;
+        return this;
+    }
+
     @Override public String toString() { return id; }
 }

@@ -1106,6 +1106,7 @@ public final class AaRuntime implements JobPort {
         if (!statsLoaded && statsFile() != null) {      // review: only once the files are known
             statsLoaded = true;
             loadStats();
+            loadPersonality();
         }
         // review: the bag set at most every 10 s (the tech tree's caches are per bag; mining changes it all the time)
         if (now - haveAt >= 10_000) {
@@ -1183,6 +1184,80 @@ public final class AaRuntime implements JobPort {
             treeError = "stats file unreadable: " + e;
         }
     }
+
+    // ---- B3 (BRAIN_PLAN 2.4): the personality file ----
+
+    private static Path personalityFile() {
+        return Core.INSTANCE.files() == null ? null : Core.INSTANCE.files().root().resolve("aa-personality.json");
+    }
+
+    /** Loads entropybot/aa-personality.json (written with the defaults when missing); errors: defaults, said in aa status. */
+    private void loadPersonality() {
+        Path f = personalityFile();
+        io.github.mojolowjo.entropybot.aa.brain.Personality p;
+        if (f == null || !Files.exists(f)) {
+            p = new io.github.mojolowjo.entropybot.aa.brain.Personality();
+            savePersonality(p);
+        } else {
+            try {
+                var o = com.google.gson.JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                for (var e : o.entrySet()) {
+                    var v = e.getValue();
+                    m.put(e.getKey(), v.isJsonPrimitive() && v.getAsJsonPrimitive().isNumber() ? (Object) v.getAsDouble() : v.toString());
+                }
+                p = io.github.mojolowjo.entropybot.aa.brain.Personality.of(m);
+            } catch (Exception e) {
+                p = new io.github.mojolowjo.entropybot.aa.brain.Personality();
+                p.errors.add(f.getFileName() + " unreadable: " + e.getMessage());
+            }
+        }
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Personality.FACT, p);
+        if (p.errors.isEmpty()) LOG.info("[entropybot] aa: personality loaded ({})", String.join(", ", p.lines().subList(0, 3)).replaceAll(" - [^,]*", ""));
+        else LOG.warn("[entropybot] aa: personality: {} - defaults used for those", String.join("; ", p.errors));
+    }
+
+    private static void savePersonality(io.github.mojolowjo.entropybot.aa.brain.Personality p) {
+        Path f = personalityFile();
+        if (f == null) return;
+        String json = p.toJson();
+        WRITER.submit(() -> {
+            try {
+                Files.createDirectories(f.getParent());
+                Path tmp = f.resolveSibling("aa-personality.json.tmp");
+                Files.writeString(tmp, json, StandardCharsets.UTF_8);
+                Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                LOG.warn("[entropybot] aa: personality write: {}", e.toString());
+            }
+        });
+    }
+
+    /** aa like [key value]: lists the personality, or sets one value and saves the file. */
+    String like(String arg) {
+        var p = io.github.mojolowjo.entropybot.aa.brain.Personality.of(bb);
+        if (bb.fact(io.github.mojolowjo.entropybot.aa.brain.Personality.FACT) == null) {      // not loaded yet: a fresh one
+            p = new io.github.mojolowjo.entropybot.aa.brain.Personality();
+            bb.fact(io.github.mojolowjo.entropybot.aa.brain.Personality.FACT, p);
+        }
+        String[] w = arg.isBlank() ? new String[0] : arg.trim().split("\\s+");
+        if (w.length == 0) return "personality (aa like <key> <n>; entropybot/aa-personality.json):\n" + String.join("\n", p.lines())
+                + (p.errors.isEmpty() ? "" : "\n!! " + String.join("; ", p.errors) + " (defaults used)");
+        if (w.length != 2) return "usage: aa like | aa like <key> <number>";
+        double v;
+        try {
+            v = Double.parseDouble(w[1]);
+        } catch (NumberFormatException e) {
+            return "error: \"" + w[1] + "\" is not a number";
+        }
+        if (!p.errors.isEmpty()) return "error: the personality file has errors (" + String.join("; ", p.errors) + ") - fix entropybot/aa-personality.json first; saving now would reset those entries";
+        String err = p.set(w[0], v);
+        if (err != null) return "error: " + err;
+        savePersonality(p);
+        return "ok: " + w[0] + " " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(v) + " (saved)";
+    }
+
+    String wantsLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.wantsLine(bb, tree.brain.lastScored()); }
 
     /** aa stats: measured runs, the tech tree and its ideas. */
     String statsText() {
