@@ -239,6 +239,8 @@ public final class Clearing {
         long lastFeet = Long.MIN_VALUE, stillSince;
         // 0.30.2 (trial 8 snow): a refused click into a cell holding a no-collision block (a snow layer) breaks it first
         boolean clearing, clearStarted;
+        /** B7: a schematic build's own state (SchematicBuild.Run), else null. */
+        Object schem;
     }
 
     /** True while a mod job runs Baritone's builder (the bridge's safety net leaves placing on then). */
@@ -289,7 +291,7 @@ public final class Clearing {
 
     /** Seq.everyTick: a clear breaks every tick. */
     static boolean everyTick(Seq.Step st) {
-        return st.type.equals("clear") && !KIND_BUILD.equals(st.kind);
+        return st.type.equals("clear") && !KIND_BUILD.equals(st.kind) && !SchematicBuild.KIND.equals(st.kind);
     }
 
     /**
@@ -408,6 +410,8 @@ public final class Clearing {
     static String step(Seq seq, Seq.Step st, LocalPlayer p, long elapsed) {
         if (st.type.equals("placeblock")) return placeRun(seq, st, p, elapsed);
         if (KIND_BUILD.equals(st.kind)) return buildRun(seq, st, p, elapsed);
+        if (SchematicBuild.KIND.equals(st.kind))                                                       // B7 (2.12)
+            return st.state instanceof BuildState sb ? SchematicBuild.run(seq, sb, p) : "the schematic build was not set up";
         if (FloorSteps.KIND_FLOOR.equals(st.kind)) return FloorSteps.floorRun(seq, st, p);       // B7e F
         if (FloorSteps.KIND_JUNK.equals(st.kind)) return FloorSteps.junkRun(seq, st, p);
         if (WaterSteps.KIND_WATER.equals(st.kind)) return WaterSteps.waterRun(seq, st, p);          // water plan
@@ -1543,6 +1547,7 @@ public final class Clearing {
 
     static void endBuild(BuildState bs) {
         bs.done = true;
+        if (bs.schem instanceof SchematicBuild.Run sr) sr.restore();
         restoreLook(bs);
         fallOff(bs);
         placingOwned = false;

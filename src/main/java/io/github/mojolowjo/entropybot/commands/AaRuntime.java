@@ -1369,6 +1369,7 @@ public final class AaRuntime implements JobPort {
     private boolean knownDue;
 
     private void goalsTick(LocalPlayer p, long tick) {
+        buildsTick(p, tick);
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
         if (goals.isEmpty() || (tick % 200 != 7 && !knownDue)) return;
         knownDue = false;
@@ -1389,6 +1390,72 @@ public final class AaRuntime implements JobPort {
             known.put(g.r.key(), n);
         }
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.KNOWN_FACT, known);
+    }
+
+    // ---- B7: schematic builds (2.12) ----
+
+    private boolean buildsDue;
+
+    /** Every 10 s while builds exist (at once after aa build): each build scanned in its dimension, a finished one said and dropped. */
+    private void buildsTick(LocalPlayer p, long tick) {
+        var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
+        if (builds.isEmpty() || (tick % 200 != 11 && !buildsDue)) return;
+        buildsDue = false;
+        String dim = p.level().dimension().location().toString();
+        for (var b : new ArrayList<>(builds)) {
+            b.lastStop = SchematicBuild.LAST_STOP.get(b.name);
+            if (b.dim != null && !b.dim.equals(dim)) continue;
+            var l = SchematicBuild.LOADED.get(b.name);
+            if (l == null) continue;
+            b.fails = SchematicBuild.FAILS.getOrDefault(b.name, 0);
+            io.github.mojolowjo.entropybot.aa.brain.Blueprint.Scan sc;
+            try {
+                sc = SchematicBuild.scan(l, b.origin, p.level());
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] aa: build {} scan failed: {}", b.name, e.toString());
+                continue;
+            }
+            if (sc == null) {                         // review 2: part of it not loaded: the last scan stays; none yet = go there and build
+                if (b.scan == null) b.scan = new io.github.mojolowjo.entropybot.aa.brain.Blueprint.Scan(Map.of(), Map.of(), 0, 1, 0, 0, 1);
+                continue;
+            }
+            b.scan = sc;
+            if (b.scan.done()) {
+                builds.remove(b);
+                tree.brain.remove(b.id(), "build done");
+                SchematicBuild.LAST_STOP.remove(b.name);
+                String msg = "built " + b.name + " (" + b.scan.placed + "/" + b.scan.total + " placed" + (b.scan.occupied > 0 ? ", " + b.scan.occupied + " cells held by other blocks" : "") + ")";
+                LOG.info("[entropybot] aa: {}", msg);
+                c.whisper(c.owner(), "aa: " + msg);
+            }
+        }
+    }
+
+    /** aa build <name> here|at x y z [high|low]: the file read, its material list said, a build goal made. */
+    String build(String arg) {
+        var a = io.github.mojolowjo.entropybot.aa.brain.Blueprint.parse(arg);
+        if (a.err() != null) return a.err();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) return "error: no world";
+        String[] err = new String[1];
+        var l = SchematicBuild.load(a.name(), err);              // read again each time (the owner may have changed the file)
+        if (l == null) return "aa build: " + err[0].replaceFirst("^error: ", "");
+        int[] o = a.at() != null ? a.at() : Jobs.here(mc.player);
+        var b = new io.github.mojolowjo.entropybot.aa.brain.Blueprint.Build(a.name(), l.file().getName(), o, a.prio(), System.currentTimeMillis(), l.need(), l.skipped());
+        b.dim = mc.level.dimension().location().toString();
+        io.github.mojolowjo.entropybot.aa.brain.Blueprint.add(bb, b);
+        tree.brain.remove(b.id(), "aa build again");
+        tree.brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerBuild(b));
+        SchematicBuild.LAST_STOP.remove(b.name);
+        SchematicBuild.FAILS.remove(b.name);
+        buildsDue = true;
+        var s = l.s();
+        LOG.info("[entropybot] aa: build goal {} at {} {} {}", b.name, o[0], o[1], o[2]);
+        return "ok: build " + b.name + " (" + l.file().getName() + ", " + s.widthX() + "x" + s.heightY() + "x" + s.lengthZ() + ", " + s.heightY() + " layers) at "
+                + o[0] + " " + o[1] + " " + o[2] + (b.prio > 0 ? " high" : b.prio < 0 ? " low" : "") + ": "
+                + io.github.mojolowjo.entropybot.aa.brain.Blueprint.materials(l.need())
+                + (l.skipped().isEmpty() ? "" : "; left out: " + String.join(", ", l.skipped()))
+                + "; I only place (blocks in the way stay); aa goals shows the layer" + (on() ? "" : " (aa is off: aa on to work on it)");
     }
 
     /** aa want <thing> [n] [high|low] (also the wants by name: house/build, explore, tidy). */
@@ -1432,8 +1499,18 @@ public final class AaRuntime implements JobPort {
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
         String w = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "_");
         if (w.isEmpty()) return "usage: aa drop <thing>|all";
-        if (goals.isEmpty()) return "no owner goals";
+        var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
+        if (goals.isEmpty() && builds.isEmpty()) return "no owner goals";
         List<String> gone = new ArrayList<>();
+        for (var b : new ArrayList<>(builds)) {              // B7: builds by name
+            if (!w.equals("all") && !b.name.equals(w)) continue;
+            builds.remove(b);
+            tree.brain.remove(b.id(), "aa drop");        // halts its running task too
+            SchematicBuild.LOADED.remove(b.name);
+            SchematicBuild.LAST_STOP.remove(b.name);
+            SchematicBuild.FAILS.remove(b.name);
+            gone.add("build " + b.name);
+        }
         for (var g : new ArrayList<>(goals)) {
             boolean hit = w.equals("all") || g.r.key().equals(w) || g.r.key().endsWith(":" + w) || g.r.word().trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "_").equals(w)
                     || g.r.ids().contains(w.contains(":") ? w : "minecraft:" + w);
@@ -1445,6 +1522,7 @@ public final class AaRuntime implements JobPort {
         if (gone.isEmpty()) {
             List<String> keys = new ArrayList<>();
             for (var g : goals) keys.add(g.r.key());
+            for (var b : builds) keys.add(b.name);
             return "no goal " + w + " (goals: " + String.join(", ", keys) + ")";
         }
         LOG.info("[entropybot] aa: dropped goals {}", gone);
@@ -1456,16 +1534,19 @@ public final class AaRuntime implements JobPort {
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
         List<String> out = new ArrayList<>();
         for (var g : goals) out.add(io.github.mojolowjo.entropybot.aa.brain.Goals.line(bb, g, scoreOf(g.id())));
-        return "owner goals" + (goals.isEmpty() ? ": none (aa want <thing> [n] [high|low])" : " (" + goals.size() + "):\n" + String.join("\n", out))
+        for (var b : io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb)) out.add("build " + io.github.mojolowjo.entropybot.aa.brain.Blueprint.line(bb, b, scoreOf(b.id())));
+        return "owner goals" + (out.isEmpty() ? ": none (aa want <thing> [n] [high|low] | aa build <name> here)" : " (" + out.size() + "):\n" + String.join("\n", out))
                 + "\n" + ideasLine();
     }
 
     /** "goals: iron_ore 0/5 70" for aa status (empty when none). */
     String goalsLine() {
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
-        if (goals.isEmpty()) return "goals: none";
+        var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
+        if (goals.isEmpty() && builds.isEmpty()) return "goals: none";
         List<String> out = new ArrayList<>();
         for (var g : goals) out.add(g.r.key() + " " + io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g) + "/" + g.n + " " + scoreOf(g.id()));
+        for (var b : builds) out.add("build " + b.name + (b.scan == null ? " (not scanned)" : " layer " + Math.min(b.scan.layer + 1, b.scan.layers) + "/" + b.scan.layers + " " + b.scan.placed + "/" + b.scan.total) + " " + scoreOf(b.id()));
         return "goals: " + String.join(", ", out);
     }
 
