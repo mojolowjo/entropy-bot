@@ -53,6 +53,7 @@ final class FakeChunk implements SummaryBuilder.ChunkSource<String> {
     static SummaryBuilder.Cls cls(String b) {
         return switch (b) {
             case "iron_ore" -> new SummaryBuilder.Cls("iron", "minecraft:iron_ore", null, false);
+            case "coal_ore" -> new SummaryBuilder.Cls("coal", "minecraft:coal_ore", null, false);
             case "deepslate_iron_ore" -> new SummaryBuilder.Cls("iron", "minecraft:deepslate_iron_ore", null, false);
             case "diamond_ore" -> new SummaryBuilder.Cls("diamond", "minecraft:diamond_ore", "diamonds", false);
             case "nickel_ore" -> new SummaryBuilder.Cls("oritech:nickel", "oritech:nickel_ore", null, false);

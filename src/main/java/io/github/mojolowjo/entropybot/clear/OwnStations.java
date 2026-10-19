@@ -59,6 +59,22 @@ public final class OwnStations {
         return null;
     }
 
+    /**
+     * The contents count a container's pickup check goes by: the chest note's count when it was read after the placement,
+     * else 0 when the bot itself emptied the machine (a furnace it took everything out of; those are not kept as chest
+     * notes) at or after the placement, else null (unknown). Pure.
+     * The newer of the two reads wins.
+     * @param noteCount the note's count when its read is newer than the placement, else null
+     * @param noteSeen  when that note was read (ms)
+     * @param emptiedAt when the bot emptied it (ms), or null
+     * @param placedAt  when it was placed (ms)
+     */
+    public static Integer contentsKnown(Integer noteCount, long noteSeen, Long emptiedAt, long placedAt) {
+        boolean emptied = emptiedAt != null && emptiedAt >= placedAt;
+        if (noteCount != null && (!emptied || noteSeen > emptiedAt)) return noteCount;
+        return emptied ? 0 : null;
+    }
+
     /** Set by the game side: my recorded station cells inside the box x1 y1 z1 x2 y2 z2 (never the whole box read). */
     public interface Cells {
         java.util.List<int[]> in(int x1, int y1, int z1, int x2, int y2, int z2);

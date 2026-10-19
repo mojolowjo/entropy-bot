@@ -403,6 +403,7 @@ final class Crafting {
             collectTargets = true;
         }
         boolean smelts = false, ownFurnace = false;
+        Step hereFurnace = null;               // the armed pickup of the furnace "smelt ... here" put down (null: none)
         for (Crafter.Step s : plan) {
             if (s instanceof Crafter.Smelt sm) {
                 smelts = true;
@@ -417,10 +418,19 @@ final class Crafting {
                         continue;
                     }
                     if (spot == null) return CraftJob.noFurnace(sm.item()) + (Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 ? " (no free spot next to me for mine)" : " - next: craft furnace 1");
-                    Step place = Clearing.placeStep(spot, "minecraft:furnace", null, false);
+                    Step place;
+                    if (here) {
+                        // 0.36.a9: the furnace "smelt ... here" puts down is taken back after the smelt (the camp's never is)
+                        Step[] hf = Clearing.furnaceHere(spot);
+                        place = hf[0];
+                        hereFurnace = hf[1];
+                    } else {
+                        place = Clearing.placeStep(spot, "minecraft:furnace", null, false);
+                    }
                     out.add(place);
                     Step note = new Step("ownfurnacenote");
                     note.pos = spot;
+                    note.kind = here ? "here" : null;
                     out.add(note);
                     ownFurnace = true;
                     efficient = false;
@@ -457,7 +467,25 @@ final class Crafting {
             note.text = label;
             out.add(note);
         }
+        if (hereFurnace != null) out.addAll(ownFurnaceTail(hereFurnace));       // after the note: its notes are added to it
         return null;
+    }
+
+    /**
+     * 0.36.a9: after the smelt, the furnace "smelt ... here" put down: everything out of it (output, input and fuel left),
+     * checked empty and recorded as emptied, then the armed pickup takes exactly that furnace back. The output was
+     * collected by the plan's own collect step before this runs.
+     */
+    private static List<Step> ownFurnaceTail(Step pickup) {
+        int[] f = pickup.pos;
+        Step empty = new Step("ops");
+        empty.pos = f;
+        empty.ops = List.of(op("empty", null, 0, null));
+        empty.expect = "Furnace";
+        empty.expectName = "furnace";
+        Step check = new Step("ownfurnaceempty");
+        check.pos = f;
+        return List.of(Step.walk(f, false), Step.open(f, "yes"), empty, check, Step.close(), pickup);
     }
 
     private static Map<String, Object> op(String kind, String id, int n, List<String> roles) {
@@ -919,8 +947,23 @@ final class Crafting {
         switch (st.type) {
             case "craft": return craftStep(s, st, p);
             case "ownfurnacenote":                         // 0.28.2 (A): the furnace went down; it stays (it holds the job)
-                addNote(s, OwnTable.furnacePlaced(Jobs.fmt(st.pos)));
+                addNote(s, "here".equals(st.kind) ? OwnTable.furnacePlacedHere(Jobs.fmt(st.pos)) : OwnTable.furnacePlaced(Jobs.fmt(st.pos)));
                 return "next";
+            case "ownfurnaceempty": {                      // 0.36.a9: at the open furnace after "empty": is it really empty?
+                if (!Gui.open(p)) return "no container open";
+                if (now() - s.stepStart < 4) return "wait";
+                FurnaceJobs.Slots fs = furnaceSlots(p);
+                int left = fs.inputN() + fs.fuelN() + fs.outputN();
+                if (left > 0) {
+                    addNote(s, OwnTable.furnaceNotEmpty(Jobs.fmt(st.pos), left));
+                    return "next";                           // the pickup is refused (contents unknown) and names it
+                }
+                RestoreLive.INSTANCE.noteStationEmptied(st.pos[0], st.pos[1], st.pos[2]);
+                FurnaceJobs.Job j = furnaces().at(st.pos, Storage.dim());
+                if (j != null) furnaces().forget(j);       // its output is in the bag: no pickup walks back to this spot
+                furnaces().clearLeftover(st.pos, Storage.dim());
+                return "next";
+            }
             case "craftitem": {
                 // hand over to a craft plan spliced in after this step; the sequence carries on when it ends
                 Prepared r = prepareCraft(p, st.text, null);

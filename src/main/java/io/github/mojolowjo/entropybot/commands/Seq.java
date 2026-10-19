@@ -204,7 +204,7 @@ public final class Seq {
         BuilderDig.afterHold(steps.get(idx), held);            // 0.29.0: the builder may have been cancelled by the hold
         String t = steps.get(idx).type;
         if ((t.equals("ops") || t.equals("put") || t.equals("note") || t.equals("rsmove") || t.equals("rsread") || t.equals("rsdisks")
-                || t.equals("smeltput") || t.equals("smelttake")) && !Gui.open(p)) {
+                || t.equals("smeltput") || t.equals("smelttake") || t.equals("ownfurnaceempty")) && !Gui.open(p)) {
             int back = idx;
             while (back > 0 && !steps.get(back).type.equals("open")) back--;
             if (back > 0 && steps.get(back - 1).type.equals("walk")) back--;
@@ -595,6 +595,11 @@ public final class Seq {
         }
         if (kind.equals("collect")) {
             GuiCore.take(m, op.get("id") != null ? id : "all", GuiCore.ALL, List.of("output"), roles);
+            return null;
+        }
+        if (kind.equals("empty")) {
+            // 0.36.a9: a furnace of mine before it is picked up: input and fuel left over and the output, all into the bag
+            GuiCore.take(m, "all", GuiCore.ALL, List.of("input", "fuel", "output"), roles);
             return null;
         }
         return "unknown gui op " + kind;

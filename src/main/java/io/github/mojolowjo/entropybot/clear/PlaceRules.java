@@ -256,6 +256,34 @@ public final class PlaceRules {
         return armed && TABLE_ID.equals(id);
     }
 
+    /** The only block the furnace pickup ever breaks (a furnace "smelt ... here" put down itself). */
+    public static final String FURNACE_ID = "minecraft:furnace";
+
+    /** The label of the clear that takes my own furnace back. */
+    public static String furnacePickupLabel(Pos p) {
+        return "picking up my furnace at " + p.key();
+    }
+
+    /** The pickup block of a pickup step: its own id, the crafting table when none is set. */
+    public static String pickupBlock(String stepId) {
+        return stepId != null ? stepId : TABLE_ID;
+    }
+
+    /** "crafting table" / "furnace": what a pickup of this block id is called in notes. */
+    public static String pickupName(String blockId) {
+        return FURNACE_ID.equals(blockId) ? "furnace" : "crafting table";
+    }
+
+    /** Like {@link #armsTable} for any station: our own click on a free cell, exactly the expected block there afterwards. */
+    public static boolean armsStation(boolean ourClick, String idAfter, String expected) {
+        return ourClick && expected != null && expected.equals(idAfter);
+    }
+
+    /** Like {@link #pickupMayBreak} for any station: armed, and the block is exactly the expected one. */
+    public static boolean pickupMayBreak(boolean armed, String id, String expected) {
+        return armed && expected != null && expected.equals(id);
+    }
+
     /**
      * B7d review 3: a trip step failed and the steps from it up to the clear go. {@code removed.get(0)} is the step that
      * failed; the armed table pickups among the others stay (in order), so the bot still takes its table back.
