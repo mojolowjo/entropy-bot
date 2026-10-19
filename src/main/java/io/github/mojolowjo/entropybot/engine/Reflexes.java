@@ -321,7 +321,7 @@ public final class Reflexes {
             case EATING -> "eating";
             case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
             case FLEEING -> "avoiding a " + target;
-            case RETREATING -> (pillaring() ? "pillared up from " : "retreating from ") + target + " (health " + Math.round(lastHealth) + ")";
+            case RETREATING -> (pillaring() ? "pillared up from " : digging() ? "dug in from " : "retreating from ") + target + " (health " + Math.round(lastHealth) + ")";
             case FETCHING -> "fetching food" + (fetchTargets != null && fetchIdx < fetchTargets.size() ? " from " + fetchTargets.get(fetchIdx).key() : "");
         };
     }
@@ -1404,6 +1404,8 @@ public final class Reflexes {
         }
         pillarCell = Integer.MIN_VALUE;
         pillarUp = false;
+        if (digging()) mc.options.keyUp.setDown(false);
+        digStage = -1;
     }
 
     /** Throwaway blocks in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#THROWAWAY}), and the slot of the first. */
@@ -1421,7 +1423,10 @@ public final class Reflexes {
     }
 
     /** Cornered: pillar up when CornerEscape says so; false = fight as before. Never throws. */
-    private boolean startPillar(Minecraft mc, LocalPlayer p, Threat t) {
+    private boolean startPillar(Minecraft mc, LocalPlayer p, Threat t) { return startPillar(mc, p, t, false); }
+
+    /** quiet: a one-second re-check on a running retreat: no event when no escape fits. */
+    private boolean startPillar(Minecraft mc, LocalPlayer p, Threat t, boolean quiet) {
         try {
             int near = 0;
             for (Entity e : mc.level.entitiesForRendering())
@@ -1432,12 +1437,14 @@ public final class Reflexes {
             int head = 0;
             while (head < io.github.mojolowjo.entropybot.threat.CornerEscape.UP && mc.level.getBlockState(feet.above(2 + head)).getCollisionShape(mc.level, feet.above(2 + head)).isEmpty()) head++;
             int[] tw = throwaway(p);
-            var plan = io.github.mojolowjo.entropybot.threat.CornerEscape.plan(bad, p.onGround(), p.isInWater() || p.isInLava(), head, tw[0]);
-            if (!plan.pillar()) {
-                events.push("reflex", "cornered by " + t.id + ", no pillar: " + plan.why(), null);
-                LOG.info("[entropybot] cornered, no pillar: {}", plan.why());
+            Direction dig = bad ? findNiche(mc, p) : null;
+            var plan = io.github.mojolowjo.entropybot.threat.CornerEscape.choose(bad, p.onGround(), p.isInWater() || p.isInLava(), head, tw[0], dig != null);
+            if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.NONE) {
+                if (!quiet) events.push("reflex", "cornered by " + t.id + ", no escape: " + plan.why(), null);
+                LOG.info("[entropybot] cornered, no escape: {}", plan.why());
                 return false;
             }
+            if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.DIG_IN) return startDig(mc, p, t, dig, plan.why());
             if (!Hotbar.toHand(mc, p, tw[1])) {
                 events.push("reflex", "cornered by " + t.id + ", no pillar: could not take the blocks in hand", null);
                 return false;
@@ -1522,9 +1529,159 @@ public final class Reflexes {
         else if (now - retreatStart >= 1800) settle("gave up on the pillar after 90 s");
     }
 
+    // ---- aa-mobs2: dig into a wall and seal (CornerEscape.choose) ----
+    private int digStage = -1;
+    private Direction digDir;
+    private BlockPos digEntrance;
+    private long digStart;
+
+    private boolean digging() { return digStage >= 0; }
+
+    private static boolean solid(Minecraft mc, BlockPos q) {
+        BlockState s = mc.level.getBlockState(q);
+        return !s.getCollisionShape(mc.level, q).isEmpty() && s.getFluidState().isEmpty();
+    }
+
+    /** The BreakPolicy ask for one niche cell (DIG_OUT intent). Never throws; false = refused or error. */
+    private static boolean policyBreaks(Minecraft mc, BlockPos q) {
+        try {
+            var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            return rt.judge("aa-corner", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK,
+                    io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, Guard.dimOf(mc.level),
+                    q.getX(), q.getY(), q.getZ(), rt.facts(mc.level, q, false), rt.where()).allowed();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** A wall direction whose two cells can be dug out and sealed behind; null = none. Never throws. */
+    private Direction findNiche(Minecraft mc, LocalPlayer p) {
+        try {
+            BlockPos feet = p.blockPosition();
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                BlockPos f = feet.relative(d), h = f.above();
+                BlockState fs = mc.level.getBlockState(f), hs = mc.level.getBlockState(h);
+                boolean breakable = solid(mc, f) && solid(mc, h)
+                        && fs.getDestroySpeed(mc.level, f) >= 0 && hs.getDestroySpeed(mc.level, h) >= 0
+                        && !fs.hasBlockEntity() && !hs.hasBlockEntity()
+                        && !(fs.getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
+                        && !(hs.getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
+                        && policyBreaks(mc, f) && policyBreaks(mc, h);
+                if (!breakable) continue;
+                int enclosed = 0;
+                for (Direction s : new Direction[]{d, d.getClockWise(), d.getCounterClockWise()}) {
+                    BlockPos side = f.relative(s);
+                    if (solid(mc, side) && solid(mc, side.above())) enclosed++;
+                }
+                BlockPos ceil = h.above();
+                boolean fluid = !mc.level.getFluidState(ceil).isEmpty() || !mc.level.getFluidState(f.below()).isEmpty();
+                if (io.github.mojolowjo.entropybot.threat.CornerEscape.nicheOk(breakable, enclosed, solid(mc, ceil), solid(mc, f.below()), fluid)) return d;
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: niche search failed: {}", e.toString());
+        }
+        return null;
+    }
+
+    private boolean startDig(Minecraft mc, LocalPlayer p, Threat t, Direction d, String why) {
+        try {
+            int[] tw = throwaway(p);
+            if (reflex == Reflex.EATING) stopEating(mc, "digging in");
+            reflex = Reflex.RETREATING;
+            retreatLit = false;
+            retreatTo = null;
+            fleeTo = null;
+            retreatGoal = null;
+            retreatStart = now;
+            calmSince = now;
+            engine.hold();
+            stopMoving(mc);
+            digDir = d;
+            digEntrance = p.blockPosition();
+            digStage = 0;
+            digStart = now;
+            lastX = p.getX();
+            lastY = p.getY();
+            lastZ = p.getZ();
+            events.push("reflex", "cornered by " + t.id + ": " + why + " (" + tw[0] + " blocks)", null);
+            LOG.info("[entropybot] cornered: dig in {} - {}", d, why);
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: dig-in failed to start, fighting instead: {}", e.toString());
+            clearPillar(mc);
+            return false;
+        }
+    }
+
+    /** The hotbar tool that breaks this block fastest goes in hand. */
+    private void toolFor(Minecraft mc, LocalPlayer p, BlockState s) {
+        int best = -1;
+        float bestSpeed = p.getInventory().getItem(p.getInventory().selected).getDestroySpeed(s);
+        for (int i = 0; i < 9; i++) {
+            float sp = p.getInventory().getItem(i).getDestroySpeed(s);
+            if (sp > bestSpeed) { bestSpeed = sp; best = i; }
+        }
+        if (best >= 0) Hotbar.toHand(mc, p, best);
+    }
+
+    private void placeAt(Minecraft mc, LocalPlayer p, BlockPos against, Direction face, BlockPos lookAtCell) {
+        int[] tw = throwaway(p);
+        if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { settle("dig-in: out of blocks"); return; }
+        var hit = new BlockHitResult(Vec3.atCenterOf(against).add(0, 0.5, 0), face, against, false);
+        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(lookAtCell)); } catch (RuntimeException ignored) {}
+        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
+        p.swing(InteractionHand.MAIN_HAND);
+    }
+
+    /** One tick of the dig-in: break two cells, step in, seal the entrance at feet and head, hold. */
+    private void digTick(Minecraft mc, LocalPlayer p) {
+        BlockPos e = digEntrance, f = e.relative(digDir), h = f.above();
+        BlockPos at = p.blockPosition();
+        if (digStage < 5 && now - digStart > io.github.mojolowjo.entropybot.threat.CornerEscape.DIG_TIMEOUT) {
+            settle("dig-in gave up at stage " + digStage);
+            return;
+        }
+        if ((!at.equals(e) && !at.equals(f)) || p.isInWater() || p.isInLava()) {
+            settle("knocked out of the niche");
+            return;
+        }
+        Threat t = nearestThreat(mc, p, true, false);
+        if (t != null) calmSince = now;
+        int prev = digStage;
+        digStage = io.github.mojolowjo.entropybot.threat.CornerEscape.nextStage(digStage, !solid(mc, f), !solid(mc, h),
+                at.equals(f), solid(mc, e), solid(mc, e.above()));
+        if (digStage != prev && digStage == 5) events.push("reflex", "dug in and sealed, holding", null);
+        mc.options.keyUp.setDown(digStage == 2);
+        switch (digStage) {
+            case 0, 1 -> {
+                BlockPos c = digStage == 0 ? f : h;
+                toolFor(mc, p, mc.level.getBlockState(c));
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(c)); } catch (RuntimeException ignored) {}
+                mc.gameMode.continueDestroyBlock(c, digDir.getOpposite());     // the guard's break check runs inside
+                p.swing(InteractionHand.MAIN_HAND);
+            }
+            case 2 -> { try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(f)); } catch (RuntimeException ignored) {} }
+            case 3 -> placeAt(mc, p, e.below(), Direction.UP, e);
+            case 4 -> placeAt(mc, p, e, Direction.UP, e.above());
+            default -> {
+                if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+                    holdWeapon(mc, p);
+                    mc.gameMode.attack(p, t.e);
+                    p.swing(InteractionHand.MAIN_HAND);
+                }
+                if (now - calmSince >= 100) settle("nothing near the niche");
+                else if (now - retreatStart >= 1800) settle("gave up on the niche after 90 s");
+            }
+        }
+    }
+
     private void retreat(Minecraft mc, LocalPlayer p, boolean hurt) {
         if (pillaring()) {
             pillarTick(mc, p);
+            return;
+        }
+        if (digging()) {
+            digTick(mc, p);
             return;
         }
         double jump = Math.abs(p.getX() - lastX) + Math.abs(p.getY() - lastY) + Math.abs(p.getZ() - lastZ);
@@ -1549,6 +1706,9 @@ public final class Reflexes {
         if (FightOrFlee.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
         Threat t = nearestThreat(mc, p, true, false);     // B2 never cuts a retreat short: the old test here
         if (t != null) calmSince = now;
+        // aa-mobs2: a running retreat looks again every second: mobs that closed the last way out = pillar or dig in
+        if (t != null && io.github.mojolowjo.entropybot.threat.CornerEscape.recheckNow(now, retreatStart)
+                && fleeHeading(mc, p, t.e, 16) == null && startPillar(mc, p, t, true)) return;
         if (now - calmSince >= 100 || now - retreatStart >= 1800) settle(now - calmSince >= 100 ? "nothing chasing me" : "gave up after 90 s");
     }
 

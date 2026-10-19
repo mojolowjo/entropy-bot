@@ -64,4 +64,51 @@ class CornerEscapeTest {
                 List.of(new FightOrFlee.Foe("zombie", 4, false), new FightOrFlee.Foe("zombie", 5, false)), null);
         assertNotEquals(FightOrFlee.Verdict.FIGHT, two.verdict(), two.why());
     }
-}
+
+    @Test
+    void choosesPillarOverDigWhenThereIsRoom() {
+        assertEquals(CornerEscape.Kind.PILLAR, CornerEscape.choose(true, true, false, 3, 20, true).kind());
+    }
+
+    @Test
+    void digsInWhenWallAdjacentAndNoPillarRoom() {
+        assertEquals(CornerEscape.Kind.DIG_IN, CornerEscape.choose(true, true, false, 1, 20, true).kind());   // low ceiling
+    }
+
+    @Test
+    void noEscapeWhenNothingFits() {
+        assertEquals(CornerEscape.Kind.NONE, CornerEscape.choose(true, true, false, 1, 20, false).kind());    // no wall
+        assertEquals(CornerEscape.Kind.NONE, CornerEscape.choose(true, true, false, 1, 1, true).kind());      // too few blocks to seal
+        assertEquals(CornerEscape.Kind.NONE, CornerEscape.choose(false, true, false, 1, 20, true).kind());    // fighting is fine
+        assertEquals(CornerEscape.Kind.NONE, CornerEscape.choose(true, false, false, 1, 20, true).kind());    // in the air
+    }
+
+    @Test
+    void nicheNeedsClosedSidesCeilingFloorAndNoFluid() {
+        assertTrue(CornerEscape.nicheOk(true, 3, true, true, false));
+        assertFalse(CornerEscape.nicheOk(false, 3, true, true, false));   // policy or block refuses
+        assertFalse(CornerEscape.nicheOk(true, 2, true, true, false));
+        assertFalse(CornerEscape.nicheOk(true, 3, false, true, false));
+        assertFalse(CornerEscape.nicheOk(true, 3, true, false, false));
+        assertFalse(CornerEscape.nicheOk(true, 3, true, true, true));
+    }
+
+    @Test
+    void digStagesAdvanceInOrder() {
+        assertEquals(0, CornerEscape.nextStage(0, false, false, false, false, false));
+        assertEquals(1, CornerEscape.nextStage(0, true, false, false, false, false));
+        assertEquals(2, CornerEscape.nextStage(1, true, true, false, false, false));
+        assertEquals(3, CornerEscape.nextStage(2, true, true, true, false, false));
+        assertEquals(4, CornerEscape.nextStage(3, true, true, true, true, false));
+        assertEquals(5, CornerEscape.nextStage(4, true, true, true, true, true));
+        assertEquals(1, CornerEscape.nextStage(1, true, false, false, false, false));
+    }
+
+    @Test
+    void retreatRechecksEverySecond() {
+        assertFalse(CornerEscape.recheckNow(100, 100));
+        assertFalse(CornerEscape.recheckNow(110, 100));
+        assertTrue(CornerEscape.recheckNow(120, 100));
+        assertTrue(CornerEscape.recheckNow(160, 100));
+    }}
+
