@@ -282,6 +282,9 @@ final class Assist {
 
     private static double dist(LocalPlayer p, int x, int z) { return Math.hypot(p.getX() - x, p.getZ() - z); }
 
+    /** B6: the companion report for AA's help desire (the last one read; null none). */
+    AssistRules.Report report() { return readReport(); }
+
     private AssistRules.Report readReport() {
         try {
             if (Core.INSTANCE.files() == null) return report;

@@ -59,6 +59,14 @@ public final class Inputs {
     /** The first buildable (not safe) area's name, else null; the food bar drains (not Peaceful). */
     public String areaName;
     public boolean hungerDrains;
+    /**
+     * B6 (2.11): the owner's flat distance (-1 unknown), their activity from the companion report ("building", "idle"...;
+     * null no fresh report), the block they last placed (id, null none), monsters within 12 of them, their spot dark
+     * (light under 8), the owner's assist mode on. Not in the vector.
+     */
+    public int ownerDist = -1, ownerHostiles;
+    public String ownerAct, ownerPlaced;
+    public boolean ownerDark, assistOn;
 
     public static final String[] NAMES = {
             "health", "food", "hurt", "danger", "creeper", "air", "lavaFire", "freeSlots", "foodItems", "torches", "wood",

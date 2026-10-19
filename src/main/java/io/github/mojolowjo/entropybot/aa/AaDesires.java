@@ -440,6 +440,45 @@ public final class AaDesires {
         };
     }
 
+    // ---- B6: helping the owner (2.11) ----
+
+    /** The help desire (UPKEEP under 75: never interrupts); its job does {@link io.github.mojolowjo.entropybot.aa.brain.Help#pick}. */
+    public static Desire help() {
+        RunJob job = new RunJob("help.owner.job", TaskKind.EXPLORE, bb -> {
+            var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, Personality.of(bb).get("help"));
+            if (p == null) return null;
+            String chain = p.chain();
+            if (p.goal() != null) {
+                String g = bb.port.resolve(p.goal());
+                if (g == null) {
+                    bb.port.log("help: no plan for \"" + p.goal() + "\" (or still searching)");
+                    return null;
+                }
+                chain = g + " then " + chain;
+            }
+            bb.port.log("help: " + p.line());
+            return new JobPort.TaskSpec(TaskKind.EXPLORE, chain, "help", 1, HELP_TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+        });
+        Node node = AaTree.idleCd("help.owner.cd", job);
+        // round 2: the brain's own cool-down (Desire.cools, the Failures record) instead of a per-node cooling check
+        return new Desire("help.owner", Desire.Kind.UPKEEP, node, bb -> {
+            var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, Personality.of(bb).get("help"));
+            return p == null ? -1 : p.score();
+        }).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+    }
+
+    /** A help task is short (a walk, a fight, a hand-over); a fetch gets the planner's time. */
+    static final long HELP_TIMEOUT_MS = 10 * 60_000;
+
+    /** aa status: "help: give 30 (give me oak_planks 32)" or why it is off. */
+    public static String helpLine(Blackboard bb) {
+        double w = Personality.of(bb).get("help");
+        String off = io.github.mojolowjo.entropybot.aa.brain.Help.off(bb.in, w);
+        if (off != null) return "help: off (" + off + ")";
+        var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, w);
+        return "help: " + (p == null ? "nothing to do (owner " + (bb.in.ownerAct == null ? "no report" : bb.in.ownerAct) + ", " + bb.in.ownerDist + " away)" : p.line());
+    }
+
     /** aa status: "wants: build parked (...), explore 4 (weight 15, bored 0.27), tidy - | day: sleep -, shelter -". */
     public static String wantsLine(Blackboard bb, List<Brain.Scored> scored) {
         Personality p = Personality.of(bb);
@@ -455,7 +494,7 @@ public final class AaDesires {
         }
         double d = Night.dusk(bb.in.dayTime, bb.in.night);
         String time = !bb.in.hungerDrains ? "Peaceful (night desires off)" : d >= 1 ? "night (danger " + Math.round(Brain.danger(bb) * 100) / 100.0 + ": under x" + Math.round(Brain.exposureFactor(Desire.Exposure.UNDER, Brain.danger(bb)) * 100) / 100.0 + ", surface x" + Math.round(Brain.exposureFactor(Desire.Exposure.SURFACE, Brain.danger(bb)) * 100) / 100.0 + ")" : d > 0 ? "dusk" : "day";
-        return "wants: " + (w.isEmpty() ? "none" : String.join(", ", w)) + " | " + time + ": " + String.join(", ", n)
+        return "wants: " + (w.isEmpty() ? "none" : String.join(", ", w)) + " | " + time + ": " + String.join(", ", n) + " | " + helpLine(bb)
                 + (p.errors.isEmpty() ? "" : " | !! personality: " + String.join("; ", p.errors) + " (defaults used)");
     }
 
@@ -466,6 +505,7 @@ public final class AaDesires {
         ds.add(ideas());
         ds.addAll(night());
         ds.addAll(wants());
+        ds.add(help());
         for (var e : idle) ds.add(idle(e.getKey(), e.getValue(), scorer));
         Brain brain = new Brain("brain", "the scored desires", ds.toArray(new Desire[0]));
         // AA_ROUND2 3: the rung pickers' option memories are views over the brain's one failure record
