@@ -59,7 +59,7 @@ class IdleBandsTest {
         bb.in.pickTier = 3;
         port.resolveTo = null;         // the planner never has a chain: the old idle starved here
         for (int i = 0; i < 12; i++) tree.tick(bb);
-        assertTrue(port.started.stream().anyMatch(t -> t.chain().equals("wait 60")), "the floor runs instead of the same option failing every tick: " + port.log);
+        assertTrue(port.started.stream().anyMatch(t -> t.chain().startsWith("wait ")), "the floor runs instead of the same option failing every tick: " + port.log);
     }
 
     @Test

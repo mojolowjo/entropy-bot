@@ -76,6 +76,13 @@ public final class Failures {
         return r.reason() + " (" + left(r.until() - now) + ")";
     }
 
+    /** small-4: when the earliest hold lapses (ms), 0 when nothing is held. */
+    public long nextLapse(long now) {
+        long best = 0;
+        for (Rec r : map.values()) if (r.until() > now && (best == 0 || r.until() < best)) best = r.until();
+        return best;
+    }
+
     public boolean blocked(String desire, String option, long now) {
         Rec r = map.get(key(desire, option));
         return r != null && r.until() > now;

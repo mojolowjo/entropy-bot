@@ -346,6 +346,16 @@ public final class Seq {
             List<io.github.mojolowjo.entropybot.clear.Pos> vein = io.github.mojolowjo.entropybot.clear.OreDetour.pick(w, me[0], me[1], me[2], r,
                     id -> canMine(p, id), (x, z) -> jobs.commands().inAreas(dim, x, z));
             if (vein.isEmpty()) return false;
+            var valuer = io.github.mojolowjo.entropybot.clear.OreDetour.valuer;
+            if (valuer != null) {          // small-3: valued, not radius-based (AA on)
+                io.github.mojolowjo.entropybot.clear.Pos f = vein.get(0);
+                double off = Math.sqrt((f.x() - me[0]) * (f.x() - me[0]) + (f.y() - me[1]) * (f.y() - me[1]) + (f.z() - me[2]) * (f.z() - me[2]));
+                double per = valuer.applyAsDouble(w.id(f.x(), f.y(), f.z()));
+                if (!io.github.mojolowjo.entropybot.aa.brain.OreValue.worthIt(per, vein.size(), off)) {
+                    detourNote = detourNote == null ? "ore detour skipped (not worth it)" : detourNote;
+                    return false;
+                }
+            }
             String line = io.github.mojolowjo.entropybot.clear.OreDetour.line(w, vein, me[0], me[1], me[2]);
             Step c = Clearing.clearStep(new io.github.mojolowjo.entropybot.clear.ClearJob.Options().only(vein).collect(true).soft(true).label(line));
             splice(idx, List.of(c));

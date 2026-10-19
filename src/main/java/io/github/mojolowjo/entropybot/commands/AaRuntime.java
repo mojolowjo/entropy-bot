@@ -550,12 +550,23 @@ public final class AaRuntime implements JobPort {
         runSwitches0 = tracer.counts.switches;
         runPointless0 = tracer.counts.pointless;
         runPreempts0 = tracer.counts.preempts;
+        io.github.mojolowjo.entropybot.clear.OreDetour.valuer = this::oreBlockValue;     // small-3: the ore detour is valued while AA runs
         LOG.info("[entropybot] aa: on{}", ended);
         LOG.info("[entropybot] aa: ready ({} desires)", tree.brain.lastScored().size());
         return "ok: aa on - danger > your orders > AI requests > basic needs > idle; one task at a time; aa status says who drives" + ended;
     }
 
+    /** small-3: seconds of value in one mined block of this ore (OreValue), from the tech tree and the open goals. */
+    private double oreBlockValue(String oreId) {
+        java.util.Map<String, Integer> goals = new java.util.HashMap<>();
+        for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb)) for (String k : g.r.counts()) goals.merge(k, g.n, Math::max);
+        var tree = bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.TechTree tt ? tt : null;
+        var have = bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT) instanceof java.util.Set<?> s ? (java.util.Set<String>) s : java.util.Set.<String>of();
+        return io.github.mojolowjo.entropybot.aa.brain.OreValue.perBlock(oreId, tree, have, goals, bb.in.bag == null ? java.util.Map.of() : bb.in.bag);
+    }
+
     String turnOff(String why) {
+        io.github.mojolowjo.entropybot.clear.OreDetour.valuer = null;
         appendRun();
         JsonObject d = data();
         d.addProperty("on", false);

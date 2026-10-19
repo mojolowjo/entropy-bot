@@ -27,7 +27,7 @@ import java.util.Map;
  */
 public final class Brain extends Node {
     public static final double BONUS = 15, URGENT = 75;
-    public static final long MIN_RUN_MS = 60_000, STUCK_MS = 180_000, CD_BASE_MS = 120_000, CD_MAX_MS = 16 * 60_000,
+    public static final long MIN_RUN_MS = 60_000, STUCK_MS = 180_000, FAST_STUCK_MS = 40_000, WAIT_MAX_S = 60, WAIT_MIN_S = 3, CD_BASE_MS = 120_000, CD_MAX_MS = 16 * 60_000,
             GAP_MS = 5_000, PROBE_MS = 60_000;
 
     /** One scored desire for {@code aa why}. */
@@ -40,7 +40,17 @@ public final class Brain extends Node {
 
     private final List<Desire> desires = new ArrayList<>();
     private int running = -1, lastWinner = -1;
-    private long startedAt, lastProgressAt, lastTickAt = -1;
+    /** small-4: blackboard fact, when the earliest Failures hold lapses (ms, 0 = none). */
+    public static final String NEXT_LAPSE_FACT = "aa.nextLapseAt";
+
+    /** small-4: seconds the idle wait lasts: min(60, until the next hold lapses), at least 3. */
+    public static int waitSeconds(long now, long nextLapseAt) {
+        if (nextLapseAt <= now) return (int) WAIT_MAX_S;
+        return (int) Math.max(WAIT_MIN_S, Math.min(WAIT_MAX_S, (nextLapseAt - now + 999) / 1000));
+    }
+
+    private long startedAt, lastProgressAt, lastMoveAt, lastTickAt = -1;
+    private String moveSig;
     private boolean taskSeen;
     private String sig;
     /** AA_ROUND2 3: the one failure record (desire holds and fails in a row; the rung pickers' option memories bind to it). */
@@ -239,6 +249,7 @@ public final class Brain extends Node {
 
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
+        bb.fact(NEXT_LAPSE_FACT, failures.nextLapse(now));          // small-4: the idle wait ends when the next hold does
         bonus = Personality.of(bb).get("margin");          // B3 (2.4): the commitment margin is the personality's
         if (bornAt < 0) bornAt = now;
         boolean gap = lastTickAt >= 0 && now - lastTickAt > GAP_MS;
@@ -248,7 +259,7 @@ public final class Brain extends Node {
             Desire cur = desires.get(running);
             if (gap) {                                 // the slot was paused (danger, held): that time is no stall
                 startedAt += now - prevTick;
-                lastProgressAt = now;
+                lastProgressAt = lastMoveAt = now;
             }
             Scored beat = challenger(bb, cur, now);
             if (beat != null) {
@@ -384,7 +395,7 @@ public final class Brain extends Node {
             if (s == Status.RUNNING) {
                 running = i;
                 lastWinner = i;
-                startedAt = lastProgressAt = now;
+                startedAt = lastProgressAt = lastMoveAt = now;
                 sig = null;
                 picks++;
                 probe(bb, d.id, "RUNNING (" + Math.round(sc.score()) + top3(all, i) + ")");
@@ -468,11 +479,26 @@ public final class Brain extends Node {
         if (!s.equals(sig) || asking || (bb.task() != null && bb.task().paused())) {
             sig = s;
             lastProgressAt = now;
+            // small-2: the second clock - the position and the bag
+            String m = moveSigOf(bb);
+            if (!m.equals(moveSig)) {
+                moveSig = m;
+                lastMoveAt = now;
+            }
             return Status.RUNNING;
         }
-        if (now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
+        String m = moveSigOf(bb);
+        if (!m.equals(moveSig)) {
+            moveSig = m;
+            lastMoveAt = now;
+        }
+        // small-2: standing still with the bag unchanged and no task progress for FAST_STUCK_MS is a stall; the long
+        // clock stays for work that moves or collects (a desire with its own patience, a shelter, keeps only its own)
+        boolean waiting = bb.task() != null && bb.task().spec() != null && bb.task().spec().kind() == io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT;     // a wait stands still on purpose
+        boolean fast = !waiting && cur.stuckMs == STUCK_MS && now - lastMoveAt >= FAST_STUCK_MS && now - lastProgressAt >= FAST_STUCK_MS;
+        if (!fast && now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
         stuck++;
-        String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s";
+        String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s" + (fast ? " (no move, no bag change)" : "");
         bb.port.log("brain " + why + " - halted, cooling down, the next desire runs");
         bb.port.incident("aa " + why);
         cur.node.halt(why);
@@ -489,6 +515,12 @@ public final class Brain extends Node {
     public int streak(String id) { return failures.fails(id, null); }
 
     /** What counts as progress: the position, the bag, the task and its progress, the planner working. */
+    /** small-2: position and bag only. */
+    static String moveSigOf(Blackboard bb) {
+        var in = bb.in;
+        return (in.pos == null ? "" : in.pos[0] + "," + in.pos[1] + "," + in.pos[2]) + "|" + (in.bag == null ? 0 : in.bag.hashCode());
+    }
+
     static String progressSig(Blackboard bb) {
         var in = bb.in;
         StringBuilder b = new StringBuilder();

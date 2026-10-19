@@ -20,6 +20,12 @@ public final class OreDetour {
 
     public static final int CAP = 8, MAX_UP = 4;
 
+    /**
+     * small-3: value of one mined block of this ore id in seconds (AA sets it while on; null = the radius is the rule).
+     * With it, {@code path.oreDetour} is only the cap of the search; the detour is taken when value x blocks > its cost.
+     */
+    public static volatile java.util.function.ToDoubleFunction<String> valuer;
+
     /** The vein to mine (nearest block first), empty when none qualifies. r: the radius (0 = off). */
     public static List<Pos> pick(ClearWorld w, int bx, int by, int bz, int r, Predicate<String> canMine, Veins.Area area) {
         List<Pos> out = new ArrayList<>();

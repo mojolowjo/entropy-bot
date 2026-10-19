@@ -123,7 +123,8 @@ public final class AaTree {
                 java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
                 java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
                 java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
-                java.util.Map.entry(TaskKind.WAIT, (Node) RunJob.of("idle.wait", TaskKind.WAIT, "wait 60", "idle")));
+                java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.of(TaskKind.WAIT, "wait " + io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
+                        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0), "idle"))));
         io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaLadder.build(), idle, scorer);
         MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, brain);
         GuardSelector root = new GuardSelector("root", "AA",

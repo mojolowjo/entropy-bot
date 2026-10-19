@@ -100,7 +100,7 @@ class AaBrainTest {
         s[0] = 40;
         s[1] = 20;
         br.tick(bb);
-        for (int i = 0; i < 180; i++) {
+        for (int i = 0; i < 40; i++) {          // small-2: no move and no bag change: a stall after 40 s
             clock.advance(1000);
             br.tick(bb);
         }

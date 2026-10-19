@@ -64,9 +64,9 @@ class BrainExposureTest {
     @Test
     void ironParkedByTheSurfaceGateLiftsTheGateToFlowOfIron() {
         Rung surface = AaLadder.build().stream().filter(r -> r.id.equals("needs.surface")).findFirst().orElseThrow();
-        Rung iron = AaLadder.build().stream().filter(r -> r.id.equals("needs.iron")).findFirst().orElseThrow();
+        Rung iron = AaLadder.build().stream().filter(r -> r.id.equals("needs.tableFurnace")).findFirst().orElseThrow();
         Brain br = new Brain("brain", "t", AaDesires.rung(surface), AaDesires.rung(iron));
-        bb.in.areaKnown = bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
+        bb.in.areaKnown = true;        // small-1: the SURFACE desire (table/furnace) is parked, the UNDER one (iron) is not
         bb.in.pickTier = 2;
         bb.in.pickaxes = 1;
         bb.in.pickPct = 100;
@@ -95,3 +95,4 @@ class BrainExposureTest {
         assertTrue(br.heldLines(clock.now()).get(0).startsWith("held: idle.wood "), br.heldLines(clock.now()).toString());
     }
 }
+

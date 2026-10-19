@@ -55,9 +55,16 @@ public final class AaLadder {
      * aa-costs: the gate rung still open (needs.area, needs.woodArea, needs.surface), else null. An upkeep that may now
      * score urgent (tools) waits for it: nothing it runs can work before the gate is met.
      */
-    public static String openGate(Blackboard bb) {
+    public static String openGate(Blackboard bb) { return openGate(bb, io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.SURFACE); }
+
+    /**
+     * small-1: the surface gate (climb out first) binds only a desire whose exposure is SURFACE; UNDER and ANY desires
+     * never wait for it (the dawn climb is the surface rung's own score). The area gates bind everything.
+     */
+    public static String openGate(Blackboard bb, io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure e) {
         if (!bb.in.areaKnown) return "needs.area";
         if (bb.fact(TREE_AREA_FACT) instanceof String) return "needs.woodArea";
+        if (e != io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.SURFACE) return null;
         if (io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb))) return "needs.surface";
         return null;
     }

@@ -107,25 +107,30 @@ public final class AaDesires {
         return 40 + 30 * (t == null || t.size() == 0 ? 1 : t.norm("iron_ingot", have(bb)));
     }
 
+    /** small-1: the surface rung's own score when a night mine is to be left at dawn. */
+    static final double DAWN_CLIMB = 45;
+
     public static Desire rung(Rung r) {
         Desire d = switch (r.id) {
             // AA_ROUND2 4 (were 100/95/90): a gate scores nothing itself; what it blocks flows to it (FLOW of the best)
-            case "needs.area", "needs.woodArea", "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 0));
+            case "needs.area", "needs.woodArea" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 0));
+            // small-1: the surface gate binds SURFACE desires only; the dawn climb out of a night mine is its own SURFACE desire
+            case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> NightWork.climbAtDawn(b, AaLadder.SURFACE_DEPTH) ? DAWN_CLIMB : 0)).exposure(Desire.Exposure.SURFACE);
             case "needs.tools" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.min(99, factor(b, "tools") * tools(b)))), b -> null, b -> null);
             // urgent food is never parked by a gate (starving is starving); a stock-up waits for it
             case "needs.food" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)), b -> null, AaDesires::foodInfeasible)
                     .infeasible(b -> {
                         String no = foodInfeasible(b);
                         if (no != null || b.in.food <= 6) return no;
-                        return gateWhy(b);
-                    }).prereq(b -> b.in.food <= 6 ? null : AaLadder.openGate(b));      // review: urgent food gives no gate its value
+                        return gateWhy(b, Desire.Exposure.ANY);
+                    }).prereq(b -> b.in.food <= 6 ? null : AaLadder.openGate(b, Desire.Exposure.ANY));      // review: urgent food gives no gate its value
             case "needs.torches" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches")))),
                     b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace", b -> null);
             case "needs.bag" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag")))), b -> null, b -> null);
-            case "needs.tableFurnace" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::stationValue)).cost(60), b -> null, b -> null);
-            case "needs.spareTable" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.spareTable(tree(b), have(b)))).cost(10), b -> null, b -> null);
-            case "needs.base" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.base(bedDanger(b)))).cost(240), b -> null, b -> null);
-            case "needs.bed" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(120), b -> null, AaDesires::bedInfeasible);
+            case "needs.tableFurnace" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::stationValue)).cost(60).exposure(Desire.Exposure.SURFACE), b -> null, b -> null);
+            case "needs.spareTable" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.spareTable(tree(b), have(b)))).cost(10).exposure(Desire.Exposure.SURFACE), b -> null, b -> null);
+            case "needs.base" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.base(bedDanger(b)))).cost(240).exposure(Desire.Exposure.SURFACE), b -> null, b -> null);
+            case "needs.bed" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(120).exposure(Desire.Exposure.SURFACE), b -> null, AaDesires::bedInfeasible);
             case "needs.iron" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600),
                     b -> b.in.pickTier < 2 ? "needs.tools" : null, b -> null).exposure(Desire.Exposure.UNDER);
             default -> new Desire(r.id, kindOf(r.id), r, bb -> rungScore(r, bb, b -> 30));
@@ -134,8 +139,10 @@ public final class AaDesires {
     }
 
     /** "needs.area first" while a gate is open (AaLadder.openGate), else null. */
-    static String gateWhy(Blackboard b) {
-        String g = AaLadder.openGate(b);
+    static String gateWhy(Blackboard b) { return gateWhy(b, Desire.Exposure.SURFACE); }
+
+    static String gateWhy(Blackboard b, Desire.Exposure e) {
+        String g = AaLadder.openGate(b, e);
         return g == null ? null : g + " first";
     }
 
@@ -145,10 +152,10 @@ public final class AaDesires {
      */
     static Desire gated(Desire d, Function<Blackboard, String> prereq, Function<Blackboard, String> infeasible) {
         return d.prereq(b -> {
-            String g = AaLadder.openGate(b);
+            String g = AaLadder.openGate(b, d.exposure());
             return g != null ? g : prereq.apply(b);
         }).infeasible(b -> {
-            String g = gateWhy(b);
+            String g = gateWhy(b, d.exposure());
             return g != null ? g : infeasible.apply(b);
         });
     }
@@ -196,7 +203,7 @@ public final class AaDesires {
                     double s = scorer.score(bb.in)[kind.ordinal()];
                     return s < 0 ? -1 : s * IDLE_SCALE;
                 }).exposure(exposureOf(kind)).cools(kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS, kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS)
-                .infeasible(AaDesires::gateWhy).prereq(AaLadder::openGate).lastTry();
+                .infeasible(b -> gateWhy(b, exposureOf(kind))).prereq(b -> AaLadder.openGate(b, exposureOf(kind))).lastTry();
     }
 
     // ---- aa-food: the bar's curve and the stock target ----
@@ -295,7 +302,7 @@ public final class AaDesires {
         return new Desire("ideas", Desire.Kind.PROGRESS, node, bb -> {
             Pick p = bestIdea(bb);
             return p == null ? -1 : 30 * p.share();
-        }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : AaLadder.openGate(b)).infeasible(AaDesires::gateWhy)
+        }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : AaLadder.openGate(b, Desire.Exposure.ANY)).infeasible(b -> gateWhy(b, Desire.Exposure.ANY))
                 .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
     }
 
@@ -365,7 +372,7 @@ public final class AaDesires {
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.WANT, node, bb -> Wants.score(bb, id, key))
-                .infeasible(b -> { String g = gateWhy(b); return g != null ? g : infeasible.apply(b); }).prereq(AaLadder::openGate)
+                .infeasible(b -> { String g = gateWhy(b, exposure); return g != null ? g : infeasible.apply(b); }).prereq(b -> AaLadder.openGate(b, exposure))
                 .exposure(exposure).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
     }
 
