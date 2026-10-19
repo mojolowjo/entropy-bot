@@ -595,7 +595,50 @@ public final class AaRuntime implements JobPort {
         in.otherJob = otherJob();
         in.ownerOrderPending = in.otherJob != null;
         in.aiRequestPending = bb.peek("ai") != null;
+        fillOwner(in, s, p, mc);
     }
+
+    /**
+     * B6 (2.11): the owner as the help desire sees them. Position: their player entity when loaded (same dimension), else
+     * the companion's position; activity and last placed block from the companion report (fresh, same name and dimension).
+     * Loader notes: vanilla client classes only (level players/entities, raw brightness).
+     */
+    private void fillOwner(Inputs in, BrainState s, LocalPlayer p, Minecraft mc) {
+        in.ownerDist = -1;
+        in.ownerHostiles = 0;
+        in.ownerAct = null;
+        in.ownerPlaced = null;
+        in.ownerDark = false;
+        in.assistOn = c.assist.on();
+        if (mc.level == null) return;
+        try {
+            String owner = c.owner();
+            net.minecraft.world.phys.Vec3 at = null;
+            for (net.minecraft.world.entity.player.Player pl : mc.level.players())
+                if (pl != p && owner != null && pl.getGameProfile().getName().equalsIgnoreCase(owner)) at = pl.position();
+            if (at == null && s.ownerKnown()) at = new net.minecraft.world.phys.Vec3(s.ownerPos[0] + 0.5, s.ownerPos[1], s.ownerPos[2] + 0.5);
+            if (at == null) return;
+            in.ownerDist = (int) Math.round(Math.hypot(at.x - p.getX(), at.z - p.getZ()));
+            net.minecraft.core.BlockPos bp = net.minecraft.core.BlockPos.containing(at);
+            if (mc.level.isLoaded(bp)) {
+                in.ownerDark = mc.level.getMaxLocalRawBrightness(bp) < 8;
+                in.ownerHostiles = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
+                        new net.minecraft.world.phys.AABB(bp).inflate(12), net.minecraft.world.entity.LivingEntity::isAlive).size();
+            }
+            io.github.mojolowjo.entropybot.assist.AssistRules.Report r = c.assist.report();
+            long now = System.currentTimeMillis();
+            if (r != null && owner != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= io.github.mojolowjo.entropybot.assist.AssistRules.FRESH_MS
+                    && r.dim().equals(mc.level.dimension().location().toString())) {
+                in.ownerAct = io.github.mojolowjo.entropybot.assist.AssistRules.guess(r, now).word();
+                in.ownerPlaced = r.placed() == null || now - r.placed().at() > io.github.mojolowjo.entropybot.assist.AssistRules.RECENT_MS ? null : r.placed().id();
+            }
+        } catch (RuntimeException e) {
+            if (!ownerReadWarned) LOG.warn("[entropybot] aa help: owner read failed (help stays off; said once): {}", e.toString());
+            ownerReadWarned = true;
+        }
+    }
+
+    private boolean ownerReadWarned;
 
     /** A camp latch from brainData "aa" (AaLadder.campLatch); saved and logged once when it changes. */
     private boolean latch(String key, boolean seen, double distToCamp) {
