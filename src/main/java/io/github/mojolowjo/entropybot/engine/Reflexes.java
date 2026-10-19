@@ -321,7 +321,7 @@ public final class Reflexes {
             case EATING -> "eating";
             case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
             case FLEEING -> "avoiding a " + target;
-            case RETREATING -> "retreating from " + target + " (health " + Math.round(lastHealth) + ")";
+            case RETREATING -> (pillaring() ? "pillared up from " : "retreating from ") + target + " (health " + Math.round(lastHealth) + ")";
             case FETCHING -> "fetching food" + (fetchTargets != null && fetchIdx < fetchTargets.size() ? " from " + fetchTargets.get(fetchIdx).key() : "");
         };
     }
@@ -364,7 +364,10 @@ public final class Reflexes {
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
         Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
-        if (reflex != Reflex.EATING && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) return;     // 0.23.6
+        if (reflex != Reflex.EATING && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
+            if (pillaring()) mc.options.keyJump.setDown(false);      // review: survival drives this tick
+            return;
+        }
 
         if (reflex == Reflex.RETREATING) {
             retreat(mc, p, hurt);
@@ -640,6 +643,7 @@ public final class Reflexes {
         target = null;
         urgent = false;
         clearSpot();            // 0.25.1
+        clearPillar(mc);        // brain-b1
         Motor.INSTANCE.stop("reflex ended: " + why, now);     // 0.27.0
         engine.release();
     }
@@ -822,7 +826,7 @@ public final class Reflexes {
         net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
         boolean away = CreeperSprint.sprintingAway(p.isSprinting(), v.x, v.z, ax, az);
         boolean mayHit = duel.mode() != CreeperRules.Mode.FLEE && t.d <= ReflexRules.REACH && (Hostility.mayAttack(t.e) || forcedAllows(t.e));
-        double[] esc = ThreatRuntime.INSTANCE.escape(p, t.e);
+        double[] esc = creeperEscape(mc, p, t.e);         // brain-b1: weighs every hostile, not just this creeper
         CreeperSprint.Act a = cspr.start(now, t.e.getId(), away, mayHit, v.x, v.z, esc[0], esc[1]);
         reflex = Reflex.FLEEING;
         target = "creeper";
@@ -855,7 +859,7 @@ public final class Reflexes {
         }
         // stuck against something: a new heading from the grid
         if (p.horizontalCollision && now % 5 == 0) {
-            double[] esc = ThreatRuntime.INSTANCE.escape(p, c);
+            double[] esc = creeperEscape(mc, p, c);
             cspr.steer(esc[0], esc[1]);
         }
         target = "creeper";
@@ -1255,20 +1259,45 @@ public final class Reflexes {
     /** Live aa376: the run end on the heading with the least threat over every nearby hostile (FleeHeading), null = cornered. Never throws. */
     private int[] fleeHeading(Minecraft mc, LocalPlayer p, Entity from, double dist) {
         try {
-            List<io.github.mojolowjo.entropybot.threat.FleeHeading.Mob> mobs = new java.util.ArrayList<>();
-            Hostility h = Hostility.INSTANCE;
-            boolean seenFrom = false;
-            for (Entity e : mc.level.entitiesForRendering()) {
-                if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
-                if (e != from && (p.distanceTo(e) > ReflexRules.lookRadius(true) || !h.kind(e, true).counts())) continue;
-                seenFrom |= e == from;
-                mobs.add(new io.github.mojolowjo.entropybot.threat.FleeHeading.Mob(e.getX(), e.getZ(), e instanceof Creeper ? 2 : 1));
-            }
-            if (!seenFrom && from != null) mobs.add(new io.github.mojolowjo.entropybot.threat.FleeHeading.Mob(from.getX(), from.getZ(), from instanceof Creeper ? 2 : 1));
-            return io.github.mojolowjo.entropybot.threat.FleeHeading.choose(p.getX(), p.getZ(), mobs, dist);
+            return io.github.mojolowjo.entropybot.threat.FleeHeading.choose(p.getX(), p.getZ(), fleeMobs(mc, p, from), dist);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] threat: flee heading failed, straight away instead: {}", e.toString());
             return from == null ? null : ReflexRules.awayFrom(p.getX(), p.getZ(), from.getX(), from.getZ(), dist);
+        }
+    }
+
+    /** Every counted hostile near (creepers weigh 2), {@code from} always included. */
+    private List<io.github.mojolowjo.entropybot.threat.FleeHeading.Mob> fleeMobs(Minecraft mc, LocalPlayer p, Entity from) {
+        List<io.github.mojolowjo.entropybot.threat.FleeHeading.Mob> mobs = new java.util.ArrayList<>();
+        Hostility h = Hostility.INSTANCE;
+        boolean seenFrom = false;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
+            if (e != from && (p.distanceTo(e) > ReflexRules.lookRadius(true) || !h.kind(e, true).counts())) continue;
+            seenFrom |= e == from;
+            mobs.add(new io.github.mojolowjo.entropybot.threat.FleeHeading.Mob(e.getX(), e.getZ(), e instanceof Creeper ? 2 : 1));
+        }
+        if (!seenFrom && from != null) mobs.add(new io.github.mojolowjo.entropybot.threat.FleeHeading.Mob(from.getX(), from.getZ(), from instanceof Creeper ? 2 : 1));
+        return mobs;
+    }
+
+    /**
+     * brain-b1: the creeper sprint's heading: EscapeDir's walkable run around FleeHeading's least-threat heading over
+     * every hostile (not straight away from the creeper alone), and never a run that passes a mob. Cornered or a
+     * failure: straight away from the creeper as before. {dirX, dirZ, run}. Never throws.
+     */
+    private double[] creeperEscape(Minecraft mc, LocalPlayer p, Entity c) {
+        try {
+            var mobs = fleeMobs(mc, p, c);
+            double[] dir = io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), mobs, ReflexRules.CREEPER_RUN_TO);
+            if (dir == null) return c == null ? ThreatRuntime.INSTANCE.escape(p, 0, 0) : ThreatRuntime.INSTANCE.escape(p, c);
+            double[] esc = ThreatRuntime.INSTANCE.escape(p, dir[0], dir[1]);
+            if (io.github.mojolowjo.entropybot.threat.FleeHeading.blocked(p.getX(), p.getZ(), mobs, esc[0], esc[1], ReflexRules.CREEPER_RUN_TO))
+                return new double[]{dir[0], dir[1], esc[2]};
+            return esc;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: creeper heading failed, straight away instead: {}", e.toString());
+            return c == null ? ThreatRuntime.INSTANCE.escape(p, 0, 0) : ThreatRuntime.INSTANCE.escape(p, c);
         }
     }
 
@@ -1290,6 +1319,7 @@ public final class Reflexes {
     }
 
     private void startLitRetreat(Minecraft mc, LocalPlayer p, Threat t, int[] lit, String why) {
+        clearPillar(mc);        // review: no stale pillar under a new retreat
         if (reflex == Reflex.EATING) stopEating(mc, "retreating");
         reflex = Reflex.RETREATING;
         mc.options.keyShift.setDown(false);
@@ -1307,12 +1337,14 @@ public final class Reflexes {
     }
 
     private void startRetreat(Minecraft mc, LocalPlayer p, Threat t) {
+        clearPillar(mc);        // review: no stale pillar under a new retreat
         // live aa376: weigh every hostile; no base to run to and no safe heading (cornered) = fight the closest
         Place b0 = base;
         boolean toBase = b0 != null && b0.dim.equals(Guard.dimOf(mc.level)) && dist2(p, b0) > 64
                 && dist2(p, b0) <= (double) io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk() * io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk();
         int[] heading = toBase ? null : fleeHeading(mc, p, t.e, 16);
         if (!toBase && heading == null) {
+            if (startPillar(mc, p, t)) return;     // brain-b1: cornered and fighting is bad: up out of reach
             events.push("reflex", "cornered by " + t.id + ": no heading clear of mobs, fighting the closest", null);
             retreatWhy = null;
             fight(mc, p, t);
@@ -1354,10 +1386,147 @@ public final class Reflexes {
                 ? ", too strong to fight (max health " + Math.round(le.getMaxHealth()) + ")" : "";
         events.push("reflex", "retreating from " + t.id + " (health " + Math.round(p.getHealth()) + why + ")" +
                 (retreatTo != null ? " to the base" : " away from it") + (tp ? ", sent /home" : "") + (retreatWhy != null ? " - " + retreatWhy : ""), null);
+        LOG.info("[entropybot] retreat from {}: {}", t.id, retreatTo != null ? "to the base" : "heading to " + fleeTo[0] + " " + fleeTo[1]);
         retreatWhy = null;
     }
 
+    // ---- brain-b1: the cornered pillar (CornerEscape) ----
+    private int pillarCell = Integer.MIN_VALUE, pillarBase, pillarTop, pillarX, pillarZ;
+    private long pillarStart;
+    private boolean pillarUp;           // reached the top: hold there, hitting what comes in reach
+
+    private boolean pillaring() { return pillarCell != Integer.MIN_VALUE; }
+
+    private void clearPillar(Minecraft mc) {
+        if (pillaring()) {
+            mc.options.keyJump.setDown(false);
+            mc.options.keyUse.setDown(false);
+        }
+        pillarCell = Integer.MIN_VALUE;
+        pillarUp = false;
+    }
+
+    /** Throwaway blocks in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#THROWAWAY}), and the slot of the first. */
+    private static int[] throwaway(LocalPlayer p) {
+        int n = 0, slot = -1;
+        var inv = p.getInventory();
+        for (int i = 0; i < 36; i++) {
+            ItemStack s = inv.getItem(i);
+            if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem)) continue;
+            if (!io.github.mojolowjo.entropybot.aa.AaEscape.THROWAWAY.contains(BuiltInRegistries.ITEM.getKey(s.getItem()).getPath())) continue;
+            n += s.getCount();
+            if (slot < 0 || (slot >= 9 && i < 9)) slot = i;
+        }
+        return new int[]{n, slot};
+    }
+
+    /** Cornered: pillar up when CornerEscape says so; false = fight as before. Never throws. */
+    private boolean startPillar(Minecraft mc, LocalPlayer p, Threat t) {
+        try {
+            int near = 0;
+            for (Entity e : mc.level.entitiesForRendering())
+                if (e != p && e instanceof LivingEntity le && le.isAlive() && p.distanceTo(e) <= ReflexRules.LOOK && Hostility.INSTANCE.kind(e, true).counts()) near++;
+            boolean bad = io.github.mojolowjo.entropybot.threat.CornerEscape.fightBad(p.getHealth() + p.getAbsorptionAmount(),
+                    ReflexRules.RETREAT_AT, t.strong, true, near);       // only reached on a retreat verdict: losing
+            BlockPos feet = p.blockPosition();
+            int head = 0;
+            while (head < io.github.mojolowjo.entropybot.threat.CornerEscape.UP && mc.level.getBlockState(feet.above(2 + head)).getCollisionShape(mc.level, feet.above(2 + head)).isEmpty()) head++;
+            int[] tw = throwaway(p);
+            var plan = io.github.mojolowjo.entropybot.threat.CornerEscape.plan(bad, p.onGround(), p.isInWater() || p.isInLava(), head, tw[0]);
+            if (!plan.pillar()) {
+                events.push("reflex", "cornered by " + t.id + ", no pillar: " + plan.why(), null);
+                LOG.info("[entropybot] cornered, no pillar: {}", plan.why());
+                return false;
+            }
+            if (!Hotbar.toHand(mc, p, tw[1])) {
+                events.push("reflex", "cornered by " + t.id + ", no pillar: could not take the blocks in hand", null);
+                return false;
+            }
+            if (reflex == Reflex.EATING) stopEating(mc, "pillaring");
+            reflex = Reflex.RETREATING;
+            retreatLit = false;
+            retreatTo = null;
+            fleeTo = null;
+            retreatGoal = null;
+            retreatStart = now;
+            calmSince = now;
+            engine.hold();
+            stopMoving(mc);
+            pillarCell = feet.getY();
+            pillarBase = pillarCell;
+            pillarTop = feet.getY() + plan.height();
+            pillarX = feet.getX();
+            pillarZ = feet.getZ();
+            pillarStart = now;
+            pillarUp = false;
+            lastX = p.getX();
+            lastY = p.getY();
+            lastZ = p.getZ();
+            events.push("reflex", "cornered by " + t.id + ": " + plan.why(), null);
+            LOG.info("[entropybot] cornered: {}", plan.why());
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: pillar failed to start, fighting instead: {}", e.toString());
+            clearPillar(mc);
+            return false;
+        }
+    }
+
+    /** One tick of the pillar: jump, place under the feet once clear; at the top hold and hit what is in reach. */
+    private void pillarTick(Minecraft mc, LocalPlayer p) {
+        if (p.getBlockX() != pillarX || p.getBlockZ() != pillarZ || p.isInWater() || p.isInLava()) {
+            settle("knocked off the pillar");
+            return;
+        }
+        Threat t = nearestThreat(mc, p, true, false);
+        if (t != null) calmSince = now;
+        if (!pillarUp) {
+            if (now - pillarStart > io.github.mojolowjo.entropybot.threat.CornerEscape.TIMEOUT) {
+                settle("pillar gave up at " + (pillarCell - pillarBase) + " up");
+                return;
+            }
+            p.setXRot(90f);
+            p.setDeltaMovement(0, p.getDeltaMovement().y, 0);      // straight up: no drift off the column
+            BlockPos cell = new BlockPos(pillarX, pillarCell, pillarZ);
+            if (p.getY() >= pillarCell + 1.0 - 1e-3 && p.onGround() && !mc.level.getBlockState(cell).isAir()) pillarCell++;   // landed on the last one
+            if (pillarCell >= pillarTop) {
+                pillarUp = true;
+                mc.options.keyJump.setDown(false);
+                events.push("reflex", "pillared up to " + pillarTop + ", holding", null);
+                LOG.info("[entropybot] pillared up to {}, holding", pillarTop);
+                return;
+            }
+            int[] tw = throwaway(p);
+            if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) {      // review: re-take a throwaway stack each tick
+                settle("pillar: out of blocks");
+                return;
+            }
+            mc.options.keyJump.setDown(p.onGround());
+            if (io.github.mojolowjo.entropybot.threat.CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
+                BlockPos below = cell.below();
+                var hit = new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(below).add(0, 0.5, 0),
+                        net.minecraft.core.Direction.UP, below, false);
+                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
+                p.swing(InteractionHand.MAIN_HAND);
+            }
+            return;
+        }
+        // at the top: hit a mob in reach, else wait it out
+        if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+            holdWeapon(mc, p);
+            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+            mc.gameMode.attack(p, t.e);
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+        if (now - calmSince >= 100) settle("nothing near the pillar");
+        else if (now - retreatStart >= 1800) settle("gave up on the pillar after 90 s");
+    }
+
     private void retreat(Minecraft mc, LocalPlayer p, boolean hurt) {
+        if (pillaring()) {
+            pillarTick(mc, p);
+            return;
+        }
         double jump = Math.abs(p.getX() - lastX) + Math.abs(p.getY() - lastY) + Math.abs(p.getZ() - lastZ);
         lastX = p.getX();
         lastY = p.getY();

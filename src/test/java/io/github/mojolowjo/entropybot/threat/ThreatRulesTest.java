@@ -128,7 +128,9 @@ class ThreatRulesTest {
         FightOrFlee.Result tight = FightOrFlee.assess(me(20, 0, 4, 0, 10), zombies(1));
         assertEquals(FightOrFlee.Verdict.LIT, tight.verdict(), tight.why());
         assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 4, 12, 10), zombies(1)).verdict(), "tight but lit here");
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(20, 0, 4, 0, -1), zombies(1)).verdict(), "tight, dark, no lit spot");
+        // brain-b1: a lone weak mob against an armed bot is fought even dark with no lit spot (was HOME)
+        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 4, 0, -1), zombies(1)).verdict(), "tight, dark, no lit spot, lone zombie");
+        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(20, 0, 1, 0, -1), zombies(1)).verdict(), "tight, dark, no lit spot, bare hands");
         // a creeper in a group: home
         assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(20, 15, 6, 15, -1),
                 List.of(new FightOrFlee.Foe("zombie", 4, false), new FightOrFlee.Foe("creeper", 5, true))).verdict());
