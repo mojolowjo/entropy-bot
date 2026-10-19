@@ -96,6 +96,35 @@ class BrainInterruptTest {
         assertEquals("do food", last());
     }
 
+    @Test
+    void starvingUpkeepIsExemptFromTheCapButNotFromTheProbe() {
+        String[] probe = {null};
+        Brain br = new Brain("brain", "t", d(0, "a", Desire.Kind.PROGRESS), d(1, "food", Desire.Kind.UPKEEP).probe(b -> probe[0]));
+        s[0] = 40;
+        br.tick(bb);
+        for (int k = 0; k < 2; k++) {
+            s[1] = 80;
+            br.tick(bb);
+            port.done(port.nextId - 1, "done");
+            s[1] = -1;
+            br.tick(bb);
+            br.tick(bb);
+        }
+        assertEquals(2, br.interrupts);
+        probe[0] = "no food source";
+        s[1] = 95;
+        clock.advance(Brain.PROBE_HOLD_MS);
+        br.tick(bb);
+        assertEquals(2, br.interrupts, "exempt from the cap, still probed");
+        assertEquals("do a", last());
+        probe[0] = null;
+        clock.advance(Brain.PROBE_HOLD_MS);
+        port.progress.put(port.nextId - 1, 1L);
+        br.tick(bb);
+        assertEquals(3, br.interrupts, "starving passes the cap");
+        assertEquals("do food", last());
+    }
+
     /** The overnight 2026-10-19 thrash: food 77 with no source interrupted explore every 0.25 s. Now: never. */
     @Test
     void overnightFoodWithNoSourceNeverInterruptsExplore() {

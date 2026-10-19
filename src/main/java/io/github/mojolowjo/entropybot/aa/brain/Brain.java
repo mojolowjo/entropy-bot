@@ -282,8 +282,13 @@ public final class Brain extends Node {
         // AA_ROUND2 2: at most MAX_INTERRUPTS_PER_MIN; over the cap a challenger waits
         while (!interruptTimes.isEmpty() && now - interruptTimes.peekFirst() >= 60_000) interruptTimes.removeFirst();
         if (interruptTimes.size() >= MAX_INTERRUPTS_PER_MIN) {
-            for (Scored s : cands) wouldNote.put(s.d().id, "interrupt cap");
-            return null;
+            // director 2026-10-19: upkeep at CAP_EXEMPT+ (starving) is not capped; it still needs the probe below
+            cands.removeIf(s -> {
+                boolean exempt = s.d().kind == Desire.Kind.UPKEEP && s.own() >= CAP_EXEMPT;
+                if (!exempt) wouldNote.put(s.d().id, "interrupt cap");
+                return !exempt;
+            });
+            if (cands.isEmpty()) return null;
         }
         // AA_ROUND2 2: only a challenger that can start a task may halt the running one
         for (Scored s : cands) {
@@ -305,6 +310,8 @@ public final class Brain extends Node {
     /** AA_ROUND2 2: a challenger's "cannot start" is re-asked at most this often. */
     public static final long PROBE_HOLD_MS = 5_000;
     public static final int MAX_INTERRUPTS_PER_MIN = 2;
+    /** Upkeep this urgent is exempt from the cap (probe and false-interrupt cooldown still apply). */
+    public static final double CAP_EXEMPT = 90;
     private record Held(String why, long at) {}
     private final Map<String, Held> probeHeld = new HashMap<>();
     private final java.util.ArrayDeque<Long> interruptTimes = new java.util.ArrayDeque<>();
