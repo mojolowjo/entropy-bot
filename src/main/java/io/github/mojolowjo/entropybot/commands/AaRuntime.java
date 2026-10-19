@@ -1290,7 +1290,7 @@ public final class AaRuntime implements JobPort {
             names.putIfAbsent(id, e.getValue().getName().getString().toLowerCase(java.util.Locale.ROOT));
         }
         Map<String, io.github.mojolowjo.entropybot.aa.brain.Thing.Gen> gen = worldgen(mc);
-        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen);
+        catalog = new io.github.mojolowjo.entropybot.aa.brain.Thing.Catalog(items, blocks, names, tiers, gen, AaRuntime::learned);
         catalogWorld = world;
         LOG.info("[entropybot] aa: resolver catalog: {} items, {} blocks, worldgen {}", items.size(), blocks.size(),
                 gen == null ? "none (multiplayer)" : gen.size() + " ore blocks");
@@ -1363,6 +1363,25 @@ public final class AaRuntime implements JobPort {
                 out.add(io.github.mojolowjo.entropybot.aa.brain.Thing.anchorY(k, e.getValue().getAsInt(), bottom, top));
             else anchors(e.getValue(), bottom, top, out);
         }
+    }
+
+    /** B5: what the chunk pass has learned about a family (read live, so a cached catalog stays current). */
+    private static io.github.mojolowjo.entropybot.aa.brain.Thing.Learned learned(String family) {
+        var st = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.stats();
+        var r = st == null ? null : st.best(family);
+        return r == null ? null : new io.github.mojolowjo.entropybot.aa.brain.Thing.Learned(r.dim(), r.lowY(), r.highY(), r.peakY(), r.n());
+    }
+
+    /** aa ore [<thing>]: the heights learned from the chunks seen (plus what the resolver says for a word). */
+    String oreInfo(String arg) {
+        var st = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.stats();
+        if (st == null) return "ore info: no world files yet";
+        String w = arg == null ? "" : arg.trim().replaceFirst("^(?i)info\\s*", "");
+        String learned = st.info(w);
+        Minecraft mc = Minecraft.getInstance();
+        if (w.isEmpty() || mc.level == null) return learned;
+        var r = io.github.mojolowjo.entropybot.aa.brain.Thing.resolve(w, catalog(mc));
+        return (r.err() != null ? r.err() : r.text()) + "\nlearned: " + learned;
     }
 
     /** Every 10 s while goals exist: known positions per family (OreIndex, 256 around), reached goals said and dropped. */

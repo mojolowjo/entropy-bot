@@ -200,6 +200,7 @@ public final class ChunkPass {
                 audit(level, now);
             }
             if (tick % 20 == 3) writeDue(now, false);
+            if (tick % 1200 == 5) saveStats();
         } catch (Throwable t) {
             error("tick", t);
         } finally {
@@ -250,6 +251,9 @@ public final class ChunkPass {
      */
     public void worldChanged() {
         try {
+            saveStats();                                  // leftWorld may have run already (then it is clean); the old root is still set
+            stats = null;
+            statsRoot = null;
             gen.incrementAndGet();
             schedule.clear();
             live.clear();
@@ -271,12 +275,64 @@ public final class ChunkPass {
     public void leftWorld() {
         try {
             writeDue(System.currentTimeMillis(), true);
+            saveStats();
             schedule.clear();
             live.clear();
             index.markAllStale();
             dim = null;
         } catch (Throwable t) {
             error("leave", t);
+        }
+    }
+
+    // ---- ore stats (B5): where each ore family turns up, per world (entropybot/.../ore-stats.json) ----
+
+    private OreStats stats;
+    private String statsRoot;
+
+    /** The learned ore heights of the current world (loaded from its file on first use); null before the files exist. Never throws. */
+    public OreStats stats() {
+        try {
+            Path root = root();
+            if (root == null) return stats;
+            String r = root.toString();
+            if (stats != null && r.equals(statsRoot)) return stats;
+            if (stats != null) saveStats();               // a different world root: keep the old one's counts
+            Path f = root.resolve("ore-stats.json");
+            int[] skipped = new int[1];
+            if (java.nio.file.Files.isRegularFile(f)) {
+                stats = OreStats.fromJson(java.nio.file.Files.readString(f), skipped);
+                if (skipped[0] > 0) LOG.warn("[entropybot] sense: ore-stats.json had {} unreadable part(s), skipped", skipped[0]);
+            } else {
+                stats = new OreStats();
+            }
+            statsRoot = r;
+            return stats;
+        } catch (Throwable t) {
+            error("ore stats load", t);
+            if (stats == null) stats = new OreStats();    // count in memory at least; the file is not overwritten unseen (see saveStats)
+            return stats;
+        }
+    }
+
+    private void saveStats() {
+        try {
+            OreStats st = stats;
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (st == null || files == null || statsRoot == null || !st.dirty()) return;
+            if (!statsRoot.equals(files.worldRoot().toString())) return;
+            String json = st.toJson();
+            st.saved();
+            Path target = files.worldRoot().resolve("ore-stats.json");
+            worker().execute(() -> {
+                try {
+                    files.writeAtomic(target, json);
+                } catch (Throwable t) {
+                    LOG.warn("[entropybot] sense: couldn't write {}: {}", target.getFileName(), t.toString());
+                }
+            });
+        } catch (Throwable t) {
+            error("ore stats save", t);
         }
     }
 
@@ -306,6 +362,12 @@ public final class ChunkPass {
         List<ChunkDiff.Change> changes = ChunkDiff.between(old, fresh);
         index.put(fresh);
         live.add(k);
+        try {
+            OreStats st = stats();
+            if (st != null) st.addChunk(fresh);
+        } catch (Throwable t) {
+            error("ore stats", t);
+        }
         apply(fresh, changes, true);
         mapChunk(it.cx(), it.cz());
         if (old == null || old.stale || !changes.isEmpty()) dirty.mark(SummaryFiles.Dirty.key(dim, it.cx(), it.cz()), now);

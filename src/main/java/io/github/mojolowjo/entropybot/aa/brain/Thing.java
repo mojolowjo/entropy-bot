@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -32,7 +33,18 @@ public final class Thing {
 
     /** The registries as the resolver needs them (ids "ns:path"; names id -> lower-case display name; tiers 0..4). */
     public record Catalog(Collection<String> items, Collection<String> blocks, Map<String, String> names,
-                          Map<String, Integer> tiers, Map<String, Gen> gen) {}
+                          Map<String, Integer> tiers, Map<String, Gen> gen, Function<String, Learned> learned) {
+        public Catalog(Collection<String> items, Collection<String> blocks, Map<String, String> names,
+                       Map<String, Integer> tiers, Map<String, Gen> gen) {
+            this(items, blocks, names, tiers, gen, null);
+        }
+    }
+
+    /** B5: where the chunk pass has seen a family (5th..95th percentile Y, the busiest Y, n ores seen). */
+    public record Learned(String dim, int lowY, int highY, int peakY, int n) {}
+
+    /** Samples before what was learned beats the vanilla table (a few veins say little). */
+    public static final int LEARN_MIN = 25;
 
     /** Where to look: a dimension, a Y range (UNKNOWN_Y when unknown), and the source of that answer. */
     public record Where(String dim, int minY, int maxY, String source) {
@@ -171,8 +183,17 @@ public final class Thing {
             String d = dims.contains(OVERWORLD) ? OVERWORLD : dims.iterator().next();
             return new Where(d, lo == Integer.MAX_VALUE ? UNKNOWN_Y : lo, lo == Integer.MAX_VALUE ? UNKNOWN_Y : hi, "from worldgen");
         }
+        Learned l = c.learned() == null ? null : c.learned().apply(fam);
+        if (l != null && l.n() >= LEARN_MIN) return learnedWhere(l);
         Where v = vanilla(fam);
-        return v != null ? v : guess(ids);
+        if (v != null) return v;
+        Where g = guess(ids);
+        // a few samples still beat a bare guess when the guess has no Y
+        return l != null && l.n() > 0 && !g.yKnown() ? learnedWhere(l) : g;
+    }
+
+    static Where learnedWhere(Learned l) {
+        return new Where(l.dim(), l.lowY(), l.highY(), "learned from " + l.n() + " ores seen, most at Y " + l.peakY());
     }
 
     /** Vanilla 1.21 ore heights (the placed features' ranges; ores outside them are rare). */
