@@ -56,7 +56,17 @@ public final class FoodOptions {
     public record FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
                             Map<String, Integer> animals, int animalsOutside, String huntWhy,
                             int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
-                            int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me) {
+                            int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
+                            Map<String, Integer> animalsOut, float health) {
+        /** Without the outside-areas facts (none seen, health 20). */
+        public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
+                         Map<String, Integer> animals, int animalsOutside, String huntWhy,
+                         int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
+                         int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me) {
+            this(food, saturation, bag, target, furnace, animals, animalsOutside, huntWhy, oak, oakType, oakDist, berry, berryDist, red, brown,
+                    grass, waterNear, farmKnown, storedFood, kelpNear, me, Map.of(), 20);
+        }
+
         int has(String path) { return bag == null ? 0 : bag.getOrDefault(path, 0); }
     }
 
@@ -152,6 +162,16 @@ public final class FoodOptions {
             if (a.equals("chicken") && !f.furnace()) continue;               // raw chicken poisons
             if (n > most) { animal = a; most = n; }
         }
+        boolean out = false;
+        if (animal == null && f.animalsOut() != null && io.github.mojolowjo.entropybot.vocab.HuntRules.urgentOut(f.food(), f.health())) {
+            // the director (2026-10-19): food urgent, none in my areas: up to 48 outside them ("hunt ... out")
+            for (String a : List.of("cow", "pig", "sheep", "chicken")) {
+                int n = f.animalsOut().getOrDefault(a, 0);
+                if (a.equals("chicken") && !f.furnace()) continue;
+                if (n > most) { animal = a; most = n; }
+            }
+            out = animal != null;
+        }
         if (animal == null) {
             dropped.add("hunt: no animal in reach inside my areas" + (f.animalsOutside() > 0 ? " (" + f.animalsOutside() + " outside them)" : "")
                     + (f.furnace() || f.animals() == null || f.animals().getOrDefault("chicken", 0) == 0 ? "" : " (chickens only, no furnace)"));
@@ -160,10 +180,11 @@ public final class FoodOptions {
         String meat = MEAT.get(animal), cooked = FoodModel.COOKS.get(meat);
         double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
-        String chain = "hunt " + n + " " + animal + (f.furnace() ? " then cook " + meat + " " + n : "");
-        double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
-        RungOptions.add(rows, dropped, m, now, Options.scored("hunt " + animal, "hunt", chain, cost,
-                most + " " + animal + " in reach" + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", false, m));
+        String chain = "hunt " + n + " " + animal + (out ? " out" : "") + (f.furnace() ? " then cook " + meat + " " + n : "");
+        double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0)
+                + (out ? 2 * io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R : 0);      // there and back
+        RungOptions.add(rows, dropped, m, now, Options.scored(out ? "hunt out " + animal : "hunt " + animal, "hunt", chain, cost,
+                most + " " + animal + (out ? " outside my areas (food urgent)" : " in reach") + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", false, m));
     }
 
     static void stew(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {

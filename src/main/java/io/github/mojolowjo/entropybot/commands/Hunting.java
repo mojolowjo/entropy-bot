@@ -38,6 +38,8 @@ final class Hunting {
         int n;
         long started, nextAt, idleSince = -1;
         String why;
+        boolean out, saidOut;
+        int[] start;
         int targetId = -1;
         int[] dropAt;
         JobRequests.Request req;
@@ -106,6 +108,8 @@ final class Hunting {
         r.n = (Integer) a[0];
         r.want = (String) a[1];
         r.started = Core.INSTANCE.tick();
+        r.out = HuntRules.outWord(rest);
+        r.start = p == null ? null : Jobs.here(p);
         String reply = "started: hunting until I have " + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + " (hunt status)";
         r.req = c.requests.local("hunt", from, raw, reply, l);
         run = r;
@@ -195,6 +199,14 @@ final class Hunting {
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
             boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
                     || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
+            // the director (2026-10-19): an urgent "out" hunt may take animals up to 48 from its start, outside my areas
+            if (!inAreas && r.start != null && HuntRules.outOk(r.out, Math.sqrt(Jobs.distSq(r.start, new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()})))) {
+                inAreas = true;
+                if (!r.saidOut && HuntRules.MEAT.containsKey(type)) {
+                    r.saidOut = true;
+                    LOG.info("[entropybot] hunt: food urgent, hunting outside my areas (up to {} from {})", HuntRules.OUT_R, Jobs.fmt(r.start));
+                }
+            }
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, e instanceof Player, e instanceof AbstractVillager,
                     e instanceof AgeableMob am && am.isBaby(), inAreas);
             if (HuntRules.MEAT.containsKey(type) && (r.want == null || r.want.equals(type))) seen++;

@@ -42,8 +42,23 @@ public final class HuntRules {
         return meat(bag, want) >= n;
     }
 
-    /** "hunt <n> [animal]": {n, animal id or null}; null = bad. */
+    /** The director (2026-10-19): an urgent hunt ("hunt n [animal] out") may take animals this far from where it started, outside my areas. */
+    public static final int OUT_R = 48;
+
+    /** Food urgent enough to leave the areas for a hunt: hunger 6 or less, or health under 10. */
+    public static boolean urgentOut(int food, float health) { return food <= 6 || health < 10; }
+
+    /** An animal outside my areas, {@code fromStart} blocks from the hunt's start: may an "out" hunt take it? */
+    public static boolean outOk(boolean out, double fromStart) { return out && fromStart <= OUT_R; }
+
+    /** "hunt n [animal] out": the trailing "out" word, else false. */
+    public static boolean outWord(String rest) {
+        return rest != null && rest.trim().toLowerCase(Locale.ROOT).matches(".*\\s+out$");
+    }
+
+    /** "hunt <n> [animal] [out]": {n, animal id or null}; null = bad. The "out" word: {@link #outWord}. */
     public static Object[] parse(String rest) {
+        if (outWord(rest)) rest = rest.trim().replaceFirst("(?i)\\s+out$", "");
         String[] w = (rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT)).split("\\s+");
         if (w.length == 0 || w[0].isEmpty()) return new Object[]{4, null};
         if (!w[0].matches("^\\d{1,3}$")) return null;

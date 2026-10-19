@@ -35,7 +35,7 @@ public final class AaScorer implements Scorer {
         s[TaskKind.STOCK_STONE.ordinal()] = in.pickTier < 1 ? -1 : deficit(stone, in.cobble);
         s[TaskKind.STOCK_COAL.ordinal()] = in.pickTier < 1 ? -1 : deficit(coal, in.coal);
         s[TaskKind.STOCK_IRON.ordinal()] = in.pickTier < 2 ? -1 : deficit(iron, in.ironIngots);
-        s[TaskKind.STOCK_TORCHES.ordinal()] = deficit(torches, in.torches);
+        s[TaskKind.STOCK_TORCHES.ordinal()] = in.torchCoal() ? deficit(torches, in.torches) : -1;   // the coal goal's reserve
         // deposit: free slots under 10 until 16, only with base chests scanned
         double d = in.baseChests ? deficit(bag, in.freeSlots) : -1;
         s[TaskKind.DEPOSIT.ordinal()] = d;

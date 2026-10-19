@@ -33,6 +33,19 @@ class FoodOptionsTest {
     }
 
     @Test
+    void urgentFoodHuntsOutsideTheAreas() {
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(5, 0, Map.of(), 24, true, Map.of(), 3, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20);
+        Options.Choice c = choose(f);
+        assertNotNull(c.best(), c.why());
+        assertEquals("hunt out cow", c.best().id());
+        assertTrue(c.best().command().startsWith("hunt 2 cow out then cook beef"), c.best().command());
+        FoodOptions.FoodFacts calm = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of(), 3, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20);
+        assertNull(choose(calm).best(), "not urgent: stays in the areas");
+    }
+
+    @Test
     void noFurnaceNeverRawChicken() {
         Options.Choice c = choose(facts(10, Map.of(), false, Map.of("chicken", 5), null));
         assertNull(c.best(), c.why());

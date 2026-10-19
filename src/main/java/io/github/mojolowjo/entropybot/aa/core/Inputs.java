@@ -40,6 +40,11 @@ public final class Inputs {
     public boolean litTonight;
     /** nightwork: inside a shell of its own that is built and waiting (ShelterJob WAIT, at its cell). Not in the vector. */
     public boolean sheltered;
+    /** overnight 2026-10-19: coal kept back from torches for an open coal goal (Goals.coalReserve). Not in the vector. */
+    public int coalReserve;
+
+    /** Torches may burn coal: no reserve, or coal over it. */
+    public boolean torchCoal() { return coalReserve <= 0 || coal > coalReserve; }
     public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;

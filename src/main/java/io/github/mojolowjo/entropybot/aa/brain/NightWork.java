@@ -40,8 +40,25 @@ public final class NightWork {
     /** The craft chain, or null: an iron pickaxe from 3 ingots, torches from coal and sticks/planks. */
     public static String craft(Inputs in) {
         if (in.pickTier < 3 && in.ironIngots >= 3 && (in.tableKnown || in.tableInBag)) return "craft iron_pickaxe";
-        if (in.torches < 8 && in.coal >= 1 && (in.planks >= 2 || in.wood >= 1) && (in.tableKnown || in.tableInBag)) return "craft torch 16";
+        if (in.torches < 8 && in.coal >= 1 && in.torchCoal() && (in.planks >= 2 || in.wood >= 1) && (in.tableKnown || in.tableInBag)) return "craft torch 16";
         return null;
+    }
+
+    /** Set when the night work dug its stairs down; the surface gate climbs back up them at dawn. */
+    public static final String DUG_FACT = "aa.nightDug";
+
+    /** Notes the staircase dug at night (the adapter's chain start). */
+    public static void noteDug(Blackboard bb, Work w) { if (w == Work.STAIRS) bb.fact(DUG_FACT, Boolean.TRUE); }
+
+    /**
+     * overnight 2026-10-19 (stayed at Y30 after dawn): the bot dug down at night and it is day now, under
+     * {@code surfaceDepth} or more of ground: climb out (its own stairs, or pillar up the shaft) before day work.
+     * Back near the surface the note is cleared.
+     */
+    public static boolean climbAtDawn(Blackboard bb, int surfaceDepth) {
+        if (!(bb.fact(DUG_FACT) instanceof Boolean b && b)) return false;
+        if (bb.in.underDepth < surfaceDepth) { bb.fact(DUG_FACT, Boolean.FALSE); return false; }
+        return !Night.hostile(bb);
     }
 
     /** The chain for {@code work} at feet (x, y, z); null for NONE. */

@@ -324,7 +324,9 @@ public final class AaDesires {
         // nightwork: the NightWork rules were never registered as a desire (live ow-night: waited in the shell all night)
         Node work = AaTree.idleCd("night.work.cd", new RunJob("night.work.job", TaskKind.BASE_BED, bb -> {
             int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
-            return new JobPort.TaskSpec(TaskKind.BASE_BED, NightWork.chain(bb.in, NightWork.pick(bb.in), p[0], p[1], p[2], 1, 0),
+            NightWork.Work w = NightWork.pick(bb.in);
+            NightWork.noteDug(bb, w);
+            return new JobPort.TaskSpec(TaskKind.BASE_BED, NightWork.chain(bb.in, w, p[0], p[1], p[2], 1, 0),
                     "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS);
         }));
         return List.of(

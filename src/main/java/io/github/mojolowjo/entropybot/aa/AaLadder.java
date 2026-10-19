@@ -91,7 +91,8 @@ public final class AaLadder {
         // 0.36.3 (aa40b: bootstrap left the bot in its quarry hole, 9 under the surface, and "goal table" / "goal iron
         // tools" had no free spot for the table for 30 minutes): a rung that needs open ground waits for a climb first
         Rung surface = new Rung("needs.surface", TaskKind.TABLE_FURNACE,
-                bb -> bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb),
+                // overnight 2026-10-19: also at dawn after the night work dug down (it clears its note near the surface)
+                bb -> io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb)),
                 // S2: climb / pillar / trail / goto open sky / nothing, scored (RungOptions.Surface)
                 bb -> null, bb -> CLIMB, new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface()));
         // 0.36.3: no tree the chopper can get at in my areas: a second work area around the nearest reachable tree
@@ -115,7 +116,7 @@ public final class AaLadder {
                 bb -> null, bb -> "craft crafting_table 1");
         Rung torch = new Rung("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
-                bb -> null, bb -> "goal torch 16");
+                bb -> bb.in.torchCoal() ? null : "coal kept for the coal goal (" + bb.in.coal + "/" + bb.in.coalReserve + " reserve)", bb -> "goal torch 16");
         Rung base = new Rung("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(SHELTER_FACT),
                 bb -> null,

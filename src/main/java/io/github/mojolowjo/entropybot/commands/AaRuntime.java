@@ -122,6 +122,16 @@ public final class AaRuntime implements JobPort {
             String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
             if (io.github.mojolowjo.entropybot.aa.FoodOptions.MEAT_ANIMALS.contains(type)) outside++;
         }
+        // the director (2026-10-19): allowed animals outside my areas within 48, for an urgent "hunt ... out"
+        Map<String, Integer> animalsOut = new java.util.HashMap<>();
+        String hdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R))) {
+            String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+            if (!io.github.mojolowjo.entropybot.aa.FoodOptions.MEAT_ANIMALS.contains(type) || e.isBaby() || e.hasCustomName()
+                    || io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e) || c.inAreas(hdim, e.getBlockX(), e.getBlockZ())
+                    || p.distanceTo(e) > io.github.mojolowjo.entropybot.vocab.HuntRules.OUT_R) continue;
+            animalsOut.merge(type, 1, Integer::sum);
+        }
         int inside = 0;
         for (int n : animals.values()) inside += n;
         outside = Math.max(0, outside - inside);
@@ -183,7 +193,7 @@ public final class AaRuntime implements JobPort {
                 io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb), bb.in.furnaceKnown || bb.in.furnaceInBag,
                 animals, outside, c.hunting.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
                 oak, oakType, oak == null ? -1 : oakD, berry, berry == null ? -1 : berryD, red, brown, grass, water, farm,
-                Math.max(0, stored), kelp, me);
+                Math.max(0, stored), kelp, me, animalsOut, p.getHealth());
         foodCacheAt = now;
         return foodCache;
     }
@@ -712,6 +722,7 @@ public final class AaRuntime implements JobPort {
         in.night = s.night;
         in.thunder = s.thundering;
         in.underGround = !s.skyAbove;
+        in.coalReserve = io.github.mojolowjo.entropybot.aa.brain.Goals.coalReserve(bb);
         in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
         int[] me = Jobs.here(p);
@@ -1543,6 +1554,14 @@ public final class AaRuntime implements JobPort {
             known.put(g.r.key(), n);
         }
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.KNOWN_FACT, known);
+        if (sensed != null && Minecraft.getInstance().level != null) {
+            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(Minecraft.getInstance().level);
+            var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
+            int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
+            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;
+            bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.WAYS_FACT, new io.github.mojolowjo.entropybot.aa.brain.Goals.Ways(caveDist,
+                    sensed.feas != null && sensed.feas.mineMarked, sensed.areasHere));
+        }
     }
 
     /** aa want <thing> [n] [high|low] (also the wants by name: house/build, explore, tidy). */

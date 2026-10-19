@@ -114,7 +114,29 @@ public final class Goals {
         if (known(bb, g.r.key()) > 0) return "mine " + w + " " + left + " dig";
         // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
         if (g.r.where() != null && !g.r.where().yKnown()) return "explore 5";
+        // overnight 2026-10-19 (coal goal: "mine strip" with no mine marked failed twice): the iron-style ways in order
+        if (bb.fact(WAYS_FACT) instanceof Ways ws) {
+            if (ws.caveDist() >= 0) return "mine cave " + w + " " + left;
+            if (ws.mineMarked() && ws.inAreas()) return "mine strip " + w + " " + left;
+            if (ws.inAreas()) return "place mine north then mine strip " + w + " " + left;
+            return "explore 5";
+        }
         return "mine strip " + w + " " + left;
+    }
+
+    /** The adapter's ore-goal facts (set with {@link #KNOWN_FACT}): a known cave within reach (-1 none), a mine marked, in my areas. */
+    public static final String WAYS_FACT = "aa.oreWays";
+
+    public record Ways(int caveDist, boolean mineMarked, boolean inAreas) {}
+
+    /** Coal kept back from torches while a coal goal is open (the director, 2026-10-19). */
+    public static final int COAL_RESERVE = 4;
+
+    /** {@link #COAL_RESERVE} while a coal goal is not reached yet, else 0. */
+    public static int coalReserve(Blackboard bb) {
+        if (!(bb.fact(FACT) instanceof List<?>)) return 0;
+        for (Goal g : of(bb)) if (g.r.key().replaceFirst("^.*:", "").matches("(deepslate_)?coal(_ore)?") && have(bb.in.bag, g) < g.n) return COAL_RESERVE;
+        return 0;
     }
 
     /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */
