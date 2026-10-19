@@ -29,8 +29,8 @@ import java.util.function.ToDoubleFunction;
  * <p>B2 scores (0..100; a met rung -1; the owner's {@code aa do} 100):
  * <ul>
  * <li>GATE: area 100, tree area 95, surface 90 (hard limits; never interrupt).</li>
- * <li>UPKEEP: tools (no pickaxe 74, wooden 65, worn 40 + curve), food {@code 125 x shortfall^2} of 18 (10 -> 25,
- *     4 -> 76: urgent), torches 30 + {@code 30 x shortfall^2} of 16, bag 20 + {@code 60 x shortfall^2} of 10 free.
+ * <li>UPKEEP: tools (no pickaxe 74, wooden 65, worn 40 + curve), food {@code 175 x shortfall^2} of 18 (aa-food:
+ *     10 -> 35, 6 -> 78 urgent, 4 -> 100) or its stock score (25..60) under the stock target, parked with no source, torches 30 + {@code 30 x shortfall^2} of 16, bag 20 + {@code 60 x shortfall^2} of 10 free.
  *     Tools stay under 75 on purpose: a pickaxe count that flickers in a craft must not break a running task.</li>
  * <li>PROGRESS (value, hand cost s; the brain applies P and cost): table/furnace 70/60, spare table 50/10, base 55/240,
  *     bed 45/120, iron 40 + 30 x the tech tree's iron share / 600. Iron gives its value to tools while it has no stone
@@ -99,7 +99,8 @@ public final class AaDesires {
             case "needs.woodArea" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 95));
             case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 90));
             case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.min(74, factor(b, "tools") * tools(b))));
-            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.max(1, factor(b, "food") * Curves.upkeep(125, b.in.food, 18))));
+            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore))
+                    .infeasible(AaDesires::foodInfeasible);
             case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches"))))
                     .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
             case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag"))));
@@ -122,6 +123,45 @@ public final class AaDesires {
                     double s = scorer.score(bb.in)[kind.ordinal()];
                     return s < 0 ? -1 : s * IDLE_SCALE;
                 }).night(nightSign(kind)).lastTry();
+    }
+
+    // ---- aa-food: the bar's curve and the stock target ----
+
+    /** Blackboard fact: the brain's BrainStats (measured drain per kind); absent: hand rates. */
+    public static final String STATS_FACT = "aa.brainStats";
+
+    static io.github.mojolowjo.entropybot.aa.brain.BrainStats stats(Blackboard bb) {
+        return bb.fact(STATS_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.BrainStats s ? s : null;
+    }
+
+    /** The bag's food target now (energy points): the planned work's measured drain for an hour, less the body's reserve. */
+    public static double foodTarget(Blackboard bb) {
+        TaskKind running = bb.task() == null ? TaskKind.NONE : bb.task().kind;
+        return io.github.mojolowjo.entropybot.aa.brain.FoodModel.target(io.github.mojolowjo.entropybot.aa.brain.FoodModel.plannedRate(stats(bb), running),
+                bb.in.food, bb.in.saturation);
+    }
+
+    public static double foodStock(Blackboard bb) { return io.github.mojolowjo.entropybot.aa.brain.FoodModel.energy(bb.in.bag); }
+
+    /** The bag holds less food than the target (gathered before the bar is low). */
+    public static boolean foodStockLow(Blackboard bb) { return foodStock(bb) < foodTarget(bb); }
+
+    /**
+     * The bar's curve (Curves.food: urgent from 6) x the personality, or the stock score (25..60) when that is higher;
+     * at most 100. The personality never lifts a stock-up over the urgent line.
+     */
+    static double foodScore(Blackboard b) {
+        double bar = factor(b, "food") * Curves.food(b.in.food);
+        double stock = io.github.mojolowjo.entropybot.aa.brain.FoodModel.stockScore(foodStock(b), foodTarget(b));
+        return Math.min(100, Math.max(1, Math.max(bar, stock < 0 ? 0 : scaled(stock, factor(b, "food")))));
+    }
+
+    /** Parked while no way to food exists (FoodOptions.noSource on the adapter's facts; re-checked as they refresh). */
+    @SuppressWarnings("unchecked")
+    static String foodInfeasible(Blackboard bb) {
+        if (!(bb.fact(FoodOptions.FACTS) instanceof java.util.function.Supplier<?> s)) return null;
+        Object f = s.get();
+        return f instanceof FoodOptions.FoodFacts ff ? FoodOptions.noSource(ff) : null;
     }
 
     /** B3 (2.4): the personality's upkeep factor (1 by default). */

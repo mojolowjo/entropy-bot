@@ -25,6 +25,15 @@ public final class Curves {
         return Math.min(100, w * s * s);
     }
 
+    /**
+     * aa-food (live aaep1: hunger 6 scored 56, under the night shelter's 90 and the urgent line): the food curve,
+     * {@code 175 x shortfall^2} of 18: 10 -> 35, 8 -> 54, 6 -> 78 (urgent), 5 -> 91, 4 and under -> 100 (over the
+     * night shelter: starving outranks everything but danger).
+     */
+    public static final double FOOD_W = 175, FOOD_FULL = 18;
+
+    public static double food(int hunger) { return upkeep(FOOD_W, hunger, FOOD_FULL); }
+
     public static double progress(double value, double p, double costS) {
         return value * p / (1 + Math.max(0, costS) / COST_C);
     }

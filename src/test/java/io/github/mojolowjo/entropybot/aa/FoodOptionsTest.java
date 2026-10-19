@@ -1,0 +1,139 @@
+package io.github.mojolowjo.entropybot.aa;
+
+import io.github.mojolowjo.entropybot.aa.core.Blackboard;
+import io.github.mojolowjo.entropybot.aa.core.Clock;
+import io.github.mojolowjo.entropybot.aa.core.FakePort;
+import io.github.mojolowjo.entropybot.aa.core.Tracer;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/** aa-food: the FOOD rung's ways, the park reason, the desire's score. */
+class FoodOptionsTest {
+    static final int[] ME = {0, 64, 0};
+
+    static FoodOptions.FoodFacts facts(int food, Map<String, Integer> bag, boolean furnace, Map<String, Integer> animals, String huntWhy) {
+        return new FoodOptions.FoodFacts(food, 0, bag, 24, furnace, animals, 0, huntWhy,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME);
+    }
+
+    static Options.Choice choose(FoodOptions.FoodFacts f) {
+        return new FoodOptions.Food().choose(f, new Options.OptionMemory(), 0, null, 0, "no stored food", null);
+    }
+
+    @Test
+    void aaep1HuntsTheAnimalsNearAndCooksTheMeat() {
+        Options.Choice c = choose(facts(6, Map.of(), true, Map.of("cow", 9, "sheep", 4, "chicken", 3), null));
+        assertNotNull(c.best(), c.why());
+        assertEquals("hunt cow", c.best().id());
+        assertEquals("hunt 2 cow then cook beef 2", c.best().command(), "24 points: 2 cooked beef (20.8 each)");
+    }
+
+    @Test
+    void noFurnaceNeverRawChicken() {
+        Options.Choice c = choose(facts(10, Map.of(), false, Map.of("chicken", 5), null));
+        assertNull(c.best(), c.why());
+        assertTrue(c.why().contains("chickens only, no furnace"), c.why());
+        Options.Choice pig = choose(facts(10, Map.of(), false, Map.of("pig", 2), null));
+        assertTrue(pig.best().command().startsWith("hunt ") && !pig.best().command().contains("cook"), pig.why());
+    }
+
+    @Test
+    void eatFromTheBagFirstAndCookWhatIsRaw() {
+        Options.Choice c = choose(facts(10, Map.of("cooked_beef", 1, "beef", 3), true, Map.of("cow", 3), null));
+        assertEquals("eat", c.best().id(), c.why());
+        assertEquals("cook beef", c.ranked().get(1).id(), c.why());
+        assertEquals("cook beef 3", c.ranked().get(1).command());
+        Options.Choice notYet = choose(facts(16, Map.of("cooked_beef", 1), true, Map.of(), null));
+        assertTrue(notYet.ranked().stream().noneMatch(o -> o.id().equals("eat")), "down 4, steak gives 8: no waste");
+    }
+
+    @Test
+    void theOwnersHuntingOffIsSaid() {
+        Options.Choice c = choose(facts(6, Map.of(), true, Map.of("cow", 9), "hunting is off"));
+        assertNull(c.best());
+        assertTrue(c.why().contains("hunt: hunting is off"), c.why());
+    }
+
+    @Test
+    void foragingWaysAndAWheatFieldWhenNotHungry() {
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "oak_planks", 4), 24, true, Map.of(), 0, null,
+                new int[]{5, 64, 5}, "oak", 7, new int[]{3, 64, 0}, 3, new int[]{1, 64, 1}, new int[]{2, 64, 2}, null, true, false, 0, true, ME);
+        Options.Choice c = choose(f);
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        c.ranked().forEach(o -> ids.add(o.id()));
+        assertTrue(ids.containsAll(java.util.List.of("berries", "stew", "apples", "wheat field")), c.why());
+        assertTrue(c.why().contains("kelp: seen in the water"), c.why());
+        Options.Option field = c.ranked().stream().filter(o -> o.id().equals("wheat field")).findFirst().orElseThrow();
+        assertEquals("farm plant wheat here 4 then place farm 0 64 0", field.command());
+        Options.Option stew = c.ranked().stream().filter(o -> o.id().equals("stew")).findFirst().orElseThrow();
+        assertEquals("dig 1 64 1 1 64 1 then dig 2 64 2 2 64 2 then craft bowl 1 then craft mushroom_stew 1", stew.command());
+        // hungry: no field (too slow)
+        FoodOptions.FoodFacts hungry = new FoodOptions.FoodFacts(5, 0, f.bag(), 24, true, Map.of(), 0, null,
+                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME);
+        assertTrue(choose(hungry).why().contains("wheat: too slow while hungry"), choose(hungry).why());
+    }
+
+    @Test
+    void parkedWithTheReasonWhenNoSourceElseNot() {
+        FoodOptions.FoodFacts none = facts(6, Map.of(), true, Map.of(), null);
+        String why = FoodOptions.noSource(none);
+        assertNotNull(why);
+        assertTrue(why.startsWith("no food source: ") && why.contains("hunt: no animal in reach"), why);
+        assertNull(FoodOptions.noSource(facts(6, Map.of(), true, Map.of("pig", 1), null)));
+        FoodOptions.FoodFacts stored = new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, Map.of(), 0, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 3, false, ME);
+        assertNull(FoodOptions.noSource(stored), "food in storage: the planner fetches it");
+        assertNull(FoodOptions.noSource(null), "no facts: never parked");
+    }
+
+    @Test
+    void aSlowWayThatGainedNothingIsChargedNotRerunForever() {
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of(), 24, true, Map.of(), 0, null,
+                new int[]{5, 64, 5}, "oak", 7, null, -1, null, null, null, false, false, 0, false, ME);
+        FoodOptions.Food set = new FoodOptions.Food();
+        Options.OptionMemory m = new Options.OptionMemory();
+        assertEquals("apples", set.choose(f, m, 0, null, 0, null, null).best().id());
+        Options.Choice again = set.choose(f, m, 1000, null, 0, null, null);
+        assertNull(again.best(), again.why());
+        assertTrue(again.why().contains("no food gained last time"), again.why());
+    }
+
+    // ---- the desire ----
+
+    final Clock.Fake clock = new Clock.Fake(10_000_000);
+    final Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
+
+    @Test
+    void desireUrgentAtSixAndStocksUpBeforeHunger() {
+        bb.in.hungerDrains = true;
+        bb.in.food = 6;
+        bb.in.saturation = 0;
+        assertTrue(AaDesires.foodScore(bb) >= 75, "aaep1: urgent without aa like: " + AaDesires.foodScore(bb));
+        bb.in.food = 20;
+        bb.in.saturation = 5;
+        bb.in.bag = Map.of();
+        assertTrue(AaDesires.foodStockLow(bb), "empty bag under the 8-point minimum");
+        double s = AaDesires.foodScore(bb);
+        assertTrue(s >= 25 && s < 75, "a stock-up, never urgent: " + s);
+        bb.in.bag = Map.of("cooked_beef", 2);
+        assertFalse(AaDesires.foodStockLow(bb));
+        Rung food = AaLadder.build().stream().filter(r -> r.id.equals("needs.food")).findFirst().orElseThrow();
+        assertFalse(food.unmet(bb), "full and stocked: met");
+        bb.in.bag = Map.of();
+        assertTrue(food.unmet(bb), "full but empty bag: gather before hunger");
+    }
+
+    @Test
+    void desireParksOnTheFactsAndComesBack() {
+        Supplier<FoodOptions.FoodFacts> sup = () -> facts(6, Map.of(), true, Map.of(), null);
+        bb.fact(FoodOptions.FACTS, sup);
+        assertNotNull(AaDesires.foodInfeasible(bb));
+        Supplier<FoodOptions.FoodFacts> cows = () -> facts(6, Map.of(), true, Map.of("cow", 2), null);
+        bb.fact(FoodOptions.FACTS, cows);
+        assertNull(AaDesires.foodInfeasible(bb), "re-checked: animals came into reach");
+    }
+}

@@ -85,7 +85,134 @@ public final class AaRuntime implements JobPort {
         bb.fact(IronOptions.FACTS, (java.util.function.Supplier<IronOptions.Facts>) this::ironFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts>) this::surfaceFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
         c.chains.onEnd(this::chainEnded);
+    }
+
+    // ---- aa-food: the FOOD rung's facts and the drain sampler ----
+
+    private io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts foodCache;
+    private long foodCacheAt = -1;
+    /** The food facts are read at most this often (the desire's park check asks every tick). */
+    static final long FOOD_FACTS_MS = 10_000;
+    static final int FOOD_R = 24, FOOD_DY = 6;
+
+    /**
+     * aa-food: the FOOD rung's facts (cached {@link #FOOD_FACTS_MS}): the bag, the stock target, a furnace, the animals
+     * the hunt may take (Hunting.animalsNear) and those outside the areas, and one scan of the blocks within
+     * {@link #FOOD_R} (y +-{@link #FOOD_DY}): oak/dark-oak logs, ripe berry bushes, mushrooms, water, kelp, a grass patch.
+     * Null when nothing can be read; a throw is caught by the picker (logged, counted) and by the desire's park check.
+     */
+    io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts foodFacts() {
+        long now = System.currentTimeMillis();
+        // review: the cache holds only while the bag, the bar and the furnace are unchanged (a hunt/cook/eat refreshes it)
+        if (foodCache != null && now - foodCacheAt < FOOD_FACTS_MS && sensed != null && sensed.feas != null
+                && foodCache.bag().equals(sensed.feas.bag) && foodCache.food() == bb.in.food
+                && foodCache.furnace() == (bb.in.furnaceKnown || bb.in.furnaceInBag)) return foodCache;
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null || sensed == null || sensed.feas == null) return null;
+        var lv = mc.level;
+        int[] me = Jobs.here(p);
+        Map<String, Integer> bag = sensed.feas.bag;
+        Map<String, Integer> animals = c.hunting.animalsNear(p);
+        int outside = 0;
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(32))) {
+            String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+            if (io.github.mojolowjo.entropybot.aa.FoodOptions.MEAT_ANIMALS.contains(type)) outside++;
+        }
+        int inside = 0;
+        for (int n : animals.values()) inside += n;
+        outside = Math.max(0, outside - inside);
+        int[] oak = null, berry = null, red = null, brown = null;
+        String oakType = "oak";
+        double oakD = Double.MAX_VALUE, berryD = Double.MAX_VALUE, redD = Double.MAX_VALUE, brownD = Double.MAX_VALUE;
+        boolean water = false, kelp = false;
+        Map<Long, Integer> grassCells = new java.util.HashMap<>();
+        var m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int x = me[0] - FOOD_R; x <= me[0] + FOOD_R; x++)
+            for (int z = me[2] - FOOD_R; z <= me[2] + FOOD_R; z++)
+                for (int y = me[1] - FOOD_DY; y <= me[1] + FOOD_DY; y++) {
+                    m.set(x, y, z);
+                    if (!lv.isLoaded(m)) continue;
+                    var st = lv.getBlockState(m);
+                    if (st.isAir()) continue;
+                    var b = st.getBlock();
+                    double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
+                    if (b == net.minecraft.world.level.block.Blocks.OAK_LOG || b == net.minecraft.world.level.block.Blocks.DARK_OAK_LOG) {
+                        if (d < oakD) { oakD = d; oak = new int[]{x, y, z}; oakType = b == net.minecraft.world.level.block.Blocks.OAK_LOG ? "oak" : "dark_oak"; }
+                    } else if (b == net.minecraft.world.level.block.Blocks.SWEET_BERRY_BUSH) {
+                        if (st.getValue(net.minecraft.world.level.block.SweetBerryBushBlock.AGE) >= 2 && d < berryD) { berryD = d; berry = new int[]{x, y, z}; }
+                    } else if (b == net.minecraft.world.level.block.Blocks.RED_MUSHROOM) {
+                        if (d < redD) { redD = d; red = new int[]{x, y, z}; }
+                    } else if (b == net.minecraft.world.level.block.Blocks.BROWN_MUSHROOM) {
+                        if (d < brownD) { brownD = d; brown = new int[]{x, y, z}; }
+                    } else if (b == net.minecraft.world.level.block.Blocks.KELP || b == net.minecraft.world.level.block.Blocks.KELP_PLANT) {
+                        kelp = true;
+                    } else if (b == net.minecraft.world.level.block.Blocks.SHORT_GRASS || b == net.minecraft.world.level.block.Blocks.TALL_GRASS) {
+                        grassCells.merge(((long) (x >> 3) << 32) | ((z >> 3) & 0xffffffffL), 1, Integer::sum);
+                    }
+                    if (!water && d <= 12 && st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.getFluidState().isSource()) water = true;
+                }
+        // a grass patch: the 8x8 cell with the most grass (10 at least), inside my areas
+        int[] grass = null;
+        int bestG = 9;
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+        for (var e : grassCells.entrySet()) {
+            if (e.getValue() <= bestG) continue;
+            long k = e.getKey();
+            int cx = ((int) (k >> 32)) << 3, cz = ((int) k) << 3;
+            if (!c.inAreas(dim, cx + 4, cz + 4)) continue;
+            bestG = e.getValue();
+            grass = new int[]{cx, cz, cx + 7, cz + 7};
+        }
+        boolean farm;
+        try { farm = Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
+        int stored = 0;
+        try {
+            Map<String, Integer> stock = c.storage.stock(p).totals();        // the bag included (GoalPlanning subtracts it too)
+            for (var e : stock.entrySet()) {
+                String path = e.getKey().startsWith("minecraft:") ? e.getKey().substring(10) : e.getKey();
+                if (io.github.mojolowjo.entropybot.aa.brain.FoodModel.energyOf(path) > 0) stored += e.getValue() - bag.getOrDefault(path, 0);
+            }
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: food facts: no stock view: {}", e.toString());
+        }
+        foodCache = new io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts(bb.in.food, bb.in.saturation, bag,
+                io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb), bb.in.furnaceKnown || bb.in.furnaceInBag,
+                animals, outside, c.hunting.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
+                oak, oakType, oak == null ? -1 : oakD, berry, berry == null ? -1 : berryD, red, brown, grass, water, farm,
+                Math.max(0, stored), kelp, me);
+        foodCacheAt = now;
+        return foodCache;
+    }
+
+    /** aa-food drain sampler: energy (food + saturation) at the window's start, its start time and kind. */
+    private double drainE0 = -1;
+    private long drainT0;
+    private String drainKind;
+    /** A sample closes after this long at most (a long task gives several). */
+    static final long DRAIN_WINDOW_MS = 5 * 60_000;
+
+    /**
+     * aa-food: one drain sample per stretch of one task kind (FoodModel): closed when the kind changes, the bot ate
+     * (the energy rose) or {@link #DRAIN_WINDOW_MS} passed; samples under a minute are dropped (BrainStats.recordDrain).
+     */
+    private void drainTick(long now) {
+        if (!bb.in.hungerDrains) { drainE0 = -1; return; }
+        double e = bb.in.food + bb.in.saturation;
+        String kind = (bb.task() == null ? io.github.mojolowjo.entropybot.aa.core.TaskKind.NONE : bb.task().kind).name();
+        if (drainE0 < 0) { drainE0 = e; drainT0 = now; drainKind = kind; return; }
+        boolean ate = e > drainE0 + 0.01;
+        if (ate || !kind.equals(drainKind) || now - drainT0 >= DRAIN_WINDOW_MS) {
+            double minutes = (now - drainT0) / 60_000.0;
+            if (!ate && tree.brain.stats.recordDrain(drainKind, drainE0 - e, minutes))
+                LOG.info("[entropybot] aa: food drain {}: {} points in {} min", drainKind, String.format(java.util.Locale.ROOT, "%.1f", drainE0 - e), String.format(java.util.Locale.ROOT, "%.1f", minutes));
+            drainE0 = e;
+            drainT0 = now;
+            drainKind = kind;
+        }
     }
 
     /**
@@ -439,6 +566,7 @@ public final class AaRuntime implements JobPort {
             }
             escapeTick(p, mc);
             fill(bb.in, sensed, p, mc);
+            drainTick(now);
             progressTick(p);
             brainFacts(mc, now);
             goalsTick(p, tick);
@@ -527,6 +655,7 @@ public final class AaRuntime implements JobPort {
         in.health = p.getHealth();
         in.maxHealth = p.getMaxHealth();
         in.food = p.getFoodData().getFoodLevel();
+        in.saturation = p.getFoodData().getSaturationLevel();
         in.hurtRecently = p.hurtTime > 0;
         Reflexes.Reflex r = Core.INSTANCE.reflexes.reflex();
         in.danger = r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING || r == Reflexes.Reflex.RETREATING ? 2 : Core.INSTANCE.reflexes.hold() ? 1 : 0;
@@ -1181,6 +1310,11 @@ public final class AaRuntime implements JobPort {
             var o = com.google.gson.JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
             for (var e : o.entrySet()) {
                 var s = e.getValue().getAsJsonObject();
+                if (e.getKey().startsWith(io.github.mojolowjo.entropybot.aa.brain.BrainStats.DRAIN_PREFIX)) {      // aa-food
+                    if (s.has("perMin")) tree.brain.stats.putDrain(e.getKey().substring(io.github.mojolowjo.entropybot.aa.brain.BrainStats.DRAIN_PREFIX.length()),
+                            s.get("n").getAsInt(), s.get("perMin").getAsDouble());
+                    continue;
+                }
                 tree.brain.stats.put(e.getKey(), s.get("n").getAsInt(), s.get("ok").getAsInt(), s.get("avgS").getAsDouble());
             }
             LOG.info("[entropybot] aa: measured costs loaded for {} desires", o.size());

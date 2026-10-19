@@ -19,7 +19,8 @@ import java.util.List;
  *     (4096 blocks at most), so the base rung builds a shelter unless the owner made a smaller area.</li>
  * <li>TOOLS: no pickaxe at all -> {@code bootstrap} (the from-nothing job); a wooden one, or the best under 15 % with
  *     no spare -> {@code goal stone tools}.</li>
- * <li>FOOD: on a hungry difficulty only (Peaceful: the bar never drains): food under 10 until 18 -> {@code goal food 8}.</li>
+ * <li>FOOD: on a hungry difficulty only (Peaceful: the bar never drains): food under 10 until 18, or the bag under its stock target (aa-food,
+ *     FoodModel) -> the best of FoodOptions' ways (eat, cook, hunt, forage, apples, a wheat field, {@code goal food 8}).</li>
  * <li>TABLE_FURNACE: no table known -> {@code goal table}; no furnace -> {@code goal furnace}.</li>
  * <li>TORCHES: under 8 until 16 -> {@code goal torch 16} (planner: coal or charcoal).</li>
  * <li>BASE_BED: no base/shelter -> {@code house <area>} when a buildable area exists, else {@code goal shelter} (once:
@@ -98,9 +99,11 @@ public final class AaLadder {
         Rung woodArea = new Rung("needs.woodArea", TaskKind.STOCK_WOOD,
                 bb -> bb.fact(TREE_AREA_FACT) instanceof String,
                 bb -> null, bb -> (String) bb.fact(TREE_AREA_FACT));
-        Rung hunger =new Rung("needs.food", TaskKind.FOOD,
-                bb -> bb.in.hungerDrains && food.update(bb.in.food),
-                bb -> null, bb -> "goal food 8");
+        // aa-food: the bar's band, or the bag under the stock target (FoodModel); the ways are scored (FoodOptions)
+        Rung hunger = new Rung("needs.food", TaskKind.FOOD,
+                bb -> bb.in.hungerDrains && (food.update(bb.in.food) | AaDesires.foodStockLow(bb)),
+                bb -> null, bb -> "goal food 8",
+                new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
         // a table or furnace in the bag counts (live 2026-10-18: "goal table" with one in the bag is "nothing to do",
         // which the planner hook reports as no plan; the near-block fact is false as soon as the bot walks away)
         Rung tableFurnace = new Rung("needs.tableFurnace", TaskKind.TABLE_FURNACE,
