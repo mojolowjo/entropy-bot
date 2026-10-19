@@ -281,7 +281,14 @@ public final class AaDesires {
         Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, "sleep", "night"));
         Node shelter = AaTree.idleCd("night.shelter.cd", new RunJob("night.shelter.job", TaskKind.BASE_BED,
                 bb -> new JobPort.TaskSpec(TaskKind.BASE_BED, shelterChain(bb), "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS)));
+        // nightwork: the NightWork rules were never registered as a desire (live ow-night: waited in the shell all night)
+        Node work = AaTree.idleCd("night.work.cd", new RunJob("night.work.job", TaskKind.BASE_BED, bb -> {
+            int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
+            return new JobPort.TaskSpec(TaskKind.BASE_BED, NightWork.chain(bb.in, NightWork.pick(bb.in), p[0], p[1], p[2], 1, 0),
+                    "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS);
+        }));
         return List.of(
+                new Desire("night.work", Desire.Kind.UPKEEP, work, bb -> cooling(work, bb) ? -1 : NightWork.score(bb)),
                 new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, bb -> cooling(sleep, bb) ? -1 : sleepScore(bb)).lastTry(),
                 new Desire("night.shelter", Desire.Kind.UPKEEP, shelter, bb -> cooling(shelter, bb) ? -1 : shelterScore(bb))
                         .patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).lastTry());

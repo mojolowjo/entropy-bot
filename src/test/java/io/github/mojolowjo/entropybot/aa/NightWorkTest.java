@@ -25,6 +25,12 @@ class NightWorkTest {
     }
 
     @Test
+    void desireIsRegistered() {
+        night();
+        assertTrue(AaDesires.night().stream().anyMatch(x -> x.id.equals("night.work")));
+    }
+
+    @Test
     void scoreOnlyWhenShelteredAtHostileNightWithWork() {
         night();
         assertEquals(NightWork.SCORE, NightWork.score(bb));
