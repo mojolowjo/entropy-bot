@@ -583,6 +583,7 @@ public final class AaRuntime implements JobPort {
         in.night = s.night;
         in.thunder = s.thundering;
         in.underGround = !s.skyAbove;
+        in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
