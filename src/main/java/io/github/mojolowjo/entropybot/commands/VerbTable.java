@@ -107,9 +107,9 @@ public final class VerbTable {
                 "climb", "goto <x y z>");
         v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
                 "fell trees in my areas for n logs (logs: any kind but what kinds logs leaves out), never next to builds; pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
-        v("gather", "", "digging", O, "gather <item|kind> [n] [<min>m] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
+        v("gather", "", "digging", O, "gather <item|kind> [n] [<min>m] | gather kelp [n] [<min>m] [cook] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
                 "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave; cobblestone: dig stone n, a staircase quarry at my feet dug by Baritone's builder; the bag count decides when n is reached), "
-                        + "cut or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it",
+                        + "cut or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it; kelp: cut the kelp columns in my areas (water, air reflex first) until n, cook: then dried kelp",
                 "gather cobblestone 64|gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch", "deposit");
         v("light", "", "digging", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks, inside my areas (fetches or crafts torches first)",
                 "light here 8|light 0 0 30 30", "status");
@@ -192,6 +192,9 @@ public final class VerbTable {
         v("hunt", "", "brain", O, "hunt <n> [cow|pig|chicken|sheep] | hunt status",
                 "with hunting on: kill the allowed animals (kinds animals; never pets, named ones, babies, villagers or players) within 32 inside my areas until I have n raw meat, picking up the drops; then cook",
                 "hunt 3 cow", "hunting");
+        v("fish", "", "brain", O, "fish [n] | fish <min>m | fish status",
+                "craft a rod when I carry 3 sticks + 2 string, cast at a water patch inside my areas, reel in on the bite; stops at n fish (cod, salmon, tropical fish; default 4), the minutes, or stop; then cook the catch (cook cod n)",
+                "fish 4|fish 5m", "cook");
         v("camp", "", "brain", O, "camp here", "a camp for a night or two: area camp (24 round, neutral), place camp with a bed marker, torches, my bed when I carry one; not a base", "camp here", "sleep");
         v("bootstrap", "", "brain", O, "bootstrap | bootstrap tools | bootstrap status", "a camp from nothing: cut, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp placed (tools: stop after the furnace)",
                 "bootstrap|bootstrap tools|bootstrap status", "places");
