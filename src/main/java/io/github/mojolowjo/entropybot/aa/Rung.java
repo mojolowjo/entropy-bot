@@ -72,6 +72,8 @@ public final class Rung extends Node {
     private final Picker picker;
     private String resolved, planned;
     private double plannedCost;
+    /** The task runs for the owner's aa do (a met need is no reason to count its failure as done). */
+    private boolean lastForced;
     private long planningSince = -1, settledAt = -1, lastSearchPick = -1;
     private String planFailed;
     private long planFailedAt = -1;
@@ -122,6 +124,7 @@ public final class Rung extends Node {
             man.doRung = null;
         }
         boolean forced = id.equals(man.doRung);
+        lastForced = forced;
         if (man.doRung != null && !forced) return fail(kind + " waits: the owner's aa do " + man.doRung.substring(man.doRung.indexOf('.') + 1));
         if (!forced && !unmet.test(bb)) return fail(kind + " met");
         String why = skip.apply(bb);
@@ -258,6 +261,14 @@ public final class Rung extends Node {
      * fails as before and the options line goes with the reason.
      */
     private Status jobFailed(Blackboard bb, String why) {
+        // S2 (aa373: bootstrap ended "scan base: no chests" after the tools were made): the need is met, the task's
+        // failed tail is not this rung's failure
+        if (!lastForced && !unmet.test(bb) && !Options.ownerOrDanger(why == null ? "" : why)) {
+            cooldown.forget();
+            settledAt = bb.clock.now();
+            bb.port.log(kind + ": the task ended \"" + why + "\" but the need is met - counted done");
+            return Status.SUCCESS;
+        }
         if (picker == null) return fail(why);
         if (picker.failed(bb, why)) {
             bb.fact(CURRENT_RUNG, id);

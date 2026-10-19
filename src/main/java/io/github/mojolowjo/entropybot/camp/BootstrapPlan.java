@@ -120,6 +120,20 @@ public final class BootstrapPlan {
         return p[0] + " " + p[1] + " " + p[2];
     }
 
+    /**
+     * S2 (MINING_PLAN 16 Q1, owner yes): {@code bootstrap tools} stops after the furnace: the steps up to the last
+     * "place furnace" (else the last stone tool craft, else the table's place); the chest, charcoal, torches and the
+     * base scan are left to AA's rungs, which score them. Empty when none of those steps is in the plan.
+     */
+    public static List<String> cutAfterFurnace(List<String> steps) {
+        int cut = -1;
+        for (int i = 0; i < steps.size(); i++) if (steps.get(i).startsWith("place furnace")) cut = i;
+        if (cut < 0)        // review: the last of the tool steps (a wooden pickaxe after the table counts)
+            for (int i = 0; i < steps.size(); i++)
+                for (String prefix : new String[]{"craft stone_", "place crafting_table", "craft wooden_pickaxe"}) if (steps.get(i).startsWith(prefix)) cut = i;
+        return cut < 0 ? List.of() : new ArrayList<>(steps.subList(0, cut + 1));
+    }
+
     public static Plan plan(Facts f) {
         Map<String, Integer> inv = f.inv();
         List<String> out = new ArrayList<>();

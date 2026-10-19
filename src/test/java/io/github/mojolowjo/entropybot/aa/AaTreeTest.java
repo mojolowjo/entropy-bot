@@ -74,7 +74,9 @@ class AaTreeTest {
         port.done(1, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertNull(bb.task());
-        // a wooden pickaxe now: the tools rung is still unmet, with another goal (no settle for a different goal)
+        // a wooden pickaxe now: the tools rung is still unmet; S2: its goal text stays "goal stone tools" (the options
+        // choose bootstrap or the plan), so the settle time passes first
+        clock.advance(Rung.SETTLE_MS + 1);
         assertEquals(Status.RUNNING, tree.tick(bb));
         assertEquals("goal stone tools", lastChain());
         port.done(2, "done");

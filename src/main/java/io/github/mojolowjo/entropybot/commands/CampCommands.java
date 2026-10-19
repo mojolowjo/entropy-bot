@@ -62,7 +62,10 @@ final class CampCommands {
     String bootstrap(LocalPlayer p, String from, boolean internal, String rest) {
         boolean status = rest != null && rest.trim().equalsIgnoreCase("status");
         if (rest != null && rest.trim().equalsIgnoreCase("food")) return bootstrapFood(p, from, internal);   // 0.30.5
-        if (rest != null && !rest.isBlank() && !status) return "usage: bootstrap | bootstrap status | bootstrap food";
+        // S2 (MINING_PLAN 16 Q1): "bootstrap tools" stops after the furnace (AA's tools rung; its rungs do the rest)
+        boolean toolsOnly = rest != null && rest.trim().equalsIgnoreCase("tools");
+        if (rest != null && !rest.isBlank() && !status && !toolsOnly) return "usage: bootstrap | bootstrap tools | bootstrap status | bootstrap food";
+        String self = toolsOnly ? "bootstrap tools" : "bootstrap";
         // 0.24.3: inside a chain its steps go right after it (the chain "bootstrap then gather ..." stopped silently)
         boolean splice = !status && c.chainsRef().running() && internal;
         if (!status && !splice && c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
@@ -77,7 +80,7 @@ final class CampCommands {
         // the fence: the camp's digs and placements need leases inside an area (strict mode)
         boolean strict = Core.INSTANCE.guard.core.mode() == GuardCore.Mode.STRICT;
         if (!status && strict && c.areaGap(feet[0], feet[1], feet[2], dim) > 0) {
-            return Hints.next("error: this spot is outside my work areas, so I may not dig or place here", "area here 48 camp neutral then bootstrap");
+            return Hints.next("error: this spot is outside my work areas, so I may not dig or place here", "area here 48 camp neutral then " + self);
         }
         boolean tableNear = near(lv, feet, "crafting_table"), furnaceNear = near(lv, feet, "furnace"), chestNear = near(lv, feet, "chest") || near(lv, feet, "barrel");
         int[] dir = quarryDir(lv, feet);
@@ -92,14 +95,14 @@ final class CampCommands {
         }
         if (free.isEmpty() && !status) {
             int[] spot = flatSpotNear(lv, feet, dir);
-            if (spot == null) return Hints.next("error: no free spot for the crafting table within 16 blocks (every cell around me is solid or water)", "goto a flat, open spot, then bootstrap");
-            String text = "goto " + Jobs.fmt(spot) + " then bootstrap";
+            if (spot == null) return Hints.next("error: no free spot for the crafting table within 16 blocks (every cell around me is solid or water)", "goto a flat, open spot, then " + self);
+            String text = "goto " + Jobs.fmt(spot) + " then " + self;
             LOG.info("[entropybot] bootstrap: no room at {}, moving to {}", Jobs.fmt(feet), Jobs.fmt(spot));
             if (splice) {
                 String err = c.chainsRef().spliceNext(text);
                 return err == null ? "ok: no room for a camp here - walking to " + Jobs.fmt(spot) + " first" : "error: " + err;
             }
-            return c.chainsRef().startChain(from, "bootstrap", text, 1);
+            return c.chainsRef().startChain(from, self, text, 1);
         }
         int[] table = free.size() > 0 ? free.get(0) : null, furnace = free.size() > 1 ? free.get(1) : null, chest = free.size() > 2 ? free.get(2) : null;
         boolean campMarked = Core.INSTANCE.knowledge.places().containsKey("camp");
@@ -116,7 +119,10 @@ final class CampCommands {
                 feet, table, furnace, chest, dir, snowy, quarryBlocked));
         if (plan.err() != null) return plan.err();
         List<String> all = new ArrayList<>(pre);
-        all.addAll(io.github.mojolowjo.entropybot.camp.FoodPlan.withFood(plan.steps()));      // 0.30.5: the food step last, always
+        if (toolsOnly) {
+            all.addAll(BootstrapPlan.cutAfterFurnace(plan.steps()));
+            if (all.isEmpty()) return "ok: bootstrap tools: the table, the stone tools and the furnace are there already";
+        } else all.addAll(io.github.mojolowjo.entropybot.camp.FoodPlan.withFood(plan.steps()));      // 0.30.5: the food step last, always
         if (status) return "bootstrap here would run " + plan.summary() + ": " + String.join(" > ", all);
         LOG.info("[entropybot] bootstrap at {}: {}", Jobs.fmt(feet), String.join(" > ", all));
         if (splice) {

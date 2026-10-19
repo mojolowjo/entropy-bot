@@ -257,6 +257,14 @@ public final class Options {
 
         public Picker(String rung, String factsKey, Class<F> type, OptionSet<F> set) { this(rung, factsKey, type, set, null); }
 
+        private java.util.function.BiFunction<Blackboard, String, String> noFacts = (b, planned) -> planned;
+
+        /** What runs without facts (default: the planner's chain as it is); the TOOLS rung keeps its old bootstrap-at-tier-0. */
+        public Picker<F> withoutFacts(java.util.function.BiFunction<Blackboard, String, String> f) {
+            noFacts = f;
+            return this;
+        }
+
         @Override public String pick(Blackboard bb, String planned) { return pick(bb, planned, 0, null); }
 
         @Override public String pick(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
@@ -279,7 +287,7 @@ public final class Options {
             if (!(sup instanceof Supplier<?> s)) {
                 why = "no " + rung.toLowerCase(Locale.ROOT) + " facts from the adapter: the planner's chain as it is";
                 last = null;
-                return planned;
+                return noFacts.apply(bb, planned);
             }
             Object fo;
             try {
@@ -295,7 +303,7 @@ public final class Options {
             if (!type.isInstance(fo)) {
                 why = rung.toLowerCase(Locale.ROOT) + " facts not readable now: the planner's chain as it is";
                 last = null;
-                return planned;
+                return noFacts.apply(bb, planned);
             }
             memory.sweep(bb.in);
             Choice c = set.choose(type.cast(fo), memory, now, planned, plannedCost, plannerWhy, after);
@@ -319,6 +327,8 @@ public final class Options {
                 counters.none++;
                 return null;
             }
+            // "nothing" (the rung passes) is tried once: if the rung comes back within the retry time, a real way runs
+            if (NOTHING.equals(ran.command())) memory.failed(ran.memoryKey(), "passed once already", now);
             return ran.command();
         }
 

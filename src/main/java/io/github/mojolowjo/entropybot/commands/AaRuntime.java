@@ -83,6 +83,8 @@ public final class AaRuntime implements JobPort {
         JsonObject d = data();
         if (d.has(AaLadder.SHELTER_FACT) && d.get(AaLadder.SHELTER_FACT).getAsBoolean()) AaLadder.noteShelter(bb);
         bb.fact(IronOptions.FACTS, (java.util.function.Supplier<IronOptions.Facts>) this::ironFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts>) this::surfaceFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         c.chains.onEnd(this::chainEnded);
     }
 
@@ -116,6 +118,67 @@ public final class AaRuntime implements JobPort {
             LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
             return null;
         }
+    }
+
+    /**
+     * S2 (MINING_PLAN 11): the SURFACE rung's facts, read once per pick: depth (or the hole's way out), the open shaft,
+     * throwaway blocks, placing allowed, a pickaxe, the trail back to open sky (TrailRuntime.retrace), the nearest
+     * standable open-sky cell within {@link #SKY_R} (heightmap scan of loaded columns), and whether the next rung is the
+     * table/furnace one. Null when nothing can be read; a throw is caught by the picker (logged, counted).
+     */
+    io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts surfaceFacts() {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null || sensed == null) return null;
+        net.minecraft.world.level.Level lv = mc.level;
+        int[] me = Jobs.here(p);
+        int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
+        if (depth == 0) depth = Math.max(0, holeUp(lv, me));
+        boolean shaft = depth > 0;
+        for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
+        Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
+        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+        int[] trailEnd = null;
+        double trailLen = 0;
+        List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(dim, me[0], me[1], me[2], 8, 8, 400);
+        if (hops != null && !hops.isEmpty()) {
+            int[] prev = me;
+            for (int[] h : hops) {
+                trailLen += Math.sqrt(Jobs.distSq(prev, h));
+                prev = h;
+            }
+            trailEnd = hops.get(hops.size() - 1);
+        }
+        int[] sky = null;
+        double best = Double.MAX_VALUE;
+        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int x = me[0] - SKY_R; x <= me[0] + SKY_R; x++)
+            for (int z = me[2] - SKY_R; z <= me[2] + SKY_R; z++) {
+                m.set(x, 0, z);
+                if (!lv.isLoaded(m)) continue;
+                int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
+                m.set(x, y, z);
+                if (d >= best || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
+                m.set(x, y - 1, z);
+                var below = lv.getBlockState(m);
+                if (below.getCollisionShape(lv, m).isEmpty() || !below.getFluidState().isEmpty()) continue;
+                best = d;
+                sky = new int[]{x, y, z};
+            }
+        boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
+        return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
+                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), bb.in.pickaxes > 0,
+                trailEnd, trailLen, sky, sky == null ? -1 : best, tf);
+    }
+
+    /** The open-sky cell search radius (columns), S2. */
+    static final int SKY_R = 24;
+
+    /** S2: the TOOLS rung's facts (the pickaxe tier, trees within 16 as the planner sees them). */
+    io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts toolsFacts() {
+        if (sensed == null || sensed.feas == null) return null;
+        return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(bb.in.pickTier, sensed.feas.trees);
     }
 
     /** The nearest known iron positions the scorer weighs. */

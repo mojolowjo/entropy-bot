@@ -83,12 +83,15 @@ public final class AaLadder {
                 bb -> null, bb -> AREA_COMMAND);
         Rung tools = new Rung("needs.tools", TaskKind.TOOLS,
                 bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2),
-                bb -> null, bb -> bb.in.pickTier == 0 ? BOOTSTRAP : "goal stone tools");
+                // S2 (MINING_PLAN 11): bootstrap tools / bootstrap / the planner, scored (RungOptions.Tools)
+                bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
+                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? BOOTSTRAP : planned));
         // 0.36.3 (aa40b: bootstrap left the bot in its quarry hole, 9 under the surface, and "goal table" / "goal iron
         // tools" had no free spot for the table for 30 minutes): a rung that needs open ground waits for a climb first
         Rung surface = new Rung("needs.surface", TaskKind.TABLE_FURNACE,
                 bb -> bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb),
-                bb -> null, bb -> CLIMB);
+                // S2: climb / pillar / trail / goto open sky / nothing, scored (RungOptions.Surface)
+                bb -> null, bb -> CLIMB, new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface()));
         // 0.36.3: no tree the chopper can get at in my areas: a second work area around the nearest reachable tree
         // (AaRuntime puts the area command in the fact; it is cleared after the area is made)
         Rung woodArea = new Rung("needs.woodArea", TaskKind.STOCK_WOOD,
