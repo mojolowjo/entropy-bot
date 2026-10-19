@@ -58,6 +58,8 @@ final class Gathering {
         int pickFixes;
         /** 0.30.1: "dig stone" give-ups in a row (GatherRules.quarryGiveUps) */
         int quarryGiveUps;
+        /** aa385: the same no-progress end 3x in a row ends the gather FAILED */
+        final io.github.mojolowjo.entropybot.gather.RepeatFail repeat = new io.github.mojolowjo.entropybot.gather.RepeatFail();
         final Map<String, Integer> leafFails = new HashMap<>();
         final GatherRules.Tally tally = new GatherRules.Tally();
     }
@@ -289,12 +291,19 @@ final class Gathering {
         if (progress) {
             r.noProgress = 0;
             r.leafFails.put(s.leaf(), 0);
+            r.repeat.reset();
         } else if (fight) {
             r.retryAt = core.tick() + 200;                     // a fight cut it short: again once it is over, not a failure
         } else {
             r.leafFails.merge(s.leaf(), 1, Integer::sum);
             r.noProgress++;
             r.lastFail = r.command + ": " + msg;
+            if (r.repeat.note(r.command, msg, core.tick())) {
+                String why = r.command + " - " + shortMsg(msg).replaceFirst("^(error|stopped): ", "") + " (" + io.github.mojolowjo.entropybot.gather.RepeatFail.TIMES + "x in a row)";
+                LOG.info("[entropybot] gather {}: ends failed: {}", GatherSources.shortId(r.item), why);
+                end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, why, null));
+                return;
+            }
         }
         int have = bag(p, r.item);
         whisper(r, "step " + r.steps + " (" + r.command + "): " + shortMsg(msg) + " - " + have + "/" + r.want + " " + GatherSources.shortId(r.item));

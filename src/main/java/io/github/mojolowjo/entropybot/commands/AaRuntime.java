@@ -829,6 +829,7 @@ public final class AaRuntime implements JobPort {
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
         in.pos = me;
         in.inArea = s.areasHere;
+        io.github.mojolowjo.entropybot.aa.core.WayBack.observe(bb);
         in.ownerOnline = s.ownerOnline;
         in.hungerDrains = mc.level.getDifficulty() != net.minecraft.world.Difficulty.PEACEFUL;
         in.menuOpen = mc.screen != null && !chainRunning() && !c.jobs.running();

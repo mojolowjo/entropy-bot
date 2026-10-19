@@ -32,6 +32,12 @@ public final class RunJob extends Node {
         if (taskId < 0) {
             JobPort.TaskSpec t = spec.apply(bb);
             if (t == null) return fail("nothing to run");
+            // aa385: outside the areas, the task waits behind a costed return leg; done, the desire re-decides from inside
+            WayBack.Leg leg = WayBack.leg(bb, t.chain(), t.source());
+            if (leg != null) {
+                bb.port.log(t.kind() + " options: " + leg.terms() + "; then \"" + t.chain() + "\" re-planned inside");
+                t = JobPort.TaskSpec.of(t.kind(), leg.chain(), t.source());
+            } else WayBack.started(bb, t.chain());
             long id = bb.port.start(t);
             if (id < 0) {
                 String r = bb.port.lastRefusal();

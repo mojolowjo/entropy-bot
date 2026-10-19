@@ -19,6 +19,17 @@ public final class ExploreRules {
     public static final long WALK_TICKS = 20 * 90;
     public static final int ARRIVED = 24;
 
+    /** aa385: explore's leash, blocks from the nearest area cell. */
+    public static final int LEASH = 64;
+
+    /** An area cell within {@code r} blocks (grid of 8, then the exact distance; areas are boxes far wider than 8). */
+    public static boolean nearAreas(java.util.function.BiPredicate<Integer, Integer> inAreas, int x, int z, int r) {
+        for (int dx = -r; dx <= r; dx += 8)
+            for (int dz = -r; dz <= r; dz += 8)
+                if (dx * dx + dz * dz <= r * r && inAreas.test(x + dx, z + dz)) return true;
+        return false;
+    }
+
     public static String key(String dim, int cx, int cz) {
         return dim + " " + cx + " " + cz;
     }

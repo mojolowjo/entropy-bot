@@ -1269,6 +1269,11 @@ final class Mining {
         ex.at[2] = me[2];
         if (now() % 20 == 0 && notes().markExplored(ExploreRules.around(d, me[0], me[2])) > 0) ex.chunks++;
         String done = now() > ex.until ? "the time is up" : null;
+        // aa385: the leash - never farther than LEASH blocks from my areas (live: explore went 363 blocks out); the
+        // brain's return leg (aa.core.WayBack) brings it back
+        if (done == null && now() % 100 == 50 && !commands.inAreas(d, me[0], me[2]) && !commands.areaNames().isEmpty()
+                && !ExploreRules.nearAreas((x, z) -> commands.inAreas(d, x, z), me[0], me[2], ExploreRules.LEASH))
+            done = "leash: " + ExploreRules.LEASH + " blocks past my areas";
         // V1b find: stop when it turned up
         if (ex.find != null && done == null && now() % 20 == 5) {
             try {
