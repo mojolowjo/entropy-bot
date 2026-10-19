@@ -120,6 +120,20 @@ public final class BootstrapPlan {
         return p[0] + " " + p[1] + " " + p[2];
     }
 
+    /**
+     * S2 (MINING_PLAN 16 Q1, owner yes): {@code bootstrap tools} stops after the furnace: the steps up to the last
+     * "place furnace" (else the last stone tool craft, else the table's place); the chest, charcoal, torches and the
+     * base scan are left to AA's rungs, which score them. Empty when none of those steps is in the plan.
+     */
+    public static List<String> cutAfterFurnace(List<String> steps) {
+        int cut = -1;
+        for (int i = 0; i < steps.size(); i++) if (steps.get(i).startsWith("place furnace")) cut = i;
+        if (cut < 0)        // review: the last of the tool steps (a wooden pickaxe after the table counts)
+            for (int i = 0; i < steps.size(); i++)
+                for (String prefix : new String[]{"craft stone_", "place crafting_table", "craft wooden_pickaxe"}) if (steps.get(i).startsWith(prefix)) cut = i;
+        return cut < 0 ? List.of() : new ArrayList<>(steps.subList(0, cut + 1));
+    }
+
     public static Plan plan(Facts f) {
         Map<String, Integer> inv = f.inv();
         List<String> out = new ArrayList<>();
@@ -212,8 +226,24 @@ public final class BootstrapPlan {
         for (int i = 1; i <= QUARRY_LEN; i++) {
             int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
             int x1 = cx - px, z1 = cz - pz, x2 = cx + px, z2 = cz + pz;
-            out.add("dig " + x1 + " " + (feet[1] - i) + " " + z1 + " " + x2 + " " + (feet[1] - 1) + " " + z2);
+            out.add("dig " + x1 + " " + stepBottom(feet[1], i) + " " + z1 + " " + x2 + " " + stepTop(feet[1], i) + " " + z2);
         }
         return out;
+    }
+
+    /** Owner's rule (0.36.5): at least this many blocks of headroom above every step's floor. */
+    public static final int HEADROOM = 3;
+
+    /** Standing level of step i (1..QUARRY_LEN): one lower than the step before; the floor block under it stays. */
+    public static int stepBottom(int feetY, int i) { return feetY - i; }
+
+    /** Top of step i's box: the ceiling steps down with the floor, HEADROOM blocks of air above the standing level. */
+    public static int stepTop(int feetY, int i) { return feetY - i + HEADROOM - 1; }
+
+    /** The one log line for the staircase plan: start, direction, steps. */
+    public static String planLine(int[] feet, int[] dir) {
+        return "staircase quarry from " + feet[0] + " " + feet[1] + " " + feet[2] + " dir " + dir[0] + " " + dir[1] + ", "
+                + QUARRY_LEN + " steps, stand y " + stepBottom(feet[1], 1) + ".." + stepBottom(feet[1], QUARRY_LEN)
+                + ", ceiling y " + stepTop(feet[1], 1) + ".." + stepTop(feet[1], QUARRY_LEN) + " (" + HEADROOM + " headroom, 1-high steps)";
     }
 }

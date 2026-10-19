@@ -242,6 +242,30 @@ class TrialFixTest {
         assertTrue(e.steps().get(0).startsWith("goto "), e.steps().toString());
     }
 
+    @Test
+    void climbFromWaterCaveUsesAFartherStart() {
+        // 0.36.a2 (aa367-369): water on every side within 1 block; a dry standable cell 3 east, one higher
+        Map<String, ClimbPlan.Kind> m = new HashMap<>();
+        for (int y = 6; y <= 9; y++) m.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);
+        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) for (int y = 5; y <= 9; y++)
+            if (x != 0 || z != 0) m.put(x + " " + y + " " + z, ClimbPlan.Kind.BLOCKED);
+        m.put("3 7 0", ClimbPlan.Kind.OPEN);
+        m.put("3 8 0", ClimbPlan.Kind.OPEN);
+        ClimbPlan.Plan p = ClimbPlan.plan(cells(m), (x, y, z) -> false, 0, 6, 0, 10, true);
+        assertNull(p.err(), p.err());
+        assertEquals("goto 3 7 0", p.steps().get(0));
+        assertEquals(3, p.up());
+        assertEquals(10, p.end()[1]);
+        // the same start on a water floor: refused, and the error says the wider search found nothing
+        ClimbPlan.Plan w = ClimbPlan.plan(cells(m), (x, y, z) -> x == 3 && y == 6 && z == 0, 0, 6, 0, 10, true);
+        assertTrue(w.err().contains("no other start within 4 blocks"), w.err());
+        // a water floor under a step is no step
+        Map<String, ClimbPlan.Kind> s = new HashMap<>();
+        for (int y = 6; y <= 9; y++) s.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);
+        ClimbPlan.Plan n = ClimbPlan.plan(cells(s), (x, y, z) -> z == -1 && y == 6, 0, 6, 0, 10, true);
+        assertNotEquals("north", n.dir());
+    }
+
     // ---- D: shovel ----
 
     @Test

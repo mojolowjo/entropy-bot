@@ -33,6 +33,19 @@ class PlannerTest {
         for (String a : Planner.ACTIONS) assertTrue(ActionTable.actions().get(a).planner(), a);
     }
 
+    /** 0.36.2 (aa-v0 h): the bag is taken off the stock with namespaced bag ids, so nothing the bag holds is "fetched". */
+    @Test
+    void theBagIsNeverFetchedFromTheStock() {
+        java.util.Map<String, Integer> stock = PlanFacts.minusBag(java.util.Map.of("coal", 1, "oak_log", 5, "planks", 3),
+                java.util.Map.of("minecraft:coal", 1, "minecraft:oak_log", 3));
+        assertEquals(java.util.Map.of("oak_log", 2, "planks", 3), stock);
+        PlanFacts f = forest().bag("coal", 1).bag("stick", 4);
+        f.addStock(PlanFacts.minusBag(java.util.Map.of("coal", 1, "stick", 4), java.util.Map.of("minecraft:coal", 1, "minecraft:stick", 4)), null);
+        Planner.Result r = Planner.plan(f, GoalGrammar.parse("torch 4", null).needs());
+        assertTrue(r.ok(), r.missing() + " " + r.error());
+        assertFalse(r.chain().contains("get "), r.chain());
+    }
+
     @Test
     void bedFromNothingButWool() {
         PlanFacts f = forest().bag("white_wool", 3);

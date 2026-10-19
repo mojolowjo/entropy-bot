@@ -186,6 +186,7 @@ final class Mining {
             s.allowBreak.value = false;
             s.allowPlace.value = false;
             s.allowBreakAnyway.value = new ArrayList<>();
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "mine ended");
         } catch (Throwable ignored) {}
     }
 
@@ -311,14 +312,16 @@ final class Mining {
         int[] me = Jobs.here(p);
         List<Box> prot = boxes(policy(), "protect");
         Level level = p.level();
+        long tick = now();
         // the whole family (iron_ore and deepslate_iron_ore drop the same raw_iron; live: the deepslate ones were skipped)
         // (the owner: "mine iron_ore" / "mine iron" take both; "mine deepslate_iron_ore" stays exact)
         String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
         io.github.mojolowjo.entropybot.clear.ClearJob.StandCheck stand = Clearing.standCheck(commands);
         boolean exact = !j.familyWord;      // the owner: "mine iron" = the family, deepslate or not; "mine iron_ore" = exactly that block
         java.util.function.Predicate<String> idOk = id -> exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
-        return pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, (x, y, z) -> {
+        io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
+            if (MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), tick)) return false;   // 0.36.a3: timed, not for good
             if (!commands.inAreas(d, x, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
             // 0.28.0 live (LAN flat world): the clear engine stands only inside an area in 3D (Clearing.standCheck), so an
             // area whose floor is above the cell under/beside the ore left "nowhere to stand": that ore is no candidate
@@ -327,7 +330,87 @@ final class Mining {
             if (!level.isLoaded(q)) return true;              // known from before: go and look
             return idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())
                     && (j.dig || exposed(level, q));
-        });
+        };
+        List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> idx = pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, n, ok);
+        // 0.36.a5 (owner test: iron placed 2 blocks away was ignored): Baritone's live scan of the loaded chunks joins the index
+        List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> live = new ArrayList<>();
+        for (io.github.mojolowjo.entropybot.sense.MemoryPick.Spot s : liveOres(p, j, tick)) {
+            if (!ok.test(s.x(), s.y(), s.z())) continue;
+            long dx = s.x() - me[0], dy = s.y() - me[1], dz = s.z() - me[2];
+            live.add(new io.github.mojolowjo.entropybot.sense.OreIndex.Hit(s.x(), s.y(), s.z(), s.id(), io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(s.id()), dx * dx + dy * dy + dz * dz, false));
+        }
+        io.github.mojolowjo.entropybot.sense.OreMerge.Merged m = io.github.mojolowjo.entropybot.sense.OreMerge.merge(idx, live, n);
+        j.kIdxKeys = new java.util.HashSet<>();
+        for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : idx) j.kIdxKeys.add(io.github.mojolowjo.entropybot.sense.OreMerge.key(h.x(), h.y(), h.z()));
+        j.kMerged = m;
+        return m.hits();
+    }
+
+    /**
+     * 0.36.a8 (AA's iron option scorer, MINING_PLAN 3.6): the nearest known ore of a family with the facts the scorer
+     * reads: loaded, a dry open face, sky-open, the dig depth from the surface, the water rule (a dig down from in the
+     * water), and the break policy's MINE verdict at the cell. Same fence as the mine's own pick (my areas, the protect
+     * margin, the guard); no tried-set (the scorer keeps its own memory). Never throws; empty when the index is not ready.
+     */
+    List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n) {
+        List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> out = new ArrayList<>();
+        try {
+            if (!indexReady()) return out;
+            String d = dim();
+            int[] me = Jobs.here(p);
+            Level level = p.level();
+            List<Box> prot = boxes(policy(), "protect");
+            java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> commands.inAreas(d, x, z)
+                    && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null;
+            var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, n, ok)) {
+                BlockPos q = new BlockPos(h.x(), h.y(), h.z());
+                boolean loaded = level.isLoaded(q);
+                double dist = Math.sqrt(h.d2());
+                if (!loaded) {
+                    out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, false, true, false, -1, false, null, false));
+                    continue;
+                }
+                if (!idOk.test(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString())) continue;     // gone
+                boolean open = airFace(level, h.x(), h.y(), h.z());
+                boolean sky = open && skyOpen(level, q);
+                int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, h.x(), h.z()) - 1;
+                boolean touchesWater = io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null || !level.getFluidState(q.below()).isEmpty();
+                boolean wet = !open && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(), touchesWater);
+                String deny = null;
+                boolean floor = false;
+                try {
+                    var v = rt.judge("aa-iron", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE,
+                            d, h.x(), h.y(), h.z(), rt.facts(level, q, false), rt.where());
+                    if (!v.allowed()) {
+                        deny = v.reason();
+                        floor = v.floor();
+                    }
+                } catch (RuntimeException e) {
+                    deny = "policy error: " + e;
+                }
+                out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, true, open, sky, Math.max(1, top - h.y() + 1), wet, deny, floor));
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa iron: the known-ore facts could not be read: {}", e.toString());
+        }
+        return out;
+    }
+
+    /** 0.36.a5: Baritone's live scan for the job's block(s) near me, kept a few seconds (one scan per pick, cheap on the tick). */
+    private List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> liveOres(LocalPlayer p, MineRun j, long tick) {
+        if (j.kLive != null && tick - j.kLiveAt < 60) return j.kLive;
+        String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
+        List<String> ids = new ArrayList<>();
+        for (net.minecraft.resources.ResourceLocation k : BuiltInRegistries.BLOCK.keySet()) {
+            String id = k.toString();
+            if (!k.getPath().endsWith("_ore") && !k.getPath().equals("ancient_debris")) continue;
+            if (!j.familyWord ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam)) ids.add(id);
+        }
+        j.kLive = io.github.mojolowjo.entropybot.sense.BaritoneMemory.live(p, ids, 64, 6);
+        j.kLiveAt = tick;
+        return j.kLive;
     }
 
     /** The mine starts (or goes on) from the index: phase "known". False: the index has none near (today's path runs). */
@@ -360,7 +443,9 @@ final class Mining {
         // 0.34.1 (review): one recall per job; later asks reuse its list (tried and now-gone spots taken out)
         if (j.kFarCache != null) {
             io.github.mojolowjo.entropybot.sense.MemoryPick.Check live = io.github.mojolowjo.entropybot.sense.BaritoneMemory.check(p.level());
+            long tk = now();
             j.kFarCache.removeIf(o -> j.knownTried.contains(BlockPos.asLong(o.x(), o.y(), o.z()))
+                    || MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(o.x(), o.y(), o.z())), tk)
                     || live.at(o.id(), o.x(), o.y(), o.z()) == io.github.mojolowjo.entropybot.sense.MemoryPick.Live.LOADED_GONE);
             // 0.34.2 (review): nearest from where I stand now; an empty list recalls once more
             int[] here = Jobs.here(p);
@@ -381,7 +466,8 @@ final class Mining {
         if (ids.isEmpty()) return List.of();
         List<Box> prot = boxes(policy(), "protect");
         j.kFarCache = new ArrayList<>(io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
-                !j.knownTried.contains(BlockPos.asLong(x, y, z)) && commands.inAreas(d, x, z)
+                !j.knownTried.contains(BlockPos.asLong(x, y, z)) && !MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), now())
+                        && commands.inAreas(d, x, z)
                         && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null
                         && (j.dig || io.github.mojolowjo.entropybot.sense.BaritoneMemory.exposedInCache(x, y, z)), 8, "mine"));   // 0.34.1: walkable faces only
         return j.kFarCache.isEmpty() ? List.of() : List.of(j.kFarCache.get(0));
@@ -397,6 +483,7 @@ final class Mining {
         j.kFarTrips++;
         j.kFarId = o.id();
         j.kFarText = io.github.mojolowjo.entropybot.sense.MemoryPick.text(o, me);
+        j.kWaterDown = false;
         j.knownTried.add(BlockPos.asLong(t[0], t[1], t[2]));
         j.kTarget = t;
         j.kVein = new ArrayList<>(List.of(new Pos(t[0], t[1], t[2])));   // the rest of the vein shows in the index once loaded
@@ -409,6 +496,28 @@ final class Mining {
         s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - " + j.kFarText + ", walking there");
         spliceHere(s, List.of(w));
         return true;
+    }
+
+    /**
+     * 0.36.a3: the walk watch of every known-ore walk: the remembered target gone (farWatch), or the walk digging down
+     * from in the water (owner's rule; aa370 ran out of air that way) - that sets kWaterDown and ends the walk.
+     */
+    private static java.util.function.BooleanSupplier walkWatch(MineRun j, String farId, int[] t) {
+        java.util.function.BooleanSupplier far = farWatch(farId, t);
+        return () -> {
+            if (far != null && far.getAsBoolean()) return true;
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            LocalPlayer pl = mc.player;
+            if (pl == null || mc.gameMode == null) return false;
+            int breakY = Integer.MAX_VALUE;
+            if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bh && bh.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK)
+                breakY = bh.getBlockPos().getY();
+            if (MineRules.waterDigDown(pl.isInWater(), mc.gameMode.isDestroying(), breakY, pl.blockPosition().getY())) {
+                j.kWaterDown = true;
+                return true;
+            }
+            return false;
+        };
     }
 
     /** 0.34.2: the walk watch for a remembered target (null id: none). */
@@ -496,6 +605,21 @@ final class Mining {
             String failed = j.kFailed;
             j.kTarget = null;
             j.kFailed = null;
+            if (j.kWaterDown) {
+                // 0.36.a3 (owner's rule): the walk began digging down from in the water - stopped; this ore is out of
+                // the pick for a minute (not for good: from dry ground it is fine), no try spent, the next one is picked
+                j.kWaterDown = false;
+                j.kWalks = 0;
+                if (j.kFarId != null) {          // review: a remembered target went into knownTried at its walk start - timed only
+                    j.knownTried.remove(BlockPos.asLong(t[0], t[1], t[2]));
+                    if (j.kFarTrips > 0) j.kFarTrips--;
+                }
+                j.kFarId = null;
+                j.kWaterSkip.put(BlockPos.asLong(t[0], t[1], t[2]), now + MineRules.WATER_SKIP_TICKS);
+                LOG.info("[entropybot] mine: target {} at {} skipped for {} s: the walk started digging down from in the water at {} (no try spent)",
+                        sid(j), Jobs.fmt(t), MineRules.WATER_SKIP_TICKS / 20, Jobs.fmt(me));
+                return "wait";
+            }
             if (j.kFarId != null && io.github.mojolowjo.entropybot.sense.BaritoneMemory.check(p.level()).at(j.kFarId, t[0], t[1], t[2])
                     == io.github.mojolowjo.entropybot.sense.MemoryPick.Live.LOADED_GONE) {
                 // 0.34.0: the remembered ore is gone now that its chunk is loaded: dropped, no try spent
@@ -516,7 +640,7 @@ final class Mining {
                 j.kTarget = t;
                 Seq.Step w = Seq.Step.walk(t.clone(), true);
                 w.optional = true;
-                w.watch = walkWatch(j, j.kFarId, t);              // 0.34.2: every leg of a remembered target is watched
+                w.watch = walkWatch(j, j.kFarId, t);          // 0.34.2: every leg of a remembered target is watched (0.36.a3: and the water dig-down)
                 LOG.info("[entropybot] mine: the walk to the known {} at {} ended short at {}{} - walking again ({}/2)", sid(j), Jobs.fmt(t), Jobs.fmt(me),
                         failed != null ? " (" + failed + ")" : "", j.kWalks);
                 spliceHere(s, List.of(w));
@@ -546,13 +670,24 @@ final class Mining {
         Level level = p.level();
         io.github.mojolowjo.entropybot.sense.OreIndex.Hit best = null;
         double bestCost = Double.MAX_VALUE;
-        int buried = 0, tooDeep = 0, deepest = 0;
+        int buried = 0, tooDeep = 0, deepest = 0, underWater = 0;
+        List<String> wetAt = new ArrayList<>();
         int bestTop = Integer.MIN_VALUE;          // with dig: the surface block over a buried ore (the dig box runs from the ore up to it)
         int[] bestTun = null;                     // with dig: the side tunnel (KnownOre.sideTunnel) to the best one
         for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) {
             BlockPos q = new BlockPos(h.x(), h.y(), h.z());
             double cost;
             int top = Integer.MIN_VALUE;
+            // 0.36.8 (owner's rule): in water, never dig down through solid blocks to an ore (no air down there); an ore
+            // the water touches is fine (sink to it). Skipped here, no try spent; the next known ore is picked.
+            if (level.isLoaded(q) && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(),
+                    io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null
+                            || !level.getFluidState(q.below()).isEmpty())
+                    && !airFace(level, h.x(), h.y(), h.z())) {         // 0.36.9: an ore with a dry open face is walked to (a cave beside it)
+                underWater++;
+                if (wetAt.size() < 5) wetAt.add(h.x() + " " + h.y() + " " + h.z());
+                continue;
+            }
             // 0.28.0 live (the owner's shells one over the floor): with dig, a 2-high side tunnel at the ore's level first
             int[] tun = j.dig && level.isLoaded(q) ? io.github.mojolowjo.entropybot.sense.KnownOre.sideTunnel(me[0], me[2], h.x(), h.y(), h.z(), (x, y, z) -> {
                 BlockPos c = new BlockPos(x, y, z);
@@ -590,10 +725,15 @@ final class Mining {
                 bestTun = null;
             }
         }
+        if (underWater > 0) LOG.info("[entropybot] mine: skipped {} known {} below me that I'd have to dig down to from in the water (no air down there; ore the water touches or with a dry face is fine): {}", underWater, sid(j), String.join("; ", wetAt));
         if (best == null && tooDeep > 0) LOG.info("[entropybot] mine: {} known {} too deep for a dig ({} blocks), use mine strip", tooDeep, sid(j), deepest);
         if (best == null) {
-            LOG.info("[entropybot] mine: the {} nearest known {} are all buried or not loaded (I walk only to ore with an open face)", hits.size(), sid(j));
             for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : hits) j.knownTried.add(BlockPos.asLong(h.x(), h.y(), h.z()));
+            if (underWater == hits.size()) {          // 0.36.9: every one skipped by the water rule - say so, not "buried"
+                LOG.info("[entropybot] mine: all {} nearest known {} are below me and I'm in the water - out of the water first", hits.size(), sid(j));
+                return mineEnd(s, p, j, "all " + hits.size() + " nearest known " + sid(j) + " are below me and I'm in the water (I don't dig down from in the water) - out of the water first");
+            }
+            LOG.info("[entropybot] mine: the {} nearest known {} are all buried or not loaded (I walk only to ore with an open face)", hits.size(), sid(j));
             return mineEnd(s, p, j, io.github.mojolowjo.entropybot.sense.KnownOre.unreachableText(fam, j.kKnown, j.kTries) + (tooDeep > 0 ? " (" + tooDeep + " too deep for a dig (" + deepest + " blocks), use mine strip)" : " (" + buried + " nearest are buried; mine ... dig digs to them)"));
         }
         j.kVein = new ArrayList<>();
@@ -602,7 +742,12 @@ final class Mining {
         j.anchor = me;
         MineRules.trail(j.trail, me);
         int[] t = {best.x(), best.y(), best.z()};
-        LOG.info("[entropybot] mine: next known {} at {} ({}, {} blocks; try {}/{}; {} buried ones skipped)", sid(j), Jobs.fmt(t),
+        if (j.kMerged != null) {
+            int mem = j.kFarCache == null ? 0 : j.kFarCache.size();
+            LOG.info("[entropybot] mine: pick sources for {}: {} from the index, {} from the live scan only, {} remembered by Baritone; chosen {} from {}", sid(j),
+                    j.kMerged.fromIndex(), j.kMerged.liveOnly(), mem, Jobs.fmt(t), j.kMerged.sourceOf(t[0], t[1], t[2], j.kIdxKeys));
+        }
+        LOG.info("[entropybot] mine: next known {} at {} ({},{} blocks; try {}/{}; {} buried ones skipped)", sid(j), Jobs.fmt(t),
                 skyOpen(level, new BlockPos(t[0], t[1], t[2])) ? "open to the sky" : "in a cave", (int) Math.round(Math.sqrt(best.d2())),
                 j.kTries + 1, io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS, buried);
         if (bestTun != null) {
@@ -620,7 +765,7 @@ final class Mining {
                 box.optional = true;
                 steps.add(box);
             }
-            Seq.Step vein = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true)
+            Seq.Step vein = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true).waterOk(true)
                     .label("mining " + j.kVein.size() + " known " + sid(j) + " blocks"));
             vein.optional = true;
             steps.add(vein);
@@ -648,11 +793,15 @@ final class Mining {
             spliceHere(s, Jobs.distSq(me, stand) <= 16 ? List.of(box) : List.of(w, box));
             return "wait";
         }
-        if (Jobs.distSq(me, t) <= 16) return knownClear(s, j, t);
+        // 0.36.a3 (aa370: 1 block short of -42 59 23 it swam 25 s at the surface): within the clear's reach (the same 20 as
+        // the walk's end check) the vein clear starts from here
+        if (Jobs.distSq(me, t) <= 20) return knownClear(s, j, t);
         j.kTarget = t;
         j.kFarId = null;
+        j.kWaterDown = false;
         Seq.Step w = Seq.Step.walk(t.clone(), true);
         w.optional = true;
+        w.watch = walkWatch(j, null, t);
         s.setStatus("mining " + sid(j) + ": " + mineCount(p, j) + "/" + j.count + " - walking to known ore at " + Jobs.fmt(t) + " (" + (int) Math.round(Math.sqrt(best.d2())) + " blocks)");
         spliceHere(s, List.of(w));
         return "wait";
@@ -708,7 +857,7 @@ final class Mining {
     private String knownClear(Seq s, MineRun j, int[] target) {
         j.kLast = target;
         // (nothing marked tried here: a vein clear that mines nothing costs a try on its target only)
-        Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true)
+        Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true).waterOk(true)
                 .label("mining " + j.kVein.size() + " known " + sid(j) + " blocks"));
         clear.optional = true;
         j.kClear = clear;
@@ -1636,6 +1785,10 @@ final class Mining {
         final List<String> leases = new ArrayList<>();
         /** 0.28.0 phase "known": positions tried, the walk to the next vein, its cells, the clear spliced, veins done, the index's none-reason. */
         final Set<Long> knownTried = new HashSet<>();
+        /** 0.36.a3: known ores dropped because the walk dug down from in the water: position -> tick the skip ends (not for good). */
+        final Map<Long, Long> kWaterSkip = new HashMap<>();
+        /** 0.36.a3: set by the walk watch when the walk started digging down from in the water. */
+        volatile boolean kWaterDown;
         int[] kTarget;
         /** 0.34.0: kTarget came from Baritone's memory (this block id); trips made. */
         String kFarId;
@@ -1644,6 +1797,11 @@ final class Mining {
         /** 0.34.1: this job's one recall of Baritone's memory (nearest first), or null before it. */
         List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> kFarCache;
         int kFarRecalls;
+        /** 0.36.a5: the live scan's last answer and when; the last merged pick list and the index's positions in it. */
+        List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> kLive;
+        long kLiveAt;
+        io.github.mojolowjo.entropybot.sense.OreMerge.Merged kMerged;
+        java.util.Set<Long> kIdxKeys;
         String kFailed;
         int kTries, kKnown, kWalks;
         boolean familyWord, kDigging;
@@ -1763,6 +1921,18 @@ final class Mining {
         j.leases.clear();
     }
 
+    /** 0.36.9: a dry open cell (air, no fluid) beside x y z: the ore has a face a walk can reach without digging. */
+    private static boolean airFace(Level level, int x, int y, int z) {
+        int[][] sides = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (int[] d : sides) {
+            BlockPos c = new BlockPos(x + d[0], y + d[1], z + d[2]);
+            if (!level.isLoaded(c)) continue;
+            var st = level.getBlockState(c);
+            if (st.getFluidState().isEmpty() && st.getCollisionShape(level, c).isEmpty()) return true;
+        }
+        return false;
+    }
+
     /** Only the job's block may be broken (with dig: tunnelling too; the protected blocks never). */
     private static void mineSettings(MineRun j) {
         try {
@@ -1772,6 +1942,8 @@ final class Mining {
             list.add(j.block);
             s.allowBreakAnyway.value = list;
             s.allowBreak.value = j.dig;
+            // mining plan phase 1: Baritone's mine digs under the MINE intent (its own rules, plus: never down from in the water)
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE, "mine");
         } catch (Throwable ignored) {}
     }
 
@@ -1780,7 +1952,15 @@ final class Mining {
         job.holdOnFight = true;
         job.ownsBreaking = true;
         // P1: with dig, every block but the target that Baritone breaks is a path break the restore ledger puts back
-        if (j.dig) RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
+        // 0.36.8: the known-ore walk may dig now too, so the path context is set for every mine job (without dig and
+        // outside that walk Baritone breaks only the target, which is never a path break)
+        RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
+        // 0.36.8: while this job runs, breaking next to water is allowed; its known-ore walk may dig inside my areas
+        MineWater.start(job, () -> {
+            if (j.kTarget == null) return false;
+            var pl = net.minecraft.client.Minecraft.getInstance().player;
+            return pl != null && core.commands.inAreas(Storage.dim(), (int) Math.floor(pl.getX()), (int) Math.floor(pl.getZ()));
+        });
         job.onHold = () -> {
             j.held = true;
             j.heldBy = core.reflexes.reflex().name().toLowerCase();
@@ -1789,6 +1969,7 @@ final class Mining {
             restoreSettings();
         };
         job.onEnd = () -> {
+            MineWater.end(job);
             restoreSettings();
             releaseLeases(j);
         };

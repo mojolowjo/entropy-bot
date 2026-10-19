@@ -161,7 +161,10 @@ public final class PaperPlan {
             s.allowPlace.value = plc;
             s.blockBreakAdditionalPenalty.value = Math.max(obp, 6.0);     // owner: a walk keeps breaking/placing expensive
             s.blockPlacementPenalty.value = Math.max(opp, 20.0);
-            ctx = new baritone.pathing.movement.CalculationContext(b, true);
+            // mining plan phase 1: a plan's own context: BUILD (no travel cap) when it may break or place, else walking only
+            ctx = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.withIntent(
+                    brk || plc ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.NONE,
+                    () -> new baritone.pathing.movement.CalculationContext(b, true));
         } finally {
             s.allowBreak.value = ob;
             s.allowPlace.value = op;
@@ -318,6 +321,21 @@ public final class PaperPlan {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] escape plan failed: {}", e.toString());
         }
+    }
+
+    /**
+     * 0.36.a6: AA's pillar out of a shaft: a plain walk to {@code e} (straight above) with placing on for this job only
+     * (no breaking), so Baritone pillars up with its throwaway blocks. The same ownership as "plan go": placing goes
+     * off again when the job ends (tick, SafetyNet backstop).
+     */
+    String pillar(Commands c, int[] e, String from) {
+        if (running) return "busy: a plan is being made";
+        if (owned()) return "busy: a plan go is walking";
+        goBreak = false;
+        goPlace = true;
+        String s = c.jobs.startPlanGo(e, false, true, from, id -> { goJob = id; goJobObj = c.jobs.job; });
+        LOG.info("[entropybot] pillar: to {} (placing on), job {}: {}", Jobs.fmt(e), goJob, s);
+        return s;
     }
 
     /** "plan go": the last reachable plan, walked with its rules' breaking/placing on for this job only. */

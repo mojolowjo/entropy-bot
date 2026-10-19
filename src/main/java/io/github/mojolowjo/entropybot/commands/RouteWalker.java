@@ -54,7 +54,11 @@ final class RouteWalker {
 
     static boolean breakingOn() {
         try {
-            return BaritoneAPI.getSettings().allowBreak.value || BaritoneAPI.getSettings().allowPlace.value;
+            // mining plan phase 1: a walk under the travel policy alone is routed like a plain walk
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            boolean brk = BaritoneAPI.getSettings().allowBreak.value && !pr.travelOnlyBreaking();
+            boolean plc = BaritoneAPI.getSettings().allowPlace.value && !pr.travelOnlyPlacing();
+            return brk || plc;
         } catch (Throwable t) {
             return true;       // can't tell: don't route
         }

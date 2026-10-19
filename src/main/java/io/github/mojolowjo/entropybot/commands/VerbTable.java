@@ -59,8 +59,8 @@ public final class VerbTable {
                         + "main (blue: the base; built blocks never), safe (green: walk only, never dig or build: someone else's); here = around you (r blocks each way; safe: 8 below, 16 above), "
                         + "and the near-me zone (16 blocks around you, on by default; safe areas always win); candidates: the bases explore and find noted, accept makes one a safe area",
                 "area here 60 base main|area here 8 house safe|area 0 0 30 30 pit destroy 40 70|area change type pit neutral|area list", "fence", "area list");
-        v("fence", "", "space", P, "fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm",
-                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type)",
+        v("fence", "", "space", P, "fence | fence vetoes | fence check x y z break|place|go | fence rules | fence why x y z [break|place] [travel|mine|dig_out] | fence mode strict | fence mode log confirm",
+                "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type); rules = the break policy (intent, cost hook, counters), why = its verdict for one cell",
                 "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
         // ---- stock (VOCABULARY 2)
         v("fetch", "", "stocking", O, "fetch <item|kind> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32|fetch logs 16", "inv");
@@ -172,6 +172,9 @@ public final class VerbTable {
         // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
         v("brain", "", "brain", O, "brain on|off|status | brain copy on|off|status | brain get [key] | brain set <key> <value> | brain reset <key>|all|parks | brain tree [reload] | brain learned [job kind] | brain learned reset", "the brain: every 2 s it scores the needs (safety, food, tools, bag, your needs and goals, copy, the idle list) and starts the best job; it whispers only when it starts one (with why), when one fails 3 times (parked 30 min), and stays within 32 of you until done; off stops its own job, yours run on; copy: chop, mine or farm what you do near you; get/set/reset: its weights and thresholds (saved in brain-config.json; need.<name>.weight 0-5); tree reload: loads brain-tree.override.json (refused: the built-in tree, check says why)",
                 "brain on|brain status|brain copy on", "why");
+        v("aa", "", "brain", O, "aa on|off|status|why|tree",
+                "the new brain (AA v0, docs/AA_PLAN.md): a behavior tree with fixed priorities, danger > your orders > AI requests > basic needs (stone tools, table and furnace, torches, base, bag, iron tools) > idle (wood, stone, wait), and one task at a time: a task runs to its end before AA chooses again; only danger pauses it and only your order replaces it (logged); on and brain on exclude each other; status: who drives, the counters, each rung's reason; why: the last 10 decisions; tree: the tree as Mermaid",
+                "aa on|aa status|aa why", "brain off");
         v("idle", "", "brain", O, "idle list | idle list set <items> | idle list reset", "what the brain does when nothing is asked, in order, skipping what cannot run: restock, strip (the marked mine), cave, farm, explore (default restock, strip, cave, farm)",
                 "idle list|idle list set strip, cave", "brain on");
         v("dayplan", "", "brain", O, "dayplan | dayplan skip | dayplan clear [hold] | dayplan now", "the day plan: at dawn the brain picks up to dayPlan.maxGoals goals from the stage and the stock (each checked by a planner dry run), whispers today: ..., and serves them one by one as the need day_goal (score dayPlan.score); unfinished goals carry over to the next dawn; your goal pauses it; a goal without progress for dayPlan.stallMinutes is given up; skip gives up the active goal, clear empties the plan, now plans the day at once (by day)",
@@ -190,8 +193,8 @@ public final class VerbTable {
                 "with hunting on: kill the allowed animals (kinds animals; never pets, named ones, babies, villagers or players) within 32 inside my areas until I have n raw meat, picking up the drops; then cook",
                 "hunt 3 cow", "hunting");
         v("camp", "", "brain", O, "camp here", "a camp for a night or two: area camp (24 round, neutral), place camp with a bed marker, torches, my bed when I carry one; not a base", "camp here", "sleep");
-        v("bootstrap", "", "brain", O, "bootstrap | bootstrap status", "a camp from nothing: cut, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp placed",
-                "bootstrap|bootstrap status", "places");
+        v("bootstrap", "", "brain", O, "bootstrap | bootstrap tools | bootstrap status", "a camp from nothing: cut, table, wooden then stone tools, furnace, chest, charcoal, torches, base and camp placed (tools: stop after the furnace)",
+                "bootstrap|bootstrap tools|bootstrap status", "places");
         v("restore", "", "brain", O, "restore [status] | restore now [r] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off",
                 "blocks I broke on the way (mine ... dig tunnels, digging out of a stuck spot) and put back; build hints to protect",
                 "restore status|restore now|restore ignore 10 64 -20", "status");

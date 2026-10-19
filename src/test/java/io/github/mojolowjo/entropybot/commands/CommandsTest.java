@@ -235,6 +235,22 @@ class CommandsTest {
         assertTrue(mem.get("run").isJsonNull());
     }
 
+    /** 0.36.0 AA P2: the end hook is a fan-out: the brain and AA both hear a chain's end; a throwing listener stops nobody. */
+    @Test
+    void chainEndFansOutToEveryListener() {
+        Fake f = fake(new JsonObject());
+        List<String> heard = new ArrayList<>();
+        f.chains.onEnd((n, m) -> { throw new IllegalStateException("boom"); });
+        f.chains.onEnd((n, m) -> heard.add("brain " + n + ": " + m));
+        f.chains.onEnd((n, m) -> heard.add("aa " + n + ": " + m));
+        assertEquals(3, f.chains.endHookCount());
+        f.chains.startChain("owner", "aa", "places", 1);
+        f.run(5);
+        f.run(5);
+        assertFalse(f.chains.running());
+        assertEquals(List.of("brain aa: done", "aa aa: done"), heard);
+    }
+
     @Test
     void aFailedStepEndsTheChainAndAFightIsRetried() {
         Fake f = fake(new JsonObject());

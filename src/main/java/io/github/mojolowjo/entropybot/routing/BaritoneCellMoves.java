@@ -38,15 +38,23 @@ public final class BaritoneCellMoves implements CellMoves {
     private static final Moves[] MOVES = Moves.values();
 
     private final CalculationContext ctx;
+    private final boolean policyWalkingOnly;
     private final MutableMoveResult res = new MutableMoveResult();
 
-    private BaritoneCellMoves(CalculationContext ctx) {
+    private BaritoneCellMoves(CalculationContext ctx, boolean policyWalkingOnly) {
         this.ctx = ctx;
+        this.policyWalkingOnly = policyWalkingOnly;
     }
 
-    /** Makes the context. Game thread only (Baritone reads the player, inventory and settings, and checks the thread). */
+    /**
+     * Makes the context. Game thread only (Baritone reads the player, inventory and settings, and checks the thread).
+     * Mining plan phase 1: built under the NONE intent, so with the fork's CostAdvisor every break costs COST_INF for
+     * this context even while a walk keeps allowBreak on; the context is then walking-only in effect.
+     */
     public static BaritoneCellMoves create(IBaritone baritone) {
-        return new BaritoneCellMoves(new CalculationContext(baritone, true));
+        var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+        CalculationContext ctx = pr.withIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.NONE, () -> new CalculationContext(baritone, true));
+        return new BaritoneCellMoves(ctx, io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.fork() && pr.travelOnlyBreaking());
     }
 
     /**
@@ -54,7 +62,7 @@ public final class BaritoneCellMoves implements CellMoves {
      * context is never stored.
      */
     public boolean walkingOnly() {
-        return !ctx.allowBreak && !ctx.hasThrowaway;
+        return (!ctx.allowBreak || policyWalkingOnly) && !ctx.hasThrowaway;
     }
 
     /**

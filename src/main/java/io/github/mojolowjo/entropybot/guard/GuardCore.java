@@ -432,6 +432,40 @@ public final class GuardCore {
     }
 
     /**
+     * Mining plan phase 1: a real break click under the TRAVEL intent. The floor and the box rules as before; when only
+     * a box rule (no areas, outside every area, no lease here) would refuse and {@link BreakPolicy} allows the break
+     * for travel, the click goes through: travel breaks need no lease, the rule set and the cost decide. Returns the
+     * policy's verdict in {@code travel} when it decided (null otherwise), so the caller can log it. Never logs.
+     */
+    public record TravelCheck(Verdict guard, BreakPolicy.Verdict travel, boolean allowed) {}
+
+    public TravelCheck checkTravelBreak(String dim, int x, int y, int z, BlockInfo block, BreakPolicy.Snapshot s,
+                                        BreakPolicy.BlockFacts facts, BreakPolicy.Where me) {
+        return checkPolicy(dim, x, y, z, "break", block, s, facts, me, BreakPolicy.Intent.TRAVEL);
+    }
+
+    /**
+     * The owner's place rule (aa372): a real placement click while a job walks under the policy ({@code intent} TRAVEL,
+     * MINE, DIG_OUT or BUILD). The floor and the box rules as before; where only a box rule (no place lease here, outside
+     * every area) would refuse and the policy allows the placement (a refill of a cell the bot dug itself anywhere, a new
+     * block where the rule set is lenient), the click goes through. {@code facts} carries {@code dugByMe}.
+     */
+    public TravelCheck checkPolicyPlace(String dim, int x, int y, int z, BlockInfo block, BreakPolicy.Snapshot s,
+                                        BreakPolicy.BlockFacts facts, BreakPolicy.Where me, BreakPolicy.Intent intent) {
+        return checkPolicy(dim, x, y, z, "place", block, s, facts, me, intent);
+    }
+
+    private TravelCheck checkPolicy(String dim, int x, int y, int z, String action, BlockInfo block, BreakPolicy.Snapshot s,
+                                    BreakPolicy.BlockFacts facts, BreakPolicy.Where me, BreakPolicy.Intent intent) {
+        Verdict v = checkUnlogged(dim, x, y, z, action, block);
+        if (v.allowed() && !v.wouldVeto()) return new TravelCheck(v, null, true);
+        if (v.floor()) return new TravelCheck(v, null, false);
+        BreakPolicy.Action a = "place".equals(action) ? BreakPolicy.Action.PLACE : BreakPolicy.Action.BREAK;
+        BreakPolicy.Verdict pv = BreakPolicy.judge(s, new BreakPolicy.Ask(a, intent, dim, x, y, z, facts, me));
+        return new TravelCheck(v, pv, pv.allowed() || v.allowed());
+    }
+
+    /**
      * Wave 1 (item 3): the tail "guard check ... break" adds when the block is next to a liquid ("lava" / "water",
      * Guard.liquidNextTo), "" for none: the guard only knows boxes, the digging never breaks such a block.
      */
@@ -454,6 +488,14 @@ public final class GuardCore {
             if (l != null) water = true;
         }
         return water ? "water" : null;
+    }
+
+    /**
+     * 0.36.8 (owner 2026-10-18): the liquid that forbids breaking a block, given {@link #liquidNextTo}'s answer. While a
+     * mine job runs ({@code waterOk}) water no longer forbids it; lava always does. Pure.
+     */
+    public static String breakLiquid(String liquid, boolean waterOk) {
+        return waterOk && "water".equals(liquid) ? null : liquid;
     }
 
     /** "guard check x y z <action>": the guard's answer, plus the liquid note for a break (not for an error). */

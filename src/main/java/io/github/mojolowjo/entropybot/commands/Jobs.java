@@ -156,7 +156,9 @@ public final class Jobs {
             @Override
             public boolean boxedIn(int[] me) {
                 LocalPlayer p = Minecraft.getInstance().player;
-                return p != null && bestFreeStep(p, null) == null;
+                // 0.36.7 (owner, aa366): in water it is never sealed in - Baritone swims; the dig-out refused every
+                // side by the water and ended the walk "no path" while the iron was reachable
+                return p != null && !p.isInWater() && bestFreeStep(p, null) == null;
             }
 
             @Override
@@ -196,7 +198,8 @@ public final class Jobs {
             IBaritone b = baritone();
             boolean walk = running() && (walking() || (job.seq != null && job.status != null && job.status.contains("walking")));
             boolean breaking = false;
-            try { breaking = BaritoneAPI.getSettings().allowBreak.value; } catch (Throwable ignored) {}
+            // mining plan phase 1: breaking on for the travel policy alone is still a plain walk for the movement package
+            try { breaking = BaritoneAPI.getSettings().allowBreak.value && !io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelOnlyBreaking(); } catch (Throwable ignored) {}
             boolean fleeing = core.reflexes.reflex() == Reflexes.Reflex.FLEEING || core.reflexes.reflex() == Reflexes.Reflex.RETREATING;
             boolean idle = !commands.busyForQueue() && b != null && idle(b) && !core.reflexes.hold();
             if (running() && job.longRoute && core.reflexes.reflex() != Reflexes.Reflex.NONE) walkReflex = core.reflexes.reflex().name();
@@ -349,7 +352,7 @@ public final class Jobs {
             if (!level.isLoaded(bp)) return false;
             var st = level.getBlockState(bp);
             if (!st.getFluidState().isEmpty() || st.hasBlockEntity() || st.getDestroySpeed(level, bp) < 0) return false;
-            if (Guard.liquidNextTo(level, x, y, z) != null) return false;
+            if (Guard.breakLiquid(level, x, y, z) != null) return false;
             if (level.getBlockState(bp.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
             return pol.digOutAny(dim, x, y, z, RestoreLive.INSTANCE.builtByMe(x, y, z));
         } catch (RuntimeException e) {
@@ -372,7 +375,7 @@ public final class Jobs {
                 || st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK);
         boolean own = (ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
                 && !houseCell(Guard.dimOf(level), x, y, z);         // 0.30.6: a house wall is not a shelter wall
-        return SurfaceSeal.kind(id, leaves, persistent && !own, plant, own, st.hasBlockEntity(), Guard.liquidNextTo(level, x, y, z) != null);
+        return SurfaceSeal.kind(id, leaves, persistent && !own, plant, own, st.hasBlockEntity(), Guard.breakLiquid(level, x, y, z) != null);
     }
 
     /** The surface escape plan: EscapePlan over the surface kinds (breakable: leaves, plants, own blocks), or null. */
@@ -446,7 +449,7 @@ public final class Jobs {
             if (k == SurfaceSeal.Kind.NO) {
                 if (st.is(net.minecraft.tags.BlockTags.LEAVES)) return id + " (persistent: placed by a player, never broken)";
                 if (st.hasBlockEntity()) return id + " (a container or machine)";
-                if (Guard.liquidNextTo(level, c[0], c[1], c[2]) != null) return id + " (next to water or lava)";
+                if (Guard.breakLiquid(level, c[0], c[1], c[2]) != null) return id + " (next to water or lava)";
                 return id + " (not leaves, a plant or my own block)";
             }
             if (k != SurfaceSeal.Kind.OWN && !io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(core.guard.core.policy(), dim, c[0], c[1], c[2]))
@@ -623,12 +626,31 @@ public final class Jobs {
         try { b.getPathingBehavior().cancelEverything(); } catch (Throwable ignored) {}
     }
 
-    /** A walk never breaks or places (the bridge's restoreSafeSettings, for Baritone's part). */
+    /**
+     * A walk's Baritone settings (the bridge's restoreSafeSettings, for Baritone's part). Mining plan phase 1: a walk
+     * runs under the TRAVEL intent; with the cost hook live, breaking stays ON and the policy's costs (x6 outside, x10
+     * in the camp, never under water from in the water, cap 24 a walk) do the limiting; breaking next to water is
+     * Baritone's setting the policy needs for that. Without the hook: as before, no breaking.
+     */
     static void safeSettings() {
         try {
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            boolean build = PaperPlan.ownsBreak() || PaperPlan.ownsPlace();
+            // a mine job's mid-job walks keep the MINE intent (its Baritone mine and vein clear are not travel)
+            boolean mine = false;
+            try { var j = Core.INSTANCE.commands.jobs.job; mine = j != null && !j.done && j.ownsBreaking; } catch (Throwable ignored) {}
+            pr.setIntent(build ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : mine ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE
+                    : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, build ? "plan go" : mine ? "mine walk" : "walk");
+            boolean travel = pr.travelMayBreak();
             // 0.32.3: a plan-go job keeps the breaking/placing its plan needs (PaperPlan owns them for that job only)
-            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak();
-            BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace();
+            // 0.36.8: a mine job's walk to a known ore may dig (MineWater: inside my areas; next to water too, never lava)
+            BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig() || travel;
+            MineWater.set(MineWater.active() || travel);
+            // owner's place rule (aa372): a walk may place under the policy's costs (x3 travel, a refill of its own dug
+            // cell about free, COST_INF where the rule set places nothing); the click veto asks the same policy
+            // (review: TRAVEL walks only - a mine job's walk keeps Mining's allowPlace=false, and the route map's
+            // travelOnlyPlacing holds)
+            BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace() || (pr.travelMayPlace() && !build && !mine);
         } catch (Throwable ignored) {}
     }
 
@@ -1619,7 +1641,7 @@ public final class Jobs {
             j.retraceFinal = null;
             j.retraceHops = null;
             j.paperEscape = true;
-            PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: plan from the highest point reached
+            paperEscape(p);        // P3.4: plan from the highest point reached
             return false;
         }
         int[] nx = j.retraceHops != null && !j.retraceHops.isEmpty() ? j.retraceHops.pollFirst() : null;
@@ -1664,7 +1686,7 @@ public final class Jobs {
             if (!j.retraceTried || j.paperEscape || j.retraceFinal != null || !j.type.equals("travel") || !underGround(p)) return false;
             j.paperEscape = true;
             LOG.info("[entropybot] escape: the trail back didn't get me out from {}: walk plan, then a digging plan", fmt(here(p)));
-            PaperPlan.INSTANCE.escape(commands, p, commands.owner());
+            paperEscape(p);
             return true;
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] escape: paper plan failed to start: {}", e.toString());
@@ -1672,9 +1694,25 @@ public final class Jobs {
         }
     }
 
+    /** 0.36.a6: under AA the bot gets itself out (AaRuntime's escape: pillar or climb) - no plan, no whisper to wait for. */
+    private boolean aaEscapes() {
+        return commands.aaRuntime != null && commands.aaRuntime.ownsEscape();
+    }
+
+    /** P3.4's paper escape (walk plan, then digging plan, whispered), unless AA gets the bot out itself. */
+    private void paperEscape(LocalPlayer p) {
+        if (aaEscapes()) {
+            LOG.info("[entropybot] escape: aa drives - no paper plan, aa gets me out");
+            return;
+        }
+        PaperPlan.INSTANCE.escape(commands, p, commands.owner());
+    }
+
     /** 0.33.0 (A1): the walk's end once the paper escape runs: no staircase, no dig-out; the plans' answer is whispered. */
     String paperEscapeEnd(LocalPlayer p) {
-        String s = "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
+        String s = aaEscapes()
+                ? "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; aa gets me out next"
+                : "error: stuck under ground at " + fmt(here(p)) + " - my trail back didn't get me out; planning a way out (on foot, then with digging): the answer comes as a whisper - next: plan last";
         LOG.info("[entropybot] escape: {}", s);
         return s;
     }
@@ -1691,7 +1729,7 @@ public final class Jobs {
             if (hops.isEmpty()) {
                 LOG.info("[entropybot] retrace ({}): no trail back to open sky from {}", why, fmt(me));
                 j.paperEscape = true;
-                PaperPlan.INSTANCE.escape(commands, p, commands.owner());        // P3.4: a long search, then a plan with digging
+                paperEscape(p);        // P3.4: a long search, then a plan with digging
                 return false;
             }
             j.retraceHops = new java.util.ArrayDeque<>(hops);
@@ -1810,13 +1848,13 @@ public final class Jobs {
         if (houseCell(dim, x, y, z)) return EscapePlan.Kind.FLOOR_ONLY;      // 0.30.6: never through a house's wall, floor or roof
         // 0.27.3 fix: my own shelter blocks (shelterBlocks / the ledger) are mine to open, not a stranger's build
         if ((ShelterJob.ownBlocks(commands).contains(x + " " + y + " " + z) || RestoreLive.INSTANCE.builtByMe(x, y, z))
-                && !st.hasBlockEntity() && Guard.liquidNextTo(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;
+                && !st.hasBlockEntity() && Guard.breakLiquid(level, x, y, z) == null) return EscapePlan.Kind.BREAKABLE;
         // 0.30.7: the owner's rule (2026-10-11): in my own neutral/destroy areas any block may go (also for the stair side)
         if (digOutAny(level, pol, dim, x, y, z)) return EscapePlan.Kind.BREAKABLE;
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         boolean ok = RestoreRules.natural(id) && !st.hasBlockEntity() && !core.guard.isProtectedBlock(st.getBlock())
                 && !st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && st.getDestroySpeed(level, bp) >= 0
-                && Guard.liquidNextTo(level, x, y, z) == null
+                && Guard.breakLiquid(level, x, y, z) == null
                 && io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(pol, dim, x, y, z)
                 && !(level.getBlockState(bp.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
         return ok ? EscapePlan.Kind.BREAKABLE : EscapePlan.Kind.FLOOR_ONLY;
@@ -1829,6 +1867,22 @@ public final class Jobs {
      */
     boolean startEscape(LocalPlayer p, Job j) {
         return startEscape(p, j, false);
+    }
+
+    /**
+     * 0.36.a3 (aa370: the same two "stuck ... underground" lines every second for 25 s while the bot bobbed in water at
+     * one x z): the same kind at the same x z logs once per 10 s.
+     */
+    private final java.util.Map<String, String> stuckLogKey = new java.util.HashMap<>();
+    private final java.util.Map<String, Long> stuckLogAt = new java.util.HashMap<>();
+    private boolean stuckLogDue(String kind, int[] me) {
+        String k = me[0] + " " + me[2];
+        long n = System.currentTimeMillis();
+        Long at = stuckLogAt.get(kind);
+        if (k.equals(stuckLogKey.get(kind)) && at != null && n - at < 10_000) return false;
+        stuckLogKey.put(kind, k);
+        stuckLogAt.put(kind, n);
+        return true;
     }
 
     /** towardGoal: a walk that ended short (only steps closer to the goal; EscapePlan). */
@@ -1862,7 +1916,7 @@ public final class Jobs {
         io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
         EscapePlan.Escape e = EscapePlan.plan((x, y, z) -> escapeKind(level, pol, dim, x, y, z), me, travelDest(j), towardGoal);
         if (e == null) {
-            LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}: {}", fmt(me), EscapePlan.MAX_BREAKS,
+            if (stuckLogDue("noway", me)) LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}: {}", fmt(me), EscapePlan.MAX_BREAKS,
                     EscapePlan.explain((x, y, z) -> escapeKind(level, pol, dim, x, y, z), c -> surfaceWhat(level, dim, c), me));
             core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);
             // 0.27.3 (d3): underground inside the areas: a staircase up toward the surface instead (after this job ends)
@@ -1950,7 +2004,8 @@ public final class Jobs {
         if (n <= 0) return;
         int[] side = EscapePlan.stairSide(g, me, dest);
         if (side == null) {
-            LOG.info("[entropybot] stuck at {} underground: no side to dig a staircase up from (built blocks, fluid or a protect box next to me)", fmt(me));
+            if (stuckLogDue("stairs", me))
+                LOG.info("[entropybot] stuck at {} underground: no side to dig a staircase up from (built blocks, fluid or a protect box next to me)", fmt(me));
             return;
         }
         java.util.List<String> steps = new java.util.ArrayList<>(StairPlan.upSteps(me[0], me[1], me[2], side[0], side[1], n));

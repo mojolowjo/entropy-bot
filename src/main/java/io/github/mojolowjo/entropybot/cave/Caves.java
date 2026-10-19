@@ -112,6 +112,18 @@ public final class Caves {
     /** B7e: how many caves it remembers (for "memory"). */
     public synchronized int size() { return caves.size(); }
 
+    /** 0.36.a8 (AA's iron scorer): the nearest cave of this dimension with frontier left (by its entrance), or null. */
+    public synchronized Cave nearest(String dim, int x, int y, int z) {
+        Cave best = null;
+        long bestD = Long.MAX_VALUE;
+        for (Cave c : caves.values()) {
+            if (!c.dim.equals(dim) || !c.frontierLeft) continue;
+            long d = (long) (c.ex - x) * (c.ex - x) + (long) (c.ey - y) * (c.ey - y) + (long) (c.ez - z) * (c.ez - z);
+            if (d < bestD) { bestD = d; best = c; }
+        }
+        return best;
+    }
+
     /**
      * The cave for a "mine cave" starting at x y z: the named one, else the nearest one in this dimension with frontier
      * left whose entrance is within PICK_WITHIN, else a new one with its entrance here. Null for an unknown name.

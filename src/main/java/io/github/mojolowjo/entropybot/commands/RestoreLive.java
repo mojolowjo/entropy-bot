@@ -96,7 +96,15 @@ public final class RestoreLive {
                 + (note.length() > 0 ? " (" + note + ")" : "");
         String capNote = book.ledger.takeNote();
         if (capNote != null) LOG.info("[entropybot] restore: {}", capNote);
+        dugFromLedger();
         return loadNote;
+    }
+
+    /** The refill rule's dug set starts over from this world's ledger: the cells I broke (not the ones I built). */
+    private void dugFromLedger() {
+        List<String> keys = new ArrayList<>();
+        for (Ledger.Entry e : book.ledger.all()) if (e.why == null || !e.why.startsWith("built:")) keys.add(e.key());
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.resetDug(keys);
     }
 
     private void changed() {
@@ -159,11 +167,15 @@ public final class RestoreLive {
         BlockState st = mc.level.getBlockState(pos);
         if (st.isAir()) return;
         String id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+        // owner's place rule (aa372): every cell a job of mine breaks may be refilled for about nothing (BreakPolicy)
+        io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.markDug(key);
         String reason;
         Long esc;
         synchronized (expected) { esc = expected.remove(key); }
         if (esc != null && esc == j.id) reason = Ledger.ESCAPE;
         else if (pathJob == j.id && !pathTargets.contains(id) && !purpose(id)) reason = Ledger.PATH;
+        // mining plan phase 1: a walk's break under the travel policy (the guard marked it) is a path break of that walk
+        else if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.takeTravelBreak(key)) reason = Ledger.PATH;
         else return;                                         // the job's purpose (or no incidental context)
         // V1a: the ledger is off inside a destroy area (AreaTypeRules.restore)
         if (!io.github.mojolowjo.entropybot.guard.AreaTypeRules.restore(Guard.INSTANCE.core.basePolicy().typeAt(dim, pos.getX(), pos.getY(), pos.getZ()))) return;

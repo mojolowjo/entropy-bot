@@ -33,6 +33,22 @@ public final class ReflexRules {
         return !somethingDrives;
     }
 
+    /** 0.36.a1: what the air reflex does this tick. */
+    public enum Air { NONE, DEFER, SWIM, TAKEOVER }
+
+    /**
+     * 0.36.a1 (live: the held jump fought Baritone's dig under water - the bot bobbed off the block, lost its look and
+     * ran out of air digging down). While something drives: DEFER (no key of ours; Baritone jumps in liquid itself)
+     * until the air is below a third, then TAKEOVER (Baritone paused, jump held) - kept until the air is full again or
+     * the bot is out of the water, so it does not dive straight back at a third and bounce. Nothing driving: SWIM.
+     */
+    public static Air air(boolean eyesInWater, boolean inWater, int air, int maxAir, boolean somethingDrives, boolean tookOver) {
+        if (tookOver && inWater && air < maxAir) return Air.TAKEOVER;
+        if (!eyesInWater) return Air.NONE;
+        if (!somethingDrives) return Air.SWIM;
+        return air * 3 < maxAir ? Air.TAKEOVER : Air.DEFER;
+    }
+
     /** 0.34.3: a dry cell to stand on (solid ground under it, feet and head free of blocks and fluid). */
     public interface Dry { boolean standable(int x, int y, int z); }
 

@@ -59,6 +59,13 @@ public final class ClearJob {
         public Options liquidBlocks(boolean l) { liquidBlocks = l; return this; }
 
         /**
+         * 0.36.a3 (aa370: the known-ore vein clear refused iron touching water while the mine job allowed it - "broke 0;
+         * next to water/lava"): blocks next to water may be broken (owner's rule 0.36.8); lava still never.
+         */
+        public boolean waterOk;
+        public Options waterOk(boolean w) { waterOk = w; return this; }
+
+        /**
          * Water plan: "dig ... water": water that stops the dig is sealed off ({@link WaterPlan}) and the dig goes on;
          * waterLarge ("water large"): a large body of water too. waterTally: the rounds so far (shared by the re-runs of
          * the same dig); line: the dig's own command, for the confirm question.
@@ -119,6 +126,8 @@ public final class ClearJob {
     public final String floorBlock;
     /** {@link Options#liquidBlocks} */
     public final boolean liquidBlocks;
+    /** {@link Options#waterOk} */
+    public final boolean waterOk;
     /** {@link Options#water}: keep a reserve of junk blocks for sealing ("junk drop" throws the rest) */
     public final boolean water;
     /** F: where (feet x y z) and when (tick) "junk drop" threw junk; those drops are left alone a while ({@link JunkDrop#nearThrow}) */
@@ -206,6 +215,7 @@ public final class ClearJob {
         this.floor = o.floor;
         this.floorBlock = o.floorBlock;
         this.liquidBlocks = o.liquidBlocks;
+        this.waterOk = o.waterOk;
         this.water = o.water;
     }
 

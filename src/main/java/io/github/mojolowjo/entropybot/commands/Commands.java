@@ -62,6 +62,17 @@ public final class Commands implements Chains.Env {
     Chains chains;
     /** B1: the brain's game side (null until the world's stores are loaded). */
     BrainRuntime brainRuntime;
+    /** 0.36.0: AA, the new brain (AA_PLAN); null before a world. */
+    AaRuntime aaRuntime;
+
+    /** AA is on (it then owns the job slot; the brain, rules, assist, the supply rewrite step aside). */
+    boolean aaOn() { return aaRuntime != null && aaRuntime.on(); }
+
+    /** The AI operator's job command while AA's task runs: queued as an AI request (the reply), or null when AA is off or idle. */
+    public String aaPostAi(String cmd) { return aaOn() && aaRuntime.chainRunning() ? aaRuntime.postAi(cmd) : null; }
+
+    /** The AI's stop with AA on: its own requests go (the text), else null (AA off: the old global stop). */
+    public String aaCancelAi() { return aaOn() ? aaRuntime.cancelAi() : null; }
     private PolicyCommands policy;
     /** The kubejs/bridge folder: state.json out, cmd.json in. */
     private BotFiles stateFiles;
@@ -618,7 +629,9 @@ public final class Commands implements Chains.Env {
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
         chains = new Chains(this, brainStore.data());
         brainRuntime = new BrainRuntime(this);                  // B1: the brain (the autominer retired into it)
-        chains.endHook = brainRuntime::chainEnded;
+        chains.onEnd(brainRuntime::chainEnded);
+        aaRuntime = new AaRuntime(this);                        // 0.36.0: AA (registers its own end listener)
+        sb.append("; aa ").append(aaRuntime.on() ? "on" : "off").append(" (tree ").append(aaRuntime.tree.nodes().size()).append(" nodes)");
         chains.endNote = DigCommands::stairEndNote;                  // 0.30.5: honest stair-chain endings
         sb.append("; policy: ").append(policy.apply());
         JsonObject b = brainStore.data();
@@ -684,6 +697,7 @@ public final class Commands implements Chains.Env {
                     chains.endChain("stopped: " + e);
                 }
             }
+            if (tick % 20 == 7) Clearing.keptTick(this);                     // a kept craft table the chain never came back for
             if (tick % 5 == 1 && !chains.running()) jobs.stairsTick();      // 0.27.3 (d3): a sealed pit's staircase up
             if (tick % 5 == 4) {
                 try {
@@ -705,7 +719,7 @@ public final class Commands implements Chains.Env {
                     mule.stop("error: " + e);
                 }
             }
-            if (tick % 20 == 5) chains.deathTick(dead);
+            if (tick % 20 == 5 && !aaOn()) chains.deathTick(dead);     // 0.36.0: with AA on, AA re-chooses after a death (no chain resume)
             if (worldTicks == 1) respawn.joined();
             if (tick % 20 == 6) {
                 try {                                         // 0.24.3: joined or respawned outside every area: say so once
@@ -719,12 +733,16 @@ public final class Commands implements Chains.Env {
                     if (errors++ < 5) LOG.warn("[entropybot] respawn check: {}", e.toString());
                 }
             }
-            if (!chains.resumeChecked() && worldTicks > 200) chains.resumeRun();
-            if (tick % 100 == 55 && worldTicks > 400) {
-                chains.rulesTick();
+            if (!chains.resumeChecked() && worldTicks > 200) {
+                if (aaOn()) chains.dropRun("aa is on: it chooses by itself");     // 0.36.1: no saved run resumes under AA
+                else chains.resumeRun();
+            }
+            if (tick % 100 == 55 && worldTicks > 400 && !aaOn()) {
+                chains.rulesTick();                            // 0.36.0: off while AA runs (AA_PLAN 4: a poster later)
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
-            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null) brainRuntime.brain.tick();     // B1: every 2 s, never throws
+            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null && !aaOn()) brainRuntime.brain.tick();     // B1: every 2 s, never throws; 0.36.5: never next to AA
+            if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) aaRuntime.tick(tick);             // 0.36.0: AA at 4 Hz, never throws
         planning.drainSearches();                                                                    // 0.23.1: the planner's answers from the worker
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
             if (tick % 40 == 21) {
@@ -779,7 +797,7 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 7) nearTick(mc, player);         // 0.21.2: the near-me zone follows the owner
-            if (tick % 20 == 12) {
+            if (tick % 20 == 12 && !aaOn()) {                   // 0.36.1: escort and assist are off under AA (aa on ends them)
                 try {
                     escortTick();
                 } catch (RuntimeException e) {
@@ -798,7 +816,7 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] hold: {}", e.toString());
                 }
             }
-            if (tick % 20 == 17) {
+            if (tick % 20 == 17 && !aaOn()) {                   // 0.36.1: under AA the queue is drained by AA's slot (an owner order)
                 try {
                     vocab.tick();                       // V1b: the queue
                 } catch (RuntimeException e) {
@@ -1032,6 +1050,13 @@ public final class Commands implements Chains.Env {
             brainRuntime.yieldToOwner(Texts.verbAndRest(message)[0]);
             r = handleOnce(from, message, internal, auto, l);
         }
+        // 0.36.0 AA (AA_PLAN 4, Q1): the owner's order preempts AA's needs/idle task (logged); an AI command never does
+        // (AiRuntime queues it instead, see AiRuntime.run)
+        if (!internal && !auto && r != null && r.pending() == null && r.text() != null && r.text().startsWith("busy: ") && aaRuntime != null
+                && aaRuntime.chainRunning() && from.equalsIgnoreCase(owner()) && !io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling()) {
+            aaRuntime.yieldToOwner(Texts.verbAndRest(message)[0]);
+            if (!aaRuntime.chainRunning()) r = handleOnce(from, message, internal, auto, l);
+        }
         return r;
     }
 
@@ -1064,12 +1089,14 @@ public final class Commands implements Chains.Env {
             }
         }
         // B1 (owner's answer 4.4): with the brain on, the owner's dig / mine strip|cave / explore gets its supplies first when short
-        if (isOwner && !internal && !auto && brainRuntime != null) {
+        if (isOwner && !internal && !auto && brainRuntime != null && !aaOn()) {          // 0.36.0: off with AA on (the line runs as typed)
             Reply sup = brainRuntime.ownerSupply(from, raw);
             if (sup != null) return sup;
         }
         if (verb.equals("help") || verb.equals("?") || verb.isEmpty()) return Reply.now(HelpCommand.answer(rest, isOwner, owner()));
-        if (verb.equals("check")) return Reply.now(selfCheck.command(player) + "\n" + io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.counters() + "; " + io.github.mojolowjo.entropybot.view.ViewLive.NEWS.counters());
+        if (verb.equals("check")) return Reply.now(selfCheck.command(player) + "\n" + io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.counters() + "; " + io.github.mojolowjo.entropybot.view.ViewLive.NEWS.counters()
+                + (aaRuntime == null ? "" : "\n" + aaRuntime.statusLine() + "; " + aaRuntime.counts()));      // 0.36.0: AA's self-check line
+        if (verb.equals("aa")) return Reply.now(isOwner ? AaCommands.handle(this, rest) : "sorry, only " + owner() + " can use aa");     // 0.36.0
         // 0.32.0 (operator view): the last failure in full, the text map, the reply setting
         // review: "why" and "why cut" are the operator view's; "why brain" / "why threats" stay the brain's
         if (verb.equals("why") && (rest.isBlank() || rest.trim().equalsIgnoreCase("cut"))) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.why(System.currentTimeMillis(), rest));
@@ -1129,7 +1156,9 @@ public final class Commands implements Chains.Env {
         if (verb.equals("stop")) {
             // 0.35.0: the owner's stop pauses the AI operator until the next request (the AI's own stop does not)
             String aiNote = isOwner && !internal && !auto ? io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.ownerStopped() : "";
-            return Reply.now(stopAll() + aiNote);
+            // 0.36.0: AA's task ends, the slot waits; 0.36.1: only the owner's own stop holds it (not the AI's, not a guest's)
+            String aaNote = aaRuntime != null && !internal && isOwner && !io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling() ? aaRuntime.ownerStopped() : "";
+            return Reply.now(stopAll() + aiNote + aaNote);
         }
         if (verb.equals("defence") || verb.equals("defense")) {                     // V1b: the self-defence setting
             Boolean pl = io.github.mojolowjo.entropybot.vocab.AttackRules.playersSetting(rest);
@@ -1155,12 +1184,14 @@ public final class Commands implements Chains.Env {
             }
             return Reply.now(vocab.dismiss(from, player));
         }
+        if (verb.equals("assist") && aaOn() && !rest.trim().toLowerCase().matches("^(off|status)$")) return Reply.now("aa is on - assist is off while AA runs (aa off first)");   // 0.36.0
         if (verb.equals("assist")) return Reply.now(assist.command(from, rest, player));     // 0.24.2
         if (verb.equals("guard") && !io.github.mojolowjo.entropybot.vocab.HoldRules.fenceForm(rest)) {     // V1b: guard <area|place|marker>
             vocab.endHold("a new order");
             if (jobs.running()) jobs.finish("stopped: guard");
             return Reply.now(vocab.guard(from, rest, player));
         }
+        if (verb.equals("escort") && aaOn() && !rest.trim().toLowerCase().matches("^(off|stop|status)$")) return Reply.now("aa is on - escort is off while AA runs (aa off first)");   // 0.36.0
         if (verb.equals("escort")) return Reply.now(escortCommand(from, rest.isBlank() ? "me" : rest, player));          // C7; V1b: escort alone = the sender (the owner)
         if (verb.equals("attack")) return Reply.now(vocab.attack(from, rest, player));     // V1b: the attack rules (C1's point key sends attack target <id>)
         if (verb.equals("routine") || verb.equals("routines")) return Reply.now(chains.routineCommand(rest));
@@ -1172,7 +1203,9 @@ public final class Commands implements Chains.Env {
             return Reply.now("the autominer is the brain's idle list now: " + brainRuntime.brain.status());
         }
         String copyAsAssist = verb.equals("brain") ? io.github.mojolowjo.entropybot.assist.AssistRules.fromBrainCopy(rest) : null;
+        if (copyAsAssist != null && aaOn()) return Reply.now("aa is on - assist is off while AA runs (aa off first)");   // 0.36.5
         if (copyAsAssist != null) return Reply.now(assist.command(from, copyAsAssist, player));     // 0.24.2: brain copy = assist
+        if (verb.equals("brain") && rest.trim().equalsIgnoreCase("on") && aaOn()) return Reply.now("aa is on - aa off first (aa and brain exclude each other)");   // 0.36.0
         if (verb.equals("brain")) return Reply.now(brainRuntime.brain.command(rest));
         if (verb.equals("idle")) return Reply.now(brainRuntime.brain.idle(rest));
         if (verb.equals("dayplan")) return Reply.now(brainRuntime.brain.dayplan(rest));      // 0.26.3: the day plan
@@ -1735,6 +1768,7 @@ public final class Commands implements Chains.Env {
         if (mem.has("state") && "broken".equals(mem.get("state").getAsString())) s += " | a note file was broken at start (debug memory)";
         if (vocab.hold != null) s += " | " + vocab.hold.what();
         if (!vocab.queued.isEmpty()) s += " | " + vocab.queued.size() + " queued";
+        if (aaOn()) s += " | " + aaRuntime.statusPart();          // 0.36.0: who drives
         return s + vocab.statusPart(p);
     }
 
@@ -2545,6 +2579,11 @@ public final class Commands implements Chains.Env {
         } catch (RuntimeException e) {
             errs.add("brain: " + e);
         }
+        try {                                                   // 0.36.0: AA (on, driver, task, danger)
+            if (aaRuntime != null) s.add("aa", aaRuntime.stateBlock());
+        } catch (RuntimeException e) {
+            errs.add("aa: " + e);
+        }
         JsonObject pm = new JsonObject();
         pm.addProperty("listening", true);
         pm.addProperty("owner", owner());
@@ -2767,6 +2806,17 @@ public final class Commands implements Chains.Env {
 
         @Override
         public String vetoes(int max) { return core.guard.core.log().recent(max); }
+
+        @Override
+        public String rules() { return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.status(); }
+
+        @Override
+        public String why(String dim, int x, int y, int z, String action, String intent) {
+            var in = io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.of(intent);
+            var act = "place".equals(action) ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.PLACE : io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK;
+            return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.why(Minecraft.getInstance().level, dim, x, y, z, act,
+                    in == null ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL : in);
+        }
 
         @Override
         public String check(String dim, int x, int y, int z, String action) {

@@ -238,8 +238,29 @@ public final class Chains {
 
     public String name() { return chain == null ? null : chain.name; }
 
-    /** B1: told how every chain ends (name, message). */
-    java.util.function.BiConsumer<String, String> endHook;
+    /** 0.36.2 (AA review 6): no next step (or retry) for the next {@code ticks} ticks: AA's danger pause holds the chain. */
+    public void holdFor(long ticks) {
+        if (chain != null) chain.retryAt = Math.max(chain.retryAt, env.tick() + ticks);
+    }
+
+    /** B1: told how every chain ends (name, message); 0.36.0 (AA P2): a fan-out, the brain and AA both listen. */
+    private final List<java.util.function.BiConsumer<String, String>> endHooks = new ArrayList<>();
+
+    /** Adds a listener for every chain's end (name, message). A listener that throws is logged, the others still run. */
+    public void onEnd(java.util.function.BiConsumer<String, String> hook) { endHooks.add(hook); }
+
+    /** For tests: how many end listeners are set. */
+    int endHookCount() { return endHooks.size(); }
+
+    private void fireEnd(String name, String msg) {
+        for (java.util.function.BiConsumer<String, String> h : endHooks) {
+            try {
+                h.accept(name, msg);
+            } catch (RuntimeException e) {
+                env.log("chain " + name + ": an end listener failed: " + e);
+            }
+        }
+    }
 
     /** B1: a corpse trip is due or runs (the brain starts nothing before it). */
     public boolean corpseBusy() { return corpsePending || corpseRun; }
@@ -318,7 +339,7 @@ public final class Chains {
         env.log("chain " + chain.name + ": " + msg);
         if (chain.name.equals("autominer")) lastChainEnd = msg;
         if (TRACKED_ENDS.contains(chain.name)) endsByName.put(chain.name, msg);   // 0.30.5: climb counts its own failures
-        if (endHook != null) endHook.accept(chain.name, msg);         // B1: the brain hears how its chain ended
+        fireEnd(chain.name, msg);                                      // B1: the brain (and AA) hear how the chain ended
         chain = null;
         clearRun();
     }
@@ -332,8 +353,11 @@ public final class Chains {
         return n;
     }
 
+    /** 0.36.1: AA's chain is never saved or resumed (AA chooses again after a restart). */
+    static final String AA_CHAIN = "aa";
+
     void saveRun() {
-        if (chain == null || quiet(chain.name)) return;
+        if (chain == null || quiet(chain.name) || AA_CHAIN.equals(chain.name)) return;
         JsonObject r = new JsonObject();
         r.addProperty("name", chain.name);
         r.addProperty("text", chain.text);
@@ -387,6 +411,17 @@ public final class Chains {
     public void rearmResume() { runResumeChecked = false; }
 
     public boolean resumeChecked() { return runResumeChecked; }
+
+    /** 0.36.1: with AA on, a saved run is dropped with a line instead of resumed (AA's slot decides what runs). */
+    public void dropRun(String why) {
+        runResumeChecked = true;
+        JsonObject r = obj(mem, "run");
+        if (r == null) return;
+        String name = str(r, "name", "run");
+        env.log("chain " + name + ": the saved run is dropped (" + why + ")");
+        if (!AA_CHAIN.equals(name)) env.whisper(str(r, "from", env.owner()), "I won't carry on with \"" + name + "\" after the restart: " + why + " (PM it again)");
+        clearRun();
+    }
 
     /** Every 5 ticks: starts the next step once the last one has finished. */
     /**

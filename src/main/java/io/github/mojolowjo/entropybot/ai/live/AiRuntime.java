@@ -180,6 +180,9 @@ public final class AiRuntime {
 
     public boolean on() { return loop != null && loop.on(); }
 
+    /** 0.36.0: a command of the model's is being handled right now (Commands tells the owner's orders from the AI's). */
+    public boolean calling() { return calling; }
+
     // ---- the tick (game thread) ----
 
     /** From Commands.tick, in a world. Never throws. */
@@ -271,6 +274,12 @@ public final class AiRuntime {
             Chains.Reply rep = c.handle(c.owner(), cmd, false, l);
             boolean job = rep != null && rep.pending() != null;
             String text = rep == null ? null : rep.text();
+            // 0.36.0 AA (AA_PLAN 4): with AA on, a command that is busy because of AA's own task is queued as an AI
+            // request (AA runs it when the task ends) instead of making AA yield; the AI is told so
+            if (!job && text != null && text.startsWith("busy: ")) {
+                String q = c.aaPostAi(cmd);
+                if (q != null) text = q;
+            }
             String shaped = text == null || text.isBlank() ? (job ? "started" : "ok") : c.aiShape(cmd, text);
             loop.onCommandResult(cmd, shaped, job, now);
         } catch (RuntimeException e) {
@@ -346,6 +355,8 @@ public final class AiRuntime {
                 if (!on()) return "the AI operator is off";
                 loop.stopByOwner(now);
                 if (arg.equalsIgnoreCase("all")) {
+                    String aa = c.aaCancelAi();            // 0.36.0: with AA on, the AI's stop ends only the AI's own request, never the owner's or a need
+                    if (aa != null) return "ok: AI stopped; " + aa + " (ai on or your next request starts the AI again)";
                     calling = true;
                     try {
                         c.handle(c.owner(), "stop", false, null);

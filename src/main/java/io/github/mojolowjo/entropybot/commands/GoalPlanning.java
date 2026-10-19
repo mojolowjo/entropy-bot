@@ -59,6 +59,7 @@ final class GoalPlanning {
 
     PlanFacts facts(LocalPlayer p) {
         PlanFacts f = new PlanFacts();
+        if (Core.INSTANCE.files() != null) io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files().worldRoot().toString());
         Map<String, Integer> inv = Gui.inventory(p);
         Set<String> food = new HashSet<>();
         for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
@@ -74,6 +75,17 @@ final class GoalPlanning {
         if (CampCommands.near(lv, feet, "furnace")) f.flag("furnace");
         f.dir = CampCommands.quarryDir(lv, feet);
         List<int[]> free = CampCommands.freeRing(lv, feet, f.dir);
+        if (free.size() < 2) {
+            // 0.36.4 (aa40c: at the top of a climb no cell by the feet was free for 30 min): the nearest standable cell
+            // inside my areas with two free cells by it, within 6 first, then 24; the place steps walk there first
+            int[] s = openSpot(lv, feet, f.dir, 6, 1);
+            if (s == null) s = openSpot(lv, feet, f.dir, 24, 2);
+            if (s != null) {
+                LOG.info("[entropybot] plan: no free spot by my feet at {} - using {} {} {} (the place steps walk there first)", Jobs.fmt(feet), s[0], s[1], s[2]);
+                f.feet = s;
+                free = CampCommands.freeRing(lv, s, f.dir);
+            }
+        }
         if (free.size() > 0) { f.table = free.get(0); f.flag("spot:table"); }
         if (free.size() > 1) { f.furnace = free.get(1); f.flag("spot:furnace"); }
         f.flag("quarry");
@@ -83,25 +95,45 @@ final class GoalPlanning {
         return f;
     }
 
-    /** The stock view counts the bag too: only the rest is "in storage". */
-    static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) {
-        Map<String, Integer> out = new HashMap<>();
-        for (Map.Entry<String, Integer> e : totals.entrySet()) {
-            int n = e.getValue() - bag.getOrDefault(e.getKey(), 0);
-            if (n > 0) out.put(e.getKey(), n);
+    /**
+     * The stock view counts the bag too: only the rest is "in storage". 0.36.2: the stock's ids are short ("oak_log"),
+     * the bag's namespaced ("minecraft:oak_log"): both are compared short, else nothing was taken off and the planner
+     * planned "get coal 1" / "get planks 3" for what the bag already held (aa-v0 open point h).
+     */
+    /** 0.36.4: the nearest cell within r (step) where the bot can stand, sky open, inside my areas, 2+ free cells by it. */
+    private int[] openSpot(ClientLevel lv, int[] f, int[] dir, int r, int step) {
+        String dim = Storage.dim();
+        int[] best = null;
+        long bestD = Long.MAX_VALUE;
+        for (int dx = -r; dx <= r; dx += step) for (int dz = -r; dz <= r; dz += step) for (int dy = -4; dy <= 4; dy++) {
+            long d = (long) dx * dx + (long) dz * dz + (long) dy * dy;
+            if (d == 0 || d >= bestD) continue;
+            int[] cell = {f[0] + dx, f[1] + dy, f[2] + dz};
+            BlockPos b = new BlockPos(cell[0], cell[1], cell[2]);
+            if (!c.inAreas(dim, cell[0], cell[2]) || !lv.isLoaded(b)) continue;
+            if (!CampCommands.placeable(lv, b) || !lv.getBlockState(b.above()).canBeReplaced() || !lv.canSeeSky(b.above())) continue;
+            if (CampCommands.freeRing(lv, cell, dir).size() < 2) continue;
+            best = cell;
+            bestD = d;
         }
-        return out;
+        return best;
     }
+
+    static Map<String, Integer> minus(Map<String, Integer> totals, Map<String, Integer> bag) { return PlanFacts.minusBag(totals, bag); }
 
     /** Logs, stone and ores within 16 blocks (8 up and down): the trees, stone and ore:<family> facts. */
     static void scan(ClientLevel lv, int[] c, PlanFacts f) {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         boolean stoneBelow = false;
+        long now = System.currentTimeMillis();
         for (int dx = -16; dx <= 16; dx++) for (int dz = -16; dz <= 16; dz++) for (int dy = -8; dy <= 8; dy++) {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
             if (!lv.isLoaded(m)) continue;
             String id = lv.getBlockState(m).getBlock().getDescriptionId();
-            if (id.endsWith("_log") || id.endsWith("_stem")) f.flag("trees");
+            if (id.endsWith("_log") || id.endsWith("_stem")) {
+                // 0.36.3: a trunk the chopper could not get at is no tree for the plan
+                if (!io.github.mojolowjo.entropybot.chop.Unreachable.blocked(c[0] + dx, c[2] + dz, now)) f.flag("trees");
+            }
             else if (id.endsWith("_ore")) {
                 String fam = id.substring(id.lastIndexOf('.') + 1).replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
                 f.flag("ore:" + fam);
@@ -308,7 +340,8 @@ final class GoalPlanning {
         try {
             Object[] hit = hookCache.get(goalText);
             long now = System.currentTimeMillis();
-            if (hit != null && now - (Long) hit[0] < 60_000) return (String) hit[1];
+            // 0.36.2: a cached routine name that was deleted since (AA drops a stale, infeasible one) is planned afresh
+            if (hit != null && now - (Long) hit[0] < 60_000 && (hit[1] == null || !((String) hit[1]).startsWith("goal_") || routineText((String) hit[1]) != null)) return (String) hit[1];
             String chain = null;
             LocalPlayer p = Minecraft.getInstance().player;
             GoalGrammar.Goal g = GoalGrammar.parse(goalText, n -> c.policyArea(n) != null);
@@ -329,17 +362,42 @@ final class GoalPlanning {
                             c.saved();
                             ch = g.routine();
                         }
-                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch});
+                        // S0 (MINING_PLAN 10.1): why there is no chain, for AA's NONE
+                        String why = ch != null ? null : r == null ? "the search threw" : !r.ok() ? (r.missing() != null ? "missing " + r.missing() : String.valueOf(r.error()))
+                                : r.steps().isEmpty() ? "nothing to do - I have it" : "the plan could not be saved";
+                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch, why});
                     });
                     return null;
                 }
             }
-            hookCache.put(goalText, new Object[]{now, chain});
+            hookCache.put(goalText, new Object[]{now, chain, chain != null ? null : p == null ? "not in a world" : g.error()});
             return chain;
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] plan: brain hook: {}", e.toString());
             return null;
         }
+    }
+
+    /**
+     * S0 (MINING_PLAN 10.1): {@link #chainFor} with its state: READY (the chain and the planner's cost from the plans
+     * store, 0 when unknown), NONE (a fresh "no plan" answer in the cache, with why), else SEARCHING (the worker runs).
+     */
+    io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved chainState(String goalText) {
+        String ch = chainFor(goalText);
+        if (ch != null) {
+            double cost = 0;
+            try {
+                JsonObject pl = plansStore();
+                if (pl.has(ch) && pl.get(ch).isJsonObject() && pl.getAsJsonObject(ch).has("cost")) cost = pl.getAsJsonObject(ch).get("cost").getAsDouble();
+            } catch (RuntimeException ignored) {
+                // the cost is a ranking hint only; 0 when the store cannot say
+            }
+            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.ready(ch, cost);
+        }
+        Object[] hit = hookCache.get(goalText);
+        if (hit != null && System.currentTimeMillis() - (Long) hit[0] < 60_000 && hit[1] == null)
+            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.none(hit.length > 2 ? (String) hit[2] : null);
+        return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.searching();
     }
 
     String actions(String rest) { return ActionTable.shortText(rest); }

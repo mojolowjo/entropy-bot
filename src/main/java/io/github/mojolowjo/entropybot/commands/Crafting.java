@@ -386,8 +386,19 @@ final class Crafting {
      * at the end (a craft); else the job ends once the furnace runs and the pickup collects it when due (the smelt verb).
      */
     String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient) {
+        return planSteps(p, plan, label, out, collectTargets, kind, efficient, false);
+    }
+
+    /** How near a furnace must be to count as "here" ({@code smelt ... here}: else the one from the bag goes down next to me). */
+    static final int HERE_R = 6;
+
+    /**
+     * @param here 0.36.a8 (AA's iron scorer, smelting on the spot): a furnace further than {@link #HERE_R} from me is not
+     *             used; the one in the bag goes down next to me and I wait there (wait mode), as when none is near
+     */
+    String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient, boolean here) {
         // a job is only ever left running in a furnace at the base: no base marked -> stand by the furnace (wait mode)
-        if (efficient && base() == null) {
+        if (efficient && (base() == null || here)) {
             efficient = false;
             collectTargets = true;
         }
@@ -395,11 +406,12 @@ final class Crafting {
         for (Crafter.Step s : plan) {
             if (s instanceof Crafter.Smelt sm) {
                 smelts = true;
-                if (efficient ? findFurnaces(p, true).isEmpty() : findFurnace(p) == null) {
+                int[] nearF = here ? findBlockAround(Jobs.here(p), FURNACE, HERE_R, 3) : findFurnace(p);
+                if (efficient ? findFurnaces(p, true).isEmpty() : nearF == null) {
                     // 0.28.2 (A): a furnace in the bag goes down next to me (and stays: it holds the job); wait mode there
-                    int[] spot = Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 && findFurnace(p) == null ? ownFurnaceSpot(p) : null;
+                    int[] spot = Gui.inventory(p).getOrDefault("minecraft:furnace", 0) > 0 && nearF == null ? ownFurnaceSpot(p) : null;
                     if (ownFurnace) continue;
-                    if (spot == null && findFurnace(p) != null && efficient) {
+                    if (spot == null && nearF != null && efficient) {
                         efficient = false;                 // a furnace near me but not at the base: stand by it
                         collectTargets = true;
                         continue;
@@ -531,6 +543,11 @@ final class Crafting {
                 if (ch[0] == OwnTable.Choice.NONE) return craftNoTable(steps);
             }
         }
+        Step stray = Clearing.takeStrayKept();
+        if (stray != null) {
+            steps = new ArrayList<>(steps);
+            steps.add(0, stray);
+        }
         boolean opens = steps.stream().anyMatch(s -> s.type.equals("open") || s.type.equals("craft"));
         String started = startSeq(r.label(), steps, opens ? "always" : "fail");
         return started.startsWith("started") ? started + tail : started;
@@ -542,6 +559,18 @@ final class Crafting {
         w.set(p);
         var spot = io.github.mojolowjo.entropybot.clear.PlaceRules.tableSpot(w, io.github.mojolowjo.entropybot.clear.McClearWorld.botOf(p), null, Clearing::placeCellAllowed);
         return spot == null ? null : new int[]{spot.x(), spot.y(), spot.z()};
+    }
+
+    /** Look-ahead for the own-table pickup: the craft text plans now and wants a 3x3 grid. */
+    boolean craftWantsTable(LocalPlayer p, String text) {
+        try {
+            String t = text.trim();
+            if (t.regionMatches(true, 0, "craft ", 0, 6)) t = t.substring(6);
+            Prepared r = prepareCraft(p, t, null);
+            return r.err() == null && needsTable(r.steps());
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** 0.28.2: a plan whose crafting steps want a 3x3 grid. */
@@ -582,6 +611,9 @@ final class Crafting {
         if (t.equals("mode") || t.startsWith("mode ")) return smeltModeCommand(t.substring(4).trim());
         if (t.startsWith("forget")) return SmeltTexts.forget(furnaces(), t.substring(6).trim());
         if (t.equals("collect") || t.startsWith("collect ")) return collect(p, t.substring(7).trim());
+        // 0.36.a8: "smelt <item> [n] here": the furnace from my bag goes down next to me even when the camp's is known
+        boolean here = t.endsWith(" here");
+        if (here) text = text.trim().replaceFirst("(?i)\\s+here$", "");
         CraftTexts.NameCount nc = CraftTexts.parseNameCount(text, 1);
         if (nc == null) return CraftTexts.SMELT_USAGE;
         Map<String, Integer> inv = Gui.inventory(p);
@@ -601,8 +633,8 @@ final class Crafting {
         }
         List<Step> steps = new ArrayList<>(trips.steps());
         // efficient (the default): the job ends once the furnace runs, the pickup collects it when it is due
-        boolean efficient = MODE_EFFICIENT.equals(smeltMode());
-        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient);
+        boolean efficient = MODE_EFFICIENT.equals(smeltMode()) && !here;
+        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient, here);
         if (err != null) return "error: " + err;
         // a job left running (efficient, a base marked) ends "ok: done starting the furnace for ...", not "done smelting"
         String seqLabel = efficient && base() != null ? SmeltTexts.startLabel(trips.used() > 0, label) : CraftTexts.smeltSeqLabel(trips.used() > 0, label);

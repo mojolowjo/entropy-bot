@@ -118,6 +118,7 @@ public final class SafetyNet {
                 if (st != null) st.reset();
             }
             for (String name : SafetyRules.RESTORE_FALSE_IF_PRESENT) setFalse(s, name);
+            io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "restore");
             if (Guard.INSTANCE.floorReady()) putProtected(s);
             Core.INSTANCE.baritone.enforceSettings();
         } catch (Throwable t) {
@@ -145,7 +146,10 @@ public final class SafetyNet {
     static boolean breakingOwned(IBaritone b) {
         if (builderBreakingOwned(b)) return true;
         if (io.github.mojolowjo.entropybot.commands.PaperPlan.ownsBreak()) return true;                      // 0.32.3: the fourth owner, a plan-go walk
+        if (io.github.mojolowjo.entropybot.commands.MineWater.walkDig()) return true;                        // 0.36.8: a mine job's walk to a known ore
         try {
+            // mining plan phase 1: a running job's walk keeps breaking on under the policy's costs; idle = off again
+            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayBreak() && Core.INSTANCE.commands.jobs.running()) return true;
             var j = Core.INSTANCE.commands.jobs.job;
             if (j == null || j.done || !j.ownsBreaking) return false;
             return b != null && b.getMineProcess().isActive();
@@ -171,7 +175,12 @@ public final class SafetyNet {
 
     /** A mod job runs Baritone's builder (build floor|walls|fill|shell). */
     static boolean placingOwned() {
-        try { return io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace(); } catch (Throwable t) { return false; }
+        try {
+            if (io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace()) return true;
+            // owner's place rule (aa372): a running job's walk keeps placing on under the policy's costs; idle = off again
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            return pr.travelMayPlace() && pr.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL && Core.INSTANCE.commands.jobs.running();
+        } catch (Throwable t) { return false; }
     }
 
     public static IBaritone primary() {

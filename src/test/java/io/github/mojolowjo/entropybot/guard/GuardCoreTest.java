@@ -39,6 +39,54 @@ class GuardCoreTest {
     }
 
     @Test
+    void travelBreakGoesThroughWhereOnlyABoxRuleRefuses() {
+        // mining plan phase 1: a walk's break outside every area, no lease: the policy (lenient outside) lets it through
+        GuardCore g = withPolicy();
+        BreakPolicy.Snapshot s = BreakPolicy.Snapshot.of(g.policy(), false);
+        GuardCore.TravelCheck t = g.checkTravelBreak(OW, 500, 60, 500, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY);
+        assertTrue(t.allowed());
+        assertNotNull(t.travel());
+        assertEquals("outside every area", t.guard().reason());
+        // inside an area with no lease: the same
+        assertTrue(g.checkTravelBreak(OW, 0, 60, 300, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
+        // the floor stays the floor
+        GuardCore.TravelCheck chest = g.checkTravelBreak(OW, 500, 60, 500, CHEST, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY);
+        assertFalse(chest.allowed());
+        assertNull(chest.travel(), "the policy is not even asked");
+        // the policy's own denies hold: digging down from in the water
+        GuardCore.TravelCheck down = g.checkTravelBreak(OW, 500, 60, 500, PLAIN, s, BreakPolicy.BlockFacts.STONE.withAbove(BreakPolicy.Fluid.WATER), BreakPolicy.Where.WET);
+        assertFalse(down.allowed());
+        assertEquals("digging down from in the water", down.travel().reason());
+        // a protect box is floor in both
+        assertFalse(g.checkTravelBreak(OW, -20, 60, 180, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).allowed());
+        // a break the fence allows anyway (a lease) is not the policy's business
+        lease(g, false);
+        assertNull(g.checkTravelBreak(OW, -45, 16, 396, PLAIN, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY).travel());
+    }
+
+    @Test
+    void refillPlacementGoesThroughWhereOnlyABoxRuleRefuses() {
+        // owner's place rule (aa372): a walk refills a cell it dug itself outside every area (no place lease): through
+        GuardCore g = withPolicy();
+        BreakPolicy.Snapshot s = BreakPolicy.Snapshot.of(g.policy(), false);
+        GuardCore.BlockInfo air = GuardCore.BlockInfo.placing(true, false);
+        BreakPolicy.BlockFacts dug = BreakPolicy.BlockFacts.STONE.withDug(true);
+        GuardCore.TravelCheck t = g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
+        assertTrue(t.allowed());
+        assertEquals("travel+refill", t.travel().rule());
+        assertEquals("outside every area", t.guard().reason());
+        // the same cell, not dug: the rule set places nothing but torches outside, so the click is refused
+        GuardCore.TravelCheck fresh = g.checkPolicyPlace(OW, 500, 60, 500, air, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
+        assertFalse(fresh.allowed());
+        assertEquals("nothing but torches placed in outside (singleplayer, lenient)", fresh.travel().reason());
+        // under a mine walk the same refill passes; a protect box stays floor and the policy is not asked
+        assertTrue(g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.MINE).allowed());
+        GuardCore.TravelCheck box = g.checkPolicyPlace(OW, -20, 60, 180, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
+        assertFalse(box.allowed());
+        assertNull(box.travel());
+    }
+
+    @Test
     void startsInLogModeDuringB0() {
         GuardCore g = new GuardCore();
         assertEquals(GuardCore.DEFAULT_MODE, g.mode());
@@ -184,5 +232,18 @@ class GuardCoreTest {
         assertTrue(s.contains("\"mode\":\"strict\""));
         assertTrue(s.contains("\"floorBlocks\":3548"));
         assertTrue(s.contains("minecraft:the_end"));
+    }
+
+    @Test
+    void breakLiquidAllowsWaterOnlyInMineJobsNeverLava() {
+        assertNull(GuardCore.breakLiquid(null, false));
+        assertNull(GuardCore.breakLiquid(null, true));
+        assertEquals("water", GuardCore.breakLiquid("water", false));
+        assertNull(GuardCore.breakLiquid("water", true));
+        assertEquals("lava", GuardCore.breakLiquid("lava", false));
+        assertEquals("lava", GuardCore.breakLiquid("lava", true));
+        // lava wins over water in liquidNextTo, so a cell by both stays forbidden in a mine job
+        GuardCore.FluidAt both = (x, y, z) -> x == 1 ? "water" : x == -1 ? "lava" : null;
+        assertEquals("lava", GuardCore.breakLiquid(GuardCore.liquidNextTo(both, 0, 0, 0), true));
     }
 }
