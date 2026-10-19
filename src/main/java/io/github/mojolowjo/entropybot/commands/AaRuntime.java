@@ -198,6 +198,38 @@ public final class AaRuntime implements JobPort {
         return foodCache;
     }
 
+    private boolean conserving;
+    private String conserveWhy;
+
+    /**
+     * aa-sprint: conserve hunger while no food source is known and the bag holds less than the predicted need
+     * (HungerConserve). Renews the flag the movement package reads; one log line per start and end. Never throws.
+     */
+    private void conserveTick(long now) {
+        boolean on = false;
+        String why = null;
+        try {
+            double bagE = io.github.mojolowjo.entropybot.aa.brain.FoodModel.energy(bb.in.bag);
+            double target = io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb);
+            if (bb.in.hungerDrains && !io.github.mojolowjo.entropybot.aa.brain.HungerConserve.covered(bagE, target)) {
+                String park = io.github.mojolowjo.entropybot.aa.FoodOptions.noSource(foodFacts());
+                on = io.github.mojolowjo.entropybot.aa.brain.HungerConserve.decide(true, park != null, bagE, target);
+                if (on) why = String.format(java.util.Locale.ROOT, "bag %.0f of %.0f food points, %s", bagE, target, park);
+            }
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: conserve check: {}", e.toString());
+            on = conserving;                      // keep the last answer on a read error
+            why = conserveWhy;
+        }
+        io.github.mojolowjo.entropybot.aa.brain.HungerConserve.set(on, now);
+        if (on != conserving) {
+            LOG.info("[entropybot] aa: conserving hunger {} ({})", on ? "starts: no sprint, no parkour" : "ends: normal movement",
+                    on ? why : "a food source is known or the bag covers the need");
+            conserving = on;
+        }
+        conserveWhy = why;
+    }
+
     /** aa-food drain sampler: energy (food + saturation) at the window's start, its start time and kind. */
     private double drainE0 = -1;
     private long drainT0;
@@ -577,6 +609,7 @@ public final class AaRuntime implements JobPort {
             escapeTick(p, mc);
             fill(bb.in, sensed, p, mc);
             drainTick(now);
+            conserveTick(now);
             progressTick(p);
             brainFacts(mc, now);
             goalsTick(p, tick);
@@ -1206,6 +1239,7 @@ public final class AaRuntime implements JobPort {
         if (now < heldUntil) b.append("held ").append((heldUntil - now + 59_999) / 60_000).append(" min after a stop");
         else b.append(tree.driver()).append('>').append(bb.taskText(now));
         b.append(" | danger: ").append(tree.dangerWhy());
+        if (conserving) b.append(" | conserving hunger");
         b.append(" | last switch ").append(tracer.lastSwitchText(now));
         return b.toString();
     }

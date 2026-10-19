@@ -58,6 +58,29 @@ public final class Profiles {
     private final Map<String, Object> saved = new LinkedHashMap<>();
     private long switches;
 
+    /** Originals of allowsprint/allowparkour while hunger is being conserved (null: not conserving). */
+    private Map<String, Object> held;
+
+    public boolean conserving() { return held != null; }
+
+    /**
+     * Hunger conserving (HungerConserve): sprint and parkour off, except that fleeing keeps sprint. Idempotent, called
+     * every movement tick; the first call keeps the originals, {@code on == false} puts them back.
+     */
+    public void conserve(boolean on, boolean fleeing, Access a) {
+        if (!on) {
+            if (held != null) { held.forEach((k, v) -> { if (v != null) a.set(k, v); }); held = null; }
+            return;
+        }
+        if (held == null) {
+            held = new LinkedHashMap<>();
+            held.put("allowsprint", a.get("allowsprint"));
+            held.put("allowparkour", a.get("allowparkour"));
+        }
+        a.set("allowsprint", fleeing);
+        a.set("allowparkour", false);
+    }
+
     public Profile active() { return active; }
 
     public long switches() { return switches; }
@@ -67,7 +90,8 @@ public final class Profiles {
         if (p == active) return false;
         if (active == Profile.NONE) {
             saved.clear();
-            for (String k : allNames()) saved.put(k, a.get(k));
+            // conserving: the originals, not the values conserve() wrote
+            for (String k : allNames()) saved.put(k, held != null && held.containsKey(k) ? held.get(k) : a.get(k));
         }
         if (p == Profile.NONE) {
             saved.forEach((k, v) -> { if (v != null) a.set(k, v); });
