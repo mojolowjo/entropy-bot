@@ -131,23 +131,25 @@ public final class BreakPolicy {
      * The bot: in water now (the drowning rule: no digging down with water over the cell while the bot itself is in
      * the water; from dry ground a cell under a pond is a wet side, not a dive); travel breaks made on this walk so far.
      */
-    public record Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) {
+    public record Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY, int pickTier) {
         public static final Where DRY = new Where(false, 0);
         public static final Where WET = new Where(true, 0);
 
         /** Air unknown (0): a dive is never allowed (the old rule). */
-        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE); }
+        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE, DrownRisk.DEFAULT_TIER); }
+
+        public Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) { this(inWater, travelBreaks, air, waterAbove, feetY, DrownRisk.DEFAULT_TIER); }
 
         /** aa-costs: the drowning risk of digging one block down from here (DrownRisk). */
-        public double diveRisk() { return DrownRisk.risk(1, waterAbove, air); }
+        public double diveRisk() { return DrownRisk.risk(1, waterAbove, air, pickTier); }
 
         /** aa-costs (review): the risk of digging down to the cell at {@code y}: the whole depth from my feet counts. */
         public double diveRisk(int y) {
             int d = feetY == Integer.MIN_VALUE ? 1 : Math.max(1, feetY - y);
-            return DrownRisk.risk(d, waterAbove, air);
+            return DrownRisk.risk(d, waterAbove, air, pickTier);
         }
 
-        public Where withBreaks(int n) { return new Where(inWater, n, air, waterAbove, feetY); }
+        public Where withBreaks(int n) { return new Where(inWater, n, air, waterAbove, feetY, pickTier); }
     }
 
     public record Ask(Action action, Intent intent, String dim, int x, int y, int z, BlockFacts block, Where me) {}

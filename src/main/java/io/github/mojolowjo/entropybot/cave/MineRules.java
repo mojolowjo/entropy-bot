@@ -390,15 +390,15 @@ public final class MineRules {
     }
 
     /** aa-costs: the skip with the drowning risk (DrownRisk) in place of the fixed "2 below": skipped only when fatal. */
-    public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater, int air, int waterAbove) {
+    public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater, int air, int waterAbove, int tier) {
         return waterDownSkip(inWater, meY, oreY, oreTouchesWater)
-                && io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(io.github.mojolowjo.entropybot.guard.DrownRisk.risk(meY - oreY, waterAbove, air));
+                && io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(io.github.mojolowjo.entropybot.guard.DrownRisk.risk(meY - oreY, waterAbove, air, tier));
     }
 
     /** aa-costs: the walk's stop with the drowning risk of the dig still ahead ({@code targetY}): stopped only when fatal. */
-    public static boolean waterDigDown(boolean inWater, boolean breaking, int breakY, int feetY, int targetY, int air, int waterAbove) {
+    public static boolean waterDigDown(boolean inWater, boolean breaking, int breakY, int feetY, int targetY, int air, int waterAbove, int tier) {
         return waterDigDown(inWater, breaking, breakY, feetY)
-                && io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(io.github.mojolowjo.entropybot.guard.DrownRisk.risk(Math.max(1, feetY - targetY), waterAbove, air));
+                && io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(io.github.mojolowjo.entropybot.guard.DrownRisk.risk(Math.max(1, feetY - targetY), waterAbove, air, tier));
     }
 
     /** 0.36.a3: how long (ticks) a known ore dropped for the water stays out of the pick; then it is a candidate again. */

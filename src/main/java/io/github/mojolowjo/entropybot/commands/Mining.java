@@ -380,9 +380,9 @@ final class Mining {
                 // aa-costs: the drowning risk of the dig (DrownRisk); fatal = dropped, else a cost the scorer weighs
                 boolean wetDown = !open && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(), touchesWater);
                 int wAbove = wetDown ? io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(level, p.blockPosition()) : 0;
-                double risk = wetDown ? io.github.mojolowjo.entropybot.guard.DrownRisk.risk(me[1] - h.y(), wAbove, p.getAirSupply()) : 0;
+                double risk = wetDown ? io.github.mojolowjo.entropybot.guard.DrownRisk.risk(me[1] - h.y(), wAbove, p.getAirSupply(), io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p)) : 0;
                 boolean wet = io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(risk);
-                String drownWhy = wetDown ? io.github.mojolowjo.entropybot.guard.DrownRisk.terms(me[1] - h.y(), wAbove, p.getAirSupply()) : null;
+                String drownWhy = wetDown ? io.github.mojolowjo.entropybot.guard.DrownRisk.terms(me[1] - h.y(), wAbove, p.getAirSupply(), io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p)) : null;
                 String deny = null;
                 boolean floor = false;
                 try {
@@ -521,9 +521,9 @@ final class Mining {
             // aa-costs: stopped only when the dig still ahead leaves no air to come back (DrownRisk)
             int feet = pl.blockPosition().getY(), ty = t == null ? feet - 1 : t[1];
             if (MineRules.waterDigDown(pl.isInWater(), mc.gameMode.isDestroying(), breakY, feet, ty, pl.getAirSupply(),
-                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(pl.level(), pl.blockPosition()))) {
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(pl.level(), pl.blockPosition()), io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(pl))) {
                 LOG.info("[entropybot] mine: walk stopped, {}", io.github.mojolowjo.entropybot.guard.DrownRisk.terms(Math.max(1, feet - ty),
-                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(pl.level(), pl.blockPosition()), pl.getAirSupply()));
+                        io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(pl.level(), pl.blockPosition()), pl.getAirSupply(), io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(pl)));
                 j.kWaterDown = true;
                 return true;
             }
@@ -695,7 +695,7 @@ final class Mining {
             // aa-costs: skipped only when the drowning risk of the dig is fatal (DrownRisk: air, depth, water above)
             if (level.isLoaded(q) && MineRules.waterDownSkip(p.isInWater(), me[1], h.y(),
                     io.github.mojolowjo.entropybot.guard.Guard.liquidNextTo(level, h.x(), h.y(), h.z()) != null
-                            || !level.getFluidState(q.below()).isEmpty(), p.getAirSupply(), wAbove)
+                            || !level.getFluidState(q.below()).isEmpty(), p.getAirSupply(), wAbove, io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p))
                     && !airFace(level, h.x(), h.y(), h.z())) {         // 0.36.9: an ore with a dry open face is walked to (a cave beside it)
                 underWater++;
                 if (wetAt.size() < 5) wetAt.add(h.x() + " " + h.y() + " " + h.z());

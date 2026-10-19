@@ -745,7 +745,7 @@ public final class AaRuntime implements JobPort {
             double d = Math.sqrt(Jobs.distSq(s.botPos, m));
             camp = camp < 0 ? d : Math.min(camp, d);
         }
-        boolean tLatch = latch("tableAtCamp", s.feas.table, camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
+        boolean tLatch = latch("tableAtCamp", s.feas.table || io.github.mojolowjo.entropybot.craft.OwnTable.takeCampTable(), camp), fLatch = latch("furnaceAtCamp", s.feas.furnace, camp);
         in.tableKnown = s.feas.table || tLatch;
         in.furnaceKnown = s.feas.furnace || fLatch;
         in.tableInBag = bag.getOrDefault("crafting_table", 0) > 0;

@@ -731,7 +731,10 @@ public final class Clearing {
                 LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));      // safety net: named by check if the chain never gets back to it
                 LOG.info("[entropybot] craft: {} at {} ({})", io.github.mojolowjo.entropybot.craft.OwnTable.KEPT_LOG, Jobs.fmt(st.pos), terms);
             }
-            case LEAVE_AT_CAMP -> LOG.info("[entropybot] craft: table left at {} as the camp's ({})", Jobs.fmt(st.pos), terms);
+            case LEAVE_AT_CAMP -> {
+                io.github.mojolowjo.entropybot.craft.OwnTable.noteCampTable();     // director: registered as the camp's table
+                LOG.info("[entropybot] craft: table left at {} as the camp's ({})", Jobs.fmt(st.pos), terms);
+            }
             default -> LOG.info("[entropybot] craft: {} ({})", io.github.mojolowjo.entropybot.craft.OwnTable.PICKED_LOG, terms);
         }
         return end != io.github.mojolowjo.entropybot.craft.OwnTable.End.TAKE;

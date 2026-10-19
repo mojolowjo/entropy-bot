@@ -79,5 +79,11 @@ class CostsTest {
         assertEquals(OwnTable.End.TAKE, OwnTable.decide(false, false, true, false, false), "no wood to remake one: keep it");
         assertEquals(OwnTable.End.TAKE, OwnTable.decide(true, true, true, false, true), "a failed craft");
         assertTrue(OwnTable.terms(false, false, true, false, true).endsWith("leave_at_camp"));
+        assertTrue(OwnTable.registersAsCamp(OwnTable.End.LEAVE_AT_CAMP), "director: a table left at the camp counts as the camp's");
+        assertFalse(OwnTable.registersAsCamp(OwnTable.End.KEEP_FOR_NEXT));
+        OwnTable.takeCampTable();
+        OwnTable.noteCampTable();
+        assertTrue(OwnTable.takeCampTable(), "the latch is fed once");
+        assertFalse(OwnTable.takeCampTable());
     }
 }

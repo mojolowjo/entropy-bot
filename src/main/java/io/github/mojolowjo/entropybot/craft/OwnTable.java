@@ -87,6 +87,21 @@ public final class OwnTable {
         return nextNeedsTable ? End.KEEP_FOR_NEXT : End.LEAVE_AT_CAMP;
     }
 
+    /** A table left at the camp is registered as the camp's (AA's tableAtCamp latch), so no second one is crafted. */
+    public static boolean registersAsCamp(End e) { return e == End.LEAVE_AT_CAMP; }
+
+    private static volatile boolean campTableLeft;
+
+    /** Clearing: the table was left as the camp's. */
+    public static void noteCampTable() { campTableLeft = true; }
+
+    /** AA's fill: true once after a table was left at the camp (feeds the tableAtCamp latch). */
+    public static boolean takeCampTable() {
+        boolean v = campTableLeft;
+        campTableLeft = false;
+        return v;
+    }
+
     public static String terms(boolean craftFailed, boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
         return "take " + Math.round(takeCost(nextNeedsTable)) + " s vs leave " + Math.round(leaveCost(nextNeedsTable, nearCamp, campHasTable, canRemake)) + " s"
                 + (nextNeedsTable ? " (next step crafts)" : "") + (nearCamp ? campHasTable ? " (camp has a table)" : " (camp without a table)" : "")

@@ -84,7 +84,7 @@ public final class PolicyRuntime {
             boolean wet = pl != null && pl.isInWater();
             // review: one snapshot, one volatile write (the pathfinder thread never sees a torn mix)
             body = new Where(wet, 0, pl == null ? 300 : pl.getAirSupply(),
-                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY());
+                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.DEFAULT_TIER : pickTier(pl));
             inWater = wet;
             Policy p = core.policy();
             if (snapshot == null || p != snapshotOf || mp != multiplayer) {
@@ -264,6 +264,14 @@ public final class PolicyRuntime {
 
     private volatile boolean inWater;
     private volatile Where body = new Where(false, 0, 300, 0, Integer.MIN_VALUE);
+
+    /** aa-costs (director): the best pickaxe tier in the bag (DrownRisk's dig time), 0 none. */
+    public static int pickTier(net.minecraft.world.entity.player.Player pl) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (var st : pl.getInventory().items)
+            if (!st.isEmpty()) ids.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+        return DrownRisk.pickTier(ids);
+    }
 
     /** aa-costs (DrownRisk): water cells from the feet up (at most 32), the swim back to air. */
     public static int waterAbove(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos feet) {
