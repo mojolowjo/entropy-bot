@@ -121,6 +121,7 @@ public final class Door {
     public static boolean aiMayUnderAa(String line) {
         if (line == null) return false;
         String l = line.trim().toLowerCase().replaceAll("\\s+", " ");
+        if (l.contains(";") || l.contains(" then ")) return false;     // one line, never a chain (review: "aa want x; dig")
         return l.matches("aa (want|drop|why)( .*)?") || l.equals("aa status") || l.equals("status") || l.equals("aa");
     }
 }
