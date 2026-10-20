@@ -73,6 +73,9 @@ public final class DangerMoves {
         this.engine = engine;
     }
 
+    /** 0.38.b9 (review: a verb started a move with a stale clock and the first tick ended it): the client tick, every tick. */
+    void time(long tick) { now = tick; }
+
     public boolean active() { return move != Move.NONE; }
 
     public Move move() { return move; }

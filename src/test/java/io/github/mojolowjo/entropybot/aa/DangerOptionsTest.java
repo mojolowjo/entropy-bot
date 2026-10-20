@@ -95,4 +95,15 @@ class DangerOptionsTest {
         assertTrue(Tuning.set("danger.minS", 600).startsWith("ok"));
         assertEquals(-1, DangerOptions.choose(facts(me(20, 1), OPEN, zombie(3))).score(), "tuned: not worth it");
     }
+
+    @Test
+    void aRunningMoveHoldsTheDesireUntilItEnds() {
+        var bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(1_000_000),
+                new io.github.mojolowjo.entropybot.aa.core.FakePort(), new io.github.mojolowjo.entropybot.aa.core.Tracer());
+        bb.fact(AaDesires.THREAT_FACT, (java.util.function.Supplier<ThreatFacts>) () -> ThreatFacts.CALM);
+        bb.fact(AaDesires.MOVE_FACT, true);
+        assertFalse(AaDesires.dangerMet(bb), "a flee still running: not done though staying looks cheap now");
+        bb.fact(AaDesires.MOVE_FACT, false);
+        assertTrue(AaDesires.dangerMet(bb), "the move ended and nothing is priced: done");
+    }
 }

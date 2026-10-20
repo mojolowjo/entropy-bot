@@ -21,7 +21,7 @@ final class AaCommands {
             case "on" -> { return aa.turnOn(); }
             case "off" -> { return aa.turnOff("aa off"); }
             case "", "status" -> {
-                return aa.statusLine() + "\n" + aa.counts() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : "");
+                return aa.statusLine() + aa.tuningLine() + "\n" + aa.counts() + (aa.on() ? "\n" + aa.brainCounters() + "\ndesires: " + String.join(" | ", aa.brainLines(5)) + "\n" + aa.goalsLine() + "\n" + aa.wantsLine() + "\nrungs: " + aa.ladderLine() + "\n" + aa.optionStatus() : "");
             }
             case "why" -> {
                 List<String> d = aa.decisions();

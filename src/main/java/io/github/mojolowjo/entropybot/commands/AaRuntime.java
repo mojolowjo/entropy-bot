@@ -1109,7 +1109,10 @@ public final class AaRuntime implements JobPort {
         Reflexes.Reflex r = Core.INSTANCE.reflexes.reflex();
         // AA_CLEANUP 4: AA's own danger moves (RETREATING) and its own attack (a forced fight) are not a danger pause;
         // the true reflexes are (the hit response, the creeper flee, the fire reflex, eating)
-        boolean aaOwn = r == Reflexes.Reflex.RETREATING || (r == Reflexes.Reflex.FIGHTING && Core.INSTANCE.reflexes.forcing());
+        boolean dangerJob = tree.brain.runningDesire() != null && io.github.mojolowjo.entropybot.aa.AaDesires.DANGER_ID.equals(tree.brain.runningDesire().id);
+        // 0.38.b9: a hit response while AA's own danger job runs is part of that job (no pause of the danger chain)
+        boolean aaOwn = r == Reflexes.Reflex.RETREATING || (r == Reflexes.Reflex.FIGHTING && (Core.INSTANCE.reflexes.forcing() || dangerJob));
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.MOVE_FACT, Core.INSTANCE.reflexes.moves.active());
         in.danger = !aaOwn && (r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) ? 2 : !aaOwn && Core.INSTANCE.reflexes.hold() ? 1 : 0;
         in.dangerWhy = in.danger > 0 ? r.name().toLowerCase() : "";
         in.creeperClose = creeperClose();
@@ -1967,8 +1970,12 @@ public final class AaRuntime implements JobPort {
     }
 
     /** Loads the world's aa-tuning.json (absent: the defaults); errors are logged and the defaults kept for those. */
+    /** 0.38.b9: why the world's tuning file could not be read or written (aa status), null = fine. */
+    private String tuningProblem;
+
     private void loadTuning() {
         Path f = tuningFile();
+        tuningProblem = null;
         Map<String, Double> m = new java.util.LinkedHashMap<>();
         if (f != null && java.nio.file.Files.exists(f)) {
             try {
@@ -1977,19 +1984,24 @@ public final class AaRuntime implements JobPort {
                     try { m.put(e.getKey(), e.getValue().getAsDouble()); } catch (RuntimeException x) { m.put(e.getKey(), Double.NaN); }
                 }
             } catch (Exception e) {
+                tuningProblem = "aa-tuning.json unreadable (" + e.getMessage() + ") - defaults used; fix or delete it";
                 LOG.warn("[entropybot] aa: tuning file {} unreadable ({}) - defaults used", f, e.toString());
             }
         }
         java.util.List<String> errors = io.github.mojolowjo.entropybot.aa.brain.Tuning.load(m);
-        if (!errors.isEmpty()) LOG.warn("[entropybot] aa: tuning: {} - defaults used for those", String.join("; ", errors));
+        if (!errors.isEmpty()) {
+            tuningProblem = "aa-tuning.json: " + String.join("; ", errors) + " - defaults used for those";
+            LOG.warn("[entropybot] aa: tuning: {} - defaults used for those", String.join("; ", errors));
+        }
         else if (!m.isEmpty()) LOG.info("[entropybot] aa: tuning loaded ({} tuned)", m.size());
     }
 
-    private static void saveTuning() {
+    /** Writes the tuned values; null = saved, else why not (logged). */
+    private static String saveTuning() {
         Path f = tuningFile();
         if (f == null) {
             LOG.warn("[entropybot] aa: tuning not saved: no world folder");
-            return;
+            return "no world folder";
         }
         try {
             JsonObject o = new JsonObject();
@@ -2000,20 +2012,25 @@ public final class AaRuntime implements JobPort {
             java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {
             LOG.warn("[entropybot] aa: tuning write: {}", e.toString());
+            return "the write failed: " + e.getMessage();
         }
+        return null;
     }
+
+    /** aa status: the tuning file's problem, or "". */
+    String tuningLine() { return tuningProblem == null ? "" : "\n!! tuning: " + tuningProblem; }
 
     /** aa tune [name value]: lists the tuning, or sets one for this world and saves it. */
     String tune(String[] w) {
-        if (w.length == 0) return "tuning (aa tune <name> <n>; saved per world in aa-tuning.json):\n" + String.join("\n", io.github.mojolowjo.entropybot.aa.brain.Tuning.lines());
+        if (w.length == 0) return "tuning (aa tune <name> <n>; saved per world in aa-tuning.json):\n" + String.join("\n", io.github.mojolowjo.entropybot.aa.brain.Tuning.lines()) + tuningLine();
         if (w.length != 2) return "usage: aa tune [<name> <n>]";
         double v;
         try { v = Double.parseDouble(w[1]); } catch (NumberFormatException e) { return "error: " + w[1] + " is not a number"; }
         String r = io.github.mojolowjo.entropybot.aa.brain.Tuning.set(w[0], v);
         if (r.startsWith("ok")) {
-            saveTuning();
+            String why = saveTuning();
             LOG.info("[entropybot] aa: {}", r);
-            return r + " (saved for this world)";
+            return why == null ? r + " (saved for this world)" : r + " - NOT saved: " + why + " (it holds until the game closes or another world loads)";
         }
         return r;
     }

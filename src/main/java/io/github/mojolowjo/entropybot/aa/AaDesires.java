@@ -652,7 +652,18 @@ public final class AaDesires {
         });
         return new Desire(DANGER_ID, Desire.Kind.UPKEEP, AaTree.idleCd(DANGER_ID + ".cd", job), AaDesires::dangerScore)
                 .cools(Cooldown.NO_RUN_MS, 0).patient(2 * 60_000).overTrumps().lastTry().nightProof()
-                .met(b -> dangerScore(b) < 0);
+                .met(AaDesires::dangerMet);
+    }
+
+    /** 0.38.b9: blackboard fact (Boolean), a danger move (flee, cover, pillar, burrow) runs now (the adapter's). */
+    public static final String MOVE_FACT = "aa.dangerMove";
+
+    /**
+     * 0.38.b9 (review: flee flapped, "stay" got cheap a few blocks out and the job was cut mid-flee): the danger desire is
+     * done only when staying is cheapest AND no danger move runs (the move ends on its own calm clock or arrival).
+     */
+    static boolean dangerMet(Blackboard b) {
+        return !Boolean.TRUE.equals(b.fact(MOVE_FACT)) && dangerScore(b) < 0;
     }
 
     /** The step grace before the shelter interrupts. */

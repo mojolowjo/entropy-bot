@@ -299,6 +299,7 @@ public final class Reflexes {
     public void tick(long tick) {
         try {
             now = tick;
+            moves.time(tick);      // 0.38.b9: the verbs start moves on the current clock
             step();
         } catch (Throwable t) {
             errors++;
@@ -423,6 +424,7 @@ public final class Reflexes {
             // (the owner's or AA's attack) fought; under AA anything else gets only the hit response (AA's danger desire
             // prices fight vs flee vs home vs cover vs dig in vs pillar); with AA off the old self-defence fights
             if (t.creeper) creeper(mc, p, t);
+            else if (ft == null && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn() && hp <= ReflexRules.RETREAT_AT && aaOffMove(mc, p, hurt)) return;
             else if (ft != null || !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()) fight(mc, p, t);
             else hitResponse(mc, p, t, hurt);
             return;
@@ -868,6 +870,37 @@ public final class Reflexes {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] threat: creeper heading failed, straight away instead: {}", e.toString());
             return c == null ? ThreatRuntime.INSTANCE.escape(p, 0, 0) : ThreatRuntime.INSTANCE.escape(p, c);
+        }
+    }
+
+    private long aaOffPricedAt = -1000;
+
+    /**
+     * 0.38.b9 (review: with AA off a low-health bot fought to the death): at or under the old retreat health, the same
+     * priced pick AA uses (DangerOptions on DangerMoves.facts) runs flee, cover, pillar or burrow; home, fight or stay:
+     * false (the fight goes on). Once a second at most; the pick is logged. Never throws.
+     */
+    private boolean aaOffMove(Minecraft mc, LocalPlayer p, boolean hurt) {
+        if (now - aaOffPricedAt < 20) return false;
+        aaOffPricedAt = now;
+        try {
+            Place b = base;
+            var c = io.github.mojolowjo.entropybot.aa.DangerOptions.choose(moves.facts(mc, p, b == null ? null : new int[]{b.x, b.y, b.z}, b == null ? null : b.dim, hurt));
+            if (c.score() < 0 || c.best() == null) return false;
+            String r = switch (c.best().way()) {
+                case FLEE -> moves.flee();
+                case COVER -> moves.cover();
+                case PILLAR -> moves.pillar();
+                case DIG_IN -> moves.burrow();
+                default -> null;
+            };
+            LOG.info("[entropybot] low health, aa off: {} -> {}", c.terms(), r == null ? "fight on" : r);
+            if (r == null || !r.startsWith("ok")) return false;
+            if (reflex == Reflex.FIGHTING) settle("low health: " + c.best().way().name().toLowerCase());
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] low health, aa off: the danger pick failed, fighting: {}", e.toString());
+            return false;
         }
     }
 
