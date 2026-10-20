@@ -207,7 +207,7 @@ public final class Rung extends Node {
         // aa-trees: the wood prerequisite is priced over the trees seen (extend the area / chop at); nothing runnable is
         // an option drop with every reason (held per option 10 min in woodMem), never a failed task looping
         woodRan = null;
-        if (picker == null && pre != null && bb.fact(WoodOptions.FACTS) instanceof java.util.function.Supplier<?> sup) {
+        if (pre != null && bb.fact(WoodOptions.FACTS) instanceof java.util.function.Supplier<?> sup) {      // picker rungs too (TOOLS, IRON...): missing logs are this prerequisite, not a switchable end
             WoodOptions.WoodFacts wf = null;
             try {
                 if (sup.get() instanceof WoodOptions.WoodFacts x) wf = x;
@@ -223,9 +223,10 @@ public final class Rung extends Node {
                 pre = woodRan.command();
             }
         }
-        if (picker == null && pre != null && prereqDoneAt >= 0 && now - prereqDoneAt < SETTLE_MS && g.equals(prereqGoal))
+        if (picker != null && woodRan == null) pre = null;          // no wood facts: the picker as before
+        if (pre != null && prereqDoneAt >= 0 && now - prereqDoneAt < SETTLE_MS && g.equals(prereqGoal))
             return fail(kind + " prerequisite done (" + resolved + "), waiting for the facts before " + g);
-        if (picker == null && pre != null) {
+        if (pre != null) {
             clearPlanning(bb);
             if (!pre.equals(resolved) || !g.equals(settledGoal))
                 bb.port.log(kind + " prerequisite for " + g + ": " + r.why() + " -> " + pre + " first (~" + prereqSeconds(pre) + " s), then " + g + (woodRan == null ? "" : " [wood options: " + woodWhy + "]"));
@@ -357,13 +358,19 @@ public final class Rung extends Node {
             bb.port.log(kind + ": the task ended \"" + why + "\" but the need is met - counted done");
             return Status.SUCCESS;
         }
-        if (picker == null) {
-            if (woodRan != null && isPrereq(resolved)) {
+        if (woodRan != null && isPrereq(resolved)) {
+            {
                 woodMem.failed(woodRan.memoryKey(), why == null ? "failed" : why, bb.clock.now(), bb.in);
                 bb.port.log(kind + ": wood option " + woodRan.id() + " failed (\"" + why + "\"), held " + Options.RETRY_MS / 60000 + " min; the next option runs");
                 woodRan = null;
                 if (WoodOptions.switchable(why)) cooldown.forget();
             }
+            return fail(why);
+        }
+        if (picker == null) return fail(why);
+        // aa-trees: a picker rung whose own chain ended on missing wood: the next pick goes through the wood prerequisite
+        if (why != null && why.contains("no trees in my areas") && board != null && board.fact(WoodOptions.FACTS) != null) {
+            cooldown.forget();
             return fail(why);
         }
         if (picker.failed(bb, why)) {
