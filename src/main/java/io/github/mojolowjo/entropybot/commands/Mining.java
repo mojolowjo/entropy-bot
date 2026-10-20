@@ -298,7 +298,7 @@ final class Mining {
         int[] me = Jobs.here(p);
         String d = dim();
         return !pass().nearest(d, id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, family), me[0], me[1], me[2],
-                io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.inAreas(d, x, z) && fairOk(d, x, y, z)).isEmpty();
+                io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.inAreas(d, x, y, z) && fairOk(d, x, y, z)).isEmpty();
     }
 
     /** AA_ROUND3 3: under {@code aa fair} (default on) only an ore cell I have seen counts (sense.Seen); off: every indexed one. */
@@ -312,7 +312,7 @@ final class Mining {
     private int chunksHere(LocalPlayer p) {
         int[] me = Jobs.here(p);
         String d = dim();
-        return pass().chunksSeen(d, me[0], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, (x, y, z) -> commands.inAreas(d, x, z));
+        return pass().chunksSeen(d, me[0], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, (x, y, z) -> commands.inAreas(d, x, y, z));
     }
 
     /** One face of the block at q is open (air, water, a plant): Baritone's mine without "dig" can reach it. */
@@ -342,7 +342,7 @@ final class Mining {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
             if (!fairOk(d, x, y, z)) return false;          // AA_ROUND3 3: the at form, the index and the live scan: seen cells only
             if (MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), tick)) return false;   // 0.36.a3: timed, not for good
-            if (!commands.inAreas(d, x, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
+            if (!commands.inAreas(d, x, y, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
             // 0.28.0 live (LAN flat world): the clear engine stands only inside an area in 3D (Clearing.standCheck), so an
             // area whose floor is above the cell under/beside the ore left "nowhere to stand": that ore is no candidate
             if (stand != null && !stand.ok(x, y - 1, z) && !stand.ok(x, y, z)) return false;
@@ -450,7 +450,7 @@ final class Mining {
             Level level = p.level();
             List<Box> prot = boxes(policy(), "protect");
             java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
-            io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.inAreas(d, x, z)
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.inAreas(d, x, y, z)
                     && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null;
             io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> fairOk(d, x, y, z) && fence.test(x, y, z);     // AA_ROUND3 4: the seen lookup first (cheap, mostly no)
             if (unseen > 0 && io.github.mojolowjo.entropybot.sense.Seen.fair())
@@ -579,7 +579,7 @@ final class Mining {
         List<Box> prot = boxes(policy(), "protect");
         j.kFarCache = new ArrayList<>(io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
                 !j.knownTried.contains(BlockPos.asLong(x, y, z)) && !MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), now())
-                        && commands.inAreas(d, x, z) && fairOk(d, x, y, z)
+                        && commands.inAreas(d, x, y, z) && fairOk(d, x, y, z)
                         && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null
                         && (j.dig || io.github.mojolowjo.entropybot.sense.BaritoneMemory.exposedInCache(x, y, z)), 8, "mine"));   // 0.34.1: walkable faces only
         return j.kFarCache.isEmpty() ? List.of() : List.of(j.kFarCache.get(0));
@@ -1001,7 +1001,7 @@ final class Mining {
         List<Pos> out = new ArrayList<>();
         for (int[] c : MineRules.vein(j.at, n -> {
             BlockPos q = new BlockPos(n[0], n[1], n[2]);
-            return level.isLoaded(q) && commands.inAreas(d, n[0], n[2]) && jobs.goalAllowed(n[0], n[1], n[2]) == null
+            return level.isLoaded(q) && commands.inAreas(d, n[0], n[1], n[2]) && jobs.goalAllowed(n[0], n[1], n[2]) == null
                     && io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString(), fam);
         }, MineRules.AT_VEIN)) out.add(new Pos(c[0], c[1], c[2]));
         return out;
@@ -1145,7 +1145,7 @@ final class Mining {
         if (!ex.gather) return null;
         final List<int[]> bases = ex.baseSpots;
         java.util.function.Predicate<int[]> ok = c -> {
-            if (!commands.inAreas(d, c[0], c[2])) return false;
+            if (!commands.inAreas(d, c[0], c[1], c[2])) return false;
             for (int[] b : bases) if (Math.abs(c[0] - b[0]) <= 16 && Math.abs(c[2] - b[2]) <= 16) return false;
             return true;
         };
@@ -1376,7 +1376,10 @@ final class Mining {
             ex.scanAt = now();
             try {
                 io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc = baseScan(p);
-                if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc)) {
+                // AREAS review 1: a village (the world's own structure) is no base to whisper about, but a candidate AA keeps off
+                boolean village = !io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc) && sc.natural() != null
+                        && (sc.built() >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || sc.blockEntities() > 0);
+                if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc) || village) {
                     String key = (me[0] >> 5) + " " + (me[2] >> 5);
                     List<String> around = new ArrayList<>();
                     for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) around.add(ExploreRules.key(d, (me[0] >> 4) + dx, (me[2] >> 4) + dz));
@@ -1385,10 +1388,12 @@ final class Mining {
                     for (int[] bs : ex.baseSpots) if (Math.abs(bs[0] - me[0]) <= 16 && Math.abs(bs[2] - me[2]) <= 16) { known = true; break; }
                     if (!known) ex.baseSpots.add(me.clone());      // 0.23.1: roaming keeps 16 off it
                     if (ex.bases.add(key)) {
-                        String note = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseNote(sc, me[0], me[1], me[2]);
-                        LOG.info("[entropybot] explore: {}", note);
                         commands.noteSafeCandidate(d, me, sc);
-                        commands.whisper(commands.owner(), note);
+                        if (!village) {
+                            String note = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseNote(sc, me[0], me[1], me[2]);
+                            LOG.info("[entropybot] explore: {}", note);
+                            commands.whisper(commands.owner(), note);
+                        } else LOG.info("[entropybot] explore: {} near {} - a no-break candidate until rejected", sc.natural(), Jobs.fmt(me));
                     }
                     ex.target = null;
                     if (b != null) Jobs.cancel(b);
@@ -1770,7 +1775,7 @@ final class Mining {
         if (c == null) return "the cave search failed: no cave called " + cv.name;
         core.caves.visit(c, me[0], me[1], me[2], System.currentTimeMillis(), now());
         // 0.27.3: a dark spot or ore in a keep-out / no-break area is no candidate (AREAS: the world is open otherwise)
-        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || !commands.inAreas(d, x, z);
+        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || !commands.inAreas(d, x, y, z);
         CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE, off);
         cv.steps++;
         // ores first: one vein at a time

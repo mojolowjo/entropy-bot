@@ -59,6 +59,9 @@ class AreaFactsTest {
         assertTrue(AreaFacts.autoNoBreak(false, 2), "two block entities");
         assertFalse(AreaFacts.autoNoBreak(false, 1), "one chest could be mine");
         assertFalse(AreaFacts.autoNoBreak(false, 0));
+        assertTrue(AreaFacts.autoNoBreak(false, 0, 6, null), "review 1: a cluster of 6 built blocks");
+        assertTrue(AreaFacts.autoNoBreak(false, 0, 0, "a village"), "review 1: a village (bells, beds, workstations, doors, paths)");
+        assertFalse(AreaFacts.autoNoBreak(false, 1, 5, null));
         Box b = AreaFacts.candidateBox("found1", OW, 100, 64, -20, 16, 8, 16);
         assertEquals(AreaType.NO_BREAK, b.type);
         assertEquals(84, b.x1);

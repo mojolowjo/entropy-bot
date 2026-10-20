@@ -114,7 +114,18 @@ public final class Guard {
         boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(bid)
                 // 0.33.0 (A3): my own station inside my areas is a built block here (a force lease may take it), not floor
                 && !(io.github.mojolowjo.entropybot.clear.OwnStations.station(bid) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(pos.getX(), pos.getY(), pos.getZ()));
-        return GuardCore.BlockInfo.of(true, be, s.contains(st.getBlock()));
+        boolean built = s.contains(st.getBlock());
+        // AREAS review 1 (BuiltNear): outside every area a natural block beside a built one or a block entity is built too
+        if (!built && !be && !st.isAir() && core.policy().typeAt(dimOf(level), pos.getX(), pos.getY(), pos.getZ()) == null) {
+            BuiltNear.Look look = (x, y, z) -> {
+                BlockPos q = new BlockPos(x, y, z);
+                if (!level.isLoaded(q)) return -1;
+                BlockState t = level.getBlockState(q);
+                return (t.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(t.getBlock()).toString())) || s.contains(t.getBlock()) ? 1 : 0;
+            };
+            built = BuiltNear.counts(false, st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES), true, look, pos.getX(), pos.getY(), pos.getZ());
+        }
+        return GuardCore.BlockInfo.of(true, be, built);
     }
 
     public static String dimOf(Level level) {

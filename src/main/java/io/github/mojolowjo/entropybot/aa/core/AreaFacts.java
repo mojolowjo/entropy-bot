@@ -81,10 +81,18 @@ public final class AreaFacts {
      * rejects it, when it is not plainly the bot's own: a named mob there, or {@code manyEntities} block entities or
      * more. {@code built} alone (a few placed blocks) is not enough: the bot's own paths and torches look like that.
      */
-    public static final int MANY_ENTITIES = 2;
+    public static final int MANY_ENTITIES = 2, MANY_BUILT = 6;
 
     public static boolean autoNoBreak(boolean named, int blockEntities) {
-        return named || blockEntities >= MANY_ENTITIES;
+        return autoNoBreak(named, blockEntities, 0, null);
+    }
+
+    /**
+     * AREAS review 1: a village or another world structure ({@code natural} names it: bells, beds, workstations, doors,
+     * paths) and a cluster of {@link #MANY_BUILT} built blocks count too - a lone chest or a few torches do not.
+     */
+    public static boolean autoNoBreak(boolean named, int blockEntities, int built, String natural) {
+        return named || blockEntities >= MANY_ENTITIES || built >= MANY_BUILT || natural != null;
     }
 
     /** The no-break box for a candidate at (x, y, z): R each way, DOWN below, UP above (the accept command's shape). */

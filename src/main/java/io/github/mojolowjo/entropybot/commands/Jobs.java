@@ -2242,7 +2242,7 @@ public final class Jobs {
      * position watch ("a job outside every area stops", its grace, the walk back inside) is gone - the world is open.
      */
     private void fenceWatch(LocalPlayer p) {
-        if (!commands.fenceOn()) return;
+        // review 5: no fenceOn gate - goalAllowed refuses a keep-out box (and a portal) in every mode, nothing else
         if (followWatch != null) {
             Player t = findPlayer(followWatch[0]);
             if (t == null) return;

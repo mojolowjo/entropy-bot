@@ -312,7 +312,7 @@ final class Chopping {
         List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> got = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) -> {
             if (r.tried.contains("far " + x + " " + z)) return false;
             if (io.github.mojolowjo.entropybot.chop.Unreachable.blocked(x, z, System.currentTimeMillis())) return false;      // 0.36.3
-            if (!commands.inAreas(dim, x, z) || jobs.goalAllowed(x, y, z) != null) return false;
+            if (!commands.inAreas(dim, x, y, z) || jobs.goalAllowed(x, y, z) != null) return false;
             // 0.34.1 (review): never toward a protect box (margin as the mine's), nor a loaded log the tree finder
             // judges built (a log house) or not a tree; unloaded ones are judged by the scan on arrival
             if (MineRules.protectNear(prot, dim, x, y, z, MineRules.PROTECT_MARGIN) != null) return false;
@@ -505,7 +505,7 @@ final class Chopping {
                 // 0.32.1 (P1, Haiku run: "no log at -249 71 123" three runs in a row): the column source counts stripped
                 // logs and 6-sided wood as LOG, the tree finder doesn't: only a column whose top is a real log is a candidate
                 if (!w.log(x, y, z)) { r.notLogs++; continue; }
-                if (commands.inAreas(dim, x, z)) inside.add(new int[]{x, y, z});
+                if (commands.inAreas(dim, x, y, z)) inside.add(new int[]{x, y, z});
                 else {
                     long d = (long) (x - me[0]) * (x - me[0]) + (long) (z - me[2]) * (z - me[2]);
                     if (d < bestOut) {
@@ -558,7 +558,7 @@ final class Chopping {
             }
             boolean off = false;
             for (int[] l : t.logs()) {
-                if (!commands.inAreas(dim, l[0], l[2]) || MineRules.protectNear(prot, dim, l[0], l[1], l[2], 0) != null) {
+                if (!commands.inAreas(dim, l[0], l[1], l[2]) || MineRules.protectNear(prot, dim, l[0], l[1], l[2], 0) != null) {
                     off = true;
                     break;
                 }

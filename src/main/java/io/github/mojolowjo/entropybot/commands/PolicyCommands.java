@@ -53,6 +53,9 @@ public final class PolicyCommands {
         /** Mining plan: "fence rules" (the policy snapshot, intent, hook, counters), or null without the mod. */
         default String rules() { return null; }
 
+        /** AREAS review 3: the guard's immutable policy snapshot (the candidate boxes included), for the hot checks; null without the mod. */
+        default io.github.mojolowjo.entropybot.guard.Policy policy() { return null; }
+
         /** AREAS: the danger move multiplier (1..64); sets it when {@code set} is not NaN; the value in force. */
         default double danger(double set) { return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
 
@@ -96,7 +99,11 @@ public final class PolicyCommands {
         JsonArray as = areas(), ps = protect();
         List<JsonObject> all = new ArrayList<>();
         for (JsonElement e : as) if (e.isJsonObject()) all.add(e.getAsJsonObject());
-        for (JsonElement e : ps) if (e.isJsonObject()) all.add(e.getAsJsonObject());
+        for (JsonElement e : ps) if (e.isJsonObject()) {
+            JsonObject b = e.getAsJsonObject();
+            if (!b.has("type")) b.addProperty("type", AreaType.NO_BREAK.word());       // review 6: an untyped protect box is no-break
+            all.add(b);
+        }
         JsonArray na = new JsonArray(), np = new JsonArray();
         for (JsonObject b : all) {
             AreaType t = typeOf(b);
@@ -160,7 +167,9 @@ public final class PolicyCommands {
                 named = pn.isBoolean() ? pn.getAsBoolean() : pn.isNumber() && pn.getAsInt() > 0;
             }
             int ents = o.has("blockEntities") ? o.get("blockEntities").getAsInt() : 0;
-            if (!io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(named, ents)) continue;
+            int built = o.has("built") ? o.get("built").getAsInt() : 0;
+            String natural = o.has("natural") && o.get("natural").isJsonPrimitive() ? o.get("natural").getAsString() : null;
+            if (!io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(named, ents, built, natural)) continue;
             String dim = o.has("dim") ? o.get("dim").getAsString() : DEFAULT_DIM;
             JsonObject b = io.github.mojolowjo.entropybot.aa.core.AreaFacts.candidateBox("found" + (i + 1), dim, n(o, "x"), n(o, "y"), n(o, "z"),
                     io.github.mojolowjo.entropybot.vocab.AreaCandidates.R, io.github.mojolowjo.entropybot.vocab.AreaCandidates.DOWN, io.github.mojolowjo.entropybot.vocab.AreaCandidates.UP).toJson();
@@ -200,11 +209,26 @@ public final class PolicyCommands {
      * reading). The old "inside one of my areas" is gone - the world is open.
      */
     public boolean inAreas(String dim, int x, int z) {
+        io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();        // review 3: the guard's snapshot, no JSON per call
+        if (pol != null) return pol.protectColumn(dim, x, z) == null;
         return blocker(dim, x, z) == null;
+    }
+
+    /** AREAS review 8: the same with the height: a no-break box over a mine far below it does not block the mine. */
+    public boolean inAreas(String dim, int x, int y, int z) {
+        io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();
+        if (pol != null) return pol.protectAt(dim, x, y, z) == null;
+        JsonObject b = blocker(dim, x, z);
+        return b == null || (hasY(b) && (y < n(b, "y1") || y > n(b, "y2")));
     }
 
     /** AREAS: the keep-out or no-break entry whose footprint holds the column (keep-out first), or null. */
     public JsonObject blocker(String dim, int x, int z) {
+        io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();
+        if (pol != null) {
+            io.github.mojolowjo.entropybot.guard.Box b = pol.protectColumn(dim, x, z);
+            return b == null ? null : b.toJson();
+        }
         JsonObject best = null;
         JsonArray all = protect().deepCopy();
         all.addAll(candidateBoxes());

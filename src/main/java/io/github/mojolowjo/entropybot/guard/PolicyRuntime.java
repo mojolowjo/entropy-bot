@@ -76,6 +76,28 @@ public final class PolicyRuntime {
 
     // ---- the snapshot ----
 
+    /** AREAS review 1: the areas policy and the bot's dimension as of the last tick (the built-near rule, any thread). */
+    private volatile Policy areasNow;
+    private volatile String dimNow;
+
+    /**
+     * AREAS review 1 (BuiltNear): a natural-looking block outside every area counts as built when a built block or a
+     * block entity stands within reach of it (an unlabelled cobble hut, a village). Any thread (array reads on {@code at}).
+     */
+    public boolean builtNear(StateAt at, int x, int y, int z, boolean ore) {
+        Policy p = areasNow;
+        String dim = dimNow;
+        if (p == null || dim == null || p.typeAt(dim, x, y, z) != null) return false;
+        Guard g = Guard.INSTANCE;
+        BuiltNear.Look look = (lx, ly, lz) -> {
+            BlockState s = at.at(lx, ly, lz);
+            if (s == null) return -1;
+            return (s.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString()))
+                    || g.isProtectedBlock(s.getBlock()) ? 1 : 0;
+        };
+        return BuiltNear.counts(false, ore, true, look, x, y, z);
+    }
+
     /** Client tick: the connection kind and the guard's policy into the snapshot when either changed. Never throws. */
     public void tick(Minecraft mc, GuardCore core) {
         try {
@@ -87,6 +109,8 @@ public final class PolicyRuntime {
                     pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.DEFAULT_TIER : pickTier(pl));
             inWater = wet;
             Policy p = core.policy();
+            areasNow = p;                                                   // AREAS review 1: for the built-near rule
+            if (pl != null) dimNow = Guard.dimOf(pl.level());
             if (snapshot == null || p != snapshotOf || mp != multiplayer) {
                 multiplayer = mp;
                 snapshotOf = p;
@@ -227,8 +251,8 @@ public final class PolicyRuntime {
             id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
             be = !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(id);
         }
-        boolean built = g.isProtectedBlock(st.getBlock());
         boolean ore = st.is(Tags.Blocks.ORES);
+        boolean built = g.isProtectedBlock(st.getBlock()) || (!be && !st.isAir() && builtNear(at, x, y, z, ore));     // AREAS review 1
         boolean unbreakable = st.getBlock().defaultDestroyTime() < 0;
         // in the cell: a pure liquid block only (kelp, seagrass and waterlogged stairs are broken like any block)
         Fluid in = st.getBlock() instanceof LiquidBlock ? fluidOf(st) : Fluid.NONE;

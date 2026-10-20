@@ -146,12 +146,13 @@ public final class Commands implements Chains.Env {
         o.addProperty("built", sc.built());
         o.addProperty("blockEntities", sc.blockEntities());
         o.addProperty("named", sc.named());
+        if (sc.natural() != null) o.addProperty("natural", sc.natural());      // AREAS review 1: a village is a candidate too
         o.addProperty("at", System.currentTimeMillis());
         list.add(o);
         while (list.size() > 20) list.remove(0);
         b.add("safeCandidates", list);
         saved();
-        if (io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(sc.named() > 0, sc.blockEntities()) && policy != null) {
+        if (io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(sc.named() > 0, sc.blockEntities(), sc.built(), sc.natural()) && policy != null) {
             LOG.info("[entropybot] area candidates: {} {} {} looks like someone's base ({} built, {} block entities{}) - treated as no-break until rejected: {}",
                     at[0], at[1], at[2], sc.built(), sc.blockEntities(), sc.named() > 0 ? ", a named mob" : "", policy.apply());
         }
@@ -1423,14 +1424,14 @@ public final class Commands implements Chains.Env {
                     int[] fix = ownerFixPos(name);
                     if (fix != null) return jobs.startFollowFix(name, from, fix);
                 }
-                Player target = fenceOn() ? Jobs.findPlayer(name) : null;
+                Player target = Jobs.findPlayer(name);              // review 5: a keep-out box refuses in every mode, fence on or off
                 if (target != null) {
                     int[] t = Jobs.here(target);
                     String why = jobs.goalAllowed(t[0], t[1], t[2]);
                     if (why != null) return FenceRules.followRefusal(name, why, t[0], t[2]);
                 }
                 String r = jobs.startTravel("follow player " + name, "following " + name, null, null, false);
-                if (r.startsWith("ok") && fenceOn()) jobs.followWatch = new String[]{name, from};
+                if (r.startsWith("ok")) jobs.followWatch = new String[]{name, from};
                 if (jobs.job != null) jobs.job.done = true;        // a follow never "arrives"; nobody waits for it
                 return r;
             }
@@ -2770,6 +2771,9 @@ public final class Commands implements Chains.Env {
 
     @Override public boolean inAreas(String dim, int x, int z) { return policy.inAreas(dim, x, z); }
 
+    /** AREAS review 8: with the height (a protect box's y range counts). */
+    public boolean inAreas(String dim, int x, int y, int z) { return policy.inAreas(dim, x, y, z); }
+
     @Override public long dayTime() {
         Minecraft mc = Minecraft.getInstance();
         return mc.level == null ? -1 : mc.level.getDayTime();
@@ -2827,6 +2831,9 @@ public final class Commands implements Chains.Env {
 
         @Override
         public String rules() { return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.status(); }
+
+        @Override
+        public io.github.mojolowjo.entropybot.guard.Policy policy() { return core.guard.core.policy(); }
 
         @Override
         public double danger(double set) {
