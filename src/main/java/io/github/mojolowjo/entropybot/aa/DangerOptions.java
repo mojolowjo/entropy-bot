@@ -64,9 +64,11 @@ public final class DangerOptions {
         double runT = w.fleeRun() / speed;
         double fleeD = w.fleeRun() > 0 ? away(foes, runT, speed) + Tuning.get("danger.fleeBack") * stayFight[0] : 0;
         all.add(priced(me, Way.FLEE, w.fleeRun() > 0, fleeD, 2 * runT, w.fleeRun() > 0 ? "run " + w.fleeRun() + " and back" : "cornered: no heading clear of mobs"));
-        double homeT = w.baseDist() > 0 ? w.baseDist() / speed : 0;
-        all.add(priced(me, Way.HOME, w.baseDist() > 0, w.baseDist() > 0 ? away(foes, homeT, speed) : 0, 2 * homeT,
-                w.baseDist() > 0 ? "the base " + Math.round(w.baseDist()) + " away, there and back" : "no base in reach"));
+        // round 4 fix 2 (live: "home saves 356s" at 3.7 hp with an 18.5 s walk, slain by the zombie 14 s later): the walk
+        // home is a Baritone path at walking pace, not a sprint away, and every chaser follows it the whole way
+        double homeT = w.baseDist() > 0 ? w.baseDist() / HOME_SPEED : 0;
+        all.add(priced(me, Way.HOME, w.baseDist() > 0, w.baseDist() > 0 ? pursuit(foes, homeT, HOME_SPEED) : 0, 2 * homeT,
+                w.baseDist() > 0 ? "the base " + Math.round(w.baseDist()) + " away, there and back, the chasers counted" : "no base in reach"));
         boolean ranged = false;
         for (ThreatFacts.Foe x : foes) ranged |= x.ranged();
         double moveT = w.coverDist() < 0 ? 0 : w.coverDist() / 4.3 + 0.5, coverD = 0;
@@ -140,6 +142,36 @@ public final class DangerOptions {
     static double kill(ThreatFacts.Me me, ThreatFacts.Foe x) {
         double hit = Math.max(1, me.weaponHit());
         return Math.ceil(x.hp() / hit) * (hit <= 1 ? FIST_S : SWING_S);
+    }
+
+    /**
+     * The walk home: Baritone walks a path (4.3 blocks/s on the flat) with turns, jumps and doors, so a pursuer loses
+     * less ground than the straight-line speeds say: {@link ThreatFacts#WALK} x {@link #PATH_FACTOR}.
+     */
+    static final double PATH_FACTOR = 0.6, HOME_SPEED = ThreatFacts.WALK * PATH_FACTOR;
+    /** A walker this far behind at the start loses the bot on the way; nearer ones follow for the whole walk. */
+    static final double PURSUIT_RANGE = 16;
+
+    /**
+     * Round 4 fix 2: the damage the foes do over a whole walk of {@code walkT} s at {@code walkSpeed} (the way home):
+     * a shooter while the bot is still in its range, a flier or a faster walker for all of it past its reach time,
+     * and a slower walker for the share of the walk it keeps up (its speed over the bot's) scaled by how close it
+     * starts (within {@link #PURSUIT_RANGE}). Every chaser adds up. Pure.
+     */
+    static double pursuit(List<ThreatFacts.Foe> foes, double walkT, double walkSpeed) {
+        double d = 0;
+        for (ThreatFacts.Foe x : foes) {
+            if (x.ranged()) {
+                double out = Math.max(0, ThreatFacts.RANGED_RANGE - x.dist()) / Math.max(0.5, walkSpeed - x.speed());
+                d += x.dps() * Math.min(walkT, out);
+            } else if (x.flies() || x.speed() >= walkSpeed) {
+                d += x.dps() * Math.max(0, walkT - x.reachT());
+            } else {
+                double share = Math.min(1, x.speed() / walkSpeed) * Math.max(0, 1 - x.dist() / PURSUIT_RANGE);
+                d += x.dps() * Math.max(0, walkT - x.reachT()) * share;
+            }
+        }
+        return d;
     }
 
     /** The damage taken while running away for {@code runT} s: slower walkers one hit if in reach, faster ones and shooters while they keep up. */

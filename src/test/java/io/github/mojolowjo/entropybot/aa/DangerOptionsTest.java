@@ -43,15 +43,32 @@ class DangerOptionsTest {
     }
 
     @Test
-    void lowHealthGoesHomeWhenTheBaseIsInReachElsePillars() {
-        ThreatFacts.Ways home = new ThreatFacts.Ways(16, 40, -1, false, 0, 3, true);
-        DangerOptions.Choice c = DangerOptions.choose(facts(me(6, 7), home, zombie(5)));
+    void lowHealthGoesHomeOnlyWhenTheChasersCannotFollowElsePillars() {
+        // round 4 fix 2: cornered (no flee heading), the base 40 away, a zombie far behind: home is worth it
+        ThreatFacts.Ways home = new ThreatFacts.Ways(0, 40, -1, false, 0, 3, true);
+        DangerOptions.Choice c = DangerOptions.choose(facts(me(6, 1), home, zombie(15)));          // bare hands: no quick kill
         assertEquals(DangerOptions.Way.HOME, c.best().way(), c.terms());
         assertEquals("go base", c.chain());
         assertTrue(c.score() >= Brain.URGENT, "a likely death avoided: urgent " + c.terms());
+        // the same walk with the zombie 3 blocks behind: it follows the whole way (live: slain 14 s into "go base")
+        DangerOptions.Choice chased = DangerOptions.choose(facts(me(6, 1), home, zombie(3)));
+        assertNotEquals(DangerOptions.Way.HOME, chased.best().way(), chased.terms());
         ThreatFacts.Ways pillar = new ThreatFacts.Ways(16, -1, -1, false, 12, 3, true);
         DangerOptions.Choice p = DangerOptions.choose(facts(me(6, 7), pillar, zombie(5)));
         assertEquals(DangerOptions.Way.PILLAR, p.best().way(), p.terms());
+    }
+
+    @Test
+    void theWalkHomeCountsEveryChaserOverTheWholeWalk() {
+        double walkT = 40 / DangerOptions.HOME_SPEED;
+        double one = DangerOptions.pursuit(List.of(zombie(3)), walkT, DangerOptions.HOME_SPEED);
+        double two = DangerOptions.pursuit(List.of(zombie(3), zombie(4)), walkT, DangerOptions.HOME_SPEED);
+        assertTrue(one > 6, "a zombie 3 behind over a 15 s walk: more than 6 hp, " + one);
+        assertTrue(two > one * 1.8, "two chasers add up: " + two);
+        assertEquals(0, DangerOptions.pursuit(List.of(zombie(20)), walkT, DangerOptions.HOME_SPEED), 1e-9, "a zombie 20 behind loses the bot");
+        assertTrue(DangerOptions.pursuit(List.of(zombie(3)), walkT, 5.6) < one, "a sprint shakes it off sooner than a walked path");
+        ThreatFacts.Foe sk = ThreatFacts.foe("minecraft:skeleton", 12, 0, null);
+        assertTrue(DangerOptions.pursuit(List.of(sk), walkT, DangerOptions.HOME_SPEED) > 0, "a skeleton shoots until the bot is out of range");
     }
 
     @Test

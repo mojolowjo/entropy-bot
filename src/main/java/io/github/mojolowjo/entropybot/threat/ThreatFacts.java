@@ -100,8 +100,11 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
     /** 0.23.2: sprint whenever a run moves (vanilla needs food above 6). */
     public static boolean sprint(boolean moving, int food) { return moving && food > 6; }
 
+    /** The bot's walking pace (a Baritone path), blocks per second on the flat. */
+    public static final double WALK = 4.3;
+
     /** The bot's run speed: sprint 5.6 with food above 6, else walk 4.3. */
-    public static double runSpeed(int food) { return food > 6 ? 5.6 : 4.3; }
+    public static double runSpeed(int food) { return food > 6 ? 5.6 : WALK; }
 
     /** "zombie 3.0 (table 3/hit), skeleton 12.0 (...)" for aa why. */
     public String foesText() {
