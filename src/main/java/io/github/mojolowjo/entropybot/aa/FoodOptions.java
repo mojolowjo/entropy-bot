@@ -59,7 +59,17 @@ public final class FoodOptions {
                             Map<String, Integer> animals, int animalsOutside, String huntWhy,
                             int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
                             int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
-                            Map<String, Integer> animalsOut, float health, double outDist, int[] outAt, int[] waterSpot) {
+                            Map<String, Integer> animalsOut, float health, double outDist, int[] outAt, int[] waterSpot, List<Herd> herds) {
+        /** AA_ROUND3 5: without the remembered herds. */
+        public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
+                         Map<String, Integer> animals, int animalsOutside, String huntWhy,
+                         int[] oak, String oakType, double oakDist, int[] berry, double berryDist, int[] red, int[] brown,
+                         int[] grass, boolean waterNear, boolean farmKnown, int storedFood, boolean kelpNear, int[] me,
+                         Map<String, Integer> animalsOut, float health, double outDist, int[] outAt, int[] waterSpot) {
+            this(food, saturation, bag, target, furnace, animals, animalsOutside, huntWhy, oak, oakType, oakDist, berry, berryDist, red, brown,
+                    grass, waterNear, farmKnown, storedFood, kelpNear, me, animalsOut, health, outDist, outAt, waterSpot, List.of());
+        }
+
         /** Without the nearest outside animal's place and a field spot by water. */
         public FoodFacts(int food, double saturation, Map<String, Integer> bag, double target, boolean furnace,
                          Map<String, Integer> animals, int animalsOutside, String huntWhy,
@@ -91,6 +101,15 @@ public final class FoodOptions {
 
         int has(String path) { return bag == null ? 0 : bag.getOrDefault(path, 0); }
     }
+
+    /**
+     * AA_ROUND3 5: a herd I saw earlier (Sightings kind ANIMAL): the type's short name ("cow"), where, how many, the
+     * decayed confidence (0..1) and the walk there from me.
+     */
+    public record Herd(String type, int x, int y, int z, int count, double conf, double dist) {}
+
+    /** Herds this far or more are not offered (a round trip past the horizon). */
+    public static final double HERD_MAX = 400, HERD_MIN_CONF = 0.05;
 
     /** Meat per animal (the hunt verb's names) and the cooked food's energy. */
     public static final java.util.Set<String> MEAT_ANIMALS = java.util.Set.of("cow", "pig", "sheep", "chicken");
@@ -190,6 +209,39 @@ public final class FoodOptions {
         // hunger, beside the hunt inside: the travel (there and back) divided by the food urgency (Costs.huntOutTravel)
         String outside = most(f.animalsOut(), f.furnace());
         if (outside != null) huntRow(f, m, now, rows, dropped, short_, outside, f.animalsOut().get(outside), true);
+        seenRows(f, m, now, rows, dropped, short_);
+    }
+
+    /**
+     * AA_ROUND3 5: "go hunt &lt;type&gt; at x z" for a herd I saw earlier and whose type is not in reach now: a round
+     * trip (walk there + the hunt + walk back, + the cook) x 1 / confidence; the best one per type. Its memory key is
+     * {@code sighting/animal <type> <x z>} (a visit that finds none fails it through Failures).
+     */
+    static void seenRows(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {
+        if (f.herds() == null || f.herds().isEmpty()) return;
+        Map<String, Options.Option> best = new java.util.HashMap<>();
+        for (Herd h : f.herds()) {
+            if (!MEAT_ANIMALS.contains(h.type())) continue;
+            if (h.type().equals("chicken") && !f.furnace()) continue;
+            if (f.animals() != null && f.animals().getOrDefault(h.type(), 0) > 0) continue;     // in reach: the plain hunt
+            if (f.animalsOut() != null && f.animalsOut().getOrDefault(h.type(), 0) > 0) continue; // in view outside: hunt out
+            if (h.conf() < HERD_MIN_CONF) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": seen too long ago (confidence " + String.format(Locale.ROOT, "%.2f", h.conf()) + ")"); continue; }
+            if (h.dist() > HERD_MAX) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": " + Math.round(h.dist()) + " away"); continue; }
+            String meat = MEAT.get(h.type()), cooked = FoodModel.COOKS.get(meat);
+            double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
+            int n = Math.max(2, Math.min(Math.min(8, Math.max(2, h.count())), FoodModel.count(short_, each)));
+            double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
+            double cost = trip / Math.max(HERD_MIN_CONF, h.conf());
+            String key = "sighting/animal " + h.type() + " " + h.x() + " " + h.z();
+            String chain = "hunt " + n + " " + h.type() + " at " + h.x() + " " + h.z() + (f.furnace() ? " then cook " + meat + " " + n : "");
+            Options.Option o = Options.scored("go hunt " + h.type(), "hunt", chain, cost,
+                    String.format(Locale.ROOT, "%d %s seen at %d %d, %.0f away, round trip %.0f / confidence %.2f", h.count(), h.type(), h.x(), h.z(), h.dist(), trip, h.conf())
+                            + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), key, false, m)
+                    .withSite(io.github.mojolowjo.entropybot.aa.brain.Site.at(h.x(), h.y(), h.z()));      // the sequencer chains by it
+            Options.Option was = best.get(h.type());
+            if (was == null || o.cost() < was.cost()) best.put(h.type(), o);
+        }
+        for (Options.Option o : best.values()) RungOptions.add(rows, dropped, m, now, o);
     }
 
     /** The animal with the most head (the meatiest first on a tie; no chicken without a furnace: raw chicken poisons). */

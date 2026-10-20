@@ -108,6 +108,21 @@ public final class IronOptions {
             }
             return null;
         }
+
+        /** AA_ROUND3 5: no cave known or seen: the explore walk before "mine cave" ("find cave 5"), or null. */
+        String cavePrefix() {
+            for (var o : discovery) if (o.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.EXPLORE) {
+                int i = o.command().indexOf(" then mine cave");
+                return i > 0 ? o.command().substring(0, i) : null;
+            }
+            return null;
+        }
+
+        /** AA_ROUND3 5: the seen cave opening the CAVE row walks to, or null. */
+        int[] caveSite() {
+            for (var o : discovery) if (o.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.CAVE) return o.site();
+            return null;
+        }
     }
 
     public static final double CLEAR = 10, DIG_BLOCK = 3, PLACE_BLOCK = 5, CAVE_TIME = 120, STRIP_TIME = 200, STALE = 1.5, CAVE_FACE = 2;
@@ -291,7 +306,7 @@ public final class IronOptions {
         if (f.fair() != null) {
             // AA_ROUND3 3: the discovery ways, priced by what was learned (cave yield, the best band's density)
             for (var d : f.fair().discovery()) {
-                Way w = d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.CAVE ? Way.CAVE
+                Way w = d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.CAVE || d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.EXPLORE ? Way.CAVE
                         : d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP ? Way.STRIP : null;
                 if (w == null) continue;
                 if (m.blocked(w, null, now)) dropped.add(d.label() + ": " + m.reason(w, null));
@@ -430,10 +445,12 @@ public final class IronOptions {
                 String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
                 String cmd = rewrite(steps, one);
                 // AA_ROUND3 3: strip at the best band with no mine marked: the mine is placed there first
-                String pre = s.way() == Way.STRIP && f.fair() != null ? f.fair().stripPrefix() : null;
+                String pre = f.fair() == null ? null : s.way() == Way.STRIP ? f.fair().stripPrefix() : s.way() == Way.CAVE ? f.fair().cavePrefix() : null;
                 if (pre != null) cmd = pre + " then " + cmd;
                 rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), cmd, s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
-                        returnLeg(s, f, oreIdx), s.target() == null ? null : io.github.mojolowjo.entropybot.aa.brain.Site.at(s.target().x(), s.target().y(), s.target().z())));
+                        returnLeg(s, f, oreIdx), s.target() != null ? io.github.mojolowjo.entropybot.aa.brain.Site.at(s.target().x(), s.target().y(), s.target().z())
+                        : s.way() == Way.CAVE && f.fair() != null && f.fair().caveSite() != null
+                        ? io.github.mojolowjo.entropybot.aa.brain.Site.at(f.fair().caveSite()[0], f.fair().caveSite()[1], f.fair().caveSite()[2]) : null));
             }
             // aa-replan: ranked by the round trip (go + do + return)
             rows.sort(java.util.Comparator.comparingDouble(Options.Option::total));

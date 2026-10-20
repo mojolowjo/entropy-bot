@@ -26,7 +26,8 @@ final class SeenRuntime {
     /** Candidates gathered per pass (the nearest first). */
     static final int CANDIDATES = 48;
 
-    private final Seen.Budget budget = new Seen.Budget();
+    /** The ray budget, shared with {@link SightingsRuntime} (AA_ROUND3 5: one budget for every kind). */
+    final Seen.Budget budget = new Seen.Budget();
     private long rays, hits, logAt, logged;
     /** review: a cell whose ray was blocked waits {@link #RETRY_MS} (else the nearest blocked cells take every ray). */
     static final long RETRY_MS = 2000;

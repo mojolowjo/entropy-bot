@@ -45,7 +45,29 @@ final class Hunting {
         int[] start;
         int targetId = -1;
         int[] dropAt;
+        /** AA_ROUND3 5: "at x z": where the animals were seen ({x, z}); arrived there; the visit noted in Sightings. */
+        int[] at;
+        boolean arrived, visited;
+        long walkAt = -1;
         JobRequests.Request req;
+    }
+
+    /** AA_ROUND3 5: the visit's outcome for the sighting at the hunt's place (wanted type only). Never throws. */
+    private static void visit(Run r, boolean found, int count) {
+        if (r.at == null || r.visited) return;
+        r.visited = true;
+        if (r.want == null) return;
+        try {
+            var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+            var lv = Minecraft.getInstance().level;
+            String dim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
+            if (sg == null || lv == null || dim == null) return;
+            var rec = sg.visit(dim, r.want, r.at[0], r.at[1], found, count, lv.getGameTime() * 50);
+            LOG.info("[entropybot] hunt: the {} seen at {} {}: {}{}", r.want.replaceFirst("^minecraft:", ""), r.at[0], r.at[1],
+                    found ? count + " there" : "none there (confidence " + io.github.mojolowjo.entropybot.sense.Sightings.MISS_CONF + ")", rec == null ? " (no sighting there)" : "");
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] hunt: sighting visit: {}", e.toString());
+        }
     }
 
     private Run run;
@@ -119,6 +141,7 @@ final class Hunting {
             r.want = mob;
             r.item = (String) f[2];
             r.itemWant = (Integer) f[3];
+            r.at = HuntRules.at(rest);
             r.started = Core.INSTANCE.tick();
             String reply = "started: hunting " + mob.replaceFirst("^minecraft:", "") + " until I have " + r.itemWant + " " + r.item.replaceFirst("^minecraft:", "") + " (hunt status)";
             r.req = c.requests.local("hunt", from, raw, reply, l);
@@ -127,13 +150,14 @@ final class Hunting {
             return new Chains.Reply(reply, r.req);
         }
         Object[] a = HuntRules.parse(rest);
-        if (a == null) return Chains.Reply.now("usage: hunt <n> [cow|pig|chicken|sheep] | hunt <n> <mob> for <item> [count] | hunt status");
+        if (a == null) return Chains.Reply.now("usage: hunt <n> [cow|pig|chicken|sheep] [at x z] [out] | hunt <n> <mob> for <item> [count] [at x z] | hunt status");
         Run r = new Run();
         r.from = from;
         r.n = (Integer) a[0];
         r.want = (String) a[1];
         r.started = Core.INSTANCE.tick();
-        r.out = HuntRules.outWord(rest);
+        r.out = HuntRules.outWord(HuntRules.withoutAt(rest));
+        r.at = HuntRules.at(rest);
         r.start = p == null ? null : Jobs.here(p);
         String reply = "started: hunting until I have " + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + " (hunt status)";
         r.req = c.requests.local("hunt", from, raw, reply, l);
@@ -235,6 +259,8 @@ final class Hunting {
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             boolean target = r.item != null ? type.equals(r.want) : HuntRules.MEAT.containsKey(type);
             if (!target && !(e instanceof Player) && !(e instanceof AbstractVillager)) continue;
+            // AA_ROUND3 5: an "at" hunt takes only animals within 16 of the place it was told (never "the exact cell")
+            if (r.at != null && !HuntRules.atOk(r.at, e.getBlockX(), e.getBlockZ())) continue;
             double d = p.distanceTo(e);
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
             boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
@@ -247,6 +273,7 @@ final class Hunting {
                     LOG.info("[entropybot] hunt: hunting outside my areas (up to {} from {})", HuntRules.OUT_R, Jobs.fmt(r.start));
                 }
             }
+            if (!inAreas && r.at != null) inAreas = true;            // the place's 16 are its own out-rule (as hunt out)
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, e instanceof Player, e instanceof AbstractVillager,
                     e instanceof AgeableMob am && am.isBaby(), inAreas);
             if (target && (r.want == null || r.want.equals(type))) seen++;
@@ -258,6 +285,28 @@ final class Hunting {
                 continue;
             }
             if (d < bestD) { bestD = d; best = e; }
+        }
+        if (r.at != null) {
+            int[] me = Jobs.here(p);
+            long dx = me[0] - r.at[0], dz = me[2] - r.at[1];
+            if (!r.arrived && dx * dx + dz * dz <= (long) HuntRules.AT_ARRIVED * HuntRules.AT_ARRIVED) r.arrived = true;
+            if (best != null) visit(r, true, seen);
+            else if (r.visited) { /* some were there and taken: the usual idle rule below */ }
+            else if (r.arrived) {
+                visit(r, false, 0);
+                end(r, "stopped: hunt: " + have(r, bag) + "/" + goal(r) + " - " + HuntRules.AT_NONE + " (" + r.at[0] + " " + r.at[1] + ")");
+                return;
+            } else {
+                // walk to the place first (the goto is re-issued every 10 s while it is on the way)
+                if (r.walkAt < 0 || now - r.walkAt >= 200) {
+                    r.walkAt = now;
+                    c.handle(r.from, "goto " + r.at[0] + " " + r.at[1], true, null);
+                }
+                r.why = "walking to " + r.at[0] + " " + r.at[1] + " where I saw them";
+                r.idleSince = -1;
+                r.nextAt = now + 20;
+                return;
+            }
         }
         if (best == null) {
             String what = r.want == null ? "animal" : r.want.substring(10);

@@ -70,6 +70,21 @@ class LootDataTest {
         return new LootBook.Ctx(hunting, Set.of("minecraft:cow"), allowed, b -> b.equals("minecraft:gravel"), armed);
     }
 
+    /** AA_ROUND3 5: a herd seen earlier (not in view): the hunt goes to its place; the vanilla table on a server. */
+    @Test
+    void planHuntsAtASeenHerd() {
+        LootBook b = book();
+        LootBook.Plan p = b.plan("leather", 3, 3, ctx(true, Set.of(), false), false, Map.of("minecraft:cow", new int[]{80, -20, 90, 50}));
+        assertEquals("hunt 3 cow for leather 3 at 80 -20", p.command());
+        assertTrue(p.text().contains("confidence 0.50"), p.text());
+        assertEquals("hunt 3 cow for leather 3", b.plan("leather", 3, 3, ctx(true, Set.of(), false), false, Map.of()).command(), "none seen: the plain hunt");
+        assertEquals("mine gravel 30", b.plan("flint", 3, 3, ctx(true, Set.of(), false), false, Map.of("minecraft:cow", new int[]{1, 2, 3, 4})).command());
+        LootBook v = LootBook.vanilla();
+        assertFalse(v.isEmpty());
+        assertEquals("hunt 2 cow for leather 3", v.plan("leather", 2, 3, ctx(true, Set.of(), false), false).command());
+        assertEquals("hunt 3 sheep for white_wool 3", v.plan("white_wool", 3, new LootBook.Ctx(true, Set.of("minecraft:sheep"), Set.of(), x -> false, false), false).command());
+    }
+
     @Test
     void planBreaksKillsOrSaysWhyNot() {
         LootBook b = book();

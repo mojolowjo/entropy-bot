@@ -141,8 +141,8 @@ public final class AaLadder {
                 bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter");
         Rung bed = new Rung("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
-                bb -> bb.in.wool >= 3 ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep on this template)",
-                bb -> "goal bed");
+                bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
+                bb -> bedChain(bb.in.wool, sheepHerd(bb)));
         Rung deposit = new Rung("needs.bag", TaskKind.BAG,
                 bb -> bag.update(bb.in.freeSlots),
                 bb -> bb.in.baseChests ? null : "no base chests scanned (scan base)",
@@ -155,6 +155,22 @@ public final class AaLadder {
         // the brain runs a started desire to its end (live check 2026-10-18: a reactive Fallback let an earlier rung that
         // started *planning* cancel a lower rung's job: a pointless switch)
         return List.of(area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
+    }
+
+    /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */
+    static int[] sheepHerd(io.github.mojolowjo.entropybot.aa.core.Blackboard bb) {
+        return bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.HERDS_FACT) instanceof java.util.Map<?, ?> m
+                && m.get("minecraft:sheep") instanceof int[] h ? h : null;
+    }
+
+    /**
+     * AA_ROUND3 5 (owner 2026-10-20: it never made a bed): short of wool, the bed rung first hunts sheep for it, at the
+     * remembered herd when none is in view (Sightings), then {@code goal bed}.
+     */
+    public static String bedChain(int wool, int[] herd) {
+        if (wool >= 3) return "goal bed";
+        int k = 3 - Math.max(0, wool);
+        return "hunt " + k + " sheep for white_wool 3" + (herd == null ? "" : " at " + herd[0] + " " + herd[1]) + " then goal bed";
     }
 
     /** The rungs under the brain (or any node), in order (for tests and the status line). */

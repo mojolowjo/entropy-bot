@@ -10,6 +10,19 @@ import org.junit.jupiter.api.Test;
 class HuntRulesTest {
     static HuntRules.Target t(String type) { return new HuntRules.Target(type, false, false, false, false, false, false, true); }
 
+    /** AA_ROUND3 5: "hunt n animal at x z [out]" and the loot form with "at". */
+    @Test void atPlace() {
+        assertArrayEquals(new int[]{80, -12}, HuntRules.at("3 cow at 80 -12"));
+        assertNull(HuntRules.at("3 cow"));
+        assertArrayEquals(new Object[]{3, "minecraft:cow"}, HuntRules.parse("3 cow at 80 -12"));
+        assertArrayEquals(new Object[]{3, "minecraft:cow"}, HuntRules.parse("3 cow at 80 -12 out"));
+        assertTrue(HuntRules.outWord(HuntRules.withoutAt("3 cow at 80 -12 out")));
+        assertArrayEquals(new Object[]{2, "minecraft:cow", "minecraft:leather", 3}, HuntRules.parseFor("2 cow for leather 3 at 5 6"));
+        assertTrue(HuntRules.atOk(new int[]{80, 0}, 90, 10), "within 16");
+        assertFalse(HuntRules.atOk(new int[]{80, 0}, 100, 0), "20 off: not taken");
+        assertFalse(HuntRules.atOk(null, 0, 0));
+    }
+
     @Test void targetFilter() {
         List<String> ok = HuntRules.ANIMALS;
         assertTrue(HuntRules.mayTake(t("minecraft:cow"), ok, null));

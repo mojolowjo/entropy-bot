@@ -28,6 +28,24 @@ import java.util.function.Predicate;
  */
 public final class LootBook {
     public static final String FACT = "aa.lootBook", CTX_FACT = "aa.lootCtx";
+    /** AA_ROUND3 5: mob id -> {x, z, distance, confidence x 100} of the best herd seen and not in view (Sightings). */
+    public static final String HERDS_FACT = "aa.herdsSeen";
+
+    /**
+     * AA_ROUND3 5 (pitfall 4): a multiplayer client has no loot tables; the farm animals' drops are known anyway (the
+     * vanilla tables: cow beef + leather, pig porkchop, sheep mutton + white wool, chicken chicken + feather).
+     */
+    public static LootBook vanilla() {
+        List<Source> l = new ArrayList<>();
+        l.add(new Source(Kind.MOB, "minecraft:cow", "minecraft:beef", 2, 1, false, null));
+        l.add(new Source(Kind.MOB, "minecraft:cow", "minecraft:leather", 1, 0.67, false, null));
+        l.add(new Source(Kind.MOB, "minecraft:pig", "minecraft:porkchop", 2, 1, false, null));
+        l.add(new Source(Kind.MOB, "minecraft:sheep", "minecraft:mutton", 1.5, 1, false, null));
+        l.add(new Source(Kind.MOB, "minecraft:sheep", "minecraft:white_wool", 1, 1, false, null));
+        l.add(new Source(Kind.MOB, "minecraft:chicken", "minecraft:chicken", 1, 1, false, null));
+        l.add(new Source(Kind.MOB, "minecraft:chicken", "minecraft:feather", 1, 0.67, false, null));
+        return new LootBook(l, "the vanilla farm-animal table (multiplayer client: no loot tables)");
+    }
 
     public enum Kind { MOB, BLOCK, CHEST, TRADE }
 
@@ -110,7 +128,23 @@ public final class LootBook {
     public Plan plan(String item, int n, Ctx ctx, boolean fightOk) { return plan(item, n, n, ctx, fightOk); }
 
     /** stopAt: the bag total the hunt stops at (the goal's n; hunt counts the whole bag, not what it got). */
-    public Plan plan(String item, int n, int stopAt, Ctx ctx, boolean fightOk) {
+    public Plan plan(String item, int n, int stopAt, Ctx ctx, boolean fightOk) { return plan(item, n, stopAt, ctx, fightOk, null); }
+
+    /**
+     * AA_ROUND3 5: herds = {@link #HERDS_FACT} (null none): a mob not in view but seen earlier is hunted at its place
+     * ({@code hunt k cow for leather n at x z}); the line names the place, the distance and the confidence.
+     */
+    public Plan plan(String item, int n, int stopAt, Ctx ctx, boolean fightOk, Map<String, int[]> herds) {
+        Plan p = plan0(item, n, stopAt, ctx, fightOk);
+        if (p.command() == null || p.text() == null || herds == null || !p.command().startsWith("hunt ")) return p;
+        String[] w = p.command().split(" ");
+        String mob = w.length > 2 ? (w[2].indexOf(':') >= 0 ? w[2] : "minecraft:" + w[2]) : null;
+        int[] h = mob == null ? null : herds.get(mob);
+        if (h == null) return p;
+        return new Plan(p.command() + " at " + h[0] + " " + h[1], p.text() + " at " + h[0] + " " + h[1] + " (seen there, " + h[2] + " away, confidence " + String.format(Locale.ROOT, "%.2f", h[3] / 100.0) + ")");
+    }
+
+    private Plan plan0(String item, int n, int stopAt, Ctx ctx, boolean fightOk) {
         String id = TechTree.id(item);
         List<Source> l = sources(id);
         if (l.isEmpty()) return new Plan(null, null);

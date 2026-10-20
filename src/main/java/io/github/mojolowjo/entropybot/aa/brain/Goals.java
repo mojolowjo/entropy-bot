@@ -213,7 +213,9 @@ public final class Goals {
         String id = g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0);
         if (bb.fact(TechTree.FACT) instanceof TechTree t && t.makes(id)) return null;
         LootBook.Ctx ctx = bb.fact(LootBook.CTX_FACT) instanceof LootBook.Ctx c ? c : LootBook.Ctx.NONE;
-        LootBook.Plan p = book.plan(id, Math.max(1, left), g.n, ctx, fightOk(bb, ctx));     // review: hunt stops at the bag total
+        @SuppressWarnings("unchecked")
+        Map<String, int[]> herds = bb.fact(LootBook.HERDS_FACT) instanceof Map<?, ?> hm ? (Map<String, int[]>) hm : null;
+        LootBook.Plan p = book.plan(id, Math.max(1, left), g.n, ctx, fightOk(bb, ctx), herds);     // review: hunt stops at the bag total
         return p.command() == null && p.text() == null ? null : p;
     }
 

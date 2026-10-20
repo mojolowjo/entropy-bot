@@ -95,10 +95,12 @@ public final class ChunkPass {
 
     private final SeenRuntime seenRt = new SeenRuntime();
 
-    /** AA_ROUND3 3: the seen ore cells of this world (kept in ore-stats.json); null before the world files are known. */
+    private final SightingsRuntime sightRt = new SightingsRuntime();
+
+    /** AA_ROUND3 3/5: the seen ore cells of this world (Sightings kind ORE, sightings.json); null before the world files are known. */
     public Seen seen() {
-        OreStats st = stats();
-        return st == null ? null : st.seen();
+        Sightings s = sightings();
+        return s == null ? null : s.ore();
     }
 
     /** sense status: the seen-ore line. */
@@ -155,8 +157,7 @@ public final class ChunkPass {
             SummaryBuilder.Cls cf = reader.cls(from), ct = reader.cls(to);
             if (ct.family() != null) oreHeard++;       // an ore block appeared (sense status counts them: the hook is alive)
             if (cf.family() != null && ct.family() == null) {           // AA_ROUND3 3: a mined ore leaves the seen cells
-                OreStats so = stats();
-                Seen sn = so == null ? null : so.seen();
+                Seen sn = seen();
                 if (sn != null) sn.mined(dim, x, y, z);
             }
             if (s == null || !live.contains(k)) {
@@ -224,8 +225,9 @@ public final class ChunkPass {
             if (tick % 20 == 3) writeDue(now, false);
             if (tick % 1200 == 5) saveStats();
             try {
-                OreStats sn = stats();
-                if (sn != null && dim != null) seenRt.tick(level, mc.player, index, sn.seen(), dim, tick, now);
+                Sightings sg = sightings();
+                if (sg != null && dim != null) seenRt.tick(level, mc.player, index, sg.ore(), dim, tick, now);
+                if (sg != null && dim != null) sightRt.tick(level, mc.player, sg, dim, seenRt.budget, tick, now);
             } catch (Throwable t) {
                 error("seen", t);
             }
@@ -282,6 +284,8 @@ public final class ChunkPass {
             saveStats();                                  // leftWorld may have run already (then it is clean); the old root is still set
             stats = null;
             statsRoot = null;
+            sightings = null;
+            sightRoot = null;
             gen.incrementAndGet();
             schedule.clear();
             live.clear();
@@ -343,7 +347,68 @@ public final class ChunkPass {
         }
     }
 
+    // ---- sightings (AA_ROUND3 5): ore cells, caves and animals the bot has seen, per world (sightings.json) ----
+
+    private Sightings sightings;
+    private String sightRoot;
+
+    /** The current world's sightings (loaded on first use; an older ore-stats.json "seen" part is carried over once). Never throws. */
+    public Sightings sightings() {
+        try {
+            Path root = root();
+            if (root == null) return sightings;
+            String r = root.toString();
+            if (sightings != null && r.equals(sightRoot)) return sightings;
+            if (sightings != null) saveSightings();
+            Path f = root.resolve("sightings.json");
+            int[] skipped = new int[1];
+            if (java.nio.file.Files.isRegularFile(f)) {
+                sightings = Sightings.fromJson(java.nio.file.Files.readString(f), skipped);
+                if (skipped[0] > 0) LOG.warn("[entropybot] sense: sightings.json had {} unreadable part(s), skipped", skipped[0]);
+            } else {
+                OreStats st = stats();
+                Seen old = st == null ? null : st.legacySeen();
+                sightings = new Sightings(old);
+                if (old != null) LOG.info("[entropybot] sense: sightings.json: the seen ore cells carried over from ore-stats.json");
+            }
+            sightRoot = r;
+            return sightings;
+        } catch (Throwable t) {
+            error("sightings load", t);
+            if (sightings == null) sightings = new Sightings();
+            return sightings;
+        }
+    }
+
+    /** aa fair / aa sightings: the sightings line. */
+    public String sightingsText() {
+        Sightings s = sightings();
+        var mc = Minecraft.getInstance();
+        return s == null || dim == null ? "sightings: no world" : s.text(dim, mc.level == null ? 0 : mc.level.getGameTime() * 50) + " | " + sightRt.status();
+    }
+
+    private void saveSightings() {
+        try {
+            Sightings sg = sightings;
+            io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();
+            if (sg == null || files == null || sightRoot == null || !sg.dirty()) return;
+            if (!sightRoot.equals(files.worldRoot().toString())) return;
+            String json = sg.snapshot();
+            Path target = files.worldRoot().resolve("sightings.json");
+            worker().execute(() -> {
+                try {
+                    files.writeAtomic(target, json);
+                } catch (Throwable t) {
+                    LOG.warn("[entropybot] sense: couldn't write {}: {}", target.getFileName(), t.toString());
+                }
+            });
+        } catch (Throwable t) {
+            error("sightings save", t);
+        }
+    }
+
     private void saveStats() {
+        saveSightings();
         try {
             OreStats st = stats;
             io.github.mojolowjo.entropybot.io.BotFiles files = Core.INSTANCE.files();

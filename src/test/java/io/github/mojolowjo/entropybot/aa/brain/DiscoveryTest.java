@@ -13,6 +13,46 @@ class DiscoveryTest {
         return new Discovery.Facts(caveDist, rate, marked, areas, areas ? null : "outside my areas", 100, 70, 200, bestY, density, 0.4, owner);
     }
 
+    /** AA_ROUND3 5: with a seen cave opening and the learned chance to see one per 100 blocks. */
+    static Discovery.Facts g(int caveDist, int[] seen, double per100, boolean areas) {
+        return new Discovery.Facts(caveDist, 1, false, areas, areas ? null : "outside my areas", 100, 70, 200, 16, 0.002, 0.4, false, null, seen, per100);
+    }
+
+    @Test
+    void aSeenCaveBeatsExplore() {
+        List<String> dd = new ArrayList<>();
+        var r = Discovery.rank(g(-1, new int[]{120, 60, 210}, 0.5, false), "iron", 3, dd);
+        assertEquals(Discovery.Kind.CAVE, r.get(0).kind());
+        assertEquals("mine cave iron 3", r.get(0).command(), "the cave run walks to the seen opening itself");
+        assertArrayEquals(new int[]{120, 60, 210}, r.get(0).site());
+        assertTrue(r.get(0).why().contains("opening I saw at 120 60 210"), r.get(0).why());
+        assertTrue(r.stream().noneMatch(o -> o.kind() == Discovery.Kind.EXPLORE), "seen: no explore row");
+        // past 64 the opening is not offered: explore is, valued by the learned chance
+        dd.clear();
+        r = Discovery.rank(g(-1, new int[]{300, 60, 200}, 0.5, false), "iron", 3, dd);
+        assertEquals(Discovery.Kind.EXPLORE, r.get(0).kind());
+        assertEquals("find cave 5 then mine cave iron 3", r.get(0).command());
+        assertTrue(dd.stream().anyMatch(d -> d.startsWith("explore cave: no known cave and no cave opening seen")), dd.toString());
+    }
+
+    @Test
+    void exploreIsValuedByTheLearnedChance() {
+        List<String> dd = new ArrayList<>();
+        double often = Discovery.rank(g(-1, null, 2, false), "iron", 3, dd).get(0).cost();
+        double rare = Discovery.rank(g(-1, null, 0.2, false), "iron", 3, dd).get(0).cost();
+        assertTrue(often < rare, often + " vs " + rare);
+        assertEquals(100 / 0.2 - 100 / 2.0, rare - often, 1e-6, "the walk to the next cave: 100 / chance blocks");
+        // a near seen cave is cheaper than any explore
+        double seen = Discovery.rank(g(-1, new int[]{110, 70, 200}, 2, false), "iron", 3, dd).get(0).cost();
+        assertTrue(seen < often);
+        // a known cave nearer than the seen opening keeps the old row
+        var r = Discovery.rank(g(5, new int[]{140, 70, 200}, 2, false), "iron", 3, dd);
+        assertEquals("mine cave iron 3", r.get(0).command());
+        assertNull(r.get(0).site());
+        // not read (0): no explore row, the old behaviour
+        assertTrue(Discovery.rank(f(-1, 1, false, false, 16, 0.002, false), "iron", 3, dd).isEmpty());
+    }
+
     @Test
     void aNearRichCaveBeatsTheStrip() {
         List<String> dd = new ArrayList<>();

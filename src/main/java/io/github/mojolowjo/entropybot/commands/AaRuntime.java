@@ -166,6 +166,45 @@ public final class AaRuntime implements JobPort {
         return null;
     }
 
+    /** AA_ROUND3 5: the herds I have seen in this dimension (Sightings kind ANIMAL), confidence decayed to now (game time). */
+    static List<io.github.mojolowjo.entropybot.aa.FoodOptions.Herd> herds(net.minecraft.world.level.Level lv, int[] me) {
+        List<io.github.mojolowjo.entropybot.aa.FoodOptions.Herd> out = new ArrayList<>();
+        var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+        String dim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
+        if (sg == null || dim == null || lv == null) return out;
+        long game = lv.getGameTime() * 50;
+        for (var r : sg.animals(dim, null)) {
+            String type = r.id().startsWith("minecraft:") ? r.id().substring(10) : r.id();
+            out.add(new io.github.mojolowjo.entropybot.aa.FoodOptions.Herd(type, r.x(), r.y(), r.z(), r.count(),
+                    io.github.mojolowjo.entropybot.sense.Sightings.confidence(r, game), Math.sqrt(Jobs.distSq(me, new int[]{r.x(), r.y(), r.z()}))));
+        }
+        return out;
+    }
+
+    /**
+     * AA_ROUND3 5: mob id -> the best herd seen ({x, z, distance, confidence x 100}) for the loot plan's "at" hunt, the
+     * types in view now left out (the plain hunt takes them).
+     */
+    static Map<String, int[]> herdsSeen(net.minecraft.world.level.Level lv, LocalPlayer p) {
+        Map<String, int[]> out = new java.util.HashMap<>();
+        if (lv == null || p == null) return out;
+        java.util.Set<String> inView = new java.util.HashSet<>();
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.RANGE)))
+            inView.add(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
+        int[] me = Jobs.here(p);
+        Map<String, Double> score = new java.util.HashMap<>();
+        for (var h : herds(lv, me)) {
+            String id = h.type().indexOf(':') >= 0 ? h.type() : "minecraft:" + h.type();
+            if (inView.contains(id) || h.conf() < io.github.mojolowjo.entropybot.aa.FoodOptions.HERD_MIN_CONF || h.dist() > io.github.mojolowjo.entropybot.aa.FoodOptions.HERD_MAX) continue;
+            double s = (2 * h.dist() + 60) / h.conf();
+            if (s < score.getOrDefault(id, Double.MAX_VALUE)) {
+                score.put(id, s);
+                out.put(id, new int[]{h.x(), h.z(), (int) Math.round(h.dist()), (int) Math.round(h.conf() * 100)});
+            }
+        }
+        return out;
+    }
+
     io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts foodFacts() {
         long now = System.currentTimeMillis();
         // review: the cache holds only while the bag, the bar and the furnace are unchanged (a hunt/cook/eat refreshes it)
@@ -269,7 +308,7 @@ public final class AaRuntime implements JobPort {
                 io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb), bb.in.furnaceKnown || bb.in.furnaceInBag,
                 animals, outside, c.hunting.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
                 oak, oakType, oak == null ? -1 : oakD, berry, berry == null ? -1 : berryD, red, brown, grass, water, farm,
-                Math.max(0, stored), kelp, me, animalsOut, p.getHealth(), outDist, outAt, waterSpot);
+                Math.max(0, stored), kelp, me, animalsOut, p.getHealth(), outDist, outAt, waterSpot, herds(lv, me));
         foodCacheAt = now;
         return foodCache;
     }
@@ -391,7 +430,10 @@ public final class AaRuntime implements JobPort {
     private io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts discoveryFacts(String dim, int[] me, String fam, int caveDist, boolean mineMarked, String stripWhy, boolean ownerGoal) {
         var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
         var st = pass.stats();
-        var sn = st == null ? null : st.seen();
+        var sg = pass.sightings();
+        var sn = sg == null ? null : sg.ore();
+        // AA_ROUND3 5: the nearest cave opening I have seen (not exhausted) and the learned chance to see one per 100 blocks
+        var seenCave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
         var r = st == null ? null : st.range(dim, fam);
         int bestY = r == null ? Integer.MIN_VALUE : r.peakY();
         double density = r == null ? -1 : st.density(dim, fam, io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
@@ -403,7 +445,10 @@ public final class AaRuntime implements JobPort {
         var lv = Minecraft.getInstance().level;
         var downs = mineMarked || !sensed.areasHere || down <= 0 || lv == null ? null : downHeadings(lv, me, down);
         return new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, sn == null ? io.github.mojolowjo.entropybot.sense.Seen.PRIOR_RATE : sn.caveRate(fam),
-                mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, density, dig, ownerGoal, downs);
+                mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, density, dig, ownerGoal, downs,
+                seenCave == null ? null : new int[]{seenCave.x(), seenCave.y(), seenCave.z()}, sg == null ? io.github.mojolowjo.entropybot.sense.Sightings.PRIOR_CAVES : sg.cavesPer100(),
+                bb.in.basePos == null ? -1 : Math.sqrt(Jobs.distSq(me, bb.in.basePos)),
+                io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(io.github.mojolowjo.entropybot.aa.brain.Brain.horizon(bb)), bb.in.dayTime);
     }
 
     /** AA_ROUND3 4: the staircase steps down whose cells are read per heading (the pick-time budget). */
@@ -470,7 +515,7 @@ public final class AaRuntime implements JobPort {
         String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
         var sn = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
         String state = "fair " + (io.github.mojolowjo.entropybot.sense.Seen.fair() ? "on" : "off") + " - " + io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seenStatus()
-                + (sn == null ? "" : "; " + sn.caveText());
+                + (sn == null ? "" : "; " + sn.caveText()) + "; " + io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightingsText();
         if (a.isEmpty()) return state;
         if (!a.equals("on") && !a.equals("off")) return "usage: aa fair on|off (" + state + ")";
         io.github.mojolowjo.entropybot.sense.Seen.fair(a.equals("on"));
@@ -950,6 +995,11 @@ public final class AaRuntime implements JobPort {
         in.bag = bag;
         if (mc.level != null) in.dimension = mc.level.dimension().location().toString();
         if (!sheepLatch && mc.level != null && !mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(48)).isEmpty()) sheepLatch = true;
+        if (!sheepLatch && mc.level != null) {           // AA_ROUND3 5: a sheep herd remembered (Sightings) is a wool source too
+            var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+            String sd = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
+            if (sg != null && sd != null && !sg.animals(sd, "minecraft:sheep").isEmpty()) sheepLatch = true;
+        }
         in.sheepSeen = sheepLatch;
         // aa-costs: the tier smoothed (a drop counts after 4 s held) in place of the tools score's old cap at 74
         in.pickTier = toolSmoother.update(s.feas.known ? s.feas.pickTier : (s.pickaxes > 0 ? 1 : 0), System.currentTimeMillis());
@@ -2160,8 +2210,8 @@ public final class AaRuntime implements JobPort {
     private static io.github.mojolowjo.entropybot.aa.brain.LootBook lootBook(Minecraft mc, java.util.Set<String> passive) {
         var server = mc.getSingleplayerServer();
         if (server == null) {
-            LOG.info("[entropybot] aa: loot data: none (multiplayer client: loot tables stay on the server) - aa want uses recipes, ores and gather sources only");
-            return io.github.mojolowjo.entropybot.aa.brain.LootBook.empty("none: multiplayer client");
+            LOG.info("[entropybot] aa: loot data: the vanilla farm-animal table only (multiplayer client: loot tables stay on the server; modded drops unknown)");
+            return io.github.mojolowjo.entropybot.aa.brain.LootBook.vanilla();
         }
         long t0 = System.nanoTime();
         List<io.github.mojolowjo.entropybot.aa.brain.LootBook.Source> all = new ArrayList<>();
@@ -2250,6 +2300,12 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.CTX_FACT, new io.github.mojolowjo.entropybot.aa.brain.LootBook.Ctx(
                 c.hunting != null && c.hunting.on(), lootPassive, java.util.Set.copyOf(c.vocab.expand("animals")),
                 b -> io.github.mojolowjo.entropybot.cave.MineRules.EXTRA.matcher(b).find(), armed));
+        try {         // AA_ROUND3 5: herds seen earlier, for the loot plan's "hunt ... at x z"
+            Minecraft mc = Minecraft.getInstance();
+            bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.HERDS_FACT, herdsSeen(mc.level, mc.player));
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: herds seen: {}", e.toString());
+        }
     }
 
     /** The min/max Y of the anchors in a placement list's height_range (null when none). */

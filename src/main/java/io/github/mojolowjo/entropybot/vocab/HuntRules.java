@@ -56,8 +56,37 @@ public final class HuntRules {
         return rest != null && rest.trim().toLowerCase(Locale.ROOT).matches(".*\\s+out$");
     }
 
+    /**
+     * AA_ROUND3 5: "hunt n [animal] at x z" (and "hunt n mob for item [count] at x z"): the hunt starts at a place where
+     * the animals were seen; it walks there and takes only animals within {@link #AT_R} of it (outside my areas too, as
+     * an out hunt). Arriving to none there ends it ({@link #AT_NONE}).
+     */
+    public static final int AT_R = 16, AT_ARRIVED = 8;
+    private static final java.util.regex.Pattern AT = java.util.regex.Pattern.compile("(?i)\\s+at\\s+(-?\\d{1,8})\\s+(-?\\d{1,8})(?=\\s|$)");
+
+    /** The "at x z" part ({x, z}) or null. */
+    public static int[] at(String rest) {
+        if (rest == null) return null;
+        var m = AT.matcher(rest);
+        return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))} : null;
+    }
+
+    /** The words without the "at x z" part. */
+    public static String withoutAt(String rest) { return rest == null ? null : AT.matcher(rest).replaceFirst(""); }
+
+    /** May an "at" hunt take an animal {@code dx dz} from its place? */
+    public static boolean atOk(int[] at, int x, int z) {
+        if (at == null) return false;
+        long dx = x - at[0], dz = z - at[1];
+        return dx * dx + dz * dz <= (long) AT_R * AT_R;
+    }
+
+    /** The end text when an "at" hunt arrives to none (FoodOptions' switch words: "none"). */
+    public static final String AT_NONE = "none at the place I saw them";
+
     /** "hunt <n> [animal] [out]": {n, animal id or null}; null = bad. The "out" word: {@link #outWord}. */
     public static Object[] parse(String rest) {
+        rest = withoutAt(rest);
         if (outWord(rest)) rest = rest.trim().replaceFirst("(?i)\\s+out$", "");
         String[] w = (rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT)).split("\\s+");
         if (w.length == 0 || w[0].isEmpty()) return new Object[]{4, null};
@@ -81,6 +110,7 @@ public final class HuntRules {
      * The stop count defaults to n.
      */
     public static Object[] parseFor(String rest) {
+        rest = withoutAt(rest);
         String[] w = (rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT)).split("\\s+");
         if (w.length < 4 || w.length > 5 || !w[2].equals("for") || !w[0].matches("^\\d{1,3}$")) return null;
         int n = Integer.parseInt(w[0]), want = n;

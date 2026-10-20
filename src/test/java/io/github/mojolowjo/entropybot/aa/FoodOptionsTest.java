@@ -24,6 +24,44 @@ class FoodOptionsTest {
         return new FoodOptions.Food().choose(f, new Options.OptionMemory(), 0, null, 0, "no stored food", null);
     }
 
+    static FoodOptions.FoodFacts withHerds(Map<String, Integer> animals, java.util.List<FoodOptions.Herd> herds) {
+        return new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, animals, 0, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of(), 20, 96, null, null, herds);
+    }
+
+    @Test
+    void theBedHuntsSheepForWoolFirst() {
+        assertEquals("goal bed", AaLadder.bedChain(3, null));
+        assertEquals("hunt 2 sheep for white_wool 3 then goal bed", AaLadder.bedChain(1, null));
+        assertEquals("hunt 3 sheep for white_wool 3 at 40 -8 then goal bed", AaLadder.bedChain(0, new int[]{40, -8, 50, 80}));
+    }
+
+    @Test
+    void aSeenHerdIsARoundTripPricedByConfidence() {
+        var fresh = new FoodOptions.Herd("cow", 80, 64, 0, 8, 1.0, 80);
+        Options.Choice c = choose(withHerds(Map.of(), java.util.List.of(fresh)));
+        assertNotNull(c.best(), c.why());
+        assertEquals("go hunt cow", c.best().id());
+        assertEquals("hunt 2 cow at 80 0 then cook beef 2", c.best().command());
+        assertEquals("sighting/animal cow 80 0", c.best().memoryKey());
+        assertNotNull(c.best().site(), "the site feeds the sequencer");
+        // an older sighting costs more: x 1 / confidence
+        var old = new FoodOptions.Herd("cow", 80, 64, 0, 8, 0.25, 80);
+        double cFresh = c.best().cost(), cOld = choose(withHerds(Map.of(), java.util.List.of(old))).best().cost();
+        assertEquals(4 * cFresh, cOld, 1e-6);
+        // the best herd of a type wins; a type in reach is the plain hunt, not a walk to memory
+        var near = new FoodOptions.Herd("cow", 20, 64, 0, 3, 1.0, 20);
+        assertEquals("hunt 2 cow at 20 0 then cook beef 2", choose(withHerds(Map.of(), java.util.List.of(fresh, near))).best().command());
+        Options.Choice inReach = choose(withHerds(Map.of("cow", 4), java.util.List.of(fresh)));
+        assertEquals("hunt cow", inReach.best().id());
+        assertTrue(inReach.ranked().stream().noneMatch(o -> o.id().equals("go hunt cow")));
+        // forgotten (under 0.05) or too far: dropped with why
+        Options.Choice gone = choose(withHerds(Map.of(), java.util.List.of(new FoodOptions.Herd("cow", 80, 64, 0, 8, 0.01, 80),
+                new FoodOptions.Herd("pig", 900, 64, 0, 8, 1, 900))));
+        assertTrue(gone.dropped().stream().anyMatch(d -> d.contains("seen too long ago")), gone.dropped().toString());
+        assertTrue(gone.dropped().stream().anyMatch(d -> d.startsWith("go hunt pig at 900 0: 900 away")), gone.dropped().toString());
+    }
+
     @Test
     void aaep1HuntsTheAnimalsNearAndCooksTheMeat() {
         Options.Choice c = choose(facts(6, Map.of(), true, Map.of("cow", 9, "sheep", 4, "chicken", 3), null));
