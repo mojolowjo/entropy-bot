@@ -25,9 +25,13 @@ class MoveRulesTest {
 
     @Test
     void aBotInsideAKeepOutBoxWalksOutDearNotStuck() {
-        int[] inside = {15, 64, 15};
-        assertEquals(4, MoveRules.moveMultiplier(P, OW, inside, 16, 64, 15, 4), "the box is dear while it starts inside");
-        assertEquals(4, MoveRules.moveMultiplier(P, OW, new int[]{15, 59, 15}, 16, 64, 15, 4), "head inside counts as inside");
+        int[] inside = {12, 64, 15};                 // 2 from the west edge (x1 10): the way out is west
+        assertEquals(4, MoveRules.moveMultiplier(P, OW, inside, 11, 64, 15, 4), "a step toward the edge is dear, not impassable");
+        assertEquals(4, MoveRules.moveMultiplier(P, OW, inside, 16, 64, 15, 4), "within the edge distance plus the slack (4)");
+        assertEquals(MoveRules.COST_INF, MoveRules.moveMultiplier(P, OW, inside, 18, 64, 15, 4), "review 2: the far side of the box stays impassable");
+        assertEquals(4, MoveRules.moveMultiplier(P, OW, new int[]{12, 59, 15}, 11, 64, 15, 4), "head inside counts as inside");
+        assertEquals(0, MoveRules.edgeGap(new Box("b", OW, 10, 60, 10, 20, 70, 20), 10, 15));
+        assertEquals(5, MoveRules.edgeGap(new Box("b", OW, 10, 60, 10, 20, 70, 20), 15, 15));
         assertTrue(Double.isNaN(MoveRules.moveMultiplier(P, OW, inside, 9, 64, 15, 4)), "and outside is free: the way out");
         assertEquals(MoveRules.COST_INF, MoveRules.moveMultiplier(P, OW, null, 16, 64, 15, 4), "no start known: impassable");
     }

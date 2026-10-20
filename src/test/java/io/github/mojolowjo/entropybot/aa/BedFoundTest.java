@@ -13,6 +13,7 @@ class BedFoundTest {
         assertArrayEquals(new int[]{12, 64, 7}, BedSpot.foundAt("remembered red_bed at 12 64 7, 90 blocks (Baritone's memory)"));
         assertArrayEquals(new int[]{1, 2, 3}, BedSpot.foundAt("known white_bed at 1 2 3, 200 blocks (my notes)"));
         assertNull(BedSpot.foundAt("none within 16, in loaded chunks or remembered"));
+        assertArrayEquals(new int[]{7, 8, 9}, BedSpot.foundAt("found 7 8 9"), "review 8: no trailing space at the end");
         assertNull(BedSpot.foundAt("found white_bed"));
         assertNull(BedSpot.foundAt(null));
     }

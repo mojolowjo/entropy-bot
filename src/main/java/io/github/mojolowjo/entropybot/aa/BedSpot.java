@@ -23,7 +23,7 @@ public final class BedSpot {
         public String key() { return cell[0] + " " + cell[1] + " " + cell[2]; }
     }
 
-    private static final java.util.regex.Pattern FOUND_NEAR = java.util.regex.Pattern.compile("^found (-?\\d+) (-?\\d+) (-?\\d+) ");
+    private static final java.util.regex.Pattern FOUND_NEAR = java.util.regex.Pattern.compile("^found (-?\\d+) (-?\\d+) (-?\\d+)(?:\\s|$)");
     private static final java.util.regex.Pattern FOUND_FAR = java.util.regex.Pattern.compile("^(?:found|remembered|known) \\S+ at (-?\\d+) (-?\\d+) (-?\\d+)\\b");
 
     /**

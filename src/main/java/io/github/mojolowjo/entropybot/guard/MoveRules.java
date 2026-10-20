@@ -32,8 +32,26 @@ public final class MoveRules {
         if (ko == null) ko = p.keepOutAt(dim, x, y + 1, z);
         if (ko != null) {
             boolean startedInside = at != null && at.length >= 3 && (ko.contains(dim, at[0], at[1], at[2]) || ko.contains(dim, at[0], at[1] + 1, at[2]));
-            return startedInside ? dear : COST_INF;
+            // review 2: only the way out is dear - cells within the start's distance to the box's edge (plus the slack), the
+            // rest of the box stays impassable, so the bot leaves by the nearest side and never crosses the box
+            return startedInside && wayOut(ko, at, x, y, z) ? dear : COST_INF;
         }
         return p.dangerAt(dim, x, y, z) != null ? dear : Double.NaN;
+    }
+
+    /** Slack beyond the shortest way out a cell may lie and still be walked (round obstacles). */
+    public static final int OUT_SLACK = 2;
+
+    /** The cell lies within (the start's blocks to the nearest edge + slack) of the start: part of a way out. */
+    static boolean wayOut(Box ko, int[] at, int x, int y, int z) {
+        int toEdge = edgeGap(ko, at[0], at[2]);
+        int d = Math.max(Math.abs(x - at[0]), Math.abs(z - at[2]));
+        return d <= toEdge + OUT_SLACK;
+    }
+
+    /** Blocks from the column to the nearest x/z edge of the box, 0 on the edge (inside). */
+    static int edgeGap(Box b, int x, int z) {
+        if (b.round) return Math.max(0, b.r - (int) Math.ceil(Math.hypot(x - b.cx, z - b.cz)));
+        return Math.max(0, Math.min(Math.min(x - b.x1, b.x2 - x), Math.min(z - b.z1, b.z2 - z)));
     }
 }

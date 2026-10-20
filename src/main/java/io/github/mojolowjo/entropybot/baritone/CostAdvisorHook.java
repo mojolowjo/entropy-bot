@@ -104,6 +104,8 @@ public final class CostAdvisorHook {
                     return placeCost(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], (BlockState) a[4], stateAt(a[5]), (Double) a[6]);
                 case "moveMultiplier":
                     return moveMultiplier(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3]);
+                case "pricesMoves":        // review 4: no keep-out or danger box = the A* loop never asks per node
+                    return a[0] instanceof Token tk && tk.areas() != null && !(tk.areas().keepOut.isEmpty() && tk.areas().danger.isEmpty());
                 case "toString": return "EntropyBot cost advisor";
                 case "hashCode": return System.identityHashCode(CostAdvisorHook.class);
                 case "equals": return a != null && a.length == 1 && a[0] != null && Proxy.isProxyClass(a[0].getClass());
