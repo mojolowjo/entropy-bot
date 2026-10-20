@@ -5,6 +5,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.LightLayer;
@@ -41,10 +42,10 @@ import java.util.concurrent.ThreadLocalRandom;
 final class SightingsRuntime {
     private static final Logger LOG = LogUtils.getLogger();
     /** The pitfall cap (AA_ROUND3 5 (1)): at most this many cave rays a pass. */
-    static final int CAVE_RAYS = 16, ANIMAL_CANDIDATES = 16;
+    static final int CAVE_RAYS = 16, ANIMAL_CANDIDATES = 16, TREE_RAYS = 8;
     static final long UNDERGROUND_LOG_MS = 5 * 60_000;
 
-    private long caveRays, caves, animalRays, herds, lastUnderLog = -UNDERGROUND_LOG_MS;
+    private long treeRays, trees, caveRays, caves, animalRays, herds, lastUnderLog = -UNDERGROUND_LOG_MS;
     private double lastX = Double.NaN, lastZ;
     private final Map<String, Integer> lastCount = new HashMap<>();
     /** Entity id -> last time it was seen after its confirmation. */
@@ -53,6 +54,7 @@ final class SightingsRuntime {
     void tick(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, long tick, long now) {
         boolean roofed = roofed(level, p);
         if (tick % 10 == 7 && !roofed) caves(level, p, sg, dim, budget, now);
+        if (tick % 10 == 3 && !roofed) trees(level, p, sg, dim, budget, now);
         if (tick % 20 == 11) {
             animals(level, p, sg, dim, budget, now, roofed);
             double x = p.getX(), z = p.getZ();
@@ -107,6 +109,44 @@ final class SightingsRuntime {
             if (c != null) {
                 caves++;
                 LOG.info("[entropybot] sense: seen cave at {} {} {} ({})", a.getX(), a.getY(), a.getZ(), kind);
+            }
+        }
+    }
+
+    /**
+     * aa-trees: up to {@link #TREE_RAYS} rays in the view cone (24 blocks, shared budget); a log hit is walked down to its
+     * column's lowest log, the ground under it, the logs stacked and the leaves by the top are read, and
+     * {@link Sightings#treeRule} + the confirm-twice rule decide. Log: "sense: seen tree at x y z (N logs)".
+     */
+    private void trees(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, long now) {
+        Vec3 eye = p.getEyePosition();
+        float yaw = p.getYRot(), pitch = p.getXRot();
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        for (int i = 0; i < TREE_RAYS; i++) {
+            if (!budget.take(now)) return;
+            treeRays++;
+            float ry = yaw + (float) rnd.nextDouble(-50, 50), rp = Math.max(-60f, Math.min(60f, pitch + (float) rnd.nextDouble(-25, 15)));
+            Vec3 to = eye.add(Vec3.directionFromRotation(rp, ry).scale(Seen.RANGE));
+            BlockHitResult r = level.clip(new ClipContext(eye, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
+            if (r.getType() != HitResult.Type.BLOCK) continue;
+            BlockPos hit = r.getBlockPos();
+            if (!level.isLoaded(hit) || !level.getBlockState(hit).is(BlockTags.LOGS)) continue;
+            BlockPos base = hit;
+            for (int k = 0; k < 40 && level.getBlockState(base.below()).is(BlockTags.LOGS); k++) base = base.below();
+            int logs = 0;
+            BlockPos top = base;
+            for (int k = 0; k < 40 && level.getBlockState(base.above(k)).is(BlockTags.LOGS); k++) { logs++; top = base.above(k); }
+            boolean dirt = level.getBlockState(base.below()).is(BlockTags.DIRT);
+            boolean leaves = false;
+            for (int dx = -2; dx <= 2 && !leaves; dx++)
+                for (int dz = -2; dz <= 2 && !leaves; dz++)
+                    for (int dy = -1; dy <= 2 && !leaves; dy++)
+                        leaves = level.getBlockState(top.offset(dx, dy, dz)).is(BlockTags.LEAVES);
+            if (!Sightings.treeRule(dirt, logs, leaves, false)) continue;
+            if (!sg.confirm(Sightings.key(Sightings.Kind.TREE, "tree", base.getX(), base.getY(), base.getZ()), now)) continue;
+            if (sg.sawTree(dim, base.getX(), base.getY(), base.getZ(), logs, now) != null) {
+                trees++;
+                LOG.info("[entropybot] sense: seen tree at {} {} {} ({} logs)", base.getX(), base.getY(), base.getZ(), logs);
             }
         }
     }
@@ -173,5 +213,5 @@ final class SightingsRuntime {
         return out;
     }
 
-    String status() { return caveRays + " cave rays, " + caves + " caves, " + animalRays + " animal rays, " + herds + " herd notes"; }
+    String status() { return caveRays + " cave rays, " + caves + " caves, " + treeRays + " tree rays, " + trees + " trees, " + animalRays + " animal rays, " + herds + " herd notes"; }
 }

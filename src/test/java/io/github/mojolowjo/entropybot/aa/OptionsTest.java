@@ -83,6 +83,22 @@ class OptionsTest {
     }
 
     @Test
+    void pickerRungRoutesMissingLogsThroughTheWoodOptions() {
+        Rung r = rung("goal x");
+        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
+                List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
+        assertEquals(Status.RUNNING, r.tick(bb));
+        assertEquals("area 30 -20 70 20 trees1 work neutral then cut 4", port.started.get(0).chain(), "the priced wood prerequisite, not the picker's alpha");
+        port.fail(1, "error: chopped nothing - no trees in my areas");
+        r.tick(bb);
+        clock.advance(1000);
+        r.tick(bb);
+        assertTrue(port.started.size() >= 2, "the next wood option starts, no fail loop");
+        assertTrue(port.started.get(1).chain().startsWith("area 42 -8 58 8 treeat"), port.started.get(1).chain());
+    }
+
+    @Test
     void searchingIsWaitedForOnlyBrieflyWhenAnotherOptionCanRun() {
         Rung r = rung("goal x");
         port.resolveTo = null;          // the planner searches

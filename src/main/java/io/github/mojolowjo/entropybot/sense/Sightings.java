@@ -18,7 +18,7 @@ import java.util.TreeMap;
  * <li>ORE: the seen ore cells of section 3 ({@link Seen}: fair play; mined = removed, no decay).</li>
  * <li>CAVE: cave openings, ravines and dark holes (no decay: openings do not move; a cave entered and found empty of
  *     ore is marked {@code exhausted} with its time and offered no more).</li>
- * <li>ANIMAL: herds by entity type (position, count, time); the confidence halves every {@link #HALF_LIFE_MS} of game
+ * <li>TREE (aa-trees): a log column standing on dirt with leaves by it, seen (x y z = its lowest log; no decay; a visit that\n *     finds it gone or unreachable marks it {@code exhausted}, offered no more).</li>\n * <li>ANIMAL: herds by entity type (position, count, time); the confidence halves every {@link #HALF_LIFE_MS} of game
  *     time; a visit that finds none sets it to {@link #MISS_CONF} (kept: herds drift), one that finds some resets it.</li>
  * </ul>
  * One seeing rule for all kinds: within {@link Seen#RANGE} (animals {@link #ANIMAL_RANGE}), in the view cone
@@ -29,9 +29,9 @@ import java.util.TreeMap;
  * candidates live in SeenRuntime/SightingsRuntime).
  */
 public final class Sightings {
-    public enum Kind { ORE, CAVE, ANIMAL }
+    public enum Kind { ORE, CAVE, ANIMAL, TREE }
 
-    public static final int ANIMAL_RANGE = 32, MERGE = 16, MAX_CAVES = 400, MAX_ANIMALS = 400;
+    public static final int ANIMAL_RANGE = 32, MERGE = 16, MAX_CAVES = 400, MAX_ANIMALS = 400, MAX_TREES = 300, TREE_MERGE = 6, TREE_MIN_LOGS = 3;
     public static final long CONFIRM_MS = 2000, CONFIRM_MAX_MS = 30_000, HALF_LIFE_MS = 10 * 60_000;
     public static final double MISS_CONF = 0.1;
     /** The cave-chance prior: {@link #PRIOR_CAVES} openings per 100 blocks walked, weighed as {@link #PRIOR_HUNDREDS} hundreds. */
@@ -46,7 +46,7 @@ public final class Sightings {
     }
 
     private final Seen ore;
-    private final Map<String, List<Rec>> caves = new HashMap<>(), animals = new HashMap<>();
+    private final Map<String, List<Rec>> caves = new HashMap<>(), animals = new HashMap<>(), trees = new HashMap<>();
     private final Map<Long, Long> pending = new HashMap<>();
     private double walked, cavesFound;
     private volatile boolean dirty;
@@ -155,6 +155,63 @@ public final class Sightings {
         return (cavesFound + PRIOR_CAVES * PRIOR_HUNDREDS) / (walked / 100 + PRIOR_HUNDREDS);
     }
 
+    // ---- trees (aa-trees) ----
+
+    /**
+     * The tree candidate rule for a log the ray hit: the column's lowest log stands on dirt (grass, podzol, mud...),
+     * {@link #TREE_MIN_LOGS}+ logs stack up, and leaves touch the top part. A log pile or a build rests on another
+     * ground or has no leaves (the chopper's own TreeFinder judges the same way); a log the bot placed never counts.
+     */
+    public static boolean treeRule(boolean groundDirt, int logsInColumn, boolean leavesNear, boolean placedByMe) {
+        return groundDirt && logsInColumn >= TREE_MIN_LOGS && leavesNear && !placedByMe;
+    }
+
+    /** A confirmed tree at its lowest log: a new record (returned) unless one lies within {@link #TREE_MERGE} (null). */
+    public synchronized Rec sawTree(String dim, int x, int y, int z, int logs, long now) {
+        List<Rec> l = trees.computeIfAbsent(dim, k -> new ArrayList<>());
+        for (Rec r : l) if (d2(r, x, y, z) <= (long) TREE_MERGE * TREE_MERGE) return null;
+        Rec r = new Rec(Kind.TREE, "tree", x, y, z, now, Math.max(1, logs), 1, 0);
+        l.add(r);
+        while (l.size() > MAX_TREES) l.remove(0);
+        dirty = true;
+        return r;
+    }
+
+    /** The seen trees (not exhausted) within {@code max} blocks (horizontal) of x z, nearest first. */
+    public synchronized List<Rec> treesNear(String dim, int x, int z, int max) {
+        List<Rec> out = new ArrayList<>();
+        long m2 = (long) max * max;
+        for (Rec r : trees.getOrDefault(dim, List.of())) {
+            long dx = r.x() - x, dz = r.z() - z;
+            if (r.exhausted() == 0 && dx * dx + dz * dz <= m2) out.add(r);
+        }
+        out.sort((a, b) -> Long.compare((long) (a.x() - x) * (a.x() - x) + (long) (a.z() - z) * (a.z() - z),
+                (long) (b.x() - x) * (b.x() - x) + (long) (b.z() - z) * (b.z() - z)));
+        return out;
+    }
+
+    /** The tree within {@link #TREE_MERGE} of x z was visited and is gone (or cannot be reached): offered no more. How many. */
+    public synchronized int exhaustTree(String dim, int x, int z, long now) {
+        int n = 0;
+        List<Rec> l = trees.getOrDefault(dim, List.of());
+        for (int i = 0; i < l.size(); i++) {
+            Rec r = l.get(i);
+            long dx = r.x() - x, dz = r.z() - z;
+            if (r.exhausted() == 0 && dx * dx + dz * dz <= (long) TREE_MERGE * TREE_MERGE) {
+                l.set(i, new Rec(r.kind(), r.id(), r.x(), r.y(), r.z(), r.at(), r.count(), r.conf(), now));
+                n++;
+            }
+        }
+        if (n > 0) dirty = true;
+        return n;
+    }
+
+    public synchronized int treeCount(String dim) {
+        int n = 0;
+        for (Rec r : trees.getOrDefault(dim, List.of())) if (r.exhausted() == 0) n++;
+        return n;
+    }
+
     // ---- animals ----
 
     /**
@@ -228,7 +285,7 @@ public final class Sightings {
         int open = 0, ex = 0;
         for (Rec r : caves.getOrDefault(dim, List.of())) if (r.exhausted() > 0) ex++; else open++;
         return "sightings: " + ore.size(dim) + " ore cells, " + open + " caves (" + ex + " exhausted), "
-                + String.format(Locale.ROOT, "%.2f caves per 100 blocks walked (%.0f walked)", cavesPer100(), walked)
+                + String.format(Locale.ROOT, "%.2f caves per 100 blocks walked (%.0f walked)", cavesPer100(), walked) + ", " + treeCount(dim) + " trees"
                 + (a.isEmpty() ? ", no animals seen yet" : ", animals: " + String.join(", ", a.subList(Math.max(0, a.size() - 6), a.size())));
     }
 
@@ -248,6 +305,7 @@ public final class Sightings {
         o.add("ore", ore.toJson());
         o.add("caves", recs(caves));
         o.add("animals", recs(animals));
+        o.add("trees", recs(trees));
         o.addProperty("walked", walked);
         o.addProperty("cavesFound", cavesFound);
         return new Gson().toJson(o);
@@ -288,6 +346,7 @@ public final class Sightings {
         Sightings s = new Sightings(o.has("ore") ? Seen.fromJson(o.get("ore"), skipped) : new Seen());
         read(o, "caves", Kind.CAVE, s.caves, skipped);
         read(o, "animals", Kind.ANIMAL, s.animals, skipped);
+        read(o, "trees", Kind.TREE, s.trees, skipped);
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());
             if (o.has("cavesFound")) s.cavesFound = Math.max(0, o.get("cavesFound").getAsDouble());
@@ -315,3 +374,4 @@ public final class Sightings {
         return dx * dx + dy * dy + dz * dz;
     }
 }
+
