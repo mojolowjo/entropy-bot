@@ -2242,6 +2242,13 @@ public final class Commands implements Chains.Env {
         }
 
         @Override
+        public JsonObject aa() {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null || mc.player == null || aaRuntime == null) return null;
+            return aaRuntime.live();
+        }
+
+        @Override
         public JsonObject block(int x, int y, int z) {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null || mc.player == null) return null;

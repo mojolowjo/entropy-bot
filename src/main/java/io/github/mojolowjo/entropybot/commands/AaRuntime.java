@@ -2273,6 +2273,9 @@ public final class AaRuntime implements JobPort {
 
     String ideasLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 5); }
 
+    /** The dashboard's live AA tree (fast channel GET /aa), built from the running tree. */
+    com.google.gson.JsonObject live() { return io.github.mojolowjo.entropybot.aa.AaLive.json(tree, bb, on(), io.github.mojolowjo.entropybot.aa.AaLive.SWITCHES); }
+
     /** BRAIN_PLAN B1: the top desires with their scores (aa why / aa status). */
     List<String> brainLines(int n) { return tree.brain.whyLines(n); }
 

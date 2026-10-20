@@ -47,6 +47,7 @@ import java.util.function.Consumer;
  *   <li>{@code GET /block?x=&y=&z=} and {@code GET /column?x=&z=} (P4, 0.19.10): one block or one surface column for the
  *       dashboard's map menu, answered on the game thread at the next tick (400 for bad numbers, 503 outside a world,
  *       504 after 5 s).</li>
+ *   <li>{@code GET /aa}: AA's live state for the dashboard's tree panel (AaLive), on the game thread; 503 outside a world.</li>
  *   <li>{@code GET /wait[?timeout=ms][&chain=0|1]}: a long poll that answers {idle: true, waitedMs} once the bot has
  *       been idle (no job, no chain unless chain=0, Baritone idle) for {@link #SETTLE_TICKS}
  *       ticks in a row, or {idle: false, timeout: true, busy: "chain night"} when the time runs out.</li>
@@ -97,6 +98,9 @@ public final class FastServer {
 
         /** B3 GET /actions: the action table plus the state summary (actions.json's content, built now). Null: not in a world. */
         default JsonObject actions() { return null; }
+
+        /** GET /aa: AA's live tree, desires, options and switches (AaLive), built now. Null: not in a world. */
+        default JsonObject aa() { return null; }
     }
 
     /** Where the key lives: re-read when the file changes, so a new dashboard key works without a restart. */
@@ -324,6 +328,13 @@ public final class FastServer {
                         return;
                     }
                     onGame(ex, handler::actions);
+                }
+                case "/aa" -> {
+                    if (!method.equals("GET")) {
+                        send(ex, 405, err("GET only"));
+                        return;
+                    }
+                    onGame(ex, handler::aa);
                 }
                 default -> send(ex, 404, err("unknown path " + path));
             }

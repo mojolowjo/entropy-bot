@@ -559,6 +559,9 @@ public final class Brain extends Node {
 
     public List<Scored> lastScored() { return lastScored; }
 
+    /** Why this challenger would interrupt but does not (the last scoring), or null (the dashboard's live tree). */
+    public String wouldWhy(String id) { return wouldNote.get(id); }
+
     /** AA_ROUND2 3: "held: desire/option reason (n min)" per failure record holding now (aa why). */
     public List<String> heldLines(long now) { return failures.describe(now); }
 
