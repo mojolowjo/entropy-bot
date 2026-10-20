@@ -22,6 +22,16 @@ public final class DrownRisk {
     public static final int DEFAULT_TIER = 2;
 
     /** Seconds to dig one block down while submerged with this pickaxe tier. */
+    /**
+     * wetbreak (owner, r4: "it still tries to path through leaf blocks while swimming"): any block broken from the water
+     * costs vanilla's slowdown, x{@link #WATER_SLOW} submerged and x{@link #WATER_SLOW} again when the water there is
+     * deep (the bot floats, off the ground). Baritone priced it as dry, so leaves in a lake looked free. 1 = dry.
+     */
+    public static double wetBreakMult(boolean waterBeside, boolean deep) {
+        if (!waterBeside) return 1;
+        return deep ? WATER_SLOW * WATER_SLOW : WATER_SLOW;
+    }
+
     public static double digS(int tier) { return DRY_S[Math.max(0, Math.min(4, tier))] * WATER_SLOW + DROP_S; }
 
     public static double needS(int digDown, int waterAbove, int tier) {
