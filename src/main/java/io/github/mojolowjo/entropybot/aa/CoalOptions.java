@@ -95,6 +95,7 @@ public final class CoalOptions {
         boolean noFurnace = !f.furnaceInBag() && f.furnaceDist() < 0;
         int cobbleLack = Math.max(0, IronOptions.FURNACE_COBBLE - f.cobble());
         if (noFurnace && cobbleLack > 0 && f.pickTier() < 1) dropped.add("charcoal: no furnace and no pickaxe for the " + IronOptions.FURNACE_COBBLE + " cobblestone to make one");
+        else if (missing > 0 && !f.treesKnown()) dropped.add("charcoal: " + want + " logs wanted, " + have + " in the bag and no tree seen to cut the other " + missing + " (round 3: the chop failed 3x \"no trees in my areas\"); the wood option set finds trees first");
         else if (m.blocked("charcoal", now)) dropped.add("charcoal: " + m.reason("charcoal"));
         else {
             double trip = f.furnaceInBag() || f.furnaceDist() < 0 ? 0 : FURNACE_TRIP * f.furnaceDist();
@@ -180,3 +181,4 @@ public final class CoalOptions {
         return torchChain(c.best().command(), target);
     }
 }
+

@@ -46,7 +46,7 @@ public final class WoodOptions {
     public record WoodFacts(int need, List<Tree> trees, int areasMade, boolean outsideLogs) {}
 
     public static String areaCmd(String name, int x, int z, int r) {
-        return "area " + (x - r) + " " + (z - r) + " " + (x + r) + " " + (z + r) + " " + name + " work neutral";
+        return "area " + (x - r) + " " + (z - r) + " " + (x + r) + " " + (z + r) + " " + name + " neutral";
     }
 
     public static Options.Choice choose(WoodFacts f, Options.OptionMemory m, long now) {
@@ -104,3 +104,4 @@ public final class WoodOptions {
     /** True for a prerequisite command this set made ("area ... then cut N"). */
     public static boolean isWoodCommand(String c) { return c != null && c.startsWith("area ") && c.contains(" then cut "); }
 }
+
