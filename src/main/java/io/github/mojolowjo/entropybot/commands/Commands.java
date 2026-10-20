@@ -73,7 +73,7 @@ public final class Commands implements Chains.Env {
 
     /** The AI's stop with AA on: its own requests go (the text), else null (AA off: the old global stop). */
     public String aaCancelAi() { return aaOn() ? aaRuntime.cancelAi() : null; }
-    private PolicyCommands policy;
+    PolicyCommands policy;        // AREAS: the verbs read blockedText from it
     /** The kubejs/bridge folder: state.json out, cmd.json in. */
     private BotFiles stateFiles;
     private boolean ready;
@@ -204,22 +204,6 @@ public final class Commands implements Chains.Env {
     final GoalPlanning planning = new GoalPlanning(this);
 
     /** B3: the areas as the fence sees them (an empty array without a policy). */
-    /** 0.27.3: the owner's rectangular areas of this dimension (not the near-me circle), for area.return. */
-    java.util.List<io.github.mojolowjo.entropybot.sense.AreaReturn.Area> areaRects(String dim) {
-        java.util.List<io.github.mojolowjo.entropybot.sense.AreaReturn.Area> out = new java.util.ArrayList<>();
-        if (policy == null) return out;
-        for (com.google.gson.JsonElement e : policy.areas()) {
-            try {
-                JsonObject a = e.getAsJsonObject();
-                if (a.has("round") || !PolicyCommands.dimOf(a).equals(dim)) continue;
-                out.add(new io.github.mojolowjo.entropybot.sense.AreaReturn.Area(PolicyCommands.nameOf(a),
-                        PolicyCommands.n(a, "x1"), PolicyCommands.n(a, "z1"), PolicyCommands.n(a, "x2"), PolicyCommands.n(a, "z2")));
-            } catch (RuntimeException ex) {
-                LOG.warn("[entropybot] area.return: a bad area entry: {}", ex.toString());
-            }
-        }
-        return out;
-    }
 
     com.google.gson.JsonArray effectiveAreas() { return policy == null ? new com.google.gson.JsonArray() : policy.effectiveAreas(); }
 
@@ -673,7 +657,7 @@ public final class Commands implements Chains.Env {
                 if (worldTicks > 0 && jobs.running() && !jobs.walking()) jobs.finish("stopped: I was disconnected");
                 if (worldTicks > 0 && aaRuntime != null) aaRuntime.lookRestore();     // aa-look: freeLook back when the world goes
                 worldTicks = 0;
-                if (core.guard.core.nearBox() != null) core.guard.core.setNearZone(null);     // 0.21.2: no world, no owner spot
+                core.guard.core.near.update(null, null, null, System.currentTimeMillis());     // 0.21.2: no world, no owner spot
                 if (tick % 20 == 0) writeState(mc, tick);
                 return;
             }
@@ -1425,7 +1409,8 @@ public final class Commands implements Chains.Env {
                 Player target = fenceOn() ? Jobs.findPlayer(name) : null;
                 if (target != null) {
                     int[] t = Jobs.here(target);
-                    if (jobs.goalAllowed(t[0], t[1], t[2]) != null) return FenceRules.followRefusal(name, t[0], t[2]);
+                    String why = jobs.goalAllowed(t[0], t[1], t[2]);
+                    if (why != null) return FenceRules.followRefusal(name, why, t[0], t[2]);
                 }
                 String r = jobs.startTravel("follow player " + name, "following " + name, null, null, false);
                 if (r.startsWith("ok") && fenceOn()) jobs.followWatch = new String[]{name, from};
@@ -1737,14 +1722,9 @@ public final class Commands implements Chains.Env {
         saved();
     }
 
-    /** The fence is on: strict mode and at least one area. */
+    /** The fence is on: strict mode (AREAS: no area needed - the world is open, keep-out and no-break bind). */
     public boolean fenceOn() {
-        return policy != null && policy.strict() && !policy.areas().isEmpty();
-    }
-
-    /** Cells between x y z and the nearest area in this dimension (0 = inside one, the near-me zone counts); 999 with none. */
-    int areaGap(int x, int y, int z, String dim) {
-        return FenceRules.areaGap(policy.effectiveAreas(), x, y, z, dim);
+        return policy != null && policy.strict();
     }
 
     private long nearErrors;
@@ -1770,11 +1750,9 @@ public final class Commands implements Chains.Env {
                 pos = ownerFixPos(o);
                 if (pos != null) src = "companion";
             }
-            io.github.mojolowjo.entropybot.guard.Box b = g.near.update(dim, pos, src, System.currentTimeMillis()), cur = g.nearBox();
-            if (!String.valueOf(b).equals(String.valueOf(cur))) g.setNearZone(b);
+            g.near.update(dim, pos, src, System.currentTimeMillis());         // AREAS: a fact for AA (area.nearOwner), no permission
         } catch (RuntimeException e) {
             g.near.error(e.toString());
-            g.setNearZone(null);
             if (nearErrors++ < 5 || nearErrors % 600 == 0) LOG.warn("[entropybot] near-me zone #{}: {}", nearErrors, e.toString());
         }
     }
@@ -2815,20 +2793,13 @@ public final class Commands implements Chains.Env {
 
         @Override
         public JsonObject nearArea() {
-            io.github.mojolowjo.entropybot.guard.Box b = core.guard.core.nearBox();
+            io.github.mojolowjo.entropybot.guard.Box b = core.guard.core.near.box();
             return b == null ? null : b.toJson();
         }
 
         @Override
         public void setNear(boolean on, int r) {
-            GuardCore g = core.guard.core;
-            g.near.set(on, r);
-            if (!on) g.setNearZone(null);
-            else {
-                // a new radius: the next update (within a second) builds the box anew; drop the old size now
-                io.github.mojolowjo.entropybot.guard.Box b = g.nearBox();
-                if (b != null && b.x2 - b.x1 != 2 * r) g.setNearZone(null);
-            }
+            core.guard.core.near.set(on, r);          // AREAS: a fact only; the next update (within a second) rebuilds the box
         }
 
         @Override

@@ -53,7 +53,7 @@ public final class LeaseSet {
             if (r.startsWith("error")) {
                 for (String id : got) core.release(id);
                 String why = r.replaceFirst("^error: ", "");
-                if (core.mode() == GuardCore.Mode.STRICT) return "error: the guard refused: " + why + " - " + AREA_HINT;
+                if (core.mode() == GuardCore.Mode.STRICT) return "error: the guard refused: " + why;
                 if (!warned) log.accept("lease refused (log mode): " + why + " (" + task + ")");
                 warned = true;
                 return null;

@@ -164,17 +164,13 @@ public final class Jobs {
             }
 
             @Override
-            public boolean insideAreas(int x, int z) {         // 0.27.3: with no area in this dimension: everywhere
-                String dim = Storage.dim();
-                return commands.areaRects(dim).isEmpty() || commands.inAreas(dim, x, z);
+            public boolean insideAreas(int x, int z) {         // AREAS: everywhere but a keep-out / no-break column
+                return commands.inAreas(Storage.dim(), x, z);
             }
 
             @Override
-            public int[] insideFor(int[] xz) {
-                String dim = Storage.dim();
-                if (commands.inAreas(dim, xz[0], xz[1])) return null;
-                var t = io.github.mojolowjo.entropybot.sense.AreaReturn.nearest(commands.areaRects(dim), xz[0], xz[1]);
-                return t == null ? null : new int[]{t.x(), t.z()};
+            public int[] insideFor(int[] xz) {                 // AREAS: no "nearest area" to clip a leg to - the world is open
+                return null;
             }
 
             @Override
@@ -1926,7 +1922,7 @@ public final class Jobs {
         }
         if (!commands.inAreas(dim, me[0], me[2])) {
             if (startSurfaceEscape(p, j, me, dim, towardGoal)) return true;
-            LOG.info("[entropybot] stuck at {} with no free step, outside my areas: no dig-out (surface: {})", fmt(me), surfaceWhy(level, dim, me));
+            LOG.info("[entropybot] stuck at {} with no free step, {}: no dig-out (surface: {})", fmt(me), commands.policy.blockedText(dim, me[0], me[2]), surfaceWhy(level, dim, me));
             return false;
         }
         io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
@@ -2241,58 +2237,12 @@ public final class Jobs {
         if (b != null) cancel(b);
     }
 
-    /** T3: the tick the bot first stood 2+ blocks outside the areas during a dig (-1: it doesn't). */
-    private long fenceOutSince = -1;
-    /** 28a: the last spot of this job that was inside an area, and when the walk back was last ordered. */
-    private int[] fenceLastInside;
-    private long fenceBackTick = -1000;
-
-    /** T3: the mod's own break leases (a clear holds them while it digs; a walk or a craft trip holds none). */
-    private boolean holdsDigLeases() {
-        for (io.github.mojolowjo.entropybot.guard.Lease l : core.guard.core.leases().values()) {
-            if (!l.place && core.token.equals(l.owner)) return true;
-        }
-        return false;
-    }
-
-    /** Every 20 ticks with the fence on: a job outside every area stops; a follow ends when its player leaves the areas. */
+    /**
+     * Every 20 ticks with the fence on: a follow ends when its player walks where the bot may not go. AREAS (0.39.0): the
+     * position watch ("a job outside every area stops", its grace, the walk back inside) is gone - the world is open.
+     */
     private void fenceWatch(LocalPlayer p) {
         if (!commands.fenceOn()) return;
-        int[] me = here(p);
-        String dim = Guard.dimOf(p.level());
-        if (FenceRules.watches(true, running(), running() && (job.reflex || job.goalInside))) {
-            // T3: a clear pulled 2-4 blocks out (a drop, a cave) gets 15 s to come back; everything else as before
-            int gap = commands.areaGap(me[0], me[1], me[2], dim);
-            long now = core.tick();
-            FenceGrace.Verdict v = FenceGrace.verdict(gap, gap > 1 && holdsDigLeases(), fenceOutSince, now);
-            if (v == FenceGrace.Verdict.OK) {
-                fenceOutSince = -1;
-                if (gap == 0) fenceLastInside = me;
-            } else if (v == FenceGrace.Verdict.GRACE) {
-                if (fenceOutSince < 0) {
-                    fenceOutSince = now;
-                    LOG.info("[entropybot] {} block(s) outside my areas at {} - 15 s to get back in", gap, fmt(me));
-                }
-                // 28a: Baritone's own path took it out (a cave beside the tunnel): when it stands idle out there, walk back
-                // to the last spot that was inside; the dig then goes on from there
-                IBaritone gb = baritone();
-                if (gb != null && fenceLastInside != null && idle(gb) && now - fenceOutSince >= 20 && now - fenceBackTick >= 100) {
-                    fenceBackTick = now;
-                    LOG.info("[entropybot] walking back inside to {}", fmt(fenceLastInside));
-                    safeSettings();
-                    gb.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(new BlockPos(fenceLastInside[0], fenceLastInside[1], fenceLastInside[2])));
-                }
-            } else {
-                boolean afterGrace = fenceOutSince >= 0;
-                fenceOutSince = -1;
-                IBaritone b = baritone();
-                if (b != null) cancel(b);
-                finish(FenceGrace.stopMessage(fmt(me), afterGrace));
-                return;
-            }
-        } else {
-            fenceOutSince = -1;
-        }
         if (followWatch != null) {
             Player t = findPlayer(followWatch[0]);
             if (t == null) return;

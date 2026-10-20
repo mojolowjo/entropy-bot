@@ -237,16 +237,14 @@ class MiningRulesTest {
             for (int x = b[0]; x <= b[3]; x++) assertTrue(x > -10 || b[2] > 200 || b[5] < 170, "no slice inside the protect box");
         }
         assertEquals(32L * 33 * 32 - 9L * 33 * 30, vol, "x -18..-10, z 171..200 is the base's, the rest is leased");
-        // clipped by the area's edge
+        // AREAS: the world is open: no clipping by an area's edge, boxes outside every area lease whole
         parts = MineRules.leaseBoxes(MineRules.mineBox(220, 50, 0), areas, List.of(), "minecraft:overworld");
         int maxX = Integer.MIN_VALUE;
         for (int[] b : parts) maxX = Math.max(maxX, b[3]);
-        assertEquals(223, maxX);
-        assertNull(MineRules.leaseBoxes(MineRules.mineBox(1000, 50, 0), areas, List.of(), "minecraft:overworld"), "no area there");
-        assertNull(MineRules.leaseBoxes(mb, List.of(), List.of(), "minecraft:overworld"), "no areas at all");
-        // an area with heights
-        List<int[]> ylim = MineRules.leaseBoxes(mb, List.of(new Box("deep", "minecraft:overworld", -100, -64, 100, 100, 40, 300)), List.of(), "minecraft:overworld");
-        for (int[] b : ylim) assertTrue(b[4] <= 40 && b[1] >= 34);
+        assertEquals(235, maxX);
+        assertNotNull(MineRules.leaseBoxes(MineRules.mineBox(1000, 50, 0), areas, List.of(), "minecraft:overworld"), "no area there: still leased");
+        assertNotNull(MineRules.leaseBoxes(mb, List.of(), List.of(), "minecraft:overworld"), "no areas at all: still leased");
+        assertNull(MineRules.leaseBoxes(mb, List.of(), List.of(new Box("all", "minecraft:overworld", -100, -64, -100, 100, 320, 300)), "minecraft:overworld"), "wholly in a protect box: nothing");
         // minus: a box with no y cuts every height
         List<int[]> m = MineRules.minus(new int[]{0, 0, 0, 9, 9, 9}, box("p", 3, 3, 5, 5));
         long left = 0;

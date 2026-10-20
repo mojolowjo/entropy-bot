@@ -119,7 +119,7 @@ final class FarmPlanting {
         if (Math.abs(cx - me[0]) > 48 || Math.abs(cz - me[2]) > 48) return "error: the farm box is more than 48 blocks from me - walk me nearer first";
         for (int x = box[0]; x <= box[2]; x++) {
             for (int z = box[1]; z <= box[3]; z++) {
-                if (!commands.inAreas(dim, x, z)) return "error: the farm box reaches outside my areas at " + x + " " + z + " - " + PolicyCommands.AREA_HINT.trim();
+                if (!commands.inAreas(dim, x, z)) return "error: the farm box reaches " + commands.policy.blockedText(dim, x, z) + " at " + x + " " + z;
             }
         }
         if (Jobs.baritone() == null) return "error: baritone not loaded";

@@ -257,13 +257,18 @@ class ClearRunLoopTest {
     @Test
     void strictRefusalIsTheErrorLogModeGoesOn() {
         LeaseSet strict = new LeaseSet(guard(true), "tok", "minecraft:overworld", null);
-        assertEquals("error: the guard refused: that box is not inside one of my areas - area here 48 work neutral",
-                strict.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
-        assertTrue(strict.ids.isEmpty());
+        assertNull(strict.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false), "AREAS: the world is open, a lease anywhere");
+        GuardCore kg = new GuardCore();
+        kg.setPolicy(new Policy(List.of(), List.of(new Box("keep", "minecraft:overworld", -40, 45, 170, -10, 80, 200))));
+        kg.setMode(GuardCore.Mode.STRICT);
+        assertEquals("error: the guard refused: that box touches keep (no-break)",
+                new LeaseSet(kg, "tok", "minecraft:overworld", null).take("digging", ClearBox.of(-20, 50, 180, -19, 51, 181), false, false));
+        assertEquals(1, strict.ids.size(), "the open-world lease was taken");
         List<String> logged = new ArrayList<>();
-        LeaseSet log = new LeaseSet(guard(false), "tok", "minecraft:overworld", logged::add);
-        assertNull(log.take("digging", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
-        assertNull(log.take("digging again", ClearBox.of(1000, 50, 1000, 1001, 51, 1001), false, false));
+        kg.setMode(GuardCore.Mode.LOG);
+        LeaseSet log = new LeaseSet(kg, "tok", "minecraft:overworld", logged::add);
+        assertNull(log.take("digging", ClearBox.of(-20, 50, 180, -19, 51, 181), false, false));
+        assertNull(log.take("digging again", ClearBox.of(-20, 50, 180, -19, 51, 181), false, false));
         assertEquals(1, logged.stream().filter(s -> s.startsWith("lease refused")).count(), "logged once");
         // a force lease is one box of 64 at most, never sliced
         LeaseSet f = new LeaseSet(guard(true), "tok", "minecraft:overworld", null);

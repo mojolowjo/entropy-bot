@@ -440,7 +440,7 @@ class CommandsTest {
         assertTrue(pc.command("area", "list", true, "owner", here, here).startsWith("no areas set - the world is open"));
         assertEquals("ok: area home (work, white: -20 -10 to 40 50) added | mod: ok: 1 areas", pc.command("area", "here 30 home", true, "owner", here, here));
         assertTrue(pc.inAreas("minecraft:overworld", 0, 0));
-        assertFalse(pc.inAreas("minecraft:overworld", 100, 0));
+        assertTrue(pc.inAreas("minecraft:overworld", 100, 0), "AREAS: open outside the areas too");
         assertEquals("only owner can change where I may go and dig", pc.command("area", "here 3 x", false, "owner", here, here));
         assertTrue(pc.command("area", "show home", false, "owner", here, here).contains("edges: west 30, east 30"));
         assertEquals("ok: area base (no-break, green: 0 10 to 20 30, y 56..80) added (safe = no-break now) | mod: ok: 1 areas", pc.command("area", "here 10 base safe", true, "owner", here, here));
@@ -454,7 +454,7 @@ class CommandsTest {
         assertEquals(new JsonArray(), g.last.getAsJsonArray("areas"));
         assertTrue(pc.command("fence", "", true, "owner", here, here).startsWith("fence: mod not loaded"));
         assertEquals("ok (in base, no-break)", pc.command("fence", "check 10 64 20 go", true, "owner", here, here));
-        assertEquals("ok (outside every area)", pc.command("fence", "check 500 64 20 go", true, "owner", here, here));
+        assertEquals("ok (no area)", pc.command("fence", "check 500 64 20 go", true, "owner", here, here));
     }
 
     /** V1a: the new area forms, change, del, and the types. */
@@ -581,22 +581,16 @@ class CommandsTest {
         assertTrue(g.on);
         assertTrue(saves[0] >= 3, "every change saves areas.json");
         assertTrue(pc.command("area", "near sideways", true, "owner", here, here).startsWith("usage: area near"));
-        // the zone counts in inAreas and effectiveAreas, never in areas() (areas.json)
-        assertFalse(pc.inAreas("minecraft:overworld", 100, 100));
-        g.near = PolicyCommands.makeBox("near-me", "minecraft:overworld", 84, 84, 116, 116, 48, 80);
-        assertTrue(pc.inAreas("minecraft:overworld", 100, 100));
-        assertEquals(1, pc.effectiveAreas().size());
-        assertEquals(0, pc.areas().size());
-        assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 100, 64, 100, "minecraft:overworld"));
-        assertEquals(17, FenceRules.areaGap(pc.effectiveAreas(), 100, 97, 100, "minecraft:overworld"), "the zone's height counts");
-        // the real zone is a circle: the JSON checks use it too
+        // AREAS: the zone is a fact, never a permission: inAreas is true everywhere but a keep-out / no-break column
+        assertTrue(pc.inAreas("minecraft:overworld", 100, 100), "the world is open");
         g.near = io.github.mojolowjo.entropybot.guard.NearZone.boxAt("minecraft:overworld", 100, 64, 100, 16).toJson();
-        assertTrue(pc.inAreas("minecraft:overworld", 116, 100), "r");
-        assertFalse(pc.inAreas("minecraft:overworld", 117, 100), "r + 1");
-        assertFalse(pc.inAreas("minecraft:overworld", 114, 114), "the square's corner area");
-        assertEquals(0, FenceRules.areaGap(pc.effectiveAreas(), 111, 64, 111, "minecraft:overworld"));
-        assertEquals(4, FenceRules.areaGap(pc.effectiveAreas(), 114, 64, 114, "minecraft:overworld"));
+        assertEquals(0, pc.effectiveAreas().size(), "the zone is no area");
+        assertTrue(pc.inAreas("minecraft:overworld", 117, 100), "outside the zone: still open");
         assertEquals("a circle of 16 around 100 100, y 48..80", PolicyCommands.boxText(g.near));
+        pc.command("area", "here 4 hole keep-out", true, "owner", here, here);
+        assertFalse(pc.inAreas("minecraft:overworld", here.x(), here.z()));
+        assertEquals("in hole (keep-out)", pc.blockedText("minecraft:overworld", here.x(), here.z()));
+        assertNull(pc.blockedText("minecraft:overworld", here.x() + 5, here.z()));
         // a broken near entry falls back to the defaults
         p.add("near", new com.google.gson.JsonPrimitive("x"));
         assertTrue(pc.nearOn());

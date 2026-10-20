@@ -255,7 +255,7 @@ public final class Mule {
         String why = commands.jobs.goalAllowed(o[0], o[1], o[2]);
         if (why != null) {
             stopWalk();
-            end(r, "stopped: carry - " + FenceRules.followRefusal(r.from, o[0], o[2]));
+            end(r, "stopped: carry - " + FenceRules.followRefusal(r.from, why, o[0], o[2]));
             return;
         }
         if (!Gui.open(p)) {

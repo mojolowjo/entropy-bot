@@ -572,7 +572,7 @@ public final class RestoreLive {
             int[] k = h.center();
             Policy pol = Core.INSTANCE.guard.core.policy();
             io.github.mojolowjo.entropybot.guard.AreaType t = pol == null ? null : pol.typeAt(dim, k[0], k[1], k[2]);
-            Box near = Core.INSTANCE.guard.core.nearBox();
+            Box near = Core.INSTANCE.guard.core.near.box();
             boolean inNear = near != null && near.contains(dim, k[0], k[1], k[2]);
             boolean mentioned = warnedHints.contains(h.key());
             if (!BuildSpotter.walkHintAllowed(t == null ? null : t.word(), inNear, mentioned)) return false;

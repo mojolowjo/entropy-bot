@@ -73,13 +73,13 @@ class FloorFillTest {
         assertEquals(FloorFill.LIQUID, s.skipped().get(new Pos(270, -47, 853)));
         assertEquals(FloorFill.LIQUID, s.skipped().get(new Pos(269, -47, 853)), "beside the lava");
         assertEquals(FloorFill.FENCED, s.skipped().get(new Pos(262, -47, 854)), "a protect box");
-        // a box whose floor layer lies outside the area: every cell refused
+        // AREAS: a box whose floor layer lies outside the area is open too (only a protect box fences)
         ClearBox low = ClearBox.of(261, -50, 853, 262, -50, 855);
         FakeWorld deep = cave();
         deep.fill(261, 262, -51, -51, 853, 855, "air");
         FloorFill.Selection out = FloorFill.select(deep, low, AREA_ONLY);
-        assertTrue(out.todo().isEmpty());
-        assertEquals(FloorFill.FENCED, out.skipped().get(new Pos(261, -51, 854)), "y -51 is below the area");
+        assertEquals(6, out.todo().size(), "y -51 below the area is open");
+        assertNull(out.skipped().get(new Pos(261, -51, 854)));
     }
 
     @Test

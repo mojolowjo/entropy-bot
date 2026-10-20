@@ -1136,22 +1136,19 @@ final class Mining {
         jobs.job.goalInside = true;               // V1b: explore and find may walk outside the areas (the position watch leaves it be)
         ex.gather = gather;
         System.arraycopy(me, 0, ex.at, 0, 3);
-        if (gather && r != null && r.startsWith("started")) {
-            // 0.23.1: the roaming permission, tied to this job (gone the moment it ends or is stopped)
-            final Jobs.Job j = jobs.job;
-            io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.setRoam(new io.github.mojolowjo.entropybot.guard.GuardCore.Roam("explore", dim(), ex.at, ex.baseSpots,
-                    () -> jobs.running() && jobs.job == j));
-        }
-        return r + (gather ? "" : " (no gathering outside my areas)");
+        return r + (gather ? "" : " (no gathering while exploring)");
     }
 
-    /** 0.23.1: a gather outside the areas while exploring: a tree (when short of logs) or an exposed ore vein; null = nothing. */
+    /** 0.23.1: a gather while exploring: a tree (when short of logs) or an exposed ore vein; null = nothing. AREAS: anywhere not protected, keeping off bases seen. */
     private List<Seq.Step> gatherSteps(Seq s, ExRun ex, LocalPlayer p) {
         String d = dim();
-        io.github.mojolowjo.entropybot.guard.GuardCore.Roam ro = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.roam();
-        if (ro == null) return null;
-        java.util.function.Predicate<int[]> ok = c -> !commands.inAreas(d, c[0], c[2])
-                && io.github.mojolowjo.entropybot.guard.GuardCore.roamCovers(ro, d, c[0], c[1], c[2]);
+        if (!ex.gather) return null;
+        final List<int[]> bases = ex.baseSpots;
+        java.util.function.Predicate<int[]> ok = c -> {
+            if (!commands.inAreas(d, c[0], c[2])) return false;
+            for (int[] b : bases) if (Math.abs(c[0] - b[0]) <= 16 && Math.abs(c[2] - b[2]) <= 16) return false;
+            return true;
+        };
         int logs = 0;
         for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
         if (logs < GATHER_LOGS_BELOW) {
@@ -1463,7 +1460,6 @@ final class Mining {
             s.label = (ex.find != null ? "looking for a " + ex.find.what().replaceFirst("^minecraft:", "") : "exploring")
                     + " - ended after " + realMin + " min (" + why + ")";
             if (s.job() != null) s.job().label = s.label;
-            io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.endRoam("explore");
             int[] base = basePos();
             if (base != null) s.splice(s.idx + 1, List.of(Seq.Step.walk(base, true)));
             notes().flush();
@@ -1502,7 +1498,7 @@ final class Mining {
         if (busy != null) return busy;
         String d = dim();
         try {
-            if (boxes(policy(), "areas").isEmpty()) return "error: I scout only inside my areas, and there are none - " + PolicyCommands.AREA_HINT;
+            boxes(policy(), "areas");
         } catch (MineRules.BadPolicy e) {
             return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't scout");
         }
@@ -1511,11 +1507,11 @@ final class Mining {
             if (ownerAt == null) return "error: I can't see you (and no companion position) - say it without \"from me\"";
             start = ownerAt;
         }
-        if (!commands.inAreas(d, start[0], start[2])) return "error: " + start[0] + " " + start[2] + " is outside my areas - " + PolicyCommands.AREA_HINT;
+        if (!commands.inAreas(d, start[0], start[2])) return "error: " + start[0] + " " + start[2] + " is " + commands.policy.blockedText(d, start[0], start[2]);
         final int y = start[1];
         ScoutRules.Plan plan = ScoutRules.legs(start[0], start[2], m, (x, z) -> commands.inAreas(d, x, z) && jobs.goalAllowed(x, y, z) == null);
         if (plan.legs().isEmpty()) {
-            if (plan.cutAt() != null) return "error: " + plan.dirText() + " leaves my areas at once (" + plan.cutAt()[0] + " " + plan.cutAt()[1] + ") - " + PolicyCommands.AREA_HINT;
+            if (plan.cutAt() != null) return "error: " + plan.dirText() + " runs into a keep-out or no-break area at once (" + plan.cutAt()[0] + " " + plan.cutAt()[1] + ")";
             return "error: that is where I start - name a direction or a farther point";
         }
         ScRun sc = new ScRun();
@@ -1773,9 +1769,8 @@ final class Mining {
         Caves.Cave c = core.caves.get(cv.name);
         if (c == null) return "the cave search failed: no cave called " + cv.name;
         core.caves.visit(c, me[0], me[1], me[2], System.currentTimeMillis(), now());
-        // 0.27.3: a dark spot or ore outside the areas (and the near-me zone) is no candidate (live: a caving walk left a 48 area)
-        boolean fenced = !commands.areaRects(d).isEmpty();
-        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || (fenced && !commands.inAreas(d, x, z));
+        // 0.27.3: a dark spot or ore in a keep-out / no-break area is no candidate (AREAS: the world is open otherwise)
+        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || !commands.inAreas(d, x, z);
         CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE, off);
         cv.steps++;
         // ores first: one vein at a time
@@ -1864,9 +1859,9 @@ final class Mining {
     private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why) { return caveMove(s, cv, p, why, false); }
 
     /** closeForGood (S1: a cave in a protect box): the cave is closed even when an earlier job made it. */
-    /** 0.27.3: x z lies outside every area (and the near-me zone) while areas exist in this dimension. */
+    /** 0.27.3, AREAS: x z lies in a keep-out or no-break column. */
     private boolean outsideFenced(String d, int x, int z) {
-        return !commands.areaRects(d).isEmpty() && !commands.inAreas(d, x, z);
+        return !commands.inAreas(d, x, z);
     }
 
     private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why, boolean closeForGood) {
@@ -2051,7 +2046,7 @@ final class Mining {
         JsonObject pol = policy();
         String d = dim();
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(d, me[0], me[2])) return MineRules.outsideAreas(areaNames(pol), PolicyCommands.AREA_HINT);
+        if (!commands.inAreas(d, me[0], me[2])) return "error: I am " + commands.policy.blockedText(d, me[0], me[2]) + " - I mine nothing here";
         if (Jobs.baritone() == null) return "error: baritone not loaded";
         // wave 1, item 8: Baritone's mine digs where it likes, so never inside or near a protect box (the base)
         MineRules.Near pn = MineRules.protectNear(boxes(pol, "protect"), d, me[0], me[1], me[2], MineRules.PROTECT_MARGIN);
@@ -2115,8 +2110,8 @@ final class Mining {
         boolean strict = strict(pol);
         List<int[]> parts = MineRules.leaseBoxes(MineRules.mineBox(me[0], me[1], me[2]), areas, boxes(pol, "protect"), d);
         if (parts == null) {
-            String why = areas.isEmpty() ? "no areas set" : "that box is not inside one of my areas";
-            if (strict) return "error: the guard refused: " + why + " - " + PolicyCommands.AREA_HINT;
+            String why = "the whole box lies in a keep-out or no-break area";
+            if (strict) return "error: the guard refused: " + why;
             if (!j.leaseWarned) LOG.info("[entropybot] lease refused (log mode): {} ({})", why, task);
             j.leaseWarned = true;
             return null;

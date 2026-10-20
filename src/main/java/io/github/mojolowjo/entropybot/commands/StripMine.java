@@ -156,16 +156,14 @@ public final class StripMine {
 
     private static Policy policy() { return Guard.INSTANCE.core.policy(); }
 
-    /** inMapArea with the mod: one area's x/z range holds x z (y is ignored here). */
+    /** AREAS: x z lies in no keep-out / no-break column (the world is open). */
     boolean inArea(String dim, int x, int z) {
-        for (Box a : policy().areas) if (a.dim.equals(dim) && a.columnIn(x, z)) return true;
-        return false;
+        return policy().protectColumn(dim, x, z) == null;
     }
 
-    /** boxInMapArea: one area's x/z range holds the whole box. */
+    /** AREAS: the box touches no keep-out / no-break area. */
     boolean boxInArea(String dim, ClearBox b) {
-        for (Box a : policy().areas) if (a.dim.equals(dim) && a.columnsInside(b.x1(), b.z1(), b.x2(), b.z2())) return true;
-        return false;
+        return policy().safeTouching(new Box(null, dim, b.x1(), b.y1(), b.z1(), b.x2(), b.y2(), b.z2())) == null;
     }
 
     String areaText() {
@@ -186,15 +184,7 @@ public final class StripMine {
         // the corridor or skips the branch instead of digging into the guard's refusals
         String prot = StripRules.protectRefusal(pol.protect, dim, b, torches);
         if (prot != null) return prot;
-        if (g.mode() != GuardCore.Mode.STRICT) return null;
-        List<ClearBox> boxes = new ArrayList<>(List.of(b));
-        if (torches) boxes.add(b.grow(1));
-        for (ClearBox x : boxes) {
-            if (!pol.areaCovers(new Box(null, dim, x.x1(), x.y1(), x.z1(), x.x2(), x.y2(), x.z2()))) {
-                return pol.areas.isEmpty() ? "no areas set" : "that box is not inside one of my areas";
-            }
-        }
-        return null;
+        return null;                                   // AREAS: the world is open; only the protect boxes above refuse
     }
 
     // ---- ore lists ----

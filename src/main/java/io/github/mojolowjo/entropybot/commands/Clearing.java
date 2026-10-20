@@ -1821,13 +1821,9 @@ public final class Clearing {
         @Override public void log(String text) { LOG.info("[entropybot] clear: {}", text); }
     }
 
-    /** The dimension check for a box the verbs are given: the guard's notion of "inside one of my areas" (x/z). */
+    /** The dimension check for a box the verbs are given: AREAS, the box touches no keep-out / no-break area (x/z/y). */
     static boolean boxInAreas(ClearBox b) {
         var pol = Core.INSTANCE.guard.core.policy();
-        String dim = Storage.dim();
-        for (var a : pol.areas) {
-            if (a.dim.equals(dim) && a.columnsInside(b.x1(), b.z1(), b.x2(), b.z2())) return true;     // a round area: its circle
-        }
-        return false;
+        return pol.safeTouching(new io.github.mojolowjo.entropybot.guard.Box("box", Storage.dim(), b.x1(), b.y1(), b.z1(), b.x2(), b.y2(), b.z2())) == null;
     }
 }

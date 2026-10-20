@@ -187,7 +187,7 @@ class AreaTypesTest {
         GuardCore g = guard();
         // walking: every type, safe too
         for (int x : new int[]{5, 25, 45, 65}) assertTrue(g.checkBoxes(OW, x, 65, 5, "go").allowed(), "go at " + x);
-        assertFalse(g.checkBoxes(OW, 100, 65, 5, "go").allowed(), "outside every area: the fence (the owner's goto passes in FenceRules)");
+        assertTrue(g.checkBoxes(OW, 100, 65, 5, "go").allowed(), "AREAS: no area = open");
         // safe: never break or place, even with a lease around it
         GuardCore.Verdict v = g.check(OW, 65, 65, 5, "break", PLAIN);
         assertFalse(v.allowed());

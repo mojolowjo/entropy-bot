@@ -77,11 +77,9 @@ final class CampCommands {
         int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
         if (feet[1] != here[1]) LOG.info("[entropybot] bootstrap: standing at {}, the camp goes on the ground at {}", Jobs.fmt(here), Jobs.fmt(feet));
         String dim = Guard.dimOf(lv);
-        // the fence: the camp's digs and placements need leases inside an area (strict mode)
-        boolean strict = Core.INSTANCE.guard.core.mode() == GuardCore.Mode.STRICT;
-        if (!status && strict && c.areaGap(feet[0], feet[1], feet[2], dim) > 0) {
-            return Hints.next("error: this spot is outside my work areas, so I may not dig or place here", "area here 48 camp neutral then " + self);
-        }
+        // AREAS: the world is open; only a keep-out / no-break spot refuses the camp
+        String blocked = c.policy.blockedText(dim, feet[0], feet[2]);
+        if (!status && blocked != null) return "error: this spot is " + blocked + ", so I may not dig or place here";
         boolean tableNear = near(lv, feet, "crafting_table"), furnaceNear = near(lv, feet, "furnace"), chestNear = near(lv, feet, "chest") || near(lv, feet, "barrel");
         int[] dir = quarryDir(lv, feet);
         List<int[]> free = new ArrayList<>(freeRing(lv, feet, dir));

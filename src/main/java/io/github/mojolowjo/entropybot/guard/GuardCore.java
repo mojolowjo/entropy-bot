@@ -12,12 +12,13 @@ import java.util.Set;
  * The guard's rules, free of Minecraft types so they can be unit-tested.
  *
  * <p>Two layers. The <b>floor</b> never moves: no break or placement in a denied dimension, inside a
- * protect box, on a block entity, or on a built block (unless a force lease covers it). The
- * <b>area and lease rules</b> on top are what the owner configures: a break or placement needs a lease
- * that contains the spot and lies inside an area; a walk goal needs an area. In {@link Mode#LOG} the
- * area and lease rules only record what they would have refused; the floor is enforced in every mode.
+ * protect box (a no-break or keep-out area), no walk goal inside a keep-out area, on a block entity, or on a
+ * built block (unless a force lease covers it). The <b>lease rule</b> on top: a break or placement needs a lease
+ * that contains the spot. AREAS (0.39.0, AREAS_PLAN 4): the world is open by default - no area at all means
+ * walking, leases and jobs are fine anywhere; an area is a label, and only keep-out / no-break bind here. In
+ * {@link Mode#LOG} the lease rule only records what it would have refused; the floor is enforced in every mode.
  *
- * <p>Fails closed: no policy, no areas or no lease means nothing breaks or is placed. Snapshots
+ * <p>Fails closed on the floor and the lease: no lease means nothing breaks or is placed. Snapshots
  * ({@code policy}, {@code leases}) are immutable and swapped under {@code synchronized}, so the
  * pathfinder thread can call {@link #checkBoxes} without locks.
  */
@@ -84,15 +85,12 @@ public final class GuardCore {
     public static final Mode DEFAULT_MODE = Mode.LOG;
 
     /**
-     * 0.21.2: the policy every check reads = the owner's areas plus the near-me zone ({@link NearZone}) when it is up.
-     * This is the ONE place the zone joins the guard: areaAt, areaCovers, cellLeasable, the walk check ("go") and the
-     * lease grant all read this snapshot, so the zone counts exactly like an area (protect boxes, the floor and leases
-     * still apply). {@link #basePolicy} is the owner's areas alone (what "area list" and areas.json hold).
+     * The policy every check reads: the owner's labelled areas. AREAS (0.39.0): the near-me zone ({@link NearZone}) no
+     * longer joins it - it is a fact for AA ({@code area.nearOwner}), never a permission, so a stranger's base near the
+     * owner stays as protected as anywhere else.
      */
     private volatile Policy policy = Policy.EMPTY;
-    private volatile Policy basePolicy = Policy.EMPTY;
-    private volatile Box nearBox;
-    /** The near-me zone's settings and state (the commands feed it the owner's spot once a second). */
+    /** The near-me zone's settings and state (the commands feed it the owner's spot once a second); a fact only. */
     public final NearZone near = new NearZone();
     private volatile Mode mode = DEFAULT_MODE;
     private volatile Map<String, Lease> leases = Collections.emptyMap();
@@ -100,70 +98,10 @@ public final class GuardCore {
     private volatile long tick;
     private int nextId = 1;
 
-    // ---- 0.23.1: roaming (VOCABULARY 6b) ----
-
-    /** How far round the bot a roaming job may walk and take natural blocks; how far it keeps off a base. */
-    public static final int ROAM_R = 24, BASE_KEEP_OFF = 16;
-
-    /**
-     * The roaming permission of a running explore/find with gathering on: outside the areas, within {@link #ROAM_R} of
-     * the bot ({@code at}, moved as it walks), never within {@link #BASE_KEEP_OFF} of a base it saw; walk and natural
-     * blocks (the floor still refuses built blocks and block entities), no placement except torches. Tied to the job:
-     * {@code alive} false = gone (checked on every use, so a stopped job leaves nothing behind).
-     */
-    public record Roam(String owner, String dim, int[] at, java.util.List<int[]> bases, java.util.function.BooleanSupplier alive) {}
-
-    private volatile Roam roam;
-
-    public void setRoam(Roam r) { roam = r; }
-
-    public void endRoam(String owner) {
-        Roam r = roam;
-        if (r != null && (owner == null || r.owner().equals(owner))) roam = null;
-    }
-
-    /** The live roaming permission, or null (none, or its job ended). */
-    public Roam roam() {
-        Roam r = roam;
-        if (r == null) return null;
-        boolean alive;
-        try { alive = r.alive() == null || r.alive().getAsBoolean(); } catch (RuntimeException e) { alive = false; }
-        if (!alive) { roam = null; return null; }
-        return r;
-    }
-
-    /** x y z lies within the roaming permission: same dimension, within ROAM_R of the bot, not within BASE_KEEP_OFF of a base. */
-    public static boolean roamCovers(Roam r, String dim, int x, int y, int z) {
-        if (r == null || !r.dim().equals(dim)) return false;
-        int[] a = r.at();
-        if (Math.abs(x - a[0]) > ROAM_R || Math.abs(z - a[2]) > ROAM_R || Math.abs(y - a[1]) > ROAM_R) return false;
-        for (int[] b : r.bases()) if (Math.abs(x - b[0]) <= BASE_KEEP_OFF && Math.abs(z - b[2]) <= BASE_KEEP_OFF) return false;
-        return true;
-    }
-
-    private boolean roamCoversBox(Roam r, Box b) {
-        return r != null && roamCovers(r, b.dim, b.x1, b.y1, b.z1) && roamCovers(r, b.dim, b.x2, b.y2, b.z2)
-                && roamCovers(r, b.dim, b.x1, b.y1, b.z2) && roamCovers(r, b.dim, b.x2, b.y2, b.z1);
-    }
-
-    /** The effective policy: the owner's areas plus the near-me zone when it is up. */
     public Policy policy() { return policy; }
 
-    /** The owner's areas and protect boxes alone (without the near-me zone). */
-    public Policy basePolicy() { return basePolicy; }
-
-    /** The near-me zone the guard uses now, or null. */
-    public Box nearBox() { return nearBox; }
-
-    /**
-     * 0.21.2: the near-me zone moved (or went away: null). Leases are not ended here: one granted inside the zone
-     * ({@link Lease#near}) stays good inside its own box until its job releases it or it times out.
-     */
-    public synchronized void setNearZone(Box b) {
-        if (b != null && DENIED_DIMS.contains(b.dim)) b = null;
-        nearBox = b;
-        policy = basePolicy.withArea(b);
-    }
+    /** The owner's areas and protect boxes (the same as {@link #policy} since 0.39.0; kept for the callers). */
+    public Policy basePolicy() { return policy; }
 
     public Mode mode() { return mode; }
 
@@ -171,18 +109,17 @@ public final class GuardCore {
 
     public long tick() { return tick; }
 
-    /** Replaces the policy. Every lease that no longer lies inside an area ends; the count is reported. */
+    /** Replaces the policy. Every lease that now touches a keep-out or no-break area ends; the count is reported. */
     public synchronized String setPolicy(Policy p) {
-        basePolicy = p;
-        policy = p.withArea(nearBox);
+        policy = p;
         int ended = 0;
         Map<String, Lease> m = new LinkedHashMap<>(leases);
         for (var it = m.values().iterator(); it.hasNext(); ) {
             Lease l = it.next();
-            if (!l.near && !policy.areaCovers(l.box)) { it.remove(); ended++; }
+            if (p.safeTouching(l.box) != null) { it.remove(); ended++; }
         }
         leases = Collections.unmodifiableMap(m);
-        return "ok: " + p.areas.size() + " areas, " + p.protect.size() + " protect boxes" + (ended > 0 ? ", ended " + ended + " leases now outside" : "");
+        return "ok: " + p.areas.size() + " areas, " + p.protect.size() + " protect boxes" + (ended > 0 ? ", ended " + ended + " leases now in a protected area" : "");
     }
 
     public synchronized String setMode(Mode m) {
@@ -192,36 +129,27 @@ public final class GuardCore {
 
     /** T2: a one-cell lease at x y z would be granted and a placement there not refused by the floor (no lease taken). */
     public static boolean cellLeasable(Policy p, String dim, int x, int y, int z) {
-        if (DENIED_DIMS.contains(dim) || p.protectAt(dim, x, y, z) != null) return false;
-        return p.areaCovers(new Box(null, dim, x, y, z, x, y, z));
+        return !DENIED_DIMS.contains(dim) && p.protectAt(dim, x, y, z) == null;
     }
 
-    /** Takes a lease. Returns the id, or "error: ...". */
+    /** AREAS: the refusal for a lease box that touches a keep-out or no-break area, or null. */
+    public static String protectedRefusal(Policy p, Box box) {
+        Box pr = p.safeTouching(box);
+        return pr == null ? null : "error: that box touches " + (pr.name == null ? "a protected area" : pr.name) + " (" + pr.type.word() + ")";
+    }
+
+    /** Takes a lease: anywhere but a denied dimension or a box touching a keep-out / no-break area. Returns the id, or "error: ...". */
     public synchronized String lease(String owner, String task, Box box, boolean place, boolean force) {
         if (owner == null || owner.isEmpty()) return "error: no token";
         if (DENIED_DIMS.contains(box.dim)) return "error: no digging in " + box.dim;
         if (box.allY()) return "error: a lease needs y1 and y2";
         long max = force ? MAX_FORCE_VOLUME : MAX_LEASE_VOLUME;
         if (box.volume() > max) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + max;
-        if (!policy.areaCovers(box) && !place && !force && box.volume() <= 512 && roamCoversBox(roam(), box)
-                && policy.safeTouching(box) == null) {
-            // 0.23.1: roaming: a break lease for natural blocks near the bot, outside the areas (the floor still holds)
-            String id = "L" + (nextId++);
-            Lease l = new Lease(id, owner, task, box, false, false, tick, false, false);
-            l.roam = true;
-            Map<String, Lease> m = new LinkedHashMap<>(leases);
-            m.put(id, l);
-            leases = Collections.unmodifiableMap(m);
-            return id;
-        }
-        if (!policy.areaCovers(box)) {
-            if (policy.areas.isEmpty()) return "error: no areas set" + (near.on() ? " and I can't see where you are (near me: " + near.radius() + " blocks)" : "");
-            return "error: that box is not inside one of my areas" + (nearBox != null ? " or within " + near.radius() + " blocks of you" : "");
-        }
-        boolean viaNear = !basePolicy.areaCovers(box);
+        String prot = protectedRefusal(policy, box);
+        if (prot != null) return prot;
         String id = "L" + (nextId++);
         Map<String, Lease> m = new LinkedHashMap<>(leases);
-        m.put(id, new Lease(id, owner, task, box, place, force, tick, false, viaNear));
+        m.put(id, new Lease(id, owner, task, box, place, force, tick, false, false));
         leases = Collections.unmodifiableMap(m);
         return id;
     }
@@ -237,7 +165,7 @@ public final class GuardCore {
         if (DENIED_DIMS.contains(box.dim)) return "error: no digging in " + box.dim;
         if (box.allY()) return "error: a lease needs y1 and y2";
         if (box.volume() > MAX_LEASE_VOLUME) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + MAX_LEASE_VOLUME;
-        Box a = basePolicy.destroyCovering(box, areaName == null ? "" : areaName);
+        Box a = policy.destroyCovering(box, areaName == null ? "" : areaName);
         if (a == null || !AreaTypeRules.breakBuilt(a.type, ownerDigArea)) {
             String why = !ownerDigArea ? "built blocks go only with the owner's own dig <area>"
                     : "that box is not inside the destroy area " + areaName;
@@ -361,8 +289,9 @@ public final class GuardCore {
     }
 
     /**
-     * The box rules only (denied dimensions, protect boxes, areas, leases): cheap, lock-free, safe on
-     * the pathfinder thread. {@code action} is "break", "place" or "go".
+     * The box rules only (denied dimensions, keep-out and no-break areas, leases): cheap, lock-free, safe on the
+     * pathfinder thread. {@code action} is "break", "place" or "go". AREAS: no "outside every area" verdict any more -
+     * the world is open; a keep-out box refuses a walk goal as the floor does, a no-break box is walked through.
      */
     public Verdict checkBoxes(String dim, int x, int y, int z, String action) {
         Policy p = policy;
@@ -370,29 +299,8 @@ public final class GuardCore {
         if (DENIED_DIMS.contains(dim)) return Verdict.floor("no " + action + " in " + dim);
         boolean go = "go".equals(action), place = "place".equals(action);
         Box pr = p.protectAt(dim, x, y, z);
-        if (!go) {
-            if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")");
-        } else if (pr != null) {
-            return Verdict.OK;                          // V1a: a safe area may be walked
-        }
-        if (p.areaAt(dim, x, y, z) == null) {
-            // 0.21.2: a lease granted inside the near-me zone stays good in its box after the owner walked off
-            if (!go) {
-                Lease nl = leaseAt(dim, x, y, z, place);
-                if (nl != null && nl.near) return Verdict.OK;
-            }
-            // 0.23.1: a running explore/find with gathering on may walk, break under its roam lease, and place (torches only,
-            // checkUnlogged) within 24 of the bot, never near a base it saw
-            Roam ro = roam();
-            if (ro != null && roamCovers(ro, dim, x, y, z)) {
-                if (go || place) return Verdict.OK;
-                Lease rl = leaseAt(dim, x, y, z, false);
-                if (rl != null && rl.roam) return Verdict.OK;
-            }
-            if (p.areas.isEmpty()) return Verdict.rule("no areas set", m);
-            // water plan: a seal lease lets a block in just outside the areas (the floor above still holds)
-            if (place && sealOnly(dim, x, y, z)) return Verdict.OK;
-            return Verdict.rule("outside every area" + (nearBox != null ? " and more than " + near.radius() + " blocks from you" : ""), m);
+        if (pr != null && (!go || pr.type == AreaType.KEEP_OUT)) {
+            return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")");
         }
         if (go) return Verdict.OK;
         Lease l = leaseAt(dim, x, y, z, place);
@@ -420,13 +328,6 @@ public final class GuardCore {
         }
         if ("place".equals(action) && !block.airOrWater() && sealOnly(dim, x, y, z)) {
             return Verdict.floor("a seal only fills water or air");
-        }
-        if ("place".equals(action) && !block.torch() && policy.areaAt(dim, x, y, z) == null && !sealOnly(dim, x, y, z)) {
-            Roam ro = roam();
-            if (ro != null && roamCovers(ro, dim, x, y, z)) {
-                Lease rl = leaseAt(dim, x, y, z, true);
-                if (rl == null || !rl.seal) return Verdict.floor("roaming outside my areas I place nothing but torches");
-            }
         }
         return checkBoxes(dim, x, y, z, action);
     }
@@ -509,12 +410,12 @@ public final class GuardCore {
         o.addProperty("mode", mode.name().toLowerCase());
         o.addProperty("floorBlocks", floorBlocks);
         o.add("deniedDims", toArray(DENIED_DIMS));
-        o.add("areas", basePolicy.toJson().getAsJsonArray("areas"));
-        o.add("protect", basePolicy.toJson().getAsJsonArray("protect"));
-        JsonObject n = new JsonObject();          // 0.21.2: the near-me zone (on, radius, the box now or none)
+        o.add("areas", policy.toJson().getAsJsonArray("areas"));
+        o.add("protect", policy.toJson().getAsJsonArray("protect"));
+        JsonObject n = new JsonObject();          // 0.21.2: the near-me zone (on, radius, the box now or none); AREAS: a fact only
         n.addProperty("on", near.on());
         n.addProperty("r", near.radius());
-        Box nb = nearBox;
+        Box nb = near.box();
         if (nb != null) n.add("box", nb.toJson());
         n.addProperty("errors", near.errors());
         o.add("near", n);

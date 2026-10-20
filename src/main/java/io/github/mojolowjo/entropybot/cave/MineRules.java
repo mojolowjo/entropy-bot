@@ -248,27 +248,21 @@ public final class MineRules {
     }
 
     /**
-     * The lease boxes for box b (the bridge's takeLeaseClipped with minusProtect): the part inside each area of this
-     * dimension, minus every protect box, sliced. Null when no area of this dimension overlaps the box at all.
+     * The lease boxes for box b (the bridge's takeLeaseClipped with minusProtect): AREAS (0.39.0) the world is open, so
+     * the whole box minus every protect box (keep-out, no-break) of this dimension, sliced; {@code areas} is unused.
+     * Null when nothing is left (the box lies wholly in protected areas).
      */
     public static List<int[]> leaseBoxes(int[] b, List<Box> areas, List<Box> protect, String dim) {
         List<int[]> out = new ArrayList<>();
-        boolean any = false;
-        for (Box a : areas) {
-            if (!a.dim.equals(dim)) continue;
-            // 0.21.2: Box.clip knows the shape (a round near-me zone gives strips that each lie inside its circle)
-            List<int[]> parts = new ArrayList<>(a.clip(b));
-            if (parts.isEmpty()) continue;
-            any = true;
-            for (Box p : protect) {
-                if (!p.dim.equals(dim)) continue;
-                List<int[]> q = new ArrayList<>();
-                for (int[] x : parts) q.addAll(minus(x, p));
-                parts = q;
-            }
-            for (int[] part : parts) out.addAll(slices(part, LEASE_MAX));
+        List<int[]> parts = new ArrayList<>(List.of(b.clone()));
+        for (Box p : protect) {
+            if (!p.dim.equals(dim)) continue;
+            List<int[]> q = new ArrayList<>();
+            for (int[] x : parts) q.addAll(minus(x, p));
+            parts = q;
         }
-        return any ? out : null;
+        for (int[] part : parts) out.addAll(slices(part, LEASE_MAX));
+        return out.isEmpty() ? null : out;
     }
 
     // ---- the pickaxe ----

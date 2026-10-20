@@ -32,8 +32,7 @@ class TunnelNightTest {
         assertTrue(g.checkBoxes(OW, 244, -46, 854, "place").allowed());
         assertFalse(g.checkBoxes(OW, 244, -46, 855, "place").allowed(), "only the cell is leased");
         assertNull(l.placeLease(244, -46, 855, "the side cell"), "the 3-pickaxe trip's cell too");
-        String r = new LeaseSet(g, "tok", OW, null).placeLease(244, -47, 854, "the floor");
-        assertTrue(r.startsWith("error: the guard refused: that box is not inside one of my areas"), r);
+        assertNull(new LeaseSet(g, "tok", OW, null).placeLease(244, -47, 854, "the floor"), "AREAS: the world is open; a cell outside the tunnel area leases too");
     }
 
     @Test
@@ -44,9 +43,9 @@ class TunnelNightTest {
         assertEquals(ClearBox.of(5, 10, 5, 5, 10, 5), PlaceRules.placeLeaseBox(5, 10, 5));
         PlaceRules.Side east = PlaceRules.SIDES.get(1);            // the neighbour at x+1
         assertEquals(ClearBox.of(5, 10, 5, 6, 10, 5), PlaceRules.placeLeaseBox(5, 10, 5, east, false));
-        // in the tunnel a bucket on the floor can't be leased (the floor is outside), a block item can
+        // AREAS: the world is open, so the floor cell outside the tunnel area leases too
         LeaseSet l = new LeaseSet(tunnelGuard(), "tok", OW, null);
-        assertNotNull(l.placeLease(PlaceRules.placeLeaseBox(244, -46, 854, floor, false), "water"));
+        assertNull(l.placeLease(PlaceRules.placeLeaseBox(244, -46, 854, floor, false), "water"));
         assertNull(l.placeLease(PlaceRules.placeLeaseBox(244, -46, 854, floor, true), "a block"));
     }
 
@@ -54,7 +53,7 @@ class TunnelNightTest {
     void cellLeasableFollowsAreasAndProtectBoxes() {
         Policy p = new Policy(List.of(TUNNEL), List.of(new Box("door", OW, 300, -46, 853, 300, -44, 855)));
         assertTrue(GuardCore.cellLeasable(p, OW, 244, -46, 854));
-        assertFalse(GuardCore.cellLeasable(p, OW, 244, -47, 854));
+        assertTrue(GuardCore.cellLeasable(p, OW, 244, -47, 854), "AREAS: outside the area is open");
         assertFalse(GuardCore.cellLeasable(p, OW, 300, -45, 854), "a protect box");
         assertFalse(GuardCore.cellLeasable(p, "minecraft:the_nether", 244, -46, 854));
     }

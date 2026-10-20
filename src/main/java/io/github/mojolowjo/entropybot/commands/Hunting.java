@@ -108,8 +108,7 @@ final class Hunting {
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             if (!HuntRules.MEAT.containsKey(type)) continue;
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
-            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
-                    || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
+            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ());
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, false, false, e instanceof AgeableMob am && am.isBaby(), inAreas);
             if (HuntRules.mayTake(t, allowed, null)) out.merge(type.substring(10), 1, Integer::sum);
         }
@@ -269,8 +268,7 @@ final class Hunting {
             if (r.at != null && !HuntRules.atOk(r.at, e.getBlockX(), e.getBlockZ())) continue;
             double d = p.distanceTo(e);
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
-            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ())
-                    || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
+            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ());
             // the director (2026-10-19): an urgent "out" hunt may take animals up to 48 from its start, outside my areas
             if (!inAreas && r.start != null && HuntRules.outOk(r.out, Math.sqrt(Jobs.distSq(r.start, new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()})))) {
                 inAreas = true;

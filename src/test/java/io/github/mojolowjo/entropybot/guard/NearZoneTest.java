@@ -8,7 +8,10 @@ import io.github.mojolowjo.entropybot.guard.GuardCore.Verdict;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.21.2: the near-me zone's rule, and how the guard counts it as one more area (only adding permission). */
+/**
+ * 0.21.2: the near-me zone's rule. AREAS (0.39.0): the zone is a fact for AA, never a permission: the guard does not read
+ * it, the world is open anyway, and the protect boxes and the floor win everywhere.
+ */
 class NearZoneTest {
     static final String OW = "minecraft:overworld";
 
@@ -82,19 +85,6 @@ class NearZoneTest {
     }
 
     @Test
-    void roundZoneThroughTheGuard() {
-        GuardCore g = strict(List.of(), List.of());
-        g.setNearZone(NearZone.boxAt(OW, 0, 64, 0, 16));
-        assertTrue(g.checkBoxes(OW, 16, 64, 0, "go").allowed(), "r");
-        assertFalse(g.checkBoxes(OW, 17, 64, 0, "go").allowed(), "r + 1");
-        assertFalse(g.checkBoxes(OW, 14, 64, 14, "go").allowed(), "diagonal outside");
-        assertTrue(g.lease("j", "t", new Box("t", OW, -11, 63, -11, 11, 65, 11), false, false).startsWith("L"));
-        assertTrue(g.lease("j", "t", new Box("t", OW, -12, 63, -12, 12, 65, 12), false, false).startsWith("error"), "no gap at the square's corners");
-        assertFalse(GuardCore.cellLeasable(g.policy(), OW, 13, 64, 13));
-        assertTrue(GuardCore.cellLeasable(g.policy(), OW, 11, 64, 11));
-    }
-
-    @Test
     void radiusBounds() {
         assertNull(NearZone.checkRadius(4));
         assertNull(NearZone.checkRadius(64));
@@ -135,67 +125,56 @@ class NearZoneTest {
     }
 
     @Test
-    void zoneAllowsWorkOutsideTheAreasInStrictMode() {
+    void theZoneIsAFactNotAPermission() {
+        // AREAS: the guard's zone holds the owner's spot for AA's area.nearOwner fact; the policy never changes
         Box area = new Box("base", OW, 0, -64, 0, 50, 300, 50);
         GuardCore g = strict(List.of(area), List.of());
-        assertFalse(g.checkBoxes(OW, 200, 64, 200, "go").allowed(), "outside the areas, no zone");
-        g.setNearZone(NearZone.boxAt(OW, 200, 64, 200, 16));
-        assertTrue(g.checkBoxes(OW, 210, 64, 210, "go").allowed(), "walking near the owner");
-        Verdict v = g.checkBoxes(OW, 230, 64, 200, "go");
-        assertFalse(v.allowed(), "30 blocks away");
-        assertTrue(v.reason().contains("more than 16 blocks from you"), v.reason());
-        assertFalse(g.checkBoxes(OW, 205, 64, 205, "break").allowed(), "the lease rule still holds");
+        g.near.update(OW, new int[]{200, 64, 200}, "view", 1000);
+        assertNotNull(g.near.box());
+        assertEquals(1, g.policy().areas.size(), "the zone never joins the policy");
+        assertTrue(g.status(0, false, false).getAsJsonObject("near").has("box"), "status still reports it");
+        // the world is open with or without the zone: walking and leases work everywhere outside the protect boxes
+        assertTrue(g.checkBoxes(OW, 230, 64, 200, "go").allowed(), "30 blocks from the owner, no area: fine");
+        assertTrue(g.checkBoxes(OW, 1000, 64, 1000, "go").allowed());
         String id = g.lease("job", "dig", new Box("dig", OW, 204, 63, 204, 206, 65, 206), false, false);
         assertTrue(id.startsWith("L"), id);
-        assertTrue(g.leases().get(id).near, "granted through the zone");
+        assertFalse(g.leases().get(id).near, "no lease is granted 'through the zone' any more");
         assertTrue(g.checkBoxes(OW, 205, 64, 205, "break").allowed());
-        assertTrue(g.lease("job", "far", new Box("far", OW, 230, 63, 200, 231, 64, 200), false, false).contains("or within 16 blocks of you"));
-        assertTrue(g.lease("job", "deep", new Box("deep", OW, 204, 40, 204, 205, 41, 205), false, false).startsWith("error"), "below the zone's height");
-        // the owner walks off: the zone moves, the dig's own lease stays good inside its box only
-        g.setNearZone(NearZone.boxAt(OW, 400, 64, 400, 16));
-        assertTrue(g.checkBoxes(OW, 205, 64, 205, "break").allowed(), "a dig started next to the owner finishes");
-        assertFalse(g.checkBoxes(OW, 210, 64, 210, "break").allowed(), "but nothing past its box");
-        assertFalse(g.checkBoxes(OW, 210, 64, 210, "go").allowed(), "walking there is outside again");
-        // a new policy keeps the near lease
-        g.setPolicy(new Policy(List.of(area), List.of()));
-        assertTrue(g.leases().containsKey(id));
-        assertEquals(1, g.basePolicy().areas.size(), "the base policy never holds the zone");
-        assertEquals(2, g.policy().areas.size());
-        assertEquals(1, g.status(0, false, false).getAsJsonArray("areas").size(), "status lists the owner's areas");
-        assertTrue(g.status(0, false, false).getAsJsonObject("near").has("box"));
-    }
-
-    @Test
-    void zoneWithNoAreasAndTheEmptyCase() {
-        GuardCore g = strict(List.of(), List.of());
-        assertEquals("no areas set", g.checkBoxes(OW, 0, 64, 0, "break").reason());
-        assertEquals("error: no areas set and I can't see where you are (near me: 16 blocks)", g.lease("j", "t", new Box("t", OW, 0, 64, 0, 1, 65, 1), false, false));
-        g.setNearZone(NearZone.boxAt(OW, 0, 64, 0, 16));
-        String id = g.lease("j", "t", new Box("t", OW, 0, 64, 0, 1, 65, 1), true, false);
-        assertTrue(id.startsWith("L"), id);
-        assertTrue(g.checkBoxes(OW, 1, 65, 1, "place").allowed());
-        g.setNearZone(null);
-        assertTrue(GuardCore.cellLeasable(g.policy(), OW, 100, 64, 100) == false);
-        assertEquals(0, g.policy().areas.size(), "no zone: back to nothing");
+        assertFalse(g.checkBoxes(OW, 210, 64, 210, "break").allowed(), "the lease rule still holds");
+        assertTrue(GuardCore.cellLeasable(g.policy(), OW, 100, 64, 100));
     }
 
     @Test
     void protectBoxesAndTheFloorAlwaysWin() {
         Box keep = new Box("keep", OW, -4, 60, -4, 4, 70, 4);
         GuardCore g = strict(List.of(), List.of(keep));
-        g.setNearZone(NearZone.boxAt(OW, 0, 64, 0, 16));
+        g.near.update(OW, new int[]{0, 64, 0}, "view", 1000);
         Verdict v = g.checkBoxes(OW, 0, 64, 0, "break");
         assertFalse(v.allowed());
         assertTrue(v.floor());
         assertTrue(v.reason().contains("in keep (no-break)"));
+        assertTrue(g.checkBoxes(OW, 0, 64, 0, "go").allowed(), "a no-break box is walked through");
         String id = g.lease("j", "t", new Box("t", OW, 10, 64, 10, 11, 65, 11), false, false);
         assertTrue(id.startsWith("L"));
         assertFalse(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true, true, false)).allowed(), "a chest in the zone");
         assertFalse(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.of(true, false, true)).allowed(), "a built block in the zone");
         assertTrue(g.check(OW, 10, 64, 10, "break", GuardCore.BlockInfo.PLAIN).allowed());
-        g.setNearZone(new Box(NearZone.NAME, "minecraft:the_nether", -16, 48, -16, 16, 80, 16));
-        assertNull(g.nearBox(), "a zone in a denied dimension is dropped");
+        assertTrue(g.lease("j", "t", new Box("t", OW, 3, 64, 3, 6, 65, 6), false, false).startsWith("error: that box touches keep (no-break)"));
         assertFalse(g.checkBoxes("minecraft:the_nether", 0, 64, 0, "go").allowed());
+    }
+
+    @Test
+    void keepOutRefusesTheWalkToo() {
+        Box pit = new Box("pit", OW, -4, 60, -4, 4, 70, 4).withType(AreaType.KEEP_OUT);
+        GuardCore g = strict(List.of(), List.of(pit));
+        Verdict v = g.checkBoxes(OW, 0, 64, 0, "go");
+        assertFalse(v.allowed());
+        assertTrue(v.floor(), "a keep-out walk veto is the floor: every mode");
+        assertEquals("in pit (keep-out)", v.reason());
+        assertEquals("in pit (keep-out)", g.checkBoxes(OW, 0, 64, 0, "break").reason());
+        assertTrue(g.checkBoxes(OW, 5, 64, 0, "go").allowed(), "next to it is fine");
+        g.setMode(GuardCore.Mode.LOG);
+        assertFalse(g.checkBoxes(OW, 0, 64, 0, "go").allowed(), "log mode too");
     }
 
     @Test
@@ -206,5 +185,6 @@ class NearZoneTest {
         Verdict v = g.checkBoxes(OW, 0, 64, 0, "break");
         assertTrue(v.allowed());
         assertTrue(v.wouldVeto(), "log mode only notes, as before");
+        assertEquals("no lease here", v.reason());
     }
 }

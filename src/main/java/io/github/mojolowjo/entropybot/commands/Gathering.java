@@ -109,13 +109,12 @@ final class Gathering {
             return Chains.Reply.now("error: " + GatherSources.shortId(a.item()) + " is not an item id (find it with recipe <part of the name>)");
         }
         try {
-            if (MineRules.policyBoxes(MineRules.parsePolicy(commands.policyJson()), "areas", PolicyCommands.DEFAULT_DIM).isEmpty())
-                return Chains.Reply.now("error: I gather only inside my areas, and there are none - " + PolicyCommands.AREA_HINT);
+            MineRules.policyBoxes(MineRules.parsePolicy(commands.policyJson()), "areas", PolicyCommands.DEFAULT_DIM);      // AREAS: a bad file still refuses
         } catch (MineRules.BadPolicy e) {
             return Chains.Reply.now("error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't gather"));
         }
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(Storage.dim(), me[0], me[2])) return Chains.Reply.now("error: I'm outside my areas - walk me into one first (" + PolicyCommands.AREA_HINT.trim() + ")");
+        if (!commands.inAreas(Storage.dim(), me[0], me[2])) return Chains.Reply.now("error: I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " - I gather nothing here");
         commands.jobs.replaceWalk();
         Run r = new Run();
         r.from = from;
@@ -173,7 +172,7 @@ final class Gathering {
         }
         int[] me = Jobs.here(p);
         if (!commands.inAreas(Storage.dim(), me[0], me[2])) {
-            end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, "I'm outside my areas at " + Jobs.fmt(me), "walk me back into one, or \"area here 48 work neutral\""));
+            end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, "I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " at " + Jobs.fmt(me), "walk me out of it"));
             return;
         }
         GatherPlan.Step s;

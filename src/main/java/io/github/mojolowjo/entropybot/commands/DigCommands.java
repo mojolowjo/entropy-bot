@@ -418,8 +418,8 @@ final class DigCommands {
         // a dig box has to lie inside an area: in strict mode the lease says so, in log mode this gate does
         if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
             List<String> names = new ArrayList<>();
-            for (var ar : Core.INSTANCE.guard.core.policy().areas) names.add(ar.name == null ? "?" : ar.name);
-            return "error: that box is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
+            for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
+            return "error: that box touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";
         }
         String label = "digging " + n[0] + " " + n[1] + " " + n[2] + " to " + n[3] + " " + n[4] + " " + n[5] + (force ? " (force)" : "") + (ores ? " (ores too)" : "")
                 + (a.floor() ? " (floor" + (floorId != null ? " of " + GuiCore.shortId(floorId) : "") + ")" : "") + (a.junkDrop() ? " (junk drop)" : "")
@@ -560,8 +560,8 @@ final class DigCommands {
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
         if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
             List<String> names = new ArrayList<>();
-            for (var ar : Core.INSTANCE.guard.core.policy().areas) names.add(ar.name == null ? "?" : ar.name);
-            return "error: that rectangle is not inside one of my areas (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ") - " + PolicyCommands.AREA_HINT;
+            for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
+            return "error: that rectangle touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";
         }
         String label = "digging " + n[0] + " " + n[1] + " to " + n[2] + " " + n[3] + ", " + plan.blocks().size() + " blocks"
                 + " (from the surface, " + a.surface() + " " + a.depth() + ", " + plan.columns() + " columns)"

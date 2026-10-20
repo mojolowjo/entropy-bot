@@ -150,13 +150,12 @@ final class Chopping {
         if (a.status()) return status();
         if (jobs.running() && !jobs.walking()) return "error: busy with \"" + jobs.job.status + "\" - send stop first";
         try {
-            if (MineRules.policyBoxes(MineRules.parsePolicy(commands.policyJson()), "areas", PolicyCommands.DEFAULT_DIM).isEmpty())
-                return "error: I chop only inside my areas, and there are none - " + PolicyCommands.AREA_HINT;
+            MineRules.policyBoxes(MineRules.parsePolicy(commands.policyJson()), "areas", PolicyCommands.DEFAULT_DIM);      // AREAS: a bad file still refuses
         } catch (MineRules.BadPolicy e) {
             return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't chop");
         }
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(Storage.dim(), me[0], me[2])) return "error: I'm outside my areas - walk me into one first (" + PolicyCommands.AREA_HINT.trim() + ")";
+        if (!commands.inAreas(Storage.dim(), me[0], me[2])) return "error: I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " - I cut nothing here";
         if (Jobs.baritone() == null) return "error: baritone not loaded";
         Run r = new Run();
         r.args = a;

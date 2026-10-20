@@ -120,16 +120,9 @@ public final class PolicyCommands {
         }
     }
 
-    /**
-     * 0.21.2: the areas plus the near-me zone when it is up: what the commands' own area checks read (inAreas, the
-     * position watch's gap, the miner's policy JSON). The guard has the same zone ({@code GuardCore.setNearZone}).
-     */
+    /** The labelled areas (AREAS: the near-me zone is a fact, never an area; kept for the readers of "my areas"). */
     public JsonArray effectiveAreas() {
-        JsonObject n = guard.nearArea();
-        if (n == null) return areas();
-        JsonArray a = areas().deepCopy();
-        a.add(n);
-        return a;
+        return areas();
     }
 
     /** The labelled areas (every meaning but no-break and keep-out). */
@@ -155,16 +148,32 @@ public final class PolicyCommands {
         return r == null ? null : r[0] + "; mode " + r[1];
     }
 
-    /** True when (x, z) lies inside an area of that dimension (heights aside), as the bridge's inMapArea. */
+    /**
+     * AREAS (0.39.0): the bot may work in the column (x, z) of that dimension: true everywhere except in the footprint
+     * of a keep-out or no-break area (heights aside: a protected box binds its whole column here, the conservative
+     * reading). The old "inside one of my areas" is gone - the world is open.
+     */
     public boolean inAreas(String dim, int x, int z) {
-        for (JsonElement e : effectiveAreas()) {
+        return blocker(dim, x, z) == null;
+    }
+
+    /** AREAS: the keep-out or no-break entry whose footprint holds the column (keep-out first), or null. */
+    public JsonObject blocker(String dim, int x, int z) {
+        JsonObject best = null;
+        for (JsonElement e : protect()) {
             JsonObject a = e.getAsJsonObject();
             if (!dimOf(a).equals(dim)) continue;
-            if (a.has("round")) {                                            // 0.21.2: the near-me circle (Box knows the shape)
-                if (io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)) return true;
-            } else if (x >= n(a, "x1") && x <= n(a, "x2") && z >= n(a, "z1") && z <= n(a, "z2")) return true;
+            boolean in = a.has("round") ? io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)
+                    : x >= n(a, "x1") && x <= n(a, "x2") && z >= n(a, "z1") && z <= n(a, "z2");
+            if (in && (best == null || typeOf(a).rank() < typeOf(best).rank())) best = a;
         }
-        return false;
+        return best;
+    }
+
+    /** AREAS: "in toms-house (no-break)" for the column, or null when nothing blocks it. For the verbs' refusals. */
+    public String blockedText(String dim, int x, int z) {
+        JsonObject b = blocker(dim, x, z);
+        return b == null ? null : "in " + nameOf(b) + " (" + typeOf(b).word() + ")";
     }
 
     /** V1a: an area of any type by name (case-insensitive), or null. */
@@ -435,8 +444,8 @@ public final class PolicyCommands {
             }
         }
         JsonObject n = guard.nearArea();
-        if (n != null && dimOf(n).equals(dim) && boxGap(n, x, y, z) == 0) return " (within " + nearR() + " blocks of you)";
-        return " (outside every area)";
+        if (n != null && dimOf(n).equals(dim) && boxGap(n, x, y, z) == 0) return " (no area; within " + nearR() + " blocks of you)";
+        return " (no area)";
     }
 
     /** "area list": one list, every meaning, with the colour word and the note. */
@@ -473,8 +482,8 @@ public final class PolicyCommands {
                     p.getAsJsonObject("near").addProperty("on", arg.equals("on"));
                     guard.setNear(nearOn(), nearR());
                     saved.run();
-                    return "ok: near me " + arg + (arg.equals("on") ? " - I may work in a circle of " + nearR() + " blocks around you, wherever you are (safe areas and the safety rules still hold)"
-                            : " - only my areas count now");
+                    return "ok: near me " + arg + (arg.equals("on") ? " - AA treats a circle of " + nearR() + " blocks around you as a place it prefers in companion mode (a fact, never a permission)"
+                            : " - AA no longer prefers the spot around you");
                 }
                 Integer r = arg.matches("^\\d{1,4}$") ? Integer.valueOf(arg) : null;
                 String bad = r == null ? "usage: area near [<r>|on|off|status]" : io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r);
@@ -484,7 +493,7 @@ public final class PolicyCommands {
                 n.addProperty("on", true);
                 guard.setNear(true, r);
                 saved.run();
-                return "ok: near me " + r + " blocks (on) - I may work in a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down)";
+                return "ok: near me " + r + " blocks (on) - AA prefers a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down) in companion mode; a fact, never a permission";
             }
             String name = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
             if (sub.equals("show")) {

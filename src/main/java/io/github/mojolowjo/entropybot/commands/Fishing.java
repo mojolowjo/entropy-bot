@@ -226,8 +226,7 @@ final class Fishing {
 
     private boolean inAreas(int[] cell) {
         String dim = Storage.dim();
-        return c.inAreas(dim, cell[0], cell[2])
-                || (Core.INSTANCE.guard.core.nearBox() != null && Core.INSTANCE.guard.core.nearBox().contains(dim, cell[0], cell[1], cell[2]));
+        return c.inAreas(dim, cell[0], cell[2]);
     }
 
     /** Water source cells with air above, near me (one scan per cast). */
