@@ -391,7 +391,7 @@ public final class ShelterJob {
         int bestTier = -1;
         for (String id : Gui.inventory(p).keySet()) {
             if (!id.endsWith(kind) || (kind.equals("_axe") && id.endsWith("_pickaxe"))) continue;
-            int t = io.github.mojolowjo.entropybot.brain.NightSafety.tierOf(id);
+            int t = io.github.mojolowjo.entropybot.sense.Gear.tierOf(id);
             if (t > bestTier) { best = id; bestTier = t; }
         }
         if (best != null) Clearing.holdItem(p, best);

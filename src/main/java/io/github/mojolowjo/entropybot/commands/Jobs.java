@@ -173,7 +173,7 @@ public final class Jobs {
             public int[] insideFor(int[] xz) {
                 String dim = Storage.dim();
                 if (commands.inAreas(dim, xz[0], xz[1])) return null;
-                var t = io.github.mojolowjo.entropybot.brain.AreaReturn.nearest(commands.areaRects(dim), xz[0], xz[1]);
+                var t = io.github.mojolowjo.entropybot.sense.AreaReturn.nearest(commands.areaRects(dim), xz[0], xz[1]);
                 return t == null ? null : new int[]{t.x(), t.z()};
             }
 

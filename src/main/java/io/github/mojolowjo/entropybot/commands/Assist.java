@@ -196,7 +196,7 @@ final class Assist {
 
     private void farm(LocalPlayer p, AssistRules.Report r, long now) {
         JsonObject f = Core.INSTANCE.knowledge.places().get("farm");
-        int[] at = f == null ? null : BrainRuntime.xyz(f);
+        int[] at = f == null ? null : SenseRuntime.xyz(f);
         boolean near = at != null && Math.hypot(at[0] - r.x(), at[2] - r.z()) <= AssistRules.FARM_R;
         if (!near) {
             doing = "following you (no farm place within " + AssistRules.FARM_R + " of you: place farm marks one)";

@@ -1,4 +1,4 @@
-package io.github.mojolowjo.entropybot.brain;
+package io.github.mojolowjo.entropybot.sense;
 
 import java.util.List;
 import java.util.function.Predicate;
@@ -7,7 +7,7 @@ import java.util.function.Predicate;
  * 0.27.3 {@code area.return}: the bot stands outside every area of its dimension (and the near-me zone), so every job
  * is refused ("I am outside my areas"); the brain walks it back. Pure (JUnit): which area is nearest, which cell a
  * couple of blocks inside its edge is nearest to the bot, and which height in that column the bot can stand on.
- * Loader notes: none (the game side, commands.BrainRuntime, reads the areas and the block states).
+ * Loader notes: none (the game side, commands.SenseRuntime, reads the areas and the block states).
  */
 public final class AreaReturn {
     private AreaReturn() {}

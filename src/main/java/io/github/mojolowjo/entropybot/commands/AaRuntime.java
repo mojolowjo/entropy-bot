@@ -16,8 +16,8 @@ import io.github.mojolowjo.entropybot.aa.core.Request;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
-import io.github.mojolowjo.entropybot.brain.BrainState;
-import io.github.mojolowjo.entropybot.brain.Feasibility;
+import io.github.mojolowjo.entropybot.sense.BrainState;
+import io.github.mojolowjo.entropybot.sense.Feasibility;
 import io.github.mojolowjo.entropybot.engine.Reflexes;
 import io.github.mojolowjo.entropybot.plan.RoutineRule;
 import net.minecraft.client.Minecraft;
@@ -35,7 +35,7 @@ import java.util.Map;
 
 /**
  * 0.36.0 AA v0 (AA_PLAN 2-6, 8, 11; package P3): the thin game-side adapter of the new brain. Fills the Blackboard
- * from {@code BrainRuntime.sense()} (reused, not copied), implements {@link JobPort} over Chains/Jobs (AA's chain is
+ * from {@code SenseRuntime.sense()} (reused, not copied), implements {@link JobPort} over Chains/Jobs (AA's chain is
  * named {@value #CHAIN}; only AA starts and cancels it), is ticked from {@code Commands.tick} every 5 client ticks
  * (4 Hz; the sense snapshot every 10), writes the snapshot and decision files under {@code entropybot/aa/}, and turns
  * itself off after 10 tick errors in a minute (saying so in {@code aa status} and a whisper).
@@ -791,7 +791,6 @@ public final class AaRuntime implements JobPort {
     }
 
     String turnOn() {
-        if (c.brainRuntime != null && c.brainRuntime.brain.on()) return "brain is on - brain off first (aa and brain exclude each other)";
         JsonObject d = data();
         d.addProperty("on", true);
         d.addProperty("since", System.currentTimeMillis());
@@ -987,10 +986,6 @@ public final class AaRuntime implements JobPort {
                 return;
             }
             long now = System.currentTimeMillis();
-            if (c.brainRuntime != null && c.brainRuntime.brain.on()) {     // 0.36.5 (review 1): both saved on (an old save): AA wins
-                c.brainRuntime.brain.command("off");
-                LOG.info("[entropybot] aa: the brain was on next to aa - brain off");
-            }
             if (p.isDeadOrDying()) {
                 if (!runDead) {
                     runDead = true;
@@ -1005,7 +1000,7 @@ public final class AaRuntime implements JobPort {
                 return;
             }
             if (sensedTick < 0 || tick - sensedTick >= 10) {
-                sensed = c.brainRuntime.sense();
+                sensed = c.senses.sense();      // AA_CLEANUP 3: was BrainRuntime.sense()
                 sensedTick = tick;
             }
             escapeTick(p, mc);
@@ -2918,7 +2913,6 @@ public final class AaRuntime implements JobPort {
         List<String[]> out = new ArrayList<>();
         if (offReason != null) out.add(new String[]{"aa", "aa " + offReason, "aa on (after a look at the log)"});
         if (on() && tracer.counts.lost > 0) out.add(new String[]{"aalost", "aa lost " + tracer.counts.lost + " task(s) to someone else (a poster not gated)", "aa why"});
-        if (on() && c.brainRuntime != null && c.brainRuntime.brain.on()) out.add(new String[]{"aabrain", "aa and the brain are both on", "brain off"});
         return out;
     }
 

@@ -32,9 +32,9 @@ public final class Failures {
             String t = reason.toLowerCase(Locale.ROOT);
             if (t.contains("stopped: your") || t.contains("overridden")) return OWNER;
             if (t.contains("attacked") || t.contains("low health") || t.contains("died")) return DANGER;
-            io.github.mojolowjo.entropybot.brain.FailMemory.Reason r = io.github.mojolowjo.entropybot.brain.FailMemory.classify(reason);
-            if (r == io.github.mojolowjo.entropybot.brain.FailMemory.Reason.NO_ITEM) return NO_ITEM;
-            if (r == io.github.mojolowjo.entropybot.brain.FailMemory.Reason.NO_PATH) return NO_PATH;
+            io.github.mojolowjo.entropybot.sense.FailMemory.Reason r = io.github.mojolowjo.entropybot.sense.FailMemory.classify(reason);
+            if (r == io.github.mojolowjo.entropybot.sense.FailMemory.Reason.NO_ITEM) return NO_ITEM;
+            if (r == io.github.mojolowjo.entropybot.sense.FailMemory.Reason.NO_PATH) return NO_PATH;
             return UNKNOWN;
         }
     }

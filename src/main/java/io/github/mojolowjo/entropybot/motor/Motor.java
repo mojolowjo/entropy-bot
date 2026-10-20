@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.motor;
 
 import com.mojang.logging.LogUtils;
-import io.github.mojolowjo.entropybot.brain.BrainConfig;
 import io.github.mojolowjo.entropybot.engine.EngineProcess;
 import io.github.mojolowjo.entropybot.engine.WatchSteer;
 import io.github.mojolowjo.entropybot.threat.ReachGrid;
@@ -22,6 +21,8 @@ import org.slf4j.Logger;
  * while a move runs. Never throws; errors are counted, the first 5 logged in full, and 20 turn the motor off.
  */
 public final class Motor {
+    /** AA_CLEANUP 3: a motor move ends after this many ticks (the old BrainConfig motor.moveTicks default). */
+    public static final int MOVE_TICKS = 60;
     private static final Logger LOG = LogUtils.getLogger();
     public static final Motor INSTANCE = new Motor();
     static final int ERROR_LIMIT = 20;
@@ -62,7 +63,7 @@ public final class Motor {
     /** The motor may run (the key on, not stopped by errors). */
     public boolean enabled() {
         try {
-            return offBy == null && registered && BrainConfig.current().on("motor");
+            return offBy == null && registered;      // AA_CLEANUP 3: the BrainConfig "motor" key (default on) went
         } catch (RuntimeException e) {
             return false;
         }
@@ -90,7 +91,7 @@ public final class Motor {
     public String start(MotorPlan.Plan plan, Arbiter.Owner owner, Entity face, String why, long tick) {
         try {
             Minecraft mc = Minecraft.getInstance();
-            int budget = BrainConfig.current().i("motor.moveTicks");
+            int budget = MOVE_TICKS;
             String r = arb.request(plan, owner, tick, budget, gate(mc, owner == Arbiter.Owner.REFLEX), why, System.currentTimeMillis());
             if (r != null) return r;
             idx = 0;

@@ -769,7 +769,7 @@ final class CampCommands {
 
     /** 0.25.1 gear.ironFirst (a brain setting; defaults until the brain loaded them). */
     static boolean ironFirst() {
-        try { return io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("gear.ironFirst"); } catch (RuntimeException e) { return true; }
+        return true;      // AA_CLEANUP 3: was BrainConfig gear.ironFirst (default 1)
     }
 
     /** Every 100 ticks; at a pause (no job, chain or request, no reflex) a worn or broken tool is replaced. */

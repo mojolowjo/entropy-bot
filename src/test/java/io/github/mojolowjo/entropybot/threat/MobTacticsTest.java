@@ -2,7 +2,6 @@ package io.github.mojolowjo.entropybot.threat;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import io.github.mojolowjo.entropybot.brain.BrainConfig;
 import org.junit.jupiter.api.Test;
 
 /** 0.27.0 the owner's footwork table (heavy-log replay of 2026-10-08) and the motor keys. */
@@ -85,11 +84,4 @@ class MobTacticsTest {
         assertEquals(ThreatRules.Move.FLY, ThreatRules.moveOf("minecraft:phantom"));
     }
 
-    @Test
-    void motorKeysAndRanges() {
-        assertTrue(BrainConfig.known("motor"));
-        assertArrayEquals(new int[]{0, 1}, BrainConfig.ranges().get("motor"));
-        assertArrayEquals(new int[]{0, 20}, BrainConfig.ranges().get("motor.backoffHealth"));
-        assertArrayEquals(new int[]{20, 200}, BrainConfig.ranges().get("motor.moveTicks"));
-    }
 }

@@ -332,7 +332,7 @@ public final class Seq {
      */
     private boolean oreDetour(Step st, LocalPlayer p) {
         try {
-            int r = io.github.mojolowjo.entropybot.brain.BrainConfig.current().i("path.oreDetour");
+            int r = 8;      // AA_CLEANUP 3: was BrainConfig path.oreDetour (its default)
             if (r <= 0 || st.pos == null || st.exact || routeTest != null) return false;
             com.google.gson.JsonObject base = jobs.core().knowledge.places().get("base");
             if (base == null || !Jobs.dimOf(base).equals(Storage.dim())) return false;

@@ -1,7 +1,5 @@
 package io.github.mojolowjo.entropybot.sense;
 
-import io.github.mojolowjo.entropybot.brain.BrainState;
-import io.github.mojolowjo.entropybot.brain.Feasibility;
 import io.github.mojolowjo.entropybot.gather.GatherSources;
 import io.github.mojolowjo.entropybot.poi.Pois;
 import org.junit.jupiter.api.Test;

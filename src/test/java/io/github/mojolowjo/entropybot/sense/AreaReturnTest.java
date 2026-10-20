@@ -1,4 +1,4 @@
-package io.github.mojolowjo.entropybot.brain;
+package io.github.mojolowjo.entropybot.sense;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -58,20 +58,4 @@ class AreaReturnTest {
         assertEquals("I am outside my areas - walking back into camp", AreaReturn.whisper("camp"));
     }
 
-    @Test void treeNodeRightAfterDanger() {
-        BrainState s = new BrainState();
-        s.areasHere = false;
-        s.areaReturn = AreaReturn.withY(AreaReturn.nearest(AREAS, 40, 5), 64, f -> f[1] == 64);
-        BrainTree.Decision d = BrainTest.decide(s, null);
-        assertEquals("area.return", d.branch());
-        assertEquals("goto 22 64 5", d.chain());
-        assertEquals(BrainTree.AREA_NEED, d.need());
-        s.danger = true;
-        assertEquals("danger", BrainTest.decide(s, null).branch());
-        s.danger = false;
-        s.ownerJob = "goto 0 0 0";
-        assertNotEquals("area.return", BrainTest.decide(s, null).branch());
-        s.ownerJob = null;
-        assertEquals(BrainTree.Kind.KEEP, BrainTest.decide(s, new BrainTree.Running(BrainTree.AREA_NEED, "goto 22 64 5", 90)).kind());
-    }
 }

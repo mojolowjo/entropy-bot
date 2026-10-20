@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.chop;
 
-import io.github.mojolowjo.entropybot.brain.BrainConfig;
-import io.github.mojolowjo.entropybot.brain.FailMemory;
+import io.github.mojolowjo.entropybot.sense.FailMemory;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -194,8 +193,7 @@ class ChopLoopTest {
     }
 
     @Test void brainKeysHaveDefaults() {
-        BrainConfig c = BrainConfig.defaults();
-        assertEquals(24, c.i("chop.maxChops"));
-        assertEquals(8, c.i("chop.maxTrees"));
+        assertEquals(24, ChopLoop.DEFAULT_MAX_CHOPS);      // AA_CLEANUP 3: the BrainConfig keys went, these defaults stay
+        assertEquals(8, ChopLoop.DEFAULT_MAX_TREES);
     }
 }

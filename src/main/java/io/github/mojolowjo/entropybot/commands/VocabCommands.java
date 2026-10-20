@@ -406,13 +406,11 @@ final class VocabCommands {
         if (w.size() == 2 && w.get(0).equals("clear")) {
             if (w.get(1).equals("all")) {
                 b.add("goals", new JsonArray());
-                io.github.mojolowjo.entropybot.brain.Brain.forgetGoalParks(b, null);       // 0.23.1: no park outlives the goals
                 c.saved();
                 return "ok: no goals";
             }
             if (!w.get(1).matches("^\\d{1,2}$") || Integer.parseInt(w.get(1)) < 1 || Integer.parseInt(w.get(1)) > goals.size()) return "error: no goal " + w.get(1) + " (goals lists them)";
             JsonElement gone = goals.remove(Integer.parseInt(w.get(1)) - 1);
-            try { io.github.mojolowjo.entropybot.brain.Brain.forgetGoalParks(b, gone.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException ignored) {}
             b.add("goals", goals);
             c.saved();
             return "ok: goal " + w.get(1) + " cleared";
@@ -497,9 +495,7 @@ final class VocabCommands {
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] status stage: {}", e.toString());
         }
-        String brain = null;
-        try { brain = c.brainRuntime == null ? null : c.brainRuntime.brain.statusPart(); } catch (RuntimeException e) { LOG.warn("[entropybot] status brain: {}", e.toString()); }
-        return GameStage.statusPart(deaths, stage, brain);
+        return GameStage.statusPart(deaths, stage, null);      // AA_CLEANUP 3: no old brain part
     }
 
     // ---- queue ----

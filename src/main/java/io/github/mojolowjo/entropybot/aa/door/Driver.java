@@ -18,14 +18,12 @@ public enum Driver {
     RULE,
     /** The AI operator (AiRuntime); under AA it may only say "aa want" / "aa drop". */
     AI,
-    /** The old brain. */
-    OLD_BRAIN,
     /** Anything else: timers (stairs, kept table, furnace pickup, defend hold), side machines, guests, unknown callers. */
     OTHER;
 
     /** True when this driver may start or stop a job while AA is on. */
     public boolean passesUnderAa() { return this == AA || this == OWNER || this == REFLEX; }
 
-    /** Short lower-case name for status lines ("old brain"). */
+    /** Short lower-case name for status lines ("other"). */
     public String label() { return name().toLowerCase().replace('_', ' '); }
 }

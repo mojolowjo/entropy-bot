@@ -1075,7 +1075,7 @@ public final class Reflexes {
                 hitsOnTarget = 0;
             }
             hitsOnTarget++;
-            int backoffHealth = io.github.mojolowjo.entropybot.brain.BrainConfig.current().i("motor.backoffHealth");
+            int backoffHealth = MOTOR_BACKOFF_HEALTH;
             MobTactics.Decision d = MobTactics.afterHit(t.id, ThreatRules.moveOf(t.id), t.d, p.getHealth(), backoffHealth, hitsOnTarget);
             if (d.action() != MobTactics.Action.BACK_OFF) return;
             MotorPlan.Plan pl = MotorPlan.backOff(Motor.grid(), p.getBlockX(), p.getBlockY(), p.getBlockZ(), t.e.getX(), t.e.getZ(), MobTactics.BACKOFF_CELLS);
@@ -1112,16 +1112,19 @@ public final class Reflexes {
     }
 
     /** The cover and high-ground holds; true when one acted this tick. Errors: logged, the old fight goes on. */
+    /** AA_CLEANUP 3: the old BrainConfig's defaults, inlined (motor.backoffHealth, threat.cover*, threat.highGround). */
+    static final int MOTOR_BACKOFF_HEALTH = 10, COVER_RANGE = 8, COVER_CLOSE_AT = 4, COVER_WAIT_S = 15;
+    static final boolean HIGH_GROUND = true;
+
     private boolean spotTick(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
         try {
-            io.github.mojolowjo.entropybot.brain.BrainConfig cfg = io.github.mojolowjo.entropybot.brain.BrainConfig.current();
             if (spot != null && creeperNear(mc, spot[0], spot[1], spot[2])) {          // 0.32.1: never toward a creeper
                 ThreatRuntime.INSTANCE.verdict(t.id + ": leaving the " + (spotCover ? "cover" : "high ground") + " spot: a creeper is near it");
                 clearSpot();
                 return false;
             }
             if (spot != null && spotCover) {
-                int close = cfg.i("threat.coverCloseAt"), wait = cfg.i("threat.coverWait");
+                int close = COVER_CLOSE_AT, wait = COVER_WAIT_S;
                 if (spotMob == t.e.getId() && !io.github.mojolowjo.entropybot.threat.Cover.over(t.d, now - spotStart, close, wait)) {
                     holdSpot(mc, p, t, "taking cover from " + t.id);
                     return true;
@@ -1148,7 +1151,7 @@ public final class Reflexes {
                 holdSpot(mc, p, t, "holding high ground against " + t.id);
                 return true;
             }
-            int range = cfg.i("threat.coverRange");
+            int range = COVER_RANGE;
             if (range > 0 && t.e.getId() != coverDoneMob
                     && io.github.mojolowjo.entropybot.threat.Cover.wanted(io.github.mojolowjo.entropybot.threat.Cover.ranged(t.id,
                     io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(10), System.currentTimeMillis()), t.d, range)) {
@@ -1163,7 +1166,7 @@ public final class Reflexes {
                     spotMob = t.e.getId();
                     spotStart = now;
                     String line = io.github.mojolowjo.entropybot.threat.Cover.line(t.id, t.e.getBlockX(), t.e.getBlockY(), t.e.getBlockZ(), t.d, c,
-                            cfg.i("threat.coverCloseAt"), cfg.i("threat.coverWait"));
+                            COVER_CLOSE_AT, COVER_WAIT_S);
                     ThreatRuntime.INSTANCE.verdict(t.id + ": " + line);
                     events.push("reflex", line, null);
                     holdSpot(mc, p, t, "taking cover from " + t.id);
@@ -1222,7 +1225,7 @@ public final class Reflexes {
                 v = FightOrFlee.holdIfDeadEnd(v, ThreatRuntime.INSTANCE.deadEnd(p, t.e));     // 0.24.4
                 v = FightOrFlee.cover(FightOrFlee.unarmed(v, Hostility.weaponHit(p), lastFoes, false), Hostility.weaponHit(p), lastFoes);       // aa-night2 P0 2: no corridor fight with a pickaxe
                 // 0.25.1 high ground (a dead end's hold and a losing retreat win)
-                if (!fighting && io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("threat.highGround")
+                if (!fighting && HIGH_GROUND
                         && v.verdict() != FightOrFlee.Verdict.HOLD && v.verdict() != FightOrFlee.Verdict.HOME) {
                     List<int[]> melee = meleeNear(mc, p, hurt);
                     if (melee.size() >= io.github.mojolowjo.entropybot.threat.HighGround.MIN_MOBS) {

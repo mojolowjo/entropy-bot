@@ -407,10 +407,10 @@ final class GoalPlanning {
 
     // ---- actions.json ----
 
-    /** The state summary a model needs with the table: stage, bag, needs, goals, areas, places, the brain's last why, the job. */
+    /** The state summary a model needs with the table: stage, bag, needs, goals, areas, places, the job. */
     JsonObject stateSummary(LocalPlayer p) {
         JsonObject s = new JsonObject();
-        s.addProperty("stage", c.brainRuntime != null ? c.brainRuntime.stage() : "?");
+        s.addProperty("stage", c.senses != null ? c.senses.stage() : "?");
         JsonObject bag = new JsonObject();
         Map<String, Integer> inv = Gui.inventory(p);
         int k = 0;
@@ -439,7 +439,7 @@ final class GoalPlanning {
         s.add("areas", areas);
         JsonObject places = new JsonObject();
         for (Map.Entry<String, JsonObject> e : Core.INSTANCE.knowledge.places().entrySet()) {
-            int[] xyz = BrainRuntime.xyz(e.getValue());
+            int[] xyz = SenseRuntime.xyz(e.getValue());
             if (xyz != null) places.addProperty(e.getKey(), xyz[0] + " " + xyz[1] + " " + xyz[2]);
         }
         s.add("places", places);
@@ -448,11 +448,6 @@ final class GoalPlanning {
         s.add("routines", routines);
         String job = c.chainsRef().running() ? c.chainsRef().chainStatus() : c.jobs.running() ? c.jobs.job.status : null;
         s.addProperty("job", job == null ? "idle" : job);
-        if (c.brainRuntime != null) {
-            String why = c.brainRuntime.brain.why();
-            s.addProperty("brain", c.brainRuntime.brain.on() ? "on" : "off");
-            s.addProperty("why", why.length() > 600 ? why.substring(0, 600) + "..." : why);
-        }
         return s;
     }
 

@@ -1,4 +1,4 @@
-package io.github.mojolowjo.entropybot.brain;
+package io.github.mojolowjo.entropybot.sense;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -13,10 +13,10 @@ import java.util.function.Predicate;
  *
  * <p>Steps run in order, and what an earlier step gives (gather/get/craft/cut/smelt X n) counts for the later ones, so
  * "craft torch 4 then light here 8" is judged as a whole. Optimistic on purpose: an UNKNOWN step that names an item still
- * counts as giving it. Owner-ordered chains never come here (only {@link Brain} calls it, for its own picks).
+ * counts as giving it. Owner-ordered chains never come here (AA calls it for its own routines; AA_CLEANUP 3: moved from the old brain).
  *
  * <p>Pure Java, no game classes: JUnit builds fake states. Loader notes: none (the facts are filled by
- * {@code commands.BrainRuntime} with vanilla client getters). Errors: never throws on odd text; a step it cannot parse is UNKNOWN.
+ * {@code commands.SenseRuntime} with vanilla client getters). Errors: never throws on odd text; a step it cannot parse is UNKNOWN.
  */
 public final class Feasibility {
     private Feasibility() {}

@@ -112,11 +112,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("motorcheck", "couldn't check the motor: " + e, "debug motor"));
         }
         try {
-            if (c.brainRuntime != null) for (String[] t : c.brainRuntime.brain.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // B1
-        } catch (RuntimeException e) {
-            f.add(new SelfCheck.Finding("braincheck", "couldn't check the brain: " + e, "brain status"));
-        }
-        try {
             if (c.aaRuntime != null) for (String[] t : c.aaRuntime.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // 0.36.0 AA
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("aacheck", "couldn't check aa: " + e, "aa status"));

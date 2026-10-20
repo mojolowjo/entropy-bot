@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.move;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import io.github.mojolowjo.entropybot.brain.AreaReturn;
+import io.github.mojolowjo.entropybot.sense.AreaReturn;
 import io.github.mojolowjo.entropybot.route.Cell;
 import java.util.List;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Site;
-import io.github.mojolowjo.entropybot.brain.FailMemory;
+import io.github.mojolowjo.entropybot.sense.FailMemory;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -23,7 +23,7 @@ import java.util.function.IntFunction;
  *     ({@link WoodOptions#CUT_LOG} each, {@link WoodOptions#SEARCH} to find trees when none is known), the smelt costs
  *     {@value #SMELT_ITEM} per item. No furnace known: "craft furnace 1" (8 cobblestone, gathered first when short) is prepended and priced, so charcoal can win early.</li>
  * </ul>
- * Charcoal counts as coal everywhere the bag does (BrainRuntime: coal + charcoal), so the stock goal and the torches take
+ * Charcoal counts as coal everywhere the bag does (SenseRuntime: coal + charcoal), so the stock goal and the torches take
  * it. Torches whose coal is missing run the best row first ({@link #torchChain}), never a bare "can't craft". A failed
  * row is held per option ({@link Options#RETRY_MS}) in {@link Memory}; zero gained stays a failure (AaRuntime.poll).
  * Pure (JUnit: CoalOptionsTest). Loader notes: none (the facts come from {@code AaRuntime.coalFacts}).

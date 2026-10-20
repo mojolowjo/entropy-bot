@@ -42,7 +42,7 @@ class DoorTest {
         assertTrue(Door.allow(Driver.AA, "chain aa"));
         assertTrue(Door.allow(Driver.OWNER, "travel goto"));
         assertTrue(Door.allow(Driver.REFLEX, "x"));
-        for (Driver d : List.of(Driver.DANGER, Driver.RULE, Driver.AI, Driver.OLD_BRAIN, Driver.OTHER)) assertFalse(Door.allow(d, "x"), d.name());
+        for (Driver d : List.of(Driver.DANGER, Driver.RULE, Driver.AI, Driver.OTHER)) assertFalse(Door.allow(d, "x"), d.name());
         assertEquals(1, Door.refused(Driver.RULE));
     }
 
@@ -97,8 +97,8 @@ class DoorTest {
 
     @Test
     void refusalTextNamesTheDriver() {
-        try (var s = Door.scope(Driver.OLD_BRAIN)) {
-            assertEquals("error: refused: aa is on, old brain may not start or stop a job (chain brain)", Door.refusal("chain brain"));
+        try (var s = Door.scope(Driver.RULE)) {
+            assertEquals("error: refused: aa is on, rule may not start or stop a job (chain brain)", Door.refusal("chain brain"));
         }
     }
 

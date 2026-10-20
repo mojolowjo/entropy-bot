@@ -186,9 +186,9 @@ final class Chopping {
         }
     }
 
-    /** 0.26.4 brain settings chop.maxChops / chop.maxTrees (defaults until the brain loaded them). */
+    /** 0.26.4 chop.maxChops / chop.maxTrees: AA_CLEANUP 3, the old BrainConfig went; its defaults (24, 8) are ChopLoop's. */
     static int setting(String key, int dflt) {
-        try { return io.github.mojolowjo.entropybot.brain.BrainConfig.current().i(key); } catch (RuntimeException e) { return dflt; }
+        return dflt;
     }
 
     private static String modsLine() {
