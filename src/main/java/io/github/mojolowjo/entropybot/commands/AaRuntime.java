@@ -1197,7 +1197,7 @@ public final class AaRuntime implements JobPort {
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
         in.pos = me;
         fillChestCell(in, mc, me);
-        in.inArea = s.areasHere;
+        in.inArea = c.inAreas(Storage.dim(), me[0], me[2]);      // r4: the same tick as in.pos (the sensed flag lagged up to 0.5 s and stored an outside spot as the way back)
         io.github.mojolowjo.entropybot.aa.core.WayBack.observe(bb);
         in.ownerOnline = s.ownerOnline;
         in.hungerDrains = mc.level.getDifficulty() != net.minecraft.world.Difficulty.PEACEFUL;

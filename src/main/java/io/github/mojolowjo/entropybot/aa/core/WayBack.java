@@ -18,6 +18,10 @@ public final class WayBack {
     public static final String FACT = "aa.wayBack", OWNER = "aa.wayBackFor";
     /** Walking outside the areas counts this much per block (the hunt out's travel uses the same idea, 2x there and back). */
     public static final double OUT_FACTOR = 2;
+    /** Within this many blocks of the way back and still outside: the stored spot is stale (r4 loop). */
+    static final double STALE_BLOCKS = 2;
+    /** The last dropped way back, for aa status / the log. */
+    public static final String DROPPED = "aa.wayBackDropped";
     /** Sources a return leg may come before (never danger/owner work). */
     static final Pattern SOURCES = Pattern.compile("needs|night|idle|want");
     /** Steps that go outside on purpose: no leg before them. */
@@ -56,6 +60,13 @@ public final class WayBack {
         String g = "goto " + back[0] + " " + back[1] + " " + back[2];
         if (g.equals(chain)) return null;
         double c = cost(bb.in.pos, back);
+        // r4 (live, two games): standing on the stored spot and still outside (the edge moved, or the spot sat on it):
+        // the leg "arrives" at once and every task repeats it. The spot is stale: forget it, plan from here.
+        if (c / OUT_FACTOR <= STALE_BLOCKS) {
+            bb.fact(FACT, null);
+            bb.fact(DROPPED, "way back " + back[0] + " " + back[1] + " " + back[2] + " dropped: I stand on it and am still outside my areas");
+            return null;
+        }
         String terms = String.format(Locale.ROOT, "return to my areas %d (I am outside at %d %d %d; back to %d %d %d, %d blocks x %.0f outside)%s",
                 Math.round(c), bb.in.pos[0], bb.in.pos[1], bb.in.pos[2], back[0], back[1], back[2], Math.round(c / OUT_FACTOR), OUT_FACTOR,
                 bb.fact(OWNER) instanceof String o ? "; way back stored by \"" + o + "\"" : "");

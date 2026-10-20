@@ -37,6 +37,17 @@ class WayBackTest {
     }
 
     @Test
+    void aStaleWayBackUnderTheFeetIsDroppedNotLooped() {
+        at(-104, 64, 40, true);           // r4: stored while the in-area flag still lagged
+        at(-104, 64, 40, false);
+        RunJob wait = RunJob.of("w", TaskKind.WAIT, "wait 60", "idle");
+        assertEquals(Status.RUNNING, wait.tick(bb));
+        assertEquals("wait 60", port.started.get(0).chain(), "no goto to the spot it stands on");
+        assertNull(bb.fact(WayBack.FACT));
+        assertTrue(String.join("|", port.log).contains("way back -104 64 40 dropped: I stand on it and am still outside my areas"), port.log.toString());
+    }
+
+    @Test
     void anOutsideRungReturnsInsteadOfAnInfeasiblePlan() {
         at(0, 64, 0, true);
         at(40, 70, 0, false);
