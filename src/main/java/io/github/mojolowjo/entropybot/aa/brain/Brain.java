@@ -54,7 +54,9 @@ public final class Brain extends Node {
     private boolean taskSeen;
     private String sig;
     /** AA_ROUND2 3: the one failure record (desire holds and fails in a row; the rung pickers' option memories bind to it). */
-    public final Failures failures = new Failures();
+    public Failures failures = new Failures();
+    /** Review 2 (4): the blackboard fact holding the outer brain's {@link Failures} (option memories outside a rung bind to it). */
+    public static final String FAILURES_FACT = "aa.failures";
     private List<Scored> lastScored = List.of();
     /** Counters for aa status. */
     public long picks, interrupts, stuck;
@@ -66,6 +68,8 @@ public final class Brain extends Node {
     public Brain(String id, String label, Desire... ds) {
         super(id, label);
         for (Desire d : ds) desires.add(d);
+        // review 2 (4): a nested option set keeps no record of its own: it shares this brain's one record
+        for (Desire d : ds) if (d.node instanceof Brain b && b.nested) b.failures = failures;
     }
 
     /** B4: an owner goal joins the list (or replaces one with the same id). */
@@ -265,6 +269,7 @@ public final class Brain extends Node {
 
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
+        if (!nested) bb.fact(FAILURES_FACT, failures);
         if (!nested) bb.fact(NEXT_LAPSE_FACT, nextLapse(now));      // small-4: the idle wait ends when the next hold does (nested holds too)
         bonus = Personality.of(bb).get("margin");          // B3 (2.4): the commitment margin is the personality's
         if (bornAt < 0) bornAt = now;
@@ -484,6 +489,8 @@ public final class Brain extends Node {
             why.append(d.node.reason());
             if (d == checkFalse && taskSeen) ended(bb, d, s, now);     // it started a task: a real run, not a false interrupt
             else if (d.selfCool && d != checkFalse) ended(bb, d, s, now);
+            else if (!taskSeen && d != checkFalse && d.node instanceof io.github.mojolowjo.entropybot.aa.Rung)
+                failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());      // review 2 (4): a no-task rung fail rests
             if (d == checkFalse && !taskSeen) {
                 // AA_ROUND2 2: the interrupter could not even start: a false interrupt. It cools down (its own streak),
                 // and the interrupted desire is tried next (its commitment bonus kept: lastWinner untouched)
@@ -647,6 +654,10 @@ public final class Brain extends Node {
         } else if (d.selfCool && d.noRunMs > 0) {
             // AA_ROUND2 3 (was the idle Cooldown's ranOnly): a failure before any task rests it, the next option gets its turn
             failures.rest(d.id, d.noRunMs, now, d.node.reason());
+        } else if (!d.selfCool && d.node instanceof io.github.mojolowjo.entropybot.aa.Rung) {
+            // review 2 (4, 07:52: seven picks in 60 s, each a one-second no-task fail): a rung that failed without
+            // starting a task rests NO_RUN_MS in the one record, so the next desire gets its turn
+            failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());
         }
         taskSeen = false;
     }
@@ -659,7 +670,8 @@ public final class Brain extends Node {
     private Status watchdog(Blackboard bb, Desire cur, long now) {
         String s = progressSig(bb);
         Object plan = bb.fact("planning");          // review: an ask waiting for the owner's aa pick is no stall
-        boolean asking = plan != null && plan.toString().contains("asking the owner");
+        boolean asking = plan != null && (plan.toString().contains("asking the owner")
+                || plan.toString().contains(io.github.mojolowjo.entropybot.aa.Rung.SETTLE_WAIT));      // review 2: a bounded settle wait is no stall
         if (!s.equals(sig) || asking || (bb.task() != null && bb.task().paused())) {
             sig = s;
             lastProgressAt = now;
@@ -749,7 +761,7 @@ public final class Brain extends Node {
     /** AA_ROUND2 3: "held: desire/option reason (n min)" per failure record holding now (aa why). */
     public List<String> heldLines(long now) {
         List<String> out = new ArrayList<>(failures.describe(now));
-        for (Desire d : desires) if (d.node instanceof Brain b) out.addAll(b.heldLines(now));
+        for (Desire d : desires) if (d.node instanceof Brain b && b.failures != failures) out.addAll(b.heldLines(now));
         return out;
     }
 

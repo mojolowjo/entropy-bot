@@ -85,6 +85,7 @@ class OptionsTest {
     @Test
     void pickerRungRoutesMissingLogsThroughTheWoodOptions() {
         Rung r = rung("goal x");
+        facts = new F(false, false);          // review 2: no planner-free option, so the priced prerequisite is the only way
         port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
                 List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
@@ -96,6 +97,40 @@ class OptionsTest {
         r.tick(bb);
         assertTrue(port.started.size() >= 2, "the next wood option starts, no fail loop");
         assertTrue(port.started.get(1).chain().startsWith("area 42 -8 58 8 treeat"), port.started.get(1).chain());
+    }
+
+    /** Review 2 (2a), b2/b4 smoke: "cut 4" ran before bootstrap tools (which chops its own wood); now the picker prices both. */
+    @Test
+    void stonePickaxePathIsNotBlockedByTheWoodPrerequisite() {
+        Rung r = rung("goal stone tools");
+        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
+                List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
+        assertEquals(Status.RUNNING, r.tick(bb));
+        assertEquals("do alpha", port.started.get(0).chain(), "the planner-free whole-job option is cheaper than cut + the rest");
+        assertTrue(String.join("|", port.log).contains("prerequisite priced"), port.log.toString());
+    }
+
+    /** Review 2 (2b): a done prerequisite waits for the facts RUNNING (never a failure that hands the slot on), bounded by SETTLE_MS. */
+    @Test
+    void aDonePrerequisiteWaitsRunningNotFailing() {
+        Rung r = rung("goal stone tools");
+        facts = new F(false, false);
+        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
+                List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
+        assertEquals(Status.RUNNING, r.tick(bb));
+        assertEquals(1, port.started.size());
+        port.done(1, "done");
+        r.tick(bb);
+        clock.advance(1000);
+        assertEquals(Status.RUNNING, r.tick(bb), "the planner's facts lag: the desire keeps the slot");
+        assertEquals(1, port.started.size(), "no task while it waits");
+        assertTrue(String.valueOf(bb.fact(Rung.PLANNING_FACT)).contains(Rung.SETTLE_WAIT));
+        port.noPlan = "missing 3 logs - none in storage; no trees in my areas";      // the planner answered anew: the wait ends early
+        clock.advance(1000);
+        r.tick(bb);
+        assertEquals(2, port.started.size(), "the facts changed: the prerequisite runs again at once");
     }
 
     @Test

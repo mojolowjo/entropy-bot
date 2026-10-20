@@ -828,7 +828,10 @@ public final class AaDesires {
         if (!idle.isEmpty()) ds.add(idleSet(idle, scorer));
         Brain brain = new Brain("brain", "the scored desires", ds.toArray(new Desire[0]));
         // AA_ROUND2 3: the rung pickers' option memories are views over the brain's one failure record
-        for (Rung r : rungs) if (r.picker() instanceof Options.Picker<?> op) op.memory.bind(brain.failures, r.id);
+        for (Rung r : rungs) {
+            if (r.picker() instanceof Options.Picker<?> op) op.memory.bind(brain.failures, r.id);
+            r.bindFailures(brain.failures);          // review 2 (4): the wood prerequisite's memory too
+        }
         return brain;
     }
 }
