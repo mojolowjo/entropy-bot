@@ -2,6 +2,8 @@ package io.github.mojolowjo.entropybot.guard;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /** V1a (0.22.0): the guard per area type (BRAIN_PLAN 1.2), the destroy lease, the colours. */
@@ -65,33 +67,100 @@ class AreaTypesTest {
     @Test
     void theTable() {
         for (AreaType t : AreaType.values()) {
-            assertTrue(AreaTypeRules.walk(t, AreaTypeRules.Walker.OTHER), "walk in " + t);
-            assertEquals(t != AreaType.SAFE, AreaTypeRules.dig(t), "dig in " + t);
+            boolean prot = t == AreaType.KEEP_OUT || t == AreaType.NO_BREAK;
+            for (AreaTypeRules.Walker w : AreaTypeRules.Walker.values()) assertEquals(t != AreaType.KEEP_OUT, AreaTypeRules.walk(t, w), "walk in " + t + " as " + w);
+            assertEquals(!prot, AreaTypeRules.dig(t), "dig in " + t);
             assertEquals(t == AreaType.DESTROY, AreaTypeRules.breakBuilt(t, true), "built in " + t);
             assertFalse(AreaTypeRules.breakBuilt(t, false), "built blocks need the owner's dig <area>: " + t);
-            assertEquals(t == AreaType.NEUTRAL || t == AreaType.MAIN, AreaTypeRules.restore(t), "restore in " + t);
-            assertEquals(t != AreaType.SAFE, AreaTypeRules.mayStartJob(t), "jobs in " + t);
+            assertEquals(!prot && t != AreaType.DESTROY, AreaTypeRules.restore(t), "restore in " + t);
+            assertEquals(!prot, AreaTypeRules.mayStartJob(t), "jobs in " + t);
+            assertEquals(prot, AreaTypeRules.protects(t), "protect list: " + t);
         }
-        // outside every area: only the owner's own order, explore and find walk; nothing digs
-        assertTrue(AreaTypeRules.walk(null, AreaTypeRules.Walker.OWNER_ORDER));
-        assertTrue(AreaTypeRules.walk(null, AreaTypeRules.Walker.EXPLORE));
-        assertTrue(AreaTypeRules.walk(null, AreaTypeRules.Walker.FIND));
-        assertFalse(AreaTypeRules.walk(null, AreaTypeRules.Walker.OTHER));
-        assertFalse(AreaTypeRules.dig(null));
+        // AREAS: no area = the open world: every walker walks, digs with a lease, jobs start
+        for (AreaTypeRules.Walker w : AreaTypeRules.Walker.values()) assertTrue(AreaTypeRules.walk(null, w));
+        assertTrue(AreaTypeRules.dig(null));
         assertFalse(AreaTypeRules.breakBuilt(null, true));
         assertTrue(AreaTypeRules.restore(null));
-        assertFalse(AreaTypeRules.mayStartJob(null));
+        assertTrue(AreaTypeRules.mayStartJob(null));
+    }
+
+    @Test
+    void wordsOldAndNew() {
+        assertEquals(AreaType.WORK, AreaType.of("neutral"));
+        assertEquals(AreaType.NO_BREAK, AreaType.of("safe"));
+        assertEquals(AreaType.BASE, AreaType.of("main"));
+        assertEquals(AreaType.KEEP_OUT, AreaType.of("keep-out"));
+        assertEquals(AreaType.KEEP_OUT, AreaType.of("keepout"));
+        assertEquals(AreaType.NO_BREAK, AreaType.of("no_break"));
+        assertEquals(AreaType.STORAGE, AreaType.of("Storage"));
+        assertEquals(AreaType.DANGER, AreaType.of("danger"));
+        assertNull(AreaType.of("outside"));
+        assertEquals("no-break", AreaType.oldWord("safe"));
+        assertNull(AreaType.oldWord("base"));
+        assertEquals("keep-out", AreaType.KEEP_OUT.word());
+        assertTrue(AreaType.KEEP_OUT.hard && AreaType.NO_BREAK.hard && AreaType.DESTROY.hard);
+        assertFalse(AreaType.BASE.hard || AreaType.WORK.hard || AreaType.STORAGE.hard || AreaType.DANGER.hard);
+    }
+
+    @Test
+    void stackingOrderTheHardestWins() {
+        // keep-out > no-break > destroy > base > work > storage > danger
+        AreaType[] order = {AreaType.KEEP_OUT, AreaType.NO_BREAK, AreaType.DESTROY, AreaType.BASE, AreaType.WORK, AreaType.STORAGE, AreaType.DANGER};
+        for (int i = 0; i < order.length; i++) {
+            assertEquals(i, order[i].rank());
+            for (int j = i; j < order.length; j++) assertEquals(order[i], AreaType.harder(order[i], order[j]));
+        }
+        assertEquals(AreaType.DANGER, AreaType.harder(null, AreaType.DANGER));
+        assertNull(AreaType.harder(null, null));
+        Policy p = Policy.parse("{\"areas\":["
+                + "{\"name\":\"camp\",\"type\":\"work\",\"x1\":0,\"z1\":0,\"x2\":99,\"z2\":99},"
+                + "{\"name\":\"home\",\"type\":\"base\",\"x1\":10,\"z1\":10,\"x2\":20,\"z2\":20},"
+                + "{\"name\":\"swamp\",\"type\":\"danger\",\"x1\":50,\"z1\":50,\"x2\":60,\"z2\":60},"
+                + "{\"name\":\"pit\",\"type\":\"keep-out\",\"x1\":15,\"z1\":15,\"x2\":16,\"z2\":16}]}");
+        assertEquals(AreaType.WORK, p.typeAt(OW, 5, 64, 5));
+        assertEquals(AreaType.BASE, p.typeAt(OW, 12, 64, 12), "base over work");
+        assertEquals(AreaType.WORK, p.typeAt(OW, 55, 64, 55), "work over danger");
+        assertEquals(AreaType.KEEP_OUT, p.typeAt(OW, 15, 64, 15), "keep-out over everything");
+        assertEquals(1, p.keepOut.size());
+        assertEquals("pit", p.keepOutAt(OW, 16, 64, 16).name);
+        assertNull(p.keepOutAt(OW, 17, 64, 17));
+        assertEquals(List.of("pit", "home", "camp"), p.boxesAt(OW, 15, 64, 15).stream().map(b -> b.name).toList());
+        assertEquals(15, p.nearestBase(OW, 100, 100)[0]);
+        assertNull(p.nearestBase("minecraft:the_nether", 0, 0));
+    }
+
+    @Test
+    void theNoteRoundTrips() {
+        Policy p = Policy.parse("{\"areas\":[{\"name\":\"tom\",\"type\":\"no-break\",\"note\":\"tom's house\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9}]}");
+        assertEquals("tom's house", p.protect.get(0).note);
+        Policy again = Policy.parse(p.toJson().toString());
+        assertEquals("tom's house", again.protect.get(0).note);
+        assertNull(again.protect.get(0).withNote("  ").note);
+        assertFalse(Policy.parse("{\"areas\":[{\"name\":\"a\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9}]}").areas.get(0).toJson().has("note"));
+    }
+
+    @Test
+    void oldWordsAreWrittenBackAsTheNewOnes() {
+        Policy p = Policy.parse("{\"areas\":[{\"name\":\"a\",\"type\":\"neutral\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9},"
+                + "{\"name\":\"b\",\"type\":\"main\",\"x1\":20,\"z1\":0,\"x2\":29,\"z2\":9},"
+                + "{\"name\":\"c\",\"type\":\"safe\",\"x1\":40,\"z1\":0,\"x2\":49,\"z2\":9}],"
+                + "\"protect\":[{\"name\":\"d\",\"x1\":60,\"y1\":0,\"z1\":0,\"x2\":69,\"y2\":9,\"z2\":9}]}");
+        String json = p.toJson().toString();
+        assertFalse(json.contains("neutral") || json.contains("main") || json.contains("safe"), json);
+        assertTrue(json.contains("\"type\":\"base\"") && json.contains("\"type\":\"no-break\""), json);
+        assertEquals(2, p.protect.size());
+        assertEquals(AreaType.NO_BREAK, p.protect.get(1).type, "an untyped protect box is no-break");
     }
 
     @Test
     void colours() {
-        assertEquals("white", AreaType.NEUTRAL.colour);
-        assertEquals("red", AreaType.DESTROY.colour);
-        assertEquals("blue", AreaType.MAIN.colour);
-        assertEquals("green", AreaType.SAFE.colour);
+        assertEquals("white", AreaType.WORK.colour);
+        assertEquals("dark red", AreaType.DESTROY.colour);
+        assertEquals("blue", AreaType.BASE.colour);
+        assertEquals("green", AreaType.NO_BREAK.colour);
         assertEquals(AreaType.DESTROY, AreaType.of("Destroy"));
         assertNull(AreaType.of("red"));
-        assertEquals(AreaType.NEUTRAL, AreaType.orNeutral(null));
+        assertEquals(AreaType.WORK, AreaType.orWork(null));
     }
 
     @Test
@@ -99,18 +168,18 @@ class AreaTypesTest {
         Policy p = Policy.parse(POLICY);
         assertEquals(3, p.areas.size());
         assertEquals(1, p.protect.size(), "a safe area is a protect box");
-        assertEquals(AreaType.SAFE, p.protect.get(0).type);
+        assertEquals(AreaType.NO_BREAK, p.protect.get(0).type);
         assertEquals(AreaType.DESTROY, p.typeAt(OW, 25, 65, 5));
-        assertEquals(AreaType.SAFE, p.typeAt(OW, 65, 65, 5));
+        assertEquals(AreaType.NO_BREAK, p.typeAt(OW, 65, 65, 5));
         assertNull(p.typeAt(OW, 100, 65, 5));
         Policy again = Policy.parse(p.toJson().toString());
-        assertEquals(AreaType.MAIN, again.areaAt(OW, 45, 65, 5).type);
-        assertEquals(AreaType.SAFE, again.protect.get(0).type);
+        assertEquals(AreaType.BASE, again.areaAt(OW, 45, 65, 5).type);
+        assertEquals(AreaType.NO_BREAK, again.protect.get(0).type);
         assertFalse(p.areas.get(0).toJson().has("type"), "neutral writes no type");
         // an old v1 file: protect boxes become safe
         Policy v1 = Policy.parse("{\"areas\":[{\"name\":\"a\",\"x1\":0,\"z1\":0,\"x2\":5,\"z2\":5}],\"protect\":[{\"name\":\"p\",\"x1\":0,\"y1\":0,\"z1\":0,\"x2\":1,\"y2\":1,\"z2\":1}]}");
-        assertEquals(AreaType.NEUTRAL, v1.areas.get(0).type);
-        assertEquals(AreaType.SAFE, v1.protect.get(0).type);
+        assertEquals(AreaType.WORK, v1.areas.get(0).type);
+        assertEquals(AreaType.NO_BREAK, v1.protect.get(0).type);
     }
 
     @Test
@@ -123,7 +192,7 @@ class AreaTypesTest {
         GuardCore.Verdict v = g.check(OW, 65, 65, 5, "break", PLAIN);
         assertFalse(v.allowed());
         assertTrue(v.floor());
-        assertEquals("in house (safe)", v.reason());
+        assertEquals("in house (no-break)", v.reason());
         assertFalse(g.check(OW, 65, 65, 5, "place", PLAIN).allowed());
         // neutral, destroy, main: natural blocks with a lease
         for (int x : new int[]{0, 20, 40}) {
@@ -136,15 +205,16 @@ class AreaTypesTest {
     }
 
     @Test
-    void theOwnersOwnGotoWalksOutside() {
-        var C = io.github.mojolowjo.entropybot.commands.FenceRules.class;
+    void everyWalkerWalksOutsideOnlyKeepOutRefuses() {
+        // AREAS: the world is open; the fence only refuses a keep-out box and the floor (a portal)
         String out = "would refuse: outside every area";
-        assertNotNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(out, true, AreaTypeRules.Walker.OTHER));
-        assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(out, true, AreaTypeRules.Walker.OWNER_ORDER));
-        assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: no areas set", true, AreaTypeRules.Walker.OWNER_ORDER));
-        assertNotNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: next to a nether_portal (I stay out)", true, AreaTypeRules.Walker.OWNER_ORDER),
-                "the floor holds for the owner too");
-        assertNotNull(C);
+        for (AreaTypeRules.Walker w : AreaTypeRules.Walker.values()) {
+            assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(out, true, w), w.name());
+            assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: no areas set", true, w), w.name());
+            assertEquals("in pit (keep-out)", io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: in pit (keep-out)", true, w), w.name());
+            assertNotNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: next to a nether_portal (I stay out)", true, w),
+                    "the floor holds for everyone");
+        }
     }
 
     @Test

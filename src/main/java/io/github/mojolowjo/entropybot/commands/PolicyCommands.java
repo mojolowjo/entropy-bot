@@ -10,14 +10,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * "area ..." and "fence ..." (V1a, 0.22.0: areas with a type; the old protect/unprotect/guard words only answer with the
+ * "area ..." and "fence ..." (V1a, 0.22.0: areas with a type; AREAS 0.39.0: a type is a meaning, keep-out / no-break /
+ * base / storage / work / danger / destroy, plus a free note; the old protect/unprotect/guard words only answer with the
  * new form, {@link OldWords}). The policy lives in {@code areas.json}: {version: 2, areas:[{name,dim,x1,z1,x2,z2,y1?,y2?,
- * type?}], protect:[... type "safe"], strict, near}. The owner sees one list; the file keeps the safe areas apart (the
- * guard's lock-free protect check and every reader of "protect" stay as they were). Plain Java behind {@link Guard}.
+ * type?,note?}], protect:[... type "no-break" or "keep-out"], strict, near}. The owner sees one list; the file keeps the
+ * protected areas apart (the guard's lock-free protect check and every reader of "protect" stay as they were). Old words
+ * (neutral, safe, main) are read forever and answered with the new one once. Plain Java behind {@link Guard}.
  */
 public final class PolicyCommands {
-    /** V1a: the short form. */
-    public static final String AREA_HINT = "area here 48 work neutral";   // 0.35.2: a runnable hint (radius, name, type), no placeholders
+    /** V1a: the short form (AREAS: the world is open by default, so the hint only shows how an area is made). */
+    public static final String AREA_HINT = "area here 48 camp work";   // 0.35.2: a runnable hint (radius, name, meaning), no placeholders
     static final String NAME_RE = "^[a-z0-9_-]{1,24}$";
     static final String DEFAULT_DIM = "minecraft:overworld";
     /** areas.json's format: 2 = typed areas (V1a). */
@@ -58,7 +60,8 @@ public final class PolicyCommands {
     /** The words "area" takes as subcommands (and the old ones, so an old line never makes an area): no area name. */
     static final java.util.Set<String> AREA_WORDS = java.util.Set.of("list", "show", "add", "corner1", "corner2", "grow", "remove",
             "protect", "unprotect", "near", "here", "confirm", "on", "off", "status", "change", "del", "name", "type",
-            "neutral", "destroy", "main", "safe", "all", "me", "candidates",
+            "meaning", "note",                                                                      // AREAS (0.39.0)
+            "neutral", "destroy", "main", "safe", "keep-out", "no-break", "all", "me", "candidates",     // base, work, storage, danger stay usable as names
             "stone");     // 0.30.0: "dig stone [n]" is the quarry, so no area may be called stone
 
     private final JsonObject p;
@@ -72,12 +75,34 @@ public final class PolicyCommands {
         if (!p.has("areas") || !p.get("areas").isJsonArray()) p.add("areas", new JsonArray());
         if (!p.has("protect") || !p.get("protect").isJsonArray()) p.add("protect", new JsonArray());
         if (!p.has("strict")) p.addProperty("strict", false);
+        normalise();
         if (!p.has("near") || !p.get("near").isJsonObject()) {
             JsonObject n = new JsonObject();
             n.addProperty("on", true);
             n.addProperty("r", io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R);
             p.add("near", n);
         }
+    }
+
+    /**
+     * AREAS (0.39.0): old words in the file become the new ones (neutral -> work, written as no type; safe -> no-break;
+     * main -> base), and every entry sits in the list its meaning belongs to (keep-out and no-break in "protect", the
+     * rest in "areas"). Idempotent; the file is written at the next change.
+     */
+    private void normalise() {
+        JsonArray as = areas(), ps = protect();
+        List<JsonObject> all = new ArrayList<>();
+        for (JsonElement e : as) if (e.isJsonObject()) all.add(e.getAsJsonObject());
+        for (JsonElement e : ps) if (e.isJsonObject()) all.add(e.getAsJsonObject());
+        JsonArray na = new JsonArray(), np = new JsonArray();
+        for (JsonObject b : all) {
+            AreaType t = typeOf(b);
+            if (t == AreaType.WORK) b.remove("type");
+            else b.addProperty("type", t.word());
+            (io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(t) ? np : na).add(b);
+        }
+        p.add("areas", na);
+        p.add("protect", np);
     }
 
     /** 0.21.2: the near-me zone is on (areas.json "near.on", default true). */
@@ -107,10 +132,10 @@ public final class PolicyCommands {
         return a;
     }
 
-    /** The work areas (every type but safe). */
+    /** The labelled areas (every meaning but no-break and keep-out). */
     public JsonArray areas() { return p.getAsJsonArray("areas"); }
 
-    /** The safe areas (the old protect boxes). */
+    /** The no-break and keep-out areas (the old protect boxes). */
     public JsonArray protect() { return p.getAsJsonArray("protect"); }
 
     public boolean strict() { return p.has("strict") && p.get("strict").getAsBoolean(); }
@@ -160,7 +185,7 @@ public final class PolicyCommands {
 
     /** V1a: the type of an area entry (absent = neutral). */
     public static AreaType typeOf(JsonObject b) {
-        return AreaType.orNeutral(b.has("type") && b.get("type").isJsonPrimitive() ? b.get("type").getAsString() : null);
+        return AreaType.orWork(b.has("type") && b.get("type").isJsonPrimitive() ? b.get("type").getAsString() : null);
     }
 
     /** "-272 -64 to 223 431" (plus ", y 10..60" when the box has a height). */
@@ -172,10 +197,16 @@ public final class PolicyCommands {
         return n(b, "x1") + " " + n(b, "z1") + " to " + n(b, "x2") + " " + n(b, "z2") + (hasY(b) ? ", y " + n(b, "y1") + ".." + n(b, "y2") : "");
     }
 
-    /** "map (main, blue: -272 -64 to 223 431)". */
+    /** "map (base, blue: -272 -64 to 223 431)" plus the note when there is one: "... - note: tom's house". */
     static String areaText(JsonObject b) {
         AreaType t = typeOf(b);
-        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")";
+        String note = noteOf(b);
+        return nameOf(b) + " (" + t.word() + ", " + t.colour + ": " + boxText(b) + ")" + (note == null ? "" : " - note: " + note);
+    }
+
+    /** AREAS: the owner's note on an area entry, or null. */
+    public static String noteOf(JsonObject b) {
+        return b.has("note") && b.get("note").isJsonPrimitive() && !b.get("note").getAsString().isBlank() ? b.get("note").getAsString() : null;
     }
 
     static String nameOf(JsonObject b) {
@@ -258,12 +289,15 @@ public final class PolicyCommands {
     }
 
     /** One parsed "area" creation line. error != null: the answer. */
-    record NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error) {
-        static NewArea err(String e) { return new NewArea(null, null, null, null, null, null, e); }
+    record NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error, String typeWord) {
+        NewArea(String name, AreaType type, int[] xz, Integer r, Integer y1, Integer y2, String error) {
+            this(name, type, xz, r, y1, y2, error, null);
+        }
+        static NewArea err(String e) { return new NewArea(null, null, null, null, null, null, e, null); }
     }
 
-    static final String USAGE = "usage: area here <r> <name> [type] [down up] | area x z x2 z2 <name> [type] [y1 y2] | area change name <name> <new> "
-            + "| area change type <name> <type> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (types: neutral, destroy, main, safe)";
+    static final String USAGE = "usage: area here <r> <name> [meaning] [down up] | area x z x2 z2 <name> [meaning] [y1 y2] | area change name <name> <new> "
+            + "| area change meaning <name> <meaning> | area note <name> <text> | area del <name> confirm | area list | area show <name> | area near [<r>|on|off|status]  (meanings: " + AreaType.WORDS + ")";
 
     /**
      * Parses "here &lt;r&gt; &lt;name&gt; [type] [down up]" (r != null; y1/y2 = down/up) and "x z x2 z2 &lt;name&gt; [type]
@@ -277,7 +311,7 @@ public final class PolicyCommands {
         boolean yFromSix = false;
 
         if (!w.isEmpty() && w.get(0).equalsIgnoreCase("here")) {
-            if (w.size() < 3 || !w.get(1).matches("^\\d{1,4}$")) return NewArea.err("usage: area here <r> <name> [type] [down up]  (r = blocks each way, 1..2000)");
+            if (w.size() < 3 || !w.get(1).matches("^\\d{1,4}$")) return NewArea.err("usage: area here <r> <name> [meaning] [down up]  (r = blocks each way, 1..2000)");
             r = Integer.parseInt(w.get(1));
             if (r < 1 || r > 2000) return NewArea.err("error: r is 1..2000 blocks each way");
             i = 2;
@@ -307,14 +341,15 @@ public final class PolicyCommands {
         }
 
         if (!ints.isEmpty()) {
-            if (yFromSix) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
-            if (ints.size() != 2) return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+            if (yFromSix) return NewArea.err(r != null ? "usage: area here <r> <name> [meaning] [down up]" : "usage: area x z x2 z2 <name> [meaning] [y1 y2]");
+            if (ints.size() != 2) return NewArea.err(r != null ? "usage: area here <r> <name> [meaning] [down up]" : "usage: area x z x2 z2 <name> [meaning] [y1 y2]");
             y1 = ints.get(0);
             y2 = ints.get(1);
         }
 
         String name;
-        AreaType type = AreaType.NEUTRAL;
+        AreaType type = AreaType.WORK;
+        String typeWord = null;
         if (nonInts.size() == 1) {
             name = nonInts.get(0);
         } else if (nonInts.size() == 2) {
@@ -323,39 +358,48 @@ public final class PolicyCommands {
             if (t0 != null && t1 != null) {
                 name = nonInts.get(0);
                 type = t1;
+                typeWord = nonInts.get(1);
             } else if (t0 != null) {
                 type = t0;
+                typeWord = nonInts.get(0);
                 name = nonInts.get(1);
             } else if (t1 != null) {
                 type = t1;
+                typeWord = nonInts.get(1);
                 name = nonInts.get(0);
             } else {
                 return NewArea.err(AreaType.BAD);
             }
         } else {
-            return NewArea.err(r != null ? "usage: area here <r> <name> [type] [down up]" : "usage: area x z x2 z2 <name> [type] [y1 y2]");
+            return NewArea.err(r != null ? "usage: area here <r> <name> [meaning] [down up]" : "usage: area x z x2 z2 <name> [meaning] [y1 y2]");
         }
 
         String bad = badName(name);
         if (bad != null) return NewArea.err(bad);
         if (r != null && y1 != null && (y1 < 0 || y2 < 0)) return NewArea.err("error: down and up are blocks below and above you (0 or more)");
 
-        return new NewArea(name, type, xz, r, y1, y2, null);
+        return new NewArea(name, type, xz, r, y1, y2, null, typeWord);
     }
 
-    /** The area entry for a parsed line (here = the owner's spot or the bot's; a safe "here" area defaults to 8 down, 16 up). */
+    /** AREAS: " (safe = no-break now)" when the owner used an old word, else "". */
+    static String oldWordNote(String word) {
+        String nw = AreaType.oldWord(word);
+        return nw == null ? "" : " (" + word.toLowerCase() + " = " + nw + " now)";
+    }
+
+    /** The area entry for a parsed line (here = the owner's spot or the bot's; a no-break/keep-out "here" area defaults to 8 down, 16 up). */
     static JsonObject build(NewArea a, Pos here, Pos me) {
         JsonObject b;
         if (a.r() != null) {
             Integer lo = null, hi = null;
             if (a.y1() != null) { lo = here.y() - a.y1(); hi = here.y() + a.y2(); }
-            else if (a.type() == AreaType.SAFE) { lo = here.y() - 8; hi = here.y() + 16; }
+            else if (io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(a.type())) { lo = here.y() - 8; hi = here.y() + 16; }
             b = makeBox(a.name(), here.dim(), here.x() - a.r(), here.z() - a.r(), here.x() + a.r(), here.z() + a.r(), lo, hi);
         } else {
             int[] v = a.xz();
             b = makeBox(a.name(), me.dim(), v[0], v[1], v[2], v[3], a.y1(), a.y2());
         }
-        if (a.type() != AreaType.NEUTRAL) b.addProperty("type", a.type().word());
+        if (a.type() != AreaType.WORK) b.addProperty("type", a.type().word());
         return b;
     }
 
@@ -368,14 +412,14 @@ public final class PolicyCommands {
         return false;
     }
 
-    /** Puts an entry in the list its type belongs to (safe: protect). Null when fine, else the cap's error. */
+    /** Puts an entry in the list its meaning belongs to (no-break, keep-out: protect). Null when fine, else the cap's error. */
     private String put(JsonObject b) {
         String name = nameOf(b);
-        boolean safe = typeOf(b) == AreaType.SAFE;
+        boolean safe = io.github.mojolowjo.entropybot.guard.AreaTypeRules.protects(typeOf(b));
         JsonArray list = safe ? protect() : areas();
         boolean replacing = findArea(name) != null;
         int i = findBox(list, name);
-        String full = safe ? Limits.full(i >= 0, list.size(), Limits.PROTECT, "safe areas", "delete one first (area del <name> confirm)") : areasFull(list, i);
+        String full = safe ? Limits.full(i >= 0, list.size(), Limits.PROTECT, "no-break and keep-out areas", "delete one first (area del <name> confirm)") : areasFull(list, i);
         if (full != null) return full;
         if (replacing) removeNamed(name);
         list.add(b);
@@ -395,11 +439,11 @@ public final class PolicyCommands {
         return " (outside every area)";
     }
 
-    /** "area list": one list, every type, with the colour word. */
+    /** "area list": one list, every meaning, with the colour word and the note. */
     String listText() {
         String nearLine = guard.nearStatus();
         String tail = nearLine == null ? "" : " | " + nearLine;
-        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - " + AREA_HINT + tail;
+        if (areas().isEmpty() && protect().isEmpty()) return "no areas set - the world is open (" + AREA_HINT + " labels a place; meanings: " + AreaType.WORDS + ")" + tail;
         List<String> out = new ArrayList<>();
         for (JsonElement e : areas()) out.add(areaText(e.getAsJsonObject()));
         for (JsonElement e : protect()) out.add(areaText(e.getAsJsonObject()));
@@ -458,9 +502,20 @@ public final class PolicyCommands {
                 removeNamed(name);
                 return changed("ok: area " + name + " deleted", false);
             }
+            if (sub.equals("note")) {                                    // AREAS: a free note on an area
+                JsonObject b = findArea(name);
+                if (name.isEmpty()) return "usage: area note <name> <text> (an empty text clears it)";
+                if (b == null) return "I have no area called " + name + " (area list)";
+                String text = parts.size() > 2 ? String.join(" ", parts.subList(2, parts.size())).trim() : "";
+                if (text.length() > 200) return "error: a note is 200 characters at most";
+                if (text.isEmpty()) b.remove("note");
+                else b.addProperty("note", text);
+                return changed("ok: area " + name + (text.isEmpty() ? " - note cleared" : " - note: " + text), false);
+            }
             if (sub.equals("change")) {
                 String what = name;
-                if (parts.size() != 4 || !(what.equals("name") || what.equals("type"))) return "usage: area change name <name> <new name> | area change type <name> <type>";
+                if (what.equals("type")) what = "meaning";                 // AREAS: the old word keeps working
+                if (parts.size() != 4 || !(what.equals("name") || what.equals("meaning"))) return "usage: area change name <name> <new name> | area change meaning <name> <meaning>";
                 String target = parts.get(2).toLowerCase(), val = parts.get(3).toLowerCase();
                 JsonObject b = findArea(target);
                 if (b == null) return "I have no area called " + target + " (area list)";
@@ -474,7 +529,7 @@ public final class PolicyCommands {
                 AreaType t = AreaType.of(val);
                 if (t == null) return AreaType.BAD;
                 JsonObject nb = b.deepCopy();
-                if (t == AreaType.NEUTRAL) nb.remove("type");
+                if (t == AreaType.WORK) nb.remove("type");
                 else nb.addProperty("type", t.word());
                 removeNamed(target);
                 String full = put(nb);
@@ -482,16 +537,18 @@ public final class PolicyCommands {
                     put(b);
                     return full;
                 }
-                return changed("ok: area " + target + " is now " + t.word() + " (" + t.colour + ")", false);
+                return changed("ok: area " + target + " is now " + t.word() + " (" + t.colour + ")" + oldWordNote(val), false);
             }
             NewArea a = parseNew(parts);
             if (a.error() != null) return a.error();
             JsonObject b = build(a, here, me);
             if (io.github.mojolowjo.entropybot.guard.GuardCore.DENIED_DIMS.contains(dimOf(b))) return "error: no areas in " + dimOf(b);
             boolean existed = findArea(a.name()) != null;
+            if (existed) b.addProperty("note", noteOf(findArea(a.name())));          // a replaced box keeps its note
+            if (noteOf(b) == null) b.remove("note");
             String full = put(b);
             if (full != null) return full;
-            return changed("ok: area " + areaText(b) + (existed ? " replaced" : " added"), false);
+            return changed("ok: area " + areaText(b) + (existed ? " replaced" : " added") + (a.typeWord() == null ? "" : oldWordNote(a.typeWord())), false);
         }
         if (verb.equals("fence")) {
             if (sub.isEmpty() || sub.equals("status")) {
@@ -556,8 +613,8 @@ public final class PolicyCommands {
                 String m = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
                 if (m.equals("strict")) {
                     p.addProperty("strict", true);
-                    return changed("ok: strict mode - the fence is on (" + (areas().isEmpty() ? "no work areas yet - " + AREA_HINT + "; walking stays free, digging and building only "
-                            + (nearOn() ? "within " + nearR() + " blocks of you" : "nowhere") : "areas: " + names(areas()) + (nearOn() ? ", plus " + nearR() + " blocks around you" : "")) + ")", true);
+                    return changed("ok: strict mode - the fence is on (the world is open; keep-out and no-break areas bind: "
+                            + (protect().isEmpty() ? "none set" : names(protect())) + ")", true);
                 }
                 if (m.equals("log")) {
                     if (parts.size() < 3 || !parts.get(2).equalsIgnoreCase("confirm")) {

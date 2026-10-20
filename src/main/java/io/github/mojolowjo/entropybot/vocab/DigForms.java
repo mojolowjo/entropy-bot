@@ -25,7 +25,7 @@ public final class DigForms {
      */
     public static String areaProblem(String name, boolean exists, boolean round, boolean allY, boolean safe, List<String> words) {
         if (!exists) return "error: I have no area called " + name + " (area list)";
-        if (safe) return "error: " + name + " is a safe area - I never dig there";
+        if (safe) return "error: " + name + " is a no-break area - I never dig there";
         if (round) return "error: " + name + " is a circle - make a box area for this";
         for (int i = 1; i < words.size(); i++) {
             String w = words.get(i);

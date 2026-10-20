@@ -23,8 +23,8 @@ public final class AreaCandidates {
 
     /** "1. 120 64 -300 (overworld): 9 built, 2 block entities, named mob" lines, or the empty answer. */
     public static String list(JsonArray l) {
-        if (l == null || l.isEmpty()) return "no safe-area candidates (explore and find note someone's base here when they meet one)";
-        StringBuilder sb = new StringBuilder("safe-area candidates (area candidates accept <n> [name] | reject <n>): ");
+        if (l == null || l.isEmpty()) return "no no-break candidates (explore and find note someone's base here when they meet one)";
+        StringBuilder sb = new StringBuilder("no-break candidates, treated as no-break until rejected (area candidates accept <n> [name] | reject <n>): ");
         for (int i = 0; i < l.size(); i++) {
             JsonObject o = l.get(i).getAsJsonObject();
             if (i > 0) sb.append("; ");
@@ -54,7 +54,7 @@ public final class AreaCandidates {
         JsonObject o = l.get(n - 1).getAsJsonObject();
         String name = w.size() == 3 ? w.get(2) : "found" + n;
         int x = i(o, "x"), y = i(o, "y"), z = i(o, "z");
-        return new Plan(null, (x - R) + " " + (z - R) + " " + (x + R) + " " + (z + R) + " " + name + " safe " + (y - DOWN) + " " + (y + UP), n - 1);
+        return new Plan(null, (x - R) + " " + (z - R) + " " + (x + R) + " " + (z + R) + " " + name + " no-break " + (y - DOWN) + " " + (y + UP), n - 1);
     }
 
     private static int i(JsonObject o, String k) {

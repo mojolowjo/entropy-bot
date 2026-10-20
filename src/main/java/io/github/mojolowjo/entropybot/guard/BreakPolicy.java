@@ -68,9 +68,14 @@ public final class BreakPolicy {
     /** 3.2: the rules behind one box (or behind "outside every area"). */
     public record RuleSet(String name, Natural breakNatural, boolean useResources, Built breakBuilt, PlaceRule place,
                           boolean restore, double travelMultiplier, double mineMultiplier) {
-        public static final RuleSet SAFE = new RuleSet("safe", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.TRAVEL, 1);
-        public static final RuleSet MAIN = new RuleSet("main", Natural.TRAVEL_EXPENSIVE, false, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL_EXPENSIVE, 1);
-        public static final RuleSet NEUTRAL = new RuleSet("neutral", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
+        // AREAS (0.39.0): the presets by meaning; keep-out shares no-break's (nothing breaks or is placed; the walk veto is
+        // the guard's and the cost advisor's), storage and danger share work's (they are facts for AA, not break rules)
+        public static final RuleSet NO_BREAK = new RuleSet("no-break", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.TRAVEL, 1);
+        public static final RuleSet KEEP_OUT = new RuleSet("keep-out", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.TRAVEL, 1);
+        public static final RuleSet BASE = new RuleSet("base", Natural.TRAVEL_EXPENSIVE, false, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL_EXPENSIVE, 1);
+        public static final RuleSet WORK = new RuleSet("work", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
+        public static final RuleSet STORAGE = new RuleSet("storage", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
+        public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
         public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, Built.OWNER_DIG_ONLY, PlaceRule.LENIENT, false, Costs.TRAVEL, 1);
         /** Outside every area in a singleplayer world (owner's note 2026-10-18: follows the connection, no toggle). */
         public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.TORCHES, true, Costs.TRAVEL, 1);
@@ -84,9 +89,12 @@ public final class BreakPolicy {
         public static RuleSet preset(AreaType t) {
             if (t == null) return null;
             return switch (t) {
-                case SAFE -> SAFE;
-                case MAIN -> MAIN;
-                case NEUTRAL -> NEUTRAL;
+                case KEEP_OUT -> KEEP_OUT;
+                case NO_BREAK -> NO_BREAK;
+                case BASE -> BASE;
+                case WORK -> WORK;
+                case STORAGE -> STORAGE;
+                case DANGER -> DANGER;
                 case DESTROY -> DESTROY;
             };
         }
@@ -177,11 +185,12 @@ public final class BreakPolicy {
             return new Snapshot(p == null ? Policy.EMPTY : p, multiplayer ? RuleSet.OUTSIDE_MULTIPLAYER : RuleSet.OUTSIDE_SINGLEPLAYER, multiplayer, Costs.TRAVEL_CAP);
         }
 
-        /** The rule set at a cell: a protect box = safe; else the innermost area's preset; else the outside rule set. */
+        /** The rule set at a cell: a protect box (keep-out, no-break) = its preset; else the hardest area's; else the outside rule set. */
         public RuleSet ruleSetAt(String dim, int x, int y, int z) {
-            if (policy.protectAt(dim, x, y, z) != null) return RuleSet.SAFE;
-            Box a = policy.innermostAreaAt(dim, x, y, z);
-            return a == null ? outside : RuleSet.preset(a.type);
+            Box pr = policy.protectAt(dim, x, y, z);
+            if (pr != null) return RuleSet.preset(pr.type);
+            AreaType t = policy.typeAt(dim, x, y, z);          // AREAS: the hardest meaning wins where boxes overlap
+            return t == null ? outside : RuleSet.preset(t);
         }
     }
 
@@ -194,7 +203,7 @@ public final class BreakPolicy {
         if (intent == null || intent == Intent.NONE) return Verdict.deny("walking only", "intent");
         if (GuardCore.DENIED_DIMS.contains(dim)) return Verdict.floor("no breaking in " + dim);
         Box pr = s.policy().protectAt(dim, x, y, z);
-        if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (safe)");
+        if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")");
         if (intent != Intent.BUILD && s.policy().houseCell(dim, x, y, z, false)) return Verdict.deny("my house (the door is the way)", "house");
         RuleSet r = s.ruleSetAt(dim, x, y, z);
         if (r.breakNatural() == Natural.NEVER && intent != Intent.RESTORE) return Verdict.deny("nothing broken or placed in " + r.name(), "area");

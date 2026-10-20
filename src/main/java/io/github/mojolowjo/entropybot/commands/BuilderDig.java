@@ -241,7 +241,7 @@ public final class BuilderDig {
             for (int x = box.x1(); x <= box.x2(); x++)
                 for (int y = box.y1(); y <= box.y2(); y++)
                     for (int z = box.z1(); z <= box.z2(); z++)
-                        if (denied || pol.protectAt(dim, x, y, z) != null || pol.typeAt(dim, x, y, z) == AreaType.SAFE) s.fenced.add(BaritoneMask.packed(x, y, z));
+                        if (denied || pol.protectAt(dim, x, y, z) != null || pol.typeAt(dim, x, y, z) == AreaType.NO_BREAK) s.fenced.add(BaritoneMask.packed(x, y, z));
         } catch (RuntimeException e) {
             return "error: couldn't read the guard's protect boxes: " + e;
         }

@@ -153,7 +153,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
                 for (Box a : Core.INSTANCE.guard.core.policy().areas) {
                     if (a.name == null) continue;
                     JsonObject ab = c.policyArea(a.name);
-                    if (ab == null || PolicyCommands.typeOf(ab) != io.github.mojolowjo.entropybot.guard.AreaType.MAIN) continue;
+                    if (ab == null || PolicyCommands.typeOf(ab) != io.github.mojolowjo.entropybot.guard.AreaType.BASE) continue;
                     String[] err = new String[1];
                     int[] b = DigCommands.areaBox(c, a.name, err);
                     if (b == null || Math.abs(b[3] - b[0]) + 1 < 7 || Math.abs(b[5] - b[2]) + 1 < 7 || Math.abs(b[4] - b[1]) + 1 < 5) continue;
@@ -368,7 +368,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         JsonObject b = c.policyArea(name);
         if (b == null) return io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, false, false, false, false, words);
         return io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, true, b.has("round"), !PolicyCommands.hasY(b),
-                PolicyCommands.typeOf(b) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE, words);
+                PolicyCommands.typeOf(b) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK, words);
     }
 
     @Override

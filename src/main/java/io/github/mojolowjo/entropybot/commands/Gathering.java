@@ -210,7 +210,7 @@ final class Gathering {
                     var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
                     if (ar == null || ar.name == null) return false;
                     var t = PolicyCommands.typeOf(commands.policyArea(ar.name));
-                    return t == io.github.mojolowjo.entropybot.guard.AreaType.MAIN || t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE;
+                    return t == io.github.mojolowjo.entropybot.guard.AreaType.BASE || t == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK;
                 });
                 if (face == null) throw new IllegalStateException("every face box around me touches a main or safe area");
                 r.command = face;

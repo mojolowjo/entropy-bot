@@ -58,11 +58,11 @@ public final class OldWords {
     private static String protectForm(List<String> w) {
         if (w.size() >= 3 && w.get(1).equalsIgnoreCase("here") && isInt(w.get(2))) {
             String d = w.size() > 3 && isInt(w.get(3)) ? w.get(3) : "8", u = w.size() > 4 && isInt(w.get(4)) ? w.get(4) : "16";
-            return "area here " + w.get(2) + " " + w.get(0) + " safe " + d + " " + u;
+            return "area here " + w.get(2) + " " + w.get(0) + " no-break " + d + " " + u;
         }
         if (w.size() == 7 && allInts(w.subList(1, 7)))
-            return "area " + w.get(1) + " " + w.get(3) + " " + w.get(4) + " " + w.get(6) + " " + w.get(0) + " safe " + w.get(2) + " " + w.get(5);
-        return "area here <r> " + (w.isEmpty() ? "<name>" : w.get(0)) + " safe";
+            return "area " + w.get(1) + " " + w.get(3) + " " + w.get(4) + " " + w.get(6) + " " + w.get(0) + " no-break " + w.get(2) + " " + w.get(5);
+        return "area here <r> " + (w.isEmpty() ? "<name>" : w.get(0)) + " no-break";
     }
 
     /**
@@ -76,12 +76,12 @@ public final class OldWords {
         String t = translate(v, r);
         if (t != null) return "that is now " + t;
         switch (v) {
-            case "protect" -> { return "that is now area here <r> <name> safe (or area x z x2 z2 <name> safe y1 y2)"; }
+            case "protect" -> { return "that is now area here <r> <name> no-break (or area x z x2 z2 <name> no-break y1 y2)"; }
             case "unprotect" -> { return "that is now area del <name> confirm"; }
             case "guard" -> { return "that is now fence (fence, fence vetoes, fence check x y z break|place|go, fence mode strict|log confirm)"; }
             case "zone" -> { return "zone is gone: make an area (area x z x2 z2 <name> [type] [y1 y2]) and name it: build floor <block> <area>, build clear <area>"; }
             case "area" -> {
-                if (sub.equals("add") || sub.equals("protect")) return "that is now area here <r> <name> [type] | area x z x2 z2 <name> [type] [y1 y2]";
+                if (sub.equals("add") || sub.equals("protect")) return "that is now area here <r> <name> [meaning] | area x z x2 z2 <name> [meaning] [y1 y2]";
                 if (sub.equals("remove") || sub.equals("unprotect")) return "that is now area del <name> confirm";
                 if (sub.equals("corner1") || sub.equals("corner2")) return "area corner1/corner2 are gone: the companion marks corners, or type area x z x2 z2 <name> [type]";
                 if (sub.equals("grow")) return "area grow is gone: set the area again with area x z x2 z2 <name> [type] (or area here <r> <name>)";

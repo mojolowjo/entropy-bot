@@ -187,7 +187,7 @@ final class CampCommands {
         String area = w.get(0);
         JsonObject ab = c.policyArea(area);
         if (ab == null) return "error: I have no area called " + area + " - next: area x z x2 z2 " + area + " main y1 y2";
-        if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + area + " is a safe area - I never build there";
+        if (PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + area + " is a no-break area - I never build there";
         String[] err = new String[1];
         int[] box = DigCommands.areaBox(c, area, err);
         // 0.30.4 (trial 9, open terrain): an area without heights gets them from the ground: the floor at the lowest

@@ -57,7 +57,7 @@ class V1bFourTest {
     @Test
     void areaCandidates() {
         JsonArray l = new JsonArray();
-        assertTrue(AreaCandidates.list(l).startsWith("no safe-area candidates"));
+        assertTrue(AreaCandidates.list(l).startsWith("no no-break candidates"));
         JsonObject o = new JsonObject();
         o.addProperty("dim", "minecraft:overworld");
         o.addProperty("x", 100);
@@ -69,9 +69,9 @@ class V1bFourTest {
         l.add(o);
         assertTrue(AreaCandidates.list(l).contains("1. 100 64 -20 (overworld): 9 built, 2 block entities, a named mob"), AreaCandidates.list(l));
         var a = AreaCandidates.plan(l, List.of("accept", "1", "alex"));
-        assertEquals("84 -36 116 -4 alex safe 56 80", a.areaCommand());
+        assertEquals("84 -36 116 -4 alex no-break 56 80", a.areaCommand());
         assertEquals(0, a.remove());
-        assertEquals("84 -36 116 -4 found1 safe 56 80", AreaCandidates.plan(l, List.of("accept", "1")).areaCommand());
+        assertEquals("84 -36 116 -4 found1 no-break 56 80", AreaCandidates.plan(l, List.of("accept", "1")).areaCommand());
         var r = AreaCandidates.plan(l, List.of("reject", "1"));
         assertNull(r.areaCommand());
         assertEquals(0, r.remove());

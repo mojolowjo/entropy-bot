@@ -39,15 +39,15 @@ class AreaMigrationTest {
         assertTrue(r.ran());
         assertEquals(AREAS_V1.replace(" ", ""), written.get("areas.bak-0.22.0.json").replace(" ", ""), "the backup is the old file");
         assertTrue(written.containsKey("commands.bak-0.22.0.json"));
-        assertEquals("areas: moved to types: 2 neutral, 1 main, 1 destroy, 3 safe", r.summary());
+        assertEquals("areas: moved to meanings: 2 work, 1 base, 1 destroy, 3 no-break", r.summary());
         // map holds the base and is the smaller one: main; outside and tunnel neutral
-        assertEquals("main", PolicyCommands.typeOf(a.getAsJsonArray("areas").get(0).getAsJsonObject()).word());
-        assertEquals(AreaType.NEUTRAL, PolicyCommands.typeOf(a.getAsJsonArray("areas").get(1).getAsJsonObject()));
+        assertEquals("base", PolicyCommands.typeOf(a.getAsJsonArray("areas").get(0).getAsJsonObject()).word());
+        assertEquals(AreaType.WORK, PolicyCommands.typeOf(a.getAsJsonArray("areas").get(1).getAsJsonObject()));
         // every protect box is a safe area with its y range; the unnamed one is protect_1; "base" kept (no area had it)
         assertEquals(3, a.getAsJsonArray("protect").size(), "count before = after");
         JsonObject s0 = a.getAsJsonArray("protect").get(1).getAsJsonObject();
         assertEquals("base", s0.get("name").getAsString());
-        assertEquals("safe", s0.get("type").getAsString());
+        assertEquals("no-break", s0.get("type").getAsString());
         assertEquals(-64, s0.get("y1").getAsInt());
         assertEquals("protect_1", a.getAsJsonArray("protect").get(2).getAsJsonObject().get("name").getAsString());
         // the build zone -> a destroy area "zone", gone from commands.json
@@ -59,12 +59,12 @@ class AreaMigrationTest {
         // routines and rules rewritten; the rest untouched (near, strict, suppliesOwner)
         assertEquals("area here 30 farm then fence mode strict", b.getAsJsonObject("routines").get("fence").getAsString());
         assertEquals("goto cave2 then stripmine", b.getAsJsonObject("routines").get("cavestrip").getAsString());
-        assertEquals("area here 5 old safe 8 16 then deposit", b.getAsJsonArray("rules").get(0).getAsJsonObject().get("text").getAsString());
+        assertEquals("area here 5 old no-break 8 16 then deposit", b.getAsJsonArray("rules").get(0).getAsJsonObject().get("text").getAsString());
         assertTrue(b.has("suppliesOwner"));
         assertEquals(24, a.getAsJsonObject("near").get("r").getAsInt());
         assertTrue(a.get("strict").getAsBoolean());
         assertEquals(2, a.get("version").getAsInt());
-        assertTrue(r.lines().stream().anyMatch(l -> l.startsWith("protect box (no name) -> safe area protect_1")), r.lines().toString());
+        assertTrue(r.lines().stream().anyMatch(l -> l.startsWith("protect box (no name) -> no-break area protect_1")), r.lines().toString());
         assertTrue(r.lines().stream().anyMatch(l -> l.startsWith("routine fence:")));
         // the guard reads it: 4 areas (3 + zone), 3 safe
         Policy p = Policy.parse(a.toString());
@@ -93,10 +93,10 @@ class AreaMigrationTest {
         JsonObject a = JsonParser.parseString("{\"areas\":[{\"name\":\"base\",\"x1\":0,\"z1\":0,\"x2\":5,\"z2\":5},{\"name\":\"big\",\"x1\":-50,\"z1\":-50,\"x2\":50,\"z2\":50}],"
                 + "\"protect\":[{\"name\":\"base\",\"x1\":0,\"y1\":0,\"z1\":0,\"x2\":1,\"y2\":1,\"z2\":1}]}").getAsJsonObject();
         AreaMigration.Result r = AreaMigration.migrate(a, Map.of(), null);
-        assertEquals("main", a.getAsJsonArray("areas").get(0).getAsJsonObject().get("type").getAsString(), "an area named base is main");
+        assertEquals("base", a.getAsJsonArray("areas").get(0).getAsJsonObject().get("type").getAsString(), "an area named base is base");
         assertFalse(a.getAsJsonArray("areas").get(1).getAsJsonObject().has("type"));
         assertEquals("base_safe", a.getAsJsonArray("protect").get(0).getAsJsonObject().get("name").getAsString());
-        assertEquals("areas: moved to types: 1 neutral, 1 main, 0 destroy, 1 safe", r.summary());
+        assertEquals("areas: moved to meanings: 1 work, 1 base, 0 destroy, 1 no-break", r.summary());
     }
 
     @Test

@@ -39,7 +39,7 @@ class TrialFixTest {
     void anyOrderAfterCoordinates() {
         // Expected: x -1..5, z -5..1, name 'house', type main, y 83..87
         int[] expectedXz = new int[]{-1, -5, 5, 1};
-        AreaType expectedType = AreaType.MAIN;
+        AreaType expectedType = AreaType.BASE;
         String expectedName = "house";
         Integer expectedY1 = 83, expectedY2 = 87;
 
@@ -72,7 +72,7 @@ class TrialFixTest {
             PolicyCommands.NewArea a = PolicyCommands.parseNew(words);
             assertNull(a.error(), "no error for " + words + ": " + a.error());
             assertEquals("camp", a.name(), "name for " + words);
-            assertEquals(AreaType.NEUTRAL, a.type(), "type for " + words);
+            assertEquals(AreaType.WORK, a.type(), "type for " + words);
             assertNull(a.xz(), "xz for " + words);
             assertEquals(48, a.r(), "r for " + words);
             if (words.size() == 6) {

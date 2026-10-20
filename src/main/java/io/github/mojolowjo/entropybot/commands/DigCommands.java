@@ -307,7 +307,7 @@ final class DigCommands {
     static boolean inMainArea(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
         if (ar == null || ar.name == null) return false;
         JsonObject ab = c.policyArea(ar.name);
-        return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN;
+        return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE;
     }
 
     /** 0.28.2 (D): the side toward the camp mark (a house's door faces it), else south. */
@@ -372,7 +372,7 @@ final class DigCommands {
             var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
             if (ar == null || ar.name == null) continue;
             JsonObject ab = c.policyArea(ar.name);
-            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN)
+            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE)
                 return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
         }
         String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
@@ -414,7 +414,7 @@ final class DigCommands {
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
         // V1a: a dig box that touches a safe area is refused whole, not block by block
         var safe = Core.INSTANCE.guard.core.policy().safeTouching(new io.github.mojolowjo.entropybot.guard.Box("dig", Storage.dim(), box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2()));
-        if (safe != null) return "error: that box touches " + (safe.name == null ? "a safe area" : safe.name) + " (safe) - nothing in a safe area is dug; make the box smaller";
+        if (safe != null) return "error: that box touches " + (safe.name == null ? "a protected area" : safe.name) + " (" + safe.type.word() + ") - nothing in a " + safe.type.word() + " area is dug; make the box smaller";
         // a dig box has to lie inside an area: in strict mode the lease says so, in log mode this gate does
         if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
             List<String> names = new ArrayList<>();
@@ -491,7 +491,7 @@ final class DigCommands {
         List<String> ws = Texts.words(rest.trim().toLowerCase());
         JsonObject b0 = c.policyArea(name);
         String no = io.github.mojolowjo.entropybot.vocab.DigForms.areaProblem(name, b0 != null, b0 != null && b0.has("round"), b0 != null && !PolicyCommands.hasY(b0),
-                b0 != null && PolicyCommands.typeOf(b0) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE, ws);
+                b0 != null && PolicyCommands.typeOf(b0) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK, ws);
         if (no != null) return no;
         // V1b: "dig <area> -N|+N": the area's x z, N down or up from the surface (an all-heights area needs it)
         String sn = io.github.mojolowjo.entropybot.vocab.DigForms.signed(ws);
@@ -510,7 +510,7 @@ final class DigCommands {
         if (n == null) return err[0];
         JsonObject b = c.policyArea(name);
         io.github.mojolowjo.entropybot.guard.AreaType t = PolicyCommands.typeOf(b);
-        if (t == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + name + " is a safe area - I never dig there";
+        if (t == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + name + " is a no-break area - I never dig there";
         List<String> words = Texts.words(rest.trim().toLowerCase());
         boolean ores = words.contains("ores"), junk = words.contains("junk") && words.contains("drop"), water = words.contains("water") || words.contains("large"), large = words.contains("large");
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
@@ -661,7 +661,7 @@ final class DigCommands {
         String[] err = new String[1];
         int[] an = areaBox(c, areaName, err);
         if (an == null) return err[0];
-        if (PolicyCommands.typeOf(c.policyArea(areaName)) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) return "error: " + areaName + " is a safe area - I never build or dig there";
+        if (PolicyCommands.typeOf(c.policyArea(areaName)) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) return "error: " + areaName + " is a no-break area - I never build or dig there";
         JsonObject z = new JsonObject();
         z.addProperty("dim", Storage.dim());
         z.addProperty("x1", an[0]); z.addProperty("y1", an[1]); z.addProperty("z1", an[2]);

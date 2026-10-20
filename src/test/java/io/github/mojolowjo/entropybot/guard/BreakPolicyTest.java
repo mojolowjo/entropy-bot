@@ -38,10 +38,10 @@ class BreakPolicyTest {
 
     @Test
     void ruleSetFollowsTheAreaAndTheConnection() {
-        assertSame(RuleSet.MAIN, SP.ruleSetAt(OW, 0, 60, 0));
-        assertSame(RuleSet.NEUTRAL, SP.ruleSetAt(OW, 120, 60, 120));
+        assertSame(RuleSet.BASE, SP.ruleSetAt(OW, 0, 60, 0));
+        assertSame(RuleSet.WORK, SP.ruleSetAt(OW, 120, 60, 120));
         assertSame(RuleSet.DESTROY, SP.ruleSetAt(OW, 220, 60, 220));
-        assertSame(RuleSet.SAFE, SP.ruleSetAt(OW, 305, 60, 305), "a protect box is safe");
+        assertSame(RuleSet.NO_BREAK, SP.ruleSetAt(OW, 305, 60, 305), "a protect box is safe");
         assertSame(RuleSet.OUTSIDE_SINGLEPLAYER, SP.ruleSetAt(OW, 1000, 60, 1000));
         assertSame(RuleSet.OUTSIDE_MULTIPLAYER, MP.ruleSetAt(OW, 1000, 60, 1000), "a server starts expensive outside, no toggle");
         assertSame(RuleSet.OUTSIDE_SINGLEPLAYER, SP.ruleSetAt(OW, 0, 95, 0), "above the camp box = outside");
@@ -49,16 +49,16 @@ class BreakPolicyTest {
 
     @Test
     void presetsMatchTheTable() {
-        assertEquals(BreakPolicy.Natural.NEVER, RuleSet.SAFE.breakNatural());
-        assertFalse(RuleSet.MAIN.useResources(), "ores and logs in the camp stay (owner's default)");
-        assertEquals(BreakPolicy.Natural.TRAVEL_EXPENSIVE, RuleSet.MAIN.breakNatural());
-        assertTrue(RuleSet.NEUTRAL.useResources());
+        assertEquals(BreakPolicy.Natural.NEVER, RuleSet.NO_BREAK.breakNatural());
+        assertFalse(RuleSet.BASE.useResources(), "ores and logs in the camp stay (owner's default)");
+        assertEquals(BreakPolicy.Natural.TRAVEL_EXPENSIVE, RuleSet.BASE.breakNatural());
+        assertTrue(RuleSet.WORK.useResources());
         assertFalse(RuleSet.DESTROY.restore());
         assertEquals(6, RuleSet.OUTSIDE_SINGLEPLAYER.travelMultiplier(), "travel x6");
         assertEquals(10, RuleSet.OUTSIDE_MULTIPLAYER.travelMultiplier());
         assertEquals(24, BreakPolicy.Costs.TRAVEL_CAP);
         assertNull(RuleSet.preset(null));
-        assertTrue(RuleSet.NEUTRAL.describe().startsWith("neutral: natural lenient, resources yes"));
+        assertTrue(RuleSet.WORK.describe().startsWith("work: natural lenient, resources yes"));
     }
 
     // ---- the floor
@@ -158,7 +158,7 @@ class BreakPolicyTest {
     void campKeepsItsResources() {
         Verdict v = brk(SP, Intent.MINE, 0, 60, 0, BlockFacts.STONE.withOre(true));
         assertFalse(v.allowed());
-        assertEquals("no resources taken in main", v.reason());
+        assertEquals("no resources taken in base", v.reason());
         assertEquals("resources", v.rule());
         assertTrue(brk(SP, Intent.MINE, 0, 60, 0, BlockFacts.STONE).allowed(), "stone in the camp may be mined");
         assertTrue(brk(SP, Intent.TRAVEL, 0, 60, 0, BlockFacts.STONE.withOre(true)).allowed(), "travel through an ore is a travel break, not a resource taken");
@@ -236,10 +236,10 @@ class BreakPolicyTest {
         Verdict safe = BreakPolicy.boxes(SP, Intent.TRAVEL, OW, 305, 60, 305);
         assertFalse(safe.allowed());
         assertTrue(safe.floor());
-        assertEquals("in shrine (safe)", safe.reason());
+        assertEquals("in shrine (no-break)", safe.reason());
         assertFalse(BreakPolicy.boxes(null, Intent.TRAVEL, OW, 0, 0, 0).allowed());
         // a safe area is a protect box in the parsed policy: floor, named
-        assertEquals("in s (safe)", BreakPolicy.boxes(Snapshot.of(Policy.parse("{\"areas\":[{\"name\":\"s\",\"type\":\"safe\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9}]}"), false),
+        assertEquals("in s (no-break)", BreakPolicy.boxes(Snapshot.of(Policy.parse("{\"areas\":[{\"name\":\"s\",\"type\":\"safe\",\"x1\":0,\"z1\":0,\"x2\":9,\"z2\":9}]}"), false),
                 Intent.MINE, OW, 5, 60, 5).reason());
         // a rule set that never breaks (phase 3's nobreak) denies as a rule, not the floor
         Snapshot nb = new Snapshot(Policy.EMPTY, RuleSet.NOBREAK, false, 24);

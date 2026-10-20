@@ -371,7 +371,7 @@ public final class GuardCore {
         boolean go = "go".equals(action), place = "place".equals(action);
         Box pr = p.protectAt(dim, x, y, z);
         if (!go) {
-            if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (safe)");
+            if (pr != null) return Verdict.floor("in " + (pr.name == null ? "box" : pr.name) + " (" + pr.type.word() + ")");
         } else if (pr != null) {
             return Verdict.OK;                          // V1a: a safe area may be walked
         }

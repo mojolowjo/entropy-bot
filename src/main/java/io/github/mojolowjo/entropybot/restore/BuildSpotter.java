@@ -90,7 +90,9 @@ public final class BuildSpotter {
      */
     public static boolean walkHintAllowed(String typeAtCenter, boolean inNearZone, boolean mentioned) {
         if (mentioned || inNearZone) return false;
-        return !"safe".equals(typeAtCenter) && !"main".equals(typeAtCenter);
+        // AREAS: the meaning words (no-break, keep-out, base); the old words still count for callers that pass them
+        return !"safe".equals(typeAtCenter) && !"main".equals(typeAtCenter) && !"no-break".equals(typeAtCenter)
+                && !"keep-out".equals(typeAtCenter) && !"base".equals(typeAtCenter);
     }
 
     /** 0.24.3: how far from the bot's spawn point or a bed it used a build hint never fires. */

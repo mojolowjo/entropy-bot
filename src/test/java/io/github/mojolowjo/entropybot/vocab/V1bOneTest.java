@@ -100,7 +100,7 @@ class V1bOneTest {
         assertNull(DigForms.areaProblem("pit", true, false, true, false, List.of("pit", "-3")));
         assertNull(DigForms.areaProblem("pit", true, false, false, false, List.of("pit", "ores")));
         assertTrue(DigForms.areaProblem("pit", false, false, false, false, w).startsWith("error: I have no area called pit"));
-        assertTrue(DigForms.areaProblem("house", true, false, false, true, List.of("house")).contains("safe area"));
+        assertTrue(DigForms.areaProblem("house", true, false, false, true, List.of("house")).contains("no-break area"));
         assertTrue(DigForms.areaProblem("pit", true, false, false, false, List.of("pit", "deep")).startsWith("usage"));
         assertEquals("-3", DigForms.signed(List.of("pit", "-3", "ores")));
     }

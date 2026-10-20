@@ -443,7 +443,7 @@ public final class AaRuntime implements JobPort {
                 boxes.addAll(pol.protect);
             }
             int near = io.github.mojolowjo.entropybot.guard.Litter.nearestBoxGap(boxes, dim, me[0], me[2]);
-            boolean own = pol != null && pol.typeAt(dim, me[0], me[1], me[2]) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN;
+            boolean own = pol != null && pol.typeAt(dim, me[0], me[1], me[2]) == io.github.mojolowjo.entropybot.guard.AreaType.BASE;
             var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
             var cave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
             return new io.github.mojolowjo.entropybot.guard.Litter.Site(near, bb.in.pickTier, 3, 0, cave == null ? 0 : cave.conf(), Math.max(0, oreCount - 1), 0, own);
@@ -1169,7 +1169,7 @@ public final class AaRuntime implements JobPort {
         in.areaName = null;
         for (String n : c.areaNames()) {
             JsonObject a = c.policyArea(n);
-            if (a == null || PolicyCommands.typeOf(a) == io.github.mojolowjo.entropybot.guard.AreaType.SAFE) continue;
+            if (a == null || PolicyCommands.typeOf(a) == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK) continue;
             in.areaKnown = true;
             if (in.areaName == null && houseFits(a)) in.areaName = n;
         }

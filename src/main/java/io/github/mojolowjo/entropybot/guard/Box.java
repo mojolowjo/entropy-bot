@@ -21,8 +21,10 @@ public final class Box {
      */
     public final boolean round;
     public final int cx, cz, r;
-    /** V1a (0.22.0): the area's type (JSON "type", absent = neutral). A lease box or a plain box is neutral. */
+    /** V1a (0.22.0): the area's meaning (JSON "type", absent = work). A lease box or a plain box is work. */
     public final AreaType type;
+    /** AREAS: the owner's free note on the area (JSON "note"), or null. */
+    public final String note;
 
     public Box(String name, String dim, int x1, int y1, int z1, int x2, int y2, int z2) {
         this.name = name;
@@ -32,18 +34,23 @@ public final class Box {
         this.z1 = Math.min(z1, z2); this.z2 = Math.max(z1, z2);
         this.round = false;
         this.cx = 0; this.cz = 0; this.r = 0;
-        this.type = AreaType.NEUTRAL;
+        this.type = AreaType.WORK;
+        this.note = null;
     }
 
-    private Box(Box o, AreaType t) {
+    private Box(Box o, AreaType t, String note) {
         this.name = o.name; this.dim = o.dim;
         this.x1 = o.x1; this.y1 = o.y1; this.z1 = o.z1; this.x2 = o.x2; this.y2 = o.y2; this.z2 = o.z2;
         this.round = o.round; this.cx = o.cx; this.cz = o.cz; this.r = o.r;
-        this.type = t == null ? AreaType.NEUTRAL : t;
+        this.type = t == null ? AreaType.WORK : t;
+        this.note = note;
     }
 
-    /** This box with another type. */
-    public Box withType(AreaType t) { return new Box(this, t); }
+    /** This box with another meaning. */
+    public Box withType(AreaType t) { return new Box(this, t, note); }
+
+    /** AREAS: this box with a note (null or blank = none). */
+    public Box withNote(String n) { return new Box(this, type, n == null || n.isBlank() ? null : n.trim()); }
 
     private Box(String name, String dim, int cx, int cz, int r, int y1, int y2) {
         int rr = Math.max(0, r);
@@ -54,7 +61,8 @@ public final class Box {
         this.y1 = Math.min(y1, y2); this.y2 = Math.max(y1, y2);
         this.round = true;
         this.cx = cx; this.cz = cz; this.r = rr;
-        this.type = AreaType.NEUTRAL;
+        this.type = AreaType.WORK;
+        this.note = null;
     }
 
     /** A round area: horizontal distance to (cx, cz) at most r (block columns), y1..y2. */
@@ -172,8 +180,9 @@ public final class Box {
         int y1 = o.has("y1") ? o.get("y1").getAsInt() : ALL_Y_MIN;
         int y2 = o.has("y2") ? o.get("y2").getAsInt() : ALL_Y_MAX;
         String name = o.has("name") && !o.get("name").isJsonNull() ? o.get("name").getAsString() : null;
-        AreaType type = AreaType.orNeutral(o.has("type") && o.get("type").isJsonPrimitive() ? o.get("type").getAsString() : null);
-        return fromJson0(o, dim, y1, y2, name).withType(type);
+        AreaType type = AreaType.orWork(o.has("type") && o.get("type").isJsonPrimitive() ? o.get("type").getAsString() : null);
+        String note = o.has("note") && o.get("note").isJsonPrimitive() ? o.get("note").getAsString() : null;      // AREAS
+        return fromJson0(o, dim, y1, y2, name).withType(type).withNote(note);
     }
 
     private static Box fromJson0(JsonObject o, String dim, int y1, int y2, String name) {
@@ -191,7 +200,8 @@ public final class Box {
         o.addProperty("dim", dim);
         o.addProperty("x1", x1); o.addProperty("z1", z1); o.addProperty("x2", x2); o.addProperty("z2", z2);
         if (!allY()) { o.addProperty("y1", y1); o.addProperty("y2", y2); }
-        if (type != AreaType.NEUTRAL) o.addProperty("type", type.word());
+        if (type != AreaType.WORK) o.addProperty("type", type.word());       // AREAS: written back as the new word
+        if (note != null) o.addProperty("note", note);
         if (round) {
             JsonObject rd = new JsonObject();
             rd.addProperty("cx", cx);
