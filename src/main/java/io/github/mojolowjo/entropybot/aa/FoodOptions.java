@@ -187,7 +187,9 @@ public final class FoodOptions {
                         Options.MINUTE * (kelp ? 4 : 5) * rounds(short_, each), w.why(), w.name(), false, m));
             }
 
+            String huntGap = planned == null ? null : plannerHuntGap(planned, f);
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
+            else if (huntGap != null) dropped.add("planner: its chain \"" + planned + "\" " + huntGap);
             else RungOptions.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, pc * Options.PLAN_UNIT,
                     "goal food (storage" + (f.farmKnown() ? ", bread from the farm" : "") + ")", "planner", true, m));
             return Options.Choice.of(rows, dropped, "no way to food");
@@ -244,7 +246,27 @@ public final class FoodOptions {
         for (Options.Option o : best.values()) RungOptions.add(rows, dropped, m, now, o);
     }
 
-    /** The animal with the most head (the meatiest first on a tie; no chicken without a furnace: raw chicken poisons). */
+    private static final Pattern HUNT_STEP = Pattern.compile("\\bhunt\\s+(?:\\d+\\s+)?(cow|pig|sheep|chicken)\\b");
+
+    /**
+     * aa395 (131 picks of "gather food 8 -> hunt 8 cow" with no cow within 64): a planner chain that hunts an animal
+     * type with none in reach, none seen outside my areas and no remembered herd is not runnable. Returns why, or null
+     * (no hunt step, or the animal is known somewhere).
+     */
+    static String plannerHuntGap(String planned, FoodFacts f) {
+        var m = HUNT_STEP.matcher(planned.toLowerCase(Locale.ROOT));
+        while (m.find()) {
+            String a = m.group(1);
+            if (f.animals() != null && f.animals().getOrDefault(a, 0) > 0) continue;
+            if (f.animalsOut() != null && f.animalsOut().getOrDefault(a, 0) > 0) continue;
+            boolean herd = false;
+            if (f.herds() != null) for (Herd h : f.herds()) if (h.type().equals(a) && h.conf() >= HERD_MIN_CONF && h.dist() <= HERD_MAX) herd = true;
+            if (!herd) return "hunts " + a + ", none seen in reach, outside my areas or remembered";
+        }
+        return null;
+    }
+
+    /** The animal with the most head(the meatiest first on a tie; no chicken without a furnace: raw chicken poisons). */
     static String most(Map<String, Integer> animals, boolean furnace) {
         if (animals == null) return null;
         String animal = null;

@@ -405,6 +405,11 @@ public final class Options {
             return ran.command();
         }
 
+        @Override public void stalled(Blackboard bb, String why) {
+            if (ran == null || NOTHING.equals(ran.command())) return;
+            memory.failed(ran.memoryKey(), why, bb.clock.now(), bb.in);      // held RETRY_MS x fails (10 min the first time)
+        }
+
         @Override public boolean failed(Blackboard bb, String end) {
             if (last == null || ran == null || end == null || !set.switchable(end) || switches >= MAX_SWITCHES) return false;
             String key = set.blame(last, ran, end);

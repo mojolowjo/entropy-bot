@@ -45,6 +45,9 @@ public final class Rung extends Node {
 
         boolean failed(Blackboard bb, String end);
 
+        /** aa395: the brain's stuck watchdog halted the running option: charged like a failure (held), no switch at once. */
+        default void stalled(Blackboard bb, String why) {}
+
         /** The options line for {@code aa why}. */
         String why();
 
@@ -441,6 +444,7 @@ public final class Rung extends Node {
         if (planningSince >= 0 && board != null) board.fact(PLANNING_FACT, null);
         planningSince = -1;
         if (board != null) AaManual.of(board).dropAsk(id);
+        if (picker != null && board != null && why != null && why.startsWith("stuck:") && job.running()) picker.stalled(board, why);
         cooldown.halt(why);
     }
 

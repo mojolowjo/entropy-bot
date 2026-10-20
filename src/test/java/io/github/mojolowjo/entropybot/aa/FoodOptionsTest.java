@@ -223,6 +223,25 @@ class FoodOptionsTest {
     }
 
     @Test
+    void aPlannerChainThatHuntsAnAnimalNobodySawIsDropped() {
+        Options.Choice c = new FoodOptions.Food().choose(facts(10, Map.of(), false, Map.of(), null), new Options.OptionMemory(), 0,
+                "gather food 8 -> hunt 8 cow", 20, null, null);
+        assertTrue(c.ranked().stream().noneMatch(o -> o.id().equals("planner")), c.why());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.startsWith("planner:") && d.contains("hunts cow")), c.dropped().toString());
+        // the cow is in reach, or remembered: the chain stays
+        Options.Choice near = new FoodOptions.Food().choose(facts(10, Map.of(), true, Map.of("cow", 3), null), new Options.OptionMemory(), 0,
+                "gather food 8 -> hunt 8 cow", 20, null, null);
+        assertTrue(near.ranked().stream().anyMatch(o -> o.id().equals("planner")));
+        Options.Choice seen = new FoodOptions.Food().choose(withHerds(Map.of(), java.util.List.of(new FoodOptions.Herd("cow", 80, 64, 0, 8, 1.0, 80))),
+                new Options.OptionMemory(), 0, "gather food 8 -> hunt 8 cow", 20, null, null);
+        assertTrue(seen.ranked().stream().anyMatch(o -> o.id().equals("planner")));
+        // sheep seen, the chain hunts cows: dropped, and the sheep walk wins
+        Options.Choice sheep = new FoodOptions.Food().choose(withHerds(Map.of(), java.util.List.of(new FoodOptions.Herd("sheep", 80, 64, 0, 1, 0.8, 106))),
+                new Options.OptionMemory(), 0, "gather food 8 -> hunt 8 cow", 20, null, null);
+        assertEquals("go hunt sheep", sheep.best().id());
+    }
+
+    @Test
     void desireParksOnTheFactsAndComesBack() {
         Supplier<FoodOptions.FoodFacts> sup = () -> facts(6, Map.of(), true, Map.of(), null);
         bb.fact(FoodOptions.FACTS, sup);

@@ -40,6 +40,7 @@ final class Hunting {
         int itemWant;
         int n;
         long started, nextAt, idleSince = -1;
+        int noneLooks;
         String why;
         boolean out, saidOut;
         int[] start;
@@ -304,6 +305,7 @@ final class Hunting {
                 }
                 r.why = "walking to " + r.at[0] + " " + r.at[1] + " where I saw them";
                 r.idleSince = -1;
+                r.noneLooks = 0;
                 r.nextAt = now + 20;
                 return;
             }
@@ -317,8 +319,11 @@ final class Hunting {
                     : seen > 0 ? "I see " + seen + " " + what + (seen > 1 ? "s" : "") + " but none I may take (babies, named or tamed ones, or not in the animals kind)"
                     : "I see no " + what + " (I see about " + Minecraft.getInstance().options.getEffectiveRenderDistance() * 16 + " blocks around me) - walk me to some";
             if (r.idleSince < 0) r.idleSince = now;
-            r.nextAt = now + 100;
-            if (now - r.idleSince >= IDLE_END) {
+            // aa395: nothing of the kind in view at all, 3 looks in a row: the step ends at once (the 40 s watchdog came first)
+            boolean none = outside == null && seen == 0;
+            r.noneLooks = none ? r.noneLooks + 1 : 0;
+            r.nextAt = now + (none ? 40 : 100);
+            if (now - r.idleSince >= IDLE_END || io.github.mojolowjo.entropybot.vocab.HuntRules.noneEnds(r.noneLooks)) {
                 end(r, "stopped: hunt: " + have(r, bag) + "/" + goal(r) + " - " + r.why);
                 return;
             }
@@ -326,6 +331,7 @@ final class Hunting {
             return;
         }
         r.idleSince = -1;
+        r.noneLooks = 0;
         r.why = null;
         String name = BuiltInRegistries.ENTITY_TYPE.getKey(best.getType()).getPath();
         if (bestD > 20) {

@@ -46,6 +46,11 @@ public final class HuntRules {
     public static final int OUT_R = 48;
 
     /** Food urgent enough to leave the areas for a hunt: hunger 6 or less, or health under 10. */
+    /** aa395: "I see no cow" this many looks in a row (nothing of the kind in view, none outside, none merely not takable) ends the hunt step. */
+    public static final int NONE_LOOKS = 3;
+
+    public static boolean noneEnds(int looksInARow) { return looksInARow >= NONE_LOOKS; }
+
     public static boolean urgentOut(int food, float health) { return food <= 6 || health < 10; }
 
     /** An animal outside my areas, {@code fromStart} blocks from the hunt's start: may an "out" hunt take it? */

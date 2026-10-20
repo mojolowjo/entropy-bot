@@ -216,6 +216,18 @@ class OptionsTest {
     }
 
     @Test
+    void aStuckHaltChargesTheRunningOptionForTheFullHold() {
+        bb.fact("t.facts", (Supplier<F>) () -> new F(true, true));
+        Options.Picker<F> p = new Options.Picker<>("TOOLS", "t.facts", F.class, new TwoWays());
+        assertEquals("do alpha", p.pick(bb, null));
+        p.stalled(bb, "stuck: needs.tools made no progress for 41s");
+        clock.advance(9 * 60_000);
+        assertEquals("do beta", p.pick(bb, null), "alpha is held 10 min after a stall");
+        clock.advance(2 * 60_000);
+        assertEquals("do alpha", p.pick(bb, null), "the hold ran out");
+    }
+
+    @Test
     void theIdleProbeLineSaysWhyNothingRuns() {
         UtilitySelector idle = new UtilitySelector("idle", "idle", in -> {
             double[] s = new double[TaskKind.values().length];
