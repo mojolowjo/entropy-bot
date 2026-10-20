@@ -48,6 +48,7 @@ public final class ActionTable {
         a("deposit", "deposit [item ...]", "", "base chests scanned (scan base)", "free bag slots", "10", true, false);
         a("attack", "attack <mob kind|entity id>", "a mob", "the mob in sight; never players unless defence players on; never pets", "the mob dead or gone", "10", true, false);
         a("eat", "eat", "", "food in the bag", "food bar up", "1", true, false);
+        a("burrow", "burrow", "", "soft ground under me, closed sides, no water near", "sealed in a hole 2-3 down", "5", true, false);
         a("chest", "open x y z | take <item> [n] | put <item> [n] | close", "a chest", "the chest trusted", "items moved", "3", true, false);
         a("area", "area here <r> <name> [type] [down up]", "radius, name", "owner", "an area where I may work", "1", true, false);
         a("camp", "camp here", "", "inside my areas", "a camp place with a bed marker, torches", "20", true, false);
@@ -78,6 +79,7 @@ public final class ActionTable {
         v("a:deposit", "deposit", "unload");
         v("a:attack", "attack");
         v("a:eat", "eat");
+        v("a:burrow", "burrow");
         v("a:chest", "open", "take", "put", "close");
         v("a:area", "area");
         v("a:camp", "camp");

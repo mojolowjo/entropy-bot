@@ -1136,7 +1136,9 @@ public final class AaRuntime implements JobPort {
         if (in.coalGoalN > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "coal", in.torchCoalTerms());
         in.difficulty = mc.level.getDifficulty().getId();
         in.light = mc.level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p.blockPosition());
-        in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size();
+        // aa-night3 (normal2: 4 of 7 deaths shot by skeletons): a ranged mob hits from range, so it counts twice in the danger
+        in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size()
+                + mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.AbstractSkeleton.class, p.getBoundingBox().inflate(24)).size();
         in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
         in.armed = io.github.mojolowjo.entropybot.engine.Hostility.weaponHit(p) >= io.github.mojolowjo.entropybot.threat.FightOrFlee.ARMED;
         // aa-night2 P0 2: a zombie seen once stays seen (sticky while the game runs)

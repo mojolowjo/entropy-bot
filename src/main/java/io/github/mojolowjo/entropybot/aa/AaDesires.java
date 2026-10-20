@@ -587,8 +587,11 @@ public final class AaDesires {
         return v;
     }
 
-    /** The hide's chain: a sealed shell right here (dug in where it can), held 3 min; the hide's score ends it at 16 hp. */
-    static final String HIDE_CHAIN = "shelter 3m";
+    /**
+     * aa-night3: the hide's chain: dig down here and seal over the head with a dug block (no throwaway blocks needed;
+     * normal2: "shelter 3m" with 0 blocks failed at once, 1 run 0 ok), then wait in the hole; its predicate ends it at 16 hp.
+     */
+    static final String HIDE_CHAIN = "burrow then wait 60";
 
     static Desire hide() {
         Node n = AaTree.idleCd("night.hide.cd", RunJob.of("night.hide.job", TaskKind.BASE_BED, HIDE_CHAIN, "hide"));
@@ -605,7 +608,22 @@ public final class AaDesires {
     static String shelterChain(Blackboard bb) {
         if (bb.in.bedKnown || bb.in.bedInBag) return "sleep";
         if (bb.in.baseKnown) return "go base then shelter";
-        return "shelter";
+        // aa-night3 (normal2: "I need 12 planks, cobblestone or dirt for a shelter" at night with an empty bag after a death)
+        return shellBlocks(bb.in.bag) >= SHELL_BLOCKS ? "shelter" : "burrow then wait 120";
+    }
+
+    /** Blocks a built shell takes at most (ShelterPlan: the 12 cells around feet and head, less what stands). */
+    static final int SHELL_BLOCKS = 12;
+
+    /** Planks, cobblestone and dirt in the bag (what ShelterPlan builds a shell from). */
+    static int shellBlocks(java.util.Map<String, Integer> bag) {
+        int n = 0;
+        if (bag == null) return 0;
+        for (var e : bag.entrySet()) {
+            String k = e.getKey().replaceFirst("^minecraft:", "");
+            if (k.endsWith("_planks") || k.equals("cobblestone") || k.equals("dirt")) n += Math.max(0, e.getValue());
+        }
+        return n;
     }
 
     /** 2.10: sleep and shelter (UPKEEP under 75: they wait for the running task, then win by number). */

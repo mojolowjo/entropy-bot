@@ -47,7 +47,7 @@ public final class CommandGate {
                 "dismiss", "attack", "queue", "status", "inv", "stop", "wait", "summary", "check", "look", "why", "deaths", "resume", "kinds", "tools",
                 "hotbar", "explore", "find", "scout", "idle", "dayplan", "plan", "actions", "done", "sleep", "shelter", "hunting", "hunt", "fish", "camp",
                 "bootstrap", "restore", "come", "follow", "goto", "go", "path", "home", "death", "corpse", "open", "take", "put", "close", "drop",
-                "wear", "scan", "rs", "pots", "craft", "kit", "recipe", "smelt", "cook", "eat", "farm", "compact", "infuse", "upgrade", "help", "say",
+                "wear", "scan", "rs", "pots", "craft", "kit", "recipe", "smelt", "cook", "eat", "burrow", "farm", "compact", "infuse", "upgrade", "help", "say",
                 "sense", "surface"))
             d.put(v, Decision.ALLOW);
         for (String v : List.of("area", "fence", "mine", "brain", "defence")) d.put(v, Decision.FORMS);

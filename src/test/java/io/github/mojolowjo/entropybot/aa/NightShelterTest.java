@@ -35,7 +35,10 @@ class NightShelterTest {
         bb.in.baseKnown = true;
         assertEquals("go base then shelter", AaDesires.shelterChain(bb));
         bb.in.baseKnown = false;
+        assertEquals("burrow then wait 120", AaDesires.shelterChain(bb), "aa-night3: no blocks for a shell: dig down");
+        bb.in.bag = java.util.Map.of("dirt", 12);
         assertEquals("shelter", AaDesires.shelterChain(bb));
+        bb.in.bag = java.util.Map.of();
         bb.in.underGround = true;
         assertTrue(AaDesires.shelterScore(bb) > 0, "aa-night2: no sky (a tree, an overhang) is no shelter");
         bb.in.underDepth = AaLadder.SURFACE_DEPTH;

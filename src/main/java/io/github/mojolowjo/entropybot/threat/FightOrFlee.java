@@ -95,6 +95,34 @@ public final class FightOrFlee {
      * fight a walker without a weapon of hit {@link #ARMED}+ (a pickaxe is no sword): FIGHT and HOLD become HOME (the
      * retreat, which digs in or pillars when cornered). Fliers/ranged alone (they can't be outrun) and high ground stay.
      */
+    /** aa-night3: within this an armed bot may hit a ranged mob (it closed in itself); beyond it, cover. */
+    public static final double RANGED_REACH = 3.5, RANGED_FAR = 20;
+
+    /**
+     * aa-night3 (normal2: 4 of 7 deaths "shot by Skeleton", the unarmed rule left ranged mobs as a fight): against ranged
+     * mobs at range, or any ranged mob while unarmed, never stand: HOME with a "cover:" reason, which the reflex answers
+     * with a dig-down or a wall niche (breaks the line of sight) before a plain retreat. A pillar is no cover from arrows.
+     */
+    public static Result cover(Result r, double weaponHit, List<Foe> foes) {
+        if (r == null || foes == null || foes.isEmpty()) return r;
+        if (r.verdict() != Verdict.FIGHT && r.verdict() != Verdict.HOLD && r.verdict() != Verdict.SHELTER) return r;
+        Foe near = null;
+        for (Foe f : foes) {
+            // review: armed with a melee mob in reach: fight that one (fleeing it is worse)
+            if (weaponHit >= ARMED && ThreatRules.moveOf(f.kind()) != ThreatRules.Move.RANGED && f.dist() <= RANGED_REACH) return r;
+        }
+        for (Foe f : foes) {
+            if (ThreatRules.moveOf(f.kind()) != ThreatRules.Move.RANGED || f.dist() > RANGED_FAR) continue;
+            if (near == null || f.dist() < near.dist()) near = f;
+        }
+        if (near == null) return r;
+        if (weaponHit >= ARMED && near.dist() <= RANGED_REACH) return r;
+        return new Result(Verdict.HOME, r.margin(), r.loss(), "cover: " + ThreatRules.path(near.kind()) + " shoots from " + ThreatRules.fmt(Math.round(near.dist()))
+                + " blocks" + (weaponHit < ARMED ? ", no weapon" : "") + " - " + r.why());
+    }
+
+    public static boolean isCover(Result r) { return r != null && r.verdict() == Verdict.HOME && r.why() != null && r.why().startsWith("cover:"); }
+
     public static Result unarmed(Result r, double weaponHit, List<Foe> foes, boolean highGround) {
         if (r == null || weaponHit >= ARMED || highGround || foes == null || foes.isEmpty()) return r;
         if (r.verdict() != Verdict.FIGHT && r.verdict() != Verdict.HOLD) return r;

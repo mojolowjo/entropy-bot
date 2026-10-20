@@ -37,7 +37,7 @@ public final class CornerEscape {
 
     // ---- dig into a wall and seal (brain-b1 open item, aa-mobs2) ----
 
-    public enum Kind { NONE, PILLAR, DIG_IN }
+    public enum Kind { NONE, PILLAR, DIG_IN, DIG_DOWN }
 
     /** Blocks the seal needs: the entrance cell at feet and at head height. */
     public static final int SEAL_BLOCKS = 2;
@@ -54,12 +54,65 @@ public final class CornerEscape {
      * @param wallDig a wall cell next to the bot passed {@link #nicheOk} and the break policy
      */
     public static Choice choose(boolean fightBad, boolean onGround, boolean inFluid, int headroom, int blocks, boolean wallDig) {
+        return choose(fightBad, onGround, inFluid, headroom, blocks, wallDig, 0);
+    }
+
+    /** aa-night3: the escapes' costs in "steps": a placement {@link #PLACE}, a break {@link #BREAK}. */
+    public static final double PLACE = 1, BREAK = 2;
+
+    /**
+     * aa-night3 (normal2: "cornered, no escape: only 0 throwaway blocks to pillar with; no wall to dig into", 7 deaths):
+     * a third escape, dig DOWN {@code downDepth} cells (2 or 3, 0 = no fit; {@link #burrowDepth}) and seal the hole above
+     * the head with a block just dug out, so it needs no throwaway block. The cheapest that fits wins: a pillar
+     * (h x PLACE), the wall niche (2 BREAK + 2 PLACE, 2 blocks), the burrow (depth x BREAK + 1 PLACE).
+     */
+    public static Choice choose(boolean fightBad, boolean onGround, boolean inFluid, int headroom, int blocks, boolean wallDig, int downDepth) {
         Plan pillar = plan(fightBad, onGround, inFluid, headroom, blocks);
-        if (pillar.pillar()) return new Choice(Kind.PILLAR, pillar.height(), pillar.why());
         if (!fightBad || inFluid || !onGround) return new Choice(Kind.NONE, 0, pillar.why());
-        if (!wallDig) return new Choice(Kind.NONE, 0, pillar.why() + "; no wall to dig into");
-        if (blocks < SEAL_BLOCKS) return new Choice(Kind.NONE, 0, "only " + blocks + " throwaway blocks to seal a dug-in niche with");
-        return new Choice(Kind.DIG_IN, 0, "digging into the wall and sealing (" + pillar.why() + ")");
+        double cp = pillar.pillar() ? pillar.height() * PLACE : Double.NaN;
+        double cw = wallDig && blocks >= SEAL_BLOCKS ? 2 * BREAK + 2 * PLACE : Double.NaN;
+        double cd = downDepth >= 2 ? downDepth * BREAK + PLACE : Double.NaN;
+        String costs = "costs: pillar " + c(cp) + ", wall " + c(cw) + ", down " + c(cd);
+        if (Double.isNaN(cp) && Double.isNaN(cw) && Double.isNaN(cd)) {
+            String why = pillar.why() + (wallDig ? "; only " + blocks + " throwaway blocks to seal a dug-in niche with" : "; no wall to dig into") + "; no ground to dig down into";
+            return new Choice(Kind.NONE, 0, why);
+        }
+        double best = Math.min(n(cp), Math.min(n(cw), n(cd)));
+        if (best == n(cp)) return new Choice(Kind.PILLAR, pillar.height(), pillar.why() + " (" + costs + ")");
+        if (best == n(cw)) return new Choice(Kind.DIG_IN, 0, "digging into the wall and sealing (" + pillar.why() + "; " + costs + ")");
+        return new Choice(Kind.DIG_DOWN, downDepth, "digging down " + downDepth + " and sealing above with a dug block (" + pillar.why() + "; " + costs + ")");
+    }
+
+    private static double n(double v) { return Double.isNaN(v) ? Double.MAX_VALUE : v; }
+
+    private static String c(double v) { return Double.isNaN(v) ? "-" : String.valueOf((int) v); }
+
+    /**
+     * aa-night3: how deep a burrow here goes: 2 when the cell at the feet has a solid side to seal against (the seal goes
+     * there), else 3 (the seal goes in the first dug cell, inside the ground); 0 when the cells to dig don't fit.
+     *
+     * @param digOk     the cells below the feet, 1 to 3 down: breakable, not falling, no fluid next to them (BreakPolicy too)
+     * @param sidesOk   for a final depth d (index d-2 for 2 and 3): the feet and head cells there are closed on all 4 sides and the floor holds
+     * @param feetSide  the cell at the feet has a solid horizontal neighbour
+     */
+    public static int burrowDepth(boolean[] digOk, boolean[] sidesOk, boolean feetSide) {
+        if (digOk == null || digOk.length < 3 || sidesOk == null || sidesOk.length < 2) return 0;
+        if (feetSide && digOk[0] && digOk[1] && sidesOk[0]) return 2;
+        if (digOk[0] && digOk[1] && digOk[2] && sidesOk[1]) return 3;
+        return 0;
+    }
+
+    /**
+     * aa-night3 burrow stages for depth d: 0..d-1 break cell k+1 below the start and drop into it, d seal, d+1 hold.
+     *
+     * @param cellOpen the cell being dug (stage k: k+1 below the start) is open
+     * @param atDepth  the feet are at that cell's height
+     * @param sealed   the seal cell is solid
+     */
+    public static int burrowStage(int stage, int depth, boolean cellOpen, boolean atDepth, boolean sealed) {
+        if (stage < depth) return cellOpen && atDepth ? stage + 1 : stage;
+        if (stage == depth) return sealed ? depth + 1 : depth;
+        return stage;
     }
 
     /**

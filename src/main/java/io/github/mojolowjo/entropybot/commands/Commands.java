@@ -1345,6 +1345,8 @@ public final class Commands implements Chains.Env {
         }
         // eating never waits for a task: the reflex holds the task and it carries on afterwards
         if (verb.equals("eat")) return Reply.now(core.reflexes.eat());
+        // aa-night3: the hide's way in (a reflex dig, like eating it needs no free task slot)
+        if (verb.equals("burrow")) return Reply.now(core.reflexes.burrow());
         // a running routine owns the bot between its steps too
         if (!internal && chains.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
             return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");

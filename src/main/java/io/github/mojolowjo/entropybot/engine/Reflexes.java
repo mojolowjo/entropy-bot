@@ -321,7 +321,7 @@ public final class Reflexes {
             case EATING -> "eating";
             case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
             case FLEEING -> "avoiding a " + target;
-            case RETREATING -> (pillaring() ? "pillared up from " : digging() ? "dug in from " : "retreating from ") + target + " (health " + Math.round(lastHealth) + ")";
+            case RETREATING -> (pillaring() ? "pillared up from " : digging() ? "dug in from " : burrowing() ? "dug down from " : "retreating from ") + target + " (health " + Math.round(lastHealth) + ")";
             case FETCHING -> "fetching food" + (fetchTargets != null && fetchIdx < fetchTargets.size() ? " from " + fetchTargets.get(fetchIdx).key() : "");
         };
     }
@@ -1199,7 +1199,7 @@ public final class Reflexes {
             try {
                 v = assess(mc, p, hurt);
                 v = FightOrFlee.holdIfDeadEnd(v, ThreatRuntime.INSTANCE.deadEnd(p, t.e));     // 0.24.4
-                v = FightOrFlee.unarmed(v, Hostility.weaponHit(p), lastFoes, false);       // aa-night2 P0 2: no corridor fight with a pickaxe
+                v = FightOrFlee.cover(FightOrFlee.unarmed(v, Hostility.weaponHit(p), lastFoes, false), Hostility.weaponHit(p), lastFoes);       // aa-night2 P0 2: no corridor fight with a pickaxe
                 // 0.25.1 high ground (a dead end's hold and a losing retreat win)
                 if (!fighting && io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("threat.highGround")
                         && v.verdict() != FightOrFlee.Verdict.HOLD && v.verdict() != FightOrFlee.Verdict.HOME) {
@@ -1242,6 +1242,7 @@ public final class Reflexes {
                 return;
             }
             if (verdict == FightOrFlee.Verdict.HOME) {
+                if (FightOrFlee.isCover(v) && startCover(mc, p, t, v.why())) return;      // aa-night3: out of the line of sight first
                 retreatWhy = v.why();
                 startRetreat(mc, p, t);
                 return;
@@ -1317,7 +1318,7 @@ public final class Reflexes {
         FightOrFlee.Me me = new FightOrFlee.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue(),
                 Hostility.weaponHit(p), mc.level.getMaxLocalRawBrightness(p.blockPosition()), lit == null ? -1 : lit[3], ReflexRules.RETREAT_AT);
         lastFoes = foes;
-        return FightOrFlee.unarmed(FightOrFlee.assess(me, foes), me.weaponHit(), foes, false);
+        return FightOrFlee.cover(FightOrFlee.unarmed(FightOrFlee.assess(me, foes), me.weaponHit(), foes, false), me.weaponHit(), foes);
     }
 
     /** The foes of the last assess (the unarmed rule re-applies after the dead-end hold). */
@@ -1411,6 +1412,7 @@ public final class Reflexes {
         pillarUp = false;
         if (digging()) mc.options.keyUp.setDown(false);
         digStage = -1;
+        burrowStage = -1;
     }
 
     /** Throwaway blocks in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#THROWAWAY}), and the slot of the first. */
@@ -1443,7 +1445,9 @@ public final class Reflexes {
             while (head < io.github.mojolowjo.entropybot.threat.CornerEscape.UP && mc.level.getBlockState(feet.above(2 + head)).getCollisionShape(mc.level, feet.above(2 + head)).isEmpty()) head++;
             int[] tw = throwaway(p);
             Direction dig = bad ? findNiche(mc, p) : null;
-            var plan = io.github.mojolowjo.entropybot.threat.CornerEscape.choose(bad, p.onGround(), p.isInWater() || p.isInLava(), head, tw[0], dig != null);
+            int down = bad ? findBurrow(mc, p) : 0;
+            var plan = io.github.mojolowjo.entropybot.threat.CornerEscape.choose(bad, p.onGround(), p.isInWater() || p.isInLava(), head, tw[0], dig != null, down);
+            if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.DIG_DOWN) return startBurrow(mc, p, t.id, down, plan.why());
             if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.NONE) {
                 if (!quiet) events.push("reflex", "cornered by " + t.id + ", no escape: " + plan.why(), null);
                 LOG.info("[entropybot] cornered, no escape: {}", plan.why());
@@ -1680,9 +1684,184 @@ public final class Reflexes {
         }
     }
 
+    // ---- aa-night3: dig down and seal above with a dug block (CornerEscape.burrowDepth / burrowStage) ----
+    private int burrowStage = -1, burrowDepth, burrowWait;
+    private BlockPos burrowTop;
+    private long burrowStart;
+
+    private boolean burrowing() { return burrowStage >= 0; }
+
+    /** A cell this burrow may dig: solid, breakable soon (soft, or the right tool in the bag), not falling, no block entity, no fluid near, the policy allows. */
+    private boolean burrowDiggable(Minecraft mc, LocalPlayer p, BlockPos q) {
+        BlockState s = mc.level.getBlockState(q);
+        if (!solid(mc, q) || s.hasBlockEntity() || s.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
+        float hard = s.getDestroySpeed(mc.level, q);
+        if (hard < 0) return false;
+        boolean tool = false;
+        for (int i = 0; i < 9 && !tool; i++) tool = p.getInventory().getItem(i).isCorrectToolForDrops(s) && hard <= 3.5f;
+        if (hard > 0.8f && !tool) return false;           // stone by hand: 7.5 s a block, and it drops nothing to seal with
+        for (Direction d : Direction.values()) if (!mc.level.getFluidState(q.relative(d)).isEmpty()) return false;
+        return policyBreaks(mc, q);
+    }
+
+    /** The cells at feet and head of a final depth closed on 4 sides, the floor under it solid. */
+    private boolean burrowClosed(Minecraft mc, BlockPos feet, BlockPos top) {
+        BlockPos head = feet.above();
+        for (Direction d : Direction.Plane.HORIZONTAL) if (!solid(mc, feet.relative(d)) || !solid(mc, head.relative(d))) return false;
+        return solid(mc, feet.below());
+    }
+
+    /** The burrow depth here (2 or 3), 0 = none. Never throws. */
+    private int findBurrow(Minecraft mc, LocalPlayer p) {
+        try {
+            if (!p.onGround() || p.isInWater() || p.isInLava()) return 0;
+            BlockPos top = p.blockPosition();
+            boolean[] dig = new boolean[3];
+            for (int k = 0; k < 3; k++) dig[k] = burrowDiggable(mc, p, top.below(k + 1));
+            boolean sealSide = false;          // review: depth 3 seals in the first dug cell; it needs a side to place against
+            for (Direction d : Direction.Plane.HORIZONTAL) sealSide |= solid(mc, top.below().relative(d));
+            boolean[] sides = {burrowClosed(mc, top.below(2), top), sealSide && burrowClosed(mc, top.below(3), top)};
+            boolean feetSide = false;
+            for (Direction d : Direction.Plane.HORIZONTAL) feetSide |= solid(mc, top.relative(d));
+            return io.github.mojolowjo.entropybot.threat.CornerEscape.burrowDepth(dig, sides, feetSide);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: burrow check failed: {}", e.toString());
+            return 0;
+        }
+    }
+
+    /** aa-night3: cover from ranged mobs: a dig-down, else a wall niche (both break the line of sight); false = none fits. */
+    private boolean startCover(Minecraft mc, LocalPlayer p, Threat t, String why) {
+        if (sealedHere(mc, p)) return false;              // review: no second hole inside the first
+        int down = findBurrow(mc, p);
+        if (down > 0) return startBurrow(mc, p, t.id, down, why);
+        Direction d = findNiche(mc, p);
+        if (d != null && throwaway(p)[0] >= io.github.mojolowjo.entropybot.threat.CornerEscape.SEAL_BLOCKS) return startDig(mc, p, t, d, why);
+        return false;
+    }
+
+    private boolean startBurrow(Minecraft mc, LocalPlayer p, String from, int depth, String why) {
+        try {
+            if (reflex == Reflex.EATING) stopEating(mc, "digging down");
+            reflex = Reflex.RETREATING;
+            retreatLit = false;
+            retreatTo = null;
+            fleeTo = null;
+            retreatGoal = null;
+            retreatStart = now;
+            calmSince = now;
+            engine.hold();
+            stopMoving(mc);
+            burrowTop = p.blockPosition();
+            burrowDepth = depth;
+            burrowStage = 0;
+            burrowWait = 0;
+            burrowStart = now;
+            lastX = p.getX();
+            lastY = p.getY();
+            lastZ = p.getZ();
+            events.push("reflex", "hiding from " + from + ": " + why, null);
+            LOG.info("[entropybot] burrow: dig down {} - {}", depth, why);
+            return true;
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] threat: burrow failed to start: {}", e.toString());
+            burrowStage = -1;
+            return false;
+        }
+    }
+
+    /**
+     * aa-night3: the hide's way in (the AA "burrow" command): dig down here and seal, no throwaway blocks needed.
+     * A reply line: "ok: ..." started or already hidden, else why not.
+     */
+    public String burrow() {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null) return "error: no player";
+        if (burrowing()) return "ok: digging down already (stage " + burrowStage + ")";
+        if (sealedHere(mc, p)) return "ok: sealed in here already";
+        int d = findBurrow(mc, p);
+        if (d == 0) return "error: no ground here to dig down into (soft ground, closed sides, no water near)";
+        return startBurrow(mc, p, "the night", d, "hiding to heal") ? "ok: digging down " + d + " and sealing" : "error: the burrow did not start";
+    }
+
+    /** Feet and head closed on 4 sides and a solid block over the head. */
+    private boolean sealedHere(Minecraft mc, LocalPlayer p) {
+        BlockPos f = p.blockPosition();
+        return burrowClosed(mc, f, f) && solid(mc, f.above(2));
+    }
+
+    /** One tick of the burrow: break down cell by cell (dropping in), seal over the head with a dug block, hold. */
+    private void burrowTick(Minecraft mc, LocalPlayer p) {
+        if (burrowStage <= burrowDepth && now - burrowStart > io.github.mojolowjo.entropybot.threat.CornerEscape.DIG_TIMEOUT) {
+            burrowStage = -1;
+            settle("burrow gave up");
+            return;
+        }
+        if (p.isInWater() || p.isInLava() || Math.abs(p.getX() - (burrowTop.getX() + 0.5)) > 1 || Math.abs(p.getZ() - (burrowTop.getZ() + 0.5)) > 1) {
+            burrowStage = -1;
+            settle("knocked out of the burrow");
+            return;
+        }
+        Threat t = nearestThreat(mc, p, true, false);
+        if (t != null) calmSince = now;
+        // the seal: the cell over the head at the end (depth 2: the start cell, depth 3: the first dug cell)
+        BlockPos seal = burrowTop.below(burrowDepth - 2);
+        BlockPos cell = burrowStage < burrowDepth ? burrowTop.below(burrowStage + 1) : null;
+        int prevStage = burrowStage;
+        burrowStage = io.github.mojolowjo.entropybot.threat.CornerEscape.burrowStage(burrowStage, burrowDepth,
+                cell != null && !solid(mc, cell), cell != null && p.blockPosition().getY() <= cell.getY() && p.onGround(), solid(mc, seal));
+        if (burrowStage < burrowDepth) {
+            BlockPos c = burrowTop.below(burrowStage + 1);
+            if (solid(mc, c)) {
+                toolFor(mc, p, mc.level.getBlockState(c));
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(c)); } catch (RuntimeException ignored) {}
+                mc.gameMode.continueDestroyBlock(c, Direction.UP);       // the guard's break check runs inside
+                p.swing(InteractionHand.MAIN_HAND);
+            }
+            return;
+        }
+        if (burrowStage == burrowDepth) {
+            // against a solid side of the seal cell, from below (the head is right under it)
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                BlockPos side = seal.relative(d);
+                if (!solid(mc, side)) continue;
+                int[] tw = throwaway(p);
+                if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) {
+                    // review: a drop is picked up ~10 ticks after it falls; wait a second for it
+                    if (++burrowWait < 30) return;
+                    burrowStage = -1;
+                    settle("burrow: no dug block came into the bag to seal with");
+                    return;
+                }
+                var hit = new BlockHitResult(Vec3.atCenterOf(side).relative(d.getOpposite(), 0.5), d.getOpposite(), side, false);
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(seal)); } catch (RuntimeException ignored) {}
+                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
+                p.swing(InteractionHand.MAIN_HAND);
+                return;
+            }
+            burrowStage = -1;
+            settle("burrow: nothing beside the hole to seal against");
+            return;
+        }
+        if (prevStage == burrowDepth && burrowStage == burrowDepth + 1) calmSince = now;       // review: the hold starts its own calm wait
+        if (prevStage == burrowDepth && burrowStage == burrowDepth + 1) events.push("reflex", "dug down and sealed, holding", null);
+        if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+            holdWeapon(mc, p);
+            mc.gameMode.attack(p, t.e);
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+        if (now - calmSince >= 100) { burrowStage = -1; settle("nothing near the burrow"); }
+        else if (now - retreatStart >= 1800) { burrowStage = -1; settle("gave up on the burrow after 90 s"); }
+    }
+
     private void retreat(Minecraft mc, LocalPlayer p, boolean hurt) {
         if (pillaring()) {
             pillarTick(mc, p);
+            return;
+        }
+        if (burrowing()) {
+            burrowTick(mc, p);
             return;
         }
         if (digging()) {
