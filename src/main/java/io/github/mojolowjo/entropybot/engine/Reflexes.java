@@ -1199,6 +1199,7 @@ public final class Reflexes {
             try {
                 v = assess(mc, p, hurt);
                 v = FightOrFlee.holdIfDeadEnd(v, ThreatRuntime.INSTANCE.deadEnd(p, t.e));     // 0.24.4
+                v = FightOrFlee.unarmed(v, Hostility.weaponHit(p), lastFoes, false);       // aa-night2 P0 2: no corridor fight with a pickaxe
                 // 0.25.1 high ground (a dead end's hold and a losing retreat win)
                 if (!fighting && io.github.mojolowjo.entropybot.brain.BrainConfig.current().on("threat.highGround")
                         && v.verdict() != FightOrFlee.Verdict.HOLD && v.verdict() != FightOrFlee.Verdict.HOME) {
@@ -1315,8 +1316,12 @@ public final class Reflexes {
         int[] lit = ThreatRuntime.INSTANCE.litSpot();
         FightOrFlee.Me me = new FightOrFlee.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue(),
                 Hostility.weaponHit(p), mc.level.getMaxLocalRawBrightness(p.blockPosition()), lit == null ? -1 : lit[3], ReflexRules.RETREAT_AT);
-        return FightOrFlee.assess(me, foes);
+        lastFoes = foes;
+        return FightOrFlee.unarmed(FightOrFlee.assess(me, foes), me.weaponHit(), foes, false);
     }
+
+    /** The foes of the last assess (the unarmed rule re-applies after the dead-end hold). */
+    private List<FightOrFlee.Foe> lastFoes = List.of();
 
     private void startLitRetreat(Minecraft mc, LocalPlayer p, Threat t, int[] lit, String why) {
         clearPillar(mc);        // review: no stale pillar under a new retreat

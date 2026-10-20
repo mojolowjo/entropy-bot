@@ -1133,6 +1133,9 @@ public final class AaRuntime implements JobPort {
         in.light = mc.level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p.blockPosition());
         in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size();
         in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
+        in.armed = io.github.mojolowjo.entropybot.engine.Hostility.weaponHit(p) >= io.github.mojolowjo.entropybot.threat.FightOrFlee.ARMED;
+        // aa-night2 P0 2: a zombie seen once stays seen (sticky while the game runs)
+        if (!in.zombieSeen) in.zombieSeen = !mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Zombie.class, p.getBoundingBox().inflate(24)).isEmpty();
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
@@ -1260,6 +1263,9 @@ public final class AaRuntime implements JobPort {
         int bagTotal = 0;
         for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();
         if (lastBag >= 0 && bagTotal > lastBag) progress++;          // gained (a deposit's drop is no progress by itself)
+        // aa-night2 P0 3 (normal run: BASE_BED "stuck 40 s, no move, no bag change" while placing): a build's placed
+        // blocks leave the bag, and that is its progress
+        else if (lastBag >= 0 && bagTotal < lastBag && io.github.mojolowjo.entropybot.aa.core.BuildProgress.counts(startedKind)) progress++;
         lastBag = bagTotal;
         int[] pos = Jobs.here(p);
         int[] dest = c.jobs.running() ? Jobs.travelDest(c.jobs.job) : null;
@@ -1275,6 +1281,8 @@ public final class AaRuntime implements JobPort {
     }
 
     private double lastGoalDist = -1;
+    /** The kind of the task AA started last (its progress rules differ: a build spends blocks). */
+    private TaskKind startedKind;
 
     // ---- JobPort ----
 
@@ -1290,6 +1298,7 @@ public final class AaRuntime implements JobPort {
         if (c.requests.busy()) { refusal = "busy: a request is open"; return -1; }
         lastEnd = null;
         myChain = CHAIN;
+        startedKind = t.kind();
         clearEscape();
         escapes = 0;
         runningOpt = null;

@@ -53,6 +53,8 @@ public final class Inputs {
     public int coalGoalN;
     /** aa-costs (night): difficulty 0..3, block light at the feet, hostiles within 24. Not in the vector. */
     public int difficulty = 2, light, hostilesNear;
+    /** aa-night2 P0 2: a weapon with hit 4+ in the bag (a sword or an axe; Hostility.weaponHit); a zombie seen this run. Not in the vector. */
+    public boolean armed, zombieSeen;
 
     /** Torches may burn coal: the torches' gain per coal over the coal goal's loss per coal (Costs.torchCoal). */
     public boolean torchCoal() { return io.github.mojolowjo.entropybot.aa.brain.Costs.torchCoal(coal, torches, coalGoalScore, coalGoalN); }

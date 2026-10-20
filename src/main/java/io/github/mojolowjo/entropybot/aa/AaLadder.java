@@ -107,7 +107,8 @@ public final class AaLadder {
                 bb -> !bb.in.areaKnown,
                 bb -> null, bb -> AREA_COMMAND);
         Rung tools = new Rung("needs.tools", TaskKind.TOOLS,
-                bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2),
+                // aa-night2 P0 2: a stone sword too once a zombie was seen (the planner's "goal stone tools" makes one)
+                bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
                 // S2 (MINING_PLAN 11): bootstrap tools / bootstrap / the planner, scored (RungOptions.Tools)
                 bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
                         .withoutFacts((b, planned) -> b.in.pickTier == 0 ? BOOTSTRAP : planned));

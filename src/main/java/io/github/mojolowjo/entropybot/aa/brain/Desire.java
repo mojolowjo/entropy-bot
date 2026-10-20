@@ -152,6 +152,36 @@ public final class Desire {
         return this;
     }
 
+    /**
+     * aa-night2 P0 3: the desire's own "done" predicate (its rung met). When set, a running desire ends on "its reason
+     * is gone" only when this says met, never on a score that fell for another reason (a gate's flow drying up).
+     */
+    java.util.function.Predicate<Blackboard> met;
+
+    /** aa-night2 P0 1: at its full score this desire beats any running one but starving food (Brain.trumps). */
+    boolean trumps;
+
+    public Desire trumps() {
+        trumps = true;
+        return this;
+    }
+
+    public Desire met(java.util.function.Predicate<Blackboard> f) {
+        met = f;
+        return this;
+    }
+
+    /** The own predicate: TRUE met, FALSE unmet, null none set or it failed. */
+    public Boolean metNow(Blackboard bb) {
+        if (met == null) return null;
+        try {
+            return met.test(bb);
+        } catch (RuntimeException e) {
+            bb.port.log("brain: " + id + " met check failed: " + e);
+            return null;
+        }
+    }
+
     /** AA_ROUND3 2: where this desire's work is done now (its chosen option's target, the base...), null unknown. */
     Function<Blackboard, Site> site;
 

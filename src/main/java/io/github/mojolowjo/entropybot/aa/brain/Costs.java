@@ -123,6 +123,16 @@ public final class Costs {
         return 40 + Curves.upkeep(30, pickPct, 15);
     }
 
+    /**
+     * aa-night2 P0 2 (normal run: 11 zombie deaths "fighting zombie" with a pickaxe): once a zombie was seen, no weapon
+     * with hit 4+ is a tools need of its own worth {@link #SWORD}, added to the pickaxe's.
+     */
+    public static final double SWORD = 25;
+
+    public static boolean swordWanted(boolean zombieSeen, boolean armed) { return zombieSeen && !armed; }
+
+    public static double sword(boolean zombieSeen, boolean armed) { return swordWanted(zombieSeen, armed) ? SWORD : 0; }
+
     /** The share of the next steps a missing (tier 0) or wooden (tier 1) pickaxe blocks: stone/iron/furnace/coal. */
     public static double blocked(int pickTier, boolean furnace, int coal, int torches, boolean ownerOreGoal) {
         int n = 0, of = 4;

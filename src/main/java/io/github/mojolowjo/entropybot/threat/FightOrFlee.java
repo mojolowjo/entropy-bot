@@ -90,6 +90,23 @@ public final class FightOrFlee {
 
     public static Result assess(Me me, List<Foe> foes) { return assess(me, foes, MobDamage.INSTANCE); }
 
+    /**
+     * aa-night2 P0 2 (normal run: "I died ... fighting zombie" with a stone pickaxe, 11 zombie deaths): never stand and
+     * fight a walker without a weapon of hit {@link #ARMED}+ (a pickaxe is no sword): FIGHT and HOLD become HOME (the
+     * retreat, which digs in or pillars when cornered). Fliers/ranged alone (they can't be outrun) and high ground stay.
+     */
+    public static Result unarmed(Result r, double weaponHit, List<Foe> foes, boolean highGround) {
+        if (r == null || weaponHit >= ARMED || highGround || foes == null || foes.isEmpty()) return r;
+        if (r.verdict() != Verdict.FIGHT && r.verdict() != Verdict.HOLD) return r;
+        boolean walker = false;
+        for (Foe f : foes) {
+            ThreatRules.Move mv = ThreatRules.moveOf(f.kind());
+            if (mv != ThreatRules.Move.FLY && mv != ThreatRules.Move.RANGED) walker = true;
+        }
+        if (!walker) return r;
+        return new Result(Verdict.HOME, r.margin(), r.loss(), "retreat: no weapon (hit " + ThreatRules.fmt(weaponHit) + " < " + ThreatRules.fmt(ARMED) + "), not fighting - " + r.why());
+    }
+
     /** 0.24.4: with the measured damage per hit (after armour) where a kind has 3+ samples, else the hand table. */
     public static Result assess(Me me, List<Foe> foes, MobDamage seen) {
         if (foes.isEmpty()) return new Result(Verdict.FIGHT, Double.NaN, 0, "nothing counts");

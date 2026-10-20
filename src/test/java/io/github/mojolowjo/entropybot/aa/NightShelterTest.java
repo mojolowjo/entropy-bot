@@ -37,7 +37,13 @@ class NightShelterTest {
         bb.in.baseKnown = false;
         assertEquals("shelter", AaDesires.shelterChain(bb));
         bb.in.underGround = true;
-        assertEquals(-1, AaDesires.shelterScore(bb), "dug in: night work goes on");
+        assertTrue(AaDesires.shelterScore(bb) > 0, "aa-night2: no sky (a tree, an overhang) is no shelter");
+        bb.in.underDepth = AaLadder.SURFACE_DEPTH;
+        assertEquals(-1, AaDesires.shelterScore(bb), "deep under: night work goes on");
+        bb.in.underDepth = 0;
+        bb.in.sheltered = true;
+        assertEquals(-1, AaDesires.shelterScore(bb), "in my shell");
+        bb.in.sheltered = false;
         bb.in.underGround = false;
         bb.in.hungerDrains = false;
         assertEquals(-1, AaDesires.shelterScore(bb), "Peaceful");
@@ -46,6 +52,43 @@ class NightShelterTest {
         assertEquals(-1, AaDesires.shelterScore(bb), "day");
         bb.in.dayTime = 12000;
         assertTrue(AaDesires.shelterScore(bb) > 0 && AaDesires.shelterScore(bb) < Brain.URGENT, "dusk: rising, not urgent");
+    }
+
+    @Test
+    void normalRunSpawnNightScores99() {
+        bb.in.hungerDrains = true;
+        bb.in.dayTime = 18000;
+        bb.in.underGround = true;           // the 01:44 case: a staircase's first steps, no sky
+        bb.in.hostilesNear = 2;
+        assertEquals(99, AaDesires.shelterScore(bb), 1e-9);
+    }
+
+    @Test
+    void fullNightShelterTrumpsAHighToolsRunButNotStarvingFood() {
+        double[] v = {88, 0};
+        Brain br = new Brain("brain", "t",
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do food", "brain"), b -> v[0]),
+                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, "do shelter", "brain"), b -> v[1]).trumps());
+        bb.in.food = 2;
+        br.tick(bb);
+        assertEquals("do food", port.started.get(port.started.size() - 1).chain());
+        v[1] = 99;
+        br.tick(bb);
+        assertEquals("do food", port.started.get(port.started.size() - 1).chain(), "food under 4 keeps running");
+        bb.in.food = 10;
+        br.tick(bb);
+        assertEquals("do shelter", port.started.get(port.started.size() - 1).chain(), "99 beats 88 + the margin");
+    }
+
+    @Test
+    void hideAndHeal() {
+        assertEquals(-1, AaDesires.hideScore(false, 0, 8, 20, 1, false), "day, nothing near");
+        assertEquals(-1, AaDesires.hideScore(false, 2, 12, 20, 1, false), "day, hostiles near, 12 hp: not yet");
+        assertEquals(56, AaDesires.hideScore(false, 2, 12, 20, 1, true), 1e-9, "started: holds to 16");
+        assertEquals(70, AaDesires.hideScore(false, 2, 10, 20, 1, true), 1e-9);
+        assertTrue(AaDesires.hideScore(false, 2, 8, 20, 1, false) >= Brain.URGENT, "day, hostiles near, 8 hp: urgent");
+        assertEquals(99, AaDesires.hideScore(true, 0, 6, 20, 1.37, false), 1e-9, "night 6 hp: full");
+        assertEquals(-1, AaDesires.hideScore(true, 3, 16, 20, 1.37, true), "16 hp: done");
     }
 
     @Test

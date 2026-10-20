@@ -295,7 +295,7 @@ public final class Brain extends Node {
             Status s = cur.node.tick(bb);
             if (bb.task() != null) taskSeen = true;
             Scored mine = lastScored.size() > running ? lastScored.get(running) : null;
-            if (s == Status.RUNNING && mine != null && reasonGone(mine)) {          // day-check: the reason is gone; the commitment margin must not keep it alive
+            if (s == Status.RUNNING && mine != null && reasonGone(mine, cur.metNow(bb))) {          // day-check: the reason is gone; the commitment margin must not keep it alive
                 String why = "its reason is gone: " + cur.id + " wanted " + Math.round(mine.score()) + " (" + mine.parts() + ")";
                 bb.port.log("brain: ends " + cur.id + ": " + why);
                 cur.node.halt(why);
@@ -311,9 +311,29 @@ public final class Brain extends Node {
     }
 
     /** day-check: a running desire (not the owner's) whose desire fell to 0 or below, or is no longer wanted, ends. */
-    static boolean reasonGone(Scored c) {
+    static boolean reasonGone(Scored c) { return reasonGone(c, null); }
+
+    /**
+     * aa-night2 P0 3: with the running desire's own predicate ({@code met}, null = none) that alone decides: a gate whose
+     * flow dried up (score -1 while its climb still runs) is not a gone reason ("needs.surface wanted -1" live).
+     */
+    static boolean reasonGone(Scored c, Boolean met) {
         if (c.d().kind == Desire.Kind.OWNER) return false;
+        if (met != null) return met;
         return c.score() <= 0 && (c.skip() == null || c.skip().startsWith("not wanted"));
+    }
+
+    /** aa-night2 P0 1: the food bar under which eating beats a trumping (night) desire. */
+    public static final int TRUMP_FOOD = 4;
+
+    /**
+     * aa-night2 P0 1: a desire marked {@link Desire#trumps()} at its full score ({@link Costs#SHELTER_MAX}: the full night
+     * at the surface) beats the running one whatever its number and the commitment margin; only food under
+     * {@link #TRUMP_FOOD} and another trumping desire keep running.
+     */
+    static boolean trumps(Blackboard bb, Scored s, Desire cur) {
+        if (!s.d().trumps || s.own() < Costs.SHELTER_MAX || cur.trumps) return false;
+        return !(cur.id.equals("needs.food") && bb.in.food < TRUMP_FOOD);
     }
 
     private double curScore;
@@ -342,7 +362,7 @@ public final class Brain extends Node {
             if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus
             boolean overOwner = urgent(s.d(), s.own()) && cur.kind == Desire.Kind.OWNER;
-            if (!overOwner && s.score() <= curScore + bonus) continue;
+            if (!overOwner && !trumps(bb, s, cur) && s.score() <= curScore + bonus) continue;
             cands.add(s);
         }
         if (cands.isEmpty()) return null;
