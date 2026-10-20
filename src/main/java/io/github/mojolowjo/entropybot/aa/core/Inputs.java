@@ -44,6 +44,13 @@ public final class Inputs {
     public int[] pos;
     /** AA_ROUND3 2: the camp and the base (the known places for the sequencer's sites), null unknown. */
     public int[] campPos, basePos;
+    /**
+     * aa-r1fix: the camp chest's cell (ChestSpot: free, inside my areas, next to the table, cheapest not refused), null none
+     * found; why it was chosen; the cells the game refused ("x y z"). Not in the vector.
+     */
+    public int[] chestCell;
+    public String chestWhy;
+    public final java.util.Set<String> chestFailed = new java.util.HashSet<>();
     /** S1: the spot was lit this night (AaTree keeps it; the idle LIGHT option scores -1 then). Not in the vector. */
     public boolean litTonight;
     /** nightwork: inside a shell of its own that is built and waiting (ShelterJob WAIT, at its cell). Not in the vector. */

@@ -355,6 +355,12 @@ public final class Rung extends Node {
      * fails as before and the options line goes with the reason.
      */
     private Status jobFailed(Blackboard bb, String why) {
+        // aa-r1fix: a camp chest the game refused is not tried again (the next cell of ChestSpot's ranking is)
+        if (kind == TaskKind.TABLE_FURNACE && ChestSpot.failedCell(why) != null) {
+            ChestSpot.noteFailure(bb.in.chestFailed, why);
+            cooldown.forget();
+            bb.port.log(kind + ": chest cell refused (\"" + why + "\"), the next free cell is tried");
+        }
         // S2 (aa373: bootstrap ended "scan base: no chests" after the tools were made): the need is met, the task's
         // failed tail is not this rung's failure
         if (!lastForced && !unmet.test(bb) && !Options.ownerOrDanger(why == null ? "" : why)) {

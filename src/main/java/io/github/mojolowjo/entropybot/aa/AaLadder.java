@@ -135,7 +135,7 @@ public final class AaLadder {
                 // aa-kit: the "camp" rung: table + furnace + a chest at the base (the stash needs one)
                 bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !AaDesires.campChest(bb),
                 bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
-                        : AaDesires.chestChain(bb.in.basePos, bb.in.pos, bb.in.bag != null && bb.in.bag.getOrDefault("chest", 0) > 0));
+                        : AaDesires.chestChain(bb.in));
         // a spare table in the bag at all times (owner 2026-10-18): crafts away from the camp never walk back to it
         Rung spare = new Rung("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> spareTableWanted(bb.in.tableInBag, bb.in.planks),
