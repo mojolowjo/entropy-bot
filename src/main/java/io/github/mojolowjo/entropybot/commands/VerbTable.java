@@ -233,6 +233,7 @@ public final class VerbTable {
                 "smelt at a base furnace and go on with other things; no furnace near me but one in my bag: I put it down next to me and wait there (the furnace stays)", "smelt iron_ingot 9|smelt jobs", "smelt collect");
         v("cook", "", "crafting", O, "cook <food> [n]", "cook raw food at a furnace (smelt cooked_<food>)", "cook beef 8", "smelt jobs");
         v("eat", "", "crafting", O, "eat", "eat now (I also eat by myself)", "eat", "place food");
+        v("burrow", "", "other", O, "burrow", "dig down 2-3 here and seal over my head with a dug block (hide; no blocks needed)", "burrow", "shelter");
         v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
                 "one farm round (harvest, replant or let Harvest with Ease replant, pick up); plant a new field", "farm|farm plant wheat here 4|farm status", "deposit");
         v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "have <item>");
