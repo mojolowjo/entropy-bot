@@ -96,7 +96,7 @@ public final class FightOrFlee {
      * retreat, which digs in or pillars when cornered). Fliers/ranged alone (they can't be outrun) and high ground stay.
      */
     /** aa-night3: within this an armed bot may hit a ranged mob (it closed in itself); beyond it, cover. */
-    public static final double RANGED_REACH = 3.5;
+    public static final double RANGED_REACH = 3.5, RANGED_FAR = 20;
 
     /**
      * aa-night3 (normal2: 4 of 7 deaths "shot by Skeleton", the unarmed rule left ranged mobs as a fight): against ranged
@@ -108,7 +108,11 @@ public final class FightOrFlee {
         if (r.verdict() != Verdict.FIGHT && r.verdict() != Verdict.HOLD && r.verdict() != Verdict.SHELTER) return r;
         Foe near = null;
         for (Foe f : foes) {
-            if (ThreatRules.moveOf(f.kind()) != ThreatRules.Move.RANGED) continue;
+            // review: armed with a melee mob in reach: fight that one (fleeing it is worse)
+            if (weaponHit >= ARMED && ThreatRules.moveOf(f.kind()) != ThreatRules.Move.RANGED && f.dist() <= RANGED_REACH) return r;
+        }
+        for (Foe f : foes) {
+            if (ThreatRules.moveOf(f.kind()) != ThreatRules.Move.RANGED || f.dist() > RANGED_FAR) continue;
             if (near == null || f.dist() < near.dist()) near = f;
         }
         if (near == null) return r;

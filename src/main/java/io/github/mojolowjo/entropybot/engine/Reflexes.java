@@ -1685,7 +1685,7 @@ public final class Reflexes {
     }
 
     // ---- aa-night3: dig down and seal above with a dug block (CornerEscape.burrowDepth / burrowStage) ----
-    private int burrowStage = -1, burrowDepth;
+    private int burrowStage = -1, burrowDepth, burrowWait;
     private BlockPos burrowTop;
     private long burrowStart;
 
@@ -1718,7 +1718,9 @@ public final class Reflexes {
             BlockPos top = p.blockPosition();
             boolean[] dig = new boolean[3];
             for (int k = 0; k < 3; k++) dig[k] = burrowDiggable(mc, p, top.below(k + 1));
-            boolean[] sides = {burrowClosed(mc, top.below(2), top), burrowClosed(mc, top.below(3), top)};
+            boolean sealSide = false;          // review: depth 3 seals in the first dug cell; it needs a side to place against
+            for (Direction d : Direction.Plane.HORIZONTAL) sealSide |= solid(mc, top.below().relative(d));
+            boolean[] sides = {burrowClosed(mc, top.below(2), top), sealSide && burrowClosed(mc, top.below(3), top)};
             boolean feetSide = false;
             for (Direction d : Direction.Plane.HORIZONTAL) feetSide |= solid(mc, top.relative(d));
             return io.github.mojolowjo.entropybot.threat.CornerEscape.burrowDepth(dig, sides, feetSide);
@@ -1730,6 +1732,7 @@ public final class Reflexes {
 
     /** aa-night3: cover from ranged mobs: a dig-down, else a wall niche (both break the line of sight); false = none fits. */
     private boolean startCover(Minecraft mc, LocalPlayer p, Threat t, String why) {
+        if (sealedHere(mc, p)) return false;              // review: no second hole inside the first
         int down = findBurrow(mc, p);
         if (down > 0) return startBurrow(mc, p, t.id, down, why);
         Direction d = findNiche(mc, p);
@@ -1752,6 +1755,7 @@ public final class Reflexes {
             burrowTop = p.blockPosition();
             burrowDepth = depth;
             burrowStage = 0;
+            burrowWait = 0;
             burrowStart = now;
             lastX = p.getX();
             lastY = p.getY();
@@ -1823,7 +1827,13 @@ public final class Reflexes {
                 BlockPos side = seal.relative(d);
                 if (!solid(mc, side)) continue;
                 int[] tw = throwaway(p);
-                if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { burrowStage = -1; settle("burrow: no dug block came into the bag to seal with"); return; }
+                if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) {
+                    // review: a drop is picked up ~10 ticks after it falls; wait a second for it
+                    if (++burrowWait < 30) return;
+                    burrowStage = -1;
+                    settle("burrow: no dug block came into the bag to seal with");
+                    return;
+                }
                 var hit = new BlockHitResult(Vec3.atCenterOf(side).relative(d.getOpposite(), 0.5), d.getOpposite(), side, false);
                 try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(seal)); } catch (RuntimeException ignored) {}
                 mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
@@ -1834,6 +1844,7 @@ public final class Reflexes {
             settle("burrow: nothing beside the hole to seal against");
             return;
         }
+        if (prevStage == burrowDepth && burrowStage == burrowDepth + 1) calmSince = now;       // review: the hold starts its own calm wait
         if (prevStage == burrowDepth && burrowStage == burrowDepth + 1) events.push("reflex", "dug down and sealed, holding", null);
         if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
             holdWeapon(mc, p);
