@@ -462,7 +462,7 @@ public final class IronOptions {
         String st = failedStep(end);
         if (st == null) return "ore";
         String w = st.toLowerCase(Locale.ROOT);
-        if (w.startsWith("mine") || w.startsWith("goto") || w.startsWith("find") || w.startsWith("place") || w.startsWith("dig")) return "ore";      // aa-trees: the discovery prefix steps (find cave, place mine, dig stairs) are the ore way too
+        if (w.startsWith("mine") || w.startsWith("goto") || w.startsWith("find") || w.startsWith("place mine") || w.startsWith("dig")) return "ore";      // aa-trees: the discovery prefix steps (find cave, place mine, dig stairs) are the ore way too
         if (w.startsWith("smelt")) return "smelt";
         return "other";
     }
