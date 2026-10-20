@@ -157,10 +157,21 @@ public final class Ledger {
         Entry e = new Entry(nextSeq++, x, y, z, dim, block, state, items, why, job, jobLabel, reason, tick, at, true);
         list.add(e);
         while (list.size() > cap) {
-            list.remove(0);
+            // aa-litter: scaffold notes go first, so a long bridge never pushes out broken terrain that restore now still needs
+            int victim = 0;
+            for (int i = 0; i < list.size(); i++) if (PlacedPlan.litter(list.get(i))) { victim = i; break; }
+            list.remove(victim);
             droppedByCap++;
         }
         return e;
+    }
+
+    /** aa-litter: the entry with another note (why/reason), same seq and place in the list, confirmed. False when it is gone. */
+    public synchronized boolean rewrite(Entry old, String why, String reason) {
+        int i = list.indexOf(old);
+        if (i < 0) return false;
+        list.set(i, new Entry(old.seq, old.x, old.y, old.z, old.dim, old.block, old.state, old.items, why, old.job, old.jobLabel, reason, old.tick, old.at, false));
+        return true;
     }
 
     /** The cap's note since the last call ("dropped 3 oldest ..."), else null. */

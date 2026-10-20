@@ -31,22 +31,28 @@ public final class PlacedPlan {
 
     /**
      * The litter entries to take down: confirmed, in this dimension, within {@code maxDist} of {@code center} (the others
-     * are Left "too far"), the nearest first (what is in reach comes down first; a column is taken from its foot). Kept entries are never
+     * are Left "too far"), the lowest first (a column is taken from its foot, so the bot never stands on what it breaks), then the nearest. Kept entries are never
      * in it.
      */
     public static RestorePlan.Plan plan(List<Ledger.Entry> entries, int[] center, String dim, int maxDist) {
         List<Ledger.Entry> order = new ArrayList<>();
         for (Ledger.Entry e : entries) if (litter(e) && !e.pending) order.add(e);
-        order.sort(Comparator.comparingLong((Ledger.Entry e) -> d2(e, center)).thenComparingInt(e -> e.y));
+        order.sort(Comparator.comparingInt((Ledger.Entry e) -> e.y).thenComparingLong(e -> d2(e, center)));
         List<RestorePlan.Action> actions = new ArrayList<>();
         List<RestorePlan.Left> left = new ArrayList<>();
         long max2 = (long) maxDist * maxDist;
         for (Ledger.Entry e : order) {
             if (dim != null && !dim.equals(e.dim)) left.add(new RestorePlan.Left(e, "too far"));
-            else if (d2(e, center) > max2) left.add(new RestorePlan.Left(e, "too far"));
+            else if (d2h(e, center) > max2) left.add(new RestorePlan.Left(e, "too far"));
             else actions.add(new RestorePlan.Action(e, null));
         }
         return new RestorePlan.Plan(actions, left);
+    }
+
+    /** Flat distance squared: the radius is horizontal, a tall pillar is not "too far". */
+    private static long d2h(Ledger.Entry e, int[] c) {
+        long dx = e.x - c[0], dz = e.z - c[2];
+        return dx * dx + dz * dz;
     }
 
     private static long d2(Ledger.Entry e, int[] c) {

@@ -491,12 +491,12 @@ public final class RestoreLive {
         String dim = Guard.dimOf(p.level());
         int[] me = Jobs.here(p);
         int n = 0;
+        // only the newest step's scaffold (the job that placed the latest litter): earlier steps were priced "take down"
+        long lastJob = -1, lastSeq = -1;
+        for (Ledger.Entry e : book.ledger.all()) if (io.github.mojolowjo.entropybot.restore.PlacedPlan.litter(e) && e.seq > lastSeq) { lastSeq = e.seq; lastJob = e.job; }
         for (Ledger.Entry e : new ArrayList<>(book.ledger.all())) {
-            if (!io.github.mojolowjo.entropybot.restore.PlacedPlan.litter(e) || !dim.equals(e.dim) || d2(e, me) > 48L * 48) continue;
-            book.ledger.remove(e);
-            book.ledger.add(e.x, e.y, e.z, dim, e.block, e.state, List.of(), io.github.mojolowjo.entropybot.restore.PlacedPlan.keptWhy(what, e.x, e.y, e.z, "reuse pays for it"),
-                    e.job, e.jobLabel, io.github.mojolowjo.entropybot.restore.PlacedPlan.KEPT.trim(), e.tick, e.at);
-            n++;
+            if (!io.github.mojolowjo.entropybot.restore.PlacedPlan.litter(e) || e.job != lastJob || !dim.equals(e.dim) || d2(e, me) > 48L * 48) continue;
+            if (book.ledger.rewrite(e, io.github.mojolowjo.entropybot.restore.PlacedPlan.keptWhy(what, e.x, e.y, e.z, "reuse pays for it"), io.github.mojolowjo.entropybot.restore.PlacedPlan.KEPT.trim())) n++;
         }
         if (n > 0) changed();
         LOG.info("[entropybot] litter: kept {} blocks as {}", n, what);
