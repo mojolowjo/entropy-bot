@@ -519,6 +519,13 @@ public final class RestoreLive {
         return c.jobs.startRestore(new RestoreRun(plan, true), "taking down " + plan.actions().size() + (plan.actions().size() == 1 ? " block" : " blocks") + " I placed");
     }
 
+    /** AA_STEP2 3: blocks waiting in the ledger to be put back (aa status "restore pending: N blocks"). */
+    public int pendingCount() {
+        int n = 0;
+        for (Ledger.Entry e : book.ledger.confirmed()) if (e.restorable()) n++;
+        return n;
+    }
+
     /** "restore now [r]": a job that walks to and puts back every waiting block within r. */
     String startNow(LocalPlayer p, String rest) {
         if (RestoreArgs.parse(rest).kind() == RestoreArgs.Kind.PLACED) return startPlaced(p, rest);

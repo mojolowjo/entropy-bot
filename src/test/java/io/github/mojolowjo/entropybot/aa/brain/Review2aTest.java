@@ -29,8 +29,11 @@ class Review2aTest {
     @Test
     void item1PostDeathToolsAtTheSurfaceFallUnderTheShelter() {
         normalNight();
-        var night = io.github.mojolowjo.entropybot.aa.AaDesires.night();
-        Desire shelter = night.stream().filter(x -> x.id.equals("night.shelter")).findFirst().orElseThrow();
+        // AA_STEP2 1: the danger desire answers the night (night.shelter is gone)
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.THREAT_FACT,
+                (java.util.function.Supplier<io.github.mojolowjo.entropybot.threat.ThreatFacts>) () -> new io.github.mojolowjo.entropybot.threat.ThreatFacts(io.github.mojolowjo.entropybot.threat.ThreatFacts.CALM.me(), java.util.List.of(),
+                        new io.github.mojolowjo.entropybot.threat.ThreatFacts.Ways(0, -1, -1, true, 0, 0, true)));
+        Desire shelter = io.github.mojolowjo.entropybot.aa.AaDesires.danger();
         Brain br = new Brain("brain", "t", d("needs.tools", Desire.Kind.UPKEEP, 98, Desire.Exposure.ANY), shelter);
         double danger = Brain.danger(bb);
         assertEquals(1.0, danger, 1e-9, "Normal, no armour, dark (AA_ROUND4 B2: no bed term)");

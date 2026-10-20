@@ -91,6 +91,21 @@ public final class Door {
         try { log.accept("door: refused " + d.label() + ": " + w + " (aa is on)"); } catch (RuntimeException ignored) {}
     }
 
+    /** AA_STEP2 3: what AA's start does with the slot. */
+    public enum Slot { FREE, HALT_RESTORE, BUSY }
+
+    /**
+     * AA_STEP2 3 (round 5: "refused BASE_BED ...: busy: putting back 1 block I broke on the way"): putting back blocks is
+     * AA's own work below every desire, never the owner's job; an AA start halts it (the blocks wait in the ledger and
+     * are put back later). Anything else in the slot is busy. Pure.
+     * @param jobRunning a job runs; @param restoreOnly that job is only putting blocks back
+     */
+    public static Slot aaSlot(boolean chainRunning, boolean jobRunning, boolean restoreOnly) {
+        if (chainRunning) return Slot.BUSY;
+        if (!jobRunning) return Slot.FREE;
+        return restoreOnly ? Slot.HALT_RESTORE : Slot.BUSY;
+    }
+
     /** The reply text for a refused start. */
     public static String refusal(String what) {
         Driver d = current == null ? Driver.OTHER : current;

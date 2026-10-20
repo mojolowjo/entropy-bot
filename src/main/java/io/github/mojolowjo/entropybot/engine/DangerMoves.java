@@ -363,7 +363,7 @@ public final class DangerMoves {
             }
             ThreatFacts.Me me = new ThreatFacts.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), armor, Hostility.weaponHit(p),
                     p.getFoodData().getFoodLevel());
-            if (foes.isEmpty()) return new ThreatFacts(me, List.of(), ThreatFacts.Ways.NONE);
+            // AA_STEP2 1: the ways are filled with no foe near too (the night ways: box, burrow, dig in, home)
             int flee = FleeHeading.choose(p.getX(), p.getZ(), mobs, FLEE_RUN) == null ? 0 : (int) FLEE_RUN;
             double baseDist = -1;
             if (base != null && (baseDim == null || baseDim.equals(Guard.dimOf(mc.level)))) {
@@ -376,8 +376,9 @@ public final class DangerMoves {
                 if (c != null) cover = c.moves();
             }
             int[] tw = throwaway(p);
-            boolean dig = findBurrow(mc, p) > 0 || (tw[0] >= CornerEscape.SEAL_BLOCKS && findNiche(mc, p) != null);
-            return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, cover, dig, tw[0], headRoom(mc, p), p.onGround() && !p.isInWater()));
+            boolean burrow = findBurrow(mc, p) > 0, niche = tw[0] >= CornerEscape.SEAL_BLOCKS && findNiche(mc, p) != null;
+            return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, cover, burrow || niche, tw[0], headRoom(mc, p),
+                    p.onGround() && !p.isInWater(), burrow, niche));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] danger facts failed (calm facts used): {}", e.toString());
             return ThreatFacts.CALM;

@@ -536,15 +536,19 @@ public final class AaDesires {
         return d <= 0 ? -1 : Personality.of(bb).get("sleep") * d;
     }
 
-    /** 2.10 shelter: no bed, at the surface, from dusk; off in Peaceful and under ground (dug in already). */
+    /**
+     * AA_STEP2 1: the night's part of the danger need (was the night.shelter desire): from dusk at the surface, the full
+     * night {@code Costs.shelterScore(nightDanger)}; off in Peaceful, deep under ground (the night work's place,
+     * AaLadder.SURFACE_DEPTH+) and in my shell with work under ground ready. In my shell otherwise it keeps scoring
+     * (the way is "wait it out"), so surface work does not lure the bot out.
+     */
     static double shelterScore(Blackboard bb) {
         if (!bb.in.hungerDrains) return -1;
         double d = Night.dusk(bb.in.dayTime, bb.in.night);
         if (d <= 0) return -1;
         // aa-night2 P0 1 (normal run 01:44: "night (danger 1.37 ...): shelter -" at the spawn): "under ground" was
-        // !canSeeSky, true under a tree, an overhang or a staircase's first steps. Off only in my own shell or deep
-        // under (the night work's place, AaLadder.SURFACE_DEPTH+)
-        String off = shelterOff(bb.in.sheltered, bb.in.underDepth);
+        // !canSeeSky, true under a tree, an overhang or a staircase's first steps. Off only deep under
+        String off = shelterOff(bb.in.sheltered && nightWorkReady(bb), bb.in.underDepth);
         if (off != null) {
             io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "shelter", "off: " + off);
             return -1;
@@ -563,9 +567,9 @@ public final class AaDesires {
         return Personality.of(bb).get("shelter") * d;
     }
 
-    /** Why the night shelter is not needed here (null = it is): in my shell, or deep under ground. */
-    static String shelterOff(boolean sheltered, int underDepth) {
-        if (sheltered) return "in my shell";
+    /** Why the night need is off here (null = it is not): in my shell with work under ground ready, or deep under ground. */
+    static String shelterOff(boolean shelteredWorkReady, int underDepth) {
+        if (shelteredWorkReady) return "in my shell, work under ground is ready";
         if (underDepth >= AaLadder.SURFACE_DEPTH) return underDepth + " blocks under ground";
         return null;
     }
@@ -601,57 +605,94 @@ public final class AaDesires {
         return v;
     }
 
-    /**
-     * aa-night3: the hide's chain: dig down here and seal over the head with a dug block (no throwaway blocks needed;
-     * normal2: "shelter 3m" with 0 blocks failed at once, 1 run 0 ok), then wait in the hole; its predicate ends it at 16 hp.
-     */
-    static final String HIDE_CHAIN = "burrow then wait 60";
-
-    static Desire hide() {
-        Node n = AaTree.idleCd("night.hide.cd", RunJob.of("night.hide.job", TaskKind.BASE_BED, HIDE_CHAIN, "hide"));
-        return new Desire("night.hide", Desire.Kind.UPKEEP, n, AaDesires::hideScore)
-                .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).grace(2_000).patient(4 * 60_000).trumps().lastTry().nightProof()
-                // its own end: healed (the shell it waits in turns the score off; that is no gone reason)
-                .met(b -> !b.in.hungerDrains || b.in.health >= HEAL_TO);
-    }
-
-    // ---- AA_CLEANUP 4: danger (fight, flee, home, cover, dig in, pillar priced on the threat facts) ----
+    // ---- AA_CLEANUP 4 + AA_STEP2 1: the one danger desire (the foes' ways and the night ways, priced) ----
 
     /** Blackboard fact: a {@code Supplier<ThreatFacts>} (the adapter's, cached about a second). */
     public static final String THREAT_FACT = "aa.threatFacts";
     public static final String DANGER_ID = "danger";
+    /** Blackboard fact: the way the danger job started last (Way), so a failure holds that way only. */
+    public static final String WAY_FACT = "aa.dangerWay";
 
-    /** The priced ways now (null: no facts supplier). */
+    /**
+     * AA_STEP2 1: the need besides the foes (was night.shelter and night.hide): the larger of the night's
+     * ({@link #shelterScore}) and the hide's ({@link #hideScore}); -1 in Peaceful or when nothing threatens.
+     */
+    static DangerOptions.Need need(Blackboard bb) {
+        if (!bb.in.hungerDrains) return DangerOptions.Need.NONE;
+        double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
+                bb.in.torchesNear, bb.in.hostilesNear);
+        double night = shelterScore(bb), hide = bb.in.sheltered ? -1 : hideScore(bb);
+        double v = Math.max(night, hide);
+        if (v < 0) return DangerOptions.Need.NONE;
+        String why = (hide > night ? "hide and heal " + Math.round(hide) : "night " + Math.round(night)) + " (danger " + Math.round(danger * 100) / 100.0 + ")";
+        return new DangerOptions.Need(v, why, Night.hostile(bb) ? danger : 0, bb.in.sheltered, shellBlocks(bb.in.bag),
+                bb.in.bedKnown || bb.in.bedInBag, bb.in.baseKnown);
+    }
+
+    /** The priced ways now (null: no facts supplier); the held ways (Failures, this desire's options) are out. */
     static DangerOptions.Choice dangerChoice(Blackboard bb) {
         if (!(bb.fact(THREAT_FACT) instanceof java.util.function.Supplier<?> s)) return null;
         Object f = s.get();
-        return f instanceof io.github.mojolowjo.entropybot.threat.ThreatFacts tf ? DangerOptions.choose(tf) : null;
+        if (!(f instanceof io.github.mojolowjo.entropybot.threat.ThreatFacts tf)) return null;
+        long now = bb.clock.now();
+        java.util.function.Function<String, String> held = bb.fact(Brain.FAILURES_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.Failures fs
+                ? k -> fs.held(DANGER_ID, k, now) : k -> null;
+        return DangerOptions.choose(tf, need(bb), held);
     }
 
-    /** The seconds the best way saves over staying x Tuning danger.perS (at most 99: trumps like the shelter); -1 calm or staying is best. */
+    /** The foes' saved seconds x danger.perS, or the need's score (at most 99: trumps); -1 calm or staying is best. */
     static double dangerScore(Blackboard bb) {
         DangerOptions.Choice c = dangerChoice(bb);
         if (c == null) return -1;
-        if (c.stay() != null) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "danger", c.terms());
+        if (c.stay() != null || c.best() != null || c.score() >= 0 || !c.all().isEmpty()) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "danger", c.terms());
         return c.score();
     }
 
     /**
-     * AA_CLEANUP 4: the danger desire (UPKEEP, trumps like the shelter, never discounted by the night): its job runs the
-     * best way's chain ("flee then wait 6", "burrow then wait 33", "attack nearest then wait 5", "go base"...); it ends
-     * when staying is cheapest again. The reflexes keep only air, lava/fire, fall, the creeper flee and the hit response.
+     * AA_CLEANUP 4 + AA_STEP2 1: the danger desire (UPKEEP, trumps, never discounted by the night): its job runs the
+     * best way's chain ("flee then wait 6", "burrow then wait 120", "shelter", "sleep", "go base then shelter", "wait
+     * 60"...); it ends when staying is cheapest and the night is over. A failed run holds that way only (10 min x fails),
+     * the next way runs at once. The reflexes keep only air, lava/fire, fall, the creeper flee and the hit response.
      */
     public static Desire danger() {
         RunJob job = new RunJob(DANGER_ID + ".job", TaskKind.BASE_BED, bb -> {
             DangerOptions.Choice c = dangerChoice(bb);
             String chain = c == null || c.score() < 0 ? null : c.chain();
-            if (chain == null) return null;
+            if (chain == null) {
+                bb.port.log("danger: nothing to run (" + (c == null ? "no threat facts" : c.terms()) + ")");
+                return null;
+            }
+            bb.fact(WAY_FACT, c.best().way());
             bb.port.log("danger: " + c.terms());
-            return new JobPort.TaskSpec(TaskKind.BASE_BED, chain, "danger", 1, 3 * 60_000L, 90_000L);
+            boolean night = c.best().way().ordinal() >= DangerOptions.Way.BOX.ordinal();
+            return new JobPort.TaskSpec(TaskKind.BASE_BED, chain, "danger", 1, night ? JobPort.TaskSpec.TIMEOUT_MS : 3 * 60_000L,
+                    night ? SHELTER_PATIENCE_MS : 90_000L);
         });
-        return new Desire(DANGER_ID, Desire.Kind.UPKEEP, AaTree.idleCd(DANGER_ID + ".cd", job), AaDesires::dangerScore)
-                .cools(Cooldown.NO_RUN_MS, 0).patient(2 * 60_000).overTrumps().lastTry().nightProof()
+        return new Desire(DANGER_ID, Desire.Kind.UPKEEP, wayHolds(job), AaDesires::dangerScore)
+                .cools(5_000, 0).optionHolds().patient(SHELTER_PATIENCE_MS).overTrumps().lastTry().nightProof()
                 .met(AaDesires::dangerMet);
+    }
+
+    /** AA_STEP2 1: the danger job's node: a failed run holds its way in Failures ("danger/box"), logged; the rest stay open. */
+    static Node wayHolds(RunJob job) {
+        return new Node(job.id + ".ways", "the danger job; a failure holds its way") {
+            @Override protected Status run(Blackboard bb) {
+                Status s = job.tick(bb);
+                if (s == Status.FAILURE && bb.fact(WAY_FACT) instanceof DangerOptions.Way w) {
+                    bb.fact(WAY_FACT, null);
+                    if (bb.fact(Brain.FAILURES_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.Failures fs) {
+                        var r = fs.failed(DANGER_ID, w.key(), job.reason(), bb.clock.now(), bb.in);
+                        bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "): held " + (r.until() - bb.clock.now()) / 1000 + " s, the other ways stay open");
+                    } else bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "), no failure record to hold it");
+                }
+                if (s == Status.SUCCESS) bb.fact(WAY_FACT, null);
+                return s == Status.FAILURE ? fail(job.reason()) : s;
+            }
+
+            @Override public void halt(String why) { job.halt(why); }
+
+            @Override public List<Node> children() { return List.of(job); }
+        };
     }
 
     /** 0.38.b9: blackboard fact (Boolean), a danger move (flee, cover, pillar, burrow) runs now (the adapter's). */
@@ -665,20 +706,6 @@ public final class AaDesires {
         return !Boolean.TRUE.equals(b.fact(MOVE_FACT)) && dangerScore(b) < 0;
     }
 
-    /** The step grace before the shelter interrupts. */
-    static final long SHELTER_GRACE_MS = 8_000;
-
-    /** Where to shelter: the bed if known, else the base (house), else a shell right here (dug or built, sealed). */
-    static String shelterChain(Blackboard bb) {
-        if (bb.in.bedKnown || bb.in.bedInBag) return "sleep";
-        if (bb.in.baseKnown) return "go base then shelter";
-        // aa-night3 (normal2: "I need 12 planks, cobblestone or dirt for a shelter" at night with an empty bag after a death)
-        return shellBlocks(bb.in.bag) >= SHELL_BLOCKS ? "shelter" : "burrow then wait 120";
-    }
-
-    /** Blocks a built shell takes at most (ShelterPlan: the 12 cells around feet and head, less what stands). */
-    static final int SHELL_BLOCKS = 12;
-
     /** Planks, cobblestone and dirt in the bag (what ShelterPlan builds a shell from). */
     static int shellBlocks(java.util.Map<String, Integer> bag) {
         int n = 0;
@@ -690,49 +717,24 @@ public final class AaDesires {
         return n;
     }
 
-    /** 2.10: sleep and shelter (UPKEEP under 75: they wait for the running task, then win by number). */
+    /**
+     * 2.10: sleep (UPKEEP under 75: it waits for the running task, then wins by number). AA_STEP2 1: night.shelter and
+     * night.hide are gone; the danger desire's night ways (box, burrow, dig in, pillar, flee home, sleep, wait it out)
+     * answer the night. In the shell with work under ground ready the need is off, so that work runs.
+     */
     public static List<Desire> night() {
         Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, "sleep", "night"));
-        Node shelter = AaTree.idleCd("night.shelter.cd", new RunJob("night.shelter.job", TaskKind.BASE_BED,
-                bb -> new JobPort.TaskSpec(TaskKind.BASE_BED, shelterChain(bb), "night", 1, JobPort.TaskSpec.TIMEOUT_MS, SHELTER_PATIENCE_MS)));
-        // AA_ROUND2 4: night.work (78) is gone; NightWork is the mining stock-ups' UNDER option (AaTree.underGoal). Once
-        // the shell is built and work under ground is wanted, the shelter's wait ends (done) so that work can run.
-        Node shelterYield = yieldWhenSheltered(shelter);
         return List.of(
-                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof(),
-                new Desire("night.shelter", Desire.Kind.UPKEEP, shelterYield, bb -> nightWorkReady(bb) ? -1 : shelterScore(bb))
-                        .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).trumps().lastTry().nightProof()
-                        // its own end: day (or Peaceful); in the shell the score is off, which is no gone reason
-                        .met(b -> !b.in.hungerDrains || Night.dusk(b.in.dayTime, b.in.night) <= 0),
-                hide());
+                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof());
     }
 
-    /** Blackboard fact: when a mining stock-up (UNDER) last scored wanted (ms); the shelter yields to it for 10 s after. */
+    /** Blackboard fact: when a mining stock-up (UNDER) last scored wanted (ms); the night need yields to it for 10 s after. */
     public static final String UNDER_WANTED_FACT = Brain.UNDER_WANTED_FACT;
 
     /** In the shell at a hostile night, night work to do (NightWork.pick) and an UNDER stock-up wanted just now. */
     static boolean nightWorkReady(Blackboard bb) {
         if (!NightWork.active(bb) || NightWork.pick(bb.in) == NightWork.Work.NONE) return false;
         return bb.fact(UNDER_WANTED_FACT) instanceof Long at && bb.clock.now() - at <= RESCORE_MS;
-    }
-
-    /** The shelter's node: while its wait runs and night work is ready, the wait ends done (the shell stays). */
-    static Node yieldWhenSheltered(Node shelter) {
-        return new Node(shelter.id + ".yield", "shelter, until work under ground is ready") {
-            @Override protected Status run(Blackboard bb) {
-                Status s = shelter.tick(bb);
-                if (s == Status.RUNNING && nightWorkReady(bb)) {
-                    shelter.halt("sheltered: work under ground is cheaper now");
-                    bb.port.log("night: sheltered, the wait ends - work under ground (" + NightWork.pick(bb.in) + ")");
-                    return Status.SUCCESS;
-                }
-                return s == Status.FAILURE ? fail(shelter.reason()) : s;
-            }
-
-            @Override public void halt(String why) { shelter.halt(why); }
-
-            @Override public List<Node> children() { return List.of(shelter); }
-        };
     }
 
     // ---- B6: helping the owner (2.11) ----
@@ -786,6 +788,7 @@ public final class AaDesires {
                 w.add(key + " " + v + " (weight " + Personality.fmt(p.get(key)) + ", bored "
                         + Math.round(Wants.boredom(bb, id, p.get("boredomDays")) * 100) / 100.0 + ")");
             } else if (id.startsWith("night.")) n.add(id.substring(6) + " " + v);
+            else if (id.equals(DANGER_ID)) n.add("danger " + v);          // AA_STEP2 1: the one answer to the night
         }
         double d = Night.dusk(bb.in.dayTime, bb.in.night);
         String time = !bb.in.hungerDrains ? "Peaceful (night desires off)" : d >= 1 ? "night (danger " + Math.round(Brain.danger(bb) * 100) / 100.0 + ": under x" + Math.round(Brain.exposureFactor(Desire.Exposure.UNDER, Brain.danger(bb)) * 100) / 100.0 + ", surface x" + Math.round(Brain.exposureFactor(Desire.Exposure.SURFACE, Brain.danger(bb)) * 100) / 100.0 + ")" : d > 0 ? "dusk" : "day";

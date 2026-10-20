@@ -130,6 +130,17 @@ public final class Desire {
         return this;
     }
 
+    /**
+     * AA_STEP2 1: a failed run holds the way that failed (its option in Failures, 10 min x fails), never the desire: the
+     * other ways stay open (round 5: the night.shelter cooled 203 s after two failed boxes). The failure is still counted.
+     */
+    boolean optionHolds;
+
+    public Desire optionHolds() {
+        optionHolds = true;
+        return this;
+    }
+
     /** B3: how long the stuck watchdog waits without progress (a shelter waits out the night). */
     long stuckMs = Brain.STUCK_MS;
 

@@ -19,7 +19,21 @@ import java.util.Locale;
 public final class DangerOptions {
     private DangerOptions() {}
 
-    public enum Way { STAY, FIGHT, FLEE, HOME, COVER, DIG_IN, PILLAR }
+    /** AA_STEP2 1: BOX (the built shell), BURROW (dig down, seal), BASE (flee home), SLEEP, WAIT (in my shell) are the night ways. */
+    public enum Way { STAY, FIGHT, FLEE, HOME, COVER, DIG_IN, PILLAR, BOX, BURROW, BASE, SLEEP, WAIT;
+
+        /** The memory key a failure is held by (Failures option): "box", "dig in"... */
+        public String key() { return name().toLowerCase(Locale.ROOT).replace('_', ' '); }
+    }
+
+    /**
+     * AA_STEP2 1: the need behind the danger desire apart from the foes near: the night at the surface ({@code Costs.nightDanger}
+     * x shelterAt1) or the day hide (hidePerHp x danger x missing health); score -1 when nothing threatens. The facts the
+     * night ways take: in my shell, the bag's shell blocks, a bed known, a base known.
+     */
+    public record Need(double score, String why, double danger, boolean sheltered, int shellBlocks, boolean bed, boolean base) {
+        public static final Need NONE = new Need(-1, "nothing threatens", 0, false, 0, false, false);
+    }
 
     /** One way: possible here, the expected damage (hp), the time lost (s), the cost (s) and its terms. */
     public record Priced(Way way, boolean possible, double damage, double timeS, double costS, String why) {}
@@ -59,7 +73,14 @@ public final class DangerOptions {
         // stay: the hit response fights the walkers that reach me with what I hold; ranged ones shoot on
         Priced stay = priced(me, Way.STAY, true, stayFight[0], stayFight[1], "work on, the hit response strikes back");
         all.add(stay);
-        all.add(priced(me, Way.FIGHT, true, fight[0], fight[1], "kill them (hit " + fmt(me.weaponHit()) + ", " + fmt(fight[1]) + " s)"));
+        // AA_STEP2 1: fight only armed (Tuning danger.fightHit), with the exchange in my favour (the expected damage under my
+        // health by the measured numbers) and never at a shooter out of reach
+        boolean shooterOff = false;
+        for (ThreatFacts.Foe x : foes) shooterOff |= x.ranged() && x.dist() > 3.5;
+        String fightOff = me.weaponHit() < Tuning.get("danger.fightHit") ? "hit " + fmt(me.weaponHit()) + " under " + fmt(Tuning.get("danger.fightHit"))
+                : fight[0] >= me.health() ? "the exchange is against me (" + fmt(fight[0]) + " hp taken, " + fmt(me.health()) + " left)"
+                : shooterOff ? "a shooter out of reach in the open" : null;
+        all.add(priced(me, Way.FIGHT, fightOff == null, fight[0], fight[1], fightOff != null ? fightOff : "kill them (hit " + fmt(me.weaponHit()) + ", " + fmt(fight[1]) + " s)"));
         // flee: the least-threat heading; slower walkers get one hit at most, the rest follow later (danger.fleeBack)
         double runT = w.fleeRun() / speed;
         double fleeD = w.fleeRun() > 0 ? away(foes, runT, speed) + Tuning.get("danger.fleeBack") * stayFight[0] : 0;
@@ -197,8 +218,88 @@ public final class DangerOptions {
             case COVER -> "cover then wait " + wait;
             case DIG_IN -> "burrow then wait " + wait;
             case PILLAR -> "pillar then wait " + wait;
+            case BOX -> "shelter";
+            case BURROW -> "burrow then wait 120";
+            case BASE -> "go base then shelter";
+            case SLEEP -> "sleep";
+            case WAIT -> "wait 60";
             case STAY -> null;
         };
+    }
+
+    // ---- AA_STEP2 1: the night ways (one danger desire; night.hide and night.shelter are gone) ----
+
+    /** As {@link #choose(ThreatFacts)} with the need and no holds. */
+    public static Choice choose(ThreatFacts f, Need need) { return choose(f, need, k -> null); }
+
+    /**
+     * The foes' ways ({@link #choose(ThreatFacts)}) and, when the need scores, the night ways priced the same way (seconds:
+     * the damage taken while a way is set up, from the foes near and the open night's {@code danger.nightHpS} x danger, as
+     * health-seconds, plus the setup time). A way held in {@code held} (its memory key -> the hold's text, null = open) is
+     * out; the others stay open. The score is the need's (or the foes' when higher); the pick is the cheapest open way.
+     * With the need and no way open the score is -1 and the terms say why (never silent). Pure.
+     */
+    public static Choice choose(ThreatFacts f, Need need, java.util.function.Function<String, String> held) {
+        Choice foes = choose(f);
+        if (need == null || need.score() < 0) return foes;
+        ThreatFacts.Me me = f == null || f.me() == null ? ThreatFacts.CALM.me() : f.me();
+        ThreatFacts.Ways w = f == null || f.ways() == null ? ThreatFacts.Ways.NONE : f.ways();
+        List<ThreatFacts.Foe> near = new ArrayList<>();
+        if (f != null && f.foes() != null) for (ThreatFacts.Foe x : f.foes()) if (!ThreatRules.creeper(x.kind())) near.add(x);
+        double amb = Tuning.get("danger.nightHpS") * Math.max(0, need.danger());
+        List<Priced> all = new ArrayList<>();
+        if (need.sheltered()) all.add(new Priced(Way.WAIT, true, 0, 0, 0, "in my shell"));
+        else {
+            int box = (int) Tuning.get("danger.boxBlocks");
+            double bt = Tuning.get("danger.boxS");
+            all.add(priced(me, Way.BOX, need.shellBlocks() >= box, during(near, bt) + amb * bt, bt,
+                    need.shellBlocks() >= box ? box + " blocks (" + need.shellBlocks() + " in the bag)" : "needs " + box + " blocks, " + need.shellBlocks() + " in the bag"));
+            double ut = Tuning.get("danger.burrowS");
+            all.add(priced(me, Way.BURROW, w.burrow(), during(near, ut) + amb * ut, ut, w.burrow() ? "dig down and seal" : "no diggable floor"));
+            all.add(priced(me, Way.DIG_IN, w.niche(), during(near, DIG_S) + amb * DIG_S, DIG_S, w.niche() ? "a niche in the wall" : "no wall to dig into"));
+            boolean pil = w.onGround() && w.pillarBlocks() >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
+            double open = Tuning.get("danger.openS");
+            all.add(priced(me, Way.PILLAR, pil, during(near, PILLAR_S) + amb * open, PILLAR_S,
+                    pil ? "pillar " + PILLAR_UP + " up, open to arrows " + Math.round(open) + " s" : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
+            boolean home = need.base() && w.baseDist() > 0;
+            double ht = home ? w.baseDist() / HOME_SPEED : 0;
+            all.add(priced(me, Way.BASE, home, home ? pursuit(near, ht, HOME_SPEED) + amb * ht : 0, ht,
+                    home ? "flee home " + Math.round(w.baseDist()) + " (" + near.size() + " on the way)" : need.base() ? "the base out of reach" : "no base"));
+            double st = Tuning.get("danger.bedS");
+            all.add(priced(me, Way.SLEEP, need.bed(), during(near, st) + amb * st, st, need.bed() ? "a bed known" : "no bed known"));
+        }
+        Priced best = null;
+        List<String> holds = new ArrayList<>();
+        for (Priced p : all) {
+            String h = held == null ? null : held.apply(p.way().key());
+            if (h != null) { holds.add(p.way().key() + " held: " + h); continue; }
+            if (p.possible() && (best == null || p.costS() < best.costS())) best = p;
+        }
+        String night = nightTerms(all, held) + (holds.isEmpty() ? "" : "; " + String.join(", ", holds));
+        if (foes.score() > need.score() && foes.best() != null && foes.best().way() != Way.STAY)
+            return new Choice(foes.stay(), foes.best(), foes.all(), foes.savedS(), foes.score(), foes.terms() + " | night: " + night + " -> the foes first");
+        if (best == null) return new Choice(null, null, all, 0, -1, need.why() + ": " + night + " -> no way open");
+        return new Choice(null, best, all, 0, need.score(), need.why() + ": " + night + " -> " + best.way().key()
+                + (foes.stay() != null ? " | foes: " + foes.terms() : ""));
+    }
+
+    /** The damage the foes near deal while a way takes {@code t} s (each from when it reaches me). */
+    static double during(List<ThreatFacts.Foe> foes, double t) {
+        double d = 0;
+        for (ThreatFacts.Foe x : foes) d += x.dps() * Math.max(0, t - x.reachT());
+        return d;
+    }
+
+    /** "box 40s (12 blocks), burrow 25s (dig down and seal), flee home - (no base)" as aa why shows them. */
+    static String nightTerms(List<Priced> all, java.util.function.Function<String, String> held) {
+        StringBuilder b = new StringBuilder();
+        for (Priced p : all) {
+            if (b.length() > 0) b.append(" vs ");
+            b.append(p.way() == Way.BASE ? "flee home" : p.way().key()).append(' ');
+            if (!p.possible()) b.append("- (").append(p.why()).append(')');
+            else b.append(Math.round(p.costS())).append(" s (").append(p.why()).append(", ").append(fmt(p.damage())).append(" hp)");
+        }
+        return b.toString();
     }
 
     static String terms(List<Priced> all, Priced best, double saved, double score, int creepers) {

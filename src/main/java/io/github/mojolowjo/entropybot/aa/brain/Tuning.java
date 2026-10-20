@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
+import io.github.mojolowjo.entropybot.threat.ThreatFacts;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +39,14 @@ public final class Tuning {
         def("danger.holdS", 30, "AA_CLEANUP 4", "seconds a dug-in or pillared bot waits before it works again");
         def("danger.coverS", 15, "AA_CLEANUP 4", "seconds the cover from a ranged mob is held");
         def("danger.perS", 0.25, "AA_CLEANUP 4", "the danger desire's score per second the best way saves (300 s = urgent 75)");
+        // AA_STEP2 1: the night ways (round 5: night.hide and night.shelter cancelled each other; one danger desire now)
+        def("danger.fightHit", ThreatFacts.ARMED, "AA_STEP2 1", "the least weapon hit the fight way needs (a wooden sword 4)");
+        def("danger.boxBlocks", 12, "AA_STEP2 1", "blocks the built shell (box) needs in the bag (ShelterPlan: 12 cells)");
+        def("danger.boxS", 20, "AA_STEP2 1", "seconds to build the box (12 blocks, the torch inside)");
+        def("danger.burrowS", 6, "AA_STEP2 1", "seconds to dig down two and seal over the head");
+        def("danger.bedS", 20, "AA_STEP2 1", "seconds to reach a known bed and lie down (no bed distance in the facts)");
+        def("danger.nightHpS", 0.05, "AA_STEP2 1", "health per second the open night costs at night danger 1 (fresh spawns, while a way is set up)");
+        def("danger.openS", 60, "AA_STEP2 1", "seconds a pillar top stays open to arrows and phantoms at night");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

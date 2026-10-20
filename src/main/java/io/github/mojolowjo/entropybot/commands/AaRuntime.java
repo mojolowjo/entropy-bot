@@ -1345,6 +1345,7 @@ public final class AaRuntime implements JobPort {
     private String otherJob() {
         if (escapePending || escapeWay != null) return null;       // 0.36.a6: AA's own way out (pillar job / climb chain)
         if (c.chains.running()) return chainRunning() ? null : "chain " + c.chains.name();
+        if (restoreInSlot()) return null;          // AA_STEP2 3: putting back blocks is AA's own work, never the owner's job
         if (c.jobs.running()) return c.jobs.job.type + " (" + c.jobs.job.status + ")";
         if (c.gathering.running()) return "gather";
         if (c.hunting.running()) return "hunt";
@@ -1401,6 +1402,13 @@ public final class AaRuntime implements JobPort {
     @Override public long start(TaskSpec t) {
         refusal = null;
         if (c.chains.running()) { refusal = "busy: " + c.chains.chainStatus(); return -1; }
+        if (io.github.mojolowjo.entropybot.aa.door.Door.aaSlot(false, c.jobs.running(), restoreInSlot()) == io.github.mojolowjo.entropybot.aa.door.Door.Slot.HALT_RESTORE) {
+            // AA_STEP2 3: the restore is AA's own, below every desire: halted, its blocks wait in the ledger
+            String was = c.jobs.job.status;
+            log("restore halted for " + t.kind() + " \"" + t.chain() + "\" (" + was + "; " + RestoreLive.INSTANCE.pendingCount() + " wait in the ledger)");
+            c.jobs.finish("stopped: aa needs the slot (the restore waits)");
+            if (c.jobs.running()) { refusal = "busy: the restore did not stop (" + c.jobs.job.status + ")"; return -1; }
+        }
         if (c.jobs.running()) { refusal = "busy: " + c.jobs.job.status; return -1; }      // 0.36.1: any job, as otherJob() sees it
         if (c.gathering.running()) { refusal = "busy: " + c.gathering.statusText(); return -1; }
         if (c.hunting.running()) { refusal = "busy: a hunt runs"; return -1; }
@@ -2306,7 +2314,24 @@ public final class AaRuntime implements JobPort {
                 + ", ticks " + k.ticks + ", last tick " + k.tickUs + " us, errors " + errors + (lastError != null ? " (last: " + lastError + ")" : "")
                 + (writeErrors > 0 ? ", file write errors " + writeErrors : "")
                 + ", AI requests " + aiRequests + " (" + bb.requests().size() + " waiting)"
-                + ", " + io.github.mojolowjo.entropybot.aa.door.Door.text();     // AA_CLEANUP 2: the one door
+                + ", " + io.github.mojolowjo.entropybot.aa.door.Door.text()     // AA_CLEANUP 2: the one door
+                + ", " + restoreLine();
+    }
+
+    /** AA_STEP2 3: "restore pending: N blocks" (running now / waiting in the ledger). */
+    private String restoreLine() {
+        int n;
+        try {
+            n = RestoreLive.INSTANCE.pendingCount();
+        } catch (RuntimeException e) {
+            return "restore pending: ? (" + e + ")";
+        }
+        return "restore pending: " + n + (n == 1 ? " block" : " blocks") + (restoreInSlot() ? " (putting back now, AA's own: any desire halts it)" : "");
+    }
+
+    /** AA_STEP2 3: the job in the slot is only putting back blocks (a job's end restore or a restore job). */
+    private boolean restoreInSlot() {
+        return c.jobs.running() && c.jobs.job.restoreRun != null && !c.jobs.job.restoreResume;
     }
 
     /** The ladder's reasons this tick ("needs.tools: TOOLS met; needs.torches: TORCHES planning ..."). */

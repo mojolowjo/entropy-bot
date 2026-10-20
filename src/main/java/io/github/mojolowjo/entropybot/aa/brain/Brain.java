@@ -401,7 +401,14 @@ public final class Brain extends Node {
      * at the surface) beats the running one whatever its number and the commitment margin; only food under
      * {@link #TRUMP_FOOD} and another trumping desire keep running.
      */
-    static boolean trumps(Blackboard bb, Scored s, Desire cur) {
+    static boolean trumps(Blackboard bb, Scored s, Desire cur) { return trumps(bb, s, cur, 0); }
+
+    /**
+     * AA_STEP2 1 (round 5: "urgent: danger 99 beat night.hide 99 + 15" and back every ~3 s): a running desire at the cap
+     * itself is never trumped; the commitment margin decides between two at the cap, so they cannot alternate.
+     */
+    static boolean trumps(Blackboard bb, Scored s, Desire cur, double curScore) {
+        if (curScore >= Costs.SHELTER_MAX) return false;
         // AA_CLEANUP 4: a desire that trumps the trumping ones (danger) beats a running shelter or hide at its full score too
         if (!s.d().trumps || s.own() < Costs.SHELTER_MAX || (cur.trumps && !(s.d().overTrumps && !cur.overTrumps))) return false;
         return !(cur.id.equals("needs.food") && bb.in.food < TRUMP_FOOD);
@@ -433,7 +440,7 @@ public final class Brain extends Node {
             if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus
             boolean overOwner = urgent(s.d(), s.own()) && cur.kind == Desire.Kind.OWNER;
-            if (!overOwner && !trumps(bb, s, cur) && s.score() <= curScore + bonus) continue;
+            if (!overOwner && !trumps(bb, s, cur, curScore) && s.score() <= curScore + bonus) continue;
             cands.add(s);
         }
         if (cands.isEmpty()) return null;
@@ -702,7 +709,7 @@ public final class Brain extends Node {
             onEnd(d, true, taskSeen, now - startedAt);
         } else if (taskSeen) {
             // P(success) drops; a self-cooling desire is held here (2 min doubling), a rung by its own cooldown
-            if (d.selfCool) failures.failed(d.id, null, d.node.reason(), now, bb.in);
+            if (d.selfCool && !d.optionHolds) failures.failed(d.id, null, d.node.reason(), now, bb.in);
             else failures.counted(d.id, null, d.node.reason());
             onEnd(d, false, true, now - startedAt);
         } else if (d.selfCool && d.noRunMs > 0) {

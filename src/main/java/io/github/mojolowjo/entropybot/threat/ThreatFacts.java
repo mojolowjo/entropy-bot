@@ -33,9 +33,17 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
      * The ways out here. fleeRun: the run length of the least-threat heading (0 = cornered); baseDist: walk to the
      * base (-1 none in reach); coverDist: moves to a cell out of the nearest ranged mob's sight (-1 none); digIn: a
      * dig-down or a wall niche fits here; pillarBlocks/headRoom: throwaway blocks and free cells over the head.
+     * AA_STEP2 1 (the night ways, filled even with no foe near): burrow, a diggable floor (dig down and seal); niche, a
+     * wall to dig into ({@link CornerEscape}). The shell's blocks come from the bag (AaDesires.shellBlocks).
      */
-    public record Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround) {
+    public record Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                       boolean burrow, boolean niche) {
         public static final Ways NONE = new Ways(0, -1, -1, false, 0, 0, true);
+
+        /** AA_STEP2 1: the ways before the night ways were split (digIn stands for both the floor and the wall). */
+        public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround) {
+            this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, digIn, digIn);
+        }
     }
 
     public static final ThreatFacts CALM = new ThreatFacts(new Me(20, 20, 0, 1, 20), List.of(), Ways.NONE);
