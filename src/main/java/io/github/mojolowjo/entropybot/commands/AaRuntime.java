@@ -769,6 +769,9 @@ public final class AaRuntime implements JobPort {
 
     // aa-look: Baritone's freeLook (default true) turns the head server-side only, so the camera looked away from the walk
     private Boolean savedFreeLook;
+    private Double savedRandomLooking, savedRandomLooking113;
+    private Boolean savedSmoothLook;
+    private Integer savedSmoothTicks;
 
     /** While AA drives the camera faces where the bot walks and mines (freeLook false); the old value is kept for lookRestore. */
     void lookApply() {
@@ -779,6 +782,21 @@ public final class AaRuntime implements JobPort {
                 LOG.info("[entropybot] aa: camera follows the walk (freeLook {} -> false)", savedFreeLook);
             }
             if (fl.value) fl.value = false;
+            // smooth: no per-tick aim jitter, head eases toward the target instead of snapping (smoothLookTicks stays default)
+            var st = baritone.api.BaritoneAPI.getSettings();
+            if (savedRandomLooking == null) {
+                savedRandomLooking = st.randomLooking.value;
+                savedRandomLooking113 = st.randomLooking113.value;
+                savedSmoothLook = st.smoothLook.value;
+                LOG.info("[entropybot] aa: smooth camera (randomLooking {} -> 0, randomLooking113 {} -> 0, smoothLook {} -> true)",
+                        savedRandomLooking, savedRandomLooking113, savedSmoothLook);
+            }
+            if (st.randomLooking.value != 0d) st.randomLooking.value = 0d;
+            if (st.randomLooking113.value != 0d) st.randomLooking113.value = 0d;
+            if (!st.smoothLook.value) st.smoothLook.value = true;
+            if (savedSmoothTicks == null) savedSmoothTicks = st.smoothLookTicks.value;
+            int lt = data().has("lookTicks") ? data().get("lookTicks").getAsInt() : LOOK_TICKS_DEFAULT;
+            if (st.smoothLookTicks.value != lt) st.smoothLookTicks.value = lt;
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] aa: freeLook not set: {}", e.toString());
         }
@@ -788,12 +806,23 @@ public final class AaRuntime implements JobPort {
     void lookRestore() {
         if (savedFreeLook == null) return;
         try {
-            baritone.api.BaritoneAPI.getSettings().freeLook.value = savedFreeLook;
-            LOG.info("[entropybot] aa: freeLook restored to {}", savedFreeLook);
+            var st = baritone.api.BaritoneAPI.getSettings();
+            st.freeLook.value = savedFreeLook;
+            if (savedRandomLooking != null) {
+                st.randomLooking.value = savedRandomLooking;
+                st.randomLooking113.value = savedRandomLooking113;
+                st.smoothLook.value = savedSmoothLook;
+                if (savedSmoothTicks != null) st.smoothLookTicks.value = savedSmoothTicks;
+            }
+            LOG.info("[entropybot] aa: freeLook restored to {}, randomLooking {}/{} smoothLook {}", savedFreeLook, savedRandomLooking, savedRandomLooking113, savedSmoothLook);
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] aa: freeLook not restored: {}", e.toString());
         }
         savedFreeLook = null;
+        savedRandomLooking = null;
+        savedRandomLooking113 = null;
+        savedSmoothLook = null;
+        savedSmoothTicks = null;
     }
 
     String turnOff(String why) {
@@ -1294,6 +1323,34 @@ public final class AaRuntime implements JobPort {
     boolean replanOn() {
         JsonObject d = data();
         return !d.has("replan") || d.get("replan").getAsBoolean();
+    }
+
+    static final int LOOK_TICKS_DEFAULT = 10;      // Baritone's own default is 5
+
+    /** "aa look [smooth <ticks>]": shows / sets how many ticks a head turn takes (smoothLookTicks, 1..60), saved. */
+    String look(String arg) {
+        String a = arg == null ? "" : arg.trim();
+        int now = data().has("lookTicks") ? data().get("lookTicks").getAsInt() : LOOK_TICKS_DEFAULT;
+        String live;
+        try {
+            live = String.valueOf(baritone.api.BaritoneAPI.getSettings().smoothLookTicks.value);
+        } catch (RuntimeException | LinkageError e) {
+            live = "?";
+        }
+        if (a.isEmpty()) return "aa look: smooth " + now + " ticks per turn (Baritone now " + live + ", default " + LOOK_TICKS_DEFAULT + "); set with: aa look smooth <ticks>";
+        String[] w = a.split("\\s+");
+        int s;
+        try {
+            if (w.length != 2 || !w[0].equals("smooth")) throw new NumberFormatException();
+            s = Integer.parseInt(w[1]);
+        } catch (NumberFormatException e) {
+            return "usage: aa look [smooth <ticks>] (1..60, now " + now + ")";
+        }
+        if (s < 1 || s > 60) return "usage: aa look smooth <ticks> (1..60, now " + now + ")";
+        data().addProperty("lookTicks", s);
+        c.saved();
+        if (on()) lookApply();
+        return "ok: aa look smooth " + s + " ticks (was " + now + ")";
     }
 
     /** "aa horizon [seconds]": the sequencer's horizon (default 600; 30..7200), saved. */
