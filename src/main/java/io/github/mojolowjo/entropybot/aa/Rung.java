@@ -89,6 +89,9 @@ public final class Rung extends Node {
     private long planningSince = -1, settledAt = -1, lastSearchPick = -1;
     private String planFailed;
     private long planFailedAt = -1;
+    /** aa-prereq: when the last prerequisite step ended done (the planner's facts lag up to a minute behind the bag). */
+    private long prereqDoneAt = -1;
+    private String prereqGoal;
 
     /**
      * @param unmet the need is on (bands live in here)
@@ -125,7 +128,7 @@ public final class Rung extends Node {
         long now = bb.clock.now();
         if (job.running()) {
             Status s = cooldown.tick(bb);
-            if (s == Status.SUCCESS) settledAt = now;
+            if (s == Status.SUCCESS) { if (isPrereq(resolved)) { prereqDoneAt = now; prereqGoal = settledGoal; } else settledAt = now; }
             if (s == Status.FAILURE) return jobFailed(bb, cooldown.reason());
             return s;
         }
@@ -193,6 +196,23 @@ public final class Rung extends Node {
                 if (picker == null) bb.port.log(kind + " " + r.chain() + " skipped " + Cooldown.BASE_MS / 60000 + " min: " + inf);
             }
         }
+        // aa-prereq (aa391: torches 60 / table 54 outranked idle, yet "no plan: missing 1 logs - no trees in my areas"
+        // skipped them for 2 min and idle.stock_coal ran): the missing wood is a priced prerequisite step, not a skip.
+        // The cut walks to trees in my areas; none there -> the woodArea rung makes an area at the nearest tree.
+        String pre = r.state() == JobPort.PlanState.NONE && chain == null ? woodPrereq(r.why()) : null;
+        if (picker == null && pre != null && prereqDoneAt >= 0 && now - prereqDoneAt < SETTLE_MS && g.equals(prereqGoal))
+            return fail(kind + " prerequisite done (" + resolved + "), waiting for the facts before " + g);
+        if (picker == null && pre != null) {
+            clearPlanning(bb);
+            if (!pre.equals(resolved) || !g.equals(settledGoal))
+                bb.port.log(kind + " prerequisite for " + g + ": " + r.why() + " -> " + pre + " first (~" + prereqSeconds(pre) + " s), then " + g);
+            resolved = pre;
+            settledGoal = g;
+            bb.pendingReason("needs: " + kind + " unmet -> " + g + " [prerequisite: " + pre + " ~" + prereqSeconds(pre) + " s]");
+            Status s = cooldown.tick(bb);
+            if (s == Status.SUCCESS) { prereqDoneAt = now; prereqGoal = g; }
+            return s == Status.FAILURE ? jobFailed(bb, cooldown.reason()) : s;
+        }
         if (picker == null) {
             if (searching) return waitPlan(bb, g, now);
             if (chain == null) return planFailed(bb, now, plannerWhy, r.state() == JobPort.PlanState.NONE);
@@ -241,6 +261,27 @@ public final class Rung extends Node {
         Status s = cooldown.tick(bb);
         if (s == Status.SUCCESS) settledAt = now;
         return s == Status.FAILURE ? jobFailed(bb, cooldown.reason()) : s;
+    }
+
+    /** The prerequisite verb a wood-less plan gets first. */
+    static final String PREREQ_CUT = "cut ";
+
+    static boolean isPrereq(String chain) { return chain != null && chain.startsWith(PREREQ_CUT); }
+
+    /**
+     * aa-prereq: the planner's "missing N logs - ... no trees in my areas" -> "cut max(N, 4)" (a table's worth at the
+     * least); any other no-plan reason -> null (the skip stands, with its reason).
+     */
+    static String woodPrereq(String why) {
+        if (why == null || !why.contains("no trees in my areas")) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("missing (\\d+) logs").matcher(why);
+        if (!m.find()) return null;
+        return PREREQ_CUT + Math.max(4, Math.min(64, Integer.parseInt(m.group(1))));
+    }
+
+    /** The cut's price: 20 s to reach trees and 6 s a log (the chopper's measured pace with an axe, rounded up). */
+    static int prereqSeconds(String pre) {
+        try { return 20 + 6 * Integer.parseInt(pre.substring(PREREQ_CUT.length()).trim()); } catch (RuntimeException e) { return 60; }
     }
 
     /** The planner searches on its worker: the slot waits on this rung (RUNNING) up to PLAN_WAIT_MS, then a skip. */
