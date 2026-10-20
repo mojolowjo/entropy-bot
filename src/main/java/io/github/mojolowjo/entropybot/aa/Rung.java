@@ -92,6 +92,10 @@ public final class Rung extends Node {
     /** aa-prereq: when the last prerequisite step ended done (the planner's facts lag up to a minute behind the bag). */
     private long prereqDoneAt = -1;
     private String prereqGoal;
+    /** aa-trees: the wood option the running prerequisite is (a failure is held against it), its options line, and the memory. */
+    private Options.Option woodRan;
+    private String woodWhy;
+    private final Options.OptionMemory woodMem = new Options.OptionMemory();
 
     /**
      * @param unmet the need is on (bands live in here)
@@ -200,12 +204,31 @@ public final class Rung extends Node {
         // skipped them for 2 min and idle.stock_coal ran): the missing wood is a priced prerequisite step, not a skip.
         // The cut walks to trees in my areas; none there -> the woodArea rung makes an area at the nearest tree.
         String pre = r.state() == JobPort.PlanState.NONE && chain == null ? woodPrereq(r.why()) : null;
+        // aa-trees: the wood prerequisite is priced over the trees seen (extend the area / chop at); nothing runnable is
+        // an option drop with every reason (held per option 10 min in woodMem), never a failed task looping
+        woodRan = null;
+        if (picker == null && pre != null && bb.fact(WoodOptions.FACTS) instanceof java.util.function.Supplier<?> sup) {
+            WoodOptions.WoodFacts wf = null;
+            try {
+                if (sup.get() instanceof WoodOptions.WoodFacts x) wf = x;
+            } catch (RuntimeException e) {
+                bb.port.log(kind + " wood facts: " + e);
+            }
+            if (wf != null) {
+                woodMem.sweep(bb.in);
+                Options.Choice wc = WoodOptions.choose(new WoodOptions.WoodFacts(Integer.parseInt(pre.substring(PREREQ_CUT.length()).trim()), wf.trees(), wf.areasMade(), wf.outsideLogs()), woodMem, now);
+                if (wc.best() == null) return planFailed(bb, now, "no wood option (" + wc.why() + ")", false);
+                woodRan = wc.best();
+                woodWhy = wc.why();
+                pre = woodRan.command();
+            }
+        }
         if (picker == null && pre != null && prereqDoneAt >= 0 && now - prereqDoneAt < SETTLE_MS && g.equals(prereqGoal))
             return fail(kind + " prerequisite done (" + resolved + "), waiting for the facts before " + g);
         if (picker == null && pre != null) {
             clearPlanning(bb);
             if (!pre.equals(resolved) || !g.equals(settledGoal))
-                bb.port.log(kind + " prerequisite for " + g + ": " + r.why() + " -> " + pre + " first (~" + prereqSeconds(pre) + " s), then " + g);
+                bb.port.log(kind + " prerequisite for " + g + ": " + r.why() + " -> " + pre + " first (~" + prereqSeconds(pre) + " s), then " + g + (woodRan == null ? "" : " [wood options: " + woodWhy + "]"));
             resolved = pre;
             settledGoal = g;
             bb.pendingReason("needs: " + kind + " unmet -> " + g + " [prerequisite: " + pre + " ~" + prereqSeconds(pre) + " s]");
@@ -266,7 +289,7 @@ public final class Rung extends Node {
     /** The prerequisite verb a wood-less plan gets first. */
     static final String PREREQ_CUT = "cut ";
 
-    static boolean isPrereq(String chain) { return chain != null && chain.startsWith(PREREQ_CUT); }
+    static boolean isPrereq(String chain) { return chain != null && (chain.startsWith(PREREQ_CUT) || WoodOptions.isWoodCommand(chain)); }
 
     /**
      * aa-prereq: the planner's "missing N logs - ... no trees in my areas" -> "cut max(N, 4)" (a table's worth at the
@@ -281,7 +304,7 @@ public final class Rung extends Node {
 
     /** The cut's price: 20 s to reach trees and 6 s a log (the chopper's measured pace with an axe, rounded up). */
     static int prereqSeconds(String pre) {
-        try { return 20 + 6 * Integer.parseInt(pre.substring(PREREQ_CUT.length()).trim()); } catch (RuntimeException e) { return 60; }
+        try { return 20 + 6 * Integer.parseInt(pre.substring(pre.lastIndexOf(PREREQ_CUT) + PREREQ_CUT.length()).trim()); } catch (RuntimeException e) { return 60; }
     }
 
     /** The planner searches on its worker: the slot waits on this rung (RUNNING) up to PLAN_WAIT_MS, then a skip. */
@@ -334,7 +357,15 @@ public final class Rung extends Node {
             bb.port.log(kind + ": the task ended \"" + why + "\" but the need is met - counted done");
             return Status.SUCCESS;
         }
-        if (picker == null) return fail(why);
+        if (picker == null) {
+            if (woodRan != null && isPrereq(resolved)) {
+                woodMem.failed(woodRan.memoryKey(), why == null ? "failed" : why, bb.clock.now(), bb.in);
+                bb.port.log(kind + ": wood option " + woodRan.id() + " failed (\"" + why + "\"), held " + Options.RETRY_MS / 60000 + " min; the next option runs");
+                woodRan = null;
+                if (WoodOptions.switchable(why)) cooldown.forget();
+            }
+            return fail(why);
+        }
         if (picker.failed(bb, why)) {
             bb.fact(CURRENT_RUNG, id);
             String next = picker.pick(bb, planned, plannedCost, planned == null ? "no planner chain" : null);

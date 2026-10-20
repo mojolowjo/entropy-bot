@@ -9,6 +9,29 @@ import static org.junit.jupiter.api.Assertions.*;
 /** AA_ROUND3 5: the one sightings memory: rule, confirm-twice, decay per kind, visit outcomes, the cave chance, the file. */
 class SightingsTest {
     @Test
+    void treeRuleAndMemory() {
+        assertTrue(Sightings.treeRule(true, 4, true, false));
+        assertFalse(Sightings.treeRule(false, 4, true, false), "a pile on stone is no tree");
+        assertFalse(Sightings.treeRule(true, 2, true, false), "a stump");
+        assertFalse(Sightings.treeRule(true, 5, false, false), "no leaves: a build");
+        assertFalse(Sightings.treeRule(true, 5, true, true), "placed by me");
+        Sightings s = new Sightings();
+        assertNotNull(s.sawTree("d", 50, 64, 0, 5, 1000));
+        assertNull(s.sawTree("d", 53, 64, 2, 5, 2000), "within the merge distance");
+        assertNotNull(s.sawTree("d", -40, 64, 10, 4, 3000));
+        var near = s.treesNear("d", 0, 0, 60);
+        assertEquals(2, near.size());
+        assertEquals(-40, near.get(0).x(), "nearest first (40 before 50)");
+        assertEquals(1, s.treesNear("d", 0, 0, 45).size());
+        assertEquals(1, s.exhaustTree("d", 50, 0, 4000));
+        assertEquals(1, s.treesNear("d", 0, 0, 60).size(), "a gone tree is offered no more");
+        Sightings back = Sightings.fromJson(s.toJson(), new int[1]);
+        assertEquals(1, back.treeCount("d"));
+        assertEquals(1, back.treesNear("d", 0, 0, 60).size());
+        assertTrue(s.text("d", 0).contains("1 trees"));
+    }
+
+    @Test
     void rangePerKind() {
         assertTrue(Sightings.inRange(Sightings.Kind.ANIMAL, 0, 0, 0, 30, 0, 0));
         assertFalse(Sightings.inRange(Sightings.Kind.CAVE, 0, 0, 0, 30, 0, 0));

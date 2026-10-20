@@ -82,7 +82,15 @@ public final class IronOptions {
     public record Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                         boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
                         io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair,
-                        io.github.mojolowjo.entropybot.guard.Litter.Site litter) {
+                        io.github.mojolowjo.entropybot.guard.Litter.Site litter, int rawIron) {
+        /** aa-trees: -1 = raw_iron in the bag not known (tests): a chain that smelts is taken as it is. */
+        public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
+                     boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
+                     io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair,
+                     io.github.mojolowjo.entropybot.guard.Litter.Site litter) {
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, fair, litter, -1);
+        }
+
         /** aa-litter: null = no litter term (tests, unreadable facts). */
         public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                      boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
@@ -410,6 +418,29 @@ public final class IronOptions {
         return c.target() != null && c.way() != Way.CAVE && c.way() != Way.STRIP;
     }
 
+    private static final Pattern SMELT_IRON = Pattern.compile("^smelt\\s+(?:raw_iron|iron_ingot)(?:\\s+(\\d+))?(?:\\s+here)?$");
+
+    /**
+     * aa-trees (STOCK_IRON live: "smelt iron_ingot 16" planned with no raw iron, then "missing 16 raw_iron" at once): a chain
+     * that smelts iron the bag lacks, with no ore step and no fetch of raw_iron, gets "mine iron <short>" in front of the smelt,
+     * so the ways below price the ore (a seen ore; else, under fair play, explore a cave / strip at the learned Y; their
+     * density is OreStats, statistics learned from what was seen, not targeting). Unknown bag (-1) or enough raw iron: as it is.
+     */
+    static List<String> withOreStep(List<String> steps, Facts f) {
+        if (f.rawIron() < 0 || hasMineStep(steps)) return steps;
+        for (String s : steps) if (!SMELT_IRON.matcher(s.trim().toLowerCase(Locale.ROOT)).matches() && s.toLowerCase(Locale.ROOT).contains("raw_iron")) return steps;
+        for (int i = 0; i < steps.size(); i++) {
+            Matcher m = SMELT_IRON.matcher(steps.get(i).trim().toLowerCase(Locale.ROOT));
+            if (!m.matches()) continue;
+            int n = m.group(1) == null ? DEFAULT_N : Integer.parseInt(m.group(1)), lack = n - f.rawIron();
+            if (lack <= 0) return steps;
+            List<String> out = new ArrayList<>(steps);
+            out.add(i, "mine " + FAMILY + " " + lack);
+            return out;
+        }
+        return steps;
+    }
+
     /** The chain holds an ore step (else the scorer has nothing to choose, the smelt choice still applies). */
     public static boolean hasMineStep(List<String> steps) {
         for (String s : steps) if (MINE_STEP.matcher(s.trim().toLowerCase(Locale.ROOT)).matches()) return true;
@@ -431,7 +462,7 @@ public final class IronOptions {
         String st = failedStep(end);
         if (st == null) return "ore";
         String w = st.toLowerCase(Locale.ROOT);
-        if (w.startsWith("mine") || w.startsWith("goto")) return "ore";
+        if (w.startsWith("mine") || w.startsWith("goto") || w.startsWith("find") || w.startsWith("place") || w.startsWith("dig")) return "ore";      // aa-trees: the discovery prefix steps (find cave, place mine, dig stairs) are the ore way too
         if (w.startsWith("smelt")) return "smelt";
         return "other";
     }
@@ -459,7 +490,7 @@ public final class IronOptions {
 
         @Override public Options.Choice choose(Facts f, Options.OptionMemory om, long now, String planned, double plannedCost, String plannerWhy, String afterFail) {
             if (planned == null) return new Options.Choice(null, List.of(), List.of(), "no plan for iron" + (plannerWhy == null ? "" : ": " + plannerWhy));
-            List<String> steps = split(planned);
+            List<String> steps = withOreStep(split(planned), f);
             Choice c = IronOptions.choose(f, new Memory(om), now);
             lastSmelt = c.smelt();
             if (afterFail != null && failedPart(afterFail).equals("smelt")) {       // the ore is mined: the camp smelts
@@ -495,6 +526,9 @@ public final class IronOptions {
 
         @Override public String blame(Options.Choice last, Options.Option ran, String end) {
             String part = failedPart(end);
+            // aa-trees: a smelt that lacks the ore is the ore way's failure, charged to it (held), not to the smelt place
+            if (end != null && end.toLowerCase(Locale.ROOT).contains("missing") && end.toLowerCase(Locale.ROOT).contains("raw_iron"))
+                return ran == null || ran.way().equals("planner") || ran.way().equals("smelt") ? null : ran.memoryKey();
             if (part.equals("smelt")) return lastSmelt == Smelt.HERE ? Memory.key(null, null) : null;
             if (part.equals("ore")) return ran == null || ran.way().equals("planner") || ran.way().equals("smelt") ? null : ran.memoryKey();
             return null;

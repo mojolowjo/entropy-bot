@@ -94,6 +94,7 @@ public final class AaRuntime implements JobPort {
         if (d.has(AaLadder.SHELTER_FACT) && d.get(AaLadder.SHELTER_FACT).getAsBoolean()) AaLadder.noteShelter(bb);
         bb.fact(IronOptions.FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("iron", this::ironFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
+        bb.fact(io.github.mojolowjo.entropybot.aa.WoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts>) this::woodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -417,7 +418,7 @@ public final class AaRuntime implements JobPort {
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
                     furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
                     bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in), fairFacts,
-                    litterSite(dim, me, ores.size()));
+                    litterSite(dim, me, ores.size()), bag.getOrDefault("raw_iron", 0));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
             return null;
@@ -1974,6 +1975,42 @@ public final class AaRuntime implements JobPort {
         clearEscape();
         lastEnd = (fail == null ? "error: stuck under ground" : fail) + " (getting out: " + why + ")";
         LOG.info("[entropybot] aa: no way out from under ground: {}", why);
+    }
+
+    /**
+     * aa-trees: the trees the bot has SEEN (sense/Sightings kind TREE) as wood options facts: distance, and a deny reason
+     * (inside my areas already = the chop could not get at it, remembered unreachable, a protected build near). A seen tree whose
+     * chunk is loaded and whose lowest log is gone is exhausted here. Null when nothing can be read; never throws.
+     */
+    io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts woodFacts() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+            if (p == null || mc.level == null || sg == null) return null;
+            String gdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level), adim = Storage.dim();
+            var prot = io.github.mojolowjo.entropybot.cave.MineRules.policyBoxes(io.github.mojolowjo.entropybot.cave.MineRules.parsePolicy(c.policyJson()), "protect", PolicyCommands.DEFAULT_DIM);
+            int[] me = Jobs.here(p);
+            long now = System.currentTimeMillis();
+            List<io.github.mojolowjo.entropybot.aa.WoodOptions.Tree> out = new ArrayList<>();
+            for (var r : sg.treesNear(gdim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.FAR_MAX)) {
+                net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(r.x(), r.y(), r.z());
+                if (mc.level.isLoaded(q) && !mc.level.getBlockState(q).is(net.minecraft.tags.BlockTags.LOGS)) {
+                    sg.exhaustTree(gdim, r.x(), r.z(), now);
+                    continue;
+                }
+                String deny = c.inAreas(adim, r.x(), r.z()) ? "inside my areas already (the chop could not get at it)"
+                        : io.github.mojolowjo.entropybot.chop.Unreachable.blocked(r.x(), r.z(), now) ? "remembered as unreachable"
+                        : io.github.mojolowjo.entropybot.cave.MineRules.protectNear(prot, adim, r.x(), r.y(), r.z(), io.github.mojolowjo.entropybot.aa.WoodOptions.TREE_AREA_R + 8) != null ? "a protected build is near" : null;
+                out.add(new io.github.mojolowjo.entropybot.aa.WoodOptions.Tree(r.x(), r.y(), r.z(), Math.hypot(r.x() - me[0], r.z() - me[2]), deny));
+            }
+            int n = 0;
+            for (String a : c.areaNames()) if (a.startsWith("trees")) n++;
+            return new io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts(0, out, n, mc.getSingleplayerServer() != null);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: wood facts: {}", e.toString());
+            return null;
+        }
     }
 
     /** At most this many tree areas AA adds itself ("trees1".."trees3"), each a box of 2*TREE_AREA_R+1. */
