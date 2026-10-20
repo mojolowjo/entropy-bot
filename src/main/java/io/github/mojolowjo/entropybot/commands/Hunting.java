@@ -48,7 +48,7 @@ final class Hunting {
         int[] dropAt;
         /** AA_ROUND3 5: "at x z": where the animals were seen ({x, z}); arrived there; the visit noted in Sightings. */
         int[] at;
-        boolean arrived, visited;
+        boolean arrived, visited, triedHerd;
         long walkAt = -1;
         JobRequests.Request req;
     }
@@ -323,7 +323,26 @@ final class Hunting {
             boolean none = outside == null && seen == 0;
             r.noneLooks = none ? r.noneLooks + 1 : 0;
             r.nextAt = now + (none ? 40 : 100);
-            if (now - r.idleSince >= IDLE_END || io.github.mojolowjo.entropybot.vocab.HuntRules.noneEnds(r.noneLooks)) {
+            boolean ending = now - r.idleSince >= IDLE_END || io.github.mojolowjo.entropybot.vocab.HuntRules.noneEnds(r.noneLooks);
+            // aa-r2fix (round 2: 3x "hunt 3 sheep for white_wool: I see no sheep" gave up with a herd remembered): before giving up,
+            // go to the best herd of this kind Sightings remembers (the "go hunt <type> at x z" option), once
+            if (ending && none && r.at == null && r.want != null && !r.triedHerd) {
+                r.triedHerd = true;
+                int[] herd = AaRuntime.herdsSeen(mc.level, p).get(r.want);
+                if (herd != null) {
+                    r.at = new int[]{herd[0], herd[1]};
+                    r.arrived = false;
+                    r.visited = false;
+                    r.walkAt = -1;
+                    r.idleSince = -1;
+                    r.noneLooks = 0;
+                    r.nextAt = now + 20;
+                    LOG.info("[entropybot] hunt: no {} in view - going to the herd I saw at {} {} ({} away, confidence {}%)",
+                            what, herd[0], herd[1], herd[2], herd[3]);
+                    return;
+                }
+            }
+            if (ending) {
                 end(r, "stopped: hunt: " + have(r, bag) + "/" + goal(r) + " - " + r.why);
                 return;
             }

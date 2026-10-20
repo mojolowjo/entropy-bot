@@ -93,8 +93,13 @@ public final class SleepJob {
         } else {
             String id = carriedBed(p);
             if (id == null) return Hints.next("error: no bed within " + SEARCH + " blocks and I carry none", "give me a bed (or craft white_bed 1: 3 wool + 3 planks), then sleep");
-            bed = bedSpot(lv, Jobs.here(p));
-            if (bed == null) return Hints.next("error: no room for my bed next to me (2 free blocks in a row on solid ground)", "goto an open spot, then sleep");
+            noteRefused(lv);
+            io.github.mojolowjo.entropybot.aa.BedSpot.Spot spot = bedSpot(c, lv, Jobs.here(p));
+            if (spot == null) return Hints.next("error: no room for my bed within " + io.github.mojolowjo.entropybot.aa.BedSpot.FAR
+                    + " blocks (2 free blocks in a row on solid ground inside my areas; " + REFUSED.size() + " cells refused)", "goto an open spot, then sleep");
+            bed = spot.cell();
+            tried = spot.key();
+            LOG.info("[entropybot] sleep: bed cell {}: {}", spot.key(), spot.why());
             steps.add(Clearing.placeStep(bed, id));
             placed = id;
         }
@@ -116,14 +121,36 @@ public final class SleepJob {
         return r;
     }
 
-    /** A cell next to the bot with the next one in the same direction free too (the bed's foot and head). */
-    static int[] bedSpot(ClientLevel lv, int[] f) {
-        int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-        for (int[] d : dirs) {
-            BlockPos a = new BlockPos(f[0] + d[0], f[1], f[2] + d[1]), b = new BlockPos(f[0] + 2 * d[0], f[1], f[2] + 2 * d[1]);
-            if (CampCommands.placeable(lv, a) && CampCommands.placeable(lv, b) && lv.getBlockState(a.above()).isAir()) return new int[]{a.getX(), a.getY(), a.getZ()};
+    /** aa-r2fix: cells the game refused a bed at (foot "x y z"); the next sleep skips them. */
+    private static final java.util.Set<String> REFUSED = new java.util.LinkedHashSet<>();
+    /** The cell the last bed was put down at, until a later call finds a bed there or marks it refused. */
+    private static String tried;
+
+    /** A bed put down at the last tried cell that is not there now was refused: remembered, never chosen again. */
+    static void noteRefused(ClientLevel lv) {
+        if (tried == null) return;
+        String[] w = tried.split(" ");
+        if (!lv.getBlockState(new BlockPos(Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2]))).is(net.minecraft.tags.BlockTags.BEDS)) {
+            REFUSED.add(tried);
+            while (REFUSED.size() > 64) REFUSED.remove(REFUSED.iterator().next());
         }
-        return null;
+        tried = null;
+    }
+
+    /**
+     * aa-r2fix: the bed's cell, chosen like the chest's (BedSpot): a free 2-cell footprint on solid ground, inside my areas, near the
+     * table or chest, by cost; refused cells skipped; none near the camp: the wider ring (the bed goes down elsewhere).
+     */
+    static io.github.mojolowjo.entropybot.aa.BedSpot.Spot bedSpot(Commands c, ClientLevel lv, int[] me) {
+        int[] table = Crafting.findBlockAround(me, "crafting_table", 8, 3), chest = Crafting.findBlockAround(me, "chest", 8, 3);
+        int[] near = table != null ? table : chest != null ? chest : me;
+        int[] anchor = {near[0], me[1], near[2]};
+        return io.github.mojolowjo.entropybot.aa.BedSpot.choose(anchor, table, chest, me,
+                cc -> {
+                    BlockPos b = new BlockPos(cc[0], cc[1], cc[2]);
+                    return lv.isLoaded(b) && CampCommands.placeable(lv, b) && lv.getBlockState(b.above()).canBeReplaced();
+                },
+                cc -> c.jobs.goalAllowed(cc[0], cc[1], cc[2]) == null, REFUSED);
     }
 
     static void wake() {

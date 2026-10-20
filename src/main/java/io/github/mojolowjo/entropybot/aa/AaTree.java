@@ -167,7 +167,10 @@ public final class AaTree {
             String chain = bb.port.resolve(text);
             if (chain != null && kind == TaskKind.STOCK_IRON) {      // aa-r1fix: the ore step first, priced through the iron options
                 String[] why = new String[1];
-                chain = IronOptions.idleChain(bb.fact(IronOptions.FACTS), chain, bb.clock.now(), why);
+                // aa-r2fix: the planner hands back a saved routine ("goal_iron_16"); expand it like the IRON rung does, else the
+                // ore/smelt steps inside it are invisible here and the routine ran bare ("can't smelt 16 iron_ingot - missing raw_iron")
+                String exp = bb.port.expand(chain);
+                chain = IronOptions.idleChain(bb.fact(IronOptions.FACTS), exp == null ? chain : exp, bb.clock.now(), why);
                 if (chain == null) bb.pendingReason("idle iron: " + why[0]);
             }
             return chain == null ? null : JobPort.TaskSpec.of(kind, chain, "idle");

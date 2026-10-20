@@ -176,6 +176,12 @@ public final class GatherPlan {
                 // everything is there but the planner can't make it now: a furnace without fuel, or a table/furnace
                 // missing (the craft verb says which)
                 if (r.smelt() && !hasFuel(w, crafts)) {
+                    // aa-r2fix (round 2: "gather charcoal 31" ran "mine cave coal"): charcoal is logs smelted; its fuel is
+                    // planks from logs (never a coal ore trip, which is the thing charcoal stands in for)
+                    if (id.equals("minecraft:charcoal")) {
+                        Step fuel = charcoalFuel(r, crafts, w);
+                        if (fuel != null) return fuel;
+                    }
                     GatherSources.Source coal = GatherSources.resolve("minecraft:coal", w.overrides());
                     return source(coal, (int) Math.ceil(crafts / 8.0), false, w);
                 }
@@ -185,6 +191,32 @@ public final class GatherPlan {
             path.remove(id);
         }
         return firstNoWay;
+    }
+
+    /**
+     * The step that gives the furnace its fuel when the charcoal's logs are all there: craft planks from the logs held beyond
+     * the smelt's input (4 planks a log, 1.5 items a plank), else chop the logs that are short. Null when the recipe has no
+     * wood-log input to read.
+     */
+    static Step charcoalFuel(Recipe r, int crafts, World w) {
+        if (r.needs().size() != 1) return null;
+        String log = null;
+        for (String a : r.needs().get(0).alts()) {
+            Matcher m = WOOD.matcher(a);
+            if (m.find() && m.group(2).equals("log") && (log == null || stock(w, a) > stock(w, log))) log = a;
+        }
+        if (log == null) return null;
+        int planksNeeded = (int) Math.ceil(crafts * 2 / 3.0);
+        int logsForFuel = (planksNeeded + 3) / 4;
+        int spare = stock(w, log) - crafts * r.needs().get(0).amount();
+        if (spare >= logsForFuel) {
+            Matcher m = WOOD.matcher(log);
+            m.find();
+            return new Step(Kind.CRAFT, "minecraft:" + m.group(1) + "_planks", logsForFuel * 4, List.of(), null);
+        }
+        GatherSources.Source src = GatherSources.resolve(log, w.overrides());
+        if (src == null) return null;
+        return source(src, logsForFuel - Math.max(0, spare), false, w);
     }
 
     static boolean oreBlockInput(Recipe r) {
