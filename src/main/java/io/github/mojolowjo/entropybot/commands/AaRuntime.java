@@ -1189,6 +1189,7 @@ public final class AaRuntime implements JobPort {
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
         in.pos = me;
+        fillChestCell(in, mc, me);
         in.inArea = s.areasHere;
         io.github.mojolowjo.entropybot.aa.core.WayBack.observe(bb);
         in.ownerOnline = s.ownerOnline;
@@ -1199,6 +1200,40 @@ public final class AaRuntime implements JobPort {
         in.ownerOrderPending = in.otherJob != null;
         in.aiRequestPending = bb.peek("ai") != null;
         fillOwner(in, s, p, mc);
+    }
+
+    /**
+     * aa-r1fix: the camp chest's cell, only while the camp needs one (table and furnace stand, no base chest yet): the free cells
+     * around the base (else me), inside my areas, ranked by walk and distance from the table (ChestSpot); refused cells are skipped.
+     */
+    private void fillChestCell(Inputs in, Minecraft mc, int[] me) {
+        if (in.baseChests) {
+            in.chestCell = null;
+            in.chestWhy = null;
+            in.chestFailed.clear();
+            return;
+        }
+        if (mc.level == null || !(in.tableKnown || in.tableInBag) || !(in.furnaceKnown || in.furnaceInBag)) return;
+        try {
+            var lv = mc.level;
+            String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
+            int[] anchor = in.basePos != null ? in.basePos : me;
+            int[] table = Crafting.findBlockAround(anchor, "crafting_table", 8, 3);
+            var ranked = io.github.mojolowjo.entropybot.aa.ChestSpot.rank(anchor, table, me,
+                    cc -> {
+                        var b = new net.minecraft.core.BlockPos(cc[0], cc[1], cc[2]);
+                        return lv.isLoaded(b) && CampCommands.placeable(lv, b) && lv.getBlockState(b.above()).canBeReplaced();
+                    },
+                    cc -> !c.fenceOn() || c.inAreas(dim, cc[0], cc[2]));
+            var pick = io.github.mojolowjo.entropybot.aa.ChestSpot.pick(ranked, in.chestFailed);
+            in.chestCell = pick == null ? null : pick.cell();
+            in.chestWhy = pick == null ? "no free cell within " + io.github.mojolowjo.entropybot.aa.ChestSpot.RADIUS + " of the "
+                    + (in.basePos != null ? "base" : "bot") + " (" + in.chestFailed.size() + " refused)"
+                    : "chest cell " + pick.key() + ": " + pick.why() + " (" + ranked.size() + " free, " + in.chestFailed.size() + " refused)";
+        } catch (RuntimeException e) {
+            in.chestCell = null;
+            in.chestWhy = "chest cell: " + e;
+        }
     }
 
     /**

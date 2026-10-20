@@ -165,6 +165,11 @@ public final class AaTree {
                 }
             }
             String chain = bb.port.resolve(text);
+            if (chain != null && kind == TaskKind.STOCK_IRON) {      // aa-r1fix: the ore step first, priced through the iron options
+                String[] why = new String[1];
+                chain = IronOptions.idleChain(bb.fact(IronOptions.FACTS), chain, bb.clock.now(), why);
+                if (chain == null) bb.pendingReason("idle iron: " + why[0]);
+            }
             return chain == null ? null : JobPort.TaskSpec.of(kind, chain, "idle");
         });
     }

@@ -12,6 +12,7 @@ import io.github.mojolowjo.entropybot.aa.brain.Worth;
 import io.github.mojolowjo.entropybot.aa.brain.TechTree;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Cooldown;
+import io.github.mojolowjo.entropybot.aa.core.Inputs;
 import io.github.mojolowjo.entropybot.aa.core.JobPort;
 import io.github.mojolowjo.entropybot.aa.core.Node;
 import io.github.mojolowjo.entropybot.aa.core.RunJob;
@@ -224,6 +225,21 @@ public final class AaDesires {
         if (base != null) return get + "go base then place chest " + (base[0] + 1) + " " + base[1] + " " + base[2] + " then scan base";
         if (me == null) return null;
         return get + "place chest " + (me[0] + 1) + " " + me[1] + " " + me[2] + " then place base " + me[0] + " " + me[1] + " " + me[2] + " then scan base";
+    }
+
+    /**
+     * aa-r1fix: the chest chain with the cell ChestSpot chose (free, inside the areas, next to the table; the cheapest the game
+     * has not refused). No cell read yet and none refused: the old rule (one east of the base); every cell refused or none free: null
+     * (the rung says why, the refused cells stay in the facts until a chest stands).
+     */
+    public static String chestChain(Inputs in) {
+        boolean inBag = in.bag != null && in.bag.getOrDefault("chest", 0) > 0;
+        if (in.chestCell == null) return in.chestWhy == null && in.chestFailed.isEmpty() ? chestChain(in.basePos, in.pos, inBag) : null;
+        int[] c = in.chestCell;
+        String get = inBag ? "" : "craft chest 1 then ", at = "place chest " + c[0] + " " + c[1] + " " + c[2];
+        if (in.basePos != null) return get + "go base then " + at + " then scan base";
+        if (in.pos == null) return null;
+        return get + at + " then place base " + in.pos[0] + " " + in.pos[1] + " " + in.pos[2] + " then scan base";
     }
 
     /** What a bed saves tonight: the night's danger at the current facts (any time of day; Peaceful 0). */

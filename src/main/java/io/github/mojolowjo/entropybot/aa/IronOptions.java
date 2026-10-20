@@ -558,6 +558,28 @@ public final class IronOptions {
         };
     }
 
+    /**
+     * aa-r1fix (round 1: 3x "failed STOCK_IRON: smelt iron_ingot N: missing raw_iron"): the idle stock_iron desire ran the planner's
+     * chain bare. The ore step now comes first and is priced through the iron option set (the same ways as the IRON rung).
+     * Returns the chain to run; null with {@code why[0]} set when no ore way can run now. No facts: the chain as it is.
+     */
+    static String idleChain(Object factsSupplier, String planned, long now, String[] why) {
+        if (!(factsSupplier instanceof java.util.function.Supplier<?> s)) return planned;
+        Object fo;
+        try {
+            fo = s.get();
+        } catch (RuntimeException e) {
+            return planned;
+        }
+        if (!(fo instanceof Facts f)) return planned;
+        Options.Choice c = new Set().choose(f, new Options.OptionMemory(), now, planned, 0, null, null);
+        if (c.best() == null) {
+            why[0] = "no iron option (" + c.why() + ")";
+            return null;
+        }
+        return c.best().command();
+    }
+
     /** The IRON rung's {@link Rung.Picker}: the generic picker over {@link Set}. */
     public static final class Picker extends Options.Picker<Facts> {
         public Picker() { super("IRON", FACTS, Facts.class, new Set()); }
