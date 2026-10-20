@@ -142,7 +142,7 @@ public final class AaLadder {
                 bb -> null, bb -> "craft crafting_table 1");
         Rung torch = new Rung("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
-                bb -> bb.in.torchCoal() ? null : "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")", bb -> "goal torch 16");
+                bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : CoalOptions.torchBlock(bb, 16), bb -> torchGoal(bb));
         Rung base = new Rung("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(SHELTER_FACT),
                 bb -> null,
@@ -163,6 +163,12 @@ public final class AaLadder {
         // the brain runs a started desire to its end (live check 2026-10-18: a reactive Fallback let an earlier rung that
         // started *planning* cancel a lower rung's job: a pointless switch)
         return List.of(area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
+    }
+
+    /** three-tier r1: "goal torch 16", or with no coal in the bag the best coal way first (CoalOptions.torchesFirst; no way: the planner's goal, which fails with its own reason). */
+    static String torchGoal(Blackboard bb) {
+        String c = CoalOptions.torchesFirst(bb, null, 16, null);
+        return c == null ? "goal torch 16" : c;
     }
 
     /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */

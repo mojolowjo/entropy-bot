@@ -118,9 +118,9 @@ public final class AaTree {
                 // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
                 java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "goal wood " + AaScorer.WOOD_HI))),
                 java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, "goal cobblestone " + AaScorer.STONE_HI))),
-                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", underGoal("idle.coal", TaskKind.STOCK_COAL, "goal coal " + AaScorer.COAL_HI))),
+                java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", coalStock())),
                 java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, "goal iron " + AaScorer.IRON_HI))),
-                java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", goal("idle.torches", TaskKind.STOCK_TORCHES, "goal torch " + AaScorer.TORCH_HI))),
+                java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", torchStock())),
                 java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, "deposit", "idle"))),
                 java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
                 java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.of(TaskKind.WAIT, "wait " + io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
@@ -169,6 +169,45 @@ public final class AaTree {
         });
     }
 
+    /**
+     * three-tier r1: the coal stock-up through the priced coal set (mine seen / find / charcoal, CoalOptions). Night work
+     * as underGoal; no facts readable: the planner's "goal coal" as before. No runnable way: logged with every reason.
+     */
+    private static RunJob coalStock() {
+        return new RunJob("idle.coal", TaskKind.STOCK_COAL, bb -> {
+            if (io.github.mojolowjo.entropybot.aa.brain.NightWork.active(bb)) {
+                var w = io.github.mojolowjo.entropybot.aa.brain.NightWork.pick(bb.in);
+                if (w != io.github.mojolowjo.entropybot.aa.brain.NightWork.Work.NONE) {
+                    int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
+                    io.github.mojolowjo.entropybot.aa.brain.NightWork.noteDug(bb, w);
+                    return new JobPort.TaskSpec(TaskKind.STOCK_COAL, io.github.mojolowjo.entropybot.aa.brain.NightWork.chain(bb.in, w, p[0], p[1], p[2], 1, 0),
+                            "night", 1, JobPort.TaskSpec.TIMEOUT_MS, AaDesires.SHELTER_PATIENCE_MS);
+                }
+            }
+            Options.Choice c = CoalOptions.plan(bb, Math.max(1, AaScorer.COAL_HI - bb.in.coal));
+            if (c != null) {
+                if (c.best() == null) {
+                    bb.port.log("STOCK_COAL has no coal way: " + c.why());
+                    return null;
+                }
+                bb.port.log("STOCK_COAL coal ways: " + c.why());
+                return JobPort.TaskSpec.of(TaskKind.STOCK_COAL, c.best().command(), "idle");
+            }
+            String chain = bb.port.resolve("goal coal " + AaScorer.COAL_HI);
+            return chain == null ? null : JobPort.TaskSpec.of(TaskKind.STOCK_COAL, chain, "idle");
+        });
+    }
+
+    /** three-tier r1: torches with no coal in the bag run the best coal way first (CoalOptions.torchesFirst), never a bare craft. */
+    private static RunJob torchStock() {
+        return new RunJob("idle.torches", TaskKind.STOCK_TORCHES, bb -> {
+            String planned = bb.port.resolve("goal torch " + AaScorer.TORCH_HI);
+            String[] why = new String[1];
+            String chain = CoalOptions.torchesFirst(bb, planned, AaScorer.TORCH_HI, why);
+            if (why[0] != null) bb.port.log("STOCK_TORCHES coal ways: " + why[0]);
+            return chain == null ? null : JobPort.TaskSpec.of(TaskKind.STOCK_TORCHES, chain, "idle");
+        });
+    }
     /** S1: lighting the spot runs once per night (a SUCCESS holds it until the day). */
     static Node oncePerNight(Node child) {
         return new Node(child.id + ".night", "once per night") {

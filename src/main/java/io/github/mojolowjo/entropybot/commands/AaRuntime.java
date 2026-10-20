@@ -94,7 +94,8 @@ public final class AaRuntime implements JobPort {
         if (d.has(AaLadder.SHELTER_FACT) && d.get(AaLadder.SHELTER_FACT).getAsBoolean()) AaLadder.noteShelter(bb);
         bb.fact(IronOptions.FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("iron", this::ironFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
-        bb.fact(io.github.mojolowjo.entropybot.aa.WoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts>) this::woodFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.CoalOptions.FACTS, (java.util.function.IntFunction<io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts>) this::coalFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.WoodOptions.FACTS,(java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts>) this::woodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -445,6 +446,47 @@ public final class AaRuntime implements JobPort {
             return new io.github.mojolowjo.entropybot.guard.Litter.Site(near, bb.in.pickTier, 3, 0, cave == null ? 0 : cave.conf(), Math.max(0, oreCount - 1), 0, own);
         } catch (RuntimeException e) {
             LOG.debug("[entropybot] aa: litter site: {}", e.toString());
+            return null;
+        }
+    }
+
+    private final io.github.mojolowjo.entropybot.aa.FactsMemo<io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts> coalMemo = new io.github.mojolowjo.entropybot.aa.FactsMemo<>(10_000);
+
+    /**
+     * three-tier r1: the coal set's facts (seen coal, the discovery rows for the coal family, logs, the furnace, trees seen),
+     * read once per pick and kept 10 s for the same spot and bag. Null when nothing can be read; never throws.
+     */
+    io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts coalFacts(int need) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null || sensed == null) return null;
+            int[] me = Jobs.here(p);
+            Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
+            int logs = 0;
+            for (Map.Entry<String, Integer> e : bag.entrySet()) if (e.getKey().endsWith("_log") || e.getKey().endsWith("_stem")) logs += e.getValue();
+            String key = me[0] + " " + me[1] + " " + me[2] + " " + need + " " + logs + " " + bb.in.planks + " " + bb.in.pickTier + " " + bb.in.furnaceKnown + " " + bag.getOrDefault("furnace", 0);
+            final int logsNow = logs;
+            return coalMemo.get(gameTick(), System.currentTimeMillis(), key, () -> {
+                String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
+                List<IronOptions.Ore> ores = Mining.get().aaOres(p, io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, 8);
+                var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
+                int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
+                if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;
+                boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
+                String stripWhy = !mineMarked ? "no mine marked (place mine)" : !sensed.areasHere ? "outside my areas" : null;
+                List<String> dd = new ArrayList<>();
+                var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, caveDist, mineMarked, stripWhy, false),
+                        io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, need, dd);
+                int[] furnace = bag.getOrDefault("furnace", 0) > 0 ? null : c.crafting.findFurnace(p);
+                int furnaceDist = furnace != null ? (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace))) : bb.in.furnaceKnown ? 30 : -1;
+                var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+                boolean trees = sg != null && sg.treesNear(dim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.FAR_MAX).iterator().hasNext();
+                return new io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts(need, bb.in.pickTier, ores, opts, dd, logsNow, bb.in.planks,
+                        bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees);
+            });
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: coal facts: {}", e.toString());
             return null;
         }
     }
@@ -1602,8 +1644,11 @@ public final class AaRuntime implements JobPort {
             // that gained nothing of what it was sent for is a failure (Failures holds it), never a success
             if (e.startsWith("done") && io.github.mojolowjo.entropybot.aa.AaLadder.zeroGain(e)) {
                 LOG.info("[entropybot] aa: the task ended \"done\" with nothing gained - counted failed: {}", e);
-                return JobState.failed("failed: nothing gained - " + e.substring(4).replaceFirst("^\\s*-\\s*", ""));
+                e = "failed: nothing gained - " + e.substring(4).replaceFirst("^\\s*-\\s*", "");
+                io.github.mojolowjo.entropybot.aa.CoalOptions.noteEnd(bb, currentChain, e, true);        // three-tier r1: a coal way that gained nothing is held
+                return JobState.failed(e);
             }
+            io.github.mojolowjo.entropybot.aa.CoalOptions.noteEnd(bb, currentChain, e, !e.startsWith("done"));
             return e.startsWith("done") ? JobState.done(e) : JobState.failed(e);
         }
         if (escapePending || escapeWay != null) return JobState.RUNNING;      // 0.36.a6: getting out, then the task goes on
