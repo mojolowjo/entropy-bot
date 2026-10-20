@@ -634,6 +634,7 @@ public final class Commands implements Chains.Env {
         chains = new Chains(this, brainStore.data());
         brainRuntime = new BrainRuntime(this);                  // B1: the brain (the autominer retired into it)
         chains.onEnd(brainRuntime::chainEnded);
+        io.github.mojolowjo.entropybot.aa.door.Door.wire(this::aaOn, s -> LOG.info("[entropybot] {}", s));     // AA_CLEANUP 2: the one door
         aaRuntime = new AaRuntime(this);                        // 0.36.0: AA (registers its own end listener)
         sb.append("; aa ").append(aaRuntime.on() ? "on" : "off").append(" (tree ").append(aaRuntime.tree.nodes().size()).append(" nodes)");
         chains.endNote = DigCommands::stairEndNote;                  // 0.30.5: honest stair-chain endings
@@ -691,7 +692,7 @@ public final class Commands implements Chains.Env {
             if (dead && !wasDead) noteDeath(mc, player);
             wasDead = dead;
             if (tick % 5 == 0) processPms();
-            io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.tick(this);     // 0.35.0 the AI operator (never throws; HTTP is on its own thread)
+            try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AI)) { io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.tick(this); }     // 0.35.0 the AI operator (never throws; HTTP is on its own thread)
             if (tick % 5 == 0) pollCommand(mc, tick);
             // 0.23.3: a chain whose step's job just ended goes on the next tick (no gap between walks), else every 5 ticks
             if (tick % 5 == 3 || (chains.running() && !jobs.running() && !requests.busy())) {
@@ -702,35 +703,35 @@ public final class Commands implements Chains.Env {
                     chains.endChain("stopped: " + e);
                 }
             }
-            if (tick % 20 == 7) Clearing.keptTick(this);                     // a kept craft table the chain never came back for
-            if (tick % 5 == 1 && !chains.running()) jobs.stairsTick();      // 0.27.3 (d3): a sealed pit's staircase up
+            if (tick % 20 == 7 && !aaOn()) Clearing.keptTick(this);          // a kept craft table the chain never came back for (AA keeps its own)
+            if (tick % 5 == 1 && !chains.running()) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { jobs.stairsTick(); } }     // 0.27.3 (d3): a sealed pit's staircase up (a safety path)
             if (tick % 5 == 4) {
                 try {
-                    gathering.tick(player);                    // P2: the next gather step once the last one ended
+                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(gathering.driver)) { gathering.tick(player); }                    // P2: the next gather step once the last one ended
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] gather: {}", e.toString());
                     gathering.stop("error: " + e);
                 }
                 try {
-                    hunting.tick(player);                      // 0.24.3: the next animal
+                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(hunting.driver)) { hunting.tick(player); }                      // 0.24.3: the next animal
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] hunt: {}", e.toString());
                     hunting.stop("error: " + e);
                 }
                 try {
-                    kelping.tick(player);                      // aa-kelpfish: the next kelp column
+                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(kelping.driver)) { kelping.tick(player); }                      // aa-kelpfish: the next kelp column
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] gather kelp: {}", e.toString());
                     kelping.stop("error: " + e);
                 }
                 try {
-                    fishing.tick(player);                      // aa-kelpfish: cast, wait, reel
+                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(fishing.driver)) { fishing.tick(player); }                      // aa-kelpfish: cast, wait, reel
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] fish: {}", e.toString());
                     fishing.stop("error: " + e);
                 }
                 try {
-                    mule.tick(player);                         // C6: hold this, give, carry, unload, fetch
+                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(mule.driver)) { mule.tick(player); }                         // C6: hold this, give, carry, unload, fetch
                 } catch (RuntimeException e) {
                     LOG.warn("[entropybot] mule: {}", e.toString());
                     mule.stop("error: " + e);
@@ -758,8 +759,8 @@ public final class Commands implements Chains.Env {
                 chains.rulesTick();                            // 0.36.0: off while AA runs (AA_PLAN 4: a poster later)
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
-            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null && !aaOn()) brainRuntime.brain.tick();     // B1: every 2 s, never throws; 0.36.5: never next to AA
-            if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) aaRuntime.tick(tick);             // 0.36.0: AA at 4 Hz, never throws
+            if (tick % 40 == 31 && worldTicks > 400 && brainRuntime != null && !aaOn()) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.OLD_BRAIN)) { brainRuntime.brain.tick(); } }     // B1: every 2 s, never throws; 0.36.5: never next to AA
+            if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AA)) { aaRuntime.tick(tick); } }             // 0.36.0: AA at 4 Hz, never throws
         planning.drainSearches();                                                                    // 0.23.1: the planner's answers from the worker
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws
             if (tick % 40 == 21) {
@@ -779,7 +780,7 @@ public final class Commands implements Chains.Env {
             if (tick % 200 == 77 && worldTicks > 1200) selfCheck.idleTick(player, !jobs.running() && !chains.running() && !requests.busy(), System.currentTimeMillis());
             if (tick % 25 == 0) sendOutbox(player);
             try {
-                jobs.tick(player);
+                try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(jobs.driver())) { jobs.tick(player); }     // AA_CLEANUP 2: as the job's starter
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] job: {}", e.toString());
                 jobs.finish("error: " + e);
@@ -1060,6 +1061,20 @@ public final class Commands implements Chains.Env {
 
     /** auto: a line the bot sends itself (furnace pickup, corpse fetch): it skips the confirm gate, so it never cancels the owner's question. */
     Reply handle(String from, String message, boolean internal, boolean auto, Listener l) {
+        // AA_CLEANUP 2: who is asking. The AI operator calls as the owner with internal=false; AiRuntime.calling() tells it apart.
+        io.github.mojolowjo.entropybot.aa.door.Driver d = io.github.mojolowjo.entropybot.ai.live.AiRuntime.INSTANCE.calling() ? io.github.mojolowjo.entropybot.aa.door.Driver.AI
+                : io.github.mojolowjo.entropybot.aa.door.Door.current() != null ? io.github.mojolowjo.entropybot.aa.door.Door.current()
+                : !internal && from != null && from.equalsIgnoreCase(owner()) ? io.github.mojolowjo.entropybot.aa.door.Driver.OWNER : io.github.mojolowjo.entropybot.aa.door.Driver.OTHER;     // auto too: furnace pickup, camp steps
+        if (d == io.github.mojolowjo.entropybot.aa.door.Driver.AI && aaOn() && !io.github.mojolowjo.entropybot.aa.door.Door.aiMayUnderAa(message)) {
+            io.github.mojolowjo.entropybot.aa.door.Door.refuse(d, Texts.verbAndRest(message)[0]);
+            return Reply.now("error: refused: aa is on, the AI may only say \"aa want ...\" or \"aa drop ...\"");
+        }
+        try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(d)) {
+            return handleScoped(from, message, internal, auto, l);
+        }
+    }
+
+    private Reply handleScoped(String from, String message, boolean internal, boolean auto, Listener l) {
         Reply r = handleOnce(from, message, internal, auto, l);
         // B1: the owner's order wins: a "busy" because of the brain's own chain makes the brain step aside, then it runs
         if (!internal && !auto && r != null && r.pending() == null && r.text() != null && r.text().startsWith("busy: ") && brainRuntime != null

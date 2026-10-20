@@ -67,6 +67,9 @@ final class Gathering {
     private Run run;
     private String lastEnd = "none yet";
 
+    /** AA_CLEANUP 2: who started the run (the door scope then; null = none). */
+    io.github.mojolowjo.entropybot.aa.door.Driver driver;
+
     boolean running() { return run != null; }
 
     String statusText() {
@@ -123,6 +126,7 @@ final class Gathering {
         String reply = "started: gathering " + a.n() + " " + GatherSources.shortId(a.item()) + " (up to " + a.minutes() + " min; \"gather status\" shows it)";
         r.req = commands.requests.local("gather", from, raw, reply, l);
         run = r;
+        driver = io.github.mojolowjo.entropybot.aa.door.Door.current();     // AA_CLEANUP 2: its ticks run as its starter
         LOG.info("[entropybot] gather: {} {} ({} min) for {}", a.n(), a.item(), a.minutes(), from);
         return new Chains.Reply(reply, r.req);
     }

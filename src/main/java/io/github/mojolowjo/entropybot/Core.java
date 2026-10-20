@@ -265,7 +265,7 @@ public final class Core {
                 advisorInstalled = true;
                 io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.install();
             }
-            reflexes.tick(tick);
+            try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
             if (tick % 20 == 7) io.github.mojolowjo.entropybot.summary.SummaryRuntime.INSTANCE.tick(mc, mc.player, files, s -> commands.whisper(commands.owner(), s));     // 0.23.6
             knowledge.flushIfDue(tick);
             if (tick % 20 == 0) writeStock();                                   // C2: stock.json for the dashboard

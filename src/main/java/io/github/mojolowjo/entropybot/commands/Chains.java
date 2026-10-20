@@ -104,6 +104,8 @@ public final class Chains {
     }
 
     static final class Chain {
+        /** AA_CLEANUP 2: who started it; its steps run in that driver scope. */
+        final io.github.mojolowjo.entropybot.aa.door.Driver driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         String name, text, from, lastOk;
         List<String> steps;
         int idx, retries;
@@ -290,6 +292,7 @@ public final class Chains {
     public boolean isRoutine(String name) { return routines().has(name.toLowerCase()); }
 
     public String startChain(String from, String name, String text, long rounds) {
+        if (!io.github.mojolowjo.entropybot.aa.door.Door.allow("chain " + name)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("chain " + name);
         List<String> steps = expandSteps(Texts.splitChain(text), 0);
         if (steps.isEmpty()) return "error: nothing to do";
         String tooLong = stepsRefusal(steps.size());
@@ -347,6 +350,7 @@ public final class Chains {
     /** "stop": the chain goes, quietly, and so do the saved run and a chain set aside by a death. */
     public String clear() {
         String n = chain == null ? null : chain.name;
+        if (n != null && !io.github.mojolowjo.entropybot.aa.door.Door.allow("stop the chain " + n)) return null;
         chain = null;
         deathResume = null;
         clearRun();
@@ -442,6 +446,13 @@ public final class Chains {
     }
 
     public void stepChain() {
+        Chain dc = chain;
+        try (var s = io.github.mojolowjo.entropybot.aa.door.Door.scope(dc == null ? io.github.mojolowjo.entropybot.aa.door.Door.current() : dc.driver)) {
+            stepChainIn();
+        }
+    }
+
+    private void stepChainIn() {
         Chain c = chain;
         if (c == null || !env.alive()) return;
         String st = null;
@@ -851,6 +862,12 @@ public final class Chains {
 
     /** Every 100 ticks: the first rule that is due starts as a chain (only while nothing else runs). */
     public void rulesTick() {
+        try (var s = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.RULE)) {
+            rulesTickIn();
+        }
+    }
+
+    private void rulesTickIn() {
         long now = env.now();
         if (chain != null || env.busy() || parked() || env.holding()) {
             idleSince = -1;

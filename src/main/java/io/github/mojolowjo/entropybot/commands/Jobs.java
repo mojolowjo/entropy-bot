@@ -40,6 +40,8 @@ public final class Jobs {
     static final long TRAVEL_STUCK_TICKS = 600;
 
     public static final class Job {
+        /** AA_CLEANUP 2: who started it (the door's scope at the start; null = no scope); its tick runs in that scope. */
+        public final io.github.mojolowjo.entropybot.aa.door.Driver driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         public String type, status, label, goal;
         public boolean done, reflex;
         /** 28b: a walk whose goal the fence allowed (inside an area); the position watch leaves it be, so it can walk back in. */
@@ -598,6 +600,7 @@ public final class Jobs {
 
     /** A job made of steps (open, scan, deposit, corpse, rs, pots...): "started: <label>". */
     String startSeq(Seq s, String closeOnEnd) {
+        if (!door("job " + s.label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("job " + s.label);
         followWatch = null;
         followFix = null;
         Job j = new Job();
@@ -828,6 +831,7 @@ public final class Jobs {
 
     /** "restore now": a job that only puts blocks back. */
     String startRestore(RestoreRun run, String label) {
+        if (!door("restore " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("restore " + label);
         followWatch = null;
         followFix = null;
         safeSettings();
@@ -885,8 +889,14 @@ public final class Jobs {
 
     /** A new command replaces a walk: it ends quietly (the bridge's "job.done = true"). */
     public void replaceWalk() {
-        if (walking()) finish(JobRequests.REPLACED);
+        if (walking() && door("replace the walk " + job.label)) finish(JobRequests.REPLACED);
     }
+
+    /** AA_CLEANUP 2: the one door for job starts and foreign stops (always true with AA off). */
+    static boolean door(String what) { return io.github.mojolowjo.entropybot.aa.door.Door.allow(what); }
+
+    /** The running job's driver (null when none or unscoped): Commands runs the job's tick in it. */
+    public io.github.mojolowjo.entropybot.aa.door.Driver driver() { Job j = job; return j == null ? null : j.driver; }
 
     // ---- the fence ----
 
@@ -915,6 +925,7 @@ public final class Jobs {
 
     /** V1a: walker OWNER_ORDER (the owner's own goto/go) may walk outside every area; digging rules are unchanged. */
     public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker walker) {
+        if (!door("travel " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("travel " + label);
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
         LocalPlayer p = Minecraft.getInstance().player;
@@ -1031,6 +1042,7 @@ public final class Jobs {
 
     /** "home": /home right away. */
     public String startHome(LocalPlayer p) {
+        if (!door("home")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("home");
         JsonObject h = commands.home();
         int[] me = here(p);
         if (h != null && dimOf(h).equals(Guard.dimOf(p.level())) && distSq(pos(h), me) <= 64) return "ok: already home (" + fmt(pos(h)) + ")";
@@ -1055,6 +1067,7 @@ public final class Jobs {
 
     /** "spawn": walk to the nearest bed and click it. */
     public String startSetSpawn(LocalPlayer p) {
+        if (!door("spawn")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("spawn");
         String f = findBlock(p, "_bed 24");
         if (!f.startsWith("found")) return Hints.next("error: no bed within 24 blocks", "go base then spawn (or goto x y z next to a bed, then spawn)");
         String[] w = f.split(" ");
@@ -1076,6 +1089,7 @@ public final class Jobs {
 
     /** "wait <seconds>": a step that does nothing for a while. */
     public String startWait(String text) {
+        if (!door("wait")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("wait");
         int s = (int) Math.min(Math.max(Chains.leadingInt(text) == 0 ? 10 : Chains.leadingInt(text), 1), 3600);
         Job j = new Job();
         j.type = "wait";
@@ -1087,6 +1101,7 @@ public final class Jobs {
 
     /** "twerk" is a toggle: crouch on/off every 4 ticks until "twerk" again; "twerk <s>" for that long. */
     public String startTwerk(String text) {
+        if (!door("twerk")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("twerk");
         String t = text == null ? "" : text.trim().toLowerCase();
         long seconds = Chains.leadingInt(t);
         if (running() && job.type.equals("twerk")) {
@@ -2222,6 +2237,10 @@ public final class Jobs {
     }
 
     private void stopForReflex(String msg) {
+        // AA_CLEANUP 2: the retreat and fight stops are hand-rule danger decisions; under AA the job is held, not
+        // killed (AA's own danger pause decides). A denied dimension is a true reflex and still stops it.
+        if (!msg.contains("off limits") && !io.github.mojolowjo.entropybot.aa.door.Door.allow(
+                io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "stop the job: " + msg.replaceFirst("^stopped: ", ""))) return;
         finish(msg);
         IBaritone b = baritone();
         if (b != null) cancel(b);
@@ -2298,6 +2317,7 @@ public final class Jobs {
 
     /** "follow <name>" with the player out of view but a fresh position t: walk there and keep walking as it changes. */
     String startFollowFix(String name, String from, int[] t) {
+        if (!door("follow")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("follow");
         String r = followFixGo(name, from, t);
         return r.startsWith("ok") ? r + " (by the position your game sends, until you're in view)" : r;
     }

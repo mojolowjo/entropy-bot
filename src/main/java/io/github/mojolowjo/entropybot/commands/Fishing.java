@@ -51,6 +51,9 @@ final class Fishing {
 
     Fishing(Commands c) { this.c = c; }
 
+    /** AA_CLEANUP 2: who started the run (the door scope then; null = none). */
+    io.github.mojolowjo.entropybot.aa.door.Driver driver;
+
     boolean running() { return run != null; }
 
     Chains.Reply command(String from, String rest, String raw, JobRequests.Listener l, LocalPlayer p) {
@@ -68,6 +71,7 @@ final class Fishing {
         String reply = "started: fishing " + (g.timed() ? g.minutes() + " min" : "until " + g.n() + " fish") + " (fish status)";
         k.req = c.requests.local("fish", from, raw, reply, l);
         run = k;
+        driver = io.github.mojolowjo.entropybot.aa.door.Door.current();     // AA_CLEANUP 2: its ticks run as its starter
         LOG.info("[entropybot] fish: {} for {}", g, from);
         return new Chains.Reply(reply, k.req);
     }

@@ -364,7 +364,8 @@ public final class Reflexes {
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
         Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
-        if (reflex != Reflex.EATING && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
+        // AA_CLEANUP 2: Survival's hand-rule runs are off under AA (step 4: AA's hide/heal desire)
+        if (reflex != Reflex.EATING && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn() && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
             if (pillaring()) mc.options.keyJump.setDown(false);      // review: survival drives this tick
             return;
         }
@@ -424,7 +425,8 @@ public final class Reflexes {
         // then re-evaluate beyond 6: a duel only with the bow setting, or melee with a big margin (armour and health)
         if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil
                 && CreeperSprint.duelAfter(duel.mode(), bigCreeperMargin(mc, p))
-                && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
+                && duel.check(mc, p, (Creeper) t.e, now, hurt) == null
+                && io.github.mojolowjo.entropybot.aa.door.Door.allow(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "creeper duel")) {     // AA_CLEANUP 2: a duel is a hand-rule fight
             startDuel(mc, p, t);
             return;
         }
@@ -454,7 +456,9 @@ public final class Reflexes {
             // (review: Animal covers wolves, polar bears, goats, hoglins too: only the hunt's farm animals are harmless)
             boolean harmless = ft != null && io.github.mojolowjo.entropybot.vocab.HuntRules.MEAT.containsKey(
                     BuiltInRegistries.ENTITY_TYPE.getKey(t.e.getType()).toString());
-            if ((hp <= ReflexRules.RETREAT_AT && !harmless) || t.strong) {
+            if (((hp <= ReflexRules.RETREAT_AT && !harmless) || t.strong) && !io.github.mojolowjo.entropybot.aa.door.Door.allow(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "retreat home from " + t.id)) {
+                hitResponse(mc, p, t, hurt);     // AA_CLEANUP 2: under AA no hand-rule retreat, only the hit response
+            } else if ((hp <= ReflexRules.RETREAT_AT && !harmless) || t.strong) {
                 io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.verdict(t.id + ": retreat home: "
                         + (t.strong ? "too strong to fight" : "health " + Math.round(hp) + " at or below " + Math.round(ReflexRules.RETREAT_AT)));
                 startRetreat(mc, p, t);
@@ -1189,7 +1193,24 @@ public final class Reflexes {
         return out;
     }
 
+    /**
+     * AA_CLEANUP 2: the true reflex left under AA: hit and the attacker in reach = face it and strike back (fight);
+     * anything else (a hand-rule fight, flee, cover, lit spot, home) is refused at the door until step 4.
+     */
+    private void hitResponse(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
+        if (hurt && t.d <= ReflexRules.REACH) {
+            fight(mc, p, t);
+            return;
+        }
+        io.github.mojolowjo.entropybot.aa.door.Door.refuse(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "fight or flee " + t.id);
+        if (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING) settle("aa is on: no hand-rule fight");
+    }
+
     private void fightOrFlee(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
+        if (io.github.mojolowjo.entropybot.aa.door.Door.aaOn()) {
+            hitResponse(mc, p, t, hurt);
+            return;
+        }
         if (spotTick(mc, p, t, hurt)) return;          // 0.25.1
         boolean fighting = reflex == Reflex.FIGHTING;
         if (!fighting || now - assessedAt >= 10) {
@@ -2018,6 +2039,10 @@ public final class Reflexes {
 
     private boolean startFetch(Minecraft mc, LocalPlayer p) {
         fetchCooldownUntil = now + 2400;            // whatever happens, the next run waits 2 minutes
+        if (!eatRequested && !io.github.mojolowjo.entropybot.aa.door.Door.allow(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "food run")) {     // AA_CLEANUP 2: aa-food feeds the bot under AA
+            fetchNote = "aa is on: aa-food fetches food";
+            return false;
+        }
         // 0.32.1 (P1, cave test: "fetching food from -255 67 128" walked the bot 110 blocks out of a running job under
         // ground): never a silent takeover. A job running or the bot under ground: no run; very hungry with a job: the
         // job stops with the reason. An owner's "eat" still fetches.

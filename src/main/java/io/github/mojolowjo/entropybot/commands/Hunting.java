@@ -91,6 +91,9 @@ final class Hunting {
         return b.has("hunting") && !b.get("hunting").getAsBoolean();
     }
 
+    /** AA_CLEANUP 2: who started the run (the door scope then; null = none). */
+    io.github.mojolowjo.entropybot.aa.door.Driver driver;
+
     boolean running() { return run != null; }
 
     /** 0.30.5: the animals hunt may take within RANGE now (short kind -> count), the same filter as the hunt's pick. */
@@ -147,6 +150,7 @@ final class Hunting {
             String reply = "started: hunting " + mob.replaceFirst("^minecraft:", "") + " until I have " + r.itemWant + " " + r.item.replaceFirst("^minecraft:", "") + " (hunt status)";
             r.req = c.requests.local("hunt", from, raw, reply, l);
             run = r;
+            driver = io.github.mojolowjo.entropybot.aa.door.Door.current();     // AA_CLEANUP 2: its ticks run as its starter
             LOG.info("[entropybot] hunt: {} {} for {} x{} ({})", r.n, mob, r.item, r.itemWant, from);
             return new Chains.Reply(reply, r.req);
         }
@@ -163,6 +167,7 @@ final class Hunting {
         String reply = "started: hunting until I have " + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + " (hunt status)";
         r.req = c.requests.local("hunt", from, raw, reply, l);
         run = r;
+        driver = io.github.mojolowjo.entropybot.aa.door.Door.current();     // AA_CLEANUP 2: its ticks run as its starter
         LOG.info("[entropybot] hunt: {} {} for {}", r.n, r.want, from);
         return new Chains.Reply(reply, r.req);
     }

@@ -813,6 +813,7 @@ public final class AaRuntime implements JobPort {
         }
         int queued = c.vocab.queued.size();
         if (queued > 0) ended += "; " + queued + " queued task(s) run as your orders when my slot is free";
+        ended += "; rules and routines are suspended while aa runs (only aa, your orders and true reflexes start jobs)";     // AA_CLEANUP 2
         runStartMs = System.currentTimeMillis();
         runPicks = runStuckHalts = runDeaths = 0;
         runDead = false;
@@ -2192,7 +2193,8 @@ public final class AaRuntime implements JobPort {
         return "switches " + k.switches + " (pointless " + k.pointless + "), preempts " + k.preempts + ", fails " + k.fails + ", lost " + k.lost
                 + ", ticks " + k.ticks + ", last tick " + k.tickUs + " us, errors " + errors + (lastError != null ? " (last: " + lastError + ")" : "")
                 + (writeErrors > 0 ? ", file write errors " + writeErrors : "")
-                + ", AI requests " + aiRequests + " (" + bb.requests().size() + " waiting)";
+                + ", AI requests " + aiRequests + " (" + bb.requests().size() + " waiting)"
+                + ", " + io.github.mojolowjo.entropybot.aa.door.Door.text();     // AA_CLEANUP 2: the one door
     }
 
     /** The ladder's reasons this tick ("needs.tools: TOOLS met; needs.torches: TORCHES planning ..."). */
@@ -2906,6 +2908,7 @@ public final class AaRuntime implements JobPort {
             if (bb.task() != null) o.addProperty("task", bb.task().spec().chain());
             o.addProperty("danger", tree.dangerWhy());
             o.addProperty("status", statusLine());
+        o.addProperty("door", io.github.mojolowjo.entropybot.aa.door.Door.text());     // AA_CLEANUP 2
         }
         return o;
     }

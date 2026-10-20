@@ -73,6 +73,9 @@ public final class Mule {
     private Run run;
     private List<String> carryList = List.of();
 
+    /** AA_CLEANUP 2: who started the run (the door scope then; null = none). */
+    io.github.mojolowjo.entropybot.aa.door.Driver driver;
+
     boolean running() { return run != null; }
 
     /** 0.24.2: a carry runs (assist's idle mode). */
@@ -176,6 +179,7 @@ public final class Mule {
         commands.jobs.replaceWalk();
         r.req = commands.requests.local("mule", from, raw, reply, a.kind() == MuleRules.Kind.CARRY ? null : l);
         run = r;
+        driver = io.github.mojolowjo.entropybot.aa.door.Door.current();     // AA_CLEANUP 2: its ticks run as its starter
         LOG.info("[entropybot] mule: {} {} for {}", verb, rest, from);
         if (a.kind() == MuleRules.Kind.CARRY) {
             r.req.finished = true;                       // like follow: a carry never "arrives"; nobody waits for it
