@@ -68,7 +68,7 @@ class DiscoveryTest {
         var r = Discovery.rank(f(-1, 1, false, true, 16, 0.002, false), "iron", 5, dd);
         assertEquals(Discovery.Kind.STRIP, r.get(0).kind());
         assertTrue(r.get(0).command().startsWith("dig 100 69 199 100 71 199 ores via engine then goto 100 69 199 then "), r.get(0).command());
-        assertTrue(r.get(0).command().endsWith("goto 100 16 146 then place mine north then mine strip iron 5"), r.get(0).command());
+        assertTrue(r.get(0).command().endsWith("goto 100 40 170"), r.get(0).command());
         assertFalse(r.get(0).command().contains("torch"));
         assertTrue(r.get(0).why().contains("54 down"), r.get(0).why());
         // a marked mine: its own place
@@ -111,7 +111,7 @@ class DiscoveryTest {
         var s = r.get(0);
         assertEquals(Discovery.Kind.STRIP, s.kind());
         assertTrue(s.command().startsWith("dig 101 69 200 101 71 200 ores via engine then goto 101 69 200 then "), s.command());
-        assertTrue(s.command().endsWith("goto 154 16 200 then place mine east then mine strip iron 5"), s.command());
+        assertTrue(s.command().endsWith("goto 130 40 200"), s.command());
         assertTrue(s.why().contains("stairs east ground"), s.why());
         assertTrue(dd.contains("strip at Y: stairs north leaves my areas at 100 40 170"), dd.toString());
         assertTrue(dd.contains("strip at Y: stairs west a cell may not be broken"), dd.toString());

@@ -57,6 +57,6 @@ class IronFairTest {
         var ch = set.choose(facts(List.of(), fair(Set.of())), new Options.OptionMemory(), 0,
                 "mine iron_ore 3 dig then smelt raw_iron 3", 10, null, null);
         assertNotNull(ch.best(), ch.line());
-        assertTrue(ch.best().command().contains("goto 100 16 152 then place mine north then mine strip iron 3"), ch.best().command());
+        assertTrue(ch.best().command().endsWith("goto 100 34 170"), ch.best().command());
     }
 }

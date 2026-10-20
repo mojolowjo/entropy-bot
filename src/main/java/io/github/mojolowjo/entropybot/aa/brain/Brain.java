@@ -296,7 +296,13 @@ public final class Brain extends Node {
             if (bb.task() != null) taskSeen = true;
             Scored mine = lastScored.size() > running ? lastScored.get(running) : null;
             Boolean metNow = mine == null || s != Status.RUNNING ? null : cur.metNow(bb);
-            if (s == Status.RUNNING && mine != null && reasonGone(mine, metNow)) {          // day-check: the reason is gone; the commitment margin must not keep it alive
+            // aa-switch2 (r2-iron: "night.sleep wanted -1" 0.5 s after its pick): a score <= 0 ends the task only after
+            // ZERO_END_MS without a break, and never while the desire's own probe answer is held (a flicker); met = done at once
+            boolean goneNow = s == Status.RUNNING && mine != null && reasonGone(mine, metNow)
+                    && (Boolean.TRUE.equals(metNow) || !probeFlicker(cur, now));
+            if (!goneNow || gap) goneSince = -1;
+            else if (goneSince < 0) goneSince = now;
+            if (goneNow && (Boolean.TRUE.equals(metNow) || now - goneSince >= ZERO_END_MS)) {          // day-check: the reason is gone; the commitment margin must not keep it alive
                 // aa-gate: the desire's own check met = its work is done (a met rung, day for the shelter, healed): no pointless switch
                 String why = (Boolean.TRUE.equals(metNow) ? "done: its own check is met: " : "its reason is gone: ") + cur.id + " wanted " + Math.round(mine.score()) + " (" + mine.parts() + ")";
                 bb.port.log("brain: ends " + cur.id + ": " + why);
@@ -310,6 +316,17 @@ public final class Brain extends Node {
             return s == Status.FAILURE ? fail(cur.node.reason()) : s;
         }
         return choose(bb, now, null);
+    }
+
+    /** aa-switch2: how long a running desire's score must stay at or below 0 before the day-check ends it. */
+    public static final long ZERO_END_MS = 5_000;
+    /** aa-switch2: since when the running desire's reason has been gone without a break (-1: it is not). */
+    private long goneSince = -1;
+
+    /** aa-switch2: the running desire's own "cannot start" probe answer is held: its -1 is that flicker, not a gone reason. */
+    private boolean probeFlicker(Desire cur, long now) {
+        Held h = probeHeld.get(cur.id);
+        return h != null && now - h.at() < PROBE_HOLD_MS;
     }
 
     /** day-check: a running desire (not the owner's) whose desire fell to 0 or below, or is no longer wanted, ends. */
@@ -450,6 +467,7 @@ public final class Brain extends Node {
                 running = i;
                 lastWinner = i;
                 startedAt = lastProgressAt = lastMoveAt = now;
+                goneSince = -1;
                 sig = null;
                 picks++;
                 probe(bb, d.id, "RUNNING (" + Math.round(sc.score()) + top3(all, i) + ")");

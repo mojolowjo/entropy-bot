@@ -156,6 +156,12 @@ class BrainInterruptTest {
         s[0] = 0;
         clock.advance(250);
         br.tick(bb);
+        // aa-switch2: only after Brain.ZERO_END_MS without a break
+        assertFalse(port.log.stream().anyMatch(l -> l.startsWith("brain: ends shelter")), port.log.toString());
+        for (int i = 0; i < 5; i++) {
+            clock.advance(1_000);
+            br.tick(bb);
+        }
         assertTrue(port.log.stream().anyMatch(l -> l.startsWith("brain: ends shelter")), port.log.toString());
     }
 

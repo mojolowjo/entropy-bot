@@ -120,9 +120,16 @@ public final class IronOptions {
         String stripPrefix() {
             for (var o : discovery) if (o.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP) {
                 int i = o.command().indexOf(" then mine strip");     // "[dig stairs north n then ]place mine north"
-                return i > 0 ? o.command().substring(0, i) : null;
+                return i > 0 ? o.command().substring(0, i) : stripLeg() ? o.command() : null;
             }
             return null;
+        }
+
+        /** aa-switch2: the strip option is only a staircase leg (the band is deeper than one chain): it runs alone. */
+        boolean stripLeg() {
+            for (var o : discovery) if (o.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP)
+                return o.command().startsWith("dig ") && !o.command().contains("mine strip");
+            return false;
         }
 
         /** AA_ROUND3 5: no cave known or seen: the explore walk before "mine cave" ("find cave 5"), or null. */
@@ -511,7 +518,7 @@ public final class IronOptions {
                 String cmd = rewrite(steps, one);
                 // AA_ROUND3 3: strip at the best band with no mine marked: the mine is placed there first
                 String pre = f.fair() == null ? null : s.way() == Way.STRIP ? f.fair().stripPrefix() : s.way() == Way.CAVE ? f.fair().cavePrefix() : null;
-                if (pre != null) cmd = pre + " then " + cmd;
+                if (pre != null) cmd = s.way() == Way.STRIP && f.fair().stripLeg() ? pre : pre + " then " + cmd;
                 rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), cmd, s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
                         returnLeg(s, f, oreIdx), s.target() != null ? io.github.mojolowjo.entropybot.aa.brain.Site.at(s.target().x(), s.target().y(), s.target().z())
                         : s.way() == Way.CAVE && f.fair() != null && f.fair().caveSite() != null

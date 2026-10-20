@@ -31,6 +31,8 @@ public final class Discovery {
     /** AA_ROUND3 5: a seen opening this close is the cheap cave option; the explore walk's cap on blocks per cave expected. */
     public static final int SEEN_CAVE_WITHIN = 64, MAX_WALK_PER_CAVE = 3000, EXPLORE_MINUTES = 5;
     public static final int SLAB = 4;
+    /** aa-switch2: staircase levels per chain (2 steps each; the chain limit is 100 with the routine after it). */
+    public static final int STAIR_LEG = 30;
 
     /**
      * @param caveDist   blocks to the nearest known cave within reach, -1 none
@@ -188,13 +190,18 @@ public final class Discovery {
             // to the band, then the mine is marked where I stand
             String dir = stair == null ? "north" : stair.dir();
             int[] u = io.github.mojolowjo.entropybot.aa.WayUp.dir(dir);
+            // aa-switch2 (r2-iron: 17 of 19 pointless): a staircase of 2 steps a level past the chain limit (100) was
+            // refused at every start ("123 steps"); a deep band is reached in legs of STAIR_LEG levels, re-decided at each bottom
+            boolean leg = !f.mineMarked() && down > STAIR_LEG;
             StringBuilder sb = new StringBuilder();
-            for (String st : io.github.mojolowjo.entropybot.commands.StairPlan.steps(f.meX(), f.meY(), f.meZ(), u[0], u[1], down))
+            for (String st : io.github.mojolowjo.entropybot.commands.StairPlan.steps(f.meX(), f.meY(), f.meZ(), u[0], u[1], leg ? STAIR_LEG : down))
                 if (!st.startsWith("place torch")) sb.append(st).append(" then ");
-            String cmd = f.mineMarked() ? "mine strip " + word + " " + left : sb + "place mine " + dir + " then mine strip " + word + " " + left;
+            String cmd = f.mineMarked() ? "mine strip " + word + " " + left
+                    : leg ? sb.substring(0, sb.length() - " then ".length())
+                    : sb + "place mine " + dir + " then mine strip " + word + " " + left;
             out.add(new Opt(Kind.STRIP, cost, String.format(Locale.ROOT, "%s, %s, %.0f tunnel blocks per ore, %.1f s a block%s%s",
                     f.mineMarked() ? "the marked mine" : "Y " + y + (down > 0 ? " (" + down + " down)" : ""), dens, per, dig,
-                    f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : "",
+                    (f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : "") + (leg ? ", this leg " + STAIR_LEG + " of " + down + " levels" : ""),
                     g == null ? "" : String.format(Locale.ROOT, ", stairs %s ground %.0f s", dir, g.cost())), cmd));
         }
         if (!f.ownerGoal()) dropped.add("clear chunk: the owner's goals only");

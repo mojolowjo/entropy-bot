@@ -30,7 +30,7 @@ class RunJobTest {
         assertEquals("busy: the owner's chain runs", job.reason());
         assertFalse(job.running());
         assertTrue(port.log.get(0).startsWith("refused TORCHES \"goal torch 16\": busy"), port.log.get(0));
-        assertEquals(1, tracer.decisions().size(), "a decision line even for a refusal");
+        assertEquals(2, tracer.decisions().size(), "a decision line even for a refusal, and its end line (aa-switch2)");
     }
 
     @Test
