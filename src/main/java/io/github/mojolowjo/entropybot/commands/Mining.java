@@ -1055,7 +1055,7 @@ final class Mining {
     // ==== explore ====
 
     static final class ExRun {
-        long until, start, targetAt, scanAt;
+        long until, start, targetAt, scanAt, findAt = -1;
         int chunks, sx, sz;
         /** 0.33.0: where the walk started (the report says how far it went). */
         int[] from;
@@ -1309,10 +1309,16 @@ final class Mining {
                 }
             }
             case CAVE -> {
-                if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isCave(darkAirBelow(p))) {
+                // live aa-seen2: this under-the-feet test never ran before (the step's ticks missed "% 20 == 5"); once it ran
+                // it called the spawn's plain ground a cave. Kept on its old schedule; the sightings below are the finder.
+                if (now() % 20 == 5 && io.github.mojolowjo.entropybot.vocab.ExploreWords.isCave(darkAirBelow(p))) {
                     var poi = core.pois.saw("cave", me[0], me[1], me[2], dim(), System.currentTimeMillis(), now(), null);
                     return "found a cave under " + me[0] + " " + me[1] + " " + me[2] + (poi != null ? " (poi #" + poi.id() + "; mine cave <ores> there)" : "");
                 }
+                // AA_ROUND3 5: a cave opening seen (Sightings: in view, line of sight, two glances) within 64
+                var sg = pass().sightings();
+                var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+                if (open != null) return "saw a cave opening at " + open.where() + " (" + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{open.x(), open.y(), open.z()}))) + " away; mine cave <ores> starts there)";
             }
             default -> { }
         }
@@ -1350,11 +1356,12 @@ final class Mining {
         String done = now() > ex.until ? "the time is up" : null;
         // aa385: the leash - never farther than LEASH blocks from my areas (live: explore went 363 blocks out); the
         // brain's return leg (aa.core.WayBack) brings it back
-        if (done == null && now() % 100 == 50 && !commands.inAreas(d, me[0], me[2]) && !commands.areaNames().isEmpty()
-                && !ExploreRules.nearAreas((x, z) -> commands.inAreas(d, x, z), me[0], me[2], ExploreRules.LEASH))
-            done = "leash: " + ExploreRules.LEASH + " blocks past my areas";
+        // owner 2026-10-20: no leash any more - exploring may leave the areas freely; the way home is priced instead
+        // (Discovery's explore row: the return trip to my areas, night-weighted, within the horizon)
         // V1b find: stop when it turned up
-        if (ex.find != null && done == null && now() % 20 == 5) {
+        // AA_ROUND3 5 (live aa-seen2: the step runs on even ticks, so "% 20 == 5" never came): once a second by the clock
+        if (ex.find != null && done == null && (ex.findAt < 0 || now() - ex.findAt >= 20)) {
+            ex.findAt = now();
             try {
                 ex.found = findCheck(ex, p);
             } catch (RuntimeException e) {
@@ -1450,6 +1457,12 @@ final class Mining {
             s.note = ExploreRules.note(ex.chunks, now() - ex.start, done != null ? done : "nothing left to explore in reach", fresh, ex.from, Jobs.here(p));
             if (ex.find != null) s.note = "no " + ex.find.what().replaceFirst("^minecraft:", "") + " found (" + (done != null ? done : "nothing left in reach") + "); " + s.note;
             s.note += tookText(ex.took);
+            // owner 2026-10-20 ("done exploring for 5 min" after 1 min): the label says the real time and why it ended
+            long realMin = Math.max(0, Math.round((now() - ex.start) / 1200.0));
+            String why = done != null ? done : "nothing left to explore in reach";
+            s.label = (ex.find != null ? "looking for a " + ex.find.what().replaceFirst("^minecraft:", "") : "exploring")
+                    + " - ended after " + realMin + " min (" + why + ")";
+            if (s.job() != null) s.job().label = s.label;
             io.github.mojolowjo.entropybot.guard.Guard.INSTANCE.core.endRoam("explore");
             int[] base = basePos();
             if (base != null) s.splice(s.idx + 1, List.of(Seq.Step.walk(base, true)));
@@ -1626,7 +1639,20 @@ final class Mining {
         if (bagRoom(p) <= CaveRules.FREE) return "error: my bag is nearly full - \"deposit\" first";
         protectBoxes();                           // S1: fail closed - a policy it can't read refuses here (BadPolicy, caught in mine())
         int[] me = Jobs.here(p);
-        Caves.Cave c = core.caves.pick(m.at() == null ? "" : m.at(), dim(), me[0], me[1], me[2], System.currentTimeMillis(), now());
+        // AA_ROUND3 5: no known cave within reach but a cave opening I have seen within 64: the cave starts there (walk first)
+        int[] at = me, walkTo = null;
+        if (m.at() == null || m.at().isEmpty()) {
+            Caves.Cave k = core.caves.nearest(dim(), me[0], me[1], me[2]);
+            boolean knownNear = k != null && Jobs.distSq(me, new int[]{k.ex, k.ey, k.ez}) <= (long) Caves.PICK_WITHIN * Caves.PICK_WITHIN;
+            var sg = knownNear ? null : pass().sightings();
+            var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+            if (open != null) {
+                at = new int[]{open.x(), open.y(), open.z()};
+                if (Jobs.distSq(me, at) > 36) walkTo = at;
+                LOG.info("[entropybot] cave: no known cave near; the cave opening I saw at {} ({} away)", open.where(), Math.round(Math.sqrt(Jobs.distSq(me, at))));
+            }
+        }
+        Caves.Cave c = core.caves.pick(m.at() == null ? "" : m.at(), dim(), at[0], at[1], at[2], System.currentTimeMillis(), now());
         if (c == null) return "error: I know no cave called " + m.at() + " (\"debug caves\" lists them)";
         int minutes = m.minutes() > 0 ? m.minutes() : CaveRules.MINUTES;
         CaveRun cv = new CaveRun();
@@ -1638,7 +1664,8 @@ final class Mining {
         cv.until = now() + minutes * 1200L;
         cv.start = now();
         cv.own = c.visited.isEmpty() ? c.name : null;
-        Seq s = new Seq(jobs, storage, CaveRules.label(c.name, m.spec(), m.n(), minutes), List.of(new Seq.Step("cavestep")), "always");
+        Seq s = new Seq(jobs, storage, CaveRules.label(c.name, m.spec(), m.n(), minutes),
+                walkTo == null ? List.of(new Seq.Step("cavestep")) : List.of(Seq.Step.walk(walkTo.clone(), true), new Seq.Step("cavestep")), "always");
         runs.put(s, cv);
         String r = jobs.startSeq(s, "always");
         jobs.job.holdOnFight = true;              // monsters live in caves: a fight holds the caving, it doesn't end it
@@ -1929,6 +1956,16 @@ final class Mining {
 
     /** The way out: to the entrance, then home (the walk step teleports when that's worth it); the report after the entrance. */
     private String caveFinish(Seq s, CaveRun cv, String why, boolean finished, boolean noCave) {
+        // AA_ROUND3 5: a cave entered that gave no ore: its seen openings are exhausted (no more "explore cave" there)
+        if (cv.got() == 0 && cv.entrance != null) {
+            try {
+                var sg = pass().sightings();
+                int n = sg == null ? 0 : sg.exhaust(dim(), cv.entrance[0], cv.entrance[1], cv.entrance[2], System.currentTimeMillis());
+                if (n > 0) LOG.info("[entropybot] cave: no ore in {} - the cave opening{} seen at {} marked exhausted", cv.name, n == 1 ? "" : "s", Jobs.fmt(cv.entrance));
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] cave: couldn't mark the sighting exhausted: {}", e.toString());
+            }
+        }
         List<Seq.Step> steps = new ArrayList<>();
         if (cv.entrance != null) steps.add(Seq.Step.walk(cv.entrance.clone(), true));
         Seq.Step end = new Seq.Step("caveend");

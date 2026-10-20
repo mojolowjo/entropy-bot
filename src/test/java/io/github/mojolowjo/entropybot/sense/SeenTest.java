@@ -90,16 +90,20 @@ class SeenTest {
         s.caving = false;
         s.caveTime(2);
         assertEquals((2 + Seen.PRIOR_RATE * Seen.PRIOR_MIN) / (2 + Seen.PRIOR_MIN), s.caveRate("iron"), 1e-9);
-        OreStats o = new OreStats();
-        o.seen().saw("d", 4, 5, 6, "iron", 7);
-        o.seen().caveTime(1);
+        // AA_ROUND3 5: the ore cells live in sightings.json (Sightings kind ORE)
+        Sightings o = new Sightings();
+        o.ore().saw("d", 4, 5, 6, "iron", 7);
+        o.ore().caveTime(1);
         assertTrue(o.dirty());
         int[] bad = {0};
-        OreStats back = OreStats.fromJson(o.toJson(), bad);
+        Sightings back = Sightings.fromJson(o.toJson(), bad);
         assertEquals(0, bad[0]);
-        assertTrue(back.seen().has("d", 4, 5, 6));
+        assertTrue(back.ore().has("d", 4, 5, 6));
         assertFalse(back.dirty());
-        // an old file without the part loads empty
-        assertEquals(0, OreStats.fromJson("{\"hist\":{}}", bad).seen().size("d"));
+        // an old ore-stats.json with the part: read once as the legacy cells (ChunkPass carries them over), not written back
+        OreStats old = OreStats.fromJson("{\"hist\":{},\"seen\":" + o.ore().toJson() + "}", bad);
+        assertTrue(old.legacySeen().has("d", 4, 5, 6));
+        assertFalse(old.toJson().contains("\"seen\""));
+        assertNull(OreStats.fromJson("{\"hist\":{}}", bad).legacySeen());
     }
 }

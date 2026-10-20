@@ -42,14 +42,17 @@ public final class OreStats {
         }
     }
 
-    /** AA_ROUND3 3: the seen ore cells and the cave yield, kept in the same file. */
-    private Seen seen = new Seen();
+    /**
+     * AA_ROUND3 5: the seen ore cells moved to {@link Sightings} (sightings.json, kind ORE). An older file's "seen" part
+     * is read here only so ChunkPass can carry it over once; it is no longer written here.
+     */
+    private Seen legacySeen;
 
-    public Seen seen() { return seen; }
+    public Seen legacySeen() { return legacySeen; }
 
-    public boolean dirty() { return dirty || seen.dirty(); }
+    public boolean dirty() { return dirty; }
 
-    public void saved() { dirty = false; seen.saved(); }
+    public void saved() { dirty = false; }
 
     /**
      * AA_ROUND3 3: listed ore of a family per block in the {@link #BAND}-block band around y, in one dimension (the
@@ -158,7 +161,6 @@ public final class OreStats {
             cs.add(d.getKey(), a);
         }
         root.add("chunks", cs);
-        root.add("seen", seen.toJson());
         return GSON.toJson(root);
     }
 
@@ -193,12 +195,11 @@ public final class OreStats {
             skipped[0]++;
         }
         try {
-            if (root.has("seen")) o.seen = Seen.fromJson(root.get("seen"), skipped);
+            if (root.has("seen")) o.legacySeen = Seen.fromJson(root.get("seen"), skipped);
         } catch (RuntimeException ex) {
             skipped[0]++;
         }
         o.dirty = false;
-        o.seen.saved();
         return o;
     }
 
