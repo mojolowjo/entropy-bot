@@ -1126,6 +1126,8 @@ public final class Commands implements Chains.Env {
         if (verb.equals("check")) return Reply.now(selfCheck.command(player) + "\n" + io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.counters() + "; " + io.github.mojolowjo.entropybot.view.ViewLive.NEWS.counters()
                 + (aaRuntime == null ? "" : "\n" + aaRuntime.statusLine() + "; " + aaRuntime.counts()));      // 0.36.0: AA's self-check line
         if (verb.equals("aa")) return Reply.now(isOwner ? AaCommands.handle(this, rest) : "sorry, only " + owner() + " can use aa");     // 0.36.0
+        // AA_STEP3 B: a bare "go" releases the plan slow mode holds (go <place> | go poi <n> stay the walking verb below)
+        if (verb.equals("go") && rest.isBlank() && aaRuntime != null) return Reply.now(isOwner ? aaRuntime.slow.go() : "sorry, only " + owner() + " can use go");
         // 0.32.0 (operator view): the last failure in full, the text map, the reply setting
         // review: "why" and "why cut" are the operator view's; "why brain" / "why threats" stay the brain's
         if (verb.equals("why") && (rest.isBlank() || rest.trim().equalsIgnoreCase("cut"))) return Reply.now(io.github.mojolowjo.entropybot.view.ViewLive.SHAPER.why(System.currentTimeMillis(), rest));

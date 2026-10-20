@@ -39,6 +39,7 @@ public final class WatchEvents {
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, CalculateDetachedCameraDistanceEvent.class, WatchEvents::distance);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, ViewportEvent.ComputeFov.class, WatchEvents::fov);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, RenderLevelStageEvent.class, WatchEvents::stage);
+        NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, RenderLevelStageEvent.class, SlowRender::onStage);     // AA_STEP3 B: slow mode's route
         NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, false, RenderFrameEvent.Pre.class, WatchEvents::framePre);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, RenderFrameEvent.Post.class, WatchEvents::framePost);
         MixinFlags.watchApplied = true;          // "the watch hook is in": the listeners, since 0.15.2

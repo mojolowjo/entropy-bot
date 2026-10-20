@@ -108,7 +108,41 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) AaRuntime::surfaceY);        // AA_ROUND4 B1
         loadTuning();                                                                                                                        // AA_ROUND4 B3
         c.chains.onEnd(this::chainEnded);
+        slow = new AaSlow(c, this);                                  // AA_STEP3 B: slow mode + the prediction ledger
+        c.chains.stepGate(slow::hold);
     }
+
+    // ---- AA_STEP3 B: slow mode (AaSlow) ----
+
+    final AaSlow slow;
+
+    io.github.mojolowjo.entropybot.aa.Options.Option runningOption() { return runningOpt; }
+
+    long taskSeq() { return current; }
+
+    boolean ownChainRunning() { return chainRunning() && CHAIN.equals(myChain); }
+
+    /** Danger and the way out of a hole are never held by slow mode. */
+    boolean slowSkip() { return "danger".equals(tree.driver()) || escapePending || escapeWay != null; }
+
+    void poke() { progress++; }
+
+    String desireId() {
+        var rd = tree.brain.runningDesire();
+        return rd == null ? "" : rd.id;
+    }
+
+    String objective() {
+        String ch = bb.task() == null ? "" : bb.task().spec().chain();
+        return desireId() + (ch == null || ch.isEmpty() ? "" : ": " + ch);
+    }
+
+    io.github.mojolowjo.entropybot.aa.Options.Choice lastChoice() {
+        var op = runningOpt == null ? null : pickerOf(runningOpt);
+        return op == null ? null : op.last();
+    }
+
+    static void background(Runnable r) { WRITER.submit(r); }
 
     // ---- AA_ROUND3 4: facts timing (the pick's cost lives in its facts supplier) ----
 
@@ -899,6 +933,7 @@ public final class AaRuntime implements JobPort {
 
     String turnOff(String why) {
         lookRestore();
+        slow.reset();                        // AA_STEP3 B
         io.github.mojolowjo.entropybot.clear.OreDetour.valuer = null;
         appendRun();
         JsonObject d = data();
@@ -1036,6 +1071,7 @@ public final class AaRuntime implements JobPort {
             Status s = tree.tick(bb);
             swimTick(p, now);
             replanTick(p, now);
+            slow.tick(p, now);               // AA_STEP3 B: the ledger rows and the slow-mode hold
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
@@ -1452,6 +1488,7 @@ public final class AaRuntime implements JobPort {
         }
         current = ++seq;
         currentChain = head;
+        slow.chainStarted();                // AA_STEP3 B: the ledger's predictions (slow mode or not)
         return current;
     }
 
@@ -1699,6 +1736,7 @@ public final class AaRuntime implements JobPort {
             return;
         }
         currentChain = head;
+        slow.chainStarted();                 // AA_STEP3 B: the switched way's steps are priced for the ledger
     }
 
     @Override public String lastRefusal() { return refusal; }
@@ -3035,7 +3073,11 @@ public final class AaRuntime implements JobPort {
     String ideasLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 5); }
 
     /** The dashboard's live AA tree (fast channel GET /aa), built from the running tree. */
-    com.google.gson.JsonObject live() { return io.github.mojolowjo.entropybot.aa.AaLive.json(tree, bb, on(), io.github.mojolowjo.entropybot.aa.AaLive.SWITCHES); }
+    com.google.gson.JsonObject live() {
+        var o = io.github.mojolowjo.entropybot.aa.AaLive.json(tree, bb, on(), io.github.mojolowjo.entropybot.aa.AaLive.SWITCHES);
+        o.add("slow", slow.json(System.currentTimeMillis()));          // AA_STEP3 B: the waiting plan, the Go button's state
+        return o;
+    }
 
     /** BRAIN_PLAN B1: the top desires with their scores (aa why / aa status). */
     List<String> brainLines(int n) { return tree.brain.whyLines(n); }

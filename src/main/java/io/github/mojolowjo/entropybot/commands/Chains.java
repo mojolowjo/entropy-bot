@@ -245,6 +245,29 @@ public final class Chains {
         if (chain != null) chain.retryAt = Math.max(chain.retryAt, env.tick() + ticks);
     }
 
+    /** AA_STEP3 B (slow mode): asked before a step of a chain is dispatched (never a detour); true = hold it this tick. */
+    public interface StepGate { boolean hold(String chain, int idx, String step); }
+
+    private StepGate stepGate;
+
+    public void stepGate(StepGate g) { stepGate = g; }
+
+    /** The running chain's whole step list (a copy), empty when none: slow mode shows it as the plan. */
+    public List<String> stepsNow() {
+        Chain c = chain;
+        return c == null ? List.of() : new ArrayList<>(c.steps);
+    }
+
+    /** A gate that throws lets the step go (logged): slow mode must never wedge a chain. */
+    private boolean gateHolds(Chain c) {
+        try {
+            return stepGate.hold(c.name, c.idx, c.steps.get(c.idx));
+        } catch (RuntimeException e) {
+            env.log("chain " + c.name + ": the step gate failed, the step goes on: " + e);
+            return false;
+        }
+    }
+
     /** B1: told how every chain ends (name, message); 0.36.0 (AA P2): a fan-out, the brain and AA both listen. */
     private final List<java.util.function.BiConsumer<String, String>> endHooks = new ArrayList<>();
 
@@ -578,6 +601,7 @@ public final class Chains {
             c.detour = null;
             c.inDetour = true;
         } else {
+            if (stepGate != null && gateHolds(c)) return;         // AA_STEP3 B: slow mode holds the step; asked again next tick
             step = c.steps.get(c.idx++);
             c.jobPos = null;
             if (step.startsWith(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT)) step = step.substring(io.github.mojolowjo.entropybot.camp.FoodPlan.SOFT.length());
