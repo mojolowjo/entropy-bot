@@ -55,6 +55,15 @@ public final class Failures {
         return x;
     }
 
+    /** AA_STEP2 review 2: a failure counted with a hold of {@code holdMs} (shorter when nothing else is open). */
+    public Rec failedFor(String desire, String option, String reason, long now, Inputs in, long holdMs) {
+        Rec r = map.get(key(desire, option));
+        int n = r == null ? 1 : r.fails() + 1;
+        Rec x = new Rec(desire, option, Cause.of(reason), in == null || in.pos == null ? null : in.pos.clone(), in == null ? -1 : items(in), n, now + holdMs, reason);
+        map.put(key(desire, option), x);
+        return x;
+    }
+
     /** A failure counted without a hold (P(success) drops; something else holds it off). */
     public void counted(String desire, String option, String reason) {
         Rec r = map.get(key(desire, option));

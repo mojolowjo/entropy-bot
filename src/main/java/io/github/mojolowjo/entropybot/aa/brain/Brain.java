@@ -436,6 +436,14 @@ public final class Brain extends Node {
                 if (now - s.d().urgentSince < s.d().graceMs) continue;
             }
             boolean owner = s.d().kind == Desire.Kind.OWNER && s.d().freshUntil > now && now - startedAt >= MIN_RUN_MS;
+            // AA_STEP2 review 1: the cap guard is only between trumping desires; food under TRUMP_FOOD and the owner's
+            // fresh order still beat a running trumping one (danger waiting out the night at 99)
+            if (cur.trumps && !s.d().trumps && (owner || s.d().id.equals("needs.food") && bb.in.food < TRUMP_FOOD && s.score() > 0)) {
+                cands.add(s);
+                continue;
+            }
+            // and the other way round: starving food keeps the slot against a trumping desire (no flip back)
+            if (s.d().trumps && cur.id.equals("needs.food") && bb.in.food < TRUMP_FOOD) continue;
             if (!urgent(s.d(), s.own()) && !owner) continue;
             if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus

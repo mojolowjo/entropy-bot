@@ -625,7 +625,7 @@ public final class AaDesires {
         double v = Math.max(night, hide);
         if (v < 0) return DangerOptions.Need.NONE;
         String why = (hide > night ? "hide and heal " + Math.round(hide) : "night " + Math.round(night)) + " (danger " + Math.round(danger * 100) / 100.0 + ")";
-        return new DangerOptions.Need(v, why, Night.hostile(bb) ? danger : 0, bb.in.sheltered, shellBlocks(bb.in.bag),
+        return new DangerOptions.Need(v, why, Night.hostile(bb) ? danger : 0, bb.in.sheltered || sealedHere(bb), shellBlocks(bb.in.bag),
                 bb.in.bedKnown || bb.in.bedInBag, bb.in.baseKnown);
     }
 
@@ -673,19 +673,53 @@ public final class AaDesires {
                 .met(AaDesires::dangerMet);
     }
 
+    /** Review 4: the ways that leave the bot sealed in; the fact (int[] pos) where it sealed in last. */
+    static final java.util.Set<DangerOptions.Way> SEALS = java.util.EnumSet.of(DangerOptions.Way.BURROW, DangerOptions.Way.DIG_IN, DangerOptions.Way.BOX);
+    public static final String SEALED_FACT = "aa.sealedAt";
+    /** Review 2: a failed way's hold when no other way is open (else Failures' 10 min x fails). */
+    static final long SHORT_HOLD_MS = 60_000;
+
+    static long holdMs(int othersOpen, int fails) {
+        if (othersOpen <= 0) return SHORT_HOLD_MS;
+        return Math.min(io.github.mojolowjo.entropybot.aa.brain.Failures.RETRY_MAX_MS, io.github.mojolowjo.entropybot.aa.brain.Failures.RETRY_MS * Math.max(1, fails));
+    }
+
+    /** Review 4: still in the cell it sealed in (1 across, 3 up or down); moved away = the fact goes. */
+    static boolean sealedHere(Blackboard bb) {
+        if (!(bb.fact(SEALED_FACT) instanceof int[] at) || bb.in.pos == null) return false;
+        int[] p = bb.in.pos;
+        boolean here = Math.abs(p[0] - at[0]) <= 1 && Math.abs(p[2] - at[2]) <= 1 && Math.abs(p[1] - at[1]) <= 3;
+        if (!here) bb.fact(SEALED_FACT, null);
+        return here;
+    }
+
     /** AA_STEP2 1: the danger job's node: a failed run holds its way in Failures ("danger/box"), logged; the rest stay open. */
     static Node wayHolds(RunJob job) {
         return new Node(job.id + ".ways", "the danger job; a failure holds its way") {
             @Override protected Status run(Blackboard bb) {
+                boolean ran = job.running();           // review 3: a start refused ("busy: ...") never ran: no hold
                 Status s = job.tick(bb);
                 if (s == Status.FAILURE && bb.fact(WAY_FACT) instanceof DangerOptions.Way w) {
                     bb.fact(WAY_FACT, null);
-                    if (bb.fact(Brain.FAILURES_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.Failures fs) {
-                        var r = fs.failed(DANGER_ID, w.key(), job.reason(), bb.clock.now(), bb.in);
-                        bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "): held " + (r.until() - bb.clock.now()) / 1000 + " s, the other ways stay open");
+                    if (!ran) bb.port.log("danger: " + w.key() + " did not start (" + job.reason() + "): not held");
+                    else if (w == DangerOptions.Way.WAIT) bb.port.log("danger: wait failed (" + job.reason() + "): the fallback is never held");
+                    else if (bb.fact(Brain.FAILURES_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.Failures fs) {
+                        long now = bb.clock.now();
+                        java.util.function.Function<String, String> held = k -> k.equals(w.key()) ? "this one" : fs.held(DANGER_ID, k, now);
+                        int open = DangerOptions.openWays(dangerChoice(bb), held);
+                        long ms = holdMs(open, fs.fails(DANGER_ID, w.key()) + 1);
+                        fs.failedFor(DANGER_ID, w.key(), job.reason(), now, bb.in, ms);
+                        bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "): held " + ms / 1000 + " s, " + open + " other way(s) open");
                     } else bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "), no failure record to hold it");
                 }
-                if (s == Status.SUCCESS) bb.fact(WAY_FACT, null);
+                if (s == Status.SUCCESS) {
+                    // review 4: a dug or built shell counts as sheltered while the bot stays in it (no re-burrow loop)
+                    if (bb.fact(WAY_FACT) instanceof DangerOptions.Way w && SEALS.contains(w) && bb.in.pos != null) {
+                        bb.fact(SEALED_FACT, bb.in.pos.clone());
+                        bb.port.log("danger: " + w.key() + " done, sealed in at " + java.util.Arrays.toString(bb.in.pos) + " (stay: the cheapest way)");
+                    }
+                    bb.fact(WAY_FACT, null);
+                }
                 return s == Status.FAILURE ? fail(job.reason()) : s;
             }
 

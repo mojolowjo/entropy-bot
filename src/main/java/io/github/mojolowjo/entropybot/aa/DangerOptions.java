@@ -229,6 +229,16 @@ public final class DangerOptions {
 
     // ---- AA_STEP2 1: the night ways (one danger desire; night.hide and night.shelter are gone) ----
 
+    /** Review 2: the open-air fallback's length (s). */
+    static final double OPEN_WAIT_S = 60;
+
+    /** Review 2: the night ways other than the fallback that are possible and not held (a failure then holds only briefly when 0). */
+    public static int openWays(Choice c, java.util.function.Function<String, String> held) {
+        int n = 0;
+        if (c != null) for (Priced p : c.all()) if (p.possible() && p.way() != Way.WAIT && p.way() != Way.STAY && (held == null || held.apply(p.way().key()) == null)) n++;
+        return n;
+    }
+
     /** As {@link #choose(ThreatFacts)} with the need and no holds. */
     public static Choice choose(ThreatFacts f, Need need) { return choose(f, need, k -> null); }
 
@@ -267,11 +277,13 @@ public final class DangerOptions {
                     home ? "flee home " + Math.round(w.baseDist()) + " (" + near.size() + " on the way)" : need.base() ? "the base out of reach" : "no base"));
             double st = Tuning.get("danger.bedS");
             all.add(priced(me, Way.SLEEP, need.bed(), during(near, st) + amb * st, st, need.bed() ? "a bed known" : "no bed known"));
+            // review 2: the always-possible fallback with its real cost: stand here in the open for a minute (never held)
+            all.add(priced(me, Way.WAIT, true, during(near, OPEN_WAIT_S) + amb * OPEN_WAIT_S, 0, "wait here in the open " + Math.round(OPEN_WAIT_S) + " s"));
         }
         Priced best = null;
         List<String> holds = new ArrayList<>();
         for (Priced p : all) {
-            String h = held == null ? null : held.apply(p.way().key());
+            String h = held == null || p.way() == Way.WAIT ? null : held.apply(p.way().key());       // WAIT is never held
             if (h != null) { holds.add(p.way().key() + " held: " + h); continue; }
             if (p.possible() && (best == null || p.costS() < best.costS())) best = p;
         }

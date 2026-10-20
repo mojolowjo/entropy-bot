@@ -80,8 +80,10 @@ class DangerStep2Test {
         assertEquals(85, c.score(), 1e-9, "the night is not silenced by the failed box");
         fs.failed(AaDesires.DANGER_ID, "burrow", "no ground", clock.now(), bb.in);
         DangerOptions.Choice none = AaDesires.dangerChoice(bb);
-        assertEquals(-1, none.score());
-        assertTrue(none.terms().endsWith("no way open"), "never silent: " + none.terms());
+        assertEquals(85, none.score(), "review 2: the night still has an answer " + none.terms());
+        assertEquals(DangerOptions.Way.WAIT, none.best().way(), "the open-air fallback, never held: " + none.terms());
+        assertEquals(60_000, AaDesires.holdMs(0, 3), "nothing else open: a short hold");
+        assertEquals(Failures.RETRY_MS * 2, AaDesires.holdMs(1, 2));
         clock.advance(Failures.RETRY_MS + 1);
         assertEquals(DangerOptions.Way.BOX, AaDesires.dangerChoice(bb).best().way(), "the hold runs out");
     }
@@ -128,6 +130,50 @@ class DangerStep2Test {
             br.tick(bb);
         }
         assertEquals(1, port.started.size(), "99 vs 99: the margin holds at the cap, no switch");
+    }
+
+    @Test
+    void review1FoodUnder4AndTheOwnersOrderStillBeatADangerAt99() {
+        double[] v = {99, -1};
+        Brain br = new Brain("brain", "t",
+                new Desire("danger", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do danger", "brain"), b -> v[0]).overTrumps(),
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, "do food", "brain"), b -> v[1]));
+        bb.in.food = 10;
+        br.tick(bb);
+        assertEquals("do danger", port.started.get(port.started.size() - 1).chain());
+        v[1] = 80;
+        clock.advance(3_000);
+        br.tick(bb);
+        assertEquals("do danger", port.started.get(port.started.size() - 1).chain(), "food 10: danger keeps the slot");
+        bb.in.food = 2;
+        clock.advance(3_000);
+        br.tick(bb);
+        br.tick(bb);
+        assertEquals("do food", port.started.get(port.started.size() - 1).chain(), "food under 4 beats the danger at 99 " + port.log);
+    }
+
+    @Test
+    void review3ARefusedStartHoldsNothingReview4ASealedHoleIsStayedIn() {
+        normalNight(HERE);
+        Failures fs = new Failures();
+        bb.fact(Brain.FAILURES_FACT, fs);
+        Desire d = AaDesires.danger();
+        port.refuse = "busy: putting back 1 block";
+        d.node.tick(bb);
+        assertEquals(0, fs.size(), "never ran: no hold " + port.log);
+        port.refuse = null;
+        d.node.tick(bb);
+        DangerOptions.Way w = (DangerOptions.Way) bb.fact(AaDesires.WAY_FACT);
+        assertTrue(AaDesires.SEALS.contains(w), "a dig-in way: " + w);
+        port.done(port.nextId - 1, "done");
+        d.node.tick(bb);
+        assertNotNull(bb.fact(AaDesires.SEALED_FACT));
+        DangerOptions.Choice c = AaDesires.dangerChoice(bb);
+        assertEquals(DangerOptions.Way.WAIT, c.best().way(), "sealed in: stay " + c.terms());
+        assertEquals("wait 60", c.chain());
+        bb.in.pos = new int[]{10, 64, 0};
+        assertNotEquals(DangerOptions.Way.WAIT, AaDesires.dangerChoice(bb).best().way(), "moved away: not sealed");
+        assertNull(bb.fact(AaDesires.SEALED_FACT));
     }
 
     Desire siteDesire(String id, double v, Site s) {
