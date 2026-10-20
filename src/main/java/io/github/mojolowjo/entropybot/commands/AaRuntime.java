@@ -98,6 +98,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.WoodOptions.FACTS,(java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts>) this::woodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.BedOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts>) this::bedFacts);     // round 4 fix 4
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
         // AA_ROUND3 2: the sequencer's horizon (aa horizon, saved) and the nearest known coal (torches' site, cached 10 s)
         io.github.mojolowjo.entropybot.sense.Seen.fair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
@@ -2226,6 +2227,26 @@ public final class AaRuntime implements JobPort {
      * (inside my areas already = the chop could not get at it, remembered unreachable, a protected build near). A seen tree whose
      * chunk is loaded and whose lowest log is gone is exhausted here. Null when nothing can be read; never throws.
      */
+    /**
+     * Round 4 fix 4: the bed's facts: white wool in the bag, sheep within the hunt's range now, the best remembered sheep
+     * herd not in view (herdsSeen), the bot's cell. Null when nothing can be read; never throws.
+     */
+    io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts bedFacts() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer p = mc.player;
+            if (p == null || mc.level == null) return null;
+            int wool = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault("minecraft:white_wool", 0);
+            int sheep = mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.RANGE),
+                    e -> e.isAlive() && !e.isBaby() && !e.hasCustomName()).size();
+            int[] herd = herdsSeen(mc.level, p).get("minecraft:sheep");
+            return new io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts(wool, sheep, herd, Jobs.here(p));
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: bed facts: {}", e.toString());
+            return null;
+        }
+    }
+
     io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts woodFacts() {
         try {
             Minecraft mc = Minecraft.getInstance();

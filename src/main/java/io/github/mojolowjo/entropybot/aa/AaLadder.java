@@ -136,10 +136,12 @@ public final class AaLadder {
                 bb -> !bb.in.baseKnown && !bb.flag(SHELTER_FACT),
                 bb -> null,
                 bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter");
+        // round 4 fix 4: the ways to a bed are priced (BedOptions): a failed wool hunt is held and the next way runs
         Rung bed = new Rung("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
                 bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
-                bb -> bedChain(bb.in.wool, sheepHerd(bb)));
+                bb -> bedChain(bb.in.wool, sheepHerd(bb)),
+                new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set()));
         Rung deposit = new Rung("needs.bag", TaskKind.BAG,
                 bb -> bag.update(bb.in.freeSlots),
                 bb -> bb.in.baseChests ? null : "no base chests scanned (scan base)",
@@ -171,9 +173,8 @@ public final class AaLadder {
      * remembered herd when none is in view (Sightings), then {@code goal bed}.
      */
     public static String bedChain(int wool, int[] herd) {
-        if (wool >= 3) return "goal bed";
-        int k = 3 - Math.max(0, wool);
-        return "hunt " + k + " sheep for white_wool 3" + (herd == null ? "" : " at " + herd[0] + " " + herd[1]) + " then goal bed";
+        if (wool >= BedOptions.WOOL) return "goal bed";
+        return BedOptions.huntChain(wool, herd);
     }
 
     /** The rungs under the brain (or any node), in order (for tests and the status line). */
