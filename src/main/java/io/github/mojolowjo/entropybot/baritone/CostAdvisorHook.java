@@ -31,16 +31,43 @@ public final class CostAdvisorHook {
     private static final Logger LOG = LogUtils.getLogger();
     private static final double COST_INF = baritone.api.pathing.movement.ActionCosts.COST_INF;
 
-    /** What one calculation holds fixed: captured on the thread that builds the context. */
-    public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {}
+    /**
+     * What one calculation holds fixed: captured on the thread that builds the context. AREAS: the areas policy (its
+     * keep-out and danger boxes, an immutable snapshot) and the bot's cell at the start (a bot already inside a
+     * keep-out box walks out by the shortest way: that box is dear, not impassable, for this calculation).
+     */
+    public record Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me,
+                        io.github.mojolowjo.entropybot.guard.Policy areas, int[] at) {
+        public Token(BreakPolicy.Snapshot snapshot, Intent intent, String dim, BreakPolicy.Where me) {
+            this(snapshot, intent, dim, me, null, null);
+        }
+    }
 
-    private static volatile boolean fork;
+    private static volatile boolean fork, moveHook;
+    /** AREAS (owner's default 10.7): the move multiplier inside a danger area; {@code fence danger <n>} sets it. */
+    private static volatile double dangerMultiplier = io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER;
 
     private CostAdvisorHook() {}
 
     public static boolean fork() { return fork; }
 
-    /** Once Baritone is loaded: the fork hook when this Baritone has it, else the mixin fallback. Returns the kind. */
+    /** AREAS: the fork's CostAdvisor has moveMultiplier (keep-out is pathed around); false = command-level keep-out only. */
+    public static boolean moveHook() { return moveHook; }
+
+    public static double dangerMultiplier() { return dangerMultiplier; }
+
+    /** Bounds 1..64 (1 = no cost); the old value when out of bounds. */
+    public static double setDangerMultiplier(double m) {
+        dangerMultiplier = io.github.mojolowjo.entropybot.guard.MoveRules.danger(m, dangerMultiplier);
+        return dangerMultiplier;
+    }
+
+    /**
+     * Once Baritone is loaded: the fork hook when this Baritone has it, else the mixin fallback. Returns the kind.
+     * Loader note: our Baritone fork's {@code CalculationContext.costAdvisor} (static, public) is found by reflection
+     * because the mod compiles against the stock jar; the Proxy answers whatever methods the fork's interface
+     * declares, so an older fork without {@code moveMultiplier} simply never asks (reported, never silent).
+     */
     public static String install() {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         try {
@@ -50,8 +77,11 @@ public final class CostAdvisorHook {
             Object proxy = Proxy.newProxyInstance(iface.getClassLoader(), new Class<?>[]{iface}, h);
             f.set(null, proxy);
             fork = true;
-            pr.setHook("fork");
-            LOG.info("[entropybot] rules: cost advisor installed (fork hook)");
+            boolean mh;
+            try { iface.getMethod("moveMultiplier", Object.class, int.class, int.class, int.class); mh = true; } catch (NoSuchMethodException e) { mh = false; }
+            moveHook = mh;
+            pr.setHook(mh ? "fork" : "fork-nomove");
+            LOG.info("[entropybot] rules: cost advisor installed ({})", pr.hookText());
         } catch (NoSuchFieldException e) {
             fork = false;
             pr.setHook(MixinFlags.astarApplied ? "mixin" : "none");
@@ -72,6 +102,8 @@ public final class CostAdvisorHook {
                     return breakMultiplier(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], (BlockState) a[4], stateAt(a[5]));
                 case "placeCost":
                     return placeCost(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3], (BlockState) a[4], stateAt(a[5]), (Double) a[6]);
+                case "moveMultiplier":
+                    return moveMultiplier(a[0], (Integer) a[1], (Integer) a[2], (Integer) a[3]);
                 case "toString": return "EntropyBot cost advisor";
                 case "hashCode": return System.identityHashCode(CostAdvisorHook.class);
                 case "equals": return a != null && a.length == 1 && a[0] != null && Proxy.isProxyClass(a[0].getClass());
@@ -92,11 +124,29 @@ public final class CostAdvisorHook {
     public static Token begin() {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         String dim = null;
+        int[] at = null;
         try {
             var lv = Minecraft.getInstance().level;
             if (lv != null) dim = Guard.dimOf(lv);
+            var p = Minecraft.getInstance().player;
+            if (p != null) at = new int[]{p.getBlockX(), p.getBlockY(), p.getBlockZ()};
         } catch (Throwable ignored) {}
-        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where());
+        io.github.mojolowjo.entropybot.guard.Policy areas = null;
+        try { areas = Guard.INSTANCE.core.policy(); } catch (Throwable ignored) {}
+        return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at);
+    }
+
+    /**
+     * AREAS (AREAS_PLAN 3): the multiplier on a move ending with the feet at x y z: COST_INF inside a keep-out box
+     * (feet or head cell), {@link #dangerMultiplier} inside a danger box, NaN elsewhere. A bot that starts inside a
+     * keep-out box (the owner drew it around it) gets that box priced like danger instead, so it walks out by the
+     * shortest way. Early-out when the policy holds no such boxes; lock-free (immutable snapshot in the token).
+     */
+    public static double moveMultiplier(Object token, int x, int y, int z) {
+        Token t = token instanceof Token tk ? tk : null;
+        if (t == null) return Double.NaN;
+        double m = io.github.mojolowjo.entropybot.guard.MoveRules.moveMultiplier(t.areas(), t.dim(), t.at(), x, y, z, dangerMultiplier);
+        return m >= io.github.mojolowjo.entropybot.guard.MoveRules.COST_INF ? COST_INF : m;
     }
 
     /**

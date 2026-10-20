@@ -53,6 +53,9 @@ public final class PolicyCommands {
         /** Mining plan: "fence rules" (the policy snapshot, intent, hook, counters), or null without the mod. */
         default String rules() { return null; }
 
+        /** AREAS: the danger move multiplier (1..64); sets it when {@code set} is not NaN; the value in force. */
+        default double danger(double set) { return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+
         /** Mining plan: "fence why x y z [break|place] [travel|mine|dig_out|build]": the policy's verdict for one cell. */
         default String why(String dim, int x, int y, int z, String action, String intent) { return null; }
     }
@@ -177,9 +180,16 @@ public final class PolicyCommands {
         return o;
     }
 
+    /** AREAS: the danger multiplier the owner set (areas.json "danger"), else the default. */
+    public double dangerMult() {
+        try { return p.has("danger") ? p.get("danger").getAsDouble() : io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+        catch (RuntimeException e) { return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+    }
+
     /** Pushes the policy to the guard (at load). The two replies joined, or null. */
     public String apply() {
         guard.setNear(nearOn(), nearR());
+        guard.danger(dangerMult());
         String[] r = guard.apply(guardPolicy(), strict());
         return r == null ? null : r[0] + "; mode " + r[1];
     }
@@ -650,6 +660,16 @@ public final class PolicyCommands {
                 String r = guard.why(me.dim(), Integer.parseInt(parts.get(1)), Integer.parseInt(parts.get(2)), Integer.parseInt(parts.get(3)), action, intent);
                 return r == null ? "rules: mod not loaded" : r;
             }
+            if (sub.equals("danger")) {                                   // AREAS: the danger area's move multiplier
+                if (parts.size() < 2) return "fence danger: a move inside a danger area costs x" + fmtMult(guard.danger(Double.NaN)) + " (fence danger <1..64>)";
+                if (!isOwner) return notOwner;
+                double m;
+                try { m = Double.parseDouble(parts.get(1)); } catch (NumberFormatException e) { return "usage: fence danger <1..64>"; }
+                if (io.github.mojolowjo.entropybot.guard.MoveRules.danger(m, -1) < 0) return "error: the danger multiplier is 1..64";
+                p.addProperty("danger", m);
+                saved.run();
+                return "ok: a move inside a danger area costs x" + fmtMult(guard.danger(m)) + " now";
+            }
             if (!isOwner) return notOwner;
             if (sub.equals("check")) {
                 String m = parts.size() > 4 ? parts.get(4).toLowerCase() : "";
@@ -674,10 +694,12 @@ public final class PolicyCommands {
                 }
                 return "usage: fence mode strict | fence mode log confirm";
             }
-            return "usage: fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm";
+            return "usage: fence | fence vetoes | fence check x y z break|place|go | fence mode strict | fence mode log confirm | fence rules | fence why x y z | fence danger [<n>]";
         }
         return "unknown command \"" + verb + "\"";
     }
+
+    static String fmtMult(double m) { return m == Math.rint(m) ? String.valueOf((long) m) : String.valueOf(m); }
 
     private static String names(JsonArray l) {
         List<String> out = new ArrayList<>();

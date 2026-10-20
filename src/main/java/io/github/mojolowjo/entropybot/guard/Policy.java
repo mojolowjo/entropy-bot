@@ -23,14 +23,24 @@ public final class Policy {
     public final List<Box> protect;
     /** AREAS: the keep-out boxes (a subset of {@link #protect}): no walk goal inside, Baritone paths around them. */
     public final List<Box> keepOut;
+    /** AREAS: the danger boxes (a subset of {@link #areas}): a cost per move for Baritone, a fact for AA. */
+    public final List<Box> danger;
 
     public Policy(List<Box> areas, List<Box> protect) {
         this.areas = List.copyOf(areas);
-        List<Box> pr = new ArrayList<>(), ko = new ArrayList<>();
+        List<Box> pr = new ArrayList<>(), ko = new ArrayList<>(), dg = new ArrayList<>();
         for (Box b : protect) pr.add(AreaTypeRules.protects(b.type) ? b : b.withType(AreaType.NO_BREAK));   // a plain protect box = no-break
         this.protect = List.copyOf(pr);
         for (Box b : this.protect) if (b.type == AreaType.KEEP_OUT) ko.add(b);
+        for (Box b : this.areas) if (b.type == AreaType.DANGER) dg.add(b);
         this.keepOut = List.copyOf(ko);
+        this.danger = List.copyOf(dg);
+    }
+
+    /** AREAS: the danger box holding the spot, or null. Lock-free (the pathfinder thread reads it). */
+    public Box dangerAt(String dim, int x, int y, int z) {
+        for (Box b : danger) if (b.contains(dim, x, y, z)) return b;
+        return null;
     }
 
     public static Policy parse(String json) {

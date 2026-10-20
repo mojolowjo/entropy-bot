@@ -152,12 +152,12 @@ public final class PolicyRuntime {
      * the NONE intent ({@link #withIntent}); the mixin fallback reads the live intent and cannot promise that.
      */
     public boolean travelOnlyBreaking() {
-        return travelMayBreak() && "fork".equals(hook) && intent == Intent.TRAVEL;
+        return travelMayBreak() && hook.startsWith("fork") && intent == Intent.TRAVEL;
     }
 
     /** The same for placing: allowPlace is on only because of the travel policy (no plan-go or build owns it). */
     public boolean travelOnlyPlacing() {
-        return travelMayPlace() && "fork".equals(hook) && intent == Intent.TRAVEL;
+        return travelMayPlace() && hook.startsWith("fork") && intent == Intent.TRAVEL;
     }
 
     /**
@@ -405,11 +405,14 @@ public final class PolicyRuntime {
 
     public String hookText() {
         return switch (hook) {
-            case "fork" -> "fork hook";
-            case "mixin" -> "mixin fallback";
+            case "fork" -> "fork hook (keep-out pathed around, danger x" + fmtMult(io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.dangerMultiplier()) + ")";
+            case "fork-nomove" -> "fork hook (NO move hook: this Baritone is older than 0.39 - keep-out is command-level only, danger costs nothing)";
+            case "mixin" -> "mixin fallback (no move hook: keep-out is command-level only, danger costs nothing)";
             default -> "NOT running - Baritone's own rules only";
         };
     }
+
+    private static String fmtMult(double m) { return m == Math.rint(m) ? String.valueOf((long) m) : String.valueOf(m); }
 
     /** "fence why x y z [break|place] [intent]": the verdict for one cell with the rule that decided (client thread). */
     public String why(Level level, String dim, int x, int y, int z, Action action, Intent in) {

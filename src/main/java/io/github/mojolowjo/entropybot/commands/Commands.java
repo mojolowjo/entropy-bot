@@ -2829,6 +2829,12 @@ public final class Commands implements Chains.Env {
         public String rules() { return io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.status(); }
 
         @Override
+        public double danger(double set) {
+            return Double.isNaN(set) ? io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.dangerMultiplier()
+                    : io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.setDangerMultiplier(set);
+        }
+
+        @Override
         public String why(String dim, int x, int y, int z, String action, String intent) {
             var in = io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.of(intent);
             var act = "place".equals(action) ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.PLACE : io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK;
