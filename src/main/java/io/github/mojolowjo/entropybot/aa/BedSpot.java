@@ -23,6 +23,23 @@ public final class BedSpot {
         public String key() { return cell[0] + " " + cell[1] + " " + cell[2]; }
     }
 
+    private static final java.util.regex.Pattern FOUND_NEAR = java.util.regex.Pattern.compile("^found (-?\\d+) (-?\\d+) (-?\\d+) ");
+    private static final java.util.regex.Pattern FOUND_FAR = java.util.regex.Pattern.compile("^(?:found|remembered|known) \\S+ at (-?\\d+) (-?\\d+) (-?\\d+)\\b");
+
+    /**
+     * Round 4 fix 3 (live, 4x: {@code NumberFormatException: "white_bed"}): the bed cell in a {@code findBlock} answer. The
+     * near form is "found x y z <id> dist N"; the far one (Baritone's scanner or memory) is "found white_bed at x y z, N
+     * blocks" - the old parse took "white_bed" for x. Null when the answer names no bed.
+     */
+    public static int[] foundAt(String reply) {
+        if (reply == null) return null;
+        for (java.util.regex.Pattern p : new java.util.regex.Pattern[]{FOUND_NEAR, FOUND_FAR}) {
+            java.util.regex.Matcher m = p.matcher(reply);
+            if (m.find()) return new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))};
+        }
+        return null;
+    }
+
     /** Blocks of cost per block the bed lies away from being next to the table or chest. */
     public static final double OFF_CAMP = 1.5;
     /** Cost of each head direction that is blocked. */

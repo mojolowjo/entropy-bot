@@ -63,10 +63,10 @@ public final class SleepJob {
 
     static String status(LocalPlayer p) {
         ClientLevel lv = Minecraft.getInstance().level;
-        String bed = Jobs.findBlock(p, "_bed " + SEARCH);
+        int[] bed = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(Jobs.findBlock(p, "_bed " + SEARCH));
         String carried = carriedBed(p);
         return "sleep: it is " + DayNight.clock(lv.getDayTime()) + (night(lv) ? " (night: beds work)" : " (day: beds don't work)")
-                + (p.isSleeping() ? ", I am in bed" : "") + "; " + (bed.startsWith("found") ? "nearest bed at " + bed.split(" ")[1] + " " + bed.split(" ")[2] + " " + bed.split(" ")[3]
+                + (p.isSleeping() ? ", I am in bed" : "") + "; " + (bed != null ? "nearest bed at " + bed[0] + " " + bed[1] + " " + bed[2]
                 : "no bed within " + SEARCH) + (carried != null ? "; I carry a " + carried.replace("minecraft:", "") : "")
                 + " - rule when night do sleep sleeps every night";
     }
@@ -87,9 +87,9 @@ public final class SleepJob {
         int[] bed;
         String f = Jobs.findBlock(p, "_bed " + SEARCH);
         String placed = null;
-        if (f.startsWith("found")) {
-            String[] w = f.split(" ");
-            bed = new int[]{Integer.parseInt(w[1]), Integer.parseInt(w[2]), Integer.parseInt(w[3])};
+        int[] found = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(f);      // round 4 fix 3: the far form too ("found white_bed at x y z, N blocks")
+        if (found != null) {
+            bed = found;
         } else {
             String id = carriedBed(p);
             if (id == null) return Hints.next("error: no bed within " + SEARCH + " blocks and I carry none", "give me a bed (or craft white_bed 1: 3 wool + 3 planks), then sleep");
