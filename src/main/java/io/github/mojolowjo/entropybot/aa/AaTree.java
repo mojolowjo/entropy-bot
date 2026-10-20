@@ -56,7 +56,11 @@ public final class AaTree {
 
     public static AaTree build(Scorer scorer) {
         AaTree[] self = new AaTree[1];
-        // [1] DANGER: the guard with the band (enter at once, leave after 3 s calm with health >= 12 and air full)
+        // [1] DANGER: the guard with the band (enter at once, leave after 3 s calm). Round 4 (owner 2026-10-20: "AA should
+        // be making all decisions so remove the danger guard"): hostiles never pause the slot any more - the danger desire
+        // prices fight/flee/cover/home/dig-in/pillar against staying (DangerOptions) and competes by score; the hit
+        // response runs under the slot as a reflex. Only the true reflexes that move the bot regardless still pause it:
+        // drowning (air), lava or fire, and the creeper sprint.
         Condition dangerGuard = new Condition("danger", "danger", bb -> {
             AaTree t = self[0];
             // 0.36.4 (aa40d/e: under a water ceiling the air stayed short and AA's job sat paused 10+ min, nothing moving
@@ -70,17 +74,17 @@ public final class AaTree {
             // AA_CLEANUP 4: low health alone is no reflex any more (no retreat rule): the danger desire and the hide price it;
             // drowning at low health still is (air short and health <= 8)
             boolean drown = airShort && bb.in.health <= 8;
-            boolean urgent = bb.in.danger >= 2 || drown || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
-            boolean notCalm = t.dangerLatch.active() && (airCounts || drown || bb.in.danger > 0);
+            boolean urgent = drown || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
+            boolean notCalm = t.dangerLatch.active() && (airCounts || drown || bb.in.creeperClose);
             boolean on = t.dangerLatch.update(urgent || notCalm, bb.clock.now());
             if (on) t.dangerWhy = bb.in.air < 100 ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : drown ? "drowning, health " + Math.round(bb.in.health)
-                    : bb.in.creeperClose ? "creeper close" : bb.in.danger >= 2 ? bb.in.dangerWhy : "calming down";
+                    : bb.in.creeperClose ? "creeper close" : "calming down";
             return on;
         });
         Node dangerBranch = new Fallback("danger.reflex", "the reflex that moves",
                 new Seq("danger.air", "drowning", new Condition("danger.air?", "air < 100", bb -> bb.in.air < 100), observe("danger.air.reflex", "air reflex")),
                 new Seq("danger.lava", "lava or fire", new Condition("danger.lava?", "in lava or fire", bb -> bb.in.inLavaOrFire), observe("danger.lava.reflex", "escape reflex")),
-                new Seq("danger.hostile", "hostile or creeper", new Condition("danger.hostile?", "fight/flee or creeper", bb -> bb.in.danger >= 2 || bb.in.creeperClose), observe("danger.hostile.reflex", "fight/flee reflex")),
+                new Seq("danger.creeper", "creeper", new Condition("danger.creeper?", "creeper close", bb -> bb.in.creeperClose), observe("danger.creeper.reflex", "creeper sprint")),
                 observe("danger.calm", "calming down"));
         // [2a] the owner's order: adopted while a job that is not AA's runs
         Node owner = new Node("owner", "the owner's order (a job of the owner's runs)") {

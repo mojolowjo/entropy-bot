@@ -305,6 +305,28 @@ class AaTreeTest {
     }
 
     /** 0.36.4 (aa40d): short air alone holds the danger guard at most 30 s; then the task runs again. */
+    /** Round 4 (owner): a fight or flee reflex is no pause any more; the danger desire prices it, the slot runs on. */
+    @Test
+    void hostilesNeverPauseTheSlotOnlyTheTrueReflexesDo() {
+        freshStart();
+        tree.tick(bb);
+        bb.in.danger = 2;
+        bb.in.dangerWhy = "fighting";
+        tree.tick(bb);
+        assertEquals("needs", tree.driver(), "a hit response runs under the slot");
+        assertFalse(bb.task().paused());
+        assertEquals("calm", tree.dangerWhy());
+        bb.in.danger = 0;
+        bb.in.creeperClose = true;
+        tree.tick(bb);
+        assertEquals("danger", tree.driver(), "the creeper sprint still pauses");
+        assertEquals("creeper close", tree.dangerWhy());
+        bb.in.creeperClose = false;
+        clock.advance(3100);
+        tree.tick(bb);
+        assertEquals("needs", tree.driver());
+    }
+
     @Test
     void shortAirAloneDoesNotHoldTheTaskForever() {
         freshStart();
