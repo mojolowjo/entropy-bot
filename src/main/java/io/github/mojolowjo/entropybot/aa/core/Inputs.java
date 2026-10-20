@@ -42,6 +42,8 @@ public final class Inputs {
     public int armorPoints;
     /** S0: the bot's block position (null unknown; OptionMemory's NO_PATH sweep). Not in the vector. */
     public int[] pos;
+    /** AA_ROUND3 2: the camp and the base (the known places for the sequencer's sites), null unknown. */
+    public int[] campPos, basePos;
     /** S1: the spot was lit this night (AaTree keeps it; the idle LIGHT option scores -1 then). Not in the vector. */
     public boolean litTonight;
     /** nightwork: inside a shell of its own that is built and waiting (ShelterJob WAIT, at its cell). Not in the vector. */

@@ -44,9 +44,19 @@ public final class Options {
      * @param memoryKey    what a failure of it is remembered under
      * @param needsPlanner it is the planner's chain (or a rewrite of it)
      */
-    public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret) {
+    public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret,
+                         io.github.mojolowjo.entropybot.aa.brain.Site site) {
         public Option {
             if (ret == null) ret = Replan.Ret.NONE;
+        }
+
+        /** AA_ROUND3 2: no site known (the sequencer leaves it out). */
+        public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret) {
+            this(id, way, command, cost, why, memoryKey, needsPlanner, ret, null);
+        }
+
+        public Option withSite(io.github.mojolowjo.entropybot.aa.brain.Site s) {
+            return new Option(id, way, command, cost, why, memoryKey, needsPlanner, ret, s);
         }
 
         /** An option with no way back to weigh (aa-replan: the return leg is {@link Replan.Ret#NONE}). */
@@ -306,6 +316,12 @@ public final class Options {
         /** AA_ROUND2 1: the chosen option's round trip in seconds from the last pick or rescore (NaN: no choice yet). */
         @Override public double lastCostS() { return lastCostS; }
 
+        /** AA_ROUND3 2: the chosen option's site from the last pick or rescore (null: none known). */
+        @Override public io.github.mojolowjo.entropybot.aa.brain.Site lastSite() {
+            Option o = lastRescore != null ? lastRescore.best() : ran;
+            return o == null ? null : o.site();
+        }
+
         @Override public void refresh(Blackboard bb) { rescore(bb); }
 
         /** AA_ROUND2 2: "no option" when the last rescore ranked nothing that can run (null: one can, or not known). */
@@ -370,6 +386,13 @@ public final class Options {
                 for (Option o : c.ranked()) if (o.id().toLowerCase(Locale.ROOT).contains(u) || o.way().toLowerCase(Locale.ROOT).contains(u)) { forced = o; break; }
                 man.used(rung, forced == null ? null : forced.id(), ran == null ? "none" : ran.id(), bb.port::log);
                 if (forced != null) ran = forced;
+            }
+            // the owner's aa do: "nothing" (pass to the next rung) is no answer to a forced rung; the next real way runs
+            if (ran != null && NOTHING.equals(ran.command()) && man.doRung != null && man.doRung.equals(bb.fact(Rung.CURRENT_RUNG))) {
+                Option real = null;
+                for (Option o : c.ranked()) if (!NOTHING.equals(o.command())) { real = o; break; }
+                bb.port.log(rung + ": aa do - not passing, " + (real == null ? "no real way" : real.id() + " runs"));
+                ran = real;
             }
             lastRescore = null;
             lastCostS = ran == null ? Double.NaN : ran.seconds();

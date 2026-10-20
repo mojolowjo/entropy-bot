@@ -135,7 +135,26 @@ public final class AaDesires {
                     b -> b.in.pickTier < 2 ? "needs.tools" : null, b -> null).exposure(Desire.Exposure.UNDER);
             default -> new Desire(r.id, kindOf(r.id), r, bb -> rungScore(r, bb, b -> 30));
         };
-        return wire(d, r);
+        return wire(d, r).site(b -> rungSite(r, b));
+    }
+
+    /** AA_ROUND3 2: blackboard fact, a {@code Supplier<int[]>} of the nearest known coal ore (the adapter caches it). */
+    public static final String COAL_SITE_FACT = "aa.coalSite";
+
+    /**
+     * AA_ROUND3 2: a rung's site for the sequencer: iron from its chosen option, torches at the nearest known coal,
+     * the table/furnace at the camp (else the base), base/bed/bag at the base; the gates and the rest none.
+     */
+    @SuppressWarnings("unchecked")
+    static io.github.mojolowjo.entropybot.aa.brain.Site rungSite(Rung r, Blackboard b) {
+        int[] place = b.in.campPos != null ? b.in.campPos : b.in.basePos;
+        return switch (r.id) {
+            case "needs.iron" -> r.picker() == null ? null : r.picker().lastSite();
+            case "needs.torches" -> b.fact(COAL_SITE_FACT) instanceof java.util.function.Supplier<?> s && s.get() instanceof int[] p ? io.github.mojolowjo.entropybot.aa.brain.Site.of(p) : null;
+            case "needs.tableFurnace", "needs.spareTable" -> io.github.mojolowjo.entropybot.aa.brain.Site.of(place);
+            case "needs.base", "needs.bed", "needs.bag" -> io.github.mojolowjo.entropybot.aa.brain.Site.of(b.in.basePos);
+            default -> null;
+        };
     }
 
     /** "needs.area first" while a gate is open (AaLadder.openGate), else null. */

@@ -133,7 +133,8 @@ public final class Brain extends Node {
         }
         String skip = v < 0 ? "not wanted" : null;
         long cu = failures.until(d.id, null);
-        if (skip == null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + failures.fails(d.id, null) + " fails)";
+        // the owner's aa do (100) is never held by the brain's own cooling (the rung forgets its cooldown itself)
+        if (skip == null && cu > now && v < 100) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + failures.fails(d.id, null) + " fails)";
         String parts = String.valueOf(Math.round(v));
         if (d.detail != null) {
             try {
@@ -290,6 +291,7 @@ public final class Brain extends Node {
                 running = -1;
                 return choose(bb, now, cur);
             }
+            replanWhileRunning(bb, now);
             Status s = cur.node.tick(bb);
             if (bb.task() != null) taskSeen = true;
             if (s == Status.RUNNING) return watchdog(bb, cur, now);
@@ -396,6 +398,7 @@ public final class Brain extends Node {
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < all.size(); i++) if (all.get(i).skip() == null && all.get(i).d() != not) order.add(i);
         order.sort((a, b) -> Double.compare(rankOf(all, b), rankOf(all, a)));     // stable: a tie keeps list order
+        if (!nested) sequence(bb, all, order, now);
         StringBuilder why = new StringBuilder();
         Desire checkFalse = interrupter;
         interrupter = null;
@@ -450,6 +453,117 @@ public final class Brain extends Node {
         return fail(why.toString());
     }
 
+    // ---- AA_ROUND3 2: order planning within the horizon ----
+
+    /** Blackboard fact: the horizon in seconds ({@code aa horizon}, an Integer); absent: {@link Sequencer#DEFAULT_HORIZON_S}. */
+    public static final String HORIZON_FACT = "aa.horizon";
+    public static final long PLAN_EVERY_MS = 30_000;
+    private Sequencer.Plan plan;
+    private long planAt = -1;
+    /** The plan's next after a SUCCESS (runs without the ranking deciding while its site is near), or null. */
+    private String planNext;
+    private String planNote;
+
+    public static int horizon(Blackboard bb) {
+        return bb.fact(HORIZON_FACT) instanceof Integer h && h > 0 ? h : Sequencer.DEFAULT_HORIZON_S;
+    }
+
+    static Site here(Blackboard bb) {
+        int[] p = bb.in.pos;
+        return p == null ? null : new Site(bb.in.dimension, p[0], p[1], p[2], 0);
+    }
+
+    /** A desire's own cost in seconds for the sequencer: live, else measured/hand. */
+    double costOf(Blackboard bb, Desire d) {
+        double live = liveCost(bb, d);
+        return Double.isNaN(live) ? stats.cost(d.id, d.handCostS) : live;
+    }
+
+    /** Builds the plan from the ranked runnable list (winner first). */
+    Sequencer.Plan buildPlan(Blackboard bb, List<Scored> all, List<Integer> order) {
+        List<Sequencer.Item> items = new ArrayList<>();
+        for (int i : order) {
+            if (items.size() >= Sequencer.K) break;
+            Scored s = all.get(i);
+            if (s.score() <= 0) continue;
+            items.add(new Sequencer.Item(s.d().id, costOf(bb, s.d()), s.d().siteOf(bb)));
+        }
+        planHorizon = horizon(bb);
+        return Sequencer.build(here(bb), items, planHorizon);
+    }
+
+    private int planHorizon = Sequencer.DEFAULT_HORIZON_S;
+
+    /**
+     * Rebuilds the plan and puts its first (or, right after a plan step ended SUCCESS, its next while that is still
+     * wanted and its site within {@link Site#SAME}) at the head of {@code order}. Never over urgent upkeep or the owner's
+     * aa do (a top rank of 100+).
+     */
+    private void sequence(Blackboard bb, List<Scored> all, List<Integer> order, long now) {
+        String next = planNext;
+        planNext = null;
+        if (order.isEmpty()) return;
+        try {
+            plan = buildPlan(bb, all, order);
+            planAt = now;
+        } catch (RuntimeException e) {
+            bb.port.log("brain: plan failed: " + e);
+            plan = null;
+            return;
+        }
+        Scored top = all.get(order.get(0));
+        if (top.rank() >= 100) { planNote = null; planNext = next; return; }     // review: the next waits out urgent work
+        String want = null;
+        if (next != null) {
+            int j = indexOf(all, order, next);
+            Site site = j < 0 ? null : all.get(j).d().siteOf(bb);
+            Site me = here(bb);
+            if (j >= 0 && all.get(j).score() > 0 && site != null && me != null && site.near(me)) {
+                want = next;
+                planNote = "plan next " + next + " (its site is near, no re-pick)";
+            } else planNote = "plan next " + next + " dropped (" + (j < 0 ? "not runnable" : all.get(j).score() <= 0 ? "not wanted" : "its site moved away") + "): the normal pick";
+            bb.port.log("brain: " + planNote);
+        }
+        if (want == null && plan != null && plan.steps().size() > 1) want = plan.first();
+        if (want == null) return;
+        int j = indexOf(all, order, want);
+        if (j < 0) return;
+        order.remove(Integer.valueOf(j));
+        order.add(0, j);
+    }
+
+    private static int indexOf(List<Scored> all, List<Integer> order, String id) {
+        for (int i : order) if (all.get(i).d().id.equals(id)) return i;
+        return -1;
+    }
+
+    /** "plan: iron (at ..) then coal (same place, saves 40 s)" for aa why, or null before the first plan. */
+    public String planText() {
+        if (plan == null) return null;
+        return "plan (horizon " + planHorizon + " s): " + plan.text() + (planNote == null ? "" : "; " + planNote);
+    }
+
+    public Sequencer.Plan plan() { return plan; }
+
+    /** Every {@link #PLAN_EVERY_MS} while a desire runs the plan is rebuilt for aa why. */
+    private void replanWhileRunning(Blackboard bb, long now) {
+        if (nested || planAt >= 0 && now - planAt < PLAN_EVERY_MS) return;
+        List<Scored> all = lastScored;
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < all.size(); i++) if (all.get(i).skip() == null) order.add(i);
+        order.sort((a, b) -> Double.compare(rankOf(all, b), rankOf(all, a)));
+        if (running >= 0 && running < all.size()) {          // the running desire is the plan's first
+            order.remove(Integer.valueOf(running));
+            order.add(0, running);
+        }
+        planAt = now;
+        try {
+            plan = order.isEmpty() ? null : buildPlan(bb, all, order);
+        } catch (RuntimeException e) {
+            bb.port.log("brain: plan failed: " + e);
+        }
+    }
+
     private double rankOf(List<Scored> all, int i) {
         return all.get(i).rank() + (i == lastWinner ? bonus : 0);
     }
@@ -467,6 +581,7 @@ public final class Brain extends Node {
     private void ended(Blackboard bb, Desire d, Status s, long now) {
         if (s == Status.SUCCESS) {
             failures.succeeded(d.id);
+            if (!nested && plan != null) planNext = plan.next(d.id);      // AA_ROUND3 2: the plan's next runs while near
             if (d.selfCool && d.restMs > 0) failures.rest(d.id, d.restMs, now, "done just now (a rest before it runs again)");
             if (d.kind == Desire.Kind.WANT) Wants.done(bb, d.id, now);   // B3: boredom starts over
             onEnd(d, true, taskSeen, now - startedAt);

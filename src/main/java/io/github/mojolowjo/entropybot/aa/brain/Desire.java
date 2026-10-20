@@ -152,5 +152,24 @@ public final class Desire {
         return this;
     }
 
+    /** AA_ROUND3 2: where this desire's work is done now (its chosen option's target, the base...), null unknown. */
+    Function<Blackboard, Site> site;
+
+    public Desire site(Function<Blackboard, Site> f) {
+        site = f;
+        return this;
+    }
+
+    /** The site now (null unknown or it failed). */
+    public Site siteOf(Blackboard bb) {
+        if (site == null) return null;
+        try {
+            return site.apply(bb);
+        } catch (RuntimeException e) {
+            bb.port.log("brain: " + id + " site failed: " + e);
+            return null;
+        }
+    }
+
     @Override public String toString() { return id; }
 }

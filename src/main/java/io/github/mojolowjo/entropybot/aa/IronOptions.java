@@ -395,7 +395,7 @@ public final class IronOptions {
                 Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place());
                 String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
                 rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), rewrite(steps, one), s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
-                        returnLeg(s, f, oreIdx)));
+                        returnLeg(s, f, oreIdx), s.target() == null ? null : io.github.mojolowjo.entropybot.aa.brain.Site.at(s.target().x(), s.target().y(), s.target().z())));
             }
             // aa-replan: ranked by the round trip (go + do + return)
             rows.sort(java.util.Comparator.comparingDouble(Options.Option::total));

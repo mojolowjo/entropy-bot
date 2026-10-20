@@ -118,6 +118,7 @@ public final class AaLive {
         o.add("desires", ds);
         o.add("costs", strings(Costs.lines(bb)));
         o.add("held", strings(b.heldLines(now)));
+        if (b.planText() != null) o.addProperty("plan", b.planText());          // AA_ROUND3 2
         List<String> dec = bb.tracer.decisions();
         JsonArray sw = new JsonArray();
         for (int i = Math.max(0, dec.size() - Math.max(0, switches)); i < dec.size(); i++) {

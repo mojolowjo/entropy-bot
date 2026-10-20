@@ -66,6 +66,9 @@ public final class Rung extends Node {
         /** AA_ROUND2 1: the chosen option's cost in seconds from the last pick or rescore (NaN: unknown). */
         default double lastCostS() { return Double.NaN; }
 
+        /** AA_ROUND3 2: the chosen option's site (null: unknown). */
+        default io.github.mojolowjo.entropybot.aa.brain.Site lastSite() { return null; }
+
         /** AA_ROUND2 1: re-score from fresh facts without picking (updates {@link #lastCostS}); no-op by default. */
         default void refresh(Blackboard bb) {}
 

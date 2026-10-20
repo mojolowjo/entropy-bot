@@ -97,6 +97,9 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
+        // AA_ROUND3 2: the sequencer's horizon (aa horizon, saved) and the nearest known coal (torches' site, cached 10 s)
+        if (d.has("horizon")) bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, d.get("horizon").getAsInt());
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.COAL_SITE_FACT, (java.util.function.Supplier<int[]>) this::coalSite);
         c.chains.onEnd(this::chainEnded);
     }
 
@@ -410,6 +413,7 @@ public final class AaRuntime implements JobPort {
     /** One "options <rung>: <line>" per rung with a picker (aa why). */
     List<String> optionLines() {
         List<String> out = new ArrayList<>();
+        if (tree.brain.planText() != null) out.add(tree.brain.planText());          // AA_ROUND3 2: the sequencer's plan
         for (var r : AaLadder.rungs(tree.ladder)) if (r.picker() != null) out.add(r.id.substring(6) + " options: " + r.options());
         out.addAll(io.github.mojolowjo.entropybot.aa.brain.Costs.lines(bb));      // aa-costs: the cost terms
         out.addAll(tree.brain.heldLines(bb.clock.now()));                          // AA_ROUND2 3: the failure holds
@@ -823,6 +827,8 @@ public final class AaRuntime implements JobPort {
         in.furnaceInBag = bag.getOrDefault("furnace", 0) > 0;
         in.baseChests = s.feas.baseChests;
         in.baseKnown = s.basePos != null;
+        in.basePos = s.basePos;
+        in.campPos = s.campPos;
         in.shelterBuilt = bb.flag(AaLadder.SHELTER_FACT);
         in.areaKnown = false;
         in.areaName = null;
@@ -1059,6 +1065,43 @@ public final class AaRuntime implements JobPort {
     boolean replanOn() {
         JsonObject d = data();
         return !d.has("replan") || d.get("replan").getAsBoolean();
+    }
+
+    /** "aa horizon [seconds]": the sequencer's horizon (default 600; 30..7200), saved. */
+    String horizon(String arg) {
+        String a = arg == null ? "" : arg.trim();
+        int now = io.github.mojolowjo.entropybot.aa.brain.Brain.horizon(bb);
+        if (a.isEmpty()) return "aa horizon " + now + " s (plans of up to 3 desires that start within it); " + (tree.brain.planText() == null ? "no plan yet" : tree.brain.planText());
+        int s;
+        try {
+            s = Integer.parseInt(a.replaceAll("(?i)s$", ""));
+        } catch (NumberFormatException e) {
+            return "usage: aa horizon <seconds> (30..7200, now " + now + ")";
+        }
+        if (s < 30 || s > 7200) return "usage: aa horizon <seconds> (30..7200, now " + now + ")";
+        data().addProperty("horizon", s);
+        c.saved();
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, s);
+        return "ok: aa horizon " + s + " s (was " + now + ")";
+    }
+
+    private int[] coalAt;
+    private long coalAtMs = -1;
+
+    /** The nearest known coal ore (Mining.aaOres, family coal), cached 10 s; null none or unreadable (logged). */
+    int[] coalSite() {
+        long now = System.currentTimeMillis();
+        if (coalAtMs >= 0 && now - coalAtMs < 10_000) return coalAt;
+        coalAtMs = now;
+        try {
+            LocalPlayer p = Minecraft.getInstance().player;
+            List<IronOptions.Ore> ores = p == null ? List.of() : Mining.get().aaOres(p, "coal", 1);
+            coalAt = ores.isEmpty() ? null : new int[]{ores.get(0).x(), ores.get(0).y(), ores.get(0).z()};
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] aa: coal site: {}", e.toString());
+            coalAt = null;
+        }
+        return coalAt;
     }
 
     String replan(String arg) {

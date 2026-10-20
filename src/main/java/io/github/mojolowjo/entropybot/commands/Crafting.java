@@ -397,8 +397,13 @@ final class Crafting {
      *             used; the one in the bag goes down next to me and I wait there (wait mode), as when none is near
      */
     String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient, boolean here) {
+        return planSteps(p, plan, label, out, collectTargets, kind, efficient, here, false);
+    }
+
+    /** @param nowait AA_ROUND3 2: load and leave even with no base marked or a furnace here (the job is remembered) */
+    String planSteps(LocalPlayer p, List<Crafter.Step> plan, String label, List<Step> out, boolean collectTargets, String kind, boolean efficient, boolean here, boolean nowait) {
         // a job is only ever left running in a furnace at the base: no base marked -> stand by the furnace (wait mode)
-        if (efficient && (base() == null || here)) {
+        if (efficient && !nowait && (base() == null || here)) {
             efficient = false;
             collectTargets = true;
         }
@@ -640,8 +645,10 @@ final class Crafting {
         if (t.startsWith("forget")) return SmeltTexts.forget(furnaces(), t.substring(6).trim());
         if (t.equals("collect") || t.startsWith("collect ")) return collect(p, t.substring(7).trim());
         // 0.36.a8: "smelt <item> [n] here": the furnace from my bag goes down next to me even when the camp's is known
-        boolean here = t.endsWith(" here");
-        if (here) text = text.trim().replaceFirst("(?i)\\s+here$", "");
+        // AA_ROUND3 2: "... nowait": load the furnace and leave (the job is remembered; collect later)
+        SmeltTexts.Form form = SmeltTexts.form(text);
+        boolean nowait = form.nowait(), here = form.here() && !nowait;      // nowait never takes its furnace back
+        text = form.text();
         CraftTexts.NameCount nc = CraftTexts.parseNameCount(text, 1);
         if (nc == null) return CraftTexts.SMELT_USAGE;
         Map<String, Integer> inv = Gui.inventory(p);
@@ -661,9 +668,10 @@ final class Crafting {
         }
         List<Step> steps = new ArrayList<>(trips.steps());
         // efficient (the default): the job ends once the furnace runs, the pickup collects it when it is due
-        boolean efficient = MODE_EFFICIENT.equals(smeltMode()) && !here;
-        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient, here);
+        boolean efficient = nowait || (MODE_EFFICIENT.equals(smeltMode()) && !here);
+        String err = planSteps(p, plan.steps(), label, steps, !efficient, FurnaceJobs.SMELT, efficient, here, nowait);
         if (err != null) return "error: " + err;
+        if (nowait) return startSeq(SmeltTexts.nowaitLabel(trips.used() > 0, label), steps, "always");
         // a job left running (efficient, a base marked) ends "ok: done starting the furnace for ...", not "done smelting"
         String seqLabel = efficient && base() != null ? SmeltTexts.startLabel(trips.used() > 0, label) : CraftTexts.smeltSeqLabel(trips.used() > 0, label);
         return startSeq(seqLabel, steps, "always");
