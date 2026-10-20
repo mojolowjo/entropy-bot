@@ -107,10 +107,15 @@ public final class AaEscape {
      */
     public static Choice choose(int depth, boolean shaftOpen, int throwaway, boolean pickaxe) {
         if (depth <= 0) return new Choice(Way.OUT, "not under ground any more");
-        if (shaftOpen && throwaway >= depth)
-            return new Choice(Way.PILLAR, "an open shaft straight up (" + depth + " to the surface), " + throwaway + " blocks to place");
-        String shaft = shaftOpen ? "a shaft up but only " + throwaway + " of " + depth + " blocks to place" : "no open shaft above";
-        if (pickaxe) return new Choice(Way.CLIMB, shaft + ": staircase up (3-high headroom)");
-        return new Choice(Way.NONE, shaft + " and no pickaxe for stairs; the trail back was walked already");
+        // AA_ROUND3 1: a thin call into the one way-up set (no trail/sky facts here: the walk already walked its trail)
+        var f = new RungOptions.SurfaceFacts(depth, new int[]{0, 0, 0}, shaftOpen, throwaway, true, pickaxe, null, 0, null, -1, false);
+        Options.Choice c = WayUp.choose(f, new Options.OptionMemory(), 0);
+        if (c.best() == null) return new Choice(Way.NONE, c.why());
+        return new Choice("pillar".equals(c.best().id()) ? Way.PILLAR : Way.CLIMB, c.why());
+    }
+
+    /** The live escape: the whole WayUp choice over the adapter's facts (stairs per heading, tunnel, trail, sky). */
+    public static Options.Choice chooseAll(RungOptions.SurfaceFacts f, Options.OptionMemory m, long now) {
+        return WayUp.choose(f, m, now);
     }
 }

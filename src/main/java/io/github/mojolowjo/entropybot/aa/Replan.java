@@ -84,8 +84,13 @@ public final class Replan {
 
     /** The choice at the ore step's end: tunnel/pillar when >= 20% cheaper than the walk, else walk. Both priced. */
     public static Way chooseNow(List<Cell> column, int levels, int throwaway, double walk) {
+        return chooseNow(column, levels, throwaway, walk, null);
+    }
+
+    /** AA_ROUND3 1: the pillar/tunnel price is WayUp's (with the tool's seconds and wear for the breaks). */
+    public static Way chooseNow(List<Cell> column, int levels, int throwaway, double walk, io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
         if (levels <= 0) return new Way(Leg.NONE, 0, "already out");
-        Way t = tunnelUp(column, levels, throwaway);
+        Way t = WayUp.upColumn(column, levels, throwaway, kit);
         String both = t.leg().name().toLowerCase(Locale.ROOT) + " " + fmt(t.cost()) + " (" + t.why() + ") vs walk " + fmt(walk);
         if (t.cost() <= walk * (1 - TUNNEL_BETTER)) return new Way(t.leg(), t.cost(), both);
         return new Way(Leg.WALK, walk, both + ": walking");

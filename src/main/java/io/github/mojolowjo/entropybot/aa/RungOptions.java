@@ -31,36 +31,34 @@ public final class RungOptions {
      */
     public record SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
                                int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext,
-                               io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
+                               io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit,
+                               List<Replan.Cell> column, List<WayUp.Heading> headings) {
         public SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
                             int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext) {
             this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, trailEnd, trailLen, sky, skyDist, tableFurnaceNext, null);
+        }
+
+        /** Without the column and heading facts (pillar by the open-shaft flag, the climb verb row). */
+        public SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
+                            int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext,
+                            io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
+            this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, trailEnd, trailLen, sky, skyDist, tableFurnaceNext, kit, null, null);
         }
     }
 
     private static final Pattern SURFACE_END = Pattern.compile("no way up|unreachable|trail back|stuck|no path|no progress|timeout|couldn't|can't|could not|did not start|refused");
 
     public static final class Surface implements Options.OptionSet<SurfaceFacts> {
+        /** AA_ROUND3 1: the SURFACE rung is the one way-up set ({@link WayUp}). */
         @Override public Options.Choice choose(SurfaceFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
-            List<Options.Option> rows = new ArrayList<>();
-            List<String> dropped = new ArrayList<>();
-            int d = Math.max(1, f.depth());
+            return WayUp.choose(f, m, now);
+        }
+
+        /** The climb verb's row (no heading facts): priced by ToolWear with a kit, else the old depth x 3 + 10. */
+        static void climbRow(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
             if (f.kit() != null) climb(rows, dropped, m, now, f, d);
             else if (!f.pickaxe()) dropped.add("climb: no pickaxe");
             else add(rows, dropped, m, now, Options.scored("climb", "climb", AaLadder.CLIMB, d * CLIMB_BLOCK + CLIMB_FIX, d + " up, a staircase", "climb", false, m));
-            if (!f.shaftOpen()) dropped.add("pillar: no open shaft above");
-            else if (!f.placeAllowed()) dropped.add("pillar: placing not allowed here");
-            else if (f.throwaway() < d) dropped.add("pillar: " + f.throwaway() + " of " + d + " blocks to place");
-            else add(rows, dropped, m, now, Options.scored("pillar", "pillar", "goto " + f.me()[0] + " " + (f.me()[1] + d) + " " + f.me()[2],
-                    d * PILLAR_BLOCK + PILLAR_FIX, "an open shaft, " + f.throwaway() + " blocks", "pillar", false, m));
-            if (f.trailEnd() == null) dropped.add("trail: no trail back to open sky");
-            else add(rows, dropped, m, now, Options.scored("trail", "trail", "goto " + xyz(f.trailEnd()), f.trailLen(), "my trail back, " + Math.round(f.trailLen()) + " long", "trail", false, m));
-            if (f.sky() == null) dropped.add("sky: no open-sky cell found near");
-            else add(rows, dropped, m, now, Options.scored("sky", "goto", "goto " + xyz(f.sky()), f.skyDist() * SKY_WALK, "open sky " + Math.round(f.skyDist()) + " away", "sky", false, m));
-            if (!f.tableFurnaceNext()) dropped.add("nothing: the next rung needs open ground itself");
-            else if (f.sky() == null || f.skyDist() > NOTHING_SKY) dropped.add("nothing: no open spot within " + Math.round(NOTHING_SKY) + " for the next rung's walk");
-            else add(rows, dropped, m, now, new Options.Option("nothing", "nothing", Options.NOTHING, 0, "the table/furnace rung walks to its own spot", "nothing", false));
-            return Options.Choice.of(rows, dropped, "no way up");
         }
 
         /**
@@ -68,7 +66,7 @@ public final class RungOptions {
          * per way; the climb verb digs with a pickaxe, so USE is "climb", CRAFT is "craft stone_pickaxe 1 then climb",
          * and HAND has no verb (dropped with its price, so aa why still shows it). Seconds = walk-blocks.
          */
-        private static void climb(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
+        static void climb(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
             int blocks = d * io.github.mojolowjo.entropybot.aa.brain.ToolWear.STAIR_BLOCKS_PER_UP;
             for (var p : io.github.mojolowjo.entropybot.aa.brain.ToolWear.price(blocks, f.kit())) {
                 String terms = d + " up, a staircase: " + blocks + " blocks, " + p.terms();

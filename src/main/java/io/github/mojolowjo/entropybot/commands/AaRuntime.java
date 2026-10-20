@@ -63,6 +63,11 @@ public final class AaRuntime implements JobPort {
     private long seq, current = -1;
     private String currentChain, lastEnd;
     private long progress;
+    /** AA_ROUND3 1: the escape's way-up option that runs (its failure is charged to it), and the Failures view. */
+    private io.github.mojolowjo.entropybot.aa.Options.Option escapeOpt;
+    private final io.github.mojolowjo.entropybot.aa.Options.OptionMemory wayMem = new io.github.mojolowjo.entropybot.aa.Options.OptionMemory();
+    static final String WAYUP = "wayup";
+    private int lastRestoreWork = -1;
     private String lastStep, lastJobStatus;
     private int lastBag = -1;
     private int[] lastPos;
@@ -378,7 +383,8 @@ public final class AaRuntime implements JobPort {
         boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
                 io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), bb.in.pickaxes > 0,
-                trailEnd, trailLen, sky, sky == null ? -1 : best, tf, io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in));
+                trailEnd, trailLen, sky, sky == null ? -1 : best, tf, io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in),
+                depth > 0 ? column(lv, me, depth) : null, depth > 0 ? headings(lv, me, depth) : null);
     }
 
     /** The open-sky cell search radius (columns), S2. */
@@ -957,6 +963,11 @@ public final class AaRuntime implements JobPort {
         String js = c.jobs.running() ? c.jobs.job.status : null;
         if (js != null && !js.equals(lastJobStatus)) progress++;
         lastJobStatus = js;
+        // AA_ROUND3 1 finding 4: putting back blocks stands still; each placement (or try) counts as progress
+        RestoreRun rr = c.jobs.running() ? c.jobs.job.restoreRun : null;
+        int rw = rr == null ? -1 : rr.placed;      // review: only placements (a retried block is no progress)
+        progress = io.github.mojolowjo.entropybot.aa.core.RestoreProgress.tick(progress, lastRestoreWork, rw);
+        lastRestoreWork = rw;
         int bagTotal = 0;
         for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();
         if (lastBag >= 0 && bagTotal > lastBag) progress++;          // gained (a deposit's drop is no progress by itself)
@@ -1100,40 +1111,22 @@ public final class AaRuntime implements JobPort {
 
     /** The ore step is done and a pillar way back is stored: check the shaft and the blocks again, pillar or walk. */
     private void startReturn(LocalPlayer p, Minecraft mc) {
+        escapeOpt = null;
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            boolean out = Jobs.underDepth(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;
-            // aa-replan 2: the column over the head up to the first sky cell (feet there), priced cell by cell
-            String dim = lv.dimension().location().toString();
-            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
-            List<io.github.mojolowjo.entropybot.aa.Replan.Cell> col = new java.util.ArrayList<>();
-            int top = -1, maxY = Math.min(lv.getMaxBuildHeight() - 2, me[1] + 2 * io.github.mojolowjo.entropybot.aa.Replan.TUNNEL_CAP);
-            for (int y = me[1] + 1; y <= maxY && !out; y++) {
-                net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(me[0], y, me[2]);
-                if (y > me[1] + 1 && openCell(lv, me[0], y - 1, me[2]) && openCell(lv, me[0], y, me[2]) && lv.canSeeSky(q)) { top = y - 1; break; }
-                if (y == me[1] + 1) continue;                      // my head cell is open
-                var st = lv.getBlockState(q);
-                var fl = io.github.mojolowjo.entropybot.guard.PolicyRuntime.fluidOf(st);
-                boolean open = openCell(lv, me[0], y, me[2]);
-                double mult = 1;
-                boolean own = pr.dug(dim, me[0], y, me[2]);
-                if (!open && fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.NONE) {
-                    var f = pr.facts(lv, q, false).withDug(own);
-                    var v = pr.judge("aa-return", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, dim, me[0], y, me[2], f, pr.where());
-                    mult = v.allowed() ? v.multiplier() : Double.POSITIVE_INFINITY;
-                }
-                col.add(new io.github.mojolowjo.entropybot.aa.Replan.Cell(open, own, mult,
-                        fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.LAVA, fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.WATER,
-                        st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock));
-            }
-            int levels = out ? 0 : top < 0 ? maxY - me[1] : top - me[1];
-            if (top < 0 && !out) top = maxY;
+            int under = Jobs.underDepth(lv, me[0], me[1], me[2]), hole = holeUp(lv, me);
+            boolean out = under == 0 && hole == 0;
+            // AA_ROUND3 1 (aa388): the levels are the hole's step-out level (holeExit), never "the first cell that sees the
+            // sky" (every cell of a 1-wide shaft does); with ground overhead the scan to the first open sky cell
+            int levels = out ? 0 : io.github.mojolowjo.entropybot.aa.WayUp.returnLevels(under, hole, skyLevels(lv, me));
+            int top = me[1] + levels;
+            List<io.github.mojolowjo.entropybot.aa.Replan.Cell> col = column(lv, me, levels);
             double back = startPos == null ? 0 : Math.sqrt(Math.pow(startPos[0] - me[0], 2) + Math.pow(startPos[2] - me[2], 2));
             double walk = io.github.mojolowjo.entropybot.aa.Replan.walkCost(levels, back);
             Map<String, Integer> bag = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
             int tw = AaEscape.throwaway(bag);
-            var way = io.github.mojolowjo.entropybot.aa.Replan.chooseNow(col, levels, tw, walk);
+            var way = io.github.mojolowjo.entropybot.aa.Replan.chooseNow(col, levels, tw, walk, io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in));
             String why = way.why() + (runningOpt == null ? "" : "; planned " + runningOpt.ret().text());
             LOG.info("[entropybot] aa: way back at {}: {} - {}", Jobs.fmt(me), way.leg().name().toLowerCase(), why);
             var leg = way.leg();
@@ -1338,7 +1331,17 @@ public final class AaRuntime implements JobPort {
                 escapePending = true;           // review: the chain starts from escapeTick, not inside the end callback
                 escapeWay = "resume";
             }
-            else escapeFailNow("climbing out failed too: " + msg);
+            else if (escapeOpt != null && escapes < AaEscape.MAX_PER_TASK) {
+                // AA_ROUND3 1 finding 3: the failed way (a heading) is held in Failures; the next priced way runs
+                wayMem.failed(escapeOpt.memoryKey(), msg == null ? "failed" : msg, bb.clock.now());
+                LOG.info("[entropybot] aa: wayup: {} failed ({}) - held; the next way up", escapeOpt.id(), msg);
+                escapes++;
+                escapeOpt = null;
+                escapePending = true;           // escapeTick starts it once the chain has settled
+            } else {
+                if (escapeOpt != null) wayMem.failed(escapeOpt.memoryKey(), msg == null ? "failed" : msg, bb.clock.now());
+                escapeFailNow("climbing out failed too: " + msg);
+            }
             return;
         }
         if (mine && current >= 0 && escapeWay == null && !escapePending && on() && (AaEscape.stuck(msg) || holeStuckNow(msg)) && escapes < AaEscape.MAX_PER_TASK) {
@@ -1405,6 +1408,65 @@ public final class AaRuntime implements JobPort {
         return AaEscape.holeExit(AaEscape.HOLE_MAX_UP, open, stepOut);
     }
 
+    /** With ground overhead: the levels up to the first cell with open feet, head and sky (at most 2 x the tunnel cap). */
+    private static int skyLevels(net.minecraft.world.level.Level lv, int[] me) {
+        int maxY = Math.min(lv.getMaxBuildHeight() - 2, me[1] + 2 * io.github.mojolowjo.entropybot.aa.Replan.TUNNEL_CAP);
+        for (int y = me[1] + 2; y <= maxY; y++)
+            if (openCell(lv, me[0], y - 1, me[2]) && openCell(lv, me[0], y, me[2]) && lv.canSeeSky(new net.minecraft.core.BlockPos(me[0], y, me[2]))) return y - 1 - me[1];
+        return maxY - me[1];
+    }
+
+    /** The column over the head for {@code levels} up (the head cells on the way: feet+2 .. feet+levels+1), priced cell by cell. */
+    private static List<io.github.mojolowjo.entropybot.aa.Replan.Cell> column(net.minecraft.world.level.Level lv, int[] me, int levels) {
+        List<io.github.mojolowjo.entropybot.aa.Replan.Cell> col = new java.util.ArrayList<>();
+        for (int y = me[1] + 2; y <= me[1] + levels + 1; y++) col.add(cellAt(lv, me[0], y, me[2]));
+        return col;
+    }
+
+    /** One cell for WayUp: open, mine, the BreakPolicy multiplier (denied = infinite), fluids, a falling block. */
+    private static io.github.mojolowjo.entropybot.aa.Replan.Cell cellAt(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+        String dim = lv.dimension().location().toString();
+        net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(x, y, z);
+        if (!lv.isLoaded(q)) return new io.github.mojolowjo.entropybot.aa.Replan.Cell(false, false, Double.POSITIVE_INFINITY, false, false, false);
+        var st = lv.getBlockState(q);
+        var fl = io.github.mojolowjo.entropybot.guard.PolicyRuntime.fluidOf(st);
+        boolean open = openCell(lv, x, y, z);
+        double mult = 1;
+        boolean own = pr.dug(dim, x, y, z);
+        if (!open && fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.NONE) {
+            if (st.getDestroySpeed(lv, q) < 0) mult = Double.POSITIVE_INFINITY;            // bedrock and the like
+            else {
+                var f = pr.facts(lv, q, false).withDug(own);
+                var v = pr.judge("aa-wayup", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK, io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, dim, x, y, z, f, pr.where());
+                mult = v.allowed() ? v.multiplier() : Double.POSITIVE_INFINITY;
+            }
+        }
+        return new io.github.mojolowjo.entropybot.aa.Replan.Cell(open, own, mult,
+                fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.LAVA, fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.WATER,
+                st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
+    }
+
+    /**
+     * AA_ROUND3 1 finding 3: every stair heading's cells ({@code dig stairs up <dir> n}, n = levels, at most StairPlan.MAX)
+     * read and checked against my areas (the dig refuses a box outside them: the first such cell is kept).
+     */
+    private static List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> headings(net.minecraft.world.level.Level lv, int[] me, int levels) {
+        List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> out = new java.util.ArrayList<>();
+        int n = Math.min(Math.max(1, levels), StairPlan.MAX);
+        for (String d : io.github.mojolowjo.entropybot.aa.WayUp.DIRS) {
+            int[] u = io.github.mojolowjo.entropybot.aa.WayUp.dir(d);
+            List<io.github.mojolowjo.entropybot.aa.Replan.Cell> cells = new java.util.ArrayList<>();
+            int[] outside = null;
+            for (int[] c : io.github.mojolowjo.entropybot.aa.WayUp.stairCells(me[0], me[1], me[2], u[0], u[1], n)) {
+                if (outside == null && !Clearing.boxInAreas(io.github.mojolowjo.entropybot.clear.ClearBox.of(c[0], c[1], c[2], c[0], c[1], c[2]))) outside = c;
+                cells.add(cellAt(lv, c[0], c[1], c[2]));
+            }
+            out.add(new io.github.mojolowjo.entropybot.aa.WayUp.Heading(d, n, cells, outside));
+        }
+        return out;
+    }
+
     private static boolean openCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
         net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(x, y, z);
         if (!lv.isLoaded(q)) return false;
@@ -1429,6 +1491,7 @@ public final class AaRuntime implements JobPort {
         escapeResume = null;
         escapeFail = null;
         escapeJob = null;
+        escapeOpt = null;
         myChain = CHAIN;
         returnDone = null;
     }
@@ -1455,7 +1518,8 @@ public final class AaRuntime implements JobPort {
             int[] me = Jobs.here(p);
             if (outNow(mc.level, me)) escapeResumeNow("pillared up");
             else {
-                LOG.info("[entropybot] aa: the pillar ended still in the hole at {} - trying the staircase", Jobs.fmt(me));
+                LOG.info("[entropybot] aa: the pillar ended still in the hole at {} - the next way up", Jobs.fmt(me));
+                if (escapeOpt != null) wayMem.failed(escapeOpt.memoryKey(), "ended still in the hole", bb.clock.now());
                 startEscape(p, mc, true);
             }
         }
@@ -1465,36 +1529,42 @@ public final class AaRuntime implements JobPort {
         try {
             int[] me = Jobs.here(p);
             net.minecraft.world.level.Level lv = mc.level;
-            int depth = Jobs.underDepth(lv, me[0], me[1], me[2]);
-            boolean hole = depth == 0;                   // aa372 gap: open to the sky, but at the bottom of a hole
-            if (hole) depth = Math.max(0, holeUp(lv, me));
-            boolean shaft = !noPillar && depth > 0;
-            for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
-            Map<String, Integer> bag = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
-            AaEscape.Choice ch = AaEscape.choose(depth, shaft, AaEscape.throwaway(bag), bb.in.pickaxes > 0);
-            LOG.info("[entropybot] aa: stuck {} at {} ({} {} up): {} - {}", hole ? "in a hole" : "under ground", Jobs.fmt(me), hole ? "the way out" : "surface", depth,
-                    ch.way().name().toLowerCase(), ch.why());
-            switch (ch.way()) {
-                case OUT -> escapeResumeNow("already out");
-                case PILLAR -> {
-                    String r = PaperPlan.INSTANCE.pillar(c, new int[]{me[0], me[1] + depth, me[2]}, c.owner());
-                    if (r != null && !r.startsWith("error") && !r.startsWith("busy") && c.jobs.running()) {
-                        escapeWay = "pillar";
-                        escapeJob = c.jobs.job;
-                    } else {
-                        LOG.info("[entropybot] aa: the pillar did not start ({}) - trying the staircase", r);
-                        startEscape(p, mc, true);
-                    }
+            boolean hole = Jobs.underDepth(lv, me[0], me[1], me[2]) == 0;     // aa372 gap: open to the sky, but at the bottom of a hole
+            var f = surfaceFacts();
+            if (f == null || f.depth() <= 0) { escapeResumeNow("already out"); return; }
+            if (noPillar) f = new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(f.depth(), f.me(), false, f.throwaway(), false, f.pickaxe(),
+                    f.trailEnd(), f.trailLen(), f.sky(), f.skyDist(), false, f.kit(), null, f.headings());
+            else f = new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(f.depth(), f.me(), f.shaftOpen(), f.throwaway(), f.placeAllowed(), f.pickaxe(),
+                    f.trailEnd(), f.trailLen(), f.sky(), f.skyDist(), false, f.kit(), f.column(), f.headings());
+            // AA_ROUND3 1: the one way-up set, priced; a failed way is held in Failures under "wayup/<id>"
+            wayMem.bind(tree.brain.failures, WAYUP);
+            var ch = io.github.mojolowjo.entropybot.aa.AaEscape.chooseAll(f, wayMem, bb.clock.now());
+            var o = ch.best();
+            LOG.info("[entropybot] aa: stuck {} at {} ({} {} up): wayup: {} - {}", hole ? "in a hole" : "under ground", Jobs.fmt(me), hole ? "the way out" : "surface", f.depth(),
+                    o == null ? "wait" : o.id(), ch.why());
+            escapeOpt = o;
+            if (o == null) { escapeFailNow("no way up: " + ch.why()); return; }
+            if ("pillar".equals(o.id()) || "tunnel".equals(o.id())) {
+                int[] e = {me[0], me[1] + f.depth(), me[2]};
+                String r = "pillar".equals(o.id()) ? PaperPlan.INSTANCE.pillar(c, e, c.owner()) : PaperPlan.INSTANCE.tunnelUp(c, e, c.owner());
+                if (r != null && !r.startsWith("error") && !r.startsWith("busy") && c.jobs.running()) {
+                    escapeWay = "pillar";
+                    escapeJob = c.jobs.job;
+                } else {
+                    LOG.info("[entropybot] aa: the {} did not start ({}) - the next way up", o.id(), r);
+                    wayMem.failed(o.memoryKey(), "did not start: " + r, bb.clock.now());
+                    startEscape(p, mc, true);
                 }
-                case CLIMB -> {
-                    String cr = DigCommands.climb(c, p, "", c.owner());
-                    if (cr != null && cr.startsWith("ok")) escapeResumeNow("climb: " + cr);
-                    else if (cr != null && cr.startsWith("started")) {
-                        escapeWay = "climb";
-                        myChain = "climb";
-                    } else escapeFailNow("the staircase did not start: " + cr);
-                }
-                case NONE -> escapeFailNow(ch.why());
+                return;
+            }
+            String cr = io.github.mojolowjo.entropybot.aa.AaLadder.CLIMB.equals(o.command()) ? DigCommands.climb(c, p, "", c.owner()) : c.chainsRef().startChain(c.owner(), "climb", o.command(), 1);
+            if (cr != null && cr.startsWith("ok")) escapeResumeNow(o.id() + ": " + cr);
+            else if (cr != null && cr.startsWith("started")) {
+                escapeWay = "climb";
+                myChain = "climb";
+            } else {
+                wayMem.failed(o.memoryKey(), "did not start: " + cr, bb.clock.now());
+                escapeFailNow("the way up (" + o.id() + ") did not start: " + cr);
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: escape failed: {}", e.toString());
