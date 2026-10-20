@@ -149,7 +149,9 @@ public final class AaDesires {
             AaManual man = AaManual.of(b);
             if (r.id.equals(man.doRung)) return false;          // the owner's aa do runs until its job ends
             if (man.skipped(r.id)) return true;
-            return r.id.equals("needs.surface") ? b.in.underDepth < AaLadder.SURFACE_DEPTH : !r.unmet(b);
+            // aa-gate (normal3: 8 of 17 pointless "needs.surface wanted -1"): a running climb ends on its own result only;
+            // under 3 deep came before the climb's last steps
+            return !r.id.equals("needs.surface") && !r.unmet(b);
         });
         return wire(d, r).site(b -> rungSite(r, b));
     }

@@ -75,7 +75,8 @@ public final class Tracer {
     /** AA_PLAN 10: a switch replaced a live task; justified only by danger, the owner's order or aa off. */
     public static boolean justified(String why) {
         // BRAIN_PLAN B1: the brain's urgent-upkeep interrupt and the stuck watchdog's halt are deliberate, never pointless
-        return why != null && (why.startsWith("danger") || why.startsWith("urgent:") || why.startsWith("stuck:") || why.startsWith("preempted by owner") || why.startsWith("aa off") || why.startsWith("the owner's stop"));
+        // aa-gate: a desire whose own check is met ("done:") and the shelter's planned hand-over to night work ("sheltered:") are deliberate too
+        return why != null && (why.startsWith("done:") || why.startsWith("sheltered:") || why.startsWith("danger") || why.startsWith("urgent:") || why.startsWith("stuck:") || why.startsWith("preempted by owner") || why.startsWith("aa off") || why.startsWith("the owner's stop"));
     }
 
     private void countSwitch(long now, String why, String text) {

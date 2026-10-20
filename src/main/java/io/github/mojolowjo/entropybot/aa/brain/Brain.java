@@ -295,8 +295,10 @@ public final class Brain extends Node {
             Status s = cur.node.tick(bb);
             if (bb.task() != null) taskSeen = true;
             Scored mine = lastScored.size() > running ? lastScored.get(running) : null;
-            if (s == Status.RUNNING && mine != null && reasonGone(mine, cur.metNow(bb))) {          // day-check: the reason is gone; the commitment margin must not keep it alive
-                String why = "its reason is gone: " + cur.id + " wanted " + Math.round(mine.score()) + " (" + mine.parts() + ")";
+            Boolean metNow = mine == null || s != Status.RUNNING ? null : cur.metNow(bb);
+            if (s == Status.RUNNING && mine != null && reasonGone(mine, metNow)) {          // day-check: the reason is gone; the commitment margin must not keep it alive
+                // aa-gate: the desire's own check met = its work is done (a met rung, day for the shelter, healed): no pointless switch
+                String why = (Boolean.TRUE.equals(metNow) ? "done: its own check is met: " : "its reason is gone: ") + cur.id + " wanted " + Math.round(mine.score()) + " (" + mine.parts() + ")";
                 bb.port.log("brain: ends " + cur.id + ": " + why);
                 cur.node.halt(why);
                 running = -1;
