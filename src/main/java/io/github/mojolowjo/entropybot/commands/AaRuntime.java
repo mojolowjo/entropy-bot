@@ -483,7 +483,7 @@ public final class AaRuntime implements JobPort {
                 var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
                 boolean trees = sg != null && sg.treesNear(dim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.FAR_MAX).iterator().hasNext();
                 return new io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts(need, bb.in.pickTier, ores, opts, dd, logsNow, bb.in.planks,
-                        bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees);
+                        bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees, bb.in.cobble);
             });
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: coal facts: {}", e.toString());

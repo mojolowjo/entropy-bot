@@ -21,8 +21,7 @@ import java.util.function.IntFunction;
  *     {@link Discovery} (the iron rung's rows; the first ore found, then {@value #MINE_ORE} per further one).</li>
  * <li><b>charcoal</b>: logs smelted in a furnace ({@code gather charcoal N}); the missing logs are cut
  *     ({@link WoodOptions#CUT_LOG} each, {@link WoodOptions#SEARCH} to find trees when none is known), the smelt costs
- *     {@value #SMELT_ITEM} per item. Needs a furnace (in the bag or known): without one the row is dropped with the
- *     reason and the table/furnace rung makes it first (the station prerequisite).</li>
+ *     {@value #SMELT_ITEM} per item. No furnace known: "craft furnace 1" (8 cobblestone, gathered first when short) is prepended and priced, so charcoal can win early.</li>
  * </ul>
  * Charcoal counts as coal everywhere the bag does (BrainRuntime: coal + charcoal), so the stock goal and the torches take
  * it. Torches whose coal is missing run the best row first ({@link #torchChain}), never a bare "can't craft". A failed
@@ -34,7 +33,7 @@ public final class CoalOptions {
 
     /** Blackboard fact: an {@code IntFunction<CoalFacts>} (the need in, the facts out; null result: not readable). */
     public static final String FACTS = "coal.facts", MEM_FACT = "coal.mem";
-    public static final double MINE_ORE = 3, SMELT_ITEM = 10, FURNACE_TRIP = 2;
+    public static final double MINE_ORE = 3, SMELT_ITEM = 10, FURNACE_TRIP = 2, FURNACE_MAKE = 15;
     public static final int DIG_MAX = 16;
     public static final String FAMILY = "coal";
 
@@ -48,8 +47,8 @@ public final class CoalOptions {
      * @param treesKnown a tree has been seen (cutting the missing logs needs no search)
      */
     public record CoalFacts(int need, int pickTier, List<IronOptions.Ore> ores, List<Discovery.Opt> discovery, List<String> discoveryDropped,
-                            int logs, int planks, boolean furnaceInBag, int furnaceDist, boolean treesKnown) {
-        public CoalFacts withNeed(int n) { return new CoalFacts(n, pickTier, ores, discovery, discoveryDropped, logs, planks, furnaceInBag, furnaceDist, treesKnown); }
+                            int logs, int planks, boolean furnaceInBag, int furnaceDist, boolean treesKnown, int cobble) {
+        public CoalFacts withNeed(int n) { return new CoalFacts(n, pickTier, ores, discovery, discoveryDropped, logs, planks, furnaceInBag, furnaceDist, treesKnown, cobble); }
     }
 
     /** Logs a charcoal batch burns: one per item and a log of planks-fuel (6 items) per 6 smelted. */
@@ -93,16 +92,20 @@ public final class CoalOptions {
         }
         // 3. charcoal: logs smelted
         int want = logsFor(need), have = f.logs() + f.planks() / 4, missing = Math.max(0, want - have);
-        if (!f.furnaceInBag() && f.furnaceDist() < 0) dropped.add("charcoal: no furnace yet (the table/furnace rung makes one first)");
+        boolean noFurnace = !f.furnaceInBag() && f.furnaceDist() < 0;
+        int cobbleLack = Math.max(0, IronOptions.FURNACE_COBBLE - f.cobble());
+        if (noFurnace && cobbleLack > 0 && f.pickTier() < 1) dropped.add("charcoal: no furnace and no pickaxe for the " + IronOptions.FURNACE_COBBLE + " cobblestone to make one");
         else if (m.blocked("charcoal", now)) dropped.add("charcoal: " + m.reason("charcoal"));
         else {
             double trip = f.furnaceInBag() || f.furnaceDist() < 0 ? 0 : FURNACE_TRIP * f.furnaceDist();
+            // the station prerequisite, prepended: no furnace known -> craft one (8 cobblestone, gathered first when short); the smelt places it from the bag
+            double station = noFurnace ? FURNACE_MAKE + cobbleLack * MINE_ORE : 0;
+            String pre = !noFurnace ? "" : (cobbleLack > 0 ? "gather cobblestone " + IronOptions.FURNACE_COBBLE + " then " : "") + "craft furnace 1 then ";
             double cut = missing == 0 ? 0 : WoodOptions.CUT_LOG * missing + (f.treesKnown() ? 0 : WoodOptions.SEARCH);
-            rows.add(Options.scored("charcoal", "coal", "gather charcoal " + need, trip + cut + SMELT_ITEM * need + 10,
+            rows.add(Options.scored("charcoal", "coal", pre + "gather charcoal " + need, trip + station + cut + SMELT_ITEM * need + 10,
                     want + " logs (" + have + " in the bag" + (missing > 0 ? ", cut " + missing + (f.treesKnown() ? "" : ", no tree seen yet") : "") + "), smelt " + need
-                            + (f.furnaceInBag() ? " at a placed furnace" : ", a furnace " + f.furnaceDist() + " away"), "charcoal", false, m));
-        }
-        return Options.Choice.of(rows, dropped, "no way to coal");
+                            + (noFurnace ? ", first a furnace (" + (cobbleLack > 0 ? cobbleLack + " cobblestone short, " : "") + "craft it)" : f.furnaceInBag() ? " at a placed furnace" : ", a furnace " + f.furnaceDist() + " away"), "charcoal", false, m));
+        }        return Options.Choice.of(rows, dropped, "no way to coal");
     }
 
     // ---- what ran, and what a failure is charged to ----

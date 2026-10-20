@@ -15,7 +15,7 @@ class CoalOptionsTest {
     static Discovery.Opt strip(double cost) { return new Discovery.Opt(Discovery.Kind.STRIP, cost, "Y 40", "mine strip coal 8"); }
 
     static CoalFacts facts(List<IronOptions.Ore> ores, List<Discovery.Opt> disc, int logs, boolean furnace) {
-        return new CoalFacts(8, 1, ores, disc, List.of(), logs, 0, furnace, furnace ? -1 : -1, true);
+        return new CoalFacts(8, 1, ores, disc, List.of(), logs, 0, furnace, -1, true, 0);
     }
 
     @Test
@@ -35,12 +35,14 @@ class CoalOptionsTest {
     }
 
     @Test
-    void noFurnaceDropsCharcoalWithTheStationReason() {
+    void noFurnacePricesTheStationFirstAndCharcoalCanStillWin() {
         Options.Choice c = CoalOptions.choose(facts(List.of(), List.of(strip(900)), 12, false), new Options.OptionMemory(), 0);
-        assertEquals("strip at Y for coal", c.best().id(), c.line());
-        assertTrue(c.dropped().stream().anyMatch(d -> d.contains("no furnace yet")), c.line());
+        assertEquals("charcoal", c.best().id(), c.line());
+        assertEquals("gather cobblestone 8 then craft furnace 1 then gather charcoal 8", c.best().command());
+        CoalFacts withCobble = new CoalFacts(8, 1, List.of(), List.of(), List.of(), 12, 0, false, -1, true, 8);
+        assertEquals("craft furnace 1 then gather charcoal 8", CoalOptions.choose(withCobble, new Options.OptionMemory(), 0).best().command());
+        assertTrue(CoalOptions.choose(withCobble, new Options.OptionMemory(), 0).best().cost() < c.best().cost());
     }
-
     @Test
     void missingLogsAreCutAndPriced() {
         Options.Choice rich = CoalOptions.choose(facts(List.of(), List.of(), 12, true), new Options.OptionMemory(), 0);
@@ -63,7 +65,7 @@ class CoalOptionsTest {
 
     @Test
     void noPickaxeLeavesCharcoalOnly() {
-        CoalFacts f = new CoalFacts(8, 0, List.of(ore(5, true)), List.of(strip(100)), List.of(), 12, 0, true, -1, true);
+        CoalFacts f = new CoalFacts(8, 0, List.of(ore(5, true)), List.of(strip(100)), List.of(), 12, 0, true, -1, true, 0);
         Options.Choice c = CoalOptions.choose(f, new Options.OptionMemory(), 0);
         assertEquals(1, c.ranked().size(), c.line());
         assertEquals("charcoal", c.best().id());
@@ -71,10 +73,10 @@ class CoalOptionsTest {
 
     @Test
     void nothingRunnableIsNoWayWithEveryReason() {
-        CoalFacts f = new CoalFacts(8, 1, List.of(), List.of(), List.of("explore cave: no known cave"), 0, 0, false, -1, false);
+        CoalFacts f = new CoalFacts(8, 0, List.of(), List.of(), List.of("explore cave: no known cave"), 0, 0, false, -1, false, 0);
         Options.Choice c = CoalOptions.choose(f, new Options.OptionMemory(), 0);
         assertNull(c.best());
-        assertTrue(c.line().contains("no coal ore known yet") && c.line().contains("no furnace yet") && c.line().contains("no known cave"), c.line());
+        assertTrue(c.line().contains("no pickaxe") && c.line().contains("no furnace and no pickaxe"), c.line());
     }
 
     @Test
