@@ -291,7 +291,8 @@ public final class RestoreLive {
         }
         if (n > 0) {
             changed();
-            LOG.info("[entropybot] restore: {} blocks noted as {}", n, why);
+            if (io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER.equals(why)) LOG.debug("[entropybot] restore: {} blocks noted as {}", n, why);      // one per scaffold block
+            else LOG.info("[entropybot] restore: {} blocks noted as {}", n, why);
         }
     }
 
@@ -404,6 +405,7 @@ public final class RestoreLive {
                 changed();
                 return "ok: forgot all " + n + " blocks to put back";
             }
+            case KEEP -> { return keepLitter(p, cmd.mode()); }
             case IGNORE -> {
                 int[] q = cmd.pos();
                 if (!book.ignore(q[0], q[1], q[2])) return "error: no build hint at " + q[0] + " " + q[1] + " " + q[2] + " (restore status lists them)";
@@ -458,8 +460,68 @@ public final class RestoreLive {
         return dx * dx + dy * dy + dz * dz;
     }
 
+    // ---- aa-litter: the scaffold the bot placed on the way ----
+
+    /** What Baritone throws away as scaffold: only these, placed under a walk's travel intent, are litter. */
+    private static final Set<String> SCAFFOLD = Set.of("cobblestone", "cobbled_deepslate", "dirt", "netherrack", "stone");
+
+    /**
+     * From the place hook (client thread, after the guard let the placement through): a walk (travel intent, a job
+     * running) put a throwaway block into a cell it did not dig itself. Noted in the ledger as {@code built: litter}
+     * until the step's end takes it down ({@code restore placed}) or keeps it ({@code restore keep}). Never throws.
+     */
+    public void noteLitter(BlockPos pos, String itemPath) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            Commands cm = c;
+            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null || !SCAFFOLD.contains(itemPath)) return;
+            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() != io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) return;
+            String dim = Guard.dimOf(mc.level);
+            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole
+            if (book.ledger.at(dim, pos.getX(), pos.getY(), pos.getZ()) != null) return;
+            noteBuilt(List.of(new int[]{pos.getX(), pos.getY(), pos.getZ()}), "minecraft:" + itemPath, io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER);
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] litter note failed: {}", e.toString());
+        }
+    }
+
+    /** "restore keep <what>": the litter standing within 48 of me becomes a kept structure of mine (never taken down later). */
+    String keepLitter(LocalPlayer p, String what) {
+        if (readOnly) return "error: " + loadNote;
+        String dim = Guard.dimOf(p.level());
+        int[] me = Jobs.here(p);
+        int n = 0;
+        for (Ledger.Entry e : new ArrayList<>(book.ledger.all())) {
+            if (!io.github.mojolowjo.entropybot.restore.PlacedPlan.litter(e) || !dim.equals(e.dim) || d2(e, me) > 48L * 48) continue;
+            book.ledger.remove(e);
+            book.ledger.add(e.x, e.y, e.z, dim, e.block, e.state, List.of(), io.github.mojolowjo.entropybot.restore.PlacedPlan.keptWhy(what, e.x, e.y, e.z, "reuse pays for it"),
+                    e.job, e.jobLabel, io.github.mojolowjo.entropybot.restore.PlacedPlan.KEPT.trim(), e.tick, e.at);
+            n++;
+        }
+        if (n > 0) changed();
+        LOG.info("[entropybot] litter: kept {} blocks as {}", n, what);
+        return "ok: kept " + n + (n == 1 ? " block" : " blocks") + " as " + what;
+    }
+
+    /** {@code aa litter}: what is standing to take down and what was kept. */
+    public String litterText() {
+        return io.github.mojolowjo.entropybot.restore.PlacedPlan.text(book.ledger.all());
+    }
+
+    /** "restore placed [r]": a job that walks to and breaks the scaffold the bot placed within r (the step's end). */
+    String startPlaced(LocalPlayer p, String rest) {
+        RestoreArgs.Cmd cmd = RestoreArgs.parse(rest);
+        if (cmd.kind() != RestoreArgs.Kind.PLACED) return RestoreArgs.USAGE;
+        if (readOnly) return "error: " + loadNote;
+        RestorePlan.Plan plan = io.github.mojolowjo.entropybot.restore.PlacedPlan.plan(book.ledger.confirmed(), Jobs.here(p), Guard.dimOf(p.level()), cmd.n());
+        if (plan.actions().isEmpty())
+            return plan.left().isEmpty() ? "ok: nothing of mine left standing" : "error: " + io.github.mojolowjo.entropybot.restore.PlacedPlan.summary(0, plan.left());
+        return c.jobs.startRestore(new RestoreRun(plan, true), "taking down " + plan.actions().size() + (plan.actions().size() == 1 ? " block" : " blocks") + " I placed");
+    }
+
     /** "restore now [r]": a job that walks to and puts back every waiting block within r. */
     String startNow(LocalPlayer p, String rest) {
+        if (RestoreArgs.parse(rest).kind() == RestoreArgs.Kind.PLACED) return startPlaced(p, rest);
         RestoreArgs.Cmd cmd = RestoreArgs.parse(rest);
         if (cmd.kind() != RestoreArgs.Kind.NOW) return RestoreArgs.USAGE;
         if (readOnly) return "error: " + loadNote;

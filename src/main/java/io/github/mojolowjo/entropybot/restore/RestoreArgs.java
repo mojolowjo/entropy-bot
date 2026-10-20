@@ -7,11 +7,11 @@ package io.github.mojolowjo.entropybot.restore;
 public final class RestoreArgs {
     private RestoreArgs() {}
 
-    public enum Kind { STATUS, NOW, FORGET, FORGET_ALL, IGNORE, MODE, USAGE }
+    public enum Kind { STATUS, NOW, PLACED, KEEP, FORGET, FORGET_ALL, IGNORE, MODE, USAGE }
 
     public record Cmd(Kind kind, int n, int[] pos, String mode, String error) {}
 
-    public static final String USAGE = "usage: restore [status] | restore now [radius] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off";
+    public static final String USAGE = "usage: restore [status] | restore now [radius] | restore forget <n>|all confirm | restore ignore x y z | restore mode auto|manual|off | restore placed [radius] | restore keep <what>";
 
     public static final int MAX_RADIUS = 64;
 
@@ -28,6 +28,19 @@ public final class RestoreArgs {
                     return new Cmd(Kind.NOW, r, null, null, null);
                 }
                 return usage(null);
+            }
+            case "placed" -> {
+                if (w.length == 1) return new Cmd(Kind.PLACED, PlacedPlan.DEFAULT_RADIUS, null, null, null);
+                if (w.length == 2 && w[1].matches("\\d{1,3}")) {
+                    int r = Integer.parseInt(w[1]);
+                    if (r < 1 || r > MAX_RADIUS) return usage("the radius is 1 to " + MAX_RADIUS);
+                    return new Cmd(Kind.PLACED, r, null, null, null);
+                }
+                return usage(null);
+            }
+            case "keep" -> {
+                if (w.length >= 2 && t.substring(5).matches("[a-z0-9 _:.-]{1,60}")) return new Cmd(Kind.KEEP, 0, null, t.substring(5).trim(), null);
+                return usage("restore keep needs a word for what it keeps (bridge, pillar, stairs)");
             }
             case "forget" -> {
                 if (w.length >= 2 && w[1].equals("all")) {
@@ -53,10 +66,12 @@ public final class RestoreArgs {
 
     /** "restore now" is a job (it walks and places); everything else answers at once. */
     public static boolean isJob(String rest) {
-        return parse(rest).kind() == Kind.NOW;
+        Kind k = parse(rest).kind();
+        return k == Kind.NOW || k == Kind.PLACED;
     }
 
     private static Cmd usage(String why) {
         return new Cmd(Kind.USAGE, 0, null, null, why == null ? USAGE : "error: " + why);
     }
 }
+

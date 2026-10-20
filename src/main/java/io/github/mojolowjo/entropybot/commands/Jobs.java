@@ -853,7 +853,7 @@ public final class Jobs {
             done = true;
         }
         if (!done) {
-            if (!j.restoreResume) j.status = "putting back blocks I broke on the way (" + r.placed + " of " + r.total() + ")";
+            if (!j.restoreResume) j.status = r.placedMode ? "taking down blocks I placed (" + r.placed + " of " + r.total() + ")" : "putting back blocks I broke on the way (" + r.placed + " of " + r.total() + ")";
             return;
         }
         r.end();
@@ -877,7 +877,8 @@ public final class Jobs {
         if (j.restoreMsg != null) text = RestoreLive.INSTANCE.endText(j.restoreMsg, j, r);
         else {
             String sum = r.summary();
-            text = (r.placed == 0 && !r.left.isEmpty() ? "error: " : "ok: ") + (sum == null ? "nothing to put back" : sum);
+            if (r.placedMode) text = (io.github.mojolowjo.entropybot.restore.PlacedPlan.failed(r.placed, r.left) ? "error: " : "ok: ") + (sum == null ? "nothing of mine left standing" : sum);   // aa-litter: blocks left standing fail the step
+            else text = (r.placed == 0 && !r.left.isEmpty() ? "error: " : "ok: ") + (sum == null ? "nothing to put back" : sum);
         }
         finish(text);
     }

@@ -135,6 +135,8 @@ final class Chopping {
         int[] farAt;            // 0.34.1: the last trip's target
         String nearestReachable;
         boolean treeChop;
+        /** aa-litter: logs above this y are left standing (the pillar to them costs more than they are worth); MAX = take all. */
+        int skipAbove = Integer.MAX_VALUE;
         int pickBag, pickGot;   // 0.35.5: the pickup's bag count and items gained
         long pickGainAt;        // 0.35.5: the pickup step's tick of the last gain
     }
@@ -260,7 +262,8 @@ final class Chopping {
         r.tree = t;
         r.phase = "fell";
         r.rounds = 0;
-        r.lastLeft = t.logs().size();
+        planTop(r, t, p);
+        r.lastLeft = standing(r, t.logs()).size();
         r.brokeAny = 0;
         r.loop = new ChopLoop.State();
         r.trunk = TreeFinder.lowest(t.logs()).get(0).clone();
@@ -272,7 +275,7 @@ final class Chopping {
         s.setStatus(s.label + " - the " + ChopRules.shortId(t.logId()).replace("_log", "") + " tree at " + t.at() + " (" + ChopRules.total(r.got) + " logs so far)");
         List<Seq.Step> add = new ArrayList<>();
         add.add(Seq.Step.walk(t.base().clone(), true));
-        add.addAll(breakSteps(r, TreeFinder.lowest(t.logs())));
+        add.addAll(breakSteps(r, standing(r, TreeFinder.lowest(t.logs()))));
         spliceHere(s, add);
         return "wait";
     }
@@ -340,6 +343,50 @@ final class Chopping {
         return "wait";
     }
 
+    // ---- aa-litter: a tall tree's top logs ----
+
+    /** The tall-tree decision for a tree (pillar and take it down, or skip the top logs), priced by {@link io.github.mojolowjo.entropybot.guard.Litter}. */
+    private static io.github.mojolowjo.entropybot.guard.Litter.TreeTop tallTree(TreeFinder.Tree t, LocalPlayer p) {
+        int base = t.base()[1], top = base, topLogs = 0;
+        for (int[] l : t.logs()) {
+            top = Math.max(top, l[1]);
+            if (l[1] - base > io.github.mojolowjo.entropybot.guard.Litter.REACH_UP) topLogs++;
+        }
+        var facts = new io.github.mojolowjo.entropybot.guard.Litter.Facts(true, -1, false, false, false);     // a tree stands under the sky
+        return io.github.mojolowjo.entropybot.guard.Litter.tallTree(facts, top - base, topLogs, io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p), 3);
+    }
+
+    /** The seconds a tree's top logs add to its price in the pick (0 for a tree reached from the ground). */
+    private double litterExtra(TreeFinder.Tree t, LocalPlayer p) {
+        try {
+            var tt = tallTree(t, p);
+            return tt.pillar() == 0 ? 0 : Math.min(tt.pillarS(), tt.skipS());
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /** Before felling: skip the top logs when leaving them is cheaper than a pillar (by hand only: TreeChop and Falling Trees drop the whole tree). */
+    private void planTop(Run r, TreeFinder.Tree t, LocalPlayer p) {
+        r.skipAbove = Integer.MAX_VALUE;
+        if (r.treeChop) return;
+        var tt = tallTree(t, p);
+        if (tt.pillar() == 0) return;
+        LOG.info("[entropybot] chop: tree at {}: {}", t.at(), tt.why());
+        if (tt.way() == io.github.mojolowjo.entropybot.guard.Litter.TreeWay.SKIP_TOP) {
+            r.skipAbove = t.base()[1] + io.github.mojolowjo.entropybot.guard.Litter.REACH_UP;
+            r.notes.add("tree at " + t.at() + ": top " + tt.topLogs() + " logs left standing (" + tt.why() + ")");
+        }
+    }
+
+    /** The logs this run still means to take: those at or below the skip line. */
+    private static List<int[]> standing(Run r, List<int[]> logs) {
+        if (r.skipAbove == Integer.MAX_VALUE) return logs;
+        List<int[]> out = new ArrayList<>();
+        for (int[] l : logs) if (l[1] <= r.skipAbove) out.add(l);
+        return out;
+    }
+
     /** One break round: a clear of these cells, then 40 ticks for a fall (Falling Trees' animation is 1.5 s). */
     private List<Seq.Step> breakSteps(Run r, List<int[]> cells) {
         List<Pos> only = new ArrayList<>();
@@ -353,7 +400,7 @@ final class Chopping {
 
     /** After a break round: more rounds while its logs stand (and progress is made), then the pickup and the replant. */
     private String afterBreak(Seq s, Run r, LocalPlayer p, Live w) {
-        List<int[]> left = TreeFinder.left(w, r.tree);
+        List<int[]> left = standing(r, TreeFinder.left(w, r.tree));
         String idNow = w.id(r.trunk[0], r.trunk[1], r.trunk[2]), sigNow = w.sig(r.trunk[0], r.trunk[1], r.trunk[2]);
         int gained = ChopRules.total(ChopRules.gained(r.before, Gui.inventory(p), Chopping::isLogItem));
         ChopLoop.Round rd = new ChopLoop.Round(r.lastLeft, left.size(), r.trunkId, idNow, r.trunkSig, sigNow, lastBroken(s), gained);
@@ -529,7 +576,7 @@ final class Chopping {
             // 0.26.4: trunks with a free standing cell next to their base first (after a reach failure: the next nearest)
             boolean reach = !stump && trunkReachable(p, b);
             long cost = (long) (b[0] - me[0]) * (b[0] - me[0]) + (long) (b[2] - me[2]) * (b[2] - me[2]) + 4L * (b[1] - me[1]) * (b[1] - me[1]);
-            cands.add(new ChopLoop.Cand(b, cost, reach, stump));
+            cands.add(new ChopLoop.Cand(b, cost, reach, stump, stump ? 0 : litterExtra(t, p)));
             found.put(TreeFinder.key(b[0], b[1], b[2]), t);
             if (reach && r.reachFails == 0) break;      // the usual case: the nearest tree is fine
         }
