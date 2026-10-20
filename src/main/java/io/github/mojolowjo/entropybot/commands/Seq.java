@@ -344,7 +344,7 @@ public final class Seq {
             io.github.mojolowjo.entropybot.clear.ClearWorld w = new io.github.mojolowjo.entropybot.clear.McClearWorld(mc.level, p, Clearing.avoidPredicate());
             String dim = Storage.dim();
             List<io.github.mojolowjo.entropybot.clear.Pos> vein = io.github.mojolowjo.entropybot.clear.OreDetour.pick(w, me[0], me[1], me[2], r,
-                    id -> canMine(p, id), (x, z) -> jobs.commands().inAreas(dim, x, z));
+                    id -> canMine(p, id), (x, z) -> jobs.commands().inAreas(dim, x, z), (x, y, z) -> Mining.fairOk(dim, x, y, z));    // AA_ROUND3 3
             if (vein.isEmpty()) return false;
             var valuer = io.github.mojolowjo.entropybot.clear.OreDetour.valuer;
             if (valuer != null) {          // small-3: valued, not radius-based (AA on)

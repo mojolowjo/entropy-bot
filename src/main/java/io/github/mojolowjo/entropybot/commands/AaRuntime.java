@@ -98,6 +98,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
         // AA_ROUND3 2: the sequencer's horizon (aa horizon, saved) and the nearest known coal (torches' site, cached 10 s)
+        io.github.mojolowjo.entropybot.sense.Seen.fair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
         if (d.has("horizon")) bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, d.get("horizon").getAsInt());
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.COAL_SITE_FACT, (java.util.function.Supplier<int[]>) this::coalSite);
         c.chains.onEnd(this::chainEnded);
@@ -318,23 +319,80 @@ public final class AaRuntime implements JobPort {
             if (p == null || mc.level == null || sensed == null) return null;
             int[] me = Jobs.here(p);
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
-            List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, IRON_ORES);
+            boolean fair = io.github.mojolowjo.entropybot.sense.Seen.fair();
+            List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, IRON_ORES, fair ? 2 : 0);
             var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
             int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
             if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;      // review: "mine cave" picks only within 64, else it starts a new cave here
             Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
             boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
             String stripWhy = !mineMarked ? "no mine marked (place mine)" : !sensed.areasHere ? "outside my areas" : null;
+            IronOptions.Fair fairFacts = null;
+            if (fair) {         // AA_ROUND3 3: seen ores only, discovery priced
+                java.util.Set<String> seenKeys = new java.util.HashSet<>();
+                var sn = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
+                for (IronOptions.Ore o : ores) if (sn != null && sn.has(dim, o.x(), o.y(), o.z())) seenKeys.add(o.key());
+                List<String> dd = new ArrayList<>();
+                var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, IronOptions.FAMILY, caveDist, mineMarked, stripWhy, false), IronOptions.FAMILY, 3, dd);
+                fairFacts = new IronOptions.Fair(seenKeys, opts, dd);
+            }
             int[] furnace = c.crafting.findFurnace(p);
             int furnaceDist = furnace == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace)));
             return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
                     furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
-                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in));
+                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in), fairFacts);
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
             return null;
         }
+    }
+
+    /**
+     * AA_ROUND3 3: the discovery facts for a family: the known cave, the cave yield (Seen), the mine or my areas, the best
+     * band and its density (OreStats, this dimension), my pickaxe's seconds per stone block.
+     */
+    private io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts discoveryFacts(String dim, int[] me, String fam, int caveDist, boolean mineMarked, String stripWhy, boolean ownerGoal) {
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        var st = pass.stats();
+        var sn = st == null ? null : st.seen();
+        var r = st == null ? null : st.range(dim, fam);
+        int bestY = r == null ? Integer.MIN_VALUE : r.peakY();
+        double density = r == null ? -1 : st.density(dim, fam, io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
+                new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, -1, 1, ownerGoal)));
+        var kit = io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in);
+        double dig = io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(kit == null ? io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED : kit.speed());
+        return new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, sn == null ? io.github.mojolowjo.entropybot.sense.Seen.PRIOR_RATE : sn.caveRate(fam),
+                mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, density, dig, ownerGoal);
+    }
+
+    private long caveTickAt = -1;
+
+    /** AA_ROUND3 3: minutes of caving (a "mine cave" chain runs) feed Seen's cave yield; new sightings meanwhile count. */
+    private void caveTick(long now) {
+        var sn = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
+        if (sn == null) return;
+        boolean caving = currentChain != null && current >= 0 && currentChain.contains("mine cave");
+        if (caving && sn.caving && caveTickAt >= 0) sn.caveTime((now - caveTickAt) / 60_000.0);
+        sn.caving = caving;
+        caveTickAt = now;
+    }
+
+    /** aa fair on|off (saved): seen ore only (default) or today's behaviour (the whole chunk index). */
+    String fair(String arg) {
+        String a = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
+        var sn = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
+        String state = "fair " + (io.github.mojolowjo.entropybot.sense.Seen.fair() ? "on" : "off") + " - " + io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seenStatus()
+                + (sn == null ? "" : "; " + sn.caveText());
+        if (a.isEmpty()) return state;
+        if (!a.equals("on") && !a.equals("off")) return "usage: aa fair on|off (" + state + ")";
+        io.github.mojolowjo.entropybot.sense.Seen.fair(a.equals("on"));
+        data().addProperty("fair", a.equals("on"));
+        knownDue = true;                  // review: the goals' known counts and discovery refresh at once
+        c.saved();
+        LOG.info("[entropybot] aa: fair {}", a);
+        return "ok: aa fair " + a + (a.equals("on") ? " - I go only for ore I have seen (24 blocks, an open face, in view); else I cave or strip mine"
+                : " - every ore the chunk index knows counts again (today's behaviour)");
     }
 
     /**
@@ -692,6 +750,7 @@ public final class AaRuntime implements JobPort {
             progressTick(p);
             brainFacts(mc, now);
             goalsTick(p, tick);
+            caveTick(now);
             if (now < heldUntil) {
                 releaseSwim(mc);
                 if (bb.in.otherJob == null) {
@@ -2152,10 +2211,13 @@ public final class AaRuntime implements JobPort {
     /** Every 10 s while goals exist: known positions per family (OreIndex, 256 around), reached goals said and dropped. */
     private boolean knownDue;
 
+    private final Map<String, String> discLines = new java.util.HashMap<>();
+
     private void goalsTick(LocalPlayer p, long tick) {
         buildsTick(p, tick);
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
-        if (goals.isEmpty() || (tick % 200 != 7 && !knownDue)) return;
+        if (goals.isEmpty()) { bb.fact(io.github.mojolowjo.entropybot.aa.brain.Discovery.FACT, Map.of()); return; }
+        if (tick % 200 != 7 && !knownDue) return;
         knownDue = false;
         lootCtx();
         for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.done(bb)) {
@@ -2168,8 +2230,14 @@ public final class AaRuntime implements JobPort {
         var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
         int[] me = Jobs.here(p);
         Map<String, io.github.mojolowjo.entropybot.sense.OreIndex.Count> within = pass.index().within(bb.in.dimension, me[0], me[1], me[2], 256);
+        var seenNow = io.github.mojolowjo.entropybot.sense.Seen.fair() ? pass.seen() : null;
         for (var g : goals) {
             if (!g.r.ore()) continue;
+            if (io.github.mojolowjo.entropybot.sense.Seen.fair()) {       // AA_ROUND3 3: only the cells I have seen count as known
+                String sf = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
+                known.put(g.r.key(), seenNow == null || sf == null || sf.equals("?") ? 0 : seenNow.near(bb.in.dimension, io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), me[0], me[1], me[2], 256).size());
+                continue;
+            }
             int n = 0;
             // aa-water (live water1): the index is keyed by family ("iron"), the goal by ids ("iron_ore"): both count
             String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
@@ -2203,6 +2271,27 @@ public final class AaRuntime implements JobPort {
             if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;
             bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.WAYS_FACT, new io.github.mojolowjo.entropybot.aa.brain.Goals.Ways(caveDist,
                     sensed.feas != null && sensed.feas.mineMarked, sensed.areasHere));
+            // AA_ROUND3 3: each ore goal's discovery options (fair on), cheapest first; the choice is logged when it changes
+            Map<String, List<io.github.mojolowjo.entropybot.aa.brain.Discovery.Opt>> disc = new java.util.HashMap<>();
+            if (io.github.mojolowjo.entropybot.sense.Seen.fair()) {
+                boolean marked = sensed.feas != null && sensed.feas.mineMarked;
+                String stripWhy = !sensed.areasHere ? "outside my areas" : null;
+                for (var g : goals) {
+                    if (!g.r.ore()) continue;
+                    String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
+                    List<String> dd = new ArrayList<>();
+                    var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, fam, caveDist, marked, stripWhy, true),
+                            g.r.key().replaceFirst("^.*:", ""), Math.max(1, g.n - io.github.mojolowjo.entropybot.aa.brain.Goals.have(bb.in.bag, g)), dd);
+                    disc.put(g.r.key(), opts);
+                    String line = opts.isEmpty() ? "none (" + String.join("; ", dd) + ")" : opts.get(0).text() + (opts.size() > 1 ? "; then " + opts.get(1).text() : "");
+                    String head = opts.isEmpty() ? "none" : opts.get(0).label();       // logged when the chosen way changes, not its price
+                    if (!head.equals(discLines.get(g.r.key()))) {
+                        discLines.put(g.r.key(), head);
+                        if (known.getOrDefault(g.r.key(), 0) == 0) LOG.info("[entropybot] aa: goal {}: none seen; discovery: {}", g.r.key(), line);
+                    }
+                }
+            }
+            bb.fact(io.github.mojolowjo.entropybot.aa.brain.Discovery.FACT, disc);
         }
     }
 

@@ -81,10 +81,32 @@ public final class IronOptions {
      */
     public record Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                         boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
-                        io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
+                        io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair) {
+        public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
+                     boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
+                     io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, null);
+        }
+
         public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                      boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble) {
-            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, null);
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, null, null);
+        }
+    }
+
+    /**
+     * AA_ROUND3 3 (aa fair on): the ore cells I have seen ({@link Ore#key()}s; an ore not in it is dropped "not seen")
+     * and the discovery options (cave and strip priced by what was learned) in place of the fixed CAVE/STRIP rows. Null
+     * in {@link Facts}: today's behaviour.
+     */
+    public record Fair(java.util.Set<String> seen, List<io.github.mojolowjo.entropybot.aa.brain.Discovery.Opt> discovery, List<String> dropped) {
+        /** The strip option's steps before "mine strip" ("place mine x y z north"), or null. */
+        String stripPrefix() {
+            for (var o : discovery) if (o.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP) {
+                int i = o.command().indexOf(" then mine strip");     // "[dig stairs north n then ]place mine north"
+                return i > 0 ? o.command().substring(0, i) : null;
+            }
+            return null;
         }
     }
 
@@ -221,6 +243,7 @@ public final class IronOptions {
         List<String> dropped = new ArrayList<>();
         Ore above = null;
         for (Ore o : f.ores()) {
+            if (f.fair() != null && !f.fair().seen().contains(o.key())) { dropped.add(o.key() + ": not seen"); continue; }
             if (o.floor()) { dropped.add(o.key() + ": " + o.deny()); continue; }
             if (o.deny() != null) { dropped.add(o.key() + ": " + o.deny()); continue; }
             // aa-water (1f): a wet ore: the floating dig is priced into walk and dig; standing ways are rows of their own
@@ -265,11 +288,22 @@ public final class IronOptions {
                 else ranked.add(scored(Way.PILLAR_KNOWN, o, o.dist() + up * PLACE_BLOCK + CLEAR, up + " up, " + f.throwaway() + " blocks to place", m));
             } else if (up >= PILLAR_MIN_UP) dropped.add("pillar " + o.key() + ": " + m.reason(Way.PILLAR_KNOWN, o));
         }
-        if (f.caveDist() >= 0) {
+        if (f.fair() != null) {
+            // AA_ROUND3 3: the discovery ways, priced by what was learned (cave yield, the best band's density)
+            for (var d : f.fair().discovery()) {
+                Way w = d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.CAVE ? Way.CAVE
+                        : d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP ? Way.STRIP : null;
+                if (w == null) continue;
+                if (m.blocked(w, null, now)) dropped.add(d.label() + ": " + m.reason(w, null));
+                else ranked.add(scored(w, null, d.cost() + (w == Way.STRIP ? wear(f, STRIP_BLOCKS) : 0), d.label() + ": " + d.why() + (w == Way.STRIP ? wearWhy(f, STRIP_BLOCKS) : ""), m));
+            }
+            dropped.addAll(f.fair().dropped());
+        } else if (f.caveDist() >= 0) {
             if (m.blocked(Way.CAVE, null, now)) dropped.add("cave: " + m.reason(Way.CAVE, null));
             else ranked.add(scored(Way.CAVE, null, f.caveDist() + CAVE_TIME, "a known cave " + f.caveDist() + " away", m));
         } else dropped.add("cave: none known");
-        if (f.stripAllowed()) {
+        if (f.fair() != null) { /* the strip row came with the discovery ways */ }
+        else if (f.stripAllowed()) {
             if (m.blocked(Way.STRIP, null, now)) dropped.add("strip: " + m.reason(Way.STRIP, null));
             else ranked.add(scored(Way.STRIP, null, STRIP_TIME + wear(f, STRIP_BLOCKS), "a mine is marked" + wearWhy(f, STRIP_BLOCKS), m));
         } else dropped.add("strip: " + (f.stripWhy() == null ? "not allowed" : f.stripWhy()));
@@ -394,7 +428,11 @@ public final class IronOptions {
             for (Scored s : c.ranked()) {
                 Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place());
                 String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
-                rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), rewrite(steps, one), s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
+                String cmd = rewrite(steps, one);
+                // AA_ROUND3 3: strip at the best band with no mine marked: the mine is placed there first
+                String pre = s.way() == Way.STRIP && f.fair() != null ? f.fair().stripPrefix() : null;
+                if (pre != null) cmd = pre + " then " + cmd;
+                rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), cmd, s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
                         returnLeg(s, f, oreIdx), s.target() == null ? null : io.github.mojolowjo.entropybot.aa.brain.Site.at(s.target().x(), s.target().y(), s.target().z())));
             }
             // aa-replan: ranked by the round trip (go + do + return)

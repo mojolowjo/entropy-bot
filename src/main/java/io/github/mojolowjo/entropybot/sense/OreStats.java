@@ -42,9 +42,28 @@ public final class OreStats {
         }
     }
 
-    public boolean dirty() { return dirty; }
+    /** AA_ROUND3 3: the seen ore cells and the cave yield, kept in the same file. */
+    private Seen seen = new Seen();
 
-    public void saved() { dirty = false; }
+    public Seen seen() { return seen; }
+
+    public boolean dirty() { return dirty || seen.dirty(); }
+
+    public void saved() { dirty = false; seen.saved(); }
+
+    /**
+     * AA_ROUND3 3: listed ore of a family per block in the {@link #BAND}-block band around y, in one dimension (the
+     * samples over the chunks counted there x 256 x BAND); -1 unknown. Samples are capped per chunk: a floor, not exact.
+     */
+    public synchronized double density(String dim, String family, int y) {
+        Map<String, TreeMap<Integer, Integer>> d = hist.get(dim);
+        TreeMap<Integer, Integer> h = d == null ? null : d.get(family);
+        Set<Long> cs = counted.get(dim);
+        if (h == null || cs == null || cs.isEmpty()) return -1;
+        int n = 0;
+        for (int c : h.subMap(y - BAND / 2, true, y + BAND / 2, false).values()) n += c;
+        return n / ((double) cs.size() * 256 * BAND);
+    }
 
     public long chunks() { return chunks; }
 
@@ -139,6 +158,7 @@ public final class OreStats {
             cs.add(d.getKey(), a);
         }
         root.add("chunks", cs);
+        root.add("seen", seen.toJson());
         return GSON.toJson(root);
     }
 
@@ -172,7 +192,13 @@ public final class OreStats {
         } catch (RuntimeException ex) {
             skipped[0]++;
         }
+        try {
+            if (root.has("seen")) o.seen = Seen.fromJson(root.get("seen"), skipped);
+        } catch (RuntimeException ex) {
+            skipped[0]++;
+        }
         o.dirty = false;
+        o.seen.saved();
         return o;
     }
 

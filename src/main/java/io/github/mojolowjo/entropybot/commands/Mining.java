@@ -298,7 +298,14 @@ final class Mining {
         int[] me = Jobs.here(p);
         String d = dim();
         return !pass().nearest(d, id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, family), me[0], me[1], me[2],
-                io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.inAreas(d, x, z)).isEmpty();
+                io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.inAreas(d, x, z) && fairOk(d, x, y, z)).isEmpty();
+    }
+
+    /** AA_ROUND3 3: under {@code aa fair} (default on) only an ore cell I have seen counts (sense.Seen); off: every indexed one. */
+    static boolean fairOk(String d, int x, int y, int z) {
+        if (!io.github.mojolowjo.entropybot.sense.Seen.fair()) return true;
+        io.github.mojolowjo.entropybot.sense.Seen s = pass().seen();
+        return s != null && s.has(d, x, y, z);
     }
 
     /** Chunks seen within the mine reach inside the areas ("I have seen N chunks here"). */
@@ -333,6 +340,7 @@ final class Mining {
         java.util.function.Predicate<String> idOk = id -> exact ? id.equals(j.target) : io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
         io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
+            if (!fairOk(d, x, y, z)) return false;          // AA_ROUND3 3: the at form, the index and the live scan: seen cells only
             if (MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), tick)) return false;   // 0.36.a3: timed, not for good
             if (!commands.inAreas(d, x, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
             // 0.28.0 live (LAN flat world): the clear engine stands only inside an area in 3D (Clearing.standCheck), so an
@@ -423,7 +431,13 @@ final class Mining {
      * water), and the break policy's MINE verdict at the cell. Same fence as the mine's own pick (my areas, the protect
      * margin, the guard); no tried-set (the scorer keeps its own memory). Never throws; empty when the index is not ready.
      */
-    List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n) {
+    List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n) { return aaOres(p, fam, n, 0); }
+
+    /**
+     * AA_ROUND3 3: under {@code aa fair} the n nearest seen ores, plus up to {@code unseen} nearest ones I never saw
+     * (bare rows, so the iron scorer drops them with the reason "not seen"); fair off: the n nearest as before.
+     */
+    List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n, int unseen) {
         List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> out = new ArrayList<>();
         try {
             if (!indexReady()) return out;
@@ -432,8 +446,13 @@ final class Mining {
             Level level = p.level();
             List<Box> prot = boxes(policy(), "protect");
             java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
-            io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> commands.inAreas(d, x, z)
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.inAreas(d, x, z)
                     && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null;
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> fence.test(x, y, z) && fairOk(d, x, y, z);
+            if (unseen > 0 && io.github.mojolowjo.entropybot.sense.Seen.fair())
+                for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, unseen,
+                        (x, y, z) -> fence.test(x, y, z) && !fairOk(d, x, y, z)))
+                    out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), Math.sqrt(h.d2()), false, false, false, -1, false, null, false));
             var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
             for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, n, ok)) {
                 BlockPos q = new BlockPos(h.x(), h.y(), h.z());
@@ -551,7 +570,7 @@ final class Mining {
         List<Box> prot = boxes(policy(), "protect");
         j.kFarCache = new ArrayList<>(io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
                 !j.knownTried.contains(BlockPos.asLong(x, y, z)) && !MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), now())
-                        && commands.inAreas(d, x, z)
+                        && commands.inAreas(d, x, z) && fairOk(d, x, y, z)
                         && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null
                         && (j.dig || io.github.mojolowjo.entropybot.sense.BaritoneMemory.exposedInCache(x, y, z)), 8, "mine"));   // 0.34.1: walkable faces only
         return j.kFarCache.isEmpty() ? List.of() : List.of(j.kFarCache.get(0));
@@ -1779,7 +1798,7 @@ final class Mining {
         Level level = p.level();
         long reach2 = (long) CaveRules.FROM_ENTRANCE * CaveRules.FROM_ENTRANCE;
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> h = pass().nearest(dim(), cv.ids::contains, me[0], me[1], me[2], CaveRules.FROM_ENTRANCE, 1, (x, y, z) -> {
-            if (cv.knownTried.contains(BlockPos.asLong(x, y, z)) || off.test(x, y, z) || jobs.goalAllowed(x, y, z) != null) return false;
+            if (cv.knownTried.contains(BlockPos.asLong(x, y, z)) || off.test(x, y, z) || jobs.goalAllowed(x, y, z) != null || !fairOk(dim(), x, y, z)) return false;
             long dx = x - c.ex, dy = y - c.ey, dz = z - c.ez;
             if (dx * dx + dy * dy + dz * dz > reach2) return false;
             BlockPos q = new BlockPos(x, y, z);

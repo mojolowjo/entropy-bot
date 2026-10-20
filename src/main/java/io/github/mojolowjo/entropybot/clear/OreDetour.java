@@ -28,6 +28,13 @@ public final class OreDetour {
 
     /** The vein to mine (nearest block first), empty when none qualifies. r: the radius (0 = off). */
     public static List<Pos> pick(ClearWorld w, int bx, int by, int bz, int r, Predicate<String> canMine, Veins.Area area) {
+        return pick(w, bx, by, bz, r, canMine, area, null);
+    }
+
+    /** AA_ROUND3 3: a gate on the vein's first cell (aa fair: a cell I have seen); null = any. */
+    public interface First { boolean ok(int x, int y, int z); }
+
+    public static List<Pos> pick(ClearWorld w, int bx, int by, int bz, int r, Predicate<String> canMine, Veins.Area area, First firstOk) {
         List<Pos> out = new ArrayList<>();
         if (w == null || r <= 0) return out;
         int up = Math.min(r, MAX_UP);
@@ -38,7 +45,7 @@ public final class OreDetour {
                 if (!area.contains(x, z)) continue;
                 for (int y = by - up; y <= by + up + 1; y++) {
                     double d = (x - bx) * (x - bx) + (y - by) * (y - by) + (z - bz) * (z - bz);
-                    if (d > (double) r * r || d >= best || !ok(w, x, y, z, canMine) || !exposed(w, x, y, z)) continue;
+                    if (d > (double) r * r || d >= best || !ok(w, x, y, z, canMine) || !exposed(w, x, y, z) || (firstOk != null && !firstOk.ok(x, y, z))) continue;
                     best = d;
                     first = new Pos(x, y, z);
                 }

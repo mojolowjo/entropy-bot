@@ -121,6 +121,9 @@ public final class Goals {
             return cmd.replace("mine " + io.github.mojolowjo.entropybot.aa.IronOptions.FAMILY + " 1 at", "mine " + w + " 1 at");
         if (at != null) return "mine " + w + " 1 at " + at[0] + " " + at[1] + " " + at[2] + (at.length > 3 && at[3] == 0 ? " walk" : " dig");
         if (known(bb, g.r.key()) > 0) return "mine " + w + " " + left + " dig";
+        // AA_ROUND3 3 (aa fair): no ore seen: the cheapest discovery way (explore cave, strip at Y, clear chunk), priced
+        Discovery.Opt d = discovery(bb, g.r.key());
+        if (d != null) return d.command();
         // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
         if (g.r.where() != null && !g.r.where().yKnown()) return "explore 5";
         // overnight 2026-10-19 (coal goal: "mine strip" with no mine marked failed twice): the iron-style ways in order
@@ -176,6 +179,12 @@ public final class Goals {
         }
         int[] at = pickOre(ores, digMax);
         return at == null ? null : new Pick(at, null);
+    }
+
+    /** AA_ROUND3 3: the goal's cheapest discovery option (the adapter's {@link Discovery#FACT}), null none. */
+    @SuppressWarnings("unchecked")
+    public static Discovery.Opt discovery(Blackboard bb, String key) {
+        return bb.fact(Discovery.FACT) instanceof Map<?, ?> m && m.get(key) instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Discovery.Opt o ? o : null;
     }
 
     public static int[] nearest(Blackboard bb, String key) {

@@ -93,6 +93,20 @@ public final class ChunkPass {
 
     public OreIndex index() { return index; }
 
+    private final SeenRuntime seenRt = new SeenRuntime();
+
+    /** AA_ROUND3 3: the seen ore cells of this world (kept in ore-stats.json); null before the world files are known. */
+    public Seen seen() {
+        OreStats st = stats();
+        return st == null ? null : st.seen();
+    }
+
+    /** sense status: the seen-ore line. */
+    public String seenStatus() {
+        Seen s = seen();
+        return "seen ore: " + (s == null || dim == null ? "no world" : s.size(dim) + " cells here") + ", " + seenRt.status() + ", fair " + (Seen.fair() ? "on" : "off");
+    }
+
     /** Has the pass read at least one chunk in this dimension (the index can answer)? */
     public boolean ready() { return dim != null && readsLoad + readsResend > 0; }
 
@@ -140,6 +154,11 @@ public final class ChunkPass {
             ChunkSummary s = index.get(dim, cx, cz);
             SummaryBuilder.Cls cf = reader.cls(from), ct = reader.cls(to);
             if (ct.family() != null) oreHeard++;       // an ore block appeared (sense status counts them: the hook is alive)
+            if (cf.family() != null && ct.family() == null) {           // AA_ROUND3 3: a mined ore leaves the seen cells
+                OreStats so = stats();
+                Seen sn = so == null ? null : so.seen();
+                if (sn != null) sn.mined(dim, x, y, z);
+            }
             if (s == null || !live.contains(k)) {
                 beforeRead++;              // its read is pending (or it is not loaded): the read covers this change
                 if (!schedule.isPending(cx, cz)) schedule.missed(cx, cz, System.currentTimeMillis());
@@ -204,6 +223,12 @@ public final class ChunkPass {
             if (tick % NearAudit.EVERY_TICKS == 5 && System.nanoTime() - t0 < Limits.SENSE_BUDGET_NS / 2) nearAudit(level, p, now);
             if (tick % 20 == 3) writeDue(now, false);
             if (tick % 1200 == 5) saveStats();
+            try {
+                OreStats sn = stats();
+                if (sn != null && dim != null) seenRt.tick(level, mc.player, index, sn.seen(), dim, tick, now);
+            } catch (Throwable t) {
+                error("seen", t);
+            }
         } catch (Throwable t) {
             error("tick", t);
         } finally {
@@ -609,6 +634,7 @@ public final class ChunkPass {
         sb.append(" | ").append(schedule.loadedCount()).append(" chunks loaded, ").append(live.size()).append(" read, ").append(schedule.pending()).append(" pending");
         sb.append(" | patches ").append(patches).append(" applied, dropped: ").append(dropUnsure).append(" unsure (rescanned), ")
                 .append(dropError).append(" errors; ").append(beforeRead).append(" before the chunk's read (the read covers them)");
+        sb.append(" | ").append(seenStatus());
         sb.append(" | missed marks ").append(schedule.missedMarks).append(" (+").append(schedule.missedDeduped).append(" deduped)");
         sb.append(String.format(Locale.ROOT, " | tick %.3f ms last, %.3f max, %.3f avg (1 min); max (join) %.1f ms (the first 10 s: first reads, not a steady cost)",
                 lastNs / 1e6, maxNs / 1e6, avgMs(), joinMaxNs / 1e6));
