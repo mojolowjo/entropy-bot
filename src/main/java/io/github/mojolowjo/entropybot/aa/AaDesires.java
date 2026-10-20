@@ -144,7 +144,7 @@ public final class AaDesires {
         };
         // aa-night2 P0 3: a running rung ends on its own predicate only (skipped or met); the surface climb is done once
         // up (its unmet also reads needsOpenGround, which flickers with what the other rungs want)
-        d.met(b -> {
+        if (d.kind == Desire.Kind.GATE) d.met(b -> {
             AaManual man = AaManual.of(b);
             if (r.id.equals(man.doRung)) return false;          // the owner's aa do runs until its job ends
             if (man.skipped(r.id)) return true;
@@ -569,7 +569,9 @@ public final class AaDesires {
     static Desire hide() {
         Node n = AaTree.idleCd("night.hide.cd", RunJob.of("night.hide.job", TaskKind.BASE_BED, HIDE_CHAIN, "hide"));
         return new Desire("night.hide", Desire.Kind.UPKEEP, n, AaDesires::hideScore)
-                .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).grace(2_000).trumps().lastTry();
+                .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).grace(2_000).patient(4 * 60_000).trumps().lastTry()
+                // its own end: healed (the shell it waits in turns the score off; that is no gone reason)
+                .met(b -> !b.in.hungerDrains || b.in.health >= HEAL_TO);
     }
 
     /** The step grace before the shelter interrupts. */
@@ -593,7 +595,9 @@ public final class AaDesires {
         return List.of(
                 new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry(),
                 new Desire("night.shelter", Desire.Kind.UPKEEP, shelterYield, bb -> nightWorkReady(bb) ? -1 : shelterScore(bb))
-                        .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).trumps().lastTry(),
+                        .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).trumps().lastTry()
+                        // its own end: day (or Peaceful); in the shell the score is off, which is no gone reason
+                        .met(b -> !b.in.hungerDrains || Night.dusk(b.in.dayTime, b.in.night) <= 0),
                 hide());
     }
 
