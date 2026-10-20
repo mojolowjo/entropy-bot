@@ -17,7 +17,7 @@ import java.util.List;
 public final class NightWork {
     private NightWork() {}
 
-    public static final int SHAFT = 2, STAIRS = 24, MIN_PICK_PCT = 10;
+    public static final int SHAFT = 2, STAIRS = 24;
 
     public enum Work { NONE, SMELT, CRAFT, STAIRS }
 
@@ -28,7 +28,9 @@ public final class NightWork {
     public static Work pick(Inputs in) {
         if (in.bag.getOrDefault("raw_iron", 0) > 0 && in.furnaceInBag) return Work.SMELT;
         if (craft(in) != null) return Work.CRAFT;
-        if (in.pickTier >= 1 && in.pickPct > MIN_PICK_PCT) return Work.STAIRS;
+        // director 2026-10-19: no "save a nearly broken tool" rule (live aa388 dug 114 blocks by hand at 29/131): a worn
+        // pickaxe still digs; its wear is a cost (ToolWear) where the ways are priced
+        if (in.pickTier >= 1) return Work.STAIRS;
         return Work.NONE;
     }
 

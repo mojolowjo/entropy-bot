@@ -135,6 +135,13 @@ public final class Brain extends Node {
         long cu = failures.until(d.id, null);
         if (skip == null && cu > now) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + failures.fails(d.id, null) + " fails)";
         String parts = String.valueOf(Math.round(v));
+        if (d.detail != null) {
+            try {
+                parts = d.detail.apply(bb);
+            } catch (RuntimeException e) {
+                bb.port.log("brain: " + d.id + " detail failed: " + e);
+            }
+        }
         double live = parkedWhy != null ? Double.NaN : liveCost(bb, d);
         if (d.kind == Desire.Kind.PROGRESS && v >= 0 && v < 100) {
             // B2 (2.2, 2.9): value x P(success) / (1 + cost / C), cost and P measured after 3 runs; AA_ROUND2 1: the
@@ -159,7 +166,15 @@ public final class Brain extends Node {
         }
         if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, cu > now ? 0 : Math.max(0, v));
         double rank = v + (urgent(d, v) ? 1000 : 0);
-        return new Scored(d, v, rank, parts, skip);
+        double pv = 0;
+        if (d.parkedValue != null) {
+            try {
+                pv = Math.max(0, d.parkedValue.applyAsDouble(bb));
+            } catch (RuntimeException e) {
+                bb.port.log("brain: " + d.id + " parked value failed: " + e);
+            }
+        }
+        return new Scored(d, v, rank, parts, skip, v, pv);
     }
 
     /** The night's danger now (Costs.nightDanger at the current facts); 0 when monsters do not spawn (day, Peaceful). */
@@ -249,7 +264,7 @@ public final class Brain extends Node {
 
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
-        bb.fact(NEXT_LAPSE_FACT, failures.nextLapse(now));          // small-4: the idle wait ends when the next hold does
+        if (!nested) bb.fact(NEXT_LAPSE_FACT, nextLapse(now));      // small-4: the idle wait ends when the next hold does (nested holds too)
         bonus = Personality.of(bb).get("margin");          // B3 (2.4): the commitment margin is the personality's
         if (bornAt < 0) bornAt = now;
         boolean gap = lastTickAt >= 0 && now - lastTickAt > GAP_MS;
@@ -563,7 +578,38 @@ public final class Brain extends Node {
     public String wouldWhy(String id) { return wouldNote.get(id); }
 
     /** AA_ROUND2 3: "held: desire/option reason (n min)" per failure record holding now (aa why). */
-    public List<String> heldLines(long now) { return failures.describe(now); }
+    public List<String> heldLines(long now) {
+        List<String> out = new ArrayList<>(failures.describe(now));
+        for (Desire d : desires) if (d.node instanceof Brain b) out.addAll(b.heldLines(now));
+        return out;
+    }
+
+    // ---- idle as one desire (director 2026-10-19): a nested brain is one desire's option set ----
+
+    /** This brain is one desire's option set inside another brain (it leaves the lapse fact to the outer one). */
+    private boolean nested;
+
+    public Brain nested() {
+        nested = true;
+        return this;
+    }
+
+    /** The earliest hold lapse here or in a nested brain (ms), 0 none. */
+    public long nextLapse(long now) {
+        long best = failures.nextLapse(now);
+        for (Desire d : desires) {
+            if (!(d.node instanceof Brain b)) continue;
+            long l = b.nextLapse(now);
+            if (l > 0 && (best <= 0 || l < best)) best = l;
+        }
+        return best;
+    }
+
+    /** Scores the options now and keeps the list (the outer desire's score, aa why, the live tree). */
+    public List<Scored> scoreOptions(Blackboard bb) {
+        lastScored = scoreAll(bb);
+        return lastScored;
+    }
 
     /** "picks 12 (3.1/min), interrupts 0, stuck 0" for aa status. */
     public String counters(long now) {

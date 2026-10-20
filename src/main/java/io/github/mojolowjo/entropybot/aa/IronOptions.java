@@ -80,7 +80,13 @@ public final class IronOptions {
      * @param furnaceDist  blocks to the nearest known furnace (the camp's), -1 none
      */
     public record Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
-                        boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble) {}
+                        boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
+                        io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
+        public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
+                     boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble) {
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, null);
+        }
+    }
 
     public static final double CLEAR = 10, DIG_BLOCK = 3, PLACE_BLOCK = 5, CAVE_TIME = 120, STRIP_TIME = 200, STALE = 1.5, CAVE_FACE = 2;
     /**
@@ -90,6 +96,25 @@ public final class IronOptions {
      */
     public static final double DIG_DEEP_BLOCK = 6;
     public static final int DIG_HARD = 40;
+
+    /** Blocks a strip tunnel digs for one find (its wear term). */
+    public static final int STRIP_BLOCKS = 60;
+
+    /**
+     * Tool wear as a cost (ToolWear, director 2026-10-19): the extra seconds the cheapest way (use the pickaxe, craft a
+     * new one first, by hand) adds over a fresh stone pickaxe's dig time, which {@link #digCost} already holds. 0 with
+     * no kit (tests, unreadable facts).
+     */
+    static double wear(Facts f, int blocks) {
+        if (f.kit() == null) return 0;
+        var b = io.github.mojolowjo.entropybot.aa.brain.ToolWear.best(blocks, f.kit());
+        return Math.max(0, b.seconds() - blocks * io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED));
+    }
+
+    static String wearWhy(Facts f, int blocks) {
+        if (f.kit() == null) return "";
+        return ", tools " + io.github.mojolowjo.entropybot.aa.brain.ToolWear.text(blocks, f.kit()) + " +" + Math.round(wear(f, blocks));
+    }
 
     /** The dig's cost for an ore {@code depth} blocks under the surface (walk-blocks). */
     public static double digCost(int depth) {
@@ -228,7 +253,7 @@ public final class IronOptions {
             else if (!o.loaded()) dropped.add("dig " + o.key() + ": buried, not loaded");
             else if (o.depth() > DIG_HARD) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (the dig verb reaches " + DIG_HARD + ")");
             else if (m.blocked(Way.DIG_KNOWN, o, now)) dropped.add("dig " + o.key() + ": " + m.reason(Way.DIG_KNOWN, o));
-            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth()) + CLEAR + o.drown() + floatB, "buried " + o.depth() + " deep"
+            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth()) + CLEAR + o.drown() + floatB + wear(f, o.depth()), "buried " + o.depth() + " deep" + wearWhy(f, o.depth())
                     + (floatWhy == null ? "" : ", " + floatWhy + " +" + Math.round(floatB))
                     + (o.depth() > DIG_MAX ? " (+" + Math.round(digCost(o.depth()) - DIG_MAX * DIG_BLOCK) + " past " + DIG_MAX + ")" : "")
                     + (o.drownWhy() == null ? "" : ", " + o.drownWhy() + " +" + Math.round(o.drown())), m));
@@ -246,7 +271,7 @@ public final class IronOptions {
         } else dropped.add("cave: none known");
         if (f.stripAllowed()) {
             if (m.blocked(Way.STRIP, null, now)) dropped.add("strip: " + m.reason(Way.STRIP, null));
-            else ranked.add(scored(Way.STRIP, null, STRIP_TIME, "a mine is marked", m));
+            else ranked.add(scored(Way.STRIP, null, STRIP_TIME + wear(f, STRIP_BLOCKS), "a mine is marked" + wearWhy(f, STRIP_BLOCKS), m));
         } else dropped.add("strip: " + (f.stripWhy() == null ? "not allowed" : f.stripWhy()));
         ranked.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         Smelt smelt = smeltWhere(f, m, now);

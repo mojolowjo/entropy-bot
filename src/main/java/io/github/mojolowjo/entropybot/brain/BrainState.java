@@ -36,6 +36,8 @@ public final class BrainState {
     public String brainJob;
     /** Pickaxes in the bag, the best one's durability left in %, all of their durability together; one just broke. */
     public int pickaxes = 1, pickPct = 100, pickDurability = 131;
+    /** Tool wear as a cost (aa ToolWear): the best pickaxe's break speed on stone (ItemStack.getDestroySpeed), 0 none. */
+    public float pickSpeed = 4f;
     /** 0.23.6: the first worn armour piece ("my iron_chestplate is at 6 %"), or null. */
     public String armorWorn;
     public boolean toolBroke;

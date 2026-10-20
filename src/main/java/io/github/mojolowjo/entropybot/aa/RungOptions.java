@@ -30,7 +30,13 @@ public final class RungOptions {
      * @param tableFurnaceNext the next rung down is the table/furnace one (its place steps walk to their own spot)
      */
     public record SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
-                               int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext) {}
+                               int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext,
+                               io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
+        public SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
+                            int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext) {
+            this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, trailEnd, trailLen, sky, skyDist, tableFurnaceNext, null);
+        }
+    }
 
     private static final Pattern SURFACE_END = Pattern.compile("no way up|unreachable|trail back|stuck|no path|no progress|timeout|couldn't|can't|could not|did not start|refused");
 
@@ -39,7 +45,8 @@ public final class RungOptions {
             List<Options.Option> rows = new ArrayList<>();
             List<String> dropped = new ArrayList<>();
             int d = Math.max(1, f.depth());
-            if (!f.pickaxe()) dropped.add("climb: no pickaxe");
+            if (f.kit() != null) climb(rows, dropped, m, now, f, d);
+            else if (!f.pickaxe()) dropped.add("climb: no pickaxe");
             else add(rows, dropped, m, now, Options.scored("climb", "climb", AaLadder.CLIMB, d * CLIMB_BLOCK + CLIMB_FIX, d + " up, a staircase", "climb", false, m));
             if (!f.shaftOpen()) dropped.add("pillar: no open shaft above");
             else if (!f.placeAllowed()) dropped.add("pillar: placing not allowed here");
@@ -54,6 +61,25 @@ public final class RungOptions {
             else if (f.sky() == null || f.skyDist() > NOTHING_SKY) dropped.add("nothing: no open spot within " + Math.round(NOTHING_SKY) + " for the next rung's walk");
             else add(rows, dropped, m, now, new Options.Option("nothing", "nothing", Options.NOTHING, 0, "the table/furnace rung walks to its own spot", "nothing", false));
             return Options.Choice.of(rows, dropped, "no way up");
+        }
+
+        /**
+         * Tool wear as a cost (ToolWear): the staircase's blocks ({@value ToolWear#STAIR_BLOCKS_PER_UP} per level) priced
+         * per way; the climb verb digs with a pickaxe, so USE is "climb", CRAFT is "craft stone_pickaxe 1 then climb",
+         * and HAND has no verb (dropped with its price, so aa why still shows it). Seconds = walk-blocks.
+         */
+        private static void climb(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
+            int blocks = d * io.github.mojolowjo.entropybot.aa.brain.ToolWear.STAIR_BLOCKS_PER_UP;
+            for (var p : io.github.mojolowjo.entropybot.aa.brain.ToolWear.price(blocks, f.kit())) {
+                String terms = d + " up, a staircase: " + blocks + " blocks, " + p.terms();
+                switch (p.way()) {
+                    case USE -> add(rows, dropped, m, now, Options.scored("climb", "climb", AaLadder.CLIMB, p.seconds() + d + CLIMB_FIX, terms, "climb", false, m));
+                    case CRAFT -> add(rows, dropped, m, now, Options.scored("craft+climb", "climb",
+                            io.github.mojolowjo.entropybot.aa.brain.ToolWear.prefix(p.way()) + AaLadder.CLIMB, p.seconds() + d + CLIMB_FIX, terms, "climb", false, m));
+                    case HAND -> dropped.add("climb by hand " + Math.round(p.seconds()) + "s: the climb verb digs with a pickaxe" + (f.kit().pickaxe() ? "" : " and I have none"));
+                }
+            }
+            if (!f.kit().pickaxe() && f.kit().craftS() == io.github.mojolowjo.entropybot.aa.brain.ToolWear.INF) dropped.add("climb: no pickaxe and nothing to make one");
         }
 
         @Override public boolean switchable(String end) {

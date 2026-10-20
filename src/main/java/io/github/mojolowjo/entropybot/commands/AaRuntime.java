@@ -322,7 +322,7 @@ public final class AaRuntime implements JobPort {
             return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
                     furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
-                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0));
+                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
             return null;
@@ -378,7 +378,7 @@ public final class AaRuntime implements JobPort {
         boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
                 io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), bb.in.pickaxes > 0,
-                trailEnd, trailLen, sky, sky == null ? -1 : best, tf);
+                trailEnd, trailLen, sky, sky == null ? -1 : best, tf, io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in));
     }
 
     /** The open-sky cell search radius (columns), S2. */
@@ -797,6 +797,8 @@ public final class AaRuntime implements JobPort {
         in.pickTier = toolSmoother.update(s.feas.known ? s.feas.pickTier : (s.pickaxes > 0 ? 1 : 0), System.currentTimeMillis());
         in.pickPct = s.pickaxes == 0 ? 0 : s.pickPct;
         in.pickaxes = s.pickaxes;
+        in.pickSpeed = s.pickSpeed;
+        in.pickLeft = s.pickDurability;
         in.bedKnown = s.bedNear;
         in.bedInBag = s.bedInBag;
         // 0.36.a6: a table/furnace seen at the camp or base counts wherever the bot is (AaLadder.campLatch, saved)

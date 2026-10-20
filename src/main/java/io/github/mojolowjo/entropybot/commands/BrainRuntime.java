@@ -137,6 +137,7 @@ public final class BrainRuntime implements BrainEnv {
         s.food = p.getFoodData().getFoodLevel();
         s.freeSlots = c.freeSlots();
         // the bag: food, torches, pickaxes
+        float bestSpeed = 0;
         int food = 0, torches = 0, picks = 0, bestPct = 0, dur = 0, wood = 0, coal = 0, logs = 0;
         boolean bedBag = false;
         Map<String, Integer> bag = new java.util.HashMap<>();      // 0.26.1 R8: the pickaxe materials
@@ -155,6 +156,7 @@ public final class BrainRuntime implements BrainEnv {
                 picks++;
                 int left = st.isDamageableItem() ? st.getMaxDamage() - st.getDamageValue() : 1000;
                 dur += left;
+                try { bestSpeed = Math.max(bestSpeed, st.getDestroySpeed(net.minecraft.world.level.block.Blocks.STONE.defaultBlockState())); } catch (RuntimeException e) { bestSpeed = Math.max(bestSpeed, 4f); }
                 bestPct = Math.max(bestPct, st.isDamageableItem() ? 100 * left / Math.max(1, st.getMaxDamage()) : 100);
             }
         }
@@ -167,6 +169,7 @@ public final class BrainRuntime implements BrainEnv {
         s.pickaxes = picks;
         s.pickPct = bestPct;
         s.pickDurability = dur;
+        s.pickSpeed = bestSpeed;
         s.armorWorn = io.github.mojolowjo.entropybot.camp.ArmorCareRules.lowest(CampCommands.armor(p));
         s.toolBroke = lastPickaxes > 0 && picks < lastPickaxes && brainChainRunning();
         lastPickaxes = picks;

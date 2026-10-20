@@ -137,5 +137,20 @@ public final class Desire {
         return this;
     }
 
+    /** Director 2026-10-19 (idle as one desire): the parts text for aa why ("idle: stock wood 20 (next light 12, wait 10)"), or null. */
+    Function<Blackboard, String> detail;
+    /** The value this desire's parked options would have (it flows to a GATE prerequisite like a parked desire's), or null. */
+    ToDoubleFunction<Blackboard> parkedValue;
+
+    public Desire detail(Function<Blackboard, String> f) {
+        detail = f;
+        return this;
+    }
+
+    public Desire parkedValue(ToDoubleFunction<Blackboard> f) {
+        parkedValue = f;
+        return this;
+    }
+
     @Override public String toString() { return id; }
 }

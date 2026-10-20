@@ -206,6 +206,67 @@ public final class AaDesires {
                 .infeasible(b -> gateWhy(b, exposureOf(kind))).prereq(b -> AaLadder.openGate(b, exposureOf(kind))).lastTry();
     }
 
+    // ---- director 2026-10-19: idle as one desire ----
+
+    /** The one idle desire's id; its options are the idle kinds ("idle.stock_wood"...), scored inside it. */
+    public static final String IDLE_ID = "idle";
+
+    /**
+     * Idle as one desire (UPKEEP, low, never urgent: an option scores at most {@code 100 x IDLE_SCALE} before the night
+     * factor, which never makes it urgent). Inside it the idle options are an option set: a nested {@link Brain} scores
+     * them (each keeps its own night exposure, gate parking, rest and cooling), and the desire's score is its best
+     * runnable option's. aa why shows "idle: stock wood 20 (next light 12, wait 10)"; the live tree shows the options
+     * under the one node. Parked options still give their value to the gate that parks them.
+     */
+    public static Desire idleSet(List<Map.Entry<TaskKind, Node>> idle, Scorer scorer) {
+        List<Desire> opts = new ArrayList<>();
+        Map<String, TaskKind> kinds = new java.util.HashMap<>();
+        for (var e : idle) {
+            Desire d = idle(e.getKey(), e.getValue(), scorer);
+            opts.add(d);
+            kinds.put(d.id, e.getKey());
+        }
+        Brain set = new Brain("idle.options", "the idle options, scored inside the idle desire", opts.toArray(new Desire[0])).nested();
+        return new Desire(IDLE_ID, Desire.Kind.UPKEEP, set, bb -> {
+            double best = -1;
+            for (Brain.Scored s : set.scoreOptions(bb)) if (s.skip() == null && s.score() > best) best = s.score();
+            return best;
+        }).detail(bb -> idleText(set.lastScored()))
+                .parkedValue(bb -> {
+                    Brain.Scored p = bestParked(set.lastScored());
+                    return p == null ? 0 : p.parked();
+                })
+                .prereq(bb -> {
+                    Brain.Scored p = bestParked(set.lastScored());
+                    return p == null ? null : AaLadder.openGate(bb, exposureOf(kinds.get(p.d().id)));
+                })
+                .patient(Long.MAX_VALUE / 4)          // the options' own watchdog halts a stalled one (the next option runs)
+                .lastTry();
+    }
+
+    /** The parked option with the highest would-be value, or null. */
+    static Brain.Scored bestParked(List<Brain.Scored> all) {
+        Brain.Scored best = null;
+        for (Brain.Scored s : all) if (s.parked() > 0 && (best == null || s.parked() > best.parked())) best = s;
+        return best;
+    }
+
+    /** "idle: stock wood 20 (next light 12, wait 10)": the best runnable option, then up to three more. */
+    public static String idleText(List<Brain.Scored> all) {
+        List<Brain.Scored> ok = new ArrayList<>();
+        for (Brain.Scored s : all) if (s.skip() == null && s.score() >= 0) ok.add(s);
+        ok.sort((a, b) -> Double.compare(b.rank(), a.rank()));
+        if (ok.isEmpty()) return "idle: no option can run";
+        StringBuilder b = new StringBuilder("idle: ").append(optName(ok.get(0).d().id)).append(' ').append(Math.round(ok.get(0).score()));
+        for (int i = 1; i < ok.size() && i < 4; i++) b.append(i == 1 ? " (next " : ", ").append(optName(ok.get(i).d().id)).append(' ').append(Math.round(ok.get(i).score()));
+        if (ok.size() > 1) b.append(')');
+        return b.toString();
+    }
+
+    static String optName(String id) {
+        return (id.startsWith("idle.") ? id.substring(5) : id).replace('_', ' ');
+    }
+
     // ---- aa-food: the bar's curve and the stock target ----
 
     /** Blackboard fact: the brain's BrainStats (measured drain per kind); absent: hand rates. */
@@ -538,7 +599,7 @@ public final class AaDesires {
         ds.addAll(night());
         ds.addAll(wants());
         ds.add(help());
-        for (var e : idle) ds.add(idle(e.getKey(), e.getValue(), scorer));
+        if (!idle.isEmpty()) ds.add(idleSet(idle, scorer));
         Brain brain = new Brain("brain", "the scored desires", ds.toArray(new Desire[0]));
         // AA_ROUND2 3: the rung pickers' option memories are views over the brain's one failure record
         for (Rung r : rungs) if (r.picker() instanceof Options.Picker<?> op) op.memory.bind(brain.failures, r.id);

@@ -75,6 +75,26 @@ public final class AaLive {
             d.addProperty("exposure", s.d().exposure().name());
             d.addProperty("fails", b.streak(s.d().id));
             d.addProperty("running", s.d() == rd);
+            if (s.d().node instanceof Brain set) {
+                // director 2026-10-19: idle is one desire; its options (scored inside it) go under it
+                JsonObject op = new JsonObject();
+                op.addProperty("why", s.parts());
+                var inner = set.runningDesire();
+                op.addProperty("chosen", inner == null ? null : inner.id);
+                List<Brain.Scored> os = new ArrayList<>(set.lastScored());
+                os.sort((x, y) -> Double.compare(y.rank(), x.rank()));
+                JsonArray rows = new JsonArray();
+                for (Brain.Scored x : os) {
+                    JsonObject row = new JsonObject();
+                    row.addProperty("text", x.d().id + " " + Math.round(x.score()) + " [" + x.parts() + "]" + (x.skip() != null ? " - " + x.skip() : ""));
+                    row.addProperty("command", x.d().node.id);
+                    row.addProperty("exposure", x.d().exposure().name());
+                    row.addProperty("fails", set.streak(x.d().id));
+                    rows.add(row);
+                }
+                op.add("rows", rows);
+                d.add("options", op);
+            }
             for (Rung r : rungs) {
                 if (r != s.d().node || r.picker() == null) continue;
                 Rung.Picker p = r.picker();
