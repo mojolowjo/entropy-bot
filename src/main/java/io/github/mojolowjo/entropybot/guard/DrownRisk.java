@@ -43,6 +43,35 @@ public final class DrownRisk {
 
     public static boolean fatal(double risk) { return risk >= 1; }
 
+    /** Seconds to place one block (aim, click). */
+    public static final double PLACE_S = 0.5;
+    /** The deepest water column counted per cell (the A* scan stops here; deeper counts as this). */
+    public static final int SURFACE_SCAN = 32;
+
+    /**
+     * aa-water (to-do 1f): the risk of working one cell {@code depth} blocks below the water surface: the work there
+     * ({@code workS}: a dig {@link #digS}, a place {@link #PLACE_S}) plus the swim up from that depth, x {@link #MARGIN},
+     * over the air left. The cell's own depth counts, not my feet's (a deep flooded cave is costly from any cell in it).
+     */
+    public static double cellRisk(int depth, double workS, int air) {
+        double need = (Math.max(0, workS) + Math.max(0, depth) / SWIM_UP) * MARGIN;
+        double a = Math.max(0, air) / 20.0;
+        if (a <= 0) return need > 0 ? Double.POSITIVE_INFINITY : 0;
+        return need / a;
+    }
+
+    /** A* break multiplier for a cell under water: 1 + 4 risk^2, infinite when fatal. */
+    public static double breakMult(int depth, int air, int tier) {
+        double r = cellRisk(depth, digS(tier), air);
+        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + 4 * r * r;
+    }
+
+    /** A* place multiplier for a cell in water: 1 + 4 risk^2, infinite when fatal. */
+    public static double placeMult(int depth, int air) {
+        double r = cellRisk(depth, PLACE_S, air);
+        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + 4 * r * r;
+    }
+
     /** Walk-blocks: K x risk^2 under 1, infinite from 1. */
     public static double cost(double risk) { return fatal(risk) ? Double.POSITIVE_INFINITY : K * risk * risk; }
 

@@ -699,6 +699,7 @@ public final class AaRuntime implements JobPort {
             }
             io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString());
             Status s = tree.tick(bb);
+            swimTick(p, now);
             replanTick(p, now);
             for (var r : AaLadder.rungs(tree.ladder)) if (r.id.equals("needs.woodArea") && r.last() == Status.SUCCESS) bb.fact(AaLadder.TREE_AREA_FACT, null);
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
@@ -1037,6 +1038,9 @@ public final class AaRuntime implements JobPort {
     private final io.github.mojolowjo.entropybot.aa.Replan.Timer replanTimer = new io.github.mojolowjo.entropybot.aa.Replan.Timer();
     final io.github.mojolowjo.entropybot.aa.Replan.Log replanLog = new io.github.mojolowjo.entropybot.aa.Replan.Log();
     private long lastSwitchAt = -1, lastWanderAt = -1;
+    /** aa-water (1f): the swim watch; a re-score forced on entering the water. */
+    private final io.github.mojolowjo.entropybot.aa.SwimWatch swimWatch = new io.github.mojolowjo.entropybot.aa.SwimWatch();
+    private boolean wetReplan;
 
     /** aa replan on|off (saved; default on on this branch). */
     boolean replanOn() {
@@ -1153,8 +1157,24 @@ public final class AaRuntime implements JobPort {
      * its options from here; a switch (30% and 3 s cheaper, not within 20 s of the last, not mid dig-down or pillar)
      * stops the running step and starts the other option from the step where they differ. Logged with both scores.
      */
+    /**
+     * aa-water (to-do 1f): on entering the water the running option is re-scored at once; in the water with no progress
+     * for 20 s the running step ends "no progress while swimming 20 s", which the option's rung records against that
+     * option (Failures) and answers with the next one.
+     */
+    private void swimTick(LocalPlayer p, long now) {
+        boolean running = runningOpt != null && chainRunning() && CHAIN.equals(myChain);
+        var ev = swimWatch.tick(p.isInWater(), running, progress, now);
+        if (ev == io.github.mojolowjo.entropybot.aa.SwimWatch.Event.ENTERED) {
+            wetReplan = true;
+            LOG.info("[entropybot] aa: in the water during {} - re-scoring", runningOpt.id());
+        } else if (ev == io.github.mojolowjo.entropybot.aa.SwimWatch.Event.STALLED && c.jobs.running()) {
+            LOG.info("[entropybot] aa: {} during {} (air {}) - that option failed", io.github.mojolowjo.entropybot.aa.SwimWatch.REASON, runningOpt.id(), p.getAirSupply());
+            c.jobs.finish(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON);
+        }
+    }
     private void replanTick(LocalPlayer p, long now) {
-        if (current < 0) { replanTimer.reset(); return; }
+        if (current < 0) { replanTimer.reset(); wetReplan = false; return; }
         if (!replanOn() || runningOpt == null || !chainRunning() || !CHAIN.equals(myChain) || escapePending || escapeWay != null
                 || "danger".equals(tree.driver())) return;
         String st = c.chains.stepText();
@@ -1165,6 +1185,7 @@ public final class AaRuntime implements JobPort {
                 && io.github.mojolowjo.entropybot.aa.Replan.wandered(io.github.mojolowjo.entropybot.aa.Replan.targetOf(runningOpt.id()), me);
         boolean due = replanTimer.due(st, now);
         if (!due && wandered && now - lastWanderAt >= io.github.mojolowjo.entropybot.aa.Replan.EVERY_MS) due = true;
+        if (wetReplan) { wetReplan = false; due = true; }       // aa-water: in the water now: the water ways price it
         if (!due) return;
         if (wandered) lastWanderAt = now;
         var op = pickerOf(runningOpt);
@@ -2035,19 +2056,31 @@ public final class AaRuntime implements JobPort {
         for (var g : goals) {
             if (!g.r.ore()) continue;
             int n = 0;
-            for (var e : within.entrySet()) if (g.r.ids().contains(e.getKey())) n += e.getValue().n();
+            // aa-water (live water1): the index is keyed by family ("iron"), the goal by ids ("iron_ore"): both count
+            String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key());
+            for (var e : within.entrySet()) if (g.r.ids().contains(e.getKey()) || e.getKey().equals(fam)) n += e.getValue().n();
             known.put(g.r.key(), n);
         }
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.KNOWN_FACT, known);
         // round 2 item 5: each ore goal's nearest takeable ore, for its "mine <ore> 1 at x y z" step
         Map<String, int[]> nearest = new java.util.HashMap<>();
+        Map<String, String> waterCmd = new java.util.HashMap<>();
+        Map<String, Integer> bagNow = sensed != null && sensed.feas != null ? sensed.feas.bag : Map.of();
         for (var g : goals) {
             if (!g.r.ore() || known.getOrDefault(g.r.key(), 0) == 0) continue;
-            int[] at = io.github.mojolowjo.entropybot.aa.brain.Goals.pickOre(Mining.get().aaOres(p,
-                    io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), IRON_ORES), IronOptions.DIG_MAX);
-            if (at != null) nearest.put(g.r.key(), at);
+            // aa-water (1f): priced by the iron scorer (the water ways, a floating dig, the other ores)
+            var pick = io.github.mojolowjo.entropybot.aa.brain.Goals.pickPriced(Mining.get().aaOres(p,
+                    io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), IRON_ORES), me[1], p.isInWater(), AaEscape.throwaway(bagNow),
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), IronOptions.DIG_MAX);
+            if (pick == null) continue;
+            nearest.put(g.r.key(), pick.at());
+            if (pick.waterCmd() != null) {
+                waterCmd.put(g.r.key(), pick.waterCmd());
+                LOG.info("[entropybot] aa: goal {}: water way {}", g.r.key(), pick.waterCmd());
+            }
         }
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NEAREST_FACT, nearest);
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.WATER_CMD_FACT, waterCmd);
         if (sensed != null && Minecraft.getInstance().level != null) {
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(Minecraft.getInstance().level);
             var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
