@@ -148,6 +148,23 @@ public final class ArmorCareRules {
         return "craft " + best + "_" + slot + " 1 then wear";
     }
 
+    /**
+     * aa-prereq (aa391: "craft leather_helmet" ended "needs a crafting table and there is none"): a craft with no table
+     * within reach, none in the bag and under 4 planks (a log is 4) gets the table's wood as a prerequisite first
+     * ("cut 4 then craft ..."); the craft verb then makes and places its own table. Anything else is unchanged.
+     */
+    public static String withTablePrereq(String cmd, boolean tableNear, Map<String, Integer> bag) {
+        if (cmd == null || !cmd.startsWith("craft ") || tableNear) return cmd;
+        if (bag.getOrDefault("crafting_table", 0) > 0) return cmd;
+        int planks = 0;
+        for (Map.Entry<String, Integer> e : bag.entrySet()) {
+            String k = e.getKey();
+            if (k.endsWith("_planks")) planks += e.getValue();
+            else if (k.endsWith("_log") || k.endsWith("_stem") || k.endsWith("_wood") || k.endsWith("_hyphae")) planks += 4 * e.getValue();
+        }
+        return planks >= 4 ? cmd : "cut 4 then " + cmd;
+    }
+
     /** The "tools" line: "armour: iron_helmet 150/165, chestplate -, ..." */
     public static String text(List<Piece> worn) {
         List<String> parts = new ArrayList<>();

@@ -850,6 +850,19 @@ final class CampCommands {
      */
     private long armorBusyLog;
 
+    /** A crafting table within r blocks (6 up and down) of the player. */
+    static boolean tableWithin(LocalPlayer p, int r) {
+        var lv = Minecraft.getInstance().level;
+        if (lv == null) return false;
+        net.minecraft.core.BlockPos c = p.blockPosition();
+        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -6; dy <= 6; dy++) {
+            m.set(c.getX() + dx, c.getY() + dy, c.getZ() + dz);
+            if (lv.isLoaded(m) && lv.getBlockState(m).is(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)) return true;
+        }
+        return false;
+    }
+
     boolean armorCareTick(LocalPlayer p, String busy) {
         List<ArmorCareRules.Piece> on = armor(p), bag = armorInBag(p);
         Set<String> filled = new LinkedHashSet<>();
@@ -897,6 +910,9 @@ final class CampCommands {
                 continue;
             }
             careStuck.remove("armor:" + slot);
+            String pre = ArmorCareRules.withTablePrereq(cmd, tableWithin(p, 12), Gui.inventory(p));
+            if (!pre.equals(cmd)) LOG.info("[entropybot] armour care: prerequisite for {}: no crafting table within 12, none in the bag, no wood for one -> cut 4 logs first (~30 s), the craft makes the table", cmd);
+            cmd = pre;
             LOG.info("[entropybot] armour care: {} {} -> {}", slot, e.getValue() == null ? "missing" : e.getValue() + " worn", cmd);
             Chains.Reply r = c.handle(c.owner(), cmd, false, true, null);
             LOG.info("[entropybot] armour care: {} -> {}", cmd, r.text());

@@ -1557,6 +1557,12 @@ public final class AaRuntime implements JobPort {
             String e = lastEnd;
             lastEnd = null;
             current = -1;
+            // aa-prereq (aa391: "done - mining coal: got 0 of 32 - no coal ore known yet" in 3 s counted done): a task
+            // that gained nothing of what it was sent for is a failure (Failures holds it), never a success
+            if (e.startsWith("done") && io.github.mojolowjo.entropybot.aa.AaLadder.zeroGain(e)) {
+                LOG.info("[entropybot] aa: the task ended \"done\" with nothing gained - counted failed: {}", e);
+                return JobState.failed("failed: nothing gained - " + e.substring(4).replaceFirst("^\\s*-\\s*", ""));
+            }
             return e.startsWith("done") ? JobState.done(e) : JobState.failed(e);
         }
         if (escapePending || escapeWay != null) return JobState.RUNNING;      // 0.36.a6: getting out, then the task goes on

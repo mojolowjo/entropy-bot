@@ -74,6 +74,11 @@ public final class AaLadder {
         return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT)) || (bb.in.pickTier >= 2 && bb.in.pickTier < 3);
     }
 
+    private static final java.util.regex.Pattern ZERO_GAIN = java.util.regex.Pattern.compile("\\bgot 0 of [1-9]\\d*\\b");
+
+    /** aa-prereq: a task's end that says it got none of what it wanted ("got 0 of 32"). */
+    public static boolean zeroGain(String end) { return end != null && ZERO_GAIN.matcher(end).find(); }
+
     /** No table in the bag and planks for one (4): make the spare. */
     public static boolean spareTableWanted(boolean tableInBag, int planks) {
         return !tableInBag && planks >= 4;
