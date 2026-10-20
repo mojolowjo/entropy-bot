@@ -106,6 +106,17 @@ public final class Desire {
     public Exposure exposure() { return exposure; }
 
     /**
+     * Review 2 item 1: the answer to the night itself (shelter, hide, sleep) or the owner's call: an ANY desire that keeps
+     * its label at the surface (Brain.workExposure), so the night never divides it.
+     */
+    boolean nightProof;
+
+    public Desire nightProof() {
+        nightProof = true;
+        return this;
+    }
+
+    /**
      * AA_ROUND2 3: the brain holds this desire itself (its node has no Cooldown): a failure after a started task cools it
      * (2 min doubling, Failures), a failure before any task rests it {@code noRunMs}, a success rests it {@code restMs}.
      */

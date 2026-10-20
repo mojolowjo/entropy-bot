@@ -159,9 +159,11 @@ public final class Brain extends Node {
             v = value / (1 + live / Curves.COST_C);
             parts = "value " + Math.round(value) + " / cost " + Math.round(live) + "s live";
         }
-        if (v >= 0 && v < 100 && d.exposure != Desire.Exposure.ANY && Night.hostile(bb)) {
-            // AA_ROUND2 4 (was B3's +/-10): the night's danger makes surface work dearer and work under ground cheaper
-            double danger = danger(bb), m = exposureFactor(d.exposure, danger);
+        Desire.Exposure ex = workExposure(bb, d);
+        if (v >= 0 && v < 100 && ex != Desire.Exposure.ANY && Night.hostile(bb)) {
+            // AA_ROUND2 4 (was B3's +/-10): the night's danger makes surface work dearer and work under ground cheaper;
+            // review 2 item 1: before the urgent test, so post-death tools at the surface (98) fall under the shelter
+            double danger = danger(bb), m = exposureFactor(ex, danger);
             v = v >= URGENT ? v * m : Math.min(URGENT - 1, v * m);      // review: the night never makes a desire urgent
             parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";
         }
@@ -182,7 +184,23 @@ public final class Brain extends Node {
     public static double danger(Blackboard bb) {
         if (!Night.hostile(bb)) return 0;
         var in = bb.in;
-        return Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.light, in.hostilesNear, in.bedKnown || in.bedInBag);
+        return Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.lit, in.hostilesNear, in.bedKnown || in.bedInBag);
+    }
+
+    /** Under this much ground over the bot it is not at the surface (AaLadder.SURFACE_DEPTH). */
+    static final int SURFACE_DEPTH = 3;
+
+    /**
+     * Review 2 item 1: the night factor follows where the work happens. An ANY desire counts as SURFACE while the bot is
+     * at the surface (under {@link #SURFACE_DEPTH} of ground) and its site, when known, is not {@link #SURFACE_DEPTH}+
+     * below the bot; otherwise the desire's own label.
+     */
+    static Desire.Exposure workExposure(Blackboard bb, Desire d) {
+        if (d.exposure != Desire.Exposure.ANY || d.nightProof || bb.in.underDepth >= SURFACE_DEPTH) return d.exposure;
+        Site s = d.siteOf(bb);
+        int[] me = bb.in.pos;
+        if (s != null && me != null && me.length >= 3 && s.y() <= me[1] - SURFACE_DEPTH) return d.exposure;
+        return Desire.Exposure.SURFACE;
     }
 
     /** SURFACE 1 / (1 + danger), UNDER 1 + danger / 2, ANY 1. */

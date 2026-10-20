@@ -42,6 +42,7 @@ class BrainExposureTest {
         assertEquals("do explore", port.started.get(0).chain(), "day: no change");
         br.halt("test");
         night(2);
+        bb.in.underDepth = 5;          // review 2 item 1: ANY work at the surface counts as SURFACE; here it is under ground
         double danger = Brain.danger(bb);
         var s = br.scoreAll(bb);
         assertEquals(20 / (1 + danger), s.get(0).score(), 1e-9);

@@ -246,7 +246,7 @@ public final class AaDesires {
     static double bedDanger(Blackboard b) {
         if (!b.in.hungerDrains) return 0;                  // Peaceful (the adapter's flag, as Night.hostile reads it)
         return io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(b.in.difficulty, b.in.armorPoints, b.in.health, b.in.maxHealth,
-                b.in.light, b.in.hostilesNear, false);
+                b.in.lit, b.in.hostilesNear, false);
     }
 
     /** AA_ROUND2 1+2: a rung desire's probe (may it start?) and, with a picker, its live cost. */
@@ -556,9 +556,9 @@ public final class AaDesires {
         if (d >= 1) {
             boolean bed = bb.in.bedKnown || bb.in.bedInBag;
             double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
-                    bb.in.light, bb.in.hostilesNear, bed);
+                    bb.in.lit, bb.in.hostilesNear, bed);
             io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "shelter", io.github.mojolowjo.entropybot.aa.brain.Costs.nightTerms(bb.in.difficulty,
-                    bb.in.armorPoints, bb.in.health, bb.in.light, bb.in.hostilesNear, bed, danger));
+                    bb.in.armorPoints, bb.in.health, bb.in.lit, bb.in.hostilesNear, bed, danger));
             return io.github.mojolowjo.entropybot.aa.brain.Costs.shelterScore(danger);
         }
         if (bb.in.bedKnown || bb.in.bedInBag) return -1;      // dusk with a bed: night.sleep waits its turn
@@ -597,7 +597,7 @@ public final class AaDesires {
         boolean started = Boolean.TRUE.equals(bb.fact(HIDE_FACT));
         if (bb.in.health >= HEAL_TO && started) bb.fact(HIDE_FACT, null);
         double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
-                bb.in.light, bb.in.hostilesNear, bb.in.bedKnown || bb.in.bedInBag);
+                bb.in.lit, bb.in.hostilesNear, bb.in.bedKnown || bb.in.bedInBag);
         double v = hideScore(Night.hostile(bb), bb.in.hostilesNear, bb.in.health, bb.in.maxHealth, danger, started && bb.in.health < HEAL_TO);
         if (v >= Brain.URGENT) bb.fact(HIDE_FACT, Boolean.TRUE);
         if (v > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "hide", "health " + Math.round(bb.in.health) + "/" + Math.round(bb.in.maxHealth)
@@ -614,7 +614,7 @@ public final class AaDesires {
     static Desire hide() {
         Node n = AaTree.idleCd("night.hide.cd", RunJob.of("night.hide.job", TaskKind.BASE_BED, HIDE_CHAIN, "hide"));
         return new Desire("night.hide", Desire.Kind.UPKEEP, n, AaDesires::hideScore)
-                .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).grace(2_000).patient(4 * 60_000).trumps().lastTry()
+                .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).grace(2_000).patient(4 * 60_000).trumps().lastTry().nightProof()
                 // its own end: healed (the shell it waits in turns the score off; that is no gone reason)
                 .met(b -> !b.in.hungerDrains || b.in.health >= HEAL_TO);
     }
@@ -653,9 +653,9 @@ public final class AaDesires {
         // the shell is built and work under ground is wanted, the shelter's wait ends (done) so that work can run.
         Node shelterYield = yieldWhenSheltered(shelter);
         return List.of(
-                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry(),
+                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof(),
                 new Desire("night.shelter", Desire.Kind.UPKEEP, shelterYield, bb -> nightWorkReady(bb) ? -1 : shelterScore(bb))
-                        .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).trumps().lastTry()
+                        .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).patient(SHELTER_PATIENCE_MS).grace(SHELTER_GRACE_MS).trumps().lastTry().nightProof()
                         // its own end: day (or Peaceful); in the shell the score is off, which is no gone reason
                         .met(b -> !b.in.hungerDrains || Night.dusk(b.in.dayTime, b.in.night) <= 0),
                 hide());
@@ -713,7 +713,7 @@ public final class AaDesires {
         return new Desire("help.owner", Desire.Kind.UPKEEP, node, bb -> {
             var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, Personality.of(bb).get("help"));
             return p == null ? -1 : p.score();
-        }).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+        }).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof();     // the owner's call, not cheaper at night
     }
 
     /** A help task is short (a walk, a fight, a hand-over); a fetch gets the planner's time. */

@@ -71,7 +71,9 @@ public final class AaLadder {
 
     static boolean needsOpenGround(Blackboard bb) {
         boolean table = bb.in.tableKnown || bb.in.tableInBag, furnace = bb.in.furnaceKnown || bb.in.furnaceInBag;
-        return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT)) || (bb.in.pickTier >= 2 && bb.in.pickTier < 3);
+        // review 2 item 3: no pickTier clause (a stone pickaxe 3+ under opened the gate on every iron dig: the yo-yo); the
+        // climb is the SURFACE picker's own first step, priced by WayUp (RungOptions.Surface)
+        return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT));
     }
 
     private static final java.util.regex.Pattern ZERO_GAIN = java.util.regex.Pattern.compile("\\bgot 0 of [1-9]\\d*\\b");

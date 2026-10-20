@@ -1178,6 +1178,7 @@ public final class AaRuntime implements JobPort {
         if (in.coalGoalN > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "coal", in.torchCoalTerms());
         in.difficulty = mc.level.getDifficulty().getId();
         in.light = mc.level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p.blockPosition());
+        in.lit = litShare(mc.level, p.blockPosition());
         // aa-night3 (normal2: 4 of 7 deaths shot by skeletons): a ranged mob hits from range, so it counts twice in the danger
         in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size()
                 + mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.AbstractSkeleton.class, p.getBoundingBox().inflate(24)).size();
@@ -1901,6 +1902,19 @@ public final class AaRuntime implements JobPort {
         return new io.github.mojolowjo.entropybot.aa.Replan.Cell(open, own, mult,
                 fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.LAVA, fl == io.github.mojolowjo.entropybot.guard.BreakPolicy.Fluid.WATER,
                 st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
+    }
+
+    /**
+     * Review 2 item 5: block light on a 9 x 9 grid (step 4) within 16 of the bot at its feet level, as the lit share
+     * (Costs.litShare): one torch at the feet lights about 5 of 81 points, a lit camp most of them.
+     */
+    private static double litShare(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos at) {
+        int[] l = new int[81];
+        int i = 0;
+        for (int dx = -16; dx <= 16; dx += 4)
+            for (int dz = -16; dz <= 16; dz += 4)
+                l[i++] = lv.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, at.offset(dx, 0, dz));
+        return io.github.mojolowjo.entropybot.aa.brain.Costs.litShare(l);
     }
 
     /**

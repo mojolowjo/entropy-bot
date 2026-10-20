@@ -177,19 +177,34 @@ public final class Costs {
      * The danger of staying out at night: difficulty x armour (full iron about halves it) x missing health x light
      * (lit: mobs spawn less) x hostiles near x no bed (no way to skip the night).
      */
-    public static double nightDanger(int difficulty, int armor, float health, float maxHealth, int light, int hostiles, boolean bed) {
+    /** Review 2 item 5: the most the lit area may cut the danger (all of it lit within 16). */
+    public static final double LIGHT_CUT = 0.3;
+
+    /** Block light this high keeps a point lit (spawning is far rarer there). */
+    public static final int LIT_AT = 8;
+
+    /** The share of sampled points with block light {@link #LIT_AT}+ (0 when none sampled). */
+    public static double litShare(int[] lights) {
+        if (lights == null || lights.length == 0) return 0;
+        int n = 0;
+        for (int l : lights) if (l >= LIT_AT) n++;
+        return n / (double) lights.length;
+    }
+
+    /** @param lit the lit share of the area within 16 (0..1, Inputs.lit): a torch at the feet is a few % of it */
+    public static double nightDanger(int difficulty, int armor, float health, float maxHealth, double lit, int hostiles, boolean bed) {
         double d = DIFF[Math.max(0, Math.min(3, difficulty))];
         double armorF = 1 - 0.6 * Math.min(20, Math.max(0, armor)) / 20.0;
         double healthF = 1 + 0.5 * (1 - Math.max(0, health) / Math.max(1, maxHealth));
-        double lightF = light >= 1 ? 0.6 : 1;
+        double lightF = 1 - LIGHT_CUT * Math.max(0, Math.min(1, lit));
         double hostF = 1 + 0.15 * Math.min(6, Math.max(0, hostiles));
         return d * armorF * healthF * lightF * hostF * (bed ? 1 : 1.05);
     }
 
     public static double shelterScore(double danger) { return Math.min(SHELTER_MAX, SHELTER_AT_1 * danger); }
 
-    public static String nightTerms(int difficulty, int armor, float health, int light, int hostiles, boolean bed, double danger) {
-        return "difficulty " + difficulty + ", armour " + armor + ", health " + Math.round(health) + ", light " + light + ", hostiles " + hostiles
+    public static String nightTerms(int difficulty, int armor, float health, double lit, int hostiles, boolean bed, double danger) {
+        return "difficulty " + difficulty + ", armour " + armor + ", health " + Math.round(health) + ", lit " + Math.round(lit * 100) + "%, hostiles " + hostiles
                 + (bed ? ", bed" : ", no bed") + ": danger " + f1(danger) + " -> " + Math.round(shelterScore(danger));
     }
 }
