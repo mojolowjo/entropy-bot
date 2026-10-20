@@ -116,10 +116,17 @@ public final class CoalOptions {
         final Map<String, String> ran = new HashMap<>();
     }
 
+    /** The failure record's desire id the coal ways are held under (aa why: "held: coal/charcoal ..."). */
+    public static final String MEM_DESIRE = "coal";
+
     public static Memory memory(Blackboard bb) {
-        if (bb.fact(MEM_FACT) instanceof Memory m) return m;
-        Memory m = new Memory();
-        bb.fact(MEM_FACT, m);
+        Memory m = bb.fact(MEM_FACT) instanceof Memory x ? x : null;
+        if (m == null) {
+            m = new Memory();
+            bb.fact(MEM_FACT, m);
+        }
+        // review 2 (4): a view over the brain's one failure record (no record of its own once a brain runs)
+        if (bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.FAILURES_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.Failures f) m.held.bind(f, MEM_DESIRE);
         return m;
     }
 

@@ -94,11 +94,17 @@ public final class Rung extends Node {
     private long planFailedAt = -1;
     /** aa-prereq: when the last prerequisite step ended done (the planner's facts lag up to a minute behind the bag). */
     private long prereqDoneAt = -1;
-    private String prereqGoal;
+    private String prereqGoal, prereqWhy, planCostGoal, lastPriceLog;
+    private double planCost = Double.NaN;
+    /** The planning-fact text while a done prerequisite waits for the facts (the brain's watchdog lets it stand still). */
+    public static final String SETTLE_WAIT = "waiting for the facts";
     /** aa-trees: the wood option the running prerequisite is (a failure is held against it), its options line, and the memory. */
     private Options.Option woodRan;
     private String woodWhy;
     private final Options.OptionMemory woodMem = new Options.OptionMemory();
+
+    /** Review 2 (4): the wood options' memory is a view over the brain's one failure record (as the pickers' are). */
+    public void bindFailures(io.github.mojolowjo.entropybot.aa.brain.Failures f) { woodMem.bind(f, id); }
 
     /**
      * @param unmet the need is on (bands live in here)
@@ -211,7 +217,12 @@ public final class Rung extends Node {
         // an option drop with every reason (held per option 10 min in woodMem), never a failed task looping
         boolean woodRunning = isPrereq(resolved) && g.equals(settledGoal);      // a running wood prerequisite keeps its option: no re-choice per tick
         if (!woodRunning) woodRan = null;
-        if (pre != null && woodRunning && woodRan != null) pre = resolved;
+        boolean continuing = pre != null && woodRunning && woodRan != null;
+        if (chain != null && !Double.isNaN(r.cost())) {
+            planCost = r.cost();
+            planCostGoal = g;
+        }
+        if (continuing) pre = resolved;
         else if (pre != null && bb.fact(WoodOptions.FACTS) instanceof java.util.function.Supplier<?> sup) {      // picker rungs too (TOOLS, IRON...): missing logs are this prerequisite, not a switchable end
             WoodOptions.WoodFacts wf = null;
             try {
@@ -229,9 +240,41 @@ public final class Rung extends Node {
             }
         }
         if (picker != null && woodRan == null) pre = null;          // no wood facts: the picker as before
-        if (pre != null && prereqDoneAt >= 0 && now - prereqDoneAt < SETTLE_MS && g.equals(prereqGoal))
-            return fail(kind + " prerequisite done (" + resolved + "), waiting for the facts before " + g);
+        // review 2 (2a, b2/b4 smoke: "cut 4" ran before bootstrap, which chops its own wood): the prerequisite is a
+        // priced row among the picker's options. Its price = the wood option + the work after it: the planner's last
+        // known cost for this goal, else (unknown) the picker's own whole-job price. The cheaper way runs.
+        String prePick = null;
+        if (pre != null && picker != null && !continuing && prereqDoneAt < 0) {      // priced once per decision, not per settle tick
+            bb.fact(CURRENT_RUNG, id);
+            String p = picker.pick(bb, null, Double.NaN, "missing wood: " + r.why());
+            double pc = picker.lastCostS();
+            if (p != null && !Options.NOTHING.equals(p) && !Double.isNaN(pc)) {
+                double after = g.equals(planCostGoal) && !Double.isNaN(planCost) ? planCost : pc;
+                double preCost = woodRan.cost() + after;
+                if (!pre.equals(lastPriceLog)) bb.port.log(kind + " prerequisite priced: " + pre + " " + Math.round(woodRan.cost()) + " s + "
+                        + (after == pc ? "the rest ~" : "plan ") + Math.round(after) + " s = " + Math.round(preCost) + " s vs " + p + " " + Math.round(pc) + " s");
+                lastPriceLog = pre;
+                if (pc <= preCost) {
+                    prePick = p;
+                    pre = null;
+                    woodRan = null;
+                    prereqDoneAt = -1;
+                }
+            }
+        }
+        // review 2 (2b): "waiting for the facts" keeps the desire RUNNING (at most SETTLE_MS, ended early when the
+        // planner's answer changes); it never fails, so the slot is not handed to the next desire
+        if (pre != null && prereqDoneAt >= 0 && g.equals(prereqGoal)) {
+            if (now - prereqDoneAt < SETTLE_MS && java.util.Objects.equals(r.why(), prereqWhy)) {
+                bb.fact(PLANNING_FACT, kind + ": prerequisite done, " + SETTLE_WAIT + " (" + (now - prereqDoneAt) / 1000 + "s)");
+                bb.pendingReason("needs: " + kind + " unmet -> " + g + " [prerequisite " + resolved + " done, " + SETTLE_WAIT + "]");
+                return Status.RUNNING;
+            }
+            prereqDoneAt = -1;
+            clearPlanning(bb);
+        }
         if (pre != null) {
+            prereqWhy = r.why();
             clearPlanning(bb);
             if (!pre.equals(resolved) || !g.equals(settledGoal))
                 bb.port.log(kind + " prerequisite for " + g + ": " + r.why() + " -> " + pre + " first (~" + prereqSeconds(pre) + " s), then " + g + (woodRan == null ? "" : " [wood options: " + woodWhy + "]"));
@@ -257,7 +300,7 @@ public final class Rung extends Node {
             planned = chain == null ? null : bb.port.expand(chain);
             bb.fact(CURRENT_RUNG, id);
             plannedCost = r.cost();
-            String p = picker.pick(bb, planned, plannedCost, searching ? "still searching" : plannerWhy);
+            String p = prePick != null ? prePick : picker.pick(bb, planned, plannedCost, searching ? "still searching" : plannerWhy);
             if (p == null && searching) return waitPlan(bb, g, now);
             if (p == null) {
                 // nothing the scorer can run: remembered like a failed plan (else it would ask every tick)
