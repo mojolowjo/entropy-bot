@@ -678,6 +678,7 @@ public final class Commands implements Chains.Env {
                 // craft with a menu open) ends on a disconnect, so it can't carry on by itself from wherever the bot
                 // respawns after the reconnect
                 if (worldTicks > 0 && jobs.running() && !jobs.walking()) jobs.finish("stopped: I was disconnected");
+                if (worldTicks > 0 && aaRuntime != null) aaRuntime.lookRestore();     // aa-look: freeLook back when the world goes
                 worldTicks = 0;
                 if (core.guard.core.nearBox() != null) core.guard.core.setNearZone(null);     // 0.21.2: no world, no owner spot
                 if (tick % 20 == 0) writeState(mc, tick);

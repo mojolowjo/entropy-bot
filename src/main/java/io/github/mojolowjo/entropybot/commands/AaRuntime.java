@@ -722,7 +722,37 @@ public final class AaRuntime implements JobPort {
         return io.github.mojolowjo.entropybot.aa.brain.OreValue.perBlock(oreId, tree, have, goals, bb.in.bag == null ? java.util.Map.of() : bb.in.bag);
     }
 
+    // aa-look: Baritone's freeLook (default true) turns the head server-side only, so the camera looked away from the walk
+    private Boolean savedFreeLook;
+
+    /** While AA drives the camera faces where the bot walks and mines (freeLook false); the old value is kept for lookRestore. */
+    void lookApply() {
+        try {
+            var fl = baritone.api.BaritoneAPI.getSettings().freeLook;
+            if (savedFreeLook == null) {
+                savedFreeLook = fl.value;
+                LOG.info("[entropybot] aa: camera follows the walk (freeLook {} -> false)", savedFreeLook);
+            }
+            if (fl.value) fl.value = false;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] aa: freeLook not set: {}", e.toString());
+        }
+    }
+
+    /** Puts freeLook back to the value from before AA (aa off, world left). */
+    void lookRestore() {
+        if (savedFreeLook == null) return;
+        try {
+            baritone.api.BaritoneAPI.getSettings().freeLook.value = savedFreeLook;
+            LOG.info("[entropybot] aa: freeLook restored to {}", savedFreeLook);
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] aa: freeLook not restored: {}", e.toString());
+        }
+        savedFreeLook = null;
+    }
+
     String turnOff(String why) {
+        lookRestore();
         io.github.mojolowjo.entropybot.clear.OreDetour.valuer = null;
         appendRun();
         JsonObject d = data();
@@ -804,6 +834,7 @@ public final class AaRuntime implements JobPort {
     /** Every 5 client ticks from Commands.tick, in a world. Never throws. */
     void tick(long tick) {
         if (!on()) return;
+        lookApply();
         long t0 = System.nanoTime();
         try {
             Minecraft mc = Minecraft.getInstance();
