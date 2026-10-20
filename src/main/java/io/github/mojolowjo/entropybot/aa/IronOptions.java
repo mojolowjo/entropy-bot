@@ -81,16 +81,24 @@ public final class IronOptions {
      */
     public record Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                         boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
-                        io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair) {
+                        io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair,
+                        io.github.mojolowjo.entropybot.guard.Litter.Site litter) {
+        /** aa-litter: null = no litter term (tests, unreadable facts). */
+        public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
+                     boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
+                     io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair) {
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, fair, null);
+        }
+
         public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                      boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
                      io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
-            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, null);
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, null, null);
         }
 
         public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                      boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble) {
-            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, null, null);
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, null, null, null);
         }
     }
 
@@ -169,15 +177,20 @@ public final class IronOptions {
     public static final long RETRY_MS = Options.RETRY_MS, RETRY_MAX_MS = Options.RETRY_MAX_MS;
 
     /** aa-water: where the way stands before it digs (STAND, PLACE, DRY), with the cell placed into (PLACE), else null. */
-    public record Scored(Way way, Ore target, double cost, String why, int[] stand, int[] place) {
-        public Scored(Way way, Ore target, double cost, String why) { this(way, target, cost, why, null, null); }
+    /** {@code after}: the step that ends the way (aa-litter: "restore placed 24" / "restore keep pillar"), null for none. */
+    public record Scored(Way way, Ore target, double cost, String why, int[] stand, int[] place, String after) {
+        public Scored(Way way, Ore target, double cost, String why) { this(way, target, cost, why, null, null, null); }
+
+        public Scored(Way way, Ore target, double cost, String why, int[] stand, int[] place) { this(way, target, cost, why, stand, place, null); }
 
         String text() { return way.name().toLowerCase(Locale.ROOT) + (target == null ? "" : " " + target.key()) + " " + Math.round(cost) + " (" + why + ")"; }
     }
 
     /** The chosen way (null: none can run), its smelt choice, the line for {@code aa why}. */
-    public record Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped, int[] stand, int[] place) {
-        public Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped) { this(way, target, smelt, ranked, dropped, null, null); }
+    public record Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped, int[] stand, int[] place, String after) {
+        public Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped) { this(way, target, smelt, ranked, dropped, null, null, null); }
+
+        public Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped, int[] stand, int[] place) { this(way, target, smelt, ranked, dropped, stand, place, null); }
 
         public String why() {
             StringBuilder b = new StringBuilder();
@@ -196,6 +209,8 @@ public final class IronOptions {
          * The ore step for the chosen way. AA round 2 item 5: a known ore is one target ({@code mine iron 1 at x y z
          * dig|walk}: that cell and its vein, then the step ends); the rung re-picks for the next one.
          */
+        private String tail() { return after == null ? "" : " then " + after; }
+
         public String command(int n) {
             if (target != null && stand != null && (way == Way.WATER_STAND || way == Way.WATER_PLACE || way == Way.DRY_SIDE)) {
                 String at = "goto " + stand[0] + " " + stand[1] + " " + stand[2] + " then mine " + FAMILY + " 1 at " + target.key() + " dig";
@@ -203,12 +218,12 @@ public final class IronOptions {
             }
             if (target != null && (way == Way.WALK_KNOWN || way == Way.DIG_KNOWN || way == Way.PILLAR_KNOWN)) {
                 String at = "mine " + FAMILY + " 1 at " + target.key() + (way == Way.WALK_KNOWN ? " walk" : " dig");
-                return way == Way.PILLAR_KNOWN ? "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then " + at : at;
+                return way == Way.PILLAR_KNOWN ? "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then " + at + tail() : at;
             }
             return switch (way) {
                 case WALK_KNOWN -> "mine " + FAMILY + " " + n;
                 case DIG_KNOWN -> "mine " + FAMILY + " " + n + " dig";
-                case PILLAR_KNOWN -> "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then mine " + FAMILY + " " + n + " dig";
+                case PILLAR_KNOWN -> "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then mine " + FAMILY + " " + n + " dig" + tail();
                 case CAVE -> "mine cave " + FAMILY + " " + n;
                 case STRIP -> "mine strip " + FAMILY + " " + n;
                 case WATER_STAND, WATER_PLACE, DRY_SIDE -> "mine " + FAMILY + " " + n + " dig";
@@ -300,7 +315,14 @@ public final class IronOptions {
             if (up >= PILLAR_MIN_UP && !m.blocked(Way.PILLAR_KNOWN, o, now)) {
                 if (!f.placeAllowed()) { if (above == o) dropped.add("pillar " + o.key() + ": placing not allowed here"); }
                 else if (f.throwaway() < up) { if (above == o) dropped.add("pillar " + o.key() + ": " + f.throwaway() + " of " + up + " blocks to place"); }
-                else ranked.add(scored(Way.PILLAR_KNOWN, o, o.dist() + up * PLACE_BLOCK + CLEAR, up + " up, " + f.throwaway() + " blocks to place", m));
+                else {
+                    // aa-litter: the scaffold is priced min(litter, cleanup) and the step ends with the matching take-down / keep
+                    var lp = litterPrice(f, o, up);
+                    double lb = lp == null ? 0 : lp.priceS() * WaterWays.WALK_BPS;
+                    Scored sc = scored(Way.PILLAR_KNOWN, o, o.dist() + up * PLACE_BLOCK + CLEAR + lb, up + " up, " + f.throwaway() + " blocks to place" + (lp == null ? "" : ", " + lp.why()), m);
+                    ranked.add(new Scored(sc.way(), o, sc.cost(), sc.why(), null, null, lp == null || lp.blocks() <= 0 || lp.ctx() == io.github.mojolowjo.entropybot.guard.Litter.Context.EXEMPT ? null
+                            : lp.keep() ? "restore keep pillar" : "restore placed " + io.github.mojolowjo.entropybot.restore.PlacedPlan.DEFAULT_RADIUS));
+                }
             } else if (up >= PILLAR_MIN_UP) dropped.add("pillar " + o.key() + ": " + m.reason(Way.PILLAR_KNOWN, o));
         }
         if (f.fair() != null) {
@@ -325,7 +347,19 @@ public final class IronOptions {
         ranked.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         Smelt smelt = smeltWhere(f, m, now);
         if (ranked.isEmpty()) return new Choice(null, null, smelt, ranked, dropped);
-        return new Choice(ranked.get(0).way(), ranked.get(0).target(), smelt, ranked, dropped, ranked.get(0).stand(), ranked.get(0).place());
+        return new Choice(ranked.get(0).way(), ranked.get(0).target(), smelt, ranked, dropped, ranked.get(0).stand(), ranked.get(0).place(), ranked.get(0).after());
+    }
+
+    /**
+     * aa-litter: the price of the scaffold of a pillar {@code up} blocks to ore {@code o}: the context at the ore (open to the
+     * sky = surface, an open face = cave, else sealed), the cleanup with my pickaxe, the return leg as the reuse. Null without
+     * the site facts.
+     */
+    static io.github.mojolowjo.entropybot.guard.Litter.Price litterPrice(Facts f, Ore o, int up) {
+        var s = f.litter();
+        if (s == null || up <= 0) return null;
+        var at = new io.github.mojolowjo.entropybot.guard.Litter.Facts(o.skyOpen(), s.nearBuildDist(), !o.skyOpen() && o.openFace(), false, s.ownBox());
+        return s.price(at, up);
     }
 
     private static Scored scored(Way w, Ore o, double cost, String why, Memory m) {

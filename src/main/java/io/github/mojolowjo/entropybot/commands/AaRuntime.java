@@ -416,9 +416,34 @@ public final class AaRuntime implements JobPort {
             return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
                     furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
-                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in), fairFacts);
+                    bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in), fairFacts,
+                    litterSite(dim, me, ores.size()));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * aa-litter: what the price of a scaffold needs about this spot, read with the iron facts: the distance to the nearest
+     * area edge or protect box (the known builds and places), my pickaxe tier, the return leg and the cave sighting's
+     * confidence x the ore still known (the revisits), and whether I stand in my own camp (MAIN) box. Never throws.
+     */
+    io.github.mojolowjo.entropybot.guard.Litter.Site litterSite(String dim, int[] me, int oreCount) {
+        try {
+            var pol = Core.INSTANCE.guard.core.basePolicy();
+            List<io.github.mojolowjo.entropybot.guard.Box> boxes = new ArrayList<>();
+            if (pol != null) {
+                boxes.addAll(pol.areas);
+                boxes.addAll(pol.protect);
+            }
+            int near = io.github.mojolowjo.entropybot.guard.Litter.nearestBoxGap(boxes, dim, me[0], me[2]);
+            boolean own = pol != null && pol.typeAt(dim, me[0], me[1], me[2]) == io.github.mojolowjo.entropybot.guard.AreaType.MAIN;
+            var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
+            var cave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+            return new io.github.mojolowjo.entropybot.guard.Litter.Site(near, bb.in.pickTier, 3, 0, cave == null ? 0 : cave.conf(), Math.max(0, oreCount - 1), 0, own);
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: litter site: {}", e.toString());
             return null;
         }
     }

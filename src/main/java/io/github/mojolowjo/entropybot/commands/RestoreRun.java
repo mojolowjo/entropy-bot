@@ -10,6 +10,7 @@ import io.github.mojolowjo.entropybot.clear.PlaceRules;
 import io.github.mojolowjo.entropybot.clear.Pos;
 import io.github.mojolowjo.entropybot.gui.Gui;
 import io.github.mojolowjo.entropybot.restore.Ledger;
+import io.github.mojolowjo.entropybot.restore.PlacedPlan;
 import io.github.mojolowjo.entropybot.restore.RestorePlan;
 import io.github.mojolowjo.entropybot.restore.RestoreRules;
 import net.minecraft.client.Minecraft;
@@ -44,16 +45,25 @@ final class RestoreRun {
     long stageTick;
     boolean ended;
 
+    /** aa-litter: "restore placed" takes down the scaffold the bot left (breaks instead of places); {@code placed} counts breaks. */
+    final boolean placedMode;
+    boolean breakStarted;
+
     RestoreRun(RestorePlan.Plan plan) {
+        this(plan, false);
+    }
+
+    RestoreRun(RestorePlan.Plan plan, boolean placedMode) {
         queue = new ArrayList<>(plan.actions());
         left.addAll(plan.left());
+        this.placedMode = placedMode;
     }
 
     boolean empty() { return queue.isEmpty(); }
 
     int total() { return queue.size(); }
 
-    String summary() { return RestorePlan.summary(placed, left); }
+    String summary() { return placedMode ? PlacedPlan.summary(placed, left) : RestorePlan.summary(placed, left); }
 
     /** The rest of the queue is not done (a stop, a fight that ended the job): each a Left with why. */
     void stopRest(String why) {
@@ -64,6 +74,7 @@ final class RestoreRun {
     void end() {
         if (ended) return;
         ended = true;
+        if (placedMode && breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
         leases.releaseAll();
         Jobs.safeSettings();
     }
@@ -80,12 +91,18 @@ final class RestoreRun {
         LOG.info("[entropybot] restore: left {} {} {} ({})", e.x, e.y, e.z, why);
         IBaritone b = Jobs.baritone();
         if (b != null && "walking".equals(stage)) Jobs.cancel(b);
+        if (placedMode) {
+            if (breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            breakStarted = false;
+            leases.releaseAll();
+        }
         next();
     }
 
     /** One tick; true once every cell had its turn. */
     boolean step(LocalPlayer p, long now) {
         if (idx >= queue.size()) return true;
+        if (placedMode) return stepPlaced(p, now);
         RestorePlan.Action a = queue.get(idx);
         Ledger.Entry e = a.entry();
         Minecraft mc = Minecraft.getInstance();
@@ -196,6 +213,113 @@ final class RestoreRun {
                     return false;
                 }
                 stage = "place";
+                return false;
+            }
+            default -> {
+                stage = null;
+                return false;
+            }
+        }
+    }
+
+    /** Seconds (ticks) one scaffold block may take to break. */
+    static final long BREAK_MAX = 20 * 10;
+
+    /**
+     * aa-litter: one tick of taking a placed block down. Gone already = dropped from the ledger; out of reach = walk to
+     * a standing spot (the placing logic's); then the best tool, a one-cell force lease (the guard's break check runs in
+     * startDestroyBlock), look, click until it is air. Every block not taken down is a Left with its reason.
+     */
+    private boolean stepPlaced(LocalPlayer p, long now) {
+        Ledger.Entry e = queue.get(idx).entry();
+        Minecraft mc = Minecraft.getInstance();
+        Level level = mc.level;
+        BlockPos pos = new BlockPos(e.x, e.y, e.z);
+        if (!level.isLoaded(pos)) {
+            skip(e, "too far");
+            return false;
+        }
+        BlockState st = level.getBlockState(pos);
+        if (st.isAir() || st.canBeReplaced()) {
+            if (breakStarted) {
+                placed++;                                                    // my click took it down
+                try { mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            }
+            RestoreLive.INSTANCE.drop(e);
+            breakStarted = false;
+            leases.releaseAll();
+            next();
+            return false;
+        }
+        if (stage == null && !net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString().equals(e.block)) {
+            RestoreLive.INSTANCE.drop(e);                      // not the block I placed (the placement failed, or someone built there): not mine to break
+            next();
+            return false;
+        }
+        if (stage == null) {
+            Clearing.LiveWorld w = new Clearing.LiveWorld();
+            w.set(p);
+            boolean reach = !p.getBoundingBox().intersects(new AABB(pos)) && p.getEyePosition().distanceTo(pos.getCenter()) <= 4.5;
+            if (reach) {
+                String le = leases.take("restore placed " + e.x + " " + e.y + " " + e.z, new io.github.mojolowjo.entropybot.clear.ClearBox(e.x, e.y, e.z, e.x, e.y, e.z), false, true);
+                if (le != null) {
+                    skip(e, "couldn't break: " + le.replaceFirst("^error: ", ""));
+                    return false;
+                }
+                try {
+                    var cw = w.cur;
+                    int i = io.github.mojolowjo.entropybot.clear.Tools.choose(cw.toolSlots(p, e.x, e.y, e.z), cw.needsCorrectTool(e.x, e.y, e.z), false, io.github.mojolowjo.entropybot.engine.Hotbar.toolOres());
+                    if (i >= 0) io.github.mojolowjo.entropybot.engine.Hotbar.toHand(mc, p, i);
+                } catch (RuntimeException ex) {
+                    LOG.debug("[entropybot] restore placed: tool pick failed: {}", ex.toString());
+                }
+                stage = "break";
+                stageTick = now;
+                breakStarted = false;
+            } else {
+                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null);
+                IBaritone b = Jobs.baritone();
+                if (spot == null || b == null || (spot.x() == e.x && spot.z() == e.z && (spot.y() == e.y || spot.y() + 1 == e.y))) {
+                    skip(e, "couldn't reach");
+                    return false;
+                }
+                Jobs.safeSettings();
+                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(spot.x(), spot.y(), spot.z())));
+                stage = "walking";
+                stageTick = now;
+                return false;
+            }
+        }
+        switch (stage) {
+            case "walking" -> {
+                if (now - stageTick < 20) return false;
+                IBaritone b = Jobs.baritone();
+                if (b != null && !Jobs.idle(b)) {
+                    if (now - stageTick > WALK_MAX) skip(e, "couldn't reach");
+                    return false;
+                }
+                tries++;
+                if (tries > 2) {
+                    skip(e, "couldn't reach");
+                    return false;
+                }
+                stage = null;
+                return false;
+            }
+            case "break" -> {
+                if (now - stageTick > BREAK_MAX) {
+                    skip(e, "couldn't break: it didn't break in 10 s");
+                    return false;
+                }
+                net.minecraft.world.phys.Vec3 centre = net.minecraft.world.phys.Vec3.atCenterOf(pos);
+                try { p.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, centre); } catch (RuntimeException ignored) {}
+                net.minecraft.world.phys.Vec3 eye = p.getEyePosition();
+                net.minecraft.core.Direction face = net.minecraft.core.Direction.getNearest((float) (eye.x - centre.x), (float) (eye.y - centre.y), (float) (eye.z - centre.z));
+                if (!breakStarted) {
+                    mc.gameMode.startDestroyBlock(pos, face);
+                    breakStarted = true;
+                } else mc.gameMode.continueDestroyBlock(pos, face);
+                p.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 return false;
             }
             default -> {

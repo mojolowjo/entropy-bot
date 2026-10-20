@@ -70,8 +70,14 @@ public final class ChopLoop {
     public static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
     /** A tree candidate: where, how far (squared, the order's cost), whether a free standing cell touches its trunk base. */
-    public record Cand(int[] base, long cost, boolean reachable, boolean stump) {
-        public Cand(int[] base, long cost, boolean reachable) { this(base, cost, reachable, false); }
+    /** aa-litter: {@code extraS} = the seconds the tree's scaffold adds (a tall tree's pillar: min(litter, cleanup) or the skipped logs), 0 for none. */
+    public record Cand(int[] base, long cost, boolean reachable, boolean stump, double extraS) {
+        public Cand(int[] base, long cost, boolean reachable, boolean stump) { this(base, cost, reachable, stump, 0); }
+
+        public Cand(int[] base, long cost, boolean reachable) { this(base, cost, reachable, false, 0); }
+
+        /** The price the order sorts by within a group: the walk in seconds (blocks at 4.3 per second) plus the extra. */
+        public double seconds() { return Math.sqrt(Math.max(0, cost)) / WALK_BPS + extraS; }
     }
 
     /**
@@ -83,7 +89,7 @@ public final class ChopLoop {
         boolean anyReach = false;
         for (Cand c : in) if (c.reachable() && !c.stump()) anyReach = true;
         final boolean useReach = anyReach;
-        out.sort(Comparator.comparing(Cand::stump).thenComparing((Cand c) -> useReach && !c.reachable()).thenComparingLong(Cand::cost));
+        out.sort(Comparator.comparing(Cand::stump).thenComparing((Cand c) -> useReach && !c.reachable()).thenComparingDouble(Cand::seconds));
         return out;
     }
 
@@ -93,6 +99,8 @@ public final class ChopLoop {
     }
 
     public static final int STUMP_SKIP_RADIUS = 48;
+    /** Walking speed for turning a candidate's distance into seconds. */
+    public static final double WALK_BPS = 4.3;
 
     /**
      * 0.27.2: the order, but with every stump dropped when a real tree (2+ logs) stands within 48 blocks (flat) of me;
