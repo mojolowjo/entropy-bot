@@ -758,6 +758,9 @@ public final class Commands implements Chains.Env {
                 chains.rulesTick();                            // 0.36.0: off while AA runs (AA_PLAN 4: a poster later)
                 // B1: the autominer retired into the brain (its upkeep leaf); autominerTick stays for its tests
             }
+            if (tick % 600 == 31 && worldTicks > 400 && !aaOn()) {          // AA_CLEANUP 3: the stage for actions.json with AA off (AA senses itself)
+                try { senses.sense(); } catch (RuntimeException e) { LOG.warn("[entropybot] sense: {}", e.toString()); }
+            }
             if (tick % 5 == 2 && worldTicks > 400 && aaRuntime != null) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.AA)) { aaRuntime.tick(tick); } }             // 0.36.0: AA at 4 Hz, never throws
         planning.drainSearches();                                                                    // 0.23.1: the planner's answers from the worker
         if (worldTicks > 400) planning.tick(tick);                                                  // B3: actions.json when the state changed (every 5 s), never throws

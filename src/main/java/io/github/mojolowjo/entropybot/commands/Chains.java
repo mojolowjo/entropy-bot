@@ -983,7 +983,7 @@ public final class Chains {
         if (a == null || !a.has("on") || !a.get("on").getAsBoolean()) return "";
         a.addProperty("heldUntil", env.now() + AUTOMINER_HOLD_MS);
         env.saved();
-        return "; the autominer waits " + AUTOMINER_HOLD_MS / 60000 + " min (\"debug autominer on\" to go on now)";
+        return "; the autominer waits " + AUTOMINER_HOLD_MS / 60000 + " min";     // AA_CLEANUP 3: its verb is gone
     }
 
     static String decisionText(JsonObject e, long now) {
