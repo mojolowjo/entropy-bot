@@ -117,10 +117,11 @@ public final class CostAdvisorHook {
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
         if (in == null || in == Intent.NONE) return COST_INF;                     // walking only (the route map's context)
         if (dim == null || s == null) return in == Intent.TRAVEL ? COST_INF : Double.NaN;   // fail closed for travel
+        double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
                 BreakPolicy.Verdict v = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, x, y, z, false), me, s);
-                return v.allowed() ? v.multiplier() : COST_INF;
+                return v.allowed() ? v.multiplier() * wet : COST_INF;
             }
             case MINE -> {
                 // phase 1: mining keeps Baritone's rules, except the owner's: no digging down from in the water
@@ -140,12 +141,33 @@ public final class CostAdvisorHook {
                         pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
                         return COST_INF;
                     }
-                    return m;
+                    return m;                                                // its own drowning price (no double count)
                 }
-                return Double.NaN;
+                return wet == 1 ? Double.NaN : wet;
             }
-            default -> { return Double.NaN; }                                         // DIG_OUT, BUILD, RESTORE: as today
+            default -> { return wet == 1 ? Double.NaN : wet; }                        // DIG_OUT, BUILD, RESTORE: as today, plus the water
         }
+    }
+
+    /**
+     * wetbreak: the water the bot breaks {@code x y z} from. Water beside or above the cell = the bot stands in it;
+     * deep = water under that water too (it floats). Never throws (no world = dry).
+     */
+    static double wetMult(PolicyRuntime.StateAt at, int x, int y, int z) {
+        try {
+            int[][] side = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}};
+            for (int[] d : side) {
+                if (!water(at, x + d[0], y + d[1], z + d[2])) continue;
+                boolean deep = water(at, x + d[0], y + d[1] - 1, z + d[2]);
+                return io.github.mojolowjo.entropybot.guard.DrownRisk.wetBreakMult(true, deep);
+            }
+        } catch (RuntimeException ignored) {}
+        return 1;
+    }
+
+    private static boolean water(PolicyRuntime.StateAt at, int x, int y, int z) {
+        BlockState b = at.at(x, y, z);
+        return b != null && PolicyRuntime.fluidOf(b) == BreakPolicy.Fluid.WATER;
     }
 
     /**

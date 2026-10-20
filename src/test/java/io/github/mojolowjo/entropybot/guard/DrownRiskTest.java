@@ -58,4 +58,10 @@ class DrownRiskTest {
         assertEquals(dry.key(), c.target().key(), c.why());
         assertTrue(c.why().contains("dig 2 down under 1 water +30"), c.why());
     }
-}
+
+    @Test
+    void wetBreaksCostVanillasSlowdown() {     // wetbreak (r4: leaves in a lake looked free)
+        assertEquals(1, DrownRisk.wetBreakMult(false, true));
+        assertEquals(5, DrownRisk.wetBreakMult(true, false));
+        assertEquals(25, DrownRisk.wetBreakMult(true, true));
+    }}
