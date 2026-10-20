@@ -116,6 +116,9 @@ public final class Goals {
         String w = g.r.key().replaceFirst("^.*:", "");
         // round 2 item 5: the nearest known ore by name (that cell and its vein); the goal picks again for the next one
         int[] at = nearest(bb, g.r.key());
+        // aa-water (1f): a wet ore whose cheapest way stands first (a floor, a placed block, a dry side): that way's steps
+        if (at != null && bb.fact(WATER_CMD_FACT) instanceof Map<?, ?> wc && wc.get(g.r.key()) instanceof String cmd)
+            return cmd.replace("mine " + io.github.mojolowjo.entropybot.aa.IronOptions.FAMILY + " 1 at", "mine " + w + " 1 at");
         if (at != null) return "mine " + w + " 1 at " + at[0] + " " + at[1] + " " + at[2] + (at.length > 3 && at[3] == 0 ? " walk" : " dig");
         if (known(bb, g.r.key()) > 0) return "mine " + w + " " + left + " dig";
         // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
@@ -147,6 +150,33 @@ public final class Goals {
 
     /** Round 2 item 5: goal key -> the nearest known ore AA can take, {x, y, z, dig 1 | walk 0} (the adapter refreshes it). */
     public static final String NEAREST_FACT = "aa.oreNearest";
+    /** aa-water: goal key -> the steps of a water way (IronOptions WATER_STAND / WATER_PLACE / DRY_SIDE) for the picked ore. */
+    public static final String WATER_CMD_FACT = "aa.oreWaterCmd";
+
+    /**
+     * aa-water (1f): the ore goal's pick by the iron scorer's prices (the water ways weigh against a floating dig and
+     * the other ores): the cheapest per-ore row; {x, y, z, dig 1 | walk 0} and, for a water way, its steps. Null none.
+     */
+    public record Pick(int[] at, String waterCmd) {}
+
+    public static Pick pickPriced(List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int digMax) {
+        var f = new io.github.mojolowjo.entropybot.aa.IronOptions.Facts(ores, meY, inWater, throwaway, placeAllowed, -1, false, null, -1, false, false, 0);
+        var c = io.github.mojolowjo.entropybot.aa.IronOptions.choose(f, new io.github.mojolowjo.entropybot.aa.IronOptions.Memory(), 0);
+        for (var s : c.ranked()) {
+            var o = s.target();
+            if (o == null || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.PILLAR_KNOWN) continue;
+            if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WATER_STAND || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WATER_PLACE
+                    || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.DRY_SIDE) {
+                var one = new io.github.mojolowjo.entropybot.aa.IronOptions.Choice(s.way(), o, c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place());
+                return new Pick(new int[]{o.x(), o.y(), o.z(), 1}, one.command(1));
+            }
+            // the cheapest walk/dig row (the floating dig priced in: "another ore" wins over a wet one)
+            if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WALK_KNOWN) return new Pick(new int[]{o.x(), o.y(), o.z(), o.loaded() ? 0 : 1}, null);
+            if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.DIG_KNOWN && o.depth() <= digMax) return new Pick(new int[]{o.x(), o.y(), o.z(), 1}, null);
+        }
+        int[] at = pickOre(ores, digMax);
+        return at == null ? null : new Pick(at, null);
+    }
 
     public static int[] nearest(Blackboard bb, String key) {
         return bb.fact(NEAREST_FACT) instanceof Map<?, ?> m && m.get(key) instanceof int[] a && a.length >= 3 ? a : null;

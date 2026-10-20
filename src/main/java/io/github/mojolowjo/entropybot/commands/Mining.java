@@ -369,6 +369,55 @@ final class Mining {
     }
 
     /**
+     * aa-water (to-do 1f): the stand cells by a wet ore for WaterWays: the nearest dry cell, floor cell under water and
+     * water cell over water (a block placed under it: placed into a cell with a solid neighbour) whose eyes reach the
+     * ore (4.5). Feet and head passable, no lava. Client thread.
+     */
+    private static io.github.mojolowjo.entropybot.aa.WaterWays.Wet wetFacts(LocalPlayer p, Level level, int[] me, int ox, int oy, int oz, int oreDepth) {
+        int[] dry = null, fl = null, pl = null;
+        double dryD = -1, flD = -1, plD = -1;
+        int flDepth = 0, plDepth = 0;
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -2; dy <= 1; dy++) {
+            int x = ox + dx, y = oy + dy, z = oz + dz;
+            double ex = x + 0.5 - (ox + 0.5), ey = y + 1.6 - (oy + 0.5), ez = z + 0.5 - (oz + 0.5);
+            if (ex * ex + ey * ey + ez * ez > 4.5 * 4.5 || (dx == 0 && dz == 0 && (dy == 0 || dy == -1))) continue;
+            BlockPos feet = new BlockPos(x, y, z);
+            if (!passable(level, feet) || !passable(level, feet.above())) continue;
+            boolean wFeet = !level.getFluidState(feet).isEmpty(), wHead = !level.getFluidState(feet.above()).isEmpty();
+            BlockPos below = feet.below();
+            boolean solidBelow = solid(level, below);
+            double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
+            if (!wFeet && !wHead && solidBelow) { if (dryD < 0 || d < dryD) { dry = new int[]{x, y, z}; dryD = d; } }
+            else if (wFeet && solidBelow) { if (flD < 0 || d < flD) { fl = new int[]{x, y, z}; flD = d; flDepth = io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(level, feet); } }
+            else if (wFeet && !level.getFluidState(below).isEmpty() && passable(level, below) && hasSolidSide(level, below)) {
+                if (plD < 0 || d < plD) { pl = new int[]{x, y - 1, z}; plD = d; plDepth = io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(level, feet); }
+            }
+        }
+        int cobble = 0;
+        for (int i = 0; i < 36; i++) {
+            var st = p.getInventory().getItem(i);
+            if (st.is(net.minecraft.world.item.Items.COBBLESTONE)) cobble += st.getCount();
+        }
+        return new io.github.mojolowjo.entropybot.aa.WaterWays.Wet(p.isInWater(), oreDepth, p.getAirSupply(), io.github.mojolowjo.entropybot.guard.PolicyRuntime.pickTier(p),
+                fl, flD, flDepth, pl, plD, plDepth, dry, dryD, cobble);
+    }
+
+    private static boolean passable(Level level, BlockPos q) {
+        var st = level.getBlockState(q);
+        return st.getCollisionShape(level, q).isEmpty() && !st.getFluidState().is(net.minecraft.tags.FluidTags.LAVA);
+    }
+
+    private static boolean solid(Level level, BlockPos q) {
+        var st = level.getBlockState(q);
+        return st.getFluidState().isEmpty() && st.isCollisionShapeFullBlock(level, q);
+    }
+
+    private static boolean hasSolidSide(Level level, BlockPos q) {
+        for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) if (dir != net.minecraft.core.Direction.UP && solid(level, q.relative(dir))) return true;
+        return false;
+    }
+
+    /**
      * 0.36.a8 (AA's iron option scorer, MINING_PLAN 3.6): the nearest known ore of a family with the facts the scorer
      * reads: loaded, a dry open face, sky-open, the dig depth from the surface, the water rule (a dig down from in the
      * water), and the break policy's MINE verdict at the cell. Same fence as the mine's own pick (my areas, the protect
@@ -417,8 +466,10 @@ final class Mining {
                 } catch (RuntimeException e) {
                     deny = "policy error: " + e;
                 }
+                int oreDepth = io.github.mojolowjo.entropybot.guard.PolicyRuntime.waterAbove(level, q.above());
+                io.github.mojolowjo.entropybot.aa.WaterWays.Wet wetFacts = touchesWater || oreDepth > 0 ? wetFacts(p, level, me, h.x(), h.y(), h.z(), oreDepth) : null;
                 out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, true, open, sky, Math.max(1, top - h.y() + 1), wet, deny, floor,
-                        wet ? 0 : io.github.mojolowjo.entropybot.guard.DrownRisk.cost(risk), drownWhy));
+                        wet ? 0 : io.github.mojolowjo.entropybot.guard.DrownRisk.cost(risk), drownWhy, wetFacts));
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa iron: the known-ore facts could not be read: {}", e.toString());

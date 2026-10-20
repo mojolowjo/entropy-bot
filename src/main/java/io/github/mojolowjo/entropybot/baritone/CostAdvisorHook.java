@@ -129,12 +129,18 @@ public final class CostAdvisorHook {
                 if (up != null && PolicyRuntime.fluidOf(up) == BreakPolicy.Fluid.WATER) {
                     // aa-costs: in the water, the drowning risk of the cell (DrownRisk): no air to come back = never, else
                     // a cost; from dry ground a cell under water stays forbidden (it floods the tunnel), as before
-                    double r = me == null || !me.inWater() ? Double.POSITIVE_INFINITY : me.diveRisk(y);
-                    if (io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(r)) {
+                    // aa-water (1f): the risk from this cell's own depth below the water surface and the air now
+                    if (me == null || !me.inWater()) {
                         pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
                         return COST_INF;
                     }
-                    return 1 + 4 * r * r;
+                    int depth = 1 + PolicyRuntime.waterColumn(at, x, y + 1, z);
+                    double m = io.github.mojolowjo.entropybot.guard.DrownRisk.breakMult(depth, me.air(), me.pickTier());
+                    if (Double.isInfinite(m)) {
+                        pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
+                        return COST_INF;
+                    }
+                    return m;
                 }
                 return Double.NaN;
             }
@@ -168,7 +174,13 @@ public final class CostAdvisorHook {
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
             if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return COST_INF; }
-            return baritoneCost * v.multiplier();
+            double wet = 1;
+            // aa-water (1f): placing into a water cell while I am in the water costs its drowning risk (cell depth, air now)
+            if (me != null && me.inWater() && current != null && PolicyRuntime.fluidOf(current) == BreakPolicy.Fluid.WATER) {
+                wet = io.github.mojolowjo.entropybot.guard.DrownRisk.placeMult(PolicyRuntime.waterColumn(at, x, y, z), me.air());
+                if (Double.isInfinite(wet)) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "placing under water: no air to come back"); return COST_INF; }
+            }
+            return baritoneCost * v.multiplier() * wet;
         } catch (Throwable e) {
             // review: the mixin fallback swallows a throw (Baritone's cost would apply: fail open); travel fails closed
             pr.stats.error("advisor placeCost: " + e);

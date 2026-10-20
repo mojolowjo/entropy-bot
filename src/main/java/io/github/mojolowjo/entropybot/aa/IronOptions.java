@@ -45,7 +45,7 @@ public final class IronOptions {
     public static final String FACTS = "iron.facts";
     public static final String FAMILY = "iron";
 
-    public enum Way { WALK_KNOWN, DIG_KNOWN, PILLAR_KNOWN, CAVE, STRIP }
+    public enum Way { WALK_KNOWN, DIG_KNOWN, PILLAR_KNOWN, CAVE, STRIP, WATER_STAND, WATER_PLACE, DRY_SIDE }
 
     public enum Smelt { CAMP, HERE }
 
@@ -59,10 +59,16 @@ public final class IronOptions {
      * @param deny       the policy's reason against breaking it under MINE (null = allowed); floor = never
      */
     public record Ore(int x, int y, int z, double dist, boolean loaded, boolean openFace, boolean skyOpen, int depth, boolean wetDigDown, String deny, boolean floor,
-                      double drown, String drownWhy) {
+                      double drown, String drownWhy, WaterWays.Wet wet) {
         /** aa-costs: wetDigDown now means the drowning risk is fatal; drown is the dig's drowning cost (walk-blocks), drownWhy its terms. */
         public Ore(int x, int y, int z, double dist, boolean loaded, boolean openFace, boolean skyOpen, int depth, boolean wetDigDown, String deny, boolean floor) {
-            this(x, y, z, dist, loaded, openFace, skyOpen, depth, wetDigDown, deny, floor, 0, null);
+            this(x, y, z, dist, loaded, openFace, skyOpen, depth, wetDigDown, deny, floor, 0, null, null);
+        }
+
+        /** aa-water: {@code wet} the ore's water facts (null: a dry ore). */
+        public Ore(int x, int y, int z, double dist, boolean loaded, boolean openFace, boolean skyOpen, int depth, boolean wetDigDown, String deny, boolean floor,
+                   double drown, String drownWhy) {
+            this(x, y, z, dist, loaded, openFace, skyOpen, depth, wetDigDown, deny, floor, drown, drownWhy, null);
         }
 
         public String key() { return x + " " + y + " " + z; }
@@ -91,18 +97,26 @@ public final class IronOptions {
         return Math.min(d, DIG_MAX) * DIG_BLOCK + Math.max(0, d - DIG_MAX) * DIG_DEEP_BLOCK;
     }
 
+    /** aa-water: the block WATER_PLACE puts under its stand (the adapter offers PLACE only with cobblestone in the bag). */
+    public static final String PLACE_BLOCK_ID = "cobblestone";
+
     public static final int DIG_MAX = 16, PILLAR_MIN_UP = 3, SMELT_WALK = 24, FURNACE_COBBLE = 8, SMELT_HERE_COST = 10, DEFAULT_N = 3;
     /** Switches within one task before the rung fails as before. */
     public static final int MAX_SWITCHES = Options.MAX_SWITCHES;
     /** A failed option is skipped this long per failure (at most an hour). */
     public static final long RETRY_MS = Options.RETRY_MS, RETRY_MAX_MS = Options.RETRY_MAX_MS;
 
-    public record Scored(Way way, Ore target, double cost, String why) {
+    /** aa-water: where the way stands before it digs (STAND, PLACE, DRY), with the cell placed into (PLACE), else null. */
+    public record Scored(Way way, Ore target, double cost, String why, int[] stand, int[] place) {
+        public Scored(Way way, Ore target, double cost, String why) { this(way, target, cost, why, null, null); }
+
         String text() { return way.name().toLowerCase(Locale.ROOT) + (target == null ? "" : " " + target.key()) + " " + Math.round(cost) + " (" + why + ")"; }
     }
 
     /** The chosen way (null: none can run), its smelt choice, the line for {@code aa why}. */
-    public record Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped) {
+    public record Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped, int[] stand, int[] place) {
+        public Choice(Way way, Ore target, Smelt smelt, List<Scored> ranked, List<String> dropped) { this(way, target, smelt, ranked, dropped, null, null); }
+
         public String why() {
             StringBuilder b = new StringBuilder();
             if (way == null) b.append("no way to iron");
@@ -121,6 +135,10 @@ public final class IronOptions {
          * dig|walk}: that cell and its vein, then the step ends); the rung re-picks for the next one.
          */
         public String command(int n) {
+            if (target != null && stand != null && (way == Way.WATER_STAND || way == Way.WATER_PLACE || way == Way.DRY_SIDE)) {
+                String at = "goto " + stand[0] + " " + stand[1] + " " + stand[2] + " then mine " + FAMILY + " 1 at " + target.key() + " dig";
+                return place != null ? "place " + PLACE_BLOCK_ID + " " + place[0] + " " + place[1] + " " + place[2] + " then " + at : at;
+            }
             if (target != null && (way == Way.WALK_KNOWN || way == Way.DIG_KNOWN || way == Way.PILLAR_KNOWN)) {
                 String at = "mine " + FAMILY + " 1 at " + target.key() + (way == Way.WALK_KNOWN ? " walk" : " dig");
                 return way == Way.PILLAR_KNOWN ? "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then " + at : at;
@@ -131,6 +149,7 @@ public final class IronOptions {
                 case PILLAR_KNOWN -> "goto " + target.x() + " " + (target.y() + 1) + " " + target.z() + " then mine " + FAMILY + " " + n + " dig";
                 case CAVE -> "mine cave " + FAMILY + " " + n;
                 case STRIP -> "mine strip " + FAMILY + " " + n;
+                case WATER_STAND, WATER_PLACE, DRY_SIDE -> "mine " + FAMILY + " " + n + " dig";
             };
         }
     }
@@ -179,15 +198,38 @@ public final class IronOptions {
         for (Ore o : f.ores()) {
             if (o.floor()) { dropped.add(o.key() + ": " + o.deny()); continue; }
             if (o.deny() != null) { dropped.add(o.key() + ": " + o.deny()); continue; }
+            // aa-water (1f): a wet ore: the floating dig is priced into walk and dig; standing ways are rows of their own
+            double floatB = 0;
+            String floatWhy = null;
+            if (o.wet() != null) {
+                WaterWays.Wet w = o.wet();
+                for (WaterWays.Way ww : new WaterWays.Way[]{WaterWays.Way.STAND, WaterWays.Way.PLACE, WaterWays.Way.DRY}) {
+                    Way way = ww == WaterWays.Way.STAND ? Way.WATER_STAND : ww == WaterWays.Way.PLACE ? Way.WATER_PLACE : Way.DRY_SIDE;
+                    WaterWays.Priced pr = WaterWays.price(ww, w);
+                    if (pr == null) continue;
+                    if (m.blocked(way, o, now)) { dropped.add(way.name().toLowerCase(Locale.ROOT) + " " + o.key() + ": " + m.reason(way, o)); continue; }
+                    Scored base = scored(way, o, pr.seconds() * WaterWays.WALK_BPS + CLEAR, pr.why() + String.format(Locale.ROOT, ", %.0f s", pr.seconds()), m);
+                    ranked.add(new Scored(base.way(), o, base.cost(), base.why(), pr.stand(),
+                            ww == WaterWays.Way.PLACE ? new int[]{pr.stand()[0], pr.stand()[1] - 1, pr.stand()[2]} : null));
+                }
+                if (w.inWater() || w.oreDepth() > 0) {
+                    WaterWays.Priced fl = WaterWays.price(WaterWays.Way.FLOAT, w);
+                    if (fl == null) { dropped.add("float " + o.key() + ": no air to dig it floating"); continue; }
+                    floatB = fl.seconds() * WaterWays.WALK_BPS;
+                    floatWhy = fl.why();
+                }
+            }
             if (o.openFace()) {
                 if (m.blocked(Way.WALK_KNOWN, o, now)) dropped.add("walk " + o.key() + ": " + m.reason(Way.WALK_KNOWN, o));
-                else ranked.add(scored(Way.WALK_KNOWN, o, o.dist() * (o.skyOpen() ? 1 : CAVE_FACE) * (o.loaded() ? 1 : STALE) + CLEAR,
-                        o.loaded() ? (o.skyOpen() ? "open to the sky" : "an open face in a cave") : "known from before, not loaded", m));
+                else ranked.add(scored(Way.WALK_KNOWN, o, o.dist() * (o.skyOpen() ? 1 : CAVE_FACE) * (o.loaded() ? 1 : STALE) + CLEAR + floatB,
+                        (o.loaded() ? (o.skyOpen() ? "open to the sky" : "an open face in a cave") : "known from before, not loaded")
+                                + (floatWhy == null ? "" : ", " + floatWhy + " +" + Math.round(floatB)), m));
             } else if (o.wetDigDown()) dropped.add("dig " + o.key() + ": digging down from in the water" + (o.drownWhy() == null ? "" : " (" + o.drownWhy() + ")"));
             else if (!o.loaded()) dropped.add("dig " + o.key() + ": buried, not loaded");
             else if (o.depth() > DIG_HARD) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (the dig verb reaches " + DIG_HARD + ")");
             else if (m.blocked(Way.DIG_KNOWN, o, now)) dropped.add("dig " + o.key() + ": " + m.reason(Way.DIG_KNOWN, o));
-            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth()) + CLEAR + o.drown(), "buried " + o.depth() + " deep"
+            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth()) + CLEAR + o.drown() + floatB, "buried " + o.depth() + " deep"
+                    + (floatWhy == null ? "" : ", " + floatWhy + " +" + Math.round(floatB))
                     + (o.depth() > DIG_MAX ? " (+" + Math.round(digCost(o.depth()) - DIG_MAX * DIG_BLOCK) + " past " + DIG_MAX + ")" : "")
                     + (o.drownWhy() == null ? "" : ", " + o.drownWhy() + " +" + Math.round(o.drown())), m));
             int up = o.y() - f.meY();
@@ -209,7 +251,7 @@ public final class IronOptions {
         ranked.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         Smelt smelt = smeltWhere(f, m, now);
         if (ranked.isEmpty()) return new Choice(null, null, smelt, ranked, dropped);
-        return new Choice(ranked.get(0).way(), ranked.get(0).target(), smelt, ranked, dropped);
+        return new Choice(ranked.get(0).way(), ranked.get(0).target(), smelt, ranked, dropped, ranked.get(0).stand(), ranked.get(0).place());
     }
 
     private static Scored scored(Way w, Ore o, double cost, String why, Memory m) {
@@ -257,7 +299,7 @@ public final class IronOptions {
 
     /** The choice mines one named ore ({@code mine iron 1 at ...}). */
     static boolean perOre(Choice c) {
-        return c.target() != null && (c.way() == Way.WALK_KNOWN || c.way() == Way.DIG_KNOWN || c.way() == Way.PILLAR_KNOWN);
+        return c.target() != null && c.way() != Way.CAVE && c.way() != Way.STRIP;
     }
 
     /** The chain holds an ore step (else the scorer has nothing to choose, the smelt choice still applies). */
@@ -325,7 +367,7 @@ public final class IronOptions {
             List<Options.Option> rows = new ArrayList<>();
             int oreIdx = mineStepIndex(steps);
             for (Scored s : c.ranked()) {
-                Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped());
+                Choice one = new Choice(s.way(), s.target(), c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place());
                 String id = s.way().name().toLowerCase(Locale.ROOT) + (s.target() == null ? "" : " " + s.target().key());
                 rows.add(new Options.Option(id, s.way().name().toLowerCase(Locale.ROOT), rewrite(steps, one), s.cost(), s.why(), Memory.key(s.way(), s.target()), true,
                         returnLeg(s, f, oreIdx)));
@@ -364,6 +406,7 @@ public final class IronOptions {
             case PILLAR_KNOWN -> o == null ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), Math.max(0, o.y() - f.meY()), oreIdx < 0 ? -1 : oreIdx + 1);
             case CAVE -> Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), Math.max(0, f.caveDist()), oreIdx);
             case STRIP -> Replan.Ret.NONE;
+            case WATER_STAND, WATER_PLACE, DRY_SIDE -> o == null ? Replan.Ret.NONE : Replan.chooseReturn(0, false, f.throwaway(), f.placeAllowed(), o.dist(), oreIdx);
         };
     }
 

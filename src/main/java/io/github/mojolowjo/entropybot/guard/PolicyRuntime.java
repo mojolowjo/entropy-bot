@@ -281,6 +281,22 @@ public final class PolicyRuntime {
             n++;
             m.move(0, 1, 0);
         }
+        // aa-water (live water1, drowned): a flooded cave's water ends at a stone ceiling, not at air: no straight
+        // swim up to breathe there, so it counts as the deepest
+        return n > 0 && lv.getBlockState(m).isCollisionShapeFullBlock(lv, m) ? DrownRisk.SURFACE_SCAN : n;      // a lily pad or thin cap is not a ceiling
+    }
+
+    /** aa-water (pathfinder thread safe): water cells from (x, y, z) up through the snapshot (at most DrownRisk.SURFACE_SCAN). */
+    public static int waterColumn(StateAt at, int x, int y, int z) {
+        int n = 0;
+        while (n < DrownRisk.SURFACE_SCAN) {
+            BlockState st = at.at(x, y + n, z);
+            if (st == null || fluidOf(st) != Fluid.WATER) {
+                if (n > 0 && (st == null || st.isSolid())) return DrownRisk.SURFACE_SCAN;     // a ceiling (or unknown: fail closed), not air
+                break;
+            }
+            n++;
+        }
         return n;
     }
 
