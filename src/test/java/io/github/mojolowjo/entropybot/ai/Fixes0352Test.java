@@ -71,8 +71,8 @@ class Fixes0352Test {
         AiLoop.World busy = new AiLoop.World(true, true, false), idle = new AiLoop.World(true, false, false);
         l.ownerRequest("cut 3 logs", 0);
         l.poll(0, idle);
-        assertEquals("cut 3 then deposit", l.onCompletion(new Provider.Completion("cut 3 then deposit", 1, 1, null, "stop", 1), 0));
-        l.onCommandResult("cut 3 then deposit", "started: chain", false, 0);   // a chain answers at once, no pending
+        assertEquals("aa want oak_log 3 then aa drop oak_log", l.onCompletion(new Provider.Completion("aa want oak_log 3 then aa drop oak_log", 1, 1, null, "stop", 1), 0));
+        l.onCommandResult("aa want oak_log 3 then aa drop oak_log", "started: chain", false, 0);   // a chain answers at once, no pending
         assertNotNull(l.poll(2000, busy));
         assertNull(l.onCompletion(new Provider.Completion("wait", 1, 1, null, "stop", 1), 2000));
         l.onJobEnd("chain: stopped at step 1 (cut 3 logs): I chop only inside my areas", 3000);

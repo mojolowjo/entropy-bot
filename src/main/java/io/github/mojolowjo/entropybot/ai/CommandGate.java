@@ -25,45 +25,15 @@ public final class CommandGate {
         public boolean failed() { return kind == Kind.UNKNOWN || kind == Kind.DENIED || kind == Kind.BAD; }
     }
 
-    public enum Decision { ALLOW, DENY, FORMS }
-
-    /** Every verb of the table (by its name): allowed, denied, or some forms denied ({@link #DENIED_FORMS}). */
-    public static final Map<String, Decision> DECISIONS;
-    /** Denied sub-forms: "verb sub" (the first word of the rest). */
-    public static final Set<String> DENIED_FORMS = Set.of("brain set", "brain reset", "brain copy", "fence mode", "area del", "area remove",
-            "area change", "mine strip reset", "defence players", "defense players");
-    /** Words never in the table that must never pass either. */
-    public static final Set<String> DENY_NOT_IN_TABLE = Set.of("ai", "recorder", "dashboard", "jar", "launch", "stripmine", "b", "baritone", "run", "reconnect");
-    /** Verbs whose rest is another command line (queued for later): the rest is gated too. */
-    static final Set<String> QUEUES = Set.of("queue", "repeat", "routine", "rule");
-    /** ai.json's extraAllow can't open these. */
-    public static final Set<String> HARD_DENY = Set.of("ai", "restart", "server", "allow", "deny", "trust", "untrust", "fence mode", "blind",
-            "confirm", "defence players", "defense players", "debug");
-
-    static {
-        java.util.LinkedHashMap<String, Decision> d = new java.util.LinkedHashMap<>();
-        for (String v : List.of("place", "marker", "places", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get", "supplies", "deposit", "restock",
-                "hold", "carry", "unload", "dig", "build", "house", "climb", "cut", "gather", "light", "junk", "defend", "guard", "escort", "assist",
-                "dismiss", "attack", "queue", "status", "inv", "stop", "wait", "summary", "check", "look", "why", "deaths", "resume", "kinds", "tools",
-                "hotbar", "explore", "find", "scout", "idle", "dayplan", "plan", "actions", "done", "sleep", "shelter", "hunting", "hunt", "fish", "camp",
-                "bootstrap", "restore", "come", "follow", "goto", "go", "path", "home", "death", "corpse", "open", "take", "put", "close", "drop",
-                "wear", "scan", "rs", "pots", "craft", "kit", "recipe", "smelt", "cook", "eat", "burrow", "flee", "cover", "pillar", "farm", "compact", "infuse", "upgrade", "help", "say",
-                "sense", "surface"))
-            d.put(v, Decision.ALLOW);
-        for (String v : List.of("area", "fence", "mine", "brain", "defence")) d.put(v, Decision.FORMS);
-        // owner's answer 4 (2026-10-17): the proposed deny list, except say
-        for (String v : List.of("give", "routine", "rule", "repeat", "confirm", "reply", "twerk", "spawn", "allow", "deny", "restart", "blind", "debug",
-                "server", "trust", "untrust", "ai", "aa"))                 // 0.36.0: the AI never flips the brains
-            d.put(v, Decision.DENY);
-        DECISIONS = java.util.Collections.unmodifiableMap(d);
-    }
+    /** The only lines the model may send (besides wait/finished); the same rule as the Door under AA. */
+    public static final String ALLOWED_HELP = "aa want <thing> [n] [high|low], aa drop <thing>, aa status, aa why, status";
 
     private static final Pattern CONTROL = Pattern.compile("[\\p{Cntrl}&&[^\\t]]");
     public static final int MAX_LEN = 300;
 
     private final Set<String> extraAllow = new HashSet<>(), extraDeny = new HashSet<>();
 
-    public CommandGate(Collection<String> extraAllow, Collection<String> extraDeny) {
+    public CommandGate(Collection<String> extraAllow, Collection<String> extraDeny) { // the lists are kept for ai.json but cannot open anything now
         if (extraAllow != null) for (String s : extraAllow) if (s != null) this.extraAllow.add(norm(s));
         if (extraDeny != null) for (String s : extraDeny) if (s != null) this.extraDeny.add(norm(s));
     }
@@ -98,39 +68,11 @@ public final class CommandGate {
         return Math.max(0, n - 1);
     }
 
-    /** Is this verb (+ the first word of its rest) allowed for the model? null: yes; else the denied form. */
+    /** Is this verb (+ the rest) allowed for the model? null: yes; else the denied form. 0.38.c1: only aa want/drop/status/why and status. */
     public String denied(String verb, String rest) {
-        String sub = rest == null || rest.isBlank() ? "" : rest.trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
-        String form = sub.isEmpty() ? verb : verb + " " + sub;
-        if (HARD_DENY.contains(verb)) return verb;
-        if (HARD_DENY.contains(form)) return form;
-        if (extraDeny.contains(verb)) return verb;
-        if (extraDeny.contains(form)) return form;
-        if (DENY_NOT_IN_TABLE.contains(verb)) return verb;
-        VerbTable.Verb v = VerbTable.of(verb);
-        String name = v == null ? verb : v.name();
-        Decision dec = DECISIONS.get(name);
-        if (dec == null) return name;                                 // a verb with no decision is denied
-        String canonForm = sub.isEmpty() ? name : name + " " + sub;   // 0.35.1 review: aliases can't dodge the hard set
-        if (HARD_DENY.contains(name)) return name;
-        if (HARD_DENY.contains(canonForm)) return canonForm;
-        if (dec == Decision.DENY && !extraAllow.contains(name)) return name;
-        // 0.35.1 review: a queued line is a command too ("queue give ...", "queue then restart"): every word that is a verb is checked
-        if (QUEUES.contains(name) && rest != null && !rest.isBlank()) {
-            List<String> w = List.of(rest.trim().toLowerCase(Locale.ROOT).split("\\s+"));
-            for (int i = 0; i < w.size(); i++) {
-                String t = w.get(i);
-                if (QUEUES.contains(t) || (VerbTable.of(t) == null && !DENY_NOT_IN_TABLE.contains(t) && !HARD_DENY.contains(t))) continue;
-                String inner = denied(t, String.join(" ", w.subList(i + 1, w.size())));
-                if (inner != null) return name + " " + inner;
-            }
-        }
-        if (name.equals("mine") && rest != null && rest.trim().toLowerCase(Locale.ROOT).matches("^strip\\s+reset\\b.*")) return extraAllow.contains("mine strip reset") ? null : "mine strip reset";
-        String nameForm = sub.isEmpty() ? name : name + " " + sub;
-        if (dec == Decision.FORMS && DENIED_FORMS.contains(nameForm) && !extraAllow.contains(nameForm)) return nameForm;
-        return null;
+        String line = rest == null || rest.isBlank() ? verb : verb + " " + rest.trim();
+        return io.github.mojolowjo.entropybot.aa.door.Door.aiMayUnderAa(line) ? null : line;
     }
-
     public Verdict check(String answer) {
         String line = normalise(answer);
         if (line.isEmpty()) return new Verdict(Kind.EMPTY, "", null, "error: the reply was empty - reply with one command line");
@@ -147,13 +89,14 @@ public final class CommandGate {
             String[] vr = Texts.verbAndRest(s);
             String verb = vr[0];
             if (first == null) first = verb;
-            if (!DENY_NOT_IN_TABLE.contains(verb) && VerbTable.of(verb) == null) {
+            if (VerbTable.of(verb) == null) {
                 String sug = VerbTable.suggest(verb);
                 return new Verdict(Kind.UNKNOWN, line, verb, "error: unknown verb '" + verb + "'" + (sug != null ? " - did you mean " + sug + "?" : " - help lists the commands"));
             }
             String no = denied(verb, vr[1]);
-            if (no != null) return new Verdict(Kind.DENIED, line, verb, "error: not allowed for the AI operator: " + no + " (ask the owner)");
+            if (no != null) return new Verdict(Kind.DENIED, line, verb, "error: refused, not allowed for the AI operator: \"" + no + "\". You may only send: " + ALLOWED_HELP + ", or a question to the owner. Everything else is done by the bot itself under AA.");
         }
         return new Verdict(Kind.RUN, line, first, null);
     }
 }
+

@@ -63,8 +63,7 @@ public final class AiLoop {
     private final java.util.Map<String, String> goalReplies = new java.util.HashMap<>();
     private static final java.util.regex.Pattern ASKS_TO_SAY = java.util.regex.Pattern.compile("(?i)\\bchat\\b|\\b(?:say|tell|announce|greet)\\s+(?:to\\s+)?(?!me\\b|us\\b|the owner\\b)\\S+");
     /** 0.35.4 review: read-only verbs are never a "repeat". */
-    static final Set<String> READ_ONLY = Set.of("status", "inv", "look", "why", "check", "have", "help", "where", "stock", "places", "kinds", "needs",
-            "recipe", "supplies", "summary", "deaths", "goals", "actions", "night");
+    
     private int failureStreak, waitStreak, sameCount, lastStatus;
     private final Deque<PromptBuilder.Turn> history = new ArrayDeque<>();
     private final Deque<Long> minute = new ArrayDeque<>();
@@ -365,13 +364,11 @@ public final class AiLoop {
 
     static boolean readOnly(String line) {
         for (String st : io.github.mojolowjo.entropybot.commands.Texts.splitChain(line)) {
-            String w = io.github.mojolowjo.entropybot.commands.Texts.verbAndRest(st)[0];
-            io.github.mojolowjo.entropybot.commands.VerbTable.Verb v = io.github.mojolowjo.entropybot.commands.VerbTable.of(w);
-            if (!READ_ONLY.contains(v == null ? w : v.name())) return false;
+            String l = st.trim().toLowerCase().replaceAll("\\s+", " ");
+            if (!(l.equals("status") || l.equals("aa") || l.equals("aa status") || l.equals("aa why"))) return false;
         }
         return true;
     }
-
     private static boolean saysSomething(String line) {
         for (String st : io.github.mojolowjo.entropybot.commands.Texts.splitChain(line))
             if (isVerb(io.github.mojolowjo.entropybot.commands.Texts.verbAndRest(st)[0], "say")) return true;
@@ -531,3 +528,4 @@ public final class AiLoop {
         return st + (lastCmd != null ? ", last: " + PromptBuilder.cut(lastCmd, 40) : "");
     }
 }
+

@@ -64,8 +64,8 @@ class AiLoopTest {
         assertNull(poll(IDLE), "one request in flight");
         loop.ownerRequest("and more", now);
         assertNull(poll(IDLE), "a burst is still one call");
-        assertEquals("house house", loop.onCompletion(said("house house"), now));
-        loop.onCommandResult("house house", "started: house", true, now);
+        assertEquals("aa want bed", loop.onCompletion(said("aa want bed"), now));
+        loop.onCommandResult("aa want bed", "started: house", true, now);
         now += 5000;
         assertNotNull(poll(BUSY), "the second request (sent while thinking) is read now");
         assertNull(loop.onCompletion(said("wait"), now));
@@ -179,7 +179,7 @@ class AiLoopTest {
         assertNull(poll(IDLE));
         now += AiLoop.OUTAGE_RETRY_MS;
         assertNotNull(poll(IDLE), "retried after 5 min");
-        assertEquals("inv", loop.onCompletion(said("inv"), now));
+        assertEquals("aa status", loop.onCompletion(said("aa status"), now));
         assertEquals(0, loop.failureStreak(), "a success resets the streak");
     }
 
@@ -203,7 +203,7 @@ class AiLoopTest {
         now += s.minGapMs;
         Provider.Request r = poll(IDLE);
         assertNotNull(r, "corrective retry");
-        assertTrue(r.messages().get(r.messages().size() - 1).content().contains("not allowed for the AI operator: restart"));
+        assertTrue(r.messages().get(r.messages().size() - 1).content().contains("not allowed for the AI operator: \"restart\""));
         loop.onCompletion(said("flyy"), now);
         now += s.minGapMs;
         poll(IDLE);
@@ -218,12 +218,12 @@ class AiLoopTest {
         for (int i = 0; i < 2; i++) {
             now += s.minGapMs;
             poll(IDLE);
-            assertEquals("cut 3", loop.onCompletion(said("cut 3"), now), "run " + i);
-            loop.onCommandResult("cut 3", "error: no trees", false, now);
+            assertEquals("aa want oak_log 3", loop.onCompletion(said("aa want oak_log 3"), now), "run " + i);
+            loop.onCommandResult("aa want oak_log 3", "error: no trees", false, now);
         }
         now += s.minGapMs;
         poll(IDLE);
-        assertNull(loop.onCompletion(said("cut 3"), now), "the third one with an unchanged result is not run");
+        assertNull(loop.onCompletion(said("aa want oak_log 3"), now), "the third one with an unchanged result is not run");
         assertNull(loop.goal(), "the mod ends the request");
         assertTrue(notices.get(notices.size() - 1).contains("nothing changed"));
     }
@@ -234,14 +234,14 @@ class AiLoopTest {
         for (int i = 0; i < 4; i++) {
             now += s.minGapMs;
             poll(IDLE);
-            assertEquals("cut 3", loop.onCompletion(said("cut 3"), now), "run " + i);
-            loop.onCommandResult("cut 3", "cut: " + i + " logs", false, now);
+            assertEquals("aa want oak_log 3", loop.onCompletion(said("aa want oak_log 3"), now), "run " + i);
+            loop.onCommandResult("aa want oak_log 3", "cut: " + i + " logs", false, now);
         }
         for (int i = 0; i < 2; i++) {
             now += s.minGapMs;
             poll(IDLE);
-            assertEquals("inv", loop.onCompletion(said("inv"), now));
-            loop.onCommandResult("inv", "same bag", false, now);
+            assertEquals("aa status", loop.onCompletion(said("aa status"), now));
+            loop.onCommandResult("aa status", "same bag", false, now);
         }
         assertNotNull(loop.goal());
     }
@@ -249,7 +249,7 @@ class AiLoopTest {
     @Test
     void sameLineThreeTimesInARequestEndsIt() {
         loop.ownerRequest("x", now);
-        for (String c : List.of("cut 3", "deposit", "cut 3", "deposit", "cut 3", "deposit")) {
+        for (String c : List.of("aa want oak_log 3", "aa drop oak_log", "aa want oak_log 3", "aa drop oak_log", "aa want oak_log 3", "aa drop oak_log")) {
             now += s.minGapMs;
             poll(IDLE);
             String ran = loop.onCompletion(said(c), now);
@@ -257,21 +257,20 @@ class AiLoopTest {
         }
         now += s.minGapMs;
         assertNotNull(poll(IDLE));
-        assertNull(loop.onCompletion(said("cut 3"), now));
+        assertNull(loop.onCompletion(said("aa want oak_log 3"), now));
         assertTrue(notices.get(notices.size() - 1).contains("3 times"), notices.toString());
     }
 
     @Test
-    void sayToReportIsRefusedButAllowedWhenAsked() {
+    void sayIsRefusedWithAReason() {
         loop.ownerRequest("cut 3 logs", now);
         poll(IDLE);
         assertNull(loop.onCompletion(said("say I have 3 oak_log"), now));
-        assertTrue(loop.lastError().contains("say to report"));
+        assertTrue(loop.lastError().contains("aa want"), "the refusal names what is allowed: " + loop.lastError());
         loop.ownerRequest("tell Steve hello", now);
         poll(IDLE);
-        assertEquals("say hello Steve", loop.onCompletion(said("say hello Steve"), now));
+        assertNull(loop.onCompletion(said("say hello Steve"), now), "say is gone for the AI (0.38.c1)");
     }
-
     @Test
     void thinksPerGoalCap() {
         s.maxThinksPerGoal = 2;
@@ -292,14 +291,14 @@ class AiLoopTest {
     void goalMetHintAndSummary() {
         loop.ownerRequest("cut 3 logs", now);
         assertNotNull(loop.poll(now, new AiLoop.World(true, false, false, java.util.Map.of("oak_log", 2))));
-        loop.onCompletion(said("cut 3"), now);
-        loop.onCommandResult("cut 3", "RESULT cut: 3 oak_log", false, now);
+        loop.onCompletion(said("aa want oak_log 3"), now);
+        loop.onCommandResult("aa want oak_log 3", "RESULT cut: 3 oak_log", false, now);
         now += s.minGapMs;
         Provider.Request r = loop.poll(now, new AiLoop.World(true, false, false, java.util.Map.of("oak_log", 5)));
         assertTrue(r.messages().get(r.messages().size() - 1).content().contains("the request looks done"));
         loop.onCompletion(said("finished"), now);
         String done = notices.get(notices.size() - 1);
-        assertTrue(done.startsWith("done: cut 3 logs - ran cut 3"), done);
+        assertTrue(done.startsWith("done: cut 3 logs - ran aa want oak_log 3"), done);
     }
 
     @Test
@@ -319,8 +318,8 @@ class AiLoopTest {
     void confirmIsTheOwnersAndWaits() {
         loop.ownerRequest("clear it", now);
         poll(IDLE);
-        assertEquals("build clear", loop.onCompletion(said("build clear"), now));
-        loop.onCommandResult("build clear", "confirm? break 400 blocks - say \"confirm\" within 30 s (anything else cancels)", false, now);
+        assertEquals("aa want stone", loop.onCompletion(said("aa want stone"), now));
+        loop.onCommandResult("aa want stone", "confirm? break 400 blocks - say \"confirm\" within 30 s (anything else cancels)", false, now);
         assertEquals(AiLoop.State.WAIT_CONFIRM, loop.state());
         assertTrue(notices.get(notices.size() - 1).contains("say confirm"));
         now += 10_000;

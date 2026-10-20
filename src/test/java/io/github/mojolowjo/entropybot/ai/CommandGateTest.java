@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.ai;
 
-import io.github.mojolowjo.entropybot.commands.VerbTable;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,33 +9,26 @@ import static org.junit.jupiter.api.Assertions.*;
 class CommandGateTest {
     private final CommandGate gate = new CommandGate(List.of(), List.of());
 
-    /** A new verb in the table fails here until it gets an allow/deny decision. */
     @Test
-    void everyTableVerbHasADecision() {
-        for (VerbTable.Verb v : VerbTable.all())
-            assertNotNull(CommandGate.DECISIONS.get(v.name()), "no AI operator decision for the verb " + v.name() + " (CommandGate.DECISIONS)");
-        for (String v : CommandGate.DECISIONS.keySet()) assertNotNull(VerbTable.of(v), "decision for a verb not in the table: " + v);
-    }
-
-    @Test
-    void ownersDenyListExceptSay() {
-        for (String v : List.of("restart", "server on", "allow bob", "deny bob", "trust bob", "untrust bob", "blind on", "give bob diamond", "spawn",
-                "debug inv", "reply full", "twerk", "rule add x", "routine save x", "repeat 3 status", "confirm", "brain set x 1", "brain reset",
-                "fence mode strict", "area del base confirm", "area change name a b", "mine strip reset", "ai off", "recorder off", "defence players on"))
-            assertEquals(CommandGate.Kind.DENIED, gate.check(v).kind(), v);
-        for (String v : List.of("say hello", "status", "house house", "brain status", "fence", "area list", "mine strip", "mine iron", "defence on", "wait 30", "help dig"))
+    void onlyAaWantDropAndQuestionsPass() {
+        for (String v : List.of("aa want iron_ore 8", "aa want diamond_pickaxe", "aa drop iron_ore", "aa status", "aa why", "status", "aa", "AA  Want bed high"))
             assertEquals(CommandGate.Kind.RUN, gate.check(v).kind(), v);
+        for (String v : List.of("say hello", "inv", "dig", "house house", "brain status", "brain set x 1", "fence", "area list", "mine iron", "defence on",
+                "help dig", "restart", "server on", "allow bob", "give bob diamond", "confirm", "ai off", "idle", "aa on", "aa off", "aa like build 30",
+                "goto 1 64 2", "queue aa want x", "repeat 3 status"))
+            assertEquals(CommandGate.Kind.DENIED, gate.check(v).kind(), v);
+        CommandGate.Verdict d = gate.check("dig");
+        assertTrue(d.error().contains("aa want"), "the refusal tells the model what it may send: " + d.error());
     }
 
     @Test
     void chainsAreCheckedStepByStep() {
-        assertEquals(CommandGate.Kind.RUN, gate.check("status then inv").kind());
+        assertEquals(CommandGate.Kind.RUN, gate.check("status then aa why").kind());
         CommandGate.Verdict v = gate.check("status then allow griefer");
         assertEquals(CommandGate.Kind.DENIED, v.kind());
         assertTrue(v.error().contains("allow"), v.error());
         assertEquals(CommandGate.Kind.DENIED, gate.check("status; restart").kind());
     }
-
     @Test
     void normalisesModelAnswers() {
         assertEquals("status", CommandGate.normalise("```\nstatus\n```"));
@@ -60,13 +52,13 @@ class CommandGateTest {
         assertEquals(CommandGate.Kind.BAD, gate.check("#goto 1 2 3").kind());
         assertEquals(CommandGate.Kind.BAD, gate.check("say " + "x".repeat(400)).kind());
         assertEquals(CommandGate.Kind.BAD, gate.check("say a\u0007b").kind());
-        assertEquals(CommandGate.Kind.DENIED, gate.check("baritone mine diamond_ore").kind());
+        assertTrue(gate.check("baritone mine diamond_ore").failed());
     }
 
     @Test
     void extraAllowCannotOpenHardDeny() {
         CommandGate g = new CommandGate(List.of("rule", "restart", "allow", "fence mode", "confirm"), List.of("say"));
-        assertEquals(CommandGate.Kind.RUN, g.check("rule list").kind(), "rule is soft");
+        assertEquals(CommandGate.Kind.DENIED, g.check("rule list").kind(), "ai.json cannot open anything");
         for (String v : List.of("restart", "allow bob", "fence mode log", "confirm")) assertEquals(CommandGate.Kind.DENIED, g.check(v).kind(), v);
         assertEquals(CommandGate.Kind.DENIED, g.check("say hi").kind(), "extraDeny");
     }

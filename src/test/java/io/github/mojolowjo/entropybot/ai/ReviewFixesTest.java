@@ -50,8 +50,8 @@ class ReviewFixesTest {
         CommandGate g = new CommandGate(List.of(), List.of());
         for (String v : List.of("queue give bob diamond", "queue restart", "queue server on", "queue add allow bob", "queue status then confirm"))
             assertEquals(CommandGate.Kind.DENIED, g.check(v).kind(), v);
-        assertEquals(CommandGate.Kind.RUN, g.check("queue").kind());
-        assertEquals(CommandGate.Kind.RUN, g.check("queue mine iron").kind());
+        assertEquals(CommandGate.Kind.DENIED, g.check("queue").kind());
+        assertEquals(CommandGate.Kind.DENIED, g.check("queue mine iron").kind());
     }
 
     @Test
