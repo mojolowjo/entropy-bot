@@ -141,4 +141,12 @@ class SightingsTest {
         assertEquals(1, c.caves("d").size());
         assertEquals(1, bad2[0]);
     }
+
+    @Test
+    void regrownTreeNearAnExhaustedRecordIsRecorded() {
+        Sightings s = new Sightings();
+        assertNotNull(s.sawTree("d", 50, 64, 0, 5, 1000));
+        assertEquals(1, s.exhaustTree("d", 50, 0, 2000));
+        assertNotNull(s.sawTree("d", 52, 64, 1, 5, 3000));
+    }
 }

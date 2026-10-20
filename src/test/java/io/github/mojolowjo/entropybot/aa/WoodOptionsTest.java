@@ -53,7 +53,7 @@ class WoodOptionsTest {
     @Test
     void rulesDropRows() {
         Options.OptionMemory m = new Options.OptionMemory();
-        assertNull(WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, "a protected build is near")), 0, true), m, 0).best());
+        assertEquals("cut 4", WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, "a protected build is near")), 0, true), m, 0).best().command(), "every tree denied: only the plain cut in my areas is left");
         Options.Choice cap = WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, null)), WoodOptions.AREA_CAP, true), m, 0);
         assertTrue(cap.best().id().startsWith("chop at"), "the area cap leaves chop at");
         Options.Choice mp = WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, null)), 0, false), m, 0);
@@ -90,6 +90,17 @@ class WoodOptionsTest {
         assertEquals("ore", IronOptions.failedPart("stopped at step 1 (find cave 5): no cave"));
     }
 
+    @Test
+    void plainCutIsTheFallbackWhenEveryTreeIsDenied() {
+        Options.Choice c = WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, "water between")), 0, true), new Options.OptionMemory(), 0);
+        assertNotNull(c.best());
+        assertEquals("cut 4", c.best().command());
+    }
+
+    @Test
+    void ownerStopIsNotSwitchable() {
+        assertFalse(WoodOptions.switchable("stopped by the owner"));
+    }
     static IronOptions.Facts facts(int rawIron) {
         return new IronOptions.Facts(List.of(), 60, false, 0, true, -1, false, "no mine marked (place mine)", -1, false, false, 0, null, null, null, rawIron);
     }

@@ -53,12 +53,15 @@ public final class WoodOptions {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         int need = Math.max(1, f.need());
-        if (f.trees().isEmpty()) {
+        boolean plainTry = f.trees().isEmpty();
+        for (int pass = 0; pass < 2; pass++) {
+        if (plainTry) {
             // nothing seen: the plain cut (the chopper's own search of my areas and its remembered logs) is one priced try, held 10 min on a failure
             String key = "cut here";
             if (m.blocked(key, now)) dropped.add("cut in my areas: " + m.reason(key) + " (no tree seen yet; the sightings fill as it walks)");
             else rows.add(Options.scored("cut in my areas", "wood", "cut " + need, SEARCH + CUT_LOG * need, "no tree seen yet: the chopper searches my areas and its remembered logs", key, false, m));
         }
+        if (pass == 1) break;
         boolean extend = false, chop = false;
         for (Tree t : f.trees()) {
             String extendKey = "extend " + t.key(), chopKey = "chop at " + t.key();
@@ -83,6 +86,9 @@ public final class WoodOptions {
                 }
             }
             if (extend && chop) break;
+        }
+        if (!rows.isEmpty() || plainTry) break;
+        plainTry = true;      // trees seen but no row: the plain cut is still one try
         }
         return Options.Choice.of(rows, dropped, "no way to wood");
     }

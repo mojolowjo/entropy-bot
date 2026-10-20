@@ -18,7 +18,9 @@ import java.util.TreeMap;
  * <li>ORE: the seen ore cells of section 3 ({@link Seen}: fair play; mined = removed, no decay).</li>
  * <li>CAVE: cave openings, ravines and dark holes (no decay: openings do not move; a cave entered and found empty of
  *     ore is marked {@code exhausted} with its time and offered no more).</li>
- * <li>TREE (aa-trees): a log column standing on dirt with leaves by it, seen (x y z = its lowest log; no decay; a visit that\n *     finds it gone or unreachable marks it {@code exhausted}, offered no more).</li>\n * <li>ANIMAL: herds by entity type (position, count, time); the confidence halves every {@link #HALF_LIFE_MS} of game
+ * <li>TREE (aa-trees): a log column standing on dirt with leaves by it, seen (x y z = its lowest log; no decay; a visit that
+ *     finds it gone or unreachable marks it {@code exhausted}, offered no more).</li>
+ * <li>ANIMAL: herds by entity type (position, count, time); the confidence halves every {@link #HALF_LIFE_MS} of game
  *     time; a visit that finds none sets it to {@link #MISS_CONF} (kept: herds drift), one that finds some resets it.</li>
  * </ul>
  * One seeing rule for all kinds: within {@link Seen#RANGE} (animals {@link #ANIMAL_RANGE}), in the view cone
@@ -169,7 +171,7 @@ public final class Sightings {
     /** A confirmed tree at its lowest log: a new record (returned) unless one lies within {@link #TREE_MERGE} (null). */
     public synchronized Rec sawTree(String dim, int x, int y, int z, int logs, long now) {
         List<Rec> l = trees.computeIfAbsent(dim, k -> new ArrayList<>());
-        for (Rec r : l) if (d2(r, x, y, z) <= (long) TREE_MERGE * TREE_MERGE) return null;
+        for (Rec r : l) if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) TREE_MERGE * TREE_MERGE) return null;
         Rec r = new Rec(Kind.TREE, "tree", x, y, z, now, Math.max(1, logs), 1, 0);
         l.add(r);
         while (l.size() > MAX_TREES) l.remove(0);
