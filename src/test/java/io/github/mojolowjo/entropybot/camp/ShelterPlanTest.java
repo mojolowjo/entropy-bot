@@ -105,4 +105,12 @@ class ShelterPlanTest {
         assertArrayEquals(new long[]{6000, 1}, ShelterPlan.args("5m keep"));
         assertNull(ShelterPlan.args("forever"));
     }
-}
+
+    @Test
+    void dayTimeJumpIsDetected() {
+        assertFalse(ShelterPlan.jumped(-1, 1000));
+        assertFalse(ShelterPlan.jumped(11000, 11001));
+        assertTrue(ShelterPlan.jumped(11500, 1000), "time set day at dusk goes back");
+        assertTrue(ShelterPlan.jumped(11500, 25000), "a skipped night");
+        assertFalse(ShelterPlan.jumped(23999, 24000), "a natural day change");
+    }}

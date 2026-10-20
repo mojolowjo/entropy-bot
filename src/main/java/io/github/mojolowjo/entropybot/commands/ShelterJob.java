@@ -41,6 +41,7 @@ public final class ShelterJob {
         int[] feet;
         String block;
         long timer = -1, keep, startedAt, stageAt, lastAct;
+        long lastTime = -1;
         boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
@@ -181,7 +182,13 @@ public final class ShelterJob {
         ClientLevel lv = Minecraft.getInstance().level;
         long now = s.now();
         boolean night = SleepJob.night(lv);
+        long dt = lv.getDayTime();
         if (night) ps.sawNight = true;
+        else if (ShelterPlan.jumped(ps.lastTime, dt) && !ps.sawNight) {      // day-check: a command (or sleeping) made it day
+            LOG.info("[entropybot] shelter: the day time jumped {} -> {}: it is day", ps.lastTime, dt);
+            ps.sawNight = true;
+        }
+        ps.lastTime = dt;
         if (now % 20 == 0) ps.leases.beat();
         try {
             boolean done = switch (ps.stage) {

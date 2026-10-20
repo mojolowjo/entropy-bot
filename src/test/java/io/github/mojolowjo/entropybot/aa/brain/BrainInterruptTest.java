@@ -145,4 +145,26 @@ class BrainInterruptTest {
         assertEquals(0, br.falseInterrupts);
         assertEquals(1, port.started.size());
     }
-}
+
+    @Test
+    void aRunningDesireWhoseReasonIsGoneEnds() {
+        Brain br = new Brain("brain", "t", d(0, "shelter", Desire.Kind.UPKEEP), d(1, "b", Desire.Kind.PROGRESS));
+        s[0] = 30;
+        s[1] = 0;
+        br.tick(bb);
+        assertEquals("do shelter", last());
+        s[0] = 0;
+        clock.advance(250);
+        br.tick(bb);
+        assertTrue(port.log.stream().anyMatch(l -> l.startsWith("brain: ends shelter")), port.log.toString());
+    }
+
+    @Test
+    void reasonGonePureLogic() {
+        Desire up = d(0, "x", Desire.Kind.UPKEEP);
+        assertTrue(Brain.reasonGone(new Brain.Scored(up, 0, 0, "", null)));
+        assertTrue(Brain.reasonGone(new Brain.Scored(up, 0, 0, "", "not wanted")));
+        assertFalse(Brain.reasonGone(new Brain.Scored(up, 5, 5, "", null)));
+        assertFalse(Brain.reasonGone(new Brain.Scored(up, 0, 0, "", "cooling 5s")));
+        assertFalse(Brain.reasonGone(new Brain.Scored(d(1, "o", Desire.Kind.OWNER), 0, 0, "", null)));
+    }}

@@ -294,12 +294,26 @@ public final class Brain extends Node {
             replanWhileRunning(bb, now);
             Status s = cur.node.tick(bb);
             if (bb.task() != null) taskSeen = true;
+            Scored mine = lastScored.size() > running ? lastScored.get(running) : null;
+            if (s == Status.RUNNING && mine != null && reasonGone(mine)) {          // day-check: the reason is gone; the commitment margin must not keep it alive
+                String why = "its reason is gone: " + cur.id + " wanted " + Math.round(mine.score()) + " (" + mine.parts() + ")";
+                bb.port.log("brain: ends " + cur.id + ": " + why);
+                cur.node.halt(why);
+                running = -1;
+                return choose(bb, now, cur);
+            }
             if (s == Status.RUNNING) return watchdog(bb, cur, now);
             ended(bb, cur, s, now);
             running = -1;
             return s == Status.FAILURE ? fail(cur.node.reason()) : s;
         }
         return choose(bb, now, null);
+    }
+
+    /** day-check: a running desire (not the owner's) whose desire fell to 0 or below, or is no longer wanted, ends. */
+    static boolean reasonGone(Scored c) {
+        if (c.d().kind == Desire.Kind.OWNER) return false;
+        return c.score() <= 0 && (c.skip() == null || c.skip().startsWith("not wanted"));
     }
 
     private double curScore;

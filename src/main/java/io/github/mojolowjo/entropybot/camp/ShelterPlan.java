@@ -186,6 +186,11 @@ public final class ShelterPlan {
      * began; timerUp: a "shelter 5m" ran out (timed: a timer was given); leave: "shelter leave"; done: the current stage's
      * work is done (built, opened, outside, closed); keep: "shelter keep" (close the hole behind it).
      */
+    /** day-check: the day time jumped (a command or a skipped night): back, or on to a later day number. */
+    public static boolean jumped(long last, long now) {
+        return last >= 0 && (now < last || now / 24000 > last / 24000 && now - last > 1);
+    }
+
     public static Stage next(Stage s, boolean night, boolean sawNight, boolean timed, boolean timerUp, boolean leave, boolean done, boolean keep) {
         return switch (s) {
             case BUILD -> done ? Stage.WAIT : Stage.BUILD;
