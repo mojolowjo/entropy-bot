@@ -948,7 +948,11 @@ public final class AaRuntime implements JobPort {
                 LOG.info("[entropybot] aa: the brain was on next to aa - brain off");
             }
             if (p.isDeadOrDying()) {
-                if (!runDead) { runDead = true; runDeaths++; }
+                if (!runDead) {
+                    runDead = true;
+                    runDeaths++;
+                    io.github.mojolowjo.entropybot.aa.brain.Kit.died(bb, bb.clock.now());     // aa-kit: bb.in still holds the last live pos and bag
+                }
                 releaseSwim(mc);
                 if (bb.task() != null) {
                     tree.root.halt("died");

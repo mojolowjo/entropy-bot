@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.brain.Brain;
 import io.github.mojolowjo.entropybot.aa.brain.Curves;
 import io.github.mojolowjo.entropybot.aa.brain.Desire;
+import io.github.mojolowjo.entropybot.aa.brain.Kit;
 import io.github.mojolowjo.entropybot.aa.brain.Night;
 import io.github.mojolowjo.entropybot.aa.brain.NightWork;
 import io.github.mojolowjo.entropybot.aa.brain.Personality;
@@ -197,7 +198,30 @@ public final class AaDesires {
     /** The table/furnace rung's value: the table's while no table, else the furnace's (Worth.station). */
     static double stationValue(Blackboard b) {
         boolean table = b.in.tableKnown || b.in.tableInBag;
-        return table ? Worth.furnace(tree(b), have(b)) : Worth.table(tree(b), have(b));
+        if (!table) return Worth.table(tree(b), have(b));
+        if (!(b.in.furnaceKnown || b.in.furnaceInBag)) return Worth.furnace(tree(b), have(b));
+        // aa-kit camp: the chest is worth the stash it makes possible (the loot x the night's danger), at least CHEST_MIN
+        double v = Math.max(CHEST_MIN, Math.min(70, Kit.lootWorth(b.in.bag) * bedDanger(b)));
+        io.github.mojolowjo.entropybot.aa.brain.Costs.note(b, "camp", "chest: loot " + Math.round(Kit.lootWorth(b.in.bag)) + " x danger "
+                + Math.round(bedDanger(b) * 100) / 100.0 + " (at least " + Math.round(CHEST_MIN) + ") -> " + Math.round(v));
+        return v;
+    }
+
+    static final double CHEST_MIN = 35;
+
+    /** aa-kit camp: a chest stands at the base (scanned), or the camp has none yet. */
+    static boolean campChest(Blackboard b) { return b.in.baseChests; }
+
+    /**
+     * aa-kit: the camp's chest chain: a chest (crafted unless in the bag; short of planks the craft fails and the rung cools) placed next to the base (or, no base yet,
+     * next to me, which becomes the base), then {@code scan base} so the deposit verb knows it.
+     */
+    public static String chestChain(int[] base, int[] me, boolean chestInBag) {
+        // not "goal chest": a chain starting with "goal " goes whole to the planner (AaRuntime.resolveState)
+        String get = chestInBag ? "" : "craft chest 1 then ";
+        if (base != null) return get + "go base then place chest " + (base[0] + 1) + " " + base[1] + " " + base[2] + " then scan base";
+        if (me == null) return null;
+        return get + "place chest " + (me[0] + 1) + " " + me[1] + " " + me[2] + " then place base " + me[0] + " " + me[1] + " " + me[2] + " then scan base";
     }
 
     /** What a bed saves tonight: the night's danger at the current facts (any time of day; Peaceful 0). */
@@ -687,6 +711,72 @@ public final class AaDesires {
                 + (p.errors.isEmpty() ? "" : " | !! personality: " + String.join("; ", p.errors) + " (defaults used)");
     }
 
+    // ---- aa-kit: recover the kit after a death, stash the loot before dusk and far trips ----
+
+    public static final String RECOVER_ID = "recover.kit", STASH_ID = "stash";
+
+    static double recoverScore(Blackboard bb) {
+        Kit.Death d = Kit.of(bb);
+        if (d == null) return -1;
+        if (d.dim() != null && !d.dim().equals(bb.in.dimension)) return -1;
+        double walk = Kit.walkS(bb, d), miss = Kit.missing(d.bag(), bb.in.bag);
+        double p = Kit.pThere(bb.clock.now() - d.at(), walk);
+        double v = Kit.recoverValue(miss, p);
+        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "kit", "missing " + Math.round(miss) + " x P(there) " + Math.round(p * 100) / 100.0
+                + " (" + (bb.clock.now() - d.at()) / 1000 + "s of 300 + walk " + Math.round(walk) + "s) / cost " + Math.round(Kit.recoverCost(walk, Brain.danger(bb))) + "s -> " + Math.round(v));
+        return v;
+    }
+
+    /** recover.kit (PROGRESS): back to the death spot while the drops last (Kit). */
+    public static Desire recover() {
+        RunJob job = new RunJob(RECOVER_ID + ".job", TaskKind.EXPLORE, bb -> {
+            Kit.Death d = Kit.of(bb);
+            return d == null ? null : new JobPort.TaskSpec(TaskKind.EXPLORE, Kit.recoverChain(d), "recover kit", 1, Kit.DESPAWN_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+        });
+        return new Desire(RECOVER_ID, Desire.Kind.PROGRESS, AaTree.idleCd(RECOVER_ID + ".cd", job), AaDesires::recoverScore)
+                .liveCost(bb -> {
+                    Kit.Death d = Kit.of(bb);
+                    return d == null ? null : Kit.recoverCost(Kit.walkS(bb, d), Brain.danger(bb));
+                })
+                .site(bb -> { Kit.Death d = Kit.of(bb); return d == null ? null : d.site(); })
+                .met(bb -> recoverScore(bb) < 0)
+                .cools(Cooldown.NO_RUN_MS, Kit.DESPAWN_MS).lastTry();     // review: one trip; done = rest out the clock
+    }
+
+    /** A far trip is next: the iron rung is open and its chosen option's site is FAR_TRIP+ from the base. */
+    static boolean farTrip(Rung iron, Blackboard bb) {
+        if (iron == null || bb.in.basePos == null || !iron.unmet(bb) || iron.picker() == null) return false;
+        io.github.mojolowjo.entropybot.aa.brain.Site s = iron.picker().lastSite(), base = io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos);
+        return s != null && s.sameDim(base) && s.dist(base) >= Kit.FAR_TRIP;
+    }
+
+    /** The stash's danger: the night's at the current facts any time of day (as the bed's); Peaceful 0. */
+    static double stashScore(Blackboard bb, Rung iron) {
+        double loot = Kit.lootWorth(bb.in.bag);
+        if (loot < Kit.MIN_STASH) return -1;
+        double danger = bedDanger(bb), soon = Kit.soon(bb.in.dayTime, bb.in.night, farTrip(iron, bb));
+        double v = Kit.stashValue(loot, danger, soon);
+        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "stash", Kit.terms(loot, danger, soon, v));
+        return v;
+    }
+
+    /** stash (UPKEEP, never urgent): the loot into the base chest; no chest: the camp rung's value. */
+    public static Desire stash(Rung iron) {
+        Node node = AaTree.idleCd(STASH_ID + ".cd", RunJob.of(STASH_ID + ".job", TaskKind.DEPOSIT, "deposit", "stash"));
+        return new Desire(STASH_ID, Desire.Kind.UPKEEP, node, bb -> stashScore(bb, iron))
+                .liveCost(bb -> {
+                    int[] p = bb.in.pos;
+                    io.github.mojolowjo.entropybot.aa.brain.Site base = io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos);
+                    if (p == null || base == null) return null;
+                    double t = io.github.mojolowjo.entropybot.aa.brain.Site.at(p[0], p[1], p[2]).travelS(base);
+                    return Double.isInfinite(t) ? null : t;
+                })
+                .site(bb -> io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos))
+                .infeasible(bb -> bb.in.baseChests ? null : "no base chest (the camp rung places one)")
+                .met(bb -> Kit.lootWorth(bb.in.bag) < Kit.MIN_STASH)
+                .cools(Cooldown.NO_RUN_MS, 5 * 60_000L).lastTry();
+    }
+
     /** The brain over the rungs, the idle options and the ideas. */
     public static Brain build(List<Rung> rungs, List<Map.Entry<TaskKind, Node>> idle, Scorer scorer) {
         List<Desire> ds = new ArrayList<>();
@@ -695,6 +785,10 @@ public final class AaDesires {
         ds.addAll(night());
         ds.addAll(wants());
         ds.add(help());
+        Rung iron = null;
+        for (Rung r : rungs) if (r.id.equals("needs.iron")) iron = r;
+        ds.add(recover());
+        ds.add(stash(iron));
         if (!idle.isEmpty()) ds.add(idleSet(idle, scorer));
         Brain brain = new Brain("brain", "the scored desires", ds.toArray(new Desire[0]));
         // AA_ROUND2 3: the rung pickers' option memories are views over the brain's one failure record

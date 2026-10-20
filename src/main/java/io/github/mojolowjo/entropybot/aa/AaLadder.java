@@ -132,8 +132,10 @@ public final class AaLadder {
         // a table or furnace in the bag counts (live 2026-10-18: "goal table" with one in the bag is "nothing to do",
         // which the planner hook reports as no plan; the near-block fact is false as soon as the bot walks away)
         Rung tableFurnace = new Rung("needs.tableFurnace", TaskKind.TABLE_FURNACE,
-                bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag),
-                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : "goal furnace");
+                // aa-kit: the "camp" rung: table + furnace + a chest at the base (the stash needs one)
+                bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !AaDesires.campChest(bb),
+                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
+                        : AaDesires.chestChain(bb.in.basePos, bb.in.pos, bb.in.bag != null && bb.in.bag.getOrDefault("chest", 0) > 0));
         // a spare table in the bag at all times (owner 2026-10-18): crafts away from the camp never walk back to it
         Rung spare = new Rung("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> spareTableWanted(bb.in.tableInBag, bb.in.planks),
