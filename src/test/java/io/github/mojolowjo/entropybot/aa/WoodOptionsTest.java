@@ -18,8 +18,8 @@ class WoodOptionsTest {
         Options.Choice c = WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, null)), 0, true), m, 0);
         assertEquals(2, c.ranked().size());
         assertTrue(c.best().id().startsWith("extend wood area"), c.line());
-        assertEquals("area 30 -20 70 20 trees1 work neutral then cut 4", c.best().command());
-        assertTrue(c.ranked().get(1).command().startsWith("area 42 -8 58 8 treeat work neutral then cut 4"));
+        assertEquals("area 30 -20 70 20 trees1 neutral then cut 4", c.best().command());
+        assertTrue(c.ranked().get(1).command().startsWith("area 42 -8 58 8 treeat neutral then cut 4"));
         assertTrue(c.ranked().get(1).total() > c.best().total(), "chop at counts the way back");
         assertNotNull(c.best().site());
     }
@@ -105,3 +105,4 @@ class WoodOptionsTest {
         return new IronOptions.Facts(List.of(), 60, false, 0, true, -1, false, "no mine marked (place mine)", -1, false, false, 0, null, null, null, rawIron);
     }
 }
+

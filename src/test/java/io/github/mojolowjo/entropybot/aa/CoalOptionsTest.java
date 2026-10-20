@@ -86,4 +86,14 @@ class CoalOptionsTest {
         assertEquals(1, CoalOptions.coalForTorches(15, 16));
         assertEquals(4, CoalOptions.coalForTorches(0, 16));
     }
+
+    @Test
+    void charcoalWithMissingLogsAndNoTreeSeenIsDropped() {
+        CoalFacts f = new CoalFacts(32, 0, List.of(), List.of(), List.of(), 4, 0, true, -1, false, 0);
+        Options.Choice c = CoalOptions.choose(f, new Options.OptionMemory(), 0);
+        assertNull(c.best(), c.line());
+        assertTrue(c.line().contains("no tree seen"), c.line());
+        CoalFacts enough = new CoalFacts(8, 0, List.of(), List.of(), List.of(), 20, 0, true, -1, false, 0);
+        assertEquals("charcoal", CoalOptions.choose(enough, new Options.OptionMemory(), 0).best().id());
+    }
 }
