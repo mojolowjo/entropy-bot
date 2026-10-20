@@ -1196,6 +1196,9 @@ public final class AaRuntime implements JobPort {
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.underDepth(mc.level, me[0], me[1], me[2]);
         in.pos = me;
+        // AA_STEP3 A1: the world spawn for the death cost's walk back (client Level.getSharedSpawnPos, the level data)
+        var sp = mc.level.getSharedSpawnPos();
+        in.spawnPos = sp == null ? null : new int[]{sp.getX(), sp.getY(), sp.getZ()};
         fillChestCell(in, mc, me);
         areaFacts(in, me);                                      // AREAS: the labelled places as facts (the same tick as in.pos)
         in.ownerOnline = s.ownerOnline;

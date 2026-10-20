@@ -61,6 +61,16 @@ public final class GuardSelector extends Node {
         return s == Status.FAILURE ? fail(branches.get(pick).child.reason()) : s;
     }
 
+    /** AA_STEP3 A5: a lower child is paused now. */
+    public boolean hasPaused() { return paused >= 0 && paused != active; }
+
+    /** AA_STEP3 A5: ends the paused child ("paused too long: ..."); the next time its guard passes it starts fresh. */
+    public void endPaused(String why) {
+        if (paused < 0) return;
+        branches.get(paused).child.halt(why);
+        paused = -1;
+    }
+
     /** The branch whose child was ticked last (-1 none). */
     public int active() { return active; }
 

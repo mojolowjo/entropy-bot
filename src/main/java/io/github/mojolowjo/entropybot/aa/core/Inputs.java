@@ -54,6 +54,8 @@ public final class Inputs {
     public int[] pos;
     /** AA_ROUND3 2: the camp and the base (the known places for the sequencer's sites), null unknown. */
     public int[] campPos, basePos;
+    /** AA_STEP3 A1: the world spawn (where a death respawns the bot without a bed), null unknown. Not in the vector. */
+    public int[] spawnPos;
     /**
      * aa-r1fix: the camp chest's cell (ChestSpot: free, inside my areas, next to the table, cheapest not refused), null none
      * found; why it was chosen; the cells the game refused ("x y z"). Not in the vector.

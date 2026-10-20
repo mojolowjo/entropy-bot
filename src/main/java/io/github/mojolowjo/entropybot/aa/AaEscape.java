@@ -92,6 +92,22 @@ public final class AaEscape {
         return String.join(" then ", steps.subList(n - 1, steps.size()));
     }
 
+    /**
+     * AA_STEP3 A3 (step2-watch: "no pillar (0 blocks)" with 16 oak planks in the bag): the danger moves place their own
+     * blocks (useItemOn, not Baritone's throwaway list), so planks count with the throwaway blocks.
+     */
+    public static boolean pillarBlock(String id) {
+        String k = id == null ? "" : id.replaceFirst("^minecraft:", "");
+        return THROWAWAY.contains(k) || k.endsWith("_planks") || k.equals("planks");
+    }
+
+    /** The bag's blocks a danger pillar can place ({@link #pillarBlock}). */
+    public static int pillarBlocks(Map<String, Integer> bag) {
+        int n = 0;
+        if (bag != null) for (var e : bag.entrySet()) if (pillarBlock(e.getKey())) n += Math.max(0, e.getValue() == null ? 0 : e.getValue());
+        return n;
+    }
+
     public static int throwaway(Map<String, Integer> bag) {
         int n = 0;
         for (String k : THROWAWAY) n += bag.getOrDefault(k, 0);

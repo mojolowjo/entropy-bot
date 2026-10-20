@@ -30,6 +30,20 @@ public final class AaTree {
     /** S1: the spot was lit this night. */
     public static final String LIT_FACT = "litTonight";
     private long airSince = -1;
+    /** AA_STEP3 A5: the paused time per guard tick over the last minute ({at, ms}), its sum, and the yield after a "paused too long". */
+    private final java.util.ArrayDeque<long[]> pauseLog = new java.util.ArrayDeque<>();
+    private long pausedSum, lastGuardAt = -1;
+    private boolean airYield;
+
+    private void pausedMs(long now, boolean paused) {
+        long dt = lastGuardAt < 0 ? 0 : Math.max(0, Math.min(5_000, now - lastGuardAt));
+        lastGuardAt = now;
+        if (paused && dt > 0) {
+            pauseLog.addLast(new long[]{now, dt});
+            pausedSum += dt;
+        }
+        while (!pauseLog.isEmpty() && now - pauseLog.peekFirst()[0] > 60_000) pausedSum -= pauseLog.pollFirst()[1];
+    }
 
     public final GuardSelector root;
     public final MemoryFallback slot;
@@ -68,8 +82,28 @@ public final class AaTree {
             // and real drowning still comes back through health <= 8
             long now0 = bb.clock.now();
             boolean airShort = bb.in.air < 300;
-            if (!airShort) t.airSince = -1;
-            else if (t.airSince < 0) t.airSince = now0;
+            if (!airShort) {
+                t.airSince = -1;
+                t.airYield = false;
+            } else if (t.airSince < 0) t.airSince = now0;
+            // AA_STEP3 A5 (step2-watch: "danger.job(wait 60) PAUSED 1656s by danger | danger: drowning, health 4", the air
+            // reflex every 8 s, AA never re-priced): a job paused by a reflex more than Tuning pausedRepriceS within a
+            // minute ends ("paused too long: <reflex>"); the air guard then yields to the brain until the air is full, so
+            // it picks again with the fresh facts, and the spot is a fact (WATER_HERE_FACT: a wait here sinks)
+            t.pausedMs(now0, t.root != null && t.root.hasPaused());
+            double limitMs = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pausedRepriceS") * 1000;
+            if (airShort && !t.airYield && t.root != null && t.root.hasPaused() && t.pausedSum > limitMs) {
+                String why = "paused too long: " + t.dangerWhy + " (" + t.pausedSum / 1000 + " s paused in the last 60 s, over pausedRepriceS "
+                        + Math.round(limitMs / 1000) + "): the job ends, the brain picks again";
+                bb.port.log(why);
+                bb.tracer.event(why);
+                t.root.endPaused(why);
+                if (bb.in.pos != null) bb.fact(AaDesires.WATER_HERE_FACT, new long[]{bb.in.pos[0], bb.in.pos[1], bb.in.pos[2], now0});
+                t.airYield = true;
+                t.pauseLog.clear();
+                t.pausedSum = 0;
+            }
+            if (t.airYield) airShort = false;      // the air reflex still moves the bot; AA's slot is no longer held for it
             boolean airCounts = airShort && now0 - t.airSince < AIR_HOLD_MS;
             // AA_CLEANUP 4: low health alone is no reflex any more (no retreat rule): the danger desire and the hide price it;
             // drowning at low health still is (air short and health <= 8)

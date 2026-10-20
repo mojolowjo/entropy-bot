@@ -31,8 +31,8 @@ public final class Tuning {
         def("swordValue", Costs.SWORD, "aa-night2 P0 2", "a weapon's worth once a zombie was seen, added to the tools need");
         def("chestMin", 35, "aa-kit camp", "the camp chest's least worth");
         def("hidePerHp", 7, "aa-night2 P0 1", "the hide's score per missing health point x the night danger");
-        def("danger.hpS", 6, "AA_CLEANUP 4", "seconds one health point is worth at full health (x max/health below it)");
-        def("danger.deathS", 300, "AA_CLEANUP 4", "seconds a likely death costs (the kit, the walk back, the night lost)");
+        def("danger.hpS", 6, "AA_CLEANUP 4", "seconds one health point is worth at full health (regen + food), the cost_of_hp curve's low end");
+        def("danger.deathS", 300, "AA_CLEANUP 4", "seconds a death costs when the facts (kit, walk back, respawn, night) are not at hand (the foes-only pricing)");
         def("danger.horizonS", 10, "AA_CLEANUP 4", "the seconds of staying put the danger desire looks at");
         def("danger.fleeBack", 0.6, "AA_CLEANUP 4", "the share of the staying damage a flee still takes later (they follow)");
         def("danger.minS", 30, "AA_CLEANUP 4", "seconds a way must save over staying before the danger desire wants it");
@@ -47,6 +47,9 @@ public final class Tuning {
         def("danger.bedS", 20, "AA_STEP2 1", "seconds to reach a known bed and lie down (no bed distance in the facts)");
         def("danger.nightHpS", 0.05, "AA_STEP2 1", "health per second the open night costs at night danger 1 (fresh spawns, while a way is set up)");
         def("danger.openS", 60, "AA_STEP2 1", "seconds a pillar top stays open to arrows and phantoms at night");
+        // AA_STEP3 A (TIME_MODEL loss terms): only the curve's shape is a hand number; its ends are the facts (hpS, the death cost)
+        def("danger.hpCurve", 3, "AA_STEP3 A1", "the cost_of_hp curve's power: hpS at full health rising to the death cost at 1 hp");
+        def("pausedRepriceS", 10, "AA_STEP3 A5", "seconds a job may sit paused by a reflex within a minute before it ends and the brain picks again");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

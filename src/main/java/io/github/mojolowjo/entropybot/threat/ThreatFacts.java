@@ -37,14 +37,27 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
      * wall to dig into ({@link CornerEscape}). The shell's blocks come from the bag (AaDesires.shellBlocks).
      */
     public record Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
-                       boolean burrow, boolean niche) {
+                       boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist) {
         public static final Ways NONE = new Ways(0, -1, -1, false, 0, 0, true);
+
+        /**
+         * AA_STEP2 1 shape (no water facts). AA_STEP3 A3/A4 add: inWater (the feet in water), waterColumn (water cells from
+         * the floor under me up to the surface, 0 = not in water or no floor within reach), headDepth (water cells over the
+         * head: the swim up to air), shoreCell / shoreDist (the nearest dry standing cell within {@link #SHORE_REACH}, null / -1 none).
+         */
+        public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                    boolean burrow, boolean niche) {
+            this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, false, 0, 0, null, -1);
+        }
 
         /** AA_STEP2 1: the ways before the night ways were split (digIn stands for both the floor and the wall). */
         public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround) {
             this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, digIn, digIn);
         }
     }
+
+    /** AA_STEP3 A4: how far the shore scan looks (blocks, horizontally). */
+    public static final int SHORE_REACH = 32;
 
     public static final ThreatFacts CALM = new ThreatFacts(new Me(20, 20, 0, 1, 20), List.of(), Ways.NONE);
 

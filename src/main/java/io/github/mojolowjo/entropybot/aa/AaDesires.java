@@ -625,8 +625,42 @@ public final class AaDesires {
         double v = Math.max(night, hide);
         if (v < 0) return DangerOptions.Need.NONE;
         String why = (hide > night ? "hide and heal " + Math.round(hide) : "night " + Math.round(night)) + " (danger " + Math.round(danger * 100) / 100.0 + ")";
-        return new DangerOptions.Need(v, why, Night.hostile(bb) ? danger : 0, bb.in.sheltered || sealedHere(bb), shellBlocks(bb.in.bag),
-                bb.in.bedKnown || bb.in.bedInBag, bb.in.baseKnown);
+        double nd = Night.hostile(bb) ? danger : 0;
+        double[] dc = deathCost(bb.in.bag, bb.in.pos, bb.in.spawnPos, nd);
+        String dw = "kit " + Math.round(dc[1]) + " + walk back " + (bb.in.spawnPos == null ? "0 (spawn unknown)" : String.valueOf(Math.round(dc[2])))
+                + " + respawn " + Math.round(RESPAWN_S) + " + night " + Math.round(dc[3]);
+        return new DangerOptions.Need(v, why, nd, bb.in.sheltered || sealedHere(bb), shellBlocks(bb.in.bag),
+                bb.in.bedKnown || bb.in.bedInBag, bb.in.baseKnown, AaEscape.pillarBlocks(bb.in.bag), waterHere(bb), bb.in.air, dc[0], dw);
+    }
+
+    /** AA_STEP3 A1: seconds the death screen and the respawn take (the respawn button, the chunks loading). */
+    static final double RESPAWN_S = 5;
+
+    /**
+     * AA_STEP3 A1 (TIME_MODEL death cost): {total, kit, walk back, night}: the kit's worth (Kit.worth), the walk from the
+     * respawn back here (Site travel; 0 when the spawn is unknown or near), the respawn, and the night's danger at the
+     * spot (Kit.DIED_S x (1 + danger), as the recovery prices it). Pure.
+     */
+    static double[] deathCost(java.util.Map<String, Integer> bag, int[] pos, int[] spawn, double danger) {
+        double kit = io.github.mojolowjo.entropybot.aa.brain.Kit.worth(bag);
+        double walk = 0;
+        if (pos != null && spawn != null) {
+            double w = io.github.mojolowjo.entropybot.aa.brain.Site.of(spawn).travelS(io.github.mojolowjo.entropybot.aa.brain.Site.of(pos));
+            walk = Double.isInfinite(w) ? 0 : w;
+        }
+        double night = io.github.mojolowjo.entropybot.aa.brain.Kit.DIED_S * (1 + Math.max(0, danger));
+        return new double[]{kit + walk + RESPAWN_S + night, kit, walk, night};
+    }
+
+    /** AA_STEP3 A5: blackboard fact (long[]{x, y, z, at ms}): where and when the air reflex paused a job too long (this spot is water). */
+    public static final String WATER_HERE_FACT = "aa.waterHere";
+
+    /** The air reflex paused a job here within the last minute (within 4 blocks). */
+    static boolean waterHere(Blackboard bb) {
+        if (!(bb.fact(WATER_HERE_FACT) instanceof long[] a) || bb.in.pos == null) return false;
+        int[] p = bb.in.pos;
+        if (bb.clock.now() - a[3] > 60_000) return false;
+        return Math.abs(p[0] - a[0]) <= 4 && Math.abs(p[1] - a[1]) <= 4 && Math.abs(p[2] - a[2]) <= 4;
     }
 
     /** The priced ways now (null: no facts supplier); the held ways (Failures, this desire's options) are out. */
@@ -696,7 +730,18 @@ public final class AaDesires {
     /** AA_STEP2 1: the danger job's node: a failed run holds its way in Failures ("danger/box"), logged; the rest stay open. */
     static Node wayHolds(RunJob job) {
         return new Node(job.id + ".ways", "the danger job; a failure holds its way") {
+            private long repricedAt = -1;
+
             @Override protected Status run(Blackboard bb) {
+                String re = reprice(bb, job, repricedAt);
+                if (re != null) {
+                    repricedAt = bb.clock.now();
+                    bb.port.log("danger: " + re);
+                    bb.tracer.event("danger " + re);
+                    job.halt(re);
+                    bb.fact(WAY_FACT, null);
+                    return Status.RUNNING;             // the next tick starts the cheaper way
+                }
                 boolean ran = job.running();           // review 3: a start refused ("busy: ...") never ran: no hold
                 Status s = job.tick(bb);
                 if (s == Status.FAILURE && bb.fact(WAY_FACT) instanceof DangerOptions.Way w) {
@@ -727,6 +772,32 @@ public final class AaDesires {
 
             @Override public List<Node> children() { return List.of(job); }
         };
+    }
+
+    /** AA_STEP3 A6: how often a running danger way is priced again (the Replan cadence). */
+    static final long REPRICE_MS = 5_000;
+
+    /**
+     * AA_STEP3 A6 (step2-watch: health 4 while drowning changed nothing): every {@link #REPRICE_MS} the running way is
+     * priced again with the fresh facts (health, water, air); when another way is cheaper by more than {@code danger.minS}
+     * (or the running one is no longer possible) the job ends with the numbers and the cheaper way starts. Not while a
+     * danger move runs (it ends on its own clock) or the job is paused. Null = keep it.
+     */
+    static String reprice(Blackboard bb, RunJob job, long lastAt) {
+        if (!job.running() || job.paused() || Boolean.TRUE.equals(bb.fact(MOVE_FACT))) return null;
+        if (!(bb.fact(WAY_FACT) instanceof DangerOptions.Way w)) return null;
+        long now = bb.clock.now();
+        if (lastAt >= 0 && now - lastAt < REPRICE_MS) return null;
+        if (job.ageS(now) * 1000 < REPRICE_MS) return null;
+        DangerOptions.Choice c = dangerChoice(bb);
+        if (c == null || c.best() == null || c.score() < 0 || c.best().way() == w || c.best().way() == DangerOptions.Way.STAY) return null;
+        DangerOptions.Priced mine = null;
+        for (DangerOptions.Priced p : c.all()) if (p.way() == w) mine = p;
+        double margin = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.minS");
+        if (mine != null && mine.possible() && mine.costS() - c.best().costS() <= margin) return null;
+        return "re-priced: " + c.best().way().key() + " " + Math.round(c.best().costS()) + " s vs " + w.key() + " "
+                + (mine == null || !mine.possible() ? "- (" + (mine == null ? "not priced now" : mine.why()) + ")" : Math.round(mine.costS()) + " s")
+                + " (over danger.minS " + Math.round(margin) + "): " + w.key() + " ends";
     }
 
     /** 0.38.b9: blackboard fact (Boolean), a danger move (flee, cover, pillar, burrow) runs now (the adapter's). */

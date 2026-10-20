@@ -56,7 +56,7 @@ public final class DangerMoves {
     private int[] goalXZ;
     // pillar
     private int pillarCell, pillarBase, pillarTop, pillarX, pillarZ;
-    private boolean pillarUp;
+    private boolean pillarUp, pillarWater;
     // niche
     private int digStage = -1;
     private Direction digDir;
@@ -131,9 +131,11 @@ public final class DangerMoves {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) return "error: not in a world";
-        if (!p.onGround() || p.isInWater() || p.isInLava()) return "error: not standing on ground";
-        int head = headRoom(mc, p);
+        if (p.isInLava()) return "error: in lava";
         int[] tw = throwaway(p);
+        if (p.isInWater()) return pillarOutOfWater(mc, p, tw);
+        if (!p.onGround()) return "error: not standing on ground";
+        int head = headRoom(mc, p);
         int up = Math.min(CornerEscape.UP, Math.min(head, tw[0]));
         if (up < CornerEscape.MIN_UP) return "error: no pillar here (" + tw[0] + " blocks, head room " + head + ")";
         if (!Hotbar.toHand(mc, p, tw[1])) return "error: could not take the blocks in hand";
@@ -146,7 +148,88 @@ public final class DangerMoves {
         pillarX = feet.getX();
         pillarZ = feet.getZ();
         pillarUp = false;
+        pillarWater = false;
         return "ok: pillaring " + up + " up";
+    }
+
+    /**
+     * AA_STEP3 A3: pillar out of water. The column under me is filled from the floor up to the water surface (one block a
+     * cell, placed under the feet while swimming up: the game allows a block into a water cell against the one below),
+     * so the bot ends standing dry on top. Needs a floor within {@link #WATER_FLOOR_SCAN} and a block per cell.
+     */
+    private String pillarOutOfWater(Minecraft mc, LocalPlayer p, int[] tw) {
+        int[] wf = water(mc, p);
+        if (wf[0] <= 0) return "error: in water with no floor within " + WATER_FLOOR_SCAN;
+        if (tw[0] < wf[0]) return "error: pillar out of water needs " + wf[0] + " blocks, " + tw[0] + " in the bag";
+        if (!Hotbar.toHand(mc, p, tw[1])) return "error: could not take the blocks in hand";
+        begin(Move.PILLAR, "pillaring out of water " + wf[0] + " up");
+        engine.hold();
+        stopMoving(mc);
+        BlockPos feet = p.blockPosition();
+        pillarCell = pillarBase = wf[2] + 1;
+        pillarTop = wf[3];
+        pillarX = feet.getX();
+        pillarZ = feet.getZ();
+        pillarUp = false;
+        pillarWater = true;
+        return "ok: pillaring out of water " + wf[0] + " up (floor " + wf[2] + ", surface " + wf[3] + ")";
+    }
+
+    /** How far down the water facts look for a floor. */
+    static final int WATER_FLOOR_SCAN = 24;
+
+    /**
+     * {column, headDepth, floorY, surfaceY}: water cells from the floor (the first solid block under the feet, within
+     * {@link #WATER_FLOOR_SCAN}) up to the surface (the first cell over the feet without water); column 0 = not in water
+     * or no floor in reach. headDepth = water cells over the head cell.
+     */
+    static int[] water(Minecraft mc, LocalPlayer p) {
+        BlockPos feet = p.blockPosition();
+        if (!wet(mc, feet)) return new int[]{0, 0, 0, 0};
+        int up = feet.getY();
+        while (up - feet.getY() < 64 && wet(mc, new BlockPos(feet.getX(), up, feet.getZ()))) up++;
+        int floor = feet.getY() - 1;
+        while (feet.getY() - floor <= WATER_FLOOR_SCAN && !solid(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) {
+            if (!wet(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) break;      // air under water: no floor to build on
+            floor--;
+        }
+        boolean found = solid(mc, new BlockPos(feet.getX(), floor, feet.getZ()));
+        int column = found ? up - floor - 1 : 0;
+        return new int[]{column, Math.max(0, up - feet.getY() - 2), floor, up};
+    }
+
+    private static boolean wet(Minecraft mc, BlockPos q) {
+        return mc.level.getFluidState(q).is(net.minecraft.tags.FluidTags.WATER);
+    }
+
+    /**
+     * AA_STEP3 A4: the nearest dry standing cell (solid under, feet and head free of blocks and fluid) within
+     * {@link ThreatFacts#SHORE_REACH} across, near the water surface; ring by ring, the first ring with one wins
+     * (nearest in it). Null none.
+     */
+    static int[] shore(Minecraft mc, LocalPlayer p, int surfaceY) {
+        BlockPos feet = p.blockPosition();
+        int[] best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int r = 1; r <= ThreatFacts.SHORE_REACH && best == null; r++)
+            for (int dx = -r; dx <= r; dx++)
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
+                    int x = feet.getX() + dx, z = feet.getZ() + dz;
+                    if (!mc.level.hasChunkAt(new BlockPos(x, surfaceY, z))) continue;
+                    for (int y = surfaceY - 2; y <= surfaceY + 3; y++) {
+                        BlockPos c = new BlockPos(x, y, z);
+                        if (!solid(mc, c.below()) || !free(mc, c) || !free(mc, c.above())) continue;
+                        double d = Math.sqrt(dx * dx + dz * dz + (y - feet.getY()) * (y - feet.getY()));
+                        if (d < bestD) { bestD = d; best = new int[]{x, y, z}; }
+                        break;
+                    }
+                }
+        return best;
+    }
+
+    private static boolean free(Minecraft mc, BlockPos q) {
+        return mc.level.getBlockState(q).getCollisionShape(mc.level, q).isEmpty() && mc.level.getFluidState(q).isEmpty();
     }
 
     /** "burrow": dig down here and seal over the head (no blocks needed), else dig into a wall and seal. */
@@ -204,6 +287,7 @@ public final class DangerMoves {
             mc.options.keyJump.setDown(false);
             mc.options.keyUse.setDown(false);
             mc.options.keyUp.setDown(false);
+            mc.options.keyShift.setDown(false);
         }
         move = Move.NONE;
         goal = null;
@@ -254,9 +338,11 @@ public final class DangerMoves {
     }
 
     private void pillarTick(Minecraft mc, LocalPlayer p, Entity t) {
-        if (p.getBlockX() != pillarX || p.getBlockZ() != pillarZ || p.isInWater() || p.isInLava()) { stop("knocked off the pillar"); return; }
+        if (p.getBlockX() != pillarX || p.getBlockZ() != pillarZ || (p.isInWater() && !pillarWater) || p.isInLava()) { stop("knocked off the pillar"); return; }
         if (pillarUp) { holdOn(mc, p, t, "pillar"); return; }
-        if (now - start > CornerEscape.TIMEOUT) { stop("pillar gave up at " + (pillarCell - pillarBase) + " up"); return; }
+        long limit = pillarWater ? CornerEscape.TIMEOUT + 40L * (pillarTop - pillarBase) : CornerEscape.TIMEOUT;
+        if (now - start > limit) { stop("pillar gave up at " + (pillarCell - pillarBase) + " up" + (pillarWater ? " (out of water, " + (pillarTop - pillarBase) + " to go)" : "")); return; }
+        if (pillarWater) { pillarWaterTick(mc, p); return; }
         p.setXRot(90f);
         p.setDeltaMovement(0, p.getDeltaMovement().y, 0);      // straight up: no drift off the column
         BlockPos cell = new BlockPos(pillarX, pillarCell, pillarZ);
@@ -270,6 +356,32 @@ public final class DangerMoves {
         int[] tw = throwaway(p);
         if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { stop("pillar: out of blocks"); return; }
         mc.options.keyJump.setDown(p.onGround());
+        if (CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
+            BlockPos below = cell.below();
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+    }
+
+    /** AA_STEP3 A3: one tick of the pillar out of water: sink to the next cell, swim up over it, place it, until dry on top. */
+    private void pillarWaterTick(Minecraft mc, LocalPlayer p) {
+        p.setXRot(90f);
+        p.setDeltaMovement(0, p.getDeltaMovement().y, 0);
+        BlockPos cell = new BlockPos(pillarX, pillarCell, pillarZ);
+        if (!mc.level.getBlockState(cell).canBeReplaced() && p.getY() >= pillarCell + 1.0 - 1e-3) pillarCell++;     // placed and over it
+        if (pillarCell >= pillarTop) {
+            pillarUp = true;
+            mc.options.keyJump.setDown(false);
+            mc.options.keyShift.setDown(false);
+            events.push("reflex", "pillared out of the water to " + pillarTop + ", holding", null);
+            return;
+        }
+        int[] tw = throwaway(p);
+        if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { stop("pillar: out of blocks in the water"); return; }
+        boolean high = p.getY() > pillarCell + 1.6;                 // floating over the next cell: sink to it
+        mc.options.keyShift.setDown(high);
+        mc.options.keyJump.setDown(!high);
+        cell = new BlockPos(pillarX, pillarCell, pillarZ);
         if (CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
             BlockPos below = cell.below();
             mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
@@ -377,8 +489,13 @@ public final class DangerMoves {
             }
             int[] tw = throwaway(p);
             boolean burrow = findBurrow(mc, p) > 0, niche = tw[0] >= CornerEscape.SEAL_BLOCKS && findNiche(mc, p) != null;
+            // AA_STEP3 A3/A4: the water facts (the column to fill, the swim up, the nearest shore)
+            boolean wetNow = p.isInWater();
+            int[] wf = wetNow ? water(mc, p) : new int[]{0, 0, 0, 0};
+            int[] shore = wetNow ? shore(mc, p, wf[3] != 0 ? wf[3] : p.blockPosition().getY()) : null;
+            double shoreDist = shore == null ? -1 : Math.sqrt(Math.pow(shore[0] + 0.5 - p.getX(), 2) + Math.pow(shore[2] + 0.5 - p.getZ(), 2));
             return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, cover, burrow || niche, tw[0], headRoom(mc, p),
-                    p.onGround() && !p.isInWater(), burrow, niche));
+                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] danger facts failed (calm facts used): {}", e.toString());
             return ThreatFacts.CALM;
@@ -447,14 +564,14 @@ public final class DangerMoves {
         return head;
     }
 
-    /** Throwaway blocks in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#THROWAWAY}), and the slot of the first. */
+    /** The blocks the danger moves place, in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#pillarBlock}: throwaway and planks), and the slot of the first. */
     static int[] throwaway(LocalPlayer p) {
         int n = 0, slot = -1;
         var inv = p.getInventory();
         for (int i = 0; i < 36; i++) {
             ItemStack s = inv.getItem(i);
             if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem)) continue;
-            if (!io.github.mojolowjo.entropybot.aa.AaEscape.THROWAWAY.contains(BuiltInRegistries.ITEM.getKey(s.getItem()).getPath())) continue;
+            if (!io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(BuiltInRegistries.ITEM.getKey(s.getItem()).getPath())) continue;
             n += s.getCount();
             if (slot < 0 || (slot >= 9 && i < 9)) slot = i;
         }
