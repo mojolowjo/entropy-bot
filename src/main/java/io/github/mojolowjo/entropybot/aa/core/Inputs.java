@@ -32,10 +32,20 @@ public final class Inputs {
     /** Tool wear as a cost (ToolWear): the best pickaxe's break speed on stone (the game's getDestroySpeed), uses left of all pickaxes. Not in the vector. */
     public float pickSpeed = 4f;
     public int pickLeft = 131;
-    public boolean bedKnown, bedInBag, tableKnown, furnaceKnown, tableInBag, furnaceInBag, baseChests, baseKnown, shelterBuilt, areaKnown;
+    public boolean bedKnown, bedInBag, tableKnown, furnaceKnown, tableInBag, furnaceInBag, baseChests, baseKnown, shelterBuilt;
+    /**
+     * AREAS (0.39.2, AreaFacts): the meanings at the bot's cell, hardest first ("base,work"; "" none); the nearest base
+     * area's centre column {x, z} (null none) and its flat distance (-1); the bot stands in the owner's near-me circle
+     * (companion mode's soft preference); the owner's note on the place (null). Facts, never permissions.
+     */
+    public String areasHere = "";
+    public int[] nearestBase;
+    public double baseDist = -1;
+    public boolean nearOwner;
+    public String areaNote;
     /** The level's day time (ticks), -1 unknown. */
     public long dayTime = -1;
-    public boolean night, thunder, underGround, inArea = true, ownerOnline;
+    public boolean night, thunder, underGround, ownerOnline;
     /** 0.36.3: blocks of ground over the bot (Jobs.underDepth, leaves not counted; 0 = at the surface). Not in the vector. */
     public int underDepth;
     /** Night fix: the bot's armour points (0 = none; early game). Not in the vector. */
@@ -74,7 +84,7 @@ public final class Inputs {
     public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;
-    /** The first buildable (not safe) area's name, else null; the food bar drains (not Peaceful). */
+    /** The first base or work area a house fits (AaRuntime.houseFits), else null; the food bar drains (not Peaceful). */
     public String areaName;
     public boolean hungerDrains;
     /**
@@ -89,7 +99,7 @@ public final class Inputs {
     public static final String[] NAMES = {
             "health", "food", "hurt", "danger", "creeper", "air", "lavaFire", "freeSlots", "foodItems", "torches", "wood",
             "cobble", "coal", "iron", "wool", "pickTier", "pickPct", "bed", "table", "furnace", "baseChests", "base",
-            "shelter", "area", "night", "thunder", "underGround", "inArea", "ownerOnline", "ownerOrder", "aiRequest",
+            "shelter", "baseArea", "night", "thunder", "underGround", "nearOwner", "ownerOnline", "ownerOrder", "aiRequest",
             "menu", "parked", "otherJob"};
 
     /** The inputs as a fixed vector, 0..1 (counts capped at 64, iron at 32). */
@@ -98,8 +108,8 @@ public final class Inputs {
                 health / Math.max(1, maxHealth), food / 20f, b(hurtRecently), danger / 2f, b(creeperClose), air / 300f,
                 b(inLavaOrFire), freeSlots / 36f, cap(foodItems), cap(torches), cap(wood), cap(cobble), cap(coal),
                 Math.min(32, ironIngots) / 32f, cap(wool), pickTier / 4f, pickPct / 100f, b(bedKnown || bedInBag),
-                b(tableKnown), b(furnaceKnown), b(baseChests), b(baseKnown), b(shelterBuilt), b(areaKnown), b(night),
-                b(thunder), b(underGround), b(inArea), b(ownerOnline), b(ownerOrderPending), b(aiRequestPending),
+                b(tableKnown), b(furnaceKnown), b(baseChests), b(baseKnown), b(shelterBuilt), b(nearestBase != null), b(night),
+                b(thunder), b(underGround), b(nearOwner), b(ownerOnline), b(ownerOrderPending), b(aiRequestPending),
                 b(menuOpen), b(parked), b(otherJob != null)};
     }
 

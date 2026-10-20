@@ -62,7 +62,6 @@ class Review2aTest {
 
     @Test
     void item3AStonePickaxeUnderGroundOpensNoSurfaceGate() {
-        bb.in.areaKnown = true;
         bb.in.tableKnown = true;
         bb.in.furnaceKnown = true;
         bb.in.baseKnown = true;

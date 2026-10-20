@@ -33,20 +33,14 @@ class AaTreeTest {
         bb.in.freeSlots = 36;
         bb.in.wool = 0;
         bb.in.areaName = null;
-        bb.in.areaKnown = true;
         bb.in.hungerDrains = false;
     }
 
     @Test
-    void aFreshWorldGetsAnAreaFirst() {
+    void aFreshWorldStartsWorkAtOnce() {
+        // AREAS (0.39.2): no area rung - the world is open, AA works where it stands
         freshStart();
-        bb.in.areaKnown = false;
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals(AaLadder.AREA_COMMAND, lastChain());
-        port.done(1, "done");
-        tree.tick(bb);
-        bb.in.areaKnown = true;
-        tree.tick(bb);
         assertEquals(AaLadder.BOOTSTRAP, lastChain());
     }
 
@@ -345,17 +339,6 @@ class AaTreeTest {
     }
 
     /** 0.36.3: no reachable tree: the woodArea rung runs the area command the adapter found. */
-    @Test
-    void noReachableTreeMakesATreeArea() {
-        freshStart();
-        pick(3);
-        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
-        bb.in.torches = 16;
-        bb.fact(AaLadder.TREE_AREA_FACT, "area 0 0 40 40 trees1 work neutral");
-        tree.tick(bb);
-        assertEquals("area 0 0 40 40 trees1 work neutral", lastChain());
-    }
-
     /** 0.36.3 (Peaceful, no wool): a shelter is the base, the bed is skipped, IRON gets its turn. */
     @Test
     void noWoolStillReachesIron() {

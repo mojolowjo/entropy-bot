@@ -67,7 +67,7 @@ class BrainExposureTest {
         Rung surface = AaLadder.build().stream().filter(r -> r.id.equals("needs.surface")).findFirst().orElseThrow();
         Rung iron = AaLadder.build().stream().filter(r -> r.id.equals("needs.tableFurnace")).findFirst().orElseThrow();
         Brain br = new Brain("brain", "t", AaDesires.rung(surface), AaDesires.rung(iron));
-        bb.in.areaKnown = true;        // small-1: the SURFACE desire (table/furnace) is parked, the UNDER one (iron) is not
+        // small-1: the SURFACE desire (table/furnace) is parked, the UNDER one (iron) is not
         bb.in.pickTier = 2;
         bb.in.pickaxes = 1;
         bb.in.pickPct = 100;

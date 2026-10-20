@@ -22,13 +22,12 @@ class SmallTest {
 
     @Test
     void surfaceGateBindsOnlySurfaceDesires() {
-        bb.in.areaKnown = true;
         bb.in.underDepth = 12;                 // deep, no table/furnace yet: needs open ground
         assertEquals("needs.surface", AaLadder.openGate(bb, Desire.Exposure.SURFACE));
         assertNull(AaLadder.openGate(bb, Desire.Exposure.UNDER), "under ground work never waits for the surface");
         assertNull(AaLadder.openGate(bb, Desire.Exposure.ANY));
-        bb.in.areaKnown = false;
-        assertEquals("needs.area", AaLadder.openGate(bb, Desire.Exposure.UNDER), "the area gates bind everything");
+        bb.in.underDepth = 0;
+        assertNull(AaLadder.openGate(bb, Desire.Exposure.SURFACE), "AREAS: no area gate; at the surface nothing binds");
     }
 
     @Test

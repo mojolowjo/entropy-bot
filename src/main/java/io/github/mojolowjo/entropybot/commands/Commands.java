@@ -124,7 +124,17 @@ public final class Commands implements Chains.Env {
         return policy.command(verb, rest, from.equalsIgnoreCase(owner()), owner(), hereOf(mc, from), posOf(mc, p));
     }
 
-    /** V1b: someone's base seen while exploring, kept as a safe-area candidate (commands.json "safeCandidates", the last 20). */
+    /** AREAS: the candidates list as it stands (never null). */
+    JsonArray safeCandidates() {
+        JsonObject b = brainStore == null ? null : brainStore.data();
+        return b != null && b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
+    }
+
+    /**
+     * V1b: someone's base seen while exploring, kept as a no-break candidate (commands.json "safeCandidates", the last 20).
+     * AREAS: a candidate that is not plainly the bot's own is treated as no-break at once (the guard's policy is pushed
+     * again) until the owner rejects it; logged.
+     */
     void noteSafeCandidate(String dim, int[] at, io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc) {
         JsonObject b = brainStore.data();
         JsonArray list = b.has("safeCandidates") && b.get("safeCandidates").isJsonArray() ? b.getAsJsonArray("safeCandidates") : new JsonArray();
@@ -141,6 +151,10 @@ public final class Commands implements Chains.Env {
         while (list.size() > 20) list.remove(0);
         b.add("safeCandidates", list);
         saved();
+        if (io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(sc.named() > 0, sc.blockEntities()) && policy != null) {
+            LOG.info("[entropybot] area candidates: {} {} {} looks like someone's base ({} built, {} block entities{}) - treated as no-break until rejected: {}",
+                    at[0], at[1], at[2], sc.built(), sc.blockEntities(), sc.named() > 0 ? ", a named mob" : "", policy.apply());
+        }
     }
 
     /** V1b-4: area candidates [accept n [name] | reject n|all] over commands.json "safeCandidates". */
@@ -158,6 +172,7 @@ public final class Commands implements Chains.Env {
         if (plan.remove() != -1) {
             if (plan.remove() >= 0) b.add("safeCandidates", list);
             saved();
+            if (policy != null && plan.areaCommand() == null) policy.apply();      // AREAS: a rejected candidate leaves the guard's policy
         }
         return out;
     }
@@ -527,6 +542,7 @@ public final class Commands implements Chains.Env {
         sb.append("; ").append(brainStore.loadWorldPart(files));               // 0.31.0: home, deaths, mines... of this world
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
+        policy.setCandidateSource(this::safeCandidates);                       // AREAS: candidates ride along as no-break
         sb.append("; policy: ").append(policy.apply());
         sb.append("; ").append(Storage.loadEmptied(files));
         pushPlaces();                                                          // 0.31.1: the reflexes' base/home at once
@@ -608,6 +624,7 @@ public final class Commands implements Chains.Env {
         sb.append("; hotbar ").append(HotbarRules.describe(hotbarLayout())).append(", tools mode ").append(toolMode());
         sb.append(migrateAreas(files));
         policy = new PolicyCommands(areaStore.data(), new GuardView(), () -> areaStore.changed(core.tick()));
+        policy.setCandidateSource(this::safeCandidates);                       // AREAS: candidates ride along as no-break
         chains = new Chains(this, brainStore.data());
         senses = new SenseRuntime(this);                        // AA_CLEANUP 3: the old brain is gone, its sense part stays
         io.github.mojolowjo.entropybot.aa.door.Door.wire(this::aaOn, s -> LOG.info("[entropybot] {}", s));     // AA_CLEANUP 2: the one door

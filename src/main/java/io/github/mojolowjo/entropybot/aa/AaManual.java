@@ -26,7 +26,7 @@ public final class AaManual {
     public static final long ASK_MS = 60_000;
 
     /** The rungs by their short name ("tools", "surface"...) as {@code aa do/skip} take them. */
-    public static final List<String> NEEDS = List.of("area", "woodArea", "tools", "surface", "food", "tableFurnace", "spareTable", "torches", "base", "bed", "bag", "iron");
+    public static final List<String> NEEDS = List.of("tools", "surface", "food", "tableFurnace", "spareTable", "torches", "base", "bed", "bag", "iron");
 
     /** One option as the ask shows it. */
     public record Row(String label, String command) {}
@@ -67,7 +67,6 @@ public final class AaManual {
         return switch (t) {
             case "table", "furnace", "table_furnace", "tablefurnace" -> "needs.tableFurnace";
             case "spare", "spare_table" -> "needs.spareTable";
-            case "wood", "trees", "wood_area" -> "needs.woodArea";
             case "climb", "up" -> "needs.surface";
             case "torch" -> "needs.torches";
             case "deposit", "chest" -> "needs.bag";

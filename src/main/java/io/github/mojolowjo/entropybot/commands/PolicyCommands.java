@@ -133,11 +133,47 @@ public final class PolicyCommands {
 
     public boolean strict() { return p.has("strict") && p.get("strict").getAsBoolean(); }
 
-    /** {areas, protect} for the guard. */
+    /** AREAS (AREAS_PLAN 5, default 10.4): the base candidates explore/find noted (commands.json "safeCandidates"), read live. */
+    private java.util.function.Supplier<JsonArray> candidates = JsonArray::new;
+
+    public void setCandidateSource(java.util.function.Supplier<JsonArray> s) { candidates = s == null ? JsonArray::new : s; }
+
+    /**
+     * The candidates AA treats as no-break until the owner rejects them (AreaFacts.autoNoBreak: a named mob there or
+     * 2+ block entities), as protect entries named "found<n>" (the accept command's box shape). Never saved to
+     * areas.json; they ride along into the guard's policy and the blocker checks.
+     */
+    public JsonArray candidateBoxes() {
+        JsonArray out = new JsonArray();
+        JsonArray l;
+        try { l = candidates.get(); } catch (RuntimeException e) { return out; }
+        if (l == null) return out;
+        for (int i = 0; i < l.size(); i++) {
+            if (!l.get(i).isJsonObject()) continue;
+            JsonObject o = l.get(i).getAsJsonObject();
+            boolean named = false;      // written as a count (ExploreWords.Scan.named) or a flag
+            if (o.has("named") && o.get("named").isJsonPrimitive()) {
+                var pn = o.get("named").getAsJsonPrimitive();
+                named = pn.isBoolean() ? pn.getAsBoolean() : pn.isNumber() && pn.getAsInt() > 0;
+            }
+            int ents = o.has("blockEntities") ? o.get("blockEntities").getAsInt() : 0;
+            if (!io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(named, ents)) continue;
+            String dim = o.has("dim") ? o.get("dim").getAsString() : DEFAULT_DIM;
+            JsonObject b = io.github.mojolowjo.entropybot.aa.core.AreaFacts.candidateBox("found" + (i + 1), dim, n(o, "x"), n(o, "y"), n(o, "z"),
+                    io.github.mojolowjo.entropybot.vocab.AreaCandidates.R, io.github.mojolowjo.entropybot.vocab.AreaCandidates.DOWN, io.github.mojolowjo.entropybot.vocab.AreaCandidates.UP).toJson();
+            b.addProperty("candidate", true);
+            if (findArea("found" + (i + 1)) == null) out.add(b);
+        }
+        return out;
+    }
+
+    /** {areas, protect} for the guard (AREAS: the no-break candidates ride along in protect). */
     public JsonObject guardPolicy() {
         JsonObject o = new JsonObject();
         o.add("areas", areas().deepCopy());
-        o.add("protect", protect().deepCopy());
+        JsonArray p = protect().deepCopy();
+        p.addAll(candidateBoxes());
+        o.add("protect", p);
         return o;
     }
 
@@ -160,7 +196,9 @@ public final class PolicyCommands {
     /** AREAS: the keep-out or no-break entry whose footprint holds the column (keep-out first), or null. */
     public JsonObject blocker(String dim, int x, int z) {
         JsonObject best = null;
-        for (JsonElement e : protect()) {
+        JsonArray all = protect().deepCopy();
+        all.addAll(candidateBoxes());
+        for (JsonElement e : all) {
             JsonObject a = e.getAsJsonObject();
             if (!dimOf(a).equals(dim)) continue;
             boolean in = a.has("round") ? io.github.mojolowjo.entropybot.guard.Box.fromJson(a, DEFAULT_DIM).columnIn(x, z)
@@ -456,7 +494,9 @@ public final class PolicyCommands {
         List<String> out = new ArrayList<>();
         for (JsonElement e : areas()) out.add(areaText(e.getAsJsonObject()));
         for (JsonElement e : protect()) out.add(areaText(e.getAsJsonObject()));
-        return "areas: " + String.join(", ", out) + tail;
+        JsonArray cand = candidateBoxes();
+        String ct = cand.isEmpty() ? "" : " | candidates treated as no-break until rejected: " + cand.size() + " (area candidates)";
+        return "areas: " + String.join(", ", out) + ct + tail;
     }
 
     /**

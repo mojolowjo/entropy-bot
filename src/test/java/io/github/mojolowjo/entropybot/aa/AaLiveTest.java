@@ -44,15 +44,15 @@ class AaLiveTest {
 
     @Test
     void aRunningTickLightsThePathAndRanksTheDesires() {
-        bb.in.areaKnown = false;                                       // a fresh world: the area rung runs
+        bb.in.pickTier = 0;                                            // a fresh world: the tools rung runs (bootstrap)
         assertEquals(Status.RUNNING, tree.tick(bb));
         JsonObject o = AaLive.json(tree, bb, true, 5);
         JsonArray path = o.getAsJsonArray("path");
         List<String> p = new ArrayList<>();
         for (JsonElement e : path) p.add(e.getAsString());
         assertEquals(List.of("root", "slot"), p.subList(0, 2));
-        assertTrue(p.contains("needs.area"), p.toString());
-        assertEquals("needs.area", o.get("running").getAsString());
+        assertTrue(p.contains("needs.tools"), p.toString());
+        assertEquals("needs.tools", o.get("running").getAsString());
         JsonArray ds = o.getAsJsonArray("desires");
         assertEquals(tree.brain.desires().size(), ds.size());
         double prev = Double.MAX_VALUE;
@@ -68,7 +68,7 @@ class AaLiveTest {
         // the task started: one decision line in the switches
         assertEquals(1, o.getAsJsonArray("switches").size());
         assertTrue(o.getAsJsonArray("switches").get(0).getAsJsonObject().has("chain"));
-        assertEquals("RUNNING", find(o.getAsJsonObject("tree"), "needs.area").get("s").getAsString());
+        assertEquals("RUNNING", find(o.getAsJsonObject("tree"), "needs.tools").get("s").getAsString());
     }
 
     @Test

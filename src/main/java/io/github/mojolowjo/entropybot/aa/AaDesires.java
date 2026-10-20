@@ -54,7 +54,7 @@ public final class AaDesires {
 
     static Desire.Kind kindOf(String rungId) {
         return switch (rungId) {
-            case "needs.area", "needs.woodArea", "needs.surface" -> Desire.Kind.GATE;
+            case "needs.surface" -> Desire.Kind.GATE;
             case "needs.tools", "needs.food", "needs.torches", "needs.bag" -> Desire.Kind.UPKEEP;
             default -> Desire.Kind.PROGRESS;
         };
@@ -123,7 +123,6 @@ public final class AaDesires {
     public static Desire rung(Rung r) {
         Desire d = switch (r.id) {
             // AA_ROUND2 4 (were 100/95/90): a gate scores nothing itself; what it blocks flows to it (FLOW of the best)
-            case "needs.area", "needs.woodArea" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 0));
             // small-1: the surface gate binds SURFACE desires only; the dawn climb out of a night mine is its own SURFACE desire
             case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> NightWork.climbAtDawn(b, AaLadder.SURFACE_DEPTH) ? DAWN_CLIMB : 0)).exposure(Desire.Exposure.SURFACE);
             case "needs.tools" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b))), b -> null, b -> null);
@@ -177,7 +176,7 @@ public final class AaDesires {
         };
     }
 
-    /** "needs.area first" while a gate is open (AaLadder.openGate), else null. */
+    /** "needs.surface first" while a gate is open (AaLadder.openGate), else null. */
     static String gateWhy(Blackboard b) { return gateWhy(b, Desire.Exposure.SURFACE); }
 
     static String gateWhy(Blackboard b, Desire.Exposure e) {

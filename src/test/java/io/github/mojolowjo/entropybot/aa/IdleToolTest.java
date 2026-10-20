@@ -26,7 +26,7 @@ class IdleToolTest {
         bb.in.pickTier = 3;
         bb.in.pickaxes = 1;
         bb.in.pickPct = 100;
-        bb.in.areaKnown = bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;
+        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;
         bb.in.torches = 64;
         bb.in.coal = 32;
         bb.in.ironIngots = 40;

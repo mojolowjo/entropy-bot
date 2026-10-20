@@ -169,18 +169,6 @@ public final class Rung extends Node {
             cooldown.tick(bb);                  // answers the cooldown reason without touching the job
             return fail(cooldown.reason());
         }
-        // aa385: outside the areas every plan names a spot outside (infeasible); the return leg comes first (RunJob puts
-        // it in, costed and logged), a plan failed out there is forgotten, and this rung plans again from inside
-        if (io.github.mojolowjo.entropybot.aa.core.WayBack.leg(bb, g, "needs") != null) {
-            clearPlanning(bb);
-            planFailed = null;
-            resolved = g;
-            settledGoal = g;
-            bb.pendingReason("needs: " + kind + " unmet -> " + g + " [outside my areas: the return leg first]");
-            Status s = cooldown.tick(bb);
-            if (s == Status.SUCCESS) settledAt = now;
-            return s == Status.FAILURE ? fail(cooldown.reason()) : s;
-        }
         if (planFailed != null && now - planFailedAt < Cooldown.BASE_MS) return fail(kind + " skipped: " + planFailed);
         planFailed = null;
         // review: an ask already waits for this rung: no new pick per tick, the frozen rows decide
@@ -462,7 +450,6 @@ public final class Rung extends Node {
         if (g == null) return kind + " has nothing to run";
         if (forced) return null;
         if (cooldown.cooling(now)) return kind + " cooling down";
-        if (io.github.mojolowjo.entropybot.aa.core.WayBack.leg(bb, g, "needs") != null) return null;      // aa385: the return leg can run
         if (planFailed != null && now - planFailedAt < Cooldown.BASE_MS) return kind + " skipped: " + planFailed;
         JobPort.Resolved r = bb.port.resolveState(g);
         if (r.state() == JobPort.PlanState.SEARCHING && picker == null) return "the planner still searches " + g;

@@ -14,9 +14,8 @@ import java.util.List;
  * through {@code JobPort.resolve}.
  *
  * <ol>
- * <li value="0">AREA (live check 2026-10-18: a fresh world has no area and every gathering verb and the planner work
- *     inside areas only): no area -> {@value #AREA_COMMAND} (instant). A radius-48 area is too large for {@code house}
- *     (4096 blocks at most), so the base rung builds a shelter unless the owner made a smaller area.</li>
+ * <li value="0">AREAS (0.39.2): no area rung any more - the world is open (AREAS_PLAN 5), AA works where it stands and
+ *     the labelled places are facts (AreaFacts). The base rung builds a shelter unless a base/work area fits a house.</li>
  * <li>TOOLS: no pickaxe at all -> {@code bootstrap} (the from-nothing job); a wooden one, or the best under 15 % with
  *     no spare -> {@code goal stone tools}.</li>
  * <li>FOOD: on a hungry difficulty only (Peaceful: the bar never drains): food under 10 until 18, or the bag under its stock target (aa-food,
@@ -37,8 +36,6 @@ public final class AaLadder {
 
     public static final String SHELTER_FACT = "shelterBuilt";
 
-    /** The work area AA makes itself on a fresh world (the mod's own check hint; every gathering verb works inside areas). */
-    public static final String AREA_COMMAND = "area here 48 work neutral";
     /**
      * The from-nothing job (live check 2026-10-18: the planner's "trees" fact scans 16 blocks around the bot, so from a
      * spawn with the nearest oak 52 blocks away {@code goal stone tools} has no plan; {@code bootstrap} fells trees
@@ -46,24 +43,22 @@ public final class AaLadder {
      */
     public static final String BOOTSTRAP = "bootstrap";
 
-    public static final String CLIMB = "climb", TREE_AREA_FACT = "treeArea";
+    public static final String CLIMB = "climb";
     /** Under this much ground the table/furnace/house/iron rungs climb out first (a tree's leaves never count). */
     public static final int SURFACE_DEPTH = 3;
 
     /** A later rung that places a table or furnace, builds the base or plans iron (it places a table and furnace). */
     /**
-     * aa-costs: the gate rung still open (needs.area, needs.woodArea, needs.surface), else null. An upkeep that may now
-     * score urgent (tools) waits for it: nothing it runs can work before the gate is met.
+     * aa-costs: the gate rung still open (needs.surface; AREAS: the area gates are gone), else null. An upkeep that may
+     * now score urgent (tools) waits for it: nothing it runs can work before the gate is met.
      */
     public static String openGate(Blackboard bb) { return openGate(bb, io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.SURFACE); }
 
     /**
      * small-1: the surface gate (climb out first) binds only a desire whose exposure is SURFACE; UNDER and ANY desires
-     * never wait for it (the dawn climb is the surface rung's own score). The area gates bind everything.
+     * never wait for it (the dawn climb is the surface rung's own score).
      */
     public static String openGate(Blackboard bb, io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure e) {
-        if (!bb.in.areaKnown) return "needs.area";
-        if (bb.fact(TREE_AREA_FACT) instanceof String) return "needs.woodArea";
         if (e != io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.SURFACE) return null;
         if (io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb))) return "needs.surface";
         return null;
@@ -105,9 +100,6 @@ public final class AaLadder {
     /** BRAIN_PLAN B1: the rungs in ladder order; the brain (AaDesires) scores them instead of trying them in order. */
     public static List<Rung> build() {
         Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
-        Rung area = new Rung("needs.area", TaskKind.TOOLS,
-                bb -> !bb.in.areaKnown,
-                bb -> null, bb -> AREA_COMMAND);
         Rung tools = new Rung("needs.tools", TaskKind.TOOLS,
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the planner's "goal stone tools" makes one)
                 bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
@@ -121,11 +113,6 @@ public final class AaLadder {
                 bb -> io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb)),
                 // S2: climb / pillar / trail / goto open sky / nothing, scored (RungOptions.Surface)
                 bb -> null, bb -> CLIMB, new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface()));
-        // 0.36.3: no tree the chopper can get at in my areas: a second work area around the nearest reachable tree
-        // (AaRuntime puts the area command in the fact; it is cleared after the area is made)
-        Rung woodArea = new Rung("needs.woodArea", TaskKind.STOCK_WOOD,
-                bb -> bb.fact(TREE_AREA_FACT) instanceof String,
-                bb -> null, bb -> (String) bb.fact(TREE_AREA_FACT));
         // aa-food: the bar's band, or the bag under the stock target (FoodModel); the ways are scored (FoodOptions)
         Rung hunger = new Rung("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | AaDesires.foodStockLow(bb)),
@@ -164,7 +151,7 @@ public final class AaLadder {
                 bb -> "goal iron tools", new IronOptions.Picker());
         // the brain runs a started desire to its end (live check 2026-10-18: a reactive Fallback let an earlier rung that
         // started *planning* cancel a lower rung's job: a pointless switch)
-        return List.of(area, woodArea, tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
+        return List.of(tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
     }
 
     /** three-tier r1: "goal torch 16", or with no coal in the bag the best coal way first (CoalOptions.torchesFirst; no way: the planner's goal, which fails with its own reason). */

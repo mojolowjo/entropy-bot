@@ -52,7 +52,7 @@ class IdleBandsTest {
         bb.in.pickTier = 2;            // every rung met
         bb.in.pickaxes = 1;
         bb.in.pickPct = 100;
-        bb.in.areaKnown = bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;
+        bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;
         bb.in.torches = 64;
         bb.in.coal = 32;
         bb.in.cobble = 0;

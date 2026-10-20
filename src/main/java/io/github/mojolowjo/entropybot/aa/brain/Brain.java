@@ -581,10 +581,17 @@ public final class Brain extends Node {
         return p == null ? null : new Site(bb.in.dimension, p[0], p[1], p[2], 0);
     }
 
-    /** A desire's own cost in seconds for the sequencer: live, else measured/hand. */
+    /**
+     * A desire's own cost in seconds for the sequencer: live, else measured/hand; AREAS (0.39.2): plus the soft way back
+     * when its site lies farther from the nearest base area than the bot stands (AreaFacts.awayS, the old WayBack's
+     * return leg as a price, not a scripted leg).
+     */
     double costOf(Blackboard bb, Desire d) {
         double live = liveCost(bb, d);
-        return Double.isNaN(live) ? stats.cost(d.id, d.handCostS) : live;
+        double c = Double.isNaN(live) ? stats.cost(d.id, d.handCostS) : live;
+        Site s = d.siteOf(bb);
+        if (s != null && !Double.isNaN(c)) c += io.github.mojolowjo.entropybot.aa.core.AreaFacts.awayS(bb.in.pos, new int[]{s.x(), s.y(), s.z()}, bb.in.nearestBase);
+        return c;
     }
 
     /** Builds the plan from the ranked runnable list (winner first). */
