@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa horizon [seconds] | aa fair [on|off]";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off]";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -38,6 +38,7 @@ final class AaCommands {
             case "goals" -> { return aa.goalsText(); }
             case "ore" -> { return aa.oreInfo(arg); }
             case "replan" -> { return aa.replan(arg); }
+            case "look" -> { return aa.look(arg); }
             case "horizon" -> { return aa.horizon(arg); }
             case "fair" -> { return aa.fair(arg); }
             case "build" -> { return aa.build(arg); }
