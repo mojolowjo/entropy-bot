@@ -40,9 +40,40 @@ public final class Discovery {
      * @param density    listed ore per block in that band, -1 unknown
      * @param secPerBlock seconds to dig one stone block with my best pickaxe
      * @param ownerGoal  the owner asked for it (clear chunk is offered)
+     * @param downs      AA_ROUND3 4: the staircase down per heading (StairPlan.cells, read by the adapter against my areas
+     *                   and the break policy); null = not read (north, the old way)
      */
     public record Facts(int caveDist, double caveRate, boolean mineMarked, boolean inAreas, String stripWhy,
-                        int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal) {}
+                        int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal,
+                        List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downs) {
+        public Facts(int caveDist, double caveRate, boolean mineMarked, boolean inAreas, String stripWhy,
+                     int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal) {
+            this(caveDist, caveRate, mineMarked, inAreas, stripWhy, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, null);
+        }
+    }
+
+    /**
+     * AA_ROUND3 4 (aa-fair: the staircase ran north and its bottom left my areas, so place mine refused): the cheapest
+     * heading down by its ground (WayUp.ground: own/foreign breaks x the policy, hazards); one leaving my areas or with a
+     * cell the policy denies is dropped with why. Null when every heading is dropped; north when no headings were read.
+     */
+    static io.github.mojolowjo.entropybot.aa.WayUp.Heading stairHeading(Facts f, List<String> dropped) {
+        if (f.downs() == null) return null;
+        io.github.mojolowjo.entropybot.aa.WayUp.Heading best = null;
+        double bestCost = Double.POSITIVE_INFINITY;
+        for (var h : f.downs()) {
+            var g = io.github.mojolowjo.entropybot.aa.WayUp.ground(h);
+            if (!g.ok()) {
+                dropped.add("strip at Y: stairs " + h.dir() + " " + g.dropWhy());
+                continue;
+            }
+            if (g.cost() < bestCost) {
+                bestCost = g.cost();
+                best = h;
+            }
+        }
+        return best;
+    }
 
     public record Opt(Kind kind, double cost, String why, String command) {
         public String label() {
@@ -84,21 +115,27 @@ public final class Discovery {
         int down = Math.max(0, f.meY() - y);
         double per = tunnelPerOre(f.density());
         String dens = f.density() <= 0 ? "density not learned" : String.format(Locale.ROOT, "%.4f per block learned", f.density());
+        var stair = f.mineMarked() || down == 0 ? null : stairHeading(f, dropped);
         if (!f.inAreas()) dropped.add("strip at Y: " + (f.stripWhy() == null ? "outside my areas" : f.stripWhy()));
+        else if (!f.mineMarked() && down > 0 && f.downs() != null && stair == null) dropped.add("strip at Y: no staircase heading down stays in my areas and may be dug");
         else {
-            // the way down: a staircase digs about 2 blocks per level and walks it
-            double descend = down + Unit.blocks(down * 2 * dig);
+            // the way down: a staircase digs about 2 blocks per level and walks it, plus its heading's ground (AA_ROUND3 4)
+            var g = stair == null ? null : io.github.mojolowjo.entropybot.aa.WayUp.ground(stair);
+            double descend = down + Unit.blocks(down * 2 * dig) + (g == null ? 0 : Unit.blocks(g.cost()));
             double cost = descend + Unit.blocks(per * 2 * dig);
             // live (aa-fair r1-r3): "place mine" needs a cell to stand in, goto refuses a cell inside stone and "dig stairs"
-            // will not start inside a chain: the staircase's own steps (StairPlan, north, no torches) down to the band,
-            // then the mine is marked where I stand
+            // will not start inside a chain: the staircase's own steps (StairPlan, the cheapest heading, no torches) down
+            // to the band, then the mine is marked where I stand
+            String dir = stair == null ? "north" : stair.dir();
+            int[] u = io.github.mojolowjo.entropybot.aa.WayUp.dir(dir);
             StringBuilder sb = new StringBuilder();
-            for (String st : io.github.mojolowjo.entropybot.commands.StairPlan.steps(f.meX(), f.meY(), f.meZ(), 0, -1, down))
+            for (String st : io.github.mojolowjo.entropybot.commands.StairPlan.steps(f.meX(), f.meY(), f.meZ(), u[0], u[1], down))
                 if (!st.startsWith("place torch")) sb.append(st).append(" then ");
-            String cmd = f.mineMarked() ? "mine strip " + word + " " + left : sb + "place mine north then mine strip " + word + " " + left;
-            out.add(new Opt(Kind.STRIP, cost, String.format(Locale.ROOT, "%s, %s, %.0f tunnel blocks per ore, %.1f s a block%s",
+            String cmd = f.mineMarked() ? "mine strip " + word + " " + left : sb + "place mine " + dir + " then mine strip " + word + " " + left;
+            out.add(new Opt(Kind.STRIP, cost, String.format(Locale.ROOT, "%s, %s, %.0f tunnel blocks per ore, %.1f s a block%s%s",
                     f.mineMarked() ? "the marked mine" : "Y " + y + (down > 0 ? " (" + down + " down)" : ""), dens, per, dig,
-                    f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : ""), cmd));
+                    f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : "",
+                    g == null ? "" : String.format(Locale.ROOT, ", stairs %s ground %.0f s", dir, g.cost())), cmd));
         }
         if (!f.ownerGoal()) dropped.add("clear chunk: the owner's goals only");
         else if (!f.inAreas()) dropped.add("clear chunk: outside my areas");

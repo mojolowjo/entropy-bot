@@ -92,8 +92,8 @@ public final class AaRuntime implements JobPort {
         tracer.sink(this::appendDecision);
         JsonObject d = data();
         if (d.has(AaLadder.SHELTER_FACT) && d.get(AaLadder.SHELTER_FACT).getAsBoolean()) AaLadder.noteShelter(bb);
-        bb.fact(IronOptions.FACTS, (java.util.function.Supplier<IronOptions.Facts>) this::ironFacts);
-        bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts>) this::surfaceFacts);
+        bb.fact(IronOptions.FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("iron", this::ironFacts)));
+        bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
@@ -102,6 +102,38 @@ public final class AaRuntime implements JobPort {
         if (d.has("horizon")) bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, d.get("horizon").getAsInt());
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.COAL_SITE_FACT, (java.util.function.Supplier<int[]>) this::coalSite);
         c.chains.onEnd(this::chainEnded);
+    }
+
+    // ---- AA_ROUND3 4: facts timing (the pick's cost lives in its facts supplier) ----
+
+    private final Map<String, Long> slowLogAt = new java.util.HashMap<>();
+    /** The last facts breakdown ("ores 1200 us, discovery 300 us"), set by the suppliers that measure their parts. */
+    private String factsParts = "";
+
+    /** The game tick (level time), -1 without a level: a facts supplier is read once per tick (the pick, the re-score, the sequencer). */
+    private static long gameTick() {
+        var lv = Minecraft.getInstance().level;
+        return lv == null ? -1 : lv.getGameTime();
+    }
+
+    private static <T> java.util.function.Supplier<T> perTick(io.github.mojolowjo.entropybot.aa.FactsMemo<T> m, java.util.function.Supplier<T> s) {
+        return () -> m.get(gameTick(), System.currentTimeMillis(), null, s);
+    }
+
+    /** A facts supplier that logs a call over 2 ms (with its parts), at most every 10 s per supplier. */
+    private <T> java.util.function.Supplier<T> timed(String name, java.util.function.Supplier<T> s) {
+        return () -> {
+            long t0 = System.nanoTime();
+            factsParts = "";
+            T v = s.get();
+            long us = (System.nanoTime() - t0) / 1000;
+            long now = System.currentTimeMillis();
+            if (us > 2000 && now - slowLogAt.getOrDefault(name, 0L) >= 10_000) {
+                slowLogAt.put(name, now);
+                LOG.info("[entropybot] aa: facts {} took {} us{}", name, us, factsParts.isEmpty() ? "" : " (" + factsParts + ")");
+            }
+            return v;
+        };
     }
 
     // ---- aa-food: the FOOD rung's facts and the drain sampler ----
@@ -320,7 +352,9 @@ public final class AaRuntime implements JobPort {
             int[] me = Jobs.here(p);
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
             boolean fair = io.github.mojolowjo.entropybot.sense.Seen.fair();
+            long t0 = System.nanoTime();
             List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, IRON_ORES, fair ? 2 : 0);
+            long t1 = System.nanoTime();
             var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
             int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
             if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;      // review: "mine cave" picks only within 64, else it starts a new cave here
@@ -336,7 +370,9 @@ public final class AaRuntime implements JobPort {
                 var opts = io.github.mojolowjo.entropybot.aa.brain.Discovery.rank(discoveryFacts(dim, me, IronOptions.FAMILY, caveDist, mineMarked, stripWhy, false), IronOptions.FAMILY, 3, dd);
                 fairFacts = new IronOptions.Fair(seenKeys, opts, dd);
             }
-            int[] furnace = c.crafting.findFurnace(p);
+            long t2 = System.nanoTime();
+            int[] furnace = furnaceMemo.get(gameTick(), System.currentTimeMillis(), dim + " " + me[0] + " " + me[1] + " " + me[2] + " " + bb.in.furnaceKnown + " " + bb.in.furnaceInBag + " " + bag.getOrDefault("furnace", 0), () -> c.crafting.findFurnace(p));     // AA_ROUND3 4: 1-3 ms a read
+            factsParts = "ores " + (t1 - t0) / 1000 + " us [" + Mining.aaOresParts + "], cave+discovery " + (t2 - t1) / 1000 + " us, furnace " + (System.nanoTime() - t2) / 1000 + " us";
             int furnaceDist = furnace == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace)));
             return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
@@ -362,8 +398,59 @@ public final class AaRuntime implements JobPort {
                 new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, -1, 1, ownerGoal)));
         var kit = io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in);
         double dig = io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(kit == null ? io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED : kit.speed());
+        int down = me[1] - io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
+                new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, -1, 1, ownerGoal));
+        var lv = Minecraft.getInstance().level;
+        var downs = mineMarked || !sensed.areasHere || down <= 0 || lv == null ? null : downHeadings(lv, me, down);
         return new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, sn == null ? io.github.mojolowjo.entropybot.sense.Seen.PRIOR_RATE : sn.caveRate(fam),
-                mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, density, dig, ownerGoal);
+                mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, density, dig, ownerGoal, downs);
+    }
+
+    /** AA_ROUND3 4: the staircase steps down whose cells are read per heading (the pick-time budget). */
+    static final int STAIR_READ = 16;
+
+    private List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downsCache;
+    private final io.github.mojolowjo.entropybot.aa.FactsMemo<int[]> furnaceMemo = new io.github.mojolowjo.entropybot.aa.FactsMemo<>(10_000);
+    private String downsKey;
+    private long downsAt = -1, downsTtl = 10_000;
+
+    /**
+     * AA_ROUND3 4: the staircase down per heading (StairPlan.cells, the 3 cells a step digs): every column checked
+     * against my areas (all {@code n} steps: the bottom must stay in them, place mine marks it there), the cells of the
+     * first {@link #STAIR_READ} steps read for the policy and hazards (cellAt: about 20 us a cell, so 4 x 16 x 3 keeps the pick under ~8 ms; the rest is priced as plain stone by Discovery). Cached 10 s for the same spot and depth.
+     */
+    private List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downHeadings(net.minecraft.world.level.Level lv, int[] me, int n) {
+        long now = System.currentTimeMillis();
+        String key = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv) + " " + me[0] + " " + me[1] + " " + me[2] + " " + n;
+        if (downsCache != null && key.equals(downsKey) && now - downsAt < downsTtl) return downsCache;
+        List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> out = new java.util.ArrayList<>();
+        for (String d : io.github.mojolowjo.entropybot.aa.WayUp.DIRS) {
+            int[] u = io.github.mojolowjo.entropybot.aa.WayUp.dir(d);
+            int[] outside = null;
+            for (int i = 1; i <= n && outside == null; i++) {
+                int x = me[0] + u[0] * i, y = me[1] - i, z = me[2] + u[1] * i;
+                if (!Clearing.boxInAreas(io.github.mojolowjo.entropybot.clear.ClearBox.of(x, y, z, x, y + 2, z))) outside = new int[]{x, y, z};
+            }
+            List<io.github.mojolowjo.entropybot.aa.Replan.Cell> cells = new java.util.ArrayList<>();
+            if (outside == null)
+                for (int[] c : StairPlan.cells(me[0], me[1], me[2], u[0], u[1], Math.min(n, STAIR_READ))) {
+                    var cell = cellAt(lv, c[0], c[1], c[2]);
+                    cells.add(cell);
+                    if (Double.isInfinite(cell.mult())) {         // dropped anyway (WayUp.ground): no more reads, say where
+                        LOG.debug("[entropybot] aa: stairs down {} stops at {} {} {} (may not be broken or not loaded)", d, c[0], c[1], c[2]);
+                        break;
+                    }
+                }
+            out.add(new io.github.mojolowjo.entropybot.aa.WayUp.Heading(d, n, cells, outside));
+        }
+        // review: a heading stopped by an unbreakable or unloaded cell is kept 2 s only (chunks load, policy edits)
+        boolean stopped = false;
+        for (var h : out) for (var cl : h.cells()) if (Double.isInfinite(cl.mult())) stopped = true;
+        downsCache = out;
+        downsTtl = stopped ? 2_000 : 10_000;
+        downsKey = key;
+        downsAt = now;
+        return out;
     }
 
     private long caveTickAt = -1;
@@ -424,6 +511,7 @@ public final class AaRuntime implements JobPort {
             }
             trailEnd = hops.get(hops.size() - 1);
         }
+        long t0 = System.nanoTime();
         int[] sky = null;
         double best = Double.MAX_VALUE;
         net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
@@ -441,6 +529,7 @@ public final class AaRuntime implements JobPort {
                 best = d;
                 sky = new int[]{x, y, z};
             }
+        factsParts = "sky scan " + (System.nanoTime() - t0) / 1000 + " us";
         boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
                 io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), bb.in.pickaxes > 0,

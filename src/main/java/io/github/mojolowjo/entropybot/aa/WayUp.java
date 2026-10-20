@@ -86,9 +86,18 @@ public final class WayUp {
     /** A priced stair heading, or the reason it is dropped (then {@code cost} is infinite). */
     public record StairPrice(double cost, String why, ToolWear.Way way) {}
 
-    public static StairPrice stairs(Heading h, int levels, ToolWear.Kit kit) {
-        if (h.outsideAt() != null) return new StairPrice(Double.POSITIVE_INFINITY, "leaves my areas at " + RungOptions.xyz(h.outsideAt()), null);
-        if (h.n() < levels) return new StairPrice(Double.POSITIVE_INFINITY, h.n() + " steps reach only " + h.n() + " of " + levels + " up", null);
+    /**
+     * A heading's ground, without the tool: the breaks priced own/foreign x the policy's multiplier and the hazards
+     * (seconds), or infinite with why (a cell outside my areas, a cell the policy denies). Shared by the stairs up and
+     * AA_ROUND3 4's staircase down (Discovery's strip at Y).
+     */
+    public record Ground(double brk, double haz, int breaks, String dropWhy) {
+        public boolean ok() { return dropWhy == null; }
+        public double cost() { return ok() ? brk + haz : Double.POSITIVE_INFINITY; }
+    }
+
+    public static Ground ground(Heading h) {
+        if (h.outsideAt() != null) return new Ground(0, 0, 0, "leaves my areas at " + RungOptions.xyz(h.outsideAt()));
         double brk = 0, haz = 0;
         int breaks = 0;
         for (Replan.Cell c : h.cells()) {
@@ -96,10 +105,20 @@ public final class WayUp {
             if (c.water()) haz += Replan.WATER;
             if (c.falling()) haz += Replan.FALLING;
             if (c.open() || c.water() || c.lava()) continue;
-            if (Double.isInfinite(c.mult()) || Double.isNaN(c.mult())) return new StairPrice(Double.POSITIVE_INFINITY, "a cell may not be broken", null);
+            if (Double.isInfinite(c.mult()) || Double.isNaN(c.mult())) return new Ground(0, 0, 0, "a cell may not be broken");
             brk += (c.ownDug() ? Replan.OWN_BREAK : Replan.FOREIGN_BREAK) * c.mult();
             breaks++;
         }
+        return new Ground(brk, haz, breaks, null);
+    }
+
+    public static StairPrice stairs(Heading h, int levels, ToolWear.Kit kit) {
+        if (h.outsideAt() != null) return new StairPrice(Double.POSITIVE_INFINITY, "leaves my areas at " + RungOptions.xyz(h.outsideAt()), null);
+        if (h.n() < levels) return new StairPrice(Double.POSITIVE_INFINITY, h.n() + " steps reach only " + h.n() + " of " + levels + " up", null);
+        Ground g = ground(h);
+        if (!g.ok()) return new StairPrice(Double.POSITIVE_INFINITY, g.dropWhy(), null);
+        double brk = g.brk(), haz = g.haz();
+        int breaks = g.breaks();
         ToolWear.Priced p = tool(breaks, kit, false);
         if (p == null) return new StairPrice(Double.POSITIVE_INFINITY, "no pickaxe and nothing to make one (the dig needs one for stone)", null);
         double cost = brk + haz + p.seconds() + h.n() + Replan.CLIMB_FIX;

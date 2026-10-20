@@ -46,6 +46,20 @@ class OreIndexTest {
     }
 
     @Test
+    void theAllowIsAskedNearestFirstOnlyUntilNFound() {
+        OreIndex ix = new OreIndex(100);
+        ix.put(chunk(0, 0, "iron_ore", "iron_ore", "iron_ore", "iron_ore"));   // x 0..3
+        ix.put(chunk(3, 0, "iron_ore", "coal_ore"));                          // x 48, 49
+        java.util.List<Integer> asked = new java.util.ArrayList<>();
+        java.util.concurrent.atomic.AtomicInteger idTests = new java.util.concurrent.atomic.AtomicInteger();
+        List<OreIndex.Hit> h = ix.nearest("minecraft:overworld", id -> { idTests.incrementAndGet(); return id.endsWith("iron_ore"); }, 0, 20, 0, 96, 2,
+                (x, y, z) -> { asked.add(x); return x != 1; });
+        assertEquals(List.of(0, 2), h.stream().map(OreIndex.Hit::x).toList());
+        assertEquals(List.of(0, 1, 2), asked, "nearest first, stopped once 2 were taken");
+        assertEquals(2, idTests.get(), "the id test once per id");
+    }
+
+    @Test
     void capsDropTheOldestStaleFirst() {
         OreIndex ix = new OreIndex(3);
         ChunkSummary a = chunk(0, 0), b = chunk(1, 0), c = chunk(2, 0), d = chunk(3, 0);

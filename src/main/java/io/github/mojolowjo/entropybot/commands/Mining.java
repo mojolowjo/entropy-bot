@@ -437,8 +437,12 @@ final class Mining {
      * AA_ROUND3 3: under {@code aa fair} the n nearest seen ores, plus up to {@code unseen} nearest ones I never saw
      * (bare rows, so the iron scorer drops them with the reason "not seen"); fair off: the n nearest as before.
      */
+    /** AA_ROUND3 4: the last aaOres' parts (index query, the live cell reads) for the facts timing line. */
+    static String aaOresParts = "";
+
     List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n, int unseen) {
         List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> out = new ArrayList<>();
+        aaOresParts = "";
         try {
             if (!indexReady()) return out;
             String d = dim();
@@ -448,13 +452,17 @@ final class Mining {
             java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
             io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.inAreas(d, x, z)
                     && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null;
-            io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> fence.test(x, y, z) && fairOk(d, x, y, z);
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> fairOk(d, x, y, z) && fence.test(x, y, z);     // AA_ROUND3 4: the seen lookup first (cheap, mostly no)
             if (unseen > 0 && io.github.mojolowjo.entropybot.sense.Seen.fair())
                 for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, unseen,
                         (x, y, z) -> fence.test(x, y, z) && !fairOk(d, x, y, z)))
                     out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), Math.sqrt(h.d2()), false, false, false, -1, false, null, false));
             var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
-            for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, n, ok)) {
+            long tq = System.nanoTime();
+            var near = pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, n, ok);
+            long tc = System.nanoTime();
+            aaOresParts = "index " + (tc - tq) / 1000 + " us";
+            for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : near) {
                 BlockPos q = new BlockPos(h.x(), h.y(), h.z());
                 boolean loaded = level.isLoaded(q);
                 double dist = Math.sqrt(h.d2());
@@ -490,6 +498,7 @@ final class Mining {
                 out.add(new io.github.mojolowjo.entropybot.aa.IronOptions.Ore(h.x(), h.y(), h.z(), dist, true, open, sky, Math.max(1, top - h.y() + 1), wet, deny, floor,
                         wet ? 0 : io.github.mojolowjo.entropybot.guard.DrownRisk.cost(risk), drownWhy, wetFacts));
             }
+            aaOresParts += ", " + near.size() + " cells " + (System.nanoTime() - tc) / 1000 + " us";
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa iron: the known-ore facts could not be read: {}", e.toString());
         }

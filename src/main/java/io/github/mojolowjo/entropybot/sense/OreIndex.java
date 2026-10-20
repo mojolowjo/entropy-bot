@@ -182,20 +182,28 @@ public final class OreIndex {
         Map<Long, ChunkSummary> m = dims.get(d);
         if (m == null || n <= 0) return hits;
         long r2 = (long) r * r;
+        // AA_ROUND3 4 (the 33 ms pick): the id test once per id, the cheap filters first, then the caller's allow (areas,
+        // protect, guard, seen: the dear part) only in distance order until n are found
+        Map<String, Boolean> ids = new java.util.HashMap<>();
         for (ChunkSummary s : m.values()) {
             if (!chunkNear(s, x, z, r)) continue;
             for (Map.Entry<String, ChunkSummary.Group> e : s.ores.entrySet()) {
                 for (ChunkSummary.Spot sp : e.getValue().spots) {
-                    if (!idOk.test(sp.id())) continue;
                     long dx = sp.x() - x, dy = sp.y() - y, dz = sp.z() - z, d2 = dx * dx + dy * dy + dz * dz;
                     if (d2 > r2) continue;
-                    if (allow != null && !allow.test(sp.x(), sp.y(), sp.z())) continue;
+                    if (!ids.computeIfAbsent(sp.id(), idOk::test)) continue;
                     hits.add(new Hit(sp.x(), sp.y(), sp.z(), sp.id(), e.getKey(), d2, s.stale));
                 }
             }
         }
         hits.sort(Comparator.comparingLong(Hit::d2).thenComparingInt(Hit::y).thenComparingInt(Hit::x).thenComparingInt(Hit::z));
-        return hits.size() > n ? new ArrayList<>(hits.subList(0, n)) : hits;
+        if (allow == null) return hits.size() > n ? new ArrayList<>(hits.subList(0, n)) : hits;
+        List<Hit> out = new ArrayList<>(Math.min(n, hits.size()));
+        for (Hit h : hits) {
+            if (out.size() >= n) break;
+            if (allow.test(h.x(), h.y(), h.z())) out.add(h);
+        }
+        return out;
     }
 
     /** Family -> exact count in the chunks within r (flat) of x z; chunks: those chunks whose (x z) allow takes, by centre. */
