@@ -103,6 +103,9 @@ public final class AaRuntime implements JobPort {
         io.github.mojolowjo.entropybot.sense.Seen.fair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
         if (d.has("horizon")) bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, d.get("horizon").getAsInt());
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.COAL_SITE_FACT, (java.util.function.Supplier<int[]>) this::coalSite);
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.THREAT_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.threat.ThreatFacts>) this::threatFacts);     // AA_CLEANUP 4
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) AaRuntime::surfaceY);        // AA_ROUND4 B1
+        loadTuning();                                                                                                                        // AA_ROUND4 B3
         c.chains.onEnd(this::chainEnded);
     }
 
@@ -1104,7 +1107,10 @@ public final class AaRuntime implements JobPort {
         in.saturation = p.getFoodData().getSaturationLevel();
         in.hurtRecently = p.hurtTime > 0;
         Reflexes.Reflex r = Core.INSTANCE.reflexes.reflex();
-        in.danger = r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING || r == Reflexes.Reflex.RETREATING ? 2 : Core.INSTANCE.reflexes.hold() ? 1 : 0;
+        // AA_CLEANUP 4: AA's own danger moves (RETREATING) and its own attack (a forced fight) are not a danger pause;
+        // the true reflexes are (the hit response, the creeper flee, the fire reflex, eating)
+        boolean aaOwn = r == Reflexes.Reflex.RETREATING || (r == Reflexes.Reflex.FIGHTING && Core.INSTANCE.reflexes.forcing());
+        in.danger = !aaOwn && (r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) ? 2 : !aaOwn && Core.INSTANCE.reflexes.hold() ? 1 : 0;
         in.dangerWhy = in.danger > 0 ? r.name().toLowerCase() : "";
         in.creeperClose = creeperClose();
         in.air = p.getAirSupply();
@@ -1175,11 +1181,12 @@ public final class AaRuntime implements JobPort {
         in.difficulty = mc.level.getDifficulty().getId();
         in.light = mc.level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p.blockPosition());
         in.lit = litShare(mc.level, p.blockPosition());
+        in.torchesNear = torchesNear(mc.level, p.blockPosition());      // AA_ROUND4 B2
         // aa-night3 (normal2: 4 of 7 deaths shot by skeletons): a ranged mob hits from range, so it counts twice in the danger
         in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size()
                 + mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.AbstractSkeleton.class, p.getBoundingBox().inflate(24)).size();
         in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
-        in.armed = io.github.mojolowjo.entropybot.engine.Hostility.weaponHit(p) >= io.github.mojolowjo.entropybot.threat.FightOrFlee.ARMED;
+        in.armed = io.github.mojolowjo.entropybot.engine.Hostility.weaponHit(p) >= io.github.mojolowjo.entropybot.threat.ThreatFacts.ARMED;
         // aa-night2 P0 2: a zombie seen once stays seen (sticky while the game runs)
         if (!in.zombieSeen) in.zombieSeen = !mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Zombie.class, p.getBoundingBox().inflate(24)).isEmpty();
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
@@ -1904,6 +1911,113 @@ public final class AaRuntime implements JobPort {
      * Review 2 item 5: block light on a 9 x 9 grid (step 4) within 16 of the bot at its feet level, as the lit share
      * (Costs.litShare): one torch at the feet lights about 5 of 81 points, a lit camp most of them.
      */
+    // ---- AA_CLEANUP 4 / AA_ROUND4 B1-B3: the threat facts, the surface height, the torches near, the tuning file ----
+
+    private io.github.mojolowjo.entropybot.threat.ThreatFacts threatMemo;
+    private long threatAt = -1;
+
+    /** The danger desire's facts (DangerMoves.facts), at most once a second. Never throws (calm facts, logged there). */
+    private io.github.mojolowjo.entropybot.threat.ThreatFacts threatFacts() {
+        long now = System.currentTimeMillis();
+        if (threatMemo != null && now - threatAt < 1000) return threatMemo;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return io.github.mojolowjo.entropybot.threat.ThreatFacts.CALM;
+        threatAt = now;
+        threatMemo = Core.INSTANCE.reflexes.moves.facts(mc, mc.player, bb.in.basePos, null, Core.INSTANCE.reflexes.recentlyHurt());
+        return threatMemo;
+    }
+
+    /** The surface's y at x z (the MOTION_BLOCKING_NO_LEAVES heightmap), MIN_VALUE when the chunk is not loaded. */
+    private static int surfaceY(int x, int z) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || !mc.level.hasChunk(x >> 4, z >> 4)) return Integer.MIN_VALUE;
+        return mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+    }
+
+    private int torchMemo;
+    private long torchAt = -1;
+
+    /** Torches (and lanterns) within 16 across and 4 up or down, counted every 5 s. */
+    private int torchesNear(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos at) {
+        long now = System.currentTimeMillis();
+        if (torchAt >= 0 && now - torchAt < 5000) return torchMemo;
+        torchAt = now;
+        int n = 0;
+        net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int dx = -16; dx <= 16; dx++)
+            for (int dz = -16; dz <= 16; dz++)
+                for (int dy = -4; dy <= 4; dy++) {
+                    m.set(at.getX() + dx, at.getY() + dy, at.getZ() + dz);
+                    if (!lv.isLoaded(m)) continue;
+                    var st = lv.getBlockState(m);
+                    if (st.isAir() || st.getLightEmission() < 10) continue;
+                    String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+                    if (id.contains("torch") || id.contains("lantern")) n++;
+                }
+        torchMemo = n;
+        return n;
+    }
+
+    private static Path tuningFile() {
+        try {
+            return Core.INSTANCE.files() == null || Core.INSTANCE.files().worldRoot() == null ? null : Core.INSTANCE.files().worldRoot().resolve("aa-tuning.json");
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Loads the world's aa-tuning.json (absent: the defaults); errors are logged and the defaults kept for those. */
+    private void loadTuning() {
+        Path f = tuningFile();
+        Map<String, Double> m = new java.util.LinkedHashMap<>();
+        if (f != null && java.nio.file.Files.exists(f)) {
+            try {
+                JsonObject o = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(f)).getAsJsonObject();
+                for (var e : o.entrySet()) {
+                    try { m.put(e.getKey(), e.getValue().getAsDouble()); } catch (RuntimeException x) { m.put(e.getKey(), Double.NaN); }
+                }
+            } catch (Exception e) {
+                LOG.warn("[entropybot] aa: tuning file {} unreadable ({}) - defaults used", f, e.toString());
+            }
+        }
+        java.util.List<String> errors = io.github.mojolowjo.entropybot.aa.brain.Tuning.load(m);
+        if (!errors.isEmpty()) LOG.warn("[entropybot] aa: tuning: {} - defaults used for those", String.join("; ", errors));
+        else if (!m.isEmpty()) LOG.info("[entropybot] aa: tuning loaded ({} tuned)", m.size());
+    }
+
+    private static void saveTuning() {
+        Path f = tuningFile();
+        if (f == null) {
+            LOG.warn("[entropybot] aa: tuning not saved: no world folder");
+            return;
+        }
+        try {
+            JsonObject o = new JsonObject();
+            io.github.mojolowjo.entropybot.aa.brain.Tuning.changed().forEach(o::addProperty);
+            java.nio.file.Files.createDirectories(f.getParent());
+            Path tmp = f.resolveSibling("aa-tuning.json.tmp");
+            java.nio.file.Files.writeString(tmp, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(o));
+            java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            LOG.warn("[entropybot] aa: tuning write: {}", e.toString());
+        }
+    }
+
+    /** aa tune [name value]: lists the tuning, or sets one for this world and saves it. */
+    String tune(String[] w) {
+        if (w.length == 0) return "tuning (aa tune <name> <n>; saved per world in aa-tuning.json):\n" + String.join("\n", io.github.mojolowjo.entropybot.aa.brain.Tuning.lines());
+        if (w.length != 2) return "usage: aa tune [<name> <n>]";
+        double v;
+        try { v = Double.parseDouble(w[1]); } catch (NumberFormatException e) { return "error: " + w[1] + " is not a number"; }
+        String r = io.github.mojolowjo.entropybot.aa.brain.Tuning.set(w[0], v);
+        if (r.startsWith("ok")) {
+            saveTuning();
+            LOG.info("[entropybot] aa: {}", r);
+            return r + " (saved for this world)";
+        }
+        return r;
+    }
+
     private static double litShare(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos at) {
         int[] l = new int[81];
         int i = 0;
@@ -2214,7 +2328,15 @@ public final class AaRuntime implements JobPort {
      * set of items had (bag + known table/furnace), the stats file loaded once and saved when changed (2.9). Never
      * throws; a failure is logged once and shown by aa stats.
      */
+    /** AA_ROUND4 B3: the world folder the tuning was loaded for (a new world loads its own). */
+    private Path tuningFor;
+
     private void brainFacts(Minecraft mc, long now) {
+        Path tf = tuningFile();
+        if (tf != null && !tf.equals(tuningFor)) {
+            tuningFor = tf;
+            loadTuning();
+        }
         if (!statsLoaded && statsFile() != null) {      // review: only once the files are known
             statsLoaded = true;
             loadStats();

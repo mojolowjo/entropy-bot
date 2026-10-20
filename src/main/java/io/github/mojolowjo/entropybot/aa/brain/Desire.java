@@ -172,6 +172,15 @@ public final class Desire {
     /** aa-night2 P0 1: at its full score this desire beats any running one but starving food (Brain.trumps). */
     boolean trumps;
 
+    /** AA_CLEANUP 4: trumps, and at its full score beats a running trumping desire too (danger over the shelter and the hide). */
+    boolean overTrumps;
+
+    public Desire overTrumps() {
+        trumps = true;
+        overTrumps = true;
+        return this;
+    }
+
     public Desire trumps() {
         trumps = true;
         return this;

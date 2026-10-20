@@ -167,7 +167,7 @@ public final class ThreatRuntime {
                 firstSeen.keySet().retainAll(out.keySet());
                 ReachGrid g = cache.grid();
                 int[] w = cache.walk();
-                litSpot = g == null || w == null ? null : g.nearestLit(w, FightOrFlee.LIT, FightOrFlee.LIT_MAX_DIST);
+                litSpot = g == null || w == null ? null : g.nearestLit(w, ThreatFacts.LIT, ThreatFacts.LIT_MAX_DIST);
             }
             latest = out;
             broken = false;
@@ -318,18 +318,6 @@ public final class ThreatRuntime {
         }
     }
 
-    /** 0.24.4 dead-end rule: the check for the bot against this mob on the fresh grid, else null (no rule). Never throws. */
-    public DeadEnd.Check deadEnd(LocalPlayer p, Entity mob) {
-        try {
-            ReachGrid g = grid();
-            if (g == null || mob == null) return null;
-            return DeadEnd.check(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mob.getBlockX(), mob.getBlockY(), mob.getBlockZ());
-        } catch (RuntimeException e) {
-            error("dead end", e);
-            return null;
-        }
-    }
-
     /** 0.25.1 cover rule: a cell out of this mob's sight on the fresh grid, else null. Never throws. */
     public Cover.Spot cover(LocalPlayer p, Entity mob) {
         try {
@@ -338,18 +326,6 @@ public final class ThreatRuntime {
             return Cover.find(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mob.getX(), mob.getEyeY(), mob.getZ());
         } catch (RuntimeException e) {
             error("cover", e);
-            return null;
-        }
-    }
-
-    /** 0.25.1 high-ground rule: a cell above these mobs with one way up on the fresh grid, else null. Never throws. */
-    public HighGround.Spot highGround(LocalPlayer p, List<int[]> mobs) {
-        try {
-            ReachGrid g = grid();
-            if (g == null) return null;
-            return HighGround.find(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mobs);
-        } catch (RuntimeException e) {
-            error("high ground", e);
             return null;
         }
     }

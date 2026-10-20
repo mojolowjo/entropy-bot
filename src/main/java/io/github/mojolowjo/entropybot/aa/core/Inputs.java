@@ -62,6 +62,8 @@ public final class Inputs {
     public int difficulty = 2, light, hostilesNear;
     /** Review 2 item 5: the lit share (block light 8+) of a grid within 16 of the bot, 0..1; the night danger reads this, not {@link #light}. */
     public double lit;
+    /** AA_ROUND4 B2: torches within 16 of the bot (the adapter's count; the night danger's light term). Not in the vector. */
+    public int torchesNear;
     /** aa-night2 P0 2: a weapon with hit 4+ in the bag (a sword or an axe; Hostility.weaponHit); a zombie seen this run. Not in the vector. */
     public boolean armed, zombieSeen;
 

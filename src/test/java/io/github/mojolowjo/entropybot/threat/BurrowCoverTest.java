@@ -39,14 +39,4 @@ class BurrowCoverTest {
         assertEquals(4, CornerEscape.burrowStage(3, 3, false, false, true));
     }
 
-    @Test
-    void skeletonsAtRangeMeanCover() {
-        var fight = new FightOrFlee.Result(FightOrFlee.Verdict.FIGHT, 5, 2, "fight: fliers/ranged can't be outrun");
-        var skel = List.of(new FightOrFlee.Foe("minecraft:skeleton", 9, false));
-        var r = FightOrFlee.cover(fight, 6, skel);
-        assertTrue(FightOrFlee.isCover(r), r.why());
-        assertTrue(FightOrFlee.isCover(FightOrFlee.cover(fight, 1, List.of(new FightOrFlee.Foe("minecraft:skeleton", 2, false)))), "unarmed: always cover");
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.cover(fight, 6, List.of(new FightOrFlee.Foe("minecraft:skeleton", 2, false))).verdict(), "armed and in reach");
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.cover(fight, 1, List.of(new FightOrFlee.Foe("minecraft:zombie", 2, false))).verdict(), "no ranged: not this rule");
-    }
 }

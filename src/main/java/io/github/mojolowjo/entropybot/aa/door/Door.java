@@ -99,7 +99,7 @@ public final class Door {
 
     public static int refused(Driver d) { return refused.getOrDefault(d, 0); }
 
-    /** "refused starts: danger 3 (last: retreat home from zombie), other 1 (last: chain escape stairs)" or "refused starts: none". */
+    /** "refused starts: rule 3 (last: chain rule #2), other 1 (last: chain escape stairs)" or "refused starts: none". */
     public static String text() {
         if (refused.isEmpty()) return "refused starts: none";
         StringBuilder b = new StringBuilder("refused starts: ");

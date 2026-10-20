@@ -10,7 +10,7 @@ import java.util.List;
 final class AaCommands {
     private AaCommands() {}
 
-    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter";
+    static final String USAGE = "usage: aa on|off|status|why|tree|stats | aa like [<key> <n>] | aa tune [<name> <n>] | aa want <thing> [n] [high|low] | aa drop <thing>|all | aa goals | aa build <name> here|at <x y z> [high|low] | aa ore [info] [<thing>] | aa ask on|off | aa pick <n> | aa do <need>|none | aa skip <need>|none | aa use <option> | aa replan on|off | aa look [smooth <ticks>] | aa horizon [seconds] | aa fair [on|off] | aa litter";
 
     static String handle(Commands c, String rest) {
         AaRuntime aa = c.aaRuntime;
@@ -34,6 +34,7 @@ final class AaCommands {
             case "stats" -> { return aa.statsText(); }
             case "litter" -> { return RestoreLive.INSTANCE.litterText(); }
             case "like" -> { return aa.like(arg); }
+            case "tune" -> { return aa.tune(arg == null || arg.isBlank() ? new String[0] : arg.trim().split("\\s+")); }     // AA_ROUND4 B3
             case "want" -> { return aa.want(arg); }
             case "drop" -> { return aa.drop(arg); }
             case "goals" -> { return aa.goalsText(); }

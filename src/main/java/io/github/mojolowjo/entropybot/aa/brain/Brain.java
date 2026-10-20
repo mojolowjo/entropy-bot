@@ -188,23 +188,51 @@ public final class Brain extends Node {
     public static double danger(Blackboard bb) {
         if (!Night.hostile(bb)) return 0;
         var in = bb.in;
-        return Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.lit, in.hostilesNear, in.bedKnown || in.bedInBag);
+        return Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.torchesNear, in.hostilesNear);
     }
 
     /** Under this much ground over the bot it is not at the surface (AaLadder.SURFACE_DEPTH). */
     static final int SURFACE_DEPTH = 3;
 
     /**
-     * Review 2 item 1: the night factor follows where the work happens. An ANY desire counts as SURFACE while the bot is
-     * at the surface (under {@link #SURFACE_DEPTH} of ground) and its site, when known, is not {@link #SURFACE_DEPTH}+
-     * below the bot; otherwise the desire's own label.
+     * AA_ROUND4 B1: blackboard fact, an {@code IntBinaryOperator} (x, z) -> the surface's y there (the heightmap the adapter
+     * keeps; {@link Integer#MIN_VALUE} = not loaded).
+     */
+    public static final String SURFACE_Y_FACT = "aa.surfaceY";
+
+    /**
+     * AA_ROUND4 B1 (danger where the work is): the night factor follows the site of the work, not a label. A trumping or
+     * night-proof desire (shelter, hide, sleep, danger, the owner's help) is never discounted. A desire with a site (its
+     * chosen option's target, the base...) is UNDER when the site is {@link #SURFACE_DEPTH}+ under the surface there (the
+     * heightmap fact; unknown: the bot's own surface), else SURFACE. A desire with no site keeps its label as an override
+     * (idle stone/coal UNDER, wood SURFACE); an ANY one with no site goes by where the bot is.
      */
     static Desire.Exposure workExposure(Blackboard bb, Desire d) {
-        if (d.exposure != Desire.Exposure.ANY || d.nightProof || bb.in.underDepth >= SURFACE_DEPTH) return d.exposure;
+        if (d.nightProof || d.trumps) return Desire.Exposure.ANY;
         Site s = d.siteOf(bb);
-        int[] me = bb.in.pos;
-        if (s != null && me != null && me.length >= 3 && s.y() <= me[1] - SURFACE_DEPTH) return d.exposure;
-        return Desire.Exposure.SURFACE;
+        if (s == null) {
+            if (d.exposure != Desire.Exposure.ANY) return d.exposure;
+            return bb.in.underDepth >= SURFACE_DEPTH ? Desire.Exposure.UNDER : Desire.Exposure.SURFACE;
+        }
+        return siteUnder(bb, s) ? Desire.Exposure.UNDER : Desire.Exposure.SURFACE;
+    }
+
+    /** The site is SURFACE_DEPTH+ under the surface above it (the heightmap; else the bot's surface: its y + ground over it). */
+    static boolean siteUnder(Blackboard bb, Site s) {
+        int surface = Integer.MIN_VALUE;
+        if (bb.fact(SURFACE_Y_FACT) instanceof java.util.function.IntBinaryOperator h) {
+            try {
+                surface = h.applyAsInt(s.x(), s.z());
+            } catch (RuntimeException e) {
+                bb.port.log("brain: surface height failed: " + e);
+            }
+        }
+        if (surface == Integer.MIN_VALUE) {
+            int[] me = bb.in.pos;
+            if (me == null || me.length < 3) return false;
+            surface = me[1] + Math.max(0, bb.in.underDepth);
+        }
+        return s.y() <= surface - SURFACE_DEPTH;
     }
 
     /** SURFACE 1 / (1 + danger), UNDER 1 + danger / 2, ANY 1. */
@@ -265,11 +293,11 @@ public final class Brain extends Node {
                 // AA_ROUND2 4: a desire parked by a gate gives the value it would have to that gate
                 double base = out.get(j).d().kind == Desire.Kind.GATE ? Math.max(own[i], out.get(i).parked()) : own[i];
                 // a prerequisite is worth at least FLOW of what it unlocks (the best giver; values never add up past it)
-                double give = Curves.FLOW * Math.max(base, base + flow[i]) - own[j];
+                double give = Tuning.get("flow") * Math.max(base, base + flow[i]) - own[j];
                 if (give <= next[j]) continue;
                 next[j] = give;
                 nf[j] = null;
-                nf[j] = "(at least " + Math.round(Curves.FLOW * 100) + "% of " + out.get(i).d().id + ": +" + Math.round(give) + ")";
+                nf[j] = "(at least " + Math.round(Tuning.get("flow") * 100) + "% of " + out.get(i).d().id + ": +" + Math.round(give) + ")";
             }
             flow = next;
             from = nf;
@@ -374,7 +402,8 @@ public final class Brain extends Node {
      * {@link #TRUMP_FOOD} and another trumping desire keep running.
      */
     static boolean trumps(Blackboard bb, Scored s, Desire cur) {
-        if (!s.d().trumps || s.own() < Costs.SHELTER_MAX || cur.trumps) return false;
+        // AA_CLEANUP 4: a desire that trumps the trumping ones (danger) beats a running shelter or hide at its full score too
+        if (!s.d().trumps || s.own() < Costs.SHELTER_MAX || (cur.trumps && !(s.d().overTrumps && !cur.overTrumps))) return false;
         return !(cur.id.equals("needs.food") && bb.in.food < TRUMP_FOOD);
     }
 

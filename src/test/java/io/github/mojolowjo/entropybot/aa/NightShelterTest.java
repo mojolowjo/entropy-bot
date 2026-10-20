@@ -22,7 +22,7 @@ class NightShelterTest {
     void fullNightSurfaceIsUrgentHigherEarlyAndOffInPeacefulOrUnderground() {
         bb.in.hungerDrains = true;
         bb.in.dayTime = 18000;
-        assertEquals(85 * 1.05, AaDesires.shelterScore(bb), 1e-9, "aa-costs: Normal, no armour, no bed, dark");
+        assertEquals(85, AaDesires.shelterScore(bb), 1e-9, "aa-costs: Normal, no armour, dark (AA_ROUND4 B2: no bed term)");
         assertTrue(AaDesires.shelterScore(bb) >= Brain.URGENT);
         bb.in.armorPoints = 8;
         bb.in.bedKnown = true;

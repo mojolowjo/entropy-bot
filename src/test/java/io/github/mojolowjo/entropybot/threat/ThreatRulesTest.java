@@ -111,30 +111,4 @@ class ThreatRulesTest {
 
     // ---- fight or flee ----
 
-    static FightOrFlee.Me me(double hp, int armor, double weapon, int light, int lit) {
-        return new FightOrFlee.Me(hp, 20, armor, weapon, light, lit, 6);
-    }
-
-    static List<FightOrFlee.Foe> zombies(int n) {
-        return java.util.stream.IntStream.range(0, n).mapToObj(i -> new FightOrFlee.Foe("zombie", 4, false)).toList();
-    }
-
-    @Test
-    void fightOrFleeTable() {
-        // full iron (15) and an iron sword (hit 6), full health: one zombie is a fight, six are a flight
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 15, 6, 0, -1), zombies(1)).verdict());
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(20, 15, 6, 0, -1), zombies(6)).verdict());
-        // no armour, a wooden sword (hit 4): tight against one zombie
-        FightOrFlee.Result tight = FightOrFlee.assess(me(20, 0, 4, 0, 10), zombies(1));
-        assertEquals(FightOrFlee.Verdict.LIT, tight.verdict(), tight.why());
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 4, 12, 10), zombies(1)).verdict(), "tight but lit here");
-        // brain-b1: a lone weak mob against an armed bot is fought even dark with no lit spot (was HOME)
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.assess(me(20, 0, 4, 0, -1), zombies(1)).verdict(), "tight, dark, no lit spot, lone zombie");
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(20, 0, 1, 0, -1), zombies(1)).verdict(), "tight, dark, no lit spot, bare hands");
-        // a creeper in a group: home
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(20, 15, 6, 15, -1),
-                List.of(new FightOrFlee.Foe("zombie", 4, false), new FightOrFlee.Foe("creeper", 5, true))).verdict());
-        // low health: losing
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.assess(me(9, 0, 6, 15, -1), zombies(2)).verdict());
-    }
 }

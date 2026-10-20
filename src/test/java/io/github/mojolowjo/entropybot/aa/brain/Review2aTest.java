@@ -33,7 +33,7 @@ class Review2aTest {
         Desire shelter = night.stream().filter(x -> x.id.equals("night.shelter")).findFirst().orElseThrow();
         Brain br = new Brain("brain", "t", d("needs.tools", Desire.Kind.UPKEEP, 98, Desire.Exposure.ANY), shelter);
         double danger = Brain.danger(bb);
-        assertEquals(1.05, danger, 1e-9, "Normal, no armour, no bed, dark");
+        assertEquals(1.0, danger, 1e-9, "Normal, no armour, dark (AA_ROUND4 B2: no bed term)");
         var s = br.scoreAll(bb);
         assertEquals(98 / (1 + danger), s.get(0).score(), 1e-9, s.get(0).parts());
         assertTrue(s.get(0).rank() < 1000, "no longer urgent");
@@ -43,15 +43,15 @@ class Review2aTest {
     }
 
     @Test
-    void item1AnyWorkUnderGroundOrAtADeepSiteKeepsItsLabel() {
+    void item1AnyWorkUnderGroundOrAtADeepSiteCountsAsUnder() {
         normalNight();
         Desire tools = d("needs.tools", Desire.Kind.UPKEEP, 98, Desire.Exposure.ANY);
         bb.in.underDepth = 3;
-        assertEquals(Desire.Exposure.ANY, Brain.workExposure(bb, tools), "the bot is under ground");
+        assertEquals(Desire.Exposure.UNDER, Brain.workExposure(bb, tools), "AA_ROUND4 B1: no site: where the bot is (under ground)");
         bb.in.underDepth = 0;
         bb.in.pos = new int[]{0, 70, 0};
         tools.site(b -> Site.at(5, 40, 5));
-        assertEquals(Desire.Exposure.ANY, Brain.workExposure(bb, tools), "the site is deep");
+        assertEquals(Desire.Exposure.UNDER, Brain.workExposure(bb, tools), "AA_ROUND4 B1: the site is deep: under");
         tools.site(b -> Site.at(5, 69, 5));
         assertEquals(Desire.Exposure.SURFACE, Brain.workExposure(bb, tools), "the site is at the surface");
         assertEquals(Desire.Exposure.UNDER, Brain.workExposure(bb, d("iron", Desire.Kind.PROGRESS, 50, Desire.Exposure.UNDER)), "labels other than ANY stay");
@@ -74,17 +74,13 @@ class Review2aTest {
     }
 
     @Test
-    void item5OneTorchAtTheFeetIsNotALitArea() {
-        double dark = Costs.nightDanger(2, 0, 20, 20, 0, 0, false);
-        int[] oneTorch = new int[81];
-        for (int i = 0; i < 5; i++) oneTorch[i] = 10;
-        double torch = Costs.nightDanger(2, 0, 20, 20, Costs.litShare(oneTorch), 0, false);
-        assertTrue(torch > dark * 0.97, "one torch cuts under 3%: " + torch);
-        assertTrue(Costs.shelterScore(torch) > 85, "the shelter keeps its 89-ish");
-        int[] all = new int[81];
-        java.util.Arrays.fill(all, 14);
-        assertEquals(dark * (1 - Costs.LIGHT_CUT), Costs.nightDanger(2, 0, 20, 20, Costs.litShare(all), 0, false), 1e-9, "at most -30%");
-        assertEquals(dark * (1 - Costs.LIGHT_CUT), Costs.nightDanger(2, 0, 20, 20, 5.0, 0, false), 1e-9, "clamped");
+    void round4B2TorchesWithin16CutTheDangerFivePercentEach() {
+        double dark = Costs.nightDanger(2, 0, 20, 20, 0, 0);
+        assertEquals(1.0, dark, 1e-9, "Normal, no armour, full health, no torches, no hostiles: 1 (the bed term went)");
+        assertEquals(dark * 0.95, Costs.nightDanger(2, 0, 20, 20, 1, 0), 1e-9, "one torch: -5%");
+        assertEquals(dark * 0.7, Costs.nightDanger(2, 0, 20, 20, 6, 0), 1e-9, "six: the floor 0.7");
+        assertEquals(dark * 0.7, Costs.nightDanger(2, 0, 20, 20, 40, 0), 1e-9, "never under the floor");
+        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 0, 20, 20, 1, 0)) > Brain.URGENT, "one torch: the shelter stays urgent");
         assertEquals(0, Costs.litShare(new int[0]), 1e-9);
     }
 }

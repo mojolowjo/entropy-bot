@@ -80,6 +80,7 @@ public final class ActionTable {
         v("a:attack", "attack");
         v("a:eat", "eat");
         v("a:burrow", "burrow");
+        v("n:a danger move (AA's danger desire prices and runs it; AA_CLEANUP 4)", "flee", "cover", "pillar");
         v("a:chest", "open", "take", "put", "close");
         v("a:area", "area");
         v("a:camp", "camp");

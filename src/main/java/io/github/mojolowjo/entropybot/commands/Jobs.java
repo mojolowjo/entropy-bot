@@ -2179,8 +2179,8 @@ public final class Jobs {
 
     /**
      * The reflexes against the job (the bridge's syncReflexes for its own jobs): a held job's clocks move on by the
-     * hold and the reflex's own path events are not the job's; a retreat stops any job, an urgent fight stops what
-     * isn't a walk, a denied dimension stops everything.
+     * hold and the reflex's own path events are not the job's; with AA off an urgent fight stops what isn't a walk; a
+     * denied dimension stops everything.
      */
     private void reflexWatch(LocalPlayer p) {
         Reflexes.Reflex r = core.reflexes.reflex(), prev = reflexWas;
@@ -2209,10 +2209,9 @@ public final class Jobs {
         if (!running()) return;
         JsonObject st = core.reflexes.status();
         String target = st.has("target") ? st.get("target").getAsString() : "a monster";
-        if (r == Reflexes.Reflex.RETREATING && prev != Reflexes.Reflex.RETREATING && !core.reflexes.sheltering()) {   // 0.24.1: a shelter keeps the job
-            stopForReflex("stopped: low health, getting away from " + target);
-        } else if ((r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) && st.has("urgent") && st.get("urgent").getAsBoolean()
-                && !job.type.equals("travel") && !job.holdOnFight) {
+        // AA_CLEANUP 4: no retreat stops a job any more (the danger moves hold it); under AA a fight holds it too
+        if ((r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) && st.has("urgent") && st.get("urgent").getAsBoolean()
+                && !job.type.equals("travel") && !job.holdOnFight && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()) {
             stopForReflex("stopped: attacked by " + target);
         } else if (st.has("deniedDim")) {
             stopForReflex("stopped: I am in " + st.get("deniedDim").getAsString() + ", which is off limits");
@@ -2237,10 +2236,6 @@ public final class Jobs {
     }
 
     private void stopForReflex(String msg) {
-        // AA_CLEANUP 2: the retreat and fight stops are hand-rule danger decisions; under AA the job is held, not
-        // killed (AA's own danger pause decides). A denied dimension is a true reflex and still stops it.
-        if (!msg.contains("off limits") && !io.github.mojolowjo.entropybot.aa.door.Door.allow(
-                io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "stop the job: " + msg.replaceFirst("^stopped: ", ""))) return;
         finish(msg);
         IBaritone b = baritone();
         if (b != null) cancel(b);

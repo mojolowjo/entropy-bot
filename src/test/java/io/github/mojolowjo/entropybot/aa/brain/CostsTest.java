@@ -59,14 +59,14 @@ class CostsTest {
 
     @Test
     void nightDangerFromTheFacts() {
-        double early = Costs.nightDanger(2, 0, 20, 20, 0, 0, false);
+        double early = Costs.nightDanger(2, 0, 20, 20, 0, 0);
         assertTrue(Costs.shelterScore(early) >= Brain.URGENT, "early game, Normal: shelter");
-        assertEquals(0, Costs.nightDanger(0, 0, 20, 20, 0, 5, false), 1e-9, "Peaceful");
-        assertTrue(Costs.nightDanger(3, 0, 20, 20, 0, 0, false) > early, "Hard");
-        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 15, 20, 20, 0, 0, true)) < Brain.URGENT, "iron armour and a bed: work on");
-        assertTrue(Costs.nightDanger(2, 0, 8, 20, 0, 0, false) > early, "hurt");
-        assertTrue(Costs.nightDanger(2, 0, 20, 20, 12, 0, false) < early, "lit");
-        assertTrue(Costs.nightDanger(2, 0, 20, 20, 0, 4, false) > early, "hostiles near");
+        assertEquals(0, Costs.nightDanger(0, 0, 20, 20, 0, 5), 1e-9, "Peaceful");
+        assertTrue(Costs.nightDanger(3, 0, 20, 20, 0, 0) > early, "Hard");
+        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 15, 20, 20, 0, 0)) < Brain.URGENT, "iron armour: work on");
+        assertTrue(Costs.nightDanger(2, 0, 8, 20, 0, 0) > early, "hurt");
+        assertTrue(Costs.nightDanger(2, 0, 20, 20, 3, 0) < early, "torches near");
+        assertTrue(Costs.nightDanger(2, 0, 20, 20, 0, 4) > early, "hostiles near");
         assertTrue(Costs.shelterScore(10) <= Costs.SHELTER_MAX);
     }
 

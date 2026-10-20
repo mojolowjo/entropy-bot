@@ -127,7 +127,6 @@ public final class Storage {
 
     /** Every 20 ticks: a container opened by "use" (or by hand after it) is noted once its contents change. */
     void tick(LocalPlayer p) {
-        if (core.reflexes.reflex() == Reflexes.Reflex.FETCHING) lastOpened = null;      // the food run's chest is its own
         Map<String, Integer> contents = Gui.containerContents(p);
         if (contents == null) {
             if (containerSeen) {

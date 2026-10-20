@@ -60,12 +60,15 @@ public final class AaDesires {
         };
     }
 
+    /** AA_ROUND4 B2: the most a rung scores by itself (100 is the owner's aa do; the night discounts by place, B1). */
+    static final double RUNG_MAX = 99;
+
     /** A rung's score: 100 for the owner's aa do, -1 when skipped or met, else {@code f}. */
     static double rungScore(Rung r, Blackboard bb, ToDoubleFunction<Blackboard> f) {
         AaManual man = AaManual.of(bb);
         if (r.id.equals(man.doRung)) return 100;
         if (man.skipped(r.id)) return -1;
-        return r.unmet(bb) ? f.applyAsDouble(bb) : -1;
+        return r.unmet(bb) ? Math.min(RUNG_MAX, f.applyAsDouble(bb)) : -1;      // AA_ROUND4 B2: TOOLS_MAX went; no rung reaches the owner's 100
     }
 
     /**
@@ -116,8 +119,6 @@ public final class AaDesires {
     /** small-1: the surface rung's own score when a night mine is to be left at dawn. */
     static final double DAWN_CLIMB = 45;
 
-    /** aa-night2 P0 1: tools stay under the full-night shelter's 99 (a tie kept the running one). */
-    static final double TOOLS_MAX = 98;
 
     public static Desire rung(Rung r) {
         Desire d = switch (r.id) {
@@ -125,7 +126,7 @@ public final class AaDesires {
             case "needs.area", "needs.woodArea" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> 0));
             // small-1: the surface gate binds SURFACE desires only; the dawn climb out of a night mine is its own SURFACE desire
             case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> NightWork.climbAtDawn(b, AaLadder.SURFACE_DEPTH) ? DAWN_CLIMB : 0)).exposure(Desire.Exposure.SURFACE);
-            case "needs.tools" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Math.min(TOOLS_MAX, factor(b, "tools") * tools(b)))), b -> null, b -> null);
+            case "needs.tools" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b))), b -> null, b -> null);
             // urgent food is never parked by a gate (starving is starving); a stock-up waits for it
             case "needs.food" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)), b -> null, AaDesires::foodInfeasible)
                     .infeasible(b -> {
@@ -203,14 +204,13 @@ public final class AaDesires {
         boolean table = b.in.tableKnown || b.in.tableInBag;
         if (!table) return Worth.table(tree(b), have(b));
         if (!(b.in.furnaceKnown || b.in.furnaceInBag)) return Worth.furnace(tree(b), have(b));
-        // aa-kit camp: the chest is worth the stash it makes possible (the loot x the night's danger), at least CHEST_MIN
-        double v = Math.max(CHEST_MIN, Math.min(70, Kit.lootWorth(b.in.bag) * bedDanger(b)));
+        // aa-kit camp: the chest is worth the stash it makes possible (the loot x the night's danger), at least Tuning chestMin
+        double v = Math.max(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("chestMin"), Math.min(70, Kit.lootWorth(b.in.bag) * bedDanger(b)));
         io.github.mojolowjo.entropybot.aa.brain.Costs.note(b, "camp", "chest: loot " + Math.round(Kit.lootWorth(b.in.bag)) + " x danger "
-                + Math.round(bedDanger(b) * 100) / 100.0 + " (at least " + Math.round(CHEST_MIN) + ") -> " + Math.round(v));
+                + Math.round(bedDanger(b) * 100) / 100.0 + " (at least " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("chestMin")) + ") -> " + Math.round(v));
         return v;
     }
 
-    static final double CHEST_MIN = 35;
 
     /** aa-kit camp: a chest stands at the base (scanned), or the camp has none yet. */
     static boolean campChest(Blackboard b) { return b.in.baseChests; }
@@ -246,7 +246,7 @@ public final class AaDesires {
     static double bedDanger(Blackboard b) {
         if (!b.in.hungerDrains) return 0;                  // Peaceful (the adapter's flag, as Night.hostile reads it)
         return io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(b.in.difficulty, b.in.armorPoints, b.in.health, b.in.maxHealth,
-                b.in.lit, b.in.hostilesNear, false);
+                b.in.torchesNear, b.in.hostilesNear);
     }
 
     /** AA_ROUND2 1+2: a rung desire's probe (may it start?) and, with a picker, its live cost. */
@@ -554,11 +554,10 @@ public final class AaDesires {
         // early game (no armour, no bed); the grace lets the running step finish first
         // aa-costs (was a fixed 80 + 5 no armour + 5 no bed): the danger of staying out (Costs.nightDanger)
         if (d >= 1) {
-            boolean bed = bb.in.bedKnown || bb.in.bedInBag;
             double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
-                    bb.in.lit, bb.in.hostilesNear, bed);
+                    bb.in.torchesNear, bb.in.hostilesNear);
             io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "shelter", io.github.mojolowjo.entropybot.aa.brain.Costs.nightTerms(bb.in.difficulty,
-                    bb.in.armorPoints, bb.in.health, bb.in.lit, bb.in.hostilesNear, bed, danger));
+                    bb.in.armorPoints, bb.in.health, bb.in.torchesNear, bb.in.hostilesNear, danger));
             return io.github.mojolowjo.entropybot.aa.brain.Costs.shelterScore(danger);
         }
         if (bb.in.bedKnown || bb.in.bedInBag) return -1;      // dusk with a bed: night.sleep waits its turn
@@ -576,20 +575,18 @@ public final class AaDesires {
 
     /** Health the hide waits for; health under which it starts by day with hostiles near. */
     public static final float HEAL_TO = 16, HIDE_DAY_UNDER = 10;
-    /** Score per point of missing health x the night danger. */
-    static final double HIDE_PER_HP = 7;
     /** Blackboard fact: the hide has started (Boolean): it keeps scoring until health reaches {@link #HEAL_TO}. */
     public static final String HIDE_FACT = "aa.hide";
 
     /**
-     * Hide and heal: nightDanger x missing health (x {@link #HIDE_PER_HP}, at most 99) at a hostile night, or by day with
+     * Hide and heal: nightDanger x missing health (x Tuning hidePerHp, at most 99) at a hostile night, or by day with
      * hostiles near and health under {@link #HIDE_DAY_UNDER}; once started it holds until {@link #HEAL_TO}. Pure.
      */
     public static double hideScore(boolean hostileNight, int hostilesNear, float health, float maxHealth, double danger, boolean started) {
         if (health >= HEAL_TO) return -1;
         boolean trigger = started || (hostileNight ? health < maxHealth : hostilesNear > 0 && health < HIDE_DAY_UNDER);
         if (!trigger) return -1;
-        return Math.min(io.github.mojolowjo.entropybot.aa.brain.Costs.SHELTER_MAX, HIDE_PER_HP * Math.max(1, danger) * (maxHealth - health));
+        return Math.min(io.github.mojolowjo.entropybot.aa.brain.Costs.SHELTER_MAX, io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hidePerHp") * Math.max(1, danger) * (maxHealth - health));
     }
 
     static double hideScore(Blackboard bb) {
@@ -597,7 +594,7 @@ public final class AaDesires {
         boolean started = Boolean.TRUE.equals(bb.fact(HIDE_FACT));
         if (bb.in.health >= HEAL_TO && started) bb.fact(HIDE_FACT, null);
         double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
-                bb.in.lit, bb.in.hostilesNear, bb.in.bedKnown || bb.in.bedInBag);
+                bb.in.torchesNear, bb.in.hostilesNear);
         double v = hideScore(Night.hostile(bb), bb.in.hostilesNear, bb.in.health, bb.in.maxHealth, danger, started && bb.in.health < HEAL_TO);
         if (v >= Brain.URGENT) bb.fact(HIDE_FACT, Boolean.TRUE);
         if (v > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "hide", "health " + Math.round(bb.in.health) + "/" + Math.round(bb.in.maxHealth)
@@ -617,6 +614,45 @@ public final class AaDesires {
                 .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).grace(2_000).patient(4 * 60_000).trumps().lastTry().nightProof()
                 // its own end: healed (the shell it waits in turns the score off; that is no gone reason)
                 .met(b -> !b.in.hungerDrains || b.in.health >= HEAL_TO);
+    }
+
+    // ---- AA_CLEANUP 4: danger (fight, flee, home, cover, dig in, pillar priced on the threat facts) ----
+
+    /** Blackboard fact: a {@code Supplier<ThreatFacts>} (the adapter's, cached about a second). */
+    public static final String THREAT_FACT = "aa.threatFacts";
+    public static final String DANGER_ID = "danger";
+
+    /** The priced ways now (null: no facts supplier). */
+    static DangerOptions.Choice dangerChoice(Blackboard bb) {
+        if (!(bb.fact(THREAT_FACT) instanceof java.util.function.Supplier<?> s)) return null;
+        Object f = s.get();
+        return f instanceof io.github.mojolowjo.entropybot.threat.ThreatFacts tf ? DangerOptions.choose(tf) : null;
+    }
+
+    /** The seconds the best way saves over staying x Tuning danger.perS (at most 99: trumps like the shelter); -1 calm or staying is best. */
+    static double dangerScore(Blackboard bb) {
+        DangerOptions.Choice c = dangerChoice(bb);
+        if (c == null) return -1;
+        if (c.stay() != null) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "danger", c.terms());
+        return c.score();
+    }
+
+    /**
+     * AA_CLEANUP 4: the danger desire (UPKEEP, trumps like the shelter, never discounted by the night): its job runs the
+     * best way's chain ("flee then wait 6", "burrow then wait 33", "attack nearest then wait 5", "go base"...); it ends
+     * when staying is cheapest again. The reflexes keep only air, lava/fire, fall, the creeper flee and the hit response.
+     */
+    public static Desire danger() {
+        RunJob job = new RunJob(DANGER_ID + ".job", TaskKind.BASE_BED, bb -> {
+            DangerOptions.Choice c = dangerChoice(bb);
+            String chain = c == null || c.score() < 0 ? null : c.chain();
+            if (chain == null) return null;
+            bb.port.log("danger: " + c.terms());
+            return new JobPort.TaskSpec(TaskKind.BASE_BED, chain, "danger", 1, 3 * 60_000L, 90_000L);
+        });
+        return new Desire(DANGER_ID, Desire.Kind.UPKEEP, AaTree.idleCd(DANGER_ID + ".cd", job), AaDesires::dangerScore)
+                .cools(Cooldown.NO_RUN_MS, 0).patient(2 * 60_000).overTrumps().lastTry().nightProof()
+                .met(b -> dangerScore(b) < 0);
     }
 
     /** The step grace before the shelter interrupts. */
@@ -819,6 +855,7 @@ public final class AaDesires {
         for (Rung r : rungs) ds.add(rung(r));
         ds.add(ideas());
         ds.addAll(night());
+        ds.add(danger());           // AA_CLEANUP 4
         ds.addAll(wants());
         ds.add(help());
         Rung iron = null;

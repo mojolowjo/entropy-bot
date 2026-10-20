@@ -56,26 +56,6 @@ class DamageLogTest {
         assertEquals("genericKill", second.get(0).source());
     }
 
-    @Test
-    void observedDamageReplacesTheTableAfterThreeSamples() {
-        MobDamage md = new MobDamage();
-        FightOrFlee.Me me = new FightOrFlee.Me(20, 20, 0, 6, 0, -1, 6);
-        List<FightOrFlee.Foe> one = List.of(new FightOrFlee.Foe("minecraft:zombie", 3, false));
-        FightOrFlee.Result a = FightOrFlee.assess(me, one, md);
-        assertTrue(a.why().contains("zombie assumed 3/hit"), a.why());
-        md.add("minecraft:zombie", 7.5);
-        md.add("zombie", 7.5);
-        assertTrue(FightOrFlee.assess(me, one, md).why().contains("assumed"), "2 samples: still the table");
-        md.add("zombie", 7.5);
-        FightOrFlee.Result b = FightOrFlee.assess(me, one, md);
-        assertTrue(b.why().contains("zombie observed 7.5/hit (n=3)"), b.why());
-        assertTrue(b.loss() > a.loss(), "harder hits, bigger expected loss");
-        md.add("zombie", 1.5);                     // a decaying average: 7.5 + 0.3 * (1.5 - 7.5) = 5.7
-        assertEquals(5.7, md.observed("zombie"), 1e-9);
-        MobDamage back = new MobDamage();
-        back.load(md.toJson());
-        assertArrayEquals(new double[]{5.7, 4}, back.get("zombie"), 1e-9);
-    }
 
     // a 1-wide dead-end corridor (x 1..6, z 2) off a room (x 7..12, z 0..4): floor y 0, air y 1..2
     static ReachGrid corridor() {
@@ -91,27 +71,5 @@ class DamageLogTest {
         return ReachGrid.parse(new String[][]{fl, air, air, {roof, roof, roof, roof, roof}});
     }
 
-    @Test
-    void deadEndCorridorHoldsTheMouth() {
-        ReachGrid g = corridor();
-        DeadEnd.Check c = DeadEnd.check(g, 2, 1, 2, 10, 1, 2);       // bot deep in the corridor, the zombie in the room
-        assertNotNull(c);
-        assertTrue(c.deadEnd(), "cells " + c.cells());
-        assertArrayEquals(new int[]{6, 1, 2}, c.mouth(), "the corridor's last one-wide cell toward the mob");
-        FightOrFlee.Result home = new FightOrFlee.Result(FightOrFlee.Verdict.HOME, -1, 9, "retreat home: losing");
-        FightOrFlee.Result held = FightOrFlee.holdIfDeadEnd(home, c);
-        assertEquals(FightOrFlee.Verdict.HOLD, held.verdict());
-        assertTrue(held.why().startsWith("hold the corridor mouth at 6 1 2: a dead end behind me"), held.why());
-        FightOrFlee.Result fight = new FightOrFlee.Result(FightOrFlee.Verdict.FIGHT, 5, 3, "fight");
-        assertSame(fight, FightOrFlee.holdIfDeadEnd(fight, c), "a fight stays a fight");
-        assertSame(home, FightOrFlee.holdIfDeadEnd(home, null), "no grid: no rule");
-    }
 
-    @Test
-    void openRoomIsNoDeadEnd() {
-        ReachGrid g = corridor();
-        DeadEnd.Check c = DeadEnd.check(g, 9, 1, 1, 12, 1, 4);       // both in the room: plenty behind the bot
-        assertFalse(c.deadEnd(), "cells " + c.cells());
-        assertNull(c.mouth());
-    }
 }

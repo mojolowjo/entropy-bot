@@ -225,14 +225,7 @@ public final class Commands implements Chains.Env {
 
     Chains chainsRef() { return chains; }
 
-    /** 0.32.3 review: out of food with no run allowed: everything stops (job, chain, gather, autominer held), and the owner hears why. */
-    public void stopForFood(String why) {
-        String r = stopAll();
-        LOG.info("[entropybot] food: {} ({})", why, r);
-        whisper(owner(), why);
-    }
-
-    /** 0.32.1: a chain is running (the food run stays out of it). */
+    /** 0.32.1: a chain is running. */
     public boolean chainRunning() { return chains != null && chains.running(); }
 
     /** 0.24.4: the shaft test over the client level (loaded cells only; an unloaded one counts as not free). */
@@ -1349,7 +1342,11 @@ public final class Commands implements Chains.Env {
         // eating never waits for a task: the reflex holds the task and it carries on afterwards
         if (verb.equals("eat")) return Reply.now(core.reflexes.eat());
         // aa-night3: the hide's way in (a reflex dig, like eating it needs no free task slot)
-        if (verb.equals("burrow")) return Reply.now(core.reflexes.burrow());
+        // AA_CLEANUP 4: the danger moves (AA's danger desire runs them as chain steps; the owner may type them): dig in, flee, cover, pillar
+        if (verb.equals("burrow")) return Reply.now(core.reflexes.moves.burrow());
+        if (verb.equals("flee")) return Reply.now(core.reflexes.moves.flee());
+        if (verb.equals("cover")) return Reply.now(core.reflexes.moves.cover());
+        if (verb.equals("pillar")) return Reply.now(core.reflexes.moves.pillar());
         // a running routine owns the bot between its steps too
         if (!internal && chains.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
             return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");

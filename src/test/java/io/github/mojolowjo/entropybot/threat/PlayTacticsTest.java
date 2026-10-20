@@ -59,34 +59,5 @@ class PlayTacticsTest {
         return g;
     }
 
-    @Test
-    void highGroundIsTheStairTopWithOneWayUp() {
-        ReachGrid g = ledge();
-        List<int[]> two = List.of(new int[]{3, 1, 8}, new int[]{3, 1, 10});
-        HighGround.Spot s = HighGround.find(g, 8, 1, 8, two);
-        assertNotNull(s);
-        assertEquals("10 3 8", s.at());
-        assertEquals(2, s.above());
-        assertEquals(1, HighGround.approaches(g, 10, 3, 8));
-        assertNull(HighGround.find(g, 8, 1, 8, List.of(new int[]{3, 1, 8})), "one mob: no high ground");
-        assertNull(HighGround.find(flat(), 8, 1, 8, two), "flat ground: none");
-    }
 
-    @Test
-    void highGroundYieldsToTheDeadEndAndToARetreat() {
-        HighGround.Spot s = new HighGround.Spot(10, 3, 8, 2, 2);
-        FightOrFlee.Result fight = new FightOrFlee.Result(FightOrFlee.Verdict.FIGHT, 6, 4, "fight: margin 6");
-        FightOrFlee.Result held = HighGround.apply(fight, s, 3, true);
-        assertEquals(FightOrFlee.Verdict.HOLD, held.verdict());
-        assertTrue(held.why().startsWith("hold high ground at 10 3 8 (2 above them, one way up) vs 3 mobs: "), held.why());
-        assertTrue(HighGround.isHighGround(held));
-        FightOrFlee.Result deadEnd = new FightOrFlee.Result(FightOrFlee.Verdict.HOLD, 1, 4, "hold the corridor mouth at 1 2 3: ...");
-        assertSame(deadEnd, HighGround.apply(deadEnd, s, 3, true), "the dead-end hold wins");
-        assertFalse(HighGround.isHighGround(deadEnd));
-        FightOrFlee.Result home = new FightOrFlee.Result(FightOrFlee.Verdict.HOME, -3, 9, "retreat home: losing");
-        assertSame(home, HighGround.apply(home, s, 3, true), "only safer: a losing fight still retreats");
-        assertSame(fight, HighGround.apply(fight, s, 3, false), "threat.highGround off");
-        assertSame(fight, HighGround.apply(fight, s, 1, true), "one melee mob");
-        assertSame(fight, HighGround.apply(fight, null, 3, true), "no spot");
-    }
 }

@@ -47,9 +47,9 @@ class BrainExposureTest {
         var s = br.scoreAll(bb);
         assertEquals(20 / (1 + danger), s.get(0).score(), 1e-9);
         assertEquals(16 * (1 + danger / 2), s.get(1).score(), 1e-9);
-        assertEquals(18, s.get(2).score(), 1e-9);
+        assertEquals(18 * (1 + danger / 2), s.get(2).score(), 1e-9, "AA_ROUND4 B1: no site, no label: where the bot is (under ground)");
         assertTrue(s.get(0).parts().contains("night x"), s.get(0).parts());
-        assertTrue(s.get(1).score() > s.get(2).score() && s.get(2).score() > s.get(0).score(), "at night: under ground, then anywhere, then the surface");
+        assertTrue(s.get(2).score() > s.get(1).score() && s.get(1).score() > s.get(0).score(), "at night under ground: the work here, then the surface");
     }
 
     @Test

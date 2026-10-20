@@ -12,18 +12,11 @@ import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
-import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
-import baritone.api.pathing.goals.GoalGetToBlock;
+import io.github.mojolowjo.entropybot.motor.Motor;
+import io.github.mojolowjo.entropybot.threat.ThreatFacts;
+import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
 
 import java.util.List;
-import java.util.regex.Pattern;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
@@ -36,32 +29,25 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.food.FoodProperties;
-import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SwordItem;
-import io.github.mojolowjo.entropybot.threat.FightOrFlee;
-import io.github.mojolowjo.entropybot.threat.DeadEnd;
-import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
-import io.github.mojolowjo.entropybot.threat.MobTactics;
-import io.github.mojolowjo.entropybot.threat.ThreatRules;
-import io.github.mojolowjo.entropybot.motor.Arbiter;
-import io.github.mojolowjo.entropybot.motor.Motor;
-import io.github.mojolowjo.entropybot.motor.MotorPlan;
 import org.slf4j.Logger;
 
 /**
- * The bot's reflexes in Java (B2, docs/BOT_PLAN.md 5.8): eat, fight monsters, run from creepers, retreat
- * home at low health, respawn, and leave a denied dimension. They run under every job; while one runs,
- * {@link #hold()} is true and the bridge's jobs hold still. Moving goes through {@link EngineProcess},
- * so a walk the bridge started keeps its goal and carries on afterwards.
+ * The bot's reflexes in Java (B2, docs/BOT_PLAN.md 5.8), AA_CLEANUP 4: only the true reflexes. Air (swim up, the
+ * shore), lava and fire ({@link FireReflex}), the creeper flee (sprint, the duel only with the owner's creeper setting),
+ * the hit response (hit and the attacker in reach: face it and strike back), eating from the bag, respawn and a denied
+ * dimension; plus the hold and override of the engine. With AA off the old self-defence still fights what counts (no
+ * retreat rules any more). Fight, flee, home, cover, dig in and pillar are AA's danger desire ({@code aa.DangerOptions}),
+ * run through the verbs of {@link DangerMoves}. While a reflex or a move runs {@link #hold()} is true and the jobs hold
+ * still. Moving goes through {@link EngineProcess}, so a walk the bridge started keeps its goal and carries on afterwards.
  */
 public final class Reflexes {
     private static final Logger LOG = LogUtils.getLogger();
 
-    public enum Reflex { NONE, EATING, FIGHTING, FLEEING, RETREATING, FETCHING }
-
-    private enum Fetch { TP, WALK, OPEN, TAKE }
+    /** RETREATING: a danger move runs (DangerMoves: flee, cover, pillar, burrow). */
+    public enum Reflex { NONE, EATING, FIGHTING, FLEEING, RETREATING }
 
     /** A remembered spot from the bridge's notes (the base, the /home landing). */
     public record Place(int x, int y, int z, String dim) {
@@ -72,19 +58,11 @@ public final class Reflexes {
         }
     }
 
-    /** kind: why it counts (HostileRules); strong: a retaliation target too strong to fight (retreat instead). */
-    private record Threat(Entity e, double d, String id, boolean creeper, HostileRules.Kind kind, boolean strong) {}
+    /** kind: why it counts (HostileRules). */
+    private record Threat(Entity e, double d, String id, boolean creeper, HostileRules.Kind kind) {}
 
     private final EventRing events;
     private final EngineProcess engine;
-    private final Knowledge knowledge;
-    // the food run (B3a)
-    private List<FoodRun.Target> fetchTargets;
-    private int fetchIdx, fetchTaken;
-    private Fetch fetchStage;
-    private long fetchStageAt, fetchCooldownUntil, fetchBestTick;
-    private double fetchBest;
-    private String fetchNote;
     private long now;
     private boolean defence = true;
     private Reflex reflex = Reflex.NONE;
@@ -100,12 +78,7 @@ public final class Reflexes {
     private long eatCooldownUntil;
     // creepers
     private long fleeUntil;
-    private Goal fleeGoal, retreatGoal;
-    // retreating
-    private long retreatStart, calmSince, homeSentAt = -100000;
-    private Place retreatTo;
-    private int[] fleeTo;
-    private double lastX, lastY, lastZ;
+    private Goal fleeGoal;
     // the base and the /home landing (Commands.pushPlaces)
     private volatile Place base, home;
     // death
@@ -120,15 +93,17 @@ public final class Reflexes {
     /** C7: escort me|<player> (Commands starts the follow; this fights for them). */
     public final Escort escort = new Escort();
     private boolean escortFighting;
-    /** 0.23.6: fire, milk, the fight potion. */
-    public final Survival survival;
+    /** AA_CLEANUP 4: the lava/fire reflex (Survival's fire part; the milk and potions went). */
+    public final FireReflex fire;
+    /** AA_CLEANUP 4: the danger moves AA's danger desire (or the owner) starts: flee, cover, pillar, burrow. */
+    public final DangerMoves moves;
 
     public Reflexes(EventRing events, EngineProcess engine, Knowledge knowledge) {
         this.events = events;
         this.engine = engine;
-        this.knowledge = knowledge;
         this.duel = new CreeperDuel(events);
-        this.survival = new Survival(events, engine);
+        this.fire = new FireReflex(events, engine);
+        this.moves = new DangerMoves(events, engine);
         Motor.INSTANCE.bind(engine);        // 0.27.0: the motor pauses the job's Baritone through the same process
     }
 
@@ -192,6 +167,7 @@ public final class Reflexes {
 
     /** V1b: "stop" ends a forced attack too. */
     public void stopAttack() {
+        moves.stop("stopped by the owner");       // AA_CLEANUP 4
         forcedId = -1;
         forcedAnyway = false;
     }
@@ -232,7 +208,7 @@ public final class Reflexes {
             whisper(end);
             return null;
         }
-        return new Threat(e, p.distanceTo(e), forcedName, e instanceof Creeper, HostileRules.Kind.ENEMY, false);
+        return new Threat(e, p.distanceTo(e), forcedName, e instanceof Creeper, HostileRules.Kind.ENEMY);
     }
 
     private synchronized void whisper(String s) { whispers.add(s); }
@@ -245,9 +221,10 @@ public final class Reflexes {
         return out;
     }
 
-    public boolean hold() { return reflex != Reflex.NONE || survival.active(); }
+    public boolean hold() { return reflex != Reflex.NONE || fire.active() || moves.active(); }
 
-    public Reflex reflex() { return reflex; }
+    /** AA_CLEANUP 4: RETREATING while a danger move runs (the jobs hold; AA does not count it as its danger pause). */
+    public Reflex reflex() { return reflex == Reflex.NONE && moves.active() ? Reflex.RETREATING : reflex; }
 
     /** 0.24.3: a forced attack (attack / hunt) is still on. */
     public boolean forcing() { return forcedId >= 0; }
@@ -255,12 +232,9 @@ public final class Reflexes {
     /** 0.30.6: something in the bag the bot would eat now (raw beef counts; raw chicken does not). */
     public boolean canEat(LocalPlayer p) { return p != null && bestFood(p) >= 0; }
 
-    /** 0.24.1: a retreat to a lit spot (shelter / LIT verdict): the job is held, not stopped. */
-    public boolean sheltering() { return reflex == Reflex.RETREATING && retreatLit; }
-
     public void setDefence(boolean on) {
         defence = on;
-        if (!on && (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING || reflex == Reflex.RETREATING)) settle("self-defence off");
+        if (!on && (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING)) settle("self-defence off");
     }
 
     public boolean defence() { return defence; }
@@ -284,13 +258,9 @@ public final class Reflexes {
         eatRequested = true;
         eatCooldownUntil = 0;
         if (bestFood(p) >= 0) return "started: eating";
-        List<FoodRun.Target> t = foodTargets(mc, p);
-        if (t.isEmpty()) {
-            eatRequested = false;
-            return "error: no food in my inventory, and no chest I know holds food - place food standing at one (or scan the base)";
-        }
-        fetchCooldownUntil = 0;
-        return "started: fetching food from " + t.get(0).why() + " at " + t.get(0).key() + ", then eating";
+        eatRequested = false;
+        // AA_CLEANUP 4: the food run went (aa-food fetches food under AA)
+        return "error: no food in my inventory - bring me food, or aa on (aa-food gets some)";
     }
 
     public JsonObject status() {
@@ -317,12 +287,11 @@ public final class Reflexes {
 
     private String statusText() {
         return switch (reflex) {
-            case NONE -> survival.active() ? survival.doing() : "none";
+            case NONE -> fire.active() ? fire.doing() : moves.active() ? moves.doing() : "none";
             case EATING -> "eating";
             case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
             case FLEEING -> "avoiding a " + target;
-            case RETREATING -> (pillaring() ? "pillared up from " : digging() ? "dug in from " : burrowing() ? "dug down from " : "retreating from ") + target + " (health " + Math.round(lastHealth) + ")";
-            case FETCHING -> "fetching food" + (fetchTargets != null && fetchIdx < fetchTargets.size() ? " from " + fetchTargets.get(fetchIdx).key() : "");
+            case RETREATING -> moves.doing();
         };
     }
 
@@ -331,7 +300,6 @@ public final class Reflexes {
         try {
             now = tick;
             step();
-            motorAfter();
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] reflex error #{}: {}", errors, t.toString());
@@ -345,6 +313,7 @@ public final class Reflexes {
         if (p == null || mc.level == null) {
             releaseSwim(mc);
             if (reflex != Reflex.NONE) settle("left the world");
+            moves.stop("left the world");
             return;
         }
         io.github.mojolowjo.entropybot.threat.HitWatch.INSTANCE.observe(p);     // 0.24.4 damage log
@@ -364,15 +333,19 @@ public final class Reflexes {
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
         Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
-        // AA_CLEANUP 2: Survival's hand-rule runs are off under AA (step 4: AA's hide/heal desire)
-        if (reflex != Reflex.EATING && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn() && survival.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
-            if (pillaring()) mc.options.keyJump.setDown(false);      // review: survival drives this tick
+        // AA_CLEANUP 4: the lava/fire reflex is a true reflex: it runs under AA too (the milk and potions went)
+        if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
+            if (moves.active()) mc.options.keyJump.setDown(false);      // review: the fire reflex drives this tick
             return;
         }
-
-        if (reflex == Reflex.RETREATING) {
-            retreat(mc, p, hurt);
-            return;
+        // AA_CLEANUP 4: a danger move (AA's or the owner's) runs; only a creeper this close takes over (the creeper flee)
+        if (moves.active()) {
+            Threat c = defence ? nearestCreeper(mc, p, CreeperSprint.START) : null;
+            if (c == null || !p.hasLineOfSight(c.e)) {
+                moves.tick(mc, p, now);
+                return;
+            }
+            moves.stop("a creeper within " + (int) CreeperSprint.START + ": the creeper flee");
         }
         if (duel.active()) {
             CreeperDuel.End end = duel.tick(mc, p, now, hurt);
@@ -399,19 +372,18 @@ public final class Reflexes {
         // (the flee loop); within 4 it always does. The flee itself keeps off drops, lava and fire (sprint check, Baritone).
         if (cr != null && cr.d > 4 && (!p.hasLineOfSight(cr.e) || !creeperClosing(cr))) cr = null;
         if (cr != null && (t == null || !t.creeper)) {
-            if (spot != null) clearSpot();
             t = cr;
             if (cr.d < ReflexRules.CREEPER_RUN_TO) forceFleeUntil = Math.max(forceFleeUntil, now + 20);
         }
-        if (creeperProbe && cr != null) LOG.info("[entropybot] creeper probe: tick {} creeper {} at {} | target {} {} | reflex {} | spot {} | hp {}",
+        if (creeperProbe && cr != null) LOG.info("[entropybot] creeper probe: tick {} creeper {} at {} | target {} {} | reflex {} | hp {}",
                 now, cr.e.getId(), Math.round(cr.d * 10) / 10.0, t == null ? "none" : t.id, t == null ? "" : Math.round(t.d * 10) / 10.0,
-                reflex, spot == null ? "none" : spot[0] + " " + spot[1] + " " + spot[2], Math.round(hp));
+                reflex, Math.round(hp));
         // C7 escort: what threatens the guarded player comes first, unless something is at the bot's own throat
         // (or the owner pointed at a target with `attack`, C1)
         if (escort.active()) escort.watch(mc);
         Entity ge = ft == null && defence && escort.active() ? escort.threat(mc, p) : null;
         if (ge != null && (t == null || t.d > ReflexRules.REACH || t.e == ge)) {
-            escortFight(mc, p, threatOf(p, ge, hurt), hurt, hp);
+            escortFight(mc, p, threatOf(p, ge, hurt), hurt);
             return;
         }
         if (reflex != Reflex.FIGHTING) escortFighting = false;
@@ -423,10 +395,10 @@ public final class Reflexes {
             return;
         }
         // then re-evaluate beyond 6: a duel only with the bow setting, or melee with a big margin (armour and health)
-        if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil
-                && CreeperSprint.duelAfter(duel.mode(), bigCreeperMargin(mc, p))
-                && duel.check(mc, p, (Creeper) t.e, now, hurt) == null
-                && io.github.mojolowjo.entropybot.aa.door.Door.allow(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "creeper duel")) {     // AA_CLEANUP 2: a duel is a hand-rule fight
+        // AA_CLEANUP 4: the duel is the owner's creeper setting (a verb), never under AA
+        if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()
+                && CreeperSprint.duelAfter(duel.mode(), bigCreeperMargin(p))
+                && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
             startDuel(mc, p, t);
             return;
         }
@@ -444,36 +416,20 @@ public final class Reflexes {
         if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
         if (t != null) {
             if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id);
-            if (reflex == Reflex.FETCHING) {
-                fetchCooldownUntil = now + 200;     // after the fight it tries again
-                settle("interrupted by a " + t.id);
-            }
             target = t.id;
             targetDist = t.d;
             urgent = hurt || t.d < ReflexRules.URGENT;
-            // 0.30.6 (live, 0.30.5: a hunt at food 0 starved to 1 health and "gave up on the cow"): a hunted farm animal
-            // does no harm, so low health is no reason to run from it; its meat is the way back up
-            // (review: Animal covers wolves, polar bears, goats, hoglins too: only the hunt's farm animals are harmless)
-            boolean harmless = ft != null && io.github.mojolowjo.entropybot.vocab.HuntRules.MEAT.containsKey(
-                    BuiltInRegistries.ENTITY_TYPE.getKey(t.e.getType()).toString());
-            if (((hp <= ReflexRules.RETREAT_AT && !harmless) || t.strong) && !io.github.mojolowjo.entropybot.aa.door.Door.allow(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "retreat home from " + t.id)) {
-                hitResponse(mc, p, t, hurt);     // AA_CLEANUP 2: under AA no hand-rule retreat, only the hit response
-            } else if ((hp <= ReflexRules.RETREAT_AT && !harmless) || t.strong) {
-                io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.verdict(t.id + ": retreat home: "
-                        + (t.strong ? "too strong to fight" : "health " + Math.round(hp) + " at or below " + Math.round(ReflexRules.RETREAT_AT)));
-                startRetreat(mc, p, t);
-            }
-            else if (t.creeper) creeper(mc, p, t);
-            else fightOrFlee(mc, p, t, hurt);
+            // AA_CLEANUP 4: no hand-rule retreat, cover, lit spot or high ground: a creeper is fled, a forced target
+            // (the owner's or AA's attack) fought; under AA anything else gets only the hit response (AA's danger desire
+            // prices fight vs flee vs home vs cover vs dig in vs pillar); with AA off the old self-defence fights
+            if (t.creeper) creeper(mc, p, t);
+            else if (ft != null || !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()) fight(mc, p, t);
+            else hitResponse(mc, p, t, hurt);
             return;
         }
         if (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING) settle("no monsters left");
         if (reflex == Reflex.EATING) {
             eatStep(mc, p);
-            return;
-        }
-        if (reflex == Reflex.FETCHING) {
-            fetchStep(mc, p);
             return;
         }
         if (escort.active()) escort.idle(mc, p, engine, now);
@@ -493,7 +449,7 @@ public final class Reflexes {
     /** 0.33.1: head under water and sinking with nothing driving, or the air low: hold jump to reach the surface. */
     private void airWatch(Minecraft mc, LocalPlayer p) {
         // a screen open (chest, inventory): no input of ours; let go of a held jump
-        if (mc.screen != null) { releaseSwim(mc); floatSince = -1; return; }
+        if (mc.screen != null) { releaseSwim(mc); shore.reset(); return; }
         IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
         boolean drives = reflex != Reflex.NONE || (b != null && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
         // review: an underwater dig/build/chest job sits between Baritone legs for a tick: it drives too (a plain walk doesn't)
@@ -512,7 +468,7 @@ public final class Reflexes {
                 p.stopRiding();
             }
             releaseSwim(mc);
-            floatSince = -1;
+            shore.reset();
             return;
         }
         // 0.36.a1: our own EngineProcess hold (the takeover) counts as driving, so the takeover is kept until it ends
@@ -534,89 +490,11 @@ public final class Reflexes {
             swimming = true;
             mc.options.keyJump.setDown(true);
         } else releaseSwim(mc);
-        shoreWatch(p, b, drives);
+        shore.tick(p, b, drives, now);
     }
 
-    /** 0.34.3: since when the bot floats with its head above water and nothing driving (-1: not now); the next look. */
-    private long floatSince = -1, shoreNext = -1;
-    /** 0.34.4: the shore cell it is walking to (null: none), the cells it couldn't reach, tries, given up (reset out of the water). */
-    private int[] shoreTarget;
-    private final java.util.Set<Long> shoreFailed = new java.util.HashSet<>();
-    private int shoreTries;
-    private boolean shoreGaveUp, shoreSaid;
-    static final int SHORE_TRIES = 4;
-
-    /**
-     * 0.34.3 (after the air reflex surfaced it, the bot trod water there forever): 5 s afloat with no job, no reflex and
-     * Baritone idle: a short walk to the nearest dry standable cell (ReflexRules.nearestShore, 32 blocks), said once.
-     * None in reach: said once, looked for again in a minute. Never while a job or a reflex drives it.
-     */
-    private void shoreWatch(LocalPlayer p, IBaritone b, boolean drives) {
-        try {
-            if (b == null || !p.isInWater()) {
-                floatSince = -1;
-                shoreTarget = null; shoreFailed.clear(); shoreTries = 0; shoreGaveUp = false; shoreSaid = false;
-                return;
-            }
-            if (drives) { floatSince = -1; shoreTarget = null; return; }
-            // 0.34.4 (review): standing on the bottom of shallow water is not afloat
-            if (p.onGround()) { floatSince = -1; return; }
-            if (p.isUnderWater()) return;            // bobbing at the surface: the clock runs on
-            if (floatSince < 0) floatSince = now;
-            if (now - floatSince < 100 || now < shoreNext || shoreGaveUp) return;
-            if (shoreTarget != null) {
-                // 0.34.4 (review): afloat again with Baritone idle: that cell couldn't be reached; the next nearest
-                shoreFailed.add(net.minecraft.core.BlockPos.asLong(shoreTarget[0], shoreTarget[1], shoreTarget[2]));
-                LOG.info("[entropybot] shore: couldn't reach {} {} {} (try {})", shoreTarget[0], shoreTarget[1], shoreTarget[2], shoreTries + 1);
-                shoreTarget = null;
-                if (++shoreTries >= SHORE_TRIES) {
-                    shoreGaveUp = true;
-                    String g = "afloat at " + (int) Math.floor(p.getX()) + " " + (int) Math.floor(p.getY()) + " " + (int) Math.floor(p.getZ())
-                            + ": I couldn't reach the " + shoreTries + " nearest shores - next: goto x y z (a shore), or come get me";
-                    LOG.info("[entropybot] shore: {}", g);
-                    whisper(g);
-                    return;
-                }
-            }
-            var lv = p.level();
-            int x = (int) Math.floor(p.getX()), y = (int) Math.floor(p.getY()), z = (int) Math.floor(p.getZ());
-            int[] s = ReflexRules.nearestShore(x, y, z, ReflexRules.SHORE_RADIUS, (cx, cy, cz) -> {
-                net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(cx, cy, cz);
-                if (!lv.isLoaded(at)) return false;
-                // 0.34.4: not next to a shore cell it couldn't reach (live: 4 tries spent on one wall top)
-                for (long f : shoreFailed) {
-                    net.minecraft.core.BlockPos fp = net.minecraft.core.BlockPos.of(f);
-                    if (Math.abs(fp.getX() - cx) <= 2 && Math.abs(fp.getZ() - cz) <= 2 && Math.abs(fp.getY() - cy) <= 3) return false;
-                }
-                var below = lv.getBlockState(at.below());
-                if (!below.getFluidState().isEmpty() || !below.isFaceSturdy(lv, at.below(), net.minecraft.core.Direction.UP)) return false;
-                for (net.minecraft.core.BlockPos c : new net.minecraft.core.BlockPos[]{at, at.above()}) {
-                    var st = lv.getBlockState(c);
-                    if (!st.getFluidState().isEmpty() || !st.getCollisionShape(lv, c).isEmpty()) return false;
-                }
-                return true;
-            });
-            if (s == null) {
-                shoreNext = now + 1200;
-                if (shoreTries > 0) shoreGaveUp = true;        // the unreachable ones were all there was: said once
-                String t = "afloat at " + x + " " + y + " " + z + " with no dry ground within " + ReflexRules.SHORE_RADIUS + " blocks - next: goto x y z (a shore), or come get me";
-                LOG.info("[entropybot] shore: {}", t);
-                if (!shoreSaid) whisper(t);                    // 0.34.4: once while afloat (the log has every look)
-                shoreSaid = true;
-                return;
-            }
-            shoreNext = now + 200;
-            shoreTarget = s;
-            b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(s[0], s[1], s[2]));
-            String t = "afloat with nothing to do: swimming to the nearest shore at " + s[0] + " " + s[1] + " " + s[2];
-            LOG.info("[entropybot] shore: {} (from {} {} {})", t, x, y, z);
-            if (!shoreSaid) whisper(t);                        // 0.34.4: the first target only; the next ones are logged
-            shoreSaid = true;
-        } catch (RuntimeException e) {
-            shoreNext = now + 1200;
-            LOG.warn("[entropybot] shore: the look for dry ground failed: {}", e.toString());
-        }
-    }
+    /** AA_CLEANUP 4: the shore watch lives in its own class (afloat and idle: swim to the nearest shore). */
+    private final ShoreWatch shore = new ShoreWatch(this::whisper);
 
     /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
     private void releaseSwim(Minecraft mc) {
@@ -639,15 +517,12 @@ public final class Reflexes {
         releaseSwim(mc);
         duel.abort(why);
         cspr.abort(why);
-        if (reflex == Reflex.FLEEING || reflex == Reflex.RETREATING) stopMoving(mc);     // 0.23.2: safe, stop sprinting
+        if (reflex == Reflex.FLEEING) stopMoving(mc);     // 0.23.2: safe, stop sprinting
         if (reflex == Reflex.EATING) mc.options.keyUse.setDown(false);
-        if (reflex == Reflex.FETCHING && mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) mc.player.closeContainer();
         if (reflex != Reflex.NONE) events.push("reflex", "done " + reflex.name().toLowerCase() + ": " + why, null);
         reflex = Reflex.NONE;
         target = null;
         urgent = false;
-        clearSpot();            // 0.25.1
-        clearPillar(mc);        // brain-b1
         Motor.INSTANCE.stop("reflex ended: " + why, now);     // 0.27.0
         engine.release();
     }
@@ -676,16 +551,13 @@ public final class Reflexes {
             if (!ReflexRules.counts(d, hurt, seen)) continue;
             // B2: aggro + reach by path + closing in (a mob that hit the bot, or a creeper within 6, always counts)
             if (filter && !io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
-            boolean strong = k == HostileRules.Kind.RETALIATION && Hostility.strong(p, le);
-            best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
+            best = new Threat(e, d, BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k);
         }
         return best;
     }
 
     /** 0.32.1: a creeper this close is the target whatever else is near (the owner's rule). */
     static final double CREEPER_OVERRIDE = 10;
-    /** 0.32.1: cover and high-ground spots keep this far from every creeper. */
-    static final double CREEPER_SPOT_CLEAR = 8;
     /** 0.32.1: "debug creeper probe on|off": a log line every tick a creeper is within CREEPER_OVERRIDE. */
     public volatile boolean creeperProbe;
 
@@ -696,7 +568,7 @@ public final class Reflexes {
             if (!(e instanceof Creeper c) || !c.isAlive()) continue;
             double d = p.distanceTo(e);
             if (d > r || (best != null && d >= best.d)) continue;
-            best = new Threat(e, d, "creeper", true, HostileRules.Kind.ENEMY, false);
+            best = new Threat(e, d, "creeper", true, HostileRules.Kind.ENEMY);
         }
         return best;
     }
@@ -720,25 +592,13 @@ public final class Reflexes {
         return now - watchCreeperAt <= 160;
     }
 
-    /** True when a creeper is within CREEPER_SPOT_CLEAR of x y z. */
-    private boolean creeperNear(Minecraft mc, double x, double y, double z) {
-        for (Entity e : mc.level.entitiesForRendering())
-            if (e instanceof Creeper c && c.isAlive() && e.distanceToSqr(x + 0.5, y, z + 0.5) < CREEPER_SPOT_CLEAR * CREEPER_SPOT_CLEAR) return true;
-        return false;
-    }
-
     private Threat threatOf(LocalPlayer p, Entity e, boolean hurt) {
         HostileRules.Kind k = Hostility.INSTANCE.kind(e, hurt);
-        boolean strong = k == HostileRules.Kind.RETALIATION && e instanceof LivingEntity le && Hostility.strong(p, le);
-        return new Threat(e, p.distanceTo(e), BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k, strong);
+        return new Threat(e, p.distanceTo(e), BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k);
     }
 
     private void startDuel(Minecraft mc, LocalPlayer p, Threat t) {
         if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
-        if (reflex == Reflex.FETCHING) {
-            fetchCooldownUntil = now + 200;
-            settle("interrupted by a creeper");
-        }
         duel.start(mc, p, (Creeper) t.e, now);
         reflex = Reflex.FIGHTING;
         mc.options.keyShift.setDown(false);
@@ -749,17 +609,13 @@ public final class Reflexes {
     }
 
     /**
-     * C7: a fight for the escorted player. The retreat under 6 health stays; a creeper gets the bow duel when
+     * C7: a fight for the escorted player (an owner verb; refused under AA). A creeper gets the bow duel when
      * "defend creepers bow" (and the duel's own checks agree), else the bot stands between it and the player and
-     * knocks it back; anything else is the ordinary fight.
+     * knocks it back; anything else is the ordinary fight (AA_CLEANUP 4: the retreat under 6 health went).
      */
-    private void escortFight(Minecraft mc, LocalPlayer p, Threat t, boolean hurt, float hp) {
+    private void escortFight(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
         escort.interrupted();
         if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id + " near " + escort.name());
-        if (reflex == Reflex.FETCHING) {
-            fetchCooldownUntil = now + 200;
-            settle("interrupted by a " + t.id + " near " + escort.name());
-        }
         if (!escortFighting) {
             escortFighting = true;
             escort.countFight();
@@ -767,11 +623,6 @@ public final class Reflexes {
         target = t.id;
         targetDist = t.d;
         urgent = hurt || t.d < ReflexRules.URGENT;
-        if (hp <= ReflexRules.RETREAT_AT || t.strong) {
-            escortFighting = false;
-            startRetreat(mc, p, t);
-            return;
-        }
         if (t.creeper) {
             if (duel.mode() == CreeperRules.Mode.BOW && now >= forceFleeUntil && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
                 startDuel(mc, p, t);
@@ -802,13 +653,11 @@ public final class Reflexes {
         begin(Reflex.FIGHTING, mc, "fighting " + t.id);
         holdWeapon(mc, p);
         try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
-        if (motorFoot(mc, p, t)) return;        // 0.27.0: out of water, a running move, hold under a flier
         if (t.d <= ReflexRules.REACH) {
             engine.hold();
             if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)
                 mc.gameMode.attack(p, t.e);
                 p.swing(InteractionHand.MAIN_HAND);
-                afterHit(p, t);
             }
         } else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) {
             // close the distance (skeletons shoot from range)
@@ -821,10 +670,6 @@ public final class Reflexes {
 
     private void startCreeperSprint(Minecraft mc, LocalPlayer p, Threat t) {
         if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
-        if (reflex == Reflex.FETCHING) {
-            fetchCooldownUntil = now + 200;
-            settle("interrupted by a creeper");
-        }
         if (duel.active()) duel.abort("creeper within " + (int) CreeperSprint.START + ": sprint");
         double ax = p.getX() - t.e.getX(), az = p.getZ() - t.e.getZ();
         net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
@@ -892,7 +737,7 @@ public final class Reflexes {
         p.setYRot(yaw);
         p.setYHeadRot(yaw);
         mc.options.keyUp.setDown(true);
-        boolean sprint = FightOrFlee.sprint(true, p.getFoodData().getFoodLevel());
+        boolean sprint = ThreatFacts.sprint(true, p.getFoodData().getFoodLevel());
         mc.options.keySprint.setDown(sprint);
         if (sprint && !p.isSprinting()) p.setSprinting(true);
         mc.options.keyJump.setDown(p.horizontalCollision && p.onGround());
@@ -906,13 +751,16 @@ public final class Reflexes {
         if (mc.player != null && mc.player.isSprinting()) mc.player.setSprinting(false);
     }
 
-    private boolean bigCreeperMargin(Minecraft mc, LocalPlayer p) {
-        try {
-            return FightOrFlee.creeperDuelOk(new FightOrFlee.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue(),
-                    Hostility.weaponHit(p), 0, -1, ReflexRules.RETREAT_AT));
-        } catch (RuntimeException e) {
-            return false;
-        }
+    /** 0.23.2: the blast a melee creeper duel should expect (a hit-and-back-off that fails at about 3 blocks). */
+    static final double CREEPER_BLAST = 12;
+
+    /** 0.23.2: a melee duel with a lone creeper only with a big margin: health above the retreat line after that blast (armour counted) is at least the buffer. */
+    static boolean creeperDuelOk(double health, double maxHealth, int armor) {
+        return health - ReflexRules.RETREAT_AT - ThreatFacts.taken(CREEPER_BLAST, armor) >= Math.max(4, 0.2 * maxHealth);
+    }
+
+    private static boolean bigCreeperMargin(LocalPlayer p) {
+        return creeperDuelOk(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue());
     }
 
     private void creeper(Minecraft mc, LocalPlayer p, Threat t) {
@@ -931,7 +779,7 @@ public final class Reflexes {
         } else if (now < fleeUntil && fleeGoal != null && engine.mode() == EngineProcess.Mode.NONE) {
             engine.override(fleeGoal);      // a Baritone cancel (the bridge stopping a job) dropped it
         }
-        if (FightOrFlee.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
+        if (ThreatFacts.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
         // one that is already right here gets knocked back
         if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
             holdWeapon(mc, p);
@@ -966,320 +814,16 @@ public final class Reflexes {
         Hotbar.toHand(mc, p, best);
     }
 
-    // ---- retreating ----
-
-    // ---- B2: fight or flee (docs/COMBAT_PLAN.md 4-5; only safer: a fight may become a retreat, never the reverse) ----
-    private long assessedAt = -100;
-    private String retreatWhy;
-    private boolean retreatLit;
-
-    // ---- 0.25.1: cover from a ranged attacker, high ground against a group (the owner's played tactics) ----
-    private int[] spot;
-    private boolean spotCover;
-    private int spotMob = -1, coverDoneMob = -1;
-    private long spotStart, spotAssess;
-    static final long HIGH_HOLD_TICKS = 600;
-
-    private void clearSpot() {
-        spot = null;
-        spotMob = -1;
-    }
-
-    /** Stand on (or walk to) the spot facing the mob; hit it when it is in reach. */
-    private void holdSpot(Minecraft mc, LocalPlayer p, Threat t, String line) {
-        begin(Reflex.FIGHTING, mc, line);
-        holdWeapon(mc, p);
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
-        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
-            mc.gameMode.attack(p, t.e);
-            p.swing(InteractionHand.MAIN_HAND);
-        }
-        boolean there = p.getBlockX() == spot[0] && p.getBlockZ() == spot[2] && Math.abs(p.getBlockY() - spot[1]) <= 1;
-        if (there) engine.hold();
-        else if (motorStep(p, t)) { /* 0.27.0: step to / climb by raw input */ }
-        else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) engine.override(new GoalNear(new BlockPos(spot[0], spot[1], spot[2]), 0));
-    }
-
-    // ---- 0.27.0 the motor: short moves by raw input (motor/Motor) ----
-    private long motorRetryAt;
-    private int hitTargetId = -1, hitsOnTarget;
-    static final long MOTOR_RETRY_TICKS = 20;
-
-    /** A reflex move must not outlive the fight: a retreat, a flee or a duel takes the keys back. */
-    private void motorAfter() {
-        Motor m = Motor.INSTANCE;
-        if (m.active() && m.arbiter().owner() == Arbiter.Owner.REFLEX && (reflex != Reflex.FIGHTING || duel.active() || cspr.active()))
-            m.stop("the reflexes moved on (" + statusText() + ")", now);
-    }
-
-    private void motorNote(String targetId, MotorPlan.Plan plan, String line, String refused) {
-        ThreatRuntime.INSTANCE.verdict(targetId + ": " + line + (refused == null ? "" : " - not moved: " + refused));
-        if (refused != null) motorRetryAt = now + MOTOR_RETRY_TICKS;
-        else events.push("reflex", "motor: " + line, null);
-    }
-
-    /** Hit what is in reach (no Baritone): used while a move runs. */
-    private void hitInReach(Minecraft mc, LocalPlayer p, Threat t) {
-        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
-            mc.gameMode.attack(p, t.e);
-            p.swing(InteractionHand.MAIN_HAND);
-        }
-    }
-
-    /** Footwork before the plain fight: true when the motor drives this tick. Never throws. */
-    private boolean motorFoot(Minecraft mc, LocalPlayer p, Threat t) {
-        Motor m = Motor.INSTANCE;
-        try {
-            if (!m.enabled()) return false;
-            if (m.active() && m.arbiter().owner() == Arbiter.Owner.REFLEX) {
-                hitInReach(mc, p, t);
-                return true;
-            }
-            if (now < motorRetryAt) return false;
-            if (p.isInWater()) {
-                MotorPlan.Plan pl = MotorPlan.outOfWater(Motor.grid(), p.getBlockX(), p.getBlockY(), p.getBlockZ());
-                String line = "out of water (" + pl.why() + ", fighting " + t.id + ")";
-                String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, line, now);
-                motorNote(t.id, pl, line, r);
-                if (r == null) {
-                    hitInReach(mc, p, t);
-                    return true;
-                }
-            }
-            ThreatRules.Move mv = ThreatRules.moveOf(t.id);
-            if (MobTactics.holdForFlier(mv, t.d, ReflexRules.REACH)) {
-                MotorPlan.Plan pl = MotorPlan.hold(t.id);
-                String line = "hold (" + t.id + " flies, at " + Math.round(t.d * 10) / 10.0 + ", dY " + Math.round(t.e.getY() - p.getY()) + ")";
-                String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, line, now);
-                motorNote(t.id, pl, line, r);
-                if (r == null) {
-                    engine.hold();
-                    hitInReach(mc, p, t);
-                    return true;
-                }
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] motor: footwork failed, fighting as before: {}", e.toString());
-            motorRetryAt = now + MOTOR_RETRY_TICKS;
-        }
-        return false;
-    }
-
-    /** After the bot's own hit: the owner's back-off (MobTactics). Never throws. */
-    private void afterHit(LocalPlayer p, Threat t) {
-        try {
-            Motor m = Motor.INSTANCE;
-            if (!m.enabled() || m.active()) return;
-            if (t.e.getId() != hitTargetId) {
-                hitTargetId = t.e.getId();
-                hitsOnTarget = 0;
-            }
-            hitsOnTarget++;
-            int backoffHealth = MOTOR_BACKOFF_HEALTH;
-            MobTactics.Decision d = MobTactics.afterHit(t.id, ThreatRules.moveOf(t.id), t.d, p.getHealth(), backoffHealth, hitsOnTarget);
-            if (d.action() != MobTactics.Action.BACK_OFF) return;
-            MotorPlan.Plan pl = MotorPlan.backOff(Motor.grid(), p.getBlockX(), p.getBlockY(), p.getBlockZ(), t.e.getX(), t.e.getZ(), MobTactics.BACKOFF_CELLS);
-            String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, d.line(), now);
-            motorNote(t.id, pl, d.line(), r);
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] motor: back-off failed: {}", e.toString());
-        }
-    }
-
-    /** Walk to the cover / high-ground spot by raw input when it is within 4 (else Baritone, as before). */
-    private boolean motorStep(LocalPlayer p, Threat t) {
-        Motor m = Motor.INSTANCE;
-        try {
-            if (!m.enabled()) return false;
-            if (m.active() && m.arbiter().owner() == Arbiter.Owner.REFLEX
-                    && (m.kind() == MotorPlan.Kind.STEP_TO || m.kind() == MotorPlan.Kind.CLIMB)) return true;
-            if (now < motorRetryAt) return false;
-            int bx = p.getBlockX(), by = p.getBlockY(), bz = p.getBlockZ();
-            int dx = spot[0] - bx, dy = spot[1] - by, dz = spot[2] - bz;
-            if (Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz))) > MotorPlan.STEP_RADIUS) return false;
-            MotorPlan.Plan pl = dy == 1 && Math.abs(dx) + Math.abs(dz) == 1
-                    ? MotorPlan.climb(Motor.grid(), bx, by, bz, dx, dz)
-                    : MotorPlan.stepTo(Motor.grid(), bx, by, bz, spot[0], spot[1], spot[2]);
-            String line = pl.name() + " (" + (spotCover ? "cover from " : "high ground vs ") + t.id + ")";
-            String r = m.start(pl, Arbiter.Owner.REFLEX, t.e, line, now);
-            motorNote(t.id, pl, line, r);
-            return r == null;
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] motor: step to the spot failed, walking with Baritone: {}", e.toString());
-            motorRetryAt = now + MOTOR_RETRY_TICKS;
-            return false;
-        }
-    }
-
-    /** The cover and high-ground holds; true when one acted this tick. Errors: logged, the old fight goes on. */
-    /** AA_CLEANUP 3: the old BrainConfig's defaults, inlined (motor.backoffHealth, threat.cover*, threat.highGround). */
-    static final int MOTOR_BACKOFF_HEALTH = 10, COVER_RANGE = 8, COVER_CLOSE_AT = 4, COVER_WAIT_S = 15;
-    static final boolean HIGH_GROUND = true;
-
-    private boolean spotTick(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
-        try {
-            if (spot != null && creeperNear(mc, spot[0], spot[1], spot[2])) {          // 0.32.1: never toward a creeper
-                ThreatRuntime.INSTANCE.verdict(t.id + ": leaving the " + (spotCover ? "cover" : "high ground") + " spot: a creeper is near it");
-                clearSpot();
-                return false;
-            }
-            if (spot != null && spotCover) {
-                int close = COVER_CLOSE_AT, wait = COVER_WAIT_S;
-                if (spotMob == t.e.getId() && !io.github.mojolowjo.entropybot.threat.Cover.over(t.d, now - spotStart, close, wait)) {
-                    holdSpot(mc, p, t, "taking cover from " + t.id);
-                    return true;
-                }
-                ThreatRuntime.INSTANCE.verdict(t.id + ": leaving cover: " + (spotMob != t.e.getId() ? "another mob is nearer"
-                        : t.d <= close ? "it closed to " + Math.round(t.d) + " (threat.coverCloseAt " + close + ")" : "waited " + wait + " s (threat.coverWait)") + " - fighting");
-                coverDoneMob = spotMob;
-                clearSpot();
-                return false;
-            }
-            if (spot != null) {         // high ground
-                if (now - spotStart > HIGH_HOLD_TICKS) {
-                    clearSpot();
-                    return false;
-                }
-                if (now - spotAssess >= 10) {
-                    spotAssess = now;
-                    FightOrFlee.Result v = assess(mc, p, hurt);
-                    if (v.verdict() == FightOrFlee.Verdict.HOME) {      // only safer: losing on the ledge still retreats
-                        clearSpot();
-                        return false;
-                    }
-                }
-                holdSpot(mc, p, t, "holding high ground against " + t.id);
-                return true;
-            }
-            int range = COVER_RANGE;
-            if (range > 0 && t.e.getId() != coverDoneMob
-                    && io.github.mojolowjo.entropybot.threat.Cover.wanted(io.github.mojolowjo.entropybot.threat.Cover.ranged(t.id,
-                    io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(10), System.currentTimeMillis()), t.d, range)) {
-                io.github.mojolowjo.entropybot.threat.Cover.Spot c = ThreatRuntime.INSTANCE.cover(p, t.e);
-                if (c != null && creeperNear(mc, c.x(), c.y(), c.z())) {
-                    ThreatRuntime.INSTANCE.verdict(t.id + ": no cover at " + c.x() + " " + c.y() + " " + c.z() + ": a creeper is near it");
-                    c = null;
-                }
-                if (c != null) {
-                    spot = new int[]{c.x(), c.y(), c.z()};
-                    spotCover = true;
-                    spotMob = t.e.getId();
-                    spotStart = now;
-                    String line = io.github.mojolowjo.entropybot.threat.Cover.line(t.id, t.e.getBlockX(), t.e.getBlockY(), t.e.getBlockZ(), t.d, c,
-                            COVER_CLOSE_AT, COVER_WAIT_S);
-                    ThreatRuntime.INSTANCE.verdict(t.id + ": " + line);
-                    events.push("reflex", line, null);
-                    holdSpot(mc, p, t, "taking cover from " + t.id);
-                    return true;
-                }
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: cover/high ground failed, fighting as before: {}", e.toString());
-            clearSpot();
-        }
-        return false;
-    }
-
-    /** Melee mobs that count near (for the high-ground rule): world {x, y, z}. */
-    private List<int[]> meleeNear(Minecraft mc, LocalPlayer p, boolean hurt) {
-        List<int[]> out = new java.util.ArrayList<>();
-        Hostility h = Hostility.INSTANCE;
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
-            double d = p.distanceTo(e);
-            if (d > ReflexRules.lookRadius(hurt) || !h.kind(e, hurt).counts()) continue;
-            if (!ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
-            var mv = io.github.mojolowjo.entropybot.threat.ThreatRules.moveOf(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
-            if (mv == io.github.mojolowjo.entropybot.threat.ThreatRules.Move.RANGED || mv == io.github.mojolowjo.entropybot.threat.ThreatRules.Move.FLY) continue;
-            out.add(new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
-        }
-        return out;
-    }
-
     /**
-     * AA_CLEANUP 2: the true reflex left under AA: hit and the attacker in reach = face it and strike back (fight);
-     * anything else (a hand-rule fight, flee, cover, lit spot, home) is refused at the door until step 4.
+     * The hit response, the true reflex under AA: hit and the attacker in reach = face it and strike back (fight). Anything
+     * else is AA's danger desire (AA_CLEANUP 4: DangerOptions prices fight, flee, home, cover, dig in, pillar).
      */
     private void hitResponse(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
         if (hurt && t.d <= ReflexRules.REACH) {
             fight(mc, p, t);
             return;
         }
-        io.github.mojolowjo.entropybot.aa.door.Door.refuse(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "fight or flee " + t.id);
-        if (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING) settle("aa is on: no hand-rule fight");
-    }
-
-    private void fightOrFlee(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
-        if (io.github.mojolowjo.entropybot.aa.door.Door.aaOn()) {
-            hitResponse(mc, p, t, hurt);
-            return;
-        }
-        if (spotTick(mc, p, t, hurt)) return;          // 0.25.1
-        boolean fighting = reflex == Reflex.FIGHTING;
-        if (!fighting || now - assessedAt >= 10) {
-            assessedAt = now;
-            FightOrFlee.Result v;
-            io.github.mojolowjo.entropybot.threat.HighGround.Spot hg = null;
-            try {
-                v = assess(mc, p, hurt);
-                v = FightOrFlee.holdIfDeadEnd(v, ThreatRuntime.INSTANCE.deadEnd(p, t.e));     // 0.24.4
-                v = FightOrFlee.cover(FightOrFlee.unarmed(v, Hostility.weaponHit(p), lastFoes, false), Hostility.weaponHit(p), lastFoes);       // aa-night2 P0 2: no corridor fight with a pickaxe
-                // 0.25.1 high ground (a dead end's hold and a losing retreat win)
-                if (!fighting && HIGH_GROUND
-                        && v.verdict() != FightOrFlee.Verdict.HOLD && v.verdict() != FightOrFlee.Verdict.HOME) {
-                    List<int[]> melee = meleeNear(mc, p, hurt);
-                    if (melee.size() >= io.github.mojolowjo.entropybot.threat.HighGround.MIN_MOBS) {
-                        hg = ThreatRuntime.INSTANCE.highGround(p, melee);
-                        v = io.github.mojolowjo.entropybot.threat.HighGround.apply(v, hg, melee.size(), true);
-                    }
-                }
-            } catch (RuntimeException e) {
-                LOG.warn("[entropybot] threat: fight-or-flee failed, fighting as before: {}", e.toString());
-                fight(mc, p, t);
-                return;
-            }
-            FightOrFlee.Verdict verdict = v.verdict();
-            // committed: keep fighting while not losing (the lit-spot walk is only for the start)
-            if (fighting && verdict == FightOrFlee.Verdict.LIT) verdict = FightOrFlee.Verdict.FIGHT;
-            if (!fighting || verdict != FightOrFlee.Verdict.FIGHT) ThreatRuntime.INSTANCE.verdict(t.id + ": " + v.why());
-            if (verdict == FightOrFlee.Verdict.HOLD && hg != null && io.github.mojolowjo.entropybot.threat.HighGround.isHighGround(v)
-                    && !creeperNear(mc, hg.x(), hg.y(), hg.z())) {          // 0.32.1: no high ground beside a creeper
-                spot = new int[]{hg.x(), hg.y(), hg.z()};
-                spotCover = false;
-                spotMob = -1;
-                spotStart = now;
-                spotAssess = now;
-                events.push("reflex", v.why(), null);
-                holdSpot(mc, p, t, "holding high ground against " + t.id);
-                return;
-            }
-            if (verdict == FightOrFlee.Verdict.HOLD) {
-                // 0.24.4: a dead end behind: step to the corridor mouth (one mob at a time) and fight there
-                DeadEnd.Check d = fighting ? null : ThreatRuntime.INSTANCE.deadEnd(p, t.e);
-                int[] m = d == null ? null : d.mouth();
-                int far = m == null ? 0 : Math.abs(m[0] - p.getBlockX()) + Math.abs(m[2] - p.getBlockZ());
-                if (far > 3 && far <= 6) {     // within 3 the retreat counts as arrived at once (a loop live): fight from here
-                    startLitRetreat(mc, p, t, new int[]{m[0], m[1], m[2], far}, v.why());
-                    return;
-                }
-                fight(mc, p, t);
-                return;
-            }
-            if (verdict == FightOrFlee.Verdict.HOME) {
-                if (FightOrFlee.isCover(v) && startCover(mc, p, t, v.why())) return;      // aa-night3: out of the line of sight first
-                retreatWhy = v.why();
-                startRetreat(mc, p, t);
-                return;
-            }
-            if (verdict == FightOrFlee.Verdict.LIT || verdict == FightOrFlee.Verdict.SHELTER) {
-                int[] lit = ThreatRuntime.INSTANCE.litSpot();
-                if (lit != null) {
-                    startLitRetreat(mc, p, t, lit, v.why());
-                    return;
-                }
-            }
-        }
-        fight(mc, p, t);
+        if (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING) settle("not hit and out of reach: AA's danger desire decides");
     }
 
     /** Live aa376: the run end on the heading with the least threat over every nearby hostile (FleeHeading), null = cornered. Never throws. */
@@ -1327,604 +871,6 @@ public final class Reflexes {
         }
     }
 
-    private FightOrFlee.Result assess(Minecraft mc, LocalPlayer p, boolean hurt) {
-        List<FightOrFlee.Foe> foes = new java.util.ArrayList<>();
-        Hostility h = Hostility.INSTANCE;
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
-            double d = p.distanceTo(e);
-            if (d > ReflexRules.lookRadius(hurt) || !h.kind(e, hurt).counts()) continue;
-            boolean seen = hurt || d <= 2.5 || p.hasLineOfSight(e);
-            if (!ReflexRules.counts(d, hurt, seen) || !ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
-            foes.add(new FightOrFlee.Foe(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), d, e instanceof Creeper));
-        }
-        int[] lit = ThreatRuntime.INSTANCE.litSpot();
-        FightOrFlee.Me me = new FightOrFlee.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue(),
-                Hostility.weaponHit(p), mc.level.getMaxLocalRawBrightness(p.blockPosition()), lit == null ? -1 : lit[3], ReflexRules.RETREAT_AT);
-        lastFoes = foes;
-        return FightOrFlee.cover(FightOrFlee.unarmed(FightOrFlee.assess(me, foes), me.weaponHit(), foes, false), me.weaponHit(), foes);
-    }
-
-    /** The foes of the last assess (the unarmed rule re-applies after the dead-end hold). */
-    private List<FightOrFlee.Foe> lastFoes = List.of();
-
-    private void startLitRetreat(Minecraft mc, LocalPlayer p, Threat t, int[] lit, String why) {
-        clearPillar(mc);        // review: no stale pillar under a new retreat
-        if (reflex == Reflex.EATING) stopEating(mc, "retreating");
-        reflex = Reflex.RETREATING;
-        mc.options.keyShift.setDown(false);
-        retreatStart = now;
-        calmSince = now;
-        fleeTo = null;
-        retreatLit = true;
-        retreatTo = new Place(lit[0], lit[1], lit[2], Guard.dimOf(mc.level));
-        retreatGoal = new GoalNear(new BlockPos(lit[0], lit[1], lit[2]), 0);
-        engine.override(retreatGoal);
-        lastX = p.getX();
-        lastY = p.getY();
-        lastZ = p.getZ();
-        events.push("reflex", "retreating from " + t.id + " to a lit spot at " + lit[0] + " " + lit[1] + " " + lit[2] + " (" + why + ")", null);
-    }
-
-    private void startRetreat(Minecraft mc, LocalPlayer p, Threat t) {
-        clearPillar(mc);        // review: no stale pillar under a new retreat
-        // live aa376: weigh every hostile; no base to run to and no safe heading (cornered) = fight the closest
-        Place b0 = base;
-        boolean toBase = b0 != null && b0.dim.equals(Guard.dimOf(mc.level)) && dist2(p, b0) > 64
-                && dist2(p, b0) <= (double) io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk() * io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk();
-        int[] heading = toBase ? null : fleeHeading(mc, p, t.e, 16);
-        if (!toBase && heading == null) {
-            if (startPillar(mc, p, t)) return;     // brain-b1: cornered and fighting is bad: up out of reach
-            events.push("reflex", "cornered by " + t.id + ": no heading clear of mobs, fighting the closest", null);
-            retreatWhy = null;
-            fight(mc, p, t);
-            return;
-        }
-        retreatLit = false;
-        if (reflex == Reflex.EATING) stopEating(mc, "retreating");
-        reflex = Reflex.RETREATING;
-        mc.options.keyShift.setDown(false);
-        retreatStart = now;
-        calmSince = now;
-        retreatTo = null;
-        fleeTo = null;
-        String dim = Guard.dimOf(mc.level);
-        Place b = base;
-        // 0.24.1: a base further than path maxWalk (an old home after a move) is never the goal: get away instead
-        if (b != null && b.dim.equals(dim) && dist2(p, b) > 64 && dist2(p, b) <= (double) io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk() * io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk()) {
-            retreatTo = b;
-            retreatGoal = new GoalNear(new BlockPos(b.x, b.y, b.z), 2);
-        } else {
-            fleeTo = heading;
-            retreatGoal = new GoalXZ(fleeTo[0], fleeTo[1]);
-        }
-        engine.override(retreatGoal);
-        // far from home: /home as well, and keep moving (the server may have a warm-up). 0.24.1: only under 6 health
-        // and with server commands on (the live bug: phantoms at full health sent the bot to an old home ~10M blocks off)
-        Place h = home;
-        boolean far = h != null && now - homeSentAt >= 1200 && (!h.dim.equals(dim) || dist2(p, h) > 16 * 16);
-        boolean tp = far && io.github.mojolowjo.entropybot.move.ServerCmds.homeTp(p.getHealth(), io.github.mojolowjo.entropybot.move.ServerCmds.on());
-        if (far && p.getHealth() < 6 && !tp) io.github.mojolowjo.entropybot.move.ServerCmds.allowed("the retreat under 6 health");
-        if (tp) {
-            homeSentAt = now;
-            p.connection.sendCommand("home");
-        }
-        lastX = p.getX();
-        lastY = p.getY();
-        lastZ = p.getZ();
-        String why = t.strong && p.getHealth() > ReflexRules.RETREAT_AT && t.e instanceof LivingEntity le
-                ? ", too strong to fight (max health " + Math.round(le.getMaxHealth()) + ")" : "";
-        events.push("reflex", "retreating from " + t.id + " (health " + Math.round(p.getHealth()) + why + ")" +
-                (retreatTo != null ? " to the base" : " away from it") + (tp ? ", sent /home" : "") + (retreatWhy != null ? " - " + retreatWhy : ""), null);
-        LOG.info("[entropybot] retreat from {}: {}", t.id, retreatTo != null ? "to the base" : "heading to " + fleeTo[0] + " " + fleeTo[1]);
-        retreatWhy = null;
-    }
-
-    // ---- brain-b1: the cornered pillar (CornerEscape) ----
-    private int pillarCell = Integer.MIN_VALUE, pillarBase, pillarTop, pillarX, pillarZ;
-    private long pillarStart;
-    private boolean pillarUp;           // reached the top: hold there, hitting what comes in reach
-
-    private boolean pillaring() { return pillarCell != Integer.MIN_VALUE; }
-
-    private void clearPillar(Minecraft mc) {
-        if (pillaring()) {
-            mc.options.keyJump.setDown(false);
-            mc.options.keyUse.setDown(false);
-        }
-        pillarCell = Integer.MIN_VALUE;
-        pillarUp = false;
-        if (digging()) mc.options.keyUp.setDown(false);
-        digStage = -1;
-        burrowStage = -1;
-    }
-
-    /** Throwaway blocks in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#THROWAWAY}), and the slot of the first. */
-    private static int[] throwaway(LocalPlayer p) {
-        int n = 0, slot = -1;
-        var inv = p.getInventory();
-        for (int i = 0; i < 36; i++) {
-            ItemStack s = inv.getItem(i);
-            if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem)) continue;
-            if (!io.github.mojolowjo.entropybot.aa.AaEscape.THROWAWAY.contains(BuiltInRegistries.ITEM.getKey(s.getItem()).getPath())) continue;
-            n += s.getCount();
-            if (slot < 0 || (slot >= 9 && i < 9)) slot = i;
-        }
-        return new int[]{n, slot};
-    }
-
-    /** Cornered: pillar up when CornerEscape says so; false = fight as before. Never throws. */
-    private boolean startPillar(Minecraft mc, LocalPlayer p, Threat t) { return startPillar(mc, p, t, false); }
-
-    /** quiet: a one-second re-check on a running retreat: no event when no escape fits. */
-    private boolean startPillar(Minecraft mc, LocalPlayer p, Threat t, boolean quiet) {
-        try {
-            int near = 0;
-            for (Entity e : mc.level.entitiesForRendering())
-                if (e != p && e instanceof LivingEntity le && le.isAlive() && p.distanceTo(e) <= ReflexRules.LOOK && Hostility.INSTANCE.kind(e, true).counts()) near++;
-            boolean bad = io.github.mojolowjo.entropybot.threat.CornerEscape.fightBad(p.getHealth() + p.getAbsorptionAmount(),
-                    ReflexRules.RETREAT_AT, t.strong, true, near);       // only reached on a retreat verdict: losing
-            BlockPos feet = p.blockPosition();
-            int head = 0;
-            while (head < io.github.mojolowjo.entropybot.threat.CornerEscape.UP && mc.level.getBlockState(feet.above(2 + head)).getCollisionShape(mc.level, feet.above(2 + head)).isEmpty()) head++;
-            int[] tw = throwaway(p);
-            Direction dig = bad ? findNiche(mc, p) : null;
-            int down = bad ? findBurrow(mc, p) : 0;
-            var plan = io.github.mojolowjo.entropybot.threat.CornerEscape.choose(bad, p.onGround(), p.isInWater() || p.isInLava(), head, tw[0], dig != null, down);
-            if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.DIG_DOWN) return startBurrow(mc, p, t.id, down, plan.why());
-            if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.NONE) {
-                if (!quiet) events.push("reflex", "cornered by " + t.id + ", no escape: " + plan.why(), null);
-                LOG.info("[entropybot] cornered, no escape: {}", plan.why());
-                return false;
-            }
-            if (plan.kind() == io.github.mojolowjo.entropybot.threat.CornerEscape.Kind.DIG_IN) return startDig(mc, p, t, dig, plan.why());
-            if (!Hotbar.toHand(mc, p, tw[1])) {
-                events.push("reflex", "cornered by " + t.id + ", no pillar: could not take the blocks in hand", null);
-                return false;
-            }
-            if (reflex == Reflex.EATING) stopEating(mc, "pillaring");
-            reflex = Reflex.RETREATING;
-            retreatLit = false;
-            retreatTo = null;
-            fleeTo = null;
-            retreatGoal = null;
-            retreatStart = now;
-            calmSince = now;
-            engine.hold();
-            stopMoving(mc);
-            pillarCell = feet.getY();
-            pillarBase = pillarCell;
-            pillarTop = feet.getY() + plan.height();
-            pillarX = feet.getX();
-            pillarZ = feet.getZ();
-            pillarStart = now;
-            pillarUp = false;
-            lastX = p.getX();
-            lastY = p.getY();
-            lastZ = p.getZ();
-            events.push("reflex", "cornered by " + t.id + ": " + plan.why(), null);
-            LOG.info("[entropybot] cornered: {}", plan.why());
-            return true;
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: pillar failed to start, fighting instead: {}", e.toString());
-            clearPillar(mc);
-            return false;
-        }
-    }
-
-    /** One tick of the pillar: jump, place under the feet once clear; at the top hold and hit what is in reach. */
-    private void pillarTick(Minecraft mc, LocalPlayer p) {
-        if (p.getBlockX() != pillarX || p.getBlockZ() != pillarZ || p.isInWater() || p.isInLava()) {
-            settle("knocked off the pillar");
-            return;
-        }
-        Threat t = nearestThreat(mc, p, true, false);
-        if (t != null) calmSince = now;
-        if (!pillarUp) {
-            if (now - pillarStart > io.github.mojolowjo.entropybot.threat.CornerEscape.TIMEOUT) {
-                settle("pillar gave up at " + (pillarCell - pillarBase) + " up");
-                return;
-            }
-            p.setXRot(90f);
-            p.setDeltaMovement(0, p.getDeltaMovement().y, 0);      // straight up: no drift off the column
-            BlockPos cell = new BlockPos(pillarX, pillarCell, pillarZ);
-            if (p.getY() >= pillarCell + 1.0 - 1e-3 && p.onGround() && !mc.level.getBlockState(cell).isAir()) pillarCell++;   // landed on the last one
-            if (pillarCell >= pillarTop) {
-                pillarUp = true;
-                mc.options.keyJump.setDown(false);
-                events.push("reflex", "pillared up to " + pillarTop + ", holding", null);
-                LOG.info("[entropybot] pillared up to {}, holding", pillarTop);
-                return;
-            }
-            int[] tw = throwaway(p);
-            if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) {      // review: re-take a throwaway stack each tick
-                settle("pillar: out of blocks");
-                return;
-            }
-            mc.options.keyJump.setDown(p.onGround());
-            if (io.github.mojolowjo.entropybot.threat.CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
-                BlockPos below = cell.below();
-                var hit = new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(below).add(0, 0.5, 0),
-                        net.minecraft.core.Direction.UP, below, false);
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
-                p.swing(InteractionHand.MAIN_HAND);
-            }
-            return;
-        }
-        // at the top: hit a mob in reach, else wait it out
-        if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
-            holdWeapon(mc, p);
-            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
-            mc.gameMode.attack(p, t.e);
-            p.swing(InteractionHand.MAIN_HAND);
-        }
-        if (now - calmSince >= 100) settle("nothing near the pillar");
-        else if (now - retreatStart >= 1800) settle("gave up on the pillar after 90 s");
-    }
-
-    // ---- aa-mobs2: dig into a wall and seal (CornerEscape.choose) ----
-    private int digStage = -1;
-    private Direction digDir;
-    private BlockPos digEntrance;
-    private long digStart;
-
-    private boolean digging() { return digStage >= 0; }
-
-    private static boolean solid(Minecraft mc, BlockPos q) {
-        BlockState s = mc.level.getBlockState(q);
-        return !s.getCollisionShape(mc.level, q).isEmpty() && s.getFluidState().isEmpty();
-    }
-
-    /** The BreakPolicy ask for one niche cell (DIG_OUT intent). Never throws; false = refused or error. */
-    private static boolean policyBreaks(Minecraft mc, BlockPos q) {
-        try {
-            var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
-            return rt.judge("aa-corner", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK,
-                    io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, Guard.dimOf(mc.level),
-                    q.getX(), q.getY(), q.getZ(), rt.facts(mc.level, q, false), rt.where()).allowed();
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
-
-    /** A wall direction whose two cells can be dug out and sealed behind; null = none. Never throws. */
-    private Direction findNiche(Minecraft mc, LocalPlayer p) {
-        try {
-            BlockPos feet = p.blockPosition();
-            for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos f = feet.relative(d), h = f.above();
-                BlockState fs = mc.level.getBlockState(f), hs = mc.level.getBlockState(h);
-                boolean breakable = solid(mc, f) && solid(mc, h)
-                        && fs.getDestroySpeed(mc.level, f) >= 0 && hs.getDestroySpeed(mc.level, h) >= 0
-                        && !fs.hasBlockEntity() && !hs.hasBlockEntity()
-                        && !(fs.getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
-                        && !(hs.getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
-                        && policyBreaks(mc, f) && policyBreaks(mc, h);
-                if (!breakable) continue;
-                int enclosed = 0;
-                for (Direction s : new Direction[]{d, d.getClockWise(), d.getCounterClockWise()}) {
-                    BlockPos side = f.relative(s);
-                    if (solid(mc, side) && solid(mc, side.above())) enclosed++;
-                }
-                BlockPos ceil = h.above();
-                boolean fluid = !mc.level.getFluidState(ceil).isEmpty() || !mc.level.getFluidState(f.below()).isEmpty();
-                if (io.github.mojolowjo.entropybot.threat.CornerEscape.nicheOk(breakable, enclosed, solid(mc, ceil), solid(mc, f.below()), fluid)) return d;
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: niche search failed: {}", e.toString());
-        }
-        return null;
-    }
-
-    private boolean startDig(Minecraft mc, LocalPlayer p, Threat t, Direction d, String why) {
-        try {
-            int[] tw = throwaway(p);
-            if (reflex == Reflex.EATING) stopEating(mc, "digging in");
-            reflex = Reflex.RETREATING;
-            retreatLit = false;
-            retreatTo = null;
-            fleeTo = null;
-            retreatGoal = null;
-            retreatStart = now;
-            calmSince = now;
-            engine.hold();
-            stopMoving(mc);
-            digDir = d;
-            digEntrance = p.blockPosition();
-            digStage = 0;
-            digStart = now;
-            lastX = p.getX();
-            lastY = p.getY();
-            lastZ = p.getZ();
-            events.push("reflex", "cornered by " + t.id + ": " + why + " (" + tw[0] + " blocks)", null);
-            LOG.info("[entropybot] cornered: dig in {} - {}", d, why);
-            return true;
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: dig-in failed to start, fighting instead: {}", e.toString());
-            clearPillar(mc);
-            return false;
-        }
-    }
-
-    /** The hotbar tool that breaks this block fastest goes in hand. */
-    private void toolFor(Minecraft mc, LocalPlayer p, BlockState s) {
-        int best = -1;
-        float bestSpeed = p.getInventory().getItem(p.getInventory().selected).getDestroySpeed(s);
-        for (int i = 0; i < 9; i++) {
-            float sp = p.getInventory().getItem(i).getDestroySpeed(s);
-            if (sp > bestSpeed) { bestSpeed = sp; best = i; }
-        }
-        if (best >= 0) Hotbar.toHand(mc, p, best);
-    }
-
-    private void placeAt(Minecraft mc, LocalPlayer p, BlockPos against, Direction face, BlockPos lookAtCell) {
-        int[] tw = throwaway(p);
-        if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { settle("dig-in: out of blocks"); return; }
-        var hit = new BlockHitResult(Vec3.atCenterOf(against).add(0, 0.5, 0), face, against, false);
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(lookAtCell)); } catch (RuntimeException ignored) {}
-        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
-        p.swing(InteractionHand.MAIN_HAND);
-    }
-
-    /** One tick of the dig-in: break two cells, step in, seal the entrance at feet and head, hold. */
-    private void digTick(Minecraft mc, LocalPlayer p) {
-        BlockPos e = digEntrance, f = e.relative(digDir), h = f.above();
-        BlockPos at = p.blockPosition();
-        if (digStage < 5 && now - digStart > io.github.mojolowjo.entropybot.threat.CornerEscape.DIG_TIMEOUT) {
-            settle("dig-in gave up at stage " + digStage);
-            return;
-        }
-        if ((!at.equals(e) && !at.equals(f)) || p.isInWater() || p.isInLava()) {
-            settle("knocked out of the niche");
-            return;
-        }
-        Threat t = nearestThreat(mc, p, true, false);
-        if (t != null) calmSince = now;
-        int prev = digStage;
-        digStage = io.github.mojolowjo.entropybot.threat.CornerEscape.nextStage(digStage, !solid(mc, f), !solid(mc, h),
-                at.equals(f), solid(mc, e), solid(mc, e.above()));
-        if (digStage != prev && digStage == 5) events.push("reflex", "dug in and sealed, holding", null);
-        mc.options.keyUp.setDown(digStage == 2);
-        switch (digStage) {
-            case 0, 1 -> {
-                BlockPos c = digStage == 0 ? f : h;
-                toolFor(mc, p, mc.level.getBlockState(c));
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(c)); } catch (RuntimeException ignored) {}
-                mc.gameMode.continueDestroyBlock(c, digDir.getOpposite());     // the guard's break check runs inside
-                p.swing(InteractionHand.MAIN_HAND);
-            }
-            case 2 -> { try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(f)); } catch (RuntimeException ignored) {} }
-            case 3 -> placeAt(mc, p, e.below(), Direction.UP, e);
-            case 4 -> placeAt(mc, p, e, Direction.UP, e.above());
-            default -> {
-                if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
-                    holdWeapon(mc, p);
-                    mc.gameMode.attack(p, t.e);
-                    p.swing(InteractionHand.MAIN_HAND);
-                }
-                if (now - calmSince >= 100) settle("nothing near the niche");
-                else if (now - retreatStart >= 1800) settle("gave up on the niche after 90 s");
-            }
-        }
-    }
-
-    // ---- aa-night3: dig down and seal above with a dug block (CornerEscape.burrowDepth / burrowStage) ----
-    private int burrowStage = -1, burrowDepth, burrowWait;
-    private BlockPos burrowTop;
-    private long burrowStart;
-
-    private boolean burrowing() { return burrowStage >= 0; }
-
-    /** A cell this burrow may dig: solid, breakable soon (soft, or the right tool in the bag), not falling, no block entity, no fluid near, the policy allows. */
-    private boolean burrowDiggable(Minecraft mc, LocalPlayer p, BlockPos q) {
-        BlockState s = mc.level.getBlockState(q);
-        if (!solid(mc, q) || s.hasBlockEntity() || s.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
-        float hard = s.getDestroySpeed(mc.level, q);
-        if (hard < 0) return false;
-        boolean tool = false;
-        for (int i = 0; i < 9 && !tool; i++) tool = p.getInventory().getItem(i).isCorrectToolForDrops(s) && hard <= 3.5f;
-        if (hard > 0.8f && !tool) return false;           // stone by hand: 7.5 s a block, and it drops nothing to seal with
-        for (Direction d : Direction.values()) if (!mc.level.getFluidState(q.relative(d)).isEmpty()) return false;
-        return policyBreaks(mc, q);
-    }
-
-    /** The cells at feet and head of a final depth closed on 4 sides, the floor under it solid. */
-    private boolean burrowClosed(Minecraft mc, BlockPos feet, BlockPos top) {
-        BlockPos head = feet.above();
-        for (Direction d : Direction.Plane.HORIZONTAL) if (!solid(mc, feet.relative(d)) || !solid(mc, head.relative(d))) return false;
-        return solid(mc, feet.below());
-    }
-
-    /** The burrow depth here (2 or 3), 0 = none. Never throws. */
-    private int findBurrow(Minecraft mc, LocalPlayer p) {
-        try {
-            if (!p.onGround() || p.isInWater() || p.isInLava()) return 0;
-            BlockPos top = p.blockPosition();
-            boolean[] dig = new boolean[3];
-            for (int k = 0; k < 3; k++) dig[k] = burrowDiggable(mc, p, top.below(k + 1));
-            boolean sealSide = false;          // review: depth 3 seals in the first dug cell; it needs a side to place against
-            for (Direction d : Direction.Plane.HORIZONTAL) sealSide |= solid(mc, top.below().relative(d));
-            boolean[] sides = {burrowClosed(mc, top.below(2), top), sealSide && burrowClosed(mc, top.below(3), top)};
-            boolean feetSide = false;
-            for (Direction d : Direction.Plane.HORIZONTAL) feetSide |= solid(mc, top.relative(d));
-            return io.github.mojolowjo.entropybot.threat.CornerEscape.burrowDepth(dig, sides, feetSide);
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: burrow check failed: {}", e.toString());
-            return 0;
-        }
-    }
-
-    /** aa-night3: cover from ranged mobs: a dig-down, else a wall niche (both break the line of sight); false = none fits. */
-    private boolean startCover(Minecraft mc, LocalPlayer p, Threat t, String why) {
-        if (sealedHere(mc, p)) return false;              // review: no second hole inside the first
-        int down = findBurrow(mc, p);
-        if (down > 0) return startBurrow(mc, p, t.id, down, why);
-        Direction d = findNiche(mc, p);
-        if (d != null && throwaway(p)[0] >= io.github.mojolowjo.entropybot.threat.CornerEscape.SEAL_BLOCKS) return startDig(mc, p, t, d, why);
-        return false;
-    }
-
-    private boolean startBurrow(Minecraft mc, LocalPlayer p, String from, int depth, String why) {
-        try {
-            if (reflex == Reflex.EATING) stopEating(mc, "digging down");
-            reflex = Reflex.RETREATING;
-            retreatLit = false;
-            retreatTo = null;
-            fleeTo = null;
-            retreatGoal = null;
-            retreatStart = now;
-            calmSince = now;
-            engine.hold();
-            stopMoving(mc);
-            burrowTop = p.blockPosition();
-            burrowDepth = depth;
-            burrowStage = 0;
-            burrowWait = 0;
-            burrowStart = now;
-            lastX = p.getX();
-            lastY = p.getY();
-            lastZ = p.getZ();
-            events.push("reflex", "hiding from " + from + ": " + why, null);
-            LOG.info("[entropybot] burrow: dig down {} - {}", depth, why);
-            return true;
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: burrow failed to start: {}", e.toString());
-            burrowStage = -1;
-            return false;
-        }
-    }
-
-    /**
-     * aa-night3: the hide's way in (the AA "burrow" command): dig down here and seal, no throwaway blocks needed.
-     * A reply line: "ok: ..." started or already hidden, else why not.
-     */
-    public String burrow() {
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer p = mc.player;
-        if (p == null || mc.level == null) return "error: no player";
-        if (burrowing()) return "ok: digging down already (stage " + burrowStage + ")";
-        if (sealedHere(mc, p)) return "ok: sealed in here already";
-        int d = findBurrow(mc, p);
-        if (d == 0) return "error: no ground here to dig down into (soft ground, closed sides, no water near)";
-        return startBurrow(mc, p, "the night", d, "hiding to heal") ? "ok: digging down " + d + " and sealing" : "error: the burrow did not start";
-    }
-
-    /** Feet and head closed on 4 sides and a solid block over the head. */
-    private boolean sealedHere(Minecraft mc, LocalPlayer p) {
-        BlockPos f = p.blockPosition();
-        return burrowClosed(mc, f, f) && solid(mc, f.above(2));
-    }
-
-    /** One tick of the burrow: break down cell by cell (dropping in), seal over the head with a dug block, hold. */
-    private void burrowTick(Minecraft mc, LocalPlayer p) {
-        if (burrowStage <= burrowDepth && now - burrowStart > io.github.mojolowjo.entropybot.threat.CornerEscape.DIG_TIMEOUT) {
-            burrowStage = -1;
-            settle("burrow gave up");
-            return;
-        }
-        if (p.isInWater() || p.isInLava() || Math.abs(p.getX() - (burrowTop.getX() + 0.5)) > 1 || Math.abs(p.getZ() - (burrowTop.getZ() + 0.5)) > 1) {
-            burrowStage = -1;
-            settle("knocked out of the burrow");
-            return;
-        }
-        Threat t = nearestThreat(mc, p, true, false);
-        if (t != null) calmSince = now;
-        // the seal: the cell over the head at the end (depth 2: the start cell, depth 3: the first dug cell)
-        BlockPos seal = burrowTop.below(burrowDepth - 2);
-        BlockPos cell = burrowStage < burrowDepth ? burrowTop.below(burrowStage + 1) : null;
-        int prevStage = burrowStage;
-        burrowStage = io.github.mojolowjo.entropybot.threat.CornerEscape.burrowStage(burrowStage, burrowDepth,
-                cell != null && !solid(mc, cell), cell != null && p.blockPosition().getY() <= cell.getY() && p.onGround(), solid(mc, seal));
-        if (burrowStage < burrowDepth) {
-            BlockPos c = burrowTop.below(burrowStage + 1);
-            if (solid(mc, c)) {
-                toolFor(mc, p, mc.level.getBlockState(c));
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(c)); } catch (RuntimeException ignored) {}
-                mc.gameMode.continueDestroyBlock(c, Direction.UP);       // the guard's break check runs inside
-                p.swing(InteractionHand.MAIN_HAND);
-            }
-            return;
-        }
-        if (burrowStage == burrowDepth) {
-            // against a solid side of the seal cell, from below (the head is right under it)
-            for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos side = seal.relative(d);
-                if (!solid(mc, side)) continue;
-                int[] tw = throwaway(p);
-                if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) {
-                    // review: a drop is picked up ~10 ticks after it falls; wait a second for it
-                    if (++burrowWait < 30) return;
-                    burrowStage = -1;
-                    settle("burrow: no dug block came into the bag to seal with");
-                    return;
-                }
-                var hit = new BlockHitResult(Vec3.atCenterOf(side).relative(d.getOpposite(), 0.5), d.getOpposite(), side, false);
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(seal)); } catch (RuntimeException ignored) {}
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
-                p.swing(InteractionHand.MAIN_HAND);
-                return;
-            }
-            burrowStage = -1;
-            settle("burrow: nothing beside the hole to seal against");
-            return;
-        }
-        if (prevStage == burrowDepth && burrowStage == burrowDepth + 1) calmSince = now;       // review: the hold starts its own calm wait
-        if (prevStage == burrowDepth && burrowStage == burrowDepth + 1) events.push("reflex", "dug down and sealed, holding", null);
-        if (t != null && t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
-            holdWeapon(mc, p);
-            mc.gameMode.attack(p, t.e);
-            p.swing(InteractionHand.MAIN_HAND);
-        }
-        if (now - calmSince >= 100) { burrowStage = -1; settle("nothing near the burrow"); }
-        else if (now - retreatStart >= 1800) { burrowStage = -1; settle("gave up on the burrow after 90 s"); }
-    }
-
-    private void retreat(Minecraft mc, LocalPlayer p, boolean hurt) {
-        if (pillaring()) {
-            pillarTick(mc, p);
-            return;
-        }
-        if (burrowing()) {
-            burrowTick(mc, p);
-            return;
-        }
-        if (digging()) {
-            digTick(mc, p);
-            return;
-        }
-        double jump = Math.abs(p.getX() - lastX) + Math.abs(p.getY() - lastY) + Math.abs(p.getZ() - lastZ);
-        lastX = p.getX();
-        lastY = p.getY();
-        lastZ = p.getZ();
-        if (jump > 8) {
-            settle("teleported");
-            return;
-        }
-        if (retreatTo != null && dist2(p, retreatTo) <= 9) {
-            settle(retreatLit ? "at a lit spot" : "at the base");
-            return;
-        }
-        if (fleeTo != null && Math.abs(p.getX() - fleeTo[0]) + Math.abs(p.getZ() - fleeTo[1]) <= 3) {
-            settle("got away");
-            return;
-        }
-        // a Baritone cancel (the bridge stopping its job) dropped the goal: ask again
-        if (engine.mode() == EngineProcess.Mode.NONE && retreatGoal != null) engine.override(retreatGoal);
-        // 0.23.2: every retreat sprints
-        if (FightOrFlee.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
-        Threat t = nearestThreat(mc, p, true, false);     // B2 never cuts a retreat short: the old test here
-        if (t != null) calmSince = now;
-        // aa-mobs2: a running retreat looks again every second: mobs that closed the last way out = pillar or dig in
-        if (t != null && io.github.mojolowjo.entropybot.threat.CornerEscape.recheckNow(now, retreatStart)
-                && fleeHeading(mc, p, t.e, 16) == null && startPillar(mc, p, t, true)) return;
-        if (now - calmSince >= 100 || now - retreatStart >= 1800) settle(now - calmSince >= 100 ? "nothing chasing me" : "gave up after 90 s");
-    }
-
-    private static double dist2(LocalPlayer p, Place pl) {
-        double dx = p.getX() - pl.x - 0.5, dy = p.getY() - pl.y, dz = p.getZ() - pl.z - 0.5;
-        return dx * dx + dy * dy + dz * dz;
-    }
-
     // ---- eating ----
 
     /** The inventory slot of the best food to eat now, or -1. */
@@ -1969,9 +915,8 @@ public final class Reflexes {
 
     private void startEating(Minecraft mc, LocalPlayer p) {
         if (!holdFood(mc, p)) {
-            // nothing to eat on board: the food run, else tell the owner (once) and look again in 2 minutes
-            if (now >= fetchCooldownUntil && startFetch(mc, p)) return;
-            if (!noFood) events.push("reflex", "out of food (food " + p.getFoodData().getFoodLevel() + "/20)" + (fetchNote != null ? ": " + fetchNote : ""), null);
+            // nothing to eat on board: tell the owner (once) and look again in 10 s (AA_CLEANUP 4: the food run went; aa-food fetches)
+            if (!noFood) events.push("reflex", "out of food (food " + p.getFoodData().getFoodLevel() + "/20)", null);
             noFood = true;
             eatRequested = false;
             eatCooldownUntil = now + 200;
@@ -2022,257 +967,13 @@ public final class Reflexes {
         settle(why);
     }
 
-    // ---- the food run (B3a): nothing to eat on board, so fetch some ----
-
-    /** Slots of modded storage the run never takes from (upgrades, filters, display items). */
-    private static final Pattern SKIP_SLOT = Pattern.compile("upgrade|filter|ghost|display|fake|setting", Pattern.CASE_INSENSITIVE);
-    private static final Pattern STORAGE = Pattern.compile("chest|barrel|shulker|drawer|crate|backpack|storage");
-
-    private boolean isFoodId(String id, float health) {
-        ResourceLocation rl = ResourceLocation.tryParse(id);
-        if (rl == null) return false;
-        Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-        return item != null && foodScore(new ItemStack(item), health) >= 0;
-    }
-
-    private List<FoodRun.Target> foodTargets(Minecraft mc, LocalPlayer p) {
-        float hp = p.getHealth();
-        return FoodRun.targets(knowledge.places(), knowledge.chests(), id -> isFoodId(id, hp), Guard.dimOf(mc.level), p.getX(), p.getY(), p.getZ());
-    }
-
-    private boolean startFetch(Minecraft mc, LocalPlayer p) {
-        fetchCooldownUntil = now + 2400;            // whatever happens, the next run waits 2 minutes
-        if (!eatRequested && !io.github.mojolowjo.entropybot.aa.door.Door.allow(io.github.mojolowjo.entropybot.aa.door.Driver.DANGER, "food run")) {     // AA_CLEANUP 2: aa-food feeds the bot under AA
-            fetchNote = "aa is on: aa-food fetches food";
-            return false;
-        }
-        // 0.32.1 (P1, cave test: "fetching food from -255 67 128" walked the bot 110 blocks out of a running job under
-        // ground): never a silent takeover. A job running or the bot under ground: no run; very hungry with a job: the
-        // job stops with the reason. An owner's "eat" still fetches.
-        try {
-            var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
-            boolean busy = cmds.jobs.running() || cmds.chainRunning();
-            boolean under = io.github.mojolowjo.entropybot.commands.Jobs.underDepth(mc.level, p.getBlockX(), p.getBlockY(), p.getBlockZ()) > 0;   // 0.34.3: shared rule
-            if (!eatRequested && (busy || under)) {
-                int food = p.getFoodData().getFoodLevel();
-                fetchNote = busy ? "a job is running: no food run during it" : "under ground: no food run from here";
-                // review 1: very hungry and nothing on board (startFetch only runs then): a job, a chain or the autominer
-                // would starve the bot: everything stops with the reason; idle under ground: the owner hears it; out in the
-                // open again (or after "eat"), the run is allowed
-                if (food <= 6 && (busy || cmds.jobs.running())) {
-                    cmds.stopForFood("stopped: out of food (food " + food + "/20) and none on me" + (under ? " under ground" : "")
-                            + " - next: eat (fetches food from the chests), or bring me food");
-                    io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.DAMAGE, "out of food: stopped everything");
-                } else if (food <= 6 && under && !noFood) {
-                    cmds.whisper(cmds.owner(), "hungry (food " + food + "/20) under ground with no food on me - next: eat (walks to the food chests), or bring me food");
-                } else if (!noFood) {
-                    io.github.mojolowjo.entropybot.view.News.GLOBAL.push(io.github.mojolowjo.entropybot.view.News.TIME, "hungry (food " + food + "), no food on me: " + fetchNote);
-                }
-                return false;
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] food run check failed (no run): {}", e.toString());
-            return false;
-        }
-        fetchTargets = foodTargets(mc, p);
-        if (fetchTargets.isEmpty()) {
-            fetchNote = "no chest I know holds food (place food at one, or scan the base)";
-            return false;
-        }
-        fetchNote = null;
-        fetchIdx = 0;
-        fetchTaken = 0;
-        reflex = Reflex.FETCHING;
-        mc.options.keyShift.setDown(false);
-        FoodRun.Target t = fetchTargets.get(0);
-        events.push("reflex", "out of food: fetching some from " + t.why() + " at " + t.key(), null);
-        beginTarget(mc, p);
-        return true;
-    }
-
-    /** Walks to the current target (after a /home when it is far and the chest is near home). */
-    private void beginTarget(Minecraft mc, LocalPlayer p) {
-        FoodRun.Target t = fetchTargets.get(fetchIdx);
-        Place h = home;
-        double d = FoodRun.dist(p.getX(), p.getY(), p.getZ(), t.x(), t.y(), t.z());
-        fetchStageAt = now;
-        if (d > 64 && h != null && h.dim.equals(Guard.dimOf(mc.level)) && FoodRun.dist(h.x + 0.5, h.y, h.z + 0.5, t.x(), t.y(), t.z()) <= 32 && now - homeSentAt >= 1200
-                && io.github.mojolowjo.entropybot.move.ServerCmds.allowed("the food run's teleport home")) {
-            homeSentAt = now;
-            p.connection.sendCommand("home");
-            lastX = p.getX();
-            lastY = p.getY();
-            lastZ = p.getZ();
-            engine.hold();
-            fetchStage = Fetch.TP;
-            return;
-        }
-        walkTo(t);
-    }
-
-    private void walkTo(FoodRun.Target t) {
-        engine.override(new GoalGetToBlock(new BlockPos(t.x(), t.y(), t.z())));
-        fetchStage = Fetch.WALK;
-        fetchStageAt = now;
-        fetchBest = Double.MAX_VALUE;
-        fetchBestTick = now;
-    }
-
-    private void fetchStep(Minecraft mc, LocalPlayer p) {
-        FoodRun.Target t = fetchTargets.get(fetchIdx);
-        BlockPos pos = new BlockPos(t.x(), t.y(), t.z());
-        Vec3 center = Vec3.atCenterOf(pos);
-        long in = now - fetchStageAt;
-        switch (fetchStage) {
-            case TP -> {
-                double jump = Math.abs(p.getX() - lastX) + Math.abs(p.getY() - lastY) + Math.abs(p.getZ() - lastZ);
-                lastX = p.getX();
-                lastY = p.getY();
-                lastZ = p.getZ();
-                if (jump > 8 || in > 200) walkTo(t);
-            }
-            case WALK -> {
-                double d = p.getEyePosition().distanceTo(center);
-                if (d <= 4.4) {
-                    engine.hold();
-                    if (!openable(mc.level.getBlockState(pos), mc, pos)) {
-                        // a "food" mark made standing next to the chest: the chest within 2 blocks of it
-                        BlockPos near = openableNear(mc, p, pos);
-                        if (near == null) {
-                            nextTarget(mc, p, "no chest at " + t.key() + " any more");
-                            return;
-                        }
-                        pos = near;
-                        center = Vec3.atCenterOf(pos);
-                        fetchTargets.set(fetchIdx, t = new FoodRun.Target(pos.getX() + " " + pos.getY() + " " + pos.getZ(), pos.getX(), pos.getY(), pos.getZ(), t.why()));
-                    }
-                    try { p.lookAt(EntityAnchorArgument.Anchor.EYES, center); } catch (RuntimeException ignored) {}
-                    mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(center, Direction.UP, pos, false));
-                    p.swing(InteractionHand.MAIN_HAND);
-                    fetchStage = Fetch.OPEN;
-                    fetchStageAt = now;
-                    return;
-                }
-                if (engine.mode() == EngineProcess.Mode.NONE) engine.override(new GoalGetToBlock(pos));    // a cancel dropped it
-                if (d < fetchBest - 1) {
-                    fetchBest = d;
-                    fetchBestTick = now;
-                }
-                if (now - fetchBestTick > 400 || in > 2400) nextTarget(mc, p, "couldn't get to " + t.key());
-            }
-            case OPEN -> {
-                if (p.containerMenu != p.inventoryMenu) {
-                    if (in < 15) return;           // let the contents arrive
-                    takeFood(mc, p);
-                    fetchStage = Fetch.TAKE;
-                    fetchStageAt = now;
-                } else if (in > 60) {
-                    nextTarget(mc, p, t.key() + " did not open");
-                }
-            }
-            case TAKE -> {
-                if (in < 10) return;               // the server confirms the clicks
-                noteOpenChest(mc, p, t);
-                p.closeContainer();
-                int carried = carriedFood(p);
-                if (carried > 0) {
-                    events.push("reflex", "took " + carried + " food from " + t.key(), null);
-                    noFood = false;
-                    fetchCooldownUntil = now + 200;
-                    settle("fetched " + carried + " food");      // the eat reflex takes over next tick
-                } else {
-                    nextTarget(mc, p, t.key() + " had no food I eat");
-                }
-            }
-        }
-    }
-
-    private void nextTarget(Minecraft mc, LocalPlayer p, String why) {
-        if (p.containerMenu != p.inventoryMenu) p.closeContainer();
-        events.push("reflex", "food run: " + why, null);
-        fetchIdx++;
-        if (fetchIdx < fetchTargets.size()) {
-            beginTarget(mc, p);
-            return;
-        }
-        fetchNote = why;
-        noFood = true;
-        events.push("reflex", "out of food: the food run found nothing (" + why + ")", null);
-        settle("food run found nothing");
-    }
-
-    /** A storage block with a block entity: a right-click opens it and never places the block in hand. */
-    private static boolean openable(BlockState st, Minecraft mc, BlockPos pos) {
-        if (!st.hasBlockEntity()) return false;
-        String id = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
-        return STORAGE.matcher(id).find() && !id.contains("refinedstorage") && !id.contains("extrastorage");
-    }
-
-    /** The nearest openable storage block within 2 of pos that the bot can reach from where it stands, or null. */
-    private static BlockPos openableNear(Minecraft mc, LocalPlayer p, BlockPos pos) {
-        BlockPos best = null;
-        double bestD = 4.5;
-        for (BlockPos q : BlockPos.betweenClosed(pos.offset(-2, -2, -2), pos.offset(2, 2, 2))) {
-            if (!openable(mc.level.getBlockState(q), mc, q)) continue;
-            double d = p.getEyePosition().distanceTo(Vec3.atCenterOf(q));
-            if (d < bestD) { bestD = d; best = q.immutable(); }
-        }
-        return best;
-    }
-
-    private static boolean takeable(Slot s, LocalPlayer p) {
-        return s.container != p.getInventory() && !SKIP_SLOT.matcher(s.getClass().getName()).find();
-    }
-
-    /** Shift-clicks the best food stacks out of the open container until it carries FoodRun.TAKE or more. */
-    private void takeFood(Minecraft mc, LocalPlayer p) {
-        AbstractContainerMenu menu = p.containerMenu;
-        float hp = p.getHealth();
-        for (int clicks = 0; clicks < 4 && carriedFood(p) < FoodRun.TAKE; clicks++) {
-            Slot best = null;
-            int bestScore = -1;
-            for (Slot s : menu.slots) {
-                if (!takeable(s, p) || !s.hasItem() || !s.mayPickup(p)) continue;
-                int sc = foodScore(s.getItem(), hp);
-                if (sc > bestScore) { bestScore = sc; best = s; }
-            }
-            if (best == null) return;
-            mc.gameMode.handleInventoryMouseClick(menu.containerId, best.index, 0, ClickType.QUICK_MOVE, p);
-        }
-    }
-
-    private int carriedFood(LocalPlayer p) {
-        int n = 0;
-        for (int i = 0; i < 36; i++) {
-            ItemStack s = p.getInventory().getItem(i);
-            if (foodScore(s, p.getHealth()) >= 0) n += s.getCount();
-        }
-        return n;
-    }
-
-    /** What the open chest holds now goes into the notes (chests.json). */
-    private void noteOpenChest(Minecraft mc, LocalPlayer p, FoodRun.Target t) {
-        JsonObject items = new JsonObject();
-        for (Slot s : p.containerMenu.slots) {
-            if (!takeable(s, p) || !s.hasItem()) continue;
-            String id = BuiltInRegistries.ITEM.getKey(s.getItem().getItem()).toString();
-            items.addProperty(id, (items.has(id) ? items.get(id).getAsInt() : 0) + s.getItem().getCount());
-        }
-        JsonObject note = new JsonObject();
-        note.addProperty("dim", Guard.dimOf(mc.level));
-        note.add("items", items);
-        note.addProperty("seen", System.currentTimeMillis());
-        JsonObject old = knowledge.chests().get(t.key());
-        if (old != null && old.has("trusted")) note.add("trusted", old.get("trusted"));
-        knowledge.noteChest(t.key(), note, now);
-    }
-
     // ---- death and dimensions ----
 
     private void death(Minecraft mc, LocalPlayer p) {
         deadTicks++;
         if (deadTicks == 1) {
             if (reflex != Reflex.NONE) settle("died");
+            moves.stop("died");
             io.github.mojolowjo.entropybot.summary.DaySummary.INSTANCE.death();      // 0.23.6
             events.push("reflex", "died at " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ(), null);
         }
@@ -2291,6 +992,7 @@ public final class Reflexes {
                 deniedDim = dim;
                 deniedAt = now;
                 if (reflex != Reflex.NONE) settle("entered " + dim);
+                moves.stop("entered " + dim);
                 try {
                     IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
                     if (b != null) b.getPathingBehavior().cancelEverything();

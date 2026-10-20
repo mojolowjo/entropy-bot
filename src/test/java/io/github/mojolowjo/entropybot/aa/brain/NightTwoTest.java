@@ -7,7 +7,6 @@ import io.github.mojolowjo.entropybot.aa.core.FakePort;
 import io.github.mojolowjo.entropybot.aa.core.RunJob;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
-import io.github.mojolowjo.entropybot.threat.FightOrFlee;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -45,18 +44,6 @@ class NightTwoTest {
         assertFalse(Brain.reasonGone(new Brain.Scored(d, -1, -1, "", "not wanted", -1, 0), false));
     }
 
-    @Test
-    void noFightWithAPickaxe() {
-        var zombie = List.of(new FightOrFlee.Foe("minecraft:zombie", 3, false));
-        var fight = new FightOrFlee.Result(FightOrFlee.Verdict.FIGHT, 10, 2, "fight: margin 10");
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.unarmed(fight, 1, zombie, false).verdict());
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.unarmed(fight, 5, zombie, false).verdict(), "a stone sword");
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.unarmed(fight, 1, zombie, true).verdict(), "high ground");
-        var skel = List.of(new FightOrFlee.Foe("minecraft:skeleton", 8, false));
-        assertEquals(FightOrFlee.Verdict.FIGHT, FightOrFlee.unarmed(fight, 1, skel, false).verdict(), "ranged alone can't be outrun");
-        var hold = new FightOrFlee.Result(FightOrFlee.Verdict.HOLD, 10, 2, "dead end");
-        assertEquals(FightOrFlee.Verdict.HOME, FightOrFlee.unarmed(hold, 1, zombie, false).verdict());
-    }
 
     @Test
     void swordOnceAZombieWasSeen() {

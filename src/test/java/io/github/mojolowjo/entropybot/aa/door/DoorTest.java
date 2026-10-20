@@ -42,7 +42,7 @@ class DoorTest {
         assertTrue(Door.allow(Driver.AA, "chain aa"));
         assertTrue(Door.allow(Driver.OWNER, "travel goto"));
         assertTrue(Door.allow(Driver.REFLEX, "x"));
-        for (Driver d : List.of(Driver.DANGER, Driver.RULE, Driver.AI, Driver.OTHER)) assertFalse(Door.allow(d, "x"), d.name());
+        for (Driver d : List.of(Driver.RULE, Driver.AI, Driver.OTHER)) assertFalse(Door.allow(d, "x"), d.name());
         assertEquals(1, Door.refused(Driver.RULE));
     }
 
@@ -90,9 +90,9 @@ class DoorTest {
     @Test
     void textNamesEachDriver() {
         aa = true;
-        Door.allow(Driver.DANGER, "retreat home from zombie");
+        Door.allow(Driver.RULE, "chain rule #2");
         Door.allow(Driver.AI, "goto");
-        assertEquals("refused starts: danger 1 (last: retreat home from zombie), ai 1 (last: goto)", Door.text());
+        assertEquals("refused starts: rule 1 (last: chain rule #2), ai 1 (last: goto)", Door.text());
     }
 
     @Test

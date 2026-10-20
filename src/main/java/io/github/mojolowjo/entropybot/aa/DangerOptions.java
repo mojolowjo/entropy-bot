@@ -1,0 +1,186 @@
+package io.github.mojolowjo.entropybot.aa;
+
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import io.github.mojolowjo.entropybot.threat.ThreatFacts;
+import io.github.mojolowjo.entropybot.threat.ThreatRules;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * AA_CLEANUP 4: the danger desire's options. Fight, flee, retreat home, cover, dig in, pillar are priced on the threat
+ * facts ({@link ThreatFacts}) in seconds: the expected damage (health points x what a point is worth now, plus a likely
+ * death) and the time lost. "Stay" is the baseline: the work goes on and the hit response strikes back when hit. The
+ * desire's score is the seconds the best way saves over staying ({@code Tuning danger.perS} a second), so "a zombie and
+ * a pickaxe" picks flee or dig-in by number, a sword fights, a skeleton at range is covered from. Creepers are left out:
+ * the creeper flee is a reflex. Pure; JUnit DangerOptionsTest; loader notes: none.
+ */
+public final class DangerOptions {
+    private DangerOptions() {}
+
+    public enum Way { STAY, FIGHT, FLEE, HOME, COVER, DIG_IN, PILLAR }
+
+    /** One way: possible here, the expected damage (hp), the time lost (s), the cost (s) and its terms. */
+    public record Priced(Way way, boolean possible, double damage, double timeS, double costS, String why) {}
+
+    /** The pick: the baseline, the best possible way, every way, the seconds saved and the desire's score (-1 none). */
+    public record Choice(Priced stay, Priced best, List<Priced> all, double savedS, double score, String terms) {
+        /** The chain for the best way, or null (staying is cheapest). */
+        public String chain() { return best == null || best.way() == Way.STAY || score < 0 ? null : chainOf(best); }
+    }
+
+    /** A swing every 0.65 s with a sword or axe; a bare hand (hit 1) every 0.25 s. */
+    static final double SWING_S = 0.65, FIST_S = 0.25;
+    /** Seconds to dig two cells down (or into a wall) and seal; to jump-place a 3-high pillar. */
+    static final double DIG_S = 3, PILLAR_S = 1.5;
+    /** Blocks and head room a pillar needs (3 up: out of a zombie's reach). */
+    static final int PILLAR_UP = 3;
+
+    /** Prices every way on the facts. Pure. */
+    public static Choice choose(ThreatFacts f) {
+        List<ThreatFacts.Foe> foes = new ArrayList<>();
+        int creepers = 0;
+        if (f != null && f.foes() != null)
+            for (ThreatFacts.Foe x : f.foes()) {
+                if (ThreatRules.creeper(x.kind())) creepers++;
+                else foes.add(x);
+            }
+        if (foes.isEmpty()) {
+            String t = creepers > 0 ? "creeper only: the creeper flee is a reflex, nothing to price" : "no foes near";
+            return new Choice(null, null, List.of(), 0, -1, t);
+        }
+        ThreatFacts.Me me = f.me();
+        ThreatFacts.Ways w = f.ways() == null ? ThreatFacts.Ways.NONE : f.ways();
+        double h = Tuning.get("danger.horizonS");
+        double speed = ThreatFacts.runSpeed(me.food());
+        double[] fight = fight(me, foes, false, h), stayFight = fight(me, foes, true, h);
+        List<Priced> all = new ArrayList<>();
+        // stay: the hit response fights the walkers that reach me with what I hold; ranged ones shoot on
+        Priced stay = priced(me, Way.STAY, true, stayFight[0], stayFight[1], "work on, the hit response strikes back");
+        all.add(stay);
+        all.add(priced(me, Way.FIGHT, true, fight[0], fight[1], "kill them (hit " + fmt(me.weaponHit()) + ", " + fmt(fight[1]) + " s)"));
+        // flee: the least-threat heading; slower walkers get one hit at most, the rest follow later (danger.fleeBack)
+        double runT = w.fleeRun() / speed;
+        double fleeD = w.fleeRun() > 0 ? away(foes, runT, speed) + Tuning.get("danger.fleeBack") * stayFight[0] : 0;
+        all.add(priced(me, Way.FLEE, w.fleeRun() > 0, fleeD, 2 * runT, w.fleeRun() > 0 ? "run " + w.fleeRun() + " and back" : "cornered: no heading clear of mobs"));
+        double homeT = w.baseDist() > 0 ? w.baseDist() / speed : 0;
+        all.add(priced(me, Way.HOME, w.baseDist() > 0, w.baseDist() > 0 ? away(foes, homeT, speed) : 0, 2 * homeT,
+                w.baseDist() > 0 ? "the base " + Math.round(w.baseDist()) + " away, there and back" : "no base in reach"));
+        boolean ranged = false;
+        for (ThreatFacts.Foe x : foes) ranged |= x.ranged();
+        double moveT = w.coverDist() < 0 ? 0 : w.coverDist() / 4.3 + 0.5, coverD = 0;
+        for (ThreatFacts.Foe x : foes) coverD += x.ranged() ? x.dps() * moveT : 0;
+        coverD += meleeOnly(me, foes, h);
+        all.add(priced(me, Way.COVER, ranged && w.coverDist() >= 0, coverD, moveT + Tuning.get("danger.coverS"),
+                !ranged ? "nothing shoots" : w.coverDist() < 0 ? "no cell out of its sight" : "a cell out of sight " + w.coverDist() + " moves away"));
+        double digD = 0;
+        for (ThreatFacts.Foe x : foes) digD += x.dps() * Math.max(0, DIG_S - x.reachT());
+        all.add(priced(me, Way.DIG_IN, w.digIn(), digD, DIG_S + Tuning.get("danger.holdS"), w.digIn() ? "dig in and seal, wait" : "no ground to dig into here"));
+        double pilD = 0;
+        for (ThreatFacts.Foe x : foes) {
+            if (x.ranged() || x.flies()) pilD += x.dps() * h;                       // a pillar is no cover from arrows or fliers
+            else if (x.move() == ThreatRules.Move.SPIDER) pilD += x.dps() * Math.max(0, h - x.reachT());       // spiders climb
+            else pilD += x.dps() * Math.max(0, PILLAR_S - x.reachT());
+        }
+        boolean pillar = w.onGround() && w.pillarBlocks() >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
+        all.add(priced(me, Way.PILLAR, pillar, pilD, PILLAR_S + Tuning.get("danger.holdS"),
+                pillar ? "pillar " + PILLAR_UP + " up, wait" : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
+        Priced best = stay;
+        for (Priced p : all) if (p.possible() && p.costS() < best.costS()) best = p;
+        double saved = stay.costS() - best.costS();
+        double score = best == stay || saved < Tuning.get("danger.minS") ? -1 : Math.min(99, saved * Tuning.get("danger.perS"));
+        return new Choice(stay, best, all, saved, score, terms(all, best, saved, score, creepers));
+    }
+
+    /** Seconds one health point is worth at this health (more as health runs low). */
+    static double hpS(ThreatFacts.Me me) { return Tuning.get("danger.hpS") * me.maxHealth() / Math.max(1, me.health()); }
+
+    /** 0..1: how likely this damage kills (its high band 1.25x reaches the health left). */
+    static double risk(ThreatFacts.Me me, double damage) {
+        if (damage <= 0) return 0;
+        return Math.max(0, Math.min(1, (1.25 * damage - (me.health() - 1)) / Math.max(1, 0.5 * damage)));
+    }
+
+    static Priced priced(ThreatFacts.Me me, Way way, boolean possible, double damage, double timeS, String why) {
+        double cost = hpS(me) * damage + Tuning.get("danger.deathS") * risk(me, damage) + timeS;
+        return new Priced(way, possible, damage, timeS, cost, why);
+    }
+
+    /**
+     * The fight: quickest kill first; a ranged mob out of reach is walked to first (unless {@code stay}: then it shoots
+     * on for the horizon). {damage, seconds}.
+     */
+    static double[] fight(ThreatFacts.Me me, List<ThreatFacts.Foe> foes, boolean stay, double h) {
+        List<ThreatFacts.Foe> order = new ArrayList<>(foes);
+        order.sort((a, b) -> Double.compare(kill(me, a), kill(me, b)));
+        double t = 0, dmg = 0;
+        for (ThreatFacts.Foe x : order) {
+            if (x.ranged() && x.dist() > 3.5) {
+                if (stay) { dmg += x.dps() * h; continue; }
+                t += (x.dist() - 2) / 4.3;
+            }
+            if (x.flies() && stay) { dmg += x.dps() * h; continue; }
+            // staying, a walker reaches me first; fighting, I meet it halfway
+            double start = stay ? x.reachT() : x.reachT() / 2;
+            t = Math.max(t, start) + kill(me, x);
+            dmg += x.dps() * Math.max(0, t - x.reachT());
+        }
+        return new double[]{dmg, t};
+    }
+
+    /** The damage the melee foes alone do while the hit response fights them where I stand. */
+    static double meleeOnly(ThreatFacts.Me me, List<ThreatFacts.Foe> foes, double h) {
+        List<ThreatFacts.Foe> m = new ArrayList<>();
+        for (ThreatFacts.Foe x : foes) if (!x.ranged()) m.add(x);
+        return m.isEmpty() ? 0 : fight(me, m, true, h)[0];
+    }
+
+    /** Seconds to kill one (its health / my hit, a swing each). */
+    static double kill(ThreatFacts.Me me, ThreatFacts.Foe x) {
+        double hit = Math.max(1, me.weaponHit());
+        return Math.ceil(x.hp() / hit) * (hit <= 1 ? FIST_S : SWING_S);
+    }
+
+    /** The damage taken while running away for {@code runT} s: slower walkers one hit if in reach, faster ones and shooters while they keep up. */
+    static double away(List<ThreatFacts.Foe> foes, double runT, double speed) {
+        double d = 0;
+        for (ThreatFacts.Foe x : foes) {
+            if (x.ranged()) {
+                double out = Math.max(0, ThreatFacts.RANGED_RANGE - x.dist()) / Math.max(0.5, speed - x.speed());
+                d += x.dps() * Math.min(runT, out);
+            } else if (x.flies() || x.speed() >= speed) d += x.dps() * Math.max(0, runT - x.reachT());
+            else d += x.reachT() <= 0 ? x.dps() * ThreatFacts.HIT_EVERY_S : 0;
+        }
+        return d;
+    }
+
+    /** The chain the danger desire runs for a way. */
+    static String chainOf(Priced p) {
+        int wait = (int) Math.max(3, Math.min(60, Math.round(p.timeS())));
+        return switch (p.way()) {
+            case FIGHT -> "attack nearest then wait " + wait;
+            case FLEE -> "flee then wait " + wait;
+            case HOME -> "go base";
+            case COVER -> "cover then wait " + wait;
+            case DIG_IN -> "burrow then wait " + wait;
+            case PILLAR -> "pillar then wait " + wait;
+            case STAY -> null;
+        };
+    }
+
+    static String terms(List<Priced> all, Priced best, double saved, double score, int creepers) {
+        StringBuilder b = new StringBuilder();
+        for (Priced p : all) {
+            if (b.length() > 0) b.append(", ");
+            b.append(p.way().name().toLowerCase(Locale.ROOT).replace('_', ' ')).append(' ');
+            if (!p.possible()) b.append("- (").append(p.why()).append(')');
+            else b.append(Math.round(p.costS())).append("s (").append(fmt(p.damage())).append(" hp, ").append(fmt(p.timeS())).append(" s)");
+        }
+        String pick = best.way() == Way.STAY ? "stay (the hit response)" : score < 0 ? best.way().name().toLowerCase(Locale.ROOT).replace('_', ' ') + " saves only " + Math.round(saved) + "s: stay" : best.way().name().toLowerCase(Locale.ROOT).replace('_', ' ')
+                + " saves " + Math.round(saved) + "s -> " + Math.round(score);
+        return b + " -> " + pick + (creepers > 0 ? "; " + creepers + " creeper(s) left to the reflex" : "");
+    }
+
+    static String fmt(double v) { return String.format(Locale.ROOT, "%.1f", v); }
+}

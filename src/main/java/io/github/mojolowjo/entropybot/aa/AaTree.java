@@ -67,17 +67,19 @@ public final class AaTree {
             if (!airShort) t.airSince = -1;
             else if (t.airSince < 0) t.airSince = now0;
             boolean airCounts = airShort && now0 - t.airSince < AIR_HOLD_MS;
-            boolean urgent = bb.in.danger >= 2 || bb.in.health <= 8 || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
-            boolean notCalm = t.dangerLatch.active() && (bb.in.health < 12 || airCounts || bb.in.danger > 0);
+            // AA_CLEANUP 4: low health alone is no reflex any more (no retreat rule): the danger desire and the hide price it;
+            // drowning at low health still is (air short and health <= 8)
+            boolean drown = airShort && bb.in.health <= 8;
+            boolean urgent = bb.in.danger >= 2 || drown || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
+            boolean notCalm = t.dangerLatch.active() && (airCounts || drown || bb.in.danger > 0);
             boolean on = t.dangerLatch.update(urgent || notCalm, bb.clock.now());
-            if (on) t.dangerWhy = bb.in.air < 100 ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : bb.in.health <= 8 ? "low health " + Math.round(bb.in.health)
+            if (on) t.dangerWhy = bb.in.air < 100 ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : drown ? "drowning, health " + Math.round(bb.in.health)
                     : bb.in.creeperClose ? "creeper close" : bb.in.danger >= 2 ? bb.in.dangerWhy : "calming down";
             return on;
         });
         Node dangerBranch = new Fallback("danger.reflex", "the reflex that moves",
                 new Seq("danger.air", "drowning", new Condition("danger.air?", "air < 100", bb -> bb.in.air < 100), observe("danger.air.reflex", "air reflex")),
                 new Seq("danger.lava", "lava or fire", new Condition("danger.lava?", "in lava or fire", bb -> bb.in.inLavaOrFire), observe("danger.lava.reflex", "escape reflex")),
-                new Seq("danger.health", "low health", new Condition("danger.health?", "health <= 8", bb -> bb.in.health <= 8), observe("danger.health.reflex", "retreat reflex")),
                 new Seq("danger.hostile", "hostile or creeper", new Condition("danger.hostile?", "fight/flee or creeper", bb -> bb.in.danger >= 2 || bb.in.creeperClose), observe("danger.hostile.reflex", "fight/flee reflex")),
                 observe("danger.calm", "calming down"));
         // [2a] the owner's order: adopted while a job that is not AA's runs

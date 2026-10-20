@@ -12,8 +12,6 @@ public enum Driver {
     OWNER,
     /** A true reflex: air, lava/fire, fall, creeper flee, the hit response. */
     REFLEX,
-    /** A hand-rule danger decision in the reflexes (fight, retreat home, cover, food run, survival): step 4 makes them AA options. */
-    DANGER,
     /** The owner's rules and routines firing on a timer. */
     RULE,
     /** The AI operator (AiRuntime); under AA it may only say "aa want" / "aa drop". */

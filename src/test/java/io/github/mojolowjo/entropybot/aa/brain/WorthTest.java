@@ -34,7 +34,7 @@ class WorthTest {
     void bedAndBaseFollowTheDanger() {
         assertEquals(20, Worth.bed(0), 1e-9, "Peaceful");
         assertEquals(16, Worth.base(0), 1e-9);
-        double easy = Costs.nightDanger(1, 0, 20, 20, 0, 0, false), hard = Costs.nightDanger(3, 0, 20, 20, 0, 0, false);
+        double easy = Costs.nightDanger(1, 0, 20, 20, 0, 0), hard = Costs.nightDanger(3, 0, 20, 20, 0, 0);
         assertTrue(Worth.bed(hard) > Worth.bed(easy) && Worth.bed(easy) > 20);
         assertEquals(0.8 * Worth.bed(easy), Worth.base(easy), 1e-9);
         assertTrue(Worth.bed(5) <= 99);

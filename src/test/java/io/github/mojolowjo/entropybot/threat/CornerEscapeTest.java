@@ -50,20 +50,6 @@ class CornerEscapeTest {
         assertTrue(Math.abs(d[1]) > 0.5, d[0] + " " + d[1]);
     }
 
-    @Test
-    void loneWeakMobIsFoughtWhenArmed() {
-        // full health, wooden sword (4), no armour, dark, no lit spot: the margin is tight, but a lone zombie is fought
-        var me = new FightOrFlee.Me(20, 20, 0, 4, 0, -1, 6);
-        var r = FightOrFlee.assess(me, List.of(new FightOrFlee.Foe("zombie", 4, false)), null);
-        assertEquals(FightOrFlee.Verdict.FIGHT, r.verdict(), r.why());
-        // bare hands: still a retreat
-        var bare = FightOrFlee.assess(new FightOrFlee.Me(20, 20, 0, 1, 0, -1, 6), List.of(new FightOrFlee.Foe("zombie", 4, false)), null);
-        assertNotEquals(FightOrFlee.Verdict.FIGHT, bare.verdict(), bare.why());
-        // two zombies at 12 health: no lone-mob rule
-        var two = FightOrFlee.assess(new FightOrFlee.Me(12, 20, 0, 4, 0, -1, 6),
-                List.of(new FightOrFlee.Foe("zombie", 4, false), new FightOrFlee.Foe("zombie", 5, false)), null);
-        assertNotEquals(FightOrFlee.Verdict.FIGHT, two.verdict(), two.why());
-    }
 
     @Test
     void choosesPillarOverDigWhenThereIsRoom() {

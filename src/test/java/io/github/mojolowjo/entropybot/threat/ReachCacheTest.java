@@ -216,17 +216,5 @@ class ReachCacheTest {
 
     // ---- creeper duel margin, sprint flag ----
 
-    @Test
-    void creeperDuelNeedsArmourAndHealth() {
-        assertFalse(FightOrFlee.creeperDuelOk(new FightOrFlee.Me(20, 20, 0, 6, 0, -1, 6)), "no armour");
-        assertTrue(FightOrFlee.creeperDuelOk(new FightOrFlee.Me(20, 20, 15, 6, 0, -1, 6)), "full iron, full health");
-        assertFalse(FightOrFlee.creeperDuelOk(new FightOrFlee.Me(12, 20, 15, 6, 0, -1, 6)), "full iron, low health");
-    }
 
-    @Test
-    void sprintFlag() {
-        assertTrue(FightOrFlee.sprint(true, 20));
-        assertFalse(FightOrFlee.sprint(true, 6), "vanilla: no sprint at food 6");
-        assertFalse(FightOrFlee.sprint(false, 20));
-    }
 }
