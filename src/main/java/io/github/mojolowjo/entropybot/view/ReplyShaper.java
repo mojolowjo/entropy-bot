@@ -23,7 +23,7 @@ public final class ReplyShaper {
             "reply", "area", "areas", "places", "have", "stock", "recipe", "actions", "goals", "plan", "goal", "brain",
             "route", "pois", "poi", "caves", "ores", "allowed", "commands", "routines", "queue",
             // review 5: lists and coordinates are never cut
-            "where", "stripmine", "inv", "tools", "deaths", "death", "find", "scout", "hotbar", "supplies", "need", "gather");
+            "where", "stripmine", "inv", "tools", "deaths", "death", "find", "hotbar", "supplies", "need", "gather");
 
     private static final Pattern FAIL = Pattern.compile("^(error|stopped|failed|can't|couldn't|cannot|busy|sorry|no path|refused|blocked|usage:|unknown|i have no|i don't|i didn't|didn't|nothing to|not in a world)"
             + "|^\\S+: (stopped|error|failed|blocked)\\b|\\bblocked by (water|lava)\\b",

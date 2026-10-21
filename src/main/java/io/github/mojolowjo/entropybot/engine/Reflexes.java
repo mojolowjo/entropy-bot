@@ -10,7 +10,6 @@ import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.memory.Knowledge;
-import io.github.mojolowjo.entropybot.motor.Motor;
 import io.github.mojolowjo.entropybot.threat.ThreatFacts;
 import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
 
@@ -110,7 +109,6 @@ public final class Reflexes {
         this.reflexMoves = new io.github.mojolowjo.entropybot.aa.moves.Moves(new io.github.mojolowjo.entropybot.aa.moves.BaritoneCar(engine, true));
         this.fire = new FireReflex(events, engine, reflexMoves);
         this.moves = new DangerMoves(events, engine);
-        Motor.INSTANCE.bind(engine);        // 0.27.0: the motor pauses the job's Baritone through the same process
     }
 
     /** "defend creepers flee|melee|bow" (commands.json "creepers"). */
@@ -342,7 +340,6 @@ public final class Reflexes {
         lastHealth = hp;
         boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
-        Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
         // AA_CLEANUP 4: the lava/fire reflex is a true reflex: it runs under AA too (the milk and potions went)
         if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
             releaseSwim(mc);        // 0.39.m2: the fire reflex drives; no swim jump held into lava / fire
@@ -655,7 +652,6 @@ public final class Reflexes {
         reflex = Reflex.NONE;
         target = null;
         urgent = false;
-        Motor.INSTANCE.stop("reflex ended: " + why, now);     // 0.27.0
         engine.release();
     }
 

@@ -212,8 +212,8 @@ public final class Escort {
         String id = BuiltInRegistries.ITEM.getKey(inv.getItem(bestSlot).getItem()).toString();
         String item = BuiltInRegistries.ITEM.getKey(inv.getItem(bestSlot).getItem()).getPath();
         p.lookAt(EntityAnchorArgument.Anchor.EYES, g.getEyePosition());
-        // 0.21.0: the same THROW click as give/carry/fetch (one helper, Mule.throwItems)
-        int thrown = io.github.mojolowjo.entropybot.commands.Mule.throwItems(p, id, n);
+        // the inventory menu's THROW click, in the look direction (face the target first)
+        int thrown = throwItems(p, id, n);
         if (thrown == 0) return;
         lastFedMs = nowMs;
         say("You're hungry (food " + food + "): threw you " + thrown + " " + item.replace('_', ' ') + ".");
@@ -222,5 +222,17 @@ public final class Escort {
 
     static String idOf(Entity e) {
         return BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
+    }
+
+    private static final java.util.regex.Pattern DROPPED = java.util.regex.Pattern.compile("^ok: dropped (\\d+)");
+
+    /** Throws up to {@code n} of {@code item} (full id) with the inventory menu's THROW click. Returns how many went; 0 when none could (logged). */
+    static int throwItems(LocalPlayer p, String item, int n) {
+        if (n <= 0) return 0;
+        String res = io.github.mojolowjo.entropybot.gui.GuiCore.drop(new io.github.mojolowjo.entropybot.gui.McMenu(p), item + " " + n);
+        java.util.regex.Matcher m = DROPPED.matcher(res == null ? "" : res);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        LOG.info("[entropybot] throw {} {}: {}", n, item, res);
+        return 0;
     }
 }
