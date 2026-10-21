@@ -2412,8 +2412,6 @@ public final class Jobs {
         if (!lr.kept().isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(lr.kept().get(0), me) + " (loaded chunks)";
         java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> rem = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, null, 1, "find");
         if (!rem.isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(rem.get(0), me) + " (Baritone's memory)";
-        String idx = Mining.get().findNearest(p, needle);
-        if (idx != null && idx.startsWith("nearest ")) return idx + " (my notes)";
         return "none within " + radius + ", in loaded chunks or remembered";
     }
 

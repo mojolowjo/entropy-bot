@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** AA_CLEANUP 4: the danger desire's ways priced on the threat facts (by number, no rule). */
 class DangerOptionsTest {
-    static final ThreatFacts.Ways OPEN = new ThreatFacts.Ways(16, -1, -1, true, 0, 3, true);
+    static final ThreatFacts.Ways OPEN = new ThreatFacts.Ways(16, -1, true, 0, 3, true);
 
     static ThreatFacts.Me me(double hp, double weapon) { return new ThreatFacts.Me(hp, 20, 0, weapon, 20); }
 
@@ -45,7 +45,7 @@ class DangerOptionsTest {
     @Test
     void lowHealthGoesHomeOnlyWhenTheChasersCannotFollowElsePillars() {
         // round 4 fix 2: cornered (no flee heading), the base 40 away, a zombie far behind: home is worth it
-        ThreatFacts.Ways home = new ThreatFacts.Ways(0, 40, -1, false, 0, 3, true);
+        ThreatFacts.Ways home = new ThreatFacts.Ways(0, 40, false, 0, 3, true);
         DangerOptions.Choice c = DangerOptions.choose(facts(me(6, 1), home, zombie(15)));          // bare hands: no quick kill
         assertEquals(DangerOptions.Way.HOME, c.best().way(), c.terms());
         assertEquals("go base", c.chain());
@@ -53,7 +53,7 @@ class DangerOptionsTest {
         // the same walk with the zombie 3 blocks behind: it follows the whole way (live: slain 14 s into "go base")
         DangerOptions.Choice chased = DangerOptions.choose(facts(me(6, 1), home, zombie(3)));
         assertNotEquals(DangerOptions.Way.HOME, chased.best().way(), chased.terms());
-        ThreatFacts.Ways pillar = new ThreatFacts.Ways(16, -1, -1, false, 12, 3, true);
+        ThreatFacts.Ways pillar = new ThreatFacts.Ways(16, -1, false, 12, 3, true);
         DangerOptions.Choice p = DangerOptions.choose(facts(me(6, 7), pillar, zombie(5)));
         assertEquals(DangerOptions.Way.PILLAR, p.best().way(), p.terms());
     }
@@ -72,18 +72,39 @@ class DangerOptionsTest {
     }
 
     @Test
-    void aSkeletonAtRangeIsCoveredFromNotFought() {
+    void aPillarNeverWinsAgainstASkeleton() {
         ThreatFacts.Foe sk = ThreatFacts.foe("minecraft:skeleton", 12, 0, null);
         assertTrue(sk.ranged());
-        ThreatFacts.Ways cover = new ThreatFacts.Ways(16, -1, 2, false, 0, 3, true);
-        DangerOptions.Choice c = DangerOptions.choose(facts(me(20, 7), cover, sk));
-        assertEquals(DangerOptions.Way.COVER, c.best().way(), c.terms());
-        assertTrue(c.chain().startsWith("cover then wait"), c.chain());
-        // no cover cell: a pillar is no cover from arrows, so it never wins against a skeleton
-        ThreatFacts.Ways noCover = new ThreatFacts.Ways(16, -1, -1, false, 12, 3, true);
-        DangerOptions.Choice n = DangerOptions.choose(facts(me(20, 7), noCover, sk));
+        // a pillar is no cover from arrows, so it never wins against a skeleton (rm-threat: the cover way is gone)
+        ThreatFacts.Ways w = new ThreatFacts.Ways(16, -1, false, 12, 3, true);
+        DangerOptions.Choice n = DangerOptions.choose(facts(me(20, 7), w, sk));
         assertNotEquals(DangerOptions.Way.PILLAR, n.best().way(), n.terms());
-        assertNotEquals(DangerOptions.Way.COVER, n.best().way(), "no cell: cover is not possible");
+    }
+
+    /** rm-threat: a Normal night on a dark empty field (no armour, full health, no torch, no mob in view). */
+    static DangerOptions.Need normalDarkField(int shellBlocks) {
+        double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(2, 0, 20, 20, 0, 0);
+        return new DangerOptions.Need(io.github.mojolowjo.entropybot.aa.brain.Costs.shelterScore(danger), "night", danger, false, shellBlocks, false, false);
+    }
+
+    @Test
+    void theOpenWaitOnADarkFieldPricesTheNightDangerNotOnlyTheMobsInView() {
+        ThreatFacts.Me full = me(20, 1);
+        // a burrow possible, the bag without a box: the burrow beats the wait
+        ThreatFacts.Ways ground = new ThreatFacts.Ways(0, -1, true, 0, 3, true, true, false);
+        DangerOptions.Choice c = DangerOptions.choose(facts(full, ground), normalDarkField(0));
+        assertEquals(DangerOptions.Way.BURROW, c.best().way(), c.terms());
+        // no burrow (the fork said no), a box in the bag: the 20 s box beats the wait
+        ThreatFacts.Ways hard = new ThreatFacts.Ways(0, -1, false, 0, 3, true, false, false, false, 0, 0, null, -1, false,
+                "dig 1/3 at 0 62 0 (stone): not broken in 10 s with the best tool in the bag (Baritone's mining time 7.5 s)", "north: side east of 1 64 0 (air) is open");
+        DangerOptions.Choice b = DangerOptions.choose(facts(full, hard), normalDarkField(12));
+        assertEquals(DangerOptions.Way.BOX, b.best().way(), b.terms());
+        DangerOptions.Priced wait = null, box = null;
+        for (DangerOptions.Priced p : b.all()) { if (p.way() == DangerOptions.Way.WAIT) wait = p; if (p.way() == DangerOptions.Way.BOX) box = p; }
+        assertTrue(wait.costS() > box.costS(), "wait " + wait.costS() + " vs box " + box.costS());
+        assertTrue(wait.damage() > 0, "no mob in view, still the night's exposure: " + wait.why());
+        assertTrue(wait.why().contains("night danger 1.0 x 60 s"), wait.why());
+        assertTrue(b.terms().contains("the fork: dig 1/3 at 0 62 0 (stone)"), "the fork's no reaches aa why: " + b.terms());
     }
 
     @Test

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** V1b-4 (0.22.2): the companion and brain verbs back on the surface, camp here's free name, area candidates. */
 class V1bFourTest {
-    static final List<String> RESTORED = List.of("why", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock",
+    static final List<String> RESTORED = List.of("why", "deaths", "resume", "death", "corpse", "restock",
             "say", "twerk", "spawn", "trust", "untrust");
 
     @Test
@@ -25,24 +25,18 @@ class V1bFourTest {
             assertFalse(OldWords.DEBUG_VERBS.contains(v), v + " is no debug verb now");
             assertNull(OldWords.removedAnswer(v, "", v), v + " runs, no hint");
         }
-        assertEquals("stocking", VerbTable.of("hold").section());
         assertEquals("jobs", VerbTable.of("why").section());
         assertEquals("chests", VerbTable.of("trust").section());
         assertEquals("moving", VerbTable.of("corpse").section());
-        assertNull(OldWords.removedAnswer("hold", "this", "hold this"));
-        assertNull(OldWords.removedAnswer("give", "me dirt 4", "give me dirt 4"));
         assertEquals("that is now spawn", OldWords.removedAnswer("bed", "", "bed"));
         for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "route", "autominer", "reconnect", "use", "caves", "ores", "poi"))
             assertTrue(OldWords.DEBUG_VERBS.contains(v), v + " stays under debug");
-        assertFalse(VerbTable.of("debug").usage().contains("hold"), "debug no longer lists hold");
     }
 
     @Test
-    void guestsKeepHoldWhyAndDeaths() {
-        assertNull(Texts.guestRefusal("hold", "this", "hold this", "o"));
+    void guestsKeepWhyAndDeaths() {
         assertNull(Texts.guestRefusal("why", "", "why", "o"));
         assertNull(Texts.guestRefusal("deaths", "", "deaths", "o"));
-        assertNotNull(Texts.guestRefusal("give", "me dirt 4", "give me dirt 4", "o"));
         assertNotNull(Texts.guestRefusal("deaths", "policy off", "deaths policy off", "o"));
     }
 

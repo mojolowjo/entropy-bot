@@ -5,7 +5,6 @@ import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.assist.AssistRules;
 import io.github.mojolowjo.entropybot.assist.AssistRules.Act;
-import io.github.mojolowjo.entropybot.mule.MuleRules;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -34,7 +33,7 @@ final class Assist {
     private AssistRules.Switcher sw = new AssistRules.Switcher();
     private AssistRules.Switcher.Phase phase;
     private AssistRules.Report report;
-    private long reportMtime = Long.MIN_VALUE, lastGive = Long.MIN_VALUE / 2, lastStart = Long.MIN_VALUE / 2;
+    private long reportMtime = Long.MIN_VALUE, lastStart = Long.MIN_VALUE / 2;
     private String lastKey, doing = "starting", chainAct;
 
     Assist(Commands c) { this.c = c; }
@@ -56,7 +55,6 @@ final class Assist {
         if (on) return statusText();
         if (c.chains.running()) return "busy: " + c.chains.chainStatus() + " (stop first)";
         if (c.jobs.running() && !c.jobs.walking()) return "busy: " + c.jobs.job.status + " (stop first)";
-        if (c.mule.running()) return "busy: " + c.mule.statusText() + " (stop first)";
         on = true;
         sw = new AssistRules.Switcher();
         phase = null;
@@ -89,7 +87,6 @@ final class Assist {
             c.core().reflexes.escort.stop("assist off");
             c.endEscortFollow();
         }
-        if (c.mule.carrying()) c.mule.stop("assist off");
         LOG.info("[entropybot] assist off");
     }
 
@@ -147,7 +144,6 @@ final class Assist {
             if (c.jobs.running()) c.jobs.finish("stopped: assist switched to " + ph.act().word());
             chainAct = null;
         }
-        if (c.mule.running() && !c.mule.carrying()) return;     // a hand-over is under way
         if (!ph.mirroring()) {
             doing = "following you";
             follow(p);
@@ -207,34 +203,13 @@ final class Assist {
     }
 
     private void build(LocalPlayer p, AssistRules.Report r, long now) {
-        AssistRules.Ev pl = r.placed();
-        if (pl != null && !c.mule.running()) {
-            MuleRules.Giveable g = MuleRules.giveable(Storage.held(p), pl.id(), c.storage.keeps());
-            int n = AssistRules.give(pl, g.n(), lastGive, now);
-            if (n > 0) {
-                lastGive = now;
-                quietEscortOff();
-                if (c.mule.carrying()) c.mule.stop("assist: a hand-over");
-                Chains.Reply rep = c.mule.command("give", c.owner(), "me " + pl.id() + " " + n, "give me " + pl.id() + " " + n, null, p);
-                doing = "handing you " + n + " " + AssistRules.path(pl.id());
-                LOG.info("[entropybot] assist give: {}", rep.text());
-                return;
-            }
-        }
         doing = "staying close while you build";
         follow(p);
     }
 
     private void carry(LocalPlayer p) {
-        doing = "following you and picking up drops";
-        if (c.mule.carrying()) return;
-        if (c.jobs.running() && !c.jobs.walking()) return;
-        quietEscortOff();
-        Chains.Reply rep = c.mule.command("carry", c.owner(), "all", "carry all", null, p);
-        if (rep.text() == null || !rep.text().startsWith("ok")) {
-            LOG.info("[entropybot] assist carry: {}", rep.text());
-            follow(p);
-        }
+        doing = "following you";
+        follow(p);
     }
 
     /** Starts the chain for an activity (the same chain not again within a minute), else follows. */
@@ -245,7 +220,6 @@ final class Assist {
             return;
         }
         quietEscortOff();
-        if (c.mule.carrying()) c.mule.stop("assist: " + what);
         String s = c.chains.startChain(c.owner(), CHAIN, chain, 1);
         lastKey = chain;
         lastStart = now;
@@ -261,9 +235,8 @@ final class Assist {
 
     /** The escort (follow + fight for the owner), or a plain follow when self-defence is off. Never twice. */
     private void follow(LocalPlayer p) {
-        if (c.mule.carrying()) c.mule.stop("assist: following");
         if (c.core().reflexes.escort.active()) return;
-        if (c.chains.running() || c.mule.running() || (c.jobs.running() && !c.jobs.walking()) || c.core().reflexes.hold()) return;
+        if (c.chains.running() || (c.jobs.running() && !c.jobs.walking()) || c.core().reflexes.hold()) return;
         Jobs.Job j = c.jobs.job;
         if (j != null && j.label != null && j.label.equalsIgnoreCase("following " + c.owner()) && c.stillFollowingPub()) return;
         String r = c.escortCommand(c.owner(), "me", p);

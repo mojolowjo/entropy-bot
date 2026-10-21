@@ -31,25 +31,26 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
 
     /**
      * The ways out here. fleeRun: the run length of the least-threat heading (0 = cornered); baseDist: walk to the
-     * base (-1 none in reach); coverDist: moves to a cell out of the nearest ranged mob's sight (-1 none); digIn: a
-     * dig-down or a wall niche fits here; pillarBlocks/headRoom: throwaway blocks and free cells over the head.
-     * AA_STEP2 1 (the night ways, filled even with no foe near): burrow, a diggable floor (dig down and seal); niche, a
-     * wall to dig into ({@link CornerEscape}). The shell's blocks come from the bag (AaDesires.shellBlocks).
+     * base (-1 none in reach); digIn: a dig-down or a wall niche fits here; pillarBlocks/headRoom: throwaway blocks and
+     * free cells over the head. AA_STEP2 1 (the night ways, filled even with no foe near): burrow, the fork's
+     * BurrowProcess says "burrow here" is possible; niche, it says "dig in here" is (rm-threat: the fork answers, not mod
+     * code); burrowNo / nicheNo: the fork's no (stage, block, reason) for aa why, null when possible or not asked. The
+     * shell's blocks come from the bag (AaDesires.shellBlocks).
      */
-    public record Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+    public record Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
                        boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist,
-                       boolean waterNear) {
-        public static final Ways NONE = new Ways(0, -1, -1, false, 0, 0, true);
+                       boolean waterNear, String burrowNo, String nicheNo) {
+        public static final Ways NONE = new Ways(0, -1, false, 0, 0, true);
 
         /**
          * Backbone step 2 (owner: water is parked): waterNear = water in or beside the feet or head cell. The burrow, the
          * dig-in and both pillars are then impossible (their cell is in or beside water); the swim to the shore stays.
-         * The 14-value shape (tests, older callers) has no such fact (false).
+         * The 13-value shape (tests, older callers) has no such fact (false) and no fork reasons.
          */
-        public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
                     boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist) {
-            this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, inWater, waterColumn, headDepth,
-                    shoreCell, shoreDist, false);
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, inWater, waterColumn, headDepth,
+                    shoreCell, shoreDist, false, null, null);
         }
 
         /**
@@ -57,14 +58,14 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
          * the floor under me up to the surface, 0 = not in water or no floor within reach), headDepth (water cells over the
          * head: the swim up to air), shoreCell / shoreDist (the nearest dry standing cell within {@link #SHORE_REACH}, null / -1 none).
          */
-        public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
                     boolean burrow, boolean niche) {
-            this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, false, 0, 0, null, -1);
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, false, 0, 0, null, -1);
         }
 
         /** AA_STEP2 1: the ways before the night ways were split (digIn stands for both the floor and the wall). */
-        public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround) {
-            this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, digIn, digIn);
+        public Ways(int fleeRun, double baseDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround) {
+            this(fleeRun, baseDist, digIn, pillarBlocks, headRoom, onGround, digIn, digIn);
         }
     }
 

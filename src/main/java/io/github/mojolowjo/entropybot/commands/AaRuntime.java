@@ -1429,7 +1429,6 @@ public final class AaRuntime implements JobPort {
         if (c.jobs.running()) return c.jobs.job.type + " (" + c.jobs.job.status + ")";
         if (c.gathering.running()) return "gather";
         if (c.hunting.running()) return "hunt";
-        if (c.mule.running()) return "carry";
         if (c.requests.busy()) return "a request";
         return null;
     }
@@ -1492,7 +1491,6 @@ public final class AaRuntime implements JobPort {
         if (c.jobs.running()) { refusal = "busy: " + c.jobs.job.status; return -1; }      // 0.36.1: any job, as otherJob() sees it
         if (c.gathering.running()) { refusal = "busy: " + c.gathering.statusText(); return -1; }
         if (c.hunting.running()) { refusal = "busy: a hunt runs"; return -1; }
-        if (c.mule.running()) { refusal = "busy: " + c.mule.statusText(); return -1; }
         if (c.requests.busy()) { refusal = "busy: a request is open"; return -1; }
         lastEnd = null;
         myChain = CHAIN;
@@ -1819,7 +1817,6 @@ public final class AaRuntime implements JobPort {
         if (c.jobs.running()) c.jobs.finish("stopped: aa " + why);
         if (c.gathering.running()) c.gathering.stop("stopped: aa " + why);
         if (c.hunting.running()) c.hunting.stop("stopped: aa " + why);
-        if (c.mule.running()) c.mule.stop("stopped: aa " + why);
     }
 
     @Override public long progress(long taskId) { return progress; }

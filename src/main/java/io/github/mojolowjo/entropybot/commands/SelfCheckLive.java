@@ -103,11 +103,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             f.add(new SelfCheck.Finding("threatcheck", "couldn't check the threat test: " + e, "debug threats"));
         }
         try {
-            for (String[] t : io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // 0.27.0
-        } catch (RuntimeException e) {
-            f.add(new SelfCheck.Finding("motorcheck", "couldn't check the motor: " + e, "debug motor"));
-        }
-        try {
             if (c.aaRuntime != null) for (String[] t : c.aaRuntime.findings()) f.add(new SelfCheck.Finding(t[0], t[1], t[2]));   // 0.36.0 AA
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("aacheck", "couldn't check aa: " + e, "aa status"));

@@ -27,9 +27,9 @@ public final class ReflexNotes {
         String prev = reflexWas;
         reflexWas = k;
         if (k.equals("retreating") && !prev.equals("retreating")) {
-            String who = target == null || target.isEmpty() ? "a monster" : target;
-            // 0.24.1: a retreat at good health is a shelter (fliers/ranged, a tight fight in the dark), not low health
-            out.add(health > 6 ? "Taking cover from " + who + " (health " + Math.round(health) + "/20)" : "Low health (" + Math.round(health) + "/20), retreating from " + who);
+            String who = target == null || target.isEmpty() ? "(unnamed)" : target;      // rm-threat: the danger way that runs (DangerMoves.doing)
+            // rm-threat (audit-movers: "Taking cover" was the burrow and the pillar wearing an old label): the way's own name
+            out.add(health > 6 ? "Danger way " + who + " (health " + Math.round(health) + "/20)" : "Low health (" + Math.round(health) + "/20), danger way " + who);
         }
         if (deniedDim != null && !deniedDim.equals(deniedNoted)) {
             deniedNoted = deniedDim;

@@ -178,9 +178,9 @@ public final class Commands implements Chains.Env {
         return out;
     }
 
-    /** V1b: a job, chain, gather or mule run is going (the queue waits). */
+    /** V1b: a job, chain or gather run is going (the queue waits). */
     boolean busyForQueue() {
-        return jobs.running() || (chains != null && chains.running()) || gathering.running() || mule.running();
+        return jobs.running() || (chains != null && chains.running()) || gathering.running();
     }
     private String placesSent;
 
@@ -194,7 +194,6 @@ public final class Commands implements Chains.Env {
         this.hunting = new Hunting(this);
         this.kelping = new Kelping(this);
         this.fishing = new Fishing(this);
-        this.mule = new Mule(core, this);
     }
 
     /** P2: "gather &lt;item&gt; [n]" - runs other verbs as its steps. */
@@ -205,8 +204,6 @@ public final class Commands implements Chains.Env {
     final Fishing fishing;
     /** Where it respawned (a home fact: no build hints there). */
     final io.github.mojolowjo.entropybot.camp.RespawnHomes respawn = new io.github.mojolowjo.entropybot.camp.RespawnHomes();
-    /** C6: hold this, give, carry, unload, fetch. */
-    final Mule mule;
     /** 0.24.2: assist (help the owner with what they are doing). */
     final Assist assist = new Assist(this);
 
@@ -266,10 +263,10 @@ public final class Commands implements Chains.Env {
     JsonObject brainData() { return brainStore.data(); }
 
     /** B7e (E1): the three stores, for "memory". */
-    JsonStore[] stores() { return new JsonStore[]{pmStore, brainStore, areaStore}; }
-
-    /** Package E: commands.json written now (the altar notes made right before a click). */
+    /** commands.json written now (a crash before the debounced save would repeat an import). */
     void brainFlush() { brainStore.flush(); }
+
+    JsonStore[] stores() { return new JsonStore[]{pmStore, brainStore, areaStore}; }
 
     // ---- package D: furnace pickups ----
 
@@ -723,12 +720,6 @@ public final class Commands implements Chains.Env {
                     LOG.warn("[entropybot] fish: {}", e.toString());
                     fishing.stop("error: " + e);
                 }
-                try {
-                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(mule.driver)) { mule.tick(player); }                         // C6: hold this, give, carry, unload, fetch
-                } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] mule: {}", e.toString());
-                    mule.stop("error: " + e);
-                }
             }
             if (tick % 20 == 5 && !aaOn()) chains.deathTick(dead);     // 0.36.0: with AA on, AA re-chooses after a death (no chain resume)
             if (tick % 20 == 6) respawn.tick(dead, tick, Jobs.here(player));     // where it respawned (a home fact)
@@ -984,9 +975,9 @@ public final class Commands implements Chains.Env {
 
     // ---- 0.35.0 the AI operator's hooks (ai.live.AiRuntime) ----
 
-    /** A job, chain, gather, hunt or mule run is on (the AI waits for its end). */
+    /** A job, chain, gather or hunt run is on (the AI waits for its end). */
     public boolean aiBusy() {
-        return requests.busy() || jobs.running() || (chains != null && chains.running()) || gathering.running() || hunting.running() || kelping.running() || fishing.running() || mule.running();
+        return requests.busy() || jobs.running() || (chains != null && chains.running()) || gathering.running() || hunting.running() || kelping.running() || fishing.running();
     }
 
     /** The reply shape the owner gets for this command line's answer (RESULT/HERE/NEW/OPTIONS). */
@@ -1336,7 +1327,6 @@ public final class Commands implements Chains.Env {
         // AA_CLEANUP 4: the danger moves (AA's danger desire runs them as chain steps; the owner may type them): dig in, flee, cover, pillar
         if (verb.equals("burrow")) return Reply.now(core.reflexes.moves.burrow());
         if (verb.equals("flee")) return Reply.now(core.reflexes.moves.flee());
-        if (verb.equals("cover")) return Reply.now(core.reflexes.moves.cover());
         if (verb.equals("pillar")) return Reply.now(core.reflexes.moves.pillar());
         // a running routine owns the bot between its steps too
         if (!internal && chains.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
@@ -1354,11 +1344,6 @@ public final class Commands implements Chains.Env {
         }
         if (!internal && gathering.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
             return Reply.now("busy: " + gathering.statusText() + " (pm \"stop\" first)");
-        }
-        // C6: the mule verbs (carry list/off answer at once; a running mule owns the bot between its steps too)
-        if (verb.matches("^(hold|give|carry|unload|fetch)$")) return mule.command(verb, from, rest, raw, l, player);
-        if (!internal && mule.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
-            return Reply.now("busy: " + mule.statusText() + " (pm \"stop\" first)");
         }
         if (verb.equals("allow") || verb.equals("deny") || verb.equals("allowed")) return Reply.now(allowCommand(verb, rest, isOwner));
         if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
@@ -1483,7 +1468,6 @@ public final class Commands implements Chains.Env {
             case "wait" -> { return jobs.startWait(rest); }
             case "twerk" -> { return jobs.startTwerk(rest); }
             case "find" -> {
-                if (rest.trim().toLowerCase().matches("^nearest(\\s.*)?$")) return Mining.get().findNearest(player, rest.trim().substring(7));   // C8
                 // V1b: find cave|<poi kind>|<biome> walks (the owner); find <block> stays the nearby list
                 io.github.mojolowjo.entropybot.vocab.ExploreWords.Find f = io.github.mojolowjo.entropybot.vocab.ExploreWords.find(rest, POI_KINDS, Commands::isBiome);
                 if (f.kind() != io.github.mojolowjo.entropybot.vocab.ExploreWords.FindKind.BLOCK) {
@@ -1491,17 +1475,6 @@ public final class Commands implements Chains.Env {
                     return Mining.get().find(player, f);
                 }
                 return Jobs.findBlock(player, rest.isEmpty() ? "?" : rest);
-            }
-            case "scout" -> {                                                       // C8: look ahead and report
-                int[] ownerAt = null;
-                Minecraft mc = Minecraft.getInstance();
-                PolicyCommands.Pos h = hereOf(mc, from == null ? owner() : from);
-                if (mc.player != null && h != null) {
-                    PolicyCommands.Pos bot = posOf(mc, mc.player);
-                    boolean isBot = h.x() == bot.x() && h.y() == bot.y() && h.z() == bot.z();
-                    if (!isBot) ownerAt = new int[]{h.x(), h.y(), h.z()};
-                }
-                return Mining.get().scout(player, rest, ownerAt);
             }
             // B7b part 2: the GUI toolkit and the storage errands
             case "open" -> { return storage.open(player, rest); }
@@ -1533,7 +1506,6 @@ public final class Commands implements Chains.Env {
             case "restock" -> { return crafting.restock(player); }
             case "farm" -> { return crafting.farm(player, rest, from); }
             case "compact" -> { return crafting.compact(player, rest, from); }
-            case "infuse" -> { return crafting.infuse(player, rest); }           // package E: the infusion altar
             // B7d: digging and mining (D1 dig/build/place, D2 the strip mine, D3 mine/caves/explore)
             case "dig" -> { return DigCommands.dig(this, player, rest, from); }
             case "build" -> { return DigCommands.build(this, player, rest, from); }
@@ -1549,7 +1521,11 @@ public final class Commands implements Chains.Env {
             case "explore" -> { return Mining.get().explore(player, rest); }
             case "chop" -> { return Chopping.get().command(player, rest); }             // P3: fell trees, pick up, replant
             case "cut" -> { return Chopping.get().command(player, vocab.cutLine(rest)); }      // V1b: cut <n> [logs|type] (the kind's exclusions)
-            case "upgrade" -> { return crafting.upgrade(player, rest); }         // package E: the essence tiers
+            case "give" -> {
+                PolicyCommands.Pos h = hereOf(Minecraft.getInstance(), from == null ? owner() : from);
+                return crafting.give(player, rest, new int[]{h.x(), h.y(), h.z()});
+            }
+            case "upgrade" -> { return crafting.upgrade(player, rest); }        // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
             case "supplies" -> { return crafting.supplies(player, rest); }
@@ -1763,7 +1739,6 @@ public final class Commands implements Chains.Env {
                 + " | health " + Math.round(p.getHealth()) + "/20 | food " + p.getFoodData().getFoodLevel() + "/20";
         if (jobs.running()) s += " | " + jobs.job.status;
         if (gathering.running()) s += " | " + gathering.statusText();
-        if (mule.running()) s += " | " + mule.statusText();
         JsonObject mem = memoryBlock();
         if (mem.has("state") && "broken".equals(mem.get("state").getAsString())) s += " | a note file was broken at start (debug memory)";
         if (vocab.hold != null) s += " | " + vocab.hold.what();
@@ -1817,8 +1792,6 @@ public final class Commands implements Chains.Env {
         kelping.stop("stopped by \"stop\"");
         fishing.stop("stopped by \"stop\"");
         if (routine == null && gathered != null) routine = "gather " + gathered;
-        String muled = mule.stop("stopped by \"stop\"");
-        if (routine == null && muled != null) routine = muled;
         jobs.followWatch = null;
         jobs.followFix = null;
         core.reflexes.escort.stop("stopped by \"stop\"");     // C7
@@ -2073,7 +2046,6 @@ public final class Commands implements Chains.Env {
     private void noteDeath(Minecraft mc, LocalPlayer p) {
         chains.noteDeath();
         jobs.finish("stopped: the bot died");
-        mule.stop("the bot died");
         hunting.stop("the bot died");
         kelping.stop("the bot died");
         fishing.stop("the bot died");
@@ -2191,7 +2163,6 @@ public final class Commands implements Chains.Env {
             if (kf != null) return kf;
             if (withChain && chains != null && chains.running() && chains.idleWait() == null) return "chain " + chains.chainStatus();
             if (withChain && gathering.running()) return "chain " + gathering.statusText();
-            if (withChain && mule.running()) return "chain " + mule.statusText();
             baritone.api.IBaritone b = Jobs.baritone();
             if (b == null || Jobs.idle(b)) return null;
             return "baritone " + b.getPathingControlManager().mostRecentInControl().map(pr -> pr.displayName()).orElse("pathing");
@@ -2370,9 +2341,8 @@ public final class Commands implements Chains.Env {
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
             case "take", "put", "close", "drop", "use", "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "infuse", "upgrade",
-                 "dig", "build", "place", "stripmine", "mine", "explore", "chop", "scout" -> {
-                if (type.equals("scout") && text.trim().equalsIgnoreCase("status")) return Reply.now(Mining.get().scout(player, text, null));
+                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "give", "upgrade",
+                 "dig", "build", "place", "stripmine", "mine", "explore", "chop" -> {
                 if (type.equals("chop") && Chopping.instant(text)) return Reply.now(Chopping.get().command(player, text));
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
                 if (type.equals("stripmine") && text.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, text));
@@ -2573,8 +2543,7 @@ public final class Commands implements Chains.Env {
         s.add("defence", def);
         s.addProperty("reflex", kind);
         s.add("chain", chains.running() ? new com.google.gson.JsonPrimitive(chains.chainStatus())
-                : gathering.running() ? new com.google.gson.JsonPrimitive(gathering.statusText())
-                : mule.running() ? new com.google.gson.JsonPrimitive(mule.statusText()) : JsonNull.INSTANCE);
+                : gathering.running() ? new com.google.gson.JsonPrimitive(gathering.statusText()) : JsonNull.INSTANCE);
         String huntNow = hunting.statusText(Minecraft.getInstance().player);
         if (huntNow == null) huntNow = kelping.statusText(Minecraft.getInstance().player);
         if (huntNow == null) huntNow = fishing.statusText(Minecraft.getInstance().player);       // 0.33.0: bridge wait's fallback reads it
