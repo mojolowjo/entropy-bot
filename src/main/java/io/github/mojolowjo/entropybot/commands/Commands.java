@@ -1340,7 +1340,6 @@ public final class Commands implements Chains.Env {
         // AA_CLEANUP 4: the danger moves (AA's danger desire runs them as chain steps; the owner may type them): dig in, flee, cover, pillar
         if (verb.equals("burrow")) return Reply.now(core.reflexes.moves.burrow());
         if (verb.equals("flee")) return Reply.now(core.reflexes.moves.flee());
-        if (verb.equals("cover")) return Reply.now(core.reflexes.moves.cover());
         if (verb.equals("pillar")) return Reply.now(core.reflexes.moves.pillar());
         // a running routine owns the bot between its steps too
         if (!internal && chains.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {

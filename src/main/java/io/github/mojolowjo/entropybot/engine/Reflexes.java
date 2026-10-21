@@ -42,7 +42,7 @@ import org.slf4j.Logger;
 public final class Reflexes {
     private static final Logger LOG = LogUtils.getLogger();
 
-    /** RETREATING: a danger move runs (DangerMoves: flee, cover, pillar, burrow). */
+    /** RETREATING: a danger move runs (DangerMoves: flee, pillar, burrow, dig in). */
     public enum Reflex { NONE, EATING, FIGHTING, FLEEING, RETREATING }
 
     /** A remembered spot from the bridge's notes (the base, the /home landing). */
@@ -856,7 +856,7 @@ public final class Reflexes {
 
     /**
      * Backbone step 4: the creeper flee on Baritone: GoalRunAway {@link ReflexRules#creeperRunTo()} from every counted
-     * hostile near ({@code from} always), its heuristic leaning toward {@code dir} ({dx, dz}: FleeHeading / EscapeDir).
+     * hostile near ({@code from} always), its heuristic leaning toward {@code dir} ({dx, dz}: FleeHeading).
      */
     private void runFrom(Minecraft mc, LocalPlayer p, Entity from, double[] dir) {
         creeperTry(mc, p, from, dir, false);
@@ -1008,7 +1008,7 @@ public final class Reflexes {
 
     /**
      * The hit response, the true reflex under AA: hit and the attacker in reach = face it and strike back (fight). Anything
-     * else is AA's danger desire (AA_CLEANUP 4: DangerOptions prices fight, flee, home, cover, dig in, pillar).
+     * else is AA's danger desire (AA_CLEANUP 4: DangerOptions prices fight, flee, home, dig in, pillar).
      */
     private void hitResponse(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
         if (hurt && t.d <= ReflexRules.REACH) {
@@ -1044,30 +1044,27 @@ public final class Reflexes {
     }
 
     /**
-     * brain-b1: the creeper sprint's heading: EscapeDir's walkable run around FleeHeading's least-threat heading over
-     * every hostile (not straight away from the creeper alone), and never a run that passes a mob. Cornered or a
-     * failure: straight away from the creeper as before. {dirX, dirZ, run}. Never throws.
+     * brain-b1 / rm-threat: the creeper run's lean, FleeHeading's least-threat heading over every hostile, a heuristic
+     * input to Baritone's GoalRunAway only (the walkable run is Baritone's; the mod-side EscapeDir chooser is gone).
+     * Cornered or a failure: straight away from the creeper. {dirX, dirZ, run blocks}. Never throws.
      */
     private double[] creeperEscape(Minecraft mc, LocalPlayer p, Entity c) {
+        double run = ReflexRules.creeperRunTo();
         try {
-            var mobs = fleeMobs(mc, p, c);
-            double[] dir = io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), mobs, ReflexRules.creeperRunTo());
-            if (dir == null) return c == null ? ThreatRuntime.INSTANCE.escape(p, 0, 0) : ThreatRuntime.INSTANCE.escape(p, c);
-            double[] esc = ThreatRuntime.INSTANCE.escape(p, dir[0], dir[1]);
-            if (io.github.mojolowjo.entropybot.threat.FleeHeading.blocked(p.getX(), p.getZ(), mobs, esc[0], esc[1], ReflexRules.creeperRunTo()))
-                return new double[]{dir[0], dir[1], esc[2]};
-            return esc;
+            double[] dir = io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), fleeMobs(mc, p, c), run);
+            if (dir != null) return new double[]{dir[0], dir[1], run};
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] threat: creeper heading failed, straight away instead: {}", e.toString());
-            return c == null ? ThreatRuntime.INSTANCE.escape(p, 0, 0) : ThreatRuntime.INSTANCE.escape(p, c);
         }
+        double ax = c == null ? 0 : p.getX() - c.getX(), az = c == null ? 0 : p.getZ() - c.getZ(), n = Math.hypot(ax, az);
+        return n < 1e-6 ? new double[]{1, 0, run} : new double[]{ax / n, az / n, run};
     }
 
     private long aaOffPricedAt = -1000;
 
     /**
      * 0.38.b9 (review: with AA off a low-health bot fought to the death): at or under the old retreat health, the same
-     * priced pick AA uses (DangerOptions on DangerMoves.facts) runs flee, cover, pillar or burrow; home, fight or stay:
+     * priced pick AA uses (DangerOptions on DangerMoves.facts) runs flee, pillar or burrow; home, fight or stay:
      * false (the fight goes on). Once a second at most; the pick is logged. Never throws.
      */
     private boolean aaOffMove(Minecraft mc, LocalPlayer p, boolean hurt) {
@@ -1079,7 +1076,6 @@ public final class Reflexes {
             if (c.score() < 0 || c.best() == null) return false;
             String r = switch (c.best().way()) {
                 case FLEE -> moves.flee();
-                case COVER -> moves.cover();
                 case PILLAR -> moves.pillar();
                 case DIG_IN -> moves.burrow();
                 default -> null;

@@ -13,10 +13,10 @@ class ReflexNotesTest {
     void aRetreatIsSaidOnceWhenItStarts() {
         ReflexNotes n = new ReflexNotes();
         assertTrue(n.step("fighting", "zombie", 12, null, false, 20).isEmpty());
-        assertEquals(List.of("Low health (5/20), retreating from zombie"), n.step("retreating", "zombie", 5.4f, null, false, 20));
+        assertEquals(List.of("Low health (5/20), danger way burrow: dig 1/3"), n.step("retreating", "burrow: dig 1/3", 5.4f, null, false, 20));
         assertTrue(n.step("retreating", "zombie", 4, null, false, 20).isEmpty(), "still retreating: once");
         assertTrue(n.step("none", null, 4, null, false, 20).isEmpty());
-        assertEquals(List.of("Low health (3/20), retreating from a monster"), n.step("RETREATING", null, 3, null, false, 20), "again after it ended; no target");
+        assertEquals(List.of("Low health (3/20), danger way (unnamed)"), n.step("RETREATING", null, 3, null, false, 20), "again after it ended; no target");
     }
 
     @Test

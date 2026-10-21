@@ -14,16 +14,11 @@ class MovesTest {
     static class FakeCar implements Car {
         final List<String> calls = new ArrayList<>();
         Status status = Status.running("driving");
-        List<int[]> dig, seal;
-        int[] stand, top;
+        int[] top;
 
-        @Override public void cover(int[] cell) { calls.add("cover " + s(cell)); }
         @Override public void runAway(int dist, List<int[]> from) { calls.add("runAway " + dist + " " + from.size()); }
         @Override public void pillar(int[] top) { this.top = top; calls.add("pillar " + s(top)); }
-        @Override public void burrow(List<int[]> dig, int[] stand, List<int[]> seal, int timeoutTicks) {
-            this.dig = dig; this.stand = stand; this.seal = seal;
-            calls.add("burrow " + dig.size() + " " + seal.size());
-        }
+        @Override public void digInHere(int timeoutTicks) { calls.add("digInHere"); }
         double[] prefer;
         boolean ready;
         @Override public void runAway(int dist, List<int[]> from, double[] prefer) {
@@ -51,8 +46,7 @@ class MovesTest {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
         m.burrowHere("burrow", 2, false);
-        assertEquals("burrowHere 2 down", car.calls.get(0), "only what and how deep: the fork picks the cells");
-        assertNull(car.dig, "no mod-picked cell");
+        assertEquals(List.of("burrowHere 2 down"), car.calls, "only what and how deep: the fork picks the cells");
         assertEquals(Moves.Phase.RUNNING, m.tick(1));
         car.status = Car.Status.done("done: dug 2, sealed 1");
         assertEquals(Moves.Phase.ARRIVED, m.tick(2));
@@ -92,24 +86,24 @@ class MovesTest {
     }
 
     @Test
-    void digInDigsTheWallStepsInAndSealsTheEntrance() {
+    void digInLeavesTheWallToTheFork() {
         FakeCar car = new FakeCar();
-        new Moves(car).digIn(new int[]{0, 64, 0}, 1, 0);
-        assertEquals("1 64 0", FakeCar.s(car.dig.get(0)));
-        assertEquals("1 65 0", FakeCar.s(car.dig.get(1)));
-        assertEquals("1 64 0", FakeCar.s(car.stand));
-        assertEquals("0 64 0", FakeCar.s(car.seal.get(0)));
-        assertEquals("0 65 0", FakeCar.s(car.seal.get(1)));
+        Moves m = new Moves(car);
+        m.digInHere();
+        assertEquals(List.of("digInHere"), car.calls, "no mod-picked wall, face or cell");
+        car.status = Car.Status.failed("dig in at 0 64 0: north: side east of 0 64 -1 (air) is open; ...");
+        assertEquals(Moves.Phase.FAILED, m.tick(1));
+        assertTrue(m.why().startsWith("gave up at dig into the nearest wall: dig in at 0 64 0: north"), m.why());
     }
 
     @Test
-    void coverFleeAndLookGoToTheCar() {
+    void digInFleeAndLookGoToTheCar() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
-        m.cover(new int[]{3, 64, 3});
+        m.digInHere();
         m.flee(16, List.of(new int[]{0, 64, 0}, new int[]{1, 64, 1}));
         m.lookAt(0, 65, 0);
-        assertEquals(List.of("cover 3 64 3", "stop replaced by flee", "runAway 16 2", "look"), car.calls);
+        assertEquals(List.of("digInHere", "stop replaced by flee", "runAway 16 2", "look"), car.calls);
     }
 
     @Test
@@ -117,13 +111,13 @@ class MovesTest {
         Moves m = new Moves(new FakeCar() {
             @Override public Status status() { throw new IllegalStateException("boom"); }
         });
-        m.cover(new int[]{0, 0, 0});
+        m.digInHere();
         assertEquals(Moves.Phase.FAILED, m.tick(1));
         assertTrue(m.why().contains("boom"));
         FakeCar nul = new FakeCar();
         nul.status = null;
         Moves n = new Moves(nul);
-        n.cover(new int[]{0, 0, 0});
+        n.digInHere();
         assertEquals(Moves.Phase.FAILED, n.tick(1));
     }
 

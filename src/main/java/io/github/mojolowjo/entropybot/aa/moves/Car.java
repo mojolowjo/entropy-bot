@@ -23,9 +23,6 @@ public interface Car {
         public static Status lost(String why) { return new Status(State.FAILED, why, true, null); }
     }
 
-    /** GoalGetToBlock: next to / in this cell. */
-    void cover(int[] cell);
-
     /** GoalRunAway: {@code dist} blocks from every one of these points. */
     void runAway(int dist, List<int[]> from);
 
@@ -53,8 +50,8 @@ public interface Car {
     /** GoalBlock {@code top} with allowPlace on and the bag's throwaway list (planks, cobble, dirt...): Baritone pillars. */
     void pillar(int[] top);
 
-    /** The fork's BurrowProcess: dig these cells, step into {@code stand} (null = stay), seal these. */
-    void burrow(List<int[]> dig, int[] stand, List<int[]> seal, int timeoutTicks);
+    /** rm-threat: the fork's BurrowProcess "dig in here": it picks the wall beside the feet, digs two cells, steps in, seals. */
+    void digInHere(int timeoutTicks);
 
     /** The LookBehavior target this tick (the one camera owner). */
     void look(double x, double y, double z);
