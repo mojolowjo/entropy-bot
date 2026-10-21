@@ -1947,9 +1947,12 @@ public final class Commands implements Chains.Env {
 
     String poiCommand(String rest, LocalPlayer player, boolean isOwner) {
         List<String> w = Texts.words(rest == null ? "" : rest.toLowerCase());
-        JsonArray list = core.pois.toJson().getAsJsonArray("pois");
         String dim = Guard.dimOf(player.level());
         int mx = (int) Math.floor(player.getX()), my = (int) Math.floor(player.getY()), mz = (int) Math.floor(player.getZ());
+        // rm-mining: pois.json is refreshed from the chunk index when asked (the pass no longer writes it every chunk)
+        if (dim.equals(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim()))
+            io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.refreshPois(core.pois, dim, mx, mz, io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R);
+        JsonArray list = core.pois.toJson().getAsJsonArray("pois");
         long now = System.currentTimeMillis();
         if (!w.isEmpty() && (w.get(0).equals("show") || w.get(0).equals("forget"))) {
             String idText = w.size() > 1 ? w.get(1) : "";

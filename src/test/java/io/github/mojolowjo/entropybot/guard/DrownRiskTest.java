@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.guard;
 
 import io.github.mojolowjo.entropybot.aa.IronOptions;
-import io.github.mojolowjo.entropybot.cave.MineRules;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -27,15 +26,6 @@ class DrownRiskTest {
         assertEquals(DrownRisk.K * 0.25, DrownRisk.cost(0.5), 1e-9);
         assertTrue(Double.isInfinite(DrownRisk.cost(1)));
         assertTrue(DrownRisk.terms(2, 1, 300).contains("drown risk 0.83"), DrownRisk.terms(2, 1, 300));
-    }
-
-    @Test
-    void mineSkipAndWalkStopOnlyWhenFatal() {
-        assertFalse(MineRules.waterDownSkip(true, 60, 58, false, 300, 1, 2), "2 below, full air: a cost, not a skip");
-        assertTrue(MineRules.waterDownSkip(true, 60, 45, false, 300, 1, 2), "15 below: fatal, skipped");
-        assertFalse(MineRules.waterDownSkip(true, 60, 45, true, 300, 1, 2), "the water touches it: sink to it");
-        assertFalse(MineRules.waterDigDown(true, true, 59, 60, 58, 300, 1, 2), "2 left to dig with full air: goes on");
-        assertTrue(MineRules.waterDigDown(true, true, 59, 60, 58, 40, 6, 2), "2 s of air: stopped");
     }
 
     @Test

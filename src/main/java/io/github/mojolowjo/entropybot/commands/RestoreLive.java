@@ -70,6 +70,7 @@ public final class RestoreLive {
         io.github.mojolowjo.entropybot.clear.OwnStations.mine = this::stationOfMine;     // 0.33.0 (A3)
         io.github.mojolowjo.entropybot.clear.OwnStations.cells = this::stationCells;     // 0.33.0 review: recorded cells only
         io.github.mojolowjo.entropybot.clear.OwnStations.why = this::stationRefusal;
+        io.github.mojolowjo.entropybot.guard.OwnPlaced.cells = this::builtByMe;      // rm-mining: my placements are mine, never a built block
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
         String text = f.readJson(FILE);
@@ -196,8 +197,7 @@ public final class RestoreLive {
     boolean builtByMe(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
-        io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(Guard.dimOf(mc.level), x, y, z);
-        return e != null && e.why != null && e.why.startsWith("built:");
+        return book.ledger.placedByMe(Guard.dimOf(mc.level), x, y, z);
     }
 
     /** 0.33.0 (A3): a station I placed myself (ledger "built: station") that may be picked up. */
@@ -227,18 +227,8 @@ public final class RestoreLive {
             contents = n;
             seen = note.get("seen").getAsLong();
         }
-        // a furnace the bot took everything out of itself is never kept as a chest note: its own record says so
-        contents = io.github.mojolowjo.entropybot.clear.OwnStations.contentsKnown(contents, seen, stationEmptied.get(dim + " " + x + " " + y + " " + z), e.at);
+        contents = io.github.mojolowjo.entropybot.clear.OwnStations.contentsKnown(contents, seen, null, e.at);
         return io.github.mojolowjo.entropybot.clear.OwnStations.pickUp(e.block, now, gone != null && gone >= e.at, now, contents, x, y, z);
-    }
-
-    /** "smelt ... here": a station of mine (a furnace) the bot took everything out of, at this ms; the pickup may then break it. */
-    private final java.util.Map<String, Long> stationEmptied = new java.util.concurrent.ConcurrentHashMap<>();
-
-    public void noteStationEmptied(int x, int y, int z) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
-        stationEmptied.put(Guard.dimOf(mc.level) + " " + x + " " + y + " " + z, System.currentTimeMillis());
     }
 
     /** 0.33.0 review: station cells of mine whose block was removed (ms), from the block-change hook; a new placement clears it. */
@@ -247,7 +237,13 @@ public final class RestoreLive {
     /** The block-change hook (any thread, never throws): a recorded station cell lost its block. */
     public void blockChanged(String dim, int x, int y, int z, String fromId, String toId) {
         try {
-            if (fromId == null || fromId.equals(toId) || !io.github.mojolowjo.entropybot.clear.OwnStations.station(fromId)) return;
+            if (fromId == null || fromId.equals(toId)) return;
+            if (!io.github.mojolowjo.entropybot.clear.OwnStations.station(fromId)) {
+                // rm-mining: a block I placed is gone (broken, replaced): the cell is no longer mine (a later block there is not)
+                io.github.mojolowjo.entropybot.restore.Ledger.Entry p = book.ledger.at(dim, x, y, z);
+                if (p != null && PLACED.equals(p.why) && fromId.equals(p.block) && book.ledger.remove(p)) changed();
+                return;
+            }
             io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
             if (e != null && "built: station".equals(e.why)) stationRemoved.put(dim + " " + x + " " + y + " " + z, System.currentTimeMillis());
         } catch (RuntimeException ex) {
@@ -428,23 +424,32 @@ public final class RestoreLive {
     /** What Baritone throws away as scaffold: only these, placed under a walk's travel intent, are litter. */
     private static final Set<String> SCAFFOLD = Set.of("cobblestone", "cobbled_deepslate", "dirt", "netherrack", "stone");
 
+    /** rm-mining: the ledger note of any other block a job of mine placed (a station from the builder leg, a torch, a block). */
+    static final String PLACED = "built: placed";
+
     /**
-     * From the place hook (client thread, after the guard let the placement through): a walk (travel intent, a job
-     * running) put a throwaway block into a cell it did not dig itself. Noted in the ledger as {@code built: litter}
-     * until the step's end takes it down ({@code restore placed}) or keeps it ({@code restore keep}). Never throws.
+     * From the place hook (client thread, after the guard let the placement through), while a job of mine runs: a walk's
+     * throwaway block (travel intent, a cell it did not dig itself) is noted {@code built: litter} until the step's end takes
+     * it down ({@code restore placed}) or keeps it ({@code restore keep}); rm-mining: every other placement is noted as mine
+     * ({@code built: station} for a station, else {@link #PLACED}), so the guard never protects it from me as a "built
+     * block" (guard/OwnPlaced). A cell the ledger already holds keeps its first note. Never throws.
      */
-    public void noteLitter(BlockPos pos, String itemPath) {
+    public void notePlaced(BlockPos pos, String itemPath) {
         try {
             Minecraft mc = Minecraft.getInstance();
             Commands cm = c;
-            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null || !SCAFFOLD.contains(itemPath)) return;
-            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() != io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) return;
+            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null) return;
             String dim = Guard.dimOf(mc.level);
-            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole
             if (book.ledger.at(dim, pos.getX(), pos.getY(), pos.getZ()) != null) return;
-            noteBuilt(List.of(new int[]{pos.getX(), pos.getY(), pos.getZ()}), "minecraft:" + itemPath, io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER);
+            List<int[]> cell = List.of(new int[]{pos.getX(), pos.getY(), pos.getZ()});
+            if (SCAFFOLD.contains(itemPath) && io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) {
+                if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole
+                noteBuilt(cell, "minecraft:" + itemPath, io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER);
+                return;
+            }
+            noteBuilt(cell, "minecraft:" + itemPath, io.github.mojolowjo.entropybot.clear.OwnStations.station(itemPath) ? "built: station" : PLACED);
         } catch (RuntimeException e) {
-            LOG.debug("[entropybot] litter note failed: {}", e.toString());
+            LOG.warn("[entropybot] restore: the placement note at {} {} {} failed: {}", pos.getX(), pos.getY(), pos.getZ(), e.toString());
         }
     }
 

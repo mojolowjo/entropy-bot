@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.commands;
 
-import io.github.mojolowjo.entropybot.sense.KnownOre;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -45,11 +44,4 @@ class Pkg8Test {
                 ClimbFallback.underText("the base", "north", 7));
     }
 
-    @Test void emptyIndexEnd() {
-        assertEquals("done: mining iron: got 0 of 5 - no iron ore known yet (walked 0 blocks) - next: sense (the chunk pass) or mine strip iron",
-                KnownOre.noneYetText("iron", 0, 5, 0, ""));
-        assertEquals("done: mining coal: got 1 of 5 - no coal ore known yet (walked 1 block), got 1 coal - next: sense (the chunk pass) or mine strip coal",
-                KnownOre.noneYetText("coal", 1, 5, 1, ", got 1 coal"));
-        assertEquals(32, KnownOre.NONE_WALK_CAP);
-    }
 }

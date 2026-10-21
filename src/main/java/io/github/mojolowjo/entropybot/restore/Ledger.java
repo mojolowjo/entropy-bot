@@ -142,6 +142,15 @@ public final class Ledger {
         return n;
     }
 
+    /** rm-mining: the cell holds a block the bot placed itself (an entry noted {@code built: ...}): its own, never a built block. */
+    public synchronized boolean placedByMe(String dim, int x, int y, int z) {
+        Entry e = at(dim, x, y, z);
+        return e != null && placed(e.why);
+    }
+
+    /** The ledger note of a placement of mine ("built: station", "built: placed", "built: litter", "built: shelter"...). */
+    public static boolean placed(String why) { return why != null && why.startsWith("built:"); }
+
     public synchronized Entry at(String dim, int x, int y, int z) {
         for (Entry e : list) if (e.x == x && e.y == y && e.z == z && e.dim.equals(dim)) return e;
         return null;

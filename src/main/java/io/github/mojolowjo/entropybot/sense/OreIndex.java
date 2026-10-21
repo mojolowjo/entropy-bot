@@ -225,7 +225,23 @@ public final class OreIndex {
      * 0.28.0 fix: family -> positions within r (3D) of x y z, counted from the listed positions (never whole-chunk sums);
      * capped when a chunk in reach holds more of that family than it lists.
      */
-    public Map<String, Count> within(String d, int x, int y, int z, int r) {
+    public Map<String, Count> within(String d, int x, int y, int z, int r) { return within(d, x, y, z, r, null); }
+
+    /**
+     * rm-mining (fair play): the cells a line or a pick may name. Under {@code aa fair} only the cells {@code seen} takes
+     * (Seen/Sightings: ore the bot has looked at); off, every indexed cell (null = no filter). The chunk pass still learns
+     * every cell for OreStats density (statistics, not targeting).
+     */
+    public static Allow fairPlay(boolean fair, Allow seen) {
+        if (!fair) return null;
+        return seen == null ? (x, y, z) -> false : seen;
+    }
+
+    /**
+     * As {@link #within(String, int, int, int, int)}, only the positions {@code allow} takes (null: all). With a filter
+     * the count is never "capped": a capped chunk's unlisted cells were never seen, so no line may hint at them.
+     */
+    public Map<String, Count> within(String d, int x, int y, int z, int r, Allow allow) {
         Map<String, int[]> acc = new TreeMap<>();
         Map<Long, ChunkSummary> m = dims.get(d);
         if (m != null) {
@@ -236,9 +252,9 @@ public final class OreIndex {
                     int in = 0;
                     for (ChunkSummary.Spot sp : e.getValue().spots) {
                         long dx = sp.x() - x, dy = sp.y() - y, dz = sp.z() - z;
-                        if (dx * dx + dy * dy + dz * dz <= r2) in++;
+                        if (dx * dx + dy * dy + dz * dz <= r2 && (allow == null || allow.test(sp.x(), sp.y(), sp.z()))) in++;
                     }
-                    boolean cut = e.getValue().n > e.getValue().spots.size();
+                    boolean cut = allow == null && e.getValue().n > e.getValue().spots.size();
                     if (in == 0 && !cut) continue;
                     int[] a = acc.computeIfAbsent(e.getKey(), k -> new int[2]);
                     a[0] += in;

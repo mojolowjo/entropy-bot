@@ -5,7 +5,6 @@ import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.commands.SelfCheck;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.memory.Limits;
-import io.github.mojolowjo.entropybot.poi.PoiScanner;
 import io.github.mojolowjo.entropybot.poi.Pois;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -35,8 +34,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * read once when it arrives (first load or resend; {@link McChunkReader}, palette-gated), kept as a {@link ChunkSummary}
  * in the {@link OreIndex}, and patched per block from the mod's existing block hook. A full read happens again only on a
  * resend or when a patch had to be dropped ({@link PassSchedule}'s missed rule); once a minute one loaded chunk is read
- * again and compared with its patched summary (the self-audit). The readers: points of interest ({@link PoiScanner#found},
- * {@link Pois#gone}), the terrain map (whole chunks on a read, columns on a patch), the surface export (columns), and the
+ * again and compared with its patched summary (the self-audit). The readers: points of interest (on demand only,
+ * {@link #refreshPois}), the terrain map (whole chunks on a read, columns on a patch), the surface export (columns), and the
  * ore index the jobs ask ("mine", gather, the brain, the cave job, "ores known"). Summaries are written to
  * {@code entropybot/sense/<dim>/<cx>.<cz>.json} ({@link SummaryFiles}) and loaded back stale at the next start.
  *
@@ -179,7 +178,6 @@ public final class ChunkPass {
             }
             if (nearTop) mapColumn(x, z);
             if (!out.isEmpty()) {
-                apply(s, out, false);
                 dirty.mark(SummaryFiles.Dirty.key(dim, cx, cz), now);
             }
         } catch (Throwable t) {
@@ -461,7 +459,6 @@ public final class ChunkPass {
         } catch (Throwable t) {
             error("ore stats", t);
         }
-        apply(fresh, changes, true);
         mapChunk(it.cx(), it.cz());
         if (old == null || old.stale || !changes.isEmpty()) dirty.mark(SummaryFiles.Dirty.key(dim, it.cx(), it.cz()), now);
     }
@@ -507,39 +504,46 @@ public final class ChunkPass {
         }
         List<ChunkDiff.Change> changes = ChunkDiff.between(s, fresh);
         index.put(fresh);
-        apply(fresh, changes, false);
         dirty.mark(SummaryFiles.Dirty.key(dim, cx, cz), now);
     }
 
     // ---- readers ------------------------------------------------------------------------------------------------------
 
-    /** POI adds and removals to pois.json; a full read also refreshes every POI it holds (one per kind per section). */
-    private void apply(ChunkSummary s, List<ChunkDiff.Change> changes, boolean fullRead) {
+    /**
+     * rm-mining (sense noise: 309 "found a ..." lines in 15 min, one per POI block as chunks arrived): the pass no longer
+     * writes points of interest on every chunk read. pois.json is brought up to date on demand, when a reader asks (the
+     * "poi" verb, "go poi"): the index's POI spots within r of x z are noted (one per kind per section, merged as before)
+     * and the noted points of this dimension within r whose kind the index no longer has near them are dropped. One
+     * summary line. Client thread.
+     */
+    public String refreshPois(Pois pois, String d, int x, int z, int r) {
         Core core = Core.INSTANCE;
-        long tick = core.tick();
+        long tick = core.tick(), nowMs = System.currentTimeMillis();
+        int added = 0, gone = 0;
         try {
-            if (fullRead) {
+            for (ChunkSummary s : index.all(d)) {
+                if (Math.abs((s.cx << 4) + 8 - x) > r + 8 || Math.abs((s.cz << 4) + 8 - z) > r + 8) continue;
                 for (Map.Entry<String, ChunkSummary.Group> e : ChunkDiff.withLakes(s).entrySet()) {
                     Set<Integer> secs = new HashSet<>();
                     for (ChunkSummary.Spot sp : e.getValue().spots)
-                        if (secs.add(sp.y() >> 4)) PoiScanner.found(core.pois, core.events, e.getKey(), sp.x(), sp.y(), sp.z(), s.dim, tick);
+                        if (secs.add(sp.y() >> 4) && pois.saw(e.getKey(), sp.x(), sp.y(), sp.z(), d, nowMs, tick, null) != null) added++;
                 }
             }
-            for (ChunkDiff.Change c : changes) {
-                if (c.type() == ChunkDiff.Type.POI_ADD && !fullRead) PoiScanner.found(core.pois, core.events, c.key(), c.x(), c.y(), c.z(), s.dim, tick);
-                else if (c.type() == ChunkDiff.Type.POI_REMOVE) {
-                    Pois.Poi g = core.pois.gone(c.key(), c.x(), c.y(), c.z(), s.dim, tick,
-                            p -> index.poiNear(s.dim, p.kind(), p.x(), p.y(), p.z(), Pois.MERGE));
-                    if (g != null) {
-                        String line = "the " + g.kind() + " at " + g.x() + " " + g.y() + " " + g.z() + " is gone (poi " + g.id() + ")";
-                        core.events.push("poi", line, null);
-                        LOG.info("[entropybot] {}", line);
-                    }
-                }
+            for (com.google.gson.JsonElement el : pois.toJson().getAsJsonArray("pois")) {
+                com.google.gson.JsonObject p = el.getAsJsonObject();
+                if (!d.equals(p.get("dim").getAsString())) continue;
+                int px = p.get("x").getAsInt(), py = p.get("y").getAsInt(), pz = p.get("z").getAsInt();
+                if (Math.abs(px - x) > r || Math.abs(pz - z) > r || index.get(d, px >> 4, pz >> 4) == null) continue;     // unknown chunk: kept
+                String kind = p.get("kind").getAsString();
+                if (!index.poiNear(d, kind, px, py, pz, Pois.MERGE) && pois.gone(kind, px, py, pz, d, tick, null) != null) gone++;
             }
-        } catch (Throwable t) {
-            error("poi reader", t);
+        } catch (RuntimeException t) {
+            error("poi refresh", t);
+            return "the points of interest could not be refreshed: " + t;
         }
+        String line = "points of interest within " + r + ": " + added + " new, " + gone + " gone (from the chunk index)";
+        if (added + gone > 0) LOG.info("[entropybot] {}", line);
+        return line;
     }
 
     private void mapChunk(int cx, int cz) {
