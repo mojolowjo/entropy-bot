@@ -21,7 +21,12 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 // ---- Baritone: downloaded once into libs/, sha1-checked, never committed ----
-def baritoneFile = layout.projectDirectory.file("libs/${baritone_jar}").asFile
+def baritoneStock = layout.projectDirectory.file("libs/${baritone_jar}").asFile
+// Backbone step 2: the mod uses our fork's API (IBurrowProcess). The fork jar is copied into libs/ by hand (never
+// committed, never downloaded); when it is there the mod compiles and runs against it, else against the stock jar
+// (then the burrow says "this Baritone has no BurrowProcess" at run time).
+def baritoneFork = layout.projectDirectory.file("libs/${baritone_jar.replace('.jar', '-entropy.jar')}").asFile
+def baritoneFile = baritoneFork.exists() ? baritoneFork : baritoneStock
 
 // A task class (not a closure), so Gradle's configuration cache can serialise it.
 abstract class FetchJar extends DefaultTask {
@@ -58,7 +63,7 @@ tasks.register('fetchBaritone', FetchJar) {
     description = 'Downloads the Baritone jar the mod compiles against and checks its sha1'
     url = baritone_url
     sha1 = baritone_sha1
-    target = baritoneFile
+    target = baritoneStock
 }
 tasks.named('compileJava') { dependsOn 'fetchBaritone' }
 tasks.named('compileTestJava') { dependsOn 'fetchBaritone' }

@@ -27,6 +27,11 @@ public final class EngineProcess implements IBaritoneProcess {
 
     public boolean disabled() { return errors >= 5; }
 
+    /** Backbone step 2: ticks Baritone reported a failed path calculation for an override goal (Moves fails a leg on it). */
+    private volatile long calcFails;
+
+    public long calcFails() { return calcFails; }
+
     /** Baritone stands still, keeping the goal it had. */
     public void hold() {
         mode = Mode.HOLD;
@@ -57,6 +62,7 @@ public final class EngineProcess implements IBaritoneProcess {
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
         try {
+            if (mode == Mode.OVERRIDE && calcFailed) calcFails++;
             if (mode == Mode.HOLD) return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             if (mode == Mode.OVERRIDE && goal != null) return new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
         } catch (Throwable t) {
