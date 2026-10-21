@@ -25,10 +25,20 @@ public final class Worth {
     }
 
     /** 40 + 40 x the best tree share among what a furnace makes ({@link #SMELTS}). No tree yet: 1. */
-    public static double furnace(TechTree tree, Set<String> have) {
+    private static TechTree furnaceTree;
+    private static Set<String> furnaceHave;
+    private static java.util.List<String> furnaceOuts;
+    private static double furnaceBest;
+
+    public static synchronized double furnace(TechTree tree, Set<String> have) {
         if (tree == null || tree.size() == 0) return Tuning.get("stationBase") + Tuning.get("stationShare");
+        Set<String> h0 = have == null ? Set.of() : have;
+        java.util.List<String> o0 = ItemWorth.smelts();
+        if (tree == furnaceTree && o0 == furnaceOuts && h0.equals(furnaceHave)) return Tuning.get("stationBase") + Tuning.get("stationShare") * furnaceBest;   // AA_ROUND4 C review: one tree walk per tree/bag snapshot
         double best = 0;
-        for (String s : SMELTS) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
+        java.util.List<String> outs = ItemWorth.smelts();      // AA_ROUND4 C: what the recipes say a furnace makes; SMELTS only without data
+        for (String s : outs.isEmpty() ? SMELTS : outs) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
+        furnaceTree = tree; furnaceHave = Set.copyOf(h0); furnaceOuts = o0; furnaceBest = best;
         return Tuning.get("stationBase") + Tuning.get("stationShare") * best;
     }
 

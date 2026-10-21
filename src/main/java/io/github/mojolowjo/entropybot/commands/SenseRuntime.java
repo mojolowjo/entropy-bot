@@ -96,6 +96,9 @@ public final class SenseRuntime {
         s.pickPct = bestPct;
         s.pickDurability = dur;
         s.pickSpeed = bestSpeed;
+        // aa-times: the game's own seconds per stone block (GameTimesLive: Efficiency, Haste, water, off the ground)
+        s.digStoneS = picks > 0 ? GameTimesLive.bestPickaxeStoneSeconds(p) : -1;
+        s.handStoneS = GameTimesLive.stoneSeconds(p, ItemStack.EMPTY);
         s.armorWorn = io.github.mojolowjo.entropybot.camp.ArmorCareRules.lowest(CampCommands.armor(p));
         // the stage (the stock view, every 30 s)
         if (stockAt < 0 || s.now - stockAt > 30_000) {

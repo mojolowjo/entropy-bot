@@ -60,6 +60,8 @@ public final class Kit {
 
     /** A tool's or armour piece's worth (0: not one). */
     public static double toolValue(String id) {
+        double data = ItemWorth.gear(id);                 // AA_ROUND4 C: the game's own item data first, the tables below only when it gives none
+        if (data > 0) return data;
         String p = path(id);
         int u = p.indexOf('_');
         if (u < 0) return 0;
@@ -80,12 +82,15 @@ public final class Kit {
     }
 
     /** One food item: 0.25 per energy point. */
-    public static double foodValue(String id) { return 0.25 * FoodModel.energyOf(path(id)); }
+    public static double foodValue(String id) {
+        double data = ItemWorth.food(id);
+        return data > 0 ? data : 0.25 * FoodModel.energyOf(path(id));
+    }
 
     /** What the deposit verb keeps: tools, armour, food, torches. */
     public static boolean kept(String id) {
         String p = path(id);
-        return toolValue(p) > 0 || foodValue(p) > 0 || p.equals("torch") || p.equals("shield") || p.equals("crafting_table");
+        return toolValue(id) > 0 || foodValue(id) > 0 || p.equals("torch") || p.equals("shield") || p.equals("crafting_table");
     }
 
     /** One item's worth (any kind). */
@@ -97,7 +102,8 @@ public final class Kit {
         String p = path(id);
         if (p.equals("torch")) return 0.1;
         Double l = LOOT.get(p);
-        return l != null ? l : BLOCK;
+        if (l != null) return l;                           // scarcity (ores, gems) is in no item component: the loot table stays first for those
+        return ItemWorth.valueOr(id, BLOCK);               // the rest: the data (blocks by hardness/light, a recipe-only modded item), BLOCK when unknown
     }
 
     public static double worth(Map<String, Integer> bag) {

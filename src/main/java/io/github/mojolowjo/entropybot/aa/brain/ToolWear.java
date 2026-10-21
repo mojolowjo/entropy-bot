@@ -20,10 +20,13 @@ import java.util.Locale;
  * Replacement cost: the seconds to craft a new one from the bag (with nothing to make one, {@link #GATHER_S} to gather
  * the materials too), at most what the tool's uses
  * left are worth, the hand time they save ({@code left x (hand - tool)}), so USE never loses to HAND while a pickaxe
- * is in the bag: hand only wins with no pickaxe and nothing to make one. Dig time per block, the game's rule:
- * {@code ticks = ceil(hardness x (correct ? 30 : 100) / speed)}; stone (1.5) by hand 7.5 s, stone pickaxe 0.6 s.
+ * is in the bag: hand only wins with no pickaxe and nothing to make one. Dig time per block is the game's
+ * ({@link GameTimes#breakSeconds}: {@code ticks = ceil(hardness x (correct ? 30 : 100) / speed)}; stone (1.5) by hand
+ * 7.5 s, stone pickaxe 0.6 s). aa-times: the kit carries the seconds the adapter computed with the game's own terms
+ * (Efficiency, Haste, water, off the ground) when it read them ({@link Kit#toolS}, {@link Kit#handS}); the plain formula
+ * stands in for tests and a kit built from a speed alone.
  * Pure (JUnit ToolWearTest). Loader notes: none (the adapter reads the speed with vanilla
- * {@code ItemStack.getDestroySpeed}).
+ * {@code ItemStack.getDestroySpeed}; GameTimesLive the full terms).
  */
 public final class ToolWear {
     private ToolWear() {}
@@ -45,9 +48,19 @@ public final class ToolWear {
      * @param speed  the best pickaxe's break speed on stone (0 = no pickaxe)
      * @param left   its uses left (all pickaxes together)
      * @param craftS seconds to make a new stone pickaxe from the bag, {@link #INF} with no materials or table
+     * @param toolS  aa-times: the game's seconds per stone block with that pickaxe (the adapter's terms), NaN = from the speed
+     * @param handS  the game's seconds per stone block by hand (the adapter's terms), NaN = the plain formula
      */
-    public record Kit(float speed, int left, double craftS) {
+    public record Kit(float speed, int left, double craftS, double toolS, double handS) {
+        public Kit(float speed, int left, double craftS) { this(speed, left, craftS, Double.NaN, Double.NaN); }
+
         public boolean pickaxe() { return speed > 1 && left > 0; }
+
+        /** Seconds per stone block with the pickaxe: the adapter's number, else the plain formula on {@link #speed}. */
+        public double toolSeconds() { return toolS > 0 && Double.isFinite(toolS) ? toolS : withTool(speed); }
+
+        /** Seconds per stone block by hand: the adapter's number, else the plain formula. */
+        public double handSeconds() { return handS > 0 && Double.isFinite(handS) ? handS : hand(); }
     }
 
     /** One priced way with its terms (aa why / logs). */
@@ -58,29 +71,33 @@ public final class ToolWear {
     /** Seconds to break one block (the game's rule: 20 ticks a second; at least one tick). */
     public static double blockSeconds(double hardness, double speed, boolean correctTool) {
         if (hardness <= 0) return 0.05;
-        double ticks = Math.ceil(hardness * (correctTool ? 30 : 100) / Math.max(0.01, speed));
-        return Math.max(1, ticks) / 20.0;
+        return GameTimes.breakSeconds(hardness, Math.max(0.01, speed), correctTool);
     }
 
     public static double hand() { return blockSeconds(STONE_HARDNESS, 1, false); }
 
     public static double withTool(double speed) { return blockSeconds(STONE_HARDNESS, speed, true); }
 
-    /** The kit from the AA inputs (pickSpeed, pickLeft; materials: 3 cobblestone, 2 sticks or 2 planks; a table). */
+    /**
+     * The kit from the AA inputs (pickSpeed, pickLeft; materials: 3 cobblestone, 2 sticks or 2 planks; a table). aa-times:
+     * the game's seconds per stone block ({@code Inputs.digStoneS}, {@code handStoneS}, read by SenseRuntime through
+     * GameTimesLive) ride along when they were read.
+     */
     public static Kit kit(Inputs in) {
         int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
         boolean mats = in.cobble >= 3 && (sticks >= 2 || in.planks >= 2);
         boolean table = in.tableInBag || in.tableKnown;
-        return new Kit(in.pickaxes > 0 ? in.pickSpeed : 0, in.pickaxes > 0 ? in.pickLeft : 0, mats && table ? CRAFT_S : INF);
+        return new Kit(in.pickaxes > 0 ? in.pickSpeed : 0, in.pickaxes > 0 ? in.pickLeft : 0, mats && table ? CRAFT_S : INF,
+                in.pickaxes > 0 ? in.digStoneS : Double.NaN, in.handStoneS);
     }
 
     /** Every way for {@code blocks} of stone, cheapest first (ties: USE, CRAFT, HAND). */
     public static List<Priced> price(int blocks, Kit k) {
         int n = Math.max(0, blocks);
-        double hand = hand();
+        double hand = k.handSeconds();
         List<Priced> out = new ArrayList<>();
         if (k.pickaxe()) {
-            double tool = withTool(k.speed());
+            double tool = k.toolSeconds();
             int uses = Math.min(n, k.left());
             double worth = k.left() * Math.max(0, hand - tool);          // the hand time its uses left save
             double replace = Math.min(k.craftS() < INF ? k.craftS() : GATHER_S, worth);
