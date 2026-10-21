@@ -1081,7 +1081,7 @@ public final class Clearing {
         if (inWay != null) return inWay;
         LiveWorld w = new LiveWorld();
         w.set(p);
-        PlaceRules.Side s = forced == null ? PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ())
+        PlaceRules.Side s = forced == null ? PlaceRules.placeSideSeen(w, x, y, z, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
                 : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
                         && io.github.mojolowjo.entropybot.clear.RimPlan.clickableFrom(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ())
                         ? forced : null;
@@ -1122,7 +1122,7 @@ public final class Clearing {
     /**
      * 0.30.7 (live, shed3: the bot's corpse in the furnace cell, three "the game refused" tries): the first entity that
      * blocks building in cell x y z (not the bot, not item drops), as PlaceRules.entityText; null when free. Vanilla:
-     * Level.getEntities(Entity, AABB), Entity.blocksBuilding, BuiltInRegistries.ENTITY_TYPE (loader-neutral); the
+     * Level.getEntities(Entity, AABB), Entity.blocksBuilding, net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE (loader-neutral); the
      * corpse's owner via Storage.ownsCorpse (reflection on the Corpse mod).
      */
     /** 0.30.7 (review): the entity entityInWay named last (game thread only), and the corpse it logged last. */
@@ -1190,9 +1190,52 @@ public final class Clearing {
         return r;
     }
 
+    /** 0.39.p3 (table placement probe): one line per place tick; off by default (the system property turns it on). */
+    static boolean placeDebug = Boolean.getBoolean("entropybot.placeDebug");
+    private static String lastPlaceBlock;
+
+    private static void placeDebugLine(PlaceState ps, int[] pos, LocalPlayer p) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            BlockPos cell = new BlockPos(pos[0], pos[1], pos[2]);
+            String here = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(cell).getBlock()).getPath();
+            String vanished = lastPlaceBlock != null && !lastPlaceBlock.equals(here) ? " (was " + lastPlaceBlock + ")" : "";
+            lastPlaceBlock = here;
+            LiveWorld w = new LiveWorld();
+            w.set(p);
+            PlaceRules.Side s = PlaceRules.placeSide(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ());   // the distance pick: shows a hidden face too
+            String face = "none";
+            if (s != null) {
+                BlockPos on = new BlockPos(pos[0] + s.dx(), pos[1] + s.dy(), pos[2] + s.dz());
+                net.minecraft.world.phys.Vec3 eye = p.getEyePosition();
+                net.minecraft.world.phys.Vec3 fc = new net.minecraft.world.phys.Vec3(pos[0] + 0.5 + s.dx() * 0.5, pos[1] + 0.5 + s.dy() * 0.5, pos[2] + 0.5 + s.dz() * 0.5);
+                var d = fc.subtract(eye);
+                float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z)), pitch = (float) Math.toDegrees(-Math.atan2(d.y, Math.hypot(d.x, d.z)));
+                var hit = mc.level.clip(new net.minecraft.world.level.ClipContext(eye, fc, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
+                String hitS = hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                        ? Jobs.fmt(new int[]{hit.getBlockPos().getX(), hit.getBlockPos().getY(), hit.getBlockPos().getZ()}) + " " + hit.getDirection().getName() + " ("
+                          + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(hit.getBlockPos()).getBlock()).getPath() + ")" : "nothing";
+                face = Jobs.fmt(new int[]{on.getX(), on.getY(), on.getZ()}) + " " + McClearWorld.direction(s.face()).getName() + " ("
+                        + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(on).getBlock()).getPath() + ") dist " + String.format("%.2f", d.length())
+                        + " look " + String.format("%.0f/%.0f", yaw, pitch) + " vs " + String.format("%.0f/%.0f", p.getYRot(), p.getXRot()) + " ray to the face hits " + hitS;
+            }
+            var b = Jobs.baritone();
+            String proc = b == null ? "-" : b.getPathingControlManager().mostRecentInControl().map(x -> x.displayName()).orElse("none");
+            LOG.info("[entropybot] place debug: stage {} try {} cell {} = {}{} face {} | slot {} {} | crosshair {} | baritone {} busy {} | last {}",
+                    ps.stage, ps.tries, Jobs.fmt(pos), here, vanished, face, p.getInventory().selected,
+                    net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(p.getMainHandItem().getItem()).getPath(),
+                    mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult h && h.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                            ? Jobs.fmt(new int[]{h.getBlockPos().getX(), h.getBlockPos().getY(), h.getBlockPos().getZ()}) + " " + h.getDirection().getName() : "none",
+                    proc, placing(pos[0], pos[1], pos[2]), io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]));
+        } catch (RuntimeException e) {
+            LOG.info("[entropybot] place debug: {}", e.toString());
+        }
+    }
+
     private static String placeTick(Seq seq, Seq.Step st, PlaceState ps, LocalPlayer p, String id, String sid, long elapsed) {
         int[] pos = st.pos;
         long now = seq.now();
+        if (placeDebug) placeDebugLine(ps, pos, p);
         if (isThere(pos, id)) {
             if (ps.pickup != null) {
                 // B7d review 4b: armed only after our own click on a free cell, with exactly a crafting table there now
@@ -1214,8 +1257,8 @@ public final class Clearing {
             if (stand == null) {
                 LiveWorld w = new LiveWorld();
                 w.set(p);
-                if (PlaceRules.placeSide(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ()) == null) {
-                    var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p), standCheck(seq.jobs.core().commands));
+                if (PlaceRules.placeSideSeen(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH) == null) {
+                    var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p), standCheck(seq.jobs.core().commands), true);
                     if (spot == null) return ps.optional ? "next" : "nowhere to stand within reach of " + Jobs.fmt(pos) + " to place the " + sid;
                     stand = new int[]{spot.x(), spot.y(), spot.z()};
                 }

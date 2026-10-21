@@ -319,6 +319,23 @@ class ClearRunLoopTest {
     }
 
     @Test
+    void placeSideSkipsAFaceHiddenBehindAStep() {
+        // 0.39.p3 live probe: eye at -30 70 -59 (+eye), cell -29 69 -62 on dirt; the grass step at -29 69 -61 hides
+        // the dirt's top face ("ray to the face hits -29 69 -61 up"); Baritone can't aim at it, so it is no side
+        FakeWorld w = new FakeWorld();            // stone up to 52
+        Bot b = Bot.at(0.5, 54, 3.5);             // standing on a raised block at 0 53 3
+        w.set(0, 53, 3, "stone");
+        w.set(1, 53, 1, "stone");                 // the step between the eye and the floor face under 1 53 0
+        w.set(1, 53, 2, "stone");
+        assertEquals(ClearWorld.Face.UP, PlaceRules.placeSide(w, 1, 53, 0, b.x(), b.eyeY(), b.z()).face(), "the distance pick: the hidden floor face");
+        PlaceRules.Side s = PlaceRules.placeSideSeen(w, 1, 53, 0, b.x(), b.eyeY(), b.z(), PlaceRules.PLACE_REACH);
+        assertNotEquals(ClearWorld.Face.UP, s == null ? null : s.face(), "the place step never picks the hidden floor face");
+        ClearGrid.Spot st = PlaceRules.standFor(w, new Pos(1, 53, 0), b, null, true);
+        assertNotNull(st, "a stand spot that sees a face instead");
+        assertNotNull(PlaceRules.placeSideSeen(w, 1, 53, 0, st.eyeX(), st.eyeY(), st.eyeZ(), PlaceRules.STAND_REACH));
+    }
+
+    @Test
     void standSpotNeverPutsTheBodyInTheCell() {
         FakeWorld w = new FakeWorld();
         Bot far = Bot.at(10.5, 53, 0.5);

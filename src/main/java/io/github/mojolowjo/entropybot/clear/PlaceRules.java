@@ -59,6 +59,19 @@ public final class PlaceRules {
         return null;
     }
 
+    /**
+     * 0.39.p3 (table placement probe: "ray to the face hits -29 69 -61 up (grass_block)" for a click on -29 68 -62 up):
+     * the place step's choice. Since backbone step 3 Baritone aims the click and needs a ray that lands on the face, so
+     * a face hidden behind a step of the slope (or behind the anchor itself) is no side: placeSide, only seen faces.
+     */
+    public static Side placeSideSeen(ClearWorld w, int x, int y, int z, double ex, double ey, double ez, double reach) {
+        for (Side s : SIDES) {
+            if (!clickable(w, x + s.dx(), y + s.dy(), z + s.dz())) continue;
+            if (RimPlan.sees(w, new Pos(x, y, z), s, ex, ey, ez, reach)) return s;
+        }
+        return null;
+    }
+
     /** Standing with the feet at sx sy sz would put the bot's body in the cell (it can't place a block into itself). */
     public static boolean bodyIn(int sx, int sy, int sz, Pos cell) {
         return sx == cell.x() && sz == cell.z() && (sy == cell.y() || sy + 1 == cell.y());
@@ -75,6 +88,11 @@ public final class PlaceRules {
 
     /** T3: as above, only spots {@code ok} accepts (the owner's areas while the fence is on; null: any). */
     public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot, ClearJob.StandCheck ok) {
+        return standFor(w, cell, bot, ok, false);
+    }
+
+    /** 0.39.p3: seen = only spots from which placeSideSeen finds a face (the place step's Baritone click). */
+    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot, ClearJob.StandCheck ok, boolean seen) {
         ClearBox box = new ClearBox(cell.x(), cell.y(), cell.z(), cell.x(), cell.y(), cell.z());
         ClearGrid g = ClearGrid.build(w, box, bot, null);
         int[] dist = g.walkDistances(bot);
@@ -92,7 +110,7 @@ public final class PlaceRules {
                     else continue;
                     if (best != null && cost >= best.cost()) continue;
                     double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
-                    if (placeSide(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH) == null) continue;
+                    if ((seen ? placeSideSeen(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH) : placeSide(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH)) == null) continue;
                     best = new ClearGrid.Spot(x, y, z, cost, ex, ey, ez);
                 }
             }
