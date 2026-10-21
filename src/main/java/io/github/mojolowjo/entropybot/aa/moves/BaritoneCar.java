@@ -46,7 +46,7 @@ public final class BaritoneCar implements Car {
     private IBurrowProcess burrow;
     private Status forced;
     private Boolean savedPlace;
-    private List<Item> savedThrow;
+    private List<Item> savedThrow, setThrow;
 
     public BaritoneCar(EngineProcess engine) {
         this.engine = engine;
@@ -92,6 +92,7 @@ public final class BaritoneCar implements Car {
             List<Item> list = new ArrayList<>(savedThrow);
             for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
             s.acceptableThrowawayItems.value = list;
+            setThrow = list;
         } catch (RuntimeException e) {
             forced = Status.failed("pillar settings: " + e);
             return;
@@ -111,6 +112,7 @@ public final class BaritoneCar implements Car {
             List<Item> list = new ArrayList<>(savedThrow);
             for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
             s.acceptableThrowawayItems.value = list;
+            setThrow = list;
             List<BlockPos> d = new ArrayList<>(), sl = new ArrayList<>();
             for (int[] c : dig) d.add(pos(c));
             for (int[] c : seal) sl.add(pos(c));
@@ -136,6 +138,12 @@ public final class BaritoneCar implements Car {
     }
 
     @Override public Status status() {
+        Status s = status0();
+        if (s.state() != State.RUNNING) restore();      // review: the settings go back as soon as the leg ends, not after the hold
+        return s;
+    }
+
+    private Status status0() {
         try {
             if (forced != null) return forced;
             if (burrow != null) {
@@ -176,13 +184,15 @@ public final class BaritoneCar implements Car {
     private void restore() {
         try {
             var s = BaritoneAPI.getSettings();
-            if (savedPlace != null) s.allowPlace.value = savedPlace;
-            if (savedThrow != null) s.acceptableThrowawayItems.value = savedThrow;
+            // review: only what is still the value this car set (an owner change during the run wins)
+            if (savedPlace != null && Boolean.TRUE.equals(s.allowPlace.value)) s.allowPlace.value = savedPlace;
+            if (savedThrow != null && s.acceptableThrowawayItems.value == setThrow) s.acceptableThrowawayItems.value = savedThrow;
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] moves: settings restore failed: {}", e.toString());
         }
         savedPlace = null;
         savedThrow = null;
+        setThrow = null;
     }
 
     /** The bag's blocks the danger ways may place (AaEscape.pillarBlock: throwaway and planks). */

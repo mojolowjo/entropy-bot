@@ -176,6 +176,24 @@ class DangerStep2Test {
         assertNull(bb.fact(AaDesires.SEALED_FACT));
     }
 
+    /** Backbone step 2 review 5: a failed danger move fails the chain AND holds that way; the re-pick takes another. */
+    @Test
+    void aFailedDangerMoveFailsTheChainAndHoldsItsWay() {
+        normalNight(HERE);
+        Failures fs = new Failures();
+        bb.fact(Brain.FAILURES_FACT, fs);
+        Desire d = AaDesires.danger();
+        d.node.tick(bb);
+        DangerOptions.Way w = (DangerOptions.Way) bb.fact(AaDesires.WAY_FACT);
+        assertNotNull(w, port.log.toString());
+        bb.fact(AaDesires.MOVE_FAILED_FACT, "burrow: gave up at burrow 2 down: dig 1/2 (grass_block): not broken in 10 s");
+        assertEquals(io.github.mojolowjo.entropybot.aa.core.Status.FAILURE, d.node.tick(bb));
+        assertNull(bb.fact(AaDesires.MOVE_FAILED_FACT), "taken once");
+        assertNotNull(fs.held(AaDesires.DANGER_ID, w.key(), clock.now()), "the failed way is held: " + port.log);
+        assertNotEquals(w, AaDesires.dangerChoice(bb).best().way(), "the re-pick takes another way");
+        assertTrue(port.log.stream().anyMatch(l -> l.contains("failed") && l.contains("danger move burrow")), port.log.toString());
+    }
+
     Desire siteDesire(String id, double v, Site s) {
         return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).site(b -> s);
     }
