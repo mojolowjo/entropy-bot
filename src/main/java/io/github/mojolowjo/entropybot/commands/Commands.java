@@ -1541,7 +1541,11 @@ public final class Commands implements Chains.Env {
             case "explore" -> { return Mining.get().explore(player, rest); }
             case "chop" -> { return Chopping.get().command(player, rest); }             // P3: fell trees, pick up, replant
             case "cut" -> { return Chopping.get().command(player, vocab.cutLine(rest)); }      // V1b: cut <n> [logs|type] (the kind's exclusions)
-            case "upgrade" -> { return crafting.upgrade(player, rest); }         // package E: the essence tiers
+            case "give" -> {
+                PolicyCommands.Pos h = hereOf(Minecraft.getInstance(), from == null ? owner() : from);
+                return crafting.give(player, rest, new int[]{h.x(), h.y(), h.z()});
+            }
+            case "upgrade" -> { return crafting.upgrade(player, rest); }        // package E: the essence tiers
             case "recipe" -> { return crafting.recipe(player, rest); }
             case "need" -> { return crafting.need(player, rest); }
             case "supplies" -> { return crafting.supplies(player, rest); }
@@ -2357,7 +2361,7 @@ public final class Commands implements Chains.Env {
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
             case "take", "put", "close", "drop", "use", "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
             case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "upgrade",
+                 "craft", "kit", "smelt", "get", "restock", "farm", "compact", "give", "upgrade",
                  "dig", "build", "place", "stripmine", "mine", "explore", "chop" -> {
                 if (type.equals("chop") && Chopping.instant(text)) return Reply.now(Chopping.get().command(player, text));
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));

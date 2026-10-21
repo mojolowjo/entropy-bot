@@ -62,6 +62,36 @@ final class Crafting {
         this.mystical = new Mystical(this, core, commands, jobs, storage);
     }
 
+    /**
+     * "give me &lt;item&gt; [n]": one Baritone walk to the asker (near their position), then the inventory THROW click
+     * toward them (an item action, no key presses). Only what the bag holds goes; none in the bag is an error.
+     */
+    String give(LocalPlayer p, String text, int[] at) {
+        String[] w = text.trim().split("\\s+");
+        if (w.length > 0 && w[0].equalsIgnoreCase("me")) w = java.util.Arrays.copyOfRange(w, 1, w.length);
+        if (w.length == 0 || w[0].isEmpty()) return "usage: give me <item> [n]";
+        int n = 1;
+        if (w.length > 1) {
+            try { n = Integer.parseInt(w[1]); } catch (NumberFormatException e) { return "usage: give me <item> [n]"; }
+        }
+        if (n < 1) return "usage: give me <item> [n]";
+        String id = io.github.mojolowjo.entropybot.gui.GuiCore.normId(w[0]);
+        int have = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault(id, 0);
+        if (have <= 0) return "error: give " + w[0] + ": I have none in my bag";
+        int k = Math.min(n, have);
+        Step walk = Step.walk(at, true);
+        Step g = new Step("give");
+        g.text = id + " " + k;
+        g.pos = at;
+        return jobs.startSeq(new Seq(jobs, storage, "giving " + k + " " + w[0], List.of(walk, g), "always"), "always");
+    }
+
+    private String giveStep(Step st, LocalPlayer p) {
+        String[] w = st.text.split(" ");
+        int thrown = io.github.mojolowjo.entropybot.engine.Escort.throwItems(p, w[0], Integer.parseInt(w[1]));
+        return thrown > 0 ? "next" : "error: give " + w[0] + ": nothing could be thrown";
+    }
+
     /** Package E: "upgrade &lt;essence&gt; [n]", the essence tiers in bag-sized rounds. */
     String upgrade(LocalPlayer p, String text) { return mystical.upgrade(p, text); }
 
@@ -1075,6 +1105,7 @@ final class Crafting {
             case "compactdone": return compactStep(s, st, p);
             // package E: Mystical Agriculture
             case "upgraderound": return mystical.upgradeRound(s, st, p);
+            case "give": return giveStep(st, p);
             default:
                 if (st.type.startsWith("farm") && s.farm != null) return farmStep(s, st, p, elapsed);
                 return "unknown step " + st.type;

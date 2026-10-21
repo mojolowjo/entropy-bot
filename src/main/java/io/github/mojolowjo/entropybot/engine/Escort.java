@@ -227,7 +227,7 @@ public final class Escort {
     private static final java.util.regex.Pattern DROPPED = java.util.regex.Pattern.compile("^ok: dropped (\\d+)");
 
     /** Throws up to {@code n} of {@code item} (full id) with the inventory menu's THROW click. Returns how many went; 0 when none could (logged). */
-    static int throwItems(LocalPlayer p, String item, int n) {
+    public static int throwItems(LocalPlayer p, String item, int n) {
         if (n <= 0) return 0;
         String res = io.github.mojolowjo.entropybot.gui.GuiCore.drop(new io.github.mojolowjo.entropybot.gui.McMenu(p), item + " " + n);
         java.util.regex.Matcher m = DROPPED.matcher(res == null ? "" : res);

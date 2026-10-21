@@ -232,6 +232,7 @@ public final class VerbTable {
         v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
                 "one farm round (harvest, replant or let Harvest with Ease replant, pick up); plant a new field", "farm|farm plant wheat here 4|farm status", "deposit");
         v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "have <item>");
+        v("give", "", "stocking", O, "give me <item> [n]", "walk to you and throw the items (only what my bag holds)", "give me cobblestone 32", "inv");
         v("upgrade", "", "crafting", O, "upgrade <essence> [n]", "climb the essence tiers with the infusion crystal", "upgrade imperium 4", "inv");
         // ---- other
         // 0.35.0 the AI operator (off by default; the owner only; the model itself can never send ai)
