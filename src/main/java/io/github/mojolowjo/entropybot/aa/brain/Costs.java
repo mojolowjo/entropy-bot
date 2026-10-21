@@ -118,9 +118,9 @@ public final class Costs {
      */
     public static double tools(int pickTier, int pickPct, double blocked) {
         double b = Math.max(0, Math.min(1, blocked));
-        if (pickTier == 0) return 55 + 30 * b;
-        if (pickTier < Tuning.get("tools.stoneTier")) return 55 + 20 * b;
-        return 40 + Curves.upkeep(30, pickPct, 15);
+        if (pickTier == 0) return Tuning.get("tools.base") + Tuning.get("tools.blockedW0") * b;
+        if (pickTier < Tuning.get("tools.stoneTier")) return Tuning.get("tools.base") + Tuning.get("tools.blockedW1") * b;
+        return Tuning.get("tools.keepBase") + Curves.upkeep(Tuning.get("tools.wearSpan"), pickPct, Tuning.get("tools.wearPct"));
     }
 
     /**
@@ -135,10 +135,10 @@ public final class Costs {
 
     /** The share of the next steps a missing (tier 0) or wooden (tier 1) pickaxe blocks: stone/iron/furnace/coal. */
     public static double blocked(int pickTier, boolean furnace, int coal, int torches, boolean ownerOreGoal) {
-        int n = 0, of = 4;
+        int n = 0, of = (int) Tuning.get("tools.blockedOf");
         if (!furnace) n++;                              // cobble for the furnace
         if (pickTier < Tuning.get("tools.stoneTier")) n++;                          // iron needs a stone pickaxe
-        if (coal == 0 && torches < 16) n++;             // coal for torches
+        if (coal == 0 && torches < Tuning.get("torch.target")) n++;             // coal for torches
         if (ownerOreGoal) n++;
         if (pickTier == 1) n = Math.max(0, n - (furnace ? 0 : 1));      // a wooden pickaxe mines cobble already
         return (double) n / of;

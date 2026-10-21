@@ -94,7 +94,7 @@ public final class AaDesires {
                 + (sword > 0 ? ", + " + Math.round(sword) + " no weapon (a zombie seen)" : ""));
         // the pickaxe's worth only while it is wanted (a stone pickaxe at 100%: the sword alone)
         boolean pickWanted = bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares"));
-        return (pickWanted ? io.github.mojolowjo.entropybot.aa.brain.Costs.tools(bb.in.pickTier, bb.in.pickPct, blocked) : 30) + sword;
+        return (pickWanted ? io.github.mojolowjo.entropybot.aa.brain.Costs.tools(bb.in.pickTier, bb.in.pickPct, blocked) : Tuning.get("need.defaultScore")) + sword;
     }
 
     /** An owner goal that needs a pickaxe is open. */

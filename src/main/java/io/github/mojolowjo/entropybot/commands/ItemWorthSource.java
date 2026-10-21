@@ -73,7 +73,6 @@ final class ItemWorthSource implements ItemWorth.Source {
         double def = 0, tough = 0, atk = 0, nut = 0, sat = 0, hard = 0;
         int light = 0, level = 0;
         double speed = 0;
-        String role = "";
         for (var e : st.getAttributeModifiers().modifiers()) {
             if (e.modifier().operation() != AttributeModifier.Operation.ADD_VALUE) continue;
             if (e.attribute().is(Attributes.ARMOR.unwrapKey().get())) def += e.modifier().amount();
@@ -86,15 +85,9 @@ final class ItemWorthSource implements ItemWorth.Source {
             for (Tool.Rule r : tool.rules()) {
                 if (r.speed().isPresent() && r.blocks() instanceof HolderSet.Named<Block> n && n.key().location().getPath().startsWith("mineable/")) {
                     speed = Math.max(speed, r.speed().get());
-                    role = n.key().location().getPath().substring("mineable/".length());
                 }
             }
             if (speed > 0) level = levelOf(tool);
-            // rule 4: the role is the game's item tag (a modded tool carrying c:/minecraft: pickaxes is a pickaxe), not its id
-            if (st.is(net.minecraft.tags.ItemTags.PICKAXES)) role = "pickaxe";
-            else if (st.is(net.minecraft.tags.ItemTags.AXES)) role = "axe";
-            else if (st.is(net.minecraft.tags.ItemTags.SHOVELS)) role = "shovel";
-            else if (st.is(net.minecraft.tags.ItemTags.HOES)) role = "hoe";
         }
         var food = st.get(DataComponents.FOOD);
         if (food != null) {
@@ -107,7 +100,9 @@ final class ItemWorthSource implements ItemWorth.Source {
             hard = Math.max(0, bs.getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO));
             light = bs.getLightEmission();
         }
-        if (speed == 0 && atk > 0 && dur > 0) role = "weapon";
+        // rule 4: the role is the game's item tag (a tagged modded tool gets it with or without a mineable tag), never the id
+        ItemWorth.Role role = ItemWorth.roleOf(st.is(net.minecraft.tags.ItemTags.PICKAXES), st.is(net.minecraft.tags.ItemTags.AXES),
+                st.is(net.minecraft.tags.ItemTags.SHOVELS), st.is(net.minecraft.tags.ItemTags.HOES), speed > 0, atk > 0 && dur > 0);
         if (dur == 0 && def == 0 && speed == 0 && nut == 0 && hard == 0 && light == 0 && atk == 0) return ItemWorth.Facts.NONE;
         return new ItemWorth.Facts(role, speed, level, dur, def, tough, atk, nut, sat, hard, light);
     }

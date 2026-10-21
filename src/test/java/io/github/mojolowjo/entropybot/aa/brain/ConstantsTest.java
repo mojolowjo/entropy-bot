@@ -22,7 +22,9 @@ class ConstantsTest {
             Map.entry("bag.base", 20.0), Map.entry("bag.span", 60.0), Map.entry("cost.station", 60.0), Map.entry("cost.spareTable", 10.0),
             Map.entry("cost.base", 240.0), Map.entry("cost.bed", 120.0), Map.entry("cost.iron", 600.0), Map.entry("need.defaultScore", 30.0),
             Map.entry("sprint.drainFloor", 0.25), Map.entry("quarry.radius", 48.0), Map.entry("quarry.cacheMs", 10000.0),
-            Map.entry("quarry.digK", 1.5), Map.entry("run.weight", 2.0), Map.entry("planner.gapMs", 5000.0));
+            Map.entry("quarry.digK", 1.5), Map.entry("run.weight", 2.0), Map.entry("planner.gapMs", 5000.0),
+            Map.entry("tools.base", 55.0), Map.entry("tools.blockedW0", 30.0), Map.entry("tools.blockedW1", 20.0), Map.entry("tools.blockedOf", 4.0),
+            Map.entry("tools.keepBase", 40.0), Map.entry("tools.wearSpan", 30.0));
 
     @Test void everyMovedConstantIsRegisteredWithItsOldDefault() {
         Tuning.reset();
@@ -33,6 +35,25 @@ class ConstantsTest {
             assertEquals(e.getValue(), Tuning.get(e.getKey()), 1e-12, e.getKey());
             assertTrue(lines.stream().anyMatch(l -> l.startsWith(e.getKey() + " ")), "aa tune lists " + e.getKey());
         }
+    }
+
+    @Test void unknownNameFailsLoudly() {
+        assertThrows(IllegalArgumentException.class, () -> Tuning.get("no.such.number"));
+    }
+
+    @Test void everyTuningGetLiteralInTheSourcesIsRegistered() throws Exception {
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("Tuning\\.get\\(\"([^\"]+)\"\\)|\\bt\\(\"([^\"]+)\"\\)");
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
+            for (var f : (Iterable<java.nio.file.Path>) files.filter(x -> x.toString().endsWith(".java"))::iterator) {
+                var m = p.matcher(java.nio.file.Files.readString(f));
+                while (m.find()) {
+                    String n = m.group(1) != null ? m.group(1) : m.group(2);
+                    if (!Tuning.names().contains(n)) missing.add(f.getFileName() + ": " + n);
+                }
+            }
+        }
+        assertTrue(missing.isEmpty(), "not registered in Tuning: " + missing);
     }
 
     @Test void legacyNamesAgreeWithTuning() {

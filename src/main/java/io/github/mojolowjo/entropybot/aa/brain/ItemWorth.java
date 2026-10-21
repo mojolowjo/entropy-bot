@@ -30,10 +30,23 @@ import java.util.Set;
 public final class ItemWorth {
     private ItemWorth() {}
 
-    /** What the game says about one item (zero = does not apply). {@code role}: what a digging tool digs (pickaxe, axe, ...), "weapon", or "". */
-    public record Facts(String role, double digSpeed, int digLevel, double durability, double defence, double toughness,
+    /** What the game says about one item (zero = does not apply). {@code role}: what a digging tool digs (from the game's item tags), WEAPON, or OTHER. */
+    public record Facts(Role role, double digSpeed, int digLevel, double durability, double defence, double toughness,
                         double attack, double nutrition, double saturation, double hardness, int light) {
-        public static final Facts NONE = new Facts("", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        public static final Facts NONE = new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    /** A tool's role, decided by the game's item tags (the adapter) and never by an id; OTHER = no known tag (shears, a modded tool). */
+    public enum Role { PICKAXE, AXE, SHOVEL, HOE, WEAPON, OTHER }
+
+    /** The role from the tags the item carries (pure; the adapter reads ItemTags PICKAXES/AXES/SHOVELS/HOES), checked before any block data. */
+    public static Role roleOf(boolean pickTag, boolean axeTag, boolean shovelTag, boolean hoeTag, boolean digs, boolean attacks) {
+        if (pickTag) return Role.PICKAXE;
+        if (axeTag) return Role.AXE;
+        if (shovelTag) return Role.SHOVEL;
+        if (hoeTag) return Role.HOE;
+        if (!digs && attacks) return Role.WEAPON;
+        return Role.OTHER;
     }
 
     /** One recipe for an item: the output count and the ingredient ids (one per slot, the first choice). */
@@ -137,7 +150,7 @@ public final class ItemWorth {
             double rw = roleWeight(f.role);
             double v = cap(Tuning.get("worth.toolK") * Math.pow(f.digSpeed, Tuning.get("worth.speedPow")) * (1 + f.digLevel) * Math.log(1 + f.durability) * rw);
             return Worth.of(v, String.format(Locale.ROOT, "%s: %.2f x speed %.1f^%.2f x (1 + level %d) x ln(1 + durability %.0f) x role %.2f = %.1f",
-                    f.role.isEmpty() ? "tool" : f.role, Tuning.get("worth.toolK"), f.digSpeed, Tuning.get("worth.speedPow"), f.digLevel, f.durability, rw, v));
+                    f.role == Role.OTHER ? "tool" : f.role.name().toLowerCase(Locale.ROOT), Tuning.get("worth.toolK"), f.digSpeed, Tuning.get("worth.speedPow"), f.digLevel, f.durability, rw, v));
         }
         if (f.attack > 0 && f.durability > 0) {
             double v = cap(Tuning.get("worth.weaponK") * f.attack * f.attack * Math.log(1 + f.durability));
@@ -196,13 +209,13 @@ public final class ItemWorth {
         return true;
     }
 
-    static double roleWeight(String role) {
-        return switch (role == null ? "" : role) {
-            case "pickaxe" -> Tuning.get("worth.role.pickaxe");
-            case "axe" -> Tuning.get("worth.role.axe");
-            case "shovel" -> Tuning.get("worth.role.shovel");
-            case "hoe" -> Tuning.get("worth.role.hoe");
-            default -> Tuning.get("worth.role.other");
+    static double roleWeight(Role role) {
+        return switch (role == null ? Role.OTHER : role) {
+            case PICKAXE -> Tuning.get("worth.role.pickaxe");
+            case AXE -> Tuning.get("worth.role.axe");
+            case SHOVEL -> Tuning.get("worth.role.shovel");
+            case HOE -> Tuning.get("worth.role.hoe");
+            case WEAPON, OTHER -> Tuning.get("worth.role.other");
         };
     }
 

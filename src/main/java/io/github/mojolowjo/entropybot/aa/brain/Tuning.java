@@ -108,6 +108,12 @@ public final class Tuning {
         def("band.torchOff", 16, "aa-brain 1", "the torches need switches off at this many torches");
         def("band.foodOn", 10, "aa-brain 1", "the food need switches on under this much food energy");
         def("band.foodOff", 18, "aa-brain 1", "the food need switches off at this much food energy");
+        def("tools.base", 55, "aa-costs", "the tools need's score when the pickaxe is missing or wooden (before the blocked share)");
+        def("tools.blockedW0", 30, "aa-costs", "added to tools.base x the share of next steps blocked when there is no pickaxe");
+        def("tools.blockedW1", 20, "aa-costs", "added to tools.base x the share of next steps blocked when the pickaxe is wooden");
+        def("tools.blockedOf", 4, "aa-costs", "how many next steps (furnace, iron, coal, owner ore) the blocked share is counted out of");
+        def("tools.keepBase", 40, "aa-costs", "the tools need's score floor with a stone or better pickaxe, before its wear curve");
+        def("tools.wearSpan", 30, "aa-costs", "the wear curve's span for a stone or better pickaxe (worn out adds this)");
         def("torch.target", 16, "aa-night2 P0 1", "torches the coal and craft rows stock up to");
         def("tools.stoneTier", 2, "aa-costs", "the pickaxe tier (kit scale: wood 1, stone 2) from which iron, furnace and coal work is not blocked");
         def("tools.wearPct", 15, "aa-night2 P0 1", "pickaxe durability percent under which a single pickaxe counts as worn out");
@@ -132,10 +138,22 @@ public final class Tuning {
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }
 
-    /** The value now (the default unless tuned); an unknown name is a bug: NaN. */
+    /** True under JUnit: an unknown name throws there; in the game it is logged once (and reads 0, loudly wrong rather than silent). */
+    static volatile boolean strict = junit();
+    private static final java.util.Set<String> REPORTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private static boolean junit() {
+        try { Class.forName("org.junit.jupiter.api.Test"); return true; } catch (ClassNotFoundException e) { return false; }
+    }
+
+    /** The value now (the default unless tuned). An unknown name is a bug (rule 7): it throws under test, and in the game logs an error once. */
     public static double get(String name) {
         Entry e = ALL.get(name);
-        return e == null ? Double.NaN : e.value();
+        if (e != null) return e.value();
+        String msg = "no tuning \"" + name + "\" is registered in Tuning";
+        if (strict) throw new IllegalArgumentException(msg);
+        if (REPORTED.add(name)) org.slf4j.LoggerFactory.getLogger(Tuning.class).error("[entropybot] aa: {} (the number reads 0)", msg);
+        return 0;
     }
 
     /** Sets one; returns the reply line ("ok: ..." or "error: ..."). */

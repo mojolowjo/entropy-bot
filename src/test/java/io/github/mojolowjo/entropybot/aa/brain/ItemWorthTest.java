@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Facts;
 import io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Recipe;
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Role;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,14 +22,14 @@ class ItemWorthTest {
     void setUp() {
         pick("wooden_pickaxe", 2, 0, 59); pick("stone_pickaxe", 4, 1, 131); pick("iron_pickaxe", 6, 2, 250);
         pick("diamond_pickaxe", 8, 3, 1561); pick("golden_pickaxe", 12, 0, 32);
-        facts.put("minecraft:iron_sword", new Facts("weapon", 0, 0, 250, 0, 0, 6, 0, 0, 0, 0));
-        facts.put("minecraft:wooden_sword", new Facts("weapon", 0, 0, 59, 0, 0, 5 - 1, 0, 0, 0, 0));
-        facts.put("minecraft:iron_chestplate", new Facts("", 0, 0, 240, 6, 0, 0, 0, 0, 0, 0));
-        facts.put("minecraft:diamond_chestplate", new Facts("", 0, 0, 528, 8, 2, 0, 0, 0, 0, 0));
-        facts.put("minecraft:cooked_beef", new Facts("", 0, 0, 0, 0, 0, 0, 8, 12.8, 0, 0));
-        facts.put("minecraft:cobblestone", new Facts("", 0, 0, 0, 0, 0, 0, 0, 0, 2, 0));
-        facts.put("minecraft:torch", new Facts("", 0, 0, 0, 0, 0, 0, 0, 0, 0, 14));
-        facts.put("minecraft:oak_planks", new Facts("", 0, 0, 0, 0, 0, 0, 0, 0, 2, 0));
+        facts.put("minecraft:iron_sword", new Facts(Role.WEAPON, 0, 0, 250, 0, 0, 6, 0, 0, 0, 0));
+        facts.put("minecraft:wooden_sword", new Facts(Role.WEAPON, 0, 0, 59, 0, 0, 5 - 1, 0, 0, 0, 0));
+        facts.put("minecraft:iron_chestplate", new Facts(Role.OTHER, 0, 0, 240, 6, 0, 0, 0, 0, 0, 0));
+        facts.put("minecraft:diamond_chestplate", new Facts(Role.OTHER, 0, 0, 528, 8, 2, 0, 0, 0, 0, 0));
+        facts.put("minecraft:cooked_beef", new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, 8, 12.8, 0, 0));
+        facts.put("minecraft:cobblestone", new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0));
+        facts.put("minecraft:torch", new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14));
+        facts.put("minecraft:oak_planks", new Facts(Role.OTHER, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0));
         // a modded pack: an osmium pickaxe with speed 9, a part with a recipe only, a part whose input nobody knows
         pick("osmium:osmium_pickaxe", 9, 2, 700);
         recipes.put("osmium:gear", List.of(new Recipe(2, List.of("minecraft:cobblestone", "minecraft:oak_planks"))));
@@ -46,11 +47,24 @@ class ItemWorthTest {
     void tearDown() { ItemWorth.use(null); }
 
     void pick(String id, double speed, int level, double dur) {
-        facts.put(id.contains(":") ? id : "minecraft:" + id, new Facts("pickaxe", speed, level, dur, 0, 0, 0, 0, 0, 0, 0));
+        facts.put(id.contains(":") ? id : "minecraft:" + id, new Facts(Role.PICKAXE, speed, level, dur, 0, 0, 0, 0, 0, 0, 0));
     }
 
     double v(String id) { return ItemWorth.of(id).value(); }
 
+    @Test void roleComesFromTheTagsNotTheId() {
+        assertEquals(Role.PICKAXE, ItemWorth.roleOf(true, false, false, false, true, false));
+        assertEquals(Role.PICKAXE, ItemWorth.roleOf(true, false, false, false, false, false), "tagged, no mineable data");
+        assertEquals(Role.AXE, ItemWorth.roleOf(false, true, false, false, true, true));
+        assertEquals(Role.SHOVEL, ItemWorth.roleOf(false, false, true, false, true, false));
+        assertEquals(Role.HOE, ItemWorth.roleOf(false, false, false, true, true, false));
+        assertEquals(Role.WEAPON, ItemWorth.roleOf(false, false, false, false, false, true));
+        assertEquals(Role.OTHER, ItemWorth.roleOf(false, false, false, false, true, false), "shears: digs, no tag");
+        // a modded tool with an odd id and the pickaxe tag weighs as a pickaxe (the id is never read)
+        Role r = ItemWorth.roleOf(true, false, false, false, true, false);
+        assertEquals(Tuning.get("worth.role.pickaxe"), ItemWorth.roleWeight(r), 1e-12);
+        assertTrue(ItemWorth.roleWeight(r) > ItemWorth.roleWeight(Role.OTHER));
+    }
     @Test
     void toolsRankByTheirData() {
         assertTrue(v("wooden_pickaxe") < v("stone_pickaxe") && v("stone_pickaxe") < v("iron_pickaxe") && v("iron_pickaxe") < v("diamond_pickaxe"));
@@ -129,9 +143,9 @@ class ItemWorthTest {
 
     @Test
     void oneTermNeverPassesTheCap() {
-        facts.put("osmium:god_sword", new Facts("weapon", 0, 0, 5000, 0, 0, 50, 0, 0, 0, 0));
-        facts.put("osmium:god_pick", new Facts("pickaxe", 500, 9, 9000, 0, 0, 0, 0, 0, 0, 0));
-        facts.put("osmium:god_plate", new Facts("", 0, 0, 900, 40, 300, 0, 0, 0, 0, 0));
+        facts.put("osmium:god_sword", new Facts(Role.WEAPON, 0, 0, 5000, 0, 0, 50, 0, 0, 0, 0));
+        facts.put("osmium:god_pick", new Facts(Role.PICKAXE, 500, 9, 9000, 0, 0, 0, 0, 0, 0, 0));
+        facts.put("osmium:god_plate", new Facts(Role.OTHER, 0, 0, 900, 40, 300, 0, 0, 0, 0, 0));
         ItemWorth.use(sourceNow());
         for (String id : List.of("osmium:god_sword", "osmium:god_pick", "osmium:god_plate")) assertEquals(Tuning.get("worth.cap"), v(id), 1e-9, id);
     }
