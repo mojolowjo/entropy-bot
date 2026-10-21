@@ -182,7 +182,9 @@ final class Mining {
             s.allowPlace.value = false;
             s.allowBreakAnyway.value = new ArrayList<>();
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "mine ended");
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            io.github.mojolowjo.entropybot.Quiet.warn("mine: Baritone's settings could not be put back after the mine", t);
+        }
     }
 
     // ==== the verbs ====
@@ -950,7 +952,9 @@ final class Mining {
                 JsonObject o = e.getAsJsonObject();
                 out.add(new ExploreRules.Poi(o.get("id").getAsInt(), o.get("kind").getAsString(), o.get("x").getAsInt(), o.get("y").getAsInt(), o.get("z").getAsInt()));
             }
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException e) {
+            io.github.mojolowjo.entropybot.Quiet.warn("explore: the points of interest could not be read (none used)", e);
+        }
         return out;
     }
 

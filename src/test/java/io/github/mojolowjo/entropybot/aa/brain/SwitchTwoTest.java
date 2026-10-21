@@ -81,7 +81,7 @@ class SwitchTwoTest {
         clock.advance(500);
         br.tick(bb);
         assertEquals(1, port.cancelled.size(), port.log.toString());
-        assertEquals("do idle", port.started.get(port.started.size() - 1).chain());
+        assertEquals("plan do idle", port.started.get(port.started.size() - 1).chain());
     }
 
     /** An unmet own check keeps the task however long the score is -1; met, it ends at once as done (not pointless). */
@@ -113,13 +113,13 @@ class SwitchTwoTest {
         // at Y 70, best band Y 16: 54 levels down (108 steps: refused as one chain)
         var f = new Discovery.Facts(-1, 1, false, 100, 70, 200, 16, 0.002, 0.4, false);
         var strip = Discovery.rank(f, "iron", 3, dd).stream().filter(o -> o.kind() == Discovery.Kind.STRIP).findFirst().orElseThrow();
-        String[] steps = strip.command().split(" then ");
+        String[] steps = io.github.mojolowjo.entropybot.aa.TS.flat(strip.steps()).split(" > ");
         assertEquals(2 * Discovery.STAIR_LEG, steps.length, strip.command());
-        assertFalse(strip.command().contains("place mine"), strip.command());
+        assertFalse(io.github.mojolowjo.entropybot.aa.TS.flat(strip.steps()).contains("place mine"), strip.command());
         assertTrue(strip.why().contains("this leg " + Discovery.STAIR_LEG + " of "), strip.why());
         // a shallow band: the whole way and the mine, as before
         f = new Discovery.Facts(-1, 1, false, 100, 30, 200, 16, 0.002, 0.4, false);
         strip = Discovery.rank(f, "iron", 3, dd).stream().filter(o -> o.kind() == Discovery.Kind.STRIP).findFirst().orElseThrow();
-        assertTrue(strip.command().contains("place mine"), strip.command());
+        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(strip.steps()).contains("place mine"), strip.command());
     }
 }

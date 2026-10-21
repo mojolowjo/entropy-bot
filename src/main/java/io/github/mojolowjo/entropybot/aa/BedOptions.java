@@ -72,7 +72,7 @@ public final class BedOptions {
         if (f.bedKnown() && f.night()) Price.add(rows, dropped, m, now, Options.typed("sleep in known bed", "sleep", after(f, List.of(new Step.Sleep())), climb + Price.s(bedS),
                 "a bed known, walk + lie down " + Price.r(bedS) + " s" + climbWhy, "sleep known bed", m));
         if (f.wool() >= WOOL) {
-            RungOptions.add(rows, dropped, m, now, Options.typed("craft bed", "craft", List.of(bedPlan()), CRAFT, f.wool() + " wool in the bag", "craft bed", true, m));
+            RungOptions.add(rows, dropped, m, now, Options.typed("make bed", "craft", List.of(bedPlan()), CRAFT, f.wool() + " wool in the bag", "make bed", true, m));
             return Options.Choice.of(rows, dropped, "no way to a bed");
         }
         int k = WOOL - Math.max(0, f.wool());

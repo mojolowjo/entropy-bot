@@ -63,9 +63,9 @@ class NightWorkTest {
         assertEquals(NightWork.Work.STAIRS, NightWork.pick(bb.in));
         bb.in.torches = 2; bb.in.coal = 4; bb.in.planks = 8; bb.in.tableInBag = true;
         assertEquals(NightWork.Work.CRAFT, NightWork.pick(bb.in));
-        assertEquals("craft torch 16", NightWork.craft(bb.in));
+        assertEquals("craft torch 16", NightWork.craft(bb.in).text());
         bb.in.ironIngots = 3;
-        assertEquals("craft iron_pickaxe", NightWork.craft(bb.in));
+        assertEquals("craft iron_pickaxe 1", NightWork.craft(bb.in).text());
         bb.in.bag = Map.of("raw_iron", 5);
         bb.in.furnaceInBag = true;
         assertEquals(NightWork.Work.SMELT, NightWork.pick(bb.in));

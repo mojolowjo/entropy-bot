@@ -202,6 +202,15 @@ public final class Options {
         default String blame(Choice last, Option ran, String end) { return ran == null ? null : ran.memoryKey(); }
     }
 
+    /**
+     * rm-execution2: what a failure is stored with: the end (it names the step and the reason, "stopped at step i (...): why"),
+     * or, when the task ended without a text, the option and its steps so the record still says what failed.
+     */
+    public static String endWhy(Option ran, String end) {
+        if (end != null && !end.isBlank()) return end;
+        return "ended failed without an end text while running " + (ran == null ? "an unknown row" : ran.id() + " (" + ran.command() + ")");
+    }
+
     /** The ends that never switch: the owner's stop, a preempt, danger, a death (IronOptions.switchable's list). */
     public static boolean ownerOrDanger(String end) {
         String t = end.toLowerCase(Locale.ROOT);
@@ -431,7 +440,7 @@ public final class Options {
         /** Round 4A N: a failed end that does not switch still holds the way that ran (Failures is the one memory). */
         @Override public void charge(Blackboard bb, String end) {
             if (ran == null || NOTHING.equals(ran.command())) return;
-            memory.failed(ran.memoryKey(), end == null ? "failed" : end, bb.clock.now(), bb.in);
+            memory.failed(ran.memoryKey(), endWhy(ran, end), bb.clock.now(), bb.in);
         }
 
         @Override public void stalled(Blackboard bb, String why) {

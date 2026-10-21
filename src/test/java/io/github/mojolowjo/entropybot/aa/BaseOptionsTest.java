@@ -10,7 +10,7 @@ class BaseOptionsTest {
     void byDayTheHouseAndTheShelterAreRowsAndTheBurrowIsDropped() {
         Options.Choice c = BaseOptions.choose(new BaseOptions.BaseFacts("home", new int[]{0, 64, 0}, 20, false, 0, false, 0, true), new Options.OptionMemory(), 0);
         assertEquals(2, c.ranked().size());
-        assertEquals("goal shelter", c.best().command());
+        assertEquals("shelter", c.best().command());
         assertTrue(c.why().contains("burrow: a night way only"), c.why());
     }
 
@@ -18,7 +18,7 @@ class BaseOptionsTest {
     void atNightTheBurrowWinsAndTheOpenNightIsPriced() {
         Options.Choice day = BaseOptions.choose(new BaseOptions.BaseFacts("home", null, 0, false, 0, false, 0, true), new Options.OptionMemory(), 0);
         Options.Choice night = BaseOptions.choose(new BaseOptions.BaseFacts("home", null, 1, true, 1, false, 0, true), new Options.OptionMemory(), 0);
-        assertEquals("burrow then wait 120", night.best().command());
+        assertEquals("burrow > wait 120", night.best().command());
         double houseDay = day.ranked().get(0).cost(), houseNight = night.ranked().stream().filter(o -> o.id().startsWith("house")).findFirst().orElseThrow().cost();
         assertTrue(houseNight > houseDay, "the open night costs");
         assertTrue(night.why().contains("open night"), night.why());
@@ -27,7 +27,7 @@ class BaseOptionsTest {
     @Test
     void underGroundTheSurfaceWaysClimbFirst() {
         Options.Choice c = BaseOptions.choose(new BaseOptions.BaseFacts("home", null, 0, false, 0, true, 12, true), new Options.OptionMemory(), 0);
-        assertEquals("climb then house home", c.best().command());
+        assertEquals("climb > house home", c.best().command());
         assertTrue(c.why().contains("climb 12 up"), c.why());
     }
 

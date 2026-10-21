@@ -57,6 +57,6 @@ class IronFairTest {
         var ch = set.choose(facts(List.of(), fair(Set.of())), new Options.OptionMemory(), 0,
                 io.github.mojolowjo.entropybot.aa.TS.s("mine iron_ore 3 dig then smelt raw_iron 3"), 10, null, null);
         assertNotNull(ch.best(), ch.line());
-        assertTrue(ch.best().command().endsWith("goto 100 34 170"), ch.best().command());
+        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(ch.best().steps()).endsWith("goto 100 34 170"), ch.best().command());
     }
 }

@@ -70,7 +70,7 @@ class BrainB3Test {
         assertEquals(30 * (1 + danger / 2), s.get(0).score(), 1e-9);
         assertEquals(35 / (1 + danger), s.get(1).score(), 1e-9);
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("do mine", port.started.get(0).chain());
+        assertEquals("plan do mine", port.started.get(0).chain());
         bb.in.hungerDrains = false;                      // Peaceful: no shift
         assertEquals(30, br.scoreAll(bb).get(0).score(), 1e-9);
     }
@@ -87,7 +87,7 @@ class BrainB3Test {
         br.tick(bb);
         v[1] = 80;                                       // urgent, beats 70 + 0 (the default 15 would hold it)
         br.tick(bb);
-        assertEquals("do b", port.started.get(port.started.size() - 1).chain());
+        assertEquals("plan do b", port.started.get(port.started.size() - 1).chain());
     }
 
     @Test

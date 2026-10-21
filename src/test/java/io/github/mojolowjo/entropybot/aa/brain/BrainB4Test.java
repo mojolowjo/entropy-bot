@@ -146,6 +146,6 @@ class BrainB4Test {
         bb.in.dimension = Thing.OVERWORLD;
         assertNull(Goals.blocked(bb, s));
         assertEquals("plan shield 1", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, s)));
-        assertTrue(Goals.line(bb, s, "score 50").startsWith("shield 0/1 low: score 50 - next: goal shield 1"), Goals.line(bb, s, "score 50"));
+        assertTrue(Goals.line(bb, s, "score 50").startsWith("shield 0/1 low: score 50 - next: plan shield 1"), Goals.line(bb, s, "score 50"));
     }
 }

@@ -30,7 +30,7 @@ class TypedOptionsTest {
     /** A step the game side runs: its command is a verb the bot knows (a Plan / compound is expanded by Steps first). */
     static void runnable(Step s) {
         if (s instanceof Step.Plan || s instanceof Step.Compound) return;
-        String cmd = io.github.mojolowjo.entropybot.commands.StepHands.command(s);
+        String cmd = io.github.mojolowjo.entropybot.commands.StepCommands.command(s);
         assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(cmd.split("\\s+")[0]), "no verb for " + cmd);
     }
 
@@ -73,7 +73,7 @@ class TypedOptionsTest {
         var disc = List.of(CoalOptionsTest.strip(300));
         Options.Choice c = CoalOptions.choose(new CoalOptions.CoalFacts(8, 1, List.of(ore), disc, List.of(), 2, 0, false, -1, true, 0), new Options.OptionMemory(), 0);
         allTyped(c);
-        Options.Option mine = c.ranked().stream().filter(o -> o.id().equals("mine seen coal")).findFirst().orElseThrow();
+        Options.Option mine = c.ranked().stream().filter(o -> o.id().equals("seen coal")).findFirst().orElseThrow();
         assertEquals(new Step.MineAt("coal", 3, 60, 3, false), mine.steps().get(0), "the priced ore is the step's target");
         Options.Option charcoal = c.ranked().stream().filter(o -> o.id().equals("charcoal")).findFirst().orElseThrow();
         assertEquals("collect cobblestone 8 > craft furnace 1 > cut 8 > smelt charcoal 8", charcoal.command());

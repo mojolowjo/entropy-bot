@@ -357,7 +357,7 @@ public final class Need extends Node {
         if (why != null && Options.ownerOrDanger(why)) return fail(why);
         if (pre || picker == null) {
             if (ranKey != null) {
-                mem.failed(ranKey, why == null ? "failed" : why, now, bb.in);
+                mem.failed(ranKey, why == null ? "ended failed without an end text while running " + resolved : why, now, bb.in);
                 bb.port.log(kind + ": " + ranKey + " failed (\"" + why + "\"), held " + Options.RETRY_MS / 60000 + " min x fails");
             }
             return fail(why);

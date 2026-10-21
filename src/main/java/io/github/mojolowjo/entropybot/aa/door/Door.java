@@ -88,7 +88,7 @@ public final class Door {
         lastAt.put(key, now);
         refused.merge(d, 1, Integer::sum);
         lastWhat.put(d, w);
-        try { log.accept("door: refused " + d.label() + ": " + w + " (aa is on)"); } catch (RuntimeException ignored) {}
+        try { log.accept("door: refused " + d.label() + ": " + w + " (aa is on)"); } catch (RuntimeException e) { io.github.mojolowjo.entropybot.Quiet.warn("door: the refusal could not be logged (" + d.label() + ": " + w + ")", e); }
     }
 
     /** AA_STEP2 3: what AA's start does with the slot. */

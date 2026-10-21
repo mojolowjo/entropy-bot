@@ -134,7 +134,7 @@ class FoodOptionsTest {
         assertTrue(c.why().contains("fishing: no fishing rod"), c.why());
         assertTrue(c.why().contains("wheat by water: no dry spot next to water"), "aa383: no field here just because water is 12 away: " + c.why());
         Options.Option stew = c.ranked().stream().filter(o -> o.id().equals("stew")).findFirst().orElseThrow();
-        assertEquals("dig 1 64 1 1 64 1 then dig 2 64 2 2 64 2 then craft bowl 1 then craft mushroom_stew 1", stew.command());
+        assertEquals("dig 1 64 1 1 64 1 > dig 2 64 2 2 64 2 > craft bowl 1 > craft mushroom_stew 1", stew.command());
         // hungry: no field (too slow)
         FoodOptions.FoodFacts hungry = new FoodOptions.FoodFacts(5, 0, f.bag(), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME);
@@ -149,13 +149,13 @@ class FoodOptionsTest {
                 null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, 20, 24, spot);
         Options.Choice c = choose(byWater);
         Options.Option w = c.ranked().stream().filter(o -> o.id().equals("wheat by water")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
-        assertEquals("goto 8 64 0 then farm plant wheat here 4 then place farm 8 64 0", w.command());
+        assertEquals("goto 8 64 0 > farm plant wheat here 4 > place farm 8 64 0", w.command());
         assertTrue(c.why().contains("wheat with a bucket: no water bucket"), c.why());
         FoodOptions.FoodFacts bucket = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 24, null);
         Options.Choice b = choose(bucket);
         Options.Option here = b.ranked().stream().filter(o -> o.id().equals("wheat with a bucket")).findFirst().orElseThrow(() -> new AssertionError(b.why()));
-        assertEquals("farm plant wheat here 4 then place farm 0 64 0", here.command());
+        assertEquals("farm plant wheat here 4 > place farm 0 64 0", here.command());
         // both: the walk to the water is weighed against the bucket's extra minute
         FoodOptions.FoodFacts both = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, 20, 24, spot);

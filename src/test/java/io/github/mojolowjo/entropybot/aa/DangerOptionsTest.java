@@ -28,7 +28,7 @@ class DangerOptionsTest {
         DangerOptions.Choice c = DangerOptions.choose(facts(me(12, 1), OPEN, zombie(3)));
         assertTrue(c.best().way() == DangerOptions.Way.FLEE || c.best().way() == DangerOptions.Way.DIG_IN, c.terms());
         assertTrue(c.score() >= Brain.URGENT, "a likely death if it stays: urgent " + c.terms());
-        assertTrue(c.chain().startsWith("flee then wait") || c.chain().startsWith("burrow then wait"), c.chain());
+        assertTrue(c.chain().startsWith("flee > wait") || c.chain().startsWith("burrow > wait"), c.chain());
         // the same zombie, cornered with nowhere to dig: no way out; fighting saves too little over the hit response
         DangerOptions.Choice cornered = DangerOptions.choose(facts(me(12, 1), ThreatFacts.Ways.NONE, zombie(3)));
         assertEquals(-1, cornered.score(), cornered.terms());

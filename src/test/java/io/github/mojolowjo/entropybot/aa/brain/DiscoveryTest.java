@@ -35,7 +35,7 @@ class DiscoveryTest {
         // past 64 the opening is not offered: explore is, valued by the learned chance
         dd.clear();
         r = Discovery.rank(g(-1, new int[]{300, 60, 200}, 0.5), "iron", 3, dd);
-        assertEquals("find cave 5 then mine cave iron 3", first(r, Discovery.Kind.EXPLORE).command());
+        assertEquals("find cave 5 > mine cave iron 3", first(r, Discovery.Kind.EXPLORE).command());
         assertTrue(dd.stream().anyMatch(d -> d.startsWith("explore cave: no known cave and no cave opening seen")), dd.toString());
     }
 
@@ -71,8 +71,8 @@ class DiscoveryTest {
         List<String> dd = new ArrayList<>();
         var r = Discovery.rank(f(-1, 1, false, 16, 0.002, false), "iron", 5, dd);
         assertEquals(Discovery.Kind.STRIP, r.get(0).kind());
-        assertTrue(r.get(0).command().startsWith("dig 100 69 199 100 71 199 ores via engine then goto 100 69 199 then "), r.get(0).command());
-        assertTrue(r.get(0).command().endsWith("goto 100 40 170"), r.get(0).command());
+        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(r.get(0).steps()).startsWith("dig 100 69 199 100 71 199 ores via engine > goto 100 69 199 > "), r.get(0).command());
+        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(r.get(0).steps()).endsWith("goto 100 40 170"), r.get(0).command());
         assertFalse(r.get(0).command().contains("torch"));
         assertTrue(r.get(0).why().contains("54 down"), r.get(0).why());
         // a marked mine: its own place
@@ -93,7 +93,7 @@ class DiscoveryTest {
         List<String> dd = new ArrayList<>();
         var r = Discovery.rank(f(-1, 1, false, 16, 0.002, true), "iron", 5, dd);
         var c = r.stream().filter(o -> o.kind() == Discovery.Kind.CLEAR_CHUNK).findFirst().orElseThrow();
-        assertEquals("dig 96 16 192 111 19 207 ores", c.command());
+        assertEquals("dig 96 16 192 111 19 207 ores", io.github.mojolowjo.entropybot.aa.TS.flat(c.steps()));
         assertTrue(c.cost() > 0);
     }
 
@@ -114,8 +114,8 @@ class DiscoveryTest {
                 h("east", 1, false, null), h("west", Double.POSITIVE_INFINITY, false, null))), "iron", 5, dd);
         var s = r.get(0);
         assertEquals(Discovery.Kind.STRIP, s.kind());
-        assertTrue(s.command().startsWith("dig 101 69 200 101 71 200 ores via engine then goto 101 69 200 then "), s.command());
-        assertTrue(s.command().endsWith("goto 130 40 200"), s.command());
+        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(s.steps()).startsWith("dig 101 69 200 101 71 200 ores via engine > goto 101 69 200 > "), s.command());
+        assertTrue(io.github.mojolowjo.entropybot.aa.TS.flat(s.steps()).endsWith("goto 130 40 200"), s.command());
         assertTrue(s.why().contains("stairs east ground"), s.why());
         assertTrue(dd.contains("strip at Y: stairs north the policy refuses a cell at 100 40 170"), dd.toString());
         assertTrue(dd.contains("strip at Y: stairs west a cell may not be broken"), dd.toString());

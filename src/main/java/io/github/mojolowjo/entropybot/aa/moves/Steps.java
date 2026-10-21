@@ -174,7 +174,7 @@ public final class Steps {
         }
         if (st == null) st = Car.Status.failed("the hands gave no status");
         switch (st.state()) {
-            case FAILED -> fail(st.why() == null ? "failed" : st.why());
+            case FAILED -> fail(st.why() == null ? "the step ended failed without a reason from its hands" : st.why());
             case DONE -> {
                 lastStatus = st.why();
                 next();

@@ -81,34 +81,34 @@ class AaTreeTest {
         // choose bootstrap or the plan), so the settle time passes first
         clock.advance(75_000L + 1);
         assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("goal stone tools", lastChain());
+        assertEquals("plan stone tools", lastChain());
         port.done(2, "done");
         tree.tick(bb);
         pick(2);
         tree.tick(bb);
-        assertEquals("goal table", lastChain());
+        assertEquals("plan table", lastChain());
         port.done(3, "done");
         tree.tick(bb);
         bb.in.tableKnown = true;
         tree.tick(bb);
-        assertEquals("goal furnace", lastChain());
+        assertEquals("plan furnace", lastChain());
         port.done(4, "done");
         tree.tick(bb);
         bb.in.furnaceKnown = true;
         tree.tick(bb);
-        assertEquals("goal torch 16", lastChain());
+        assertEquals("plan torch 16", lastChain());
         port.done(5, "done");
         tree.tick(bb);
         bb.in.torches = 16;
         tree.tick(bb);
         // AA_ROUND2 4: Peaceful (danger 0): a base is worth 16 (Worth.base), so iron (70) comes first
-        assertEquals("goal iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
+        assertEquals("plan iron tools", lastChain(), "bed (no wool) and bag (no chests) are skipped with reasons");
         port.done(6, "done");
         tree.tick(bb);
         pick(3);
         stocked();                                // Peaceful base (16): after the idle stock-ups
         tree.tick(bb);
-        assertEquals("goal shelter", lastChain(), "no area: a shelter, not a house");
+        assertEquals("shelter", lastChain(), "no area: a shelter, not a house");
         port.done(7, "done");
         assertEquals(Status.SUCCESS, tree.tick(bb));
         assertTrue(bb.flag(AaLadder.SHELTER_FACT), "the shelter is AA's own fact");
@@ -163,12 +163,12 @@ class AaTreeTest {
         bb.in.food = 5;
         tree.tick(bb);
         assertEquals("idle", tree.driver(), "Peaceful: no food rung");
-        assertEquals("goal wood 64", lastChain());
+        assertEquals("plan wood 64", lastChain());
         port.done(1, "done");
         tree.tick(bb);
         bb.in.hungerDrains = true;
         tree.tick(bb);
-        assertEquals("goal food 8", lastChain());
+        assertEquals("plan food 8", lastChain());
     }
 
     @Test
@@ -266,7 +266,7 @@ class AaTreeTest {
         bb.in.tableKnown = bb.in.furnaceKnown = true;      // AA_ROUND2 4: with no tech tree a table is worth 80, over the wooden pickaxe's tools
         port.resolveTo = null;
         assertEquals(Status.RUNNING, tree.tick(bb), "the slot waits on the Need that plans");
-        assertEquals("needs>planning TOOLS: goal stone tools (still searching (0 s))", tree.driver() + ">" + bb.taskText(clock.now()));
+        assertEquals("needs>planning TOOLS: plan stone tools (still searching (0 s))", tree.driver() + ">" + bb.taskText(clock.now()));
         assertEquals(0, port.started.size());
         Need tools = Need.all(tree.ladder).stream().filter(r -> r.id.equals("needs.tools")).findFirst().orElseThrow();
         for (int i = 0; i < 45_000L / 1000; i++) {
@@ -277,12 +277,12 @@ class AaTreeTest {
         assertEquals(Status.FAILURE, tools.tick(bb));
         assertTrue(tools.reason().contains("still searched after 45 s"), tools.reason());
         assertEquals("no task", bb.taskText(clock.now()));
-        port.resolveTo = "goal_stone_tools";
+        port.resolveTo = "craft stone_pickaxe 1";
         tools.tick(bb);
         assertTrue(tools.reason().contains("held"), "held for a while even though a plan exists now: " + tools.reason());
         clock.advance(2 * 60_000 + 1);
         assertEquals(Status.RUNNING, tools.tick(bb));
-        assertEquals("goal_stone_tools", lastChain(), "the planner's routine is what runs");
+        assertEquals("craft stone_pickaxe 1", lastChain(), "the planner's routine is what runs");
     }
 
     @Test
@@ -296,12 +296,12 @@ class AaTreeTest {
         assertTrue(tree.root.reason().contains("busy: a hunt runs"), tree.root.reason());
         port.refuse = null;
         tree.tick(bb);
-        assertEquals("goal cobblestone 64", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
+        assertEquals("plan cobblestone 64", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
         port.done(1, "done");
         tree.tick(bb);
         clock.advance(Cooldown.NO_RUN_MS + 1);
         tree.tick(bb);            // wood 100 vs stone 100 + 15 inertia
-        assertEquals("goal cobblestone 64", lastChain());
+        assertEquals("plan cobblestone 64", lastChain());
     }
 
     /** 0.36.4 (aa40d): short air alone holds the danger guard at most 30 s; then the task runs again. */
@@ -353,7 +353,7 @@ class AaTreeTest {
         bb.in.underDepth = 9;
         tree.tick(bb);
         // round 4A N: no surface gate; placing needs no open sky, a gather row prices its own climb (StationOptions)
-        assertEquals("goal table", lastChain());
+        assertEquals("plan table", lastChain());
     }
 
     /** 0.36.3: no reachable tree: the woodArea Need runs the area command the adapter found. */
@@ -366,7 +366,7 @@ class AaTreeTest {
         bb.in.torches = 16;
         AaLadder.noteShelter(bb);
         tree.tick(bb);
-        assertEquals("goal iron tools", lastChain());
+        assertEquals("plan iron tools", lastChain());
     }
 
     /** 0.36.2, the 40-minute run: a failed idle task cools down; the next idle option runs meanwhile. */
@@ -377,12 +377,12 @@ class AaTreeTest {
         bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = true;
         bb.in.torches = 16;
         tree.tick(bb);
-        assertEquals("goal wood 64", lastChain());
+        assertEquals("plan wood 64", lastChain());
         port.fail(1, "error: chopped nothing");
         tree.tick(bb);
         clock.advance(250);
         tree.tick(bb);
-        assertNotEquals("goal wood 64", lastChain(), "no restart 0.25 s after the failure");
+        assertNotEquals("plan wood 64", lastChain(), "no restart 0.25 s after the failure");
         assertEquals(2, port.started.size());
     }
 
@@ -393,11 +393,11 @@ class AaTreeTest {
         pick(2);
         bb.in.tableKnown = bb.in.furnaceKnown = true;
         tree.tick(bb);
-        assertEquals("goal torch 16", lastChain());
+        assertEquals("plan torch 16", lastChain());
         bb.in.furnaceKnown = false;          // the furnace Need becomes unmet (and would plan) while torches run
         port.resolveTo = null;
         for (int i = 0; i < 5; i++) assertEquals(Status.RUNNING, tree.tick(bb));
-        assertEquals("goal torch 16", bb.task().spec().chain(), "the torches job still runs");
+        assertEquals("plan torch 16", bb.task().spec().chain(), "the torches job still runs");
         assertEquals(0, port.cancelled.size());
         assertEquals(0, tracer.counts.switches);
         port.resolveTo = "*";
@@ -405,7 +405,7 @@ class AaTreeTest {
         bb.in.torches = 16;                  // round 4A N: no settle hole; the torches are made
         tree.tick(bb);
         tree.tick(bb);
-        assertEquals("goal furnace", lastChain(), "then the furnace Need gets its turn");
+        assertEquals("plan furnace", lastChain(), "then the furnace Need gets its turn");
     }
 
     @Test

@@ -193,7 +193,7 @@ public final class BaritoneCar implements Car {
             if (savedReflexPlace != null && s.allowPlace.value == setReflexPlace) s.allowPlace.value = savedReflexPlace;
             try {
                 if (savedUnder != null && Boolean.TRUE.equals(s.pathUnderWater.value)) s.pathUnderWater.value = savedUnder;
-            } catch (LinkageError ignored) { }
+            } catch (LinkageError e) { io.github.mojolowjo.entropybot.Quiet.warn("car: pathUnderWater could not be put back (an older Baritone)", e); }
             if (savedLava != null || savedLavaCost != null) lavaWadeOff();
             // 0.39.s6 review: the intent goes back only if it is still ours (a job that set its own during the leg keeps it)
             var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;

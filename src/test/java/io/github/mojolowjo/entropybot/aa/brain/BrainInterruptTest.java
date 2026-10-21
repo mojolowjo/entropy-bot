@@ -57,7 +57,7 @@ class BrainInterruptTest {
         assertEquals(1, br.falseInterrupts);
         assertEquals(1, tracer.counts.pointless);
         assertEquals(1, br.streak("food"));
-        assertEquals("do a", last(), "the interrupted desire runs again");
+        assertEquals("plan do a", last(), "the interrupted desire runs again");
         assertEquals(2, port.started.size());
         assertTrue(port.log.stream().anyMatch(l -> l.startsWith("brain: false interrupt by food")), port.log.toString());
         for (int i = 0; i < 20; i++) {
@@ -75,17 +75,17 @@ class BrainInterruptTest {
         for (int k = 0; k < 2; k++) {
             s[1] = 80;
             br.tick(bb);                              // food interrupts a
-            assertEquals("do food", last());
+            assertEquals("plan do food", last());
             port.done(port.nextId - 1, "done");
             s[1] = -1;
             br.tick(bb);                              // food ends
             br.tick(bb);                              // a runs again
-            assertEquals("do a", last());
+            assertEquals("plan do a", last());
         }
         assertEquals(2, br.interrupts);
         s[1] = 80;
         br.tick(bb);
-        assertEquals("do a", last(), "over the cap: waits");
+        assertEquals("plan do a", last(), "over the cap: waits");
         assertTrue(String.join("\n", br.whyLines(5)).contains("interrupt cap"), br.whyLines(5).toString());
         for (int i = 0; i < 60; i++) {
             clock.advance(1000);
@@ -93,7 +93,7 @@ class BrainInterruptTest {
             br.tick(bb);
         }
         assertEquals(3, br.interrupts, "a minute later it may");
-        assertEquals("do food", last());
+        assertEquals("plan do food", last());
     }
 
     @Test
@@ -116,13 +116,13 @@ class BrainInterruptTest {
         clock.advance(Brain.PROBE_HOLD_MS);
         br.tick(bb);
         assertEquals(2, br.interrupts, "exempt from the cap, still probed");
-        assertEquals("do a", last());
+        assertEquals("plan do a", last());
         probe[0] = null;
         clock.advance(Brain.PROBE_HOLD_MS);
         port.progress.put(port.nextId - 1, 1L);
         br.tick(bb);
         assertEquals(3, br.interrupts, "starving passes the cap");
-        assertEquals("do food", last());
+        assertEquals("plan do food", last());
     }
 
     /** The overnight 2026-10-19 thrash: food 77 with no source interrupted explore every 0.25 s. Now: never. */
@@ -135,7 +135,7 @@ class BrainInterruptTest {
         Brain br = new Brain("brain", "t", explore, foodD);
         // explore is running when food turns urgent (the food Need cannot plan: it is passed over at the first pick)
         br.tick(bb);
-        assertEquals("explore 5", last());
+        assertEquals("plan explore 5", last());
         for (int i = 0; i < 600; i++) {
             clock.advance(250);
             port.progress.put(port.nextId - 1, (long) i);
@@ -152,7 +152,7 @@ class BrainInterruptTest {
         s[0] = 30;
         s[1] = 0;
         br.tick(bb);
-        assertEquals("do shelter", last());
+        assertEquals("plan do shelter", last());
         s[0] = 0;
         clock.advance(250);
         br.tick(bb);

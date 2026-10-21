@@ -46,13 +46,13 @@ class DangerStep3aTest {
         assertTrue(c.best().way() == DangerOptions.Way.SHORE || c.best().way() == DangerOptions.Way.PILLAR_OUT, c.terms());
         assertTrue(c.best().costS() < wait.costS(), c.terms());
         assertFalse(way(c, DangerOptions.Way.BOX).possible(), "in water the box is the shore's: " + c.terms());
-        assertTrue(c.chain().startsWith("goto -180 63 -238 then shelter"), c.chain());
+        assertTrue(c.chain().startsWith("goto -180 63 -238 > shelter"), c.chain());
         assertTrue(c.terms().contains("sinking: air"), c.terms());
         // a shallow pond (2 cells), no shore: the pillar out
         ThreatFacts.Ways pond = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 2, 0, null, -1);
         DangerOptions.Choice p = DangerOptions.choose(new ThreatFacts(me(20), List.of(), pond), night(16, false, 300, 200));
         assertEquals(DangerOptions.Way.PILLAR_OUT, p.best().way(), p.terms());
-        assertEquals("pillar then wait 60", p.chain());
+        assertEquals("pillar > wait 60", p.chain());
     }
 
     @Test

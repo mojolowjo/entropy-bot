@@ -148,7 +148,7 @@ public final class Tuning {
         def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
         def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");
         def("steps.stepMaxS", 600, "rm-execution (was the hunt's 10 min cap)", "seconds one typed step of an option (walk, cut, hunt, mine, craft...) may run before the option fails 'timed out'");
-        def("steps.burrowWaitS", 120, "rm-execution2 (was the chain text 'burrow then wait 120')", "seconds the bot waits sealed in after a night burrow (base and danger ways) before the need picks again");
+        def("steps.burrowWaitS", 120, "rm-execution2 (was the chain text 'burrow, wait 120')", "seconds the bot waits sealed in after a night burrow (base and danger ways) before the need picks again");
         def("steps.calmWaitS", 60, "rm-execution2 (was the chain text 'wait 60')", "seconds the danger desire's wait and pillar-out ways hold still");
         def("steps.recoverWaitS", 3, "rm-execution2 (was Kit.recoverChain's 'wait 3')", "seconds the kit recovery waits on its death spot for the drops to come in");
         def("steps.fishMin", 5, "rm-execution2 (was the food way's 'fish 4')", "minutes the food set's fishing way fishes for");
@@ -181,7 +181,7 @@ public final class Tuning {
         def("reflex.creeper.burrow", 2, "reflex choosers", "cells under the feet the creeper reflex's burrow asks the fork to dig (then sealed over the head)");
         def("reflex.failedS", 30, "reflex choosers", "seconds a reflex whose every way failed keeps the danger at full for the danger desire (its line is the reason)");
         def("game.lavaHpPerS", 8, "0.39.s6 review (vanilla Entity.lavaHurt)", "health a player loses in lava per second: 4 a hit, a hit every 10 ticks (the invulnerability time); LavaPrice prices the reflex's lava wade from it");
-        def("moves.ownerStaleS", 2, "0.39.s6 review", "seconds after its last status tick a reflex car stops owning Baritone's breaking/placing (a car dropped without stop: the SafetyNet then puts them back)");
+        def("moves.ownerStaleS", 2, "0.39.s6 review", "seconds after its last status tick a reflex car stops owning Baritone's breaking/placing (a car dropped without stop: the SafetyNet puts them back)");
         def("reflex.fire.aimTicks", 10, "reflex choosers", "ticks the water bucket waits for Baritone's look to land on the block under the feet before that try fails");
         def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
         def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");

@@ -124,7 +124,7 @@ class DangerStep2Test {
                 new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do b")), "brain"), b -> v[1]).overTrumps());
         bb.in.food = 20;
         br.tick(bb);
-        assertEquals("do a", port.started.get(port.started.size() - 1).chain());
+        assertEquals("plan do a", port.started.get(port.started.size() - 1).chain());
         v[1] = 99;
         for (int i = 0; i < 5; i++) {
             clock.advance(3_000);
@@ -141,16 +141,16 @@ class DangerStep2Test {
                 new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do food")), "brain"), b -> v[1]));
         bb.in.food = 10;
         br.tick(bb);
-        assertEquals("do danger", port.started.get(port.started.size() - 1).chain());
+        assertEquals("plan do danger", port.started.get(port.started.size() - 1).chain());
         v[1] = 80;
         clock.advance(3_000);
         br.tick(bb);
-        assertEquals("do danger", port.started.get(port.started.size() - 1).chain(), "food 10: danger keeps the slot");
+        assertEquals("plan do danger", port.started.get(port.started.size() - 1).chain(), "food 10: danger keeps the slot");
         bb.in.food = 2;
         clock.advance(3_000);
         br.tick(bb);
         br.tick(bb);
-        assertEquals("do food", port.started.get(port.started.size() - 1).chain(), "food under 4 beats the danger at 99 " + port.log);
+        assertEquals("plan do food", port.started.get(port.started.size() - 1).chain(), "food under 4 beats the danger at 99 " + port.log);
     }
 
     @Test

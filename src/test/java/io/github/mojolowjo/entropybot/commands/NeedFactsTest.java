@@ -35,7 +35,7 @@ class NeedFactsTest {
         assertEquals(7, b.depth());
         BedOptions.BedFacts alone = NeedFacts.bed(null, in);
         assertTrue(alone.bedKnown() && alone.night(), "no bed facts read: the Inputs still offer the known bed");
-        assertEquals(List.of("drop dirt 70", "drop cobblestone 5"), NeedFacts.bag(in, in.bag, List.of("minecraft:dirt", "minecraft:cobblestone"), 1).junkDrops());
+        assertEquals("drop dirt 70 > drop cobblestone 5", io.github.mojolowjo.entropybot.aa.moves.Step.label(NeedFacts.bag(in, in.bag, List.of("minecraft:dirt", "minecraft:cobblestone"), 1).junkDrops()));
         assertNull(NeedFacts.station(StationOptions.Kind.TABLE, in, in.bag, null).knownAt(), "a near table has no cell: the row is dropped, never a walk to nowhere");
         assertTrue(NeedFacts.base(in, in.bag, null, false).danger() > 0, "the night danger from Costs");
     }

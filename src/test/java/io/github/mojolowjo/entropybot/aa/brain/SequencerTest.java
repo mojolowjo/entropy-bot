@@ -23,7 +23,7 @@ class SequencerTest {
         assertEquals(List.of("iron", "coal"), p.steps().stream().map(Sequencer.Step::id).toList());
         assertEquals("same place", p.steps().get(1).how());
         assertTrue(p.steps().get(1).savedS() >= 0.15 * 30, p.text());
-        assertTrue(p.text().startsWith("iron (at 100 20 0) then coal (same place, saves "), p.text());
+        assertTrue(p.text().startsWith("iron (at 100 20 0) > coal (same place, saves "), p.text());
     }
 
     @Test
@@ -85,13 +85,13 @@ class SequencerTest {
     void thePlansNextRunsWhileItsSiteIsNear() {
         Brain br = brain();
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("do iron", last());
-        assertTrue(br.planText().contains("iron (at 100 20 0) then coal"), br.planText());
+        assertEquals("plan do iron", last());
+        assertTrue(br.planText().contains("iron (at 100 20 0) > coal"), br.planText());
         bb.in.pos = new int[]{100, 20, 0};              // at the cave
         port.done(1, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("do coal", last(), "coal is the plan's next though other scores higher");
+        assertEquals("plan do coal", last(), "coal is the plan's next though other scores higher");
     }
 
     @Test
@@ -103,7 +103,7 @@ class SequencerTest {
         port.done(1, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("do other", last());
+        assertEquals("plan do other", last());
         assertTrue(br.planText().contains("dropped"), br.planText());
     }
 
@@ -114,6 +114,6 @@ class SequencerTest {
         s[1] = 20;
         br.failures.failed("needs.surface", null, "stuck", clock.now(), bb.in);
         br.tick(bb);
-        assertEquals("do needs.surface", last());
+        assertEquals("plan do needs.surface", last());
     }
 }

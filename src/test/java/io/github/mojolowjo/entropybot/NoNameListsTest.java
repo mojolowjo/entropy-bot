@@ -53,6 +53,7 @@ class NoNameListsTest {
 
     static final Pattern CALL = Pattern.compile("\\b(Map|List|Set)\\.(of|ofEntries|copyOf)\\(|Map\\.entry\\(");
     static final Pattern STR = Pattern.compile("\"([a-z0-9_:/.*-]+)\"");
+    static final Pattern STEP_ARGS = Pattern.compile("new (?:[\\w.]*\\.)?Step\\.\\w+\\([^()]*\\)");
 
     @Test
     void noVanillaNamesInCollectionLiteralsOfTheBrainAndJunkRules() throws IOException {
@@ -67,7 +68,9 @@ class NoNameListsTest {
             Matcher m = CALL.matcher(src);
             while (m.find()) {
                 int end = close(src, m.end() - 1);
-                String body = src.substring(m.end(), end);
+                // rm-execution2: a typed step's own target (new Step.Craft("torch", n): the item the need is about) is one
+                // argument of one step, no name list; the steps a list holds are read without their arguments
+                String body = STEP_ARGS.matcher(src.substring(m.end(), end)).replaceAll("Step()");
                 Matcher s = STR.matcher(body);
                 while (s.find()) {
                     String lit = s.group(1);

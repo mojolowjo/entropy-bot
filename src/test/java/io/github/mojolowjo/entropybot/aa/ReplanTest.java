@@ -55,7 +55,7 @@ class ReplanTest {
     @Test void switchRules() {
         Options.Option run = opt("walk", "mine iron 3 then smelt raw_iron 3", 100);
         Options.Option alt = opt("cave", "mine cave iron 3 then smelt raw_iron 3", 60);
-        List<Options.Option> fresh = List.of(alt, opt("walk", run.command(), 100));
+        List<Options.Option> fresh = List.of(alt, opt("walk", "mine iron 3 then smelt raw_iron 3", 100));
         Replan.Decision d = Replan.decide(run, fresh, 0, 100_000, -1, false);
         assertTrue(d.switches());
         assertEquals(0, d.from());
@@ -64,7 +64,7 @@ class ReplanTest {
         assertFalse(Replan.decide(run, fresh, 0, 100_000, -1, true).switches());             // mid dig/pillar
         assertFalse(Replan.decide(run, fresh, 1, 100_000, -1, false).switches());            // shared smelt step
         assertFalse(Replan.decide(run, List.of(opt("cave", alt.command(), 75), opt("walk", run.command(), 100)), 0, 100_000, -1, false).switches());  // only 25%
-        assertFalse(Replan.decide(opt("a", "x", 4), List.of(opt("b", "y", 2), opt("a", "x", 4)), 0, 100_000, -1, false).switches());               // saves < 3 s
+        assertFalse(Replan.decide(opt("a", "craft x 1", 4), List.of(opt("b", "craft y 1", 2), opt("a", "craft x 1", 4)), 0, 100_000, -1, false).switches());               // saves < 3 s
     }
 
     private static List<Replan.Cell> col(int n, Replan.Cell c) { return java.util.Collections.nCopies(n, c); }

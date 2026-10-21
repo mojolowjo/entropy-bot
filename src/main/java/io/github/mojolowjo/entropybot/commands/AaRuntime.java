@@ -1927,6 +1927,8 @@ public final class AaRuntime implements JobPort {
             }
             return io.github.mojolowjo.entropybot.aa.core.JobPort.INFEASIBLE + v.missing() + (v.stepText() == null ? "" : " for " + v.stepText());
         } catch (RuntimeException e) {
+            // the check is optimistic by design: a verdict that cannot be read lets the routine run (its own steps fail with their reason)
+            io.github.mojolowjo.entropybot.Quiet.warn("aa: the feasibility check of " + chain + " could not run (the routine runs unchecked)", e);
             return null;
         }
     }
@@ -2664,7 +2666,9 @@ public final class AaRuntime implements JobPort {
             items.add(id);
             try {
                 names.put(id, e.getValue().getDescription().getString().toLowerCase(java.util.Locale.ROOT));
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException ex) {
+                io.github.mojolowjo.entropybot.Quiet.warn("aa: the name of " + id + " could not be read (left out of the name list)", ex);
+            }
         }
         for (var e : net.minecraft.core.registries.BuiltInRegistries.BLOCK.entrySet()) {
             String id = e.getKey().location().toString();

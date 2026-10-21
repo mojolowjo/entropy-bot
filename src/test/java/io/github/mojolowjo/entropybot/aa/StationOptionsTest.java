@@ -54,7 +54,7 @@ class StationOptionsTest {
     @Test
     void thePlannerIsARowAtPlanCost() {
         Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, io.github.mojolowjo.entropybot.aa.TS.plan("crafting_table"), 30, null);
-        assertEquals("goal crafting_table", c.best().command());
+        assertEquals("plan crafting_table", c.best().command());
         assertEquals(150, c.best().cost(), 1e-6);
         assertTrue(c.best().needsPlanner());
     }
@@ -70,7 +70,7 @@ class StationOptionsTest {
     @Test
     void aHeldRowIsDroppedWithItsReason() {
         Options.OptionMemory m = new Options.OptionMemory();
-        m.failed("craft crafting_table", "the game refused placing", 0);
+        m.failed("make crafting_table", "the game refused placing", 0);
         Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 4, 0, 0, 0, CELL, null, false), m, 1000, io.github.mojolowjo.entropybot.aa.TS.plan("crafting_table"), 30, null);
         assertEquals("planner", c.best().id());
         assertTrue(c.why().contains("the game refused placing"), c.why());
@@ -116,7 +116,7 @@ class StationOptionsTest {
                 assertTrue(o.typed(), o.command());
                 for (var s : o.steps())
                     if (!(s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Plan))
-                        assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(io.github.mojolowjo.entropybot.commands.StepHands.command(s).split("\\s+")[0]), s.text());
+                        assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(io.github.mojolowjo.entropybot.commands.StepCommands.command(s).split("\\s+")[0]), s.text());
             }
             for (String d : c.dropped()) assertFalse(d.contains("no verb"), d);
         }

@@ -207,7 +207,7 @@ class IronOptionsTest {
         Need r = ironRung();
         bb.fact(IronOptions.FACTS, null);
         r.tick(bb);
-        assertEquals(PLANNED, port.started.get(0).chain());
+        assertEquals(TS.label(TS.s(PLANNED)), port.started.get(0).chain());
         assertTrue(r.options().contains("no iron facts"), r.options());
     }
 

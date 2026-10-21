@@ -21,8 +21,8 @@ class CoalOptionsTest {
     @Test
     void seenCoalIsTheCheapestWayWhenNear() {
         Options.Choice c = CoalOptions.choose(facts(List.of(ore(20, true)), List.of(strip(300)), 12, true), new Options.OptionMemory(), 0);
-        assertEquals("mine seen coal", c.best().id(), c.line());
-        assertEquals("mine coal 8", c.best().command());
+        assertEquals("seen coal", c.best().id(), c.line());
+        assertEquals("mine coal 1 at 10 40 10 walk", c.best().command());
         assertTrue(c.ranked().stream().anyMatch(o -> o.id().equals("charcoal")), c.line());
     }
 
@@ -30,7 +30,7 @@ class CoalOptionsTest {
     void noCoalSeenCharcoalBeatsAFarStripAndSaysWhy() {
         Options.Choice c = CoalOptions.choose(facts(List.of(), List.of(strip(900)), 12, true), new Options.OptionMemory(), 0);
         assertEquals("charcoal", c.best().id(), c.line());
-        assertEquals("gather charcoal 8", c.best().command());
+        assertEquals("smelt charcoal 8", c.best().command());
         assertTrue(c.line().contains("no coal ore known yet"), "the drop reason is kept: " + c.line());
     }
 
@@ -38,9 +38,9 @@ class CoalOptionsTest {
     void noFurnacePricesTheStationFirstAndCharcoalCanStillWin() {
         Options.Choice c = CoalOptions.choose(facts(List.of(), List.of(strip(900)), 12, false), new Options.OptionMemory(), 0);
         assertEquals("charcoal", c.best().id(), c.line());
-        assertEquals("gather cobblestone 8 then craft furnace 1 then gather charcoal 8", c.best().command());
+        assertEquals("collect cobblestone 8 > craft furnace 1 > smelt charcoal 8", c.best().command());
         CoalFacts withCobble = new CoalFacts(8, 1, List.of(), List.of(), List.of(), 12, 0, false, -1, true, 8);
-        assertEquals("craft furnace 1 then gather charcoal 8", CoalOptions.choose(withCobble, new Options.OptionMemory(), 0).best().command());
+        assertEquals("craft furnace 1 > smelt charcoal 8", CoalOptions.choose(withCobble, new Options.OptionMemory(), 0).best().command());
         assertTrue(CoalOptions.choose(withCobble, new Options.OptionMemory(), 0).best().cost() < c.best().cost());
     }
     @Test

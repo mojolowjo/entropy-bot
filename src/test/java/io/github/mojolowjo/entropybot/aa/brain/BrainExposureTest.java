@@ -39,7 +39,7 @@ class BrainExposureTest {
         bb.in.dayTime = 6000;
         bb.in.hungerDrains = true;
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("do explore", port.started.get(0).chain(), "day: no change");
+        assertEquals("plan do explore", port.started.get(0).chain(), "day: no change");
         br.halt("test");
         night(2);
         bb.in.underDepth = 5;          // review 2 item 1: ANY work at the surface counts as SURFACE; here it is under ground
@@ -72,7 +72,7 @@ class BrainExposureTest {
         assertTrue(br.failures.held("idle.wood", null, clock.now()) != null, "rests 30 s");
         assertEquals(0, br.streak("idle.wood"), "no failure counted");
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("wait 60", port.started.get(0).chain(), "the next option gets its turn");
+        assertEquals("plan wait 60", port.started.get(0).chain(), "the next option gets its turn");
         assertTrue(br.heldLines(clock.now()).get(0).startsWith("held: idle.wood "), br.heldLines(clock.now()).toString());
     }
 }

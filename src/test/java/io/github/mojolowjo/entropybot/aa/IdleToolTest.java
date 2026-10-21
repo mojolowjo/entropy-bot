@@ -139,7 +139,7 @@ class IdleToolTest {
         var f = new RungOptions.SurfaceFacts(23, new int[]{0, 40, 0}, false, 0, false, true, null, -1, false,
                 new ToolWear.Kit(4, 29, ToolWear.CRAFT_S));
         var c = new RungOptions.Surface().choose(f, new Options.OptionMemory(), 0, null, 0, null, null);
-        assertTrue(c.best().command().startsWith("craft stone_pickaxe 1 then climb"), c.why());
+        assertTrue(c.best().command().startsWith("craft stone_pickaxe 1 > climb"), c.why());
         assertTrue(c.why().contains("climb by hand"), "hand is shown with its price");
         var none = new RungOptions.SurfaceFacts(23, new int[]{0, 40, 0}, false, 0, false, false, null, -1, false,
                 new ToolWear.Kit(0, 0, ToolWear.INF));

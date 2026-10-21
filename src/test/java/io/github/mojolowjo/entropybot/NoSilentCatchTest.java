@@ -22,9 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class NoSilentCatchTest {
     static final Path ROOT = Path.of("src/main/java/io/github/mojolowjo/entropybot");
     static final Pattern CATCH = Pattern.compile("catch\\s*\\(([^)]*)\\)\\s*\\{");
-    /** rm-execution2 owns these (aa/** and its runtime files); they join the scan when that branch merges its catches. */
-    static final List<String> LEFT_FOR_EXECUTION2 = List.of("aa/", "commands/AaRuntime.java", "commands/Mining.java", "commands/Kelping.java",
-            "commands/Fishing.java", "commands/StepHands.java", "commands/StepRun.java");
 
     @Test
     void noSilentCatches() throws IOException {
@@ -32,7 +29,6 @@ class NoSilentCatchTest {
         try (Stream<Path> st = Files.walk(ROOT)) {
             for (Path p : (Iterable<Path>) st.filter(x -> x.toString().endsWith(".java"))::iterator) {
                 String rel = ROOT.relativize(p).toString().replace('\\', '/');
-                if (LEFT_FOR_EXECUTION2.stream().anyMatch(rel::startsWith)) continue;
                 String t = Files.readString(p);
                 Matcher m = CATCH.matcher(t);
                 while (m.find()) {

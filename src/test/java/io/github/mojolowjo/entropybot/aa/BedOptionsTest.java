@@ -11,7 +11,7 @@ class BedOptionsTest {
     @Test
     void woolInTheBagCrafts() {
         Options.Choice c = BedOptions.choose(new BedOptions.BedFacts(3, 2, HERD, ME), new Options.OptionMemory(), 0);
-        assertEquals("goal bed", c.best().command());
+        assertEquals("plan bed", c.best().command());
         assertEquals(1, c.ranked().size(), "with the wool there is nothing to hunt");
     }
 
@@ -19,12 +19,12 @@ class BedOptionsTest {
     void sheepInViewBeatTheHerdAndTheHerdBeatsNothing() {
         Options.OptionMemory m = new Options.OptionMemory();
         Options.Choice c = BedOptions.choose(new BedOptions.BedFacts(1, 2, HERD, ME), m, 0);
-        assertEquals("hunt 2 sheep for white_wool 3 then goal bed", c.best().command());
+        assertEquals("hunt 2 sheep for white_wool 3 > plan bed", c.best().command());
         assertEquals(2, c.ranked().size());
-        assertEquals("hunt 2 sheep for white_wool 3 at 40 -30 then goal bed", c.ranked().get(1).command());
+        assertEquals("hunt 2 sheep for white_wool 3 at 40 -30 > plan bed", c.ranked().get(1).command());
         assertNotNull(c.ranked().get(1).site(), "the herd is a site for the sequencer");
         Options.Choice herdOnly = BedOptions.choose(new BedOptions.BedFacts(0, 0, HERD, ME), m, 0);
-        assertEquals("hunt 3 sheep for white_wool 3 at 40 -30 then goal bed", herdOnly.best().command());
+        assertEquals("hunt 3 sheep for white_wool 3 at 40 -30 > plan bed", herdOnly.best().command());
         Options.Choice none = BedOptions.choose(new BedOptions.BedFacts(0, 0, null, ME), m, 0);
         assertNull(none.best());
         assertTrue(none.why().startsWith("no wool (0/3) and no sheep seen"), none.why());
@@ -65,7 +65,7 @@ class BedOptionsTest {
         assertNull(day.best());
         assertTrue(day.why().contains("sleep in a known bed: not night"), day.why());
         Options.Choice under = BedOptions.choose(new BedOptions.BedFacts(0, 2, null, ME, false, false, true, 10), new Options.OptionMemory(), 0);
-        assertEquals("climb then hunt 3 sheep for white_wool 3 then goal bed", under.best().command());
+        assertEquals("climb > hunt 3 sheep for white_wool 3 > plan bed", under.best().command());
         assertTrue(under.why().contains("climb 10 up"), under.why());
     }
 }

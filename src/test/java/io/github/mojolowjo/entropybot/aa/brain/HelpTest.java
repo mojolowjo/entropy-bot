@@ -71,7 +71,7 @@ class HelpTest {
             assertNotNull(p);
             for (var step : p.steps()) {
                 if (step instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Plan) continue;      // the planner's routine, typed at its side
-                String cmd = io.github.mojolowjo.entropybot.commands.StepHands.command(step);
+                String cmd = io.github.mojolowjo.entropybot.commands.StepCommands.command(step);
                 assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(cmd.split("\\s+")[0]), cmd);
             }
         }

@@ -13,13 +13,20 @@ public final class TS {
 
     /** The routine as typed steps; a line with no typed step fails the test at once. */
     public static List<Step> s(String routine) {
-        List<Step> out = io.github.mojolowjo.entropybot.aa.core.FakePort.steps(routine);
+        List<Step> out = io.github.mojolowjo.entropybot.aa.core.FakePort.steps(routine.replace(" > ", " then "));
         if (out == null) throw new AssertionError("no typed step in: " + routine);
         return out;
     }
 
     /** One planner goal as a need's goal steps. */
     public static List<Step> plan(String goal) { return List.of(new Step.Plan(goal)); }
+
+    /** The steps with every compound step replaced by its parts (as aa/moves/Steps runs them), as their label. */
+    public static String flat(List<Step> steps) {
+        List<Step> out = new java.util.ArrayList<>();
+        for (Step s : steps) if (s instanceof Step.Compound c) out.addAll(c.parts()); else out.add(s);
+        return Step.label(out);
+    }
 
     /** The steps' label (what AA logs). */
     public static String label(List<Step> steps) { return steps == null ? null : Step.label(steps); }

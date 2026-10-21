@@ -70,7 +70,7 @@ class AaFix3Test {
         bb.in.planks = 4; bb.in.tableInBag = true;
         bb.in.torches = 0;
         assertTrue(bb.in.torchCoal(), "no torches: 4 torches are worth more than 1 of 16 coal: " + bb.in.torchCoalTerms());
-        assertEquals("craft torch 16", NightWork.craft(bb.in));
+        assertEquals("craft torch 16", NightWork.craft(bb.in).text());
     }
 
 }

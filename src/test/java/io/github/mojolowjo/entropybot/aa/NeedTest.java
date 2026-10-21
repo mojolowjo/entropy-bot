@@ -42,7 +42,7 @@ class NeedTest {
         bb.in.wood = 4;                            // the logs arrive in the bag: the wait ends
         port.noPlan = null;
         assertEquals(Status.RUNNING, n.tick(bb));
-        assertEquals("goal table", port.started.get(1).chain(), "then the planner's chain");
+        assertEquals("plan table", port.started.get(1).chain(), "then the planner's chain");
     }
 
     @Test
@@ -147,11 +147,11 @@ class NeedTest {
         port.done(1, "done");
         bb.in.underDepth = 0;
         assertEquals(Status.RUNNING, bed.tick(bb));
-        assertEquals("goal bed", port.started.get(1).chain(), "up: the bed's own row");
+        assertEquals("plan bed", port.started.get(1).chain(), "up: the bed's own row");
         // an under-ground need that wants no surface prices no climb
         Need iron = new Need("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("iron tools")));
         bb.in.underDepth = 10;
         iron.tick(bb);
-        assertEquals("goal iron tools", port.started.get(2).chain(), "a dig for iron is not followed by a climb");
+        assertEquals("plan iron tools", port.started.get(2).chain(), "a dig for iron is not followed by a climb");
     }
 }

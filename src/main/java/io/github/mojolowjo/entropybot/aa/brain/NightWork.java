@@ -62,7 +62,10 @@ public final class NightWork {
     /** The typed steps for {@code work} at feet (x, y, z); null for NONE. */
     public static List<Step> steps(Inputs in, Work work, int x, int y, int z, int dx, int dz) {
         return switch (work) {
-            case SMELT -> List.of(new Step.Smelt("iron_ingot", Math.min(64, in.bag.getOrDefault("raw_iron", 0)), true));
+            case SMELT -> {
+                int n = Math.min(64, in.bag.getOrDefault("raw_iron", 0));
+                yield List.of(new Step.Smelt("iron_ingot", n, true));
+            }
             case CRAFT -> craft(in) == null ? null : List.of(craft(in));
             case STAIRS -> stairs(x, y, z, dx, dz);
             case NONE -> null;

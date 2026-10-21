@@ -129,7 +129,7 @@ public final class ReflexLadder {
     public static void watch(String line) {
         var w = watcher;
         if (w != null && line != null) {
-            try { w.accept(line); } catch (RuntimeException ignored) { }
+            try { w.accept(line); } catch (RuntimeException e) { io.github.mojolowjo.entropybot.Quiet.warn("reflex ladder: the watcher threw on \"" + line + "\"", e); }
         }
     }
 

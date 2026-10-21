@@ -31,7 +31,7 @@ class AaBrainTest {
         s[0] = 40;
         s[1] = 30;
         assertEquals(Status.RUNNING, br.tick(bb));
-        assertEquals("do a", last());
+        assertEquals("plan do a", last());
         s[1] = 70;                       // not urgent: waits however high
         for (int i = 0; i < 5; i++) br.tick(bb);
         assertEquals(1, port.started.size());
@@ -39,7 +39,7 @@ class AaBrainTest {
         port.done(1, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("do b", last());
+        assertEquals("plan do b", last());
     }
 
     @Test
@@ -49,7 +49,7 @@ class AaBrainTest {
         br.tick(bb);
         s[1] = 80;
         br.tick(bb);
-        assertEquals("do food", last());
+        assertEquals("plan do food", last());
         assertEquals(1, br.interrupts);
         assertEquals(0, tracer.counts.pointless, tracer.lastSwitchText(clock.now()));
     }
@@ -79,15 +79,15 @@ class AaBrainTest {
             port.progress.put(1L, (long) i);
             br.tick(bb);
         }
-        assertEquals("do osmium", last());
+        assertEquals("plan do osmium", last());
         s[1] = 76;                       // urgent upkeep beats the owner's 90
         br.tick(bb);
-        assertEquals("do food", last());
+        assertEquals("plan do food", last());
         // with nothing running, urgent upkeep still ranks over the owner's goal
         port.done(3, "done");
         br.tick(bb);
         br.tick(bb);
-        assertEquals("do food", last());
+        assertEquals("plan do food", last());
     }
 
     @Test
@@ -111,7 +111,7 @@ class AaBrainTest {
         assertEquals(1, port.incidents.size());
         assertEquals(1, br.streak("a"));
         br.tick(bb);
-        assertEquals("do b", last(), "a cools down; b runs");
+        assertEquals("plan do b", last(), "a cools down; b runs");
         assertEquals(0, tracer.counts.pointless);
     }
 

@@ -62,7 +62,7 @@ class WayUpTest {
         assertEquals("stairs north", c.best().id(), c.why());
         assertTrue(c.why().contains("stairs west: the policy refuses a cell at -3 43 0"), c.why());
         assertTrue(c.why().contains("stairs south: a cell may not be broken"), c.why());
-        assertTrue(c.best().command().startsWith("dig 0 41 -1 0 42 0 ores via engine then goto 0 41 -1"), c.best().command());
+        assertTrue(c.best().command().startsWith("dig 0 41 -1 0 42 0 ores via engine > goto 0 41 -1"), c.best().command());
         m.failed(c.best().memoryKey(), "stopped at step 9 (dig ...): that box touches pit (keep-out)", 0);
         c = WayUp.choose(facts(6, null, hs, null, -1), m, 1);
         assertNull(c.best(), "north is held, west and south dropped: " + c.why());
@@ -74,8 +74,8 @@ class WayUpTest {
 
     @Test
     void stairStepsMatchTheVerbAndCellsCoverThem() {
-        assertEquals(StairPlan.upSteps(5, 60, -3, 1, 0, 7), WayUp.stairSteps(5, 60, -3, 1, 0, 7));
-        assertEquals(StairPlan.upSteps(5, 60, -3, 0, -1, 3), WayUp.stairSteps(5, 60, -3, 0, -1, 3));
+        assertEquals(String.join(" > ", StairPlan.upSteps(5, 60, -3, 1, 0, 7)), TS.label(WayUp.stairSteps(5, 60, -3, 1, 0, 7)));
+        assertEquals(String.join(" > ", StairPlan.upSteps(5, 60, -3, 0, -1, 3)), TS.label(WayUp.stairSteps(5, 60, -3, 0, -1, 3)));
         assertEquals(4 * 7, WayUp.stairCells(5, 60, -3, 1, 0, 7).size());
         assertArrayEquals(new int[]{5, 61, -3}, WayUp.stairCells(5, 60, -3, 1, 0, 7).get(0), "step 1 starts at the head cell");
     }

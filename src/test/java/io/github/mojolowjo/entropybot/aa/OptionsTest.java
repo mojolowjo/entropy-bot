@@ -73,13 +73,13 @@ class OptionsTest {
         Need r = new Need("needs.torches", TaskKind.TORCHES, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("torch 16")));
         port.noPlan = "missing 2 coal";
         assertEquals(Status.FAILURE, r.tick(bb), "the first tick, no wait");
-        assertTrue(r.reason().contains("no plan for goal torch 16: missing 2 coal"), r.reason());
+        assertTrue(r.reason().contains("no plan for torch 16: missing 2 coal"), r.reason());
         assertTrue(String.join("|", port.log).contains("no way can run"), port.log.toString());
         // with a picker, NONE drops only the planner option
         Need p = rung("plan x");
         assertEquals(Status.RUNNING, p.tick(bb));
         assertEquals("plan do alpha", port.started.get(0).chain());
-        assertTrue(p.options().contains("planner: no plan for goal x: missing 2 coal"), p.options());
+        assertTrue(p.options().contains("planner: no plan for x: missing 2 coal"), p.options());
     }
 
     @Test
