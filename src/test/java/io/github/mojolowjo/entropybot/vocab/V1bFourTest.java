@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** V1b-4 (0.22.2): the companion and brain verbs back on the surface, camp here's free name, area candidates. */
 class V1bFourTest {
     static final List<String> RESTORED = List.of("why", "deaths", "death", "corpse", "restock",
-            "say", "twerk", "spawn", "trust", "untrust");
+            "say", "spawn", "trust", "untrust");
 
     @Test
     void restoredVerbsAreOnTheSurface() {
@@ -29,7 +29,7 @@ class V1bFourTest {
         assertEquals("chests", VerbTable.of("trust").section());
         assertEquals("moving", VerbTable.of("corpse").section());
         assertEquals("that is now spawn", OldWords.removedAnswer("bed", "", "bed"));
-        for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "autominer", "reconnect", "use", "caves", "ores", "poi"))
+        for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "autominer", "reconnect", "caves", "ores", "poi"))
             assertTrue(OldWords.DEBUG_VERBS.contains(v), v + " stays under debug");
     }
 

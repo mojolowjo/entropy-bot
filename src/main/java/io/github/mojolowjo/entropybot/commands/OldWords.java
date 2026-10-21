@@ -122,7 +122,7 @@ public final class OldWords {
 
     /** V1b: the plumbing verbs that left the surface; each still runs after the word debug ("debug autominer on"). */
     public static final java.util.Set<String> DEBUG_VERBS = java.util.Set.of("b", "memory", "watch", "recorder", "mouse", "autominer",
-            "reconnect", "sethome", "use", "caves", "ores", "poi");
+            "reconnect", "sethome", "caves", "ores", "poi");
 
     /** V1b: every word that left the surface (0.22.2); it answers with its new form. The hints go at 0.24.0. */
     public static final java.util.Set<String> REMOVED;

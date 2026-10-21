@@ -121,12 +121,4 @@ public final class CreeperSprint {
         return Act.DONE;
     }
 
-    /** Whether a creeper duel may follow the sprint: the bow setting always; melee only with a big margin; flee never. */
-    public static boolean duelAfter(CreeperRules.Mode mode, boolean bigMargin) {
-        return switch (mode) {
-            case BOW -> true;
-            case MELEE -> bigMargin;
-            case FLEE -> false;
-        };
-    }
 }

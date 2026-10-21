@@ -33,25 +33,14 @@ class MoversTest {
 
     /** The reflexes (allowed by the design) and the audit's sites still to move: path -> the exact number of calls. */
     static final Map<String, Integer> CEILING = new TreeMap<>(Map.ofEntries(
-            // backbone step 4: the reflexes move through Baritone goals and look through LookBehavior; left are item
-            // inputs and one documented exception. Reflexes: the eat key x2, the crouch let go when a fight / duel / meal
-            // starts x3 (reflex choosers: the air jump went to the fork's swim-up gap). FireReflex: the drink use key x4
-            // (the bucket goes through useItem on Baritone's hit result, no useItemOn).
-            Map.entry("engine/Reflexes.java", 5),
+            // the genuine item inputs, each a use of the item in the hand that Baritone has no process for:
+            // Reflexes: the eat use key (hold while eating x1, let go x1); FireReflex: the drink use key x4 (the bucket
+            // goes through useItem on Baritone's hit result, no useItemOn). Strike, hotbar select and the inventory
+            // menu clicks are not key / camera / break / place calls.
+            Map.entry("engine/Reflexes.java", 2),
             Map.entry("engine/FireReflex.java", 4),
             // the mixin names the vanilla method it intercepts (not a caller)
-            Map.entry("mixin/GuardMixinGameMode.java", 1),
-            // to move in backbone steps 3-4 (movers-audit.md items 4-21)
-            Map.entry("engine/CreeperDuel.java", 12),
-            Map.entry("engine/Escort.java", 1),
-            // backbone step 3: Jobs keeps the twerk / farm-round crouch (keyShift x2) and useBlock (the "use x y z" interact, synchronous reply)
-            Map.entry("commands/Jobs.java", 4),
-            Map.entry("farm/McFarmWorld.java", 5),
-            Map.entry("commands/FloorSteps.java", 2),
-            Map.entry("commands/Crafting.java", 2),
-            Map.entry("commands/Commands.java", 2),
-            Map.entry("commands/AaRuntime.java", 2)));
-
+            Map.entry("mixin/GuardMixinGameMode.java", 1)));
     @Test
     void noMoverOutsideMovesReflexesAndTheExceptionList() throws IOException {
         Path root = Path.of("src/main/java/io/github/mojolowjo/entropybot");

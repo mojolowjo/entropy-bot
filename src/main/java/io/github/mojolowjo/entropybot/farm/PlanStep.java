@@ -13,7 +13,7 @@ import java.util.Map;
  *   <li>"put" keep: Seq's put step, items = keep (item -> how many the bot keeps), no fallback</li>
  *   <li>"craftitem" item, n, optional: craft n of item (Crafter.plan + its steps at the nearest table); optional =
  *       a craft that can't start is skipped instead of failing the job (the bridge's craftitem step)</li>
- *   <li>"farmgrow" "farmharvest" "farmgather" "farmcompact" "farmdone" "farmdeposit" "farmnote": {@link FarmRound}</li>
+ *   <li>"farmscan" "farmharvest" "farmgather" "farmcompact" "farmdone" "farmdeposit" "farmnote": {@link FarmRound}</li>
  *   <li>"compacthere" pos (the center), label (its name or "x y z"); "compactchest" pos, again; "compactdone":
  *       {@link Compact.Run}</li>
  * </ul>

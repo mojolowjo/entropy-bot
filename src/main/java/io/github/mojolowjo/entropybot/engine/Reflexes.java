@@ -36,7 +36,7 @@ import org.slf4j.Logger;
 
 /**
  * The bot's reflexes in Java (B2, docs/BOT_PLAN.md 5.8), AA_CLEANUP 4: only the true reflexes. Air (swim up, the
- * shore), lava and fire ({@link FireReflex}), the creeper flee (sprint, the duel only with the owner's creeper setting),
+ * shore), lava and fire ({@link FireReflex}), the creeper flee (sprint),
  * the hit response (hit and the attacker in reach: face it and strike back), eating from the bag, respawn and a denied
  * dimension; plus the hold and override of the engine. With AA off the old self-defence still fights what counts (no
  * retreat rules any more). Fight, flee, home, cover, dig in and pillar are AA's danger desire ({@code aa.DangerOptions}),
@@ -85,8 +85,6 @@ public final class Reflexes {
     // dimension
     private String lastDim, deniedDim;
     private long deniedAt;
-    // the creeper duel (B7e C): kill a lone creeper with hit and back off instead of running
-    private final CreeperDuel duel;
     private long forceFleeUntil;
     private final List<String> whispers = new java.util.ArrayList<>();
     /** C7: escort me|<player> (Commands starts the follow; this fights for them). */
@@ -109,19 +107,10 @@ public final class Reflexes {
     public Reflexes(EventRing events, EngineProcess engine, Knowledge knowledge) {
         this.events = events;
         this.engine = engine;
-        this.duel = new CreeperDuel(events);
         this.reflexMoves = new io.github.mojolowjo.entropybot.aa.moves.Moves(new io.github.mojolowjo.entropybot.aa.moves.BaritoneCar(engine, true));
         this.fire = new FireReflex(events, engine, reflexMoves);
         this.moves = new DangerMoves(events, engine);
     }
-
-    /** "defend creepers flee|melee|bow" (commands.json "creepers"). */
-    public void setCreeperMode(CreeperRules.Mode m) {
-        duel.setMode(m);
-        if (m == CreeperRules.Mode.FLEE && duel.active() && reflex == Reflex.FIGHTING) settle("creepers: flee");
-    }
-
-    public CreeperRules.Mode creeperMode() { return duel.mode(); }
 
     // ---- attack <entityId> | nearest (C1, 0.20.5): one forced fight through the same reflex loop ----
     static double forcedRange() { return Tuning.get("reflexes.forcedRange"); }
@@ -281,8 +270,6 @@ public final class Reflexes {
             o.addProperty("dist", Math.round(targetDist * 10) / 10.0);  // structural: rounded to one decimal for the text
         }
         o.addProperty("urgent", urgent);
-        o.addProperty("creepers", duel.mode().word());
-        if (duel.active()) o.addProperty("duel", duel.describe());
         o.addProperty("noFood", noFood);
         o.add("escort", escort.status());
         if (deniedDim != null) o.addProperty("deniedDim", deniedDim);
@@ -297,7 +284,7 @@ public final class Reflexes {
         return switch (reflex) {
             case NONE -> fire.active() ? fire.doing() : moves.active() ? moves.doing() : "none";
             case EATING -> "eating";
-            case FIGHTING -> duel.active() ? duel.describe() : "fighting " + target;
+            case FIGHTING -> "fighting " + target;
             case FLEEING -> "avoiding a " + target;
             case RETREATING -> moves.doing();
         };
@@ -345,7 +332,7 @@ public final class Reflexes {
         boolean hurt = now - hurtTick < ReflexRules.hurtTicks();
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
         // AA_CLEANUP 4: the lava/fire reflex is a true reflex: it runs under AA too (the milk and potions went)
-        if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
+        if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING)) {     // 0.23.6
             releaseSwim(mc);        // 0.39.m2: the fire reflex drives; no swim jump held into lava / fire
             return;
         }
@@ -357,22 +344,6 @@ public final class Reflexes {
                 return;
             }
             moves.stop("a creeper within " + (int) CreeperSprint.startV() + ": the creeper flee");
-        }
-        if (duel.active()) {
-            CreeperDuel.End end = duel.tick(mc, p, now, hurt);
-            if (end == null) {
-                target = "creeper";
-                targetDist = duel.dist();
-                urgent = false;         // the job is held, not stopped: it carries on after the duel
-                return;
-            }
-            duelEnded(end);
-            if (!end.flee()) {
-                settle(end.text());
-                return;
-            }
-            forceFleeUntil = now + (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.refleeTicks");  // run as before, even from beyond creeperRun
-            fleeUntil = 0;
         }
         Threat ft = forcedThreat(p, mc);
         Threat t = ft != null ? ft : defence ? nearestThreat(mc, p, hurt, true) : null;
@@ -405,15 +376,7 @@ public final class Reflexes {
             startCreeperSprint(mc, p, t);
             return;
         }
-        // then re-evaluate beyond 6: a duel only with the bow setting, or melee with a big margin (armour and health)
-        // AA_CLEANUP 4: the duel is the owner's creeper setting (a verb), never under AA
-        if (t != null && t.creeper && hp > ReflexRules.retreatAt() && now >= forceFleeUntil && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()
-                && CreeperSprint.duelAfter(duel.mode(), bigCreeperMargin(p))
-                && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
-            startDuel(mc, p, t);
-            return;
-        }
-        // just sprinted from it and no duel: stand still facing it (the job must not walk the bot back past it)
+        // just sprinted from it: stand still facing it (the job must not walk the bot back past it)
         if (t != null && t.creeper && t.d < CreeperSprint.watch() && cspr.watching(now, t.e.getId())) {
             begin(Reflex.FLEEING, mc, "keeping away from a creeper");
             target = "creeper";
@@ -648,16 +611,15 @@ public final class Reflexes {
         swimming = false;       // reflex choosers: no key of ours to let go (the fork's swim-up gap ends with its goal)
     }
 
-    /** 0.36.a1: the air reflex holds jump (AA leaves the key alone then). */
-    public boolean airSwimming() { return swimming; }
+    /** Lets go of the use key the eat reflex holds (settle, the owner's stop). */
+    public void releaseUse() { Minecraft.getInstance().options.keyUse.setDown(false); }
 
     private void settle(String why) {
         Minecraft mc = Minecraft.getInstance();
         releaseSwim(mc);
-        duel.abort(why);
         cspr.abort(why);
         creeperEnded();         // reflex choosers: the creeper way (run or burrow) goes; tries forgotten unless spent
-        if (reflex == Reflex.EATING) mc.options.keyUse.setDown(false);
+        if (reflex == Reflex.EATING) releaseUse();
         if (reflex != Reflex.NONE) events.push("reflex", "done " + reflex.name().toLowerCase() + ": " + why, null);
         reflex = Reflex.NONE;
         target = null;
@@ -735,21 +697,9 @@ public final class Reflexes {
         return new Threat(e, p.distanceTo(e), BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(), e instanceof Creeper, k);
     }
 
-    private void startDuel(Minecraft mc, LocalPlayer p, Threat t) {
-        if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
-        duel.start(mc, p, (Creeper) t.e, now);
-        reflex = Reflex.FIGHTING;
-        mc.options.keyShift.setDown(false);
-        target = "creeper";
-        targetDist = t.d;
-        urgent = false;
-        engine.hold();              // the duel drives the keys; Baritone stands by with its goal
-    }
-
     /**
-     * C7: a fight for the escorted player (an owner verb; refused under AA). A creeper gets the bow duel when
-     * "defend creepers bow" (and the duel's own checks agree), else the bot stands between it and the player and
-     * knocks it back; anything else is the ordinary fight (AA_CLEANUP 4: the retreat under 6 health went).
+     * C7: a fight for the escorted player (an owner verb; refused under AA). A creeper: the bot
+     * stands between it and the player and knocks it back; anything else is the ordinary fight (AA_CLEANUP 4: the retreat under 6 health went).
      */
     private void escortFight(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
         escort.interrupted();
@@ -762,10 +712,6 @@ public final class Reflexes {
         targetDist = t.d;
         urgent = hurt || t.d < ReflexRules.urgent();
         if (t.creeper) {
-            if (duel.mode() == CreeperRules.Mode.BOW && now >= forceFleeUntil && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
-                startDuel(mc, p, t);
-                return;
-            }
             begin(Reflex.FIGHTING, mc, "guarding " + escort.name() + " from a creeper");
             holdWeapon(mc, p);
             look(t.e);
@@ -783,7 +729,6 @@ public final class Reflexes {
     private void begin(Reflex r, Minecraft mc, String line) {
         if (reflex == r) return;
         reflex = r;
-        mc.options.keyShift.setDown(false);
         events.push("reflex", line, null);
     }
 
@@ -809,11 +754,10 @@ public final class Reflexes {
 
     private void startCreeperSprint(Minecraft mc, LocalPlayer p, Threat t) {
         if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
-        if (duel.active()) duel.abort("creeper within " + (int) CreeperSprint.startV() + ": sprint");
         double ax = p.getX() - t.e.getX(), az = p.getZ() - t.e.getZ();
         net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
         boolean away = CreeperSprint.sprintingAway(p.isSprinting(), v.x, v.z, ax, az);
-        boolean mayHit = duel.mode() != CreeperRules.Mode.FLEE && t.d <= ReflexRules.reach() && (Hostility.mayAttack(t.e) || forcedAllows(t.e));
+        boolean mayHit = t.d <= ReflexRules.reach() && (Hostility.mayAttack(t.e) || forcedAllows(t.e));
         double[] esc = creeperEscape(mc, p, t.e);         // brain-b1: weighs every hostile, not just this creeper
         CreeperSprint.Act a = cspr.start(now, t.e.getId(), away, mayHit, v.x, v.z, esc[0], esc[1]);
         reflex = Reflex.FLEEING;
@@ -972,18 +916,6 @@ public final class Reflexes {
         return out;
     }
 
-    /** 0.23.2: the blast a melee creeper duel should expect (a hit-and-back-off that fails at about 3 blocks). */
-    static double creeperBlast() { return Tuning.get("reflexes.creeperBlast"); }
-
-    /** 0.23.2: a melee duel with a lone creeper only with a big margin: health above the retreat line after that blast (armour counted) is at least the buffer. */
-    static boolean creeperDuelOk(double health, double maxHealth, int armor) {
-        return health - ReflexRules.retreatAt() - ThreatFacts.taken(creeperBlast(), armor) >= Math.max(4, Tuning.get("reflexes.blastHealthShare") * maxHealth);
-    }
-
-    private static boolean bigCreeperMargin(LocalPlayer p) {
-        return creeperDuelOk(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), p.getArmorValue());
-    }
-
     private void creeper(Minecraft mc, LocalPlayer p, Threat t) {
         if (t.d < CreeperSprint.SAFE) {         // 0.23.2: sprint, not a Baritone walk
             startCreeperSprint(mc, p, t);
@@ -1010,19 +942,6 @@ public final class Reflexes {
             holdWeapon(mc, p);
             mc.gameMode.attack(p, t.e);
             p.swing(InteractionHand.MAIN_HAND);
-        }
-    }
-
-    /** A duel's end: an explosion is whispered to the owner and made an incident in the flight recorder; the rest is logged only. */
-    private void duelEnded(CreeperDuel.End end) {
-        if (!end.exploded()) return;
-        synchronized (this) {
-            whispers.add("A creeper exploded at " + end.x() + " " + end.y() + " " + end.z() + " while I fought it.");
-        }
-        try {
-            io.github.mojolowjo.entropybot.Core.INSTANCE.recorder.jobEnded("reflex", "creeper duel at " + end.x() + " " + end.y() + " " + end.z(), end.text());
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] recorder (creeper duel): {}", e.toString());
         }
     }
 
@@ -1176,7 +1095,6 @@ public final class Reflexes {
         }
         noFood = false;
         reflex = Reflex.EATING;
-        mc.options.keyShift.setDown(false);
         eatTicks = 0;
         bites = 0;
         eatStartFood = p.getFoodData().getFoodLevel();

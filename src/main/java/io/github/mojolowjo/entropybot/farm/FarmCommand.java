@@ -27,7 +27,7 @@ public final class FarmCommand {
 
     /** "farm compact" and "farm here" are instant, even mid-job (the bridge answers them before the busy check). */
     public static boolean instant(String rest) {
-        return rest != null && rest.trim().toLowerCase().matches("^(compact|here|mode|grow|status)\\b.*");
+        return rest != null && rest.trim().toLowerCase().matches("^(compact|here|mode|status)\\b.*");
     }
 
     /**
@@ -35,10 +35,10 @@ public final class FarmCommand {
      * @param known places.farm, or null
      */
     public static Reply handle(String text, FarmSpot known, FarmWorld w) {
-        return handle(text, known, w, new FarmSettings.Effective(true, true, "", ""));
+        return handle(text, known, w, new FarmSettings.Effective(true, ""));
     }
 
-    /** P5: as above, the round harvesting and growing as {@code eff} says. */
+    /** P5: as above, the round harvesting as {@code eff} says. */
     public static Reply handle(String text, FarmSpot known, FarmWorld w, FarmSettings.Effective eff) {
         String t = text == null ? "" : text.trim().toLowerCase();
         FarmSpot f = known, save = null;
@@ -68,7 +68,7 @@ public final class FarmCommand {
         List<PlanStep> steps = new ArrayList<>();
         if (FarmRules.distSq(me, f.pos()) > 25) steps.add(PlanStep.walk(f.pos(), true));
         Map<String, Integer> have = w.inventory();
-        FarmRound round = new FarmRound(f, "farming", have, eff.modded(), eff.twerk());
+        FarmRound round = new FarmRound(f, "farming", have, eff.modded());
         for (String s : round.steps()) steps.add(PlanStep.of(s));
         return new Reply(null, save, new Start("farming", steps, note, round));
     }

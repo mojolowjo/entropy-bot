@@ -943,7 +943,6 @@ public final class AaRuntime implements JobPort {
             stopped = bb.task().spec().chain();
         }
         tree.root.halt("aa off: " + why);
-        releaseSwim(Minecraft.getInstance());
         if (chainRunning()) c.chains.clear();
         if (typedRun) c.stepRun.stop("aa off");
         typedRun = false;
@@ -971,16 +970,6 @@ public final class AaRuntime implements JobPort {
 
     /** AA's chain runs (the AI operator's request: the owner's vocabulary on the interpreter). */
     boolean chainRunning() { return c.chains.running() && CHAIN.equals(c.chains.name()); }
-    private boolean swimming;
-
-    /** Lets go of jump if AA holds it (aa off, death, hold, task change); leaves it when the air reflex holds it. */
-    private void releaseSwim(Minecraft mc) {
-        if (!swimming) return;
-        swimming = false;
-        if (mc != null && !Core.INSTANCE.reflexes.airSwimming()) mc.options.keyJump.setDown(false);
-        LOG.info("[entropybot] aa: swim-up released (aa stopped or paused)");
-    }
-
     /** The owner's order while AA's needs/idle task runs: the task is preempted (logged), the order runs (AA_PLAN 4). */
     void yieldToOwner(String verb) {
         if (!on() || !(chainRunning() || (typedRun && c.stepRun.running()))) return;
@@ -1029,7 +1018,6 @@ public final class AaRuntime implements JobPort {
                     runDeaths++;
                     io.github.mojolowjo.entropybot.aa.brain.Kit.died(bb, bb.clock.now());     // aa-kit: bb.in still holds the last live pos and bag
                 }
-                releaseSwim(mc);
                 if (bb.task() != null) {
                     tree.root.halt("died");
                     c.chains.clear();
@@ -1052,7 +1040,6 @@ public final class AaRuntime implements JobPort {
             goalsTick(p, tick);
             caveTick(now);
             if (now < heldUntil) {
-                releaseSwim(mc);
                 if (bb.in.otherJob == null) {
                     tracer.beginTick();
                     snapshot(now, "held");
@@ -1073,19 +1060,6 @@ public final class AaRuntime implements JobPort {
             // 0.36.2 (review 6): while danger drives, AA's chain starts no next step and no retry (the pause ended the
             // running one); held a little past AA's next tick, so it goes on by itself once the guard lets go
             if ("danger".equals(tree.driver()) && chainRunning()) c.chains.holdFor(10);
-            // 0.36.4 (aa40d: AA paused the iron job for "drowning" 10+ min while nothing moved the bot): under water with
-            // air short and danger driving, AA holds jump (swim up) until the air is full again or the danger ends
-            // 0.36.a1: not while the air reflex holds jump itself (one owner of the key; it also pauses Baritone)
-            // 0.36.a2: only for the air danger; a hostile/lava/creeper danger leaves jump to Baritone and the fight reflex
-            boolean otherDanger = bb.in.danger >= 2 || bb.in.inLavaOrFire || bb.in.creeperClose;
-            boolean swim = io.github.mojolowjo.entropybot.aa.AaSwim.hold("danger".equals(tree.driver()), p.isInWater(),
-                    p.getAirSupply(), p.getMaxAirSupply(), Core.INSTANCE.reflexes.airSwimming(), otherDanger, swimming);
-            if (swim != swimming) {
-                if (swim || !Core.INSTANCE.reflexes.airSwimming()) mc.options.keyJump.setDown(swim);
-                swimming = swim;
-                LOG.info(swim ? "[entropybot] aa: under water with air {} - swimming up"
-                        : "[entropybot] aa: swim-up released (air {}, driver {})", p.getAirSupply(), tree.driver());
-            }
             if (tree.ladder.last() == Status.SUCCESS && !data().has(AaLadder.SHELTER_FACT) && bb.flag(AaLadder.SHELTER_FACT)) {
                 data().addProperty(AaLadder.SHELTER_FACT, true);
                 c.saved();

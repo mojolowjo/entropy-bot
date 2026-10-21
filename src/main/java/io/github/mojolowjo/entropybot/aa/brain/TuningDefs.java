@@ -227,25 +227,6 @@ final class TuningDefs {
         Tuning.def("craftPlanner.smeltAlts", 10, "rm-constants 0.39.u2 (was CraftPlanner.SMELT_ALTS)", "How many alternatives of a missing furnace input are tried");
         // crafting
         Tuning.def("crafting.hereR", 6, "rm-constants 0.39.u2 (was Crafting.HERE_R)", "How near a furnace must be to count as 'here'");
-        // creeperRules
-        Tuning.def("creeperRules.look", 16, "rm-constants 0.39.u2 (was CreeperRules.LOOK)", "the creeper must be the only one within this");
-        Tuning.def("creeperRules.engageHealth", 12f, "rm-constants 0.39.u2 (was CreeperRules.ENGAGE_HEALTH)", "take one on only at this health or more");
-        Tuning.def("creeperRules.abortHealth", 8f, "rm-constants 0.39.u2 (was CreeperRules.ABORT_HEALTH)", "... and stop the duel at this or less");
-        Tuning.def("creeperRules.protectMargin", 16, "rm-constants 0.39.u2 (was CreeperRules.PROTECT_MARGIN)", "never a duel within this of a protect box");
-        Tuning.def("creeperRules.lineNeed", 5, "rm-constants 0.39.u2 (was CreeperRules.LINE_NEED)", "a clear straight retreat line this long");
-        Tuning.def("creeperRules.hit", 3.0, "rm-constants 0.39.u2 (was CreeperRules.HIT)", "hit from this close (center to center)");
-        Tuning.def("creeperRules.waitMin", 4, "rm-constants 0.39.u2 (was CreeperRules.WAIT_MIN)", "wait for the cooldown at 4-6 blocks");
-        Tuning.def("creeperRules.waitMax", 6, "rm-constants 0.39.u2 (was CreeperRules.WAIT_MAX)", "wait for the cooldown at 4-6 blocks");
-        Tuning.def("creeperRules.valve", 4.5, "rm-constants 0.39.u2 (was CreeperRules.VALVE)", "swelling this close with no room");
-        Tuning.def("creeperRules.ready", 0.95f, "rm-constants 0.39.u2 (was CreeperRules.READY)", "attack strength for a full (knockback) hit");
-        Tuning.def("creeperRules.swellOk", 0.2f, "rm-constants 0.39.u2 (was CreeperRules.SWELL_OK)", "charge only while the fuse is below this");
-        Tuning.def("creeperRules.swellAbort", 0.4f, "rm-constants 0.39.u2 (was CreeperRules.SWELL_ABORT)", "a charge that meets a fuse this far along turns back");
-        Tuning.def("creeperRules.chargeTicks", 40, "rm-constants 0.39.u2 (was CreeperRules.CHARGE_TICKS)", "a charge that hasn't arrived by, then waits again");
-        Tuning.def("creeperRules.maxMisses", 4, "rm-constants 0.39.u2 (was CreeperRules.MAX_MISSES)", "charges in a row without damage,, then give up");
-        Tuning.def("creeperRules.giveUpTicks", 600, "rm-constants 0.39.u2 (was CreeperRules.GIVE_UP_TICKS)", "30 s per duel");
-        Tuning.def("creeperRules.bowMin", 8, "rm-constants 0.39.u2 (was CreeperRules.BOW_MIN)", "30 s per duel");
-        Tuning.def("creeperRules.bowMax", 15, "rm-constants 0.39.u2 (was CreeperRules.BOW_MAX)", "30 s per duel");
-        Tuning.def("creeperRules.step", 0.25, "rm-constants 0.39.u2 (was CreeperRules.STEP)", "the step of CreeperRules");
         // creeperSprint
         Tuning.def("creeperSprint.start", 6, "rm-constants 0.39.u2 (was CreeperSprint.START)", "the start of CreeperSprint");
         Tuning.def("creeperSprint.maxTicks", 100, "rm-constants 0.39.u2 (was CreeperSprint.MAX_TICKS)", "the max ticks of CreeperSprint");
@@ -351,9 +332,6 @@ final class TuningDefs {
         Tuning.def("farmPlanting.maxTicks", 20L * 60 * 5, "rm-constants 0.39.u2 (was FarmPlanting.MAX_TICKS)", "The longest planting job, in ticks (5 minutes)");
         // farmRules
         Tuning.def("farmRules.farmR", 6, "rm-constants 0.39.u2 (was FarmRules.FARM_R)", "Crops within this many blocks of the farm spot");
-        Tuning.def("farmRules.farmGrowS", 60, "rm-constants 0.39.u2 (was FarmRules.FARM_GROW_S)", "Longest twerk in one round, in seconds");
-        Tuning.def("farmRules.squatR", 3, "rm-constants 0.39.u2 (was FarmRules.SQUAT_R)", "Squat Grow's 'range' (pack/config/squatgrow-common.yaml)");
-        Tuning.def("farmRules.farmSpots", 4, "rm-constants 0.39.u2 (was FarmRules.FARM_SPOTS)", "How many spots a round twerks at (each up to FARM_GROW_S s) so Squat Grow reaches the whole farm (owner, 2026-10-03)");
         Tuning.def("farmRules.farmFree", 4, "rm-constants 0.39.u2 (was FarmRules.FARM_FREE)", "A round that ends with this many free bag slots or fewer puts things away at the base");
         // fishRules
         Tuning.def("fishRules.defaultN", 4, "rm-constants 0.39.u2 (was FishRules.DEFAULT_N)", "the default n of FishRules");
@@ -620,7 +598,6 @@ final class TuningDefs {
         Tuning.def("reflexes.forcedRange", 24, "rm-constants 0.39.u2 (was Reflexes.FORCED_RANGE)", "---- attack | nearest (C1, 0.20.5)");
         Tuning.def("reflexes.forcedTicks", 600, "rm-constants 0.39.u2 (was Reflexes.FORCED_TICKS)", "30 s");
         Tuning.def("reflexes.creeperOverride", 10, "rm-constants 0.39.u2 (was Reflexes.CREEPER_OVERRIDE)", "0.32.1: a creeper this close is the target whatever else is near (the owner's rule)");
-        Tuning.def("reflexes.creeperBlast", 12, "rm-constants 0.39.u2 (was Reflexes.CREEPER_BLAST)", "0.23.2: the blast a melee creeper duel should expect (a hit-and-back-off that fails at about 3 blocks)");
         // replan
         Tuning.def("replan.refill", 0.05, "rm-constants 0.39.u2 (was Replan.REFILL)", "the refill of Replan");
         Tuning.def("replan.climbBlock", 3, "rm-constants 0.39.u2 (was Replan.CLIMB_BLOCK)", "the climb block of Replan");
@@ -878,7 +855,6 @@ final class TuningDefs {
         Tuning.def("aaRuntime.wornPct", 15, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "pickaxe durability percent under which a single pickaxe is worn");
         Tuning.def("aaRuntime.writeErrorMs", 60_000, "rm-constants 0.39.u2 (inline literal in AaRuntime)", "milliseconds between two logs of a write error");
         Tuning.def("aaScorer.bagBandWidth", 6, "rm-constants 0.39.u2 (inline literal in AaScorer)", "free slots between the bag need switching on and off");
-        Tuning.def("aaSwim.airUrgent", 100, "rm-constants 0.39.u2 (inline literal in AaSwim)", "air ticks under which the bot counts as short of air");
         Tuning.def("aaTree.airShort", 300, "rm-constants 0.39.u2 (inline literal in AaTree)", "air ticks under which air counts as short (a full breath is 300)");
         Tuning.def("aaTree.airUrgent", 100, "rm-constants 0.39.u2 (inline literal in AaTree)", "air ticks under which the air reflex is urgent");
         Tuning.def("aaTree.drownHealth", 8, "rm-constants 0.39.u2 (inline literal in AaTree)", "health at or under which short air is drowning");
@@ -954,23 +930,6 @@ final class TuningDefs {
         Tuning.def("crafting.nearR", 16, "rm-constants 0.39.u2 (inline literal in Crafting)", "blocks within which a station counts as near");
         Tuning.def("crafting.slotsTicks", 4, "rm-constants 0.39.u2 (inline literal in Crafting)", "ticks the slots are given to arrive");
         Tuning.def("crafting.tableWaitTicks", 60, "rm-constants 0.39.u2 (inline literal in Crafting)", "ticks a table is given to open");
-        Tuning.def("creeperDuel.backGain", 0.05, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "blocks a retreat must gain to count as progress");
-        Tuning.def("creeperDuel.checkTicks", 20, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "ticks between two checks of the surroundings");
-        Tuning.def("creeperDuel.drawGapTicks", 5, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "ticks between two bow draws");
-        Tuning.def("creeperDuel.lookBack", 5, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "blocks behind the bot it looks to while backing off");
-        Tuning.def("creeperDuel.refuseTicks", 10, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "ticks a refused creeper stays refused");
-        Tuning.def("creeperDuel.scanDistSq", 25, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "squared blocks round the creeper that count (5 blocks)");
-        Tuning.def("creeperDuel.scanR", 5, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "blocks round the creeper scanned for obstacles");
-        Tuning.def("creeperDuel.seenDist", 2.5, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "blocks within which a mob counts as seen without a line of sight");
-        Tuning.def("creeperDuel.sprintFood", 6, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "food from which the bot may sprint (vanilla needs more than 6)");
-        Tuning.def("creeperDuel.stallTicks", 12, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "ticks without retreat progress after which the retreat counts as stalled");
-        Tuning.def("creeperDuel.stopMargin", 1.5, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "blocks short of the safe distance the run may stop");
-        Tuning.def("creeperDuel.swellDecay", 0.98f, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "share of the highest swell kept each tick");
-        Tuning.def("creeperDuel.walkedOff", 20, "rm-constants 0.39.u2 (inline literal in CreeperDuel)", "blocks the creeper may go before the duel ends");
-        Tuning.def("creeperRules.builtBlocks", 6, "rm-constants 0.39.u2 (inline literal in CreeperRules)", "built blocks in a spot from which it counts as built");
-        Tuning.def("creeperRules.dropMax", 3, "rm-constants 0.39.u2 (inline literal in CreeperRules)", "blocks a retreat line may drop");
-        Tuning.def("creeperRules.lineLen", 5, "rm-constants 0.39.u2 (inline literal in CreeperRules)", "blocks of straight retreat line checked");
-        Tuning.def("creeperRules.opensMin", 4, "rm-constants 0.39.u2 (inline literal in CreeperRules)", "open cells on a retreat line for it to count as open");
         Tuning.def("creeperSprint.safeMax", 17, "rm-constants 0.39.u2 (inline literal in CreeperSprint)", "the most safe distance a chain asks for");
         Tuning.def("creeperSprint.safePerChain", 5, "rm-constants 0.39.u2 (inline literal in CreeperSprint)", "blocks of safe distance added per sprint in a chain");
         Tuning.def("curves.minSamples", 3, "rm-constants 0.39.u2 (inline literal in Curves)", "samples a rate needs before it is trusted over the prior");
@@ -986,6 +945,9 @@ final class TuningDefs {
         Tuning.def("drownRisk.riskK", 4, "rm-constants 0.39.u2 (inline literal in DrownRisk)", "weight of the drown risk squared in the price");
         Tuning.def("engineProcess.errorsOff", 5, "rm-constants 0.39.u2 (inline literal in EngineProcess)", "errors after which the engine process switches itself off");
         Tuning.def("escort.feedDist", 5, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks within which the bot feeds the player");
+        Tuning.def("floorSteps.throwLookDist", 8, "rm-final 0.39.u3", "blocks ahead of the bot the camera is aimed at for the junk throw");
+        Tuning.def("floorSteps.throwLookUp", 1.4, "rm-final 0.39.u3", "blocks above eye level the throw aims (about 10 degrees up at 8 blocks)");
+        Tuning.def("escort.throwLookTicks", 3, "rm-final 0.39.u3", "ticks the camera (Baritone's LookBehavior) gets to face the player before the food is thrown");
         Tuning.def("escort.fightDist", 4, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks within which an escort fights a mob");
         Tuning.def("escort.stepTicks", 40, "rm-constants 0.39.u2 (inline literal in Escort)", "ticks a step lasts");
         Tuning.def("escort.warnMargin", 8, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks beyond the warning distance a mob is ignored");
@@ -1050,7 +1012,6 @@ final class TuningDefs {
         Tuning.def("reflexRules.seenDist", 2.5, "rm-constants 0.39.u2 (inline literal in ReflexRules)", "blocks within which a mob counts as seen without a line of sight");
         Tuning.def("reflexes.aaOffRepriceTicks", 20, "rm-constants 0.39.u2 (inline literal in Reflexes)", "ticks between two prices of the AA-off way");
         Tuning.def("reflexes.bitesMax", 10, "rm-constants 0.39.u2 (inline literal in Reflexes)", "bites one meal may take");
-        Tuning.def("reflexes.blastHealthShare", 0.2, "rm-constants 0.39.u2 (inline literal in Reflexes)", "share of max health that must be left after a blast");
         Tuning.def("reflexes.creeperKeep", 4, "rm-constants 0.39.u2 (inline literal in Reflexes)", "blocks beyond which a creeper out of sight is dropped");
         Tuning.def("reflexes.deadRetryTicks", 200, "rm-constants 0.39.u2 (inline literal in Reflexes)", "ticks between two respawn asks");
         Tuning.def("reflexes.deadWaitTicks", 40, "rm-constants 0.39.u2 (inline literal in Reflexes)", "ticks dead before the respawn is asked");

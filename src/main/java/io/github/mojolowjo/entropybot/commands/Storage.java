@@ -97,19 +97,19 @@ public final class Storage {
 
     // ---- clicking and remembering containers ----
 
-    /** "use x y z": right-click the block (within reach); a container that opens is remembered under these coords. */
-    String use(LocalPlayer p, String text) {
-        String t = text == null ? "" : text.trim();
-        if (!t.matches("^-?\\d+\\s+-?\\d+\\s+-?\\d+$")) return "usage: use x y z";
-        String r = Jobs.useBlock(p, t);
-        if (r.startsWith("ok")) {
-            lastOpened = String.join(" ", t.split("\\s+"));
+    /**
+     * Right-clicks the container at pos through Baritone's job hands (it looks, stands and clicks), called every step until it ends;
+     * a container that opens is remembered under these coords.
+     */
+    io.github.mojolowjo.entropybot.aa.moves.JobHands.Result use(int[] pos) {
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(pos, "the container");
+        if (r.done()) {
+            lastOpened = pos[0] + " " + pos[1] + " " + pos[2];
             lastOpenedTick = now();
             containerSeen = false;
         }
         return r;
     }
-
     /** The open container's note under lastOpened (the trust flag kept, the other half of a double chest dropped). */
     void rememberOpen(LocalPlayer p) {
         Map<String, Integer> contents = Gui.containerContents(p);

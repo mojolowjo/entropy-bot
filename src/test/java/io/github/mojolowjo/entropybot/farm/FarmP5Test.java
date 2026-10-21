@@ -18,57 +18,45 @@ class FarmP5Test {
     @Test
     void autoModeFollowsTheModList() {
         FarmSettings auto = FarmSettings.DEFAULT;
-        // {hwe, squat} -> {modded, twerk}
-        boolean[][] table = {{true, true, true, true}, {true, false, true, false}, {false, true, false, false}, {false, false, false, false}};
-        for (boolean[] row : table) {
-            FarmSettings.Effective e = auto.resolve(row[0], row[1]);
-            assertEquals(row[2], e.modded(), "hwe " + row[0] + " squat " + row[1]);
-            assertEquals(row[3], e.twerk(), "hwe " + row[0] + " squat " + row[1]);
-            assertTrue(e.modeWhy().startsWith("auto: Harvest with Ease is " + (row[0] ? "loaded" : "not loaded")), e.modeWhy());
+        for (boolean hwe : new boolean[]{true, false}) {
+            FarmSettings.Effective e = auto.resolve(hwe);
+            assertEquals(hwe, e.modded(), "hwe " + hwe);
+            assertTrue(e.modeWhy().startsWith("auto: Harvest with Ease is " + (hwe ? "loaded" : "not loaded")), e.modeWhy());
         }
-        assertEquals("auto: vanilla mode doesn't crouch", auto.resolve(false, true).growWhy());
     }
 
     @Test
     void setModesWinAndWarn() {
-        FarmSettings.Effective e = new FarmSettings("vanilla", "auto").resolve(true, true);
+        FarmSettings.Effective e = new FarmSettings("vanilla").resolve(true);
         assertFalse(e.modded());
-        assertFalse(e.twerk(), "auto grow follows the vanilla mode");
-        e = new FarmSettings("modded", "off").resolve(false, true);
+        e = new FarmSettings("modded").resolve(false);
         assertTrue(e.modded());
-        assertFalse(e.twerk());
         assertTrue(e.modeWhy().contains("Harvest with Ease is not loaded"), e.modeWhy());
-        e = new FarmSettings("vanilla", "on").resolve(true, false);
-        assertTrue(e.twerk());
-        assertTrue(e.growWhy().contains("Squat Grow is not loaded"));
     }
 
     @Test
     void settingsParseAndSave() {
         FarmSettings s = FarmSettings.DEFAULT;
         FarmSettings.Change c = s.command("mode vanilla");
-        assertEquals(new FarmSettings("vanilla", "auto"), c.set());
+        assertEquals(new FarmSettings("vanilla"), c.set());
         assertEquals("ok: farm mode is now vanilla", c.reply());
-        c = c.set().command("grow twerk off");
-        assertEquals(new FarmSettings("vanilla", "off"), c.set());
-        assertEquals(new FarmSettings("auto", "on"), s.command("grow on").set());
+        assertNull(s.command("grow on").reply(), "the crouching grow is gone: not a settings command");
         assertNull(s.command("mode sideways").set());
         assertEquals(FarmSettings.USAGE, s.command("mode sideways").reply());
         assertNull(s.command("here").reply(), "not a settings command");
         assertNull(s.command("").reply());
-        JsonObject o = new FarmSettings("modded", "off").toJson();
-        assertEquals(new FarmSettings("modded", "off"), FarmSettings.fromJson(o));
+        JsonObject o = new FarmSettings("modded").toJson();
+        assertEquals(new FarmSettings("modded"), FarmSettings.fromJson(o));
         assertEquals(FarmSettings.DEFAULT, FarmSettings.fromJson(null));
         o.addProperty("mode", "weird");
         assertEquals("auto", FarmSettings.fromJson(o).mode());
-        String st = FarmSettings.DEFAULT.statusText(FarmSettings.DEFAULT.resolve(false, false));
+        String st = FarmSettings.DEFAULT.statusText(FarmSettings.DEFAULT.resolve(false));
         assertTrue(st.startsWith("farm: mode vanilla"), st);
         assertTrue(st.contains("Harvest with Ease is not loaded"), st);
     }
-
     @Test
     void farmCommandSettingsAreInstant() {
-        for (String s : List.of("mode vanilla", "grow twerk off", "status", "here", "compact off")) assertTrue(FarmCommand.instant(s), s);
+        for (String s : List.of("mode vanilla", "status", "here", "compact off")) assertTrue(FarmCommand.instant(s), s);
         assertFalse(FarmCommand.instant("plant wheat here 4"));
         assertFalse(FarmCommand.instant(""));
     }
@@ -223,15 +211,12 @@ class FarmP5Test {
         }
         w.at(0.5, 53, 2.5);
         FarmSpot f = new FarmSpot(0, 53, 0, null, "off");
-        FarmCommand.Reply r = FarmCommand.handle("", f, w, new FarmSettings("vanilla", "auto").resolve(true, true));
-        assertEquals(List.of("farmgrow", "farmharvest", "farmgather", "farmreplant", "farmcompact", "farmdone", "farmdeposit"),
+        FarmCommand.Reply r = FarmCommand.handle("", f, w, new FarmSettings("vanilla").resolve(true));
+        assertEquals(List.of("farmscan", "farmharvest", "farmgather", "farmreplant", "farmcompact", "farmdone", "farmdeposit"),
                 r.start().steps().stream().map(PlanStep::type).toList());
         FarmRound round = r.start().round();
-        assertFalse(round.twerk);
-        // grow: no crouching
-        FarmRound.Tick t = round.step("farmgrow", w, 0, 100);
+        FarmRound.Tick t = round.step("farmscan", w, 0, 100);
         assertEquals("next", t.result());
-        assertTrue(t.effects().stream().noneMatch(e -> e instanceof FarmRound.Sneak s && s.down()));
         // harvest: a Break for each ripe crop in reach, never for the unripe one
         int breaks = 0;
         for (int i = 0; i < 20; i++) {
@@ -274,7 +259,7 @@ class FarmP5Test {
     @Test
     void moddedRoundKeepsTheOldSteps() {
         FarmSpot f = new FarmSpot(FarmTest.FX, 53, FarmTest.FZ, null, "off");
-        FarmCommand.Reply r = FarmCommand.handle("", f, FarmTest.farmWorld(), FarmSettings.DEFAULT.resolve(true, true));
+        FarmCommand.Reply r = FarmCommand.handle("", f, FarmTest.farmWorld(), FarmSettings.DEFAULT.resolve(true));
         assertEquals(FarmRound.STEPS, r.start().steps().stream().map(PlanStep::type).toList());
         assertEquals("", r.start().round().replantNote());
     }

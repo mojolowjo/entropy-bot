@@ -238,6 +238,7 @@ final class FloorSteps {
         double[] start;
         Map<String, Integer> plan;
         long t0;
+        float yaw;
     }
 
     /** The "trip" a junk-drop clear splices in when the bag is full: turn toward the dug side, throw the junk. */
@@ -249,6 +250,11 @@ final class FloorSteps {
         js.start = start;
         s.state = js;
         return s;
+    }
+
+    private static void throwLook(LocalPlayer p, float yaw) {
+        double rad = Math.toRadians(yaw), reach = Tuning.get("floorSteps.throwLookDist");
+        io.github.mojolowjo.entropybot.aa.moves.Moves.lookAt(new double[]{p.getX() - Math.sin(rad) * reach, p.getEyeY() + Tuning.get("floorSteps.throwLookUp"), p.getZ() + Math.cos(rad) * reach});
     }
 
     static String junkRun(Seq seq, Seq.Step st, LocalPlayer p) {
@@ -266,14 +272,17 @@ final class FloorSteps {
             if (js.plan.isEmpty()) return "no plain junk blocks to throw away";
             // the rotation reaches the server with the next movement packets, before the throw clicks
             float yaw = JunkDrop.throwYaw(js.start, p.getX(), p.getZ(), js.job.box);
-            p.setYRot(yaw);
-            p.setYHeadRot(yaw);
-            p.setXRot(-10f);  // structural: look pitch up in degrees
+            // the camera is Baritone's LookBehavior target (Moves), a little upward; the settle wait lets it turn before the throw
+            js.yaw = yaw;
+            throwLook(p, yaw);
             js.t0 = now;
             seq.setStatus(seq.label + " - throwing junk blocks away");
             return "wait";
         }
-        if (now - js.t0 < Tuning.i("floorSteps.settleTicks")) return "wait";
+        if (now - js.t0 < Tuning.i("floorSteps.settleTicks")) {
+            throwLook(p, js.yaw);
+            return "wait";
+        }
         if (mc.screen != null || Gui.open(p)) Gui.close(p);
         for (Map.Entry<String, Integer> e : js.plan.entrySet()) {
             String r = GuiCore.drop(new McMenu(p), e.getKey() + " " + e.getValue());

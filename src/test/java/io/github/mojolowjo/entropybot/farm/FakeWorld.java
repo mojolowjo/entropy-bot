@@ -15,7 +15,7 @@ final class FakeWorld implements FarmWorld {
     final String[] ids = new String[36];
     final int[] counts = new int[36];
     int selected;
-    boolean pathing;
+    boolean pathing, hands;
     final List<LiveDrop> live = new ArrayList<>();
     int nextDrop = 1;
 
@@ -162,6 +162,7 @@ final class FakeWorld implements FarmWorld {
     }
 
     @Override public boolean pathing() { return pathing; }
+    @Override public boolean handsBusy() { return hands; }
 
     List<Compact.Slot> bag() {
         List<Compact.Slot> out = new ArrayList<>();

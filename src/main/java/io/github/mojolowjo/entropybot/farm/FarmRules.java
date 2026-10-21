@@ -8,24 +8,17 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The farm's pure rules, ported from the bridge (claude_bridge.js: cropAt, farmCrops, farmCropsNow, squatReach,
- * inSquatRange, farmDrops, dropStandSpot, farmStandSpot, harmlessHand/holdHarmless). Squat Grow grows crops next to
- * a crouching player; Harvest with Ease harvests and replants a ripe crop on a right-click.
+ * The farm's pure rules, ported from the bridge (claude_bridge.js: cropAt, farmCrops, farmCropsNow,
+ * farmDrops, dropStandSpot, harmlessHand/holdHarmless). Harvest with Ease harvests and replants a ripe crop on a right-click.
  */
 public final class FarmRules {
     private FarmRules() {}
 
     /** Crops within this many blocks of the farm spot. */
     public static int farmR() { return Tuning.i("farmRules.farmR"); }
-    /** Longest twerk in one round, in seconds. */
-    public static int farmGrowS() { return Tuning.i("farmRules.farmGrowS"); }
     public static final String FARM_ESS = "mysticalagriculture:inferium_essence";
     public static final String FARM_BLOCK = "mysticalagriculture:inferium_block";
     public static final String FARM_PRUD = "mysticalagriculture:prudentium_essence";
-    /** Squat Grow's "range" (pack/config/squatgrow-common.yaml): crops this close to the crouching player grow. */
-    public static int squatR() { return Tuning.i("farmRules.squatR"); }
-    /** How many spots a round twerks at (each up to FARM_GROW_S s) so Squat Grow reaches the whole farm (owner, 2026-10-03). */
-    public static int farmSpots() { return Tuning.i("farmRules.farmSpots"); }
     /** A round that ends with this many free bag slots or fewer puts things away at the base. */
     public static int farmFree() { return Tuning.i("farmRules.farmFree"); }
     /** How far the harvest right-click reaches (eye to the crop's center). */
@@ -73,73 +66,9 @@ public final class FarmRules {
         return out;
     }
 
-    /** How many of these crops a player whose feet are at p makes grow by crouching (Squat Grow's range is a cube). */
-    public static int squatReach(int[] p, List<int[]> crops) {
-        int n = 0;
-        for (int[] c : crops) {
-            if (Math.abs(c[0] - p[0]) <= squatR() && Math.abs(c[1] - p[1]) <= squatR() && Math.abs(c[2] - p[2]) <= squatR()) n++;
-        }
-        return n;
-    }
-
-    public static boolean inSquatRange(int[] p, List<int[]> crops) {
-        return squatReach(p, crops) == crops.size();
-    }
-
     public static long distSq(int[] a, int[] b) {
         long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
         return dx * dx + dy * dy + dz * dz;
-    }
-
-    /** A spot to stand on: x y z, how many crops it reaches (n), whether it is a crop's own cell, its distSq to the bot. */
-    public record Stand(int x, int y, int z, int n, int onCrop, long d) {
-        public int[] pos() { return new int[]{x, y, z}; }
-
-        public String fmt() { return x + " " + y + " " + z; }
-    }
-
-    /**
-     * Where to crouch: the free spot that reaches the most crops (all of them on a farm up to 7 wide), then one that
-     * isn't a crop's own cell (standing among them is fine, but the path there may cross the farm), then the nearest
-     * to the bot. Null when no standable cell reaches any.
-     */
-    public static Stand farmStandSpot(FarmWorld w, List<int[]> crops) { return farmStandSpot(w, crops, Set.of()); }
-
-    /**
-     * As above, never one of {@code skip} ("x y z": spots the bot couldn't get to this round). Any crop's cell counts
-     * as "on a crop" for the tie-break, not only the crops asked about (0.8.2).
-     */
-    public static Stand farmStandSpot(FarmWorld w, List<int[]> crops, Set<String> skip) {
-        int[] me = w.here();
-        int x1 = Integer.MAX_VALUE, x2 = Integer.MIN_VALUE, y1 = Integer.MAX_VALUE, y2 = Integer.MIN_VALUE, z1 = Integer.MAX_VALUE, z2 = Integer.MIN_VALUE;
-        Set<String> cells = new HashSet<>();
-        for (int[] c : crops) {
-            x1 = Math.min(x1, c[0]); x2 = Math.max(x2, c[0]);
-            y1 = Math.min(y1, c[1]); y2 = Math.max(y2, c[1]);
-            z1 = Math.min(z1, c[2]); z2 = Math.max(z2, c[2]);
-            cells.add(c[0] + " " + c[1] + " " + c[2]);
-        }
-        Stand best = null;
-        for (int x = x1 - squatR(); x <= x2 + squatR(); x++) {
-            for (int z = z1 - squatR(); z <= z2 + squatR(); z++) {
-                // the bridge's range: from one below the highest crop to one above the lowest
-                for (int y = y2 - 1; y <= y1 + 1; y++) {
-                    int[] p = {x, y, z};
-                    int n = squatReach(p, crops);
-                    if (n == 0 || (best != null && n < best.n())) continue;
-                    if (!w.standable(x, y, z) || skip.contains(x + " " + y + " " + z)) continue;
-                    int onCrop = cells.contains(x + " " + y + " " + z) || cropAt(w, x, y, z) != null ? 1 : 0;
-                    long d = distSq(me, p);
-                    // 0.8.2: the nearest first, then off a crop: Baritone walks the crop rows now (modded farmland), and
-                    // cells past the field's edge proved unreachable (a wall, water) while tying on reach
-                    if (best == null || n > best.n()
-                            || (n == best.n() && (d < best.d() || (d == best.d() && onCrop < best.onCrop())))) {
-                        best = new Stand(x, y, z, n, onCrop, d);
-                    }
-                }
-            }
-        }
-        return best;
     }
 
     /** The farm's item drops: those within FARM_R + 1 of the farm spot (x and z, from its block's center) and 3 up or down. */

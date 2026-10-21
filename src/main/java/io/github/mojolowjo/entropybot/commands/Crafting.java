@@ -804,7 +804,7 @@ final class Crafting {
         return io.github.mojolowjo.entropybot.farm.FarmSettings.fromJson(b.has("farm") && b.get("farm").isJsonObject() ? b.getAsJsonObject("farm") : null);
     }
 
-    /** P5: whether Harvest with Ease and Squat Grow are loaded (false when the mod list can't be read, logged). */
+    /** P5: whether Harvest with Ease is loaded (false when the mod list can't be read, logged). */
     static boolean modLoaded(String id) {
         try {
             return net.neoforged.fml.ModList.get().isLoaded(id);
@@ -815,10 +815,10 @@ final class Crafting {
     }
 
     io.github.mojolowjo.entropybot.farm.FarmSettings.Effective farmEffective() {
-        return farmSettings().resolve(modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.HWE), modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.SQUAT));
+        return farmSettings().resolve(modLoaded(io.github.mojolowjo.entropybot.farm.FarmSettings.HWE));
     }
 
-    /** "farm status": the mode and grow in effect and why, the farm, its crops by type and ripeness. */
+    /** "farm status": the mode in effect and why, the farm, its crops by type and ripeness. */
     String farmStatus(LocalPlayer p) {
         var fs = farmSettings();
         var eff = farmEffective();
@@ -847,7 +847,7 @@ final class Crafting {
 
     String farm(LocalPlayer p, String text) { return farm(p, text, null); }
 
-    /** "farm [here | compact ... | mode ... | grow ... | status | plant ...]". */
+    /** "farm [here | compact ... | mode ... | status | plant ...]". */
     String farm(LocalPlayer p, String text, String from) {
         String t = text == null ? "" : text.trim();
         String lt = t.toLowerCase(java.util.Locale.ROOT);
@@ -859,7 +859,7 @@ final class Crafting {
             commands.brainData().add("farm", ch.set().toJson());
             commands.saved();
             var eff = farmEffective();
-            return ch.reply() + " - in effect: " + eff.modeWord() + ", " + eff.growWord();
+            return ch.reply() + " - in effect: " + eff.modeWord();
         }
         FarmCommand.Reply r = FarmCommand.handle(text, farmSpot(), new McFarmWorld(p), farmEffective());
         if (r.save() != null) commands.putPlace("farm", r.save().toJson());
@@ -1425,22 +1425,23 @@ final class Crafting {
 
     private String farmStep(Seq s, Step st, LocalPlayer p, long elapsed) {
         McFarmWorld w = new McFarmWorld(p);
+        if (st.type.equals("farmscan")) io.github.mojolowjo.entropybot.farm.FarmHands.clear("a new farm round");
         FarmRound.Tick t = s.farm.step(st.type, w, elapsed, now());
         io.github.mojolowjo.entropybot.clear.LeaseSet leases = farmLeases.get(s);
         if (leases != null) leases.beat();
         for (FarmRound.Effect fx : t.effects()) {
             if (fx instanceof FarmRound.Break br) {
                 // P5 vanilla: crops are on the guard's built-block list (the floor), so each ripe crop gets a one-cell
-                // force lease for its one click (the break is checked at once, in startDestroyBlock) and loses it after
+                // force lease for its one click (the break is checked by Baritone's hook) and loses it after
+                // (the lease is held until Baritone's hands have broken it, then let go)
                 io.github.mojolowjo.entropybot.clear.LeaseSet one = Clearing.newLeases();
-                try {
-                    String le = one.take("farm harvest " + br.x() + " " + br.y() + " " + br.z(),
-                            new io.github.mojolowjo.entropybot.clear.ClearBox(br.x(), br.y(), br.z(), br.x(), br.y(), br.z()), false, true);
-                    if (le != null) return le.replaceFirst("^error: ", "");
-                    w.apply(fx);
-                } finally {
+                String le = one.take("farm harvest " + br.x() + " " + br.y() + " " + br.z(),
+                        new io.github.mojolowjo.entropybot.clear.ClearBox(br.x(), br.y(), br.z(), br.x(), br.y(), br.z()), false, true);
+                if (le != null) {
                     one.releaseAll();
+                    return le.replaceFirst("^error: ", "");
                 }
+                w.breakBlock(br.x(), br.y(), br.z(), one::releaseAll);
             } else if (fx instanceof FarmRound.Plant) {
                 // P5 vanilla: a place lease over the farm's box (FARM_R + 1 around the spot, 3 up and down) for the seeds
                 if (leases == null) {
@@ -1458,7 +1459,7 @@ final class Crafting {
                 String le = leases.ensure();
                 if (le != null) return le.replaceFirst("^error: ", "");
                 FarmRound.Plant pl = (FarmRound.Plant) fx;
-                if (Clearing.holdItem(p, pl.item())) w.use(pl.x(), pl.y(), pl.z());
+                w.plant(pl.x(), pl.y(), pl.z(), pl.item());
             } else if (fx instanceof FarmRound.Craft c) {
                 Step cs = new Step("craftitem");
                 cs.text = c.item() + " " + c.n();
@@ -1478,12 +1479,13 @@ final class Crafting {
                 w.apply(fx);
             }
         }
+        io.github.mojolowjo.entropybot.farm.FarmHands.pump();       // Baritone's hands follow the round's one request at a time
+        if (!t.result().equals("wait") && !t.result().equals("next")) io.github.mojolowjo.entropybot.farm.FarmHands.clear("the farm round ended: " + t.result());
         if (t.status() != null) s.setStatus(t.status());
         if (t.note() != null) {
             s.note = t.note();
             lastFarmNote = t.note();
         }
-        if (!t.result().equals("wait")) Minecraft.getInstance().options.keyShift.setDown(false);
         // the vanilla round's leases end after the replant (or when the round fails)
         if (leases != null && ((!t.result().equals("wait") && !t.result().equals("next")) || (st.type.equals(FarmRound.REPLANT) && t.result().equals("next")))) {
             leases.releaseAll();
@@ -1525,7 +1527,6 @@ final class Crafting {
             c.stage = null;
             if (c.loop != null) c.loop.interrupted();      // a batch in flight is still counted (never dropped)
         }
-        Minecraft.getInstance().options.keyShift.setDown(false);
     }
 
     // ---- the crafting grid (the bridge's stepCraft, with exact clicks instead of EMI's fill) ----
@@ -1581,8 +1582,9 @@ final class Crafting {
             // walked to the table (the spliced walk step): right-click it and wait for its menu
             if (c.stageTick < 0) {
                 if (Gui.open(p) || Minecraft.getInstance().screen != null) Gui.close(p);
-                String r = Jobs.useBlock(p, Jobs.fmt(c.table));
-                if (!r.startsWith("ok")) return craftFail(s, st, CraftJob.couldNotOpenTable(r));
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(c.table, "the crafting table");
+                if (r.running()) return "wait";
+                if (r.failed()) return craftFail(s, st, CraftJob.couldNotOpenTable(r.why()));
                 c.stageTick = now();
                 return "wait";
             }

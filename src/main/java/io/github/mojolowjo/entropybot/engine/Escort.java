@@ -7,7 +7,6 @@ import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Entity;
@@ -178,6 +177,7 @@ public final class Escort {
                 if (stepping) { stepping = false; engine.release(); }
                 return;
             }
+            nowTick = now;
             double[] s = EscortRules.standoff(g.getX(), g.getZ(), p.getX(), p.getZ());
             if (stepping && (s == null || now >= stepUntil)) {
                 stepping = false;
@@ -187,7 +187,8 @@ public final class Escort {
                 stepUntil = now + Tuning.i("escort.stepTicks");
                 engine.override(new GoalNear(BlockPos.containing(s[0], p.getY(), s[1]), 0));
             }
-            if (now % 20 == 0) feed(mc, p, g);  // structural: periodic cadence in ticks (20 ticks = 1 s)
+            if (throwAt > 0 && now >= throwAt) throwNow(p, g);
+            else if (throwAt == 0 && now % 20 == 0) feed(mc, p, g);  // structural: periodic cadence in ticks (20 ticks = 1 s)
         } catch (RuntimeException ex) {
             LOG.warn("[entropybot] escort: {}", ex.toString());
         }
@@ -213,13 +214,27 @@ public final class Escort {
         if (n <= 0 || bestSlot < 0) return;
         String id = BuiltInRegistries.ITEM.getKey(inv.getItem(bestSlot).getItem()).toString();
         String item = BuiltInRegistries.ITEM.getKey(inv.getItem(bestSlot).getItem()).getPath();
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, g.getEyePosition());
-        // the inventory menu's THROW click, in the look direction (face the target first)
-        int thrown = throwItems(p, id, n);
+        // the camera is Baritone's LookBehavior target (Moves); the inventory menu's THROW click follows a few ticks later, in that look direction
+        net.minecraft.world.phys.Vec3 eye = g.getEyePosition();
+        io.github.mojolowjo.entropybot.aa.moves.Moves.lookAt(new double[]{eye.x, eye.y, eye.z});
+        pending = new Throw(id, item, n, food);
+        throwAt = Math.max(1, nowTick + Tuning.i("escort.throwLookTicks"));
+    }
+
+    private record Throw(String id, String item, int n, int food) {}
+    private Throw pending;
+    private long throwAt, nowTick;
+
+    private void throwNow(LocalPlayer p, Player g) {
+        Throw w = pending;
+        pending = null;
+        throwAt = 0;
+        if (w == null) return;
+        int thrown = throwItems(p, w.id(), w.n());
         if (thrown == 0) return;
-        lastFedMs = nowMs;
-        say("You're hungry (food " + food + "): threw you " + thrown + " " + item.replace('_', ' ') + ".");
-        LOG.info("[entropybot] escort: threw {} {} to {} (food {})", thrown, item, name, food);
+        lastFedMs = System.currentTimeMillis();
+        say("You're hungry (food " + w.food() + "): threw you " + thrown + " " + w.item().replace('_', ' ') + ".");
+        LOG.info("[entropybot] escort: threw {} {} to {} (food {})", thrown, w.item(), name, w.food());
     }
 
     static String idOf(Entity e) {

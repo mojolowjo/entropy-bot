@@ -81,12 +81,4 @@ class CreeperSprintTest {
         s.start(70 + CreeperSprint.chaseTicks(), 7, false, false, 0, 0, 1, 0);
         assertEquals(7, s.safe(), "a while later: back to 7");
     }
-
-    @Test
-    void duelAfterTheSprint() {
-        assertTrue(CreeperSprint.duelAfter(CreeperRules.Mode.BOW, false), "bow: always re-evaluated as a duel");
-        assertFalse(CreeperSprint.duelAfter(CreeperRules.Mode.MELEE, false), "melee = hit-then-sprint by default");
-        assertTrue(CreeperSprint.duelAfter(CreeperRules.Mode.MELEE, true), "melee with a big margin");
-        assertFalse(CreeperSprint.duelAfter(CreeperRules.Mode.FLEE, true));
-    }
 }

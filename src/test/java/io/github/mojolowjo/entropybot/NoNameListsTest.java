@@ -40,10 +40,7 @@ class NoNameListsTest {
      * HostileRules, NaturalStructures, AaRuntime, FishRules, KelpRules, OwnStations, GuardCore dimensions), chopping/mining word sets
      * (Chopping, ChopRules, MineRules DROPS_PER, GoalGrammar, HotbarRules). rm-routes and rm-mining files are theirs.
      */
-    static final Set<String> PENDING = Set.of("camp/ArmorCareRules.java", "commands/Chains.java", "plan/PlanRecipes.java", "plan/Planner.java",
-            "gather/GatherSources.java", "gather/GatherPlan.java", "threat/ThreatFacts.java", "threat/ThreatRules.java", "engine/HostileRules.java",
-            "vocab/NaturalStructures.java", "commands/AaRuntime.java", "vocab/FishRules.java", "vocab/KelpRules.java", "clear/OwnStations.java",
-            "guard/GuardCore.java", "commands/Chopping.java", "chop/ChopRules.java", "cave/MineRules.java", "plan/GoalGrammar.java", "engine/HotbarRules.java");
+    static final Set<String> PENDING = Set.of();
 
     /** Whole words (split on _ and :) that name vanilla items, blocks and mobs. */
     static final Set<String> NAMES = Set.of("cobblestone", "cobbled", "dirt", "gravel", "sand", "netherrack", "deepslate", "andesite", "diorite", "granite", "tuff",
@@ -102,3 +99,4 @@ class NoNameListsTest {
         return n;
     }
 }
+

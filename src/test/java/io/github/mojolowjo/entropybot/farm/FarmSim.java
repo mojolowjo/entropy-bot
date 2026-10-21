@@ -8,7 +8,7 @@ import java.util.Map;
 
 /**
  * Drives a farm round the way commands/Seq would (a step every 2 ticks, "ok: done label; note" / "error: why (while
- * label)"), with a tiny game around the FakeWorld: walks teleport, Squat Grow ages crops next to a crouching bot,
+ * label)"), with a tiny game around the FakeWorld: walks teleport,
  * a right-click on a ripe crop replants it and drops essence, the bot picks up what it touches, crafting goes through
  * the stub Crafter and a deposit empties the bag of everything but swords.
  */
@@ -16,8 +16,7 @@ final class FarmSim {
     final FakeWorld w;
     final Crafter crafter;
     long tick = 1000;
-    boolean sneak;
-    int twerkTicks, twerkOut, crafts, lateDrops;
+    int crafts, lateDrops;
     /** Every right-click: {age before, held item id}. */
     final List<Object[]> clicks = new ArrayList<>();
     final List<String> placed = new ArrayList<>();
@@ -30,19 +29,6 @@ final class FarmSim {
 
     void worldTick() {
         tick++;
-        int[] me = w.here();
-        if (sneak) {
-            twerkTicks++;
-            boolean out = false;
-            for (Map.Entry<String, int[]> e : w.ages.entrySet()) {
-                String[] c = e.getKey().split(" ");
-                int cx = Integer.parseInt(c[0]), cy = Integer.parseInt(c[1]), cz = Integer.parseInt(c[2]);
-                boolean in = Math.abs(cx - me[0]) <= 3 && Math.abs(cy - me[1]) <= 3 && Math.abs(cz - me[2]) <= 3;
-                if (!in) out = true;
-                else if (tick % 5 == 0 && e.getValue()[0] < e.getValue()[1]) e.getValue()[0]++;
-            }
-            if (out) twerkOut++;
-        }
         for (int i = pendingDrops.size() - 1; i >= 0; i--) {
             Object[] d = pendingDrops.get(i);
             if ((long) d[0] <= tick) {
@@ -155,7 +141,6 @@ final class FarmSim {
                     FarmRound.Tick tk = round.step(st.type(), w, tick - stepStart, tick);
                     for (FarmRound.Effect fx : tk.effects()) {
                         if (fx instanceof FarmRound.Walk g) teleport(g);
-                        else if (fx instanceof FarmRound.Sneak s) sneak = s.down();
                         else if (fx instanceof FarmRound.Use u) use(u);
                         else if (fx instanceof FarmRound.Craft c) steps.add(idx + 1, PlanStep.craft(c.item(), c.n(), c.optional()));
                         else if (fx instanceof FarmRound.Deposit) {
@@ -173,7 +158,6 @@ final class FarmSim {
                 stepStart = tick;
                 continue;
             }
-            sneak = false;
             return "error: " + r + " (while " + label + ")";
         }
         return "timeout at step " + idx + " " + steps;

@@ -61,6 +61,9 @@ public interface FarmWorld {
     /** Is Baritone still pathing (not idle)? */
     boolean pathing();
 
+    /** Baritone's job hands have a farm request running or waiting (the round asks for one at a time). */
+    default boolean handsBusy() { return false; }
+
     /** P5: the seed a crop block at x y z is replanted with (vanilla mode), or null. */
     default String seedOf(int x, int y, int z) { return FarmPlant.replantSeed(blockId(x, y, z)); }
 

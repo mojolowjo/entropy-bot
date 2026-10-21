@@ -109,7 +109,7 @@ public final class VerbTable {
         v("junk", "", "digging", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
                 "what I throw away when my bag is nearly full mid-job (or put in the chest placed as junk)", "junk list|junk add tuff|junk mode chest", "junk list");
         // ---- fighting (VOCABULARY 4)
-        v("defence", "", "fighting", O, "defence on|off | defence creepers flee|melee|bow | defence hostile [list|add <id>...|remove <id>...] | defence players on|off",
+        v("defence", "", "fighting", O, "defence on|off | defence hostile [list|add <id>...|remove <id>...] | defence players on|off",
                 "self-defence (fights monsters and hostile-list mobs, hits back at what hits me, never pets; players only with defence players on, which is off at every game start; avoids creepers, retreats under 6 health)",
                 "defence on|defence hostile add arphex:spider_jump", "defend");
         v("defend", "", "fighting", O, "defend", "hold this spot: stay within 4 blocks of where I stand and fight what comes, until dismiss, stop or another order",
@@ -227,7 +227,7 @@ public final class VerbTable {
         // AA_CLEANUP 4: the danger moves (AA's danger desire runs them; nothing in the reflexes picks them any more)
         v("flee", "", "other", O, "flee", "run 16 blocks on the heading with the least threat over every monster near (held until nothing chases me)", "flee", "aa why");
         v("pillar", "", "other", O, "pillar", "jump-place 3 throwaway blocks under me and hold on top, hitting what comes in reach", "pillar", "aa why");
-        v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
+        v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
                 "one farm round (harvest, replant or let Harvest with Ease replant, pick up); plant a new field", "farm|farm plant wheat here 4|farm status", "deposit");
         v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "have <item>");
         v("give", "", "stocking", O, "give me <item> [n]", "walk to you and throw the items (only what my bag holds)", "give me cobblestone 32", "inv");
@@ -240,7 +240,6 @@ public final class VerbTable {
                 "ai status|ai build a small house and get iron tools|ai log 10", "ai status");
         v("help", "", "other", G, "help | help <verb> | help <page> | help all", "this guide: one verb, one page of it, or all", "help mine|help 2", "status");
         v("say", "", "other", O, "say <text>", "say it in public chat (never a command)", "say hello", "status");
-        v("twerk", "", "other", O, "twerk | twerk <seconds>", "crouch on and off (again to stop)", "twerk|twerk 15", "stop");
         v("spawn", "", "other", O, "spawn", "walk to the nearest bed and set my respawn point there", "spawn", "status");
         v("allow", "", "other", O, "allow | allow <name>", "who I take orders from; allow a player too (the guest commands)", "allow|allow Steve", "deny <name>");
         v("deny", "", "other", O, "deny <name>", "stop taking orders from that player", "deny Steve", "allow");

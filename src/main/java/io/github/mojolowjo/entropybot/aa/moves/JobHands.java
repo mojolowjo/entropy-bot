@@ -118,6 +118,11 @@ public final class JobHands {
         return request("click " + c(on) + " " + item, List.of(), List.of(k), timeoutTicks, who, onDone, "place", on.clone());
     }
 
+    /** Right-click block {@code on} with the empty or held hand (a bed, a crafting table, a chest): Baritone looks, stands and clicks; called every tick until DONE or FAILED. */
+    public Result use(int[] on, String who) {
+        return click(on, null, (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS")), who, null);
+    }
+
     /**
      * Builder placements: put block item {@code item} into cell x y z as a one-block schematic leg (Baritone picks
      * where to stand, the face and the click); {@code onDone} runs once when the block is there.

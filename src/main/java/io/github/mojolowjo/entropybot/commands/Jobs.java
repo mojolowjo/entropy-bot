@@ -19,7 +19,6 @@ import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.restore.RestoreRules;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
@@ -31,7 +30,7 @@ import org.slf4j.Logger;
 
 /**
  * The mod's own job slot (B7b, part 1): walks (goto, come, go, base, a teleport home, the walk to a bed), wait and
- * twerk, ported from the bridge's startTravel / stepWalkJob / startHome / startSetSpawn / startWait / startTwerk with
+ * twerk, ported from the bridge's startTravel / stepWalkJob / startHome / startSetSpawn / startWait with
  * the same wording. A walk listens to Baritone's path events (no path after 3 failed calculations, a stuck watchdog
  * for goals it can't reach), holds still while a reflex runs, stops for a retreat, an urgent fight (not a walk) or
  * the area fence, and reports through the request it carries (a chain waits on it).
@@ -49,6 +48,7 @@ public final class Jobs {
         long startTick, until, total, ticks;
         int[] dest;
         String bed;
+        boolean bedClick;
         // the teleport home: where the bot was at the last check, when /home was sent
         int[] tpLast;
         String tpDim;
@@ -351,7 +351,6 @@ public final class Jobs {
             try { j.onEnd.run(); } catch (RuntimeException e) { LOG.warn("[entropybot] job end hook: {}", e.toString()); }
         }
         Minecraft mc = Minecraft.getInstance();
-        if (j.type.equals("twerk") || j.seq != null) mc.options.keyShift.setDown(false);      // twerk, a farm round's crouch
         io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop("the job ended");
         if (j.seq != null) { try { String m = Clearing.ended(j.seq, msg); if (m != null && !m.equals(msg)) { msg = m; j.status = m; } } catch (RuntimeException e) { LOG.warn("[entropybot] clear end hook: {}", e.toString()); } }           // B7d D1: a clear's leases end with the job, however it ends (a table left is named); never keeps the request open
         if (j.seq != null) {
@@ -626,34 +625,6 @@ public final class Jobs {
         return "started: waiting " + s + "s";
     }
 
-    /** "twerk" is a toggle: crouch on/off every 4 ticks until "twerk" again; "twerk <s>" for that long. */
-    public String startTwerk(String text) {
-        if (!door("twerk")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("twerk");
-        String t = text == null ? "" : text.trim().toLowerCase();
-        long seconds = Chains.leadingInt(t);
-        if (running() && job.type.equals("twerk")) {
-            if (t.equals("on")) return "ok: already twerking";
-            Request r = job.req;
-            job.req = null;                          // one reply, not a whisper as well
-            finish("ok: stopped twerking");
-            if (r != null) commands.requests.done(r.id, JobRequests.REPLACED);
-            return "ok: stopped twerking";
-        }
-        if (t.equals("off")) return "ok: not twerking";
-        Job j = new Job();
-        j.type = "twerk";
-        if (seconds > 0) {
-            j.total = Math.min(seconds, 60) * 20;  // game fact: 20 game ticks per second
-            j.status = "twerking";
-            job = j;
-            return "started: twerking for " + Math.min(seconds, 60) + "s";
-        }
-        j.total = Long.MAX_VALUE;
-        j.status = "twerking (PM \"twerk\" again to stop)";
-        job = j;
-        return "started: twerking - PM \"twerk\" again to stop";
-    }
-
     // ---- the teleport home ----
 
     /** Worth a /home on the way? Only if dest is near home and the bot is far from it (another dimension, 40+ across, 10+ up or down). */
@@ -771,13 +742,11 @@ public final class Jobs {
             return;
         }
         switch (j.type) {
-            case "twerk" -> {
-                j.ticks++;
-                Minecraft.getInstance().options.keyShift.setDown(j.ticks < j.total && (j.ticks / 4) % 2 == 0);  // structural: sneak blink: toggles every 4 ticks
-                if (j.ticks >= j.total) finish("ok: twerked");
-            }
             case "wait" -> { if (now >= j.until) finish("ok: waited"); }
-            case "travel", "spawn" -> { if (now % 20 == 0) stepWalk(p, j); }  // structural: periodic cadence in ticks (20 ticks = 1 s)
+            case "travel", "spawn" -> {
+                if (j.bedClick) bedClick(j);
+                else if (now % 20 == 0) stepWalk(p, j);  // structural: periodic cadence in ticks (20 ticks = 1 s)
+            }
             case "seq" -> { if (now % 2 == 0 || j.seq.everyTick()) j.seq.tick(p); }
             default -> {}
         }
@@ -847,9 +816,17 @@ public final class Jobs {
             String v = moving ? null : goalVerdict(p, j);
             finish(v != null ? v : "ok: arrived near " + fmt(here(p)) + (j.tpNote != null ? " (" + j.tpNote + ")" : ""));
         } else {
-            String r = useBlock(p, j.bed);
-            finish(r.startsWith("ok") ? "ok: clicked the bed at " + j.bed + " (spawn set if it was night or the server allows it)" : r);
+            j.bedClick = true;
+            bedClick(j);
         }
+    }
+
+    /** The bed click through Baritone's hands (it looks, stands and clicks); polled every tick until it ends. */
+    private void bedClick(Job j) {
+        String[] c = j.bed.trim().split("\\s+");
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(new int[]{Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2])}, "the bed");
+        if (r.running()) return;
+        finish(r.done() ? "ok: clicked the bed at " + j.bed + " (spawn set if it was night or the server allows it)" : "error: could not click the bed at " + j.bed + ": " + r.why());
     }
 
     // ---- the walk's end ----
@@ -1139,20 +1116,6 @@ public final class Jobs {
             }
         }
         return "none within " + radius + ", nor among the ores and trees I have seen";
-    }
-
-    /** Right-clicks the block at "x y z" (within reach). */
-    static String useBlock(LocalPlayer p, String text) {
-        String[] c = text.trim().split("\\s+");
-        int x = Integer.parseInt(c[0]), y = Integer.parseInt(c[1]), z = Integer.parseInt(c[2]);
-        Vec3 center = new Vec3(x + 0.5, y + 0.5, z + 0.5);
-        double dist = p.getEyePosition().distanceTo(center);
-        if (dist > 4.5) return "error: too far (" + Math.round(dist * 10) / 10.0 + " blocks), walk closer first";  // game fact: survival interaction range 4.5
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
-        Minecraft mc = Minecraft.getInstance();
-        InteractionResult r = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(center, Direction.UP, new BlockPos(x, y, z), false));
-        p.swing(InteractionHand.MAIN_HAND);
-        return "ok: " + r;
     }
 
     /** The job as state.json shows it. */

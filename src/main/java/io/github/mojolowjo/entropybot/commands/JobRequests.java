@@ -10,7 +10,7 @@ import java.util.Map;
  * drives it.
  */
 public final class JobRequests {
-    /** A walk replaced by the next command (or a twerk toggled off): an end nobody needs to hear about. */
+    /** A walk replaced by the next command : an end nobody needs to hear about. */
     public static final String REPLACED = "stopped: replaced by a new command";
 
     /** An end nobody needs to hear about. */

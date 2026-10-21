@@ -28,7 +28,7 @@ import java.util.Map;
  * click reports the server's own message ({@code could not sleep: You may not rest now; there are monsters nearby}),
  * caught from the chat event ({@link #noteChat}).
  *
- * <p>Loader notes: the bed click is vanilla {@code MultiPlayerGameMode.useItemOn} (Jobs.useBlock); waking is the vanilla
+ * <p>Loader notes: the bed click is vanilla {@code MultiPlayerGameMode.useItemOn} (Baritone's job hands); waking is the vanilla
  * {@code ServerboundPlayerCommandPacket STOP_SLEEPING}; the refusal text comes from NeoForge's
  * {@code ClientChatReceivedEvent} (system/overlay messages; Fabric: {@code ClientReceiveMessageEvents.GAME}).
  */
@@ -180,8 +180,9 @@ public final class SleepJob {
                     s.jobs.finish("error: could not sleep: it is day (" + DayNight.clock(lv.getDayTime()) + ") - next: rule when night do sleep");
                     return "wait";
                 }
-                String r = Jobs.useBlock(p, Jobs.fmt(st.pos));
-                if (!r.startsWith("ok")) return "couldn't click the bed at " + Jobs.fmt(st.pos) + ": " + r.replaceFirst("^error: ", "");
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().use(st.pos, "the bed");
+                if (r.running()) return "wait";
+                if (r.failed()) return "couldn't click the bed at " + Jobs.fmt(st.pos) + ": " + r.why();
                 ps.stage = "check";
                 ps.at = now;
                 return "wait";

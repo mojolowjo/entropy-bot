@@ -9,7 +9,6 @@ import baritone.api.pathing.goals.GoalNear;
 import io.github.mojolowjo.entropybot.gui.Gui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -31,7 +30,7 @@ import java.util.Map;
 
 /**
  * {@link FarmWorld} over the client (client thread), plus the effects a {@link FarmRound} asks for: walk, cancel the
- * walk, sneak, get a harmless hand and right-click a crop. The only farm class that touches Minecraft.
+ * walk, get a harmless hand and (through {@link FarmHands}) break or right-click a crop. The only farm class that touches Minecraft.
  */
 public final class McFarmWorld implements FarmWorld {
     private final Minecraft mc = Minecraft.getInstance();
@@ -140,6 +139,8 @@ public final class McFarmWorld implements FarmWorld {
         return b != null && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent());
     }
 
+    @Override public boolean handsBusy() { return FarmHands.busy(); }
+
     // ---- what compact needs of the bag ----
 
     /** The 36 bag slots for {@link Compact#bagSpace}. */
@@ -165,20 +166,23 @@ public final class McFarmWorld implements FarmWorld {
         else if (fx instanceof FarmRound.CancelWalk) {
             IBaritone b = baritone();
             if (b != null) b.getPathingBehavior().cancelEverything();
-        } else if (fx instanceof FarmRound.Sneak s) mc.options.keyShift.setDown(s.down());
-        else if (fx instanceof FarmRound.Use u) {
-            hold(u.hand());
-            // never right-click the farm with a block, seeds or bone meal in hand
-            if (FarmRules.harmless(slots().get(selected()))) use(u.x(), u.y(), u.z());
-        } else if (fx instanceof FarmRound.Break b) breakBlock(b.x(), b.y(), b.z());
+        } else if (fx instanceof FarmRound.Use u) {
+            // the hotbar is the mod's input (a harmless hand, never a block, seeds or bone meal); Baritone looks and clicks
+            FarmHands.submit(new FarmHands.Req(false, new int[]{u.x(), u.y(), u.z()}, null, "farm harvest " + u.x() + " " + u.y() + " " + u.z(), () -> {
+                hold(u.hand());
+                return FarmRules.harmless(slots().get(selected()));
+            }, null));
+        } else if (fx instanceof FarmRound.Break b) breakBlock(b.x(), b.y(), b.z(), null);
     }
 
-    /** P5: one left-click on the block (a crop breaks at once; the guard's break check runs in startDestroyBlock). */
-    public void breakBlock(int x, int y, int z) {
-        BlockPos pos = new BlockPos(x, y, z);
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(x + 0.5, y + 0.5, z + 0.5));
-        mc.gameMode.startDestroyBlock(pos, Direction.UP);
-        p.swing(InteractionHand.MAIN_HAND);
+    /** P5: break the crop at x y z through Baritone's job hands (the guard's verdict is the hands' failure text); {@code after} runs when it ends (the lease). */
+    public void breakBlock(int x, int y, int z, Runnable after) {
+        FarmHands.submit(new FarmHands.Req(true, new int[]{x, y, z}, null, "farm harvest " + x + " " + y + " " + z, null, after));
+    }
+
+    /** P5: right-click the farmland at x y z with the seed (Baritone picks the item, the face and the look). */
+    public void plant(int x, int y, int z, String seed) {
+        FarmHands.submit(new FarmHands.Req(false, new int[]{x, y, z}, seed, "farm replant " + x + " " + y + " " + z, null, null));
     }
 
     public void walk(FarmRound.Walk w) {
@@ -198,11 +202,4 @@ public final class McFarmWorld implements FarmWorld {
         }
     }
 
-    /** Right-clicks the block (the bridge's useBlock): look at its center, use the main hand on it, swing. */
-    public void use(int x, int y, int z) {
-        Vec3 center = new Vec3(x + 0.5, y + 0.5, z + 0.5);
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
-        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(center, Direction.UP, new BlockPos(x, y, z), false));
-        p.swing(InteractionHand.MAIN_HAND);
-    }
 }

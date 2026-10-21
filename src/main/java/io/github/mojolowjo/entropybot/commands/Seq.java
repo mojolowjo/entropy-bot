@@ -448,8 +448,9 @@ public final class Seq {
             if (!mc.level.getBlockState(bp).hasBlockEntity()) {
                 return "there is no container at " + Jobs.fmt(st.pos) + " (it is " + Storage.blockName(mc.level.getBlockState(bp)) + ")";
             }
-            String r = storage.use(p, Jobs.fmt(st.pos));
-            if (!r.startsWith("ok")) return r;
+            var r = storage.use(st.pos);
+            if (r.running()) return "wait";
+            if (r.failed()) return "could not click the container at " + Jobs.fmt(st.pos) + ": " + r.why();
             // a machine (furnace...) is not storage: its contents are never remembered as a chest's
             machine = st.machine.equals("yes") || (st.machine.equals("auto") && !Storage.isStorageBlock(st.pos));
             if (machine) storage.lastOpened = null;

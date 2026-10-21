@@ -630,7 +630,6 @@ public final class Commands implements Chains.Env {
         JsonObject b = brainStore.data();
         if (b.has("reconnect") && !b.get("reconnect").isJsonNull() && !b.get("reconnect").getAsBoolean()) core.reconnect.setOn(false);
         core.reconnect.setConnectTimeoutS(io.github.mojolowjo.entropybot.engine.ReconnectRules.timeoutOf(b));      // 0.26.3
-        core.reflexes.setCreeperMode(io.github.mojolowjo.entropybot.engine.CreeperSetting.load(b));     // B7e C
         // package G: the fast channel starts once bridge.ps1 has written entropybot/fast.json (the key's path)
         fast = new io.github.mojolowjo.entropybot.fast.FastChannel(files.root(), new FastHandler(), m -> LOG.info("{}", m));
         ready = true;
@@ -882,7 +881,7 @@ public final class Commands implements Chains.Env {
         return notifyListener(to);
     }
 
-    /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced, a twerk toggled off). */
+    /** Whispers a job's end to {@code to} (nothing for a quiet end: a walk replaced). */
     Listener notifyListener(String to) {
         return r -> {
             if (!JobRequests.quiet(r.doneMsg)) whisperEnd(to, r.doneMsg.replaceFirst("^ok: ", ""), r.failed);     // the status the job set, not the stripped text
@@ -1332,8 +1331,7 @@ public final class Commands implements Chains.Env {
         if (verb.equals("b") || verb.equals("baritone")) return Reply.now(BaritoneVerb.run(rest, isOwner, owner()));
         boolean known = Texts.MOD_JOB_VERBS.contains(verb) || Texts.MOD_VERBS.contains(verb);
         if (!known) return Reply.now(Hints.unknown(verb));
-        // "twerk" while twerking switches it off (a toggle, so not "busy"); farm settings are instant even mid-job
-        if (verb.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(rest));
+        // farm settings are instant even mid-job
         if (verb.equals("farm") && FarmCommand.instant(rest)) return Reply.now(crafting.farm(player, rest));
 
         // everything below may replace a running walk, but not a running task (find, recipe and close never interrupt)
@@ -1355,7 +1353,7 @@ public final class Commands implements Chains.Env {
     private String jobBusyText() { return jobs.running() && !jobs.walking() ? "busy: " + jobs.job.status + " (pm \"stop\" first)" : null; }
 
 
-    /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, twerk, find. */
+    /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, find. */
     String modJob(String verb, String rest, String from, LocalPlayer player) {
         switch (verb) {
             case "come" -> {
@@ -1448,8 +1446,7 @@ public final class Commands implements Chains.Env {
             }
             case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
             case "wait" -> { return jobs.startWait(rest); }
-            case "twerk" -> { return jobs.startTwerk(rest); }
-            case "find" -> {
+                case "find" -> {
                 // V1b: find cave|<poi kind>|<biome> walks (the owner); find <block> stays the nearby list
                 io.github.mojolowjo.entropybot.vocab.ExploreWords.Find f = io.github.mojolowjo.entropybot.vocab.ExploreWords.find(rest, POI_KINDS, Commands::isBiome);
                 if (f.kind() != io.github.mojolowjo.entropybot.vocab.ExploreWords.FindKind.BLOCK) {
@@ -1470,8 +1467,7 @@ public final class Commands implements Chains.Env {
             case "put" -> { return Storage.transfer(player, rest, true); }
             case "close" -> { return Gui.closeVerb(player); }
             case "drop" -> { return Storage.drop(player, rest); }
-            case "use" -> { return storage.use(player, rest); }
-            case "wear", "equip" -> { return Gui.wearArmor(player); }
+                case "wear", "equip" -> { return Gui.wearArmor(player); }
             case "where" -> { return storage.where(player, rest); }
             case "have" -> { return storage.have(player, rest); }
             case "stock" -> { return Texts.isStockTargetsForm(rest) ? camp.stock(player, rest) : storage.stockList(player, rest); }
@@ -1787,9 +1783,7 @@ public final class Commands implements Chains.Env {
             if (b != null) b.getPathingBehavior().cancelEverything();
         } catch (Throwable caught) { Quiet.warn("Commands.stopAll failed, carrying on with the fallback", caught); }
         core.guard.core.releaseAll(core.token);
-        Minecraft mc = Minecraft.getInstance();
-        mc.options.keyUse.setDown(false);
-        mc.options.keyShift.setDown(false);
+        core.reflexes.releaseUse();
         return "ok: stopped everything" + (routine != null ? " (including " + routine + ")" : "") + ", breaking off";
     }
 
@@ -1868,7 +1862,6 @@ public final class Commands implements Chains.Env {
 
     String setDefence(String text) {
         String a = text == null ? "" : text.trim().toLowerCase();
-        if (a.matches("creepers?(\\s.*)?")) return io.github.mojolowjo.entropybot.engine.CreeperSetting.command(a.replaceFirst("^creepers?", ""), brainStore.data(), () -> brainStore.changed(core.tick()), core.reflexes::creeperMode, core.reflexes::setCreeperMode);     // B7e C
         if (a.matches("hostile(\\s.*)?")) return io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.command(a.replaceFirst("^hostile", ""));    // 0.19.1
         if (a.equals("on") || a.equals("off")) core.reflexes.setDefence(a.equals("on"));
         return "self-defence is " + (core.reflexes.defence() ? "ON (fights monsters and the " + io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE.ids().size()
@@ -2323,15 +2316,14 @@ public final class Commands implements Chains.Env {
             // B7b part 1: the places and the walks the mod does (cmd.from = whose spot "mark" uses, as before)
             case "mark", "setbase", "sethome", "forget", "places" -> { return Reply.now(placeCommand(type, text, from, player)); }
             // B7b part 2: the instant GUI and storage verbs never wait for a job (as the bridge's runCommand)
-            case "take", "put", "close", "drop", "use", "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
-            case "spawn", "home", "base", "twerk", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
+            case "take", "put", "close", "drop", "wear", "equip", "where", "have", "stock", "trust", "untrust", "recipe", "need", "supplies" -> { return Reply.now(modJob(type, text, owner(), player)); }
+            case "spawn", "home", "base", "find", "go", "open", "scan", "deposit", "corpse", "death", "rs", "pots",
                  "craft", "kit", "smelt", "get", "restock", "farm", "compact", "give", "upgrade",
                  "dig", "build", "place", "stripmine", "mine", "explore" -> {
                 if (type.equals("farm") && FarmCommand.instant(text)) return Reply.now(crafting.farm(player, text));
                 if (type.equals("stripmine") && text.trim().toLowerCase().matches("^(status|ores( collect| list)?)$")) return Reply.now(StripMine.get().command(player, text));
                 if (type.equals("smelt") && Crafting.smeltInstant(text)) return Reply.now(crafting.smelt(player, text));
-                // as the bridge's runCommand: a task makes these busy (a walk is replaced; twerk toggles; find never waits)
-                if (type.equals("twerk") && jobs.running() && jobs.job.type.equals("twerk")) return Reply.now(jobs.startTwerk(text));
+                // as the bridge's runCommand: a task makes these busy (a walk is replaced; find never waits)
                 if (!type.equals("find")) {
                     if (jobs.running() && !jobs.walking()) return Reply.now("error: busy with \"" + jobs.job.status + "\" - send stop first");
                     jobs.replaceWalk();
