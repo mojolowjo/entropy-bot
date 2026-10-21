@@ -370,7 +370,7 @@ public final class Reflexes {
                 settle(end.text());
                 return;
             }
-            forceFleeUntil = now + 60;  // run as before, even from beyond CREEPER_RUN
+            forceFleeUntil = now + (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.refleeTicks");  // run as before, even from beyond creeperRun
             fleeUntil = 0;
         }
         Threat ft = forcedThreat(p, mc);
@@ -383,7 +383,7 @@ public final class Reflexes {
         if (cr != null && cr.d > 4 && (!p.hasLineOfSight(cr.e) || !creeperClosing(cr))) cr = null;
         if (cr != null && (t == null || !t.creeper)) {
             t = cr;
-            if (cr.d < ReflexRules.CREEPER_RUN_TO) forceFleeUntil = Math.max(forceFleeUntil, now + 20);
+            if (cr.d < ReflexRules.creeperRunTo()) forceFleeUntil = Math.max(forceFleeUntil, now + 20);
         }
         if (creeperProbe && cr != null) LOG.info("[entropybot] creeper probe: tick {} creeper {} at {} | target {} {} | reflex {} | hp {}",
                 now, cr.e.getId(), Math.round(cr.d * 10) / 10.0, t == null ? "none" : t.id, t == null ? "" : Math.round(t.d * 10) / 10.0,
@@ -423,7 +423,7 @@ public final class Reflexes {
             look(t.e);
             return;
         }
-        if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
+        if (t != null && t.creeper && t.d >= ReflexRules.creeperRun() && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
         if (t != null) {
             if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id);
             target = t.id;
@@ -514,6 +514,7 @@ public final class Reflexes {
     private int[] airCell;
     private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way airWay;
     private long airTryAt = -1000;
+    private int airAtTry;
 
     private boolean airWayRunning() {
         String w = reflexMoves.way();
@@ -539,8 +540,17 @@ public final class Reflexes {
             w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(L, airCell, reflexMoves.why(), null);
             LOG.info("[entropybot] air reflex: {} - charged {} {} ({} tries), next: {}", reflexMoves.why(), L.key(),
                     io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.cell(airCell), io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.fails(L, airCell), w == null ? "FAILED" : w.label);
-        } else if (mine && airWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW_UP) {
-            w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.SURFACE;          // dug up: the surface goal again
+        } else if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED) {
+            // 0.39.s3 review: arrived but under water again. Air gained since the try = it breathed (a success: the
+            // tries are forgotten, the surface goal again); no air gained = a failed try, charged, the ladder goes on
+            if (p.getAirSupply() > airAtTry) {
+                io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.ended(L);
+                w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.SURFACE;
+            } else {
+                String why = airWay.label + " arrived but still under water (air " + p.getAirSupply() + ", was " + airAtTry + ")";
+                w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(L, airCell, why, null);
+                LOG.info("[entropybot] air reflex: {} - charged {} {}, next: {}", why, L.key(), io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.cell(airCell), w == null ? "FAILED" : w.label);
+            }
         } else w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.way(L, airCell);
         if (w == null) {
             airSpent = true;
@@ -551,6 +561,7 @@ public final class Reflexes {
         }
         airWay = w;
         airTryAt = now;
+        airAtTry = p.getAirSupply();
         airGoal = true;
         if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW_UP)
             reflexMoves.burrowHere(BURROW_UP_WAY, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.air.burrowUp"), true);
@@ -848,7 +859,7 @@ public final class Reflexes {
     private long fleeRetryAt = -1000;
 
     /**
-     * Backbone step 4: the creeper flee on Baritone: GoalRunAway {@link ReflexRules#CREEPER_RUN_TO} from every counted
+     * Backbone step 4: the creeper flee on Baritone: GoalRunAway {@link ReflexRules#creeperRunTo()} from every counted
      * hostile near ({@code from} always), its heuristic leaning toward {@code dir} ({dx, dz}: FleeHeading / EscapeDir).
      */
     private void runFrom(Minecraft mc, LocalPlayer p, Entity from, double[] dir) {
@@ -899,7 +910,7 @@ public final class Reflexes {
         creeperWay = w;
         if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW)
             reflexMoves.burrowHere(CREEPER_BURROW_WAY, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.burrow"), false);
-        else reflexMoves.flee(ReflexRules.CREEPER_RUN_TO, fleeCells(mc, p, from), dir == null ? null : new double[]{dir[0], dir[1]});
+        else reflexMoves.flee(ReflexRules.creeperRunTo(), fleeCells(mc, p, from), dir == null ? null : new double[]{dir[0], dir[1]});
         wayStarted();
     }
 
@@ -913,9 +924,9 @@ public final class Reflexes {
     }
 
     /** 0.39.m2: how far the flee looks for mobs to run from (the run's length + 6). */
-    static final double FLEE_SEE = ReflexRules.CREEPER_RUN_TO + 6;
+    static double fleeSee() { return ReflexRules.creeperRunTo() + io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.seeMore"); }
 
-    /** The cells of every hostile within {@link #FLEE_SEE}, {@code from} always included. */
+    /** The cells of every hostile within {@link #fleeSee()}, {@code from} always included. */
     private List<int[]> fleeCells(Minecraft mc, LocalPlayer p, Entity from) {
         List<int[]> out = new java.util.ArrayList<>();
         Hostility h = Hostility.INSTANCE;
@@ -924,7 +935,7 @@ public final class Reflexes {
             if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
             // 0.39.m2: every hostile within the run's reach, counted by the threat filter or not (a quiet one on the
             // heading must not be run into)
-            if (e != from && (p.distanceTo(e) > FLEE_SEE || !(e instanceof net.minecraft.world.entity.monster.Enemy || h.kind(e, true).counts()))) continue;
+            if (e != from && (p.distanceTo(e) > fleeSee() || !(e instanceof net.minecraft.world.entity.monster.Enemy || h.kind(e, true).counts()))) continue;
             seenFrom |= e == from;
             out.add(new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
         }
@@ -953,16 +964,16 @@ public final class Reflexes {
         // one escape spot for 3 seconds: picking a new one every tick makes Baritone re-plan non-stop
         // backbone step 4: GoalRunAway from every hostile near at the reflex priority, leaning on FleeHeading's
         // least-threat heading (cornered: no lean, Baritone picks); the car re-asks after a Baritone cancel
-        if ((t.d < ReflexRules.CREEPER_RUN || now < forceFleeUntil) && now >= fleeUntil) {
+        if ((t.d < ReflexRules.creeperRun() || now < forceFleeUntil) && now >= fleeUntil) {
             runFrom(mc, p, t.e, fleeDir(mc, p, t.e));
-            fleeUntil = now + 60;
+            fleeUntil = now + (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.refleeTicks");
             fleeRetryAt = now;
-        } else if (t.d < ReflexRules.CREEPER_RUN && now - fleeRetryAt >= io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()
+        } else if (t.d < ReflexRules.creeperRun() && now - fleeRetryAt >= io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()
                 && (reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING || !creeperWayRunning())) {
             // reflex choosers: the try failed, timed out or ended with the creeper still close: charged, the ladder's next way
             LOG.info("[entropybot] creeper flee: {} with the creeper at {}", reflexMoves.why(), Math.round(t.d * 10) / 10.0);
             creeperTry(mc, p, t.e, fleeDir(mc, p, t.e), true);
-            fleeUntil = now + 60;
+            fleeUntil = now + (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.refleeTicks");
             fleeRetryAt = now;
         }
         // one that is already right here gets knocked back
@@ -1014,7 +1025,7 @@ public final class Reflexes {
     /** Live aa376: the heading {dx, dz} with the least threat over every nearby hostile (FleeHeading), null = cornered. Never throws. */
     private double[] fleeDir(Minecraft mc, LocalPlayer p, Entity from) {
         try {
-            return io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), fleeMobs(mc, p, from), ReflexRules.CREEPER_RUN_TO);
+            return io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), fleeMobs(mc, p, from), ReflexRules.creeperRunTo());
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] threat: flee heading failed, GoalRunAway with no lean: {}", e.toString());
             return null;
@@ -1044,10 +1055,10 @@ public final class Reflexes {
     private double[] creeperEscape(Minecraft mc, LocalPlayer p, Entity c) {
         try {
             var mobs = fleeMobs(mc, p, c);
-            double[] dir = io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), mobs, ReflexRules.CREEPER_RUN_TO);
+            double[] dir = io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), mobs, ReflexRules.creeperRunTo());
             if (dir == null) return c == null ? ThreatRuntime.INSTANCE.escape(p, 0, 0) : ThreatRuntime.INSTANCE.escape(p, c);
             double[] esc = ThreatRuntime.INSTANCE.escape(p, dir[0], dir[1]);
-            if (io.github.mojolowjo.entropybot.threat.FleeHeading.blocked(p.getX(), p.getZ(), mobs, esc[0], esc[1], ReflexRules.CREEPER_RUN_TO))
+            if (io.github.mojolowjo.entropybot.threat.FleeHeading.blocked(p.getX(), p.getZ(), mobs, esc[0], esc[1], ReflexRules.creeperRunTo()))
                 return new double[]{dir[0], dir[1], esc[2]};
             return esc;
         } catch (RuntimeException e) {

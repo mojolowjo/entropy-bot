@@ -51,12 +51,14 @@ public final class DangerMoves {
 
     public enum Move { NONE, FLEE, COVER, PILLAR, NICHE, BURROW }
 
-    static final double FLEE_RUN = 16;
+    static double fleeRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.fleeRun"); }
     static final long CALM_TICKS = 100, MAX_TICKS = 1800;
 
     private final EventRing events;
     private final Moves moves;
     private final BaritoneCar car;
+    /** The cell a burrow started in (its dig-time hold check). */
+    private BlockPos burrowFrom;
     private Move move = Move.NONE;
     private long now, start, calmSince;
     private boolean holding;
@@ -102,13 +104,14 @@ public final class DangerMoves {
         if (p == null || mc.level == null) return "error: not in a world";
         List<FleeHeading.Mob> mobs = mobs(mc, p);
         if (mobs.isEmpty()) return "error: nothing to flee from";
-        int[] to = FleeHeading.choose(p.getX(), p.getZ(), mobs, FLEE_RUN);
-        if (to == null) return "error: cornered - no heading clear of mobs (burrow or pillar)";
-        // reflex choosers: the run is from where the mobs are (their own cells); FleeHeading only answers "cornered?"
+        // 0.39.s3 review: FleeHeading gates nothing; its least-threat heading is only the run's heuristic term
+        // (PreferredRunAway, Baritone may refuse it); none clear = plain GoalRunAway from the mobs' own cells
+        int[] to = FleeHeading.choose(p.getX(), p.getZ(), mobs, fleeRun());
+        double[] prefer = to == null ? null : new double[]{to[0] + 0.5 - p.getX(), to[1] + 0.5 - p.getZ()};
         List<int[]> from = mobCells(mc, p);
-        begin(Move.FLEE, "running " + (int) FLEE_RUN + " from " + from.size() + " mob(s)");
-        moves.flee((int) FLEE_RUN, from);
-        return "ok: running " + (int) FLEE_RUN + " from " + from.size() + " mob(s)";
+        begin(Move.FLEE, "running " + (int) fleeRun() + " from " + from.size() + " mob(s)" + (prefer == null ? "" : " leaning on the flee heading"));
+        moves.flee((int) fleeRun(), from, prefer);
+        return "ok: running " + (int) fleeRun() + " from " + from.size() + " mob(s)";
     }
 
     /** "cover": a cell out of the nearest ranged mob's sight (ThreatRuntime.cover), held 15 s or until it closes in. */
@@ -263,6 +266,7 @@ public final class DangerMoves {
             // reflex choosers: "burrow here, d deep"; the fork's BurrowProcess picks the cells from where the bot stands
             begin(Move.BURROW, "digging down " + d + " and sealing");
             anchor = null;          // the hold cell is where the fork's burrow leaves the bot (set when it arrives)
+            burrowFrom = top;
             moves.burrowHere("burrow", d, false);
             return "ok: digging down " + d + " and sealing";
         }
@@ -341,6 +345,13 @@ public final class DangerMoves {
                     if (now >= coverUntil) { stop("held the cover " + (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.coverS") + " s"); return; }
                 }
                 case PILLAR, NICHE, BURROW -> {
+                    // 0.39.s3 review: the burrow's hold-cell check runs while it digs too (from the cell it started in;
+                    // the fork digs straight down there)
+                    if (!arrived && move == Move.BURROW && burrowFrom != null && (p.isInWater() || p.isInLava()
+                            || Math.abs(p.getX() - (burrowFrom.getX() + 0.5)) > 1 || Math.abs(p.getZ() - (burrowFrom.getZ() + 0.5)) > 1)) {
+                        fail("knocked out of the burrow while digging (started at " + c(burrowFrom) + ", now " + c(p.blockPosition()) + ")");
+                        return;
+                    }
                     if (!arrived) return;
                     String what = move == Move.PILLAR ? "pillar" : move == Move.NICHE ? "niche" : "burrow";
                     if (!holding) {
@@ -415,7 +426,7 @@ public final class DangerMoves {
             ThreatFacts.Me me = new ThreatFacts.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), armor, Hostility.weaponHit(p),
                     p.getFoodData().getFoodLevel());
             // AA_STEP2 1: the ways are filled with no foe near too (the night ways: box, burrow, dig in, home)
-            int flee = FleeHeading.choose(p.getX(), p.getZ(), mobs, FLEE_RUN) == null ? 0 : (int) FLEE_RUN;
+            int flee = FleeHeading.choose(p.getX(), p.getZ(), mobs, fleeRun()) == null ? 0 : (int) fleeRun();
             double baseDist = -1;
             if (base != null && (baseDim == null || baseDim.equals(Guard.dimOf(mc.level)))) {
                 double dx = p.getX() - base[0] - 0.5, dy = p.getY() - base[1], dz = p.getZ() - base[2] - 0.5, d = Math.sqrt(dx * dx + dy * dy + dz * dz);

@@ -81,8 +81,10 @@ public final class ReflexRules {
     }
 
     public static final double REACH = 2.8;         // attack from this close
-    public static final double CREEPER_RUN = 6;     // run from a creeper this close
-    public static final int CREEPER_RUN_TO = 12;    // ... to a spot this far away
+    /** Run from a creeper this close (Tuning reflex.creeper.run). */
+    public static double creeperRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.run"); }
+    /** ... to this far away (Tuning reflex.creeper.runTo). */
+    public static int creeperRunTo() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.runTo"); }
     public static final double URGENT = 5;          // a monster this close stops a bridge job (as the bridge did)
 
     /** Worth eating now: food 14 or less, or below 18 while hurt. */

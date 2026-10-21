@@ -118,7 +118,8 @@ public final class BaritoneCar implements Car {
         try {
             // the swim-up gap is the fork's: Baritone holds jump while it has no path yet (head under water)
             var s = BaritoneAPI.getSettings();
-            savedSwim = s.swimUpWithoutPath.value;
+            // 0.39.s3 review: saved only when nothing is saved yet, so a second breathe never saves our own "true"
+            if (savedSwim == null) savedSwim = s.swimUpWithoutPath.value;
             s.swimUpWithoutPath.value = true;
             LOG.info("[entropybot] moves: swim-up gap on (Baritone holds jump until it has a path; was {})", savedSwim);
         } catch (RuntimeException | LinkageError e) {
@@ -133,7 +134,7 @@ public final class BaritoneCar implements Car {
 
     @Override public void burrowHere(int depth, boolean up, int timeoutTicks) {
         fresh();
-        // a danger move ends the job's hands and holds the job; a reflex burrow (-0.25) outranks the job's processes
+        // a danger move ends the job's hands and holds the job; a reflex burrow (the fork runs it at priority 10) outranks the job's processes
         // without either, so the job resumes after it (step 4's save/restore)
         if (!reflex) {
             JobHands.get().preempt("danger move burrow");
@@ -147,7 +148,7 @@ public final class BaritoneCar implements Car {
             s.acceptableThrowawayItems.value = list;
             setThrow = list;
             burrow = b().getBurrowProcess();
-            burrow.burrowHere(depth, up, timeoutTicks);
+            burrow.burrowHere(depth, up, timeoutTicks, reflex);     // a reflex car's burrow at priority 10 (the reflex level)
             what = "burrow " + (up ? "up " : "down ") + depth;
         } catch (LinkageError e) {
             forced = Status.failed("this Baritone has no burrowHere (the stock jar? install the entropy fork): " + e);

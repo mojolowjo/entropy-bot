@@ -141,6 +141,15 @@ public final class Tuning {
         def("moves.digS", 40, "backbone step 2", "seconds a burrow / dig-in leg may take");
         def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");
         def("reflex.triesPerWay", 3, "reflex choosers", "failed tries of one reflex way (charged in Failures as reflex.<kind> <cell>) before the next way runs");
+        def("reflex.creeper.run", 6, "0.39.s3 (was ReflexRules.CREEPER_RUN)", "blocks: a creeper this close is run from");
+        def("reflex.creeper.runTo", 12, "0.39.s3 (was ReflexRules.CREEPER_RUN_TO)", "blocks the creeper flee's GoalRunAway runs from the hostiles");
+        def("reflex.creeper.seeMore", 6, "0.39.s3 (was FLEE_SEE = runTo + 6)", "blocks past runTo the flee still counts a hostile to run from");
+        def("reflex.creeper.refleeTicks", 60, "0.39.s3 (was a hand 60)", "ticks one creeper run is kept before the next one is asked (Baritone re-plans less)");
+        def("danger.fleeRun", 16, "0.39.s3 (was DangerMoves.FLEE_RUN)", "blocks the danger desire's flee way runs from the hostiles");
+        def("reflex.fire.escapeStep", 3, "0.39.s3 (was FireReflex.ESCAPE_STEP)", "blocks the step out of lava / fire runs from the hazard cells");
+        def("reflex.fire.escapeAway", 6, "0.39.s3 (was FireReflex.ESCAPE_AWAY)", "blocks a burning bot runs from the fire / lava near");
+        def("reflex.fire.waterR", 8, "0.39.s3 (was SurvivalRules.WATER_R in nearestWater)", "blocks around the fire reflex looks for water (the fact 'water near')");
+        def("reflex.fire.waterGraceTicks", 10, "0.39.s3 review", "ticks in water before a still-burning bot counts the to-water try as failed (the burn goes out a tick or two late)");
         def("reflex.retryTicks", 10, "reflex choosers", "ticks between two tries of a reflex way (a failed run is not re-asked every tick)");
         def("reflex.air.pullUp", 24, "reflex choosers", "blocks over the feet the swim-up goal's heuristic pulls toward (Baritone's search tries up first; the goal itself is any cell with the head in air)");
         def("reflex.air.burrowUp", 3, "reflex choosers", "cells over the head the air reflex's burrow-up asks the fork to break when no swim-up path is found");
