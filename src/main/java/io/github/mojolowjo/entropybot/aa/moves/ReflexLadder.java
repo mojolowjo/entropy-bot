@@ -20,7 +20,7 @@ public final class ReflexLadder {
         AIR("air", Way.SURFACE, Way.BURROW_UP), LAVA("lava", Way.RUN_FROM_HAZARD, Way.TO_WATER), FIRE("fire", Way.RUN_FROM_HAZARD, Way.TO_WATER),
         /** Water seen near: the same records (reflex.lava / reflex.fire), water first, then the run (staged 0.39.s1: never only one). */
         LAVA_WATER_NEAR("lava", Way.TO_WATER, Way.RUN_FROM_HAZARD), FIRE_WATER_NEAR("fire", Way.TO_WATER, Way.RUN_FROM_HAZARD),
-        CREEPER("creeper", Way.RUN_AWAY, Way.BURROW);
+        CREEPER("creeper", Way.RUN_AWAY, Way.BURROW, Way.PILLAR);      // 0.39.s8: then the pillar
 
         final List<Way> ways;
         private final String key;
@@ -38,7 +38,7 @@ public final class ReflexLadder {
 
     public enum Way {
         SURFACE("surface goal", "shore"), BURROW_UP("burrow up", null), RUN_FROM_HAZARD("run from the hazard", "flee"), TO_WATER("to water", null),
-        RUN_AWAY("run away", "flee"), BURROW("burrow", "burrow");
+        RUN_AWAY("run away", "flee"), BURROW("burrow", "burrow"), PILLAR("pillar", "pillar");
 
         public final String label;
         /**

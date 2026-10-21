@@ -192,7 +192,9 @@ class BreakPolicyTest {
 
     @Test
     void placing() {
-        assertEquals("nothing but torches placed in outside (singleplayer, lenient)", place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).reason());
+        // 0.39.s8 owner: "Place anything outside": a new block outside is allowed, priced (travel x3)
+        assertTrue(place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).allowed());
+        assertTrue(place(SP, Intent.DIG_OUT, 1000, 60, 1000, BlockFacts.STONE).allowed());
         Verdict torch = place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withTorch(true));
         assertTrue(torch.allowed());
         assertEquals(3, torch.multiplier(), "travel places dearly");
@@ -222,9 +224,9 @@ class BreakPolicyTest {
         assertEquals("next to lava", place(SP, Intent.TRAVEL, 1000, 60, 1000, dug.withBelow(Fluid.LAVA)).reason());
         assertTrue(place(SP, Intent.TRAVEL, 305, 60, 305, dug).floor(), "a protect box: nothing placed, dug or not");
         assertEquals("walking only", place(SP, Intent.NONE, 1000, 60, 1000, dug).reason());
-        // a new block in travel still costs x3 (torch) or is refused (anything else, outside)
+        // a new block in travel costs x3, torch or not (0.39.s8: anything outside)
         assertEquals(3, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE.withTorch(true)).multiplier());
-        assertFalse(place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).allowed());
+        assertEquals(3, place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).multiplier());
         assertFalse(BlockFacts.STONE.dugByMe(), "the 12-argument facts are not dug");
     }
 

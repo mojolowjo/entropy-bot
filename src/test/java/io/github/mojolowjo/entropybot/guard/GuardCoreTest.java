@@ -75,10 +75,9 @@ class GuardCoreTest {
         assertTrue(t.allowed());
         assertEquals("travel+refill", t.travel().rule());
         assertEquals("no place lease here", t.guard().reason());
-        // the same cell, not dug: the rule set places nothing but torches outside, so the click is refused
+        // the same cell, not dug: 0.39.s8 owner, anything is placed outside (priced travel x3)
         GuardCore.TravelCheck fresh = g.checkPolicyPlace(OW, 500, 60, 500, air, s, BreakPolicy.BlockFacts.STONE, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
-        assertFalse(fresh.allowed());
-        assertEquals("nothing but torches placed in outside (singleplayer, lenient)", fresh.travel().reason());
+        assertTrue(fresh.allowed());
         // under a mine walk the same refill passes; a protect box stays floor and the policy is not asked
         assertTrue(g.checkPolicyPlace(OW, 500, 60, 500, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.MINE).allowed());
         GuardCore.TravelCheck box = g.checkPolicyPlace(OW, -20, 60, 180, air, s, dug, BreakPolicy.Where.DRY, BreakPolicy.Intent.TRAVEL);
