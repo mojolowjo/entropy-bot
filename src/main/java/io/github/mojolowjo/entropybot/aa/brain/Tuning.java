@@ -70,7 +70,6 @@ public final class Tuning {
         def("danger.fleeBack", 0.6, "AA_CLEANUP 4", "the share of the staying damage a flee still takes later (they follow)");
         def("danger.minS", 30, "AA_CLEANUP 4", "seconds a way must save over staying before the danger desire wants it");
         def("danger.holdS", 30, "AA_CLEANUP 4", "seconds a dug-in or pillared bot waits before it works again");
-        def("danger.coverS", 15, "AA_CLEANUP 4", "seconds the cover from a ranged mob is held");
         def("danger.perS", 0.25, "AA_CLEANUP 4", "the danger desire's score per second the best way saves (300 s = urgent 75)");
         // AA_STEP2 1: the night ways (round 5: night.hide and night.shelter cancelled each other; one danger desire now)
         def("danger.fightHit", ThreatFacts.ARMED, "AA_STEP2 1", "the least weapon hit the fight way needs (a wooden sword 4)");
@@ -146,6 +145,10 @@ public final class Tuning {
         def("reflex.creeper.seeMore", 6, "0.39.s3 (was FLEE_SEE = runTo + 6)", "blocks past runTo the flee still counts a hostile to run from");
         def("reflex.creeper.refleeTicks", 60, "0.39.s3 (was a hand 60)", "ticks one creeper run is kept before the next one is asked (Baritone re-plans less)");
         def("danger.fleeRun", 16, "0.39.s3 (was DangerMoves.FLEE_RUN)", "blocks the danger desire's flee way runs from the hostiles");
+        def("danger.burrowDepth", 3, "rm-threat (was CornerEscape.burrowDepth's 2 or 3)", "cells the danger burrow asks the fork to dig down: at 3 the seal is the cell under the old feet, ground on its sides even on open flat land (at 2 the seal is the feet cell, nothing beside it in a field: the watch-s7 'no ground' night)");
+        def("danger.pillarUp", 3, "rm-threat (was CornerEscape.UP / DangerOptions.PILLAR_UP)", "blocks the danger pillar climbs: 3 puts the feet out of a zombie's reach");
+        def("danger.pillarMinUp", 2, "rm-threat (was CornerEscape.MIN_UP)", "the least head room / blocks for which the pillar verb still pillars (lower: no pillar)");
+        def("danger.waitS", 60, "rm-threat (was DangerOptions.OPEN_WAIT_S)", "seconds of the open-air fallback wait; its exposure (night danger x these seconds) is priced against a shelter's set-up over the same span");
         def("reflex.fire.escapeStep", 3, "0.39.s3 (was FireReflex.ESCAPE_STEP)", "blocks the step out of lava / fire runs from the hazard cells");
         def("reflex.fire.escapeAway", 6, "0.39.s3 (was FireReflex.ESCAPE_AWAY)", "blocks a burning bot runs from the fire / lava near");
         def("reflex.fire.waterR", 8, "0.39.s3 (was SurvivalRules.WATER_R in nearestWater)", "blocks around the fire reflex looks for water (the fact 'water near')");

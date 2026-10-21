@@ -28,7 +28,7 @@ class DangerStep2Test {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
 
     /** No foes; a diggable floor, a wall, 12 blocks for a pillar, head room 3. */
-    static final ThreatFacts.Ways HERE = new ThreatFacts.Ways(0, -1, -1, true, 12, 3, true, true, true);
+    static final ThreatFacts.Ways HERE = new ThreatFacts.Ways(0, -1, true, 12, 3, true, true, true);
 
     void normalNight(ThreatFacts.Ways w, ThreatFacts.Foe... foes) {
         bb.in.dayTime = 18000;
@@ -67,7 +67,7 @@ class DangerStep2Test {
 
     @Test
     void aFailedWayIsHeldTheOthersStayOpen() {
-        normalNight(new ThreatFacts.Ways(0, -1, -1, false, 0, 0, true, true, false));
+        normalNight(new ThreatFacts.Ways(0, -1, false, 0, 0, true, true, false));
         bb.in.bag = java.util.Map.of("cobblestone", 30);
         Tuning.set("danger.boxS", 2);            // the box is the cheapest here
         Failures fs = new Failures();
@@ -92,9 +92,9 @@ class DangerStep2Test {
     void theFoesComeFirstWhenTheyCostMoreThanTheNight() {
         // a zombie on me at 6 hp with bare hands: its ways (flee, dig in) beat the night's 85 at 99
         bb.in.health = 6;
-        normalNight(new ThreatFacts.Ways(16, -1, -1, true, 0, 3, true, true, true));
+        normalNight(new ThreatFacts.Ways(16, -1, true, 0, 3, true, true, true));
         ThreatFacts f = new ThreatFacts(new ThreatFacts.Me(6, 20, 0, 1, 20), List.of(ThreatFacts.foe("minecraft:zombie", 2, 0, null)),
-                new ThreatFacts.Ways(16, -1, -1, true, 0, 3, true, true, true));
+                new ThreatFacts.Ways(16, -1, true, 0, 3, true, true, true));
         bb.fact(AaDesires.THREAT_FACT, (Supplier<ThreatFacts>) () -> f);
         DangerOptions.Choice c = AaDesires.dangerChoice(bb);
         assertTrue(c.score() >= Brain.URGENT, c.terms());
@@ -103,7 +103,7 @@ class DangerStep2Test {
 
     @Test
     void fightOnlyArmedWithTheExchangeInMyFavourAndNeverAtAShooterOutOfReach() {
-        ThreatFacts.Ways open = new ThreatFacts.Ways(16, -1, -1, false, 0, 3, true);
+        ThreatFacts.Ways open = new ThreatFacts.Ways(16, -1, false, 0, 3, true);
         DangerOptions.Choice fist = DangerOptions.choose(new ThreatFacts(new ThreatFacts.Me(20, 20, 0, 1, 20), List.of(ThreatFacts.foe("minecraft:zombie", 3, 0, null)), open));
         assertFalse(fist.all().stream().filter(p -> p.way() == DangerOptions.Way.FIGHT).findFirst().orElseThrow().possible(), fist.terms());
         DangerOptions.Choice sk = DangerOptions.choose(new ThreatFacts(new ThreatFacts.Me(20, 20, 0, 7, 20), List.of(ThreatFacts.foe("minecraft:skeleton", 12, 0, null)), open));

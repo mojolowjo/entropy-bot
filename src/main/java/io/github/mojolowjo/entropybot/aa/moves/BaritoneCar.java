@@ -180,10 +180,6 @@ public final class BaritoneCar implements Car {
         }
     }
 
-    @Override public void cover(int[] cell) {
-        drive(new GoalGetToBlock(pos(cell)), "cover " + cell[0] + " " + cell[1] + " " + cell[2]);
-    }
-
     @Override public void runAway(int dist, List<int[]> from) {
         BlockPos[] at = new BlockPos[from.size()];
         for (int i = 0; i < at.length; i++) at[i] = pos(from.get(i));
@@ -212,9 +208,9 @@ public final class BaritoneCar implements Car {
         push(goal);
     }
 
-    @Override public void burrow(List<int[]> dig, int[] stand, List<int[]> seal, int timeoutTicks) {
+    @Override public void digInHere(int timeoutTicks) {
         fresh();
-        JobHands.get().preempt("danger move burrow");     // step 3 review: a job's hands end with a reason, never silently
+        JobHands.get().preempt("danger move dig in");     // step 3 review: a job's hands end with a reason, never silently
         engine.hold();          // the job stays paused; BurrowProcess (-0.25) outranks the hold (-0.5)
         try {
             var s = BaritoneAPI.getSettings();
@@ -223,16 +219,38 @@ public final class BaritoneCar implements Car {
             for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
             s.acceptableThrowawayItems.value = list;
             setThrow = list;
-            List<BlockPos> d = new ArrayList<>(), sl = new ArrayList<>();
-            for (int[] c : dig) d.add(pos(c));
-            for (int[] c : seal) sl.add(pos(c));
             burrow = b().getBurrowProcess();
-            burrow.start(d, stand == null ? null : pos(stand), sl, timeoutTicks);
-            what = "burrow";
+            burrow.digInHere(timeoutTicks);          // rm-threat: the fork picks the wall
+            what = "dig in";
         } catch (LinkageError e) {
-            forced = Status.failed("this Baritone has no BurrowProcess (the stock jar? install the entropy fork): " + e);
+            forced = Status.failed("this Baritone has no digInHere (the stock jar? install the entropy fork): " + e);
         } catch (RuntimeException e) {
-            forced = Status.failed("burrow start: " + e);
+            forced = Status.failed("dig in start: " + e);
+        }
+    }
+
+    /**
+     * rm-threat: the fork's "can I burrow {@code depth} down here" (null = possible, else its stage and reason). Asked
+     * before any run, so the bag's blocks are not on the throwaway list yet (the seal's own block comes from the dig).
+     */
+    public String burrowVerdict(int depth) {
+        try {
+            return b().getBurrowProcess().canBurrowHere(depth);
+        } catch (LinkageError e) {
+            return "this Baritone has no canBurrowHere (the stock jar? install the entropy fork)";
+        } catch (RuntimeException e) {
+            return "burrow check: " + e;
+        }
+    }
+
+    /** rm-threat: the fork's "can I dig into a wall here" (null = possible, else every wall's reason). */
+    public String digInVerdict() {
+        try {
+            return b().getBurrowProcess().canDigInHere();
+        } catch (LinkageError e) {
+            return "this Baritone has no canDigInHere (the stock jar? install the entropy fork)";
+        } catch (RuntimeException e) {
+            return "dig in check: " + e;
         }
     }
 
