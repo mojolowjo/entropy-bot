@@ -84,6 +84,11 @@ public final class ReflexLadder {
 
     public static int triesPerWay() { return Math.max(1, (int) Tuning.get("reflex.triesPerWay")); }
 
+    /** 0.39.s8: the creeper sprint's own give-up (not "got away") with the creeper still there and ways left: the ladder goes on. */
+    public static boolean sprintGaveUpGoesOn(String sprintEndWhy, boolean creeperThere, boolean spent) {
+        return sprintEndWhy != null && sprintEndWhy.startsWith("gave up") && creeperThere && !spent;
+    }
+
     public static long retryTicks() { return Math.max(1, (long) Tuning.get("reflex.retryTicks")); }
 
     public static String cell(int[] c) { return c[0] + " " + c[1] + " " + c[2]; }

@@ -120,4 +120,14 @@ class ReflexLadderTest {
         assertEquals(0, ReflexLadder.fails(Kind.CREEPER, CELL));
         assertEquals(Way.RUN_AWAY, ReflexLadder.way(Kind.CREEPER, CELL));
     }
+
+    @Test
+    void sprintGiveUpDoesNotEndTheLadder() {
+        // 0.39.s8: the sprint's own 5 s give-up with the creeper near goes on to the ladder's ways
+        assertTrue(ReflexLadder.sprintGaveUpGoesOn("gave up after 5 s with the creeper at 4.9", true, false));
+        assertFalse(ReflexLadder.sprintGaveUpGoesOn("got 7.1 blocks away", true, false), "got away ends the reflex");
+        assertFalse(ReflexLadder.sprintGaveUpGoesOn("gave up after 5 s", false, false), "the creeper is gone");
+        assertFalse(ReflexLadder.sprintGaveUpGoesOn("gave up after 5 s", true, true), "every way spent: FAILED");
+        assertFalse(ReflexLadder.sprintGaveUpGoesOn(null, true, false));
+    }
 }

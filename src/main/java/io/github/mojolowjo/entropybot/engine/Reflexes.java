@@ -851,8 +851,7 @@ public final class Reflexes {
                 return false;
             }
         } else if (cspr.step(now, d) == CreeperSprint.Act.DONE) {
-            boolean gaveUp = cspr.endWhy() != null && cspr.endWhy().startsWith("gave up");
-            if (gaveUp && c != null && !Double.isNaN(d) && !creeperSpent) {
+            if (io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.sprintGaveUpGoesOn(cspr.endWhy(), c != null && !Double.isNaN(d), creeperSpent)) {
                 creeperLadderGoverns = true;
                 LOG.info("[entropybot] creeper sprint: {} with the creeper at {} - the run is charged, the ladder goes on", cspr.endWhy(), Math.round(d * 10) / 10.0);
                 fleeRetryAt = now;

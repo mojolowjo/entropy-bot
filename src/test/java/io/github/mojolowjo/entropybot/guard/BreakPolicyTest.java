@@ -191,6 +191,20 @@ class BreakPolicyTest {
     // ---- PLACE
 
     @Test
+    void outsidePlacesUnderEveryIntent() {
+        // 0.39.s8 owner: "Place anything outside": every real intent may place outside (SP and MP); keep-out and
+        // no-break (a protect box) still deny
+        for (Intent in : Intent.values()) {
+            if (in == Intent.NONE) continue;    // walking only: a route-map context, not an intent to act
+            assertTrue(place(SP, in, 1000, 60, 1000, BlockFacts.STONE).allowed(), "SP outside " + in);
+            assertTrue(place(MP, in, 1000, 60, 1000, BlockFacts.STONE).allowed(), "MP outside " + in);
+            assertFalse(place(SP, in, 305, 60, 305, BlockFacts.STONE).allowed(), "no-break box " + in);
+        }
+        assertEquals(BreakPolicy.PlaceRule.NEVER, RuleSet.KEEP_OUT.place());
+        assertEquals(BreakPolicy.PlaceRule.NEVER, RuleSet.NO_BREAK.place());
+    }
+
+    @Test
     void placing() {
         // 0.39.s8 owner: "Place anything outside": a new block outside is allowed, priced (travel x3)
         assertTrue(place(SP, Intent.TRAVEL, 1000, 60, 1000, BlockFacts.STONE).allowed());
