@@ -128,6 +128,9 @@ public final class PolicyRuntime {
 
     public Intent intent() { return intent; }
 
+    /** Who set the intent (the status line's "(by)"). */
+    public String intentBy() { return intentBy; }
+
     /** The intent for a cost calculation on this thread: a scoped one (route map) wins, else the job's. */
     public Intent intentNow() {
         Intent s = scoped.get();

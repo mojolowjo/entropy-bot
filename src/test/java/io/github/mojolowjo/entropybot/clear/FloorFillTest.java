@@ -211,6 +211,30 @@ class FloorFillTest {
     }
 
     @Test
+    void aClimbThatCannotStartFailsAtOnceWithItsReason() {
+        FakeWorld w = cave();
+        FillDriver d = new FillDriver(w, Bot.at(265.5, -49, 854.5));
+        d.bag.put(CD, 200);
+        d.climbRefusal = "no Baritone to climb out with";
+        FloorFill.Run r = new FloorFill.Run(w, BOX, null, AREA_ONLY, IN_AREA, false);
+        boolean ended = false;
+        for (int i = 0; i < 5 && !ended; i++) ended = r.tick(d);
+        assertTrue(ended, "ends within a few ticks, no timeout wait: " + r.phase());
+        assertNotEquals("walk", r.phase());
+        assertTrue(r.report().contains("can't climb out: no Baritone to climb out with"), r.report());
+        assertEquals(0, d.climbEnds, "no climb started, nothing to put back");
+    }
+
+    @Test
+    void everyStartedClimbPutsItsSettingsBack() {
+        FakeWorld w = cave();
+        FillDriver d = new FillDriver(w, Bot.at(265.5, -49, 854.5));
+        d.bag.put(CD, 200);
+        FloorFill.Run r = d.fill(new FloorFill.Run(w, BOX, null, AREA_ONLY, IN_AREA, false));
+        assertTrue(d.climbEnds >= 1, "the climb's end restored its settings: " + r.report());
+    }
+
+    @Test
     void climbOnlyWalksUpWhenThereIsAWayAndPlacesNothing() {
         FakeWorld w = cave();
         // a 1-deep part: the bot stands in the hole (feet -47 on the cave bottom at -48) and can step out

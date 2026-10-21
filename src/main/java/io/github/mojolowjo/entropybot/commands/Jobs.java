@@ -657,16 +657,49 @@ public final class Jobs {
 
     /**
      * Builder placements (floor fill climb-out): a walk under the TRAVEL intent whatever job runs, so Baritone may
-     * pillar out (allowPlace under the travel costs). The job's next {@link #safeSettings()} puts its own intent back.
+     * pillar out (allowPlace under the travel costs). 0.39.q4: answers what was there before; the climb's own end
+     * (done, fail, cancel, job stop) calls {@link Saved#restore()}. Throws when the settings could not be set (the
+     * old values are put back first), so the caller fails the step with the reason instead of climbing on leftovers.
      */
-    static void travelSettings() {
+    static Saved travelSettings() {
+        var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+        var s = BaritoneAPI.getSettings();
+        Saved saved = new Saved(pr.intent(), pr.intentBy(), s.allowBreak.value, s.allowPlace.value);
         try {
-            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
             pr.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "climb out");
-            BaritoneAPI.getSettings().allowBreak.value = pr.travelMayBreak();
-            BaritoneAPI.getSettings().allowPlace.value = pr.travelMayPlace();
-        } catch (Throwable t) {
-            LOG.warn("[entropybot] climb out: travel settings not set: {}", t.toString());
+            s.allowBreak.value = pr.travelMayBreak();
+            s.allowPlace.value = pr.travelMayPlace();
+        } catch (RuntimeException t) {
+            saved.restore();
+            throw t;
+        }
+        return saved;
+    }
+
+    /** The intent and Baritone's break/place settings from before a climb; restore() puts them back once. */
+    static final class Saved {
+        final io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent intent;
+        final String by;
+        final boolean allowBreak, allowPlace;
+        private boolean restored;
+
+        Saved(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent intent, String by, boolean allowBreak, boolean allowPlace) {
+            this.intent = intent;
+            this.by = by;
+            this.allowBreak = allowBreak;
+            this.allowPlace = allowPlace;
+        }
+
+        void restore() {
+            if (restored) return;
+            restored = true;
+            try {
+                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(intent, by);
+                BaritoneAPI.getSettings().allowBreak.value = allowBreak;
+                BaritoneAPI.getSettings().allowPlace.value = allowPlace;
+            } catch (Throwable t) {
+                LOG.warn("[entropybot] climb out: settings not put back: {}", t.toString());
+            }
         }
     }
 

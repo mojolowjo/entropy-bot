@@ -224,7 +224,10 @@ public final class FloorFill {
             default boolean placing(Pos cell) { return false; }
 
             /** A Baritone goal: feet at level y or higher inside the footprint (the fence allowing); Baritone finds the way up. */
-            void climbTo(int y, ClearBox footprint);
+            String climbTo(int y, ClearBox footprint);
+
+            /** 0.39.q4: the climb's walk ended (arrived, timed out, stuck): its settings go back. */
+            default void climbEnded() {}
 
             boolean walkIdle();
 
@@ -346,6 +349,8 @@ public final class FloorFill {
             // a reflex (a fight, a meal) held the job: the walk it was on is stale
             if (lastTick >= 0 && now - lastTick > 5 && phase.equals("walk")) {
                 b.cancelWalk();
+                if (climbing) b.climbEnded();
+                climbing = false;
                 phase = "pick";
                 target = null;
             }
@@ -521,8 +526,13 @@ public final class FloorFill {
                 return end();
             }
             target = null;
+            // 0.39.q4: a climb that cannot start fails the step with its reason (no walk phase waiting out a timeout)
+            String no = b.climbTo(fy + 1, box);
+            if (no != null) {
+                endNote = "I'm below the floor at " + key(bot) + " and can't climb out: " + no;
+                return end();
+            }
             climbing = true;
-            b.climbTo(fy + 1, box);
             phase = "walk";
             phaseStart = now;
             mx = bot.x();
@@ -548,6 +558,7 @@ public final class FloorFill {
             if (!idle && !stuck && el < 20L * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.climbS")) return false;
             if (!idle) b.cancelWalk();
             phase = "pick";
+            if (climbing) b.climbEnded();
             climbing = false;
             if (feet(bot) <= fy) climbWalkFails++;
             return false;
