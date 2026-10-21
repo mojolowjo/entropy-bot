@@ -27,8 +27,6 @@ public final class FishRules {
     private FishRules() {}
 
     public static final String ROD = "minecraft:fishing_rod";
-    /** What counts as a fish for the count (pufferfish poisons, so it is no food). */
-    public static final List<String> FISH = List.of("minecraft:cod", "minecraft:salmon", "minecraft:tropical_fish");
     public static int defaultN() { return Tuning.i("fishRules.defaultN"); }
     public static int maxMinutes() { return Tuning.i("fishRules.maxMinutes"); }
     public static int range() { return Tuning.i("fishRules.range"); }
@@ -63,23 +61,40 @@ public final class FishRules {
         return minutes < 1 || minutes > maxMinutes() ? null : new Parsed(0, minutes);
     }
 
+    /** Fish in the bag: the items the game's fishing loot table gives as fish (cod, salmon...), less the harmful ones (pufferfish poisons: no food). */
     public static int fish(Map<String, Integer> bag) {
         int n = 0;
-        for (String f : FISH) n += bag.getOrDefault(f, 0);
+        for (String f : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fishingFish()) n += bag.getOrDefault(f, 0);
         return n;
     }
 
-    /** A rod can be crafted: 3 sticks and 2 string. */
-    public static boolean canCraftRod(int sticks, int string) {
-        return sticks >= 3 && string >= 2;
+    /** What one rod takes: its recipe in the game's data (ingredient id -> count; empty when the game has none loaded). */
+    public static Map<String, Integer> rodNeeds() {
+        Map<String, Integer> m = new java.util.LinkedHashMap<>();
+        var r = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.recipes(ROD);
+        if (!r.isEmpty()) for (String in : r.get(0).inputs()) m.merge(in, 1, Integer::sum);
+        return m;
+    }
+
+    private static int has(Map<String, Integer> inv, String id) { return inv.getOrDefault(id, 0) + inv.getOrDefault(id.replaceFirst("^minecraft:", ""), 0); }
+
+    /** A rod can be crafted from the bag: the rod recipe's ingredients are all there (a game with no recipe loaded: no). */
+    public static boolean canCraftRod(Map<String, Integer> inv) {
+        Map<String, Integer> need = rodNeeds();
+        if (need.isEmpty()) return false;
+        for (var e : need.entrySet()) if (has(inv, e.getKey()) < e.getValue()) return false;
+        return true;
     }
 
     /** What is missing for a rod (the reason in the status), null when a rod is in the bag or can be crafted. */
-    public static String rodWhy(boolean haveRod, int sticks, int string) {
-        if (haveRod || canCraftRod(sticks, string)) return null;
-        return "no fishing rod and the recipe needs 3 sticks + 2 string (I have " + sticks + " sticks, " + string + " string)";
+    public static String rodWhy(boolean haveRod, Map<String, Integer> inv) {
+        if (haveRod || canCraftRod(inv)) return null;
+        Map<String, Integer> need = rodNeeds();
+        if (need.isEmpty()) return "no fishing rod and the game's recipe for one is not loaded";
+        List<String> lack = new java.util.ArrayList<>();
+        for (var e : need.entrySet()) lack.add(e.getValue() + " " + e.getKey().replaceFirst("^minecraft:", "") + " (I have " + has(inv, e.getKey()) + ")");
+        return "no fishing rod and the recipe needs " + String.join(" + ", lack);
     }
-
     /**
      * The bite flag from the bobber's non-default synced values (SynchedEntityData.getNonDefaultValues, each item's
      * {@code value()}): DATA_BITING is the only Boolean on the hook and it is non-default only while true.
@@ -90,7 +105,7 @@ public final class FishRules {
         return false;
     }
 
-    public enum Act { DONE_COUNT, DONE_TIME, TIMED_OUT, CRAFT_ROD, NO_ROD, WAIT, GO_WATER, NO_WATER, CAST, REEL_BITE, REEL_TIMEOUT, WAIT_BITE }
+    public enum Act { DONE_COUNT, DONE_TIME, TIMED_OUT, NO_ROD, WAIT, GO_WATER, NO_WATER, CAST, REEL_BITE, REEL_TIMEOUT, WAIT_BITE }
 
     /**
      * @param hookOut   the bobber is in the water ({@code Player.fishing != null})
@@ -102,7 +117,7 @@ public final class FishRules {
      * @param caught    fish in the bag now minus at the start
      * @param elapsed   ticks since the start
      */
-    public record State(boolean haveRod, boolean canCraft, boolean craftTried, boolean hookOut, boolean biting, long sinceCast,
+    public record State(boolean haveRod, boolean hookOut, boolean biting, long sinceCast,
                         long sinceReel, boolean spotOk, boolean spotFar, int caught, Parsed goal, long elapsed) {}
 
     /** The next thing to do, in order. Pure. */
@@ -110,7 +125,7 @@ public final class FishRules {
         if (!s.goal().timed() && s.caught() >= s.goal().n()) return Act.DONE_COUNT;
         if (s.goal().timed() && s.elapsed() >= s.goal().minutes() * 60 * 20L) return Act.DONE_TIME;
         if (!s.goal().timed() && s.elapsed() >= countMax()) return Act.TIMED_OUT;
-        if (!s.haveRod()) return s.canCraft() && !s.craftTried() ? Act.CRAFT_ROD : Act.NO_ROD;
+        if (!s.haveRod()) return Act.NO_ROD;
         if (s.hookOut()) {
             if (s.biting()) return Act.REEL_BITE;
             if (s.sinceCast() >= biteWait()) return Act.REEL_TIMEOUT;
@@ -151,12 +166,4 @@ public final class FishRules {
         return ((long) x & 0x3ffffff) << 38 | ((long) z & 0x3ffffff) << 12 | ((long) y & 0xfff);
     }
 
-    /** Where to stand for a far spot: 5 blocks short of it on the line from me (the dry side), y as the spot's. */
-    public static int[] standPoint(int[] spot, int mx, int mz) {
-        double dx = mx - spot[0], dz = mz - spot[2], d = Math.hypot(dx, dz);
-        if (d < 1) return new int[]{spot[0], spot[1], spot[2]};
-        double f = 5.0 / d;
-        return new int[]{(int) Math.round(spot[0] + dx * f), spot[1], (int) Math.round(spot[2] + dz * f)};
-    }
 }
-

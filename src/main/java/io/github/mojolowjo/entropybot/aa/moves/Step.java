@@ -242,14 +242,33 @@ public sealed interface Step {
         public String text() { return toolsOnly ? "bootstrap tools" : "bootstrap"; }
     }
 
-    /** Fish for {@code minutes} at the nearest water (the fishing job: cast, wait, reel). */
-    record Fish(int minutes) implements Step {
-        public String text() { return "fish " + minutes + "m"; }
+    /**
+     * Fish at the nearest water: the rod's cast and reel are item inputs on Baritone's look, the walk to the water is a
+     * Baritone goal; until {@code n} fish are in the bag ({@code n} 0: for {@code minutes}). A rod must be in the bag (the
+     * option puts a craft step before this one when it has the sticks and string); no rod, no water within reach, no fish
+     * in the time are the step's named failure.
+     */
+    record Fish(int n, int minutes) implements Step {
+        public Fish(int minutes) { this(0, minutes); }
+
+        public boolean timed() { return n == 0; }
+
+        public String text() { return timed() ? "fish " + minutes + "m" : "fish " + n + " fish"; }
     }
 
-    /** Cut {@code n} kelp and smelt it to dried kelp (the kelp job). */
-    record Kelp(int n) implements Step {
+    /** Cut {@code n} kelp over Baritone's MineProcess on the game's kelp blocks (counted in the bag). */
+    record KelpCut(int n) implements Step {
+        public String text() { return "gather kelp " + n; }
+    }
+
+    /** Cut {@code n} kelp and smelt it to dried kelp (the cut, then the cook). */
+    record Kelp(int n) implements Compound {
         public String text() { return "kelp " + n + " cook"; }
+
+        public List<Step> parts() {
+            String raw = "kelp";          // the owner's word for the cook verb (cook kelp n)
+            return List.of(new KelpCut(n), new Cook(raw, n));
+        }
     }
 
     /** Eat the bag's best food (the eat reflex's verb). */
@@ -290,7 +309,7 @@ public sealed interface Step {
     }
 
     /** A step made of steps: {@link Steps} runs its parts in its place (one machine, one failure path). */
-    sealed interface Compound extends Step permits StripLeg, ClearChunk {
+    sealed interface Compound extends Step permits StripLeg, ClearChunk, Kelp {
         List<Step> parts();
     }
 

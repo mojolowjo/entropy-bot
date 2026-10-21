@@ -256,6 +256,7 @@ public final class Seq {
             case "diskshere": return storage.disksHereStep(this, st, p);           // package F: the RS disk drives
             case "rsdisks": return storage.rsDisksStep(this, st, p, elapsed);
 
+            case "veinmine": return VeinMine.step(this, st, p);     // rm-final: a vein over Baritone's MineProcess
             case "clear":
             case "placeblock": return Clearing.step(this, st, p, elapsed);
             case "sleep": return SleepJob.step(this, st, p);                    // C4: in bed until morning

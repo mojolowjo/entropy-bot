@@ -323,7 +323,7 @@ final class Mining {
     }
 
     /** One face of the block at q is open (air, water, a plant): Baritone's mine without "dig" can reach it. */
-    private static boolean exposed(Level level, BlockPos q) {
+    static boolean exposed(Level level, BlockPos q) {
         for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
             BlockPos n = q.relative(dir);
             if (level.getBlockState(n).getCollisionShape(level, n).isEmpty()) return true;
@@ -658,8 +658,7 @@ final class Mining {
     private String knownClear(Seq s, MineRun j) {
         Level lv = Minecraft.getInstance().level;
         if (lv != null && lv.isLoaded(new BlockPos(j.at[0], j.at[1], j.at[2]))) j.kVein = atVein(lv, j);
-        Seq.Step clear = Clearing.clearStep(new ClearJob.Options().only(new ArrayList<>(j.kVein)).collect(true).soft(true).explainSpots(true).waterOk(true)
-                .label("mining " + j.kVein.size() + " " + sid(j) + " blocks at " + Jobs.fmt(j.at)));
+        Seq.Step clear = VeinMine.seqStep(new ArrayList<>(j.kVein), "mining " + j.kVein.size() + " " + sid(j) + " blocks at " + Jobs.fmt(j.at));       // rm-final: Baritone's MineProcess, not the clear engine
         clear.optional = true;
         j.kClear = clear;
         spliceHere(s, List.of(clear));
@@ -790,7 +789,7 @@ final class Mining {
         LOG.info("[entropybot] explore: mining {} exposed ore blocks at {} {} {}", vein.size(), f.x(), f.y(), f.z());
         List<Seq.Step> add = new ArrayList<>();
         add.add(Seq.Step.walk(new int[]{f.x(), f.y(), f.z()}, true));
-        add.add(Clearing.clearStep(new ClearJob.Options().only(vein).soft(true).label("mining the ore at " + f.x() + " " + f.y() + " " + f.z())));
+        add.add(VeinMine.seqStep(vein, "mining the ore at " + f.x() + " " + f.y() + " " + f.z()));       // rm-final: Baritone's MineProcess, not the clear engine
         return add;
     }
 

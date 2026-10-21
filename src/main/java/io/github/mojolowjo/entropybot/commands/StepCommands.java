@@ -11,7 +11,7 @@ public final class StepCommands {
 
     // ---- rm-execution2: the owner verb each step runs (built from the step's fields here, the game side; never its text()) ----
 
-    /** The command a step runs through its job; the walks, trees, collects, hunts, builds and the climb have hands of their own. */
+    /** The command a step runs through its job; the walks, trees, collects, hunts, builds, the climb, fishing and kelp cuts have hands of their own. */
     public static String command(Step s) {
         return switch (s) {
             case Step.Walk w -> "goto " + w.x() + " " + w.y() + " " + w.z();
@@ -56,8 +56,9 @@ public final class StepCommands {
             case Step.Give k -> "give me " + k.item() + " " + k.n();
             case Step.Light k -> "light here " + k.radius();
             case Step.Bootstrap k -> k.toolsOnly() ? "bootstrap tools" : "bootstrap";
-            case Step.Fish k -> "fish " + k.minutes() + "m";
-            case Step.Kelp k -> "gather kelp " + k.n() + " cook";
+            case Step.Fish k -> throw new IllegalStateException("a fish step has hands of its own (cast and reel on Baritone's look), no verb");
+            case Step.KelpCut k -> throw new IllegalStateException("a kelp cut has hands of its own (Baritone's mine process), no verb");
+            case Step.Kelp k -> throw new IllegalStateException("a compound step is expanded by Steps, never run by the hands");
             case Step.Eat k -> "eat";
             case Step.DigArea k -> "dig " + k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up();
             case Step.FarmPlant k -> "farm plant " + k.crop() + " here " + k.n();

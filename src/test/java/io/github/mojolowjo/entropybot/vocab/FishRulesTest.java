@@ -8,10 +8,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FishRulesTest {
-    private static FishRules.State st(boolean rod, boolean craft, boolean tried, boolean hook, boolean bite, long sinceCast, long sinceReel,
+    private static FishRules.State st(boolean rod, boolean hook, boolean bite, long sinceCast, long sinceReel,
                                       boolean ok, boolean far, int caught, FishRules.Parsed goal, long elapsed) {
-        return new FishRules.State(rod, craft, tried, hook, bite, sinceCast, sinceReel, ok, far, caught, goal, elapsed);
+        return new FishRules.State(rod, hook, bite, sinceCast, sinceReel, ok, far, caught, goal, elapsed);
     }
 
     @Test
@@ -37,33 +38,31 @@ class FishRulesTest {
     }
 
     @Test
-    void rodRecipe() {
-        assertTrue(FishRules.canCraftRod(3, 2));
-        assertFalse(FishRules.canCraftRod(2, 2));
-        assertFalse(FishRules.canCraftRod(3, 1));
-        assertNull(FishRules.rodWhy(true, 0, 0));
-        assertNull(FishRules.rodWhy(false, 3, 2));
-        assertTrue(FishRules.rodWhy(false, 1, 0).contains("3 sticks + 2 string"));
+    void rodRecipeIsTheGamesOwn() {
+        Map<String, Integer> ok = Map.of("minecraft:stick", 3, "minecraft:string", 2), few = Map.of("minecraft:stick", 2, "minecraft:string", 2);
+        assertTrue(FishRules.canCraftRod(ok));
+        assertFalse(FishRules.canCraftRod(few));
+        assertFalse(FishRules.canCraftRod(Map.of("minecraft:stick", 3, "minecraft:string", 1)));
+        assertNull(FishRules.rodWhy(true, Map.of()));
+        assertNull(FishRules.rodWhy(false, ok));
+        assertTrue(FishRules.rodWhy(false, Map.of("stick", 1)).contains("3 stick"), FishRules.rodWhy(false, Map.of("stick", 1)));
     }
 
     @Test
     void theLoop() {
         FishRules.Parsed n = new FishRules.Parsed(2, 0), t = new FishRules.Parsed(0, 2);
-        assertEquals(FishRules.Act.DONE_COUNT, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 2, n, 100)));
-        assertEquals(FishRules.Act.DONE_TIME, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, t, 2400)));
-        assertEquals(FishRules.Act.WAIT_BITE, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, t, 100)));
-        assertEquals(FishRules.Act.TIMED_OUT, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, n, FishRules.countMax())));
-        assertEquals(FishRules.Act.CRAFT_ROD, FishRules.next(st(false, true, false, false, false, 0, 99, true, false, 0, n, 0)));
-        assertEquals(FishRules.Act.NO_ROD, FishRules.next(st(false, true, true, false, false, 0, 99, true, false, 0, n, 0)), "tried once, no loop");
-        assertEquals(FishRules.Act.NO_ROD, FishRules.next(st(false, false, false, false, false, 0, 99, true, false, 0, n, 0)));
-        assertEquals(FishRules.Act.REEL_BITE, FishRules.next(st(true, false, false, true, true, 30, 99, true, false, 0, n, 100)));
-        assertEquals(FishRules.Act.REEL_TIMEOUT, FishRules.next(st(true, false, false, true, false, FishRules.biteWait(), 99, true, false, 0, n, 100)));
-        assertEquals(FishRules.Act.WAIT, FishRules.next(st(true, false, false, false, false, 0, 3, true, false, 0, n, 100)));
-        assertEquals(FishRules.Act.CAST, FishRules.next(st(true, false, false, false, false, 0, 40, true, false, 0, n, 100)));
-        assertEquals(FishRules.Act.GO_WATER, FishRules.next(st(true, false, false, false, false, 0, 40, false, true, 0, n, 100)));
-        assertEquals(FishRules.Act.NO_WATER, FishRules.next(st(true, false, false, false, false, 0, 40, false, false, 0, n, 100)));
+        assertEquals(FishRules.Act.DONE_COUNT, FishRules.next(st(true, true, false, 5, 5, true, false, 2, n, 100)));
+        assertEquals(FishRules.Act.DONE_TIME, FishRules.next(st(true, true, false, 5, 5, true, false, 0, t, 2400)));
+        assertEquals(FishRules.Act.WAIT_BITE, FishRules.next(st(true, true, false, 5, 5, true, false, 0, t, 100)));
+        assertEquals(FishRules.Act.TIMED_OUT, FishRules.next(st(true, true, false, 5, 5, true, false, 0, n, FishRules.countMax())));
+        assertEquals(FishRules.Act.NO_ROD, FishRules.next(st(false, false, false, 0, 99, true, false, 0, n, 0)), "the craft is a step before this one");
+        assertEquals(FishRules.Act.REEL_BITE, FishRules.next(st(true, true, true, 30, 99, true, false, 0, n, 100)));
+        assertEquals(FishRules.Act.REEL_TIMEOUT, FishRules.next(st(true, true, false, FishRules.biteWait(), 99, true, false, 0, n, 100)));
+        assertEquals(FishRules.Act.WAIT, FishRules.next(st(true, false, false, 0, 3, true, false, 0, n, 100)));
+        assertEquals(FishRules.Act.CAST, FishRules.next(st(true, false, false, 0, 40, true, false, 0, n, 100)));
+        assertEquals(FishRules.Act.GO_WATER, FishRules.next(st(true, false, false, 0, 40, false, true, 0, n, 100)));
+        assertEquals(FishRules.Act.NO_WATER, FishRules.next(st(true, false, false, 0, 40, false, false, 0, n, 100)));
     }
-
     private static List<int[]> pond(int x0, int z0, int w, int d, int y) {
         List<int[]> l = new ArrayList<>();
         for (int x = x0; x < x0 + w; x++) for (int z = z0; z < z0 + d; z++) l.add(new int[]{x, y, z});
@@ -81,12 +80,10 @@ class FishRulesTest {
         assertNotNull(far);
         assertEquals(1, far[3], "out of casting distance: walk first");
         assertNull(FishRules.pick(pond(5, 0, 6, 6, 63), 0, 2, cell -> false));
-        int[] stand = FishRules.standPoint(far, 0, 2);
-        assertTrue(Math.hypot(stand[0] - far[0], stand[2] - far[2]) <= 5.5);
     }
 
     @Test
-    void countsOnlyFoodFish() {
-        assertEquals(5, FishRules.fish(Map.of("minecraft:cod", 2, "minecraft:salmon", 2, "minecraft:tropical_fish", 1, "minecraft:pufferfish", 3)));
+    void countsTheGamesFishingFishOnly() {
+        assertEquals(5, FishRules.fish(Map.of("minecraft:cod", 2, "minecraft:salmon", 2, "minecraft:tropical_fish", 1, "minecraft:pufferfish", 3)), "the fish of the fishing loot, less the harmful ones");
     }
 }

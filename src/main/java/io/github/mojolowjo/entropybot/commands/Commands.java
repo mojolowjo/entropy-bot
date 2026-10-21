@@ -196,14 +196,10 @@ public final class Commands implements Chains.Env {
         this.crafting = new Crafting(core, this, jobs, storage);
         storage.crafting = crafting;
         this.stepRun = new StepRun(this);
-        this.kelping = new Kelping(this);
-        this.fishing = new Fishing(this);
     }
 
     /** rm-execution: the one runner of typed steps (AA's options; the owner's cut, gather and hunt); hunting on|off. */
     final StepRun stepRun;
-    final Kelping kelping;
-    final Fishing fishing;
     /** Where it respawned (a home fact: no build hints there). */
     final io.github.mojolowjo.entropybot.camp.RespawnHomes respawn = new io.github.mojolowjo.entropybot.camp.RespawnHomes();
     /** 0.24.2: assist (help the owner with what they are doing). */
@@ -692,20 +688,6 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 7 && !aaOn()) Clearing.keptTick(this);          // a kept craft table the chain never came back for (AA keeps its own)
-            if (tick % 5 == 4) {
-                try {
-                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(kelping.driver)) { kelping.tick(player); }                      // aa-kelpfish: the next kelp column
-                } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] gather kelp: {}", e.toString());
-                    kelping.stop("error: " + e);
-                }
-                try {
-                    try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(fishing.driver)) { fishing.tick(player); }                      // aa-kelpfish: cast, wait, reel
-                } catch (RuntimeException e) {
-                    LOG.warn("[entropybot] fish: {}", e.toString());
-                    fishing.stop("error: " + e);
-                }
-            }
             if (tick % 20 == 5 && !aaOn()) chains.deathTick(dead);     // 0.36.0: with AA on, AA re-chooses after a death (no chain resume)
             if (tick % 20 == 6) respawn.tick(dead, tick, Jobs.here(player));     // where it respawned (a home fact)
             if (!chains.resumeChecked() && worldTicks > 200) {
@@ -963,7 +945,7 @@ public final class Commands implements Chains.Env {
 
     /** A job, chain, gather or hunt run is on (the AI waits for its end). */
     public boolean aiBusy() {
-        return requests.busy() || jobs.running() || (chains != null && chains.running()) || stepRun.running() || kelping.running() || fishing.running();
+        return requests.busy() || jobs.running() || (chains != null && chains.running()) || stepRun.running();
     }
 
     /** The reply shape the owner gets for this command line's answer (RESULT/HERE/NEW/OPTIONS). */
@@ -1316,8 +1298,8 @@ public final class Commands implements Chains.Env {
             return Reply.now("busy: " + chains.chainStatus() + " (pm \"stop\" first)");
         }
         // P2: gather (its status and sources answer at once; a running gather owns the bot between its steps too)
-        if (verb.equals("gather") && io.github.mojolowjo.entropybot.vocab.KelpRules.isKelp(rest)) return kelping.command(from, rest, raw, l, player);
-        if (verb.equals("fish")) return fishing.command(from, rest, raw, l, player);
+        if (verb.equals("gather") && io.github.mojolowjo.entropybot.vocab.KelpRules.isKelp(rest)) return stepRun.kelp(from, rest, raw, l);
+        if (verb.equals("fish")) return stepRun.fish(from, rest, raw, l, player);
         if (verb.equals("hunting")) return Reply.now(stepRun.setting(rest));
         // rm-execution: a running step list owns the bot between its steps (its own steps come back as internal)
         if (!internal && stepRun.running() && Texts.isBuiltin(verb) && !verb.equals("find") && !verb.equals("recipe") && !verb.equals("close")) {
@@ -1765,8 +1747,6 @@ public final class Commands implements Chains.Env {
         lastStop = System.currentTimeMillis();         // package D: no furnace pickup for a while after "stop"
         String routine = chains.clear();
         String stepped = stepRun.stop("stopped by \"stop\"");
-        kelping.stop("stopped by \"stop\"");
-        fishing.stop("stopped by \"stop\"");
         if (routine == null && stepped != null) routine = stepped;
         jobs.followWatch = null;
         jobs.followFix = null;
@@ -2025,8 +2005,6 @@ public final class Commands implements Chains.Env {
         chains.noteDeath();
         jobs.finish("stopped: the bot died");
         stepRun.stop("the bot died");
-        kelping.stop("the bot died");
-        fishing.stop("the bot died");
         JsonObject d = new JsonObject();
         d.addProperty("x", (int) Math.floor(p.getX()));
         d.addProperty("y", (int) Math.floor(p.getY()));
@@ -2136,8 +2114,6 @@ public final class Commands implements Chains.Env {
             if (jobs.running()) return "job " + jobs.job.status;
             // 0.33.0 (Haiku run: "wait 180" came back after 1 s mid-hunt): typed steps run between their walks with no job
             if (stepRun.running()) return stepRun.status();
-            String kf = kelping.statusText(mc.player) != null ? kelping.statusText(mc.player) : fishing.statusText(mc.player);
-            if (kf != null) return kf;
             if (withChain && chains != null && chains.running()) return "chain " + chains.chainStatus();
 
             baritone.api.IBaritone b = Jobs.baritone();
@@ -2519,8 +2495,7 @@ public final class Commands implements Chains.Env {
         s.addProperty("reflex", kind);
         s.add("chain", chains.running() ? new com.google.gson.JsonPrimitive(chains.chainStatus())
                 : stepRun.running() ? new com.google.gson.JsonPrimitive(stepRun.status()) : JsonNull.INSTANCE);
-        String huntNow = kelping.statusText(Minecraft.getInstance().player);
-        if (huntNow == null) huntNow = fishing.statusText(Minecraft.getInstance().player);       // 0.33.0: bridge wait's fallback reads it
+        String huntNow = stepRun.running() ? stepRun.status() : null;       // 0.33.0: bridge wait's fallback reads it
         s.add("hunt", huntNow == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(huntNow));
 
         try {                                                   // 0.36.0: AA (on, driver, task, danger)

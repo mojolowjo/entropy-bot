@@ -36,6 +36,8 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     @Override public String smeltInput(String result) { return smeltInputs.get(result); }
     @Override public boolean needsTable(String id) { return tableItems.contains(id); }
     @Override public String oreDropping(String item) { return oreDrops.get(item); }
+    public final Set<String> fishing = new HashSet<>();
+    @Override public Set<String> fishingFish() { return fishing; }
     public final Map<String, ItemWorth.Mob> mobs = new HashMap<>();
     @Override public ItemWorth.Mob mob(String id) { return mobs.get(id); }
     public TestData mob(String id, double hp, double dmg, ItemWorth.MobMove move, boolean flagged) { mobs.put(id(id), new ItemWorth.Mob(hp, dmg, move, flagged)); return this; }
@@ -90,6 +92,8 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
                 .mob("enderman", 40, 7, ItemWorth.MobMove.TELEPORT, true).mob("witch", 26, Double.NaN, ItemWorth.MobMove.RANGED, false).mob("pillager", 24, Double.NaN, ItemWorth.MobMove.RANGED, true)
                 .mob("vindicator", 24, 13, ItemWorth.MobMove.WALK, true).mob("slime", 16, 4, ItemWorth.MobMove.WALK, false).mob("phantom", 20, 2, ItemWorth.MobMove.FLY, false)
                 .mob("blaze", 20, 6, ItemWorth.MobMove.FLY, false).mob("wither_skeleton", 20, 8, ItemWorth.MobMove.WALK, true).mob("creeper", 20, Double.NaN, ItemWorth.MobMove.WALK, true);
+        d.fishing.addAll(List.of(id("cod"), id("salmon"), id("tropical_fish")));
+        d.recipe("fishing_rod", 1, "stick", "stick", "stick", "string", "string");
         d.station.addAll(List.of(id("crafting_table"), id("furnace"), id("chest"), id("blast_furnace")));
         d.container.addAll(List.of(id("chest"), id("furnace"), id("blast_furnace"), id("trapped_chest")));
         d.plank.add(id("oak_planks"));

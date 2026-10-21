@@ -100,6 +100,8 @@ public final class ItemWorth {
         default boolean needsTable(String id) { var r = recipes(id); return !r.isEmpty() && r.get(0).inputs().size() > 4; }   // game fact: the inventory's crafting grid is 2x2: more than 4 ingredients need a table
         /** The ore block (the game's ores tag) whose loot table drops the item (raw_iron: iron_ore), or null. */
         default String oreDropping(String item) { return null; }
+        /** Items the game's fishing loot table gives as fish (the fish pool), harmful ones left out. */
+        default java.util.Set<String> fishingFish() { return java.util.Set.of(); }
         /** An item that blocks attacks when used (a shield: the game's BLOCK use animation). */
         default boolean shield(String id) { return false; }
     }
@@ -247,6 +249,13 @@ public final class ItemWorth {
     public static String smeltInput(String result) { Source s = source; return s == null || result == null ? null : s.smeltInput(full(result)); }
     public static boolean needsTable(String id) { Source s = source; return s != null && id != null && s.needsTable(full(id)); }
     public static String oreDropping(String item) { Source s = source; return s == null || item == null ? null : s.oreDropping(full(item)); }
+
+    /** The fish the game's fishing loot gives (empty without loot tables: said once). */
+    public static java.util.Set<String> fishingFish() {
+        Source s = source;
+        if (s == null || s.fishingFish().isEmpty()) { warnOnce("fishing", "no fishing loot loaded: nothing counts as a fish"); return java.util.Set.of(); }
+        return s.fishingFish();
+    }
 
     /** The mob kind's facts from the game (null: no data for it, or no data loaded). */
     public static Mob mob(String id) { Source s = source; return s == null || id == null ? null : s.mob(full(id)); }

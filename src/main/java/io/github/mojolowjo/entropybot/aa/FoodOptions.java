@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
  * <li>wheat: no farm yet, 4+ seeds (or a grass patch to dig for them) and water near, not hungry: plant a field and mark
  *     it {@code place farm}: slow (8 min to grow) but endless; the planner's bread then has a source.</li>
  * <li>planner: {@code goal food n} (storage, bread from the farm).</li>
- * <li>Kelp in the water and fishing are named with why they cannot run (no under-water harvest or fishing verb yet).</li>
+ * <li>Kelp in the water and fishing are named with why they cannot run (the kelp and fish steps of the steps machine).</li>
  * </ul>
  * {@link #noSource} is the desire's park reason: no row at all (re-checked whenever the facts refresh). Pure (JUnit
  * FoodOptionsTest). Loader notes: none (the facts come from AaRuntime.foodFacts, vanilla blocks and entities).

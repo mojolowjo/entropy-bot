@@ -161,6 +161,33 @@ public final class StepRun {
         return verb(from, raw, l, "hunt", List.of(h), h.text());
     }
 
+    /** "fish [n] | fish <min>m | fish status": the rod's craft first when the bag has none but its ingredients, then the fish step. */
+    Chains.Reply fish(String from, String rest, String raw, JobRequests.Listener l, LocalPlayer p) {
+        String r = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
+        if (r.equals("status")) return Chains.Reply.now(steps.running() && label != null && label.startsWith("fish") ? status() : "fish: not running");
+        io.github.mojolowjo.entropybot.vocab.FishRules.Parsed g = io.github.mojolowjo.entropybot.vocab.FishRules.parse(rest);
+        if (g == null) return Chains.Reply.now("usage: fish [n] | fish <min>m | fish status");
+        Map<String, Integer> bag = io.github.mojolowjo.entropybot.gui.Gui.inventory(p);
+        List<Step> s = new ArrayList<>();
+        String rod = io.github.mojolowjo.entropybot.vocab.FishRules.ROD;
+        if (bag.getOrDefault(rod, 0) + bag.getOrDefault(rod.replaceFirst("^minecraft:", ""), 0) <= 0) {
+            String why = io.github.mojolowjo.entropybot.vocab.FishRules.rodWhy(false, bag);
+            if (why != null) return Chains.Reply.now("error: " + why);
+            s.add(new Step.Craft(rod.replaceFirst("^minecraft:", ""), 1));
+        }
+        s.add(new Step.Fish(g.n(), g.minutes()));
+        return verb(from, raw, l, "fish", s, "fish " + (g.timed() ? g.minutes() + "m" : g.n() + " fish"));
+    }
+
+    /** "gather kelp [n] [cook] | gather kelp status": Baritone cuts n kelp; with cook, the furnace turns them into dried kelp. */
+    Chains.Reply kelp(String from, String rest, String raw, JobRequests.Listener l) {
+        String r = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
+        if (r.equals("kelp status")) return Chains.Reply.now(steps.running() && label != null && label.startsWith("gather kelp") ? status() : "gather kelp: not running");
+        io.github.mojolowjo.entropybot.vocab.KelpRules.Parsed g = io.github.mojolowjo.entropybot.vocab.KelpRules.parse(rest);
+        if (g == null) return Chains.Reply.now("usage: gather kelp [n] [cook] | gather kelp status");
+        return verb(from, raw, l, "gather", List.of(g.cook() ? new Step.Kelp(g.n()) : new Step.KelpCut(g.n())), "gather kelp " + g.n() + (g.cook() ? " cook" : ""));
+    }
+
     private Chains.Reply verb(String from, String raw, JobRequests.Listener l, String kind, List<Step> s, String label) {
         if (steps.running()) return Chains.Reply.now("busy: " + status() + " (pm \"stop\" first)");
         String err = start(kind + " " + from, s, label);

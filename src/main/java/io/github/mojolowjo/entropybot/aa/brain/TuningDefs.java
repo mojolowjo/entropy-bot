@@ -345,6 +345,13 @@ final class TuningDefs {
         // fishing
         Tuning.def("fishing.idleEnd", 60 * 20, "rm-constants 0.39.u2 (was Fishing.IDLE_END)", "the idle end of Fishing");
         Tuning.def("fishing.maxWalks", 4, "rm-constants 0.39.u2 (was Fishing.MAX_WALKS)", "the max walks of Fishing");
+        Tuning.def("fishing.walkTicks", 60, "rm-final 0.39.u3 (was an inline literal in Fishing)", "ticks the fish step gives Baritone to walk to the water before it looks again");
+        Tuning.def("fishing.idleRecheck", 100, "rm-final 0.39.u3 (was an inline literal in Fishing)", "ticks between two looks for water when none is in reach");
+        Tuning.def("fishing.handRetry", 20, "rm-final 0.39.u3 (was an inline literal in Fishing)", "ticks before the rod is tried to the hand again");
+        Tuning.def("fishing.aimTicks", 5, "rm-final 0.39.u3 (was an inline literal in Fishing)", "ticks the camera gets to turn before a cast, and between a reel and the next step");
+        Tuning.def("fishing.castRest", 10, "rm-final 0.39.u3 (was an inline literal in Fishing)", "ticks after a cast before the bobber is read");
+        Tuning.def("fishing.scanDown", 4, "rm-final 0.39.u3 (was an inline literal in Fishing)", "blocks below the bot the water-surface scan reaches");
+        Tuning.def("fishing.scanUp", 2, "rm-final 0.39.u3 (was an inline literal in Fishing)", "blocks above the bot the water-surface scan reaches");
         // fleeHeading
         Tuning.def("fleeHeading.clear", 2.5, "rm-constants 0.39.u2 (was FleeHeading.CLEAR)", "the clear of FleeHeading");
         // floorFill
@@ -456,13 +463,8 @@ final class TuningDefs {
         // junkRules
         Tuning.def("junkRules.low", 4, "rm-constants 0.39.u2 (was JunkRules.LOW)", "the low of JunkRules");
         // kelpRules
-        Tuning.def("kelpRules.range", 24, "rm-constants 0.39.u2 (was KelpRules.RANGE)", "the range of KelpRules");
         Tuning.def("kelpRules.defaultN", 8, "rm-constants 0.39.u2 (was KelpRules.DEFAULT_N)", "the default n of KelpRules");
-        Tuning.def("kelpRules.defaultMinutes", 10, "rm-constants 0.39.u2 (was KelpRules.DEFAULT_MINUTES)", "the default minutes of KelpRules");
-        Tuning.def("kelpRules.maxMinutes", 30, "rm-constants 0.39.u2 (was KelpRules.MAX_MINUTES)", "the max minutes of KelpRules");
         // kelping
-        Tuning.def("kelping.idleEnd", 60 * 20, "rm-constants 0.39.u2 (was Kelping.IDLE_END)", "the idle end of Kelping");
-        Tuning.def("kelping.maxDry", 3, "rm-constants 0.39.u2 (was Kelping.MAX_DRY)", "the max dry of Kelping");
         // kit
         Tuning.def("kit.minRecover", 2, "rm-constants 0.39.u2 (was Kit.MIN_RECOVER)", "Under this missing worth there is nothing to go back for");
         Tuning.def("kit.minStash", 3, "rm-constants 0.39.u2 (was Kit.MIN_STASH)", "Under this loot worth there is nothing to stash");

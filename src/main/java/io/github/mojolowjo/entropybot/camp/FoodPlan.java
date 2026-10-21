@@ -155,21 +155,23 @@ public final class FoodPlan {
     public record Way(String name, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String why) {}
 
     /**
-     * aa-kelpfish: the two water ways. kelp: kelp seen in water near -> {@code gather kelp 8} (+ {@code cook} with a furnace:
-     * dried kelp); fishing: water near and a rod in the bag or sticks + string for one -> {@code fish 4}. The reasons for
+     * aa-kelpfish: the two water ways. kelp: kelp seen in water near -> a kelp cut then a cook with a furnace (dried kelp);
+     * fishing: water near and a rod in the bag or the rod recipe's ingredients (a craft first) -> a fish step. The reasons for
      * the ways that can't run go to {@code dropped} (so the options line says why, not nothing).
      */
     public static List<Way> waterWays(Map<String, Integer> inv, boolean kelpNear, boolean waterNear, boolean furnace, List<String> dropped) {
         List<Way> out = new ArrayList<>();
         if (kelpNear && furnace) out.add(new Way("kelp", java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Kelp((int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.kelpN"))), "kelp columns seen in the water, smelted to dried kelp"));
         else if (dropped != null) dropped.add(kelpNear ? "kelp: seen, but raw kelp is no food and there is no furnace" : "kelp: none seen in the water near");
-        int rod = inv.getOrDefault("minecraft:fishing_rod", 0) + inv.getOrDefault("fishing_rod", 0);
-        int sticks = inv.getOrDefault("minecraft:stick", 0) + inv.getOrDefault("stick", 0);
-        int string = inv.getOrDefault("minecraft:string", 0) + inv.getOrDefault("string", 0);
-        String why = io.github.mojolowjo.entropybot.vocab.FishRules.rodWhy(rod > 0, sticks, string);
+        int rod = inv.getOrDefault(io.github.mojolowjo.entropybot.vocab.FishRules.ROD, 0) + inv.getOrDefault(io.github.mojolowjo.entropybot.vocab.FishRules.ROD.replaceFirst("^minecraft:", ""), 0);
+        String why = io.github.mojolowjo.entropybot.vocab.FishRules.rodWhy(rod > 0, inv);
         if (!waterNear) { if (dropped != null) dropped.add("fishing: no water near"); }
         else if (why != null) { if (dropped != null) dropped.add("fishing: " + why); }
-        else out.add(new Way("fish", java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Fish((int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.fishMin"))), "water near and " + (rod > 0 ? "a rod in the bag" : "sticks and string for a rod")));
+        else {
+            var fish = new io.github.mojolowjo.entropybot.aa.moves.Step.Fish((int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.fishMin"));
+            out.add(new Way("fish", rod > 0 ? java.util.List.of(fish) : java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Craft(io.github.mojolowjo.entropybot.vocab.FishRules.ROD.replaceFirst("^minecraft:", ""), 1), fish),
+                    "water near and " + (rod > 0 ? "a rod in the bag" : "the ingredients for a rod")));
+        }
         return out;
     }
 }

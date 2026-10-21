@@ -73,6 +73,9 @@ public final class StepHands implements Steps.Hands {
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
                 case Step.Climb k -> climb(p);
+                case Step.Fish fs -> fish(p, fs);
+                case Step.KelpCut k -> kelpCut(p, k);
+                case Step.MineAt m -> mineAt(p, m);
                 default -> verb(StepCommands.command(s));   // the item actions and the mine verb's steps: one command, its own job
             };
         } catch (RuntimeException e) {
@@ -89,6 +92,9 @@ public final class StepHands implements Steps.Hands {
             return switch (s) {
                 case Step.ChopTree t -> mineStatus(p);
                 case Step.Collect k -> mineStatus(p);
+                case Step.KelpCut k -> mineStatus(p);
+                case Step.MineAt m -> veinStatus(p, m);
+                case Step.Fish fs -> fishStatus(p);
                 case Step.HuntAt h -> huntStatus(p, h);
                 case Step.Build b -> buildStatus(b);
                 case Step.Climb k -> climbStatus();
@@ -107,6 +113,8 @@ public final class StepHands implements Steps.Hands {
                 if (b != null) b.getMineProcess().cancel();
                 Jobs.safeSettings();
             }
+            if (fishing != null) fishing.end();
+            if (vein != null) vein.stop();
             if (step instanceof Step.HuntAt) {
                 Core.INSTANCE.reflexes.stopAttack();
                 IBaritone b = Jobs.baritone();
@@ -125,6 +133,8 @@ public final class StepHands implements Steps.Hands {
 
     private void reset() {
         step = null;
+        fishing = null;
+        vein = null;
         req = null;
         instant = null;
         walkJob = null;
@@ -151,6 +161,68 @@ public final class StepHands implements Steps.Hands {
             case SEARCHING -> new Steps.Routine(null, "the planner still searches for " + p.goal());
             case NONE -> new Steps.Routine(null, r.why());
         };
+    }
+
+    // ---- fish: cast and reel as item inputs on Baritone's look, in the one Steps machine ----
+
+    private FishStep fishing;
+
+    private String fish(LocalPlayer p, Step.Fish f) {
+        String no = FishStep.canStart(p);
+        if (no != null) return "error: " + no;
+        fishing = new FishStep(c, f, p);
+        return null;
+    }
+
+    private Car.Status fishStatus(LocalPlayer p) {
+        if (fishing == null) return Car.Status.failed("the fishing step has no state");
+        Car.Status st = fishing.tick(p);
+        if (st.state() != Car.State.RUNNING) fishing = null;
+        return st;
+    }
+
+    // ---- mine at: one ore cell and its vein over Baritone's MineProcess ----
+
+    private VeinMine vein;
+
+    private String mineAt(LocalPlayer p, Step.MineAt m) {
+        var level = p.level();
+        BlockPos q = new BlockPos(m.x(), m.y(), m.z());
+        String fam = m.family();
+        if (!level.isLoaded(q)) return "error: the ore cell " + m.x() + " " + m.y() + " " + m.z() + " is not loaded";
+        if (!io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString(), fam))
+            return "error: no " + fam + " ore there any more (" + m.x() + " " + m.y() + " " + m.z() + ")";
+        if (!m.dig() && !Mining.exposed(level, q)) return "error: the " + fam + " ore is buried, and this is the walk form (the dig form digs to it)";
+        List<io.github.mojolowjo.entropybot.clear.Pos> cells = new ArrayList<>();
+        for (int[] cell : io.github.mojolowjo.entropybot.cave.MineRules.vein(new int[]{m.x(), m.y(), m.z()}, n -> {
+            BlockPos b = new BlockPos(n[0], n[1], n[2]);
+            return level.isLoaded(b) && io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(b).getBlock()).toString(), fam);
+        }, io.github.mojolowjo.entropybot.cave.MineRules.atVein())) cells.add(new io.github.mojolowjo.entropybot.clear.Pos(cell[0], cell[1], cell[2]));
+        vein = new VeinMine(cells, "mine " + fam + " at " + m.x() + " " + m.y() + " " + m.z());
+        String bad = vein.begin(level);
+        if (bad != null) { vein = null; return "error: " + bad; }
+        return null;
+    }
+
+    private Car.Status veinStatus(LocalPlayer p, Step.MineAt m) {
+        if (vein == null) return Car.Status.failed("the vein step has no state");
+        Car.Status st = vein.poll(p.level());
+        if (st.state() != Car.State.RUNNING) vein = null;
+        return st;
+    }
+
+    // ---- kelp: Baritone's MineProcess on the game's kelp blocks, counted in the bag ----
+
+    private String kelpCut(LocalPlayer p, Step.KelpCut k) {
+        List<Block> blocks = new ArrayList<>();
+        for (Block b : BuiltInRegistries.BLOCK) if (b instanceof net.minecraft.world.level.block.KelpBlock || b instanceof net.minecraft.world.level.block.KelpPlantBlock) blocks.add(b);
+        if (blocks.isEmpty()) return "error: the game has no kelp block";
+        List<String> ids = new ArrayList<>();
+        for (Block b : blocks) {
+            String id = BuiltInRegistries.ITEM.getKey(b.asItem()).toString();
+            if (!id.endsWith(":air") && !ids.contains(id)) ids.add(id);        // a block with no item (the kelp plant) names none
+        }
+        return mine(p, blocks, ids, k.n(), "cut " + k.n() + " kelp");
     }
 
     // ---- the climb: the climb verb plans its own staircase and runs it as a chain of its own ----

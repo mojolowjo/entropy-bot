@@ -84,6 +84,7 @@ final class ItemWorthSource implements ItemWorth.Source {
         }
         s.readMobs(level);
         s.readOres();
+        s.readFishing();
         s.readMobFood(level, s);
         RecipeManager rm = level.getRecipeManager();
         for (var h : rm.getRecipes()) {
@@ -171,6 +172,28 @@ final class ItemWorthSource implements ItemWorth.Source {
                 var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(b.getLootTable().location().toString()), lookup);
                 for (String drop : parsed.keySet()) if (!drop.equals(id)) oreDrops.putIfAbsent(drop, id);
             }
+        } catch (RuntimeException e) { failed++; }
+    }
+
+    private final java.util.Set<String> fishing = new java.util.HashSet<>();
+    @Override public java.util.Set<String> fishingFish() { return fishing; }
+
+    /** The fish pool of the fishing loot (singleplayer server only), less the harmful foods (a pufferfish poisons). */
+    private void readFishing() {
+        var server = net.minecraft.client.Minecraft.getInstance().getSingleplayerServer();
+        if (server == null) return;
+        try {
+            var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, server.registryAccess());
+            var rr = server.reloadableRegistries();
+            java.util.function.Function<String, com.google.gson.JsonElement> lookup = id -> {
+                try {
+                    var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE, ResourceLocation.parse(id));
+                    var t = rr.getLootTable(key);
+                    return t == net.minecraft.world.level.storage.loot.LootTable.EMPTY ? null : net.minecraft.world.level.storage.loot.LootTable.DIRECT_CODEC.encodeStart(ops, t).result().orElse(null);
+                } catch (RuntimeException e) { failed++; return null; }
+            };
+            var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(net.minecraft.world.level.storage.loot.BuiltInLootTables.FISHING_FISH.location().toString()), lookup);
+            for (String item : parsed.keySet()) if (!junkFood.contains(item) && !risky.contains(item)) fishing.add(item);
         } catch (RuntimeException e) { failed++; }
     }
 

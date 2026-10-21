@@ -590,12 +590,7 @@ junkDrop.thrownKeep	8.0
 junkDrop.thrownNear	6.0
 junkDrop.thrownTicks	2400.0
 junkRules.low	4.0
-kelpRules.defaultMinutes	10.0
 kelpRules.defaultN	8.0
-kelpRules.maxMinutes	30.0
-kelpRules.range	24.0
-kelping.idleEnd	1200.0
-kelping.maxDry	3.0
 kit.farTrip	64.0
 kit.lightMin	7.0
 kit.minRecover	2.0
@@ -1030,3 +1025,10 @@ floorSteps.throwLookDist	8.0
 threatFacts.shooterHit	3.0
 floorSteps.throwLookUp	1.4
 threatFacts.unknownHealth	20.0
+fishing.walkTicks	60.0
+fishing.idleRecheck	100.0
+fishing.handRetry	20.0
+fishing.aimTicks	5.0
+fishing.castRest	10.0
+fishing.scanDown	4.0
+fishing.scanUp	2.0

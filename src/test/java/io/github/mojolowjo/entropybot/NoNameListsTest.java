@@ -36,12 +36,7 @@ class NoNameListsTest {
             "vocab/Kinds.java", "surface/SurfaceFamily.java", "surface/SurfaceExport.java", "aa/FoodOptions.java",
             // the owner's typed words: the hotbar kinds (pickaxe, sword, ... torch), the goal grammar's verbs (furnace, table...); what a word is comes from the game
             "engine/HotbarRules.java", "plan/GoalGrammar.java");
-    /**
-     * Not converted yet (named for the next pass, each a name list with a game-data replacement still to write): crafting by material
-     * (ArmorCareRules, Chains, PlanRecipes, Planner, GatherSources, GatherPlan), mob and structure lists (ThreatFacts, ThreatRules,
-     * HostileRules, NaturalStructures, AaRuntime, FishRules, KelpRules, OwnStations, GuardCore dimensions), chopping/mining word sets
-     * (Chopping, ChopRules, MineRules DROPS_PER, GoalGrammar, HotbarRules). rm-routes and rm-mining files are theirs.
-     */
+    /** Files not converted yet: none (rm-final emptied the list; a new name list in a collection literal fails the build). */
     static final Set<String> PENDING = Set.of();
 
     /** Whole words (split on _ and :) that name vanilla items, blocks and mobs. */
