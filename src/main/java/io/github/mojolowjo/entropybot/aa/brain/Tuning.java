@@ -25,7 +25,10 @@ public final class Tuning {
 
     static {
         // AA_ROUND4 C (ItemWorth): the scales the item data is turned into worth with (iron pickaxe ~30, stone 15, wooden 4)
-        def("worth.toolK", 0.75, "AA_ROUND4 C", "a digging tool's worth = this x sqrt(speed) x (1 + level) x ln(1 + durability) x role");
+        def("worth.toolK", 1.15, "AA_ROUND4 C", "a digging tool's worth = this x speed^pow x (1 + level) x ln(1 + durability) x role");
+        def("worth.speedPow", 0.25, "AA_ROUND4 C review", "the power dig speed enters the tool formula with (low: level and durability dominate, so a fast gold pickaxe stays under stone)");
+        def("worth.cap", 135, "AA_ROUND4 C review", "no derived worth passes this (about 3x a diamond pickaxe): a modded attack 50 cannot swamp the scale");
+        def("worth.floor", 0.02, "AA_ROUND4 C review", "a recipe-derived worth is at least this (a plain block)");
         def("worth.weaponK", 0.09, "AA_ROUND4 C", "a weapon's worth = this x attack^2 x ln(1 + durability)");
         def("worth.armourK", 0.8, "AA_ROUND4 C", "an armour piece's worth = this x (defence + 2 x toughness)");
         def("worth.foodK", 0.25, "AA_ROUND4 C", "a food item's worth per energy point (nutrition + saturation), as the kit values it");

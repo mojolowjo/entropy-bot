@@ -55,6 +55,8 @@ public final class ItemWorth {
 
     private static volatile Source source;
     private static final Map<String, Worth> CACHE = new HashMap<>();
+    /** Set when a result was cut by depth or a loop (so it depends on the path and is not memoised). */
+    private static boolean cutFlag;
 
     /** The adapter sets the data (null: none yet); the cache is cleared. */
     public static synchronized void use(Source s) { source = s; CACHE.clear(); }
@@ -71,7 +73,7 @@ public final class ItemWorth {
         if (s == null || id == null) return Worth.unknown("no item data loaded");
         String k = full(id);
         Worth w = CACHE.get(k);
-        if (w == null) { w = derive(s, k, new HashSet<>(), 0); CACHE.put(k, w); }
+        if (w == null) { cutFlag = false; w = derive(s, k, new HashSet<>(), 0); if (!cutFlag) CACHE.put(k, w); }
         return w;
     }
 
@@ -112,54 +114,86 @@ public final class ItemWorth {
         return s == null ? List.of() : s.smeltResults();
     }
 
+    /** A sub-result: the memo first; stored only when no depth/loop cut is inside it. */
+    private static Worth sub(Source s, String id, Set<String> path, int depth) {
+        Worth c = CACHE.get(id);
+        if (c != null) return c;
+        boolean outer = cutFlag;
+        cutFlag = false;
+        Worth w = derive(s, id, path, depth);
+        if (!cutFlag) CACHE.put(id, w);
+        cutFlag |= outer;
+        return w;
+    }
+
     static Worth derive(Source s, String id, Set<String> path, int depth) {
         Facts f = s.facts(id);
         String n = path(id);
         if (f.defence > 0) {
-            double v = Tuning.get("worth.armourK") * (f.defence + 2 * f.toughness);
+            double v = cap(Tuning.get("worth.armourK") * (f.defence + 2 * f.toughness));
             return Worth.of(v, String.format(Locale.ROOT, "armour %.1f x (defence %.0f + 2 x toughness %.0f) = %.1f", Tuning.get("worth.armourK"), f.defence, f.toughness, v));
         }
         if (f.digSpeed > 0) {
             double rw = roleWeight(f.role);
-            double v = Tuning.get("worth.toolK") * Math.sqrt(f.digSpeed) * (1 + f.digLevel) * Math.log(1 + f.durability) * rw;
-            return Worth.of(v, String.format(Locale.ROOT, "%s: %.2f x sqrt(speed %.1f) x (1 + level %d) x ln(1 + durability %.0f) x role %.2f = %.1f",
-                    f.role.isEmpty() ? "tool" : f.role, Tuning.get("worth.toolK"), f.digSpeed, f.digLevel, f.durability, rw, v));
+            double v = cap(Tuning.get("worth.toolK") * Math.pow(f.digSpeed, Tuning.get("worth.speedPow")) * (1 + f.digLevel) * Math.log(1 + f.durability) * rw);
+            return Worth.of(v, String.format(Locale.ROOT, "%s: %.2f x speed %.1f^%.2f x (1 + level %d) x ln(1 + durability %.0f) x role %.2f = %.1f",
+                    f.role.isEmpty() ? "tool" : f.role, Tuning.get("worth.toolK"), f.digSpeed, Tuning.get("worth.speedPow"), f.digLevel, f.durability, rw, v));
         }
         if (f.attack > 0 && f.durability > 0) {
-            double v = Tuning.get("worth.weaponK") * f.attack * f.attack * Math.log(1 + f.durability);
+            double v = cap(Tuning.get("worth.weaponK") * f.attack * f.attack * Math.log(1 + f.durability));
             return Worth.of(v, String.format(Locale.ROOT, "weapon: %.3f x attack %.1f^2 x ln(1 + durability %.0f) = %.1f", Tuning.get("worth.weaponK"), f.attack, f.durability, v));
         }
         if (f.nutrition > 0) {
-            double v = Tuning.get("worth.foodK") * (f.nutrition + f.saturation);
+            double v = cap(Tuning.get("worth.foodK") * (f.nutrition + f.saturation));
             return Worth.of(v, String.format(Locale.ROOT, "food: %.2f x (nutrition %.0f + saturation %.1f) = %.2f", Tuning.get("worth.foodK"), f.nutrition, f.saturation, v));
         }
         if (f.hardness > 0 || f.light > 0) {
-            double v = Tuning.get("worth.hardK") * f.hardness + Tuning.get("worth.lightK") * f.light;
+            double v = cap(Tuning.get("worth.hardK") * f.hardness + Tuning.get("worth.lightK") * f.light);
             return Worth.of(v, String.format(Locale.ROOT, "block: %.3f x hardness %.1f + %.3f x light %d = %.3f", Tuning.get("worth.hardK"), f.hardness, Tuning.get("worth.lightK"), f.light, v));
         }
         // a recipe only
-        if (depth >= (int) Tuning.get("worth.depth")) return Worth.unknown(n + ": recipe chain deeper than " + (int) Tuning.get("worth.depth"));
-        if (!path.add(id)) return Worth.unknown(n + ": its recipe loops back to itself");
+        if (depth >= (int) Tuning.get("worth.depth")) { cutFlag = true; return Worth.unknown(n + ": recipe chain deeper than " + (int) Tuning.get("worth.depth")); }
+        if (!path.add(id)) { cutFlag = true; return Worth.unknown(n + ": its recipe loops back to itself"); }
         try {
             Worth best = null;
             String lastWhy = n + ": no facts and no recipe in the game's data";
             for (Recipe r : s.recipes(id)) {
+                if (uncraft(s, id, r)) { lastWhy = n + ": only an uncrafting recipe (from its storage block)"; continue; }
                 double sum = 0;
                 StringBuilder sb = new StringBuilder();
                 String bad = null;
                 for (String in : r.inputs()) {
-                    Worth iw = path.contains(full(in)) ? Worth.unknown(path(in) + " loops") : derive(s, full(in), path, depth + 1);
+                    Worth iw;
+                    if (path.contains(full(in))) { cutFlag = true; iw = Worth.unknown(path(in) + " loops"); }
+                    else iw = sub(s, full(in), path, depth + 1);
                     if (!iw.known()) { bad = iw.why(); break; }
                     sum += iw.value();
                     sb.append(sb.length() == 0 ? "" : " + ").append(path(in)).append(' ').append(String.format(Locale.ROOT, "%.2f", iw.value()));
                 }
                 if (bad != null) { lastWhy = n + ": recipe input unknown (" + bad + ")"; continue; }
                 double m = Tuning.get("worth.margin");
-                double v = sum * (1 + m) / Math.max(1, r.outCount());
+                double v = Math.max(Tuning.get("worth.floor"), cap(sum * (1 + m) / Math.max(1, r.outCount())));
                 if (best == null || v < best.value()) best = Worth.of(v, String.format(Locale.ROOT, "recipe: (%s) x (1 + margin %.2f) / %d = %.3f", sb, m, Math.max(1, r.outCount()), v));
             }
             return best != null ? best : Worth.unknown(lastWhy);
         } finally { path.remove(id); }
+    }
+
+    /** One term never passes worth.cap (about 3x a diamond pickaxe): a modded attack 50 cannot swamp the scale. */
+    static double cap(double v) { return Math.min(v, Tuning.get("worth.cap")); }
+
+    /** True when a recipe is an uncrafting: every input has its own recipe back from this output (ingot from its block, nuggets). */
+    static boolean uncraft(Source s, String id, Recipe r) {
+        for (String in : r.inputs()) {
+            boolean back = false;
+            for (Recipe q : s.recipes(full(in))) {
+                boolean all = !q.inputs().isEmpty();
+                for (String x : q.inputs()) if (!full(x).equals(id)) all = false;
+                if (all) { back = true; break; }
+            }
+            if (!back) return false;
+        }
+        return true;
     }
 
     static double roleWeight(String role) {

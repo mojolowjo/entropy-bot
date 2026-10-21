@@ -120,4 +120,73 @@ class ItemWorthTest {
         for (String n : List.of("worth.toolK", "worth.weaponK", "worth.armourK", "worth.foodK", "worth.hardK", "worth.lightK", "worth.margin", "worth.depth"))
             assertFalse(Double.isNaN(Tuning.defOf(n)), n);
     }
+    @Test
+    void goldIsNotAboveStoneAndTheTiersKeepTheirOrder() {
+        assertTrue(v("golden_pickaxe") <= v("stone_pickaxe"));
+        assertTrue(v("wooden_pickaxe") < v("stone_pickaxe") && v("stone_pickaxe") < v("iron_pickaxe") && v("iron_pickaxe") < v("diamond_pickaxe"));
+        assertEquals(Kit.toolValue("golden_pickaxe") <= Kit.toolValue("stone_pickaxe"), true);
+    }
+
+    @Test
+    void oneTermNeverPassesTheCap() {
+        facts.put("osmium:god_sword", new Facts("weapon", 0, 0, 5000, 0, 0, 50, 0, 0, 0, 0));
+        facts.put("osmium:god_pick", new Facts("pickaxe", 500, 9, 9000, 0, 0, 0, 0, 0, 0, 0));
+        facts.put("osmium:god_plate", new Facts("", 0, 0, 900, 40, 300, 0, 0, 0, 0, 0));
+        ItemWorth.use(sourceNow());
+        for (String id : List.of("osmium:god_sword", "osmium:god_pick", "osmium:god_plate")) assertEquals(Tuning.get("worth.cap"), v(id), 1e-9, id);
+    }
+
+    @Test
+    void anUncraftingRecipeNeverMakesAnIngotJunk() {
+        // ingot <-> block, plus nuggets: the storage-block recipes are skipped; with no other recipe the ingot is UNKNOWN (the LOOT table applies)
+        recipes.put("osmium:ingot", List.of(new Recipe(9, List.of("osmium:block")), new Recipe(1, List.of("osmium:nugget", "osmium:nugget", "osmium:nugget", "osmium:nugget", "osmium:nugget", "osmium:nugget", "osmium:nugget", "osmium:nugget", "osmium:nugget"))));
+        recipes.put("osmium:block", List.of(new Recipe(1, java.util.Collections.nCopies(9, "osmium:ingot"))));
+        recipes.put("osmium:nugget", List.of(new Recipe(9, List.of("osmium:ingot"))));
+        ItemWorth.use(sourceNow());
+        assertFalse(ItemWorth.of("osmium:ingot").known());
+        assertEquals(1.5, ItemWorth.valueOr("osmium:ingot", 1.5));
+        // and a recipe result is never under the floor
+        recipes.put("osmium:dust", List.of(new Recipe(64, List.of("minecraft:cobblestone", "minecraft:oak_planks"))));
+        ItemWorth.use(sourceNow());
+        assertTrue(v("osmium:dust") >= Tuning.get("worth.floor"));
+    }
+
+    @Test
+    void subResultsAreMemoised() {
+        int[] calls = {0};
+        // a chain of 4 parts each with 3 recipes of 3 inputs: cold fan-out is huge uncached
+        Map<String, List<Recipe>> r = new HashMap<>();
+        for (int i = 0; i < 3; i++) {
+            List<Recipe> rs = new java.util.ArrayList<>();
+            for (int k = 0; k < 3; k++) rs.add(new Recipe(1, List.of("m:p" + (i + 1), "m:p" + (i + 1), "m:p" + (i + 1))));
+            r.put("m:p" + i, rs);
+        }
+        r.put("m:p3", List.of(new Recipe(1, List.of("minecraft:cobblestone"))));
+        ItemWorth.use(new ItemWorth.Source() {
+            public Facts facts(String id) { return facts.getOrDefault(id, Facts.NONE); }
+            public List<Recipe> recipes(String id) { calls[0]++; return r.getOrDefault(id, List.of()); }
+        });
+        assertTrue(ItemWorth.of("m:p0").known());
+        int cold = calls[0];
+        assertTrue(cold < 60, "cold calls " + cold);
+        ItemWorth.of("m:p0");
+        ItemWorth.of("m:p1");
+        assertEquals(cold, calls[0], "warm reads call nothing");
+    }
+
+    @Test
+    void furnaceWorthIsStableAcrossRepeatedScoring() {
+        var tree = new TechTree(List.of(new TechTree.Recipe("minecraft:iron_pickaxe", List.of(java.util.Set.of("minecraft:iron_ingot")))));
+        double a = Worth.furnace(tree, java.util.Set.of());
+        assertEquals(a, Worth.furnace(tree, java.util.Set.of()), 0);
+        assertEquals(a, Worth.furnace(tree, new java.util.HashSet<>()), 0);
+    }
+
+    ItemWorth.Source sourceNow() {
+        return new ItemWorth.Source() {
+            public Facts facts(String id) { return facts.getOrDefault(id, Facts.NONE); }
+            public List<Recipe> recipes(String id) { return recipes.getOrDefault(id, List.of()); }
+            public List<String> smeltResults() { return List.of("minecraft:iron_ingot"); }
+        };
+    }
 }
