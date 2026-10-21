@@ -322,6 +322,7 @@ public final class Reflexes {
             if (reflex != Reflex.NONE) settle("left the world");
             moves.stop("left the world");
             endWay(null, "left the world");
+            creeperEnded();
             return;
         }
         followReflexWay();
@@ -417,7 +418,7 @@ public final class Reflexes {
             target = "creeper";
             targetDist = t.d;
             urgent = false;
-            endWay("flee", "keeping away, standing");
+            creeperEnded();
             engine.hold();
             look(t.e);
             return;
@@ -463,7 +464,7 @@ public final class Reflexes {
         if (fire.active()) { releaseSwim(mc); return; }      // 0.39.m2: lava / fire first (its way owns the reflex car)
         IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
         // backbone step 4: our own swim-up goal is not "something else driving"
-        boolean ownAir = airGoal && engine.reflexGoal();
+        boolean ownAir = airWayRunning();       // reflex choosers: the swim-up goal or the burrow up
         boolean drives = reflex != Reflex.NONE || (b != null && !ownAir && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
         // review: an underwater dig/build/chest job sits between Baritone legs for a tick: it drives too (a plain walk doesn't)
         if (!drives) {
@@ -499,76 +500,85 @@ public final class Reflexes {
             } else if (!take && !swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - swimming up",
                     (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply());
             airHeld = take;
-            // backbone step 4: Baritone swims up: GoalBlock with the feet in the top water cell, at the reflex priority
-            // (above the job's dig/walk and the burrow), started this tick
-            if (!airGoal && now >= airRetryAt) {
-                int[] s = surfaceCell(p);
-                if (s != null) {
-                    airSurface = s;
-                    reflexMoves.swimUp(s);
-                    airGoal = true;
-                    reflexPathLogged = false;
-                } else {
-                    airRetryAt = now + 20;
-                    if (!airNoSurfaceLogged) LOG.info("[entropybot] air reflex: no air above the water within {} up / {} around at {} {} {} - holding jump only",
-                            ReflexRules.SURFACE_UP, ReflexRules.SURFACE_R, (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()));
-                    airNoSurfaceLogged = true;
-                }
-            }
-            if (airGoal && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) {
-                LOG.info("[entropybot] air reflex: Baritone's swim-up failed ({}) - holding jump, again in 1 s", reflexMoves.why());
-                airGoal = false;
-                airRetryAt = now + 20;
-            }
-            // the documented exception (MoversTest): jump held only in the gap - head under water and no Baritone path
-            // for the swim-up yet (calculating, failed, or no surface cell) - so the bot never sinks while it computes
-            // 0.39.m2: a path is not enough under a third of the air: Baritone must be taking the bot up, else jump
-            boolean ready = airGoal && reflexMoves.pathReady();
-            boolean rising = p.getDeltaMovement().y > 0.01;
-            // a swim-up with its path that has neither risen nor come closer to the surface cell for SWIM_STALL_TICKS:
-            // that column is bad, a new one at once
-            double toCell = airSurface == null ? 0 : Math.hypot(p.getX() - airSurface[0] - 0.5, p.getZ() - airSurface[2] - 0.5);
-            boolean closer = toCell < lastToCell - 0.02;
-            lastToCell = toCell;
-            swimStall = ready && p.isUnderWater() && !rising && !closer ? swimStall + 1 : 0;
-            if (swimStall >= ReflexRules.SWIM_STALL_TICKS && airSurface != null) {
-                LOG.info("[entropybot] air reflex: the swim-up to {} {} {} did not rise in {} ticks - that column is out, another one now",
-                        airSurface[0], airSurface[1], airSurface[2], ReflexRules.SWIM_STALL_TICKS);
-                badColumns.add(((long) airSurface[0] << 32) ^ (airSurface[2] & 0xffffffffL));
-                swimStall = 0;
-                airGoal = false;
-                airRetryAt = 0;
-                ready = false;
-            }
-            boolean jump = ReflexRules.airJump(p.isUnderWater(), ready, p.getAirSupply(), p.getMaxAirSupply(), rising);
-            if (jump != swimming) mc.options.keyJump.setDown(jump);
-            swimming = jump;
+            // reflex choosers: Baritone swims up to any cell with the head in air (it picks the cell; in the gap before
+            // its path it holds jump itself, the fork's swimUpWithoutPath); a failed try is charged, then the next way
+            if (airCell == null) airCell = new int[]{p.getBlockX(), p.getBlockY(), p.getBlockZ()};
+            airStep(p);
+            swimming = airGoal;
         } else releaseSwim(mc);
         shore.tick(p, b, drives, now);
     }
 
-    /** Backbone step 4: the air reflex's Baritone swim-up runs (released with the reflex). */
-    private boolean airGoal, airNoSurfaceLogged;
-    private int[] airSurface;
-    private double lastToCell;
-    private long airRetryAt;
+    /** Reflex choosers: the air reflex's way runs (released with the reflex); its ladder cell and the last way. */
+    private boolean airGoal, airSpent;
+    private int[] airCell;
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way airWay;
+    private long airTryAt = -1000;
 
-    /** Backbone step 4: the top water cell with air over it, straight up or close around (ReflexRules.surface), or null. */
-    private static int[] surfaceCell(LocalPlayer p) {
-        var lv = p.level();
-        return ReflexRules.surface(p.getBlockX(), p.getBlockY(), p.getBlockZ(), (x, y, z) -> {
-            BlockPos q = new BlockPos(x, y, z);
-            var st = lv.getBlockState(q);
-            boolean free = st.getCollisionShape(lv, q).isEmpty();
-            if (!free) return ReflexRules.Cell.SOLID;          // 0.39.m2: a waterlogged slab, ice, a lily pad
-            if (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) return ReflexRules.Cell.WATER;
-            return st.getFluidState().isEmpty() ? ReflexRules.Cell.OPEN : ReflexRules.Cell.SOLID;
-        }, (x, z) -> badColumns.contains(((long) x << 32) ^ (z & 0xffffffffL)));
+    private boolean airWayRunning() {
+        String w = reflexMoves.way();
+        return airGoal && (w.equals("swim up") || w.equals(BURROW_UP_WAY));
     }
 
-    /** 0.39.m2: columns where a swim-up stalled (cleared when the air reflex ends). */
-    private static final java.util.Set<Long> badColumns = new java.util.HashSet<>();
-    private int swimStall;
+    static final String BURROW_UP_WAY = "burrow up";
+
+    /**
+     * Reflex choosers: one tick of the air ladder (surface goal, burrow up, FAILED to the danger desire). Each failed
+     * try is charged in Failures under {@code reflex.air <cell>}; after a burrow up is done the surface goal runs again.
+     */
+    private void airStep(LocalPlayer p) {
+        if (airSpent) return;
+        var L = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.AIR;
+        var ph = reflexMoves.phase();
+        boolean mine = airWayRunning();
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING) return;
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED && !p.isUnderWater()) return;    // breathing
+        if (now - airTryAt < io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()) return;
+        io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way w;
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) {
+            w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(L, airCell, reflexMoves.why(), null);
+            LOG.info("[entropybot] air reflex: {} - charged {} {} ({} tries), next: {}", reflexMoves.why(), L.key(),
+                    io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.cell(airCell), io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.fails(L, airCell), w == null ? "FAILED" : w.label);
+        } else if (mine && airWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW_UP) {
+            w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.SURFACE;          // dug up: the surface goal again
+        } else w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.way(L, airCell);
+        if (w == null) {
+            airSpent = true;
+            String line = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.spent(L, airCell, reflexMoves.why());
+            endAirWay("every way spent");
+            reflexFailed(line);
+            return;
+        }
+        airWay = w;
+        airTryAt = now;
+        airGoal = true;
+        if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW_UP)
+            reflexMoves.burrowHere(BURROW_UP_WAY, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.air.burrowUp"), true);
+        else reflexMoves.swimUp();
+        LOG.info("[entropybot] air reflex: {} at {} {} {} (air {}/{})", w.label, p.getBlockX(), p.getBlockY(), p.getBlockZ(), p.getAirSupply(), p.getMaxAirSupply());
+        wayStarted();
+    }
+
+    private void endAirWay(String why) {
+        if (airWayRunning()) reflexMoves.release();
+        airGoal = false;
+    }
+
+    /** Reflex choosers: a reflex whose every way is spent (taken once by AaRuntime for the danger desire). */
+    private volatile String reflexFailure;
+
+    private void reflexFailed(String line) {
+        reflexFailure = line;
+        events.push("reflex", line, null);
+        LOG.warn("[entropybot] {} - to the danger desire", line);
+    }
+
+    /** The last reflex whose ways were all spent, once; null none. */
+    public String takeReflexFailure() {
+        String f = reflexFailure;
+        reflexFailure = null;
+        return f != null ? f : fire.takeFailure();
+    }
 
     /**
      * Backbone step 4: follows the reflex way each tick (the car re-asks for its goal after a Baritone cancel) and logs
@@ -603,21 +613,21 @@ public final class Reflexes {
 
     /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
     private void releaseSwim(Minecraft mc) {
-        airNoSurfaceLogged = false;
-        airRetryAt = 0;
-        swimStall = 0;
-        if (!badColumns.isEmpty() && (mc == null || mc.player == null || !mc.player.isInWater())) badColumns.clear();
-        if (airGoal) {
-            airGoal = false;
-            endWay("swim up", "air reflex ended");      // backbone step 4: the swim-up goal goes, the job's process resumes
+        // reflex choosers: the air reflex ended (air back, a screen, death...): its way goes, the job's process resumes;
+        // one that ended with air back forgets its tries
+        if (airCell != null && !airSpent && mc != null && mc.player != null && !mc.player.isUnderWater())
+            io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.ended(io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.AIR);
+        if (airCell != null && (mc == null || mc.player == null || !mc.player.isUnderWater())) {
+            airCell = null;
+            airSpent = false;
+            airWay = null;
         }
+        endAirWay("air reflex ended");
         if (airHeld) {
             airHeld = false;
             LOG.info("[entropybot] air reflex: air back ({}) - Baritone resumes", mc != null && mc.player != null ? mc.player.getAirSupply() : -1);
         }
-        if (!swimming) return;
-        swimming = false;
-        if (mc != null) mc.options.keyJump.setDown(false);
+        swimming = false;       // reflex choosers: no key of ours to let go (the fork's swim-up gap ends with its goal)
     }
 
     /** 0.36.a1: the air reflex holds jump (AA leaves the key alone then). */
@@ -628,7 +638,7 @@ public final class Reflexes {
         releaseSwim(mc);
         duel.abort(why);
         cspr.abort(why);
-        endWay("flee", why);     // backbone step 4: the flee is Baritone's GoalRunAway (it stops sprinting itself)
+        creeperEnded();         // reflex choosers: the creeper way (run or burrow) goes; tries forgotten unless spent
         if (reflex == Reflex.EATING) mc.options.keyUse.setDown(false);
         if (reflex != Reflex.NONE) events.push("reflex", "done " + reflex.name().toLowerCase() + ": " + why, null);
         reflex = Reflex.NONE;
@@ -762,7 +772,7 @@ public final class Reflexes {
 
     private void fight(Minecraft mc, LocalPlayer p, Threat t) {
         begin(Reflex.FIGHTING, mc, "fighting " + t.id);
-        endWay("flee", "fighting " + t.id);
+        creeperEnded();
         holdWeapon(mc, p);
         look(t.e);      // backbone step 4: LookBehavior (the strike itself stays the mod's input: Baritone has no combat)
         if (t.d <= ReflexRules.REACH) {
@@ -824,13 +834,13 @@ public final class Reflexes {
         urgent = true;
         // backbone step 4: Baritone found no way out (or a cancel ended it): a new run from where the bot is, once a
         // half second at most (logged), so a failed path never leaves the bot standing silently
+        // reflex choosers: a try that ended (failed, cancelled, arrived with the creeper still on us) is charged and the
+        // ladder's next way runs; every way spent = FAILED to the danger desire
         var ph = reflexMoves.phase();
-        if ((ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED || ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE
-                || !reflexMoves.way().equals("flee")) && now - fleeRetryAt >= 10 && c != null) {
-            if (reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED)
-                LOG.info("[entropybot] creeper sprint: {} - a new run", reflexMoves.why());
+        if ((ph != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING || !creeperWayRunning())
+                && now - fleeRetryAt >= io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks() && c != null) {
             fleeRetryAt = now;
-            runFrom(mc, p, c, creeperEscape(mc, p, c));
+            creeperTry(mc, p, c, creeperEscape(mc, p, c), true);
         }
         return true;
     }
@@ -842,8 +852,64 @@ public final class Reflexes {
      * hostile near ({@code from} always), its heuristic leaning toward {@code dir} ({dx, dz}: FleeHeading / EscapeDir).
      */
     private void runFrom(Minecraft mc, LocalPlayer p, Entity from, double[] dir) {
-        reflexMoves.flee(ReflexRules.CREEPER_RUN_TO, fleeCells(mc, p, from), dir == null ? null : new double[]{dir[0], dir[1]});
+        creeperTry(mc, p, from, dir, false);
+    }
+
+    /** Reflex choosers: the creeper ladder (run away, burrow, FAILED to the danger desire); the cell it started in. */
+    private int[] creeperCell;
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way creeperWay;
+    private boolean creeperSpent;
+
+    private boolean creeperWayRunning() {
+        String w = reflexMoves.way();
+        return creeperWay != null && (w.equals("flee") || w.equals(CREEPER_BURROW_WAY));
+    }
+
+    static final String CREEPER_BURROW_WAY = "burrow";
+
+    /**
+     * Reflex choosers: starts the creeper ladder's way now. {@code retry}: the last try did not shake the creeper (failed,
+     * cancelled, or arrived with it still close) and is charged in Failures under {@code reflex.creeper <cell>} first.
+     * Run away = GoalRunAway from every hostile near, FleeHeading only as a heuristic term ({@code dir}, Baritone may
+     * ignore it); burrow = the fork's "burrow here". A burrow that is done is held (sealed in), never re-run.
+     */
+    private void creeperTry(Minecraft mc, LocalPlayer p, Entity from, double[] dir, boolean retry) {
+        if (creeperSpent) return;
+        var L = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.CREEPER;
+        if (creeperCell == null) creeperCell = new int[]{p.getBlockX(), p.getBlockY(), p.getBlockZ()};
+        boolean mine = creeperWayRunning();
+        if (mine && creeperWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW
+                && reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED && !retry) return;   // digging in / sealed: no run over it
+        if (mine && creeperWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW
+                && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED) return;
+        io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way w;
+        if (retry) {
+            String why = reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING ? "replaced while running"
+                    : mine ? reflexMoves.why() : "the way was ended elsewhere (" + reflexMoves.way() + ": " + reflexMoves.why() + ")";
+            w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(L, creeperCell, why, null);
+            LOG.info("[entropybot] creeper reflex: {} - charged {} {} ({} tries), next: {}", why, L.key(),
+                    io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.cell(creeperCell), io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.fails(L, creeperCell), w == null ? "FAILED" : w.label);
+        } else w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.way(L, creeperCell);
+        if (w == null) {
+            creeperSpent = true;
+            if (mine) reflexMoves.release();
+            reflexFailed(io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.spent(L, creeperCell, reflexMoves.why()));
+            return;
+        }
+        creeperWay = w;
+        if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW)
+            reflexMoves.burrowHere(CREEPER_BURROW_WAY, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.burrow"), false);
+        else reflexMoves.flee(ReflexRules.CREEPER_RUN_TO, fleeCells(mc, p, from), dir == null ? null : new double[]{dir[0], dir[1]});
         wayStarted();
+    }
+
+    /** Reflex choosers: the creeper reflex ended; one that was not spent forgets its tries. */
+    private void creeperEnded() {
+        if (creeperCell != null && !creeperSpent) io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.ended(io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.CREEPER);
+        if (creeperWayRunning()) reflexMoves.release();
+        creeperCell = null;
+        creeperWay = null;
+        creeperSpent = false;
     }
 
     /** 0.39.m2: how far the flee looks for mobs to run from (the run's length + 6). */
@@ -891,11 +957,11 @@ public final class Reflexes {
             runFrom(mc, p, t.e, fleeDir(mc, p, t.e));
             fleeUntil = now + 60;
             fleeRetryAt = now;
-        } else if (t.d < ReflexRules.CREEPER_RUN && now - fleeRetryAt >= 10
-                && (reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING || !reflexMoves.way().equals("flee"))) {
-            // 0.39.m2: the run failed, timed out or ended with the creeper still close: a new one now, not in 3 s
-            LOG.info("[entropybot] creeper flee: {} with the creeper at {} - a new run", reflexMoves.why(), Math.round(t.d * 10) / 10.0);
-            runFrom(mc, p, t.e, fleeDir(mc, p, t.e));
+        } else if (t.d < ReflexRules.CREEPER_RUN && now - fleeRetryAt >= io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()
+                && (reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING || !creeperWayRunning())) {
+            // reflex choosers: the try failed, timed out or ended with the creeper still close: charged, the ladder's next way
+            LOG.info("[entropybot] creeper flee: {} with the creeper at {}", reflexMoves.why(), Math.round(t.d * 10) / 10.0);
+            creeperTry(mc, p, t.e, fleeDir(mc, p, t.e), true);
             fleeUntil = now + 60;
             fleeRetryAt = now;
         }

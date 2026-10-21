@@ -55,17 +55,6 @@ public final class Moves {
     }
 
     /**
-     * Burrow: BurrowProcess digs the {@code depth} cells under the feet (the bot drops into each), then seals the cell
-     * over the head ({@code depth - 2} under the old feet) from the bag.
-     */
-    public void burrow(int[] top, int depth) {
-        List<int[]> dig = new ArrayList<>();
-        for (int k = 1; k <= depth; k++) dig.add(new int[]{top[0], top[1] - k, top[2]});
-        int[] seal = {top[0], top[1] - (depth - 2), top[2]};
-        begin("burrow", new Leg("burrow " + depth + " down at " + c(top), car -> car.burrow(dig, null, List.of(seal), (int) digTicks()), digTicks()));
-    }
-
-    /**
      * Dig-in: BurrowProcess digs the two wall cells beside the entrance ({@code dx, dz} one step), steps into the foot
      * one, and seals the entrance's two cells behind.
      */
@@ -80,10 +69,19 @@ public final class Moves {
     /** Ticks a reflex leg may take. */
     static long reflexTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.reflexS")); }
 
-    /** Air: GoalBlock with the feet in the top water cell (the head above the surface). */
-    public void swimUp(int[] surface) {
-        int[] s = surface.clone();
-        begin("swim up", new Leg("swim up to " + c(s), car -> car.reach(s), reflexTicks()));
+    /** Air: the head in open air (the surface or a pocket); Baritone picks the cell. */
+    public void swimUp() {
+        begin("swim up", new Leg("swim up to air", Car::breathe, reflexTicks()));
+    }
+
+    /** Reflex choosers: the fork's "burrow here" ({@code up}: the cells over the head, out of water); the fork picks them. */
+    public void burrowHere(String way, int depth, boolean up) {
+        begin(way, new Leg(way + " " + depth + (up ? " up" : " down") + " here", car -> car.burrowHere(depth, up, (int) digTicks()), digTicks()));
+    }
+
+    /** Reflex choosers: the feet in water; Baritone picks the water. */
+    public void toWater(String way) {
+        begin(way, new Leg(way, Car::toWater, reflexTicks()));
     }
 
     /** The creeper flee: GoalRunAway {@code dist} from the hostiles, leaning toward FleeHeading's {@code prefer}. */
@@ -98,12 +96,6 @@ public final class Moves {
     public void escape(String what, int dist, List<int[]> cells) {
         List<int[]> f = List.copyOf(cells);
         begin("escape " + what, new Leg("run " + dist + " from " + f.size() + " " + what + " cell(s)", car -> car.runAway(dist, f, null), reflexTicks()));
-    }
-
-    /** A plain GoalBlock way (the fire reflex walking into water). */
-    public void reach(String way, int[] cell) {
-        int[] s = cell.clone();
-        begin(way, new Leg(way + " " + c(s), car -> car.reach(s), reflexTicks()));
     }
 
     /** Baritone holds a path for the running leg's goal (the air reflex's jump gap is over). */

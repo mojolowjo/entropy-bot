@@ -35,10 +35,19 @@ public interface Car {
      */
     void runAway(int dist, List<int[]> from, double[] prefer);
 
-    /** Backbone step 4: GoalBlock, feet in this cell (the air reflex's surface cell, the fire reflex's water). */
-    void reach(int[] cell);
+    /**
+     * Reflex choosers: the air reflex's goal, the head in open air (ReflexGoals.Breathe); Baritone picks the cell and,
+     * while it has no path yet, holds jump itself (the fork's swimUpWithoutPath, on for this command only).
+     */
+    void breathe();
 
-    /** Backbone step 4: Baritone holds a calculated path for the last goal command (the air reflex's jump gap ends). */
+    /** Reflex choosers: the fire reflex's goal, the feet in water (ReflexGoals.Water); Baritone picks the water. */
+    void toWater();
+
+    /** Reflex choosers: the fork's BurrowProcess "burrow here" ({@code up}: dig over the head); the fork picks the cells. */
+    void burrowHere(int depth, boolean up, int timeoutTicks);
+
+    /** Backbone step 4: Baritone holds a calculated path for the last goal command (the latency line). */
     boolean pathReady();
 
     /** GoalBlock {@code top} with allowPlace on and the bag's throwaway list (planks, cobble, dirt...): Baritone pillars. */

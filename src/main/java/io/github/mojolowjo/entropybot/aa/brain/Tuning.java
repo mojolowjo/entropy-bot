@@ -140,6 +140,13 @@ public final class Tuning {
         def("moves.pillarS", 15, "backbone step 2", "seconds a pillar leg may take");
         def("moves.digS", 40, "backbone step 2", "seconds a burrow / dig-in leg may take");
         def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");
+        def("reflex.triesPerWay", 3, "reflex choosers", "failed tries of one reflex way (charged in Failures as reflex.<kind> <cell>) before the next way runs");
+        def("reflex.retryTicks", 10, "reflex choosers", "ticks between two tries of a reflex way (a failed run is not re-asked every tick)");
+        def("reflex.air.pullUp", 24, "reflex choosers", "blocks over the feet the swim-up goal's heuristic pulls toward (Baritone's search tries up first; the goal itself is any cell with the head in air)");
+        def("reflex.air.burrowUp", 3, "reflex choosers", "cells over the head the air reflex's burrow-up asks the fork to break when no swim-up path is found");
+        def("reflex.creeper.burrow", 2, "reflex choosers", "cells under the feet the creeper reflex's burrow asks the fork to dig (then sealed over the head)");
+        def("reflex.failedS", 30, "reflex choosers", "seconds a reflex whose every way failed keeps the danger at full for the danger desire (its line is the reason)");
+        def("reflex.fire.aimTicks", 10, "reflex choosers", "ticks the water bucket waits for Baritone's look to land on the block under the feet before that try fails");
         def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
         def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");
         def("hands.waitS", 120, "builder placements", "seconds a caller waits for a running build / click before it counts a try (twice a leg, a reflex pause in between)");

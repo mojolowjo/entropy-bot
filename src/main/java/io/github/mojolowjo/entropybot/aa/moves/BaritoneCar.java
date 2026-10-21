@@ -95,15 +95,86 @@ public final class BaritoneCar implements Car {
                 + Math.round(Math.toDegrees(Math.atan2(-prefer[0], prefer[1]))));
     }
 
-    @Override public void reach(int[] cell) {
-        drive(new GoalBlock(pos(cell)), "reach " + cell[0] + " " + cell[1] + " " + cell[2]);
+    /** The client level as the reflex goals read it (feet / head open, water in a cell). */
+    private static final ReflexGoals.Cells CELLS = new ReflexGoals.Cells() {
+        @Override public boolean open(int x, int y, int z) {
+            var lv = Minecraft.getInstance().level;
+            if (lv == null) return false;
+            BlockPos q = new BlockPos(x, y, z);
+            return lv.getBlockState(q).getCollisionShape(lv, q).isEmpty();
+        }
+
+        @Override public boolean water(int x, int y, int z) {
+            var lv = Minecraft.getInstance().level;
+            return lv != null && lv.getFluidState(new BlockPos(x, y, z)).is(net.minecraft.tags.FluidTags.WATER);
+        }
+    };
+
+    @Override public void breathe() {
+        var p = Minecraft.getInstance().player;
+        if (p == null) { fresh(); forced = Status.failed("no player"); return; }
+        int upTo = p.getBlockY() + (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.air.pullUp");
+        drive(new ReflexGoals.Breathe(CELLS, upTo), "swim up to air");
+        try {
+            // the swim-up gap is the fork's: Baritone holds jump while it has no path yet (head under water)
+            var s = BaritoneAPI.getSettings();
+            savedSwim = s.swimUpWithoutPath.value;
+            s.swimUpWithoutPath.value = true;
+            LOG.info("[entropybot] moves: swim-up gap on (Baritone holds jump until it has a path; was {})", savedSwim);
+        } catch (RuntimeException | LinkageError e) {
+            savedSwim = null;
+            LOG.warn("[entropybot] moves: this Baritone has no swimUpWithoutPath (the stock jar?) - no jump in the swim-up gap: {}", e.toString());
+        }
     }
+
+    @Override public void toWater() {
+        drive(new ReflexGoals.Water(CELLS), "to water");
+    }
+
+    @Override public void burrowHere(int depth, boolean up, int timeoutTicks) {
+        fresh();
+        // a danger move ends the job's hands and holds the job; a reflex burrow (-0.25) outranks the job's processes
+        // without either, so the job resumes after it (step 4's save/restore)
+        if (!reflex) {
+            JobHands.get().preempt("danger move burrow");
+            engine.hold();
+        } else engine.endReflex();      // a reflex goal before it (the run) would sit at 10 over the burrow
+        try {
+            var s = BaritoneAPI.getSettings();
+            savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
+            List<Item> list = new ArrayList<>(savedThrow);
+            for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
+            s.acceptableThrowawayItems.value = list;
+            setThrow = list;
+            burrow = b().getBurrowProcess();
+            burrow.burrowHere(depth, up, timeoutTicks);
+            what = "burrow " + (up ? "up " : "down ") + depth;
+        } catch (LinkageError e) {
+            forced = Status.failed("this Baritone has no burrowHere (the stock jar? install the entropy fork): " + e);
+        } catch (RuntimeException e) {
+            forced = Status.failed("burrow start: " + e);
+        }
+    }
+
+    /** The cells the fork's burrow digs (DangerMoves' guard-verdict line); empty when none. */
+    public List<BlockPos> burrowCells() {
+        try {
+            return burrow == null ? List.of() : burrow.digCells();
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] moves: burrow cells unknown: {}", e.toString());
+            return List.of();
+        }
+    }
+
+    private Boolean savedSwim;
 
     @Override public boolean pathReady() {
         try {
             var pb = b().getPathingBehavior();
             return goal != null && pb.getCurrent() != null && pb.getGoal() == goal;
         } catch (RuntimeException e) {
+            // reflex choosers: never silent; "no path yet" here only means the latency line waits
+            LOG.warn("[entropybot] moves: path check failed ({}): {}", what, e.toString());
             return false;
         }
     }
@@ -227,10 +298,12 @@ public final class BaritoneCar implements Car {
             // review: only what is still the value this car set (an owner change during the run wins)
             if (savedPlace != null && Boolean.TRUE.equals(s.allowPlace.value)) s.allowPlace.value = savedPlace;
             if (savedThrow != null && s.acceptableThrowawayItems.value == setThrow) s.acceptableThrowawayItems.value = savedThrow;
-        } catch (RuntimeException e) {
+            if (savedSwim != null && Boolean.TRUE.equals(s.swimUpWithoutPath.value)) s.swimUpWithoutPath.value = savedSwim;
+        } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] moves: settings restore failed: {}", e.toString());
         }
         savedPlace = null;
+        savedSwim = null;
         savedThrow = null;
         setThrow = null;
     }

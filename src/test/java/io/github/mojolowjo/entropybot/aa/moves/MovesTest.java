@@ -30,7 +30,13 @@ class MovesTest {
             this.prefer = prefer;
             calls.add("runAway " + dist + " " + from.size() + (prefer == null ? "" : " prefer"));
         }
-        @Override public void reach(int[] cell) { calls.add("reach " + s(cell)); }
+        int depth; boolean up;
+        @Override public void breathe() { calls.add("breathe"); }
+        @Override public void toWater() { calls.add("toWater"); }
+        @Override public void burrowHere(int depth, boolean up, int timeoutTicks) {
+            this.depth = depth; this.up = up;
+            calls.add("burrowHere " + depth + (up ? " up" : " down"));
+        }
         @Override public boolean pathReady() { return ready; }
         @Override public void look(double x, double y, double z) { calls.add("look"); }
         @Override public Status status() { return status; }
@@ -41,15 +47,12 @@ class MovesTest {
     }
 
     @Test
-    void burrowDigsTheCellsUnderTheFeetAndSealsOverTheHead() {
+    void burrowHereLeavesTheCellsToTheFork() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
-        m.burrow(new int[]{10, 64, 5}, 2);
-        assertEquals("burrow 2 1", car.calls.get(0));
-        assertEquals("10 63 5", FakeCar.s(car.dig.get(0)));
-        assertEquals("10 62 5", FakeCar.s(car.dig.get(1)));
-        assertNull(car.stand);
-        assertEquals("10 64 5", FakeCar.s(car.seal.get(0)), "depth 2 seals the old feet cell (over the head)");
+        m.burrowHere("burrow", 2, false);
+        assertEquals("burrowHere 2 down", car.calls.get(0), "only what and how deep: the fork picks the cells");
+        assertNull(car.dig, "no mod-picked cell");
         assertEquals(Moves.Phase.RUNNING, m.tick(1));
         car.status = Car.Status.done("done: dug 2, sealed 1");
         assertEquals(Moves.Phase.ARRIVED, m.tick(2));
@@ -57,24 +60,24 @@ class MovesTest {
     }
 
     @Test
-    void depthThreeSealsTheFirstDugCell() {
-        FakeCar car = new FakeCar();
-        new Moves(car).burrow(new int[]{0, 70, 0}, 3);
-        assertEquals("0 69 0", FakeCar.s(car.seal.get(0)));
-        assertEquals(3, car.dig.size());
-    }
-
-    @Test
     void aFailedBurrowNamesTheStageTheBlockAndTheVerdict() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
-        m.burrow(new int[]{10, 64, 5}, 2);
+        m.burrowHere("burrow", 2, false);
         car.status = Car.Status.failed("dig 1/2 at 10 63 5 (grass_block): refused by the break rules (cost hook / Baritone settings)");
         assertEquals(Moves.Phase.FAILED, m.tick(5));
-        assertTrue(m.why().startsWith("gave up at burrow 2 down at 10 64 5: dig 1/2 at 10 63 5 (grass_block): refused"), m.why());
+        assertTrue(m.why().startsWith("gave up at burrow 2 down here: dig 1/2 at 10 63 5 (grass_block): refused"), m.why());
         assertEquals(Moves.Phase.FAILED, m.tick(6), "a failure stays failed");
     }
 
+    @Test
+    void theAirReflexBurrowsUp() {
+        FakeCar car = new FakeCar();
+        Moves m = new Moves(car);
+        m.burrowHere("burrow up", 3, true);
+        assertEquals("burrowHere 3 up", car.calls.get(0));
+        assertEquals("burrow up", m.way());
+    }
     @Test
     void aLegOverItsTimeFailsAndStopsTheCar() {
         FakeCar car = new FakeCar();
@@ -128,7 +131,7 @@ class MovesTest {
     void releaseHandsBaritoneBackAndGoesIdle() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
-        m.burrow(new int[]{0, 64, 0}, 2);
+        m.burrowHere("burrow", 2, false);
         m.release();
         assertEquals(Moves.Phase.IDLE, m.phase());
         assertTrue(car.calls.contains("release"));
@@ -138,18 +141,18 @@ class MovesTest {
     // ---- backbone step 4: the reflexes' goals ----
 
     @Test
-    void airSwimsUpToTheSurfaceCellAndTheJumpGapEndsWithThePath() {
+    void airSwimsUpToAnyAirAndTheLatencyWaitsForThePath() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
         m.tick(10);
-        m.swimUp(new int[]{3, 62, 4});
-        assertEquals("reach 3 62 4", car.calls.get(0), "GoalBlock, the feet in the top water cell");
+        m.swimUp();
+        assertEquals("breathe", car.calls.get(0), "the head in open air: Baritone picks the cell");
         assertEquals("swim up", m.way());
         assertEquals(10, m.legStart(), "started the tick it was asked (latency is Baritone's)");
-        assertFalse(m.pathReady(), "no path yet: the air reflex holds jump in this gap");
+        assertFalse(m.pathReady(), "no path yet (the fork holds jump in this gap, not the mod)");
         car.ready = true;
         assertTrue(m.pathReady());
-        car.status = Car.Status.done("reach 3 62 4");
+        car.status = Car.Status.done("swim up to air");
         assertEquals(Moves.Phase.ARRIVED, m.tick(14));
         assertFalse(m.pathReady(), "a way that is over has no path to wait for");
     }
@@ -190,7 +193,7 @@ class MovesTest {
     void aReflexWayReplacesTheLastOne() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);
-        m.swimUp(new int[]{0, 62, 0});
+        m.swimUp();
         m.flee(12, List.<int[]>of(new int[]{0, 64, 3}), null);
         assertTrue(car.calls.contains("stop replaced by flee"), car.calls.toString());
         assertEquals("flee", m.way());
