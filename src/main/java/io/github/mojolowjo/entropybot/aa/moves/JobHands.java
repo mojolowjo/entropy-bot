@@ -167,6 +167,10 @@ public final class JobHands {
     }
 
     private Result end(Result r) {
+        if (r.failed()) {
+            lastFailWhy = r.why();
+            lastFailCells = cells;
+        }
         finalKey = key;
         finalResult = r;
         finalAt = now;
@@ -205,6 +209,15 @@ public final class JobHands {
     }
 
     public synchronized boolean idle() { return key == null; }
+
+    /** The last failure line of a request that touched cell x y z, or null (a job's own give-up line names it). */
+    public synchronized String lastFailure(int x, int y, int z) {
+        for (int[] q : lastFailCells) if (q[0] == x && q[1] == y && q[2] == z) return lastFailWhy;
+        return null;
+    }
+
+    private String lastFailWhy;
+    private List<int[]> lastFailCells = List.of();
 
     private void safeCancel(String why) {
         try { hand.cancel(why); } catch (RuntimeException ignored) { }

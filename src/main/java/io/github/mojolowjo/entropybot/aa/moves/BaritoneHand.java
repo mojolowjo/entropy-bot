@@ -32,6 +32,7 @@ import java.util.List;
 final class BaritoneHand implements JobHands.Hand {
     private static final Logger LOG = LogUtils.getLogger();
 
+    private static boolean warned;
     private IBurrowProcess proc;
     private Car.Status forced;
 
@@ -60,7 +61,11 @@ final class BaritoneHand implements JobHands.Hand {
             proc = b().getBurrowProcess();
             proc.startJob(d, k, timeoutTicks);
         } catch (LinkageError e) {
-            forced = Car.Status.failed("this Baritone has no job hands (the stock jar? install the entropy fork): " + e);
+            forced = Car.Status.failed("this Baritone has no job hands (an older jar? install the entropy fork from baritone-backbone3): " + e);
+            if (!warned) {
+                warned = true;
+                LOG.warn("[entropybot] job hands: {}", forced.why());
+            }
         } catch (RuntimeException e) {
             forced = Car.Status.failed("start: " + e);
         }

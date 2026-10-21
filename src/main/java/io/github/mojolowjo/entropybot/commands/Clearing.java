@@ -1295,7 +1295,10 @@ public final class Clearing {
         // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
         if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < 20 * 10) return "wait";
         ps.tries++;
-        if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": it didn't stay there (3 tries)";
+        if (ps.tries >= 3) {
+            String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]);
+            return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": it didn't stay there (3 tries)" + (last == null ? "" : "; Baritone: " + last);
+        }
         ps.stage = "place";
         return "wait";
     }

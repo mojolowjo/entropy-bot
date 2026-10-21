@@ -210,7 +210,8 @@ final class RestoreRun {
                 }
                 tries++;
                 if (tries >= 3) {
-                    skip(e, "couldn't place: it didn't stay");
+                    String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(e.x, e.y, e.z);
+                    skip(e, "couldn't place: it didn't stay" + (last == null ? "" : "; Baritone: " + last));
                     return false;
                 }
                 stage = "place";
