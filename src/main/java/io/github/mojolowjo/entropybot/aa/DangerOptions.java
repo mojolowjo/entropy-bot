@@ -270,6 +270,8 @@ public final class DangerOptions {
 
     /** AA_STEP3 (TIME_MODEL): swim 2.2 blocks/s, a place 0.25 s, a straight line x 1.3 before a path exists, 2 s per water edge. */
     static final double SWIM_BPS = 2.2, PLACE_S = 0.25, PATH_X = 1.3, EDGE_S = 2;
+    /** Review 0.39.a4 5: sinking held down (sneak) in water, blocks/s (vanilla about 1; a hand number until measured). */
+    static final double SINK_BPS = 1.0;
 
     /** Review 2: the open-air fallback's length (s). */
     static final double OPEN_WAIT_S = 60;
@@ -325,7 +327,9 @@ public final class DangerOptions {
             if (wet) {
                 // pillar out: a block per water cell from the floor up, a place and a swim-up each, under water the while
                 int col = w.waterColumn();
-                double pt = col * (PLACE_S + 1 / SWIM_BPS);
+                // review 0.39.a4 5: first the sink from the feet to the floor (no air on the way down either)
+                double sink = Math.max(0, col - (w.headDepth() + 2)) / SINK_BPS;
+                double pt = sink + col * (PLACE_S + 1 / SWIM_BPS);
                 double r = io.github.mojolowjo.entropybot.guard.DrownRisk.cellRisk(col, pt, air);
                 boolean ok = col > 0 && blocks >= col && r < 1;
                 String why = col <= 0 ? "no floor under the water in reach" : blocks < col ? "needs " + col + " blocks, " + blocks + " in the bag"

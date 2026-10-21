@@ -161,6 +161,10 @@ public final class DangerMoves {
         int[] wf = water(mc, p);
         if (wf[0] <= 0) return "error: in water with no floor within " + WATER_FLOOR_SCAN;
         if (tw[0] < wf[0]) return "error: pillar out of water needs " + wf[0] + " blocks, " + tw[0] + " in the bag";
+        for (int y = wf[2] + 1; y < wf[3]; y++) {
+            BlockPos c = new BlockPos(p.getBlockX(), y, p.getBlockZ());
+            if (Guard.INSTANCE.placeRefused(mc.level, c)) return "error: no placing at " + c.getX() + " " + c.getY() + " " + c.getZ() + " (an area rule): no pillar out here";
+        }
         if (!Hotbar.toHand(mc, p, tw[1])) return "error: could not take the blocks in hand";
         begin(Move.PILLAR, "pillaring out of water " + wf[0] + " up");
         engine.hold();
@@ -207,7 +211,36 @@ public final class DangerMoves {
      * {@link ThreatFacts#SHORE_REACH} across, near the water surface; ring by ring, the first ring with one wins
      * (nearest in it). Null none.
      */
+    private static int[] shoreMemo;
+    private static BlockPos shoreAt;
+    private static long shoreMs = -1;
+    /** Review 0.39.a4 3: the shore scan is kept this long (and for the same cell). */
+    static final long SHORE_CACHE_MS = 2_000;
+
+    /**
+     * Review 0.39.a4 2/3: as {@link #shoreScan}, cached {@link #SHORE_CACHE_MS} per feet cell. A cell counts only where
+     * the areas let the box be built and the floor be dug (Guard place veto, the BreakPolicy DIG_OUT ask) and where it
+     * touches the water (reachable by swimming); else the next candidate.
+     */
     static int[] shore(Minecraft mc, LocalPlayer p, int surfaceY) {
+        long ms = System.currentTimeMillis();
+        BlockPos feet = p.blockPosition();
+        if (shoreMs >= 0 && ms - shoreMs < SHORE_CACHE_MS && feet.equals(shoreAt)) return shoreMemo;
+        shoreMemo = shoreScan(mc, p, surfaceY);
+        shoreAt = feet;
+        shoreMs = ms;
+        return shoreMemo;
+    }
+
+    /** The cell is allowed (areas) and touches water beside it at the feet or one under (a swim reaches it). */
+    private static boolean shoreOk(Minecraft mc, BlockPos c) {
+        if (Guard.INSTANCE.placeRefused(mc.level, c) || Guard.INSTANCE.placeRefused(mc.level, c.above()) || !policyBreaks(mc, c.below())) return false;
+        for (Direction d : Direction.Plane.HORIZONTAL)
+            if (wet(mc, c.relative(d)) || wet(mc, c.relative(d).below())) return true;
+        return false;
+    }
+
+    static int[] shoreScan(Minecraft mc, LocalPlayer p, int surfaceY) {
         BlockPos feet = p.blockPosition();
         int[] best = null;
         double bestD = Double.MAX_VALUE;
@@ -219,7 +252,7 @@ public final class DangerMoves {
                     if (!mc.level.hasChunkAt(new BlockPos(x, surfaceY, z))) continue;
                     for (int y = surfaceY - 2; y <= surfaceY + 3; y++) {
                         BlockPos c = new BlockPos(x, y, z);
-                        if (!solid(mc, c.below()) || !free(mc, c) || !free(mc, c.above())) continue;
+                        if (!solid(mc, c.below()) || !free(mc, c) || !free(mc, c.above()) || !shoreOk(mc, c)) continue;
                         double d = Math.sqrt(dx * dx + dz * dz + (y - feet.getY()) * (y - feet.getY()));
                         if (d < bestD) { bestD = d; best = new int[]{x, y, z}; }
                         break;
@@ -356,6 +389,7 @@ public final class DangerMoves {
         int[] tw = throwaway(p);
         if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { stop("pillar: out of blocks"); return; }
         mc.options.keyJump.setDown(p.onGround());
+        if (Guard.INSTANCE.placeRefused(mc.level, cell)) { stop("pillar: no placing at " + cell.getX() + " " + cell.getY() + " " + cell.getZ() + " (an area rule)"); return; }
         if (CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
             BlockPos below = cell.below();
             mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
@@ -382,6 +416,7 @@ public final class DangerMoves {
         mc.options.keyShift.setDown(high);
         mc.options.keyJump.setDown(!high);
         cell = new BlockPos(pillarX, pillarCell, pillarZ);
+        if (Guard.INSTANCE.placeRefused(mc.level, cell)) { stop("pillar: no placing at " + cell.getX() + " " + cell.getY() + " " + cell.getZ() + " (an area rule)"); return; }
         if (CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
             BlockPos below = cell.below();
             mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
@@ -566,16 +601,22 @@ public final class DangerMoves {
 
     /** The blocks the danger moves place, in the bag ({@link io.github.mojolowjo.entropybot.aa.AaEscape#pillarBlock}: throwaway and planks), and the slot of the first. */
     static int[] throwaway(LocalPlayer p) {
-        int n = 0, slot = -1;
+        // review 0.39.a4 4: the one count (AaEscape.placeable: planks over the reserve); a plain block's slot first, planks last
+        int slot = -1, plankSlot = -1;
+        List<java.util.Map.Entry<String, Integer>> items = new ArrayList<>();
         var inv = p.getInventory();
         for (int i = 0; i < 36; i++) {
             ItemStack s = inv.getItem(i);
             if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem)) continue;
-            if (!io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(BuiltInRegistries.ITEM.getKey(s.getItem()).getPath())) continue;
-            n += s.getCount();
-            if (slot < 0 || (slot >= 9 && i < 9)) slot = i;
+            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
+            if (!io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(id)) continue;
+            items.add(java.util.Map.entry(id, s.getCount()));
+            boolean plank = id.endsWith("_planks");
+            if (plank) { if (plankSlot < 0 || (plankSlot >= 9 && i < 9)) plankSlot = i; }
+            else if (slot < 0 || (slot >= 9 && i < 9)) slot = i;
         }
-        return new int[]{n, slot};
+        int n = io.github.mojolowjo.entropybot.aa.AaEscape.placeable(items);
+        return new int[]{n, n <= 0 ? -1 : slot >= 0 ? slot : plankSlot};
     }
 
     private static boolean solid(Minecraft mc, BlockPos q) {

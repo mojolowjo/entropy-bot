@@ -794,10 +794,11 @@ public final class AaDesires {
         DangerOptions.Priced mine = null;
         for (DangerOptions.Priced p : c.all()) if (p.way() == w) mine = p;
         double margin = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.minS");
-        if (mine != null && mine.possible() && mine.costS() - c.best().costS() <= margin) return null;
+        // review 0.39.a4 1: a way not priced or not possible now (the shore once out of the water, a box once on the
+        // ground) is under way: its chain is kept; only a way saving more than danger.minS over it replaces it
+        if (mine == null || !mine.possible() || mine.costS() - c.best().costS() <= margin) return null;
         return "re-priced: " + c.best().way().key() + " " + Math.round(c.best().costS()) + " s vs " + w.key() + " "
-                + (mine == null || !mine.possible() ? "- (" + (mine == null ? "not priced now" : mine.why()) + ")" : Math.round(mine.costS()) + " s")
-                + " (over danger.minS " + Math.round(margin) + "): " + w.key() + " ends";
+                + Math.round(mine.costS()) + " s (over danger.minS " + Math.round(margin) + "): " + w.key() + " ends";
     }
 
     /** 0.38.b9: blackboard fact (Boolean), a danger move (flee, cover, pillar, burrow) runs now (the adapter's). */
@@ -813,13 +814,8 @@ public final class AaDesires {
 
     /** Planks, cobblestone and dirt in the bag (what ShelterPlan builds a shell from). */
     static int shellBlocks(java.util.Map<String, Integer> bag) {
-        int n = 0;
-        if (bag == null) return 0;
-        for (var e : bag.entrySet()) {
-            String k = e.getKey().replaceFirst("^minecraft:", "");
-            if (k.endsWith("_planks") || k.equals("cobblestone") || k.equals("dirt")) n += Math.max(0, e.getValue());
-        }
-        return n;
+        // review 0.39.a4 4: one list with the pillar (AaEscape.pillarBlocks: throwaway and planks over the reserve)
+        return AaEscape.pillarBlocks(bag);
     }
 
     /**

@@ -90,7 +90,8 @@ public final class AaTree {
             // reflex every 8 s, AA never re-priced): a job paused by a reflex more than Tuning pausedRepriceS within a
             // minute ends ("paused too long: <reflex>"); the air guard then yields to the brain until the air is full, so
             // it picks again with the fresh facts, and the spot is a fact (WATER_HERE_FACT: a wait here sinks)
-            t.pausedMs(now0, t.root != null && t.root.hasPaused());
+            // review 0.39.a4 6: only the air reflex's pause counts (lava, fire and the creeper sprint are short and real)
+            t.pausedMs(now0, t.root != null && t.root.hasPaused() && airShort && !bb.in.inLavaOrFire && !bb.in.creeperClose);
             double limitMs = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pausedRepriceS") * 1000;
             if (airShort && !t.airYield && t.root != null && t.root.hasPaused() && t.pausedSum > limitMs) {
                 String why = "paused too long: " + t.dangerWhy + " (" + t.pausedSum / 1000 + " s paused in the last 60 s, over pausedRepriceS "

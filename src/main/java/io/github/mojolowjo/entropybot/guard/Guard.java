@@ -233,6 +233,16 @@ public final class Guard {
     /** Every block placement (BlockItem.place) and every liquid, fire, egg or entity put down. True = refuse. */
     public boolean vetoPlace(Level level, BlockPos pos) { return vetoPlace(level, pos, false); }
 
+    /**
+     * Review 0.39.a4 2: the area rule for a placement asked ahead (a scan, the danger ways' shore cell): no event, no
+     * log, no policy lease. True = the areas refuse it.
+     */
+    public boolean placeRefused(Level level, BlockPos pos) {
+        if (level == null || !level.isLoaded(pos)) return false;
+        var st = level.getBlockState(pos);
+        boolean airOrWater = st.isAir() || (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.canBeReplaced());
+        return !core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", GuardCore.BlockInfo.placing(airOrWater, false)).allowed();
+    }
     /** 0.23.1: torch = the item put down is a torch (roaming outside the areas places nothing else). */
     public boolean vetoPlace(Level level, BlockPos pos, boolean torch) {
         if (level == null) level = Minecraft.getInstance().level;

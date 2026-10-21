@@ -68,8 +68,10 @@ class DangerStep3aTest {
 
     @Test
     void thePillarReadsTheBagPlanksCount() {
-        assertEquals(16, AaEscape.pillarBlocks(Map.of("oak_planks", 16, "log", 35)));
-        assertEquals(20, AaEscape.pillarBlocks(Map.of("minecraft:cobblestone", 4, "planks", 16)));
+        assertEquals(16 - AaEscape.PLANK_RESERVE, AaEscape.pillarBlocks(Map.of("oak_planks", 16, "log", 35)), "a table and sticks kept back");
+        assertEquals(0, AaEscape.pillarBlocks(Map.of("oak_planks", 4)));
+        assertEquals(AaDesires.shellBlocks(Map.of("oak_planks", 16, "dirt", 3)), AaEscape.pillarBlocks(Map.of("oak_planks", 16, "dirt", 3)), "one list");
+        assertEquals(14, AaEscape.pillarBlocks(Map.of("minecraft:cobblestone", 4, "planks", 16)));
         // the facts said 0 (an older count), the bag 16: the pillar is possible
         ThreatFacts.Ways land = new ThreatFacts.Ways(0, -1, -1, false, 0, 3, true, false, false);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(20), List.of(), land), night(16, false, 300, 200));
@@ -116,4 +118,53 @@ class DangerStep3aTest {
         clock.advance(1_000);
         tree.tick(bb);
         assertEquals("danger", tree.driver(), "air full again: the guard is back");    }
+
+    @Test
+    void review5TheSinkToTheFloorCountsForTheAir() {
+        // 8 deep, at the surface (head 0 under): 6 s of sinking first makes the pillar out too long for 5 s of air
+        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, -1, false, 16, 3, false, false, false, true, 8, 0, null, -1);
+        DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(20), List.of(), w), night(16, false, 100, 200));
+        DangerOptions.Priced po = way(c, DangerOptions.Way.PILLAR_OUT);
+        assertFalse(po.possible(), c.terms());
+        assertTrue(po.why().contains("not enough air"), po.why());
+        assertTrue(po.timeS() > 8 * (DangerOptions.PLACE_S + 1 / DangerOptions.SWIM_BPS), "the sink is in the time");
+    }
+
+    @Test
+    void review1AWayNotPricedNowKeepsItsChain() {
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        FakePort port = new FakePort();
+        Blackboard bb = new Blackboard(clock, port, new Tracer());
+        bb.in.dayTime = 18000;
+        bb.in.hungerDrains = true;
+        bb.in.difficulty = 2;
+        bb.in.pos = new int[]{0, 64, 0};
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) (x, z) -> 64);
+        ThreatFacts land = new ThreatFacts(ThreatFacts.CALM.me(), List.of(), new ThreatFacts.Ways(0, -1, -1, false, 0, 3, true, false, false));
+        bb.fact(AaDesires.THREAT_FACT, (java.util.function.Supplier<ThreatFacts>) () -> land);
+        io.github.mojolowjo.entropybot.aa.core.RunJob job = io.github.mojolowjo.entropybot.aa.core.RunJob.of("j", io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, "goto 5 64 5 then shelter", "danger");
+        job.tick(bb);
+        bb.fact(AaDesires.WAY_FACT, DangerOptions.Way.SHORE);        // swam ashore: the shore row is not priced on land
+        clock.advance(10_000);
+        assertNull(AaDesires.reprice(bb, job, -1), "the shore chain goes on");
+    }
+
+    @Test
+    void review6OnlyTheAirReflexPauseCountsTowardsPausedTooLong() {
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        FakePort port = new FakePort();
+        Blackboard bb = new Blackboard(clock, port, new Tracer());
+        bb.in.pickTier = 0; bb.in.pickaxes = 0; bb.in.tableKnown = false; bb.in.furnaceKnown = false; bb.in.torches = 0;
+        bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
+        bb.in.areaName = null; bb.in.hungerDrains = false;
+        AaTree tree = AaTree.build(new AaScorer());
+        tree.tick(bb);
+        bb.in.inLavaOrFire = true;
+        for (int i = 0; i < 15; i++) {
+            clock.advance(1_000);
+            tree.tick(bb);
+        }
+        assertFalse(port.log.stream().anyMatch(l -> l.contains("paused too long")), port.log.toString());
+        assertTrue(bb.task().paused(), "lava keeps the pause");
+    }
 }

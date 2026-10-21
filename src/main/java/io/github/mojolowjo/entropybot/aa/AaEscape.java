@@ -101,11 +101,26 @@ public final class AaEscape {
         return THROWAWAY.contains(k) || k.endsWith("_planks") || k.equals("planks");
     }
 
-    /** The bag's blocks a danger pillar can place ({@link #pillarBlock}). */
+    /** Review 0.39.a4 4: planks kept back from placing (a crafting table 4 + sticks 2), so a pillar or a box never eats the next craft. */
+    public static final int PLANK_RESERVE = 6;
+
+    static boolean plank(String k) { return k.endsWith("_planks") || k.equals("planks"); }
+
+    /** One count for every placing danger way (pillar, pillar out, box): {@link #pillarBlock} blocks, planks over {@link #PLANK_RESERVE}. */
     public static int pillarBlocks(Map<String, Integer> bag) {
-        int n = 0;
-        if (bag != null) for (var e : bag.entrySet()) if (pillarBlock(e.getKey())) n += Math.max(0, e.getValue() == null ? 0 : e.getValue());
-        return n;
+        return placeable(bag == null ? java.util.List.of() : bag.entrySet().stream().map(e -> Map.entry(e.getKey(), e.getValue() == null ? 0 : e.getValue())).toList());
+    }
+
+    /** The same count over (id, count) pairs (the adapter's inventory slots). */
+    public static int placeable(Iterable<Map.Entry<String, Integer>> items) {
+        int other = 0, planks = 0;
+        for (var e : items) {
+            String k = e.getKey() == null ? "" : e.getKey().replaceFirst("^minecraft:", "");
+            if (!pillarBlock(k)) continue;
+            if (plank(k)) planks += Math.max(0, e.getValue());
+            else other += Math.max(0, e.getValue());
+        }
+        return other + Math.max(0, planks - PLANK_RESERVE);
     }
 
     public static int throwaway(Map<String, Integer> bag) {
