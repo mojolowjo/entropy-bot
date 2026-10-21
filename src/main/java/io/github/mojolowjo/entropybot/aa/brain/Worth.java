@@ -28,7 +28,8 @@ public final class Worth {
     public static double furnace(TechTree tree, Set<String> have) {
         if (tree == null || tree.size() == 0) return Tuning.get("stationBase") + Tuning.get("stationShare");
         double best = 0;
-        for (String s : SMELTS) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
+        java.util.List<String> outs = ItemWorth.smelts();      // AA_ROUND4 C: what the recipes say a furnace makes; SMELTS only without data
+        for (String s : outs.isEmpty() ? SMELTS : outs) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
         return Tuning.get("stationBase") + Tuning.get("stationShare") * best;
     }
 

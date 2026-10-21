@@ -24,6 +24,20 @@ public final class Tuning {
     private static final Map<String, Entry> ALL = new LinkedHashMap<>();
 
     static {
+        // AA_ROUND4 C (ItemWorth): the scales the item data is turned into worth with (iron pickaxe ~30, stone 15, wooden 4)
+        def("worth.toolK", 0.75, "AA_ROUND4 C", "a digging tool's worth = this x sqrt(speed) x (1 + level) x ln(1 + durability) x role");
+        def("worth.weaponK", 0.09, "AA_ROUND4 C", "a weapon's worth = this x attack^2 x ln(1 + durability)");
+        def("worth.armourK", 0.8, "AA_ROUND4 C", "an armour piece's worth = this x (defence + 2 x toughness)");
+        def("worth.foodK", 0.25, "AA_ROUND4 C", "a food item's worth per energy point (nutrition + saturation), as the kit values it");
+        def("worth.hardK", 0.01, "AA_ROUND4 C", "a block's worth per point of hardness");
+        def("worth.lightK", 0.007, "AA_ROUND4 C", "a block's worth per light level it gives");
+        def("worth.margin", 0.1, "AA_ROUND4 C", "a recipe-only item is worth its ingredients plus this share (the work of making it)");
+        def("worth.depth", 4, "AA_ROUND4 C", "how many recipe steps deep an item's worth is followed before it is unknown");
+        def("worth.role.pickaxe", 1, "AA_ROUND4 C", "a pickaxe's weight against the tool formula");
+        def("worth.role.axe", 0.4, "AA_ROUND4 C", "an axe's weight (the kit's old axe 0.4)");
+        def("worth.role.shovel", 0.3, "AA_ROUND4 C", "a shovel's weight (the kit's old shovel 0.3)");
+        def("worth.role.hoe", 0.15, "AA_ROUND4 C", "a hoe's weight");
+        def("worth.role.other", 0.3, "AA_ROUND4 C", "weight of a digging tool whose role the data does not name (shears, a modded tool)");
         def("urgent", 75, "aa-brain 1", "the score from which an upkeep may interrupt the running desire (food near empty)");
         def("margin", 15, "aa-brain 1", "the commitment bonus: a challenger must beat the running desire by this much");
         def("capExempt", 90, "director 2026-10-19", "upkeep at this score (starving) is not capped by the night");

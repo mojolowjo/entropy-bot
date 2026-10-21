@@ -2443,6 +2443,13 @@ public final class AaRuntime implements JobPort {
                     var t = new io.github.mojolowjo.entropybot.aa.brain.TechTree(rs);
                     bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT, t);
                     treeRecipes = all.size();
+                    try {       // AA_ROUND4 C: the item data the worth is derived from (rebuilt with the recipes)
+                        var src = ItemWorthSource.read(mc.level);
+                        io.github.mojolowjo.entropybot.aa.brain.ItemWorth.use(src);
+                        LOG.info("[entropybot] aa: item worth from data: {} items with facts, {} with recipes, {} unreadable", src.itemsWithFacts(), src.itemsWithRecipes(), src.failed);
+                    } catch (RuntimeException e) {
+                        LOG.warn("[entropybot] aa: item worth data not read - the tables stay in use: {}", e.toString());
+                    }
                     treeError = null;
                     LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable)", all.size(), t.size());
                 }
