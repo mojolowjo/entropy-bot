@@ -88,9 +88,9 @@ public final class Costs {
     /** Minecraft: sprint 0.1 exhaustion per metre, 4 exhaustion = 1 food point; walk 4.317 m/s, sprint 5.612 m/s. */
     public static final double SPRINT_POINTS_PER_M = 0.1 / 4, SAVED_S_PER_M = 1 / 4.317 - 1 / 5.612;
     /** Seconds of work one food point is worth when food is fully scarce (no source, an empty bag). */
-    public static final double POINT_S = 6;
+    public static final double POINT_S = Tuning.defOf("pointS");
     /** With a food source known, scarcity counts this much. */
-    public static final double SOURCE_FACTOR = 0.2;
+    public static final double SOURCE_FACTOR = Tuning.defOf("sourceFactor");
 
     public record Sprint(boolean conserve, double savedS, double costS, double scarcity, String terms) {}
 
@@ -101,8 +101,8 @@ public final class Costs {
      * @param drainScale measured drain / hand drain of long walks (1 before anything is measured)
      */
     public static Sprint sprint(boolean drains, boolean noSource, double bagEnergy, double target, double drainScale) {
-        double scarcity = target <= 0 ? 0 : Math.max(0, Math.min(1, 1 - bagEnergy / target)) * (noSource ? 1 : SOURCE_FACTOR);
-        double cost = drains ? SPRINT_POINTS_PER_M * Math.max(0.25, drainScale) * POINT_S * scarcity : 0;
+        double scarcity = target <= 0 ? 0 : Math.max(0, Math.min(1, 1 - bagEnergy / target)) * (noSource ? 1 : Tuning.get("sourceFactor"));
+        double cost = drains ? SPRINT_POINTS_PER_M * Math.max(0.25, drainScale) * Tuning.get("pointS") * scarcity : 0;
         boolean conserve = drains && cost > SAVED_S_PER_M;
         String terms = String.format(Locale.ROOT, "sprint saves %.3f s/m, costs %.3f s/m (scarcity %.2f%s, drain x%.2f) -> %s",
                 SAVED_S_PER_M, cost, scarcity, noSource ? " no source" : "", drainScale, conserve ? "walk" : "sprint");
@@ -127,7 +127,7 @@ public final class Costs {
      * aa-night2 P0 2 (normal run: 11 zombie deaths "fighting zombie" with a pickaxe): once a zombie was seen, no weapon
      * with hit 4+ is a tools need of its own worth {@link #SWORD}, added to the pickaxe's.
      */
-    public static final double SWORD = 25;
+    public static final double SWORD = Tuning.defOf("swordValue");
 
     public static boolean swordWanted(boolean zombieSeen, boolean armed) { return zombieSeen && !armed; }
 
@@ -171,7 +171,7 @@ public final class Costs {
     /** Danger weights per difficulty (peaceful, easy, normal, hard). */
     static final double[] DIFF = {0, 0.6, 1.0, 1.3};
     /** The full-night shelter score at danger 1. */
-    public static final double SHELTER_AT_1 = 85, SHELTER_MAX = 99;
+    public static final double SHELTER_AT_1 = Tuning.defOf("shelterAt1"), SHELTER_MAX = Tuning.defOf("shelterMax");
 
     /**
      * The danger of staying out at night: difficulty x armour (full iron about halves it) x missing health x light
@@ -189,7 +189,7 @@ public final class Costs {
     }
 
     /** AA_ROUND4 B2: each torch within 16 cuts the danger by this share, down to {@link #LIGHT_FLOOR} (Tuning torchCut, lightFloor). */
-    public static final double TORCH_CUT = 0.05, LIGHT_FLOOR = 0.7;
+    public static final double TORCH_CUT = Tuning.defOf("torchCut"), LIGHT_FLOOR = Tuning.defOf("lightFloor");
 
     /** AA_ROUND4 B2: the light term from the torches within 16 of the place (sightings or my own placements). */
     public static double lightF(int torches) {
@@ -208,7 +208,7 @@ public final class Costs {
         return d * armorF * healthF * lightF(torches) * hostF;
     }
 
-    public static double shelterScore(double danger) { return Math.min(SHELTER_MAX, Tuning.get("shelterAt1") * danger); }
+    public static double shelterScore(double danger) { return Math.min(Tuning.get("shelterMax"), Tuning.get("shelterAt1") * danger); }
 
     public static String nightTerms(int difficulty, int armor, float health, int torches, int hostiles, double danger) {
         return "difficulty " + difficulty + ", armour " + armor + ", health " + Math.round(health) + ", torches " + torches + " (light x" + f1(lightF(torches))

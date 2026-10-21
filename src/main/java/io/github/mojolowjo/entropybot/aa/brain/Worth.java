@@ -20,16 +20,16 @@ public final class Worth {
      * than 4 ingredients). A station is no recipe ingredient, so its own norm in the tree would be 0. No tree yet: 1.
      */
     public static double table(TechTree tree, Set<String> have) {
-        if (tree == null || tree.size() == 0) return 80;
-        return 40 + 40 * tree.share(r -> r.slots().size() > 4, have == null ? Set.of() : have);
+        if (tree == null || tree.size() == 0) return Tuning.get("stationBase") + Tuning.get("stationShare");
+        return Tuning.get("stationBase") + Tuning.get("stationShare") * tree.share(r -> r.slots().size() > 4, have == null ? Set.of() : have);
     }
 
     /** 40 + 40 x the best tree share among what a furnace makes ({@link #SMELTS}). No tree yet: 1. */
     public static double furnace(TechTree tree, Set<String> have) {
-        if (tree == null || tree.size() == 0) return 80;
+        if (tree == null || tree.size() == 0) return Tuning.get("stationBase") + Tuning.get("stationShare");
         double best = 0;
         for (String s : SMELTS) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
-        return 40 + 40 * best;
+        return Tuning.get("stationBase") + Tuning.get("stationShare") * best;
     }
 
     public static double spareTable(TechTree tree, Set<String> have) { return 0.5 * table(tree, have); }

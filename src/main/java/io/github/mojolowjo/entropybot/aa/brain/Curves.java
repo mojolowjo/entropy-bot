@@ -16,7 +16,7 @@ public final class Curves {
     /** Seconds at which a progress desire's value halves. */
     public static final double COST_C = 600;
     /** Value flowing to a prerequisite keeps this share (2.2). */
-    public static final double FLOW = 0.9;
+    public static final double FLOW = Tuning.defOf("flow");
 
     /** 0..w: {@code w x ((full - have) / full)^2}, 0 at or above full. */
     public static double upkeep(double w, double have, double full) {
