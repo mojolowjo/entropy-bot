@@ -12,10 +12,16 @@ public final class AaLadder {
 
     public static final String SHELTER_FACT = "shelterBuilt";
 
-    /** The from-nothing job (fells trees, table, wooden then stone tools, furnace, chest, charcoal, torches, base, camp). */
-    public static final String BOOTSTRAP = "bootstrap";
+    /** The from-nothing job's label (Step.Bootstrap: fells trees, table, wooden then stone tools, furnace, chest, charcoal, torches, base, camp). */
+    public static final String BOOTSTRAP = new io.github.mojolowjo.entropybot.aa.moves.Step.Bootstrap(false).text();
 
-    public static final String CLIMB = "climb";
+    /** The climb's label (Step.Climb). */
+    public static final String CLIMB = new io.github.mojolowjo.entropybot.aa.moves.Step.Climb().text();
+
+    /** Under ground: the climb out first (rm-execution2: typed, prepended to a surface way). */
+    public static java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> climbFirst(boolean under) {
+        return under ? java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Climb()) : java.util.List.of();
+    }
     /** Under this much ground a need whose work wants open ground prices a climb into its row (a tree's leaves never count). */
     public static final int SURFACE_DEPTH = 3;
 
@@ -41,12 +47,6 @@ public final class AaLadder {
     public static boolean campLatch(boolean latched, boolean seenNear, double distToCamp) {
         if (distToCamp < 0) return false;
         return latched || (seenNear && distToCamp <= CAMP_R);
-    }
-
-    /** AA_ROUND3 5: short of wool, the bed first hunts sheep (at the remembered herd when none is in view), then {@code goal bed}. */
-    public static String bedChain(int wool, int[] herd) {
-        if (wool >= BedOptions.WOOL) return "goal bed";
-        return BedOptions.huntChain(wool, herd);
     }
 
     /** The shelter need's SUCCESS is remembered on the blackboard (the adapter persists it). */

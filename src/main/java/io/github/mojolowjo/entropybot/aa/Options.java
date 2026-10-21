@@ -42,41 +42,43 @@ public final class Options {
     /**
      * @param id           what {@code aa why}, {@code aa use} and the decision log call it ("pillar", "walk_known 1 2 3")
      * @param way          the kind of way ("pillar", "planner"...)
-     * @param command      the chain to run
+     * @param command      the label: Step.label of {@code steps} (logs, {@code aa why}, the owner's ask); never parsed.
+     *                     Only the sentinels {@link #NOTHING} and {@link Ways#WAIT_PLAN} have no steps (they never run).
      * @param cost         walk-blocks, already weighted by the failures
      * @param memoryKey    what a failure of it is remembered under
-     * @param needsPlanner it is the planner's chain (or a rewrite of it)
-     * @param steps        rm-execution: the typed steps the option runs ({@code aa/moves/Steps}); then {@code command}
-     *                     is only their label (Step.label, never parsed). Empty: a set not on typed steps yet.
+     * @param needsPlanner it is the planner's routine (or built on it)
+     * @param steps        the typed steps the option runs ({@code aa/moves/Steps})
      */
     public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret,
                          io.github.mojolowjo.entropybot.aa.brain.Site site, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
         public Option {
             if (ret == null) ret = Replan.Ret.NONE;
             steps = steps == null ? List.of() : List.copyOf(steps);
+            if (steps.isEmpty() && !NOTHING.equals(command) && !Ways.WAIT_PLAN.equals(command))
+                throw new IllegalArgumentException("option " + id + " has no typed steps");
         }
 
-        public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret,
-                      io.github.mojolowjo.entropybot.aa.brain.Site site) {
-            this(id, way, command, cost, why, memoryKey, needsPlanner, ret, site, List.of());
+        /** rm-execution2: an option on typed steps (its command is their label). */
+        public Option(String id, String way, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, String why, String memoryKey, boolean needsPlanner,
+                      Replan.Ret ret, io.github.mojolowjo.entropybot.aa.brain.Site site) {
+            this(id, way, io.github.mojolowjo.entropybot.aa.moves.Step.label(steps), cost, why, memoryKey, needsPlanner, ret, site, steps);
         }
 
-        /** AA_ROUND3 2: no site known (the sequencer leaves it out). */
-        public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret) {
-            this(id, way, command, cost, why, memoryKey, needsPlanner, ret, null);
+        public Option(String id, String way, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, String why, String memoryKey, boolean needsPlanner) {
+            this(id, way, steps, cost, why, memoryKey, needsPlanner, Replan.Ret.NONE, null);
+        }
+
+        /** A sentinel row that never runs ({@link #NOTHING}: the need passes; {@link Ways#WAIT_PLAN}: the planner thinks). */
+        public static Option sentinel(String id, String way, String command, double cost, String why, String memoryKey) {
+            return new Option(id, way, command, cost, why, memoryKey, false, Replan.Ret.NONE, null, List.of());
         }
 
         public Option withSite(io.github.mojolowjo.entropybot.aa.brain.Site s) {
             return new Option(id, way, command, cost, why, memoryKey, needsPlanner, ret, s, steps);
         }
 
-        /** rm-execution: runs on typed steps. */
+        /** It runs (not a sentinel). */
         public boolean typed() { return !steps.isEmpty(); }
-
-        /** An option with no way back to weigh (aa-replan: the return leg is {@link Replan.Ret#NONE}). */
-        public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner) {
-            this(id, way, command, cost, why, memoryKey, needsPlanner, Replan.Ret.NONE);
-        }
 
         /** aa-replan: the round trip, go + do + return. */
         public double total() { return cost + ret.cost(); }
@@ -109,17 +111,22 @@ public final class Options {
         }
     }
 
-    /** A scored row: cost x (1 + failures), the failures in the reason. */
-    public static Option scored(String id, String way, String command, double cost, String why, String key, boolean planner, OptionMemory m) {
-        int fails = m.fails(key);
-        return new Option(id, way, command, cost * (1 + fails), fails > 0 ? why + ", failed " + fails + "x" : why, key, planner);
+    /** rm-execution: a scored row on typed steps: cost x (1 + failures), the failures in the reason. */
+    public static Option typed(String id, String way, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, String why, String key, OptionMemory m) {
+        return typed(id, way, steps, cost, why, key, false, m);
     }
 
-    /** rm-execution: a scored row on typed steps (its command is only the steps' label). */
-    public static Option typed(String id, String way, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, String why, String key, OptionMemory m) {
+    public static Option typed(String id, String way, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, String why, String key, boolean planner, OptionMemory m) {
         int fails = m.fails(key);
-        return new Option(id, way, io.github.mojolowjo.entropybot.aa.moves.Step.label(steps), cost * (1 + fails), fails > 0 ? why + ", failed " + fails + "x" : why,
-                key, false, Replan.Ret.NONE, null, steps);
+        return new Option(id, way, steps, cost * (1 + fails), fails > 0 ? why + ", failed " + fails + "x" : why, key, planner, Replan.Ret.NONE, null);
+    }
+
+    /** rm-execution2: {@code first} then {@code rest} (a prefix such as the climb out, then the way). */
+    @SafeVarargs
+    public static List<io.github.mojolowjo.entropybot.aa.moves.Step> seq(List<io.github.mojolowjo.entropybot.aa.moves.Step> first, io.github.mojolowjo.entropybot.aa.moves.Step... rest) {
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> out = new ArrayList<>(first);
+        out.addAll(List.of(rest));
+        return out;
     }
 
     // ---- the memory of what failed here ----
@@ -181,11 +188,12 @@ public final class Options {
     /** One rung's options: facts and the planner's chain in, a ranked choice out. */
     public interface OptionSet<F> {
         /**
-         * @param planned     the planner's chain as plain steps (null: the planner has none, {@code plannerWhy} says why)
+         * @param planned     the planner's routine as typed steps (typed at the planner's side; null: the planner has none,
+         *                    {@code plannerWhy} says why)
          * @param plannedCost the planner's own cost (its step-cost sum)
          * @param afterFail   the failed end that made the rung pick again (a switch), null on a fresh pick
          */
-        Choice choose(F facts, OptionMemory m, long now, String planned, double plannedCost, String plannerWhy, String afterFail);
+        Choice choose(F facts, OptionMemory m, long now, List<io.github.mojolowjo.entropybot.aa.moves.Step> planned, double plannedCost, String plannerWhy, String afterFail);
 
         /** May the rung answer this failed end with another option (never the owner's stop, a fight, a death). */
         boolean switchable(String end);
@@ -207,30 +215,11 @@ public final class Options {
 
         private static final Pattern STEP = Pattern.compile("^stopped at step \\d+ \\(([^)]*)\\)");
 
-        public static List<String> split(String chain) {
-            List<String> out = new ArrayList<>();
-            for (String s : (chain == null ? "" : chain).split("(?i)\\s+then\\s+")) if (!s.isBlank()) out.add(s.trim());
-            return out;
-        }
-
-        /** The step the chain stopped at ("stopped at step 2 (mine iron 3 dig): ..."), or null. */
+        /** The step line a failed run names ("stopped at step 2 (mine iron 3 dig): ..."), or null: the failure's stage, read for its class. */
         public static String failedStep(String end) {
             if (end == null) return null;
             Matcher m = STEP.matcher(end);
             return m.find() ? m.group(1).trim() : null;
-        }
-
-        /** The steps with every step matching {@code step} replaced by {@code with} (null: left out); unchanged otherwise. */
-        public static String rewrite(List<String> steps, Pattern step, java.util.function.Function<String, String> with) {
-            List<String> out = new ArrayList<>();
-            for (String s : steps) {
-                String t = s.trim();
-                if (step.matcher(t.toLowerCase(Locale.ROOT)).matches()) {
-                    String r = with.apply(t);
-                    if (r != null) out.add(r);
-                } else out.add(t);
-            }
-            return String.join(" then ", out);
         }
     }
 
@@ -287,17 +276,17 @@ public final class Options {
 
         public Picker(String rung, String factsKey, Class<F> type, OptionSet<F> set) { this(rung, factsKey, type, set, null); }
 
-        private java.util.function.BiFunction<Blackboard, String, String> noFacts = (b, planned) -> planned;
+        private java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> noFacts = (b, planned) -> planned == null ? null : new Option("planner", "planner", planned, 0, "no facts: the planner's routine as it is", "planner", true);
 
-        /** What runs without facts (default: the planner's chain as it is); the TOOLS rung keeps its old bootstrap-at-tier-0. */
-        public Picker<F> withoutFacts(java.util.function.BiFunction<Blackboard, String, String> f) {
+        /** What runs without facts (default: the planner's routine as it is; null: nothing); the TOOLS rung keeps its old bootstrap-at-tier-0. */
+        public Picker<F> withoutFacts(java.util.function.BiFunction<Blackboard, List<io.github.mojolowjo.entropybot.aa.moves.Step>, Option> f) {
             noFacts = f;
             return this;
         }
 
-        @Override public String pick(Blackboard bb, String planned) { return pick(bb, planned, 0, null); }
+        @Override public String pick(Blackboard bb, List<io.github.mojolowjo.entropybot.aa.moves.Step> planned) { return pick(bb, planned, 0, null); }
 
-        @Override public String pick(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+        @Override public String pick(Blackboard bb, List<io.github.mojolowjo.entropybot.aa.moves.Step> planned, double plannedCost, String plannerWhy) {
             long t0 = System.nanoTime();
             try {
                 return pick0(bb, planned, plannedCost, plannerWhy);
@@ -306,7 +295,8 @@ public final class Options {
             }
         }
 
-        private String lastPlanned, lastPlannerWhy;
+        private List<io.github.mojolowjo.entropybot.aa.moves.Step> lastPlanned;
+        private String lastPlannerWhy;
         private double lastPlannedCost;
 
         /**
@@ -359,7 +349,7 @@ public final class Options {
             lastCostS = o == null ? Double.NaN : o.seconds();
         }
 
-        private String pick0(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+        private String pick0(Blackboard bb, List<io.github.mojolowjo.entropybot.aa.moves.Step> planned, double plannedCost, String plannerWhy) {
             lastPlanned = planned;
             lastPlannedCost = plannedCost;
             lastPlannerWhy = plannerWhy;
@@ -373,7 +363,8 @@ public final class Options {
             if (!(sup instanceof Supplier<?> s)) {
                 why = "no " + rung.toLowerCase(Locale.ROOT) + " facts from the adapter: the planner's chain as it is";
                 last = null;
-                return noFacts.apply(bb, planned);
+                ran = noFacts.apply(bb, planned);
+                return ran == null ? null : ran.command();
             }
             Object fo;
             try {
@@ -389,7 +380,8 @@ public final class Options {
             if (!type.isInstance(fo)) {
                 why = rung.toLowerCase(Locale.ROOT) + " facts not readable now: the planner's chain as it is";
                 last = null;
-                return noFacts.apply(bb, planned);
+                ran = noFacts.apply(bb, planned);
+                return ran == null ? null : ran.command();
             }
             memory.sweep(bb.in);
             Choice c = set.choose(type.cast(fo), memory, now, planned, plannedCost, plannerWhy, after);
@@ -474,6 +466,8 @@ public final class Options {
         }
 
         @Override public String chosenId() { return ran == null ? null : ran.id(); }
+
+        @Override public Option ranOption() { return ran; }
 
         @Override public String why() { return why; }
 

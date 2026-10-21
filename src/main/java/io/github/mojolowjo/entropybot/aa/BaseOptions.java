@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Site;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,13 +42,14 @@ public final class BaseOptions {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         double climb = Price.climb(f.under(), f.depth());
-        String pre = f.under() ? AaLadder.CLIMB + " then " : "", climbWhy = f.under() ? ", climb " + f.depth() + " up " + Price.r(climb) : "";
+        List<Step> pre = AaLadder.climbFirst(f.under());
+        String climbWhy = f.under() ? ", climb " + f.depth() + " up " + Price.r(climb) : "";
         // 1. the house in the marked area
         if (f.area() == null) dropped.add("house: no area marked");
         else {
             double s = Price.tune("base.houseS"), night = nightCost(f, s);
-            Options.Option o = Options.scored("house " + f.area(), "house", pre + "house " + f.area(), climb + Price.s(s) + night,
-                    "build " + Price.r(s) + " s" + (f.night() ? ", open night " + Price.r(night) : "") + climbWhy, "house", false, m);
+            Options.Option o = Options.typed("house " + f.area(), "house", Options.seq(pre, new Step.House(f.area())), climb + Price.s(s) + night,
+                    "build " + Price.r(s) + " s" + (f.night() ? ", open night " + Price.r(night) : "") + climbWhy, "house", m);
             Price.add(rows, dropped, m, now, f.areaAt() == null ? o : o.withSite(Site.of(f.areaAt())));
         }
         // 2. the box here
@@ -55,8 +57,8 @@ public final class BaseOptions {
         if (f.blocks() < need) dropped.add("shelter here: " + f.blocks() + " blocks in the bag, " + need + " wanted");
         else {
             double s = Price.tune("danger.boxS"), night = nightCost(f, s);
-            Price.add(rows, dropped, m, now, Options.scored("shelter here", "shelter", pre + "goal shelter", climb + Price.s(s) + night,
-                    f.blocks() + " blocks, build " + Price.r(s) + " s" + (f.night() ? ", open night " + Price.r(night) : "") + climbWhy, "shelter here", false, m));
+            Price.add(rows, dropped, m, now, Options.typed("shelter here", "shelter", Options.seq(pre, new Step.Shelter()), climb + Price.s(s) + night,
+                    f.blocks() + " blocks, build " + Price.r(s) + " s" + (f.night() ? ", open night " + Price.r(night) : "") + climbWhy, "shelter here", m));
         }
         // 3. the burrow (night only; no climb: it digs down where it is)
         if (!f.night()) dropped.add("burrow: a night way only");
@@ -64,8 +66,8 @@ public final class BaseOptions {
         else if (f.blocks() < 1) dropped.add("burrow: no block in the bag to seal with");
         else {
             double s = Price.tune("danger.burrowS"), night = nightCost(f, s);
-            Price.add(rows, dropped, m, now, Options.scored("burrow", "burrow", "burrow then wait 120", Price.s(s) + night,
-                    f.blocks() + " blocks, dig 2 and seal " + Price.r(s) + " s, open night " + Price.r(night), "burrow", false, m));
+            Price.add(rows, dropped, m, now, Options.typed("burrow", "burrow", List.of(new Step.Burrow(), new Step.Wait((int) Price.tune("base.burrowWaitS"))), Price.s(s) + night,
+                    f.blocks() + " blocks, dig 2 and seal " + Price.r(s) + " s, open night " + Price.r(night), "burrow", m));
         }
         return Options.Choice.of(rows, dropped, "no way to a base");
     }
@@ -73,7 +75,7 @@ public final class BaseOptions {
     public static boolean switchable(String end) { return end != null && !Options.ownerOrDanger(end); }
 
     public static final class Set implements Options.OptionSet<BaseFacts> {
-        @Override public Options.Choice choose(BaseFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(BaseFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
             return BaseOptions.choose(f, m, now);
         }
 

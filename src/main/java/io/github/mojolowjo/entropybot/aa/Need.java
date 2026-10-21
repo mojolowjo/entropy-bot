@@ -9,6 +9,7 @@ import io.github.mojolowjo.entropybot.aa.core.Node;
 import io.github.mojolowjo.entropybot.aa.core.RunJob;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -80,7 +81,8 @@ public final class Need extends Node {
 
     public final TaskKind kind;
     private final Predicate<Blackboard> unmet;
-    private final Function<Blackboard, String> noWay, goal;
+    private final Function<Blackboard, String> noWay;
+    private final Function<Blackboard, List<Step>> goal;
     private final Picker picker;
     private boolean surface;
     private double handS = 60;
@@ -97,9 +99,10 @@ public final class Need extends Node {
     /**
      * @param unmet the need is on (its band lives in here)
      * @param noWay why no row of it can run now (null: rows may), e.g. "no base chests scanned"
-     * @param goal  the planner goal ("goal torch 16") or a plain command ("deposit") its rows are built on
+     * @param goal  rm-execution2: the typed steps its rows are built on: one {@link Step.Plan} (a planner goal) or the
+     *              need's plain way ({@link Step.Deposit}, a craft)
      */
-    public Need(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> noWay, Function<Blackboard, String> goal, Picker picker) {
+    public Need(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> noWay, Function<Blackboard, List<Step>> goal, Picker picker) {
         super(id, "need " + kind);
         this.kind = kind;
         this.unmet = unmet;
@@ -109,7 +112,7 @@ public final class Need extends Node {
         this.job = new RunJob(id + ".job", kind, bb -> resolved == null ? null : spec(kind, resolved));
     }
 
-    public Need(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> noWay, Function<Blackboard, String> goal) {
+    public Need(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> noWay, Function<Blackboard, List<Step>> goal) {
         this(id, kind, unmet, noWay, goal, null);
     }
 
@@ -176,13 +179,14 @@ public final class Need extends Node {
         if (!forced && !unmet.test(bb)) return fail(kind + " met");
         String no = noWay.apply(bb);
         if (no != null) return fail(kind + ": no way can run (" + no + ")");
-        String g = goal.apply(bb);
-        if (g == null) return fail(kind + " has nothing to run");
+        List<Step> g = goal.apply(bb);
+        if (g == null || g.isEmpty()) return fail(kind + " has nothing to run");
         // an ask already waits for this need: the frozen rows decide, no new pick per tick
         if (man.ask && man.pending != null && man.pending.rung().equals(id)) {
             String go = man.gate(id, man.pending.rows(), now, bb.port::log);
             if (go == null) return Status.RUNNING;
             if (picker != null) picker.chose(go);
+            runOpt = null;
             return start(bb, go, false, chosenKey(), "[the owner's ask]", now);
         }
         Pick p = pick(bb, g, now);
@@ -194,7 +198,7 @@ public final class Need extends Node {
             return fail(why);
         }
         if (Ways.WAIT_PLAN.equals(p.command)) {
-            bb.fact(PLANNING_FACT, kind + ": " + g + " (" + p.why + ")");
+            bb.fact(PLANNING_FACT, kind + ": " + Step.label(g) + " (" + p.why + ")");
             return Status.RUNNING;
         }
         clearPlanning(bb);
@@ -208,7 +212,10 @@ public final class Need extends Node {
             bb.fact(PLANNING_FACT, kind + ": asking the owner (aa pick)");
             return Status.RUNNING;
         }
-        if (!go.equals(p.command) && picker != null) picker.chose(go);
+        if (!go.equals(p.command) && picker != null) {
+            picker.chose(go);
+            runOpt = null;
+        }
         return start(bb, go, p.pre && go.equals(p.command), go.equals(p.command) ? p.key : chosenKey(), "[" + p.why + "]", now);
     }
 
@@ -217,10 +224,14 @@ public final class Need extends Node {
         return picker instanceof Options.Picker<?> op && op.ran() != null ? op.ran().memoryKey() : null;
     }
 
-    /** The pick: the command, whether it is a prerequisite, its memory key and the {@code aa why} text. */
+    /** The pick: the command (the row's label), whether it is a prerequisite, its memory key and the {@code aa why} text. */
     record Pick(String command, boolean pre, String key, String why) {}
 
-    private Pick pick(Blackboard bb, String g, long now) {
+    /** rm-execution2: the row a climb or the need's own rows chose (its typed steps run); null: the picker's row. */
+    private Options.Option runOpt;
+
+    private Pick pick(Blackboard bb, List<Step> g, long now) {
+        runOpt = null;
         bb.fact(CURRENT, id);
         Ways.Plan pl = Ways.plan(bb, plan, failures, id, mem, g, now);
         Ways.Pre climb = Ways.climb(bb, mem, now);       // used by a surface need, and by a wood row (trees grow up there)
@@ -232,13 +243,14 @@ public final class Need extends Node {
             Options.Option b = c.best();
             if (b != null && Ways.WAIT_PLAN.equals(b.command())) return note(new Pick(b.command(), false, null, pl.why()), lastCostS);
             why = c.why();
+            runOpt = b;
             cmd = b == null ? null : b.command();
             key = b == null ? null : b.memoryKey();
             pre = b != null && Ways.PREREQ.equals(b.way());
             rowS = b == null ? Double.NaN : b.seconds();
         } else {
             if (picker instanceof Options.Picker<?> op) op.extra = ch -> Ways.withPlan(ch, pl, plan, mem, now);
-            cmd = picker.pick(bb, pl != null && pl.ready() ? pl.chain() : null, pl == null ? 0 : pl.cost(), pl == null ? null : pl.why());
+            cmd = picker.pick(bb, pl != null && pl.ready() ? pl.steps() : null, pl == null ? 0 : pl.cost(), pl == null ? null : pl.why());
             // no facts readable: the picker has no row for a searching planner; the need waits for it (bounded by plannerWaitS)
             if (cmd == null && pl != null && pl.state() == JobPort.PlanState.SEARCHING) cmd = Ways.WAIT_PLAN;
             if (Ways.WAIT_PLAN.equals(cmd)) return note(new Pick(cmd, false, null, pl.why()), lastCostS);
@@ -251,10 +263,11 @@ public final class Need extends Node {
         }
         climbS = 0;
         if (cmd != null && climb != null && (surface || pre) && !Ways.WAIT_PLAN.equals(cmd) && !Options.NOTHING.equals(cmd)) {
-            if (climb.command() == null) return note(new Pick(null, false, null, climb.why() + "; then " + why), Double.NaN);
+            if (climb.option() == null) return note(new Pick(null, false, null, climb.why() + "; then " + why), Double.NaN);
             climbS = climb.seconds();
             why = climb.why() + " (" + Math.round(climbS) + " s) first, then " + why;
-            cmd = climb.command();
+            runOpt = climb.option();
+            cmd = runOpt.command();
             key = climb.key();
             pre = true;
         }
@@ -274,11 +287,14 @@ public final class Need extends Node {
         return p;
     }
 
-    /** rm-execution: the row that runs as a task; a typed option's steps go with it (its command is only their label). */
+    /**
+     * rm-execution: the row that runs as a task, on its typed steps (its command is only their label). A label with no
+     * row behind it runs nothing: the task is refused "no typed steps" (AaRuntime) and the need fails with that reason.
+     */
     private JobPort.TaskSpec spec(TaskKind kind, String cmd) {
-        if (picker instanceof Options.Picker<?> op && op.ran() != null && op.ran().typed() && cmd.equals(op.ran().command()))
-            return JobPort.TaskSpec.typed(kind, cmd, op.ran().steps(), "needs");
-        return JobPort.TaskSpec.of(kind, cmd, "needs");
+        Options.Option o = runOpt != null ? runOpt : picker == null ? null : picker.ranOption();
+        if (o != null && o.typed() && cmd.equals(o.command())) return JobPort.TaskSpec.typed(kind, cmd, o.steps(), "needs");
+        return JobPort.TaskSpec.typed(kind, cmd, List.of(), "needs");
     }
 
     private Status start(Blackboard bb, String cmd, boolean pre, String key, String why, long now) {
@@ -366,15 +382,16 @@ public final class Need extends Node {
         if (!forced && !unmet.test(bb)) return kind + " met";
         String no = noWay.apply(bb);
         if (no != null) return kind + ": no way can run (" + no + ")";
-        String g = goal.apply(bb);
-        if (g == null) return kind + " has nothing to run";
+        List<Step> g = goal.apply(bb);
+        if (g == null || g.isEmpty()) return kind + " has nothing to run";
         if (forced) return null;
         if (picker == null) {
-            if (!g.startsWith("goal ")) return null;
-            String held = failures.held(id, "planner " + g, bb.clock.now());
-            if (held != null) return "planner " + g + " held: " + held;
-            JobPort.Resolved r = bb.port.resolveState(g);
-            if (r.state() == JobPort.PlanState.NONE && r.logsMissing() == 0) return "no plan for " + g + ": " + r.why();
+            String pg = Ways.planGoal(g);
+            if (pg == null) return null;
+            String held = failures.held(id, Ways.planKey(pg), bb.clock.now());
+            if (held != null) return Ways.planKey(pg) + " held: " + held;
+            JobPort.Resolved r = bb.port.resolveState(pg);
+            if (r.state() == JobPort.PlanState.NONE && r.logsMissing() == 0) return "no plan for " + pg + ": " + r.why();
             return null;
         }
         picker.refresh(bb);
@@ -389,7 +406,7 @@ public final class Need extends Node {
                 refreshAt = now + AaDesires.RESCORE_MS;
                 picker.refresh(bb);
                 Ways.Pre c = surface ? Ways.climb(bb, mem, now) : null;
-                climbS = c == null || c.command() == null ? 0 : c.seconds();
+                climbS = c == null || c.option() == null ? 0 : c.seconds();
                 double r = picker.lastCostS();
                 if (!Double.isNaN(r)) lastCostS = r + climbS;
             }

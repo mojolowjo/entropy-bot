@@ -5,6 +5,7 @@ import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.brain.Unit;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.JobPort;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,10 +33,21 @@ public final class Ways {
 
     static double blocks(String tuning) { return Unit.blocks(s(tuning)); }
 
-    /** The planner's answer for a need's goal (null for a goal that is a plain command). */
-    public record Plan(String goal, JobPort.PlanState state, String chain, double cost, String why, long searchingMs, Options.Option wood) {
-        public boolean ready() { return state == JobPort.PlanState.READY && chain != null; }
+    /**
+     * The planner's answer for a need's goal (null for a goal that is a plain way). rm-execution2: {@code steps} = the
+     * routine as typed steps (typed at the planner's side; the sets price it, the planner row runs {@link Step.Plan}).
+     */
+    public record Plan(String goal, JobPort.PlanState state, List<Step> steps, double cost, String why, long searchingMs, Options.Option wood) {
+        public boolean ready() { return state == JobPort.PlanState.READY && steps != null; }
     }
+
+    /** The planner goal of a need's steps (one {@link Step.Plan}), else null: a plain way. */
+    public static String planGoal(List<Step> goal) {
+        return goal != null && goal.size() == 1 && goal.get(0) instanceof Step.Plan p ? p.goal() : null;
+    }
+
+    /** The Failures key a planner goal is held under. */
+    public static String planKey(String goal) { return "planner " + new Step.Plan(goal).text(); }
 
     /** Per need: the planner's search clock and the last plan cost per goal. */
     public static final class State {
@@ -52,29 +64,30 @@ public final class Ways {
     static long gapMs() { return (long) Tuning.get("planner.gapMs"); }
 
     /**
-     * Asks the planner about {@code goal} ("goal ..."; any other text: null, it is a command) and folds the answer into a
-     * {@link Plan}: a searching wait past plannerWaitS is held plannerHoldS in {@code f} under {@code planner <goal>}.
+     * Asks the planner about the need's goal (one {@link Step.Plan}; any other steps: null, a plain way) and folds the
+     * answer into a {@link Plan}: a searching wait past plannerWaitS is held plannerHoldS in {@code f} under
+     * {@link #planKey}; an infeasible routine is held the same.
      */
-    public static Plan plan(Blackboard bb, State st, Failures f, String need, Options.OptionMemory woodMem, String goal, long now) {
-        if (goal == null || !goal.startsWith("goal ")) return null;
-        String key = "planner " + goal;
+    public static Plan plan(Blackboard bb, State st, Failures f, String need, Options.OptionMemory woodMem, List<Step> goalSteps, long now) {
+        String goal = planGoal(goalSteps);
+        if (goal == null) return null;
+        String key = planKey(goal);
         String held = f.held(need, key, now);
         if (held != null) return new Plan(goal, JobPort.PlanState.NONE, null, 0, "held: " + held, 0, null);
         JobPort.Resolved r = bb.port.resolveState(goal);
+        if (r.infeasible()) {
+            // live 2026-10-18: a verdict that disagrees with the saved routine spun every tick; held like a failed plan
+            st.searchSince = -1;
+            f.failedFor(need, key, r.why(), now, bb.in, (long) (s("plannerHoldS") * 1000));
+            bb.port.log(need + ": planner routine for " + goal + " held " + Math.round(s("plannerHoldS")) + " s: " + r.why());
+            return new Plan(goal, JobPort.PlanState.NONE, null, 0, r.why(), 0, null);
+        }
         switch (r.state()) {
             case READY -> {
                 st.searchSince = -1;
-                String inf = r.chain() == null ? null : bb.port.infeasible(r.chain());
-                if (inf != null) {
-                    // live 2026-10-18: a verdict that disagrees with the saved routine spun every tick; held like a failed plan
-                    f.failedFor(need, key, inf, now, bb.in, (long) (s("plannerHoldS") * 1000));
-                    bb.port.log(need + ": planner chain for " + goal + " held " + Math.round(s("plannerHoldS")) + " s: " + inf);
-                    return new Plan(goal, JobPort.PlanState.NONE, null, 0, inf, 0, null);
-                }
-                String exp = bb.port.expand(r.chain());
                 st.lastCost = r.cost();
                 st.costGoal = goal;
-                return new Plan(goal, JobPort.PlanState.READY, exp == null ? r.chain() : exp, r.cost(), null, 0, null);
+                return new Plan(goal, JobPort.PlanState.READY, r.steps(), r.cost(), null, 0, null);
             }
             case SEARCHING -> {
                 if (st.searchSince < 0 || !goal.equals(st.searchGoal) || now - st.lastAsk > gapMs()) {
@@ -153,8 +166,8 @@ public final class Ways {
         switch (p.state()) {
             case SEARCHING -> {
                 double hand = s("plannerHandS"), pen = s("searchPenalty");
-                rows.add(new Options.Option("planner (searching)", "planner", WAIT_PLAN, Unit.blocks(hand + pen),
-                        p.goal() + " " + p.why() + ": hand " + Math.round(hand) + " s + search penalty " + Math.round(pen) + " s", "planner " + p.goal(), true));
+                rows.add(Options.Option.sentinel("planner (searching)", "planner", WAIT_PLAN, Unit.blocks(hand + pen),
+                        p.goal() + " " + p.why() + ": hand " + Math.round(hand) + " s + search penalty " + Math.round(pen) + " s", planKey(p.goal())));
             }
             case NONE -> {
                 Options.Option w = p.wood();
@@ -162,38 +175,40 @@ public final class Ways {
                 String key = w.memoryKey();
                 if (m.blocked(key, now)) { dropped.add("cut + planner: " + m.reason(key)); return; }
                 double a = after(p, st);
-                rows.add(new Options.Option("cut + planner", PREREQ, w.command(), w.total() + a,
-                        w.id() + " " + Math.round(w.total()) + " + planner " + Math.round(a) + " = " + Math.round(w.total() + a) + " (" + w.why() + ")", key, false, null, w.site(), w.steps()));
+                rows.add(new Options.Option("cut + planner", PREREQ, w.steps(), w.total() + a,
+                        w.id() + " " + Math.round(w.total()) + " + planner " + Math.round(a) + " = " + Math.round(w.total() + a) + " (" + w.why() + ")", key, false, null, w.site()));
             }
             default -> { }
         }
     }
 
     /**
-     * The rows of a need with no option set of its own: a plain command at the need's hand price, or the planner's goal
-     * (READY at cost x planUnit, else the planner rows above, NONE dropped with its reason).
+     * The rows of a need with no option set of its own: its plain way at the need's hand price, or the planner's goal
+     * (READY: one {@link Step.Plan} row at cost x planUnit, the routine asked for again when it runs; else the planner
+     * rows above, NONE dropped with its reason).
      */
-    public static Options.Choice goalRows(String goal, Plan p, State st, Options.OptionMemory m, long now, double handS) {
+    public static Options.Choice goalRows(List<Step> goal, Plan p, State st, Options.OptionMemory m, long now, double handS) {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
+        String label = Step.label(goal);
         if (p == null) {
-            String key = "way " + goal;
-            if (m.blocked(key, now)) dropped.add(goal + ": " + m.reason(key));
-            else rows.add(Options.scored(goal, "command", goal, Unit.blocks(handS), "hand " + Math.round(handS) + " s", key, false, m));
+            String key = "way " + label;
+            if (m.blocked(key, now)) dropped.add(label + ": " + m.reason(key));
+            else rows.add(Options.typed(label, "command", goal, Unit.blocks(handS), "hand " + Math.round(handS) + " s", key, m));
         } else if (p.ready()) {
-            String key = "planner " + p.goal();
+            String key = planKey(p.goal());
             double c = p.cost() * Options.planUnit();
             if (m.blocked(key, now)) dropped.add("planner: " + m.reason(key));
-            else rows.add(Options.scored("planner", "planner", p.chain(), c, p.goal() + ": plan cost " + Math.round(p.cost()) + " x planUnit " + Options.planUnit(), key, true, m));
+            else rows.add(Options.typed("planner", "planner", List.of(new Step.Plan(p.goal())), c, p.goal() + ": plan cost " + Math.round(p.cost()) + " x planUnit " + Options.planUnit(), key, true, m));
         } else {
             if (p.state() == JobPort.PlanState.NONE && p.wood() == null) dropped.add("planner: " + p.why());
             addPlanRows(rows, dropped, p, st, m, now);
         }
-        return Options.Choice.of(rows, dropped, "no way to " + goal);
+        return Options.Choice.of(rows, dropped, "no way to " + label);
     }
 
-    /** A priced first step (the climb): command null = the step is needed and no way does it ({@code why} says why). */
-    public record Pre(String command, double cost, String why, String key) {
+    /** A priced first step (the climb): option null = the step is needed and no way does it ({@code why} says why). */
+    public record Pre(Options.Option option, double cost, String why, String key) {
         public double seconds() { return Unit.seconds(cost); }
     }
 
@@ -217,13 +232,14 @@ public final class Ways {
                 Options.Option b = c.best();
                 if (b == null) return new Pre(null, Double.POSITIVE_INFINITY, d + " under ground, no way up (" + c.why() + ")", null);
                 if (Options.NOTHING.equals(b.command())) return null;        // open sky is a short walk: the row's own walk gets there
-                return new Pre(b.command(), b.total(), "climb " + d + " up: " + b.text(), b.memoryKey());
+                return new Pre(b, b.total(), "climb " + d + " up: " + b.text(), b.memoryKey());
             }
         }
         double cost = d * RungOptions.CLIMB_BLOCK + RungOptions.CLIMB_FIX;
         String key = "climb";
         if (m.blocked(key, now)) return new Pre(null, Double.POSITIVE_INFINITY, d + " under ground, the climb is held: " + m.reason(key), null);
-        return new Pre(AaLadder.CLIMB, cost, "climb " + d + " up " + Math.round(cost) + " (no surface facts: " + d + " x " + Math.round(RungOptions.CLIMB_BLOCK) + " + " + Math.round(RungOptions.CLIMB_FIX) + ")", key);
+        String why = "climb " + d + " up " + Math.round(cost) + " (no surface facts: " + d + " x " + Math.round(RungOptions.CLIMB_BLOCK) + " + " + Math.round(RungOptions.CLIMB_FIX) + ")";
+        return new Pre(new Options.Option("climb", "climb", List.of(new Step.Climb()), cost, why, key, false), cost, why, key);
     }
 
     /** "12 s" for a row cost in walk-blocks. */

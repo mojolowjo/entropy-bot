@@ -143,14 +143,153 @@ public sealed interface Step {
         public String text() { return "climb"; }
     }
 
-    /** Read the chest just placed or reached (a storage action). */
-    record Scan() implements Step {
-        public String text() { return "scan"; }
+    /** Read the chest just placed or reached (a storage action); {@code base}: the base's chests. */
+    record Scan(boolean base) implements Step {
+        public Scan() { this(false); }
+
+        public String text() { return base ? "scan base" : "scan"; }
     }
 
-    /** Find {@code n} caves by walking (the explore verb's cave search). */
-    record FindCave(int n) implements Step {
-        public String text() { return "find cave " + n; }
+    /** Walk new land for {@code minutes} until a cave opening comes into view (the find verb's cave search). */
+    record FindCave(int minutes) implements Step {
+        public String text() { return "find cave " + minutes; }
+    }
+
+    /** Walk new land for {@code minutes} (the explore verb: Baritone's explore goal), the want's way. */
+    record Explore(int minutes) implements Step {
+        public String text() { return "explore " + minutes; }
+    }
+
+    // ---- rm-execution2: the kinds the remaining option sets and desires run ----
+
+    /** Put the bag's surplus into the base chests (a storage action). */
+    record Deposit() implements Step {
+        public String text() { return "deposit"; }
+    }
+
+    /** Throw {@code n} of {@code item} away (junk by its item data, Junk.is). */
+    record DropJunk(String item, int n) implements Step {
+        public String text() { return "drop " + item + " " + n; }
+    }
+
+    /** Place a chest from the bag at x y z (Baritone's builder places it). */
+    record PlaceChest(int x, int y, int z) implements Step {
+        public String text() { return "place chest " + x + " " + y + " " + z; }
+    }
+
+    /** Mark x y z as the base (a fact for the home, no block). */
+    record MarkBase(int x, int y, int z) implements Step {
+        public String text() { return "base mark " + x + " " + y + " " + z; }
+    }
+
+    /** Lie down in the known bed (the sleep job). */
+    record Sleep() implements Step {
+        public String text() { return "sleep"; }
+    }
+
+    /** Dig down and seal over me (Moves.burrow, the fork's ground check). */
+    record Burrow() implements Step {
+        public String text() { return "burrow"; }
+    }
+
+    /** Dig into the wall beside me and seal it (the dig-in way; Moves.burrow takes the niche when the floor is out). */
+    record DigIn() implements Step {
+        public String text() { return "dig in"; }
+    }
+
+    /** Run from the foes (Moves.flee: Baritone's goal away from them). */
+    record Flee() implements Step {
+        public String text() { return "flee"; }
+    }
+
+    /** Fight the nearest foe (the strike input over Baritone's walk). */
+    record Attack() implements Step {
+        public String text() { return "attack nearest"; }
+    }
+
+    /** Pillar up out of reach (Moves.pillar). */
+    record Pillar() implements Step {
+        public String text() { return "pillar"; }
+    }
+
+    /** Walk to the base (one Baritone goal). */
+    record GoBase() implements Step {
+        public String text() { return "go base"; }
+    }
+
+    /** Build the house in the marked area (the builder). */
+    record House(String area) implements Step {
+        public String text() { return "house " + area; }
+    }
+
+    /** Walk to the owner. */
+    record Come() implements Step {
+        public String text() { return "come"; }
+    }
+
+    /** Give the owner {@code n} of {@code item}. */
+    record Give(String item, int n) implements Step {
+        public String text() { return "give " + item + " " + n; }
+    }
+
+    /** Torches on a grid within {@code radius} of where I stand. */
+    record Light(int radius) implements Step {
+        public String text() { return "light here " + radius; }
+    }
+
+    /** The bootstrap (its tools part only when {@code toolsOnly}). */
+    record Bootstrap(boolean toolsOnly) implements Step {
+        public String text() { return toolsOnly ? "bootstrap tools" : "bootstrap"; }
+    }
+
+    /** Fish for {@code minutes} at the nearest water (the fishing job: cast, wait, reel). */
+    record Fish(int minutes) implements Step {
+        public String text() { return "fish " + minutes; }
+    }
+
+    /** Harvest {@code n} kelp (the kelp job). */
+    record Kelp(int n) implements Step {
+        public String text() { return "kelp " + n; }
+    }
+
+    /**
+     * The planner's routine for {@code goal} ("torch 16", "iron tools"): when the step runs, {@link Steps} asks its hands
+     * for the planner's routine (typed once at the planner's side) and runs those steps in its place. AA never builds the
+     * routine's text.
+     */
+    record Plan(String goal) implements Step {
+        public String text() { return "plan " + goal; }
+    }
+
+    /** A step made of steps: {@link Steps} runs its parts in its place (one machine, one failure path). */
+    sealed interface Compound extends Step permits StripLeg, ClearChunk {
+        List<Step> parts();
+    }
+
+    /**
+     * A staircase down from x y z heading {@code dir} ({dx, dz}) for {@code levels} levels: per level the 3-high cell is dug
+     * (Baritone's builder, ores kept) and walked into; {@code mark}: a strip mine is marked at the bottom.
+     */
+    record StripLeg(int x, int y, int z, String dir, int dx, int dz, int levels, boolean mark) implements Compound {
+        public String text() { return "stairs down " + dir + " " + levels + " from " + x + " " + y + " " + z + (mark ? " and mark a mine" : ""); }
+
+        public List<Step> parts() {
+            List<Step> out = new ArrayList<>();
+            for (int i = 1; i <= levels; i++) {
+                int cx = x + dx * i, cz = z + dz * i;
+                out.add(new Dig(new int[]{cx, y - i, cz}, new int[]{cx, y - i + 2, cz}, true, true));
+                out.add(new Walk(cx, y - i, cz, 0));
+            }
+            if (mark) out.add(new MarkMine(null, dir));
+            return out;
+        }
+    }
+
+    /** Dig the box x0..x0+15, y..y+slab-1, z0..z0+15 keeping the ores (the owner's clear-chunk way). */
+    record ClearChunk(int x0, int y, int z0, int slab) implements Compound {
+        public String text() { return "clear chunk " + x0 + " " + y + " " + z0 + " slab " + slab; }
+
+        public List<Step> parts() { return List.of(new Dig(new int[]{x0, y, z0}, new int[]{x0 + 15, y + slab - 1, z0 + 15}, true, false)); }
     }
 
     /**

@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Site;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.sense.FailMemory;
 
 import java.util.ArrayList;
@@ -13,8 +14,8 @@ import java.util.regex.Pattern;
  * bed rung): the ways to a bed as a priced option set, so a failed wool hunt is charged to its option (held
  * {@code Options.RETRY_MS} x failures, the next option runs at once) instead of the rung retrying the same chain:
  * <ul>
- * <li><b>craft</b>: 3 wool in the bag: {@code goal bed} (the planner crafts it).</li>
- * <li><b>hunt here</b>: sheep in view: {@code hunt k sheep for white_wool 3 then goal bed} (the kills needed, 1 wool each).</li>
+ * <li><b>craft</b>: 3 wool in the bag: the planner's bed ({@link Step.Plan} "bed").</li>
+ * <li><b>hunt here</b>: sheep in view: a {@link Step.HuntAt} of k sheep for 3 white wool, then the planner's bed (the kills needed, 1 wool each).</li>
  * <li><b>hunt at</b>: a herd of sheep remembered and not in view: the same hunt {@code at x z}, priced with the walk
  *     there and back and the sighting's confidence.</li>
  * </ul>
@@ -40,13 +41,22 @@ public final class BedOptions {
         public BedFacts(int wool, int sheepInView, int[] herd, int[] me) { this(wool, sheepInView, herd, me, false, false, false, 0); }
     }
 
-    /** AA_ROUND4A O: the climb out, prepended to a surface way when under ground ("" on the surface). */
-    static String climbFirst(BedFacts f) { return f.under() ? AaLadder.CLIMB + " then " : ""; }
+    /** The planner's bed. */
+    public static Step.Plan bedPlan() { return new Step.Plan("bed"); }
 
-    /** The hunt chain the ladder used before (kept: the planner-free fallback without facts). */
-    public static String huntChain(int wool, int[] herd) {
+    /** The wool hunt then the planner's bed, typed ({@code herd}: {x, z, ...} where they were seen, null in view). */
+    public static List<Step> huntSteps(int wool, int[] herd) {
         int k = WOOL - Math.max(0, wool);
-        return "hunt " + k + " sheep for white_wool " + WOOL + (herd == null ? "" : " at " + herd[0] + " " + herd[1]) + " then goal bed";
+        return List.of(new Step.HuntAt("minecraft:sheep", k, herd == null ? null : new int[]{herd[0], herd[1]}, "minecraft:white_wool", WOOL), bedPlan());
+    }
+
+    /** The bed's steps without facts: the planner's bed with the wool, else the hunt first. */
+    public static List<Step> steps(int wool, int[] herd) { return wool >= WOOL ? List.of(bedPlan()) : huntSteps(wool, herd); }
+
+    private static List<Step> after(BedFacts f, List<Step> way) {
+        List<Step> out = new ArrayList<>(AaLadder.climbFirst(f.under()));
+        out.addAll(way);
+        return out;
     }
 
     public static Options.Choice choose(BedFacts f, Options.OptionMemory m, long now) {
@@ -59,23 +69,23 @@ public final class BedOptions {
         double climb = Price.climb(f.under(), f.depth());
         String climbWhy = f.under() ? ", climb " + f.depth() + " up " + Price.r(climb) : "";
         // review 4A (3): under ground the known bed is reached by the climb first, priced like the hunt rows
-        if (f.bedKnown() && f.night()) Price.add(rows, dropped, m, now, Options.scored("sleep in known bed", "sleep", climbFirst(f) + "sleep", climb + Price.s(bedS),
-                "a bed known, walk + lie down " + Price.r(bedS) + " s" + climbWhy, "sleep known bed", false, m));
+        if (f.bedKnown() && f.night()) Price.add(rows, dropped, m, now, Options.typed("sleep in known bed", "sleep", after(f, List.of(new Step.Sleep())), climb + Price.s(bedS),
+                "a bed known, walk + lie down " + Price.r(bedS) + " s" + climbWhy, "sleep known bed", m));
         if (f.wool() >= WOOL) {
-            RungOptions.add(rows, dropped, m, now, Options.scored("craft bed", "craft", "goal bed", CRAFT, f.wool() + " wool in the bag", "craft bed", true, m));
+            RungOptions.add(rows, dropped, m, now, Options.typed("craft bed", "craft", List.of(bedPlan()), CRAFT, f.wool() + " wool in the bag", "craft bed", true, m));
             return Options.Choice.of(rows, dropped, "no way to a bed");
         }
         int k = WOOL - Math.max(0, f.wool());
         if (f.sheepInView() > 0) {
-            RungOptions.add(rows, dropped, m, now, Options.scored("hunt sheep here", "hunt", climbFirst(f) + huntChain(f.wool(), null), climb + KILL * k + CRAFT,
-                    f.sheepInView() + " sheep in view, " + k + " to kill" + climbWhy, "hunt sheep here", false, m));
+            RungOptions.add(rows, dropped, m, now, Options.typed("hunt sheep here", "hunt", after(f, huntSteps(f.wool(), null)), climb + KILL * k + CRAFT,
+                    f.sheepInView() + " sheep in view, " + k + " to kill" + climbWhy, "hunt sheep here", m));
         } else dropped.add("hunt sheep here: none in view");
         if (f.herd() != null && f.herd().length >= 4) {
             int[] h = f.herd();
             double conf = Math.max(1, h[3]) / 100.0;
             double cost = climb + (2 * h[2] + KILL * k + CRAFT + HERD_FIX) / conf;
-            Options.Option o = Options.scored("hunt sheep at " + h[0] + " " + h[1], "hunt", climbFirst(f) + huntChain(f.wool(), h), cost,
-                    "a herd I saw " + h[2] + " away (confidence " + h[3] + "%), " + k + " to kill, there and back" + climbWhy, "hunt sheep at " + h[0] + " " + h[1], false, m);
+            Options.Option o = Options.typed("hunt sheep at " + h[0] + " " + h[1], "hunt", after(f, huntSteps(f.wool(), h)), cost,
+                    "a herd I saw " + h[2] + " away (confidence " + h[3] + "%), " + k + " to kill, there and back" + climbWhy, "hunt sheep at " + h[0] + " " + h[1], m);
             if (f.me() != null) o = o.withSite(Site.at(h[0], f.me()[1], h[1]));
             RungOptions.add(rows, dropped, m, now, o);
         } else dropped.add("hunt at a herd: none remembered");
@@ -92,7 +102,7 @@ public final class BedOptions {
 
     /** The rung's option set. */
     public static final class Set implements Options.OptionSet<BedFacts> {
-        @Override public Options.Choice choose(BedFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(BedFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
             return BedOptions.choose(f, m, now);
         }
 

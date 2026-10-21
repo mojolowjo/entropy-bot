@@ -22,9 +22,9 @@ public final class RunJob extends Node {
         this.spec = spec;
     }
 
-    /** A fixed chain. */
-    public static RunJob of(String id, TaskKind kind, String chain, String source) {
-        return new RunJob(id, kind, bb -> JobPort.TaskSpec.of(kind, chain, source));
+    /** rm-execution2: fixed typed steps. */
+    public static RunJob of(String id, TaskKind kind, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String source) {
+        return new RunJob(id, kind, bb -> JobPort.TaskSpec.steps(kind, steps, source));
     }
 
     @Override protected Status run(Blackboard bb) {

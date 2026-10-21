@@ -23,7 +23,20 @@ public final class Steps {
 
         /** Ends the running step (keys, goals, its job). */
         void cancel(String why);
+
+        /**
+         * rm-execution2: the planner's routine for a {@link Step.Plan}, typed at the planner's side; {@link Routine#why}
+         * says why there is none (no plan, still searching, a routine line with no typed step).
+         */
+        default Routine routine(Step.Plan p) { return new Routine(null, "no planner in these hands"); }
     }
+
+    /** The planner's routine as typed steps, or null with why. */
+    public record Routine(List<Step> steps, String why) {}
+
+    /** At most this many expansions (a plan in a plan) per run: a routine that names itself ends FAILED, never loops. */
+    static final int MAX_EXPANSIONS = 16;
+    private int expansions;
 
     /** Seconds one step may run before the run fails "timed out" (Tuning steps.stepMaxS). */
     static long stepTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.stepMaxS")); }
@@ -48,6 +61,7 @@ public final class Steps {
         idx = -1;
         lastStatus = null;
         paused = false;
+        expansions = 0;
         if (this.steps.isEmpty()) {
             phase = Phase.FAILED;
             why = "stopped at step 0 (nothing): no steps to run";
@@ -66,6 +80,16 @@ public final class Steps {
             return;
         }
         stepStart = now;
+        String bad = expand();
+        if (bad != null) {
+            fail(bad);
+            return;
+        }
+        if (idx >= steps.size()) {               // an empty routine or compound: nothing left to run
+            phase = Phase.DONE;
+            why = "done" + (lastStatus == null || lastStatus.isEmpty() ? "" : " - " + lastStatus);
+            return;
+        }
         Step s = steps.get(idx);
         String r;
         try {
@@ -75,6 +99,35 @@ public final class Steps {
         }
         if (r != null) fail(r);
         else why = stage() + " started";
+    }
+
+    /**
+     * rm-execution2: a {@link Step.Compound} or a {@link Step.Plan} at the current index is replaced by its parts / the
+     * planner's routine (same machine, same failure path). Null when the index holds a plain step (or ran past the end),
+     * else why the expansion failed.
+     */
+    private String expand() {
+        while (idx < steps.size() && (steps.get(idx) instanceof Step.Compound || steps.get(idx) instanceof Step.Plan)) {
+            if (++expansions > MAX_EXPANSIONS) return "more than " + MAX_EXPANSIONS + " plans and compound steps in one run";
+            Step s = steps.get(idx);
+            List<Step> parts;
+            if (s instanceof Step.Compound c) parts = c.parts();
+            else {
+                Routine r;
+                try {
+                    r = hands.routine((Step.Plan) s);
+                } catch (RuntimeException e) {
+                    r = new Routine(null, "the planner: " + e);
+                }
+                if (r == null || r.steps() == null) return "no routine for " + ((Step.Plan) s).goal() + ": " + (r == null || r.why() == null ? "the planner gave no answer" : r.why());
+                parts = r.steps();
+            }
+            java.util.List<Step> all = new java.util.ArrayList<>(steps.subList(0, idx));
+            all.addAll(parts);
+            all.addAll(steps.subList(idx + 1, steps.size()));
+            steps = List.copyOf(all);
+        }
+        return null;
     }
 
     private boolean paused;
