@@ -203,6 +203,7 @@ final class RestoreRun {
             }
             case "check" -> {
                 if (now - stageTick < CHECK_TICKS) return false;
+                if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < 20 * 10) return false;     // backbone step 3: Baritone still places
                 if (!level.getBlockState(pos).canBeReplaced()) {
                     done(e);
                     return false;
@@ -241,10 +242,7 @@ final class RestoreRun {
         }
         BlockState st = level.getBlockState(pos);
         if (st.isAir() || st.canBeReplaced()) {
-            if (breakStarted) {
-                placed++;                                                    // my click took it down
-                try { mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
-            }
+            if (breakStarted) placed++;                                      // my click took it down
             RestoreLive.INSTANCE.drop(e);
             breakStarted = false;
             leases.releaseAll();
@@ -311,15 +309,10 @@ final class RestoreRun {
                     skip(e, "couldn't break: it didn't break in 10 s");
                     return false;
                 }
-                net.minecraft.world.phys.Vec3 centre = net.minecraft.world.phys.Vec3.atCenterOf(pos);
-                try { p.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, centre); } catch (RuntimeException ignored) {}
-                net.minecraft.world.phys.Vec3 eye = p.getEyePosition();
-                net.minecraft.core.Direction face = net.minecraft.core.Direction.getNearest((float) (eye.x - centre.x), (float) (eye.y - centre.y), (float) (eye.z - centre.z));
-                if (!breakStarted) {
-                    mc.gameMode.startDestroyBlock(pos, face);
-                    breakStarted = true;
-                } else mc.gameMode.continueDestroyBlock(pos, face);
-                p.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+                // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool take it down (JobHands)
+                breakStarted = true;
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(new int[]{e.x, e.y, e.z}, (int) BREAK_MAX, "restore placed " + e.x + " " + e.y + " " + e.z);
+                if (r.failed()) skip(e, "couldn't break: " + r.why());
                 return false;
             }
             default -> {

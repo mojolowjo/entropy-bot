@@ -175,6 +175,8 @@ final class FloorSteps {
 
         @Override public String place(Pos cell, String id) { return Clearing.placeAt(p, id, cell.x(), cell.y(), cell.z(), fs.leases); }
 
+        @Override public boolean placing(Pos cell) { return Clearing.placing(cell.x(), cell.y(), cell.z()); }
+
         @Override public void walkBlock(int x, int y, int z) {
             IBaritone b = Jobs.baritone();
             if (b == null) return;

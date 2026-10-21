@@ -1092,23 +1092,31 @@ public final class Clearing {
                 ? leases.sealLease(x, y, z, seal, "sealing water with " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
                 : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
         if (le != null) return le;
-        if (!holdItem(p, id)) return "error: I have no " + GuiCore.shortId(id);
-        Vec3 hit = new Vec3(x + 0.5 + s.dx() * 0.5, y + 0.5 + s.dy() * 0.5, z + 0.5 + s.dz() * 0.5);
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, hit); } catch (RuntimeException ignored) {}
-        InteractionResult r = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND,
-                new BlockHitResult(hit, McClearWorld.direction(s.face()), pos.offset(s.dx(), s.dy(), s.dz()), false));
-        p.swing(InteractionHand.MAIN_HAND);
-        // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
-        if (r == InteractionResult.FAIL) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (no room for it, or the guard said no)";
-        // 0.33.0 (A3): a station I place is noted as mine (ledger "built: station"), so I may pick it up again later
-        if (r.consumesAction() && !restore && io.github.mojolowjo.entropybot.clear.OwnStations.station(id)) {
+        if (!holdItem(p, id)) return "error: I have no " + GuiCore.shortId(id);      // the laid-out hotbar slot first; Baritone keeps it in hand
+        // backbone step 3 ("Baritone is the car"): Baritone's look and right-click on the anchor's face, the item to
+        // hand by Baritone (JobHands -> BurrowProcess.startJob); the guard checks the click in useItemOn as before.
+        // Asynchronous: "ok: placing" while it runs (callers check the cell later, Clearing.placing holds their tries),
+        // "error: gave up at <stage>: <why>; guard ..." once when Baritone failed.
+        int[] on = {x + s.dx(), y + s.dy(), z + s.dz()};
+        String face = McClearWorld.direction(s.face()).getName();
+        boolean station = !restore && io.github.mojolowjo.entropybot.clear.OwnStations.station(id);
+        Runnable noted = !station ? null : () -> {
+            // 0.33.0 (A3): a station I place is noted as mine (ledger "built: station"), so I may pick it up again later
             try {
                 RestoreLive.INSTANCE.noteBuilt(java.util.List.of(new int[]{x, y, z}), id, "built: station");
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] place: couldn't note {} at {} {} {} as mine: {}", id, x, y, z, e.toString());
             }
-        }
-        return "ok: " + r;
+        };
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().click(on, face, id, 100, "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z), noted);
+        // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
+        if (r.failed()) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (" + r.why() + ")";
+        return r.done() ? "ok: placed" : "ok: placing (" + r.why() + ")";
+    }
+
+    /** Backbone step 3: Baritone is still placing into / breaking cell x y z for a job (a check must not count a try yet). */
+    public static boolean placing(int x, int y, int z) {
+        return io.github.mojolowjo.entropybot.aa.moves.JobHands.get().busy(x, y, z);
     }
 
     /**
@@ -1284,8 +1292,8 @@ public final class Clearing {
             ps.stageTick = now;
             return "wait";
         }
-        // placed blocks show up a tick or two later; try up to 3 times
-        if (now - ps.stageTick < 6) return "wait";
+        // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
+        if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < 20 * 10) return "wait";
         ps.tries++;
         if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": it didn't stay there (3 tries)";
         ps.stage = "place";
@@ -1566,26 +1574,25 @@ public final class Clearing {
             case "clearcell" -> {
                 Pos c = bs.pick.cell();
                 Minecraft mc = Minecraft.getInstance();
+                var hands = io.github.mojolowjo.entropybot.aa.moves.JobHands.get();
                 if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > 5 * 20) {   // gone (or 5 s): place again
-                    try { mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+                    hands.stop("the cell is clear");
                     bs.stage = "place";
                     return "wait";
                 }
-                BlockPos bp = new BlockPos(c.x(), c.y(), c.z());
-                Vec3 centre = Vec3.atCenterOf(bp);
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, centre); } catch (RuntimeException ignored) {}
-                Vec3 eye = p.getEyePosition();
-                net.minecraft.core.Direction face = net.minecraft.core.Direction.getNearest((float) (eye.x - centre.x), (float) (eye.y - centre.y), (float) (eye.z - centre.z));
-                if (!bs.clearStarted) {
-                    mc.gameMode.startDestroyBlock(bp, face);
-                    bs.clearStarted = true;
-                } else mc.gameMode.continueDestroyBlock(bp, face);
-                p.swing(InteractionHand.MAIN_HAND);
+                // backbone step 3 ("Baritone is the car"): Baritone's look and click break what is in the cell
+                bs.clearStarted = true;
+                var hr = hands.dig(new int[]{c.x(), c.y(), c.z()}, 5 * 20, "clearing " + c.key() + " for " + blk);
+                if (hr.failed()) {
+                    LOG.info("[entropybot] build rim: clearing {} for {}: {} - placing again", c.key(), blk, hr.why());
+                    bs.stage = "place";
+                }
                 return "wait";
             }
             default -> {                                            // check: placed blocks show up a tick or two later
                 if (now - bs.stageTick < 6) return "wait";
                 Pos c = bs.pick.cell();
+                if (placing(c.x(), c.y(), c.z()) && now - bs.stageTick < 20 * 10) return "wait";       // backbone step 3: Baritone still places
                 if (PlaceRules.free(w, c.x(), c.y(), c.z())) triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
                 else {
                     if (!bs.pick.filler()) bs.mine++;
@@ -1704,7 +1711,8 @@ public final class Clearing {
         @Override public void hit(Pos t, ClearEngine.Sight sight, boolean first) {
             IPlayerController pc = pc();
             if (pc == null) return;
-            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(sight.x(), sight.y(), sight.z())); } catch (RuntimeException ignored) {}
+            // backbone step 3: the camera through Baritone's LookBehavior (one owner); the click below is by position
+            io.github.mojolowjo.entropybot.aa.moves.JobHands.get().look(sight.x(), sight.y(), sight.z());
             var dir = McClearWorld.direction(sight.face());
             if (first) {
                 pc.syncHeldItem();

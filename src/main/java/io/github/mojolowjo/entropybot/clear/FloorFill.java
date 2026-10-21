@@ -220,6 +220,9 @@ public final class FloorFill {
             /** Puts block item id into the cell (holding it, with the cell's place lease): "ok: ..." or "error: ...". */
             String place(Pos cell, String id);
 
+            /** Backbone step 3: Baritone is still placing into the cell (the check waits, up to 10 s). */
+            default boolean placing(Pos cell) { return false; }
+
             void walkBlock(int x, int y, int z);
 
             boolean walkIdle();
@@ -515,6 +518,7 @@ public final class FloorFill {
         /** Placed blocks show up a few ticks later; 3 tries a cell. */
         private boolean check(Body b, long now) {
             if (now - phaseStart < 6) return false;
+            if (target != null && b.placing(target) && now - phaseStart < 20 * 10) return false;
             Pos c = target;
             target = null;
             phase = "pick";
