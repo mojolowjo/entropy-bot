@@ -44,6 +44,10 @@ public final class Ways {
         String searchGoal, costGoal;
         long searchSince = -1, lastAsk = -1;
         double lastCost = Double.NaN;
+        /** review 4A-N (4): the wood row for the last missing-logs answer, re-chosen at most once a second. */
+        String woodFor;
+        long woodAt = -1;
+        Options.Option woodRow;
     }
 
     /** A gap this long between two asks means the earlier search wait is over (AA ticks at 4 Hz). */
@@ -93,7 +97,12 @@ public final class Ways {
             }
             default -> {
                 st.searchSince = -1;
-                return new Plan(goal, JobPort.PlanState.NONE, null, 0, "no plan for " + goal + ": " + r.why(), 0, wood(bb, woodMem, r.why(), now));
+                if (!java.util.Objects.equals(st.woodFor, r.why()) || st.woodAt < 0 || now - st.woodAt >= 1000) {
+                    st.woodRow = wood(bb, woodMem, r.why(), now);
+                    st.woodFor = r.why();
+                    st.woodAt = now;
+                }
+                return new Plan(goal, JobPort.PlanState.NONE, null, 0, "no plan for " + goal + ": " + r.why(), 0, st.woodRow);
             }
         }
     }

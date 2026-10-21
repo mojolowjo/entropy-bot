@@ -157,7 +157,7 @@ public final class AaRuntime implements JobPort {
         return lv == null ? -1 : lv.getGameTime();
     }
 
-    private static <T> java.util.function.Supplier<T> perTick(io.github.mojolowjo.entropybot.aa.FactsMemo<T> m, java.util.function.Supplier<T> s) {
+    static <T> java.util.function.Supplier<T> perTick(io.github.mojolowjo.entropybot.aa.FactsMemo<T> m, java.util.function.Supplier<T> s) {
         return () -> m.get(gameTick(), System.currentTimeMillis(), null, s);
     }
 

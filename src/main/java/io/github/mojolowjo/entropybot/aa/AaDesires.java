@@ -129,6 +129,9 @@ public final class AaDesires {
         return StationOptions.Kind.CHEST;
     }
 
+    /** The dawn climb-out need (scores Tuning dawnClimb while NightWork.climbAtDawn). */
+    public static final String DAWN_ID = "night.dawnClimb";
+
     public static List<Need> needs() {
         io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(8, 16),
                 bag = new io.github.mojolowjo.entropybot.aa.core.Band(BAG_ENTER, BAG_LEAVE), food = new io.github.mojolowjo.entropybot.aa.core.Band(10, 18);
@@ -136,7 +139,7 @@ public final class AaDesires {
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
                 bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
                 bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
-                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? AaLadder.BOOTSTRAP : planned));
+                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? AaLadder.BOOTSTRAP : planned)).surface();      // trees and stone at hand up there: under ground the climb is its first row
         Need hunger = new Need("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
                 bb -> null, bb -> "goal food 8", new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
@@ -176,7 +179,11 @@ public final class AaDesires {
                 bb -> bb.in.pickTier < 3,
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet (needs.tools first)",
                 bb -> "goal iron tools", new IronOptions.Picker());
-        return List.of(tools, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
+        // review 4A-N (1): the dawn climb out of the night stairs is a need of its own, priced by WayUp's ways (no gate)
+        Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.SURFACE_DEPTH), bb -> null, bb -> AaLadder.CLIMB,
+                new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface())
+                        .withoutFacts((b, planned) -> AaLadder.CLIMB));
+        return List.of(tools, hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn);
     }
 
     /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */
@@ -200,6 +207,7 @@ public final class AaDesires {
                     .infeasible(AaDesires::bedInfeasible);
             case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600)
                     .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null).exposure(Desire.Exposure.UNDER);
+            case DAWN_ID -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Tuning.get("dawnClimb")));
             default -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 30));
         };
         return wire(d, r).site(b -> rungSite(r, b));

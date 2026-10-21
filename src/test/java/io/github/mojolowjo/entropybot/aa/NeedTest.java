@@ -52,8 +52,46 @@ class NeedTest {
         port.done(1, "done");
         n.tick(bb);
         clock.advance((long) (Tuning.get("settleMaxS") * 1000) + 1);
-        assertEquals(Status.RUNNING, n.tick(bb), "picks again: the cut once more (the planner still says missing logs)");
-        assertEquals(2, port.started.size());
+        assertEquals(Status.FAILURE, n.tick(bb), "review 4A-N (2): the cut moved no fact: held, not run again");
+        assertEquals(1, port.started.size());
+        assertTrue(String.join("|", port.log).contains("held: no change after the prerequisite"), port.log.toString());
+    }
+
+    @Test
+    void toolsUnderGroundPriceTheClimbAsTheirFirstRow() {
+        Need tools = AaDesires.needs().stream().filter(x -> x.id.equals("needs.tools")).findFirst().orElseThrow();
+        bb.in.pickTier = 0;
+        bb.in.underDepth = 10;
+        assertEquals(Status.RUNNING, tools.tick(bb));
+        assertEquals(AaLadder.CLIMB, port.started.get(0).chain());
+        assertTrue(tools.wantsSurface() && tools.options().startsWith("climb 10 up 40"), tools.options());
+    }
+
+    @Test
+    void theDawnClimbIsAPricedNeedNotAGate() {
+        Need dawn = AaDesires.needs().stream().filter(x -> x.id.equals(AaDesires.DAWN_ID)).findFirst().orElseThrow();
+        Brain br = new Brain("brain", "t", AaDesires.need(dawn));
+        bb.in.underDepth = 10;
+        assertEquals(-1, br.scoreAll(bb).get(0).score(), 1e-9, "no night stairs dug: met");
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.NightWork.DUG_FACT, Boolean.TRUE);
+        assertEquals(Tuning.get("dawnClimb"), br.scoreAll(bb).get(0).score(), 1e-9, "day, dug at night, deep: dawnClimb");
+        assertEquals(Status.RUNNING, br.tick(bb));
+        assertEquals(AaLadder.CLIMB, port.started.get(0).chain());
+    }
+
+    @Test
+    void theWoodRowIsChosenOncePerSecondNotPerTick() {
+        int[] reads = {0};
+        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> { reads[0]++; return new WoodOptions.WoodFacts(0, List.of(), 0, true); });
+        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        Ways.State st = new Ways.State();
+        var f = new io.github.mojolowjo.entropybot.aa.brain.Failures();
+        Options.OptionMemory m = new Options.OptionMemory();
+        for (int i = 0; i < 4; i++) Ways.plan(bb, st, f, "n", m, "goal table", clock.now());
+        assertEquals(1, reads[0]);
+        clock.advance(1000);
+        Ways.plan(bb, st, f, "n", m, "goal table", clock.now());
+        assertEquals(2, reads[0]);
     }
 
     @Test

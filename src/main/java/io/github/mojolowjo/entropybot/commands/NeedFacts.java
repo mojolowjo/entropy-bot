@@ -39,14 +39,19 @@ public final class NeedFacts {
      */
     public static void install(Blackboard bb, AaRuntime rt) {
         Options.OptionMemory woodMem = new Options.OptionMemory();
+        // review 4A-N (4): every supplier is read once per game tick (FactsMemo), as SURFACE_FACTS; the wood choice too
+        Supplier<Options.Choice> wood = memo(() -> wood(bb, rt, woodMem));
         for (StationOptions.Kind k : StationOptions.Kind.values())
-            bb.fact(k.factsKey(), (Supplier<StationOptions.StationFacts>) () -> station(k, bb.in, bb.in.bag, wood(bb, rt, woodMem)));
+            bb.fact(k.factsKey(), memo(() -> station(k, bb.in, bb.in.bag, wood.get())));
         // round 4A N: the one station need reads the station it lacks now (table, then furnace, then the camp chest)
-        bb.fact(AaDesires.STATION_FACTS, (Supplier<StationOptions.StationFacts>) () -> station(AaDesires.stationKind(bb.in), bb.in, bb.in.bag, wood(bb, rt, woodMem)));
-        bb.fact(BedOptions.FACTS, (Supplier<BedOptions.BedFacts>) () -> bed(rt.bedFacts(), bb.in));
-        bb.fact(BaseOptions.FACTS, (Supplier<BaseOptions.BaseFacts>) () -> base(bb.in, bb.in.bag, rt.areaCell(bb.in.areaName), burrowCell(bb)));
-        bb.fact(BagOptions.FACTS, (Supplier<BagOptions.BagFacts>) () -> bag(bb.in, bb.in.bag, JunkRules.DEFAULT, AaDesires.BAG_LEAVE));      // the need's own band: slots it wants free
+        bb.fact(AaDesires.STATION_FACTS, memo(() -> station(AaDesires.stationKind(bb.in), bb.in, bb.in.bag, wood.get())));
+        bb.fact(BedOptions.FACTS, memo(() -> bed(rt.bedFacts(), bb.in)));
+        bb.fact(BaseOptions.FACTS, memo(() -> base(bb.in, bb.in.bag, rt.areaCell(bb.in.areaName), burrowCell(bb))));
+        bb.fact(BagOptions.FACTS, memo(() -> bag(bb.in, bb.in.bag, JunkRules.DEFAULT, AaDesires.BAG_LEAVE)));      // the need's own band: slots it wants free
     }
+
+    /** One read per game tick. */
+    static <T> Supplier<T> memo(Supplier<T> s) { return AaRuntime.perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), s); }
 
     /** The wood set's best row now through the one memory (null: no wood facts; the station set drops its cut row with the reason). */
     private static Options.Choice wood(Blackboard bb, AaRuntime rt, Options.OptionMemory mem) {

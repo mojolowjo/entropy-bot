@@ -156,6 +156,11 @@ public final class Need extends Node {
                 return Status.RUNNING;
             }
             bb.port.log(kind + ": " + WAIT_FACTS + " over after " + waited / 1000 + " s (" + (changed ? "the facts changed" : "settleMaxS") + "), picking again");
+            // review 4A-N (2): a prerequisite that ended done and moved no fact is held, never run again in a loop
+            if (!changed && ranKey != null) {
+                mem.failed(ranKey, "no change after the prerequisite (" + waited / 1000 + " s)", now, bb.in);
+                bb.port.log(kind + ": " + ranKey + " held: no change after the prerequisite");
+            }
             waitSince = -1;
             clearPlanning(bb);
         }
@@ -178,7 +183,7 @@ public final class Need extends Node {
             String go = man.gate(id, man.pending.rows(), now, bb.port::log);
             if (go == null) return Status.RUNNING;
             if (picker != null) picker.chose(go);
-            return start(bb, go, false, ranKey, "[the owner's ask]", now);
+            return start(bb, go, false, chosenKey(), "[the owner's ask]", now);
         }
         Pick p = pick(bb, g, now);
         if (p.command == null) {
@@ -204,7 +209,12 @@ public final class Need extends Node {
             return Status.RUNNING;
         }
         if (!go.equals(p.command) && picker != null) picker.chose(go);
-        return start(bb, go, p.pre && go.equals(p.command), p.key, "[" + p.why + "]", now);
+        return start(bb, go, p.pre && go.equals(p.command), go.equals(p.command) ? p.key : chosenKey(), "[" + p.why + "]", now);
+    }
+
+    /** The memory key of the row the owner chose (review 4A-N (3)), null when the picker has none. */
+    private String chosenKey() {
+        return picker instanceof Options.Picker<?> op && op.ran() != null ? op.ran().memoryKey() : null;
     }
 
     /** The pick: the command, whether it is a prerequisite, its memory key and the {@code aa why} text. */
@@ -213,7 +223,7 @@ public final class Need extends Node {
     private Pick pick(Blackboard bb, String g, long now) {
         bb.fact(CURRENT, id);
         Ways.Plan pl = Ways.plan(bb, plan, failures, id, mem, g, now);
-        Ways.Pre climb = surface ? Ways.climb(bb, mem, now) : null;
+        Ways.Pre climb = Ways.climb(bb, mem, now);       // used by a surface need, and by a wood row (trees grow up there)
         String cmd, key = null, why;
         boolean pre = false;
         double rowS;
@@ -240,7 +250,7 @@ public final class Need extends Node {
             }
         }
         climbS = 0;
-        if (cmd != null && climb != null && !Ways.WAIT_PLAN.equals(cmd) && !Options.NOTHING.equals(cmd)) {
+        if (cmd != null && climb != null && (surface || pre) && !Ways.WAIT_PLAN.equals(cmd) && !Options.NOTHING.equals(cmd)) {
             if (climb.command() == null) return note(new Pick(null, false, null, climb.why() + "; then " + why), Double.NaN);
             climbS = climb.seconds();
             why = climb.why() + " (" + Math.round(climbS) + " s) first, then " + why;
