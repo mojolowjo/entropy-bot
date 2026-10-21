@@ -18,7 +18,9 @@ public final class Moves {
     public enum Phase { IDLE, RUNNING, ARRIVED, FAILED }
 
     /** Seconds a leg may take (ticks), per kind. */
-    static final long WALK_TICKS = 20 * 30, PILLAR_TICKS = 20 * 15, DIG_TICKS = 20 * 40;
+    static long walkTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.walkS")); }
+    static long pillarTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.pillarS")); }
+    static long digTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.digS")); }
 
     private record Leg(String name, Consumer<Car> start, long limit) { }
 
@@ -37,19 +39,19 @@ public final class Moves {
 
     /** Cover: GoalGetToBlock to the cell out of the shooter's sight. */
     public void cover(int[] cell) {
-        begin("cover", new Leg("walk to cover " + c(cell), car -> car.cover(cell), WALK_TICKS));
+        begin("cover", new Leg("walk to cover " + c(cell), car -> car.cover(cell), walkTicks()));
     }
 
     /** Flee: GoalRunAway {@code dist} from the hostiles' positions. */
     public void flee(int dist, List<int[]> from) {
         List<int[]> f = List.copyOf(from);
-        begin("flee", new Leg("run " + dist + " from " + f.size() + " mob(s)", car -> car.runAway(dist, f), WALK_TICKS));
+        begin("flee", new Leg("run " + dist + " from " + f.size() + " mob(s)", car -> car.runAway(dist, f), walkTicks()));
     }
 
     /** Pillar: GoalBlock {@code up} over the feet with placing on; Baritone pillars on the bag's throwaway blocks. */
     public void pillar(int[] feet, int up) {
         int[] top = {feet[0], feet[1] + up, feet[2]};
-        begin("pillar", new Leg("pillar " + up + " up to " + c(top), car -> car.pillar(top), PILLAR_TICKS));
+        begin("pillar", new Leg("pillar " + up + " up to " + c(top), car -> car.pillar(top), pillarTicks()));
     }
 
     /**
@@ -60,7 +62,7 @@ public final class Moves {
         List<int[]> dig = new ArrayList<>();
         for (int k = 1; k <= depth; k++) dig.add(new int[]{top[0], top[1] - k, top[2]});
         int[] seal = {top[0], top[1] - (depth - 2), top[2]};
-        begin("burrow", new Leg("burrow " + depth + " down at " + c(top), car -> car.burrow(dig, null, List.of(seal), (int) DIG_TICKS), DIG_TICKS));
+        begin("burrow", new Leg("burrow " + depth + " down at " + c(top), car -> car.burrow(dig, null, List.of(seal), (int) digTicks()), digTicks()));
     }
 
     /**
@@ -70,18 +72,18 @@ public final class Moves {
     public void digIn(int[] entrance, int dx, int dz) {
         int[] f = {entrance[0] + dx, entrance[1], entrance[2] + dz}, h = {f[0], f[1] + 1, f[2]};
         int[] e2 = {entrance[0], entrance[1] + 1, entrance[2]};
-        begin("dig in", new Leg("dig into the wall at " + c(f), car -> car.burrow(List.of(f, h), f, List.of(entrance.clone(), e2), (int) DIG_TICKS), DIG_TICKS));
+        begin("dig in", new Leg("dig into the wall at " + c(f), car -> car.burrow(List.of(f, h), f, List.of(entrance.clone(), e2), (int) digTicks()), digTicks()));
     }
 
     // ---- backbone step 4: the reflexes' ways (a car made with the reflex priority runs them) ----
 
     /** Ticks a reflex leg may take. */
-    static final long REFLEX_TICKS = 20 * 15;
+    static long reflexTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.reflexS")); }
 
     /** Air: GoalBlock with the feet in the top water cell (the head above the surface). */
     public void swimUp(int[] surface) {
         int[] s = surface.clone();
-        begin("swim up", new Leg("swim up to " + c(s), car -> car.reach(s), REFLEX_TICKS));
+        begin("swim up", new Leg("swim up to " + c(s), car -> car.reach(s), reflexTicks()));
     }
 
     /** The creeper flee: GoalRunAway {@code dist} from the hostiles, leaning toward FleeHeading's {@code prefer}. */
@@ -89,19 +91,19 @@ public final class Moves {
         List<int[]> f = List.copyOf(from);
         double[] h = prefer == null ? null : prefer.clone();
         begin("flee", new Leg("run " + dist + " from " + f.size() + " mob(s)" + (h == null ? "" : " on the flee heading"),
-                car -> car.runAway(dist, f, h), REFLEX_TICKS));
+                car -> car.runAway(dist, f, h), reflexTicks()));
     }
 
     /** Lava / fire: GoalRunAway {@code dist} from the hazard cells ({@code what}: "lava", "fire"). */
     public void escape(String what, int dist, List<int[]> cells) {
         List<int[]> f = List.copyOf(cells);
-        begin("escape " + what, new Leg("run " + dist + " from " + f.size() + " " + what + " cell(s)", car -> car.runAway(dist, f, null), REFLEX_TICKS));
+        begin("escape " + what, new Leg("run " + dist + " from " + f.size() + " " + what + " cell(s)", car -> car.runAway(dist, f, null), reflexTicks()));
     }
 
     /** A plain GoalBlock way (the fire reflex walking into water). */
     public void reach(String way, int[] cell) {
         int[] s = cell.clone();
-        begin(way, new Leg(way + " " + c(s), car -> car.reach(s), REFLEX_TICKS));
+        begin(way, new Leg(way + " " + c(s), car -> car.reach(s), reflexTicks()));
     }
 
     /** Baritone holds a path for the running leg's goal (the air reflex's jump gap is over). */

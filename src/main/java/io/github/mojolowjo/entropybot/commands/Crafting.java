@@ -430,7 +430,7 @@ final class Crafting {
                         place = hf[0];
                         hereFurnace = hf[1];
                     } else {
-                        place = Clearing.placeStep(spot, "minecraft:furnace", null, false);
+                        place = Clearing.placeStep(spot, "minecraft:furnace", false);
                     }
                     out.add(place);
                     Step note = new Step("ownfurnacenote");

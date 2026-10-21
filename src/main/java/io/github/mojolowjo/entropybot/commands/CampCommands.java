@@ -544,7 +544,7 @@ final class CampCommands {
             order.add(at);
         }
         List<Seq.Step> steps = new ArrayList<>(before);
-        for (int[] s : order) steps.add(Clearing.placeStep(s, "minecraft:torch", null, true));
+        for (int[] s : order) steps.add(Clearing.placeStep(s, "minecraft:torch", true));
         Seq.Step note = new Seq.Step("lightnote");
         note.items = new LinkedHashMap<>();
         note.n = skipped;

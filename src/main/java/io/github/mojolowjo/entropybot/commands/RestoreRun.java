@@ -135,43 +135,10 @@ final class RestoreRun {
                 skip(e, "no " + RestoreRules.shortId(e.items.get(e.items.size() - 1)));
                 return false;
             }
-            Clearing.LiveWorld w = new Clearing.LiveWorld();
-            w.set(p);
-            boolean botInCell = p.getBoundingBox().intersects(new AABB(pos));
-            boolean reach = !botInCell && p.getEyePosition().distanceTo(pos.getCenter()) <= 4.5
-                    && PlaceRules.placeSideSeen(w, e.x, e.y, e.z, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH) != null;
-            if (reach) {
-                stage = "place";
-            } else {
-                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null, true);
-                IBaritone b = Jobs.baritone();
-                if (spot == null || b == null || (spot.x() == e.x && spot.z() == e.z && (spot.y() == e.y || spot.y() + 1 == e.y))) {
-                    skip(e, "couldn't reach");
-                    return false;
-                }
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(spot.x(), spot.y(), spot.z())));
-                stage = "walking";
-                stageTick = now;
-                return false;
-            }
+            // builder placements: the put-back is a one-block schematic; Baritone's builder walks, picks the face, clicks
+            stage = "place";
         }
         switch (stage) {
-            case "walking" -> {
-                if (now - stageTick < 20) return false;
-                IBaritone b = Jobs.baritone();
-                if (b != null && !Jobs.idle(b)) {
-                    if (now - stageTick > WALK_MAX) skip(e, "couldn't reach");
-                    return false;
-                }
-                tries++;
-                if (tries > 2) {
-                    skip(e, "couldn't reach");
-                    return false;
-                }
-                stage = null;                                // look again from where the walk ended
-                return false;
-            }
             case "retry" -> {
                 if (now - stageTick >= 10) stage = "place";
                 return false;
@@ -203,7 +170,7 @@ final class RestoreRun {
             }
             case "check" -> {
                 if (now - stageTick < CHECK_TICKS) return false;
-                if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < 20 * 10) return false;     // backbone step 3: Baritone still places
+                if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < 20 * 65) return false;     // the builder still walks / places
                 if (!level.getBlockState(pos).canBeReplaced()) {
                     done(e);
                     return false;
@@ -276,14 +243,14 @@ final class RestoreRun {
                 stageTick = now;
                 breakStarted = false;
             } else {
-                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null, true);
+                // Baritone picks the spot: a goal next to the block (GoalGetToBlock), no stand chooser here
                 IBaritone b = Jobs.baritone();
-                if (spot == null || b == null || (spot.x() == e.x && spot.z() == e.z && (spot.y() == e.y || spot.y() + 1 == e.y))) {
-                    skip(e, "couldn't reach");
+                if (b == null) {
+                    skip(e, "couldn't reach: no Baritone");
                     return false;
                 }
                 Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(spot.x(), spot.y(), spot.z())));
+                b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalGetToBlock(new BlockPos(e.x, e.y, e.z)));
                 stage = "walking";
                 stageTick = now;
                 return false;

@@ -36,86 +36,9 @@ public final class PlaceRules {
         return w.air(x, y, z) || (w.noCollision(x, y, z) && !w.fluid(x, y, z) && !w.blockEntity(x, y, z));
     }
 
-    /** placeAt's choice: the first neighbour (in SIDES order) to click from an eye at ex ey ez, or null (nothing in reach). */
-    public static Side placeSide(ClearWorld w, int x, int y, int z, double ex, double ey, double ez) {
-        return placeSide(w, x, y, z, ex, ey, ez, PLACE_REACH);
-    }
-
-    /**
-     * 0.20.1 (C4 live test): a stand spot is chosen with this shorter reach, because Baritone ends a walk anywhere on the
-     * goal block (seen live: 0.2 off the centre), and a spot right at 4.5 then failed "nothing in reach" after the walk.
-     */
-    public static final double STAND_REACH = 4.0;
-
-    /** placeSide with the given reach. */
-    public static Side placeSide(ClearWorld w, int x, int y, int z, double ex, double ey, double ez, double reach) {
-        for (Side s : SIDES) {
-            if (!clickable(w, x + s.dx(), y + s.dy(), z + s.dz())) continue;
-            double hx = x + 0.5 + s.dx() * 0.5, hy = y + 0.5 + s.dy() * 0.5, hz = z + 0.5 + s.dz() * 0.5;
-            double dx = hx - ex, dy = hy - ey, dz = hz - ez;
-            if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
-            return s;
-        }
-        return null;
-    }
-
-    /**
-     * 0.39.p3 (table placement probe: "ray to the face hits -29 69 -61 up (grass_block)" for a click on -29 68 -62 up):
-     * the place step's choice. Since backbone step 3 Baritone aims the click and needs a ray that lands on the face, so
-     * a face hidden behind a step of the slope (or behind the anchor itself) is no side: placeSide, only seen faces.
-     */
-    public static Side placeSideSeen(ClearWorld w, int x, int y, int z, double ex, double ey, double ez, double reach) {
-        for (Side s : SIDES) {
-            if (!clickable(w, x + s.dx(), y + s.dy(), z + s.dz())) continue;
-            if (RimPlan.sees(w, new Pos(x, y, z), s, ex, ey, ez, reach)) return s;
-        }
-        return null;
-    }
-
     /** Standing with the feet at sx sy sz would put the bot's body in the cell (it can't place a block into itself). */
     public static boolean bodyIn(int sx, int sy, int sz, Pos cell) {
         return sx == cell.x() && sz == cell.z() && (sy == cell.y() || sy + 1 == cell.y());
-    }
-
-    /**
-     * Where to walk so the cell can be placed: the reachable stand spot (fewest steps, ClearGrid.walkDistances) from
-     * which a neighbour is in reach, never one whose body would be in the cell; spots it can't walk to count after the
-     * others (Baritone may find a way). Null when there is none within 5 blocks.
-     */
-    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot) {
-        return standFor(w, cell, bot, null);
-    }
-
-    /** T3: as above, only spots {@code ok} accepts (the owner's areas while the fence is on; null: any). */
-    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot, ClearJob.StandCheck ok) {
-        return standFor(w, cell, bot, ok, false);
-    }
-
-    /** 0.39.p3: seen = only spots from which placeSideSeen finds a face (the place step's Baritone click). */
-    public static ClearGrid.Spot standFor(ClearWorld w, Pos cell, Bot bot, ClearJob.StandCheck ok, boolean seen) {
-        ClearBox box = new ClearBox(cell.x(), cell.y(), cell.z(), cell.x(), cell.y(), cell.z());
-        ClearGrid g = ClearGrid.build(w, box, bot, null);
-        int[] dist = g.walkDistances(bot);
-        ClearGrid.Spot best = null;
-        for (int x = cell.x() - 4; x <= cell.x() + 4; x++) {
-            for (int z = cell.z() - 4; z <= cell.z() + 4; z++) {
-                for (int y = cell.y() - 4; y <= cell.y() + 3; y++) {
-                    if (bodyIn(x, y, z, cell)) continue;
-                    if (ok != null && !ok.ok(x, y, z)) continue;
-                    int i = g.idx(x, y, z);
-                    if (i < 0) continue;
-                    double cost;
-                    if (dist[i] >= 0) cost = dist[i];
-                    else if (g.stand(x, y, z)) cost = 1000 + Math.sqrt((x - bot.x()) * (x - bot.x()) + (y - bot.y()) * (y - bot.y()) + (z - bot.z()) * (z - bot.z()));
-                    else continue;
-                    if (best != null && cost >= best.cost()) continue;
-                    double ex = x + 0.5, ey = y + Bot.EYE, ez = z + 0.5;
-                    if ((seen ? placeSideSeen(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH) : placeSide(w, cell.x(), cell.y(), cell.z(), ex, ey, ez, STAND_REACH)) == null) continue;
-                    best = new ClearGrid.Spot(x, y, z, cost, ex, ey, ez);
-                }
-            }
-        }
-        return best;
     }
 
     // ---- the bot's own crafting table (TO-LOOK-AT-LATER 18a) ----

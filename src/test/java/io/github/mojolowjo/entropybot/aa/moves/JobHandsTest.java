@@ -21,6 +21,17 @@ class JobHandsTest {
             status = Car.Status.running("started");
         }
 
+        int builds;
+        List<String> builtItems;
+
+        @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks) {
+            starts++;
+            builds++;
+            builtItems = items;
+            log.add("build " + cells.size() + " t " + timeoutTicks);
+            status = Car.Status.running("building");
+        }
+
         @Override public Car.Status status() { return status; }
 
         @Override public void cancel(String why) { cancels++; log.add("cancel " + why); }
@@ -62,14 +73,14 @@ class JobHandsTest {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
         h.dig(new int[]{0, 0, 0}, 100, "a");
-        JobHands.Result r = h.click(new int[]{5, 6, 7}, "up", "minecraft:wheat_seeds", 100, "b", null);
+        JobHands.Result r = h.click(new int[]{5, 6, 7}, "minecraft:wheat_seeds", 100, "b", null);
         assertTrue(r.running());
         assertTrue(r.why().startsWith("waiting: my hands are busy with dig 0 0 0"), r.why());
         assertEquals(0, f.cancels);
         assertEquals(1, f.starts);
         f.status = Car.Status.done("dug");
         h.tick();
-        assertTrue(h.click(new int[]{5, 6, 7}, "up", "minecraft:wheat_seeds", 100, "b", null).running());
+        assertTrue(h.click(new int[]{5, 6, 7}, "minecraft:wheat_seeds", 100, "b", null).running());
         assertEquals(2, f.starts, "a finished request makes room for the next");
         assertTrue(h.busy(5, 7, 7), "the cell beside the clicked face is the request's too");
     }
@@ -77,14 +88,14 @@ class JobHandsTest {
     void aFailureNamesTheStageAndTheGuardVerdictOnce() {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
-        h.click(new int[]{1, 64, 1}, "north", "minecraft:crafting_table", 100, "t", null);
+        h.build(new int[]{1, 64, 1}, "minecraft:crafting_table", 100, "t", null);
         f.status = Car.Status.failed("click 1/1 on 1 64 1 north (grass_block): clicked 3 times with crafting_table, nothing changed");
-        JobHands.Result r = h.click(new int[]{1, 64, 1}, "north", "minecraft:crafting_table", 100, "t", null);
+        JobHands.Result r = h.build(new int[]{1, 64, 1}, "minecraft:crafting_table", 100, "t", null);
         assertTrue(r.failed());
-        assertTrue(r.why().startsWith("gave up at click 1 64 1 north minecraft:crafting_table: click 1/1"), r.why());
-        assertTrue(r.why().contains("guard (place) at 1 64 0: the guard refused"), r.why());
+        assertTrue(r.why().startsWith("gave up at build 1 64 1 minecraft:crafting_table: click 1/1"), r.why());
+        assertTrue(r.why().contains("guard (place) at 1 64 1: the guard refused"), r.why());
         // the next call is a fresh try (the job counts its own tries)
-        assertTrue(h.click(new int[]{1, 64, 1}, "north", "minecraft:crafting_table", 100, "t", null).running());
+        assertTrue(h.build(new int[]{1, 64, 1}, "minecraft:crafting_table", 100, "t", null).running());
     }
 
     @Test
@@ -92,13 +103,13 @@ class JobHandsTest {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
         h.dig(new int[]{0, 0, 0}, 100, "t");
-        for (int i = 0; i < JobHands.RETRIES; i++) {
+        for (int i = 0; i < JobHands.retriesMax(); i++) {
             f.status = Car.Status.failed("break 1/1: Baritone took control away (cancel or pause)");
             assertTrue(h.dig(new int[]{0, 0, 0}, 100, "t").running(), "retry " + i);
         }
         f.status = Car.Status.failed("break 1/1: Baritone took control away (cancel or pause)");
         assertTrue(h.dig(new int[]{0, 0, 0}, 100, "t").failed());
-        assertEquals(1 + JobHands.RETRIES, f.starts);
+        assertEquals(1 + JobHands.retriesMax(), f.starts);
     }
 
     @Test
@@ -106,12 +117,12 @@ class JobHandsTest {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
         int[] ran = {0};
-        h.click(new int[]{2, 2, 2}, "up", "minecraft:furnace", 100, "t", () -> ran[0]++);
+        h.build(new int[]{2, 2, 2}, "minecraft:furnace", 100, "t", () -> ran[0]++);
         f.status = Car.Status.done("clicked 2 2 2 up: beside air -> furnace");
         h.tick();
         assertEquals(1, ran[0]);
         assertTrue(h.idle());
-        JobHands.Result r = h.click(new int[]{2, 2, 2}, "up", "minecraft:furnace", 100, "t", () -> ran[0]++);
+        JobHands.Result r = h.build(new int[]{2, 2, 2}, "minecraft:furnace", 100, "t", () -> ran[0]++);
         assertTrue(r.done(), "the caller still gets the DONE tick() saw");
         assertEquals(1, ran[0]);
         assertEquals(1, f.starts);
@@ -140,16 +151,16 @@ class JobHandsTest {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
         int[] ran = {0};
-        h.click(new int[]{2, 2, 2}, "up", "minecraft:crafting_table", 100, "t", () -> ran[0]++);
+        h.build(new int[]{2, 2, 2}, "minecraft:crafting_table", 100, "t", () -> ran[0]++);
         h.preempt("danger move burrow");
         assertEquals(1, f.cancels);
         f.status = Car.Status.done("the burrow's own DONE");      // the other run's end must not count
         h.tick();
-        JobHands.Result r = h.click(new int[]{2, 2, 2}, "up", "minecraft:crafting_table", 100, "t", () -> ran[0]++);
+        JobHands.Result r = h.build(new int[]{2, 2, 2}, "minecraft:crafting_table", 100, "t", () -> ran[0]++);
         assertTrue(r.failed());
         assertTrue(r.why().contains("preempted by danger move burrow"), r.why());
         assertEquals(0, ran[0], "no station note for a block never placed");
-        assertEquals("gave up at click 2 2 2 up minecraft:crafting_table: preempted by danger move burrow", h.lastFailure(2, 3, 2));
+        assertEquals("gave up at build 2 2 2 minecraft:crafting_table: preempted by danger move burrow", h.lastFailure(2, 2, 2));
     }
 
     @Test
@@ -181,5 +192,70 @@ class JobHandsTest {
     void stepThreeFilesAreOffTheMoversList() {
         for (String f : List.of("commands/ShelterJob.java", "commands/Clearing.java", "commands/RestoreRun.java", "commands/FarmPlanting.java"))
             assertFalse(MoversTest.CEILING.containsKey(f), f);
+    }
+
+    // ---- builder placements (0.39.q1) ----
+
+    @Test
+    void aPlacementIsABuilderLegWithNoFaceAndItsItem() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        assertTrue(h.build(new int[]{3, 64, 3}, "minecraft:crafting_table", 1200, "t", null).running());
+        assertEquals(1, f.builds);
+        assertEquals(List.of("minecraft:crafting_table"), f.builtItems);
+        assertTrue(h.busy(3, 64, 3));
+        f.status = Car.Status.done("place crafting_table: built");
+        assertTrue(h.build(new int[]{3, 64, 3}, "minecraft:crafting_table", 1200, "t", null).done());
+        assertEquals(1, f.starts, "followed, not restarted");
+    }
+
+    @Test
+    void aMissingItemIsAClearFailureNotAStall() {
+        Fake f = new Fake() {
+            @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks) {
+                super.startBuild(cells, items, timeoutTicks);
+                status = Car.Status.failed("stage items: need 1 torch, the bag has 0");
+            }
+        };
+        JobHands h = new JobHands(f);
+        h.build(new int[]{1, 1, 1}, "minecraft:torch", 1200, "t", null);
+        JobHands.Result r = h.build(new int[]{1, 1, 1}, "minecraft:torch", 1200, "t", null);
+        assertTrue(r.failed());
+        assertTrue(r.why().contains("stage items: need 1 torch, the bag has 0"), r.why());
+        assertTrue(r.why().contains("guard (place) at 1 1 1"), r.why());
+    }
+
+    @Test
+    void aBuildLegLosingControlRestartsThenFails() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.build(new int[]{0, 0, 0}, "minecraft:furnace", 1200, "t", null);
+        for (int i = 0; i < JobHands.retriesMax(); i++) {
+            f.status = Car.Status.failed("stage build: place furnace: another Baritone process took control away");
+            assertTrue(h.build(new int[]{0, 0, 0}, "minecraft:furnace", 1200, "t", null).running(), "retry " + i);
+        }
+        f.status = Car.Status.failed("stage build: place furnace: another Baritone process took control away");
+        assertTrue(h.build(new int[]{0, 0, 0}, "minecraft:furnace", 1200, "t", null).failed());
+        assertEquals(1 + JobHands.retriesMax(), f.builds);
+    }
+
+    @Test
+    void aThrowingDoneStepFailsTheRequestWithItsReason() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.build(new int[]{4, 4, 4}, "minecraft:chest", 1200, "t", () -> { throw new IllegalStateException("ledger full"); });
+        f.status = Car.Status.done("built");
+        JobHands.Result r = h.build(new int[]{4, 4, 4}, "minecraft:chest", 1200, "t", null);
+        assertTrue(r.failed());
+        assertTrue(r.why().contains("ledger full"), r.why());
+    }
+
+    @Test
+    void aFewBlockShellIsOneLeg() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        assertTrue(h.build(List.of(new int[]{0, 1, 0}, new int[]{0, 2, 0}), List.of("minecraft:dirt", "minecraft:dirt"), 1200, "t", null).running());
+        assertEquals(1, f.builds);
+        assertTrue(h.busy(0, 2, 0));
     }
 }

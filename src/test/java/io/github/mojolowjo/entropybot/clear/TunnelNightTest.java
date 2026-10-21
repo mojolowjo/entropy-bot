@@ -105,12 +105,7 @@ class TunnelNightTest {
         ClearJob nowhere = ClearJob.start(new ClearJob.Options().box(ClearBox.of(21, 53, 0, 24, 55, 2)), null, null);
         nowhere.standOk = (x, y, z) -> false;
         assertNull(ClearGrid.planWalk(w, bot, nowhere), "no spot inside: nothing to walk to");
-        // placing: the stand spot obeys it too
-        Pos cell = new Pos(10, 53, 1);
-        ClearGrid.Spot ps = PlaceRules.standFor(w, cell, Bot.at(2.5, 53, 1.5), (x, y, z) -> x <= 8);
-        assertNotNull(ps);
-        assertTrue(ps.x() <= 8, "stand spot inside: " + ps);
-        assertNull(PlaceRules.standFor(w, cell, Bot.at(2.5, 53, 1.5), (x, y, z) -> false));
+
     }
 
     @Test

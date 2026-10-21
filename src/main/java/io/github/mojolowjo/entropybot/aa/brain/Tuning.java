@@ -101,6 +101,14 @@ public final class Tuning {
         def("base.nightW", 1, "AA_ROUND4A O", "weight of the open-night cost while a base way is set up");
         def("bag.depositS", 5, "AA_ROUND4A O", "seconds to put the bag into the base chests once there");
         def("bag.dropS", 2, "AA_ROUND4A O", "seconds to throw the junk out");
+        // builder placements (0.39.q1): the movers' time limits and retries, out of aa/moves
+        def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
+        def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");
+        def("moves.pillarS", 15, "backbone step 2", "seconds a pillar leg may take");
+        def("moves.digS", 40, "backbone step 2", "seconds a burrow / dig-in leg may take");
+        def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");
+        def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
+        def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

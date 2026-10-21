@@ -37,7 +37,7 @@ import java.util.List;
 public final class BaritoneCar implements Car {
     private static final Logger LOG = LogUtils.getLogger();
     /** Ticks of failed path calculations before a goal leg fails (Baritone retries a few). */
-    static final long CALC_FAILS = 20;
+    static long calcFails() { return (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.calcFails"); }
 
     private final EngineProcess engine;
     private Goal goal;
@@ -196,7 +196,7 @@ public final class BaritoneCar implements Car {
             var ctx = b().getPlayerContext();
             if (ctx.player() == null) return Status.failed("no player");
             if (goal.isInGoal(ctx.playerFeet())) return Status.done(what);
-            if (engine.calcFails() - calcAtStart >= CALC_FAILS) return Status.failed("Baritone found no path (" + what + ")");
+            if (engine.calcFails() - calcAtStart >= calcFails()) return Status.failed("Baritone found no path (" + what + ")");
             if (engine.mode() != EngineProcess.Mode.OVERRIDE || reflex != engine.reflexGoal()) push(goal);     // a cancel dropped it
             return Status.running(what);
         } catch (RuntimeException e) {

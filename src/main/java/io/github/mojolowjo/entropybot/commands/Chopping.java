@@ -729,7 +729,7 @@ final class Chopping {
         if (rp.note() != null) r.notes.add("tree at " + r.tree.at() + ": " + rp.note());
         r.planted = rp.cells();
         List<Seq.Step> add = new ArrayList<>();
-        for (int[] c : rp.cells()) add.add(Clearing.placeStep(c.clone(), r.sapling, null, true));
+        for (int[] c : rp.cells()) add.add(Clearing.placeStep(c.clone(), r.sapling, true));
         s.splice(s.idx + 1, add);
         return "next";
     }

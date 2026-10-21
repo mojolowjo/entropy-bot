@@ -262,7 +262,7 @@ class RimPlanTest {
     @Test void capsUnchanged() {
         assertEquals(2, RimPlan.MAX_TRIES);
         assertEquals(90 * 20, RimPlan.LAYER_CAP_TICKS);
-        assertEquals(PlaceRules.STAND_REACH, RimPlan.REACH);
+        assertEquals(4.0, RimPlan.REACH);
     }
 
     @Test void aCellOverAOneBlockHoleGetsAFillerFirst() {

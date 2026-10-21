@@ -398,12 +398,12 @@ public final class FloorFill {
                 }
                 sup.add(nearest);
             }
-            // from where it stands: the lowest rank, then the nearest
+            // the lowest rank, then the nearest; builder placements: Baritone's builder walks to its own spot and face
             Pos best = null;
             double bestD = 0;
             int bestR = 0;
             for (Pos c : sup) {
-                if (!placeableFrom(bot.x(), bot.y(), bot.z(), bot.eyeY(), c)) continue;
+                if (bodyHits(bot.x(), bot.y(), bot.z(), c) && sup.size() > 1) continue;
                 int r = rank.getOrDefault(c, Integer.MAX_VALUE);
                 double d = ClearEngine.eyeDistSq(bot.x(), bot.eyeY(), bot.z(), c.x(), c.y(), c.z());
                 if (best == null || r < bestR || (r == bestR && d < bestD)) {
@@ -412,46 +412,7 @@ public final class FloorFill {
                     bestD = d;
                 }
             }
-            if (best != null) return placeNow(b, best, id, false, now);
-            // walk: the cheapest stand spot on the walkway among the nearest supported cells (a map around the nearest)
-            sup.sort(Comparator.<Pos>comparingDouble(c -> sq(c.x() + 0.5 - bot.x()) + sq(c.z() + 0.5 - bot.z()))
-                    .thenComparingInt(c -> rank.getOrDefault(c, Integer.MAX_VALUE)));
-            Pos focus = sup.get(0);
-            boolean reach = Math.hypot(focus.x() + 0.5 - bot.x(), focus.z() + 0.5 - bot.z()) <= 2 * NEAR;
-            // far along a long box: a map around the cell alone, every spot priced as "Baritone finds the way"
-            Bot from = reach ? bot : Bot.at(focus.x() + 0.5, fy + 1, focus.z() + 0.5);
-            ClearGrid g = grid(from, focus);
-            int[] dist = reach ? g.walkDistances(bot) : unreachable(g);
-            ClearGrid.Spot bestSpot = null;
-            Pos forCell = null;
-            List<Pos> tried = new ArrayList<>();
-            for (int i = 0; i < sup.size() && i < 16; i++) {
-                Pos c = sup.get(i);
-                if (Math.abs(c.x() - focus.x()) > MAP_R - 4 || Math.abs(c.z() - focus.z()) > MAP_R - 4) continue;
-                tried.add(c);
-                ClearGrid.Spot s = standFor(g, dist, c, bot);
-                if (s != null && (bestSpot == null || s.cost() < bestSpot.cost())) {
-                    bestSpot = s;
-                    forCell = c;
-                }
-            }
-            if (bestSpot == null) {
-                // nowhere to stand for these: they are given up, the next pick looks at the others
-                for (Pos c : tried) fail(c, NO_STAND);
-                return false;
-            }
-            target = forCell;
-            targetStep = false;
-            climbing = false;
-            startWalk(b, bestSpot, now);
-            b.status("filling the floor: walking to " + bestSpot.key() + " to place " + forCell.key());
-            return false;
-        }
-
-        private static int[] unreachable(ClearGrid g) {
-            int[] d = new int[(g.bx - g.ax + 1) * g.ny * g.nz];
-            java.util.Arrays.fill(d, -1);
-            return d;
+            return placeNow(b, best == null ? sup.get(0) : best, id, false, now);
         }
 
         /**
@@ -518,7 +479,7 @@ public final class FloorFill {
         /** Placed blocks show up a few ticks later; 3 tries a cell. */
         private boolean check(Body b, long now) {
             if (now - phaseStart < 6) return false;
-            if (target != null && b.placing(target) && now - phaseStart < 20 * 10) return false;
+            if (target != null && b.placing(target) && now - phaseStart < 20 * 65) return false;     // the builder walks and places
             Pos c = target;
             target = null;
             phase = "pick";
@@ -760,34 +721,13 @@ public final class FloorFill {
 
         // ---- reach and stand spots ----
 
-        /** From feet x y z (eye ey) a neighbour of c is in reach, and the bot's body isn't in c. */
+        /**
+         * The climb-out step: from feet x y z (eye ey) the cell is within reach and the body isn't in it (no face is
+         * picked: the builder chooses it).
+         */
         boolean placeableFrom(double x, double y, double z, double ey, Pos c) {
             if (bodyHits(x, y, z, c)) return false;
-            return PlaceRules.placeSideSeen(w, c.x(), c.y(), c.z(), x, ey, z, PlaceRules.PLACE_REACH) != null;
-        }
-
-        /** The stand spot for a floor cell: on the walkway (feet above the layer), the fence's, not in water, cheapest walk. */
-        ClearGrid.Spot standFor(ClearGrid g, int[] dist, Pos c, Bot bot) {
-            // the cheap tests first (the map, the eye's distance), the reach test only in cost order until one passes
-            List<ClearGrid.Spot> cands = new ArrayList<>();
-            double cx = c.x() + 0.5, cy = c.y() + 0.5, cz = c.z() + 0.5, far = PlaceRules.PLACE_REACH + 0.9;
-            for (int x = c.x() - 4; x <= c.x() + 4; x++) {
-                for (int z = c.z() - 4; z <= c.z() + 4; z++) {
-                    for (int y = fy + 1; y <= fy + 3; y++) {
-                        double ey = y + Bot.EYE;
-                        if (sq(x + 0.5 - cx) + sq(ey - cy) + sq(z + 0.5 - cz) > far * far) continue;
-                        int i = g.idx(x, y, z);
-                        if (i < 0 || !g.stand(x, y, z) || g.wet(x, y, z) || g.wet(x, y + 1, z)) continue;
-                        if (standOk != null && !standOk.ok(x, y, z)) continue;
-                        if (badSpots.contains(Pos.key(x, y, z))) continue;
-                        double cost = dist[i] >= 0 ? dist[i] : 1000 + Math.sqrt(sq(x - bot.x()) + sq(y - bot.y()) + sq(z - bot.z()));
-                        cands.add(new ClearGrid.Spot(x, y, z, cost, x + 0.5, ey, z + 0.5));
-                    }
-                }
-            }
-            cands.sort(Comparator.comparingDouble(ClearGrid.Spot::cost));
-            for (ClearGrid.Spot s : cands) if (placeableFrom(s.eyeX(), s.y(), s.eyeZ(), s.eyeY(), c)) return s;
-            return null;
+            return ClearEngine.eyeDistSq(x, ey, z, c.x(), c.y(), c.z()) <= PlaceRules.PLACE_REACH * PlaceRules.PLACE_REACH;
         }
 
         /** How far (sideways) from its focus the walking map reaches. */

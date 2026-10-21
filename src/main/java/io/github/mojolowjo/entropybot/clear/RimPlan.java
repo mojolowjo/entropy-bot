@@ -26,7 +26,7 @@ public final class RimPlan {
     /** The rim placer's cap per layer, in ticks (90 s). */
     public static final int LAYER_CAP_TICKS = 90 * 20;
     /** Reach used to choose the stand spot (PlaceRules.STAND_REACH: Baritone ends a walk a little off the centre). */
-    public static final double REACH = PlaceRules.STAND_REACH;
+    public static final double REACH = 4.0;
 
     /** Why a cell is left. */
     public enum Why {

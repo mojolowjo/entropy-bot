@@ -72,7 +72,7 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
         if (bag.getOrDefault(id, 0) <= 0) return "error: I have no " + id;
         if (!FloorFill.fillable(w, c.x(), c.y(), c.z())) return "error: something is in the way at " + c.key();
         if (FloorFill.bodyHits(x, y, z, c)) return "error: I'm standing in it";
-        if (PlaceRules.placeSide(w, c.x(), c.y(), c.z(), x, y + Bot.EYE, z) == null) return "error: nothing in reach to place against at " + c.key();
+        // builder placements: the fake builder walks to its own spot (no reach test here)
         w.set(c, ClearRules.blockName(id));
         bag.merge(id, -1, Integer::sum);
         placedCells.add(c);
