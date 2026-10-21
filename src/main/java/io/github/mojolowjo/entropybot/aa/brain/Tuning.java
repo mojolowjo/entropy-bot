@@ -24,11 +24,26 @@ public final class Tuning {
     private static final Map<String, Entry> ALL = new LinkedHashMap<>();
 
     static {
-        def("flow", Curves.FLOW, "AA_ROUND2 4", "a prerequisite is worth at least this share of what it unlocks");
-        def("shelterAt1", Costs.SHELTER_AT_1, "aa-costs", "the full-night shelter's score at night danger 1 (the one anchor)");
-        def("torchCut", Costs.TORCH_CUT, "AA_ROUND4 B2", "each torch within 16 cuts the night danger by this share");
-        def("lightFloor", Costs.LIGHT_FLOOR, "AA_ROUND4 B2", "the most the torches may cut the night danger to");
-        def("swordValue", Costs.SWORD, "aa-night2 P0 2", "a weapon's worth once a zombie was seen, added to the tools need");
+        def("urgent", 75, "aa-brain 1", "the score from which an upkeep may interrupt the running desire (food near empty)");
+        def("margin", 15, "aa-brain 1", "the commitment bonus: a challenger must beat the running desire by this much");
+        def("capExempt", 90, "director 2026-10-19", "upkeep at this score (starving) is not capped by the night");
+        def("trumpFood", 4, "aa-night2 P0 1", "food under this stops a trumping desire from cutting the food need");
+        def("shelterMax", 99, "aa-costs", "the most any shelter or hide scores");
+        def("stashMax", 74, "aa-kit camp", "the most the stash desire scores");
+        def("diedS", 60, "aa-kit camp", "seconds a death at the spot is worth in the recovery cost");
+        def("dawnClimb", 45, "aa-night3", "the dawn climb to the surface scores this");
+        def("respawnS", 5, "AA_STEP3 A", "seconds a respawn takes in the death cost");
+        def("healTo", 16, "aa-night2 P0 1", "health the hide keeps going until");
+        def("hideDayUnder", 10, "aa-night2 P0 1", "health under which a day hide starts with hostiles near");
+        def("pointS", 6, "aa-costs 4", "seconds of work one food point is worth when food is fully scarce");
+        def("sourceFactor", 0.2, "aa-costs 4", "with a food source known, scarcity counts this much");
+        def("stationBase", 40, "AA_ROUND2 4", "a station (table, furnace) is worth this much before its share of what it unlocks");
+        def("stationShare", 40, "AA_ROUND2 4", "a station adds this x the tech tree share of what it unlocks");
+        def("flow", 0.9, "AA_ROUND2 4", "a prerequisite is worth at least this share of what it unlocks");
+        def("shelterAt1", 85, "aa-costs", "the full-night shelter's score at night danger 1 (the one anchor)");
+        def("torchCut", 0.05, "AA_ROUND4 B2", "each torch within 16 cuts the night danger by this share");
+        def("lightFloor", 0.7, "AA_ROUND4 B2", "the most the torches may cut the night danger to");
+        def("swordValue", 25, "aa-night2 P0 2", "a weapon's worth once a zombie was seen, added to the tools need");
         def("chestMin", 35, "aa-kit camp", "the camp chest's least worth");
         def("hidePerHp", 7, "aa-night2 P0 1", "the hide's score per missing health point x the night danger");
         def("danger.hpS", 6, "AA_CLEANUP 4", "seconds one health point is worth at full health (regen + food), the cost_of_hp curve's low end");
@@ -101,6 +116,9 @@ public final class Tuning {
             out.add(e.name() + " " + fmt(e.value()) + (e.value() != e.def() ? " (tuned, default " + fmt(e.def()) + ")" : "") + " - " + e.run() + ": " + e.why());
         return out;
     }
+
+    /** The default of one number (for the legacy constants and the tests). */
+    public static double defOf(String name) { Entry e = ALL.get(name); return e == null ? Double.NaN : e.def(); }
 
     public static java.util.Set<String> names() { return ALL.keySet(); }
 

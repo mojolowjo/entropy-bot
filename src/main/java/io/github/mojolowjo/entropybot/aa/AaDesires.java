@@ -7,6 +7,7 @@ import io.github.mojolowjo.entropybot.aa.brain.Kit;
 import io.github.mojolowjo.entropybot.aa.brain.Night;
 import io.github.mojolowjo.entropybot.aa.brain.NightWork;
 import io.github.mojolowjo.entropybot.aa.brain.Personality;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.brain.Wants;
 import io.github.mojolowjo.entropybot.aa.brain.Worth;
 import io.github.mojolowjo.entropybot.aa.brain.TechTree;
@@ -117,14 +118,14 @@ public final class AaDesires {
     }
 
     /** small-1: the surface rung's own score when a night mine is to be left at dawn. */
-    static final double DAWN_CLIMB = 45;
+    static final double DAWN_CLIMB = Tuning.defOf("dawnClimb");
 
 
     public static Desire rung(Rung r) {
         Desire d = switch (r.id) {
             // AA_ROUND2 4 (were 100/95/90): a gate scores nothing itself; what it blocks flows to it (FLOW of the best)
             // small-1: the surface gate binds SURFACE desires only; the dawn climb out of a night mine is its own SURFACE desire
-            case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> NightWork.climbAtDawn(b, AaLadder.SURFACE_DEPTH) ? DAWN_CLIMB : 0)).exposure(Desire.Exposure.SURFACE);
+            case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> NightWork.climbAtDawn(b, AaLadder.SURFACE_DEPTH) ? Tuning.get("dawnClimb") : 0)).exposure(Desire.Exposure.SURFACE);
             case "needs.tools" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b))), b -> null, b -> null);
             // urgent food is never parked by a gate (starving is starving); a stock-up waits for it
             case "needs.food" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)), b -> null, AaDesires::foodInfeasible)
@@ -204,9 +205,9 @@ public final class AaDesires {
         if (!table) return Worth.table(tree(b), have(b));
         if (!(b.in.furnaceKnown || b.in.furnaceInBag)) return Worth.furnace(tree(b), have(b));
         // aa-kit camp: the chest is worth the stash it makes possible (the loot x the night's danger), at least Tuning chestMin
-        double v = Math.max(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("chestMin"), Math.min(70, Kit.lootWorth(b.in.bag) * bedDanger(b)));
+        double v = Math.max(Tuning.get("chestMin"), Math.min(70, Kit.lootWorth(b.in.bag) * bedDanger(b)));
         io.github.mojolowjo.entropybot.aa.brain.Costs.note(b, "camp", "chest: loot " + Math.round(Kit.lootWorth(b.in.bag)) + " x danger "
-                + Math.round(bedDanger(b) * 100) / 100.0 + " (at least " + Math.round(io.github.mojolowjo.entropybot.aa.brain.Tuning.get("chestMin")) + ") -> " + Math.round(v));
+                + Math.round(bedDanger(b) * 100) / 100.0 + " (at least " + Math.round(Tuning.get("chestMin")) + ") -> " + Math.round(v));
         return v;
     }
 
@@ -385,7 +386,7 @@ public final class AaDesires {
     static double factor(Blackboard bb, String key) { return Personality.of(bb).get(key); }
 
     /** review: a factor never makes a non-urgent score urgent (only food's curve may); an urgent one stays urgent. */
-    static double scaled(double base, double f) { return base >= Brain.URGENT ? base : Math.min(Brain.URGENT - 1, f * base); }
+    static double scaled(double base, double f) { return base >= Tuning.get("urgent") ? base : Math.min(Tuning.get("urgent") - 1, f * base); }
 
     /** AA_ROUND2 4 (was B3's night sign): mining stock-ups work under ground, wood at the surface. */
     static Desire.Exposure exposureOf(TaskKind k) {
@@ -577,7 +578,7 @@ public final class AaDesires {
     // ---- aa-night2 P0 1: hide and heal ----
 
     /** Health the hide waits for; health under which it starts by day with hostiles near. */
-    public static final float HEAL_TO = 16, HIDE_DAY_UNDER = 10;
+    public static final float HEAL_TO = (float) Tuning.defOf("healTo"), HIDE_DAY_UNDER = (float) Tuning.defOf("hideDayUnder");
     /** Blackboard fact: the hide has started (Boolean): it keeps scoring until health reaches {@link #HEAL_TO}. */
     public static final String HIDE_FACT = "aa.hide";
 
@@ -586,20 +587,20 @@ public final class AaDesires {
      * hostiles near and health under {@link #HIDE_DAY_UNDER}; once started it holds until {@link #HEAL_TO}. Pure.
      */
     public static double hideScore(boolean hostileNight, int hostilesNear, float health, float maxHealth, double danger, boolean started) {
-        if (health >= HEAL_TO) return -1;
-        boolean trigger = started || (hostileNight ? health < maxHealth : hostilesNear > 0 && health < HIDE_DAY_UNDER);
+        if (health >= Tuning.get("healTo")) return -1;
+        boolean trigger = started || (hostileNight ? health < maxHealth : hostilesNear > 0 && health < Tuning.get("hideDayUnder"));
         if (!trigger) return -1;
-        return Math.min(io.github.mojolowjo.entropybot.aa.brain.Costs.SHELTER_MAX, io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hidePerHp") * Math.max(1, danger) * (maxHealth - health));
+        return Math.min(Tuning.get("shelterMax"), Tuning.get("hidePerHp") * Math.max(1, danger) * (maxHealth - health));
     }
 
     static double hideScore(Blackboard bb) {
         if (!bb.in.hungerDrains || bb.in.sheltered) return -1;
         boolean started = Boolean.TRUE.equals(bb.fact(HIDE_FACT));
-        if (bb.in.health >= HEAL_TO && started) bb.fact(HIDE_FACT, null);
+        if (bb.in.health >= Tuning.get("healTo") && started) bb.fact(HIDE_FACT, null);
         double danger = io.github.mojolowjo.entropybot.aa.brain.Costs.nightDanger(bb.in.difficulty, bb.in.armorPoints, bb.in.health, bb.in.maxHealth,
                 bb.in.torchesNear, bb.in.hostilesNear);
-        double v = hideScore(Night.hostile(bb), bb.in.hostilesNear, bb.in.health, bb.in.maxHealth, danger, started && bb.in.health < HEAL_TO);
-        if (v >= Brain.URGENT) bb.fact(HIDE_FACT, Boolean.TRUE);
+        double v = hideScore(Night.hostile(bb), bb.in.hostilesNear, bb.in.health, bb.in.maxHealth, danger, started && bb.in.health < Tuning.get("healTo"));
+        if (v >= Tuning.get("urgent")) bb.fact(HIDE_FACT, Boolean.TRUE);
         if (v > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "hide", "health " + Math.round(bb.in.health) + "/" + Math.round(bb.in.maxHealth)
                 + ", danger " + Math.round(danger * 100) / 100.0 + ", hostiles " + bb.in.hostilesNear + " -> " + Math.round(v));
         return v;
@@ -628,13 +629,13 @@ public final class AaDesires {
         double nd = Night.hostile(bb) ? danger : 0;
         double[] dc = deathCost(bb.in.bag, bb.in.pos, bb.in.spawnPos, nd);
         String dw = "kit " + Math.round(dc[1]) + " + walk back " + (bb.in.spawnPos == null ? "0 (spawn unknown)" : String.valueOf(Math.round(dc[2])))
-                + " + respawn " + Math.round(RESPAWN_S) + " + night " + Math.round(dc[3]);
+                + " + respawn " + Math.round(Tuning.get("respawnS")) + " + night " + Math.round(dc[3]);
         return new DangerOptions.Need(v, why, nd, bb.in.sheltered || sealedHere(bb), shellBlocks(bb.in.bag),
                 bb.in.bedKnown || bb.in.bedInBag, bb.in.baseKnown, AaEscape.pillarBlocks(bb.in.bag), waterHere(bb), bb.in.air, dc[0], dw);
     }
 
     /** AA_STEP3 A1: seconds the death screen and the respawn take (the respawn button, the chunks loading). */
-    static final double RESPAWN_S = 5;
+    static final double RESPAWN_S = Tuning.defOf("respawnS");
 
     /**
      * AA_STEP3 A1 (TIME_MODEL death cost): {total, kit, walk back, night}: the kit's worth (Kit.worth), the walk from the
@@ -648,8 +649,8 @@ public final class AaDesires {
             double w = io.github.mojolowjo.entropybot.aa.brain.Site.of(spawn).travelS(io.github.mojolowjo.entropybot.aa.brain.Site.of(pos));
             walk = Double.isInfinite(w) ? 0 : w;
         }
-        double night = io.github.mojolowjo.entropybot.aa.brain.Kit.DIED_S * (1 + Math.max(0, danger));
-        return new double[]{kit + walk + RESPAWN_S + night, kit, walk, night};
+        double night = Tuning.get("diedS") * (1 + Math.max(0, danger));
+        return new double[]{kit + walk + Tuning.get("respawnS") + night, kit, walk, night};
     }
 
     /** AA_STEP3 A5: blackboard fact (long[]{x, y, z, at ms}): where and when the air reflex paused a job too long (this spot is water). */
@@ -793,7 +794,7 @@ public final class AaDesires {
         if (c == null || c.best() == null || c.score() < 0 || c.best().way() == w || c.best().way() == DangerOptions.Way.STAY) return null;
         DangerOptions.Priced mine = null;
         for (DangerOptions.Priced p : c.all()) if (p.way() == w) mine = p;
-        double margin = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.minS");
+        double margin = Tuning.get("danger.minS");
         // review 0.39.a4 1: a way not priced or not possible now (the shore once out of the water, a box once on the
         // ground) is under way: its chain is kept; only a way saving more than danger.minS over it replaces it
         if (mine == null || !mine.possible() || mine.costS() - c.best().costS() <= margin) return null;
