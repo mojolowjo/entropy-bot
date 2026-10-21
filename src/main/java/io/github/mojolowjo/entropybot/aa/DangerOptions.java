@@ -146,6 +146,11 @@ public final class DangerOptions {
 
     static double hpS(ThreatFacts.Me me) { return hpS(me, Tuning.get("danger.deathS")); }
 
+    /** 0.39.s6: the hp curve at a health (the lava wade's price, LavaPrice), with Tuning's death cost. */
+    public static double hpS(double health, double maxHealth) {
+        return hpS(new ThreatFacts.Me(health, maxHealth, 0, 1, 20), Tuning.get("danger.deathS"));
+    }
+
     /** AA_STEP3 A1 (TIME_MODEL cost_of_air): the death cost x the drown risk of {@code workS} s at {@code depth} under the surface. */
     static double airLoss(double death, int depth, double workS, int air) {
         return death * Math.min(1, io.github.mojolowjo.entropybot.guard.DrownRisk.cellRisk(depth, workS, air));
@@ -396,35 +401,21 @@ public final class DangerOptions {
     // ---- reflex probe 0.39.s5: a spent reflex goes to the danger desire, which acts ----
 
     /**
-     * The danger ways that are the same move as a spent reflex's ways (held for this pricing: they just failed): the run
-     * away / run from the hazard = flee, the burrow (down) = burrow. The air reflex's surface goal and burrow up, and the
-     * to-water leg, have no danger way of their own. Pure.
-     */
-    public static java.util.Set<Way> reflexHeld(String reflexLine) {
-        java.util.Set<Way> out = java.util.EnumSet.noneOf(Way.class);
-        if (reflexLine == null) return out;
-        if (reflexLine.contains("run away") || reflexLine.contains("run from the hazard")) out.add(Way.FLEE);
-        if (reflexLine.startsWith("reflex.creeper")) out.add(Way.BURROW);
-        return out;
-    }
-
-    /**
      * Reflex probe 0.39.s5 (owner's watch: FAILED went to the danger desire, which did nothing): every reflex way is spent,
      * so the bot faces its death cost. The need scores that ({@code min(99, death x danger.perS)}, the same scale as the
      * foes' saved seconds), the ways are priced as for the night ({@link #choose(ThreatFacts, Need, java.util.function.Function)})
-     * with the reflex's own ways held ({@link #reflexHeld}), and the pick is the cheapest possible way that acts: the
+     * with the reflex's own ways held (ReflexLadder.Way.dangerKey, handed over as data), and the pick is the cheapest possible way that acts: the
      * open-air wait (the "do nothing" fallback) and staying are out. No way left = score -1 with the reasons (never silent).
      */
-    public static Choice afterReflex(ThreatFacts f, Need need, String reflexLine, java.util.function.Function<String, String> held) {
+    public static Choice afterReflex(ThreatFacts f, Need need, String reflexLine, java.util.Set<String> reflexWays, java.util.function.Function<String, String> held) {
         Need base = need == null || need == Need.NONE ? Need.NONE : need;
         double death = base.deathS() > 0 ? base.deathS() : Tuning.get("danger.deathS");
         double score = Math.min(99, death * Tuning.get("danger.perS"));
         String why = "reflex spent (" + reflexLine + ")";
         Need n = new Need(Math.max(score, base.score()), why, base.danger(), base.sheltered(), base.shellBlocks(), base.bed(), base.base(),
                 base.pillarBlocks(), base.waterHere(), base.air(), base.deathS(), base.deathWhy());
-        java.util.Set<Way> own = reflexHeld(reflexLine);
         java.util.function.Function<String, String> h = k -> {
-            for (Way w : own) if (w.key().equals(k)) return "the reflex's own way, spent";
+            if (reflexWays != null && reflexWays.contains(k)) return "the reflex's own way, spent";
             return held == null ? null : held.apply(k);
         };
         Choice c = choose(f, n, h);

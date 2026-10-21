@@ -155,7 +155,8 @@ public final class Tuning {
         def("reflex.air.burrowUp", 3, "reflex choosers", "cells over the head the air reflex's burrow-up asks the fork to break when no swim-up path is found");
         def("reflex.creeper.burrow", 2, "reflex choosers", "cells under the feet the creeper reflex's burrow asks the fork to dig (then sealed over the head)");
         def("reflex.failedS", 30, "reflex choosers", "seconds a reflex whose every way failed keeps the danger at full for the danger desire (its line is the reason)");
-        def("reflex.lava.cellTicks", 20, "reflex probe 0.39.s5", "Baritone ticks a reflex leg that starts in lava pays per lava cell it wades through to the way out (the fork's lavaCellCost; lava's 4 hp every half second makes a cell dear, a wall only when 0)");
+        def("game.lavaHpPerS", 8, "0.39.s6 review (vanilla Entity.lavaHurt)", "health a player loses in lava per second: 4 a hit, a hit every 10 ticks (the invulnerability time); LavaPrice prices the reflex's lava wade from it");
+        def("moves.ownerStaleS", 2, "0.39.s6 review", "seconds after its last status tick a reflex car stops owning Baritone's breaking/placing (a car dropped without stop: the SafetyNet then puts them back)");
         def("reflex.fire.aimTicks", 10, "reflex choosers", "ticks the water bucket waits for Baritone's look to land on the block under the feet before that try fails");
         def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
         def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");

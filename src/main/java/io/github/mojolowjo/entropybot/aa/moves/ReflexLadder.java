@@ -37,12 +37,40 @@ public final class ReflexLadder {
     }
 
     public enum Way {
-        SURFACE("surface goal"), BURROW_UP("burrow up"), RUN_FROM_HAZARD("run from the hazard"), TO_WATER("to water"),
-        RUN_AWAY("run away"), BURROW("burrow");
+        SURFACE("surface goal", "shore"), BURROW_UP("burrow up", null), RUN_FROM_HAZARD("run from the hazard", "flee"), TO_WATER("to water", null),
+        RUN_AWAY("run away", "flee"), BURROW("burrow", "burrow");
 
         public final String label;
+        /**
+         * 0.39.s6 review: the danger desire's way (DangerOptions.Way key) that is the same move, held when this reflex
+         * way is spent; null = none (burrow up digs up and to-water goes into water: no danger way does). The air
+         * reflex's surface goal is the swim to air, the danger desire's shore swim.
+         */
+        public final String dangerKey;
 
-        Way(String label) { this.label = label; }
+        Way(String label, String dangerKey) {
+            this.label = label;
+            this.dangerKey = dangerKey;
+        }
+    }
+
+    /** 0.39.s6 review: what a spent reflex hands the danger desire as data: its line and the danger ways to hold. */
+    public record Spent(String line, java.util.Set<String> held) { }
+
+    private static volatile Spent lastSpent;
+
+    /** The last spent reflex (its line and held ways), once; null none. */
+    public static Spent takeSpent() {
+        Spent s = lastSpent;
+        lastSpent = null;
+        return s;
+    }
+
+    /** The danger ways the same as a kind's ways. Pure. */
+    public static java.util.Set<String> dangerHeld(Kind kind) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (Way w : kind.ways) if (w.dangerKey != null) out.add(w.dangerKey);
+        return out;
     }
 
     private static volatile Failures failures = new Failures();
@@ -112,7 +140,9 @@ public final class ReflexLadder {
     public static String spent(Kind kind, int[] cell, String why) {
         StringBuilder w = new StringBuilder();
         for (Way x : kind.ways) w.append(w.length() == 0 ? "" : ", ").append(x.label);
-        return kind.key() + " " + cell(cell) + ": FAILED after " + fails(kind, cell) + " tries (" + w + "): " + why;
+        String line = kind.key() + " " + cell(cell) + ": FAILED after " + fails(kind, cell) + " tries (" + w + "): " + why;
+        lastSpent = new Spent(line, java.util.Set.copyOf(dangerHeld(kind)));
+        return line;
     }
 
     private ReflexLadder() { }
