@@ -99,6 +99,7 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.TOOLS_FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts>) this::toolsFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.FoodOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts>) this::foodFacts);
         bb.fact(io.github.mojolowjo.entropybot.aa.BedOptions.FACTS, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts>) this::bedFacts);     // round 4 fix 4
+        NeedFacts.install(bb, this);          // round 4A N wiring: the station, bed, base and bag facts (O's sets)
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.STATS_FACT, tree.brain.stats);
         // AA_ROUND3 2: the sequencer's horizon (aa horizon, saved) and the nearest known coal (torches' site, cached 10 s)
         io.github.mojolowjo.entropybot.sense.Seen.fair(!d.has("fair") || d.get("fair").getAsBoolean());     // AA_ROUND3 3: default on
@@ -1390,6 +1391,19 @@ public final class AaRuntime implements JobPort {
         bb.fact(io.github.mojolowjo.entropybot.aa.core.AreaFacts.NEAREST_BASE, in.nearestBase);
         bb.fact(io.github.mojolowjo.entropybot.aa.core.AreaFacts.NEAR_OWNER, in.nearOwner ? Boolean.TRUE : null);
         bb.fact(io.github.mojolowjo.entropybot.aa.core.AreaFacts.NOTE, in.areaNote);
+    }
+
+    /** AA_ROUND4A O: the centre of area {@code name} at my feet's height (for the house row's site), null none or unreadable. */
+    int[] areaCell(String name) {
+        if (name == null || bb.in.pos == null) return null;
+        try {
+            JsonObject a = c.policyArea(name);
+            if (a == null || !a.has("x1")) return null;
+            return new int[]{(int) ((PolicyCommands.n(a, "x1") + PolicyCommands.n(a, "x2")) / 2), bb.in.pos[1], (int) ((PolicyCommands.n(a, "z1") + PolicyCommands.n(a, "z2")) / 2)};
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: area cell {}: {}", name, e.toString());
+            return null;
+        }
     }
 
     /** {@code house} takes a box of 7x7 up to 4096 blocks (CampCommands.house); a round area or a bigger box does not fit. */

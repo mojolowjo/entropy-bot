@@ -117,9 +117,21 @@ public final class AaDesires {
      * scores them; no ladder order, no gate: a need whose work wants open ground prices the climb into its row.
      * Round 4A O (StationOptions, BaseOptions, BagOptions) replaces the station, base and bag lines here.
      */
+    /** Round 4A N wiring: the station need's id and its facts key (NeedFacts registers the supplier). */
+    public static final String STATION_ID = "needs.tableFurnace", STATION_FACTS = "station.facts";
+    /** The bag need's band: on under BAG_ENTER free slots, off at BAG_LEAVE (BagOptions' want). */
+    public static final int BAG_ENTER = 3, BAG_LEAVE = 10;
+
+    /** The station the camp lacks now: the table, then the furnace, then the chest. */
+    public static StationOptions.Kind stationKind(Inputs in) {
+        if (!(in.tableKnown || in.tableInBag)) return StationOptions.Kind.TABLE;
+        if (!(in.furnaceKnown || in.furnaceInBag)) return StationOptions.Kind.FURNACE;
+        return StationOptions.Kind.CHEST;
+    }
+
     public static List<Need> needs() {
         io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(8, 16),
-                bag = new io.github.mojolowjo.entropybot.aa.core.Band(3, 10), food = new io.github.mojolowjo.entropybot.aa.core.Band(10, 18);
+                bag = new io.github.mojolowjo.entropybot.aa.core.Band(BAG_ENTER, BAG_LEAVE), food = new io.github.mojolowjo.entropybot.aa.core.Band(10, 18);
         Need tools = new Need("needs.tools", TaskKind.TOOLS,
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
                 bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
@@ -129,10 +141,11 @@ public final class AaDesires {
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
                 bb -> null, bb -> "goal food 8", new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
         // a table or furnace in the bag counts (the near-block fact is false as soon as the bot walks away)
-        Need tableFurnace = new Need("needs.tableFurnace", TaskKind.TABLE_FURNACE,
+        // round 4A O: craft+place at the cell, cut + craft, the planner, a known one (StationOptions); a gather climbs first there
+        Need tableFurnace = new Need(STATION_ID, TaskKind.TABLE_FURNACE,
                 bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !campChest(bb),
                 bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
-                        : chestChain(bb.in)).surface().hand(60);
+                        : chestChain(bb.in), new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
         Need spare = new Need("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> AaLadder.spareTableWanted(bb.in.tableInBag, bb.in.planks),
                 bb -> null, bb -> "craft crafting_table 1").hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
@@ -142,17 +155,22 @@ public final class AaDesires {
                 bb -> "goal torch " + CoalOptions.Torches.TARGET, new CoalOptions.Torches());
         Need base = new Need("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(AaLadder.SHELTER_FACT),
-                bb -> null, bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter").surface().hand(240);
+                bb -> null, bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter",
+                // round 4A O: house <area>, shelter here, burrow, priced with the night (BaseOptions; its rows climb first)
+                new Options.Picker<>("BASE", BaseOptions.FACTS, BaseOptions.BaseFacts.class, new BaseOptions.Set())
+                        .withoutFacts((b, planned) -> b.in.areaName != null ? "house " + b.in.areaName : planned));
         // round 4 fix 4: the ways to a bed are priced (BedOptions); the climb is the first step of its row under ground
         Need bed = new Need("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
                 bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
                 bb -> AaLadder.bedChain(bb.in.wool, sheepHerd(bb)),
-                new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set())).surface();
+                new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set()));      // its rows price the climb (BedOptions)
         Need deposit = new Need("needs.bag", TaskKind.BAG,
                 bb -> bag.update(bb.in.freeSlots),
-                bb -> bb.in.baseChests ? null : "no base chests scanned (scan base)",
-                bb -> "deposit").hand(60);
+                bb -> null,
+                // round 4A O: deposit at the base chest, craft+place a chest here, drop junk (BagOptions)
+                bb -> "deposit", new Options.Picker<>("BAG", BagOptions.FACTS, BagOptions.BagFacts.class, new BagOptions.Set())
+                        .withoutFacts((b, planned) -> b.in.baseChests ? "deposit" : null));
         // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
         Need iron = new Need("needs.iron", TaskKind.IRON,
                 bb -> bb.in.pickTier < 3,

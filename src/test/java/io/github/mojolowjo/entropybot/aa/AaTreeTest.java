@@ -138,7 +138,7 @@ class AaTreeTest {
         bb.in.baseKnown = true;
         bb.in.freeSlots = 2;
         tree.tick(bb);
-        assertTrue(String.join("|", reasons()).contains("BAG: no way can run (no base chests scanned (scan base))"), reasons().toString());
+        assertTrue(String.join("|", reasons()).contains("BAG: no way can run"), reasons().toString());
         if (bb.task() != null) port.done(port.started.size(), "done");
         tree.tick(bb);
         bb.in.baseChests = true;
@@ -346,17 +346,13 @@ class AaTreeTest {
 
     /** 0.36.3 (aa40b): in the quarry hole with no table, the ladder climbs first; at the surface it plans the table. */
     @Test
-    void underGroundWithNoTableClimbsFirst() {
+    void underGroundWithNoTableNeedsNoGate() {
         freshStart();
         pick(2);
         bb.in.torches = 16;
         bb.in.underDepth = 9;
         tree.tick(bb);
-        assertEquals(AaLadder.CLIMB, lastChain());
-        port.done(1, "done");
-        tree.tick(bb);
-        bb.in.underDepth = 0;
-        tree.tick(bb);
+        // round 4A N: no surface gate; placing needs no open sky, a gather row prices its own climb (StationOptions)
         assertEquals("goal table", lastChain());
     }
 
