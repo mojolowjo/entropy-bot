@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -26,9 +28,15 @@ import java.util.Locale;
 public final class Replan {
     private Replan() {}
 
-    public static final double PLACE_BLOCK = IronOptions.PLACE_BLOCK, REFILL = 0.05, CLIMB_BLOCK = 3, CLIMB_FIX = 10;
-    public static final double CHEAPER = 0.30, MIN_SAVE = 3;
-    public static final long EVERY_MS = 5_000, LONG_STEP_MS = 15_000, LOCK_MS = 20_000;
+    public static double placeBlock() { return IronOptions.placeBlock(); }
+    public static double refill() { return Tuning.get("replan.refill"); }
+    public static double climbBlock() { return Tuning.get("replan.climbBlock"); }
+    public static double climbFix() { return Tuning.get("replan.climbFix"); }
+    public static double cheaper() { return Tuning.get("replan.cheaper"); }
+    public static double minSave() { return Tuning.get("replan.minSave"); }
+    public static long everyMs() { return Tuning.l("replan.everyMs"); }
+    public static long longStepMs() { return Tuning.l("replan.longStepMs"); }
+    public static long lockMs() { return Tuning.l("replan.lockMs"); }
 
     public enum Leg { NONE, PILLAR, TUNNEL, WALK }
 
@@ -40,10 +48,17 @@ public final class Replan {
     // an open own shaft is its cheapest case (no breaks). Hazards and the cap are costs too: lava/water/falling blocks in
     // the column, levels over 40, blocks I lack. Tunnel/pillar wins only when >= 20% cheaper than the walk.
 
-    public static final int TUNNEL_CAP = 40;
-    public static final double OWN_BREAK = 1, FOREIGN_BREAK = 6, UP_PLACE = 0.05, TUNNEL_BETTER = 0.20;
+    public static int tunnelCap() { return Tuning.i("replan.tunnelCap"); }
+    public static double ownBreak() { return Tuning.get("replan.ownBreak"); }
+    public static double foreignBreak() { return Tuning.get("replan.foreignBreak"); }
+    public static double upPlace() { return Tuning.get("replan.upPlace"); }
+    public static double tunnelBetter() { return Tuning.get("replan.tunnelBetter"); }
     /** Hazard costs per cell (walk-blocks): lava (burns, flows onto me), water (flows down the shaft), a falling block. */
-    public static final double LAVA = 1000, WATER = 60, FALLING = 40, OVER_CAP = 25, NO_BLOCK = 30;
+    public static double lavaV() { return Tuning.get("replan.lava"); }
+    public static double waterV() { return Tuning.get("replan.water"); }
+    public static double fallingV() { return Tuning.get("replan.falling"); }
+    public static double overCap() { return Tuning.get("replan.overCap"); }
+    public static double noBlock() { return Tuning.get("replan.noBlock"); }
 
     /** One cell of the column over the head, bottom up. {@code mult} = the BreakPolicy multiplier, infinite = denied. */
     public record Cell(boolean open, boolean ownDug, double mult, boolean lava, boolean water, boolean falling) {
@@ -60,23 +75,23 @@ public final class Replan {
         int breaks = 0, own = 0;
         List<String> notes = new ArrayList<>();
         for (Cell c : column) {
-            if (c.lava()) haz += LAVA;
-            if (c.water()) haz += WATER;
-            if (c.falling()) haz += FALLING;
+            if (c.lava()) haz += lavaV();
+            if (c.water()) haz += waterV();
+            if (c.falling()) haz += fallingV();
             if (!c.open() && !c.water() && !c.lava()) {
                 double m = c.mult();
                 if (Double.isInfinite(m) || Double.isNaN(m)) { brk = Double.POSITIVE_INFINITY; notes.add("a cell may not be broken"); break; }
-                brk += (c.ownDug() ? OWN_BREAK : FOREIGN_BREAK) * m;
+                brk += (c.ownDug() ? ownBreak() : foreignBreak()) * m;
                 breaks++;
                 if (c.ownDug()) own++;
             }
         }
         if (haz > 0) notes.add("hazards " + Math.round(haz));
-        double over = Math.max(0, levels - TUNNEL_CAP) * OVER_CAP;
-        if (over > 0) notes.add((levels - TUNNEL_CAP) + " over the " + TUNNEL_CAP + " cap " + Math.round(over));
-        double lack = Math.max(0, levels - throwaway) * NO_BLOCK;
+        double over = Math.max(0, levels - tunnelCap()) * overCap();
+        if (over > 0) notes.add((levels - tunnelCap()) + " over the " + tunnelCap() + " cap " + Math.round(over));
+        double lack = Math.max(0, levels - throwaway) * noBlock();
         if (lack > 0) notes.add((levels - Math.max(0, throwaway)) + " blocks short " + Math.round(lack));
-        double cost = brk + levels * UP_PLACE + haz + over + lack;
+        double cost = brk + levels * upPlace() + haz + over + lack;
         Leg leg = breaks == 0 ? Leg.PILLAR : Leg.TUNNEL;
         String why = levels + " up, " + breaks + " breaks (" + own + " mine)" + (notes.isEmpty() ? "" : ", " + String.join(", ", notes));
         return new Way(leg, cost, why);
@@ -92,7 +107,7 @@ public final class Replan {
         if (levels <= 0) return new Way(Leg.NONE, 0, "already out");
         Way t = WayUp.upColumn(column, levels, throwaway, kit);
         String both = t.leg().name().toLowerCase(Locale.ROOT) + " " + fmt(t.cost()) + " (" + t.why() + ") vs walk " + fmt(walk);
-        if (t.cost() <= walk * (1 - TUNNEL_BETTER)) return new Way(t.leg(), t.cost(), both);
+        if (t.cost() <= walk * (1 - tunnelBetter())) return new Way(t.leg(), t.cost(), both);
         return new Way(Leg.WALK, walk, both + ": walking");
     }
 
@@ -111,12 +126,12 @@ public final class Replan {
     }
 
     /** Wandered farther than this from the planned target during the ore step: re-plan. */
-    public static final int WANDER = 24;
+    public static int wander() { return Tuning.i("replan.wander"); }
 
     public static boolean wandered(int[] target, int[] me) {
         if (target == null || me == null) return false;
         long dx = target[0] - me[0], dz = target[2] - me[2];        // horizontal: a dig straight down is not a wander
-        return dx * dx + dz * dz > (long) WANDER * WANDER;
+        return dx * dx + dz * dz > (long) wander() * wander();
     }
 
     /** The stored way back: the leg, its cost (walk-blocks), why, and the step it follows (0-based; -1 = the chain's end). */
@@ -127,10 +142,10 @@ public final class Replan {
     }
 
     /** Pillar up my own shaft: depth x place x refill. */
-    public static double pillarCost(int depth) { return Math.max(0, depth) * PLACE_BLOCK * REFILL; }
+    public static double pillarCost(int depth) { return Math.max(0, depth) * placeBlock() * refill(); }
 
     /** Walk / stairs back up: depth x 3 + 10, or the walk back when that is longer. */
-    public static double walkCost(int depth, double walkBack) { return Math.max(depth <= 0 ? 0 : depth * CLIMB_BLOCK + CLIMB_FIX, Math.max(0, walkBack)); }
+    public static double walkCost(int depth, double walkBack) { return Math.max(depth <= 0 ? 0 : depth * climbBlock() + climbFix(), Math.max(0, walkBack)); }
 
     /**
      * The return leg of an option that digs straight down {@code depth} blocks (a shaft of its own) or walks
@@ -184,7 +199,7 @@ public final class Replan {
                 stepAt = lastAt = now;
                 return true;
             }
-            if (now - stepAt >= LONG_STEP_MS && now - lastAt >= EVERY_MS) {
+            if (now - stepAt >= longStepMs() && now - lastAt >= everyMs()) {
                 lastAt = now;
                 return true;
             }
@@ -249,9 +264,9 @@ public final class Replan {
         double c = cur == null ? Double.POSITIVE_INFINITY : cur.total();
         if (alt == null) return new Decision(null, -1, c, 0, "no other option");
         double a = alt.total();
-        String scores = (wandered ? "bug signal: wandered >" + WANDER + " from the target (a per-ore mine never should): " : "") + (cur == null ? running.id() + " gone" : cur.id() + " " + Math.round(c)) + " vs " + alt.id() + " " + Math.round(a);
-        if (!(a <= c * (1 - CHEAPER) && c - a >= MIN_SAVE)) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
-        if (lastSwitchAt >= 0 && now - lastSwitchAt < LOCK_MS) return new Decision(null, -1, c, a, scores + ": locked " + (LOCK_MS - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");
+        String scores = (wandered ? "bug signal: wandered >" + wander() + " from the target (a per-ore mine never should): " : "") + (cur == null ? running.id() + " gone" : cur.id() + " " + Math.round(c)) + " vs " + alt.id() + " " + Math.round(a);
+        if (!(a <= c * (1 - cheaper()) && c - a >= minSave())) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
+        if (lastSwitchAt >= 0 && now - lastSwitchAt < lockMs()) return new Decision(null, -1, c, a, scores + ": locked " + (lockMs() - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");
         if (midDigOrPillar) return new Decision(null, -1, c, a, scores + ": mid dig-down or pillar");
         List<String> rs = lines(running), as = lines(alt);
         int p = commonPrefix(rs, as), s = commonSuffix(rs, as, p);

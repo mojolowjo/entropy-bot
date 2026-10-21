@@ -97,7 +97,7 @@ class PlacedPlanTest {
 
     @Test void restoreWordsPlacedAndKeep() {
         assertEquals(RestoreArgs.Kind.PLACED, RestoreArgs.parse("placed").kind());
-        assertEquals(PlacedPlan.DEFAULT_RADIUS, RestoreArgs.parse("placed").n());
+        assertEquals(PlacedPlan.defaultRadius(), RestoreArgs.parse("placed").n());
         assertEquals(40, RestoreArgs.parse("placed 40").n());
         assertEquals(RestoreArgs.Kind.USAGE, RestoreArgs.parse("placed 0").kind());
         assertEquals(RestoreArgs.Kind.USAGE, RestoreArgs.parse("placed 65").kind());

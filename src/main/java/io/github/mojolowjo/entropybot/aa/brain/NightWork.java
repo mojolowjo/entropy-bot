@@ -18,7 +18,8 @@ import java.util.List;
 public final class NightWork {
     private NightWork() {}
 
-    public static final int SHAFT = 2, STAIRS = 24;
+    public static int shaft() { return Tuning.i("nightWork.shaft"); }
+    public static int stairsV() { return Tuning.i("nightWork.stairs"); }
 
     public enum Work { NONE, SMELT, CRAFT, STAIRS }
 
@@ -78,10 +79,10 @@ public final class NightWork {
      */
     public static List<Step> stairs(int x, int y, int z, int dx, int dz) {
         List<Step> out = new ArrayList<>();
-        out.add(new Step.Dig(new int[]{x, y - SHAFT, z}, new int[]{x, y - 1, z}, true, true));
-        out.add(new Step.Walk(x, y - SHAFT, z, 0));
-        int sy = y - SHAFT, every = io.github.mojolowjo.entropybot.commands.StairPlan.TORCH_EVERY;
-        for (int i = 1; i <= STAIRS; i++) {
+        out.add(new Step.Dig(new int[]{x, y - shaft(), z}, new int[]{x, y - 1, z}, true, true));
+        out.add(new Step.Walk(x, y - shaft(), z, 0));
+        int sy = y - shaft(), every = io.github.mojolowjo.entropybot.commands.StairPlan.torchEvery();
+        for (int i = 1; i <= stairsV(); i++) {
             int cx = x + dx * i, cz = z + dz * i;
             out.add(new Step.Dig(new int[]{cx, sy - i, cz}, new int[]{cx, sy - i + 2, cz}, true, true));
             out.add(new Step.Walk(cx, sy - i, cz, 0));

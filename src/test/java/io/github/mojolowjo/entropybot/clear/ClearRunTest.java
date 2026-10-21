@@ -132,7 +132,7 @@ class ClearRunTest {
     void aSoftJobGivesUpWithoutFailing() {
         // nothing reachable: 8 failed tries in a row would stop a normal clear; a soft one reports "ok: gave up"
         ClearJob j = ClearJob.start(new ClearJob.Options().box(ClearBox.of(0, 52, 0, 0, 52, 0)).soft(true).label("mining 1 ore blocks next to branch 9"), null, null);
-        j.consecFails = ClearEngine.MAX_CONSEC_FAILS;
+        j.consecFails = ClearEngine.maxConsecFails();
         assertEquals("ok: gave up mining 1 ore blocks next to branch 9 (stuck - 8 tries in a row where I couldn't reach anything) - broke 0 blocks",
                 ClearEngine.finishMessage(new FakeWorld(), j, ClearEngine.STUCK));
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Locale;
 
@@ -24,15 +26,18 @@ public final class Litter {
     public enum Context { EXEMPT, SURFACE, CAVE, SEALED, OVER_FLUID }
 
     /** Seconds of litter per block left standing, by context. */
-    public static final double SURFACE_S = 30, CAVE_S = 5, SEALED_S = 2;
+    public static double surfaceS() { return Tuning.get("litter.surfaceS"); }
+    public static double caveS() { return Tuning.get("litter.caveS"); }
+    public static double sealedS() { return Tuning.get("litter.sealedS"); }
     /** A block this close to a known place, area edge or player build is on show: surface litter even underground-ish. */
-    public static final int NEAR_BUILD = 16, FAR = 9999;
+    public static int nearBuild() { return Tuning.i("litter.nearBuild"); }
+    public static int far() { return Tuning.i("litter.far"); }
     /** Extra seconds per block to take it down on top of the break time (aim, drop, step). */
-    public static final double CLEANUP_EXTRA_S = 0.5;
+    public static double cleanupExtraS() { return Tuning.get("litter.cleanupExtraS"); }
     /** Time saved by a crossing when the way around is unknown. */
-    public static final double UNKNOWN_SAVED_S = 60;
+    public static double unknownSavedS() { return Tuning.get("litter.unknownSavedS"); }
     /** Seconds to place one scaffold block (jump, look, place). */
-    public static final double PLACE_S = 0.6;
+    public static double placeS() { return Tuning.get("litter.placeS"); }
 
     /**
      * What the adapter knows about the cell the blocks go to.
@@ -49,7 +54,7 @@ public final class Litter {
         if (f == null) return Context.SURFACE;
         if (f.ownBox()) return Context.EXEMPT;
         if (f.overFluid()) return Context.OVER_FLUID;
-        if (f.skyVisible() || (f.nearBuildDist() >= 0 && f.nearBuildDist() <= NEAR_BUILD)) return Context.SURFACE;
+        if (f.skyVisible() || (f.nearBuildDist() >= 0 && f.nearBuildDist() <= nearBuild())) return Context.SURFACE;
         if (f.caveOpen()) return Context.CAVE;
         if (f.nearBuildDist() < 0) return Context.SURFACE;           // nothing known about the neighbourhood: fail to the dearest
         return Context.SEALED;
@@ -59,15 +64,15 @@ public final class Litter {
     public static double perBlock(Context c) {
         return switch (c) {
             case EXEMPT, OVER_FLUID -> 0;
-            case SURFACE -> SURFACE_S;
-            case CAVE -> CAVE_S;
-            case SEALED -> SEALED_S;
+            case SURFACE -> surfaceS();
+            case CAVE -> caveS();
+            case SEALED -> sealedS();
         };
     }
 
     /** Seconds to break one placed block: the stone-class break time of the pickaxe tier (hand 0 .. diamond 4) + the extra. */
     public static double breakS(int tier) {
-        return DrownRisk.DRY_S[Math.max(0, Math.min(4, tier))] + CLEANUP_EXTRA_S;
+        return DrownRisk.DRY_S[Math.max(0, Math.min(4, tier))] + cleanupExtraS();
     }
 
     /** Cleanup: blocks x (break time by tool + 0.5 s) + the walk back to them. */
@@ -84,7 +89,7 @@ public final class Litter {
     public static double reuseS(double returnLegs, double confidence, double remainingOre, double savedS) {
         double revisits = Math.max(0, confidence) * Math.max(0, remainingOre);
         double crossings = Math.max(0, returnLegs) + revisits;
-        double saved = savedS > 0 ? savedS : UNKNOWN_SAVED_S;
+        double saved = savedS > 0 ? savedS : unknownSavedS();
         return Math.max(0, crossings * saved);
     }
 
@@ -136,7 +141,7 @@ public final class Litter {
 
     /** Seconds to place the blocks and then deal with them: the whole price of a scaffold of {@code blocks}. */
     public static double scaffoldS(Price p) {
-        return p.blocks() * PLACE_S + p.priceS();
+        return p.blocks() * placeS() + p.priceS();
     }
 
     // ---- a tall tree: take the top logs with a pillar, or skip them ----
@@ -153,9 +158,9 @@ public final class Litter {
     }
 
     /** Standing on the ground the bot reaches this many blocks above its feet's level with the trunk in sight. */
-    public static final int REACH_UP = 5;
+    public static int reachUp() { return Tuning.i("litter.reachUp"); }
     /** What a log is worth when it has to be found elsewhere (seconds). */
-    public static final double LOG_VALUE_S = 4;
+    public static double logValueS() { return Tuning.get("litter.logValueS"); }
 
     /**
      * A tree whose top log is {@code height} above its base: the logs above {@link #REACH_UP} need a pillar of that many
@@ -163,11 +168,11 @@ public final class Litter {
      * {@code topLogs} = how many logs sit above the reach (a 1x1 trunk: the same number).
      */
     public static TreeTop tallTree(Facts f, int height, int topLogs, int tier, double walkBackS) {
-        int pillar = Math.max(0, height - REACH_UP);
+        int pillar = Math.max(0, height - reachUp());
         if (pillar == 0 || topLogs <= 0) return new TreeTop(TreeWay.ALL, 0, 0, 0, 0, price(f, 0, tier, walkBackS, 0));
         Price p = price(f, pillar, tier, walkBackS, 0);
         double pillarS = scaffoldS(p);
-        double skipS = topLogs * LOG_VALUE_S;
+        double skipS = topLogs * logValueS();
         return new TreeTop(pillarS <= skipS ? TreeWay.ALL : TreeWay.SKIP_TOP, pillar, topLogs, skipS, pillarS, p);
     }
 
@@ -179,7 +184,7 @@ public final class Litter {
      */
     public static int nearestBoxGap(List<Box> boxes, String dim, int x, int z) {
         int best = -1;
-        if (boxes == null) return FAR;
+        if (boxes == null) return far();
         for (Box b : boxes) {
             if (b == null || (dim != null && !dim.equals(b.dim))) continue;
             int d;
@@ -187,6 +192,6 @@ public final class Litter {
             else d = Math.max(Math.max(0, Math.max(b.x1 - x, x - b.x2)), Math.max(0, Math.max(b.z1 - z, z - b.z2)));
             if (best < 0 || d < best) best = d;
         }
-        return best < 0 ? FAR : best;
+        return best < 0 ? far() : best;
     }
 }

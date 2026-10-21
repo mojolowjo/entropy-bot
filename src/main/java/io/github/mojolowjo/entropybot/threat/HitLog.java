@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -16,7 +18,8 @@ import java.util.Map;
  */
 public final class HitLog {
     public static final HitLog INSTANCE = new HitLog();
-    public static final int CAP = 200, DEATH_HITS = 20;
+    public static final int CAP = 200; // structural
+    public static int deathHits() { return Tuning.i("hitLog.deathHits"); }
 
     /** type: the damage type id ("mob_attack", "fall", "lava"...); id/name: the attacker's entity type / name (null: none). */
     public record Hit(long atMs, String type, String id, String name, double amount, double healthAfter, int x, int y, int z, String job) {
@@ -61,7 +64,7 @@ public final class HitLog {
     /** A death: the last 20 hits within 5 minutes before it (and after the death before) become that death's list. */
     public synchronized List<Hit> death(long now) {
         List<Hit> l = new ArrayList<>();
-        for (Hit h : last(DEATH_HITS)) if (now - h.atMs() <= 300_000 && h.atMs() > lastDeathMs) l.add(h);
+        for (Hit h : last(deathHits())) if (now - h.atMs() <= 300_000 && h.atMs() > lastDeathMs) l.add(h);
         lastDeath = List.copyOf(l);
         lastDeathMs = now;
         return lastDeath;

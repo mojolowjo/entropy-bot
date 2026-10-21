@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.door;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,7 +21,7 @@ public final class Door {
     private Door() {}
 
     /** The same driver and action are counted and logged again only after this long. */
-    public static final long REPEAT_MS = 30_000;
+    public static long repeatMs() { return Tuning.l("door.repeatMs"); }
 
     private static BooleanSupplier aaOn = () -> false;
     private static Consumer<String> log = s -> {};
@@ -84,7 +86,7 @@ public final class Door {
         String key = d + "|" + w;
         long now = clock.getAsLong();
         Long at = lastAt.get(key);
-        if (at != null && now - at < REPEAT_MS) return;
+        if (at != null && now - at < repeatMs()) return;
         lastAt.put(key, now);
         refused.merge(d, 1, Integer::sum);
         lastWhat.put(d, w);

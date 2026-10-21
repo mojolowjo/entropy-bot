@@ -15,9 +15,10 @@ import java.util.List;
 public final class Sequencer {
     private Sequencer() {}
 
-    public static final int K = 6, MAX = 3;
-    public static final double SAVE = 0.15;
-    public static final int DEFAULT_HORIZON_S = 600;
+    public static int k() { return Tuning.i("sequencer.k"); }
+    public static int maxV() { return Tuning.i("sequencer.max"); }
+    public static double save() { return Tuning.get("sequencer.save"); }
+    public static int defaultHorizonS() { return Tuning.i("sequencer.defaultHorizonS"); }
 
     /** A candidate: its id, its own cost in seconds (the round trip from here), its site (null: unknown). */
     public record Item(String id, double costS, Site site) {}
@@ -85,7 +86,7 @@ public final class Sequencer {
         if (here == null || win.site() == null || Double.isNaN(win.costS()))
             return new Plan(steps, win.costS(), here == null ? "no position" : win.site() == null ? "the winner has no site" : "the winner has no cost");
         String note = null;
-        for (int k = 1; k < Math.min(K, ranked.size()) && plan.size() < MAX; k++) {
+        for (int k = 1; k < Math.min(k(), ranked.size()) && plan.size() < maxV(); k++) {
             Item it = ranked.get(k);
             if (it.site() == null || Double.isNaN(it.costS()) || it.costS() <= 0) continue;
             double base = cost(here, plan, null), alone = it.costS();
@@ -103,7 +104,7 @@ public final class Sequencer {
             }
             if (bestAt < 0) { note = it.id() + " past the horizon"; continue; }
             double saved = base + alone - best;
-            if (saved < SAVE * alone) continue;
+            if (saved < save() * alone) continue;
             plan.add(bestAt, it);
             Item prev = bestAt > 0 ? plan.get(bestAt - 1) : null;
             Item nxt = bestAt + 1 < plan.size() ? plan.get(bestAt + 1) : null;

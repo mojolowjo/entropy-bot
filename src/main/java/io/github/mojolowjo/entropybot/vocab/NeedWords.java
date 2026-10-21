@@ -14,7 +14,8 @@ import java.util.Map;
 public final class NeedWords {
     private NeedWords() {}
 
-    public static final int MAX_NEEDS = 32, MAX_GOALS = 10;
+    public static final int MAX_NEEDS = 32; // structural
+    public static final int MAX_GOALS = 10; // structural
 
     /** "need <item> <n>": {item, n}; null when there is no count (the old "what does it take" answer). */
     public static String[] standing(String rest) {

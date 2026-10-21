@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * V1b (VOCABULARY 4): {@code defend} (stay within {@link #DEFEND_R} of where the bot stands and fight what comes) and
  * {@code guard <area|place|marker>} (stay in the area's box, or within {@link #GUARD_R} of the place or marker). The bot
@@ -8,7 +10,8 @@ package io.github.mojolowjo.entropybot.vocab;
 public final class HoldRules {
     private HoldRules() {}
 
-    public static final int DEFEND_R = 4, GUARD_R = 8;
+    public static int defendR() { return Tuning.i("holdRules.defendR"); }
+    public static int guardR() { return Tuning.i("holdRules.guardR"); }
 
     /** Out of the hold: outside the box {x1,y1,z1,x2,y2,z2} (y ignored when y1 > y2), or farther than r (flat) from x y z. */
     public static boolean outside(int[] box, int cx, int cz, int r, int x, int y, int z) {

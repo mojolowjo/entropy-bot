@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import baritone.api.IBaritone;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.player.LocalPlayer;
@@ -34,7 +36,7 @@ final class ShoreWatch {
     private final java.util.Set<Long> shoreFailed = new java.util.HashSet<>();
     private int shoreTries;
     private boolean shoreGaveUp, shoreSaid;
-    static final int SHORE_TRIES = 4;
+    static int shoreTries() { return Tuning.i("shoreWatch.shoreTries"); }
 
     /**
      * 0.34.3 (after the air reflex surfaced it, the bot trod water there forever): 5 s afloat with no job, no reflex and
@@ -59,7 +61,7 @@ final class ShoreWatch {
                 shoreFailed.add(net.minecraft.core.BlockPos.asLong(shoreTarget[0], shoreTarget[1], shoreTarget[2]));
                 LOG.info("[entropybot] shore: couldn't reach {} {} {} (try {})", shoreTarget[0], shoreTarget[1], shoreTarget[2], shoreTries + 1);
                 shoreTarget = null;
-                if (++shoreTries >= SHORE_TRIES) {
+                if (++shoreTries >= shoreTries()) {
                     shoreGaveUp = true;
                     String g = "afloat at " + (int) Math.floor(p.getX()) + " " + (int) Math.floor(p.getY()) + " " + (int) Math.floor(p.getZ())
                             + ": I couldn't reach the " + shoreTries + " nearest shores - next: goto x y z (a shore), or come get me";
@@ -70,7 +72,7 @@ final class ShoreWatch {
             }
             var lv = p.level();
             int x = (int) Math.floor(p.getX()), y = (int) Math.floor(p.getY()), z = (int) Math.floor(p.getZ());
-            int[] s = ReflexRules.nearestShore(x, y, z, ReflexRules.SHORE_RADIUS, (cx, cy, cz) -> {
+            int[] s = ReflexRules.nearestShore(x, y, z, ReflexRules.shoreRadius(), (cx, cy, cz) -> {
                 net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(cx, cy, cz);
                 if (!lv.isLoaded(at)) return false;
                 // 0.34.4: not next to a shore cell it couldn't reach (live: 4 tries spent on one wall top)
@@ -89,7 +91,7 @@ final class ShoreWatch {
             if (s == null) {
                 shoreNext = now + 1200;
                 if (shoreTries > 0) shoreGaveUp = true;        // the unreachable ones were all there was: said once
-                String t = "afloat at " + x + " " + y + " " + z + " with no dry ground within " + ReflexRules.SHORE_RADIUS + " blocks - next: goto x y z (a shore), or come get me";
+                String t = "afloat at " + x + " " + y + " " + z + " with no dry ground within " + ReflexRules.shoreRadius() + " blocks - next: goto x y z (a shore), or come get me";
                 LOG.info("[entropybot] shore: {}", t);
                 if (!shoreSaid) whisper(t);                    // 0.34.4: once while afloat (the log has every look)
                 shoreSaid = true;

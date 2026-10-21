@@ -23,7 +23,7 @@ class LitterTest {
         assertEquals(Context.EXEMPT, Litter.contextOf(f(true, 0, false, true, true)));                // own box beats everything
         assertEquals(Context.SURFACE, Litter.contextOf(Facts.UNKNOWN));                               // unknown fails to the dearest
         assertEquals(Context.SURFACE, Litter.contextOf(null));
-        assertEquals(Context.SEALED, Litter.contextOf(f(false, Litter.FAR, false, false, false)));    // read, no build known
+        assertEquals(Context.SEALED, Litter.contextOf(f(false, Litter.far(), false, false, false)));    // read, no build known
     }
 
     @Test void perBlockSeconds() {
@@ -147,8 +147,8 @@ class LitterTest {
         assertEquals(30, Litter.nearestBoxGap(one, "minecraft:overworld", 30, 70));               // inside: the way out to the nearest side
         assertEquals(0, Litter.nearestBoxGap(one, "minecraft:overworld", 100, 50));               // on the edge
         assertEquals(7, Litter.nearestBoxGap(one, "minecraft:overworld", 107, 50));               // outside: the gap
-        assertEquals(Litter.FAR, Litter.nearestBoxGap(one, "minecraft:the_nether", 30, 30));      // other dimension
-        assertEquals(Litter.FAR, Litter.nearestBoxGap(List.of(), "minecraft:overworld", 1, 1));
+        assertEquals(Litter.far(), Litter.nearestBoxGap(one, "minecraft:the_nether", 30, 30));      // other dimension
+        assertEquals(Litter.far(), Litter.nearestBoxGap(List.of(), "minecraft:overworld", 1, 1));
     }
 
 }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
@@ -14,9 +16,12 @@ import java.util.function.Predicate;
 public final class ExploreWords {
     private ExploreWords() {}
 
-    public static final int DEFAULT_MINUTES = 5, FIND_MINUTES = 10, MAX_MINUTES = 30, RINGS = 24;
+    public static int defaultMinutes() { return Tuning.i("exploreWords.defaultMinutes"); }
+    public static int findMinutes() { return Tuning.i("exploreWords.findMinutes"); }
+    public static int maxMinutes() { return Tuning.i("exploreWords.maxMinutes"); }
+    public static int rings() { return Tuning.i("exploreWords.rings"); }
     /** How far (chunks, either axis) from where it started it goes, so the walk home stays short (256 blocks). */
-    public static final int MAX_FROM_START = 16;
+    public static int maxFromStart() { return Tuning.i("exploreWords.maxFromStart"); }
     public static final List<String> DIRS = List.of("north", "south", "east", "west");
 
     /** dir: null = any way; minutes 1-30. error: the usage. */
@@ -32,7 +37,7 @@ public final class ExploreWords {
         for (String w : g[0].toLowerCase(Locale.ROOT).split("\\s+")) {
             if (w.isEmpty()) continue;
             if (DIRS.contains(w) && dir == null) dir = w;
-            else if (w.matches("^\\d{1,3}m?$")) min = Math.max(1, Math.min(MAX_MINUTES, Integer.parseInt(w.replace("m", ""))));
+            else if (w.matches("^\\d{1,3}m?$")) min = Math.max(1, Math.min(maxMinutes(), Integer.parseInt(w.replace("m", ""))));
             else return new Args(null, 0, "usage: explore [north|south|east|west] [minutes] [gather off]");
         }
         return new Args(dir, min, null, gather);
@@ -55,13 +60,13 @@ public final class ExploreWords {
      */
     public static int[] next(int cx, int cz, int sx, int sz, String dir, BiPred seen, BiPred refused) {
         int[] st = dir == null ? null : step(dir);
-        for (int r = 1; r <= RINGS; r++) {
+        for (int r = 1; r <= rings(); r++) {
             int[] best = null;
             int bestAhead = Integer.MIN_VALUE;
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 int x = cx + dx, z = cz + dz;
-                if (Math.max(Math.abs(x - sx), Math.abs(z - sz)) > MAX_FROM_START) continue;
+                if (Math.max(Math.abs(x - sx), Math.abs(z - sz)) > maxFromStart()) continue;
                 if (st != null) {
                     int ahead = (x - sx) * st[0] + (z - sz) * st[1], side = Math.abs((x - sx) * st[1]) + Math.abs((z - sz) * st[0]);
                     if (ahead <= 0 || side > ahead) continue;
@@ -87,7 +92,8 @@ public final class ExploreWords {
 
     // ---- base detection ----
 
-    public static final int BASE_BUILT = 6, BASE_R = 16;
+    public static int baseBuilt() { return Tuning.i("exploreWords.baseBuilt"); }
+    public static int baseR() { return Tuning.i("exploreWords.baseR"); }
 
     /** What a scan within 16 blocks saw: built blocks (the floor's list), block entities (containers, beds, signs), named mobs. */
     public record Scan(int built, int blockEntities, int named, String natural) {
@@ -100,7 +106,7 @@ public final class ExploreWords {
      */
     public static boolean isBase(Scan s) {
         if (s.natural() != null && s.named() == 0) return false;
-        return s.built() >= BASE_BUILT || s.blockEntities() > 0 || s.named() > 0;
+        return s.built() >= baseBuilt() || s.blockEntities() > 0 || s.named() > 0;
     }
 
     /** The log line / whisper for a base found while exploring. */
@@ -143,10 +149,10 @@ public final class ExploreWords {
         boolean gather = go[1] == null;
         rest = go[0];
         String t = rest.trim().toLowerCase(Locale.ROOT);
-        int min = FIND_MINUTES;
+        int min = findMinutes();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\s+(\\d{1,3})m?$").matcher(t);
         if (m.find()) {
-            min = Math.max(1, Math.min(MAX_MINUTES, Integer.parseInt(m.group(1))));
+            min = Math.max(1, Math.min(maxMinutes(), Integer.parseInt(m.group(1))));
             t = t.substring(0, m.start()).trim();
         }
         if (t.equals("cave") || t.equals("caves")) return new Find(FindKind.CAVE, "cave", min, gather);
@@ -160,9 +166,9 @@ public final class ExploreWords {
     }
 
     /** A cave under the bot: enough dark air below the surface in the scanned box. */
-    public static final int CAVE_AIR = 40;
+    public static int caveAir() { return Tuning.i("exploreWords.caveAir"); }
 
     public static boolean isCave(int darkAirBelowSurface) {
-        return darkAirBelowSurface >= CAVE_AIR;
+        return darkAirBelowSurface >= caveAir();
     }
 }

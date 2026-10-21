@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.camp.DayNight;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -32,8 +34,8 @@ import java.util.Map;
  */
 public final class SleepJob {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long MAX_TICKS = 15 * 60 * 20;
-    static final int SEARCH = 24;
+    static long maxTicks() { return Tuning.l("sleepJob.maxTicks"); }
+    static int search() { return Tuning.i("sleepJob.search"); }
 
     private SleepJob() {}
 
@@ -63,11 +65,11 @@ public final class SleepJob {
 
     static String status(LocalPlayer p) {
         ClientLevel lv = Minecraft.getInstance().level;
-        int[] bed = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(Jobs.findBlock(p, "_bed " + SEARCH));
+        int[] bed = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(Jobs.findBlock(p, "_bed " + search()));
         String carried = carriedBed(p);
         return "sleep: it is " + DayNight.clock(lv.getDayTime()) + (night(lv) ? " (night: beds work)" : " (day: beds don't work)")
                 + (p.isSleeping() ? ", I am in bed" : "") + "; " + (bed != null ? "nearest bed at " + bed[0] + " " + bed[1] + " " + bed[2]
-                : "no bed within " + SEARCH) + (carried != null ? "; I carry a " + carried.replace("minecraft:", "") : "")
+                : "no bed within " + search()) + (carried != null ? "; I carry a " + carried.replace("minecraft:", "") : "")
                 + " - rule when night do sleep sleeps every night";
     }
 
@@ -85,17 +87,17 @@ public final class SleepJob {
         if (!night(lv)) return Hints.next("error: could not sleep: it is day (" + DayNight.clock(lv.getDayTime()) + ")", "rule when night do sleep (I sleep every night by myself)");
         List<Seq.Step> steps = new ArrayList<>();
         int[] bed;
-        String f = Jobs.findBlock(p, "_bed " + SEARCH);
+        String f = Jobs.findBlock(p, "_bed " + search());
         String placed = null;
         int[] found = io.github.mojolowjo.entropybot.aa.BedSpot.foundAt(f);      // round 4 fix 3: the far form too ("found white_bed at x y z, N blocks")
         if (found != null) {
             bed = found;
         } else {
             String id = carriedBed(p);
-            if (id == null) return Hints.next("error: no bed within " + SEARCH + " blocks and I carry none", "give me a bed (or craft white_bed 1: 3 wool + 3 planks), then sleep");
+            if (id == null) return Hints.next("error: no bed within " + search() + " blocks and I carry none", "give me a bed (or craft white_bed 1: 3 wool + 3 planks), then sleep");
             noteRefused(lv);
             io.github.mojolowjo.entropybot.aa.BedSpot.Spot spot = bedSpot(c, lv, Jobs.here(p));
-            if (spot == null) return Hints.next("error: no room for my bed within " + io.github.mojolowjo.entropybot.aa.BedSpot.FAR
+            if (spot == null) return Hints.next("error: no room for my bed within " + io.github.mojolowjo.entropybot.aa.BedSpot.far()
                     + " blocks (2 free blocks in a row on solid ground the policy allows; " + REFUSED.size() + " cells refused)", "goto an open spot, then sleep");
             bed = spot.cell();
             tried = spot.key();
@@ -203,7 +205,7 @@ public final class SleepJob {
                             : "ok: slept until morning (" + DayNight.clock(lv.getDayTime()) + ")");
                     return "wait";
                 }
-                if (now - ps.at > MAX_TICKS) {
+                if (now - ps.at > maxTicks()) {
                     wake();
                     s.jobs.finish("ok: stayed in bed 15 min, it is " + DayNight.clock(lv.getDayTime()) + " (the night passes faster the more players sleep)");
                 }

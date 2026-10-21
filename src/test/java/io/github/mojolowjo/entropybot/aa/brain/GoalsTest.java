@@ -37,8 +37,8 @@ class GoalsTest {
         var deep = new IronOptions.Ore(3, 10, 0, 3, true, false, false, 40, false, null, false);
         var buried = new IronOptions.Ore(4, 55, 0, 4, true, false, false, 6, false, null, false);
         var open = new IronOptions.Ore(5, 62, 0, 5, true, true, true, 1, false, null, false);
-        assertArrayEquals(new int[]{4, 55, 0, 1}, Goals.pickOre(List.of(denied, wet, deep, buried, open), IronOptions.DIG_MAX));
-        assertArrayEquals(new int[]{5, 62, 0, 0}, Goals.pickOre(List.of(denied, open), IronOptions.DIG_MAX));
-        assertNull(Goals.pickOre(List.of(denied, wet, deep), IronOptions.DIG_MAX));
+        assertArrayEquals(new int[]{4, 55, 0, 1}, Goals.pickOre(List.of(denied, wet, deep, buried, open), IronOptions.digMax()));
+        assertArrayEquals(new int[]{5, 62, 0, 0}, Goals.pickOre(List.of(denied, open), IronOptions.digMax()));
+        assertNull(Goals.pickOre(List.of(denied, wet, deep), IronOptions.digMax()));
     }
 }

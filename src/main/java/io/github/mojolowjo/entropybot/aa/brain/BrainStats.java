@@ -10,8 +10,8 @@ import java.util.Map;
  * values. Pure, synchronized (aa stats may read it off the game thread); the adapter saves {@link #toJson()} to {@code entropybot/aa-stats.json} and loads it with {@link #put}.
  */
 public final class BrainStats {
-    public static final int MIN_RUNS = 3;
-    public static final double ALPHA = 0.3;
+    public static int minRuns() { return Tuning.i("brainStats.minRuns"); }
+    public static double alpha() { return Tuning.get("brainStats.alpha"); }
 
     public static final class Stat {
         public int n, ok;
@@ -26,7 +26,7 @@ public final class BrainStats {
         s.n++;
         if (success) {
             s.ok++;
-            s.avgS = s.avgS < 0 ? seconds : s.avgS + ALPHA * (seconds - s.avgS);
+            s.avgS = s.avgS < 0 ? seconds : s.avgS + alpha() * (seconds - s.avgS);
         }
         dirty = true;
     }
@@ -36,7 +36,7 @@ public final class BrainStats {
     /** The measured cost (seconds) after MIN_RUNS runs with a success, else the hand value. */
     public synchronized double cost(String id, double hand) {
         Stat s = stats.get(id);
-        return s != null && s.n >= MIN_RUNS && s.avgS >= 0 ? s.avgS : hand;
+        return s != null && s.n >= minRuns() && s.avgS >= 0 ? s.avgS : hand;
     }
 
     public synchronized int n(String id) { Stat s = stats.get(id); return s == null ? 0 : s.n; }
@@ -63,8 +63,8 @@ public final class BrainStats {
     // ---- aa-food: the measured food drain per task kind (FoodModel) ----
 
     /** Samples before a kind's measured drain replaces the hand rate; the shortest sample (minutes). */
-    public static final int DRAIN_MIN_N = 2;
-    public static final double DRAIN_MIN_MINUTES = 1;
+    public static int drainMinN() { return Tuning.i("brainStats.drainMinN"); }
+    public static double drainMinMinutes() { return Tuning.get("brainStats.drainMinMinutes"); }
     /** Saved as "drain.KIND" next to the desires (n/ok/avgS too, so an older loader reads it as a harmless row). */
     public static final String DRAIN_PREFIX = "drain.";
 
@@ -73,10 +73,10 @@ public final class BrainStats {
 
     /** One sample: {@code points} of food + saturation spent over {@code minutes} of one kind of work. False: too short. */
     public synchronized boolean recordDrain(String kind, double points, double minutes) {
-        if (kind == null || minutes < DRAIN_MIN_MINUTES || points < 0 || Double.isNaN(points)) return false;
+        if (kind == null || minutes < drainMinMinutes() || points < 0 || Double.isNaN(points)) return false;
         double rate = points / minutes;
         double[] d = drain.computeIfAbsent(kind, k -> new double[]{0, -1});
-        d[1] = d[1] < 0 ? rate : d[1] + ALPHA * (rate - d[1]);
+        d[1] = d[1] < 0 ? rate : d[1] + alpha() * (rate - d[1]);
         d[0]++;
         dirty = true;
         return true;
@@ -85,13 +85,13 @@ public final class BrainStats {
     /** The measured drain (energy per minute) after DRAIN_MIN_N samples, else {@code hand}. */
     public synchronized double drain(String kind, double hand) {
         double[] d = drain.get(kind);
-        return d != null && d[0] >= DRAIN_MIN_N && d[1] >= 0 ? d[1] : hand;
+        return d != null && d[0] >= drainMinN() && d[1] >= 0 ? d[1] : hand;
     }
 
     /** The sample-weighted mean of the measured kinds (DRAIN_MIN_N+ samples), else {@code hand}. */
     public synchronized double meanDrain(double hand) {
         double sum = 0, n = 0;
-        for (double[] d : drain.values()) if (d[0] >= DRAIN_MIN_N && d[1] >= 0) { sum += d[0] * d[1]; n += d[0]; }
+        for (double[] d : drain.values()) if (d[0] >= drainMinN() && d[1] >= 0) { sum += d[0] * d[1]; n += d[0]; }
         return n == 0 ? hand : sum / n;
     }
 

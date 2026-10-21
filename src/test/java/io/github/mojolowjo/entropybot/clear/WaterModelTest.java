@@ -32,7 +32,7 @@ class WaterModelTest {
         Set<Pos> dug = new HashSet<>();
         List<String> log = new ArrayList<>();
         WaterPlan.Tally tally = new WaterPlan.Tally();
-        for (int round = 0; round <= WaterPlan.MAX_ROUNDS; round++) {
+        for (int round = 0; round <= WaterPlan.maxRounds(); round++) {
             ClearJob job = ClearJob.start(new ClearJob.Options().box(TUNNEL).label("digging the tunnel").liquidBlocks(true), null, d.ores);
             String end = d.run(job);
             for (int x = TUNNEL.x1(); x <= TUNNEL.x2(); x++)
@@ -59,7 +59,7 @@ class WaterModelTest {
             }
             if (r.drain()) FluidSim.settle(w, SIM);
         }
-        return new Result("too many rounds", WaterPlan.MAX_ROUNDS, tally.placed, tally.water, tally.sources, log);
+        return new Result("too many rounds", WaterPlan.maxRounds(), tally.placed, tally.water, tally.sources, log);
     }
 
     static void assertDry(FakeWorld w, Set<Pos> dug, String when) {

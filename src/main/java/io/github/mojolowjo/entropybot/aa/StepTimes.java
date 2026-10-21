@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.Unit;
 
 import java.util.ArrayList;
@@ -20,7 +22,10 @@ public final class StepTimes {
     private StepTimes() {}
 
     /** TIME_MODEL: path length = straight line x 1.3 when no plan exists yet. */
-    public static final double PATH_FACTOR = 1.3, CLIMB_S = 0.3, CRAFT_S = 0.5, PLACE_S = 0.25;
+    public static double pathFactor() { return Tuning.get("stepTimes.pathFactor"); }
+    public static double climbS() { return Tuning.get("stepTimes.climbS"); }
+    public static final double CRAFT_S = 0.5; // game fact: TIME_MODEL: a craft 0.5 s, a place 0.25 s
+    public static final double PLACE_S = 0.25; // game fact: TIME_MODEL: a craft 0.5 s, a place 0.25 s
 
     /** One step with its predicted seconds (NaN: none) and whether the game's numbers priced it alone. */
     public record Est(String step, double seconds, boolean known) {}
@@ -85,9 +90,9 @@ public final class StepTimes {
     /** TIME_MODEL walk: straight line x 1.3 at walking speed, + 0.3 s per block climbed. */
     public static double walkS(int[] a, int[] b) {
         double dx = b[0] - a[0], dz = b[2] - a[2];
-        double blocks = Math.sqrt(dx * dx + dz * dz) * PATH_FACTOR;
+        double blocks = Math.sqrt(dx * dx + dz * dz) * pathFactor();
         double climb = Math.max(0, b[1] - a[1]);
-        return Unit.seconds(blocks) + CLIMB_S * climb;
+        return Unit.seconds(blocks) + climbS() * climb;
     }
 
     /** The points the way visits that the steps name (every {@code goto x y z}), from the bot's place; plus the site when given. */

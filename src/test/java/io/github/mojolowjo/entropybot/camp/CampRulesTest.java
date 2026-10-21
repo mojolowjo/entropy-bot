@@ -80,7 +80,7 @@ class CampRulesTest {
     @Test
     void quarryIsAStaircase() {
         List<String> q = BootstrapPlan.quarrySteps(FEET, DIR);
-        assertEquals(BootstrapPlan.QUARRY_LEN, q.size());
+        assertEquals(BootstrapPlan.quarryLen(), q.size());
         // 2 east, 3 wide across z; each box: stand level feet-i up to feet-i+2 (3 headroom), ceiling steps down
         assertEquals("dig 12 63 19 12 65 21", q.get(0));
         assertEquals("dig 13 62 19 13 64 21", q.get(1));
@@ -91,14 +91,14 @@ class CampRulesTest {
 
     @Test
     void stairsKeepHeadroomAndOneHighSteps() {
-        for (int i = 1; i <= BootstrapPlan.QUARRY_LEN; i++) {
+        for (int i = 1; i <= BootstrapPlan.quarryLen(); i++) {
             assertTrue(BootstrapPlan.stepTop(64, i) - BootstrapPlan.stepBottom(64, i) + 1 >= 3);
             if (i > 1) {
                 assertEquals(1, BootstrapPlan.stepBottom(64, i - 1) - BootstrapPlan.stepBottom(64, i));
                 assertEquals(1, BootstrapPlan.stepTop(64, i - 1) - BootstrapPlan.stepTop(64, i));
             }
         }
-        assertTrue(BootstrapPlan.planLine(FEET, DIR).contains(BootstrapPlan.QUARRY_LEN + " steps"));
+        assertTrue(BootstrapPlan.planLine(FEET, DIR).contains(BootstrapPlan.quarryLen() + " steps"));
     }
 
     @Test

@@ -18,8 +18,8 @@ class RunJobTest {
     @Test
     void taskSpecLimitsAreAlwaysFinite() {
         JobPort.TaskSpec t = new JobPort.TaskSpec(TaskKind.WAIT, "wait 60", "idle", 1, Long.MAX_VALUE, 0);
-        assertEquals(JobPort.TaskSpec.TIMEOUT_MS, t.timeoutMs());
-        assertEquals(JobPort.TaskSpec.NO_PROGRESS_MS, t.noProgressMs());
+        assertEquals(JobPort.TaskSpec.timeoutMsV(), t.timeoutMs());
+        assertEquals(JobPort.TaskSpec.noProgressMsV(), t.noProgressMs());
         assertEquals(100_000, new JobPort.TaskSpec(TaskKind.WAIT, "x", "idle", 1, 100_000, -5).timeoutMs());
     }
 

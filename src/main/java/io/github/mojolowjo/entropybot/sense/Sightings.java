@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.Gson;
@@ -35,11 +37,20 @@ import java.util.TreeMap;
 public final class Sightings {
     public enum Kind { ORE, CAVE, ANIMAL, TREE }
 
-    public static final int ANIMAL_RANGE = 32, MERGE = 16, MAX_CAVES = 400, MAX_ANIMALS = 400, MAX_TREES = 300, TREE_MERGE = 6, TREE_MIN_LOGS = 3;
-    public static final long CONFIRM_MS = 2000, CONFIRM_MAX_MS = 30_000, HALF_LIFE_MS = 10 * 60_000;
-    public static final double MISS_CONF = 0.1;
+    public static int animalRange() { return Tuning.i("sightings.animalRange"); }
+    public static int merge() { return Tuning.i("sightings.merge"); }
+    public static int maxCaves() { return Tuning.i("sightings.maxCaves"); }
+    public static int maxAnimals() { return Tuning.i("sightings.maxAnimals"); }
+    public static int maxTrees() { return Tuning.i("sightings.maxTrees"); }
+    public static int treeMerge() { return Tuning.i("sightings.treeMerge"); }
+    public static int treeMinLogs() { return Tuning.i("sightings.treeMinLogs"); }
+    public static long confirmMs() { return Tuning.l("sightings.confirmMs"); }
+    public static long confirmMaxMs() { return Tuning.l("sightings.confirmMaxMs"); }
+    public static long halfLifeMs() { return Tuning.l("sightings.halfLifeMs"); }
+    public static double missConf() { return Tuning.get("sightings.missConf"); }
     /** The cave-chance prior: {@link #PRIOR_CAVES} openings per 100 blocks walked, weighed as {@link #PRIOR_HUNDREDS} hundreds. */
-    public static final double PRIOR_CAVES = 0.3, PRIOR_HUNDREDS = 5;
+    public static double priorCaves() { return Tuning.get("sightings.priorCaves"); }
+    public static double priorHundreds() { return Tuning.get("sightings.priorHundreds"); }
 
     /**
      * One sighting of a cave or a herd. at: when last seen (animals: game time in ms); conf: the confidence at {@code at}
@@ -66,7 +77,7 @@ public final class Sightings {
 
     /** Within range of the eyes for the kind (animals 32, the rest 24). */
     public static boolean inRange(Kind k, double ex, double ey, double ez, double x, double y, double z) {
-        int r = k == Kind.ANIMAL ? ANIMAL_RANGE : Seen.RANGE;
+        int r = k == Kind.ANIMAL ? animalRange() : Seen.range();
         double dx = x - ex, dy = y - ey, dz = z - ez;
         return dx * dx + dy * dy + dz * dz <= (double) r * r;
     }
@@ -77,12 +88,12 @@ public final class Sightings {
      */
     public synchronized boolean confirm(long key, long now) {
         Long first = pending.get(key);
-        if (first == null || now - first > CONFIRM_MAX_MS) {
-            if (pending.size() > 4096) pending.values().removeIf(t -> now - t > CONFIRM_MAX_MS);
+        if (first == null || now - first > confirmMaxMs()) {
+            if (pending.size() > 4096) pending.values().removeIf(t -> now - t > confirmMaxMs());
             pending.put(key, now);
             return false;
         }
-        if (now - first < CONFIRM_MS) return false;
+        if (now - first < confirmMs()) return false;
         pending.remove(key);
         return true;
     }
@@ -111,11 +122,11 @@ public final class Sightings {
     /** A confirmed cave opening: a new record (returned) unless one lies within {@link #MERGE} (null). */
     public synchronized Rec sawCave(String dim, int x, int y, int z, long now) {
         List<Rec> l = caves.computeIfAbsent(dim, k -> new ArrayList<>());
-        for (Rec r : l) if (d2(r, x, y, z) <= (long) MERGE * MERGE) return null;
+        for (Rec r : l) if (d2(r, x, y, z) <= (long) merge() * merge()) return null;
         Rec r = new Rec(Kind.CAVE, "cave", x, y, z, now, 1, 1, 0);
         l.add(r);
         cavesFound++;
-        while (l.size() > MAX_CAVES) l.remove(0);
+        while (l.size() > maxCaves()) l.remove(0);
         dirty = true;
         return r;
     }
@@ -138,7 +149,7 @@ public final class Sightings {
         List<Rec> l = caves.getOrDefault(dim, List.of());
         for (int i = 0; i < l.size(); i++) {
             Rec r = l.get(i);
-            if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) MERGE * MERGE) {
+            if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) merge() * merge()) {
                 l.set(i, new Rec(r.kind(), r.id(), r.x(), r.y(), r.z(), r.at(), r.count(), r.conf(), now));
                 n++;
             }
@@ -156,7 +167,7 @@ public final class Sightings {
 
     /** The learned chance to see a cave opening per 100 blocks walked, the prior blended in (never 0). */
     public synchronized double cavesPer100() {
-        return (cavesFound + PRIOR_CAVES * PRIOR_HUNDREDS) / (walked / 100 + PRIOR_HUNDREDS);
+        return (cavesFound + priorCaves() * priorHundreds()) / (walked / 100 + priorHundreds());
     }
 
     // ---- trees (aa-trees) ----
@@ -167,16 +178,16 @@ public final class Sightings {
      * ground or has no leaves (the chopper's own TreeFinder judges the same way); a log the bot placed never counts.
      */
     public static boolean treeRule(boolean groundDirt, int logsInColumn, boolean leavesNear, boolean placedByMe) {
-        return groundDirt && logsInColumn >= TREE_MIN_LOGS && leavesNear && !placedByMe;
+        return groundDirt && logsInColumn >= treeMinLogs() && leavesNear && !placedByMe;
     }
 
     /** A confirmed tree at its lowest log: a new record (returned) unless one lies within {@link #TREE_MERGE} (null). */
     public synchronized Rec sawTree(String dim, int x, int y, int z, int logs, long now) {
         List<Rec> l = trees.computeIfAbsent(dim, k -> new ArrayList<>());
-        for (Rec r : l) if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) TREE_MERGE * TREE_MERGE) return null;
+        for (Rec r : l) if (r.exhausted() == 0 && d2(r, x, y, z) <= (long) treeMerge() * treeMerge()) return null;
         Rec r = new Rec(Kind.TREE, "tree", x, y, z, now, Math.max(1, logs), 1, 0);
         l.add(r);
-        while (l.size() > MAX_TREES) l.remove(0);
+        while (l.size() > maxTrees()) l.remove(0);
         dirty = true;
         return r;
     }
@@ -201,7 +212,7 @@ public final class Sightings {
         for (int i = 0; i < l.size(); i++) {
             Rec r = l.get(i);
             long dx = r.x() - x, dz = r.z() - z;
-            if (r.exhausted() == 0 && dx * dx + dz * dz <= (long) TREE_MERGE * TREE_MERGE) {
+            if (r.exhausted() == 0 && dx * dx + dz * dz <= (long) treeMerge() * treeMerge()) {
                 l.set(i, new Rec(r.kind(), r.id(), r.x(), r.y(), r.z(), r.at(), r.count(), r.conf(), now));
                 n++;
             }
@@ -229,14 +240,14 @@ public final class Sightings {
         boolean isNew = true;
         for (int i = 0; i < l.size(); i++) {
             Rec o = l.get(i);
-            if (o.id().equals(type) && d2(o, x, y, z) <= (long) MERGE * MERGE) {
+            if (o.id().equals(type) && d2(o, x, y, z) <= (long) merge() * merge()) {
                 l.remove(i);
                 isNew = false;
                 break;
             }
         }
         l.add(r);                                  // newest last (eviction: the oldest first)
-        while (l.size() > MAX_ANIMALS) l.remove(0);
+        while (l.size() > maxAnimals()) l.remove(0);
         if (fresh != null && fresh.length > 0) fresh[0] = isNew;
         dirty = true;
         return r;
@@ -246,7 +257,7 @@ public final class Sightings {
     public static double confidence(Rec r, long now) {
         if (r.kind() != Kind.ANIMAL) return r.exhausted() > 0 ? 0 : 1;
         double age = Math.max(0, now - r.at());
-        return r.conf() * Math.pow(0.5, age / HALF_LIFE_MS);
+        return r.conf() * Math.pow(0.5, age / halfLifeMs());
     }
 
     /** The herds of a type (null: every type) in the dimension. */
@@ -263,7 +274,7 @@ public final class Sightings {
     public synchronized Rec visit(String dim, String type, int x, int z, boolean found, int count, long now) {
         List<Rec> l = animals.getOrDefault(dim, List.of());
         int bi = -1;
-        long bd = (long) MERGE * MERGE;
+        long bd = (long) merge() * merge();
         for (int i = 0; i < l.size(); i++) {
             Rec r = l.get(i);
             long dx = r.x() - x, dz = r.z() - z, d = dx * dx + dz * dz;
@@ -272,7 +283,7 @@ public final class Sightings {
         if (bi < 0) return null;
         Rec o = l.get(bi);
         Rec n = found ? new Rec(o.kind(), o.id(), o.x(), o.y(), o.z(), now, Math.max(1, count), 1, 0)
-                : new Rec(o.kind(), o.id(), o.x(), o.y(), o.z(), now, o.count(), MISS_CONF, 0);
+                : new Rec(o.kind(), o.id(), o.x(), o.y(), o.z(), now, o.count(), missConf(), 0);
         l.set(bi, n);
         dirty = true;
         return n;

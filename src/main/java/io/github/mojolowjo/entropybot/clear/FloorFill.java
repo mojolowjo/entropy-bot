@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,7 +56,7 @@ public final class FloorFill {
     }
 
     /** Stone pickaxe material (the game's stone_tool_materials tag): together the last {@link #STONE_KEEP} are never used up. */
-    public static List<String> stoneMaterial() { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.withTag("stone_tool_materials"); }    public static final int STONE_KEEP = 64;
+    public static List<String> stoneMaterial() { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.withTag("stone_tool_materials"); }    public static int stoneKeep() { return Tuning.i("floorFill.stoneKeep"); }
 
     /** How many of id the fill (or a junk throw) may use: all, but stone pickaxe material only above 64 of all three together. */
     public static int usable(String id, Map<String, Integer> inv) {
@@ -63,7 +65,7 @@ public final class FloorFill {
         if (!sm.contains(id)) return Math.max(0, n);
         int all = 0;
         for (String m : sm) all += inv.getOrDefault(m, 0);
-        return Math.max(0, Math.min(n, all - STONE_KEEP));
+        return Math.max(0, Math.min(n, all - stoneKeep()));
     }
 
     public static final String LIQUID = "next to water/lava";
@@ -74,7 +76,7 @@ public final class FloorFill {
     public static final String DIDNT_STAY = "it didn't stay (3 tries)";
 
     /** The most step blocks it puts down below the floor to climb out of a cave. */
-    public static final int MAX_STEPS = 6;
+    public static int maxSteps() { return Tuning.i("floorFill.maxSteps"); }
 
     /** The layer it fills: y1 - 1. */
     public static int floorY(ClearBox box) {
@@ -384,7 +386,7 @@ public final class FloorFill {
         // ---- pick ----
 
         /** Cells within this many blocks (sideways) of the bot are looked at each pick; a long box's far cells wait. */
-        static final int NEAR = 16;
+        static int near() { return Tuning.i("floorFill.near"); }
 
         private boolean pick(Body b, long now) {
             Bot bot = b.bot();
@@ -451,7 +453,7 @@ public final class FloorFill {
             }
             List<Pos> near = new ArrayList<>();
             for (Pos c : new ArrayList<>(todo)) {
-                if (Math.abs(c.x() + 0.5 - bot.x()) > NEAR || Math.abs(c.z() + 0.5 - bot.z()) > NEAR) continue;
+                if (Math.abs(c.x() + 0.5 - bot.x()) > near() || Math.abs(c.z() + 0.5 - bot.z()) > near()) continue;
                 if (!fillable(w, c.x(), c.y(), c.z())) {
                     todo.remove(c);
                     if (w.fluid(c.x(), c.y(), c.z())) failed.put(c, LIQUID);
@@ -581,7 +583,7 @@ public final class FloorFill {
         }
 
         /** How far (sideways) from its focus the walking map reaches. */
-        static final int MAP_R = 9;
+        static int mapR() { return Tuning.i("floorFill.mapR"); }
 
         private ClearGrid cached;
         private ClearBox cachedRegion;
@@ -594,9 +596,9 @@ public final class FloorFill {
          */
         private ClearGrid grid(Bot bot, Pos focus) {
             int fx = focus != null ? focus.x() : floor(bot.x()), fz = focus != null ? focus.z() : floor(bot.z());
-            int x1 = Math.max(box.x1(), fx - MAP_R), x2 = Math.min(box.x2(), fx + MAP_R);
+            int x1 = Math.max(box.x1(), fx - mapR()), x2 = Math.min(box.x2(), fx + mapR());
             if (x1 > x2) { x1 = Math.min(Math.max(fx, box.x1()), box.x2()); x2 = x1; }
-            int z1 = Math.max(box.z1(), fz - MAP_R), z2 = Math.min(box.z2(), fz + MAP_R);
+            int z1 = Math.max(box.z1(), fz - mapR()), z2 = Math.min(box.z2(), fz + mapR());
             if (z1 > z2) { z1 = Math.min(Math.max(fz, box.z1()), box.z2()); z2 = z1; }
             ClearBox region = new ClearBox(x1, fy, z1, x2, box.y2(), z2);
             int bx = floor(bot.x()), by = feet(bot), bz = floor(bot.z());

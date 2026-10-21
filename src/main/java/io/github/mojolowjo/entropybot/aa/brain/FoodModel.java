@@ -26,12 +26,15 @@ import java.util.Map;
 public final class FoodModel {
     private FoodModel() {}
 
-    public static final double HORIZON_MIN = 60, MIN_STOCK = 8, MAX_STOCK = 64;
+    public static double horizonMin() { return Tuning.get("foodModel.horizonMin"); }
+    public static double minStock() { return Tuning.get("foodModel.minStock"); }
+    public static double maxStock() { return Tuning.get("foodModel.maxStock"); }
     /** At or below this the bar is urgent: eat at once (any food), the food desire ranks over the night (Curves.food). */
-    public static final int URGENT_FOOD = 6;
-    public static final double STOCK_BASE = 25, STOCK_W = 35;
+    public static int urgentFood() { return Tuning.i("foodModel.urgentFood"); }
+    public static double stockBase() { return Tuning.get("foodModel.stockBase"); }
+    public static double stockW() { return Tuning.get("foodModel.stockW"); }
     /** Energy points per minute when nothing is measured for a kind yet (hand values, replaced after 2 samples). */
-    public static final double HAND_MEAN = 0.4;
+    public static double handMean() { return Tuning.get("foodModel.handMean"); }
 
     /** Raw food -> the cooked food (item paths), from the game's cooking recipes whose result is food (empty without data). */
     public static Map<String, String> cooks() {
@@ -65,33 +68,33 @@ public final class FoodModel {
 
     /** Hand drain (energy per minute) per kind before anything is measured. */
     public static double handRate(TaskKind k) {
-        if (k == null) return HAND_MEAN;
+        if (k == null) return handMean();
         return switch (k) {
             case NONE, WAIT, BAG, DEPOSIT -> 0.15;
             case EXPLORE -> 0.8;                                // long sprinted walks
             case IRON, STOCK_STONE, STOCK_COAL, STOCK_IRON, TOOLS -> 0.45;   // blocks broken, jumps, walks
             case FOOD -> 0.6;                                   // a hunt: sprints and attacks
-            default -> HAND_MEAN;
+            default -> handMean();
         };
     }
 
     /** Energy needed for the next {@link #HORIZON_MIN} minutes at {@code ratePerMin}. */
-    public static double need(double ratePerMin) { return Math.max(0, ratePerMin) * HORIZON_MIN; }
+    public static double need(double ratePerMin) { return Math.max(0, ratePerMin) * horizonMin(); }
 
     /**
      * The bag's food target (energy points): the need for the horizon less what the body holds above the urgent line
      * ({@code food + saturation - URGENT_FOOD}), kept within MIN_STOCK..MAX_STOCK.
      */
     public static double target(double ratePerMin, int food, double saturation) {
-        double body = Math.max(0, food + saturation - URGENT_FOOD);
-        return Math.max(MIN_STOCK, Math.min(MAX_STOCK, need(ratePerMin) - body));
+        double body = Math.max(0, food + saturation - urgentFood());
+        return Math.max(minStock(), Math.min(maxStock(), need(ratePerMin) - body));
     }
 
     /** Below the target: 25 + 35 x shortfall^2 (25..60, never urgent); at or over it -1. */
     public static double stockScore(double bagEnergy, double target) {
         if (target <= 0 || bagEnergy >= target) return -1;
         double s = (target - bagEnergy) / target;
-        return STOCK_BASE + STOCK_W * s * s;
+        return stockBase() + stockW() * s * s;
     }
 
     /** How many of a food bring the bag to the target (at least 1, at most 16). */
@@ -102,8 +105,8 @@ public final class FoodModel {
 
     /** The planned-work rate: the larger of the measured mean and the running kind's rate. */
     public static double plannedRate(BrainStats stats, TaskKind running) {
-        if (stats == null) return Math.max(HAND_MEAN, handRate(running));
-        return Math.max(stats.meanDrain(HAND_MEAN), stats.drain(running == null ? TaskKind.NONE.name() : running.name(), handRate(running)));
+        if (stats == null) return Math.max(handMean(), handRate(running));
+        return Math.max(stats.meanDrain(handMean()), stats.drain(running == null ? TaskKind.NONE.name() : running.name(), handRate(running)));
     }
 }
 

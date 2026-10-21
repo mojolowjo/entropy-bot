@@ -20,13 +20,15 @@ package io.github.mojolowjo.entropybot.watchview;
  */
 public final class Cutaway {
     /** The margin round the bot's box in blocks ({@code watch tunnel cut radius N}). */
-    public static final double DEFAULT_RADIUS = 0.6, MIN_RADIUS = 0.0, MAX_RADIUS = 3.0;
+    public static final double DEFAULT_RADIUS = 0.6; // structural
+    public static final double MIN_RADIUS = 0.0; // structural
+    public static final double MAX_RADIUS = 3.0; // structural
     /** The inner (always cut) margin is this share of the outer one; between them the dither. */
-    public static final double INNER_SHARE = 0.5;
+    public static final double INNER_SHARE = 0.5; // structural
     /** The box's bottom is raised this much: the ground under the bot's feet (drawn 0.004 above the block) is never cut. */
-    public static final double FEET_LIFT = 0.1;
+    public static final double FEET_LIFT = 0.1; // structural
     /** A fragment this close in front of the box is kept (rounding). */
-    public static final double EPS = 0.02;
+    public static final double EPS = 0.02; // structural
 
     private Cutaway() {}
 
@@ -93,11 +95,13 @@ public final class Cutaway {
     // ---- 0.19.0: the cone cut (watch cut mode cone, the default) -----------------------------------------------------
 
     /** The cone's radius at the bot ({@code watch cut radius N} in cone mode). */
-    public static final double DEFAULT_CONE_RADIUS = 2.5, MIN_CONE_RADIUS = 1.0, MAX_CONE_RADIUS = 6.0;
+    public static final double DEFAULT_CONE_RADIUS = 2.5; // structural
+    public static final double MIN_CONE_RADIUS = 1.0; // structural
+    public static final double MAX_CONE_RADIUS = 6.0; // structural
     /** The cone is never thinner than this (near the camera, t near 0). */
-    public static final double CONE_MIN_RADIUS = 0.3;
+    public static final double CONE_MIN_RADIUS = 0.3; // structural
     /** The step past the fragment along the ray that picks the cell the ray enters there. */
-    public static final double CELL_STEP = 0.01;
+    public static final double CELL_STEP = 0.01; // structural
 
     /** The cell (block) the camera ray enters at P: floor(P + dir * 0.01); null when P is at the camera. */
     public static int[] cellEntered(double px, double py, double pz, double cx, double cy, double cz) {
@@ -161,9 +165,11 @@ public final class Cutaway {
 
     public static final String SHADOW = "shadow", CONE = "cone", OUTLINE = "outline";
     /** The shadow mode's margin round the bot's box ({@code watch cut radius N} in shadow mode). */
-    public static final double DEFAULT_SHADOW_MARGIN = 0.5, MIN_SHADOW_MARGIN = 0.0, MAX_SHADOW_MARGIN = 2.0;
+    public static final double DEFAULT_SHADOW_MARGIN = 0.5; // structural
+    public static final double MIN_SHADOW_MARGIN = 0.0; // structural
+    public static final double MAX_SHADOW_MARGIN = 2.0; // structural
     /** A cell is cut only when its centre is at least this much nearer than where its ray enters the grown box. */
-    public static final double SHADOW_DEPTH = 0.5;
+    public static final double SHADOW_DEPTH = 0.5; // structural
 
     /**
      * Is the cell at x y z cut by the shadow rule? Q = its centre; the ray camera -> Q must enter the box grown by m

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,9 +24,9 @@ public final class FoodPlan {
     /** The bootstrap chain's last step. */
     public static final String STEP = "bootstrap food";
     /** Food items wanted in the bag at the end of bootstrap. */
-    public static final int WANT = 6;
+    public static int want() { return Tuning.i("foodPlan.want"); }
     /** Below this food level (of 20), check lists food first. */
-    public static final int LOW = 10;
+    public static int low() { return Tuning.i("foodPlan.low"); }
 
     /** Ready food by the game's FOOD data: food, not poison (harmful or nutrition 1 or less is junk), not raw (a cooking recipe makes something of it). */
     static boolean ready(String id) {
@@ -90,8 +92,8 @@ public final class FoodPlan {
      */
     public static Decision decide(Map<String, Integer> inv, boolean huntingOn, Map<String, Integer> near) {
         int have = count(inv);
-        if (have >= WANT) return new Decision(List.of(), "ok: food: I carry " + have + " food - nothing to do");
-        int need = Math.max(3, WANT - have);
+        if (have >= want()) return new Decision(List.of(), "ok: food: I carry " + have + " food - nothing to do");
+        int need = Math.max(3, want() - have);
         Map<String, Integer> raw = raw(inv);
         List<String> steps = new ArrayList<>();
         String kind = pick(near);
@@ -133,7 +135,7 @@ public final class FoodPlan {
      * Else hunt (the best animal near, else cow), or hunting on first.
      */
     public static String[] checkFinding(int food, Map<String, Integer> inv, boolean huntingOn, Map<String, Integer> near) {
-        if (food >= LOW) return null;
+        if (food >= low()) return null;
         if (count(inv) > 0) return new String[]{"hunger", "food " + food + "/20", "eat"};
         Map<String, Integer> raw = raw(inv);
         if (!raw.isEmpty()) {

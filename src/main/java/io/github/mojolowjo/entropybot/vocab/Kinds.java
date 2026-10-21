@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 
 import java.util.ArrayList;
@@ -136,7 +138,7 @@ public final class Kinds {
     }
 
     /** 0.27.3 (d6): a food candidate whose plan mines more blocks than this is skipped (the reason goes to the log). */
-    public static final int MAX_FOOD_MINING = 256;
+    public static final int MAX_FOOD_MINING = 256; // structural
 
     /** 0.27.3 (d6): edible items that are potions, elixirs, essences or brews by name (modded drinks), never "food". */
     static final java.util.regex.Pattern NOT_FOOD_WORDS = java.util.regex.Pattern.compile("elixir|potion|essence|tonic|brew|draught|philter|flask|vial|serum|tincture");

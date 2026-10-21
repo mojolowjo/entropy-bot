@@ -83,7 +83,7 @@ class SlowModeTest {
         List<String> steps = List.of("goto 43 64 0", "mine iron_ore 3", "wait 4", "cut 16");
         var est = StepTimes.estimate(steps, new int[]{0, 64, 0}, 60);
         assertTrue(est.get(0).known());
-        assertEquals(43 * StepTimes.PATH_FACTOR / 4.317, est.get(0).seconds(), 0.01);
+        assertEquals(43 * StepTimes.pathFactor() / 4.317, est.get(0).seconds(), 0.01);
         assertEquals(4, est.get(2).seconds(), 1e-9);
         double rest = (60 - est.get(0).seconds() - 4) / 2;
         assertFalse(est.get(1).known());

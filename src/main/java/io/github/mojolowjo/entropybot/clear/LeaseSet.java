@@ -46,7 +46,7 @@ public final class LeaseSet {
     }
 
     private String takeQuiet(String task, ClearBox b, boolean place, boolean force) {
-        List<ClearBox> slices = force ? List.of(b) : PlaceRules.leaseSlices(b, PlaceRules.LEASE_MAX);
+        List<ClearBox> slices = force ? List.of(b) : PlaceRules.leaseSlices(b, PlaceRules.leaseMax());
         List<String> got = new ArrayList<>();
         for (ClearBox sl : slices) {
             String r = core.lease(owner, task, box(task, sl), place, force);
@@ -72,7 +72,7 @@ public final class LeaseSet {
      */
     public String takeDestroy(String task, ClearBox b, String area) {
         List<String> got = new ArrayList<>();
-        for (ClearBox sl : PlaceRules.leaseSlices(b, PlaceRules.LEASE_MAX)) {
+        for (ClearBox sl : PlaceRules.leaseSlices(b, PlaceRules.leaseMax())) {
             String r = core.destroyLease(owner, task, box(task, sl), area, true);
             if (r.startsWith("error")) {
                 for (String id : got) core.release(id);

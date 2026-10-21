@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonElement;
@@ -421,7 +423,7 @@ final class Crafting {
     }
 
     /** How near a furnace must be to count as "here" ({@code smelt ... here}: else the one from the bag goes down next to me). */
-    static final int HERE_R = 6;
+    static int hereR() { return Tuning.i("crafting.hereR"); }
 
     /**
      * @param here 0.36.a8 (AA's iron scorer, smelting on the spot): a furnace further than {@link #HERE_R} from me is not
@@ -441,7 +443,7 @@ final class Crafting {
         boolean smelts = false;
         for (Crafter.Smelt sm : plan.stream().filter(s -> s instanceof Crafter.Smelt).map(s -> (Crafter.Smelt) s).toList()) {
             smelts = true;
-            int[] nearF = here ? findBlockAround(Jobs.here(p), FURNACE, HERE_R, 3) : findFurnace(p);
+            int[] nearF = here ? findBlockAround(Jobs.here(p), FURNACE, hereR(), 3) : findFurnace(p);
             if (efficient ? findFurnaces(p, true).isEmpty() : nearF == null) {
                 if (nearF != null && efficient) {
                     efficient = false;                 // a furnace near me but not at the base: stand by it
@@ -450,7 +452,7 @@ final class Crafting {
                 }
                 // rm-mining: the smelt places no furnace of its own (the old "no free spot next to me for mine" rule is gone):
                 // it takes a known / camp furnace or fails here, and AA's station option set places one through the builder
-                return CraftJob.noFurnace(sm.item()) + " (stage furnace: none known" + (here ? " within " + HERE_R : "") + ") - next: place furnace x y z (the station set), then smelt again";
+                return CraftJob.noFurnace(sm.item()) + " (stage furnace: none known" + (here ? " within " + hereR() : "") + ") - next: place furnace x y z (the station set), then smelt again";
             }
         }
         for (FurnacePlan.Action a : FurnacePlan.order(plan, planner::recipe, efficient, collectTargets)) {
@@ -1102,8 +1104,8 @@ final class Crafting {
                 s.stage = null;
                 return "wait";
             }
-            if (++ps.rounds > FurnaceJobs.BUSY_ROUNDS) return SmeltTexts.allBusy(cands.size(), ps.busy);
-            ps.waitUntil = now() + FurnaceJobs.BUSY_WAIT_TICKS;
+            if (++ps.rounds > FurnaceJobs.busyRounds()) return SmeltTexts.allBusy(cands.size(), ps.busy);
+            ps.waitUntil = now() + FurnaceJobs.busyWaitTicks();
             commands.log("furnaces busy (" + String.join("; ", ps.busy) + "): looking again in a minute");
             return "wait";
         }
@@ -1295,7 +1297,7 @@ final class Crafting {
         st.state = ts;
         if (ts.before >= 0) {
             // a take is on its way: count what really arrived
-            if (now() - ts.settleTick < Storage.GUI_SETTLE) return "wait";
+            if (now() - ts.settleTick < Storage.guiSettle()) return "wait";
             int got = Math.max(0, bag(p, j.item) - ts.before);
             ts.before = -1;
             if (got > 0) {
@@ -1443,7 +1445,7 @@ final class Crafting {
                 // P5 vanilla: a place lease over the farm's box (FARM_R + 1 around the spot, 3 up and down) for the seeds
                 if (leases == null) {
                     leases = Clearing.newLeases();
-                    int r = io.github.mojolowjo.entropybot.farm.FarmRules.FARM_R + 1;
+                    int r = io.github.mojolowjo.entropybot.farm.FarmRules.farmR() + 1;
                     FarmSpot f = s.farm.farm;
                     io.github.mojolowjo.entropybot.clear.ClearBox b = new io.github.mojolowjo.entropybot.clear.ClearBox(f.x() - r, f.y() - 3, f.z() - r, f.x() + r, f.y() + 3, f.z() + r);
                     String le = leases.take("farm replant " + f.fmt(), b, true, false);
@@ -1498,7 +1500,7 @@ final class Crafting {
         switch (st.type) {
             case "compacthere": {
                 List<int[]> found = new ArrayList<>();
-                for (Storage.Found f : Storage.findContainers(st.pos, Compact.COMPACT_R)) if (Storage.isStorageBlock(f.pos())) found.add(f.pos());
+                for (Storage.Found f : Storage.findContainers(st.pos, Compact.compactR())) if (Storage.isStorageBlock(f.pos())) found.add(f.pos());
                 r = s.compact.here(found, Jobs.here(p), st.why);
                 break;
             }

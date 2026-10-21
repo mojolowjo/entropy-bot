@@ -250,7 +250,7 @@ class ClearRunLoopTest {
         LeaseSet l = new LeaseSet(g, "tok", "minecraft:overworld", null);
         ClearBox box = ClearBox.of(0, 38, 112, 15, 54, 127);
         assertEquals(4352, box.volume());
-        assertEquals(2, PlaceRules.leaseSlices(box, PlaceRules.LEASE_MAX).size());
+        assertEquals(2, PlaceRules.leaseSlices(box, PlaceRules.leaseMax()).size());
         assertNull(l.take("digging 0 38 112 to 15 54 127", box, false, false));
         assertEquals(2, l.ids.size());
         assertEquals(2, g.leases().size());

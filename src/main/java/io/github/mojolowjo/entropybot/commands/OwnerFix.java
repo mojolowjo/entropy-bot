@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonObject;
@@ -20,9 +22,9 @@ import java.util.function.Supplier;
  * modification time or size changes. No Minecraft types, so the rules are unit tested.
  */
 public final class OwnerFix {
-    public static final long MAX_AGE_MS = 10_000;
+    public static long maxAgeMs() { return Tuning.l("ownerFix.maxAgeMs"); }
     /** A fix "from the future" (the clock was set back) is refused beyond this. */
-    static final long FUTURE_SLACK_MS = 2_000;
+    static long futureSlackMs() { return Tuning.l("ownerFix.futureSlackMs"); }
 
     /** One parsed owner.json. */
     public record Fix(String name, double x, double y, double z, String dim, long received, int food, int health) {
@@ -37,7 +39,7 @@ public final class OwnerFix {
     public static int[] vitals(Fix f, String player, long nowMs) {
         if (f == null || player == null || !f.name().equalsIgnoreCase(player)) return null;
         long age = nowMs - f.received();
-        if (age > MAX_AGE_MS || age < -FUTURE_SLACK_MS) return null;
+        if (age > maxAgeMs() || age < -futureSlackMs()) return null;
         return new int[]{f.food(), f.health()};
     }
 
@@ -74,7 +76,7 @@ public final class OwnerFix {
         if (f == null || player == null || botDim == null || !f.name().equalsIgnoreCase(player)) return null;
         if (!botDim.equals(f.dim())) return null;
         long age = nowMs - f.received();
-        if (age > MAX_AGE_MS || age < -FUTURE_SLACK_MS) return null;
+        if (age > maxAgeMs() || age < -futureSlackMs()) return null;
         return new int[]{(int) Math.floor(f.x()), (int) Math.floor(f.y()), (int) Math.floor(f.z())};
     }
 

@@ -24,13 +24,13 @@ import java.util.List;
 final class SeenRuntime {
     private static final Logger LOG = LogUtils.getLogger();
     /** Candidates gathered per pass (the nearest first). */
-    static final int CANDIDATES = 48;
+    static final int CANDIDATES = 48; // structural
 
     /** The ray budget, shared with {@link SightingsRuntime} (AA_ROUND3 5: one budget for every kind). */
     final Seen.Budget budget = new Seen.Budget();
     private long rays, hits, logAt, logged;
     /** review: a cell whose ray was blocked waits {@link #RETRY_MS} (else the nearest blocked cells take every ray). */
-    static final long RETRY_MS = 2000;
+    static final long RETRY_MS = 2000; // structural
     private final java.util.Map<Long, Long> blockedUntil = new java.util.HashMap<>();
 
     void tick(ClientLevel level, LocalPlayer p, OreIndex index, Seen seen, String dim, long tick, long now) {
@@ -40,7 +40,7 @@ final class SeenRuntime {
         Vec3 look = p.getLookAngle();
         double ex = eye.x, ey = eye.y, ez = eye.z;
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        List<OreIndex.Hit> cand = index.nearest(dim, id -> true, (int) Math.floor(ex), (int) Math.floor(ey), (int) Math.floor(ez), Seen.RANGE, CANDIDATES,
+        List<OreIndex.Hit> cand = index.nearest(dim, id -> true, (int) Math.floor(ex), (int) Math.floor(ey), (int) Math.floor(ez), Seen.range(), CANDIDATES,
                 (x, y, z) -> blockedUntil.getOrDefault(Seen.key(x, y, z), 0L) <= now && !seen.has(dim, x, y, z) && Seen.inRange(ex, ey, ez, x, y, z) && Seen.inCone(ex, ey, ez, look.x, look.y, look.z, x, y, z));
         for (OreIndex.Hit h : cand) {
             m.set(h.x(), h.y(), h.z());

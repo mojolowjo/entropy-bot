@@ -102,10 +102,10 @@ class FurnaceJobsTest {
         assertEquals(Limits.FURNACE_JOBS, fj.all().size());
         assertTrue(FurnaceJobs.fullRefusal().startsWith("I remember 16 furnace jobs already"));
         long due = fj.all().get(0).dueAt;
-        assertTrue(fj.expire(due + FurnaceJobs.EXPIRE_MS, T0).isEmpty(), "not before 30 min past due");
+        assertTrue(fj.expire(due + FurnaceJobs.expireMs(), T0).isEmpty(), "not before 30 min past due");
         // after a restart (the session started later), the 30 minutes count from the session's start
-        assertTrue(fj.expire(due + FurnaceJobs.EXPIRE_MS + 1000, due + 20 * 60_000).isEmpty());
-        List<Job> gone = fj.expire(due + 20 * 60_000 + FurnaceJobs.EXPIRE_MS + 1000, due + 20 * 60_000);
+        assertTrue(fj.expire(due + FurnaceJobs.expireMs() + 1000, due + 20 * 60_000).isEmpty());
+        List<Job> gone = fj.expire(due + 20 * 60_000 + FurnaceJobs.expireMs() + 1000, due + 20 * 60_000);
         assertEquals(Limits.FURNACE_JOBS, gone.size());
         assertTrue(fj.isEmpty());
         assertEquals("I stopped tracking 40 iron_ingot in the furnace at 0 60 0 (30 min past due) - they may still be in it", FurnaceJobs.forgotten(gone.get(0)));
@@ -113,7 +113,7 @@ class FurnaceJobsTest {
         Job j = fj.add(F1, OW, IRON, FurnaceJobs.SMELT, null, T0);
         fj.later(List.of(j), j.dueAt);
         assertTrue(fj.due(j.dueAt + 1000, OW).isEmpty());
-        assertEquals(1, fj.due(j.dueAt + FurnaceJobs.RETRY_MS, OW).size());
+        assertEquals(1, fj.due(j.dueAt + FurnaceJobs.retryMs(), OW).size());
         assertEquals("1m 30s", FurnaceJobs.eta(90_000));
         assertEquals("45s", FurnaceJobs.eta(44_200));
         assertEquals("now", FurnaceJobs.eta(0));

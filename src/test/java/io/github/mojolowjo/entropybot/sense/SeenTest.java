@@ -74,7 +74,7 @@ class SeenTest {
         Seen.Budget b = new Seen.Budget();
         int n = 0;
         while (b.take(1000)) n++;
-        assertEquals(Seen.RAYS_PER_SEC, n);
+        assertEquals(Seen.raysPerSec(), n);
         assertFalse(b.take(1000));
         assertTrue(b.take(1100));          // 6.4 rays refilled in 100 ms
     }
@@ -83,13 +83,13 @@ class SeenTest {
     void caveYieldAndTheFile() {
         Seen s = new Seen();
         double prior = s.caveRate("iron");
-        assertEquals(Seen.PRIOR_RATE, prior, 1e-9);
+        assertEquals(Seen.priorRate(), prior, 1e-9);
         s.caving = true;
         s.saw("d", 1, 1, 1, "iron", 1);
         s.saw("d", 2, 1, 1, "iron", 1);
         s.caving = false;
         s.caveTime(2);
-        assertEquals((2 + Seen.PRIOR_RATE * Seen.PRIOR_MIN) / (2 + Seen.PRIOR_MIN), s.caveRate("iron"), 1e-9);
+        assertEquals((2 + Seen.priorRate() * Seen.priorMin()) / (2 + Seen.priorMin()), s.caveRate("iron"), 1e-9);
         // AA_ROUND3 5: the ore cells live in sightings.json (Sightings kind ORE)
         Sightings o = new Sightings();
         o.ore().saw("d", 4, 5, 6, "iron", 7);

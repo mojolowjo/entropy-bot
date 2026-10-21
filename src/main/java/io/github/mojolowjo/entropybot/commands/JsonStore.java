@@ -13,7 +13,8 @@ import io.github.mojolowjo.entropybot.io.BotFiles;
  * backup every few minutes, a broken file set aside (never overwritten) and its backup loaded instead.
  */
 public final class JsonStore {
-    static final long FLUSH_AFTER = 20, BACKUP_EVERY = 6000;
+    static final long FLUSH_AFTER = 20; // structural
+    static final long BACKUP_EVERY = 6000; // structural
 
     private final String name;
     private JsonObject data = new JsonObject();

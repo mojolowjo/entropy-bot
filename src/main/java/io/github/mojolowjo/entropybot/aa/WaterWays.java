@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.guard.DrownRisk;
 
 /**
@@ -21,7 +23,9 @@ public final class WaterWays {
     public enum Way { FLOAT, STAND, PLACE, DRY }
 
     /** Blocks per second walking, swimming; the factor for digging off the ground. */
-    public static final double WALK_BPS = 4.3, SWIM_BPS = 2.0, FLOAT_SLOW = 5;
+    public static final double WALK_BPS = 4.3; // game fact: walking speed in blocks per second (about 4.3)
+    public static final double SWIM_BPS = 2.0; // game fact: swimming speed in blocks per second (about 2)
+    public static double floatSlow() { return Tuning.get("waterWays.floatSlow"); }
 
     /**
      * The wet facts of one ore (null cells / -1 distances: that way is not there).
@@ -43,12 +47,12 @@ public final class WaterWays {
     public record Priced(Way way, int[] stand, double seconds, String why) {}
 
     /** Seconds per block dug on dry ground with this tier (DrownRisk's table, without the drop). */
-    static double dryDigS(int tier) { return (DrownRisk.digS(tier) - DrownRisk.DROP_S) / DrownRisk.WATER_SLOW; }
+    static double dryDigS(int tier) { return (DrownRisk.digS(tier) - DrownRisk.dropS()) / DrownRisk.waterSlow(); }
 
     /** The drowning risk as seconds (K walk-blocks per risk^2, over the walking speed); infinite when fatal. */
     static double riskS(int depth, double workS, int air) {
         double r = DrownRisk.cellRisk(depth, workS, air);
-        return DrownRisk.fatal(r) ? Double.POSITIVE_INFINITY : DrownRisk.K * r * r / WALK_BPS;
+        return DrownRisk.fatal(r) ? Double.POSITIVE_INFINITY : DrownRisk.k() * r * r / WALK_BPS;
     }
 
     /** One way's price, or null when it is not there or fatal. */
@@ -57,7 +61,7 @@ public final class WaterWays {
         switch (w) {
             case FLOAT -> {
                 if (f.oreDepth() <= 0 && !f.inWater()) return null;
-                double dig = sub * FLOAT_SLOW;
+                double dig = sub * floatSlow();
                 double risk = riskS(f.oreDepth(), dig, f.air());
                 if (Double.isInfinite(risk)) return null;
                 return new Priced(w, null, dig + risk, String.format(java.util.Locale.ROOT, "floating dig %.0f s, %d under", dig, f.oreDepth()));
@@ -71,7 +75,7 @@ public final class WaterWays {
             }
             case PLACE -> {
                 if (f.place() == null || f.placeDist() < 0 || f.throwaway() < 1) return null;
-                double work = DrownRisk.PLACE_S + sub;
+                double work = DrownRisk.placeS() + sub;
                 double risk = riskS(f.placeDepth(), work, f.air());
                 if (Double.isInfinite(risk)) return null;
                 double s = f.placeDist() / (f.inWater() ? SWIM_BPS : WALK_BPS) + work + risk;

@@ -230,7 +230,7 @@ class MiningRulesTest {
         long vol = 0;
         for (int[] b : parts) {
             long v = (long) (b[3] - b[0] + 1) * (b[4] - b[1] + 1) * (b[5] - b[2] + 1);
-            assertTrue(v <= MineRules.LEASE_MAX, "slice " + v);
+            assertTrue(v <= MineRules.leaseMax(), "slice " + v);
             vol += v;
             for (int x = b[0]; x <= b[3]; x++) assertTrue(x > -10 || b[2] > 200 || b[5] < 170, "no slice inside the protect box");
         }

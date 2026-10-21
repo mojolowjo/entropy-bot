@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -24,9 +26,9 @@ public final class BootstrapPlan {
     private BootstrapPlan() {}
 
     /** Columns of the staircase quarry (3 wide; column i is i deep): 3 * (1+..+8) = 108 blocks, about 45 of them stone. */
-    public static final int QUARRY_LEN = 8;
-    public static final int TORCHES = 16;
-    public static final int NEAR = 8;
+    public static int quarryLen() { return Tuning.i("bootstrapPlan.quarryLen"); }
+    public static int torches() { return Tuning.i("bootstrapPlan.torches"); }
+    public static int near() { return Tuning.i("bootstrapPlan.near"); }
 
     /**
      * What the planner looks at. inv: id -> count (namespaced ids). tableNear/furnaceNear/chestNear: one within
@@ -55,7 +57,7 @@ public final class BootstrapPlan {
                                     String running, String lastRun) {
         StringBuilder b = new StringBuilder("bootstrap: ");
         b.append("table ").append(table ? "yes" : "no").append(", furnace ").append(furnace ? "yes" : "no")
-                .append(", chest ").append(chest ? "yes" : "no").append(" within ").append(NEAR);
+                .append(", chest ").append(chest ? "yes" : "no").append(" within ").append(near());
         b.append("; tools");
         for (String k : KINDS) b.append(' ').append(k).append(' ').append(best(inv, k) > 0 ? "yes" : "no");
         int torches = inv.getOrDefault("minecraft:torch", 0);
@@ -134,7 +136,7 @@ public final class BootstrapPlan {
         for (String k : KINDS) if (best(inv, k) < 2) tools.add(k);
         boolean needWoodPick = best(inv, "pickaxe") == 0;
         int torches = count(inv, "minecraft:torch");
-        int torchMissing = Math.max(0, TORCHES - torches);
+        int torchMissing = Math.max(0, torches() - torches);
         int coalHave = count(inv, "minecraft:coal", "minecraft:charcoal");
         int coalNeed = Math.max(0, (torchMissing + 3) / 4 - coalHave);
         // cobblestone (or cobbled deepslate: both are stone tool and furnace material)
@@ -210,7 +212,7 @@ public final class BootstrapPlan {
         List<String> out = new ArrayList<>();
         int dx = dir[0], dz = dir[1];
         int px = dz != 0 ? 1 : 0, pz = dx != 0 ? 1 : 0;          // across the stairs
-        for (int i = 1; i <= QUARRY_LEN; i++) {
+        for (int i = 1; i <= quarryLen(); i++) {
             int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
             int x1 = cx - px, z1 = cz - pz, x2 = cx + px, z2 = cz + pz;
             out.add("dig " + x1 + " " + stepBottom(feet[1], i) + " " + z1 + " " + x2 + " " + stepTop(feet[1], i) + " " + z2);
@@ -219,19 +221,19 @@ public final class BootstrapPlan {
     }
 
     /** Owner's rule (0.36.5): at least this many blocks of headroom above every step's floor. */
-    public static final int HEADROOM = 3;
+    public static int headroom() { return Tuning.i("bootstrapPlan.headroom"); }
 
     /** Standing level of step i (1..QUARRY_LEN): one lower than the step before; the floor block under it stays. */
     public static int stepBottom(int feetY, int i) { return feetY - i; }
 
     /** Top of step i's box: the ceiling steps down with the floor, HEADROOM blocks of air above the standing level. */
-    public static int stepTop(int feetY, int i) { return feetY - i + HEADROOM - 1; }
+    public static int stepTop(int feetY, int i) { return feetY - i + headroom() - 1; }
 
     /** The one log line for the staircase plan: start, direction, steps. */
     public static String planLine(int[] feet, int[] dir) {
         return "staircase quarry from " + feet[0] + " " + feet[1] + " " + feet[2] + " dir " + dir[0] + " " + dir[1] + ", "
-                + QUARRY_LEN + " steps, stand y " + stepBottom(feet[1], 1) + ".." + stepBottom(feet[1], QUARRY_LEN)
-                + ", ceiling y " + stepTop(feet[1], 1) + ".." + stepTop(feet[1], QUARRY_LEN) + " (" + HEADROOM + " headroom, 1-high steps)";
+                + quarryLen() + " steps, stand y " + stepBottom(feet[1], 1) + ".." + stepBottom(feet[1], quarryLen())
+                + ", ceiling y " + stepTop(feet[1], 1) + ".." + stepTop(feet[1], quarryLen()) + " (" + headroom() + " headroom, 1-high steps)";
     }
 }
 

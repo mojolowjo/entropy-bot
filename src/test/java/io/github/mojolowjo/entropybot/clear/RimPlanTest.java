@@ -71,9 +71,9 @@ class RimPlanTest {
         FakeWorld w = hillside();
         Pos a = new Pos(4, 53, 0), b = new Pos(10, 53, 0);
         Map<Pos, Integer> tries = new HashMap<>();
-        tries.put(a, RimPlan.MAX_TRIES);
+        tries.put(a, RimPlan.maxTries());
         assertEquals(b, RimPlan.next(w, List.of(a, b), tries, 4.5, 54, 0.5).cell());
-        tries.put(b, RimPlan.MAX_TRIES);
+        tries.put(b, RimPlan.maxTries());
         assertNull(RimPlan.next(w, List.of(a, b), tries, 4.5, 54, 0.5));
     }
 

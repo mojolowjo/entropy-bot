@@ -95,7 +95,7 @@ class ReplanTest {
         List<Replan.Cell> gravel = List.of(new Replan.Cell(false, false, 1, false, false, true));
         assertEquals(Replan.Leg.WALK, Replan.chooseNow(gravel, 1, 20, 40).leg());
         assertEquals(Replan.Leg.WALK, Replan.chooseNow(List.of(new Replan.Cell(false, false, Double.POSITIVE_INFINITY, false, false, false)), 1, 20, 40).leg());
-        assertTrue(Replan.tunnelUp(col(50, Replan.Cell.air()), 50, 64).cost() > 10 * Replan.OVER_CAP - 1);
+        assertTrue(Replan.tunnelUp(col(50, Replan.Cell.air()), 50, 64).cost() > 10 * Replan.overCap() - 1);
         assertTrue(Replan.tunnelUp(col(10, Replan.Cell.air()), 10, 2).why().contains("short"));
     }
 

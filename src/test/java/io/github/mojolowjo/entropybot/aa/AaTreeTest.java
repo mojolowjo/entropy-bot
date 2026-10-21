@@ -53,11 +53,11 @@ class AaTreeTest {
 
     /** AA_ROUND2 4: every idle stock band met (a Peaceful base, worth 16, comes after them). */
     void stocked() {
-        bb.in.wood = AaScorer.WOOD_HI;
-        bb.in.cobble = AaScorer.STONE_HI;
-        bb.in.coal = AaScorer.COAL_HI;
-        bb.in.ironIngots = AaScorer.IRON_HI;
-        bb.in.torches = AaScorer.TORCH_HI;
+        bb.in.wood = AaScorer.woodHi();
+        bb.in.cobble = AaScorer.stoneHi();
+        bb.in.coal = AaScorer.coalHi();
+        bb.in.ironIngots = AaScorer.ironHi();
+        bb.in.torches = AaScorer.torchHi();
     }
 
     String lastChain() { return port.started.get(port.started.size() - 1).chain(); }
@@ -299,7 +299,7 @@ class AaTreeTest {
         assertEquals("plan cobblestone 64", lastChain(), "S1: the refused option cools down 30 s, the next one runs at once");
         port.done(1, "done");
         tree.tick(bb);
-        clock.advance(Cooldown.NO_RUN_MS + 1);
+        clock.advance(Cooldown.noRunMsV() + 1);
         tree.tick(bb);            // wood 100 vs stone 100 + 15 inertia
         assertEquals("plan cobblestone 64", lastChain());
     }

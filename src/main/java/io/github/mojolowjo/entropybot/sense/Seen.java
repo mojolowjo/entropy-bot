@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -23,13 +25,15 @@ import java.util.Map;
  * discovery options. Pure (JUnit: SeenTest). Loader notes: none (the rays and the hooks live in SeenRuntime/ChunkPass).
  */
 public final class Seen {
-    public static final int RANGE = 24, RAYS_PER_SEC = 64;
+    public static int range() { return Tuning.i("seen.range"); }
+    public static int raysPerSec() { return Tuning.i("seen.raysPerSec"); }
     /** Half-angle of the view cone (degrees): about the default 70 FOV's corners. */
-    public static final double CONE_DEG = 60;
+    public static double coneDeg() { return Tuning.get("seen.coneDeg"); }
     /** Cells kept per dimension (the oldest seen go first past it). */
-    public static final int MAX = 20_000;
+    public static final int MAX = 20_000; // structural
     /** The cave-yield prior: this many ores of a family per minute, weighed as {@link #PRIOR_MIN} minutes of caving. */
-    public static final double PRIOR_RATE = 0.5, PRIOR_MIN = 2.0;
+    public static double priorRate() { return Tuning.get("seen.priorRate"); }
+    public static double priorMin() { return Tuning.get("seen.priorMin"); }
 
     private static volatile boolean fair = true;
 
@@ -59,7 +63,7 @@ public final class Seen {
     /** Within {@link #RANGE} of the eyes (to the cell's centre). */
     public static boolean inRange(double ex, double ey, double ez, int x, int y, int z) {
         double dx = x + 0.5 - ex, dy = y + 0.5 - ey, dz = z + 0.5 - ez;
-        return dx * dx + dy * dy + dz * dz <= (double) RANGE * RANGE;
+        return dx * dx + dy * dy + dz * dz <= (double) range() * range();
     }
 
     /** In the view cone: the angle between the look vector (lx ly lz, any length) and the cell's centre is at most {@link #CONE_DEG}. */
@@ -68,7 +72,7 @@ public final class Seen {
         double dl = Math.sqrt(dx * dx + dy * dy + dz * dz), ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
         if (dl < 1.0) return true;          // the cell I stand in or touch
         if (ll == 0) return false;
-        return (dx * lx + dy * ly + dz * lz) / (dl * ll) >= Math.cos(Math.toRadians(CONE_DEG));
+        return (dx * lx + dy * ly + dz * lz) / (dl * ll) >= Math.cos(Math.toRadians(coneDeg()));
     }
 
     /** The face to aim the ray at: of the open faces (open[i] for {@link #FACES}[i]) the one turned most toward the eyes; -1 none toward them. */
@@ -94,11 +98,11 @@ public final class Seen {
 
     /** The ray budget: {@link #RAYS_PER_SEC} a second, at most one second banked. */
     public static final class Budget {
-        private double tokens = RAYS_PER_SEC;
+        private double tokens = raysPerSec();
         private long last = -1;
 
         public boolean take(long now) {
-            if (last >= 0) tokens = Math.min(RAYS_PER_SEC, tokens + (now - last) * RAYS_PER_SEC / 1000.0);
+            if (last >= 0) tokens = Math.min(raysPerSec(), tokens + (now - last) * raysPerSec() / 1000.0);
             last = now;
             if (tokens < 1) return false;
             tokens -= 1;
@@ -168,11 +172,11 @@ public final class Seen {
 
     /** Ores of a family seen per minute of caving, the prior blended in (never 0). */
     public synchronized double caveRate(String family) {
-        return (caveOres.getOrDefault(family, 0.0) + PRIOR_RATE * PRIOR_MIN) / (caveMinutes + PRIOR_MIN);
+        return (caveOres.getOrDefault(family, 0.0) + priorRate() * priorMin()) / (caveMinutes + priorMin());
     }
 
     public synchronized String caveText() {
-        return String.format(java.util.Locale.ROOT, "caving %.1f min, seen %s (prior %.1f/min a family)", caveMinutes, caveOres, PRIOR_RATE);
+        return String.format(java.util.Locale.ROOT, "caving %.1f min, seen %s (prior %.1f/min a family)", caveMinutes, caveOres, priorRate());
     }
 
     public boolean dirty() { return dirty; }

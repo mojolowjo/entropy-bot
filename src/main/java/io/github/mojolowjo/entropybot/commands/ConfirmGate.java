@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -15,9 +17,9 @@ import java.util.Map;
  * A typed chain with a big step that lacks {@code confirm} asks once for the whole chain. Pure: time comes in as ms.
  */
 public final class ConfirmGate {
-    public static final long WINDOW_MS = 30_000;
+    public static long windowMs() { return Tuning.l("confirmGate.windowMs"); }
     /** A dig box bigger than this asks first. */
-    public static final long BIG_DIG = 1000;
+    public static long bigDig() { return Tuning.l("confirmGate.bigDig"); }
 
     /** What the summaries can say about the world (each may be null: a plainer summary then). */
     public interface Facts {
@@ -68,7 +70,7 @@ public final class ConfirmGate {
     }
 
     /** A dig box bigger than this is an error (DigCommands' own cap), said before any question. */
-    public static final long MAX_DIG = 20000;
+    public static long maxDig() { return Tuning.l("confirmGate.maxDig"); }
 
     /** Verbs whose lines only save, schedule or repeat: they never ask (their steps ask when they run, as chain steps: never). */
     static boolean neverAsks(String verb) {
@@ -87,7 +89,7 @@ public final class ConfirmGate {
             if (internal) return Gate.say("error: nothing to confirm (a chain's steps never ask)");
             Pending p = pending.remove(key);
             if (p == null) return Gate.say("error: nothing to confirm - say the command again");
-            if (now > p.until) return Gate.say("error: too late, \"" + p.what + "\" waited more than " + WINDOW_MS / 1000 + " s - say it again");
+            if (now > p.until) return Gate.say("error: too late, \"" + p.what + "\" waited more than " + windowMs() / 1000 + " s - say it again");
             return Gate.run(p.line);
         }
         if (!internal) pending.remove(key);              // any other command cancels a question
@@ -143,11 +145,11 @@ public final class ConfirmGate {
     private static boolean digOver(String step) {
         List<String> w = Texts.words(Texts.verbAndRest(step)[1].toLowerCase(Locale.ROOT));
         if (!w.isEmpty() && w.get(w.size() - 1).equals("confirm")) w = w.subList(0, w.size() - 1);
-        return digVolume(w) > MAX_DIG;
+        return digVolume(w) > maxDig();
     }
 
     private static String tooBig(String step) {
-        return "error: that box is too big (" + MAX_DIG + " blocks max)";
+        return "error: that box is too big (" + maxDig() + " blocks max)";
     }
 
     /** True while a question waits for this sender (and isn't stale). */
@@ -166,8 +168,8 @@ public final class ConfirmGate {
     }
 
     private Gate ask(String key, String runLine, String summary, long now) {
-        pending.put(key, new Pending(runLine, Texts.verbAndRest(runLine)[2].replaceFirst("(?i)\\s+confirm$", ""), now + WINDOW_MS));
-        return Gate.say("confirm? " + summary + " - say \"confirm\" within " + WINDOW_MS / 1000 + " s (anything else cancels)");
+        pending.put(key, new Pending(runLine, Texts.verbAndRest(runLine)[2].replaceFirst("(?i)\\s+confirm$", ""), now + windowMs()));
+        return Gate.say("confirm? " + summary + " - say \"confirm\" within " + windowMs() / 1000 + " s (anything else cancels)");
     }
 
     /** The big kind of one step, or null. */
@@ -177,7 +179,7 @@ public final class ConfirmGate {
         if (!w.isEmpty() && w.get(w.size() - 1).equals("confirm")) w = w.subList(0, w.size() - 1);
         switch (vr[0]) {
             case "build" -> { return !w.isEmpty() && w.get(0).equals("clear") ? Kind.BUILD_CLEAR : null; }
-            case "dig" -> { return digVolume(w) > BIG_DIG ? Kind.DIG : digArea(w) != null ? Kind.DIG_AREA : null; }
+            case "dig" -> { return digVolume(w) > bigDig() ? Kind.DIG : digArea(w) != null ? Kind.DIG_AREA : null; }
             case "area" -> { return w.size() >= 2 && w.get(0).equals("del") ? Kind.AREA_REMOVE : null; }
             case "stripmine" -> { return w.size() == 1 && w.get(0).equals("reset") ? Kind.STRIP_RESET : null; }
             case "mine" -> { return w.size() == 2 && w.get(0).equals("strip") && w.get(1).equals("reset") ? Kind.STRIP_RESET : null; }

@@ -10,7 +10,7 @@ public final class NearAudit {
     private NearAudit() {}
 
     /** Ticks between two near checks (10 = twice a second: the 3 x 3 are all checked again within 4.5 s). */
-    public static final int EVERY_TICKS = 10;
+    public static final int EVERY_TICKS = 10; // structural
 
     /** The chunk {cx, cz} for turn {@code cursor} (0, 1, 2...) round the bot's chunk: nine in a row, the middle one first. */
     public static int[] pick(int ecx, int ecz, long cursor) {

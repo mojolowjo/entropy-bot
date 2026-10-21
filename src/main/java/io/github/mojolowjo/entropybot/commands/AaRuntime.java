@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
@@ -46,8 +48,8 @@ import java.util.Map;
 public final class AaRuntime implements JobPort {
     private static final Logger LOG = LogUtils.getLogger();
     public static final String CHAIN = "aa";
-    static final long HOLD_MS = 2 * 60_000;
-    static final int ERRORS_PER_MINUTE_OFF = 10;
+    static long holdMs() { return Tuning.l("aaRuntime.holdMs"); }
+    static int errorsPerMinuteOff() { return Tuning.i("aaRuntime.errorsPerMinuteOff"); }
 
     private final Commands c;
     final AaTree tree;
@@ -185,8 +187,9 @@ public final class AaRuntime implements JobPort {
     private io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts foodCache;
     private long foodCacheAt = -1;
     /** The food facts are read at most this often (the desire's park check asks every tick). */
-    static final long FOOD_FACTS_MS = 10_000;
-    static final int FOOD_R = 24, FOOD_DY = 6;
+    static long foodFactsMs() { return Tuning.l("aaRuntime.foodFactsMs"); }
+    static int foodR() { return Tuning.i("aaRuntime.foodR"); }
+    static int foodDy() { return Tuning.i("aaRuntime.foodDy"); }
 
     /**
      * aa-food: the FOOD rung's facts (cached {@link #FOOD_FACTS_MS}): the bag, the stock target, a furnace, the animals
@@ -233,13 +236,13 @@ public final class AaRuntime implements JobPort {
         Map<String, int[]> out = new java.util.HashMap<>();
         if (lv == null || p == null) return out;
         java.util.Set<String> inView = new java.util.HashSet<>();
-        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.ANIMAL_RANGE)))
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.animalRange())))
             inView.add(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
         int[] me = Jobs.here(p);
         Map<String, Double> score = new java.util.HashMap<>();
         for (var h : herds(lv, me)) {
             String id = h.type().indexOf(':') >= 0 ? h.type() : "minecraft:" + h.type();
-            if (inView.contains(id) || h.conf() < io.github.mojolowjo.entropybot.aa.FoodOptions.HERD_MIN_CONF || h.dist() > io.github.mojolowjo.entropybot.aa.FoodOptions.HERD_MAX) continue;
+            if (inView.contains(id) || h.conf() < io.github.mojolowjo.entropybot.aa.FoodOptions.herdMinConf() || h.dist() > io.github.mojolowjo.entropybot.aa.FoodOptions.herdMax()) continue;
             double s = (2 * h.dist() + 60) / h.conf();
             if (s < score.getOrDefault(id, Double.MAX_VALUE)) {
                 score.put(id, s);
@@ -252,7 +255,7 @@ public final class AaRuntime implements JobPort {
     io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts foodFacts() {
         long now = System.currentTimeMillis();
         // review: the cache holds only while the bag, the bar and the furnace are unchanged (a hunt/cook/eat refreshes it)
-        if (foodCache != null && now - foodCacheAt < FOOD_FACTS_MS && sensed != null && sensed.feas != null
+        if (foodCache != null && now - foodCacheAt < foodFactsMs() && sensed != null && sensed.feas != null
                 && foodCache.bag().equals(sensed.feas.bag) && foodCache.food() == bb.in.food
                 && foodCache.furnace() == (bb.in.furnaceKnown || bb.in.furnaceInBag)) return foodCache;
         Minecraft mc = Minecraft.getInstance();
@@ -265,7 +268,7 @@ public final class AaRuntime implements JobPort {
         // owner's rule 2026-10-19: the walk to the animals is priced (FoodOptions.huntRow): the nearest one the hunt may take
         double huntDist = 0;
         double nearest = Double.MAX_VALUE;
-        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.ANIMAL_RANGE))) {
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.animalRange()))) {
             String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
             if (!animals.containsKey(type) || e.isBaby() || e.hasCustomName() || io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e)) continue;
             nearest = Math.min(nearest, p.distanceTo(e));
@@ -280,9 +283,9 @@ public final class AaRuntime implements JobPort {
         String wdim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
         Map<Long, Integer> grassCells = new java.util.HashMap<>();
         var m = new net.minecraft.core.BlockPos.MutableBlockPos();
-        for (int x = me[0] - FOOD_R; x <= me[0] + FOOD_R; x++)
-            for (int z = me[2] - FOOD_R; z <= me[2] + FOOD_R; z++)
-                for (int y = me[1] - FOOD_DY; y <= me[1] + FOOD_DY; y++) {
+        for (int x = me[0] - foodR(); x <= me[0] + foodR(); x++)
+            for (int z = me[2] - foodR(); z <= me[2] + foodR(); z++)
+                for (int y = me[1] - foodDy(); y <= me[1] + foodDy(); y++) {
                     m.set(x, y, z);
                     if (!lv.isLoaded(m)) continue;
                     var st = lv.getBlockState(m);
@@ -386,7 +389,7 @@ public final class AaRuntime implements JobPort {
     private long drainT0;
     private String drainKind;
     /** A sample closes after this long at most (a long task gives several). */
-    static final long DRAIN_WINDOW_MS = 5 * 60_000;
+    static long drainWindowMs() { return Tuning.l("aaRuntime.drainWindowMs"); }
 
     /**
      * aa-food: one drain sample per stretch of one task kind (FoodModel): closed when the kind changes, the bot ate
@@ -398,7 +401,7 @@ public final class AaRuntime implements JobPort {
         String kind = (bb.task() == null ? io.github.mojolowjo.entropybot.aa.core.TaskKind.NONE : bb.task().kind).name();
         if (drainE0 < 0) { drainE0 = e; drainT0 = now; drainKind = kind; return; }
         boolean ate = e > drainE0 + 0.01;
-        if (ate || !kind.equals(drainKind) || now - drainT0 >= DRAIN_WINDOW_MS) {
+        if (ate || !kind.equals(drainKind) || now - drainT0 >= drainWindowMs()) {
             double minutes = (now - drainT0) / 60_000.0;
             if (!ate && tree.brain.stats.recordDrain(drainKind, drainE0 - e, minutes))
                 LOG.info("[entropybot] aa: food drain {}: {} points in {} min", drainKind, String.format(java.util.Locale.ROOT, "%.1f", drainE0 - e), String.format(java.util.Locale.ROOT, "%.1f", minutes));
@@ -424,11 +427,11 @@ public final class AaRuntime implements JobPort {
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
             boolean fair = io.github.mojolowjo.entropybot.sense.Seen.fair();
             long t0 = System.nanoTime();
-            List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, IRON_ORES, fair ? 2 : 0);
+            List<IronOptions.Ore> ores = Mining.get().aaOres(p, IronOptions.FAMILY, ironOres(), fair ? 2 : 0);
             long t1 = System.nanoTime();
             var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
             int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
-            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;      // review: "mine cave" picks only within 64, else it starts a new cave here
+            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.pickWithin()) caveDist = -1;      // review: "mine cave" picks only within 64, else it starts a new cave here
             Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
             boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
             String stripWhy = !mineMarked ? "no mine marked (place mine)" : null;
@@ -473,7 +476,7 @@ public final class AaRuntime implements JobPort {
             int near = io.github.mojolowjo.entropybot.guard.Litter.nearestBoxGap(boxes, dim, me[0], me[2]);
             boolean own = pol != null && pol.typeAt(dim, me[0], me[1], me[2]) == io.github.mojolowjo.entropybot.guard.AreaType.BASE;
             var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
-            var cave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+            var cave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
             return new io.github.mojolowjo.entropybot.guard.Litter.Site(near, bb.in.pickTier, 3, 0, cave == null ? 0 : cave.conf(), Math.max(0, oreCount - 1), 0, own);
         } catch (RuntimeException e) {
             LOG.debug("[entropybot] aa: litter site: {}", e.toString());
@@ -504,7 +507,7 @@ public final class AaRuntime implements JobPort {
                 List<IronOptions.Ore> ores = Mining.get().aaOres(p, io.github.mojolowjo.entropybot.aa.CoalOptions.FAMILY, 8);
                 var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
                 int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
-                if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;
+                if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.pickWithin()) caveDist = -1;
                 boolean mineMarked = sensed.feas != null && sensed.feas.mineMarked;
                 String stripWhy = !mineMarked ? "no mine marked (place mine)" : null;
                 List<String> dd = new ArrayList<>();
@@ -513,7 +516,7 @@ public final class AaRuntime implements JobPort {
                 int[] furnace = bag.getOrDefault("furnace", 0) > 0 ? null : c.crafting.findFurnace(p);
                 int furnaceDist = furnace != null ? (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace))) : bb.in.furnaceKnown ? 30 : -1;
                 var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
-                boolean trees = sg != null && sg.treesNear(dim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.FAR_MAX).iterator().hasNext();
+                boolean trees = sg != null && sg.treesNear(dim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.farMax()).iterator().hasNext();
                 return new io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts(need, bb.in.pickTier, ores, opts, dd, logsNow, bb.in.planks,
                         bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees, bb.in.cobble,
                         io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(GameTimesLive.bestPickaxeStoneSeconds(p)));     // aa-times: the dig term from the game
@@ -534,7 +537,7 @@ public final class AaRuntime implements JobPort {
         var sg = pass.sightings();
         var sn = sg == null ? null : sg.ore();
         // AA_ROUND3 5: the nearest cave opening I have seen (not exhausted) and the learned chance to see one per 100 blocks
-        var seenCave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+        var seenCave = sg == null ? null : sg.nearestCave(dim, me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
         var r = st == null ? null : st.range(dim, fam);
         int bestY = r == null ? Integer.MIN_VALUE : r.peakY();
         double density = r == null ? -1 : st.density(dim, fam, io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
@@ -547,15 +550,15 @@ public final class AaRuntime implements JobPort {
                 new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, me[0], me[1], me[2], bestY, -1, 1, ownerGoal));
         var lv = Minecraft.getInstance().level;
         var downs = mineMarked || down <= 0 || lv == null ? null : downHeadings(lv, me, down);
-        return new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, sn == null ? io.github.mojolowjo.entropybot.sense.Seen.PRIOR_RATE : sn.caveRate(fam),
+        return new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, sn == null ? io.github.mojolowjo.entropybot.sense.Seen.priorRate() : sn.caveRate(fam),
                 mineMarked, me[0], me[1], me[2], bestY, density, dig, ownerGoal, downs,
-                seenCave == null ? null : new int[]{seenCave.x(), seenCave.y(), seenCave.z()}, sg == null ? io.github.mojolowjo.entropybot.sense.Sightings.PRIOR_CAVES : sg.cavesPer100(),
+                seenCave == null ? null : new int[]{seenCave.x(), seenCave.y(), seenCave.z()}, sg == null ? io.github.mojolowjo.entropybot.sense.Sightings.priorCaves() : sg.cavesPer100(),
                 bb.in.basePos == null ? -1 : Math.sqrt(Jobs.distSq(me, bb.in.basePos)),
                 io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(io.github.mojolowjo.entropybot.aa.brain.Brain.horizon(bb)), bb.in.dayTime);
     }
 
     /** AA_ROUND3 4: the staircase steps down whose cells are read per heading (the pick-time budget). */
-    static final int STAIR_READ = 16;
+    static int stairRead() { return Tuning.i("aaRuntime.stairRead"); }
 
     private List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downsCache;
     private final io.github.mojolowjo.entropybot.aa.FactsMemo<int[]> furnaceMemo = new io.github.mojolowjo.entropybot.aa.FactsMemo<>(10_000);
@@ -581,7 +584,7 @@ public final class AaRuntime implements JobPort {
             }
             List<io.github.mojolowjo.entropybot.aa.Replan.Cell> cells = new java.util.ArrayList<>();
             if (refused == null)
-                for (int[] c : StairPlan.cells(me[0], me[1], me[2], u[0], u[1], Math.min(n, STAIR_READ))) {
+                for (int[] c : StairPlan.cells(me[0], me[1], me[2], u[0], u[1], Math.min(n, stairRead()))) {
                     var cell = cellAt(lv, c[0], c[1], c[2]);
                     cells.add(cell);
                     if (Double.isInfinite(cell.mult())) {         // dropped anyway (WayUp.ground): no more reads, say where
@@ -651,8 +654,8 @@ public final class AaRuntime implements JobPort {
         int[] sky = null;
         double best = Double.MAX_VALUE;
         net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
-        for (int x = me[0] - SKY_R; x <= me[0] + SKY_R; x++)
-            for (int z = me[2] - SKY_R; z <= me[2] + SKY_R; z++) {
+        for (int x = me[0] - skyR(); x <= me[0] + skyR(); x++)
+            for (int z = me[2] - skyR(); z <= me[2] + skyR(); z++) {
                 m.set(x, 0, z);
                 if (!lv.isLoaded(m)) continue;
                 int y = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
@@ -674,7 +677,7 @@ public final class AaRuntime implements JobPort {
     }
 
     /** The open-sky cell search radius (columns), S2. */
-    static final int SKY_R = 24;
+    static int skyR() { return Tuning.i("aaRuntime.skyR"); }
 
     /** S2: the TOOLS rung's facts (the pickaxe tier, trees within 16 as the planner sees them). */
     io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts toolsFacts() {
@@ -688,7 +691,7 @@ public final class AaRuntime implements JobPort {
     }
 
     /** The nearest known iron positions the scorer weighs. */
-    static final int IRON_ORES = 8;
+    static int ironOres() { return Tuning.i("aaRuntime.ironOres"); }
 
     /** The IRON rung's options line ("aa why"), or null. */
     String ironOptions() {
@@ -711,7 +714,7 @@ public final class AaRuntime implements JobPort {
     /** Round 4A N: the need's live price for aa why (" = 42 s"), "" while unknown. */
     private String priced(io.github.mojolowjo.entropybot.aa.Need r) {
         double c = r.liveCostS(bb);
-        return Double.isNaN(c) ? "" : " = " + Math.round(c) + " s" + (r.wantsSurface() && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.SURFACE_DEPTH ? " (the climb priced in)" : "");
+        return Double.isNaN(c) ? "" : " = " + Math.round(c) + " s" + (r.wantsSurface() && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth() ? " (the climb priced in)" : "");
     }
 
     /** Per-rung picker counters and the manual state (aa status); "!!" first when a facts supplier failed in the last minute. */
@@ -758,7 +761,7 @@ public final class AaRuntime implements JobPort {
                 man.ask = a.equals("on");
                 if (!man.ask) man.pending = null;
                 LOG.info("[entropybot] aa: ask {}", a);
-                return "ok: aa ask " + a + (man.ask ? " - before each task I show my options and wait " + io.github.mojolowjo.entropybot.aa.AaManual.ASK_MS / 1000 + " s for aa pick <n>, then take my first" : "");
+                return "ok: aa ask " + a + (man.ask ? " - before each task I show my options and wait " + io.github.mojolowjo.entropybot.aa.AaManual.askMs() / 1000 + " s for aa pick <n>, then take my first" : "");
             }
             case "pick" -> {
                 if (man.pending == null) return "nothing to pick: no rung is asking now (aa ask on makes them ask)";
@@ -897,7 +900,7 @@ public final class AaRuntime implements JobPort {
             if (st.randomLooking113.value != 0d) st.randomLooking113.value = 0d;
             if (!st.smoothLook.value) st.smoothLook.value = true;
             if (savedSmoothTicks == null) savedSmoothTicks = st.smoothLookTicks.value;
-            int lt = data().has("lookTicks") ? data().get("lookTicks").getAsInt() : LOOK_TICKS_DEFAULT;
+            int lt = data().has("lookTicks") ? data().get("lookTicks").getAsInt() : lookTicksDefault();
             if (st.smoothLookTicks.value != lt) st.smoothLookTicks.value = lt;
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] aa: freeLook not set: {}", e.toString());
@@ -960,10 +963,10 @@ public final class AaRuntime implements JobPort {
     String ownerStopped() {
         if (!on()) return "";
         if (bb.task() != null || tree.slot.runningChild() != null) tree.root.halt("the owner's stop");
-        heldUntil = System.currentTimeMillis() + HOLD_MS;
+        heldUntil = System.currentTimeMillis() + holdMs();
         data().addProperty("heldUntil", heldUntil);
         c.saved();
-        return "; aa waits " + HOLD_MS / 60000 + " min (aa on, or your next order, to go on now)";
+        return "; aa waits " + holdMs() / 60000 + " min (aa on, or your next order, to go on now)";
     }
 
     /** AA's chain runs (the AI operator's request: the owner's vocabulary on the interpreter). */
@@ -1109,7 +1112,7 @@ public final class AaRuntime implements JobPort {
             lastErrorAt = now;
             LOG.warn("[entropybot] aa: tick failed: {}", errors <= 3 ? stack(e) : e.toString());
         }
-        if (errorsThisMinute >= ERRORS_PER_MINUTE_OFF) {
+        if (errorsThisMinute >= errorsPerMinuteOff()) {
             offReason = "turned itself off after " + errorsThisMinute + " tick errors in a minute: " + e;
             turnOff(offReason);
             c.whisper(c.owner(), "aa: " + offReason);
@@ -1247,7 +1250,7 @@ public final class AaRuntime implements JobPort {
         in.hostilesNear = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, p.getBoundingBox().inflate(24)).size()
                 + mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.AbstractSkeleton.class, p.getBoundingBox().inflate(24)).size();
         in.sheltered = ShelterJob.waitingAt(mc.player == null ? null : Jobs.here(mc.player));
-        in.armed = io.github.mojolowjo.entropybot.engine.Hostility.weaponHit(p) >= io.github.mojolowjo.entropybot.threat.ThreatFacts.ARMED;
+        in.armed = io.github.mojolowjo.entropybot.engine.Hostility.weaponHit(p) >= io.github.mojolowjo.entropybot.threat.ThreatFacts.armed();
         // aa-night2 P0 2: a zombie seen once stays seen (sticky while the game runs)
         if (!in.zombieSeen) in.zombieSeen = !mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Zombie.class, p.getBoundingBox().inflate(24)).isEmpty();
         in.armorPoints = mc.player == null ? 0 : mc.player.getArmorValue();
@@ -1294,7 +1297,7 @@ public final class AaRuntime implements JobPort {
                     cc -> c.workAllowed(dim, cc[0], cc[1], cc[2]));
             var pick = io.github.mojolowjo.entropybot.aa.ChestSpot.pick(ranked, in.chestFailed);
             in.chestCell = pick == null ? null : pick.cell();
-            in.chestWhy = pick == null ? "no free cell within " + io.github.mojolowjo.entropybot.aa.ChestSpot.RADIUS + " of the "
+            in.chestWhy = pick == null ? "no free cell within " + io.github.mojolowjo.entropybot.aa.ChestSpot.radius() + " of the "
                     + (in.basePos != null ? "base" : "bot") + " (" + in.chestFailed.size() + " refused)"
                     : "chest cell " + pick.key() + ": " + pick.why() + " (" + ranked.size() + " free, " + in.chestFailed.size() + " refused)";
         } catch (RuntimeException e) {
@@ -1332,10 +1335,10 @@ public final class AaRuntime implements JobPort {
             }
             io.github.mojolowjo.entropybot.assist.AssistRules.Report r = c.assist.report();
             long now = System.currentTimeMillis();
-            if (r != null && owner != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= io.github.mojolowjo.entropybot.assist.AssistRules.FRESH_MS
+            if (r != null && owner != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= io.github.mojolowjo.entropybot.assist.AssistRules.freshMs()
                     && r.dim().equals(mc.level.dimension().location().toString())) {
                 in.ownerAct = io.github.mojolowjo.entropybot.assist.AssistRules.guess(r, now).word();
-                in.ownerPlaced = r.placed() == null || now - r.placed().at() > io.github.mojolowjo.entropybot.assist.AssistRules.RECENT_MS ? null : r.placed().id();
+                in.ownerPlaced = r.placed() == null || now - r.placed().at() > io.github.mojolowjo.entropybot.assist.AssistRules.recentMs() ? null : r.placed().id();
             }
         } catch (RuntimeException e) {
             if (!ownerReadWarned) LOG.warn("[entropybot] aa help: owner read failed (help stays off; said once): {}", e.toString());
@@ -1353,7 +1356,7 @@ public final class AaRuntime implements JobPort {
         if (now != was) {
             d.addProperty(key, now);
             c.saved();
-            LOG.info("[entropybot] aa: {} {}", key, now ? "noted (seen within " + AaLadder.CAMP_R + " of the camp/base): it counts away from the camp too" : "dropped (no camp or base known)");
+            LOG.info("[entropybot] aa: {} {}", key, now ? "noted (seen within " + AaLadder.campR() + " of the camp/base): it counts away from the camp too" : "dropped (no camp or base known)");
         }
         return now;
     }
@@ -1546,19 +1549,19 @@ public final class AaRuntime implements JobPort {
         return !d.has("replan") || d.get("replan").getAsBoolean();
     }
 
-    static final int LOOK_TICKS_DEFAULT = 10;      // Baritone's own default is 5
+    static int lookTicksDefault() { return Tuning.i("aaRuntime.lookTicksDefault"); }  // Baritone's own default is 5
 
     /** "aa look [smooth <ticks>]": shows / sets how many ticks a head turn takes (smoothLookTicks, 1..60), saved. */
     String look(String arg) {
         String a = arg == null ? "" : arg.trim();
-        int now = data().has("lookTicks") ? data().get("lookTicks").getAsInt() : LOOK_TICKS_DEFAULT;
+        int now = data().has("lookTicks") ? data().get("lookTicks").getAsInt() : lookTicksDefault();
         String live;
         try {
             live = String.valueOf(baritone.api.BaritoneAPI.getSettings().smoothLookTicks.value);
         } catch (RuntimeException | LinkageError e) {
             live = "?";
         }
-        if (a.isEmpty()) return "aa look: smooth " + now + " ticks per turn (Baritone now " + live + ", default " + LOOK_TICKS_DEFAULT + "); set with: aa look smooth <ticks>";
+        if (a.isEmpty()) return "aa look: smooth " + now + " ticks per turn (Baritone now " + live + ", default " + lookTicksDefault() + "); set with: aa look smooth <ticks>";
         String[] w = a.split("\\s+");
         int s;
         try {
@@ -1682,7 +1685,7 @@ public final class AaRuntime implements JobPort {
         var st = c.stepRun.steps;
         String msg = st.why();
         boolean done = st.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE;
-        if (!done && on() && (AaEscape.stuck(msg) || holeStuckNow(msg)) && escapes < AaEscape.MAX_PER_TASK) {
+        if (!done && on() && (AaEscape.stuck(msg) || holeStuckNow(msg)) && escapes < AaEscape.maxPerTask()) {
             int i = Math.max(0, AaEscape.failedStep(msg) - 1);
             List<io.github.mojolowjo.entropybot.aa.moves.Step> all = st.steps();
             if (i < all.size()) {
@@ -1783,7 +1786,7 @@ public final class AaRuntime implements JobPort {
         boolean wandered = io.github.mojolowjo.entropybot.aa.Replan.oreStep(step)
                 && io.github.mojolowjo.entropybot.aa.Replan.wandered(io.github.mojolowjo.entropybot.aa.Replan.targetOf(runningOpt.id()), me);
         boolean due = replanTimer.due(st, now);
-        if (!due && wandered && now - lastWanderAt >= io.github.mojolowjo.entropybot.aa.Replan.EVERY_MS) due = true;
+        if (!due && wandered && now - lastWanderAt >= io.github.mojolowjo.entropybot.aa.Replan.everyMs()) due = true;
         if (wetReplan) { wetReplan = false; due = true; }       // aa-water: in the water now: the water ways price it
         if (!due) return;
         if (wandered) lastWanderAt = now;
@@ -1964,7 +1967,7 @@ public final class AaRuntime implements JobPort {
         if (done) {
             escapePending = true;
             escapeWay = "resume";
-        } else if (escapeOpt != null && escapes < AaEscape.MAX_PER_TASK) {
+        } else if (escapeOpt != null && escapes < AaEscape.maxPerTask()) {
             // AA_ROUND3 1 finding 3: the failed way (a heading) is held in Failures with its stage and reason; the next priced way runs
             wayMem.failed(escapeOpt.memoryKey(), msg == null ? "the way up ended without a word" : msg, bb.clock.now());
             LOG.info("[entropybot] aa: wayup: {} failed ({}) - held; the next way up", escapeOpt.id(), msg);
@@ -2006,12 +2009,12 @@ public final class AaRuntime implements JobPort {
                 if (openCell(lv, me[0] + s[0], me[1] + dy, me[2] + s[1]) && openCell(lv, me[0] + s[0], me[1] + dy + 1, me[2] + s[1])) return true;
             return false;
         };
-        return AaEscape.holeExit(AaEscape.HOLE_MAX_UP, open, stepOut);
+        return AaEscape.holeExit(AaEscape.holeMaxUp(), open, stepOut);
     }
 
     /** With ground overhead: the levels up to the first cell with open feet, head and sky (at most 2 x the tunnel cap). */
     private static int skyLevels(net.minecraft.world.level.Level lv, int[] me) {
-        int maxY = Math.min(lv.getMaxBuildHeight() - 2, me[1] + 2 * io.github.mojolowjo.entropybot.aa.Replan.TUNNEL_CAP);
+        int maxY = Math.min(lv.getMaxBuildHeight() - 2, me[1] + 2 * io.github.mojolowjo.entropybot.aa.Replan.tunnelCap());
         for (int y = me[1] + 2; y <= maxY; y++)
             if (openCell(lv, me[0], y - 1, me[2]) && openCell(lv, me[0], y, me[2]) && lv.canSeeSky(new net.minecraft.core.BlockPos(me[0], y, me[2]))) return y - 1 - me[1];
         return maxY - me[1];
@@ -2188,7 +2191,7 @@ public final class AaRuntime implements JobPort {
      */
     private static List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> headings(net.minecraft.world.level.Level lv, int[] me, int levels) {
         List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> out = new java.util.ArrayList<>();
-        int n = Math.min(Math.max(1, levels), StairPlan.MAX);
+        int n = Math.min(Math.max(1, levels), StairPlan.maxV());
         for (String d : io.github.mojolowjo.entropybot.aa.WayUp.DIRS) {
             int[] u = io.github.mojolowjo.entropybot.aa.WayUp.dir(d);
             List<io.github.mojolowjo.entropybot.aa.Replan.Cell> cells = new java.util.ArrayList<>();
@@ -2358,7 +2361,7 @@ public final class AaRuntime implements JobPort {
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) return null;
             int wool = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault("minecraft:white_wool", 0);
-            int sheep = mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.ANIMAL_RANGE),
+            int sheep = mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.animalRange()),
                     e -> e.isAlive() && !e.isBaby() && !e.hasCustomName()).size();
             int[] herd = herdsSeen(mc.level, p).get("minecraft:sheep");
             return new io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts(wool, sheep, herd, Jobs.here(p));
@@ -2384,14 +2387,14 @@ public final class AaRuntime implements JobPort {
             int[] me = Jobs.here(p);
             long now = System.currentTimeMillis();
             List<io.github.mojolowjo.entropybot.aa.WoodOptions.Tree> out = new ArrayList<>();
-            for (var r : sg.treesNear(gdim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.FAR_MAX)) {
+            for (var r : sg.treesNear(gdim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.farMax())) {
                 net.minecraft.core.BlockPos q = new net.minecraft.core.BlockPos(r.x(), r.y(), r.z());
                 if (mc.level.isLoaded(q) && !mc.level.getBlockState(q).is(net.minecraft.tags.BlockTags.LOGS)) {
                     sg.exhaustTree(gdim, r.x(), r.z(), now);
                     continue;
                 }
                 String deny = !c.workAllowed(adim, r.x(), r.y(), r.z()) ? c.policy.blockedText(adim, r.x(), r.z())
-                        : io.github.mojolowjo.entropybot.cave.MineRules.protectNear(prot, adim, r.x(), r.y(), r.z(), io.github.mojolowjo.entropybot.cave.MineRules.PROTECT_MARGIN) != null ? "a protected build is near" : null;
+                        : io.github.mojolowjo.entropybot.cave.MineRules.protectNear(prot, adim, r.x(), r.y(), r.z(), io.github.mojolowjo.entropybot.cave.MineRules.protectMargin()) != null ? "a protected build is near" : null;
                 out.add(new io.github.mojolowjo.entropybot.aa.WoodOptions.Tree(r.x(), r.y(), r.z(), Math.hypot(r.x() - me[0], r.z() - me[2]), deny));
             }
             return new io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts(0, out);
@@ -2942,8 +2945,8 @@ public final class AaRuntime implements JobPort {
             if (!g.r.ore() || known.getOrDefault(g.r.key(), 0) == 0) continue;
             // aa-water (1f): priced by the iron scorer (the water ways, a floating dig, the other ores)
             var pick = io.github.mojolowjo.entropybot.aa.brain.Goals.pickPriced(Mining.get().aaOres(p,
-                    io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), IRON_ORES), me[1], p.isInWater(), AaEscape.throwaway(bagNow),
-                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), IronOptions.DIG_MAX);
+                    io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(g.r.key()), ironOres()), me[1], p.isInWater(), AaEscape.throwaway(bagNow),
+                    io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), IronOptions.digMax());
             if (pick == null) continue;
             nearest.put(g.r.key(), pick.at());
             if (pick.waterSteps() != null) {
@@ -2957,7 +2960,7 @@ public final class AaRuntime implements JobPort {
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(Minecraft.getInstance().level);
             var cave = Core.INSTANCE.caves.nearest(dim, me[0], me[1], me[2]);
             int caveDist = cave == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, new int[]{cave.ex, cave.ey, cave.ez})));
-            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.PICK_WITHIN) caveDist = -1;
+            if (caveDist > io.github.mojolowjo.entropybot.cave.Caves.pickWithin()) caveDist = -1;
             bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.WAYS_FACT, new io.github.mojolowjo.entropybot.aa.brain.Goals.Ways(caveDist,
                     sensed.feas != null && sensed.feas.mineMarked));
             // AA_ROUND3 3: each ore goal's discovery options (fair on), cheapest first; the choice is logged when it changes
@@ -3182,7 +3185,7 @@ public final class AaRuntime implements JobPort {
 
     /** The dashboard's live AA tree (fast channel GET /aa), built from the running tree. */
     com.google.gson.JsonObject live() {
-        var o = io.github.mojolowjo.entropybot.aa.AaLive.json(tree, bb, on(), io.github.mojolowjo.entropybot.aa.AaLive.SWITCHES);
+        var o = io.github.mojolowjo.entropybot.aa.AaLive.json(tree, bb, on(), io.github.mojolowjo.entropybot.aa.AaLive.switchesV());
         o.add("slow", slow.json(System.currentTimeMillis()));          // AA_STEP3 B: the waiting plan, the Go button's state
         return o;
     }

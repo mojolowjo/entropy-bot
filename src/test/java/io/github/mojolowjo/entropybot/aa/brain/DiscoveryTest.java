@@ -137,7 +137,7 @@ class DiscoveryTest {
     void theBandNeverAboveMeAndDensityUnknown() {
         assertEquals(70, Discovery.stripY(f(-1, 1, false, 120, -1, false)));
         assertEquals(70, Discovery.stripY(f(-1, 1, false, Integer.MIN_VALUE, -1, false)));
-        assertEquals(Discovery.DEFAULT_TUNNEL_PER_ORE, Discovery.tunnelPerOre(-1));
+        assertEquals(Discovery.defaultTunnelPerOre(), Discovery.tunnelPerOre(-1));
         assertTrue(Discovery.tunnelPerOre(0.01) < Discovery.tunnelPerOre(0.001));
         // a richer band is cheaper
         List<String> dd = new ArrayList<>();

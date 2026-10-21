@@ -219,7 +219,7 @@ public final class Ways {
      */
     public static Pre climb(Blackboard bb, Options.OptionMemory m, long now) {
         int d = bb.in.underDepth;
-        if (d < AaLadder.SURFACE_DEPTH) return null;
+        if (d < AaLadder.surfaceDepth()) return null;
         if (bb.fact(RungOptions.SURFACE_FACTS) instanceof Supplier<?> sup) {
             Object fo = null;
             try {
@@ -235,10 +235,10 @@ public final class Ways {
                 return new Pre(b, b.total(), "climb " + d + " up: " + b.text(), b.memoryKey());
             }
         }
-        double cost = d * RungOptions.CLIMB_BLOCK + RungOptions.CLIMB_FIX;
+        double cost = d * RungOptions.climbBlock() + RungOptions.climbFix();
         String key = "climb";
         if (m.blocked(key, now)) return new Pre(null, Double.POSITIVE_INFINITY, d + " under ground, the climb is held: " + m.reason(key), null);
-        String why = "climb " + d + " up " + Math.round(cost) + " (no surface facts: " + d + " x " + Math.round(RungOptions.CLIMB_BLOCK) + " + " + Math.round(RungOptions.CLIMB_FIX) + ")";
+        String why = "climb " + d + " up " + Math.round(cost) + " (no surface facts: " + d + " x " + Math.round(RungOptions.climbBlock()) + " + " + Math.round(RungOptions.climbFix()) + ")";
         return new Pre(new Options.Option("climb", "climb", List.of(new Step.Climb()), cost, why, key, false), cost, why, key);
     }
 

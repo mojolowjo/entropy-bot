@@ -22,20 +22,20 @@ class FailuresTest {
     void optionClockIsTenMinutesPerFailureAtMostAnHour() {
         Failures f = new Failures();
         f.failed("needs.iron", "dig 1 2 3", "no path to 1 2 3", 0, null);
-        assertTrue(f.blocked("needs.iron", "dig 1 2 3", Failures.RETRY_MS - 1));
-        assertFalse(f.blocked("needs.iron", "dig 1 2 3", Failures.RETRY_MS));
+        assertTrue(f.blocked("needs.iron", "dig 1 2 3", Failures.retryMs() - 1));
+        assertFalse(f.blocked("needs.iron", "dig 1 2 3", Failures.retryMs()));
         for (int i = 0; i < 10; i++) f.failed("needs.iron", "dig 1 2 3", "no path", 0, null);
         assertEquals(11, f.fails("needs.iron", "dig 1 2 3"));
-        assertEquals(Failures.RETRY_MAX_MS, f.until("needs.iron", "dig 1 2 3"));
+        assertEquals(Failures.retryMaxMs(), f.until("needs.iron", "dig 1 2 3"));
     }
 
     @Test
     void desireClockDoublesFromTwoMinutesAndSuccessClearsOnlyTheDesire() {
         Failures f = new Failures();
         f.failed("idle.wood", null, "stuck", 0, null);
-        assertEquals(Failures.CD_BASE_MS, f.until("idle.wood", null));
+        assertEquals(Failures.cdBaseMs(), f.until("idle.wood", null));
         f.failed("idle.wood", null, "stuck", 0, null);
-        assertEquals(2 * Failures.CD_BASE_MS, f.until("idle.wood", null));
+        assertEquals(2 * Failures.cdBaseMs(), f.until("idle.wood", null));
         f.failed("idle.wood", "x", "no path", 0, null);
         f.succeeded("idle.wood");
         assertEquals(0, f.fails("idle.wood", null));
@@ -64,8 +64,8 @@ class FailuresTest {
         assertEquals(0, f.fails("idle.wood", null));
         f.failed("idle.wood", null, "stuck", 0, null);
         f.rest("idle.wood", 30_000, 0, "rest");
-        assertEquals(Failures.CD_BASE_MS, f.until("idle.wood", null));
-        assertNull(f.held("idle.wood", null, Failures.CD_BASE_MS));
+        assertEquals(Failures.cdBaseMs(), f.until("idle.wood", null));
+        assertNull(f.held("idle.wood", null, Failures.cdBaseMs()));
     }
 
     @Test

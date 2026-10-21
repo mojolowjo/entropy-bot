@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -20,9 +22,10 @@ import java.util.Map;
  * oldest go, and {@link #takeNote} says how many. Loader-neutral: JUnit drives it; the JSON is restore.json's "entries".
  */
 public final class Ledger {
-    public static final int CAP = 2000;
+    public static final int CAP = 2000; // structural
     /** A pending break is looked at after this many ticks, and dropped when the cell is still full after the max. */
-    public static final long CONFIRM_AFTER = 5, CONFIRM_MAX = 40;
+    public static long confirmAfter() { return Tuning.l("ledger.confirmAfter"); }
+    public static long confirmMax() { return Tuning.l("ledger.confirmMax"); }
 
     public static final String PATH = "path", ESCAPE = "escape", REACH = "reach";
 
@@ -205,7 +208,7 @@ public final class Ledger {
         int changed = 0;
         for (var it = list.iterator(); it.hasNext(); ) {
             Entry e = it.next();
-            if (now - e.tick < CONFIRM_AFTER) continue;
+            if (now - e.tick < confirmAfter()) continue;
             // 0.33.0 (A3, live: the station's "built:" note was dropped within minutes as "the server kept the block"):
             // a block I placed is noted (confirmed, so it is saved) while it stands; once its cell is empty (picked up,
             // broken) the note goes: there is nothing to put back
@@ -225,7 +228,7 @@ public final class Ledger {
             if (c == Cell.EMPTY) {
                 e.pending = false;
                 changed++;
-            } else if (now - e.tick >= CONFIRM_MAX) {
+            } else if (now - e.tick >= confirmMax()) {
                 it.remove();                               // the server kept the block (or it never loaded): nothing to put back
                 changed++;
             }

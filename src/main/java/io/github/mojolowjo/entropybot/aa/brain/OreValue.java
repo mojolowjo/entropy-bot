@@ -11,7 +11,7 @@ import java.util.Set;
 public final class OreValue {
     private OreValue() {}
 
-    public static final double DROP_S = 60;
+    public static double dropS() { return Tuning.get("oreValue.dropS"); }
 
     /** Mean drops of one ore block (no Fortune). */
     public static double dropsPerBlock(String ore) {
@@ -54,14 +54,15 @@ public final class OreValue {
         String o = ore.substring(ore.indexOf(':') + 1);
         for (Map.Entry<String, Integer> g : goals.entrySet())
             if ((g.getKey().equals(drop) || g.getKey().equals(o)) && bag.getOrDefault(drop, 0) < g.getValue()) share = 1;
-        return DROP_S * share * dropsPerBlock(ore);
+        return dropS() * share * dropsPerBlock(ore);
     }
 
     /** Dig time per ore block with the right tool (s). */
-    public static final double DIG_S = 1.2, WALK_BPS = 4.317;
+    public static double digS() { return Tuning.get("oreValue.digS"); }
+    public static final double WALK_BPS = 4.317; // game fact: vanilla walking speed 4.317 blocks per second
 
     /** The detour's cost in seconds: there and back across {@code off} blocks plus digging {@code blocks}. */
-    public static double detourCostS(double off, int blocks) { return 2 * off / WALK_BPS + blocks * DIG_S; }
+    public static double detourCostS(double off, int blocks) { return 2 * off / WALK_BPS + blocks * digS(); }
 
     /** Take the detour only when the vein's value beats its cost. */
     public static boolean worthIt(double perBlockS, int blocks, double off) {

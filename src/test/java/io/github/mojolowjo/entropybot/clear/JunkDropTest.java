@@ -62,10 +62,10 @@ class JunkDropTest {
         String block = FloorFill.chooseBlock(null, inv);
         assertEquals("minecraft:diorite", block, "stone-like filler that is no pickaxe material is spared first");
         block = CD;
-        Map<String, Integer> t = JunkDrop.plan(dep, inv, block, JunkDrop.FLOOR_KEEP);
+        Map<String, Integer> t = JunkDrop.plan(dep, inv, block, JunkDrop.floorKeep());
         assertEquals(168, t.get(CD), "the deposit's 64 of it already stay");
         // a named cobblestone floor: 64 for the floor and 64 pickaxe material together stay (cobblestone kept first)
-        Map<String, Integer> t2 = JunkDrop.plan(dep, inv, "cobblestone", JunkDrop.FLOOR_KEEP);
+        Map<String, Integer> t2 = JunkDrop.plan(dep, inv, "cobblestone", JunkDrop.floorKeep());
         assertEquals(30, t2.get("minecraft:cobblestone"), "64 of it stay for the floor and the pickaxes; the cobbled deepslate's own 64 count as material");
         assertEquals(168, t2.get(CD));
         // a supplies entry keeps more
@@ -91,7 +91,7 @@ class JunkDropTest {
         JunkDrop.noteThrow(floor, 260.5, -46, 854.5, 1000);
         assertFalse(JunkDrop.chase(CD, floor, few, 258, -46, 854, 1100), "its own throw");
         assertTrue(JunkDrop.chase(CD, floor, few, 270, -46, 854, 1100), "farther than 6 blocks");
-        assertTrue(JunkDrop.chase(CD, floor, few, 258, -46, 854, 1000 + JunkDrop.THROWN_TICKS + 1), "2 minutes later");
+        assertTrue(JunkDrop.chase(CD, floor, few, 258, -46, 854, 1000 + JunkDrop.thrownTicks() + 1), "2 minutes later");
         assertTrue(JunkDrop.chase("minecraft:raw_iron", floor, few, 258, -46, 854, 1100), "never a valuable");
     }
 

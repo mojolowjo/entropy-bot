@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,7 +21,7 @@ public final class JunkDrop {
     private JunkDrop() {}
 
     /** What a floor dig keeps of its fill block. */
-    public static final int FLOOR_KEEP = 64;
+    public static int floorKeep() { return Tuning.i("junkDrop.floorKeep"); }
 
     public static boolean isJunk(String id) {
         return id != null && FloorFill.isFallback(ClearRules.fullId(id));
@@ -44,7 +46,7 @@ public final class JunkDrop {
             if (n > 0) out.put(id, n);
         }
         // the stone pickaxe material left after the throw: at least 64 together (plus the floor's keep when it is one)
-        int need = FloorFill.STONE_KEEP + (kid != null && FloorFill.stoneMaterial().contains(kid) ? keep : 0), left = 0;
+        int need = FloorFill.stoneKeep() + (kid != null && FloorFill.stoneMaterial().contains(kid) ? keep : 0), left = 0;
         for (String m : FloorFill.stoneMaterial()) left += inv.getOrDefault(m, 0) - out.getOrDefault(m, 0);
         List<String> order = new ArrayList<>();
         if (kid != null && FloorFill.stoneMaterial().contains(kid)) order.add(kid);
@@ -61,8 +63,8 @@ public final class JunkDrop {
     }
 
     /** How long (ticks) and how near (blocks) the drops where it threw junk are left alone. */
-    public static final long THROWN_TICKS = 20L * 120;
-    public static final double THROWN_NEAR = 6;
+    public static long thrownTicks() { return Tuning.l("junkDrop.thrownTicks"); }
+    public static double thrownNear() { return Tuning.get("junkDrop.thrownNear"); }
 
     /** Notes a throw from feet x y z at tick now (the last 8 are kept). */
     public static void noteThrow(ClearJob job, double x, double y, double z, long now) {
@@ -73,9 +75,9 @@ public final class JunkDrop {
     /** A drop at x y z lies where it threw junk within the last {@link #THROWN_TICKS}. */
     public static boolean nearThrow(ClearJob job, int x, int y, int z, long now) {
         for (double[] t : job.thrown) {
-            if (now - (long) t[3] > THROWN_TICKS) continue;
+            if (now - (long) t[3] > thrownTicks()) continue;
             double dx = x + 0.5 - t[0], dy = y - t[1], dz = z + 0.5 - t[2];
-            if (dx * dx + dy * dy + dz * dz <= THROWN_NEAR * THROWN_NEAR) return true;
+            if (dx * dx + dy * dy + dz * dz <= thrownNear() * thrownNear()) return true;
         }
         return false;
     }
@@ -94,12 +96,12 @@ public final class JunkDrop {
     public static boolean chase(String id, ClearJob job, Map<String, Integer> inv) {
         if (!job.junkDrop || !isJunk(id)) return true;
         // water plan: a "water" dig picks junk up again while it has less than twice the sealing reserve
-        if (job.water && FloorFill.isFallback(ClearRules.fullId(id)) && WaterPlan.available(inv) < 2 * WaterPlan.RESERVE) return true;
+        if (job.water && FloorFill.isFallback(ClearRules.fullId(id)) && WaterPlan.available(inv) < 2 * WaterPlan.reserveV()) return true;
         if (!job.floor) return false;
         String full = ClearRules.fullId(id);
         String fb = FloorFill.chooseBlock(job.floorBlock, inv);
         if (fb == null) return job.floorBlock != null ? ClearRules.fullId(job.floorBlock).equals(full) : FloorFill.isFallback(full);
-        return fb.equals(full) && inv.getOrDefault(fb, 0) < 2 * FLOOR_KEEP;
+        return fb.equals(full) && inv.getOrDefault(fb, 0) < 2 * floorKeep();
     }
 
     /**

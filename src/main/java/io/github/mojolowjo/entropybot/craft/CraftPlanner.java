@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -32,24 +34,24 @@ import java.util.regex.Pattern;
  */
 public final class CraftPlanner implements Crafter {
     /** How deep missing ingredients are crafted or smelted first (16k disk <- 16k part <- 4k part <- 1k part <- processor <- raw processor <- silicon). */
-    public static final int MAX_DEPTH = 8;
+    public static int maxDepth() { return Tuning.i("craftPlanner.maxDepth"); }
     /** Down to this depth every alternative (up to {@link #CRAFT_ALTS}) of a missing ingredient is tried; deeper only {@link #DEEP_ALTS}. */
-    public static final int WIDE_DEPTH = 2;
+    public static int wideDepth() { return Tuning.i("craftPlanner.wideDepth"); }
     /** Alternatives of a missing ingredient tried below {@link #WIDE_DEPTH} (keeps a deep search small). */
-    public static final int DEEP_ALTS = 4;
+    public static int deepAlts() { return Tuning.i("craftPlanner.deepAlts"); }
     /**
      * Recipe tries for one target before the planner gives up ({@link #tooDeep}): a search with no end over 1000 counted
      * kinds took ~355 ms at 5000 tries (each try copies the counts), so 1500 keeps it at ~100-180 ms on the client thread (the 16k disk chain needs far fewer).
      */
-    public static final int BUDGET = 1500;
+    public static int budget() { return Tuning.i("craftPlanner.budget"); }
     /** How many alternatives of a missing crafting ingredient are tried. */
-    public static final int CRAFT_ALTS = 40;
+    public static int craftAlts() { return Tuning.i("craftPlanner.craftAlts"); }
     /** How many alternatives of a missing furnace input are tried. */
-    public static final int SMELT_ALTS = 10;
+    public static int smeltAlts() { return Tuning.i("craftPlanner.smeltAlts"); }
     /** {@link #planSmelt}'s error when no furnace recipe makes the item (the bridge's 'none'). */
     public static final String NO_SMELTING = "none";
     /** Counts above this are capped (the bridge had JS numbers; this keeps the int arithmetic from overflowing). */
-    public static final int MAX_WANT = 1_000_000;
+    public static final int MAX_WANT = 1_000_000; // structural
 
     public static final List<String> ARMOR_PIECES = List.of("helmet", "chestplate", "leggings", "boots");
     public static final List<String> TOOL_PIECES = List.of("sword", "pickaxe", "axe", "shovel", "hoe");
@@ -326,7 +328,7 @@ public final class CraftPlanner implements Crafter {
 
     // planCraft: null when planned (steps appended, counts updated), else why not
     private String planCraft(String id, int want, Map<String, Integer> counts, int depth, List<Step> steps, Ctx ctx) {
-        if (++ctx.tries > BUDGET) {
+        if (++ctx.tries > budget()) {
             ctx.outOfBudget = true;
             return tooDeep(id);
         }
@@ -394,8 +396,8 @@ public final class CraftPlanner implements Crafter {
             int missing = need - available(alts, trial);
             if (missing > 0) {
                 boolean found = false;
-                int maxAlts = depth < WIDE_DEPTH ? CRAFT_ALTS : DEEP_ALTS;
-                for (int j = 0; j < alts.size() && j < maxAlts && depth < MAX_DEPTH && !found && !ctx.outOfBudget; j++) {
+                int maxAlts = depth < wideDepth() ? craftAlts() : deepAlts();
+                for (int j = 0; j < alts.size() && j < maxAlts && depth < maxDepth() && !found && !ctx.outOfBudget; j++) {
                     Map<String, Integer> trial2 = copy(trial);
                     List<Step> steps2 = new ArrayList<>();
                     if (planCraft(alts.get(j), missing, trial2, depth + 1, steps2, ctx) == null) {
@@ -445,8 +447,8 @@ public final class CraftPlanner implements Crafter {
             int missing = n - available(alts, trial);
             if (missing > 0) {
                 boolean found = false;
-                int maxAlts = Math.min(SMELT_ALTS, depth < WIDE_DEPTH ? SMELT_ALTS : DEEP_ALTS);
-                for (int j = 0; j < alts.size() && j < maxAlts && depth < MAX_DEPTH && !found && !ctx.outOfBudget; j++) {
+                int maxAlts = Math.min(smeltAlts(), depth < wideDepth() ? smeltAlts() : deepAlts());
+                for (int j = 0; j < alts.size() && j < maxAlts && depth < maxDepth() && !found && !ctx.outOfBudget; j++) {
                     Map<String, Integer> trial2 = copy(trial);
                     List<Step> s2 = new ArrayList<>();
                     if (planCraft(alts.get(j), missing, trial2, depth + 1, s2, ctx) == null) {

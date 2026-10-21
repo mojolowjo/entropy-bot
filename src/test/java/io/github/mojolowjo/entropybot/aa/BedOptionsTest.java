@@ -46,7 +46,7 @@ class BedOptionsTest {
         m.failed("hunt sheep at 40 -30", end, 3000);
         Options.Choice nothing = BedOptions.choose(f, m, 4000);
         assertNull(nothing.best(), "both held: the Need skips with the reasons instead of retrying: " + nothing.why());
-        Options.Choice later = BedOptions.choose(f, m, 1000 + Options.RETRY_MS + 1);
+        Options.Choice later = BedOptions.choose(f, m, 1000 + Options.retryMs() + 1);
         assertNotNull(later.best(), "after the hold the way is tried again, dearer");
         assertTrue(later.best().why().contains("failed 1x"));
     }

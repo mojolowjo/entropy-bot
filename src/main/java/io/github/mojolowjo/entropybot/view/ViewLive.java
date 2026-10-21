@@ -59,7 +59,7 @@ public final class ViewLive {
         try {
             if (p == null || p.isDeadOrDying()) { lastHp = -1; return; }
             float hp = p.getHealth();
-            if (lastHp >= 0 && lastHp - hp >= 2) NEWS.push(News.DAMAGE, "lost " + Math.round(lastHp - hp) + " hp (now " + Math.round(hp) + ")");
+            if (lastHp >= 0 && lastHp - hp >= 2) NEWS.push(News.damage(), "lost " + Math.round(lastHp - hp) + " hp (now " + Math.round(hp) + ")");
             lastHp = hp;
             java.util.Map<Integer, ToolWear.Worn> worn = new java.util.HashMap<>();
             var inv = p.getInventory();
@@ -68,11 +68,11 @@ public final class ViewLive {
                 if (!st.isEmpty() && st.isDamageableItem())
                     worn.put(i, new ToolWear.Worn(BuiltInRegistries.ITEM.getKey(st.getItem()).getPath(), st.getMaxDamage() - st.getDamageValue(), st.getMaxDamage()));
             }
-            for (String n : WEAR.update(worn)) NEWS.push(News.TOOL, n);
+            for (String n : WEAR.update(worn)) NEWS.push(News.tool(), n);
             Level lv = p.level();
             long t = lv.getDayTime() % 24000;
             boolean night = t >= 13000 && t < 23000;
-            if (lastNight != null && night != lastNight) NEWS.push(News.TIME, night ? "night fell" : "day broke");
+            if (lastNight != null && night != lastNight) NEWS.push(News.time(), night ? "night fell" : "day broke");
             lastNight = night;
             long now = System.currentTimeMillis();
             if (now - lastHostileMs > 30000) {
@@ -84,7 +84,7 @@ public final class ViewLive {
                 }
                 if (best != null) {
                     lastHostileMs = now;
-                    NEWS.push(News.HOSTILE, best.getType().getDescription().getString().toLowerCase() + " " + Math.round(Math.sqrt(bd)) + " "
+                    NEWS.push(News.hostile(), best.getType().getDescription().getString().toLowerCase() + " " + Math.round(Math.sqrt(bd)) + " "
                             + compass(best.getX() - p.getX(), best.getZ() - p.getZ()));
                 }
             }

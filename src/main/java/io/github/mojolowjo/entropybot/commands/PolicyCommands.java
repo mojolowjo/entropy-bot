@@ -25,7 +25,7 @@ public final class PolicyCommands {
     static final String NAME_RE = "^[a-z0-9_-]{1,24}$";
     static final String DEFAULT_DIM = "minecraft:overworld";
     /** areas.json's format: 2 = typed areas (V1a). */
-    public static final int VERSION = 2;
+    public static final int VERSION = 2; // structural
 
     /** A spot: block coordinates and dimension. */
     public record Pos(int x, int y, int z, String dim) {}
@@ -59,7 +59,7 @@ public final class PolicyCommands {
         default io.github.mojolowjo.entropybot.guard.Policy policy() { return null; }
 
         /** AREAS: the danger move multiplier (1..64); sets it when {@code set} is not NaN; the value in force. */
-        default double danger(double set) { return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+        default double danger(double set) { return io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger(); }
 
         /** Mining plan: "fence why x y z [break|place] [travel|mine|dig_out|build]": the policy's verdict for one cell. */
         default String why(String dim, int x, int y, int z, String action, String intent) { return null; }
@@ -87,7 +87,7 @@ public final class PolicyCommands {
         if (!p.has("near") || !p.get("near").isJsonObject()) {
             JsonObject n = new JsonObject();
             n.addProperty("on", true);
-            n.addProperty("r", io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R);
+            n.addProperty("r", io.github.mojolowjo.entropybot.guard.NearZone.defaultR());
             p.add("near", n);
         }
     }
@@ -127,10 +127,10 @@ public final class PolicyCommands {
     public int nearR() {
         try {
             int r = p.getAsJsonObject("near").get("r").getAsInt();
-            return io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r) == null ? r : io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R;
+            return io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r) == null ? r : io.github.mojolowjo.entropybot.guard.NearZone.defaultR();
         } catch (RuntimeException e) {
             Quiet.warn("PolicyCommands.nearR failed, carrying on with the fallback", e);
-            return io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R;
+            return io.github.mojolowjo.entropybot.guard.NearZone.defaultR();
         }
     }
 
@@ -177,7 +177,7 @@ public final class PolicyCommands {
             if (!io.github.mojolowjo.entropybot.aa.core.AreaFacts.autoNoBreak(named, ents, built, natural)) continue;
             String dim = o.has("dim") ? o.get("dim").getAsString() : DEFAULT_DIM;
             JsonObject b = io.github.mojolowjo.entropybot.aa.core.AreaFacts.candidateBox("found" + (i + 1), dim, n(o, "x"), n(o, "y"), n(o, "z"),
-                    io.github.mojolowjo.entropybot.vocab.AreaCandidates.R, io.github.mojolowjo.entropybot.vocab.AreaCandidates.DOWN, io.github.mojolowjo.entropybot.vocab.AreaCandidates.UP).toJson();
+                    io.github.mojolowjo.entropybot.vocab.AreaCandidates.r(), io.github.mojolowjo.entropybot.vocab.AreaCandidates.down(), io.github.mojolowjo.entropybot.vocab.AreaCandidates.up()).toJson();
             b.addProperty("candidate", true);
             if (findArea("found" + (i + 1)) == null) out.add(b);
         }
@@ -196,9 +196,9 @@ public final class PolicyCommands {
 
     /** AREAS: the danger multiplier the owner set (areas.json "danger"), else the default. */
     public double dangerMult() {
-        try { return p.has("danger") ? p.get("danger").getAsDouble() : io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+        try { return p.has("danger") ? p.get("danger").getAsDouble() : io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger(); }
         catch (RuntimeException e) {
-            Quiet.warn("PolicyCommands.dangerMult failed, carrying on with the fallback", e); return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+            Quiet.warn("PolicyCommands.dangerMult failed, carrying on with the fallback", e); return io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger(); }
     }
 
     /** Pushes the policy to the guard (at load). The two replies joined, or null. */
@@ -573,7 +573,7 @@ public final class PolicyCommands {
                 n.addProperty("on", true);
                 guard.setNear(true, r);
                 saved.run();
-                return "ok: near me " + r + " blocks (on) - AA prefers a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.Y_HALF + " up and down) in companion mode; a fact, never a permission";
+                return "ok: near me " + r + " blocks (on) - AA prefers a circle of " + r + " blocks around you (" + io.github.mojolowjo.entropybot.guard.NearZone.yHalf() + " up and down) in companion mode; a fact, never a permission";
             }
             String name = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
             if (sub.equals("show")) {

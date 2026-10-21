@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 
 /**
@@ -12,8 +14,8 @@ import java.util.List;
 public final class FleeHeading {
     private FleeHeading() {}
 
-    public static final int HEADINGS = 16;
-    public static final double CLEAR = 2.5;
+    public static final int HEADINGS = 16; // structural
+    public static double clear() { return Tuning.get("fleeHeading.clear"); }
 
     /** A hostile at (x, z) with a weight (1 = an ordinary mob; a creeper or a strong one more). */
     public record Mob(double x, double z, double weight) {}
@@ -52,7 +54,7 @@ public final class FleeHeading {
                 // closest approach of the straight run to this mob (a mob already adjacent and ahead blocks it too)
                 double t = Math.min(along, dist);
                 double cx = mx - dx * t, cz = mz - dz * t;
-                if (Math.sqrt(cx * cx + cz * cz) < CLEAR) return Double.MAX_VALUE;
+                if (Math.sqrt(cx * cx + cz * cz) < clear()) return Double.MAX_VALUE;
             }
             double ed = Math.hypot(m.x() - ex, m.z() - ez);
             threat += m.weight() / Math.max(1, ed) + m.weight() / Math.max(1, md) * Math.max(0, along / Math.max(md, 0.1));

@@ -103,7 +103,7 @@ public final class Texts {
     }
 
     /** B7e: a "debug" answer (a 4096-cell slice is ~15 KB) goes into the log cut to this many characters and its length. */
-    public static final int DEBUG_LOG_CHARS = 200;
+    public static final int DEBUG_LOG_CHARS = 200; // structural
 
     /** What the log line of a cmd.json answer shows: the answer, or for "debug" (a type or a pm) its start and length. */
     public static String cmdLogged(String type, String text, String result) {

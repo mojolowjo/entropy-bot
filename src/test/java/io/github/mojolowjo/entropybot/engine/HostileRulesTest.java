@@ -95,15 +95,15 @@ class HostileRulesTest {
         w.now = 1000;
         w.hit(goat);
         assertEquals(Kind.RETALIATION, w.kind(goat));
-        w.now = 1000 + HostileRules.RETALIATE_TICKS - 1;
+        w.now = 1000 + HostileRules.retaliateTicks() - 1;
         assertEquals(Kind.RETALIATION, w.kind(goat));
-        w.now = 1000 + HostileRules.RETALIATE_TICKS;
+        w.now = 1000 + HostileRules.retaliateTicks();
         w.hurt = false;
         assertEquals(Kind.NOT_HOSTILE, w.kind(goat), "dropped after the window");
         // a new hit starts it again
         w.hit(goat);
         assertEquals(Kind.RETALIATION, w.kind(goat));
-        assertEquals(100, HostileRules.RETALIATE_TICKS);
+        assertEquals(100, HostileRules.retaliateTicks());
     }
 
     @Test
@@ -185,7 +185,7 @@ class HostileRulesTest {
         List<String> many = new ArrayList<>();
         for (int i = 0; i < 120; i++) many.add("mod:mob_" + i);
         HostileRules.Parsed p = HostileRules.parse(HostileRules.toJson(many));
-        assertEquals(HostileRules.CAP, p.ids().size());
+        assertEquals(HostileRules.cap(), p.ids().size());
         assertTrue(p.note().contains("over 100"), p.note());
     }
 
@@ -230,7 +230,7 @@ class HostileRulesTest {
     @Test
     void addStopsAtTheCap() {
         List<String> full = new ArrayList<>();
-        for (int i = 0; i < HostileRules.CAP; i++) full.add("mod:mob_" + i);
+        for (int i = 0; i < HostileRules.cap(); i++) full.add("mod:mob_" + i);
         HostileRules.Result r = HostileRules.command("add zombie", full, REGISTRY::contains);
         assertNull(r.changed());
         assertTrue(r.text().contains("I keep at most 100"), r.text());

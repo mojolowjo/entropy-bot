@@ -27,12 +27,12 @@ class WaterPlanTest {
         Map<String, Integer> inv = Map.of("minecraft:cobbled_deepslate", 300, "minecraft:tuff", 40);
         // junk drop alone would throw all but the pickaxes' 64
         Map<String, Integer> thrown = Map.of("minecraft:cobbled_deepslate", 236, "minecraft:tuff", 40);
-        Map<String, Integer> kept = WaterPlan.keepReserve(thrown, inv, WaterPlan.RESERVE);
+        Map<String, Integer> kept = WaterPlan.keepReserve(thrown, inv, WaterPlan.reserveV());
         assertEquals(Map.of("minecraft:cobbled_deepslate", 212), kept, "the tuff (placed first) gives back whole, then 24 cobbled deepslate bring the reserve");
         // already enough left: nothing changes
-        assertEquals(Map.of("minecraft:tuff", 40), WaterPlan.keepReserve(Map.of("minecraft:tuff", 40), inv, WaterPlan.RESERVE));
+        assertEquals(Map.of("minecraft:tuff", 40), WaterPlan.keepReserve(Map.of("minecraft:tuff", 40), inv, WaterPlan.reserveV()));
         // too little to keep a whole reserve: all of it stays
-        assertEquals(Map.of(), WaterPlan.keepReserve(Map.of("minecraft:dirt", 10), Map.of("minecraft:dirt", 10), WaterPlan.RESERVE));
+        assertEquals(Map.of(), WaterPlan.keepReserve(Map.of("minecraft:dirt", 10), Map.of("minecraft:dirt", 10), WaterPlan.reserveV()));
     }
 
     static WaterPlan.Inputs in(FakeWorld w, Bot bot, Pos at, ClearJob.StandCheck fence, java.util.function.Predicate<Pos> allowed) {

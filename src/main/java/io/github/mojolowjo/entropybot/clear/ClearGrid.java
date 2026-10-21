@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -162,7 +164,7 @@ public final class ClearGrid {
     }
 
     /** How many sight checks {@link #waterLock} may spend. */
-    public static final int LOCK_BUDGET = 600;
+    public static int lockBudget() { return Tuning.i("clearGrid.lockBudget"); }
 
     /**
      * TLL 30: the water that cuts the bot off from the rest of the dig, or null. Null as soon as a spot it can walk to
@@ -191,7 +193,7 @@ public final class ClearGrid {
         if (exposed.isEmpty()) return null;
         double bx = bot.x(), by = bot.y(), bz = bot.z();
         exposed.sort(Comparator.comparingDouble(t -> sq(t.x() + 0.5 - bx) + sq(t.y() + 0.5 - by) + sq(t.z() + 0.5 - bz)));
-        int budget = LOCK_BUDGET, wetSpot = -1;
+        int budget = lockBudget(), wetSpot = -1;
         for (int k = 0; k < exposed.size() && k < 60 && budget > 0; k++) {
             Pos t = exposed.get(k);
             for (int x = t.x() - 5; x <= t.x() + 5 && budget > 0; x++) {
@@ -299,7 +301,7 @@ public final class ClearGrid {
     public record Plan(Pos target, Spot spot) {}
 
     /** planWalk's sight budget per plan. */
-    public static final int SIGHT_BUDGET = 400;
+    public static int sightBudget() { return Tuning.i("clearGrid.sightBudget"); }
 
     /**
      * planWalk: the exposed block with the nearest reachable spot (checks the nearest 40 blocks, more only if
@@ -309,7 +311,7 @@ public final class ClearGrid {
     public static Plan planWalk(ClearWorld w, Bot bot, ClearJob job) {
         ClearGrid g = build(w, job.box, bot, job);
         int[] dist = g.walkDistances(bot);
-        job.sightBudget = SIGHT_BUDGET;
+        job.sightBudget = sightBudget();
         job.lastScanLeft = g.targets.size();
         job.brokenAtScan = job.broken;
         double px = bot.x(), py = bot.y(), pz = bot.z();
@@ -348,7 +350,7 @@ public final class ClearGrid {
     }
 
     /** How many sight checks {@link #entryProblem} may spend. */
-    public static final int ENTRY_BUDGET = 600;
+    public static int entryBudget() { return Tuning.i("clearGrid.entryBudget"); }
 
     /**
      * S1: why a clear got stuck, in plain words, when the cause is that no spot the bot can walk to (without breaking or
@@ -376,7 +378,7 @@ public final class ClearGrid {
         if (exposed.isEmpty()) return "";
         double bx = bot.x(), by = bot.y(), bz = bot.z();
         exposed.sort(Comparator.comparingDouble(t -> sq(t.x() + 0.5 - bx) + sq(t.y() + 0.5 - by) + sq(t.z() + 0.5 - bz)));
-        int budget = ENTRY_BUDGET;
+        int budget = entryBudget();
         for (int k = 0; k < exposed.size() && k < 60 && budget > 0; k++) {
             Pos t = exposed.get(k);
             for (int x = t.x() - 5; x <= t.x() + 5 && budget > 0; x++) {

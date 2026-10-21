@@ -142,7 +142,7 @@ public final class Desire {
     }
 
     /** B3: how long the stuck watchdog waits without progress (a shelter waits out the night). */
-    long stuckMs = Brain.STUCK_MS;
+    long stuckMs = Brain.stuckMs();
 
     public Desire patient(long ms) {
         stuckMs = ms;

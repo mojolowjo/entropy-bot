@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -15,13 +17,13 @@ public final class SelfCheck {
     private SelfCheck() {}
 
     /** A mine at or below this y walks over lava: lava fills the caves from y -55 down (the 0.12.0 night at -54). */
-    public static final int LAVA_Y = -54;
+    public static final int LAVA_Y = -54; // game fact: lava lakes fill the bottom of the overworld caves at y -54
     /** A tool with this share of its uses left or less is nearly broken. */
-    public static final double WORN = 0.10;
+    public static double worn() { return Tuning.get("selfCheck.worn"); }
     /** Free bag slots at or below this: nearly full (as the autominer's deposit). */
-    public static final int BAG_LOW = 4;
+    public static int bagLow() { return Tuning.i("selfCheck.bagLow"); }
     /** The companion's position older than this while the owner is online: stale. */
-    public static final long COMPANION_STALE_MS = 120_000;
+    public static long companionStaleMs() { return Tuning.l("selfCheck.companionStaleMs"); }
 
     /** A damageable item in the bag: id, uses left, uses in all. */
     public record Tool(String id, int left, int max) {}
@@ -61,14 +63,14 @@ public final class SelfCheck {
         if (want(sup, "iron_pickaxe") < 1) {
             out.add(new Finding("ironpick", "no iron pickaxe in my supplies: deepslate ores and diamonds need one", suppliesWithIronPick(sup)));
         }
-        if (s.freeSlots() <= BAG_LOW) out.add(new Finding("bag", "my bag is nearly full (" + s.freeSlots() + " free slots)", "deposit"));
+        if (s.freeSlots() <= bagLow()) out.add(new Finding("bag", "my bag is nearly full (" + s.freeSlots() + " free slots)", "deposit"));
         Set<String> seen = new LinkedHashSet<>();
         for (Tool t : s.tools() == null ? List.<Tool>of() : s.tools()) {
-            if (t.max() <= 0 || t.left() > t.max() * WORN || !seen.add(t.id())) continue;
+            if (t.max() <= 0 || t.left() > t.max() * worn() || !seen.add(t.id())) continue;
             String id = Texts.shortId(t.id());
             out.add(new Finding("tool:" + id, "my " + id + " is nearly broken (" + t.left() + " of " + t.max() + " uses left)", "craft " + id));
         }
-        if (s.ownerOnline() && s.companionAgeMs() > COMPANION_STALE_MS) {
+        if (s.ownerOnline() && s.companionAgeMs() > companionStaleMs()) {
             out.add(new Finding("companion", "the companion's position is " + Math.round(s.companionAgeMs() / 60000.0) + " min old though you are online (is the companion mod running?)",
                     null));
         }
@@ -101,7 +103,7 @@ public final class SelfCheck {
     /** 0.21.2: the near-me zone's findings for "check" (never whispered: not {@link #idleWorthy}). */
     public static List<Finding> nearFindings(long unknownMs, long errors, boolean ownerOnline) {
         List<Finding> out = new ArrayList<>();
-        if (ownerOnline && unknownMs >= io.github.mojolowjo.entropybot.guard.NearZone.UNKNOWN_NOTE_MS) {
+        if (ownerOnline && unknownMs >= io.github.mojolowjo.entropybot.guard.NearZone.unknownNoteMs()) {
             out.add(new Finding("nearzone", "the near-me zone hasn't known where you are for " + unknownMs / 60000 + " min though you are online (out of view, no fresh companion position)",
                     "come into view, run the companion (docs/companion.md), or area near off"));
         }
@@ -112,9 +114,9 @@ public final class SelfCheck {
     // ---- 0.21.2: the quiet idle check ----
 
     /** Free bag slots at or below this: the idle check may whisper "bag" (check lists it from {@link #BAG_LOW}). */
-    public static final int BAG_FULL = 2;
+    public static int bagFull() { return Tuning.i("selfCheck.bagFull"); }
     /** At most one self-check whisper this often, across restarts (commands.json selfCheck.lastWhisper). */
-    public static final long WHISPER_EVERY_MS = 30 * 60_000L;
+    public static long whisperEveryMs() { return Tuning.l("selfCheck.whisperEveryMs"); }
 
     /**
      * What the idle check may whisper at all: the bag (when full), no base, no food chest; and gear (a worn tool, tool
@@ -165,10 +167,10 @@ public final class SelfCheck {
         List<Finding> waiting = new ArrayList<>();
         for (Finding f : now) {
             if (!idleWorthy(f, supplyIds) || kept.contains(f.key())) continue;
-            if (f.key().equals("bag") && freeSlots > BAG_FULL) continue;      // listed by check from 4, whispered from 2
+            if (f.key().equals("bag") && freeSlots > bagFull()) continue;      // listed by check from 4, whispered from 2
             waiting.add(f);
         }
-        if (waiting.isEmpty() || (lastWhisperMs >= 0 && nowMs - lastWhisperMs < WHISPER_EVERY_MS)) return new Idle(null, kept);
+        if (waiting.isEmpty() || (lastWhisperMs >= 0 && nowMs - lastWhisperMs < whisperEveryMs())) return new Idle(null, kept);
         Finding first = waiting.get(0);
         kept.add(first.key());
         String more = waiting.size() > 1 ? " (+" + (waiting.size() - 1) + " more: PM check)" : "";

@@ -22,7 +22,7 @@ import java.util.function.Predicate;
 public final class Detour {
     private Detour() {}
 
-    public static final int DEFAULT = 3;
+    public static final int DEFAULT = 3; // structural
 
     /** cells: the passage's cells to open, in walking order (both rows); putBack: built blocks it breaks and their ids; why: when there is none. */
     public record Bypass(List<Pos> cells, Map<Pos, String> putBack, String why) {

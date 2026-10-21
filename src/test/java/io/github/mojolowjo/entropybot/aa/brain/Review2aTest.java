@@ -70,7 +70,7 @@ class Review2aTest {
         assertEquals(dark * 0.95, Costs.nightDanger(2, 0, 20, 20, 1, 0), 1e-9, "one torch: -5%");
         assertEquals(dark * 0.7, Costs.nightDanger(2, 0, 20, 20, 6, 0), 1e-9, "six: the floor 0.7");
         assertEquals(dark * 0.7, Costs.nightDanger(2, 0, 20, 20, 40, 0), 1e-9, "never under the floor");
-        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 0, 20, 20, 1, 0)) > Brain.URGENT, "one torch: the shelter stays urgent");
+        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 0, 20, 20, 1, 0)) > Brain.urgentV(), "one torch: the shelter stays urgent");
         assertEquals(0, Costs.litShare(new int[0]), 1e-9);
     }
 }

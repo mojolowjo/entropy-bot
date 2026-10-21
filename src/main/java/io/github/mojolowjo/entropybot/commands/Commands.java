@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import baritone.api.BaritoneAPI;
@@ -239,11 +241,11 @@ public final class Commands implements Chains.Env {
             String[] w = rest.trim().split("\\s+");
             if (w.length != 3) return null;
             int gx = Integer.parseInt(w[0]), gy = Integer.parseInt(w[1]), gz = Integer.parseInt(w[2]);
-            if (p.getBlockY() - gy <= StairPlan.SHAFT_DROP || Math.abs(p.getBlockX() - gx) + Math.abs(p.getBlockZ() - gz) > 6) return null;
+            if (p.getBlockY() - gy <= StairPlan.shaftDrop() || Math.abs(p.getBlockX() - gx) + Math.abs(p.getBlockZ() - gz) > 6) return null;
             int[] rim = StairPlan.shaft(cells(p.level()), gx, gy, gz);
             if (rim == null || p.getBlockY() < rim[1] - 1) return null;
             return "error: " + gx + " " + gy + " " + gz + " is straight down a shaft (" + rim[5] + " blocks) - I can't climb down or back up a sheer hole; dig a staircase: goto "
-                    + rim[0] + " " + rim[1] + " " + rim[2] + " then dig stairs " + StairPlan.dirName(rim[3], rim[4]) + " " + Math.min(StairPlan.MAX, rim[5]);
+                    + rim[0] + " " + rim[1] + " " + rim[2] + " then dig stairs " + StairPlan.dirName(rim[3], rim[4]) + " " + Math.min(StairPlan.maxV(), rim[5]);
         } catch (RuntimeException e) {
             Quiet.warn("Commands.shaftRefusal failed, carrying on with the fallback", e);
             return null;
@@ -272,10 +274,10 @@ public final class Commands implements Chains.Env {
     // ---- package D: furnace pickups ----
 
     /** A "stop" holds the pickups this long (like the autominer's hold). */
-    static final long PICKUP_HOLD_MS = 10 * 60_000L;
+    static long pickupHoldMs() { return Tuning.l("commands.pickupHoldMs"); }
     private long lastStop = -1;
 
-    private boolean pickupHeld(long now) { return lastStop > 0 && now - lastStop < PICKUP_HOLD_MS; }
+    private boolean pickupHeld(long now) { return lastStop > 0 && now - lastStop < pickupHoldMs(); }
 
     /** Package D: the furnace pickup the idle tick runs. */
     static final String PICKUP_STEP = "smelt collect due";
@@ -303,19 +305,19 @@ public final class Commands implements Chains.Env {
     }
 
     /** Blocks from the base within which the bot picks furnace output up by itself. */
-    static final int PICKUP_NEAR_BASE = 48;
+    static int pickupNearBase() { return Tuning.i("commands.pickupNearBase"); }
 
     /**
      * An idle pickup only when the bot is near the base or in one of the owner's typed places (home facts), and wasn't sent somewhere (come, goto,
      * follow, go) in the last 10 minutes: the owner's errand comes first.
      */
     private boolean pickupFromHere(LocalPlayer player, long now) {
-        if (jobs.lastTravelAt > 0 && now - jobs.lastTravelAt < PICKUP_HOLD_MS) return false;
+        if (jobs.lastTravelAt > 0 && now - jobs.lastTravelAt < pickupHoldMs()) return false;
         int[] me = Jobs.here(player);
         JsonObject b = core.knowledge.places().get("base");
         if (b != null && Jobs.dimOf(b).equals(Storage.dim())) {
             int[] bp = Jobs.pos(b);
-            if (Math.abs(me[0] - bp[0]) <= PICKUP_NEAR_BASE && Math.abs(me[2] - bp[2]) <= PICKUP_NEAR_BASE && Math.abs(me[1] - bp[1]) <= 24) return true;
+            if (Math.abs(me[0] - bp[0]) <= pickupNearBase() && Math.abs(me[2] - bp[2]) <= pickupNearBase() && Math.abs(me[1] - bp[1]) <= 24) return true;
         }
         return core.guard.core.policy().areaAt(Storage.dim(), me[0], me[1], me[2]) != null;
     }
@@ -1404,8 +1406,8 @@ public final class Commands implements Chains.Env {
                         int[] f = Jobs.freeSpotFor(player.level(), gx, gy, gz);
                         String t = gx + " " + gy + " " + gz;
                         if (f == null) {
-                            LOG.info("[entropybot] goto {}: inside {}, no free spot within {} blocks", t, solidId, WalkEnd.FREE_AROUND);
-                            return "error: " + t + " is inside " + solidId + " and there's no free spot within " + WalkEnd.FREE_AROUND
+                            LOG.info("[entropybot] goto {}: inside {}, no free spot within {} blocks", t, solidId, WalkEnd.freeAround());
+                            return "error: " + t + " is inside " + solidId + " and there's no free spot within " + WalkEnd.freeAround()
                                     + " blocks - next: goto a spot next to it";
                         }
                         LOG.info("[entropybot] goto {}: inside {}, going to {} instead", t, solidId, Jobs.fmt(f));
@@ -1729,11 +1731,11 @@ public final class Commands implements Chains.Env {
     /** B7e: state.json's "memory" block (the stores' health), refreshed at most every 20 s (it reads ~14 files' times). */
     private JsonObject memoryBlock;
     private long memoryBlockAt = -1;
-    static final long MEMORY_BLOCK_MS = 20_000;
+    static long memoryBlockMs() { return Tuning.l("commands.memoryBlockMs"); }
 
     JsonObject memoryBlock() {
         long now = System.currentTimeMillis();
-        if (memoryBlock == null || now - memoryBlockAt >= MEMORY_BLOCK_MS) {
+        if (memoryBlock == null || now - memoryBlockAt >= memoryBlockMs()) {
             try {
                 memoryBlock = MemoryCommand.stateBlock(core, this);
             } catch (RuntimeException e) {
@@ -1878,7 +1880,7 @@ public final class Commands implements Chains.Env {
         if (t.startsWith("timeout")) {      // 0.26.3: reconnect.connectTimeoutS
             String v = t.substring(7).trim();
             if (v.isEmpty()) return "reconnect timeout: " + core.reconnect.connectTimeoutS() + " s (a connect attempt not in a world after that is abandoned and counts as a failed try; "
-                    + io.github.mojolowjo.entropybot.engine.ReconnectRules.TIMEOUT_MIN_S + "-" + io.github.mojolowjo.entropybot.engine.ReconnectRules.TIMEOUT_MAX_S + ")";
+                    + io.github.mojolowjo.entropybot.engine.ReconnectRules.timeoutMinS() + "-" + io.github.mojolowjo.entropybot.engine.ReconnectRules.timeoutMaxS() + ")";
             int s;
             try { s = Integer.parseInt(v.replaceFirst("s$", "")); } catch (NumberFormatException e) { return "error: reconnect timeout takes seconds, e.g. reconnect timeout 60"; }
             String err = io.github.mojolowjo.entropybot.engine.ReconnectRules.timeoutRefusal(s);
@@ -2042,7 +2044,7 @@ public final class Commands implements Chains.Env {
         saved();
         JsonObject r = core.reflexes.status();
         String target = r.has("target") ? r.get("target").getAsString() : null;
-        io.github.mojolowjo.entropybot.view.ViewLive.NEWS.push(io.github.mojolowjo.entropybot.view.News.DEATH, "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt());
+        io.github.mojolowjo.entropybot.view.ViewLive.NEWS.push(io.github.mojolowjo.entropybot.view.News.death(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt());
         whisper(owner(), "I died at " + d.get("x").getAsInt() + " " + d.get("y").getAsInt() + " " + d.get("z").getAsInt() + deathCause(target)
                 + ". Respawning - say \"death\" and I will go back for my stuff.");
     }
@@ -2358,8 +2360,8 @@ public final class Commands implements Chains.Env {
     // ---- state.json (bridge.ps1 and the dashboard read it; the same fields the bridge wrote) ----
 
     /** state.json "mobs": radius, cap. */
-    static final double MOBS_RADIUS = 32;
-    static final int MOBS_CAP = 48;
+    static double mobsRadius() { return Tuning.get("commands.mobsRadius"); }
+    static int mobsCap() { return Tuning.i("commands.mobsCap"); }
 
     /**
      * state.json's {@code mobs} (0.19.5): hostile mobs only, as the defence judges them ({@link
@@ -2371,14 +2373,14 @@ public final class Commands implements Chains.Env {
         io.github.mojolowjo.entropybot.engine.Hostility h = io.github.mojolowjo.entropybot.engine.Hostility.INSTANCE;
         boolean hurt = core.reflexes.recentlyHurt();
         List<net.minecraft.world.entity.Mob> found = mc.level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
-                p.getBoundingBox().inflate(MOBS_RADIUS),
-                m -> m.isAlive() && m.distanceToSqr(p) <= MOBS_RADIUS * MOBS_RADIUS && h.kind(m, hurt).counts());
+                p.getBoundingBox().inflate(mobsRadius()),
+                m -> m.isAlive() && m.distanceToSqr(p) <= mobsRadius() * mobsRadius() && h.kind(m, hurt).counts());
         // RTS later: passive mobs (animals) in their own array, not live yet:
         // List<Mob> passive = mc.level.getEntitiesOfClass(Mob.class, box, m -> m.isAlive() && !h.kind(m, hurt).counts());
         found.sort(java.util.Comparator.comparingDouble(m -> m.distanceToSqr(p)));
         JsonArray a = new JsonArray();
         for (net.minecraft.world.entity.Mob m : found) {
-            if (a.size() >= MOBS_CAP) break;
+            if (a.size() >= mobsCap()) break;
             JsonObject o = new JsonObject();
             o.addProperty("id", net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(m.getType()).toString());
             o.addProperty("name", m.getName().getString());

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -18,7 +20,8 @@ import java.util.function.Predicate;
 public final class OreDetour {
     private OreDetour() {}
 
-    public static final int CAP = 8, MAX_UP = 4;
+    public static int cap() { return Tuning.i("oreDetour.cap"); }
+    public static int maxUp() { return Tuning.i("oreDetour.maxUp"); }
 
     /**
      * small-3: value of one mined block of this ore id in seconds (AA sets it while on; null = the radius is the rule).
@@ -37,7 +40,7 @@ public final class OreDetour {
     public static List<Pos> pick(ClearWorld w, int bx, int by, int bz, int r, Predicate<String> canMine, Veins.Area area, First firstOk) {
         List<Pos> out = new ArrayList<>();
         if (w == null || r <= 0) return out;
-        int up = Math.min(r, MAX_UP);
+        int up = Math.min(r, maxUp());
         Pos first = null;
         double best = Double.MAX_VALUE;
         for (int x = bx - r; x <= bx + r; x++) {
@@ -56,7 +59,7 @@ public final class OreDetour {
         ArrayDeque<Pos> q = new ArrayDeque<>();
         q.add(first);
         seen.add(first.key());
-        while (!q.isEmpty() && out.size() < CAP) {
+        while (!q.isEmpty() && out.size() < cap()) {
             Pos c = q.poll();
             out.add(c);
             for (int[] s : ClearEngine.SIDES6) {

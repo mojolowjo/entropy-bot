@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.plan;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.commands.VerbTable;
@@ -19,9 +21,9 @@ import java.util.Map;
 public final class ActionTable {
     private ActionTable() {}
 
-    public static final int VERSION = 1;
+    public static final int VERSION = 1; // structural
     /** The document's size budget without the state (BRAIN_PLAN 9: /api/actions under 30 KB). */
-    public static final int BUDGET = 30_000;
+    public static int budget() { return Tuning.i("actionTable.budget"); }
 
     /** One primitive. planner: the goal search may choose it. */
     public record ActionSpec(String id, String verb, String inputs, String pre, String eff, String cost, boolean finishes, String who, boolean planner) {}

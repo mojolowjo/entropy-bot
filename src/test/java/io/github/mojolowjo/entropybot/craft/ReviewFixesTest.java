@@ -152,7 +152,7 @@ class ReviewFixesTest {
         // expiry leaves one too
         FurnaceJobs ex = new FurnaceJobs(new JsonObject(), null);
         Job k = ex.add(F1, OW, IRON, FurnaceJobs.SMELT, null, T0);
-        ex.expire(k.dueAt + FurnaceJobs.EXPIRE_MS + 1, T0);
+        ex.expire(k.dueAt + FurnaceJobs.expireMs() + 1, T0);
         assertEquals(40, ex.leftover(F1, OW).count());
     }
 }

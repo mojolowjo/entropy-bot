@@ -13,7 +13,7 @@ import java.util.Set;
 public final class QueueRules {
     private QueueRules() {}
 
-    public static final int MAX = 10;
+    public static final int MAX = 10; // structural
     static final Set<String> ENDLESS = Set.of("follow", "escort", "defend", "guard");
     /** Answers, not tasks: nothing to wait for. */
     static final Set<String> INSTANT = Set.of("status", "inv", "help", "queue", "places", "have", "stock", "needs", "goals", "kinds", "stop", "dismiss", "confirm", "check", "summary");

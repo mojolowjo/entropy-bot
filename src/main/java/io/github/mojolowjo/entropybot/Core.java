@@ -98,7 +98,7 @@ public final class Core {
     private boolean keyPending;
     private int keyWait;
     /** review 2: ticks a join waits for the world's key before it falls back to worlds/unknown (5 s). */
-    static final int KEY_WAIT_TICKS = 100;
+    static final int KEY_WAIT_TICKS = 100; // structural
 
     /** False while the key is not known yet (the caller tries again next tick). */
     private boolean enterWorld(Minecraft mc, BotFiles f, boolean first) {

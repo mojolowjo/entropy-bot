@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -14,7 +16,10 @@ import java.util.List;
 public final class BuildSpotter {
     private BuildSpotter() {}
 
-    public static final int RADIUS = 8, MIN_BLOCKS = 6, GROW = 2, LINK = 3;
+    public static int radius() { return Tuning.i("buildSpotter.radius"); }
+    public static int minBlocks() { return Tuning.i("buildSpotter.minBlocks"); }
+    public static int grow() { return Tuning.i("buildSpotter.grow"); }
+    public static int link() { return Tuning.i("buildSpotter.link"); }
 
     /** box = x1 y1 z1 x2 y2 z2. */
     public record Hint(int[] center, int[] box, int count, String name) {
@@ -34,7 +39,7 @@ public final class BuildSpotter {
     }
 
     public static Hint spot(List<int[]> built) {
-        if (built == null || built.size() < MIN_BLOCKS) return null;
+        if (built == null || built.size() < minBlocks()) return null;
         boolean[] seen = new boolean[built.size()];
         List<int[]> best = null;
         for (int i = 0; i < built.size(); i++) {
@@ -54,7 +59,7 @@ public final class BuildSpotter {
             }
             if (best == null || group.size() > best.size()) best = group;
         }
-        if (best.size() < MIN_BLOCKS) return null;
+        if (best.size() < minBlocks()) return null;
         int[] box = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
         for (int[] p : best) {
             for (int k = 0; k < 3; k++) {
@@ -63,8 +68,8 @@ public final class BuildSpotter {
             }
         }
         for (int k = 0; k < 3; k++) {
-            box[k] -= GROW;
-            box[k + 3] += GROW;
+            box[k] -= grow();
+            box[k + 3] += grow();
         }
         int[] c = {(box[0] + box[3]) / 2, (box[1] + box[4]) / 2, (box[2] + box[5]) / 2};
         String name = ("build_" + c[0] + "_" + c[2]).replace("-", "m");
@@ -73,7 +78,7 @@ public final class BuildSpotter {
     }
 
     /** 0.24.3: how far from the bot's spawn point or a bed it used a build hint never fires. */
-    public static final int HOME_RADIUS = 24;
+    public static int homeRadius() { return Tuning.i("buildSpotter.homeRadius"); }
 
     /**
      * 0.24.3: is this cluster the bot's own spot? True (no hint) when its grown box holds a place the bot knows, a chest
@@ -89,7 +94,7 @@ public final class BuildSpotter {
             if (s == null) continue;
             // flat distance from the spot to the cluster's box (a spawn under or over a build still counts)
             long dx = Math.max(0, Math.max(h.box()[0] - s[0], s[0] - h.box()[3])), dz = Math.max(0, Math.max(h.box()[2] - s[2], s[2] - h.box()[5]));
-            if (dx * dx + dz * dz <= (long) HOME_RADIUS * HOME_RADIUS) return true;
+            if (dx * dx + dz * dz <= (long) homeRadius() * homeRadius()) return true;
         }
         return false;
     }
@@ -101,7 +106,7 @@ public final class BuildSpotter {
     }
 
     private static boolean near(int[] a, int[] b) {
-        return Math.abs(a[0] - b[0]) <= LINK && Math.abs(a[1] - b[1]) <= LINK && Math.abs(a[2] - b[2]) <= LINK;
+        return Math.abs(a[0] - b[0]) <= link() && Math.abs(a[1] - b[1]) <= link() && Math.abs(a[2] - b[2]) <= link();
     }
 
     /** The block ids a build hint never counts: what the bot puts down itself (torches, its mine's table and chests). */

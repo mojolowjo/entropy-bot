@@ -26,9 +26,17 @@ import java.util.Map;
  * and logs an incident; the next tick picks the next best.
  */
 public final class Brain extends Node {
-    public static final double BONUS = Tuning.defOf("margin"), URGENT = Tuning.defOf("urgent");
-    public static final long MIN_RUN_MS = 60_000, STUCK_MS = 180_000, FAST_STUCK_MS = 40_000, WAIT_MAX_S = 60, WAIT_MIN_S = 3, CD_BASE_MS = 120_000, CD_MAX_MS = 16 * 60_000,
-            GAP_MS = 5_000, PROBE_MS = 60_000;
+    public static double bonus() { return Tuning.get("margin"); }
+    public static double urgentV() { return Tuning.get("urgent"); }
+    public static long minRunMs() { return Tuning.l("brain.minRunMs"); }
+    public static long stuckMs() { return Tuning.l("brain.stuckMs"); }
+    public static long fastStuckMs() { return Tuning.l("brain.fastStuckMs"); }
+    public static long waitMaxS() { return Tuning.l("brain.waitMaxS"); }
+    public static long waitMinS() { return Tuning.l("brain.waitMinS"); }
+    public static long cdBaseMs() { return Tuning.l("brain.cdBaseMs"); }
+    public static long cdMaxMs() { return Tuning.l("brain.cdMaxMs"); }
+    public static long gapMs() { return Tuning.l("brain.gapMs"); }
+    public static long probeMs() { return Tuning.l("brain.probeMs"); }
 
     /** One scored desire for {@code aa why}. */
     /** @param parked AA_ROUND2 4: the value a parked desire would have (it flows to a GATE prerequisite), else 0 */
@@ -45,8 +53,8 @@ public final class Brain extends Node {
 
     /** small-4: seconds the idle wait lasts: min(60, until the next hold lapses), at least 3. */
     public static int waitSeconds(long now, long nextLapseAt) {
-        if (nextLapseAt <= now) return (int) WAIT_MAX_S;
-        return (int) Math.max(WAIT_MIN_S, Math.min(WAIT_MAX_S, (nextLapseAt - now + 999) / 1000));
+        if (nextLapseAt <= now) return (int) waitMaxS();
+        return (int) Math.max(waitMinS(), Math.min(waitMaxS(), (nextLapseAt - now + 999) / 1000));
     }
 
     private long startedAt, lastProgressAt, lastMoveAt, lastTickAt = -1;
@@ -62,7 +70,7 @@ public final class Brain extends Node {
     public long picks, interrupts, stuck;
     /** The dashboard board's pick list: one finished choice (time ms, desire, score, the option it ran: null when the desire has none). */
     public record Pick(long t, String desire, double score, String option) {}
-    public static final int PICKS_KEPT = 10;
+    public static int picksKept() { return Tuning.i("brain.picksKept"); }
     private final java.util.ArrayDeque<Pick> picked = new java.util.ArrayDeque<>();
     /** Names the option a desire's node ran (set by AaTree: an idle set's inner pick, a rung picker's chosen way); null = none. */
     public java.util.function.Function<Desire, String> optionOf = d -> null;
@@ -72,7 +80,7 @@ public final class Brain extends Node {
         String opt;
         try { opt = optionOf.apply(d); } catch (RuntimeException e) { opt = "option unreadable: " + e; }
         picked.addLast(new Pick(now, d.id, sc.score(), opt));
-        while (picked.size() > PICKS_KEPT) picked.removeFirst();
+        while (picked.size() > picksKept()) picked.removeFirst();
     }
     public final Map<Desire.Kind, Long> interruptsByKind = new EnumMap<>(Desire.Kind.class);
     private long bornAt = -1;
@@ -170,11 +178,11 @@ public final class Brain extends Node {
             double value = v;
             v = Curves.progress(value, p, c);
             parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s "
-                    + (!Double.isNaN(live) ? "live" : stats.n(d.id) >= BrainStats.MIN_RUNS ? "measured" : "hand");
+                    + (!Double.isNaN(live) ? "live" : stats.n(d.id) >= BrainStats.minRuns() ? "measured" : "hand");
         } else if (d.kind == Desire.Kind.UPKEEP && v >= 0 && v < Tuning.get("urgent") && !Double.isNaN(live)) {
             // AA_ROUND2 1: a far source does not pull the bot off a task it is close to finishing; urgent is never divided
             double value = v;
-            v = value / (1 + live / Curves.COST_C);
+            v = value / (1 + live / Curves.costC());
             parts = "value " + Math.round(value) + " / cost " + Math.round(live) + "s live";
         }
         Desire.Exposure ex = workExposure(bb, d);
@@ -206,7 +214,7 @@ public final class Brain extends Node {
     }
 
     /** Under this much ground over the bot it is not at the surface (AaLadder.SURFACE_DEPTH). */
-    static final int SURFACE_DEPTH = 3;
+    static int surfaceDepth() { return Tuning.i("brain.surfaceDepth"); }
 
     /**
      * AA_ROUND4 B1: blackboard fact, an {@code IntBinaryOperator} (x, z) -> the surface's y there (the heightmap the adapter
@@ -226,7 +234,7 @@ public final class Brain extends Node {
         Site s = d.siteOf(bb);
         if (s == null) {
             if (d.exposure != Desire.Exposure.ANY) return d.exposure;
-            return bb.in.underDepth >= SURFACE_DEPTH ? Desire.Exposure.UNDER : Desire.Exposure.SURFACE;
+            return bb.in.underDepth >= surfaceDepth() ? Desire.Exposure.UNDER : Desire.Exposure.SURFACE;
         }
         return siteUnder(bb, s) ? Desire.Exposure.UNDER : Desire.Exposure.SURFACE;
     }
@@ -246,7 +254,7 @@ public final class Brain extends Node {
             if (me == null || me.length < 3) return false;
             surface = me[1] + Math.max(0, bb.in.underDepth);
         }
-        return s.y() <= surface - SURFACE_DEPTH;
+        return s.y() <= surface - surfaceDepth();
     }
 
     /** SURFACE 1 / (1 + danger), UNDER 1 + danger / 2, ANY 1. */
@@ -333,7 +341,7 @@ public final class Brain extends Node {
         if (!nested) bb.fact(NEXT_LAPSE_FACT, nextLapse(now));      // small-4: the idle wait ends when the next hold does (nested holds too)
         bonus = Personality.of(bb).get("margin");          // B3 (2.4): the commitment margin is the personality's
         if (bornAt < 0) bornAt = now;
-        boolean gap = lastTickAt >= 0 && now - lastTickAt > GAP_MS;
+        boolean gap = lastTickAt >= 0 && now - lastTickAt > gapMs();
         long prevTick = lastTickAt;
         lastTickAt = now;
         if (running >= 0) {
@@ -367,7 +375,7 @@ public final class Brain extends Node {
                     && (Boolean.TRUE.equals(metNow) || !probeFlicker(cur, now));
             if (!goneNow || gap) goneSince = -1;
             else if (goneSince < 0) goneSince = now;
-            if (goneNow && (Boolean.TRUE.equals(metNow) || now - goneSince >= ZERO_END_MS)) {          // day-check: the reason is gone; the commitment margin must not keep it alive
+            if (goneNow && (Boolean.TRUE.equals(metNow) || now - goneSince >= zeroEndMs())) {          // day-check: the reason is gone; the commitment margin must not keep it alive
                 // aa-gate: the desire's own check met = its work is done (a met rung, day for the shelter, healed): no pointless switch
                 String why = (Boolean.TRUE.equals(metNow) ? "done: its own check is met: " : "its reason is gone: ") + cur.id + " wanted " + Math.round(mine.score()) + " (" + mine.parts() + ")";
                 bb.port.log("brain: ends " + cur.id + ": " + why);
@@ -384,14 +392,14 @@ public final class Brain extends Node {
     }
 
     /** aa-switch2: how long a running desire's score must stay at or below 0 before the day-check ends it. */
-    public static final long ZERO_END_MS = 5_000;
+    public static long zeroEndMs() { return Tuning.l("brain.zeroEndMs"); }
     /** aa-switch2: since when the running desire's reason has been gone without a break (-1: it is not). */
     private long goneSince = -1;
 
     /** aa-switch2: the running desire's own "cannot start" probe answer is held: its -1 is that flicker, not a gone reason. */
     private boolean probeFlicker(Desire cur, long now) {
         Held h = probeHeld.get(cur.id);
-        return h != null && now - h.at() < PROBE_HOLD_MS;
+        return h != null && now - h.at() < probeHoldMs();
     }
 
     /** day-check: a running desire (not the owner's) whose desire fell to 0 or below, or is no longer wanted, ends. */
@@ -408,7 +416,7 @@ public final class Brain extends Node {
     }
 
     /** aa-night2 P0 1: the food bar under which eating beats a trumping (night) desire. */
-    public static final int TRUMP_FOOD = (int) Tuning.defOf("trumpFood");
+    public static int trumpFood() { return Tuning.i("trumpFood"); }
 
     /**
      * aa-night2 P0 1: a desire marked {@link Desire#trumps()} at its full score ({@link Costs#SHELTER_MAX}: the full night
@@ -449,7 +457,7 @@ public final class Brain extends Node {
                 if (s.d().urgentSince < 0) s.d().urgentSince = now;
                 if (now - s.d().urgentSince < s.d().graceMs) continue;
             }
-            boolean owner = s.d().kind == Desire.Kind.OWNER && s.d().freshUntil > now && now - startedAt >= MIN_RUN_MS;
+            boolean owner = s.d().kind == Desire.Kind.OWNER && s.d().freshUntil > now && now - startedAt >= minRunMs();
             // AA_STEP2 review 1: the cap guard is only between trumping desires; food under TRUMP_FOOD and the owner's
             // fresh order still beat a running trumping one (danger waiting out the night at 99)
             if (cur.trumps && !s.d().trumps && (owner || s.d().id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood") && s.score() > 0)) {
@@ -469,7 +477,7 @@ public final class Brain extends Node {
         cands.sort((a, b) -> Double.compare(b.rank(), a.rank()));
         // AA_ROUND2 2: at most MAX_INTERRUPTS_PER_MIN; over the cap a challenger waits
         while (!interruptTimes.isEmpty() && now - interruptTimes.peekFirst() >= 60_000) interruptTimes.removeFirst();
-        if (interruptTimes.size() >= MAX_INTERRUPTS_PER_MIN) {
+        if (interruptTimes.size() >= maxInterruptsPerMin()) {
             // director 2026-10-19: upkeep at CAP_EXEMPT+ (starving) is not capped; it still needs the probe below
             cands.removeIf(s -> {
                 boolean exempt = s.d().kind == Desire.Kind.UPKEEP && s.own() >= Tuning.get("capExempt");
@@ -483,7 +491,7 @@ public final class Brain extends Node {
             // a "cannot start" answer is kept PROBE_HOLD_MS (a rung probe asks the planner and re-scores options)
             Held held = probeHeld.get(s.d().id);
             String why;
-            if (held != null && now - held.at() < PROBE_HOLD_MS) why = held.why();
+            if (held != null && now - held.at() < probeHoldMs()) why = held.why();
             else {
                 why = canStart(bb, s.d());
                 if (why == null) probeHeld.remove(s.d().id);
@@ -496,12 +504,12 @@ public final class Brain extends Node {
     }
 
     /** AA_ROUND2 2: a challenger's "cannot start" is re-asked at most this often. */
-    public static final long PROBE_HOLD_MS = 5_000;
-    public static final int MAX_INTERRUPTS_PER_MIN = 2;
+    public static long probeHoldMs() { return Tuning.l("brain.probeHoldMs"); }
+    public static int maxInterruptsPerMin() { return Tuning.i("brain.maxInterruptsPerMin"); }
     /** Blackboard fact: when an UNDER upkeep desire last could run (ms). */
     public static final String UNDER_WANTED_FACT = "aa.underWantedAt";
     /** Upkeep this urgent is exempt from the cap (probe and false-interrupt cooldown still apply). */
-    public static final double CAP_EXEMPT = Tuning.defOf("capExempt");
+    public static double capExempt() { return Tuning.get("capExempt"); }
     private record Held(String why, long at) {}
     private final Map<String, Held> probeHeld = new HashMap<>();
     private final java.util.ArrayDeque<Long> interruptTimes = new java.util.ArrayDeque<>();
@@ -568,7 +576,7 @@ public final class Brain extends Node {
             if (d == checkFalse && taskSeen) ended(bb, d, s, now);     // it started a task: a real run, not a false interrupt
             else if (d.selfCool && d != checkFalse) ended(bb, d, s, now);
             else if (!taskSeen && d != checkFalse && !(d.node instanceof Brain))
-                failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());      // round 4A N: a no-task fail rests every desire (A1)
+                failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.noRunMsV(), now, d.node.reason());      // round 4A N: a no-task fail rests every desire (A1)
             if (d == checkFalse && !taskSeen) {
                 // AA_ROUND2 2: the interrupter could not even start: a false interrupt. It cools down (its own streak),
                 // and the interrupted desire is tried next (its commitment bonus kept: lastWinner untouched)
@@ -596,7 +604,7 @@ public final class Brain extends Node {
 
     /** Blackboard fact: the horizon in seconds ({@code aa horizon}, an Integer); absent: {@link Sequencer#DEFAULT_HORIZON_S}. */
     public static final String HORIZON_FACT = "aa.horizon";
-    public static final long PLAN_EVERY_MS = 30_000;
+    public static long planEveryMs() { return Tuning.l("brain.planEveryMs"); }
     private Sequencer.Plan plan;
     private long planAt = -1;
     /** The plan's next after a SUCCESS (runs without the ranking deciding while its site is near), or null. */
@@ -604,7 +612,7 @@ public final class Brain extends Node {
     private String planNote;
 
     public static int horizon(Blackboard bb) {
-        return bb.fact(HORIZON_FACT) instanceof Integer h && h > 0 ? h : Sequencer.DEFAULT_HORIZON_S;
+        return bb.fact(HORIZON_FACT) instanceof Integer h && h > 0 ? h : Sequencer.defaultHorizonS();
     }
 
     static Site here(Blackboard bb) {
@@ -629,7 +637,7 @@ public final class Brain extends Node {
     Sequencer.Plan buildPlan(Blackboard bb, List<Scored> all, List<Integer> order) {
         List<Sequencer.Item> items = new ArrayList<>();
         for (int i : order) {
-            if (items.size() >= Sequencer.K) break;
+            if (items.size() >= Sequencer.k()) break;
             Scored s = all.get(i);
             if (s.score() <= 0) continue;
             items.add(new Sequencer.Item(s.d().id, costOf(bb, s.d()), s.d().siteOf(bb)));
@@ -638,7 +646,7 @@ public final class Brain extends Node {
         return Sequencer.build(here(bb), items, planHorizon);
     }
 
-    private int planHorizon = Sequencer.DEFAULT_HORIZON_S;
+    private int planHorizon = Sequencer.defaultHorizonS();
 
     /**
      * Rebuilds the plan and puts its first (or, right after a plan step ended SUCCESS, its next while that is still
@@ -693,7 +701,7 @@ public final class Brain extends Node {
 
     /** Every {@link #PLAN_EVERY_MS} while a desire runs the plan is rebuilt for aa why. */
     private void replanWhileRunning(Blackboard bb, long now) {
-        if (nested || planAt >= 0 && now - planAt < PLAN_EVERY_MS) return;
+        if (nested || planAt >= 0 && now - planAt < planEveryMs()) return;
         List<Scored> all = lastScored;
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < all.size(); i++) if (all.get(i).skip() == null) order.add(i);
@@ -742,7 +750,7 @@ public final class Brain extends Node {
         } else if (!d.selfCool && !(d.node instanceof Brain)) {      // a nested option set (idle) gives its next option the turn
             // review 2 (4, 07:52: seven picks in 60 s, each a one-second no-task fail): a rung that failed without
             // starting a task rests NO_RUN_MS in the one record, so the next desire gets its turn
-            failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());
+            failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.noRunMsV(), now, d.node.reason());
         }
         taskSeen = false;
     }
@@ -776,7 +784,7 @@ public final class Brain extends Node {
         // small-2: standing still with the bag unchanged and no task progress for FAST_STUCK_MS is a stall; the long
         // clock stays for work that moves or collects (a desire with its own patience, a shelter, keeps only its own)
         boolean waiting = bb.task() != null && bb.task().spec() != null && bb.task().spec().kind() == io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT;     // a wait stands still on purpose
-        boolean fast = !waiting && cur.stuckMs == STUCK_MS && now - lastMoveAt >= FAST_STUCK_MS && now - lastProgressAt >= FAST_STUCK_MS;
+        boolean fast = !waiting && cur.stuckMs == stuckMs() && now - lastMoveAt >= fastStuckMs() && now - lastProgressAt >= fastStuckMs();
         if (!fast && now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
         stuck++;
         String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s" + (fast ? " (no move, no bag change)" : "");
@@ -815,7 +823,7 @@ public final class Brain extends Node {
     private void probe(Blackboard bb, String what, String reason) {
         String key = what + " " + reason.replaceAll("\\d+", "#");
         long now = bb.clock.now();
-        if (key.equals(probeLast) && now - probeAt < PROBE_MS) return;
+        if (key.equals(probeLast) && now - probeAt < probeMs()) return;
         probeLast = key;
         probeAt = now;
         bb.port.log("brain picked " + what + " -> " + reason);

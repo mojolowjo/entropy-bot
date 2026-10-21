@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.core;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * AA v0 (AA_PLAN 3): the one door from the tree to the bot's jobs. The adapter (commands.AaRuntime) implements it over
  * Chains/Jobs; tests use a fake. Only AA's own tasks go through it.
@@ -11,12 +13,14 @@ public interface JobPort {
      */
     record TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs,
                     java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
-        public static final long TIMEOUT_MS = 20 * 60_000, NO_PROGRESS_MS = 180_000, MAX_MS = 60 * 60_000;
+        public static long timeoutMsV() { return Tuning.l("jobPort.timeoutMs"); }
+        public static long noProgressMsV() { return Tuning.l("jobPort.noProgressMs"); }
+        public static long maxMs() { return Tuning.l("jobPort.maxMs"); }
 
         /** 0.36.2 (review 7): every limit is finite: 0, negative or over an hour (MAX_VALUE) becomes the default. */
         public TaskSpec {
-            if (timeoutMs <= 0 || timeoutMs > MAX_MS) timeoutMs = TIMEOUT_MS;
-            if (noProgressMs <= 0 || noProgressMs > MAX_MS) noProgressMs = NO_PROGRESS_MS;
+            if (timeoutMs <= 0 || timeoutMs > maxMs()) timeoutMs = timeoutMsV();
+            if (noProgressMs <= 0 || noProgressMs > maxMs()) noProgressMs = noProgressMsV();
             steps = steps == null ? java.util.List.of() : java.util.List.copyOf(steps);
         }
 
@@ -26,12 +30,12 @@ public interface JobPort {
 
         /** rm-execution: a task on typed steps ({@code label} = Step.label of them). */
         public static TaskSpec typed(TaskKind kind, String label, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String source) {
-            return new TaskSpec(kind, label, source, 1, TIMEOUT_MS, NO_PROGRESS_MS, steps);
+            return new TaskSpec(kind, label, source, 1, timeoutMsV(), noProgressMsV(), steps);
         }
 
         /** rm-execution2: a task on typed steps, its label made from them. */
         public static TaskSpec steps(TaskKind kind, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String source) {
-            return steps(kind, steps, source, TIMEOUT_MS, NO_PROGRESS_MS);
+            return steps(kind, steps, source, timeoutMsV(), noProgressMsV());
         }
 
         public static TaskSpec steps(TaskKind kind, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String source, long timeoutMs, long noProgressMs) {

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,13 +24,13 @@ public final class RimPlan {
     private RimPlan() {}
 
     /** Tries per cell (a walk that ends out of reach or a click that did not stay both count). */
-    public static final int MAX_TRIES = 2;
+    public static int maxTries() { return Tuning.i("rimPlan.maxTries"); }
     /** The rim placer's cap per layer, in ticks (90 s). */
-    public static final int LAYER_CAP_TICKS = 90 * 20;
+    public static int layerCapTicks() { return Tuning.i("rimPlan.layerCapTicks"); }
     /** Why a cell is left. */
     public enum Why {
         NO_SUPPORT("no block under it"), NO_NEIGHBOUR("no solid neighbour"), NO_STAND("nowhere to stand"), NO_BLOCKS("out of blocks"),
-        TRIES("it did not stay after " + MAX_TRIES + " tries"), TIME("out of time");
+        TRIES("it did not stay after " + maxTries() + " tries"), TIME("out of time");
 
         public final String text;
 
@@ -139,14 +141,14 @@ public final class RimPlan {
      */
     public static Pick next(ClearWorld w, List<Pos> missing, Map<Pos, Integer> tries, double bx, double by, double bz) {
         List<Pos> open = new ArrayList<>();
-        for (Pos c : missing) if (tries.getOrDefault(c, 0) < MAX_TRIES && (supported(w, c) || anchored(w, c))) open.add(c);
+        for (Pos c : missing) if (tries.getOrDefault(c, 0) < maxTries() && (supported(w, c) || anchored(w, c))) open.add(c);
         boolean filler = false;
         if (open.isEmpty()) {
             // package 4 (8): a cell over a one-block hole: fill the hole first (its own cell, with a block under it)
             for (Pos c : missing) {
                 Pos below = new Pos(c.x(), c.y() - 1, c.z());
-                if (tries.getOrDefault(c, 0) < MAX_TRIES && !supported(w, c) && PlaceRules.free(w, below.x(), below.y(), below.z())
-                        && tries.getOrDefault(below, 0) < MAX_TRIES && supported(w, below)) open.add(below);
+                if (tries.getOrDefault(c, 0) < maxTries() && !supported(w, c) && PlaceRules.free(w, below.x(), below.y(), below.z())
+                        && tries.getOrDefault(below, 0) < maxTries() && supported(w, below)) open.add(below);
             }
             filler = true;
         }

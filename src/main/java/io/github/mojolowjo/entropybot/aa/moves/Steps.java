@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.moves;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 
 /**
@@ -35,7 +37,7 @@ public final class Steps {
     public record Routine(List<Step> steps, String why) {}
 
     /** At most this many expansions (a plan in a plan) per run: a routine that names itself ends FAILED, never loops. */
-    static final int MAX_EXPANSIONS = 16;
+    static int maxExpansions() { return Tuning.i("steps.maxExpansions"); }
     private int expansions;
 
     /** Seconds one step may run before the run fails "timed out" (Tuning steps.stepMaxS). */
@@ -108,7 +110,7 @@ public final class Steps {
      */
     private String expand() {
         while (idx < steps.size() && (steps.get(idx) instanceof Step.Compound || steps.get(idx) instanceof Step.Plan)) {
-            if (++expansions > MAX_EXPANSIONS) return "more than " + MAX_EXPANSIONS + " plans and compound steps in one run";
+            if (++expansions > maxExpansions()) return "more than " + maxExpansions() + " plans and compound steps in one run";
             Step s = steps.get(idx);
             List<Step> parts;
             if (s instanceof Step.Compound c) parts = c.parts();

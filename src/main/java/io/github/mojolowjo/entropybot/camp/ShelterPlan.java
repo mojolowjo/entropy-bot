@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -19,7 +21,7 @@ public final class ShelterPlan {
     /** Sides in the order they are tried for the way out: north, east, south, west (dx, dz). */
     public static final int[][] SIDES = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
     /** Blocks the full shell takes (4 at the feet, 4 at the head, the roof's support, the roof). */
-    public static final int FULL = 10;
+    public static int full() { return Tuning.i("shelterPlan.full"); }
 
     /**
      * The shell around feet f, in build order: the four feet-level sides, the four head-level sides, a support above the north wall, the roof last

@@ -33,7 +33,7 @@ class LedgerTest {
         assertEquals(1, l.settle((d, x, y, z) -> x == 1 ? Ledger.Cell.EMPTY : Ledger.Cell.FULL, 106));
         assertEquals(1, l.forJob(7).size());
         assertEquals(1, l.pending().size());
-        assertEquals(1, l.settle((d, x, y, z) -> Ledger.Cell.FULL, 100 + Ledger.CONFIRM_MAX));
+        assertEquals(1, l.settle((d, x, y, z) -> Ledger.Cell.FULL, 100 + Ledger.confirmMax()));
         assertEquals(1, l.size(), "a break the server undid is dropped");
         assertEquals(1, l.waiting());
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,7 +12,7 @@ import java.util.List;
  * returns what to whisper.
  */
 public final class ReflexNotes {
-    public static final int NO_FOOD_AT = 6;
+    public static int noFoodAt() { return Tuning.i("reflexNotes.noFoodAt"); }
 
     private String reflexWas = "none";
     private String deniedNoted;
@@ -37,7 +39,7 @@ public final class ReflexNotes {
         } else if (deniedDim == null) {
             deniedNoted = null;
         }
-        if (noFood && !noFoodWarned && food <= NO_FOOD_AT) {
+        if (noFood && !noFoodWarned && food <= noFoodAt()) {
             noFoodWarned = true;
             out.add("I'm out of food (food " + food + "/20) - I can keep working but will starve eventually.");
         } else if (!noFood) {

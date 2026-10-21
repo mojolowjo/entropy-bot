@@ -27,7 +27,7 @@ class OneRecordTest {
         String held = brain.failures.held("needs.table", null, clock.now());
         assertNotNull(held, "rested, not tried again next tick");
         assertEquals(0, brain.failures.fails("needs.table", null), "a rest, not a counted failure");
-        clock.advance(Cooldown.NO_RUN_MS + 1);
+        clock.advance(Cooldown.noRunMsV() + 1);
         assertNull(brain.failures.held("needs.table", null, clock.now()));
     }
 

@@ -56,7 +56,7 @@ public final class FarmCommand {
         if (t.equals("here") || f == null) {
             List<FarmRules.Crop> crops = FarmRules.farmCrops(w, me);
             if (crops.isEmpty()) {
-                return new Reply(t.equals("here") ? "error: no crops on farmland within " + FarmRules.FARM_R + " blocks of me"
+                return new Reply(t.equals("here") ? "error: no crops on farmland within " + FarmRules.farmR() + " blocks of me"
                         : "error: I don't know a farm - stand me next to the crops and PM farm (or \"farm here\")", null, null);
             }
             f = FarmRules.spotFor(crops, w.dim(), f != null ? f.compact() : "block");

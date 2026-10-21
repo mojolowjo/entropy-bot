@@ -43,12 +43,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class TerrainMap {
     private static final Logger LOG = LogUtils.getLogger();
-    static final int EVERY = 2;             // ticks between two chunks
-    static final int QUEUE_CHUNKS = 4096, QUEUE_COLUMNS = 8192, COLUMNS_PER_TICK = 64;
-    static final long WRITE_EVERY = 600;    // 30 s between two writes of the dirty regions
-    static final long FORGET_AFTER = 12000; // a clean region untouched for 10 minutes leaves memory
-    static final int MAX_STEP = 8;          // blocks to step down through see-through tops (glass, ...)
-    static final int NO_Y = Integer.MIN_VALUE;
+    static final int EVERY = 2; // structural  // ticks between two chunks
+    static final int QUEUE_CHUNKS = 4096; // structural
+    static final int QUEUE_COLUMNS = 8192; // structural
+    static final int COLUMNS_PER_TICK = 64; // structural
+    static final long WRITE_EVERY = 600; // structural  // 30 s between two writes of the dirty regions
+    static final long FORGET_AFTER = 12000; // structural  // a clean region untouched for 10 minutes leaves memory
+    static final int MAX_STEP = 8; // structural  // blocks to step down through see-through tops (glass, ...)
+    static final int NO_Y = Integer.MIN_VALUE; // structural
 
     private final Path root;
     private final Map<String, Region> regions = new HashMap<>();

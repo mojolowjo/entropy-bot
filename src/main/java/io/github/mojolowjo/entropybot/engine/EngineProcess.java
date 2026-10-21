@@ -46,7 +46,7 @@ public final class EngineProcess implements IBaritoneProcess {
      * it lasts. PathingControlManager sorts the active processes by priority every tick, so the goal is taken on
      * Baritone's next tick. A BurrowProcess running then loses control and fails (its chain moves on, logged).
      */
-    public static final double REFLEX_PRIORITY = 10;
+    public static final double REFLEX_PRIORITY = 10; // structural
 
     /** Backbone step 4: the reflex goal; the mode and goal it replaces come back at {@link #endReflex()}. */
     public synchronized void overrideReflex(Goal g) { slot.overrideReflex(g); }

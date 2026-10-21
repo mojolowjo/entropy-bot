@@ -27,9 +27,9 @@ public final class ChatCompletionsProvider implements Provider {
 
     public static final String OPENROUTER_BASE = "https://openrouter.ai/api/v1";
     public static final String LOCAL_BASE = "http://127.0.0.1:11434/v1";
-    static final int MAX_BODY = 64 * 1024;
+    static final int MAX_BODY = 64 * 1024; // structural
     static final long[] BACKOFF_MS = {2000, 8000};
-    static final long RETRY_AFTER_CAP_MS = 60_000;
+    static final long RETRY_AFTER_CAP_MS = 60_000; // structural
 
     private final String kind, base, model;
     private final Secret key;

@@ -17,8 +17,9 @@ import java.util.List;
  */
 public final class Pois {
     public static final String FILE = "pois.json";
-    public static final int MERGE = 32, MAX = 500;
-    static final long FLUSH_AFTER = 100;
+    public static final int MERGE = 32; // structural
+    public static final int MAX = 500; // structural
+    static final long FLUSH_AFTER = 100; // structural
 
     public record Poi(int id, String kind, int x, int y, int z, String dim, long first, long last, String note) {
         JsonObject toJson() {

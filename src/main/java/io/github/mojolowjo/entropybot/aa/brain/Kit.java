@@ -25,19 +25,19 @@ public final class Kit {
 
     /** Blackboard fact: the last {@link Death} (null none). */
     public static final String FACT = "aa.kitDeath";
-    public static final long DESPAWN_MS = 300_000;
+    public static final long DESPAWN_MS = 300_000; // game fact: dropped items despawn after 5 minutes
     /** Seconds of extra cost per unit of danger at the spot that killed me. */
-    public static final double DIED_S = Tuning.defOf("diedS");
+    public static double diedS() { return Tuning.get("diedS"); }
     /** Under this missing worth there is nothing to go back for. */
-    public static final double MIN_RECOVER = 2;
+    public static double minRecover() { return Tuning.get("kit.minRecover"); }
     /** Under this loot worth there is nothing to stash. */
-    public static final double MIN_STASH = 3;
+    public static double minStash() { return Tuning.get("kit.minStash"); }
     /** The stash rises over this many ticks before dusk (75 s). */
-    public static final long STASH_LEAD = 1_500;
+    public static long stashLead() { return Tuning.l("kit.stashLead"); }
     /** A trip this far from the base is a far trip (blocks). */
-    public static final double FAR_TRIP = 64;
+    public static double farTripV() { return Tuning.get("kit.farTrip"); }
     /** The stash stays under the urgent line. */
-    public static final double STASH_MAX = Tuning.defOf("stashMax");
+    public static double stashMax() { return Tuning.get("stashMax"); }
 
     public record Death(String dim, int x, int y, int z, Map<String, Integer> bag, long at) {
         public Site site() { return new Site(dim, x, y, z, 0); }
@@ -45,7 +45,7 @@ public final class Kit {
 
     // ---- worth ----
 
-    static final double BLOCK = 0.02;      // = Tuning worth.floor: a plain block, the line under which an item is no loot
+    static double block() { return Tuning.get("worth.floor"); }  // = Tuning worth.floor: a plain block, the line under which an item is no loot
 
     static String path(String id) { int i = id.indexOf(':'); return i < 0 ? id : id.substring(i + 1); }
 
@@ -86,7 +86,7 @@ public final class Kit {
             String id = e.getKey();
             if (kept(id) || Junk.is(id)) continue;
             double v = itemValue(id);
-            if (v > BLOCK) w += v * Math.max(0, e.getValue());
+            if (v > block()) w += v * Math.max(0, e.getValue());
         }
         return w;
     }
@@ -96,7 +96,7 @@ public final class Kit {
         if (dead == null) return 0;
         for (var e : dead.entrySet()) {
             // review: food eaten and blocks placed since are no drops to go back for
-            if (foodValue(e.getKey()) > 0 || itemValue(e.getKey()) <= BLOCK) continue;
+            if (foodValue(e.getKey()) > 0 || itemValue(e.getKey()) <= block()) continue;
             int have = now == null ? 0 : now.getOrDefault(e.getKey(), 0);
             w += itemValue(e.getKey()) * Math.max(0, e.getValue() - have);
         }
@@ -142,7 +142,7 @@ public final class Kit {
 
     /** The recover's value before the cost (at most 99), -1 when nothing to go back for. */
     public static double recoverValue(double missing, double pThere) {
-        if (missing < MIN_RECOVER || pThere <= 0) return -1;
+        if (missing < minRecover() || pThere <= 0) return -1;
         return Math.min(99, missing * pThere);
     }
 
@@ -157,15 +157,15 @@ public final class Kit {
     public static double soon(long dayTime, boolean nightFlag, boolean farTrip) {
         if (farTrip) return 1;
         if (dayTime < 0) return 0;
-        long t = dayTime % 24_000, from = Night.DUSK - STASH_LEAD;
-        if (t >= from && t < Night.DUSK) return (t - from) / (double) STASH_LEAD;
+        long t = dayTime % 24_000, from = Night.DUSK - stashLead();
+        if (t >= from && t < Night.DUSK) return (t - from) / (double) stashLead();
         if (t >= Night.DUSK && t < Night.BED_FROM) return 1;     // dusk: still daylight enough to walk home
         return 0;
     }
 
     /** loot x danger x soon, under the urgent line; -1 when there is nothing (or no reason) to stash. */
     public static double stashValue(double loot, double danger, double soon) {
-        if (loot < MIN_STASH || soon <= 0 || danger <= 0) return -1;
+        if (loot < minStash() || soon <= 0 || danger <= 0) return -1;
         return Math.min(Tuning.get("stashMax"), loot * danger * soon);
     }
 

@@ -42,8 +42,10 @@ import java.util.concurrent.ThreadLocalRandom;
 final class SightingsRuntime {
     private static final Logger LOG = LogUtils.getLogger();
     /** The pitfall cap (AA_ROUND3 5 (1)): at most this many cave rays a pass. */
-    static final int CAVE_RAYS = 16, ANIMAL_CANDIDATES = 16, TREE_RAYS = 8;
-    static final long UNDERGROUND_LOG_MS = 5 * 60_000;
+    static final int CAVE_RAYS = 16; // structural
+    static final int ANIMAL_CANDIDATES = 16; // structural
+    static final int TREE_RAYS = 8; // structural
+    static final long UNDERGROUND_LOG_MS = 5 * 60_000; // structural
 
     private long treeRays, trees, caveRays, caves, animalRays, herds, lastUnderLog = -UNDERGROUND_LOG_MS;
     private double lastX = Double.NaN, lastZ;
@@ -82,7 +84,7 @@ final class SightingsRuntime {
             // a direction in the cone: yaw +-50, pitch from the look down to 60 below it (holes lie below the eyes)
             float ry = yaw + (float) rnd.nextDouble(-50, 50), rp = Math.max(-30f, Math.min(89f, pitch + (float) rnd.nextDouble(-20, 60)));
             Vec3 dir = Vec3.directionFromRotation(rp, ry);
-            Vec3 to = eye.add(dir.scale(Seen.RANGE));
+            Vec3 to = eye.add(dir.scale(Seen.range()));
             BlockHitResult r = level.clip(new ClipContext(eye, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.ANY, p));
             if (r.getType() != HitResult.Type.BLOCK) continue;
             BlockPos a = r.getBlockPos().relative(r.getDirection());
@@ -126,7 +128,7 @@ final class SightingsRuntime {
             if (!budget.take(now)) return;
             treeRays++;
             float ry = yaw + (float) rnd.nextDouble(-50, 50), rp = Math.max(-60f, Math.min(60f, pitch + (float) rnd.nextDouble(-25, 15)));
-            Vec3 to = eye.add(Vec3.directionFromRotation(rp, ry).scale(Seen.RANGE));
+            Vec3 to = eye.add(Vec3.directionFromRotation(rp, ry).scale(Seen.range()));
             BlockHitResult r = level.clip(new ClipContext(eye, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
             if (r.getType() != HitResult.Type.BLOCK) continue;
             BlockPos hit = r.getBlockPos();
@@ -153,11 +155,11 @@ final class SightingsRuntime {
 
     private void animals(ClientLevel level, LocalPlayer p, Sightings sg, String dim, Seen.Budget budget, long now, boolean roofed) {
         Vec3 eye = p.getEyePosition(), look = p.getLookAngle();
-        List<Animal> near = new ArrayList<>(level.getEntitiesOfClass(Animal.class, p.getBoundingBox().inflate(Sightings.ANIMAL_RANGE)));
+        List<Animal> near = new ArrayList<>(level.getEntitiesOfClass(Animal.class, p.getBoundingBox().inflate(Sightings.animalRange())));
         near.sort((x, y) -> Double.compare(x.distanceToSqr(p), y.distanceToSqr(p)));
         long game = level.getGameTime() * 50;
         Map<String, List<int[]>> counted = new HashMap<>();
-        if (confirmed.size() > 512) confirmed.values().removeIf(t -> now - t > Sightings.CONFIRM_MAX_MS);
+        if (confirmed.size() > 512) confirmed.values().removeIf(t -> now - t > Sightings.confirmMaxMs());
         int tried = 0;
         for (Animal e : near) {
             if (tried >= ANIMAL_CANDIDATES) break;
@@ -174,7 +176,7 @@ final class SightingsRuntime {
             // confirm-twice per entity (the first glance waits; a sighting needs the same animal 2 s later); once
             // confirmed it counts on every pass it is in view, so a herd's count does not flicker
             Long was = confirmed.get(e.getId());
-            if (was == null || now - was > Sightings.CONFIRM_MAX_MS) {
+            if (was == null || now - was > Sightings.confirmMaxMs()) {
                 if (!sg.confirm((3L << 60) ^ e.getId(), now)) continue;
             }
             confirmed.put(e.getId(), now);
@@ -205,7 +207,7 @@ final class SightingsRuntime {
             int[] into = null;
             for (int[] h : out) {
                 long dx = h[0] - c[0], dz = h[2] - c[2];
-                if (dx * dx + dz * dz <= (long) Sightings.MERGE * Sightings.MERGE) { into = h; break; }
+                if (dx * dx + dz * dz <= (long) Sightings.merge() * Sightings.merge()) { into = h; break; }
             }
             if (into != null) into[3]++;
             else out.add(new int[]{c[0], c[1], c[2], 1});

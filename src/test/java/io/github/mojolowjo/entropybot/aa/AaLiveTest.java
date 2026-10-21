@@ -31,7 +31,7 @@ class AaLiveTest {
 
     @Test
     void theTreeIsTheBuiltTreeNodeForNode() {
-        JsonObject o = AaLive.json(tree, bb, false, AaLive.SWITCHES);
+        JsonObject o = AaLive.json(tree, bb, false, AaLive.switchesV());
         List<String> got = new ArrayList<>(), want = new ArrayList<>();
         ids(o.getAsJsonObject("tree"), got);
         for (Node n : tree.nodes()) want.add(n.id);
@@ -94,7 +94,7 @@ class AaLiveTest {
             clock.advance(1000);
         }
         var kept = tree.brain.lastPicks();
-        assertTrue(kept.size() <= io.github.mojolowjo.entropybot.aa.brain.Brain.PICKS_KEPT);
+        assertTrue(kept.size() <= io.github.mojolowjo.entropybot.aa.brain.Brain.picksKept());
         JsonArray pk = AaLive.json(tree, bb, true, 5).getAsJsonArray("picks");
         assertEquals(kept.size(), pk.size());
         for (int i = 1; i < pk.size(); i++)

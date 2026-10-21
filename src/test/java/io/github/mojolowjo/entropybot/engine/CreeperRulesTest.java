@@ -273,9 +273,9 @@ class CreeperRulesTest {
     void givesUpAfterChargesWithoutDamage() {
         Cycle c = new Cycle();
         long t = 0;
-        for (int i = 0; i < CreeperRules.MAX_MISSES; i++) {
+        for (int i = 0; i < CreeperRules.maxMisses(); i++) {
             assertEquals(Act.CHARGE, c.step(t, obs(6, -1, 0, 1, 5)));
-            t += CreeperRules.CHARGE_TICKS;
+            t += CreeperRules.chargeTicks();
             assertEquals(Act.WAIT, c.step(t, obs(6, -1, 0, 1, 5)));    // never arrived
             t++;
         }
@@ -284,10 +284,10 @@ class CreeperRulesTest {
         // damage resets the count
         Cycle d = new Cycle();
         t = 0;
-        for (int i = 0; i < CreeperRules.MAX_MISSES + 2; i++) {
+        for (int i = 0; i < CreeperRules.maxMisses() + 2; i++) {
             assertEquals(Act.CHARGE, d.step(t, obs(6, -1, 0, 1, 5)));
             d.damaged();
-            t += CreeperRules.CHARGE_TICKS;
+            t += CreeperRules.chargeTicks();
             d.step(t, obs(6, -1, 0, 1, 5));
             t++;
         }

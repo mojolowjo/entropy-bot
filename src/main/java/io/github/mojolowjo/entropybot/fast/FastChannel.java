@@ -22,7 +22,8 @@ import java.util.function.Consumer;
 public final class FastChannel {
     public static final String CONFIG = "fast.json", UP = "fast-server.json";
     /** How often the config is looked at while the server is off, and the "up" file touched while it is on. */
-    public static final int CHECK_TICKS = 100, BEAT_TICKS = 200;
+    public static final int CHECK_TICKS = 100; // structural
+    public static final int BEAT_TICKS = 200; // structural
 
     private final Path dir;
     private final FastServer.Handler handler;

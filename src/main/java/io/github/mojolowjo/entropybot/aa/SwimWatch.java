@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * aa-water (to-do 1f): in the water with no progress for {@link #STALL_MS} = the running option failed (the AA runtime
  * ends the step with {@link #REASON}, IronOptions counts it against the option in the Failures record and switches);
@@ -7,7 +9,7 @@ package io.github.mojolowjo.entropybot.aa;
  * counter is AaRuntime's (step, job status, bag gain, nearer the goal, 8 blocks moved). Pure (JUnit: SwimWatchTest).
  */
 public final class SwimWatch {
-    public static final long STALL_MS = 20_000;
+    public static long stallMs() { return Tuning.l("swimWatch.stallMs"); }
     public static final String REASON = "no progress while swimming 20 s";
 
     private boolean wet;
@@ -22,7 +24,7 @@ public final class SwimWatch {
         if (!inWater || !running) { since = -1; progress = progressNow; return Event.NONE; }
         if (since < 0 || progressNow != progress) { since = now; progress = progressNow; }
         if (entered) return Event.ENTERED;
-        if (now - since >= STALL_MS) { since = now; return Event.STALLED; }
+        if (now - since >= stallMs()) { since = now; return Event.STALLED; }
         return Event.NONE;
     }
 }

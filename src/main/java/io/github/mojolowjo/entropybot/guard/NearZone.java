@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * 0.21.2 (the owner, 2026-10-06: "anywhere near me should be fine for the bot to work near, like a radius of 16 blocks"):
  * the moving work zone around the owner. While it is on and the owner's spot is known (in view, else the companion's
@@ -13,14 +15,16 @@ package io.github.mojolowjo.entropybot.guard;
  */
 public final class NearZone {
     public static final String NAME = "near-me";
-    public static final int DEFAULT_R = 16, MIN_R = 4, MAX_R = 64;
+    public static int defaultR() { return Tuning.i("nearZone.defaultR"); }
+    public static int minR() { return Tuning.i("nearZone.minR"); }
+    public static int maxR() { return Tuning.i("nearZone.maxR"); }
     /** Blocks below and above the owner's feet the zone reaches. */
-    public static final int Y_HALF = 16;
+    public static int yHalf() { return Tuning.i("nearZone.yHalf"); }
     /** Owner's spot unknown this long while the zone is on (and the owner online): a {@code check} finding (never whispered). */
-    public static final long UNKNOWN_NOTE_MS = 10 * 60_000L;
+    public static long unknownNoteMs() { return Tuning.l("nearZone.unknownNoteMs"); }
 
     private volatile boolean on = true;
-    private volatile int r = DEFAULT_R;
+    private volatile int r = defaultR();
     private volatile Box box;
     private volatile long lastFixMs = -1, unknownSinceMs = -1;
     private volatile String lastSource = null;
@@ -36,7 +40,7 @@ public final class NearZone {
 
     /** Bounds 4..64; anything else is refused (null = fine, else the reason). */
     public static String checkRadius(int r) {
-        return r < MIN_R || r > MAX_R ? "the near-me radius is " + MIN_R + ".." + MAX_R + " blocks" : null;
+        return r < minR() || r > maxR() ? "the near-me radius is " + minR() + ".." + maxR() + " blocks" : null;
     }
 
     public synchronized void set(boolean on, int r) {
@@ -51,7 +55,7 @@ public final class NearZone {
      */
     public static Box boxAt(String dim, int x, int y, int z, int r) {
         if (dim == null || GuardCore.DENIED_DIMS.contains(dim)) return null;
-        return Box.round(NAME, dim, x, z, r, y - Y_HALF, y + Y_HALF);
+        return Box.round(NAME, dim, x, z, r, y - yHalf(), y + yHalf());
     }
 
     /** True when the spot lies in the zone around the owner (null owner = unknown = false). */
@@ -105,7 +109,7 @@ public final class NearZone {
         Box b = box;
         String where;
         if (b != null) {
-            where = "around you at " + b.cx + " " + (b.y1 + Y_HALF) + " " + b.cz + (lastSource == null ? "" : " via " + lastSource);
+            where = "around you at " + b.cx + " " + (b.y1 + yHalf()) + " " + b.cz + (lastSource == null ? "" : " via " + lastSource);
         } else {
             long u = unknownForMs(nowMs);
             where = "I don't know where you are" + (u > 0 ? " (" + u / 1000 + " s)" : "") + " - the zone is off until I see you or your companion";

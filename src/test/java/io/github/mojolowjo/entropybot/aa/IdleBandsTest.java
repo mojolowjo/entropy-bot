@@ -43,7 +43,7 @@ class IdleBandsTest {
         assertEquals(-1, s.score(in)[TaskKind.STOCK_IRON.ordinal()], "no stone pickaxe: no iron");
         in.night = true;
         in.torches = 8;
-        assertEquals(AaScorer.LIGHT_SCORE, s.score(in)[TaskKind.LIGHT.ordinal()]);
+        assertEquals(AaScorer.lightScore(), s.score(in)[TaskKind.LIGHT.ordinal()]);
     }
 
     @Test
@@ -75,6 +75,6 @@ class IdleBandsTest {
         assertFalse(bb.in.litTonight);
         bb.in.night = true;
         assertEquals(Status.RUNNING, light.tick(bb), "the next night lights again");
-        assertTrue(Cooldown.NO_RUN_MS <= 30_000);
+        assertTrue(Cooldown.noRunMsV() <= 30_000);
     }
 }

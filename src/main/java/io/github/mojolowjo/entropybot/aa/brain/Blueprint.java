@@ -28,7 +28,8 @@ public final class Blueprint {
 
     public static final String FACT = "aa.builds";
     /** Largest schematic AA takes (cells, air included): the world scan runs on the client tick. */
-    public static final int MAX_CELLS = 128_000, MAX_FAILS = 3;
+    public static final int MAX_CELLS = 128_000; // structural
+    public static int maxFails() { return Tuning.i("blueprint.maxFails"); }
 
     /** Blocks no item places (or that Baritone cannot place): left out of the list and the progress, said once. */
     static final Set<String> SKIP = Set.of("air", "cave_air", "void_air", "water", "lava", "bubble_column", "fire", "soul_fire",
@@ -162,13 +163,13 @@ public final class Blueprint {
     /** Parked: another dimension, or not scanned yet (the adapter scans every 10 s). */
     public static String blocked(Blackboard bb, Build b) {
         if (b.dim != null && bb.in.dimension != null && !b.dim.equals(bb.in.dimension)) return b.name + " is in " + b.dim + "; I am not";
-        if (b.fails >= MAX_FAILS) return "placed nothing in " + b.fails + " runs" + (b.lastStop != null ? " (" + b.lastStop + ")" : "") + "; aa build " + b.name + " again to retry";
+        if (b.fails >= maxFails()) return "placed nothing in " + b.fails + " runs" + (b.lastStop != null ? " (" + b.lastStop + ")" : "") + "; aa build " + b.name + " again to retry";
         return b.scan == null ? "not scanned yet" : null;
     }
 
     public static double score(Blackboard bb, Build b) {
         if (b.scan != null && b.scan.done()) return -1;
-        return Math.max(1, Personality.of(bb).get("ownerBase") + b.prio * Goals.HIGH);
+        return Math.max(1, Personality.of(bb).get("ownerBase") + b.prio * Goals.high());
     }
 
     /**

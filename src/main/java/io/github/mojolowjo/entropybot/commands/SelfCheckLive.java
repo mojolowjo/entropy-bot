@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -33,7 +35,7 @@ import java.util.Set;
  */
 public final class SelfCheckLive implements ConfirmGate.Facts {
     private static final Logger LOG = LoggerFactory.getLogger("entropybot");
-    public static final long IDLE_EVERY_MS = 30 * 60_000L;
+    public static long idleEveryMs() { return Tuning.l("selfCheckLive.idleEveryMs"); }
 
     private final Commands c;
     private long lastIdleCheck;
@@ -123,7 +125,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
                 boolean sky = me.level().canSeeSky(new net.minecraft.core.BlockPos(x, y + 1, z));
                 Clearing.LiveWorld lw = new Clearing.LiveWorld();
                 lw.set(me);
-                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.HINT_MAX
+                if (ClimbPlan.inHole(y, surface, sky) && ClimbPlan.depth(y, surface) <= ClimbPlan.hintMax()
                         && !ClimbPlan.indoors(lw, x, y, z, ClimbPlan.depth(y, surface))) f.add(new SelfCheck.Finding("hole", "I'm in a hole (rim " + ClimbPlan.depth(y, surface) + " above me)", "climb"));
                 com.google.gson.JsonObject camp = Core.INSTANCE.knowledge.places().get("camp");
                 if (camp != null && camp.has("x") && Jobs.dimOf(camp).equals(io.github.mojolowjo.entropybot.guard.Guard.dimOf(me.level()))) {
@@ -188,7 +190,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     public void idleTick(LocalPlayer p, boolean idle, long now) {
         // 0.21.2: look once a minute; the whisper itself is rate-limited to one per 30 min across restarts
         // (SelfCheck.idle and commands.json selfCheck.lastWhisper), one line, once per cause
-        if (!idle || p == null || now - lastIdleCheck < IDLE_LOOK_MS) return;
+        if (!idle || p == null || now - lastIdleCheck < idleLookMs()) return;
         if (!ownerOnline()) return;                       // nobody to tell: keep the keys, look again later
         lastIdleCheck = now;
         try {
@@ -213,7 +215,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
     }
 
     /** 0.21.2: the idle check looks this often (it whispers at most every {@link SelfCheck#WHISPER_EVERY_MS}). */
-    public static final long IDLE_LOOK_MS = 60_000L;
+    public static long idleLookMs() { return Tuning.l("selfCheckLive.idleLookMs"); }
     private long idleWhispers, idleErrors;
 
     /** When the last self-check whisper went out (commands.json selfCheck.lastWhisper), -1 = never. */

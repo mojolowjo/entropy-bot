@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * "Teleport home first" (the sim's tp run, B7e: pure, JUnit tests it). A walk to a spot near home (the /home landing)
  * starts with the server's /home when the bot is far from it: in another dimension, more than 40 blocks across, or
@@ -9,35 +11,35 @@ public final class TpRules {
     private TpRules() {}
 
     /** The destination counts as "near home" within this many blocks of the landing. */
-    public static final int HOME_R = 24;
+    public static int homeR() { return Tuning.i("tpRules.homeR"); }
     /** Far: more than this many blocks across (x and z) from the destination... */
-    public static final int ACROSS = 40;
+    public static int across() { return Tuning.i("tpRules.across"); }
     /** ...or more than this many levels up or down. */
-    public static final int LEVELS = 10;
+    public static int levels() { return Tuning.i("tpRules.levels"); }
     /** No new /home this many ticks after one that didn't move the bot (1 minute). */
-    public static final long RETRY_TICKS = 20 * 60;
+    public static long retryTicks() { return Tuning.l("tpRules.retryTicks"); }
     /** A /home that hasn't moved the bot after this many ticks failed (10 s). */
-    public static final long WAIT_TICKS = 200;
+    public static long waitTicks() { return Tuning.l("tpRules.waitTicks"); }
     /** The bot "jumped" when it is more than this far (squared: 8 blocks) from where it was at the last check. */
-    public static final long JUMP_SQ = 64;
+    public static long jumpSq() { return Tuning.l("tpRules.jumpSq"); }
 
     /**
      * Worth a /home on the way to dest? home/homeDim: where /home lands (null: none known); destDim null = home's
      * dimension; me/botDim: where the bot is; tick and failedAt: the clock and the last failed /home.
      */
     public static boolean worth(int[] home, String homeDim, int[] dest, String destDim, int[] me, String botDim, long tick, long failedAt) {
-        if (home == null || dest == null || tick - failedAt < RETRY_TICKS) return false;
+        if (home == null || dest == null || tick - failedAt < retryTicks()) return false;
         String hd = homeDim == null ? "minecraft:overworld" : homeDim;
-        if (!(destDim == null ? hd : destDim).equals(hd) || distSq(dest, home) > (long) HOME_R * HOME_R) return false;
+        if (!(destDim == null ? hd : destDim).equals(hd) || distSq(dest, home) > (long) homeR() * homeR()) return false;
         if (!botDim.equals(hd)) return true;
         long dx = me[0] - dest[0], dz = me[2] - dest[2];
-        return dx * dx + dz * dz > (long) ACROSS * ACROSS || Math.abs(me[1] - dest[1]) > LEVELS;
+        return dx * dx + dz * dz > (long) across() * across() || Math.abs(me[1] - dest[1]) > levels();
     }
 
     /** After a /home: "ok" when the bot jumped (another dimension, or 8+ blocks), null while waiting, "failed" after WAIT_TICKS. */
     public static String result(int[] last, String lastDim, int[] me, String dim, long sentAt, long tick) {
-        if (!dim.equals(lastDim) || distSq(me, last) > JUMP_SQ) return "ok";
-        return tick - sentAt < WAIT_TICKS ? null : "failed";
+        if (!dim.equals(lastDim) || distSq(me, last) > jumpSq()) return "ok";
+        return tick - sentAt < waitTicks() ? null : "failed";
     }
 
     static long distSq(int[] a, int[] b) {

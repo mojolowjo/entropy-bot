@@ -56,7 +56,7 @@ class PlannerTest {
                 bed = index(r, "craft white_bed 1");
         assertTrue(cut == 0 && planks > cut && table > planks && place > table && bed > place, r.costed());
         assertEquals(bed, r.steps().size() - 1, r.costed());
-        assertTrue(r.nodes() < Planner.MAX_NODES);
+        assertTrue(r.nodes() < Planner.maxNodesV());
     }
 
     @Test
@@ -116,7 +116,7 @@ class PlannerTest {
         assertTrue(index(r, "mine strip iron") > index(r, "craft stone_pickaxe"), r.costed());
         assertTrue(index(r, "smelt iron_ingot") > index(r, "mine strip iron"), r.costed());
         assertTrue(index(r, "craft iron_pickaxe") > index(r, "smelt iron_ingot"), r.costed());
-        assertTrue(r.steps().size() <= Planner.MAX_STEPS);
+        assertTrue(r.steps().size() <= Planner.maxStepsV());
     }
 
     @Test
@@ -163,7 +163,7 @@ class PlannerTest {
     @Test
     void documentShapeAndSize() {
         String table = ActionTable.table().toString();
-        assertTrue(table.length() < ActionTable.BUDGET, "size " + table.length());
+        assertTrue(table.length() < ActionTable.budget(), "size " + table.length());
         JsonObject state = new JsonObject();
         state.addProperty("stage", "wood");
         JsonObject d = JsonParser.parseString(ActionTable.document(state).toString()).getAsJsonObject();

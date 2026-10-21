@@ -17,11 +17,13 @@ package io.github.mojolowjo.entropybot.watchview;
  */
 public final class WorldVeil {
     /** The background behind the shell: a dark slate blue (the sky is not drawn; it would be "the world" too). */
-    public static final float BG_R = 0.09f, BG_G = 0.11f, BG_B = 0.16f;
+    public static final float BG_R = 0.09f; // structural
+    public static final float BG_G = 0.11f; // structural
+    public static final float BG_B = 0.16f; // structural
     /** Mobs and players further than this from the bot are not drawn (blocks). */
-    public static final double ENTITY_RADIUS = 48;
+    public static final double ENTITY_RADIUS = 48; // structural
     /** Frames in a row without the veil after which the view turns itself off. */
-    public static final int MISSES_TO_STOP = 3;
+    public static final int MISSES_TO_STOP = 3; // structural
 
     /** What {@link Guard#post} asks the caller to do at the end of a frame. */
     public enum Verdict { NOTHING, CLEAR, CLEAR_AND_STOP }

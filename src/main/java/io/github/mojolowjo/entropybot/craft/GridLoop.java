@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.gui.GuiCore;
 import io.github.mojolowjo.entropybot.gui.GuiMenu;
 
@@ -22,11 +24,12 @@ import static io.github.mojolowjo.entropybot.craft.CraftPlanner.shortId;
  */
 public final class GridLoop {
     /** A stack per cell at most (and never more than the item's own stack size). */
-    public static final int MAX_PER_CELL = 64;
+    public static int maxPerCell() { return Tuning.i("gridLoop.maxPerCell"); }
     /** Ticks after a clear before the next fill (the cleared items settle in the bag). */
-    public static final int CLEAR_TICKS = 4;
+    public static int clearTicks() { return Tuning.i("gridLoop.clearTicks"); }
     /** Ticks after the shift-click before the batch is counted when it all arrived; at most {@link #SETTLE_MAX}. */
-    public static final int SETTLE_MIN = 2, SETTLE_MAX = 40;
+    public static int settleMin() { return Tuning.i("gridLoop.settleMin"); }
+    public static int settleMax() { return Tuning.i("gridLoop.settleMax"); }
 
     public enum State { WAIT, DONE, FAIL }
 
@@ -113,7 +116,7 @@ public final class GridLoop {
             stage = "fill";
         }
         if (stage.equals("cleared")) {
-            if (now - stageTick < CLEAR_TICKS) return Out.WAIT;
+            if (now - stageTick < clearTicks()) return Out.WAIT;
             // what the clear couldn't move back is still in the grid: the bag is full (never fill on top of it)
             if (!gridEmpty(m, size)) {
                 stage = null;
@@ -124,7 +127,7 @@ public final class GridLoop {
         if (stage.equals("fill")) return fill(m, items, now);
         if (stage.equals("result")) {
             if (m.id(0) == null) {
-                if (now - stageTick < CraftJob.RESULT_WAIT_TICKS) return Out.WAIT;
+                if (now - stageTick < CraftJob.resultWaitTicks()) return Out.WAIT;
                 clear(m, size);
                 stage = null;
                 return Out.fail(Why.NO_RESULT, "the grid did not make " + shortId(recipe.output()));
@@ -142,7 +145,7 @@ public final class GridLoop {
     private Out settle(GuiMenu m, boolean ours, Items items, long now) {
         int gained = bag(m).getOrDefault(recipe.output(), 0) - before;
         long in = now - stageTick;
-        if (in < SETTLE_MIN || (gained < batch * recipe.outCount() && in < SETTLE_MAX)) return Out.WAIT;
+        if (in < settleMin() || (gained < batch * recipe.outCount() && in < settleMax())) return Out.WAIT;
         stage = null;
         if (gained <= 0) {
             if (ours) clear(m, size);
@@ -169,7 +172,7 @@ public final class GridLoop {
         if (!lay.ok()) return Out.fail(Why.NO_LAYOUT, lay.error() + (lay.missing() != null ? " (" + lay.missing() + ")" : ""));
         Map<String, Integer> per = new LinkedHashMap<>();
         for (String id : lay.slots().values()) per.merge(id, 1, Integer::sum);
-        int k = MAX_PER_CELL;
+        int k = maxPerCell();
         for (Map.Entry<String, Integer> e : per.entrySet()) {
             // package E: one catalyst in its cell serves the whole batch (the layout found one per cell in the bag)
             if (items.catalyst(e.getKey())) continue;

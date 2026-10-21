@@ -21,7 +21,7 @@ public final class WatchSettings {
     /** The values; the defaults are distance 4, tunnel height 4, dollhouse on, steer on, turn on at 45 degrees a second. */
     public record Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate,
                          String cutMode, double coneRadius, double outlineMargin, double shadowMargin) {
-        public static final Values DEFAULTS = new Values(4f, 4, true, true, true, SteerRules.TURN_RATE_DEFAULT);
+        public static final Values DEFAULTS = new Values(4f, 4, true, true, true, SteerRules.turnRateDefault());
 
         /** The values before the cut modes (0.19.0): the cut at its defaults (shadow, margin 0.5; cone radius 2.5; outline margin 0.6). */
         public Values(float distance, double height, boolean dollhouse, boolean steer, boolean turn, float turnRate) {
@@ -34,7 +34,7 @@ public final class WatchSettings {
 
         /** The values before watch turn (2026-10-05): the turn at its defaults. */
         public Values(float distance, double height, boolean dollhouse, boolean steer) {
-            this(distance, height, dollhouse, steer, true, SteerRules.TURN_RATE_DEFAULT);
+            this(distance, height, dollhouse, steer, true, SteerRules.turnRateDefault());
         }
     }
 
@@ -105,7 +105,7 @@ public final class WatchSettings {
         try {
             if (o.has("turnRate")) {
                 float v = o.get("turnRate").getAsFloat();
-                if (v >= SteerRules.TURN_RATE_MIN && v <= SteerRules.TURN_RATE_MAX) turnRate = v;
+                if (v >= SteerRules.turnRateMin() && v <= SteerRules.turnRateMax()) turnRate = v;
                 else bad.append(" turnRate ").append(v).append(" (5-180)");
             }
         } catch (RuntimeException e) {

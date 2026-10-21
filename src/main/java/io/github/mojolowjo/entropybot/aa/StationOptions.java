@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.Site;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 
@@ -93,7 +95,7 @@ public final class StationOptions {
                 if (f.pickTier() < 1) dropped.add("gather + craft furnace: " + lack + " cobblestone short, no pickaxe");
                 else {
                     add(rows, dropped, m, now, Options.typed("gather + craft furnace", "craft", join(List.of(new Step.Collect(k.material, lack), craft), place),
-                            lack * CoalOptions.MINE_ORE + craftPlace, lack + " cobblestone short x " + Price.r(CoalOptions.MINE_ORE) + ", craft + place",
+                            lack * CoalOptions.mineOre() + craftPlace, lack + " cobblestone short x " + Price.r(CoalOptions.mineOre()) + ", craft + place",
                             "gather craft furnace", m), f);
                 }
             } else if (f.wood() == null) dropped.add("cut + craft " + item + ": " + lack + " planks short, no wood way (" + (f.woodWhy() == null ? "no wood facts" : f.woodWhy()) + ")");

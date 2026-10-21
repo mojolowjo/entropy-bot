@@ -106,7 +106,7 @@ public final class PolicyRuntime {
             boolean wet = pl != null && pl.isInWater();
             // review: one snapshot, one volatile write (the pathfinder thread never sees a torn mix)
             body = new Where(wet, 0, pl == null ? 300 : pl.getAirSupply(),
-                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.DEFAULT_TIER : pickTier(pl));
+                    pl == null || !wet ? 0 : waterAbove(pl.level(), pl.blockPosition()), pl == null ? Integer.MIN_VALUE : pl.blockPosition().getY(), pl == null ? DrownRisk.defaultTier() : pickTier(pl));
             inWater = wet;
             Policy p = core.policy();
             areasNow = p;                                                   // AREAS review 1: for the built-near rule
@@ -201,7 +201,7 @@ public final class PolicyRuntime {
     /** Keys "dim x y z" of cells the bot broke itself (the ledger at load, every job break since). Read on the pathfinder thread. */
     private final java.util.Set<String> dug = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** More than this and the set starts over from the ledger (a bound, not a policy; the ledger itself is capped). */
-    static final int DUG_CAP = 8192;
+    static final int DUG_CAP = 8192; // structural
 
     /** A new world's ledger: the dug set starts over with its entries' keys (null: nothing). */
     public void resetDug(java.util.Collection<String> keys) {
@@ -311,16 +311,16 @@ public final class PolicyRuntime {
         }
         // aa-water (live water1, drowned): a flooded cave's water ends at a stone ceiling, not at air: no straight
         // swim up to breathe there, so it counts as the deepest
-        return n > 0 && lv.getBlockState(m).isCollisionShapeFullBlock(lv, m) ? DrownRisk.SURFACE_SCAN : n;      // a lily pad or thin cap is not a ceiling
+        return n > 0 && lv.getBlockState(m).isCollisionShapeFullBlock(lv, m) ? DrownRisk.surfaceScan() : n;      // a lily pad or thin cap is not a ceiling
     }
 
     /** aa-water (pathfinder thread safe): water cells from (x, y, z) up through the snapshot (at most DrownRisk.SURFACE_SCAN). */
     public static int waterColumn(StateAt at, int x, int y, int z) {
         int n = 0;
-        while (n < DrownRisk.SURFACE_SCAN) {
+        while (n < DrownRisk.surfaceScan()) {
             BlockState st = at.at(x, y + n, z);
             if (st == null || fluidOf(st) != Fluid.WATER) {
-                if (n > 0 && (st == null || st.isSolid())) return DrownRisk.SURFACE_SCAN;     // a ceiling (or unknown: fail closed), not air
+                if (n > 0 && (st == null || st.isSolid())) return DrownRisk.surfaceScan();     // a ceiling (or unknown: fail closed), not air
                 break;
             }
             n++;
@@ -426,7 +426,7 @@ public final class PolicyRuntime {
         if (s == null) sb.append(" | no snapshot yet");
         else sb.append(" | outside: ").append(s.outside().describe()).append(" | areas ").append(s.policy().areas.size()).append(", protect ").append(s.policy().protect.size())
                 .append(" | travel cap ").append(s.travelCap()).append(" (this walk: ").append(travelBreaks).append(")")
-                .append(" | dug cells ").append(dug.size()).append(" (refill x").append(BreakPolicy.fmt(BreakPolicy.Costs.REFILL)).append(")");
+                .append(" | dug cells ").append(dug.size()).append(" (refill x").append(BreakPolicy.fmt(BreakPolicy.Costs.refill())).append(")");
         sb.append(" | ").append(stats.summary());
         return sb.toString();
     }

@@ -17,7 +17,7 @@ import java.util.Set;
  * <p>Plain Java, JUnit, game thread only. Loader notes: none.
  */
 public final class PassSchedule {
-    public static final long MISSED_DELAY_MS = 1000;
+    public static final long MISSED_DELAY_MS = 1000; // structural
 
     public enum Why { LOAD, RESEND, MISSED, RETRY }
 

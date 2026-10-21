@@ -93,7 +93,7 @@ public final class DebugVerbs {
                 return "ok: creeper probe " + (on ? "on: a log line each tick a creeper is within 10" : "off");
             }
             case "events" -> {
-                int n = DebugRules.optInt(w, 1, DebugRules.EVENTS_DEFAULT, 1, DebugRules.EVENTS_MAX, "usage: debug events [n]");
+                int n = DebugRules.optInt(w, 1, DebugRules.eventsDefault(), 1, DebugRules.eventsMax(), "usage: debug events [n]");
                 return core.events.since(Math.max(0, core.events.lastSeq() - n), n);
             }
             case "baritone" -> { return baritone(); }
@@ -294,11 +294,11 @@ public final class DebugVerbs {
     static String changes(ClientLevel level, Recorder rec, List<String> w, long now, ZoneId zone) {
         String usage = "usage: debug changes x y z [r] [since <time>]";
         int[] c = DebugRules.ints(w, 1, 3, usage);
-        int r = DebugRules.CHANGES_R_DEFAULT;
-        if (w.size() > 4 && !w.get(4).equalsIgnoreCase("since")) r = DebugRules.optInt(w, 4, DebugRules.CHANGES_R_DEFAULT, 0, DebugRules.CHANGES_R_MAX, usage);
+        int r = DebugRules.changesRDefault();
+        if (w.size() > 4 && !w.get(4).equalsIgnoreCase("since")) r = DebugRules.optInt(w, 4, DebugRules.changesRDefault(), 0, DebugRules.changesRMax(), usage);
         String sinceWord = DebugRules.after(w, "since");
         long since = sinceWord == null ? 0 : DebugRules.time(sinceWord, now, zone);
-        List<Recorder.Change> list = rec.changes(Guard.dimOf(level), c[0], c[1], c[2], r, since, DebugRules.CHANGES_MAX);
+        List<Recorder.Change> list = rec.changes(Guard.dimOf(level), c[0], c[1], c[2], r, since, DebugRules.changesMax());
         String where = "within " + r + " of " + c[0] + " " + c[1] + " " + c[2] + (sinceWord == null ? "" : " since " + DebugRules.timeText(since, now, zone));
         if (list == null || list.isEmpty()) return "no changes recorded " + where + (rec.enabled() ? "" : " (" + rec.summary() + ")");
         List<String> out = new ArrayList<>();
@@ -309,8 +309,8 @@ public final class DebugVerbs {
     }
 
     static String trail(Recorder rec, List<String> w, long now, ZoneId zone) {
-        int min = DebugRules.optInt(w, 1, DebugRules.TRAIL_MINUTES_DEFAULT, 1, DebugRules.TRAIL_MINUTES_MAX, "usage: debug trail [minutes]");
-        List<Recorder.TrailPoint> list = rec.trail(now - min * 60_000L, DebugRules.TRAIL_MAX);
+        int min = DebugRules.optInt(w, 1, DebugRules.trailMinutesDefault(), 1, DebugRules.trailMinutesMax(), "usage: debug trail [minutes]");
+        List<Recorder.TrailPoint> list = rec.trail(now - min * 60_000L, DebugRules.trailMax());
         if (list == null || list.isEmpty()) return "no trail in the last " + min + " minutes" + (rec.enabled() ? "" : " (" + rec.summary() + ")");
         List<String> out = new ArrayList<>();
         for (Recorder.TrailPoint t : list) {
@@ -325,7 +325,7 @@ public final class DebugVerbs {
             String text = rec.incident(n);
             return text != null ? text : "no incident " + n + (rec.enabled() ? " (debug incident lists them)" : " (" + rec.summary() + ")");
         }
-        List<Recorder.Incident> list = rec.incidents(DebugRules.INCIDENTS_LIST);
+        List<Recorder.Incident> list = rec.incidents(DebugRules.incidentsList());
         if (list == null || list.isEmpty()) return "no incidents kept" + (rec.enabled() ? "" : " (" + rec.summary() + ")");
         List<String> out = new ArrayList<>();
         for (Recorder.Incident i : list) out.add("#" + i.n() + " " + DebugRules.timeText(i.atMs(), now, zone) + " " + i.reason() + " (" + i.file() + ")");

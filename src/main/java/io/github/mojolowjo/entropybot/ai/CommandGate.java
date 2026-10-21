@@ -29,7 +29,7 @@ public final class CommandGate {
     public static final String ALLOWED_HELP = "aa want <thing> [n] [high|low], aa drop <thing>, aa status, aa why, status";
 
     private static final Pattern CONTROL = Pattern.compile("[\\p{Cntrl}&&[^\\t]]");
-    public static final int MAX_LEN = 300;
+    public static final int MAX_LEN = 300; // structural
 
     private final Set<String> extraAllow = new HashSet<>(), extraDeny = new HashSet<>();
 

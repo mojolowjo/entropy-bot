@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -25,8 +27,10 @@ public final class KelpRules {
     public static final String KELP = "minecraft:kelp", DRIED = "minecraft:dried_kelp";
     /** Block ids that form a column. */
     public static final List<String> BLOCKS = List.of("minecraft:kelp", "minecraft:kelp_plant");
-    public static final int RANGE = 24;
-    public static final int DEFAULT_N = 8, DEFAULT_MINUTES = 10, MAX_MINUTES = 30;
+    public static int range() { return Tuning.i("kelpRules.range"); }
+    public static int defaultN() { return Tuning.i("kelpRules.defaultN"); }
+    public static int defaultMinutes() { return Tuning.i("kelpRules.defaultMinutes"); }
+    public static int maxMinutes() { return Tuning.i("kelpRules.maxMinutes"); }
 
     /** cook: smelt the kelp into dried kelp at the end (the word cook after the numbers). */
     public record Parsed(int n, int minutes, boolean cook) {}
@@ -46,7 +50,7 @@ public final class KelpRules {
     public static Parsed parse(String rest) {
         String[] w = words(rest);
         if (w.length == 0 || !w[0].equals("kelp")) return null;
-        int n = DEFAULT_N, minutes = DEFAULT_MINUTES;
+        int n = defaultN(), minutes = defaultMinutes();
         boolean cook = false;
         for (int i = 1; i < w.length; i++) {
             if (w[i].matches("^\\d{1,3}$") && i == 1) {
@@ -54,7 +58,7 @@ public final class KelpRules {
                 if (n < 1) return null;
             } else if (w[i].matches("^\\d{1,2}m$")) {
                 minutes = Integer.parseInt(w[i].substring(0, w[i].length() - 1));
-                if (minutes < 1 || minutes > MAX_MINUTES) return null;
+                if (minutes < 1 || minutes > maxMinutes()) return null;
             } else if (w[i].equals("cook") && i == w.length - 1) cook = true;
             else return null;
         }
@@ -105,7 +109,7 @@ public final class KelpRules {
             int[] cut = c.cut();
             if (allowed != null && !allowed.test(cut)) continue;
             double d = Math.sqrt(Math.pow(cut[0] - mx, 2) + Math.pow(cut[1] - my, 2) + Math.pow(cut[2] - mz, 2));
-            if (d > RANGE) continue;
+            if (d > range()) continue;
             double s = d - 6.0 * Math.min(c.yield(), 6);
             if (s < bestS) { bestS = s; best = c; }
         }

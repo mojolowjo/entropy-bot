@@ -11,8 +11,8 @@ import java.util.Map;
  * pending write cancelled). {@link #take} hands out at most n due chunks, nearest to the bot first. Loader notes: none.
  */
 public final class SurfaceSchedule {
-    public static final long DEBOUNCE_MS = 2000;
-    public static final int PER_TICK = 2;
+    public static final long DEBOUNCE_MS = 2000; // structural
+    public static final int PER_TICK = 2; // structural
 
     private final Map<Long, Long> due = new HashMap<>();
     private final Map<Long, Long> lastWrite = new HashMap<>();
@@ -74,7 +74,7 @@ public final class SurfaceSchedule {
     }
 
     /** check: on and nothing written for this long. */
-    public static final long QUIET_MS = 60_000;
+    public static final long QUIET_MS = 60_000; // structural
 
     /** Pure: the settings file's "on" value, null when absent or broken. */
     public static Boolean parseOn(String text) {

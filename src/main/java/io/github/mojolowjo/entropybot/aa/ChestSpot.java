@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -24,9 +26,9 @@ public final class ChestSpot {
     }
 
     /** Blocks of cost per block the chest lies away from being next to the table. */
-    public static final double OFF_TABLE = 2;
+    public static double offTable() { return Tuning.get("chestSpot.offTable"); }
     /** How far from the anchor (the base, else the bot) a chest may stand. */
-    public static final int RADIUS = 3;
+    public static int radius() { return Tuning.i("chestSpot.radius"); }
 
     /**
      * The free cells around {@code anchor} (feet level), cheapest first.
@@ -38,7 +40,7 @@ public final class ChestSpot {
     public static List<Spot> rank(int[] anchor, int[] table, int[] me, Predicate<int[]> free, Predicate<int[]> allowed) {
         List<Spot> out = new ArrayList<>();
         if (anchor == null) return out;
-        for (int dx = -RADIUS; dx <= RADIUS; dx++) for (int dz = -RADIUS; dz <= RADIUS; dz++) {
+        for (int dx = -radius(); dx <= radius(); dx++) for (int dz = -radius(); dz <= radius(); dz++) {
             if (dx == 0 && dz == 0) continue;
             int[] c = {anchor[0] + dx, anchor[1], anchor[2] + dz};
             if (same(c, me) || same(c, table)) continue;
@@ -47,7 +49,7 @@ public final class ChestSpot {
             String why = "walk " + Math.round(walk * 10) / 10.0;
             if (table != null) {
                 int beside = Math.max(Math.abs(c[0] - table[0]), Math.abs(c[2] - table[2]));
-                off = Math.max(0, beside - 1) * OFF_TABLE;
+                off = Math.max(0, beside - 1) * offTable();
                 why += beside <= 1 ? ", next to the table" : ", " + beside + " from the table";
             }
             out.add(new Spot(c, walk + off, why));

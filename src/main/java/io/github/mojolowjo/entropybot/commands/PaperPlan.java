@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import baritone.api.BaritoneAPI;
@@ -37,8 +39,9 @@ import java.util.function.Consumer;
 public final class PaperPlan {
     private static final Logger LOG = LogUtils.getLogger();
     public static final PaperPlan INSTANCE = new PaperPlan();
-    static final long PRIMARY_MS = 4000, FAILURE_MS = 20000;
-    static final int SURFACE_R = 96;
+    static long primaryMs() { return Tuning.l("paperPlan.primaryMs"); }
+    static long failureMs() { return Tuning.l("paperPlan.failureMs"); }
+    static int surfaceR() { return Tuning.i("paperPlan.surfaceR"); }
 
     private PaperPlan() {}
 
@@ -181,7 +184,7 @@ public final class PaperPlan {
         BetterBlockPos start = new BetterBlockPos(me[0], me[1], me[2]);
         final String worldAt = Core.INSTANCE.worldKey(), dimAt = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
         running = true;
-        LOG.info("[entropybot] plan path {} ({}) from {}: searching (up to {} s)", tg, rl, Jobs.fmt(me), FAILURE_MS / 1000);
+        LOG.info("[entropybot] plan path {} ({}) from {}: searching (up to {} s)", tg, rl, Jobs.fmt(me), failureMs() / 1000);
         worker.submit(() -> {
             long t0 = System.currentTimeMillis();
             List<int[]> cells = new ArrayList<>();
@@ -192,7 +195,7 @@ public final class PaperPlan {
                 baritone.pathing.calc.AStarPathFinder pf = new baritone.pathing.calc.AStarPathFinder(start, me[0], me[1], me[2], g,
                         new baritone.utils.pathing.Favoring(null, cx), cx);
                 // live: a break plan returned a 24-move segment at the 4 s primary timeout: digging plans use the whole budget
-                PathCalculationResult r = pf.calculate(rl.equals("walk") ? PRIMARY_MS : FAILURE_MS, FAILURE_MS);
+                PathCalculationResult r = pf.calculate(rl.equals("walk") ? primaryMs() : failureMs(), failureMs());
                 type = r.getType().name().toLowerCase();
                 IPath path = r.getPath().orElse(null);
                 found = path;
@@ -224,7 +227,7 @@ public final class PaperPlan {
                 if (report != null) report.accept(res.text());
             });
         });
-        return "started: planning a path to " + tg + " (" + rules + ", up to " + FAILURE_MS / 1000 + " s; plan last shows it)";
+        return "started: planning a path to " + tg + " (" + rules + ", up to " + failureMs() / 1000 + " s; plan last shows it)";
     }
 
     /** Breaks: a feet or head cell on the path that is solid now; places: a path cell with no solid block under it. */
@@ -263,20 +266,20 @@ public final class PaperPlan {
 
     /** "Out to open sky": standing on a column's top within SURFACE_R (precomputed here, on the game thread). */
     static Goal surfaceGoal(Level lv, int[] me) {
-        int n = 2 * SURFACE_R + 1;
+        int n = 2 * surfaceR() + 1;
         int[] top = new int[n * n];
-        for (int dx = -SURFACE_R; dx <= SURFACE_R; dx++)
-            for (int dz = -SURFACE_R; dz <= SURFACE_R; dz++) {
+        for (int dx = -surfaceR(); dx <= surfaceR(); dx++)
+            for (int dz = -surfaceR(); dz <= surfaceR(); dz++) {
                 int x = me[0] + dx, z = me[2] + dz;
-                top[(dx + SURFACE_R) * n + dz + SURFACE_R] = lv.isLoaded(new BlockPos(x, me[1], z))
+                top[(dx + surfaceR()) * n + dz + surfaceR()] = lv.isLoaded(new BlockPos(x, me[1], z))
                         ? lv.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) : Integer.MAX_VALUE;
             }
-        int here = top[SURFACE_R * n + SURFACE_R];
+        int here = top[surfaceR() * n + surfaceR()];
         return new Goal() {
             int topAt(int x, int z) {
                 int dx = x - me[0], dz = z - me[2];
-                if (Math.abs(dx) > SURFACE_R || Math.abs(dz) > SURFACE_R) return Integer.MAX_VALUE;
-                return top[(dx + SURFACE_R) * n + dz + SURFACE_R];
+                if (Math.abs(dx) > surfaceR() || Math.abs(dz) > surfaceR()) return Integer.MAX_VALUE;
+                return top[(dx + surfaceR()) * n + dz + surfaceR()];
             }
 
             @Override public boolean isInGoal(int x, int y, int z) {
@@ -290,7 +293,7 @@ public final class PaperPlan {
                 return Math.max(0, t - y) * 4.0;
             }
 
-            @Override public String toString() { return "Surface{r=" + SURFACE_R + "}"; }
+            @Override public String toString() { return "Surface{r=" + surfaceR() + "}"; }
         };
     }
 

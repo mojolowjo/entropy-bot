@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import baritone.api.BaritoneAPI;
@@ -36,7 +38,7 @@ import org.slf4j.Logger;
  */
 public final class Jobs {
     private static final Logger LOG = LogUtils.getLogger();
-    static final int TRAVEL_FAILS = 3;
+    static int travelFails() { return Tuning.i("jobs.travelFails"); }
 
     public static final class Job {
         /** AA_CLEANUP 2: who started it (the door's scope at the start; null = no scope); its tick runs in that scope. */
@@ -706,7 +708,7 @@ public final class Jobs {
                 else if (what.equals("AT_GOAL")) j.evAtGoal = true;
             }
             if (j.evAtGoal) return "goal";
-            if (j.evFails >= TRAVEL_FAILS) return "nopath";
+            if (j.evFails >= travelFails()) return "nopath";
         } catch (RuntimeException e) {
             Quiet.warn("Jobs.travelEvents failed, carrying on with the fallback", e);
             j.evSeq = -1;

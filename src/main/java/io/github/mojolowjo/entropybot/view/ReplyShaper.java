@@ -15,8 +15,9 @@ import java.util.regex.Pattern;
  * Loader API: none.
  */
 public final class ReplyShaper {
-    public static final int BUDGET = 600;
-    static final int MAX_OPTIONS = 3, MAX_NEWS = 3;
+    public static final int BUDGET = 600; // structural
+    static final int MAX_OPTIONS = 3; // structural
+    static final int MAX_NEWS = 3; // structural
 
     /** Verbs whose answer is the information itself (shown whole). */
     static final Set<String> PASS = Set.of("why", "look", "help", "?", "debug", "check", "memory", "summary", "status",

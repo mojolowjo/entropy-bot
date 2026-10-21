@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
@@ -92,11 +94,11 @@ public final class IronOptions {
                      boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
                      io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair,
                      io.github.mojolowjo.entropybot.guard.Litter.Site litter, int rawIron) {
-            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, fair, litter, rawIron, DIG_BLOCK);
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, fair, litter, rawIron, digBlockV());
         }
 
         /** The dig term per block: the game's when read, else {@link #DIG_BLOCK}. */
-        public double digPerBlock() { return digBlock > 0 && Double.isFinite(digBlock) ? digBlock : DIG_BLOCK; }
+        public double digPerBlock() { return digBlock > 0 && Double.isFinite(digBlock) ? digBlock : digBlockV(); }
 
         /** aa-trees: -1 = raw_iron in the bag not known (tests): a chain that smelts is taken as it is. */
         public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
@@ -164,17 +166,23 @@ public final class IronOptions {
         }
     }
 
-    public static final double CLEAR = 10, DIG_BLOCK = 3, PLACE_BLOCK = 5, CAVE_TIME = 120, STRIP_TIME = 200, STALE = 1.5, CAVE_FACE = 2;
+    public static double clear() { return Tuning.get("ironOptions.clear"); }
+    public static double digBlockV() { return Tuning.get("ironOptions.digBlock"); }
+    public static double placeBlock() { return Tuning.get("ironOptions.placeBlock"); }
+    public static double caveTime() { return Tuning.get("ironOptions.caveTime"); }
+    public static double stripTime() { return Tuning.get("ironOptions.stripTime"); }
+    public static double stale() { return Tuning.get("ironOptions.stale"); }
+    public static double caveFace() { return Tuning.get("ironOptions.caveFace"); }
     /**
      * Owner's rule 2026-10-19 (live r2b: iron 17-18 deep never picked): depth is a cost, not a limit. Up to {@link #DIG_MAX}
      * a block costs {@link #DIG_BLOCK}; each block past it {@link #DIG_DEEP_BLOCK} (a deep column: the climb back, the fall
      * and water risk). {@link #DIG_HARD} is the dig verb's own reach (Mining's column dig for the {@code at} form).
      */
-    public static final double DIG_DEEP_BLOCK = 6;
-    public static final int DIG_HARD = 40;
+    public static double digDeepBlock() { return Tuning.get("ironOptions.digDeepBlock"); }
+    public static int digHard() { return Tuning.i("ironOptions.digHard"); }
 
     /** Blocks a strip tunnel digs for one find (its wear term). */
-    public static final int STRIP_BLOCKS = 60;
+    public static int stripBlocks() { return Tuning.i("ironOptions.stripBlocks"); }
 
     /**
      * Tool wear as a cost (ToolWear, director 2026-10-19): the extra seconds the cheapest way (use the pickaxe, craft a
@@ -203,7 +211,7 @@ public final class IronOptions {
     }
 
     /** The dig's cost for an ore {@code depth} blocks under the surface (walk-blocks), at the constant {@link #DIG_BLOCK}. */
-    public static double digCost(int depth) { return digCost(depth, DIG_BLOCK); }
+    public static double digCost(int depth) { return digCost(depth, digBlockV()); }
 
     /**
      * aa-times: the same with the game's dig term per block ({@code digBlock} walk-blocks, Facts.digPerBlock); past
@@ -211,18 +219,24 @@ public final class IronOptions {
      */
     public static double digCost(int depth, double digBlock) {
         int d = Math.max(1, depth);
-        double deep = digBlock + (DIG_DEEP_BLOCK - DIG_BLOCK);
-        return Math.min(d, DIG_MAX) * digBlock + Math.max(0, d - DIG_MAX) * deep;
+        double deep = digBlock + (digDeepBlock() - digBlockV());
+        return Math.min(d, digMax()) * digBlock + Math.max(0, d - digMax()) * deep;
     }
 
     /** aa-water: the block WATER_PLACE puts under its stand (the adapter offers PLACE only with cobblestone in the bag). */
     public static final String PLACE_BLOCK_ID = "cobblestone";
 
-    public static final int DIG_MAX = 16, PILLAR_MIN_UP = 3, SMELT_WALK = 24, FURNACE_COBBLE = 8, SMELT_HERE_COST = 10, DEFAULT_N = 3;
+    public static int digMax() { return Tuning.i("ironOptions.digMax"); }
+    public static int pillarMinUp() { return Tuning.i("ironOptions.pillarMinUp"); }
+    public static int smeltWalk() { return Tuning.i("ironOptions.smeltWalk"); }
+    public static int furnaceCobble() { return Tuning.i("ironOptions.furnaceCobble"); }
+    public static int smeltHereCost() { return Tuning.i("ironOptions.smeltHereCost"); }
+    public static int defaultN() { return Tuning.i("ironOptions.defaultN"); }
     /** Switches within one task before the rung fails as before. */
-    public static final int MAX_SWITCHES = Options.MAX_SWITCHES;
+    public static int maxSwitches() { return Options.maxSwitches(); }
     /** A failed option is skipped this long per failure (at most an hour). */
-    public static final long RETRY_MS = Options.RETRY_MS, RETRY_MAX_MS = Options.RETRY_MAX_MS;
+    public static long retryMs() { return Options.retryMs(); }
+    public static long retryMaxMs() { return Options.retryMaxMs(); }
 
     /** aa-water: where the way stands before it digs (STAND, PLACE, DRY), with the cell placed into (PLACE), else null. */
     /** {@code after}: the step that ends the way (aa-litter: take the pillar down or keep it), null for none. */
@@ -349,7 +363,7 @@ public final class IronOptions {
                     WaterWays.Priced pr = WaterWays.price(ww, w);
                     if (pr == null) continue;
                     if (m.blocked(way, o, now)) { dropped.add(way.name().toLowerCase(Locale.ROOT) + " " + o.key() + ": " + m.reason(way, o)); continue; }
-                    Scored base = scored(way, o, pr.seconds() * WaterWays.WALK_BPS + CLEAR, pr.why() + String.format(Locale.ROOT, ", %.0f s", pr.seconds()), m);
+                    Scored base = scored(way, o, pr.seconds() * WaterWays.WALK_BPS + clear(), pr.why() + String.format(Locale.ROOT, ", %.0f s", pr.seconds()), m);
                     ranked.add(new Scored(base.way(), o, base.cost(), base.why(), pr.stand(),
                             ww == WaterWays.Way.PLACE ? new int[]{pr.stand()[0], pr.stand()[1] - 1, pr.stand()[2]} : null));
                 }
@@ -362,32 +376,32 @@ public final class IronOptions {
             }
             if (o.openFace()) {
                 if (m.blocked(Way.WALK_KNOWN, o, now)) dropped.add("walk " + o.key() + ": " + m.reason(Way.WALK_KNOWN, o));
-                else ranked.add(scored(Way.WALK_KNOWN, o, o.dist() * (o.skyOpen() ? 1 : CAVE_FACE) * (o.loaded() ? 1 : STALE) + CLEAR + floatB,
+                else ranked.add(scored(Way.WALK_KNOWN, o, o.dist() * (o.skyOpen() ? 1 : caveFace()) * (o.loaded() ? 1 : stale()) + clear() + floatB,
                         (o.loaded() ? (o.skyOpen() ? "open to the sky" : "an open face in a cave") : "known from before, not loaded")
                                 + (floatWhy == null ? "" : ", " + floatWhy + " +" + Math.round(floatB)), m));
             } else if (o.wetDigDown()) dropped.add("dig " + o.key() + ": digging down from in the water" + (o.drownWhy() == null ? "" : " (" + o.drownWhy() + ")"));
             else if (!o.loaded()) dropped.add("dig " + o.key() + ": buried, not loaded");
-            else if (o.depth() > DIG_HARD) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (the dig verb reaches " + DIG_HARD + ")");
+            else if (o.depth() > digHard()) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (the dig verb reaches " + digHard() + ")");
             else if (m.blocked(Way.DIG_KNOWN, o, now)) dropped.add("dig " + o.key() + ": " + m.reason(Way.DIG_KNOWN, o));
-            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth(), f.digPerBlock()) + CLEAR + o.drown() + floatB + wear(f, o.depth()), "buried " + o.depth() + " deep"
+            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth(), f.digPerBlock()) + clear() + o.drown() + floatB + wear(f, o.depth()), "buried " + o.depth() + " deep"
                     + String.format(Locale.ROOT, ", dig %.1f/block", f.digPerBlock()) + wearWhy(f, o.depth())
                     + (floatWhy == null ? "" : ", " + floatWhy + " +" + Math.round(floatB))
-                    + (o.depth() > DIG_MAX ? " (+" + Math.round(digCost(o.depth(), f.digPerBlock()) - DIG_MAX * f.digPerBlock()) + " past " + DIG_MAX + ")" : "")
+                    + (o.depth() > digMax() ? " (+" + Math.round(digCost(o.depth(), f.digPerBlock()) - digMax() * f.digPerBlock()) + " past " + digMax() + ")" : "")
                     + (o.drownWhy() == null ? "" : ", " + o.drownWhy() + " +" + Math.round(o.drown())), m));
             int up = o.y() - f.meY();
-            if (up >= PILLAR_MIN_UP && above == null) above = o;
-            if (up >= PILLAR_MIN_UP && !m.blocked(Way.PILLAR_KNOWN, o, now)) {
+            if (up >= pillarMinUp() && above == null) above = o;
+            if (up >= pillarMinUp() && !m.blocked(Way.PILLAR_KNOWN, o, now)) {
                 if (!f.placeAllowed()) { if (above == o) dropped.add("pillar " + o.key() + ": placing not allowed here"); }
                 else if (f.throwaway() < up) { if (above == o) dropped.add("pillar " + o.key() + ": " + f.throwaway() + " of " + up + " blocks to place"); }
                 else {
                     // aa-litter: the scaffold is priced min(litter, cleanup) and the step ends with the matching take-down / keep
                     var lp = litterPrice(f, o, up);
                     double lb = lp == null ? 0 : lp.priceS() * WaterWays.WALK_BPS;
-                    Scored sc = scored(Way.PILLAR_KNOWN, o, o.dist() + up * PLACE_BLOCK + CLEAR + lb, up + " up, " + f.throwaway() + " blocks to place" + (lp == null ? "" : ", " + lp.why()), m);
+                    Scored sc = scored(Way.PILLAR_KNOWN, o, o.dist() + up * placeBlock() + clear() + lb, up + " up, " + f.throwaway() + " blocks to place" + (lp == null ? "" : ", " + lp.why()), m);
                     ranked.add(new Scored(sc.way(), o, sc.cost(), sc.why(), null, null, lp == null || lp.blocks() <= 0 || lp.ctx() == io.github.mojolowjo.entropybot.guard.Litter.Context.EXEMPT ? null
-                            : new Step.Restore(lp.keep(), lp.keep() ? 0 : io.github.mojolowjo.entropybot.restore.PlacedPlan.DEFAULT_RADIUS)));
+                            : new Step.Restore(lp.keep(), lp.keep() ? 0 : io.github.mojolowjo.entropybot.restore.PlacedPlan.defaultRadius())));
                 }
-            } else if (up >= PILLAR_MIN_UP) dropped.add("pillar " + o.key() + ": " + m.reason(Way.PILLAR_KNOWN, o));
+            } else if (up >= pillarMinUp()) dropped.add("pillar " + o.key() + ": " + m.reason(Way.PILLAR_KNOWN, o));
         }
         if (f.fair() != null) {
             // AA_ROUND3 3: the discovery ways, priced by what was learned (cave yield, the best band's density)
@@ -396,17 +410,17 @@ public final class IronOptions {
                         : d.kind() == io.github.mojolowjo.entropybot.aa.brain.Discovery.Kind.STRIP ? Way.STRIP : null;
                 if (w == null) continue;
                 if (m.blocked(w, null, now)) dropped.add(d.label() + ": " + m.reason(w, null));
-                else ranked.add(scored(w, null, d.cost() + (w == Way.STRIP ? wear(f, STRIP_BLOCKS) : 0), d.label() + ": " + d.why() + (w == Way.STRIP ? wearWhy(f, STRIP_BLOCKS) : ""), m));
+                else ranked.add(scored(w, null, d.cost() + (w == Way.STRIP ? wear(f, stripBlocks()) : 0), d.label() + ": " + d.why() + (w == Way.STRIP ? wearWhy(f, stripBlocks()) : ""), m));
             }
             dropped.addAll(f.fair().dropped());
         } else if (f.caveDist() >= 0) {
             if (m.blocked(Way.CAVE, null, now)) dropped.add("cave: " + m.reason(Way.CAVE, null));
-            else ranked.add(scored(Way.CAVE, null, f.caveDist() + CAVE_TIME, "a known cave " + f.caveDist() + " away", m));
+            else ranked.add(scored(Way.CAVE, null, f.caveDist() + caveTime(), "a known cave " + f.caveDist() + " away", m));
         } else dropped.add("cave: none known");
         if (f.fair() != null) { /* the strip row came with the discovery ways */ }
         else if (f.stripAllowed()) {
             if (m.blocked(Way.STRIP, null, now)) dropped.add("strip: " + m.reason(Way.STRIP, null));
-            else ranked.add(scored(Way.STRIP, null, STRIP_TIME + wear(f, STRIP_BLOCKS), "a mine is marked" + wearWhy(f, STRIP_BLOCKS), m));
+            else ranked.add(scored(Way.STRIP, null, stripTime() + wear(f, stripBlocks()), "a mine is marked" + wearWhy(f, stripBlocks()), m));
         } else dropped.add("strip: " + (f.stripWhy() == null ? "not allowed" : f.stripWhy()));
         ranked.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         Smelt smelt = smeltWhere(f, m, now);
@@ -439,7 +453,7 @@ public final class IronOptions {
     public static Smelt smeltWhere(Facts f, Memory m, long now) {
         if (!f.furnaceInBag() || m.blocked(null, null, now)) return Smelt.CAMP;
         if (f.furnaceDist() < 0) return Smelt.HERE;
-        return f.furnaceDist() <= SMELT_WALK ? Smelt.CAMP : Smelt.HERE;
+        return f.furnaceDist() <= smeltWalk() ? Smelt.CAMP : Smelt.HERE;
     }
 
     // ---- the planner's routine with the ore and smelt steps chosen here (typed; the routine came typed from the planner's side) ----

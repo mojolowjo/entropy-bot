@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import baritone.api.IBaritone;
@@ -531,7 +533,7 @@ public final class Seq {
             stageTick = now();
             return "wait";
         }
-        if (now() - stageTick < Storage.GUI_SETTLE) return "wait";
+        if (now() - stageTick < Storage.guiSettle()) return "wait";
         List<Map<String, Integer>> d = GuiCore.diff(opBefore, Gui.inventory(p));
         String r = opErr;
         if (r == null && opWant != null) {

@@ -163,7 +163,7 @@ public final class BlindRuntime {
     private int restoreLeft;
     /** Ticks after a screen closed during which frames still draw (so the frozen frame shows no menu). */
     private int screenGrace;
-    static final int SCREEN_GRACE_TICKS = 3;
+    static final int SCREEN_GRACE_TICKS = 3; // structural
 
     private void restoreTitle(Minecraft mc) {
         titleSet = false;

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -17,7 +19,7 @@ public final class PlacedPlan {
 
     public static final String LITTER = "built: litter", KEPT = "built: kept ";
     /** The walk-back limit of "restore placed" without a radius. */
-    public static final int DEFAULT_RADIUS = 24;
+    public static int defaultRadius() { return Tuning.i("placedPlan.defaultRadius"); }
 
     public static boolean litter(Ledger.Entry e) { return e != null && LITTER.equals(e.why); }
 

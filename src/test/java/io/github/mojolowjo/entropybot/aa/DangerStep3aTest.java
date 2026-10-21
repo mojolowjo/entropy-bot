@@ -71,7 +71,7 @@ class DangerStep3aTest {
 
     @Test
     void thePillarReadsTheBagPlanksCount() {
-        assertEquals(16 - AaEscape.PLANK_RESERVE, AaEscape.pillarBlocks(Map.of("oak_planks", 16, "log", 35)), "a table and sticks kept back");
+        assertEquals(16 - AaEscape.plankReserve(), AaEscape.pillarBlocks(Map.of("oak_planks", 16, "log", 35)), "a table and sticks kept back");
         assertEquals(0, AaEscape.pillarBlocks(Map.of("oak_planks", 4)));
         assertEquals(AaDesires.shellBlocks(Map.of("oak_planks", 16, "dirt", 3)), AaEscape.pillarBlocks(Map.of("oak_planks", 16, "dirt", 3)), "one list");
         assertEquals(14, AaEscape.pillarBlocks(Map.of("minecraft:cobblestone", 4, "oak_planks", 16)));
@@ -84,8 +84,8 @@ class DangerStep3aTest {
     @Test
     void theDeathCostIsTheKitTheWalkBackTheRespawnAndTheNight() {
         double[] d = AaDesires.deathCost(Map.of(), new int[]{43, 64, 0}, new int[]{0, 64, 0}, 1.0);
-        assertEquals(43 / io.github.mojolowjo.entropybot.aa.brain.Site.SPEED + AaDesires.RESPAWN_S + 120, d[0], 1e-6);
-        assertEquals(AaDesires.RESPAWN_S + 60, AaDesires.deathCost(Map.of(), null, null, 0)[0], 1e-9);
+        assertEquals(43 / io.github.mojolowjo.entropybot.aa.brain.Site.SPEED + AaDesires.respawnS() + 120, d[0], 1e-6);
+        assertEquals(AaDesires.respawnS() + 60, AaDesires.deathCost(Map.of(), null, null, 0)[0], 1e-9);
     }
 
     @Test
@@ -109,7 +109,7 @@ class DangerStep3aTest {
             tree.tick(bb);
         }
         assertTrue(port.log.stream().anyMatch(l -> l.contains("paused too long: drowning, health 4")), port.log.toString());
-        clock.advance(AaTree.CALM_MS + 100);
+        clock.advance(AaTree.calmMs() + 100);
         tree.tick(bb);
         assertTrue(bb.task() == null || !bb.task().paused(), "the paused job ended; the slot picks again");
         assertNotEquals("danger", tree.driver(), "the air guard yields to the brain until the air is full");

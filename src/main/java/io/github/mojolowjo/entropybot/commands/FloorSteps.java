@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import java.util.List;
@@ -38,7 +40,7 @@ final class FloorSteps {
     private FloorSteps() {}
 
     static final String KIND_FLOOR = "floor", KIND_JUNK = "junk";
-    static final int MAX_ROUNDS = 4;
+    static int maxRounds() { return Tuning.i("floorSteps.maxRounds"); }
 
     /** A fill step's state. */
     static final class FloorState {
@@ -145,7 +147,7 @@ final class FloorSteps {
         }
         Clearing.Outcome o = fs.clearStep != null ? fs.clearStep.cleared : null;
         int broken = fs.brokenBefore + (o != null ? o.broken() : 0);
-        if (o != null && o.ok() && o.left() > 0 && fs.run.filled() > 0 && fs.round < MAX_ROUNDS) {
+        if (o != null && o.ok() && o.left() > 0 && fs.run.filled() > 0 && fs.round < maxRounds()) {
             // the new floor reaches what the clear couldn't: once more from it
             Seq.Step again = Clearing.clearStep(fs.opts);
             Seq.Step fill = floorStep(fs.opts, again, false);
@@ -258,9 +260,9 @@ final class FloorSteps {
             Map<String, Integer> inv = Gui.inventory(p);
             Map<String, Integer> dep = StorageRules.depositables(Storage.held(p), "", false, null, seq.storage.keeps());
             String keep = js.job.floor ? FloorFill.chooseBlock(js.job.floorBlock, inv) : null;
-            js.plan = JunkDrop.plan(dep, inv, keep, keep != null ? JunkDrop.FLOOR_KEEP : 0);
+            js.plan = JunkDrop.plan(dep, inv, keep, keep != null ? JunkDrop.floorKeep() : 0);
             // water plan: a "water" dig keeps a reserve of junk blocks to seal water with
-            if (js.job.water) js.plan = io.github.mojolowjo.entropybot.clear.WaterPlan.keepReserve(js.plan, inv, io.github.mojolowjo.entropybot.clear.WaterPlan.RESERVE);
+            if (js.job.water) js.plan = io.github.mojolowjo.entropybot.clear.WaterPlan.keepReserve(js.plan, inv, io.github.mojolowjo.entropybot.clear.WaterPlan.reserveV());
             if (js.plan.isEmpty()) return "no plain junk blocks to throw away";
             // the rotation reaches the server with the next movement packets, before the throw clicks
             float yaw = JunkDrop.throwYaw(js.start, p.getX(), p.getZ(), js.job.box);

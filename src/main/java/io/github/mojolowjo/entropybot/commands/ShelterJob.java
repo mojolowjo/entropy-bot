@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.mojang.logging.LogUtils;
@@ -34,7 +36,10 @@ import java.util.Set;
  */
 public final class ShelterJob {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long PLACE_TICKS = 6, BREAK_TICKS = 800, OUT_TICKS = 200, MAX_WAIT = 20 * 60 * 20;      // backbone step 3: OUT 3 -> 10 s (Baritone plans the step first)
+    static long placeTicks() { return Tuning.l("shelterJob.placeTicks"); }
+    static long breakTicks() { return Tuning.l("shelterJob.breakTicks"); }
+    static long outTicks() { return Tuning.l("shelterJob.outTicks"); }
+    static long maxWait() { return Tuning.l("shelterJob.maxWait"); }  // backbone step 3: OUT 3 -> 10 s (Baritone plans the step first)
 
     private ShelterJob() {}
 
@@ -207,7 +212,7 @@ public final class ShelterJob {
                 return "wait";
             }
             boolean timerUp = ps.timer > 0 && Core0.tick() - ps.startedAt >= ps.timer;
-            boolean tooLong = ps.timer <= 0 && Core0.tick() - ps.startedAt >= MAX_WAIT && !night && ps.stage == ShelterPlan.Stage.WAIT;
+            boolean tooLong = ps.timer <= 0 && Core0.tick() - ps.startedAt >= maxWait() && !night && ps.stage == ShelterPlan.Stage.WAIT;
             ShelterPlan.Stage n = ShelterPlan.next(ps.stage, night, ps.sawNight, ps.timer > 0, timerUp, ps.leave || tooLong, done, ps.keep == 1);
             if (n != ps.stage) {
                 LOG.info("[entropybot] shelter: {} -> {}", ps.stage, n);
@@ -236,7 +241,7 @@ public final class ShelterJob {
     }
 
     private static boolean build(Seq s, State ps, LocalPlayer p, ClientLevel lv, long now) {
-        if (now - ps.lastAct < PLACE_TICKS) return false;
+        if (now - ps.lastAct < placeTicks()) return false;
         ps.lastAct = now;
         while (ps.idx < ps.todo.size() && solid(lv, ps.todo.get(ps.idx))) {
             ps.own.add(ShelterPlan.key(ps.todo.get(ps.idx)));
@@ -282,8 +287,8 @@ public final class ShelterJob {
     }
 
     /** 0.27.4: ticks between the passes over the skipped cells (3 s), and the passes after the first (3). */
-    static final long SKIP_TICKS = 60;
-    static final int SKIP_ROUNDS = 3;
+    static long skipTicks() { return Tuning.l("shelterJob.skipTicks"); }
+    static int skipRounds() { return Tuning.i("shelterJob.skipRounds"); }
 
     /**
      * 0.27.4: after the other cells, the skipped ones again (a pause first). Still taken after SKIP_ROUNDS passes: the
@@ -291,20 +296,20 @@ public final class ShelterJob {
      */
     private static boolean retrySkipped(State ps, ClientLevel lv, LocalPlayer p, long now) {
         if (ps.skipAt < 0) ps.skipAt = now;
-        if (now - ps.skipAt < SKIP_TICKS) return false;
+        if (now - ps.skipAt < skipTicks()) return false;
         ps.skipAt = -1;
-        if (ps.skipRounds >= SKIP_ROUNDS) {
+        if (ps.skipRounds >= skipRounds()) {
             int[] first = ps.skipped.get(0);
             String taken = entityIn(lv, p, first);
             if (taken != null) {
                 ps.note = "error: couldn't build my shelter at " + Jobs.fmt(first) + ": the cell " + Jobs.fmt(first) + " is taken by " + taken
-                        + " (still there after " + SKIP_ROUNDS + " tries)";
+                        + " (still there after " + skipRounds() + " tries)";
                 return false;
             }
             // free now: the last pass places it (a refusal there names the guard or the face)
         }
         ps.skipRounds++;
-        LOG.info("[entropybot] shelter: retrying {} skipped cell(s), round {}/{}", ps.skipped.size(), ps.skipRounds, SKIP_ROUNDS);
+        LOG.info("[entropybot] shelter: retrying {} skipped cell(s), round {}/{}", ps.skipped.size(), ps.skipRounds, skipRounds());
         ps.todo = new ArrayList<>(ps.skipped);
         ps.skipped = new ArrayList<>();
         ps.idx = 0;
@@ -367,7 +372,7 @@ public final class ShelterJob {
             ps.note = "error: the block at " + Jobs.fmt(c) + " isn't mine - I only open my own shelter";
             return false;
         }
-        if (now - ps.stageAt > BREAK_TICKS) {
+        if (now - ps.stageAt > breakTicks()) {
             ps.note = "error: my shelter wall at " + Jobs.fmt(c) + " didn't break in 40 s (no tool for it?)";
             return false;
         }
@@ -383,7 +388,7 @@ public final class ShelterJob {
         }
         // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool break the wall (JobHands)
         ps.hit = c;
-        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(c, (int) BREAK_TICKS, "opening my shelter");
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(c, (int) breakTicks(), "opening my shelter");
         if (r.failed()) ps.note = "error: couldn't open my shelter at " + Jobs.fmt(c) + ": " + r.why();
         return false;
     }
@@ -412,10 +417,10 @@ public final class ShelterJob {
             ps.stageAt = now;
             return true;
         }
-        if (now - ps.stageAt > OUT_TICKS) {
+        if (now - ps.stageAt > outTicks()) {
             if (b != null) b.getCustomGoalProcess().setGoal(null);
             ps.note = "error: couldn't step out of my shelter (the way out at " + Jobs.fmt(ps.exit[0]) + " is open; Baritone didn't take me to " + Jobs.fmt(to)
-                    + " in " + OUT_TICKS / 20 + " s, I am at " + Jobs.fmt(me) + ")";
+                    + " in " + outTicks() / 20 + " s, I am at " + Jobs.fmt(me) + ")";
             return false;
         }
         // backbone step 3 ("Baritone is the car"): the step out is a GoalBlock, not the forward key and a camera
@@ -432,7 +437,7 @@ public final class ShelterJob {
     }
 
     private static boolean close(State ps, LocalPlayer p, ClientLevel lv, long now) {
-        if (now - ps.lastAct < PLACE_TICKS) return false;
+        if (now - ps.lastAct < placeTicks()) return false;
         ps.lastAct = now;
         if (ps.idx >= 2) return true;
         int[] c = ps.exit[ps.idx];                // the feet cell first (on the ground), then the head cell on it

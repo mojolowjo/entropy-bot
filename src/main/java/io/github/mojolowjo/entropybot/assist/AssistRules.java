@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.assist;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonElement;
@@ -24,14 +26,21 @@ import java.util.TreeMap;
 public final class AssistRules {
     private AssistRules() {}
 
-    public static final long FRESH_MS = 10_000;        // an older report is no report
-    public static final long RECENT_MS = 10_000;       // a broke/placed counts this long
-    public static final long SWITCH_MS = 5_000;        // a new activity must hold this long
-    public static final long IDLE_STOP_MS = 60_000;    // idle this long: no mirroring, just follow
-    public static final long GIVE_GAP_MS = 30_000;     // at most one hand-over in this time
-    public static final long RETRY_MS = 60_000;        // the same chain is not started again within this
-    public static final int CHOP_R = 16, MINE_R = 12, TREE_R = 4, TREE_UP = 12;
-    public static final int GIVE_LOW = 16, GIVE_MAX = 32, MINE_MAX = 8, TREE_MAX = 4, FARM_R = 16;
+    public static long freshMs() { return Tuning.l("assistRules.freshMs"); }  // an older report is no report
+    public static long recentMs() { return Tuning.l("assistRules.recentMs"); }  // a broke/placed counts this long
+    public static long switchMs() { return Tuning.l("assistRules.switchMs"); }  // a new activity must hold this long
+    public static long idleStopMs() { return Tuning.l("assistRules.idleStopMs"); }  // idle this long: no mirroring, just follow
+    public static long giveGapMs() { return Tuning.l("assistRules.giveGapMs"); }  // at most one hand-over in this time
+    public static long retryMs() { return Tuning.l("assistRules.retryMs"); }  // the same chain is not started again within this
+    public static int chopR() { return Tuning.i("assistRules.chopR"); }
+    public static int mineR() { return Tuning.i("assistRules.mineR"); }
+    public static int treeR() { return Tuning.i("assistRules.treeR"); }
+    public static int treeUp() { return Tuning.i("assistRules.treeUp"); }
+    public static int giveLow() { return Tuning.i("assistRules.giveLow"); }
+    public static int giveMax() { return Tuning.i("assistRules.giveMax"); }
+    public static int mineMax() { return Tuning.i("assistRules.mineMax"); }
+    public static int treeMax() { return Tuning.i("assistRules.treeMax"); }
+    public static int farmR() { return Tuning.i("assistRules.farmR"); }
 
     public enum Act {
         MINING, CHOPPING, FARMING, BUILDING, FIGHTING, IDLE;
@@ -105,8 +114,8 @@ public final class AssistRules {
     public static Act guess(Report r, long now) {
         Act a = Act.of(r.action());
         if (a != null) return a;
-        Ev b = r.broke() != null && now - r.broke().at() <= RECENT_MS ? r.broke() : null;
-        Ev p = r.placed() != null && now - r.placed().at() <= RECENT_MS ? r.placed() : null;
+        Ev b = r.broke() != null && now - r.broke().at() <= recentMs() ? r.broke() : null;
+        Ev p = r.placed() != null && now - r.placed().at() <= recentMs() ? r.placed() : null;
         String h = path(r.held());
         if (p != null && (b == null || p.at() >= b.at())) {
             String pp = path(p.id());
@@ -144,7 +153,7 @@ public final class AssistRules {
                     pending = seen;
                     pendingSince = now;
                 }
-                if (now - pendingSince >= SWITCH_MS) {
+                if (now - pendingSince >= switchMs()) {
                     current = seen;
                     pending = null;
                     changed = true;
@@ -157,7 +166,7 @@ public final class AssistRules {
             } else {
                 idleSince = -1;
             }
-            boolean m = !(current == Act.IDLE && now - idleSince >= IDLE_STOP_MS);
+            boolean m = !(current == Act.IDLE && now - idleSince >= idleStopMs());
             if (m != mirroring) changed = true;
             mirroring = m;
             return new Phase(current, changed, mirroring);
@@ -187,9 +196,9 @@ public final class AssistRules {
      */
     public static List<Box> halfCutTrees(World w, int bx, int by, int bz, String logId) {
         Map<Long, int[]> cols = new TreeMap<>();         // (x,z) -> {minY, maxY}
-        for (int x = bx - TREE_R; x <= bx + TREE_R; x++)
-            for (int z = bz - TREE_R; z <= bz + TREE_R; z++)
-                for (int y = by - 3; y <= by + TREE_UP; y++) {
+        for (int x = bx - treeR(); x <= bx + treeR(); x++)
+            for (int z = bz - treeR(); z <= bz + treeR(); z++)
+                for (int y = by - 3; y <= by + treeUp(); y++) {
                     if (!logId.equals(w.id(x, y, z))) continue;
                     long k = ((long) x << 32) ^ (z & 0xffffffffL);
                     int[] c = cols.computeIfAbsent(k, q -> new int[]{Integer.MAX_VALUE, Integer.MIN_VALUE});
@@ -206,7 +215,7 @@ public final class AssistRules {
         found.sort(Comparator.comparingInt(c -> (c[0] - bx) * (c[0] - bx) + (c[2] - bz) * (c[2] - bz)));
         List<Box> out = new ArrayList<>();
         for (int[] c : found) {
-            if (out.size() >= TREE_MAX) break;
+            if (out.size() >= treeMax()) break;
             out.add(new Box(c[0], c[1], c[2], c[0], c[3], c[2]));
         }
         return out;
@@ -228,7 +237,7 @@ public final class AssistRules {
     public static List<Box> mineTargets(World w, int cx, int cy, int cz, String id) {
         if (!mineable(id)) return List.of();
         List<int[]> hits = new ArrayList<>();
-        int r = MINE_R;
+        int r = mineR();
         for (int x = cx - r; x <= cx + r; x++)
             for (int y = cy - r; y <= cy + r; y++)
                 for (int z = cz - r; z <= cz + r; z++) {
@@ -241,7 +250,7 @@ public final class AssistRules {
         hits.sort(Comparator.comparingInt((int[] h) -> h[3]).thenComparingInt(h -> -h[1]));
         List<Box> out = new ArrayList<>();
         for (int[] h : hits) {
-            if (out.size() >= MINE_MAX) break;
+            if (out.size() >= mineMax()) break;
             out.add(new Box(h[0], h[1], h[2], h[0], h[1], h[2]));
         }
         return out;
@@ -263,10 +272,10 @@ public final class AssistRules {
      * some (giveable: what the C6 keep rules leave, MuleRules.giveable) and the last hand-over is {@link #GIVE_GAP_MS} old.
      */
     public static int give(Ev placed, int giveable, long lastGive, long now) {
-        if (placed == null || now - placed.at() > RECENT_MS) return 0;
-        if (placed.left() >= GIVE_LOW) return 0;
-        if (giveable <= 0 || now - lastGive < GIVE_GAP_MS) return 0;
-        return Math.min(GIVE_MAX, giveable);
+        if (placed == null || now - placed.at() > recentMs()) return 0;
+        if (placed.left() >= giveLow()) return 0;
+        if (giveable <= 0 || now - lastGive < giveGapMs()) return 0;
+        return Math.min(giveMax(), giveable);
     }
 
     // ==== words ====

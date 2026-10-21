@@ -16,7 +16,7 @@ import java.util.List;
  * or dismisses it with "restore ignore x y z"). Loader-neutral; the game side reads and writes the file.
  */
 public final class RestoreBook {
-    public static final int MAX_HINTS = 100;
+    public static final int MAX_HINTS = 100; // structural
 
     public static final class BuildHint {
         public final String key, name, dim;

@@ -22,8 +22,14 @@ import java.util.List;
 public final class Help {
     private Help() {}
 
-    public static final int FAR = 48, COME_FROM = 16, GIVE_MIN = 8, GIVE_N = 32, TORCHES_MIN = 4, LIGHT_R = 8, MOBS_MAX = 3;
-    public static final double CAP = 74;
+    public static int far() { return Tuning.i("help.far"); }
+    public static int comeFrom() { return Tuning.i("help.comeFrom"); }
+    public static int giveMin() { return Tuning.i("help.giveMin"); }
+    public static int giveN() { return Tuning.i("help.giveN"); }
+    public static int torchesMin() { return Tuning.i("help.torchesMin"); }
+    public static int lightR() { return Tuning.i("help.lightR"); }
+    public static int mobsMax() { return Tuning.i("help.mobsMax"); }
+    public static double capV() { return Tuning.get("help.cap"); }
 
     /** What to do: the typed steps (a planner {@link Step.Plan} first when the bag lacks the block). */
     public record Pick(String what, List<Step> steps, double score) {
@@ -37,28 +43,28 @@ public final class Help {
         if (!in.ownerOnline) return "owner offline";
         if (in.assistOn) return "assist runs";
         if (in.ownerDist < 0) return "owner not seen";
-        if (in.ownerDist > FAR) return "owner " + in.ownerDist + " away (over " + FAR + ")";
+        if (in.ownerDist > far()) return "owner " + in.ownerDist + " away (over " + far() + ")";
         return null;
     }
 
     public static Pick pick(Inputs in, double weight) {
         if (off(in, weight) != null) return null;
         if (in.ownerHostiles > 0)
-            return new Pick("fight", List.of(new Step.Come(), new Step.Attack()), Math.min(CAP, 2 * weight + 10 * Math.min(MOBS_MAX, in.ownerHostiles)));
+            return new Pick("fight", List.of(new Step.Come(), new Step.Attack()), Math.min(capV(), 2 * weight + 10 * Math.min(mobsMax(), in.ownerHostiles)));
         boolean busy = in.ownerAct != null && !in.ownerAct.equals("idle");
         double f = busy ? 1 : 0.5;
         if ("building".equals(in.ownerAct) && in.ownerPlaced != null) {
             String b = path(in.ownerPlaced);
             int have = in.bag.getOrDefault(b, 0);
-            Pick p = have >= GIVE_MIN ? new Pick("give", List.of(new Step.Give(b, Math.min(GIVE_N, have))), cap(1.5 * weight * f))
-                    : new Pick("fetch", List.of(new Step.Plan(b + " " + GIVE_N), new Step.Give(b, GIVE_N)), cap(weight * f));
+            Pick p = have >= giveMin() ? new Pick("give", List.of(new Step.Give(b, Math.min(giveN(), have))), cap(1.5 * weight * f))
+                    : new Pick("fetch", List.of(new Step.Plan(b + " " + giveN()), new Step.Give(b, giveN())), cap(weight * f));
             if (p.score() > 0) return p;
         }
-        if (in.ownerDark && busy && in.torches >= TORCHES_MIN) {
-            Pick p = new Pick("light", List.of(new Step.Come(), new Step.Light(LIGHT_R)), cap(1.25 * weight));
+        if (in.ownerDark && busy && in.torches >= torchesMin()) {
+            Pick p = new Pick("light", List.of(new Step.Come(), new Step.Light(lightR())), cap(1.25 * weight));
             if (p.score() > 0) return p;
         }
-        if (busy && in.ownerDist > COME_FROM) {
+        if (busy && in.ownerDist > comeFrom()) {
             Pick p = new Pick("follow", List.of(new Step.Come()), cap(weight));
             if (p.score() > 0) return p;
         }
@@ -66,7 +72,7 @@ public final class Help {
     }
 
     /** Under 1: not wanted (-1); else at most {@link #CAP}. */
-    static double cap(double v) { return v < 1 ? -1 : Math.min(CAP, v); }
+    static double cap(double v) { return v < 1 ? -1 : Math.min(capV(), v); }
 
     /** "minecraft:oak_planks" -> "oak_planks" (the bag's keys). */
     static String path(String id) { return id.substring(id.indexOf(':') + 1); }

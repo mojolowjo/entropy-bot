@@ -20,7 +20,7 @@ public final class GoalGrammar {
     public static final String FORMS = "goal camp | goal stone tools | goal iron tools | goal iron <n> | goal food <n> | goal wood <n> | goal light <area> "
             + "| goal bed | goal furnace | goal table | goal shelter | goal <item> <n>";
     public static final String USAGE = "usage: " + FORMS + " | goal show [name]";
-    public static final int MAX_N = 2304;
+    public static final int MAX_N = 2304; // structural
 
     /** name: the routine's suffix; chain: a ready chain (no search) or null; needs: what the planner must reach. */
     public record Goal(String text, String name, String chain, List<Planner.Need> needs, String error) {

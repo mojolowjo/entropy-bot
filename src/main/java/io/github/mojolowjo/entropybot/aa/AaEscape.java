@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntPredicate;
@@ -27,7 +29,7 @@ public final class AaEscape {
     public record Choice(Way way, String why) {}
 
     /** At most this many escapes per task (a way out that keeps ending stuck fails the task as before). */
-    public static final int MAX_PER_TASK = 2;
+    public static int maxPerTask() { return Tuning.i("aaEscape.maxPerTask"); }
 
     /** Baritone's default acceptableThrowawayItems that a bag has (dirt, cobblestone, netherrack, stone). */
 
@@ -35,7 +37,7 @@ public final class AaEscape {
     private static final Pattern NO_PATH = Pattern.compile("no path to (-?\\d+) (-?\\d+) (-?\\d+)");
 
     /** How far up the hole scan looks for a way out sideways. */
-    public static final int HOLE_MAX_UP = 48;
+    public static int holeMaxUp() { return Tuning.i("aaEscape.holeMaxUp"); }
 
     public static boolean stuck(String chainEnd) {
         return chainEnd != null && chainEnd.contains("stuck under ground");
@@ -95,7 +97,7 @@ public final class AaEscape {
     }
 
     /** Review 0.39.a4 4: planks kept back from placing (a crafting table 4 + sticks 2), so a pillar or a box never eats the next craft. */
-    public static final int PLANK_RESERVE = 6;
+    public static int plankReserve() { return Tuning.i("aaEscape.plankReserve"); }
 
     static boolean plank(String k) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plank(k); }
 
@@ -113,7 +115,7 @@ public final class AaEscape {
             if (plank(k)) planks += Math.max(0, e.getValue());
             else other += Math.max(0, e.getValue());
         }
-        return other + Math.max(0, planks - PLANK_RESERVE);
+        return other + Math.max(0, planks - plankReserve());
     }
 
     public static int throwaway(Map<String, Integer> bag) {

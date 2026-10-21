@@ -20,7 +20,7 @@ class OreDetourTest {
         assertTrue(OreDetour.line(w, v, 0, 53, 0).startsWith("ore on the way home: 2 iron_ore at 3 52 0 ("), OreDetour.line(w, v, 0, 53, 0));
         w.fill(-6, -2, 44, 52, -2, 2, "coal_ore");
         List<Pos> big = OreDetour.pick(w, -4, 53, 0, 8, id -> true, ALL);
-        assertEquals(OreDetour.CAP, big.size(), "one vein, 8 blocks at most");
+        assertEquals(OreDetour.cap(), big.size(), "one vein, 8 blocks at most");
     }
 
     @Test

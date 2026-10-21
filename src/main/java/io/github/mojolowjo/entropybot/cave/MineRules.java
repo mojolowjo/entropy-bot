@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import io.github.mojolowjo.entropybot.clear.Tools;
@@ -70,9 +72,9 @@ public final class MineRules {
     public static long stallTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("mine.stallS")); }
 
     /** Policy: the distance Baritone's free mine keeps from protect boxes (the guard's no-break). */
-    public static final int PROTECT_MARGIN = 16;
+    public static int protectMargin() { return Tuning.i("mineRules.protectMargin"); }
     /** A lease covers at most this many blocks (GuardCore.MAX_LEASE_VOLUME): bigger boxes are sliced. */
-    public static final long LEASE_MAX = 4096;
+    public static long leaseMax() { return Tuning.l("mineRules.leaseMax"); }
     static final Map<String, Integer> DROPS_PER = Map.of("redstone", 4, "lapis", 4, "copper", 3);
     /** The pickaxe tier a need asks of the tool, from the block tags (MiningTiers.needTier): the one scale; the caller's default is for an unreadable need and is replaced by tools.unknownNeedTier. */
     public static final NeedTiers PICK_TIER = new NeedTiers();
@@ -130,7 +132,7 @@ public final class MineRules {
     }
 
     /** The at form's vein: at most this many cells, the target included. */
-    public static final int AT_VEIN = 8;
+    public static int atVein() { return Tuning.i("mineRules.atVein"); }
 
     /** The vein from start: start, then face-touching cells {@code sameOre} accepts, breadth first, at most max. Pure. */
     public static List<int[]> vein(int[] start, java.util.function.Predicate<int[]> sameOre, int max) {
@@ -201,7 +203,7 @@ public final class MineRules {
     public static String protectNearText(Near n) {
         String name = n.box().name != null ? n.box().name : "box";
         return "I won't mine here: " + (n.gap() == 0 ? "I am inside the protected " + name : "the protected " + name + " is " + n.gap() + " blocks away")
-                + " (Baritone's mine digs where it likes, so I keep " + PROTECT_MARGIN + " blocks away from protect boxes)";
+                + " (Baritone's mine digs where it likes, so I keep " + protectMargin() + " blocks away from protect boxes)";
     }
 
     // ---- the leases: 32 x 33 x 32 around the bot, clipped to the areas, minus the protect boxes, sliced ----
@@ -262,7 +264,7 @@ public final class MineRules {
             for (int[] x : parts) q.addAll(minus(x, p));
             parts = q;
         }
-        for (int[] part : parts) out.addAll(slices(part, LEASE_MAX));
+        for (int[] part : parts) out.addAll(slices(part, leaseMax()));
         return out.isEmpty() ? null : out;
     }
 
@@ -306,7 +308,7 @@ public final class MineRules {
             if (!pickOk(s, requiresCorrectTool, need)) continue;
             int t = Tools.toolTier(s.id());
             if (t < bestT) { best = s.index(); bestT = t; }
-            if (ores && t >= Tools.ORE_TIER && t < ironT) { iron = s.index(); ironT = t; }
+            if (ores && t >= Tools.oreTier() && t < ironT) { iron = s.index(); ironT = t; }
         }
         return iron >= 0 ? iron : best;
     }

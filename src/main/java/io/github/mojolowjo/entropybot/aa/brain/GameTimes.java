@@ -33,11 +33,14 @@ public final class GameTimes {
     // Rule 3 facts, not Tuning: the constants below are the game's own (Attributes.MOVEMENT_SPEED default 0.1, Player.getDigSpeed
     // and its effect multipliers, the 20 tick second, Minecraft.missTime = 5 after a break), not choices of the brain.
     /** Vanilla walking speed: MOVEMENT_SPEED 0.1 = 4.317 blocks a second (the number Unit has always used). */
-    public static final double BASE_SPEED_ATTR = 0.1, BASE_WALK_BPS = Unit.WALK_BPS, SPRINT_FACTOR = 1.3;
+    public static final double BASE_SPEED_ATTR = 0.1; // game fact: the player base movement speed attribute is 0.1
+    public static final double BASE_WALK_BPS = Unit.WALK_BPS; // game fact: vanilla walking speed, blocks per second
+    public static final double SPRINT_FACTOR = 1.3; // game fact: sprinting multiplies the walking speed by 1.3
     /** Swimming at the surface without Depth Strider, about 2.2 blocks a second (the wiki's number; the adapter does not measure it). */
-    public static final double BASE_SWIM_BPS = 2.2;
+    public static final double BASE_SWIM_BPS = 2.2; // game fact: vanilla swimming speed, blocks per second
     /** Ticks a second, and the client's pause after a break before the next block starts. */
-    public static final int TPS = 20, AFTER_BREAK_TICKS = 5;
+    public static final int TPS = 20; // game fact: 20 game ticks per second
+    public static final int AFTER_BREAK_TICKS = 5; // game fact: vanilla destroy delay, 5 ticks between two block breaks
 
     /**
      * The player's terms of {@code Player.getDigSpeed}, read by the adapter.

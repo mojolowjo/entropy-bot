@@ -36,10 +36,10 @@ import java.util.List;
 public final class SkyScanner {
     public static final SkyScanner INSTANCE = new SkyScanner();
     /** The scan's share of a client tick (owner, 2026-10-05: performance is not a worry now; still never a stall). */
-    public static final long BUDGET_NS = 2_000_000;
-    static final int REFILL_EVERY_TICKS = 10;
+    public static final long BUDGET_NS = 2_000_000; // structural
+    static final int REFILL_EVERY_TICKS = 10; // structural
     /** check: on, chunks waiting, and no column scanned for this long. */
-    static final long STALL_MS = 5000;
+    static final long STALL_MS = 5000; // structural
 
     private final SkyStore store = new SkyStore();
     private final SeenRule.Errors errs = new SeenRule.Errors();

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -26,11 +28,11 @@ public final class WaterPlan {
     private WaterPlan() {}
 
     /** How many water rounds one dig may take (each must get it further). */
-    public static final int MAX_ROUNDS = 40;
+    public static int maxRounds() { return Tuning.i("waterPlan.maxRounds"); }
     /** The most ticks it waits for water to drain after plugging it (30 s). */
-    public static final int DRAIN_TICKS = 600;
+    public static int drainTicks() { return Tuning.i("waterPlan.drainTicks"); }
     /** What a "junk drop" dig with "water" keeps of its junk blocks for sealing (on top of the 64 for pickaxes). */
-    public static final int RESERVE = 64;
+    public static int reserveV() { return Tuning.i("waterPlan.reserve"); }
 
     /** One block to put down: where, from where (feet; null: wherever reaches), which block, and why. */
     public record Placement(Pos cell, String block, WaterShell.Role role) {}
@@ -80,7 +82,7 @@ public final class WaterPlan {
     }
 
     /** The most slices one round seals (as many as it can place from where it may stand). */
-    public static final int SLICES = 4;
+    public static int slices() { return Tuning.i("waterPlan.slices"); }
 
     /** The shell method: the next slices toward the water that need blocks. */
     private static Round shell(Inputs in, WaterScan.Scan scan, String what) {
@@ -91,7 +93,7 @@ public final class WaterPlan {
         // the slices that need anything (the water may lie a few slices ahead); a slice it can't seal, or may not place
         // in, ends the list - or the round, when it is the first
         List<List<WaterShell.Cell>> slices = new ArrayList<>();
-        for (int t = s, k = 0; WaterShell.inBox(in.box(), a, t) && k < 8 && slices.size() < SLICES; t += a.sign(), k++) {
+        for (int t = s, k = 0; WaterShell.inBox(in.box(), a, t) && k < 8 && slices.size() < slices(); t += a.sign(), k++) {
             WaterShell.SliceNeeds n = WaterShell.sliceNeeds(w, in.box(), a, t);
             String why = !n.problems().isEmpty() ? "I can't seal " + n.problems().get(0) : refused(in, n.cells());
             if (why != null) {
@@ -134,7 +136,7 @@ public final class WaterPlan {
         List<String> ids = assignBlocks(o.cells().size(), in.inv());
         if (ids == null) {
             return Round.blocked(scan.kind(), "I need " + o.cells().size() + " blocks to seal it and have " + available(in.inv())
-                    + " (cobblestone, cobbled deepslate, stone, dirt...; " + FloorFill.STONE_KEEP + " stay for pickaxes)", what);
+                    + " (cobblestone, cobbled deepslate, stone, dirt...; " + FloorFill.stoneKeep() + " stay for pickaxes)", what);
         }
         List<Placement> out = new ArrayList<>();
         int water = 0, sources = 0;
@@ -269,7 +271,7 @@ public final class WaterPlan {
     // ---- the dig's side: when to give up, the end messages ----
 
     /** Rounds in a row whose clear broke nothing after it before the dig gives up on the water. */
-    public static final int MAX_STUCK = 3;
+    public static int maxStuck() { return Tuning.i("waterPlan.maxStuck"); }
 
     /**
      * Before a round: the clear that just stopped broke {@code broken} blocks. Why the dig gives up on the water now
@@ -277,8 +279,8 @@ public final class WaterPlan {
      */
     public static String giveUp(Tally t, int broken) {
         t.stuck = t.rounds > 0 && broken == 0 ? t.stuck + 1 : 0;
-        if (t.rounds >= MAX_ROUNDS) return "gave up on the water after " + t.rounds + " rounds";
-        if (t.stuck >= MAX_STUCK) return "sealing got me no further (" + t.stuck + " rounds in a row)";
+        if (t.rounds >= maxRounds()) return "gave up on the water after " + t.rounds + " rounds";
+        if (t.stuck >= maxStuck()) return "sealing got me no further (" + t.stuck + " rounds in a row)";
         return null;
     }
 

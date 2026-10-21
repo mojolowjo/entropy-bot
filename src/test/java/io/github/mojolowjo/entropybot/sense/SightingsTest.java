@@ -70,7 +70,7 @@ class SightingsTest {
     void cavesMergeExhaustAndChance() {
         Sightings s = new Sightings();
         double prior = s.cavesPer100();
-        assertEquals(Sightings.PRIOR_CAVES, prior, 1e-9);
+        assertEquals(Sightings.priorCaves(), prior, 1e-9);
         assertNotNull(s.sawCave("d", 0, 40, 0, 1));
         assertNull(s.sawCave("d", 5, 40, 5, 2), "within 16: the same opening");
         assertNotNull(s.sawCave("d", 40, 40, 0, 3));
@@ -81,7 +81,7 @@ class SightingsTest {
         assertEquals(40, s.nearestCave("d", 2, 40, 2, 64).x(), "an exhausted cave is offered no more");
         s.walked(30);
         s.walked(500);                  // a teleport is not a walk
-        assertEquals((2 + Sightings.PRIOR_CAVES * Sightings.PRIOR_HUNDREDS) / (0.3 + Sightings.PRIOR_HUNDREDS), s.cavesPer100(), 1e-9);
+        assertEquals((2 + Sightings.priorCaves() * Sightings.priorHundreds()) / (0.3 + Sightings.priorHundreds()), s.cavesPer100(), 1e-9);
     }
 
     @Test
@@ -91,8 +91,8 @@ class SightingsTest {
         var r = s.sawHerd("d", "minecraft:cow", 100, 64, 100, 8, 0, fresh);
         assertTrue(fresh[0]);
         assertEquals(1, Sightings.confidence(r, 0), 1e-9);
-        assertEquals(0.5, Sightings.confidence(r, Sightings.HALF_LIFE_MS), 1e-9, "halves every 10 min");
-        assertEquals(0.25, Sightings.confidence(r, 2 * Sightings.HALF_LIFE_MS), 1e-9);
+        assertEquals(0.5, Sightings.confidence(r, Sightings.halfLifeMs()), 1e-9, "halves every 10 min");
+        assertEquals(0.25, Sightings.confidence(r, 2 * Sightings.halfLifeMs()), 1e-9);
         // the herd drifted 6 blocks: the same record, the new place and count
         s.sawHerd("d", "minecraft:cow", 106, 64, 100, 6, 1000, fresh);
         assertFalse(fresh[0]);
@@ -102,7 +102,7 @@ class SightingsTest {
         assertTrue(fresh[0], "another type is its own record");
         // a visit that finds none: confidence 0.1, kept (herds drift)
         var miss = s.visit("d", "minecraft:cow", 108, 98, false, 0, 5000);
-        assertEquals(Sightings.MISS_CONF, Sightings.confidence(miss, 5000), 1e-9);
+        assertEquals(Sightings.missConf(), Sightings.confidence(miss, 5000), 1e-9);
         assertEquals(1, s.animals("d", "minecraft:cow").size());
         // a visit that finds some: reset to 1, the count renewed
         var hit = s.visit("d", "minecraft:cow", 106, 100, true, 4, 9000);
@@ -111,7 +111,7 @@ class SightingsTest {
         assertNull(s.visit("d", "minecraft:cow", 500, 500, false, 0, 9000), "no sighting there");
         // caves and ore do not decay
         var cave = s.sawCave("d", 0, 30, 0, 0);
-        assertEquals(1, Sightings.confidence(cave, 10 * Sightings.HALF_LIFE_MS), 1e-9);
+        assertEquals(1, Sightings.confidence(cave, 10 * Sightings.halfLifeMs()), 1e-9);
     }
 
     @Test

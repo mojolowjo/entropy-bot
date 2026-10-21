@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.Gson;
@@ -25,9 +27,9 @@ import java.util.TreeMap;
  */
 public final class OreStats {
     /** Chunks kept (a cap on the file and memory; past it new chunks are ignored). */
-    public static final int MAX_CHUNKS = 150_000;
+    public static final int MAX_CHUNKS = 150_000; // structural
     /** The peak is the busiest band of this many blocks. */
-    public static final int BAND = 8;
+    public static int band() { return Tuning.i("oreStats.band"); }
     private static final Gson GSON = new Gson();
 
     /** dim -> family -> (Y -> samples). */
@@ -66,8 +68,8 @@ public final class OreStats {
         Set<Long> cs = counted.get(dim);
         if (h == null || cs == null || cs.isEmpty()) return -1;
         int n = 0;
-        for (int c : h.subMap(y - BAND / 2, true, y + BAND / 2, false).values()) n += c;
-        return n / ((double) cs.size() * 256 * BAND);
+        for (int c : h.subMap(y - band() / 2, true, y + band() / 2, false).values()) n += c;
+        return n / ((double) cs.size() * 256 * band());
     }
 
     public long chunks() { return chunks; }
@@ -133,11 +135,11 @@ public final class OreStats {
             if (!gotHigh && acc * 20 >= n * 19) { highY = e.getKey(); gotHigh = true; }
         }
         Map<Integer, Integer> bands = new TreeMap<>();
-        for (Map.Entry<Integer, Integer> e : h.entrySet()) bands.merge(Math.floorDiv(e.getKey(), BAND), e.getValue(), Integer::sum);
+        for (Map.Entry<Integer, Integer> e : h.entrySet()) bands.merge(Math.floorDiv(e.getKey(), band()), e.getValue(), Integer::sum);
         int bestBand = 0, bestN = -1;
         for (Map.Entry<Integer, Integer> e : bands.entrySet())
             if (e.getValue() > bestN) { bestN = e.getValue(); bestBand = e.getKey(); }
-        return new Range(dim, family, n, low, high, lowY, highY, bestBand * BAND + BAND / 2);
+        return new Range(dim, family, n, low, high, lowY, highY, bestBand * band() + band() / 2);
     }
 
     // ---- file ----

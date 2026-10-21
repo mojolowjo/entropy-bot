@@ -1,7 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
-import io.github.mojolowjo.entropybot.threat.ThreatFacts;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -81,7 +79,7 @@ public final class Tuning {
         def("danger.holdS", 30, "AA_CLEANUP 4", "seconds a dug-in or pillared bot waits before it works again");
         def("danger.perS", 0.25, "AA_CLEANUP 4", "the danger desire's score per second the best way saves (300 s = urgent 75)");
         // AA_STEP2 1: the night ways (round 5: night.hide and night.shelter cancelled each other; one danger desire now)
-        def("danger.fightHit", ThreatFacts.ARMED, "AA_STEP2 1", "the least weapon hit the fight way needs (a wooden sword 4)");
+        def("danger.fightHit", 4,"AA_STEP2 1", "the least weapon hit the fight way needs (a wooden sword 4)");
         def("danger.boxBlocks", 12, "AA_STEP2 1", "blocks the built shell (box) needs in the bag (ShelterPlan: 12 cells)");
         def("danger.boxS", 20, "AA_STEP2 1", "seconds to build the box (12 blocks, the torch inside)");
         def("danger.burrowS", 6, "AA_STEP2 1", "seconds to dig down two and seal over the head");
@@ -191,9 +189,13 @@ public final class Tuning {
         def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
         def("walk.stuckS", 30, "rm-routes (was Jobs.TRAVEL_STUCK_TICKS)", "seconds a walk may go without a block of progress toward its goal before it fails");
         def("walk.farXZ", 128, "rm-routes", "blocks across beyond which a walk asks Baritone for GoalXZ first, then GoalBlock on arrival");
+        TuningDefs.register();
     }
 
-    private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }
+    static void def(String name, double v, String run, String why) {
+        if (ALL.containsKey(name)) throw new IllegalStateException("tuning \"" + name + "\" is defined twice");
+        ALL.put(name, new Entry(name, v, v, run, why));
+    }
 
     /** True under JUnit: an unknown name throws there; in the game it is logged once (and reads 0, loudly wrong rather than silent). */
     static volatile boolean strict = junit();
@@ -212,6 +214,12 @@ public final class Tuning {
         if (REPORTED.add(name)) org.slf4j.LoggerFactory.getLogger(Tuning.class).error("[entropybot] aa: {} (the number reads 0)", msg);
         return 0;
     }
+
+    /** {@link #get} as an int (rounded). */
+    public static int i(String name) { return (int) Math.round(get(name)); }
+
+    /** {@link #get} as a long (rounded). */
+    public static long l(String name) { return Math.round(get(name)); }
 
     /** The value of a name code must have: same as get (an unknown name is loud there). */
     public static double need(String name) {
@@ -268,6 +276,7 @@ public final class Tuning {
 
     static String fmt(double v) { return v == Math.rint(v) ? String.valueOf((long) v) : String.format(Locale.ROOT, "%.3f", v).replaceAll("0+$", ""); }
 }
+
 
 
 

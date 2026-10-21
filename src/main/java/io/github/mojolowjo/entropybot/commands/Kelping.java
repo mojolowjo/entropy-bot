@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.gui.Gui;
@@ -25,8 +27,8 @@ import java.util.Map;
  */
 final class Kelping {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long IDLE_END = 60 * 20;
-    static final int MAX_DRY = 3;
+    static long idleEnd() { return Tuning.l("kelping.idleEnd"); }
+    static int maxDry() { return Tuning.i("kelping.maxDry"); }
 
     private final Commands c;
 
@@ -123,8 +125,8 @@ final class Kelping {
         if (r.picked) {                                               // the last cut and its pickup walk are over: did it pay?
             r.picked = false;
             if (have > r.lastHave) r.dry = 0;
-            else if (++r.dry >= MAX_DRY) {
-                end(r, "stopped: gather kelp " + have + "/" + r.goal.n() + " - " + MAX_DRY + " cuts in a row gave no kelp (the dig, or the drops out of reach)");
+            else if (++r.dry >= maxDry()) {
+                end(r, "stopped: gather kelp " + have + "/" + r.goal.n() + " - " + maxDry() + " cuts in a row gave no kelp (the dig, or the drops out of reach)");
                 return;
             }
             r.lastHave = have;
@@ -138,10 +140,10 @@ final class Kelping {
         }
         KelpRules.Column col = KelpRules.pick(scan(p), p.getBlockX(), p.getBlockY(), p.getBlockZ(), this::workAllowed);
         if (col == null) {
-            r.why = "I see no kelp column of 2+ blocks within " + KelpRules.RANGE + " blocks - walk me to some";
+            r.why = "I see no kelp column of 2+ blocks within " + KelpRules.range() + " blocks - walk me to some";
             if (r.idleSince < 0) r.idleSince = now;
             r.nextAt = now + 100;
-            if (now - r.idleSince >= IDLE_END) end(r, "stopped: gather kelp " + have + "/" + r.goal.n() + " - " + r.why);
+            if (now - r.idleSince >= idleEnd()) end(r, "stopped: gather kelp " + have + "/" + r.goal.n() + " - " + r.why);
             return;
         }
         r.idleSince = -1;
@@ -171,7 +173,7 @@ final class Kelping {
         List<int[]> blocks = new ArrayList<>();
         if (level == null) return List.of();
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
-        int R = KelpRules.RANGE;
+        int R = KelpRules.range();
         for (int x = p.getBlockX() - R; x <= p.getBlockX() + R; x++)
             for (int z = p.getBlockZ() - R; z <= p.getBlockZ() + R; z++)
                 for (int y = p.getBlockY() - 24; y <= p.getBlockY() + 2; y++) {

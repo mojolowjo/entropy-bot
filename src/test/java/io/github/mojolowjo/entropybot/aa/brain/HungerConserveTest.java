@@ -18,8 +18,8 @@ class HungerConserveTest {
 
     @Test void flagLapses() {
         HungerConserve.set(true, 1000);
-        assertTrue(HungerConserve.active(1000 + HungerConserve.LAPSE_MS - 1));
-        assertFalse(HungerConserve.active(1000 + HungerConserve.LAPSE_MS));
+        assertTrue(HungerConserve.active(1000 + HungerConserve.lapseMs() - 1));
+        assertFalse(HungerConserve.active(1000 + HungerConserve.lapseMs()));
         HungerConserve.set(false, 1000);
         assertFalse(HungerConserve.active(1001));
     }

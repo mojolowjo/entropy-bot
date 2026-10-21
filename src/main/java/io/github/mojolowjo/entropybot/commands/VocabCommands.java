@@ -172,7 +172,7 @@ final class VocabCommands {
         String busy = c.chainBusyTextPub();
         if (busy != null) return busy;
         int[] me = Jobs.here(p);
-        hold = new Hold("defending " + me[0] + " " + me[1] + " " + me[2], Guard.dimOf(p.level()), me[0], me[1], me[2], io.github.mojolowjo.entropybot.vocab.HoldRules.DEFEND_R, null, from);
+        hold = new Hold("defending " + me[0] + " " + me[1] + " " + me[2], Guard.dimOf(p.level()), me[0], me[1], me[2], io.github.mojolowjo.entropybot.vocab.HoldRules.defendR(), null, from);
         LOG.info("[entropybot] {}", hold.what());
         return "ok: defending this spot (" + me[0] + " " + me[1] + " " + me[2] + "): I stay within " + hold.r() + " blocks and fight what comes - dismiss or stop ends it";
     }
@@ -196,7 +196,7 @@ final class VocabCommands {
             String[] err = new String[1];
             PlaceWords.Spot s = PlaceWords.resolveGo(placeList(), n, null, err);
             if (s == null) return "error: I have no area, place or marker called " + n + " (area list, places)";
-            hold = new Hold("guarding " + s.name(), dim, s.x(), s.y(), s.z(), io.github.mojolowjo.entropybot.vocab.HoldRules.GUARD_R, null, from);
+            hold = new Hold("guarding " + s.name(), dim, s.x(), s.y(), s.z(), io.github.mojolowjo.entropybot.vocab.HoldRules.guardR(), null, from);
         }
         String why = c.jobs.walkVerdict(hold.x(), hold.y(), hold.z());
         if (why != null && !from.equalsIgnoreCase(c.owner())) {

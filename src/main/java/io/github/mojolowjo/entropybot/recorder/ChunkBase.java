@@ -18,7 +18,7 @@ import java.util.zip.GZIPOutputStream;
  * Pure; immutable after construction.
  */
 public final class ChunkBase {
-    static final int MAGIC = 0x45425231; // "EBR1"
+    static final int MAGIC = 0x45425231; // structural  // "EBR1"
     public static final String AIR = "minecraft:air";
 
     public final String dim;

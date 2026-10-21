@@ -65,7 +65,7 @@ final class Assist {
         doing = "following you";
         follow(p);
         AssistRules.Report r = readReport();
-        boolean fresh = r != null && System.currentTimeMillis() - r.received() <= AssistRules.FRESH_MS;
+        boolean fresh = r != null && System.currentTimeMillis() - r.received() <= AssistRules.freshMs();
         LOG.info("[entropybot] assist on for {}", from);
         return "ok: assisting you - I follow you, fight what threatens either of us and do what you do (chop, mine, farm; I hand you blocks while you build)"
                 + (fresh ? "" : " - no fresh report from your companion mod yet, so for now I only follow")
@@ -119,7 +119,7 @@ final class Assist {
         AssistRules.Report r = readReport();
         String owner = c.owner();
         String dim = p.level().dimension().location().toString();
-        boolean fresh = r != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= AssistRules.FRESH_MS && r.dim().equals(dim);
+        boolean fresh = r != null && r.name().equalsIgnoreCase(owner) && now - r.received() <= AssistRules.freshMs() && r.dim().equals(dim);
         if (!fresh) {
             if (ourChain()) return;                 // the job carries on; the report may come back
             doing = "following you (no fresh report from your companion mod)";
@@ -177,7 +177,7 @@ final class Assist {
             return;
         }
         String chain = AssistRules.chain(AssistRules.halfCutTrees(world(p), b.x(), b.y(), b.z(), b.id()), false);
-        if (chain == null && dist(p, r.x(), r.z()) <= AssistRules.CHOP_R) chain = "cut 16 " + AssistRules.path(b.id());
+        if (chain == null && dist(p, r.x(), r.z()) <= AssistRules.chopR()) chain = "cut 16 " + AssistRules.path(b.id());
         start(p, chain, Act.CHOPPING, "cutting " + AssistRules.path(b.id()), now);
     }
 
@@ -195,9 +195,9 @@ final class Assist {
     private void farm(LocalPlayer p, AssistRules.Report r, long now) {
         JsonObject f = Core.INSTANCE.knowledge.places().get("farm");
         int[] at = f == null ? null : SenseRuntime.xyz(f);
-        boolean near = at != null && Math.hypot(at[0] - r.x(), at[2] - r.z()) <= AssistRules.FARM_R;
+        boolean near = at != null && Math.hypot(at[0] - r.x(), at[2] - r.z()) <= AssistRules.farmR();
         if (!near) {
-            doing = "following you (no farm place within " + AssistRules.FARM_R + " of you: place farm marks one)";
+            doing = "following you (no farm place within " + AssistRules.farmR() + " of you: place farm marks one)";
             follow(p);
             return;
         }
@@ -216,7 +216,7 @@ final class Assist {
 
     /** Starts the chain for an activity (the same chain not again within a minute), else follows. */
     private void start(LocalPlayer p, String chain, Act a, String what, long now) {
-        if (chain == null || (chain.equals(lastKey) && now - lastStart < AssistRules.RETRY_MS) || (c.jobs.running() && !c.jobs.walking())) {
+        if (chain == null || (chain.equals(lastKey) && now - lastStart < AssistRules.retryMs()) || (c.jobs.running() && !c.jobs.walking())) {
             doing = "following you (" + (chain == null ? "nothing to " + a.word() + " near you" : "done " + what + " there") + ")";
             follow(p);
             return;

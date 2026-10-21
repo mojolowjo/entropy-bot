@@ -23,7 +23,7 @@ class NightShelterTest {
         bb.in.hungerDrains = true;
         bb.in.dayTime = 18000;
         assertEquals(85, AaDesires.shelterScore(bb), 1e-9, "aa-costs: Normal, no armour, dark (AA_ROUND4 B2: no bed term)");
-        assertTrue(AaDesires.shelterScore(bb) >= Brain.URGENT);
+        assertTrue(AaDesires.shelterScore(bb) >= Brain.urgentV());
         bb.in.armorPoints = 8;
         bb.in.bedKnown = true;
         assertEquals(85 * 0.76, AaDesires.shelterScore(bb), 1e-9, "armour 8 lowers the danger under the urgent line");
@@ -33,7 +33,7 @@ class NightShelterTest {
         bb.in.bedKnown = false;
         bb.in.underGround = true;
         assertTrue(AaDesires.shelterScore(bb) > 0, "aa-night2: no sky (a tree, an overhang) is no shelter");
-        bb.in.underDepth = AaLadder.SURFACE_DEPTH;
+        bb.in.underDepth = AaLadder.surfaceDepth();
         assertEquals(-1, AaDesires.shelterScore(bb), "deep under: night work goes on");
         bb.in.underDepth = 0;
         bb.in.sheltered = true;
@@ -46,7 +46,7 @@ class NightShelterTest {
         bb.in.dayTime = 6000;
         assertEquals(-1, AaDesires.shelterScore(bb), "day");
         bb.in.dayTime = 12000;
-        assertTrue(AaDesires.shelterScore(bb) > 0 && AaDesires.shelterScore(bb) < Brain.URGENT, "dusk: rising, not urgent");
+        assertTrue(AaDesires.shelterScore(bb) > 0 && AaDesires.shelterScore(bb) < Brain.urgentV(), "dusk: rising, not urgent");
     }
 
     @Test
@@ -81,7 +81,7 @@ class NightShelterTest {
         assertEquals(-1, AaDesires.hideScore(false, 2, 12, 20, 1, false), "day, hostiles near, 12 hp: not yet");
         assertEquals(56, AaDesires.hideScore(false, 2, 12, 20, 1, true), 1e-9, "started: holds to 16");
         assertEquals(70, AaDesires.hideScore(false, 2, 10, 20, 1, true), 1e-9);
-        assertTrue(AaDesires.hideScore(false, 2, 8, 20, 1, false) >= Brain.URGENT, "day, hostiles near, 8 hp: urgent");
+        assertTrue(AaDesires.hideScore(false, 2, 8, 20, 1, false) >= Brain.urgentV(), "day, hostiles near, 8 hp: urgent");
         assertEquals(99, AaDesires.hideScore(true, 0, 6, 20, 1.37, false), 1e-9, "night 6 hp: full");
         assertEquals(-1, AaDesires.hideScore(true, 3, 16, 20, 1.37, true), "16 hp: done");
     }

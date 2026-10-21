@@ -183,10 +183,10 @@ public final class FarmRound {
         List<int[]> away = new ArrayList<>();
         for (int[] c : cropSpots) if (FarmRules.squatReach(me, List.of(c)) > 0) covered.add(c[0] + " " + c[1] + " " + c[2]);
         for (int[] c : growing) if (!covered.contains(c[0] + " " + c[1] + " " + c[2])) away.add(c);
-        boolean spotDone = FarmRules.squatReach(me, growing) == 0 || elapsed - growStart >= FarmRules.FARM_GROW_S * 20L;
+        boolean spotDone = FarmRules.squatReach(me, growing) == 0 || elapsed - growStart >= FarmRules.farmGrowS() * 20L;
         if (left == 0 || spotDone) {
             grewTicks += elapsed - growStart;
-            if (!away.isEmpty() && spotsUsed < FarmRules.FARM_SPOTS) {
+            if (!away.isEmpty() && spotsUsed < FarmRules.farmSpots()) {
                 FarmRules.Stand next = FarmRules.farmStandSpot(w, away, badSpots);
                 if (next != null) {
                     spotsUsed++;
@@ -424,7 +424,7 @@ public final class FarmRound {
     private Tick deposit(FarmWorld w) {
         // nearly full (FARM_FREE free slots or fewer)? Put things away at the base chests (the walk teleports home
         // when that's far), so "repeat forever farm" never fills up. The next round walks back.
-        if (FarmRules.freeSlots(w.slots()) > FarmRules.FARM_FREE) return Tick.of("next");
+        if (FarmRules.freeSlots(w.slots()) > FarmRules.farmFree()) return Tick.of("next");
         return new Tick("next", List.of(new Deposit()), null, null);
     }
 

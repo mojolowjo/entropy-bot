@@ -81,7 +81,7 @@ class DoorTest {
         assertEquals(1, Door.refused(Driver.OTHER));
         Door.allow(Driver.OTHER, "job pick up my table");
         assertEquals(2, Door.refused(Driver.OTHER));
-        now += Door.REPEAT_MS;
+        now += Door.repeatMs();
         Door.allow(Driver.OTHER, "travel back to defending");
         assertEquals(3, Door.refused(Driver.OTHER));
         assertEquals(3, log.size());

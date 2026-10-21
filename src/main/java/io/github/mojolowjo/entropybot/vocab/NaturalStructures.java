@@ -182,7 +182,7 @@ public final class NaturalStructures {
             for (Kind k : found) if (k.palette.test(id)) { ok = true; break; }
             if (!ok) left += e.getValue();
         }
-        if (left >= ExploreWords.BASE_BUILT) return null;
+        if (left >= ExploreWords.baseBuilt()) return null;
         List<String> names = new ArrayList<>();
         for (Kind k : found) names.add(k.name);
         return String.join(" and ", names);

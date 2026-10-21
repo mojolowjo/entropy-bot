@@ -11,7 +11,7 @@ import java.util.ArrayDeque;
  * mod's own notes ("job"). Readers remember the last seq they saw and ask for everything after it.
  */
 public final class EventRing {
-    public static final int CAPACITY = 300;
+    public static final int CAPACITY = 300; // structural
 
     private final ArrayDeque<JsonObject> ring = new ArrayDeque<>();
     private long seq;

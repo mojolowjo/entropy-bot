@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import io.github.mojolowjo.entropybot.watchview.TunnelPose;
@@ -20,12 +22,12 @@ public final class WatchCamera {
     public static final WatchCamera INSTANCE = new WatchCamera();
 
     /** Camera pitch (degrees, positive = looking down) and the cap while watching. */
-    public static final float PITCH = 25f;
-    public static final int WATCH_FPS = 60;
+    public static float pitch() { return (float) Tuning.get("watchCamera.pitch"); }
+    public static int watchFps() { return Tuning.i("watchCamera.watchFps"); }
     /** Horizontal speed (blocks per tick) below which the bot counts as standing: the yaw stays. */
-    static final double MOVING = 0.03;
+    static double moving() { return Tuning.get("watchCamera.moving"); }
     /** Share of the way to the walking direction covered per client tick (about 0.5 s to settle at 20 ticks/s). */
-    static final float EASE = 0.12f;
+    static float ease() { return (float) Tuning.get("watchCamera.ease"); }
 
     private volatile boolean on;
     private volatile float yaw;
@@ -125,8 +127,8 @@ public final class WatchCamera {
 
     /** The next camera yaw: it eases towards the walking direction while the bot moves, and stays while it stands. Pure. */
     public static float follow(float yaw, double dx, double dz) {
-        if (Math.hypot(dx, dz) < MOVING) return yaw;
-        return yaw + EASE * turn(yaw, walkYaw(dx, dz));
+        if (Math.hypot(dx, dz) < moving()) return yaw;
+        return yaw + ease() * turn(yaw, walkYaw(dx, dz));
     }
 
     /** v1's angles for this frame, or null to leave the camera alone (off, or first person). */
@@ -141,7 +143,7 @@ public final class WatchCamera {
      */
     public float[] v1Angles(boolean detached, float partial) {
         if (!on || !detached) return null;
-        return new float[]{haveYaw ? drawnYaw(prevYaw, yaw, partial) : yaw, PITCH, 0f};
+        return new float[]{haveYaw ? drawnYaw(prevYaw, yaw, partial) : yaw, pitch(), 0f};
     }
 
     /** Pure: the yaw between the last tick's (from) and this tick's (to), partial 0..1 of the way, by the shorter way round. */
@@ -224,7 +226,7 @@ public final class WatchCamera {
             }
             String warn = io.github.mojolowjo.entropybot.guard.MixinFlags.watchApplied ? "" : " WARNING: the camera listeners are not in (see watch status): plain third person only.";
             String tun = TunnelView.INSTANCE.on() ? " (the tunnel view is on and shows first; watch tunnel off to see this one)" : "";
-            return "ok: watching from behind (" + WATCH_FPS + " FPS while it is on); watch off puts the normal view back." + tun + warn;
+            return "ok: watching from behind (" + watchFps() + " FPS while it is on); watch off puts the normal view back." + tun + warn;
         } catch (Throwable e) {
             return "error: " + e;
         }
@@ -300,7 +302,7 @@ public final class WatchCamera {
             return "ok: tunnel view on: the camera floats above and behind the bot looking " + compass(tv.yaw())
                     + " and passes through blocks; the real world is hidden, only what the bot's own view saw (the tunnels and caves it opened, the ground and trees round it out to the render distance), the bot and mobs are drawn; cutaway "
                     + (tv.cut() ? "on (nothing that covers the bot is drawn)" : "off") + "; "
-                    + WATCH_FPS + " FPS while on. watch tunnel turn left|right, watch tunnel height 1-40, watch tunnel cut on|off, watch tunnel off.";
+                    + watchFps() + " FPS while on. watch tunnel turn left|right, watch tunnel height 1-40, watch tunnel cut on|off, watch tunnel off.";
         } catch (Throwable e) {
             return "error: " + e;
         }
@@ -335,7 +337,7 @@ public final class WatchCamera {
         savedCamera = mc.options.getCameraType();
         viewSaved = true;
         mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_BACK);
-        mc.getWindow().setFramerateLimit(WATCH_FPS);
+        mc.getWindow().setFramerateLimit(watchFps());
     }
 
     /** No view left on: the camera type back, and the option's frame cap back on the window. Never throws. */

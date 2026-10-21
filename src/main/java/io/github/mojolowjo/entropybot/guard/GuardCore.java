@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -28,11 +30,11 @@ public final class GuardCore {
 
     public static final Set<String> DENIED_DIMS = Set.of("minecraft:the_nether", "minecraft:the_end");
     /** The biggest box a lease may cover (the bridge's {@code dig} limit). */
-    public static final long MAX_LEASE_VOLUME = 4096;
+    public static long maxLeaseVolume() { return Tuning.l("guardCore.maxLeaseVolume"); }
     /** A force lease (the owner's {@code dig ... force}) is smaller still. */
-    public static final long MAX_FORCE_VOLUME = 64;
+    public static long maxForceVolume() { return Tuning.l("guardCore.maxForceVolume"); }
     /** Ticks without a heartbeat after which a lease dies. */
-    public static final long LEASE_TIMEOUT_TICKS = 100;
+    public static long leaseTimeoutTicks() { return Tuning.l("guardCore.leaseTimeoutTicks"); }
 
     /** What the guard knows about the block at a spot; supplied by the Minecraft side. */
     public interface BlockInfo {
@@ -143,7 +145,7 @@ public final class GuardCore {
         if (owner == null || owner.isEmpty()) return "error: no token";
         if (DENIED_DIMS.contains(box.dim)) return "error: no digging in " + box.dim;
         if (box.allY()) return "error: a lease needs y1 and y2";
-        long max = force ? MAX_FORCE_VOLUME : MAX_LEASE_VOLUME;
+        long max = force ? maxForceVolume() : maxLeaseVolume();
         if (box.volume() > max) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + max;
         String prot = protectedRefusal(policy, box);
         if (prot != null) return prot;
@@ -164,7 +166,7 @@ public final class GuardCore {
         if (owner == null || owner.isEmpty()) return "error: no token";
         if (DENIED_DIMS.contains(box.dim)) return "error: no digging in " + box.dim;
         if (box.allY()) return "error: a lease needs y1 and y2";
-        if (box.volume() > MAX_LEASE_VOLUME) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + MAX_LEASE_VOLUME;
+        if (box.volume() > maxLeaseVolume()) return "error: that box is " + box.volume() + " blocks, the most a lease may cover is " + maxLeaseVolume();
         Box a = policy.destroyCovering(box, areaName == null ? "" : areaName);
         if (a == null || !AreaTypeRules.breakBuilt(a.type, ownerDigArea)) {
             String why = !ownerDigArea ? "built blocks go only with the owner's own dig <area>"
@@ -262,10 +264,10 @@ public final class GuardCore {
         tick = now;
         if (leases.isEmpty()) return;
         boolean stale = false;
-        for (Lease l : leases.values()) if (now - l.lastHeartbeat > LEASE_TIMEOUT_TICKS) { stale = true; break; }
+        for (Lease l : leases.values()) if (now - l.lastHeartbeat > leaseTimeoutTicks()) { stale = true; break; }
         if (!stale) return;
         Map<String, Lease> m = new LinkedHashMap<>(leases);
-        m.values().removeIf(l -> now - l.lastHeartbeat > LEASE_TIMEOUT_TICKS);
+        m.values().removeIf(l -> now - l.lastHeartbeat > leaseTimeoutTicks());
         leases = Collections.unmodifiableMap(m);
     }
 

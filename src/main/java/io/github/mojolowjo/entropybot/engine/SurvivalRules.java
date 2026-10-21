@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.Set;
 
 /**
@@ -22,9 +24,9 @@ public final class SurvivalRules {
 
     public static final Set<String> MILK_CURES = Set.of("poison", "wither", "hunger");
     public static final Set<String> LOG_ONLY = Set.of("weakness", "slowness", "mining_fatigue");
-    public static final float HEAL_BELOW = 6;
-    public static final long HEAL_EVERY_TICKS = 600;
-    public static final int WATER_R = 8;
+    public static float healBelow() { return (float) Tuning.get("survivalRules.healBelow"); }
+    public static long healEveryTicks() { return Tuning.l("survivalRules.healEveryTicks"); }
+    public static int waterR() { return Tuning.i("survivalRules.waterR"); }
 
     /**
      * onFire: fire ticks above 0; resistant: fire resistance active; inHazard: the feet or head cell is fire or lava;
@@ -45,7 +47,7 @@ public final class SurvivalRules {
      * regeneration potion carried; sinceHeal: ticks since the last one was drunk.
      */
     public static Effect effects(Set<String> effects, boolean milk, float health, boolean fighting, boolean healPotion, long sinceHeal) {
-        if (fighting && health < HEAL_BELOW && healPotion && sinceHeal >= HEAL_EVERY_TICKS && !effects.contains("regeneration")) return Effect.DRINK_HEAL;
+        if (fighting && health < healBelow() && healPotion && sinceHeal >= healEveryTicks() && !effects.contains("regeneration")) return Effect.DRINK_HEAL;
         for (String e : effects) {
             if (MILK_CURES.contains(e)) return milk ? Effect.DRINK_MILK : Effect.NOTE_NO_MILK;
         }

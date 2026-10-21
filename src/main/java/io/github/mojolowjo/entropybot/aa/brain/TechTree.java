@@ -15,8 +15,8 @@ import java.util.Set;
  * "namespace:path" (minecraft: may be left out).
  */
 public final class TechTree {
-    public static final int DEPTH = 3;
-    public static final double DISCOUNT = 0.5;
+    public static int depthV() { return Tuning.i("techTree.depth"); }
+    public static double discount() { return Tuning.get("techTree.discount"); }
     /** One recipe: the result and its ingredient slots (each slot = the items that fit it). */
     public record Recipe(String result, List<Set<String>> slots) {}
 
@@ -83,7 +83,7 @@ public final class TechTree {
     /** The unlock value of an item given what is had. */
     public double value(String item, Set<String> have) {
         Set<String> h = norm(have);
-        return value(id(item), h, DEPTH, new HashSet<>());
+        return value(id(item), h, depthV(), new HashSet<>());
     }
 
     private double value(String item, Set<String> have, int depth, Set<String> path) {
@@ -92,7 +92,7 @@ public final class TechTree {
         Set<String> counted = new HashSet<>();
         for (Recipe r : usedIn.getOrDefault(item, List.of())) {
             if (have.contains(r.result()) || !counted.add(r.result())) continue;
-            v += weight(r.result()) + DISCOUNT * value(r.result(), have, depth - 1, path);
+            v += weight(r.result()) + discount() * value(r.result(), have, depth - 1, path);
         }
         path.remove(item);
         return v;
@@ -103,7 +103,7 @@ public final class TechTree {
         Set<String> h = norm(have);
         if (!h.equals(bestFor)) {          // the best is worked out once per bag
             double b = 0;
-            for (String i : usedIn.keySet()) b = Math.max(b, value(i, h, DEPTH, new HashSet<>()));
+            for (String i : usedIn.keySet()) b = Math.max(b, value(i, h, depthV(), new HashSet<>()));
             bestFor = h;
             bestV = b;
         }
@@ -170,7 +170,7 @@ public final class TechTree {
                 for (String i : s) if (h.contains(i) || (reach && !made.contains(i))) { any = true; break; }
                 if (!any) { ok = false; break; }
             }
-            if (ok) best.put(r.result(), weight(r.result()) + value(r.result(), h, DEPTH, new HashSet<>()));
+            if (ok) best.put(r.result(), weight(r.result()) + value(r.result(), h, depthV(), new HashSet<>()));
         }
         List<Idea> out = new ArrayList<>();
         for (var e : best.entrySet()) out.add(new Idea(e.getKey(), e.getValue()));

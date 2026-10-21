@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
@@ -29,7 +31,7 @@ import java.util.Map;
 public final class StepRun {
     private static final Logger LOG = LogUtils.getLogger();
     /** Blocks round me the food facts count animals in (game constant: the client sees about two chunks of mobs this way). */
-    public static final int ANIMAL_RANGE = 32;
+    public static int animalRange() { return Tuning.i("stepRun.animalRange"); }
 
     private final Commands c;
     final Steps steps;
@@ -232,7 +234,7 @@ public final class StepRun {
         List<String> allowed = c.vocab.expand("animals");
         var food = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood();
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !e.isAlive() || p.distanceTo(e) > ANIMAL_RANGE) continue;
+            if (e == p || !e.isAlive() || p.distanceTo(e) > animalRange()) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             if (!food.containsKey(type) || !allowed.contains(type)) continue;
             if (io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e) || e.hasCustomName() || (e instanceof AgeableMob am && am.isBaby())) continue;

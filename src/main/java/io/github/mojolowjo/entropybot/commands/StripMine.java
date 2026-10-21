@@ -325,7 +325,7 @@ public final class StripMine {
             nx.length = length;
             steps.add(StripSteps.make("stripnext", nx));
             label = StripTexts.stripJobLabel(spec, target, mineName);
-            run.deadline = core.tick() + StripRules.MAX_TICKS;
+            run.deadline = core.tick() + StripRules.maxTicks();
         }
         Jobs jobs = commands().jobs;
         return jobs.startSeq(new Seq(jobs, storage(), label, steps, "always"), "always");

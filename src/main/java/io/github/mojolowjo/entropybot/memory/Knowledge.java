@@ -21,7 +21,8 @@ import java.util.TreeMap;
  */
 public final class Knowledge {
     public static final String PLACES = "places.json", CHESTS = "chests.json", RS = "rs.json";
-    static final long FLUSH_AFTER = 40, BACKUP_EVERY = 6000;
+    static final long FLUSH_AFTER = 40; // structural
+    static final long BACKUP_EVERY = 6000; // structural
 
     private final Map<String, JsonObject> places = new TreeMap<>();
     private final Map<String, JsonObject> chests = new TreeMap<>();

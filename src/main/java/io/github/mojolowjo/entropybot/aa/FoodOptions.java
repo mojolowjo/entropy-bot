@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.FoodModel;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
@@ -89,7 +91,8 @@ public final class FoodOptions {
     public record Herd(String type, int x, int y, int z, int count, double conf, double dist) {}
 
     /** Herds this far or more are not offered (a round trip past the horizon). */
-    public static final double HERD_MAX = 400, HERD_MIN_CONF = 0.05;
+    public static double herdMax() { return Tuning.get("foodOptions.herdMax"); }
+    public static double herdMinConf() { return Tuning.get("foodOptions.herdMinConf"); }
 
     /** Meat per animal (the hunt verb's names) and the cooked food's energy. */
     /** The short names of the animals whose loot table drops a food, and the raw meat each gives (LootBook data via HuntRules). */
@@ -103,7 +106,7 @@ public final class FoodOptions {
         return m == null ? null : m.substring(m.indexOf(':') + 1);
     }
 
-    static final double EAT_COST = 2;
+    static double eatCost() { return Tuning.get("foodOptions.eatCost"); }
     /** Energy per round of the slow ways, read from the food data when scored (the data loads after the class does). */
     static double berryYield() { return 2.5 * FoodModel.energyOf("sweet_berries"); }
     static double appleYield() { return FoodModel.energyOf("apple"); }
@@ -134,13 +137,13 @@ public final class FoodOptions {
                 m.failed(lastKey, "no food gained last time", now);
                 lastKey = null;
             }
-            double short_ = Math.max(FoodModel.MIN_STOCK, f.target() - bagE);
-            boolean urgent = f.food() <= FoodModel.URGENT_FOOD;
+            double short_ = Math.max(FoodModel.minStock(), f.target() - bagE);
+            boolean urgent = f.food() <= FoodModel.urgentFood();
             int best = FoodModel.bestNutrition(f.bag());
 
             // eat from the bag first
             if (best > 0 && (urgent || 20 - f.food() >= best))
-                RungOptions.add(rows, dropped, m, now, Options.typed("eat", "eat", List.of(new Step.Eat()), EAT_COST, "the bag's best gives " + best, "eat", m));
+                RungOptions.add(rows, dropped, m, now, Options.typed("eat", "eat", List.of(new Step.Eat()), eatCost(), "the bag's best gives " + best, "eat", m));
 
             // cook what is raw
             String raw = null;
@@ -215,13 +218,13 @@ public final class FoodOptions {
             if (!meatAnimals().contains(h.type())) continue;
             if (h.type().equals("chicken") && !f.furnace()) continue;
             if (f.animals() != null && f.animals().getOrDefault(h.type(), 0) > 0) continue;     // in reach: the plain hunt
-            if (h.conf() < HERD_MIN_CONF) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": seen too long ago (confidence " + String.format(Locale.ROOT, "%.2f", h.conf()) + ")"); continue; }
-            if (h.dist() > HERD_MAX) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": " + Math.round(h.dist()) + " away"); continue; }
+            if (h.conf() < herdMinConf()) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": seen too long ago (confidence " + String.format(Locale.ROOT, "%.2f", h.conf()) + ")"); continue; }
+            if (h.dist() > herdMax()) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": " + Math.round(h.dist()) + " away"); continue; }
             String meat = meatOf(h.type()), cooked = FoodModel.cooked(meat);
             double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
             int n = Math.max(2, Math.min(Math.min(8, Math.max(2, h.count())), FoodModel.count(short_, each)));
             double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
-            double cost = trip / Math.max(HERD_MIN_CONF, h.conf());
+            double cost = trip / Math.max(herdMinConf(), h.conf());
             String key = "sighting/animal " + h.type() + " " + h.x() + " " + h.z();
             Options.Option o = Options.typed("go hunt " + h.type(), "hunt", huntSteps(h.type(), n, new int[]{h.x(), h.z()}, f.furnace() ? meat : null), cost,
                     String.format(Locale.ROOT, "%d %s seen at %d %d, %.0f away, round trip %.0f / confidence %.2f", h.count(), h.type(), h.x(), h.z(), h.dist(), trip, h.conf())
@@ -244,7 +247,7 @@ public final class FoodOptions {
             String a = hunt.type().replaceFirst("^minecraft:", "");
             if (f.animals() != null && f.animals().getOrDefault(a, 0) > 0) continue;
             boolean herd = false;
-            if (f.herds() != null) for (Herd h : f.herds()) if (h.type().equals(a) && h.conf() >= HERD_MIN_CONF && h.dist() <= HERD_MAX) herd = true;
+            if (f.herds() != null) for (Herd h : f.herds()) if (h.type().equals(a) && h.conf() >= herdMinConf() && h.dist() <= herdMax()) herd = true;
             if (!herd) return "hunts " + a + ", none seen in reach or remembered";
         }
         return null;

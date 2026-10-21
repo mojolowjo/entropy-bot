@@ -12,7 +12,8 @@ package io.github.mojolowjo.entropybot.camp;
 public final class DayNight {
     private DayNight() {}
 
-    public static final long NIGHT_FROM = 12542, NIGHT_TO = 23459;
+    public static final long NIGHT_FROM = 12542; // game fact: vanilla day time in ticks: monsters night from 12542 to 23459
+    public static final long NIGHT_TO = 23459; // game fact: vanilla day time in ticks: monsters night from 12542 to 23459
 
     public static boolean night(long dayTime) {
         if (dayTime < 0) return false;

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.plan;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,11 +28,12 @@ import java.util.Set;
 public final class Planner {
     private Planner() {}
 
-    public static final int MAX_NODES = 2000, MAX_STEPS = 24;
-    public static final long BUDGET_MS = 200;
+    public static int maxNodesV() { return Tuning.i("planner.maxNodes"); }
+    public static int maxStepsV() { return Tuning.i("planner.maxSteps"); }
+    public static long budgetMsV() { return Tuning.l("planner.budgetMs"); }
     /** What one quarry (bootstrap's 8 staircase columns) is counted to give. */
-    public static final int QUARRY_GIVES = 40;
-    public static final int SHELTER_BLOCKS = 32;
+    public static int quarryGives() { return Tuning.i("planner.quarryGives"); }
+    public static int shelterBlocks() { return Tuning.i("planner.shelterBlocks"); }
 
     /** One thing the goal wants: an item count or a fact (flag). */
     public record Need(String what, int n, boolean flag) {
@@ -147,9 +150,9 @@ public final class Planner {
 
     // ---- the search ----
 
-    public static Result plan(PlanFacts facts, List<Need> goal) { return plan(facts, goal, MAX_NODES, BUDGET_MS); }
+    public static Result plan(PlanFacts facts, List<Need> goal) { return plan(facts, goal, maxNodesV(), budgetMsV()); }
 
-    public static Result plan(PlanFacts facts, List<Need> goal, int maxNodes, long budgetMs) { return plan(facts, goal, maxNodes, budgetMs, MAX_STEPS); }
+    public static Result plan(PlanFacts facts, List<Need> goal, int maxNodes, long budgetMs) { return plan(facts, goal, maxNodes, budgetMs, maxStepsV()); }
 
     /** 0.26.2: with a step cap (the brain's sub-plans: brain.subgoalMaxSteps). */
     public static Result plan(PlanFacts facts, List<Need> goal, int maxNodes, long budgetMs, int maxSteps) {
@@ -385,13 +388,13 @@ public final class Planner {
         if (x.equals("cobblestone")) {
             if (!n.flags.containsKey("stone")) why.add("no " + WORLD.get("stone"));
             else if (!n.flags.containsKey("quarry")) why.add("no " + WORLD.get("quarry"));
-            else if (n.find("quarry") >= 0) why.add("one quarry per plan (" + QUARRY_GIVES + " cobblestone)");
+            else if (n.find("quarry") >= 0) why.add("one quarry per plan (" + quarryGives() + " cobblestone)");
             else {
                 Node k = child(n);
-                int s = addStep(k, r, "quarry", x, "quarry", QUARRY_GIVES, 25, 0, false);
+                int s = addStep(k, r, "quarry", x, "quarry", quarryGives(), 25, 0, false);
                 if (s >= 0) {
-                    if (d > QUARRY_GIVES) k.open.addFirst(new Req(x, d - QUARRY_GIVES, false, r.forStep()));
-                    else give(k, x, s, QUARRY_GIVES - d);
+                    if (d > quarryGives()) k.open.addFirst(new Req(x, d - quarryGives(), false, r.forStep()));
+                    else give(k, x, s, quarryGives() - d);
                     k.open.addFirst(new Req("pick1", 1, true, s));
                     out.add(k);
                 }
@@ -436,11 +439,11 @@ public final class Planner {
         if (x.equals("shelter")) {
             for (String block : List.of("cobblestone", "planks")) {
                 Node k = child(n);
-                int s = addStep(k, r, "build", block, "build:shelter", SHELTER_BLOCKS, 10, 0, false);
+                int s = addStep(k, r, "build", block, "build:shelter", shelterBlocks(), 10, 0, false);
                 if (s >= 0) {
                     k.steps.get(s).extra = block;
                     addFlag(k, "shelter", s);
-                    k.open.addFirst(new Req(block, SHELTER_BLOCKS, false, s));
+                    k.open.addFirst(new Req(block, shelterBlocks(), false, s));
                     out.add(k);
                 }
             }

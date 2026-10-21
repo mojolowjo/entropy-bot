@@ -14,7 +14,7 @@ public final class LavaPrice {
     private LavaPrice() { }
 
     /** Ticks one cell takes to wade (Baritone's in-fluid walk cost). */
-    static final double CELL_TICKS = baritone.api.pathing.movement.ActionCosts.WALK_ONE_IN_WATER_COST;
+    static final double CELL_TICKS = baritone.api.pathing.movement.ActionCosts.WALK_ONE_IN_WATER_COST; // game fact: Baritone ActionCosts.WALK_ONE_IN_WATER_COST ticks per cell
 
     /** Seconds of loss one lava cell costs at this health. */
     public static double cellS(double health, double maxHealth) {

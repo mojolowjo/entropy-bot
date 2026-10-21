@@ -55,9 +55,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class FlightRecorder implements Recorder, RecorderCommand.Controls {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long REBASE_MS = 30 * 60_000L, HEARTBEAT_MS = 60_000L, AUTO_INCIDENT_GAP_MS = 20_000L;
-    static final long INCIDENT_LOOKBACK_MS = 5 * 60_000L;
-    static final int MAX_TASKS = 32, SPIRAL_MAX = RecorderSettings.RANGE_MAX;
+    static final long REBASE_MS = 30 * 60_000L; // structural
+    static final long HEARTBEAT_MS = 60_000L; // structural
+    static final long AUTO_INCIDENT_GAP_MS = 20_000L; // structural
+    static final long INCIDENT_LOOKBACK_MS = 5 * 60_000L; // structural
+    static final int MAX_TASKS = 32; // structural
+    static final int SPIRAL_MAX = RecorderSettings.RANGE_MAX; // structural
 
     /** The recorder the mixin reports to (the one installed last). */
     static volatile FlightRecorder active;
@@ -90,7 +93,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     private boolean wasDead, recording;
     private int watchedRange = -1;
     private volatile boolean offMaintained;
-    static final int TRIES_PER_STEP = 8;
+    static final int TRIES_PER_STEP = 8; // structural
     private int errors;
     private volatile int incidentCount;
     private volatile String lastIncident;
@@ -610,7 +613,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
             if (d > half && d <= 64) grabs.put("around " + target[0] + " " + target[1] + " " + target[2],
                     Grab.box(level, target[0] - half, target[1] - half, target[2] - half, target[0] + half, target[1] + half, target[2] + half));
         }
-        String hitText = HitLog.text(HitLog.INSTANCE.last(HitLog.DEATH_HITS), zone);
+        String hitText = HitLog.text(HitLog.INSTANCE.last(HitLog.deathHits()), zone);
         final String hits = hitText;
         if (!submit(() -> writeIncident(now, reason, job, dim, me, target, half, grabs, hits))) return null;
         return me;
@@ -630,7 +633,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
             cs.sort(Comparator.comparingLong(Change::atMs).reversed());
         }
         String text = IncidentText.render(now, reason, job, dim, me, half, boxes, store.trail(since, 600), cs, zone)
-                + "\nhits taken (last " + HitLog.DEATH_HITS + ", oldest first): " + hits + "\n";
+                + "\nhits taken (last " + HitLog.deathHits() + ", oldest first): " + hits + "\n";
         String file = store.writeIncident(now, reason, text);
         if (file != null) {
             store.maintain();

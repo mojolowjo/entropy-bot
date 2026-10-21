@@ -416,7 +416,7 @@ public final class ClearRun {
             b.status(job.status("walking to the zone"));
             return Out.RUN;
         }
-        if (job.consecFails >= ClearEngine.MAX_CONSEC_FAILS) {
+        if (job.consecFails >= ClearEngine.maxConsecFails()) {
             // TLL 30: 8 walks failed because water lies between the bot and the work: say so (the water plan takes it)
             if (cutOffByWater(bot)) return end(b, ClearEngine.finishMessage(w, job, null));
             return end(b, ClearEngine.finishMessage(w, job, ClearEngine.STUCK + stuckWhy(bot)

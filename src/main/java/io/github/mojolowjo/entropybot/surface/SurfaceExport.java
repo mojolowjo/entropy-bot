@@ -59,7 +59,7 @@ import java.util.concurrent.Executors;
 public final class SurfaceExport {
     public static final SurfaceExport INSTANCE = new SurfaceExport();
     public static final String SETTINGS_FILE = "surface.json";
-    public static final long BUDGET_NS = 1_000_000;
+    public static final long BUDGET_NS = 1_000_000; // structural
 
     private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
     private static final Map<String, TagKey<Block>> TAGS = Map.of("logs", BlockTags.LOGS, "leaves", BlockTags.LEAVES, "sand", BlockTags.SAND,

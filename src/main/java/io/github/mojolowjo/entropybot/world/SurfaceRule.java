@@ -19,7 +19,7 @@ public final class SurfaceRule {
     public interface Column { Cell at(int y); }
 
     /** How far down it looks at most. */
-    public static final int MAX_DROP = 64;
+    public static final int MAX_DROP = 64; // structural
 
     /**
      * The feet height of the ground at or below {@code y} (the cell over the highest SOLID or FLUID cell under the

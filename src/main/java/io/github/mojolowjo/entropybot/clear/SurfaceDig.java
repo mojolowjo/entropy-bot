@@ -15,7 +15,9 @@ import java.util.List;
  * Loader notes: none (plain Java).
  */
 public final class SurfaceDig {
-    public static final int MAX_N = 64, MAX_COLUMNS = 64 * 64, MAX_BLOCKS = 20000;
+    public static final int MAX_N = 64; // structural
+    public static final int MAX_COLUMNS = 64 * 64; // structural
+    public static final int MAX_BLOCKS = 20000; // structural
 
     private SurfaceDig() {}
 

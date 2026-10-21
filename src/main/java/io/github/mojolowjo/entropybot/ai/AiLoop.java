@@ -38,10 +38,16 @@ public final class AiLoop {
         public World(boolean inWorld, boolean busy, boolean dead) { this(inWorld, busy, dead, null); }
     }
 
-    static final long HEARTBEAT_MS = 60_000, EVENT_GAP_MS = 30_000, CONFIRM_WAIT_MS = 60_000, OUTAGE_RETRY_MS = 300_000, CAP_RETRY_MS = 300_000,
-            WATCHDOG_EXTRA_MS = 15_000;
+    static final long HEARTBEAT_MS = 60_000; // structural
+    static final long EVENT_GAP_MS = 30_000; // structural
+    static final long CONFIRM_WAIT_MS = 60_000; // structural
+    static final long OUTAGE_RETRY_MS = 300_000; // structural
+    static final long CAP_RETRY_MS = 300_000; // structural
+    static final long WATCHDOG_EXTRA_MS = 15_000; // structural
     static final long[] BACKOFF_MS = {5_000, 20_000};
-    static final int PER_MINUTE = 20, WAITS_BEFORE_NUDGE = 3, SAME_LIMIT = 3;
+    static final int PER_MINUTE = 20; // structural
+    static final int WAITS_BEFORE_NUDGE = 3; // structural
+    static final int SAME_LIMIT = 3; // structural
     public static final String AUTO_GOAL = "(autonomous) get established on your own: shelter or a house, tools, food, then better tools and armour; "
             + "pick the next useful job";
 

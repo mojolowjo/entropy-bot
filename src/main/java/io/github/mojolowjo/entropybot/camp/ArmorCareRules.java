@@ -32,7 +32,7 @@ public final class ArmorCareRules {
     /** A worn piece: slot (helmet..boots), id, uses left, max (id null = the slot is empty). */
     public record Piece(String slot, String id, int left, int max) {
         public boolean empty() { return id == null; }
-        public boolean worn() { return id != null && max > 0 && left <= max * ToolCareRules.WORN; }
+        public boolean worn() { return id != null && max > 0 && left <= max * ToolCareRules.wornV(); }
     }
 
     /** The slot of an armour id, or null. */

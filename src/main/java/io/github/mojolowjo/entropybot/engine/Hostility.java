@@ -76,7 +76,7 @@ public final class Hostility {
             Entity a = src.getEntity();
             boolean record = HostileRules.recordAttacker(a != null, a == p, a instanceof LivingEntity, a instanceof Player);
             if (!record) return false;
-            if (hitBy.size() >= HostileRules.MAX_ATTACKERS && !hitBy.containsKey(a.getId())) {
+            if (hitBy.size() >= HostileRules.maxAttackers() && !hitBy.containsKey(a.getId())) {
                 Integer oldest = null;
                 for (Map.Entry<Integer, Long> e : hitBy.entrySet()) if (oldest == null || e.getValue() < hitBy.get(oldest)) oldest = e.getKey();
                 hitBy.remove(oldest);

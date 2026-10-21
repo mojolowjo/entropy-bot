@@ -23,7 +23,7 @@ class DrownRiskTest {
         assertTrue(DrownRisk.fatal(DrownRisk.risk(2, 1, 60)), "little air left: even 2 is too far");
         assertTrue(DrownRisk.fatal(DrownRisk.risk(1, 0, 0)), "no air");
         assertTrue(DrownRisk.risk(4, 3, 300) > DrownRisk.risk(4, 0, 300), "more water over me, more risk");
-        assertEquals(DrownRisk.K * 0.25, DrownRisk.cost(0.5), 1e-9);
+        assertEquals(DrownRisk.k() * 0.25, DrownRisk.cost(0.5), 1e-9);
         assertTrue(Double.isInfinite(DrownRisk.cost(1)));
         assertTrue(DrownRisk.terms(2, 1, 300).contains("drown risk 0.83"), DrownRisk.terms(2, 1, 300));
     }

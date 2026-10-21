@@ -74,7 +74,7 @@ class AaBrainTest {
         br.add(goal);
         br.tick(bb);
         assertEquals(1, port.started.size(), "under the 60 s minimum run");
-        for (int i = 0; i < Brain.MIN_RUN_MS / 1000; i++) {      // ticked all along (a gap would be paused time)
+        for (int i = 0; i < Brain.minRunMs() / 1000; i++) {      // ticked all along (a gap would be paused time)
             clock.advance(1000);
             port.progress.put(1L, (long) i);
             br.tick(bb);

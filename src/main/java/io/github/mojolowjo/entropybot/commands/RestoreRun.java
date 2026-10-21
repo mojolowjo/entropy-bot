@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import baritone.api.IBaritone;
@@ -37,7 +39,8 @@ import java.util.Map;
  */
 final class RestoreRun {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long WALK_MAX = 20 * 60, CHECK_TICKS = 6;
+    static long walkMax() { return Tuning.l("restoreRun.walkMax"); }
+    static long checkTicks() { return Tuning.l("restoreRun.checkTicks"); }
 
     final List<RestorePlan.Action> queue;
     final List<RestorePlan.Left> left = new ArrayList<>();
@@ -171,7 +174,7 @@ final class RestoreRun {
                 return false;
             }
             case "check" -> {
-                if (now - stageTick < CHECK_TICKS) return false;
+                if (now - stageTick < checkTicks()) return false;
                 if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return false;     // the builder still walks / places
                 if (!level.getBlockState(pos).canBeReplaced()) {
                     done(e);
@@ -194,7 +197,7 @@ final class RestoreRun {
     }
 
     /** Seconds (ticks) one scaffold block may take to break. */
-    static final long BREAK_MAX = 20 * 10;
+    static long breakMax() { return Tuning.l("restoreRun.breakMax"); }
 
     /**
      * aa-litter: one tick of taking a placed block down. Gone already = dropped from the ledger; out of reach = walk to
@@ -263,7 +266,7 @@ final class RestoreRun {
                 if (now - stageTick < 20) return false;
                 IBaritone b = Jobs.baritone();
                 if (b != null && !Jobs.idle(b)) {
-                    if (now - stageTick > WALK_MAX) skip(e, "couldn't reach");
+                    if (now - stageTick > walkMax()) skip(e, "couldn't reach");
                     return false;
                 }
                 tries++;
@@ -275,13 +278,13 @@ final class RestoreRun {
                 return false;
             }
             case "break" -> {
-                if (now - stageTick > BREAK_MAX) {
+                if (now - stageTick > breakMax()) {
                     skip(e, "couldn't break: it didn't break in 10 s");
                     return false;
                 }
                 // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool take it down (JobHands)
                 breakStarted = true;
-                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(new int[]{e.x, e.y, e.z}, (int) BREAK_MAX, "restore placed " + e.x + " " + e.y + " " + e.z);
+                var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(new int[]{e.x, e.y, e.z}, (int) breakMax(), "restore placed " + e.x + " " + e.y + " " + e.z);
                 if (r.failed()) skip(e, "couldn't break: " + r.why());
                 return false;
             }

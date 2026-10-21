@@ -218,8 +218,8 @@ public final class BaritoneMask {
         public String liquidKind;
         /** the WATER cells (for the water round's skip list), at most {@link #MAX_WATER} */
         public final Map<String, String> waterCells = new LinkedHashMap<>();
-        public static final int MAX_WATER = 200;
-        public static final int MAX_EXAMPLES = 3;
+        public static final int MAX_WATER = 200; // structural
+        public static final int MAX_EXAMPLES = 3; // structural
 
         public int count(Verdict v) {
             return counts.getOrDefault(v, 0);

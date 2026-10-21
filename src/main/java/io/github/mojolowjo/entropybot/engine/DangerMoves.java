@@ -56,7 +56,8 @@ public final class DangerMoves {
     public enum Move { NONE, FLEE, PILLAR, NICHE, BURROW }
 
     static double fleeRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.fleeRun"); }
-    static final long CALM_TICKS = 100, MAX_TICKS = 1800;
+    static long calmTicks() { return Tuning.l("dangerMoves.calmTicks"); }
+    static long maxTicks() { return Tuning.l("dangerMoves.maxTicks"); }
 
     private final EventRing events;
     private final Moves moves;
@@ -153,7 +154,7 @@ public final class DangerMoves {
     }
 
     /** How far down the water facts look for a floor. */
-    static final int WATER_FLOOR_SCAN = 24;
+    static int waterFloorScan() { return Tuning.i("dangerMoves.waterFloorScan"); }
 
     /**
      * {column, headDepth, floorY, surfaceY}: water cells from the floor (the first solid block under the feet, within
@@ -166,7 +167,7 @@ public final class DangerMoves {
         int up = feet.getY();
         while (up - feet.getY() < 64 && wet(mc, new BlockPos(feet.getX(), up, feet.getZ()))) up++;
         int floor = feet.getY() - 1;
-        while (feet.getY() - floor <= WATER_FLOOR_SCAN && !solid(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) {
+        while (feet.getY() - floor <= waterFloorScan() && !solid(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) {
             if (!wet(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) break;      // air under water: no floor to build on
             floor--;
         }
@@ -188,7 +189,7 @@ public final class DangerMoves {
     private static BlockPos shoreAt;
     private static long shoreMs = -1;
     /** Review 0.39.a4 3: the shore scan is kept this long (and for the same cell). */
-    static final long SHORE_CACHE_MS = 2_000;
+    static long shoreCacheMs() { return Tuning.l("dangerMoves.shoreCacheMs"); }
 
     /**
      * Review 0.39.a4 2/3: as {@link #shoreScan}, cached {@link #SHORE_CACHE_MS} per feet cell. A cell counts only where
@@ -198,7 +199,7 @@ public final class DangerMoves {
     static int[] shore(Minecraft mc, LocalPlayer p, int surfaceY) {
         long ms = System.currentTimeMillis();
         BlockPos feet = p.blockPosition();
-        if (shoreMs >= 0 && ms - shoreMs < SHORE_CACHE_MS && feet.equals(shoreAt)) return shoreMemo;
+        if (shoreMs >= 0 && ms - shoreMs < shoreCacheMs() && feet.equals(shoreAt)) return shoreMemo;
         shoreMemo = shoreScan(mc, p, surfaceY);
         shoreAt = feet;
         shoreMs = ms;
@@ -217,7 +218,7 @@ public final class DangerMoves {
         BlockPos feet = p.blockPosition();
         int[] best = null;
         double bestD = Double.MAX_VALUE;
-        for (int r = 1; r <= ThreatFacts.SHORE_REACH && best == null; r++)
+        for (int r = 1; r <= ThreatFacts.shoreReach() && best == null; r++)
             for (int dx = -r; dx <= r; dx++)
                 for (int dz = -r; dz <= r; dz++) {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
@@ -312,14 +313,14 @@ public final class DangerMoves {
         try {
             Entity t = nearest(mc, p);
             if (t != null) calmSince = now;
-            if (now - start >= MAX_TICKS) { fail("gave up at " + move.name().toLowerCase() + " after " + MAX_TICKS / 20 + " s at " + c(p.blockPosition()) + " (" + moves.why() + ")" + verdict(mc)); return; }
+            if (now - start >= maxTicks()) { fail("gave up at " + move.name().toLowerCase() + " after " + maxTicks() / 20 + " s at " + c(p.blockPosition()) + " (" + moves.why() + ")" + verdict(mc)); return; }
             Moves.Phase ph = moves.tick(now);
             if (ph == Moves.Phase.FAILED) { fail(moves.why() + verdict(mc)); return; }
             boolean arrived = ph == Moves.Phase.ARRIVED;
             switch (move) {
                 case FLEE -> {
                     if (arrived) { stop("got away (" + moves.why() + ")"); return; }
-                    if (now - calmSince >= CALM_TICKS) stop("nothing chasing me");
+                    if (now - calmSince >= calmTicks()) stop("nothing chasing me");
                 }
                 case PILLAR, NICHE, BURROW -> {
                     // 0.39.s3 review: the burrow's hold-cell check runs while it digs too (from the cell it started in;
@@ -372,7 +373,7 @@ public final class DangerMoves {
 
     private void holdOn(Minecraft mc, LocalPlayer p, Entity t, String what) {
         hitInReach(mc, p, t);
-        if (now - calmSince >= CALM_TICKS) stop("nothing near the " + what);
+        if (now - calmSince >= calmTicks()) stop("nothing near the " + what);
     }
 
     // ---- the facts AA prices (ThreatFacts) ----
@@ -449,7 +450,7 @@ public final class DangerMoves {
     /** The nearest counted hostile within LOOK (the calm clock and the hits), or null. */
     private static Entity nearest(Minecraft mc, LocalPlayer p) {
         Entity best = null;
-        double bd = ReflexRules.LOOK;
+        double bd = ReflexRules.look();
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !(e instanceof LivingEntity le) || !le.isAlive() || !Hostility.INSTANCE.kind(e, true).counts()) continue;
             double d = p.distanceTo(e);
@@ -460,7 +461,7 @@ public final class DangerMoves {
 
     /** The strike in the hold (Baritone has no combat): the look through Moves (LookBehavior), the hit by the game mode. */
     private void hitInReach(Minecraft mc, LocalPlayer p, Entity t) {
-        if (t == null || p.distanceTo(t) > ReflexRules.REACH || !Hostility.mayAttack(t)) return;
+        if (t == null || p.distanceTo(t) > ReflexRules.reach() || !Hostility.mayAttack(t)) return;
         Vec3 eye = t.getEyePosition();
         moves.lookAt(eye.x, eye.y, eye.z);
         if (p.getAttackStrengthScale(0f) < 0.9f) return;

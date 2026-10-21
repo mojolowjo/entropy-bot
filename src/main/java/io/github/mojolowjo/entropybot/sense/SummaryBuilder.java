@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 
 /**
@@ -14,7 +16,7 @@ import java.util.List;
 public final class SummaryBuilder {
     private SummaryBuilder() {}
 
-    public static final int MINESHAFT_BELOW = 45;
+    public static int mineshaftBelow() { return Tuning.i("summaryBuilder.mineshaftBelow"); }
     public static final String MINESHAFT = "mineshaft";
 
     /**
@@ -64,7 +66,7 @@ public final class SummaryBuilder {
     }
 
     static boolean poiKept(String kind, int y) {
-        return kind != null && !(kind.equals(MINESHAFT) && y >= MINESHAFT_BELOW);
+        return kind != null && !(kind.equals(MINESHAFT) && y >= mineshaftBelow());
     }
 
     private static void add(ChunkSummary s, int x, int y, int z, Cls c, List<ChunkDiff.Change> out) {
@@ -82,7 +84,7 @@ public final class SummaryBuilder {
         if (c.lava()) {
             int[] v = s.lava.computeIfAbsent(y >> 4, k -> new int[]{0, x, y, z});
             v[0]++;
-            if (out != null && v[0] == ChunkSummary.LAVA_LAKE)
+            if (out != null && v[0] == ChunkSummary.lavaLake())
                 out.add(new ChunkDiff.Change(ChunkDiff.Type.POI_ADD, ChunkSummary.LAVA_LAKE_KIND, "minecraft:lava", v[1], v[2], v[3]));
         }
     }
@@ -112,7 +114,7 @@ public final class SummaryBuilder {
             int[] v = s.lava.get(y >> 4);
             if (v == null || v[0] <= 0) ok = false;
             else {
-                if (v[0] == ChunkSummary.LAVA_LAKE)
+                if (v[0] == ChunkSummary.lavaLake())
                     out.add(new ChunkDiff.Change(ChunkDiff.Type.POI_REMOVE, ChunkSummary.LAVA_LAKE_KIND, "minecraft:lava", v[1], v[2], v[3]));
                 v[0]--;
                 if (v[0] == 0) s.lava.remove(y >> 4);

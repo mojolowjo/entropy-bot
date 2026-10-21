@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,8 +19,9 @@ public final class Predictions {
     private Predictions() {}
 
     public static final String HEADER = "time,objective,key,step,predicted_s,actual_s,blocks,damage";
-    public static final double TOLERANCE = 0.25;
-    public static final int MIN_SAMPLES = 5, LAST = 20;
+    public static double tolerance() { return Tuning.get("predictions.tolerance"); }
+    public static int minSamples() { return Tuning.i("predictions.minSamples"); }
+    public static int last() { return Tuning.i("predictions.last"); }
 
     /** One finished step. {@code timeMs} is the wall clock at its end. */
     public record Row(long timeMs, String objective, String key, String step, double predictedS, double actualS, double blocks, double damage) {
@@ -99,7 +102,7 @@ public final class Predictions {
         for (var e : sum.entrySet()) {
             double[] a = e.getValue();
             double err = (a[2] - a[1]) / a[1];
-            if (a[0] >= MIN_SAMPLES && Math.abs(err) > TOLERANCE) out.add(new Off(e.getKey(), (int) a[0], a[1], a[2], err));
+            if (a[0] >= minSamples() && Math.abs(err) > tolerance()) out.add(new Off(e.getKey(), (int) a[0], a[1], a[2], err));
         }
         out.sort((x, y) -> Double.compare(Math.abs(y.error()), Math.abs(x.error())));
         return out;
@@ -109,17 +112,17 @@ public final class Predictions {
     public static String text(List<Row> rows, int bad, String where) {
         StringBuilder b = new StringBuilder();
         if (rows.isEmpty()) return "aa predict: no rows yet in " + where + " (a row is written when each step of an AA chain ends)" + (bad > 0 ? "; " + bad + " unreadable line(s) skipped" : "");
-        b.append("aa predict: last ").append(Math.min(LAST, rows.size())).append(" of ").append(rows.size()).append(" steps (predicted -> actual s, blocks, hp lost):");
-        for (int i = Math.max(0, rows.size() - LAST); i < rows.size(); i++) {
+        b.append("aa predict: last ").append(Math.min(last(), rows.size())).append(" of ").append(rows.size()).append(" steps (predicted -> actual s, blocks, hp lost):");
+        for (int i = Math.max(0, rows.size() - last()); i < rows.size(); i++) {
             Row r = rows.get(i);
             b.append('\n').append(r.step()).append(": ").append(f(r.predictedS()).isEmpty() ? "?" : f(r.predictedS())).append(" -> ").append(f(r.actualS()))
                     .append(" s, ").append(f(r.blocks())).append(" blocks, ").append(f(r.damage())).append(" hp")
                     .append(Double.isNaN(r.error()) ? "" : String.format(Locale.ROOT, " (%+.0f%%)", r.error() * 100));
         }
         List<Off> off = off(rows);
-        if (off.isEmpty()) b.append("\nno step kind is off by more than ").append(Math.round(TOLERANCE * 100)).append("% over ").append(MIN_SAMPLES).append("+ samples");
+        if (off.isEmpty()) b.append("\nno step kind is off by more than ").append(Math.round(tolerance() * 100)).append("% over ").append(minSamples()).append("+ samples");
         else {
-            b.append("\nwhere the model is wrong (over ").append(Math.round(TOLERANCE * 100)).append("% off, ").append(MIN_SAMPLES).append("+ samples):");
+            b.append("\nwhere the model is wrong (over ").append(Math.round(tolerance() * 100)).append("% off, ").append(minSamples()).append("+ samples):");
             for (Off o : off)
                 b.append('\n').append(o.key()).append(": ").append(o.n()).append(" samples, predicted ").append(f(o.predictedS())).append(" s, took ").append(f(o.actualS()))
                         .append(" s (").append(String.format(Locale.ROOT, "%+.0f%%", o.error() * 100)).append(')');

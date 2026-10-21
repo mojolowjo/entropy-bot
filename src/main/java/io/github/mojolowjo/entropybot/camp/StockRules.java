@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,7 +17,7 @@ import java.util.Map;
 public final class StockRules {
     private StockRules() {}
 
-    public static final int MAX_ITEMS = 32;
+    public static int maxItems() { return Tuning.i("stockRules.maxItems"); }
     public static final String USAGE = "usage: stock targets | stock set <item> <n> | stock clear <item>|all | restock base";
 
     /** What is short: id -> missing (have: the base chests' notes, id -> count). */

@@ -67,7 +67,7 @@ final class AaSlow {
     private volatile long writeErrors, lastWriteErrorAt;
     private Boolean fileHasContent;
     private long fileBytes = -1;
-    static final long MAX_BYTES = 5_000_000;
+    static final long MAX_BYTES = 5_000_000; // structural
     private Boolean savedRenderPath, savedRenderGoal;
 
     AaSlow(Commands c, AaRuntime rt) {

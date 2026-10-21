@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonElement;
@@ -15,8 +17,8 @@ import java.util.Map;
  */
 public final class MobDamage {
     public static final MobDamage INSTANCE = new MobDamage();
-    public static final double ALPHA = 0.3;
-    public static final int MIN_SAMPLES = 3;
+    public static double alpha() { return Tuning.get("mobDamage.alpha"); }
+    public static int minSamples() { return Tuning.i("mobDamage.minSamples"); }
 
     private final Map<String, double[]> m = new LinkedHashMap<>();
     private boolean dirty;
@@ -28,7 +30,7 @@ public final class MobDamage {
         double[] s = m.get(key(kind));
         if (s == null) m.put(key(kind), new double[]{amount, 1});
         else {
-            s[0] = s[1] < 1 ? amount : s[0] + ALPHA * (amount - s[0]);
+            s[0] = s[1] < 1 ? amount : s[0] + alpha() * (amount - s[0]);
             s[1]++;
         }
         dirty = true;
@@ -43,7 +45,7 @@ public final class MobDamage {
     /** The average when there are enough samples, else NaN. */
     public double observed(String kind) {
         double[] s = get(kind);
-        return s != null && s[1] >= MIN_SAMPLES ? s[0] : Double.NaN;
+        return s != null && s[1] >= minSamples() ? s[0] : Double.NaN;
     }
 
     public synchronized boolean takeDirty() {

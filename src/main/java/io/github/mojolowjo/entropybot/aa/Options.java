@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
@@ -29,13 +31,14 @@ import java.util.regex.Pattern;
 public final class Options {
     private Options() {}
 
-    public static final double MINUTE = 60;
+    public static final double MINUTE = 60; // structural: seconds in a minute (unit)
 
     /** Round 4A N: walk-blocks per planner step-cost unit (Tuning planUnit, was the constant PLAN_UNIT 5). */
     public static double planUnit() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("planUnit"); }
-    public static final int MAX_SWITCHES = 4;
+    public static int maxSwitches() { return Tuning.i("options.maxSwitches"); }
     /** A failed option is skipped this long per failure (at most an hour). */
-    public static final long RETRY_MS = 10 * 60_000, RETRY_MAX_MS = 60 * 60_000;
+    public static long retryMs() { return Tuning.l("options.retryMs"); }
+    public static long retryMaxMs() { return Tuning.l("options.retryMaxMs"); }
     /** The command of an option that does nothing: the rung passes and a later rung's own walk does the job. */
     public static final String NOTHING = "(nothing)";
 
@@ -449,7 +452,7 @@ public final class Options {
         }
 
         @Override public boolean failed(Blackboard bb, String end) {
-            if (last == null || ran == null || end == null || !set.switchable(end) || switches >= MAX_SWITCHES) return false;
+            if (last == null || ran == null || end == null || !set.switchable(end) || switches >= maxSwitches()) return false;
             String key = set.blame(last, ran, end);
             if (key == null) return false;
             memory.failed(key, end, bb.clock.now(), bb.in);

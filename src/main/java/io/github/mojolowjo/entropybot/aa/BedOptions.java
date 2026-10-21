@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.Site;
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
@@ -27,8 +29,10 @@ public final class BedOptions {
 
     public static final String FACTS = "bed.facts";
     /** Wool a bed takes; blocks of work per kill (walk up, hit, pick up); the craft itself; a fixed cost for leaving for a herd. */
-    public static final int WOOL = 3;
-    public static final double KILL = 25, CRAFT = 20, HERD_FIX = 20;
+    public static final int WOOL = 3; // game fact: a bed is made of 3 wool
+    public static double kill() { return Tuning.get("bedOptions.kill"); }
+    public static double craft() { return Tuning.get("bedOptions.craft"); }
+    public static double herdFix() { return Tuning.get("bedOptions.herdFix"); }
 
     /**
      * @param wool        white wool in the bag
@@ -72,18 +76,18 @@ public final class BedOptions {
         if (f.bedKnown() && f.night()) Price.add(rows, dropped, m, now, Options.typed("sleep in known bed", "sleep", after(f, List.of(new Step.Sleep())), climb + Price.s(bedS),
                 "a bed known, walk + lie down " + Price.r(bedS) + " s" + climbWhy, "sleep known bed", m));
         if (f.wool() >= WOOL) {
-            RungOptions.add(rows, dropped, m, now, Options.typed("make bed", "craft", List.of(bedPlan()), CRAFT, f.wool() + " wool in the bag", "make bed", true, m));
+            RungOptions.add(rows, dropped, m, now, Options.typed("make bed", "craft", List.of(bedPlan()), craft(), f.wool() + " wool in the bag", "make bed", true, m));
             return Options.Choice.of(rows, dropped, "no way to a bed");
         }
         int k = WOOL - Math.max(0, f.wool());
         if (f.sheepInView() > 0) {
-            RungOptions.add(rows, dropped, m, now, Options.typed("hunt sheep here", "hunt", after(f, huntSteps(f.wool(), null)), climb + KILL * k + CRAFT,
+            RungOptions.add(rows, dropped, m, now, Options.typed("hunt sheep here", "hunt", after(f, huntSteps(f.wool(), null)), climb + kill() * k + craft(),
                     f.sheepInView() + " sheep in view, " + k + " to kill" + climbWhy, "hunt sheep here", m));
         } else dropped.add("hunt sheep here: none in view");
         if (f.herd() != null && f.herd().length >= 4) {
             int[] h = f.herd();
             double conf = Math.max(1, h[3]) / 100.0;
-            double cost = climb + (2 * h[2] + KILL * k + CRAFT + HERD_FIX) / conf;
+            double cost = climb + (2 * h[2] + kill() * k + craft() + herdFix()) / conf;
             Options.Option o = Options.typed("hunt sheep at " + h[0] + " " + h[1], "hunt", after(f, huntSteps(f.wool(), h)), cost,
                     "a herd I saw " + h[2] + " away (confidence " + h[3] + "%), " + k + " to kill, there and back" + climbWhy, "hunt sheep at " + h[0] + " " + h[1], m);
             if (f.me() != null) o = o.withSite(Site.at(h[0], f.me()[1], h[1]));

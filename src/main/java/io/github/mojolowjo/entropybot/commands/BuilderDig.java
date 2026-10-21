@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import java.util.ArrayList;
@@ -63,7 +65,7 @@ public final class BuilderDig {
     public static boolean breaking() { return breaking; }
 
     /** Restarts after the builder went idle while blocks were left and it had broken some since its last start (a hold). */
-    static final int MAX_RESTARTS = 5;
+    static int maxRestarts() { return Tuning.i("builderDig.maxRestarts"); }
 
     static final class Saved {
         boolean buildInLayers, layerOrder, breakFromAbove, remainWithExistingLookDirection;
@@ -254,7 +256,7 @@ public final class BuilderDig {
                 BaritoneMask.onlyCells(o.only));
         s.startCells = Set.copyOf(s.mask.digCells(s.world));
         s.outside = solidAround(s.world, box);
-        s.outsideCapped = s.outside.size() >= OUTSIDE_CAP;
+        s.outsideCapped = s.outside.size() >= outsideCap();
         s.mask.refresh(s.world);
         s.leases = Clearing.newLeases();
         String le = s.leases.take(s.job.label, s.job.breakLeaseBox(), false, s.job.force);
@@ -371,10 +373,10 @@ public final class BuilderDig {
     /** 0.34.3 (live: "broke 0 blocks" while cobblestone came in: Baritone broke its way in, outside the box; our own breaks send no change event). */
     static Set<Long> solidAround(Clearing.LiveWorld w, ClearBox b) {
         Set<Long> out = new HashSet<>();
-        for (int x = b.x1() - OUTSIDE_NEAR; x <= b.x2() + OUTSIDE_NEAR; x++)
-            for (int y = b.y1() - OUTSIDE_NEAR; y <= b.y2() + OUTSIDE_NEAR; y++)
-                for (int z = b.z1() - OUTSIDE_NEAR; z <= b.z2() + OUTSIDE_NEAR; z++) {
-                    if (b.contains(x, y, z) || out.size() >= OUTSIDE_CAP) continue;
+        for (int x = b.x1() - outsideNear(); x <= b.x2() + outsideNear(); x++)
+            for (int y = b.y1() - outsideNear(); y <= b.y2() + outsideNear(); y++)
+                for (int z = b.z1() - outsideNear(); z <= b.z2() + outsideNear(); z++) {
+                    if (b.contains(x, y, z) || out.size() >= outsideCap()) continue;
                     try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException caught) { Quiet.warn("BuilderDig.solidAround failed, carrying on with the fallback", caught); }
                 }
         return out;
@@ -480,7 +482,7 @@ public final class BuilderDig {
             // idle with blocks it may break still there: cancelled from outside (a fight hold), or it lost them; once it
             // broke something since its last start, it goes again (a few times)
             BaritoneMask.Leftover left = s.mask.leftover(s.world);
-            if (left.unreachable() > 0 && s.restarts < MAX_RESTARTS && (s.brokeAtPoll > s.brokeAtStart || s.holdSeen)) {
+            if (left.unreachable() > 0 && s.restarts < maxRestarts() && (s.brokeAtPoll > s.brokeAtStart || s.holdSeen)) {
                 s.restarts++;
                 s.holdSeen = false;
                 LOG.info("[entropybot] dig via baritone: the builder went idle with {} left, starting it again ({})", left.unreachable(), s.restarts);
@@ -867,8 +869,8 @@ public final class BuilderDig {
      * clock starts again, the snapshot is refreshed). Water flowing or gravel falling is no progress.
      */
     /** How far outside the box a break still counts as the way in. */
-    static final int OUTSIDE_NEAR = 2;
-    static final int OUTSIDE_CAP = 20000;
+    static int outsideNear() { return Tuning.i("builderDig.outsideNear"); }
+    static int outsideCap() { return Tuning.i("builderDig.outsideCap"); }
 
     public static void blockChanged(int x, int y, int z, boolean air) {
         State s = current;

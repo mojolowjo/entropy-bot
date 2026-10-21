@@ -59,7 +59,7 @@ public final class StripTexts {
     public static String stripStop(int target, int got, boolean timeUp, int runs) {
         if (target != 0 && got >= target) return "that makes " + target;
         if (timeUp) return "an hour is up";
-        if (runs >= StripRules.MAX_RUNS) return StripRules.MAX_RUNS + " runs";
+        if (runs >= StripRules.maxRuns()) return StripRules.maxRuns() + " runs";
         return null;
     }
 

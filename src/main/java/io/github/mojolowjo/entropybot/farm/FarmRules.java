@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.farm;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -14,20 +16,20 @@ public final class FarmRules {
     private FarmRules() {}
 
     /** Crops within this many blocks of the farm spot. */
-    public static final int FARM_R = 6;
+    public static int farmR() { return Tuning.i("farmRules.farmR"); }
     /** Longest twerk in one round, in seconds. */
-    public static final int FARM_GROW_S = 60;
+    public static int farmGrowS() { return Tuning.i("farmRules.farmGrowS"); }
     public static final String FARM_ESS = "mysticalagriculture:inferium_essence";
     public static final String FARM_BLOCK = "mysticalagriculture:inferium_block";
     public static final String FARM_PRUD = "mysticalagriculture:prudentium_essence";
     /** Squat Grow's "range" (pack/config/squatgrow-common.yaml): crops this close to the crouching player grow. */
-    public static final int SQUAT_R = 3;
+    public static int squatR() { return Tuning.i("farmRules.squatR"); }
     /** How many spots a round twerks at (each up to FARM_GROW_S s) so Squat Grow reaches the whole farm (owner, 2026-10-03). */
-    public static final int FARM_SPOTS = 4;
+    public static int farmSpots() { return Tuning.i("farmRules.farmSpots"); }
     /** A round that ends with this many free bag slots or fewer puts things away at the base. */
-    public static final int FARM_FREE = 4;
+    public static int farmFree() { return Tuning.i("farmRules.farmFree"); }
     /** How far the harvest right-click reaches (eye to the crop's center). */
-    public static final double REACH = 4.3;
+    public static final double REACH = 4.3; // game fact: near enough to a crop to tend it: block reach 4.5 minus a margin
 
     /** A crop: a block with an "age" standing on farmland. Ripe when age >= max. */
     public record Crop(int x, int y, int z, int age, int max) {
@@ -50,8 +52,8 @@ public final class FarmRules {
     /** The crops within FARM_R blocks (and 2 up or down) of center. */
     public static List<Crop> farmCrops(FarmWorld w, int[] center) {
         List<Crop> out = new ArrayList<>();
-        for (int x = center[0] - FARM_R; x <= center[0] + FARM_R; x++) {
-            for (int z = center[2] - FARM_R; z <= center[2] + FARM_R; z++) {
+        for (int x = center[0] - farmR(); x <= center[0] + farmR(); x++) {
+            for (int z = center[2] - farmR(); z <= center[2] + farmR(); z++) {
                 for (int y = center[1] - 2; y <= center[1] + 2; y++) {
                     Crop c = cropAt(w, x, y, z);
                     if (c != null) out.add(c);
@@ -75,7 +77,7 @@ public final class FarmRules {
     public static int squatReach(int[] p, List<int[]> crops) {
         int n = 0;
         for (int[] c : crops) {
-            if (Math.abs(c[0] - p[0]) <= SQUAT_R && Math.abs(c[1] - p[1]) <= SQUAT_R && Math.abs(c[2] - p[2]) <= SQUAT_R) n++;
+            if (Math.abs(c[0] - p[0]) <= squatR() && Math.abs(c[1] - p[1]) <= squatR() && Math.abs(c[2] - p[2]) <= squatR()) n++;
         }
         return n;
     }
@@ -118,8 +120,8 @@ public final class FarmRules {
             cells.add(c[0] + " " + c[1] + " " + c[2]);
         }
         Stand best = null;
-        for (int x = x1 - SQUAT_R; x <= x2 + SQUAT_R; x++) {
-            for (int z = z1 - SQUAT_R; z <= z2 + SQUAT_R; z++) {
+        for (int x = x1 - squatR(); x <= x2 + squatR(); x++) {
+            for (int z = z1 - squatR(); z <= z2 + squatR(); z++) {
                 // the bridge's range: from one below the highest crop to one above the lowest
                 for (int y = y2 - 1; y <= y1 + 1; y++) {
                     int[] p = {x, y, z};
@@ -144,7 +146,7 @@ public final class FarmRules {
     public static List<FarmWorld.Drop> farmDrops(FarmWorld w, FarmSpot f) {
         List<FarmWorld.Drop> out = new ArrayList<>();
         for (FarmWorld.Drop e : w.drops()) {
-            if (Math.abs(e.x() - f.x() - 0.5) > FARM_R + 1 || Math.abs(e.z() - f.z() - 0.5) > FARM_R + 1 || Math.abs(e.y() - f.y()) > 3) continue;
+            if (Math.abs(e.x() - f.x() - 0.5) > farmR() + 1 || Math.abs(e.z() - f.z() - 0.5) > farmR() + 1 || Math.abs(e.y() - f.y()) > 3) continue;
             out.add(e);
         }
         return out;

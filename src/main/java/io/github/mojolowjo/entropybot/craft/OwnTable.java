@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * 0.28.2 (trial fix package 2, A): a craft that needs a crafting table (or a smelt that needs a furnace) and has none it
  * can reach puts down the one it carries (or makes a table from its wood first). The craft's own table is always picked
@@ -12,9 +14,9 @@ public final class OwnTable {
     private OwnTable() {}
 
     /** A table this far (eye to block) or nearer is used as it is. */
-    public static final double REACH_NEAR = 12;
+    public static double reachNear() { return Tuning.get("ownTable.reachNear"); }
     /** A table this many blocks or more below the bot's feet sits in a pit (trial 2: "couldn't get close"). */
-    public static final int PIT_DEPTH = 3;
+    public static int pitDepth() { return Tuning.i("ownTable.pitDepth"); }
 
     public enum Choice {
         /** a reachable table near: walk there and craft (as before) */
@@ -44,7 +46,7 @@ public final class OwnTable {
 
     /** Near enough and not down in a pit. */
     public static boolean reachable(Double dist, int dy) {
-        return dist != null && dist <= REACH_NEAR && dy > -PIT_DEPTH;
+        return dist != null && dist <= reachNear() && dy > -pitDepth();
     }
 
     /**
@@ -65,10 +67,15 @@ public final class OwnTable {
     public enum End { KEEP_FOR_NEXT, LEAVE_AT_CAMP, TAKE }
 
     /** Seconds: pick it up, place it again, remake one (planks / no planks), a stray block left in the world, a table at a camp without one. */
-    public static final double PICK_S = 4, PLACE_S = 2, REMAKE_S = 8, REMAKE_NONE_S = 60, LITTER_S = 10, CAMP_VALUE_S = 15;
+    public static double pickS() { return Tuning.get("ownTable.pickS"); }
+    public static double placeS() { return Tuning.get("ownTable.placeS"); }
+    public static double remakeS() { return Tuning.get("ownTable.remakeS"); }
+    public static double remakeNoneS() { return Tuning.get("ownTable.remakeNoneS"); }
+    public static double litterS() { return Tuning.get("ownTable.litterS"); }
+    public static double campValueS() { return Tuning.get("ownTable.campValueS"); }
 
     /** Taking it back: the pickup, plus placing it again when the next step crafts at a table. */
-    public static double takeCost(boolean nextNeedsTable) { return PICK_S + (nextNeedsTable ? PLACE_S : 0); }
+    public static double takeCost(boolean nextNeedsTable) { return pickS() + (nextNeedsTable ? placeS() : 0); }
 
     /**
      * Leaving it: nothing now when the next step uses it (it is taken after that); else the table lost (remade later)
@@ -76,7 +83,7 @@ public final class OwnTable {
      */
     public static double leaveCost(boolean nextNeedsTable, boolean nearCamp, boolean campHasTable, boolean canRemake) {
         if (nextNeedsTable) return 0;
-        return (canRemake ? REMAKE_S : REMAKE_NONE_S) + LITTER_S - (nearCamp && !campHasTable ? CAMP_VALUE_S : 0);
+        return (canRemake ? remakeS() : remakeNoneS()) + litterS() - (nearCamp && !campHasTable ? campValueS() : 0);
     }
 
     /** The cheaper end; a failed craft always takes it back (the chain stops, nothing uses it). */

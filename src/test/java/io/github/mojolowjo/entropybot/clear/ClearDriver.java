@@ -206,7 +206,7 @@ class ClearDriver {
             }
             // plan
             if (job.box.distTo(x, y, z) > 24) throw new IllegalStateException("the driver doesn't walk to far boxes");
-            if (job.consecFails >= ClearEngine.MAX_CONSEC_FAILS) return ClearEngine.finishMessage(w, job, ClearEngine.STUCK);
+            if (job.consecFails >= ClearEngine.maxConsecFails()) return ClearEngine.finishMessage(w, job, ClearEngine.STUCK);
             ClearGrid.Plan p = ClearGrid.planWalk(w, bot(), job);
             if (p == null && ClearEngine.retryRound(job)) p = ClearGrid.planWalk(w, bot(), job);
             if (p == null && brokeSinceSettle) {

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.farm;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -17,9 +19,9 @@ public final class FarmPlant {
     private FarmPlant() {}
 
     /** Farmland within this many blocks (each way) of water stays wet. */
-    public static final int WATER_R = 4;
+    public static int waterR() { return Tuning.i("farmPlant.waterR"); }
     /** The largest box side. */
-    public static final int MAX_SIDE = 33;
+    public static int maxSide() { return Tuning.i("farmPlant.maxSide"); }
     public static final String USAGE = "usage: farm plant <crop> [x1 z1 x2 z2 | here <r>] (crop: wheat, carrot, potato, beetroot, or a seed id)";
 
     /** The parsed words: crop, then a box (x1 z1 x2 z2), or here with a radius, or neither (the farm's own box). */
@@ -36,13 +38,13 @@ public final class FarmPlant {
             if (w[1].equals("here")) {
                 if (w.length > 3) return Args.err(USAGE);
                 int r = w.length == 3 ? Integer.parseInt(w[2]) : 4;
-                if (r < 1 || 2 * r + 1 > MAX_SIDE) return Args.err("error: the radius goes from 1 to " + (MAX_SIDE - 1) / 2);
+                if (r < 1 || 2 * r + 1 > maxSide()) return Args.err("error: the radius goes from 1 to " + (maxSide() - 1) / 2);
                 return new Args(crop, null, true, r, null);
             }
             if (w.length != 5) return Args.err(USAGE);
             int x1 = Integer.parseInt(w[1]), z1 = Integer.parseInt(w[2]), x2 = Integer.parseInt(w[3]), z2 = Integer.parseInt(w[4]);
             int[] b = {Math.min(x1, x2), Math.min(z1, z2), Math.max(x1, x2), Math.max(z1, z2)};
-            if (b[2] - b[0] + 1 > MAX_SIDE || b[3] - b[1] + 1 > MAX_SIDE) return Args.err("error: a farm box is at most " + MAX_SIDE + " blocks a side");
+            if (b[2] - b[0] + 1 > maxSide() || b[3] - b[1] + 1 > maxSide()) return Args.err("error: a farm box is at most " + maxSide() + " blocks a side");
             return new Args(crop, b, false, 0, null);
         } catch (NumberFormatException e) {
             return Args.err(USAGE);
@@ -102,18 +104,18 @@ public final class FarmPlant {
     /** Lattice positions along one axis lo..hi so every cell is within WATER_R of one. */
     static List<Integer> lattice(int lo, int hi) {
         List<Integer> out = new ArrayList<>();
-        int p = lo + WATER_R;
+        int p = lo + waterR();
         if (p > hi) p = (lo + hi) / 2;
         while (true) {
             out.add(p);
-            if (p + WATER_R >= hi) break;
-            p = Math.min(p + 2 * WATER_R + 1, hi);
+            if (p + waterR() >= hi) break;
+            p = Math.min(p + 2 * waterR() + 1, hi);
         }
         return out;
     }
 
     static boolean near(Cell a, Cell b) {
-        return Math.abs(a.x() - b.x()) <= WATER_R && Math.abs(a.z() - b.z()) <= WATER_R && b.y() >= a.y() && b.y() <= a.y() + 1;
+        return Math.abs(a.x() - b.x()) <= waterR() && Math.abs(a.z() - b.z()) <= waterR() && b.y() >= a.y() && b.y() <= a.y() + 1;
     }
 
     /**
@@ -139,7 +141,7 @@ public final class FarmPlant {
             for (int px : lattice(x1, x2)) {
                 boolean needs = false;
                 for (Cell c : field) {
-                    if (Math.abs(c.x() - px) > WATER_R || Math.abs(c.z() - pz) > WATER_R) continue;
+                    if (Math.abs(c.x() - px) > waterR() || Math.abs(c.z() - pz) > waterR()) continue;
                     if (!wet(c, water) && !wet(c, added)) {
                         needs = true;
                         break;

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.strip;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.clear.ClearBox;
 import io.github.mojolowjo.entropybot.clear.ClearEngine;
 import io.github.mojolowjo.entropybot.clear.ClearJob;
@@ -25,9 +27,12 @@ import java.util.regex.Pattern;
 public final class StripRules {
     private StripRules() {}
 
-    public static final int TURN_ALONG = 8, BASE_TRIP_MIN = 64, BASE_TRIP_FREE = 4, MAX_RUNS = 30;
+    public static int turnAlong() { return Tuning.i("stripRules.turnAlong"); }
+    public static int baseTripMin() { return Tuning.i("stripRules.baseTripMin"); }
+    public static int baseTripFree() { return Tuning.i("stripRules.baseTripFree"); }
+    public static int maxRuns() { return Tuning.i("stripRules.maxRuns"); }
     /** "mine strip" starts no new run after an hour. */
-    public static final long MAX_TICKS = 20L * 60 * 60;
+    public static long maxTicks() { return Tuning.l("stripRules.maxTicks"); }
 
     /** The pickaxe tier a block needs, from the block tags on the one scale (MiningTiers.needTier). */
     public static int pickTier(String need) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.needTier(need); }
@@ -125,7 +130,7 @@ public final class StripRules {
      */
     public static int scanFrom(MineGeom g, int[] me, int to) {
         if (me == null) return 0;
-        if (Math.abs(g.side(me)) > 20 || Math.abs(me[1] - g.y) > MineGeom.LEG_LEVELS) return 0;
+        if (Math.abs(g.side(me)) > 20 || Math.abs(me[1] - g.y) > MineGeom.legLevels()) return 0;
         return Math.max(0, Math.min(to, g.along(me)));
     }
 
@@ -211,10 +216,10 @@ public final class StripRules {
         if (!"right".equals(only)) out.add(new TurnOption(g.cell(e, 0), left));
         if (!"left".equals(only)) out.add(new TurnOption(g.cell(e, 0), right));
         if (only == null && k > 1) {
-            out.add(new TurnOption(g.cell(e, TURN_ALONG), g.dir));
-            out.add(new TurnOption(g.cell(e, TURN_ALONG), left));
-            out.add(new TurnOption(g.cell(e, -TURN_ALONG), g.dir));
-            out.add(new TurnOption(g.cell(e, -TURN_ALONG), right));
+            out.add(new TurnOption(g.cell(e, turnAlong()), g.dir));
+            out.add(new TurnOption(g.cell(e, turnAlong()), left));
+            out.add(new TurnOption(g.cell(e, -turnAlong()), g.dir));
+            out.add(new TurnOption(g.cell(e, -turnAlong()), right));
         }
         return out;
     }
@@ -320,7 +325,7 @@ public final class StripRules {
     public static boolean baseTrip(Map<String, Integer> keep, Map<String, Integer> have, int bagRoom) {
         int vals = 0;
         for (Map.Entry<String, Integer> e : keep.entrySet()) vals += have.getOrDefault(e.getKey(), 0) - e.getValue();
-        return vals > 0 && (vals >= BASE_TRIP_MIN || bagRoom <= BASE_TRIP_FREE);
+        return vals > 0 && (vals >= baseTripMin() || bagRoom <= baseTripFree());
     }
 
     /** bagRoom: slots that are free or hold only junk the next dump empties (junk = depositables with the valuables kept, {id: keep}). */

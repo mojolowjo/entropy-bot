@@ -16,7 +16,7 @@ class ShelterPlanTest {
 
     @Test void shellAroundTheCell() {
         List<int[]> s = ShelterPlan.shell(F, c -> false);
-        assertEquals(ShelterPlan.FULL, s.size());
+        assertEquals(ShelterPlan.full(), s.size());
         assertArrayEquals(new int[]{10, 64, 19}, s.get(0));                // north at the feet first
         for (int i = 0; i < 4; i++) assertEquals(64, s.get(i)[1]);
         for (int i = 4; i < 8; i++) assertEquals(65, s.get(i)[1]);
@@ -29,7 +29,7 @@ class ShelterPlanTest {
     @Test void anchoredOrderOnOpenGrassWithADip() {
         java.util.function.Predicate<int[]> ground = c -> c[1] <= 63 && !(c[0] == 11 && c[1] == 63 && c[2] == 20);
         List<int[]> o = ShelterPlan.ordered(F, ground, ground);
-        assertEquals(ShelterPlan.FULL + 1, o.size());                     // the shell plus one footing
+        assertEquals(ShelterPlan.full() + 1, o.size());                     // the shell plus one footing
         Set<String> placed = new HashSet<>();
         for (int[] c : o) {
             assertTrue(ShelterPlan.hasAnchor(c, placed, ground), "no anchor for " + ShelterPlan.key(c));
@@ -60,7 +60,7 @@ class ShelterPlanTest {
 
     @Test void solidCellsAreLeftOut() {
         List<int[]> s = ShelterPlan.shell(F, c -> c[0] == 11);              // a wall to the east already
-        assertEquals(ShelterPlan.FULL - 2, s.size());
+        assertEquals(ShelterPlan.full() - 2, s.size());
     }
 
     @Test void materialOrder() {

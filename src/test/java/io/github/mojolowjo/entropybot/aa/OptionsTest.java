@@ -203,7 +203,7 @@ class OptionsTest {
         Need r = rung("plan x");
         AaManual.of(bb).ask = true;
         r.tick(bb);
-        clock.advance(AaManual.ASK_MS);
+        clock.advance(AaManual.askMs());
         r.tick(bb);
         r.tick(bb);
         assertEquals("plan do alpha", port.started.get(0).chain());
@@ -270,7 +270,7 @@ class OptionsTest {
             s[TaskKind.STOCK_WOOD.ordinal()] = 50;
             s[TaskKind.WAIT.ordinal()] = 10;
             return s;
-        }, UtilitySelector.BONUS,
+        }, UtilitySelector.bonusV(),
                 new UtilitySelector.Option(TaskKind.STOCK_WOOD, new Cooldown("w.cd", new RunJob("w", TaskKind.STOCK_WOOD, b -> null)).ranOnly()),
                 new UtilitySelector.Option(TaskKind.WAIT, new Cooldown("wait.cd", RunJob.of("wait", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("wait 60")), "idle")).ranOnly()));
         idle.tick(bb);

@@ -42,7 +42,7 @@ public final class RestoreLive {
     private static final Logger LOG = LogUtils.getLogger();
     public static final RestoreLive INSTANCE = new RestoreLive();
     static final String FILE = "restore.json";
-    static final long FLUSH_AFTER = 20;
+    static final long FLUSH_AFTER = 20; // structural
 
     private Commands c;
     private BotFiles files;
@@ -314,7 +314,7 @@ public final class RestoreLive {
         List<Ledger.Entry> mine = book.ledger.forJob(j.id);
         if (mine.isEmpty()) return null;
         if (!auto()) return null;
-        RestorePlan.Plan plan = RestorePlan.plan(mine, here, dim, RestorePlan.AFTER_JOB, Gui0.inventory());
+        RestorePlan.Plan plan = RestorePlan.plan(mine, here, dim, RestorePlan.afterJob(), Gui0.inventory());
         return new RestoreRun(plan);
     }
 
@@ -578,7 +578,7 @@ public final class RestoreLive {
         java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();   // 0.19.7: what the count is made of, in the log
         java.util.Map<String, Integer> clues = new java.util.TreeMap<>();
         int wet = 0, open = 0;
-        int r = BuildSpotter.RADIUS;
+        int r = BuildSpotter.radius();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) {
             for (int dy = -r; dy <= r; dy++) {

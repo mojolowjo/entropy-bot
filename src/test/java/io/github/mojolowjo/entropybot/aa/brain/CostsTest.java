@@ -41,7 +41,7 @@ class CostsTest {
         double all = Costs.blocked(0, false, 0, 0, true);
         assertEquals(1, all, 1e-9);
         assertEquals(85, Costs.tools(0, 0, all), 1e-9, "no pickaxe blocking everything: over the urgent line");
-        assertTrue(Costs.tools(0, 0, Costs.blocked(0, true, 5, 16, false)) < Brain.URGENT, "only iron waits: not urgent");
+        assertTrue(Costs.tools(0, 0, Costs.blocked(0, true, 5, 16, false)) < Brain.urgentV(), "only iron waits: not urgent");
         assertTrue(Costs.blocked(1, false, 5, 16, false) < Costs.blocked(0, false, 5, 16, false), "a wooden pickaxe mines cobble");
         assertEquals(40, Costs.tools(3, 100, 0), 1e-9);
     }
@@ -53,21 +53,21 @@ class CostsTest {
         assertEquals(2, s.update(0, 100), "a craft flicker");
         assertEquals(2, s.update(2, 500));
         assertEquals(2, s.update(0, 1000));
-        assertEquals(0, s.update(0, 1000 + Costs.ToolSmoother.HOLD_MS), "held: real");
+        assertEquals(0, s.update(0, 1000 + Costs.ToolSmoother.holdMs()), "held: real");
         assertEquals(3, s.update(3, 6000), "a rise counts at once");
     }
 
     @Test
     void nightDangerFromTheFacts() {
         double early = Costs.nightDanger(2, 0, 20, 20, 0, 0);
-        assertTrue(Costs.shelterScore(early) >= Brain.URGENT, "early game, Normal: shelter");
+        assertTrue(Costs.shelterScore(early) >= Brain.urgentV(), "early game, Normal: shelter");
         assertEquals(0, Costs.nightDanger(0, 0, 20, 20, 0, 5), 1e-9, "Peaceful");
         assertTrue(Costs.nightDanger(3, 0, 20, 20, 0, 0) > early, "Hard");
-        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 15, 20, 20, 0, 0)) < Brain.URGENT, "iron armour: work on");
+        assertTrue(Costs.shelterScore(Costs.nightDanger(2, 15, 20, 20, 0, 0)) < Brain.urgentV(), "iron armour: work on");
         assertTrue(Costs.nightDanger(2, 0, 8, 20, 0, 0) > early, "hurt");
         assertTrue(Costs.nightDanger(2, 0, 20, 20, 3, 0) < early, "torches near");
         assertTrue(Costs.nightDanger(2, 0, 20, 20, 0, 4) > early, "hostiles near");
-        assertTrue(Costs.shelterScore(10) <= Costs.SHELTER_MAX);
+        assertTrue(Costs.shelterScore(10) <= Costs.shelterMax());
     }
 
     @Test

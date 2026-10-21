@@ -14,7 +14,7 @@ public final class Wants {
     private Wants() {}
 
     public static final String FACT = "aa.wantsDone";
-    public static final long DAY_MS = 20 * 60_000;
+    public static final long DAY_MS = 20 * 60_000; // game fact: a Minecraft day is 24000 ticks = 20 minutes
 
     @SuppressWarnings("unchecked")
     static Map<String, Long> map(Blackboard bb) {

@@ -18,7 +18,7 @@ import java.util.Set;
  */
 public final class MineBook {
     /** Old mine notes kept (wave 1 H: LIMITS.mines). */
-    public static final int MAX_MINES = 20;
+    public static final int MAX_MINES = 20; // structural
 
     private final JsonObject root;
 

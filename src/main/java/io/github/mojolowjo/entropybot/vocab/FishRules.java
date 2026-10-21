@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -27,14 +29,17 @@ public final class FishRules {
     public static final String ROD = "minecraft:fishing_rod";
     /** What counts as a fish for the count (pufferfish poisons, so it is no food). */
     public static final List<String> FISH = List.of("minecraft:cod", "minecraft:salmon", "minecraft:tropical_fish");
-    public static final int DEFAULT_N = 4, MAX_MINUTES = 30;
-    public static final int RANGE = 16, MIN_CAST = 3, MAX_CAST = 9;
+    public static int defaultN() { return Tuning.i("fishRules.defaultN"); }
+    public static int maxMinutes() { return Tuning.i("fishRules.maxMinutes"); }
+    public static int range() { return Tuning.i("fishRules.range"); }
+    public static int minCast() { return Tuning.i("fishRules.minCast"); }
+    public static int maxCast() { return Tuning.i("fishRules.maxCast"); }
     /** Ticks: no bite for this long after a cast = reel in and cast again (the bobber may sit in a bad spot). */
-    public static final long BITE_WAIT = 40 * 20L;
+    public static long biteWait() { return Tuning.l("fishRules.biteWait"); }
     /** Ticks between a reel and the next cast (the bobber is gone). */
-    public static final long RECAST_DELAY = 15;
+    public static long recastDelay() { return Tuning.l("fishRules.recastDelay"); }
     /** A count run stops after this long (ticks), like hunt's 10 minutes, but fishing is slow: 15 minutes. */
-    public static final long COUNT_MAX = 15 * 60 * 20L;
+    public static long countMax() { return Tuning.l("fishRules.countMax"); }
 
     /** n fish, or minutes (n = 0). */
     public record Parsed(int n, int minutes) {
@@ -44,7 +49,7 @@ public final class FishRules {
     /** "fish", "fish 5" (5 fish), "fish 3m" or "fish 3 minutes" (3 minutes); null = bad. "status" is handled by the caller. */
     public static Parsed parse(String rest) {
         String r = rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT);
-        if (r.isEmpty()) return new Parsed(DEFAULT_N, 0);
+        if (r.isEmpty()) return new Parsed(defaultN(), 0);
         String[] w = r.split("\\s+");
         if (w.length == 1 && w[0].matches("^\\d{1,3}$")) {
             int n = Integer.parseInt(w[0]);
@@ -55,7 +60,7 @@ public final class FishRules {
         else if (w.length == 2 && w[0].matches("^\\d{1,2}$") && w[1].matches("^(m|min|mins|minute|minutes)$")) m = w[0];
         if (m == null) return null;
         int minutes = Integer.parseInt(m);
-        return minutes < 1 || minutes > MAX_MINUTES ? null : new Parsed(0, minutes);
+        return minutes < 1 || minutes > maxMinutes() ? null : new Parsed(0, minutes);
     }
 
     public static int fish(Map<String, Integer> bag) {
@@ -104,14 +109,14 @@ public final class FishRules {
     public static Act next(State s) {
         if (!s.goal().timed() && s.caught() >= s.goal().n()) return Act.DONE_COUNT;
         if (s.goal().timed() && s.elapsed() >= s.goal().minutes() * 60 * 20L) return Act.DONE_TIME;
-        if (!s.goal().timed() && s.elapsed() >= COUNT_MAX) return Act.TIMED_OUT;
+        if (!s.goal().timed() && s.elapsed() >= countMax()) return Act.TIMED_OUT;
         if (!s.haveRod()) return s.canCraft() && !s.craftTried() ? Act.CRAFT_ROD : Act.NO_ROD;
         if (s.hookOut()) {
             if (s.biting()) return Act.REEL_BITE;
-            if (s.sinceCast() >= BITE_WAIT) return Act.REEL_TIMEOUT;
+            if (s.sinceCast() >= biteWait()) return Act.REEL_TIMEOUT;
             return Act.WAIT_BITE;
         }
-        if (s.sinceReel() < RECAST_DELAY) return Act.WAIT;
+        if (s.sinceReel() < recastDelay()) return Act.WAIT;
         if (s.spotOk()) return Act.CAST;
         return s.spotFar() ? Act.GO_WATER : Act.NO_WATER;
     }
@@ -134,8 +139,8 @@ public final class FishRules {
                 for (int dz = -1; dz <= 1 && open; dz++) if (!set.contains(key(c[0] + dx, c[2] + dz, c[1]))) open = false;
             if (!open) continue;
             double d = Math.hypot(c[0] - mx, c[2] - mz);
-            if (d >= MIN_CAST && d <= MAX_CAST) { if (d < nd) { nd = d; near = c; } }
-            else if (d < fd && d <= RANGE) { fd = d; far = c; }
+            if (d >= minCast() && d <= maxCast()) { if (d < nd) { nd = d; near = c; } }
+            else if (d < fd && d <= range()) { fd = d; far = c; }
         }
         if (near != null) return new int[]{near[0], near[1], near[2], 0};
         if (far != null) return new int[]{far[0], far[1], far[2], 1};

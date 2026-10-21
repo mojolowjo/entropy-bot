@@ -17,7 +17,7 @@ final class PathCommand {
         try {
             JsonObject r = c.routeSettings();
             ServerCmds.setOn(r.has("serverCommands") && r.get("serverCommands").getAsBoolean());     // 0.24.1, default off
-            ServerCmds.setMaxWalk(r.has("maxWalk") ? r.get("maxWalk").getAsInt() : ServerCmds.MAX_WALK_DEFAULT);
+            ServerCmds.setMaxWalk(r.has("maxWalk") ? r.get("maxWalk").getAsInt() : ServerCmds.maxWalkDefault());
         } catch (RuntimeException t) {
             com.mojang.logging.LogUtils.getLogger().warn("[entropybot] path settings: not applied at the load stage: {}", t.toString());
         }

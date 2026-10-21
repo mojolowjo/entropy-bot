@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.baritone;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -12,9 +14,10 @@ public final class SafetyRules {
     private SafetyRules() {}
 
     /** The protected list goes back into Baritone this often (and once as soon as the guard's floor is ready). */
-    public static final long PROTECT_EVERY = 200;
+    public static long protectEvery() { return Tuning.l("safetyRules.protectEvery"); }
     /** Breaking/placing with nobody owning it is turned off at this tick of every 200 (the bridge's 10 s net). */
-    public static final long NET_EVERY = 200, NET_AT = 100;
+    public static long netEvery() { return Tuning.l("safetyRules.netEvery"); }
+    public static long netAt() { return Tuning.l("safetyRules.netAt"); }
 
     /**
      * What {@code restore()} puts back, in this order (the bridge's restoreSafeSettings): the booleans to false,
@@ -33,10 +36,10 @@ public final class SafetyRules {
 
     /** The protected list is due: not put yet, or its regular re-put. */
     public static boolean protectedDue(long tick, boolean putOnce) {
-        return !putOnce || tick % PROTECT_EVERY == 0;
+        return !putOnce || tick % protectEvery() == 0;
     }
 
-    public static boolean netDue(long tick) { return tick % NET_EVERY == NET_AT; }
+    public static boolean netDue(long tick) { return tick % netEvery() == netAt(); }
 
     /** Breaking or placing is on and no job of the mod owns it (Baritone's mine with breaking on, the builder). */
     public static boolean shouldTurnOff(boolean allowBreak, boolean allowPlace, boolean breakingOwned, boolean placingOwned) {

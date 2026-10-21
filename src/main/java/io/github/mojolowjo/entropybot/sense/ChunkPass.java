@@ -61,8 +61,9 @@ public final class ChunkPass {
     private static final Logger LOG = LogUtils.getLogger();
     public static final ChunkPass INSTANCE = new ChunkPass();
     /** Chunks a tick may take from the schedule (the time budget usually stops sooner). */
-    static final int PER_TICK = 8;
-    static final long AUDIT_EVERY_MS = 60_000, LOG_EVERY_MS = 60_000;
+    static final int PER_TICK = 8; // structural
+    static final long AUDIT_EVERY_MS = 60_000; // structural
+    static final long LOG_EVERY_MS = 60_000; // structural
 
     private final PassSchedule schedule = new PassSchedule();
     private final OreIndex index = new OreIndex();

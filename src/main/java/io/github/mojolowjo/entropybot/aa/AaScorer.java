@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Band;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
 import io.github.mojolowjo.entropybot.aa.core.Scorer;
@@ -14,19 +16,31 @@ import io.github.mojolowjo.entropybot.aa.core.TaskKind;
  * winner). Light the camp: night and 8+ torches, a fixed 40. WAIT is the floor (10). Only the idle kinds get a score.
  */
 public final class AaScorer implements Scorer {
-    public static final int STOCK_TARGET = 64;
-    public static final int WOOD_LO = 32, WOOD_HI = 64, STONE_LO = 32, STONE_HI = 64, COAL_LO = 8, COAL_HI = 32,
-            IRON_LO = 4, IRON_HI = 16, TORCH_LO = 32, TORCH_HI = 64, DEPOSIT_BELOW = 10, LIGHT_TORCHES = 8;
-    public static final double LIGHT_SCORE = 40, WAIT_SCORE = 10, ON_FLOOR = 12;
+    public static int stockTarget() { return Tuning.i("aaScorer.stockTarget"); }
+    public static int woodLo() { return Tuning.i("aaScorer.woodLo"); }
+    public static int woodHi() { return Tuning.i("aaScorer.woodHi"); }
+    public static int stoneLo() { return Tuning.i("aaScorer.stoneLo"); }
+    public static int stoneHi() { return Tuning.i("aaScorer.stoneHi"); }
+    public static int coalLo() { return Tuning.i("aaScorer.coalLo"); }
+    public static int coalHi() { return Tuning.i("aaScorer.coalHi"); }
+    public static int ironLo() { return Tuning.i("aaScorer.ironLo"); }
+    public static int ironHi() { return Tuning.i("aaScorer.ironHi"); }
+    public static int torchLo() { return Tuning.i("aaScorer.torchLo"); }
+    public static int torchHi() { return Tuning.i("aaScorer.torchHi"); }
+    public static int depositBelow() { return Tuning.i("aaScorer.depositBelow"); }
+    public static int lightTorches() { return Tuning.i("aaScorer.lightTorches"); }
+    public static double lightScore() { return Tuning.get("aaScorer.lightScore"); }
+    public static double waitScore() { return Tuning.get("aaScorer.waitScore"); }
+    public static double onFloor() { return Tuning.get("aaScorer.onFloor"); }
 
-    final Band wood = new Band(WOOD_LO, WOOD_HI), stone = new Band(STONE_LO, STONE_HI), coal = new Band(COAL_LO, COAL_HI),
-            iron = new Band(IRON_LO, IRON_HI), torches = new Band(TORCH_LO, TORCH_HI), bag = new Band(DEPOSIT_BELOW, DEPOSIT_BELOW + 6);
+    final Band wood = new Band(woodLo(), woodHi()), stone = new Band(stoneLo(), stoneHi()), coal = new Band(coalLo(), coalHi()),
+            iron = new Band(ironLo(), ironHi()), torches = new Band(torchLo(), torchHi()), bag = new Band(depositBelow(), depositBelow() + 6);
 
     /** The band's deficit 0..100, or -1 when it is off. */
     static double deficit(Band b, int have) {
         if (!b.update(have)) return -1;
         // review: a band that is on never scores under WAIT (else it stays on and never runs)
-        return Math.max(ON_FLOOR, Math.min(100, 100.0 * (b.leaveAt - have) / b.leaveAt));
+        return Math.max(onFloor(), Math.min(100, 100.0 * (b.leaveAt - have) / b.leaveAt));
     }
 
     @Override public double[] score(Inputs in) {
@@ -39,8 +53,8 @@ public final class AaScorer implements Scorer {
         // deposit: free slots under 10 until 16, only with base chests scanned
         double d = in.baseChests ? deficit(bag, in.freeSlots) : -1;
         s[TaskKind.DEPOSIT.ordinal()] = d;
-        s[TaskKind.LIGHT.ordinal()] = in.night && !in.litTonight && in.torches >= LIGHT_TORCHES ? LIGHT_SCORE : -1;
-        s[TaskKind.WAIT.ordinal()] = WAIT_SCORE;
+        s[TaskKind.LIGHT.ordinal()] = in.night && !in.litTonight && in.torches >= lightTorches() ? lightScore() : -1;
+        s[TaskKind.WAIT.ordinal()] = waitScore();
         return s;
     }
 }

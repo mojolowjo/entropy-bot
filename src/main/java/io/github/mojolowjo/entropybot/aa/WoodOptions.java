@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.Site;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
@@ -28,8 +30,9 @@ public final class WoodOptions {
     private WoodOptions() {}
 
     public static final String FACTS = "wood.facts";
-    public static final double CUT_LOG = 6, SEARCH = 60;
-    public static final int FAR_MAX = 256;
+    public static double cutLog() { return Tuning.get("woodOptions.cutLog"); }
+    public static double search() { return Tuning.get("woodOptions.search"); }
+    public static int farMax() { return Tuning.i("woodOptions.farMax"); }
 
     /** @param deny the policy's or a protect box's reason against cutting there (null: allowed) */
     public record Tree(int x, int y, int z, double dist, String deny) {
@@ -56,10 +59,10 @@ public final class WoodOptions {
         for (Tree t : f.trees()) {
             String chopKey = "chop at " + t.key();
             if (t.deny() != null) { dropped.add("tree " + t.key() + ": " + t.deny()); continue; }
-            if (t.dist() > FAR_MAX) continue;
+            if (t.dist() > farMax()) continue;
             if (m.blocked(chopKey, now)) { dropped.add(chopKey + ": " + m.reason(chopKey)); continue; }
             rows.add(Options.typed("chop at " + t.key(), "wood", chopSteps(t, need),
-                    2 * t.dist() + CUT_LOG * need, "the seen tree " + Math.round(t.dist()) + " away, the walk there and back counted", chopKey, m)
+                    2 * t.dist() + cutLog() * need, "the seen tree " + Math.round(t.dist()) + " away, the walk there and back counted", chopKey, m)
                     .withSite(Site.at(t.x(), t.y(), t.z())));
             chop = true;
             break;
@@ -68,7 +71,7 @@ public final class WoodOptions {
             // nothing seen (or every seen tree refused/held): Baritone's tree mining on the logs it knows is one priced try
             String key = "cut here";
             if (m.blocked(key, now)) dropped.add("cut: " + m.reason(key) + " (no tree seen yet; the sightings fill as it walks)");
-            else rows.add(Options.typed("cut", "wood", List.of(new Step.ChopTree(null, need, null)), SEARCH + CUT_LOG * need,
+            else rows.add(Options.typed("cut", "wood", List.of(new Step.ChopTree(null, need, null)), search() + cutLog() * need,
                     "no tree seen yet: Baritone mines the logs it knows", key, m));
         }
         return Options.Choice.of(rows, dropped, "no way to wood");

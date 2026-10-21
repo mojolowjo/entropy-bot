@@ -65,9 +65,11 @@ public final class DangerOptions {
     }
 
     /** A swing every 0.65 s with a sword or axe; a bare hand (hit 1) every 0.25 s. */
-    static final double SWING_S = 0.65, FIST_S = 0.25;
+    static final double SWING_S = 0.65; // game fact: a sword swing takes about 0.65 seconds (attack speed 1.6)
+    static final double FIST_S = 0.25; // game fact: a bare-fist swing takes 0.25 seconds (attack speed 4)
     /** Seconds to dig two cells down (or into a wall) and seal; to jump-place a 3-high pillar. */
-    static final double DIG_S = 3, PILLAR_S = 1.5;
+    static double digS() { return Tuning.get("dangerOptions.digS"); }
+    static double pillarS() { return Tuning.get("dangerOptions.pillarS"); }
     /** Blocks and head room a pillar needs (Tuning danger.pillarUp: out of a zombie's reach). */
     static int pillarUp() { return (int) Tuning.get("danger.pillarUp"); }
 
@@ -110,21 +112,21 @@ public final class DangerOptions {
         all.add(priced(me, death, Way.FLEE, w.fleeRun() > 0, fleeD, 2 * runT, w.fleeRun() > 0 ? "run " + w.fleeRun() + " and back" : "cornered: no heading clear of mobs"));
         // round 4 fix 2 (live: "home saves 356s" at 3.7 hp with an 18.5 s walk, slain by the zombie 14 s later): the walk
         // home is a Baritone path at walking pace, not a sprint away, and every chaser follows it the whole way
-        double homeT = w.baseDist() > 0 ? w.baseDist() / HOME_SPEED : 0;
-        all.add(priced(me, death, Way.HOME, w.baseDist() > 0, w.baseDist() > 0 ? pursuit(foes, homeT, HOME_SPEED) : 0, 2 * homeT,
+        double homeT = w.baseDist() > 0 ? w.baseDist() / homeSpeed() : 0;
+        all.add(priced(me, death, Way.HOME, w.baseDist() > 0, w.baseDist() > 0 ? pursuit(foes, homeT, homeSpeed()) : 0, 2 * homeT,
                 w.baseDist() > 0 ? "the base " + Math.round(w.baseDist()) + " away, there and back, the chasers counted" : "no base in reach"));
         double digD = 0;
-        for (ThreatFacts.Foe x : foes) digD += x.dps() * Math.max(0, DIG_S - x.reachT());
-        all.add(priced(me, death, Way.DIG_IN, w.digIn() && !w.waterNear(), digD, DIG_S + Tuning.get("danger.holdS"),
+        for (ThreatFacts.Foe x : foes) digD += x.dps() * Math.max(0, digS() - x.reachT());
+        all.add(priced(me, death, Way.DIG_IN, w.digIn() && !w.waterNear(), digD, digS() + Tuning.get("danger.holdS"),
                 w.waterNear() ? WATER_NEAR : w.digIn() ? "dig in and seal, wait" : "the fork: " + forkNo(w)));
         double pilD = 0;
         for (ThreatFacts.Foe x : foes) {
             if (x.ranged() || x.flies()) pilD += x.dps() * h;                       // a pillar is no cover from arrows or fliers
             else if (x.move() == ThreatRules.Move.SPIDER) pilD += x.dps() * Math.max(0, h - x.reachT());       // spiders climb
-            else pilD += x.dps() * Math.max(0, PILLAR_S - x.reachT());
+            else pilD += x.dps() * Math.max(0, pillarS() - x.reachT());
         }
         boolean pillar = w.onGround() && !w.waterNear() && w.pillarBlocks() >= pillarUp() && w.headRoom() >= pillarUp();
-        all.add(priced(me, death, Way.PILLAR, pillar, pilD, PILLAR_S + Tuning.get("danger.holdS"),
+        all.add(priced(me, death, Way.PILLAR, pillar, pilD, pillarS() + Tuning.get("danger.holdS"),
                 pillar ? "pillar " + pillarUp() + " up, wait" : w.waterNear() ? WATER_NEAR : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
         Priced best = stay;
         for (Priced p : all) if (p.possible() && p.costS() < best.costS()) best = p;
@@ -204,9 +206,10 @@ public final class DangerOptions {
      * The walk home: Baritone walks a path (4.3 blocks/s on the flat) with turns, jumps and doors, so a pursuer loses
      * less ground than the straight-line speeds say: {@link ThreatFacts#WALK} x {@link #PATH_FACTOR}.
      */
-    static final double PATH_FACTOR = 0.6, HOME_SPEED = ThreatFacts.WALK * PATH_FACTOR;
+    static double pathFactor() { return Tuning.get("dangerOptions.pathFactor"); }
+    static double homeSpeed() { return ThreatFacts.WALK * pathFactor(); }
     /** A walker this far behind at the start loses the bot on the way; nearer ones follow for the whole walk. */
-    static final double PURSUIT_RANGE = 16;
+    static double pursuitRange() { return Tuning.get("dangerOptions.pursuitRange"); }
 
     /**
      * Round 4 fix 2: the damage the foes do over a whole walk of {@code walkT} s at {@code walkSpeed} (the way home):
@@ -218,12 +221,12 @@ public final class DangerOptions {
         double d = 0;
         for (ThreatFacts.Foe x : foes) {
             if (x.ranged()) {
-                double out = Math.max(0, ThreatFacts.RANGED_RANGE - x.dist()) / Math.max(0.5, walkSpeed - x.speed());
+                double out = Math.max(0, ThreatFacts.rangedRange() - x.dist()) / Math.max(0.5, walkSpeed - x.speed());
                 d += x.dps() * Math.min(walkT, out);
             } else if (x.flies() || x.speed() >= walkSpeed) {
                 d += x.dps() * Math.max(0, walkT - x.reachT());
             } else {
-                double share = Math.min(1, x.speed() / walkSpeed) * Math.max(0, 1 - x.dist() / PURSUIT_RANGE);
+                double share = Math.min(1, x.speed() / walkSpeed) * Math.max(0, 1 - x.dist() / pursuitRange());
                 d += x.dps() * Math.max(0, walkT - x.reachT()) * share;
             }
         }
@@ -235,7 +238,7 @@ public final class DangerOptions {
         double d = 0;
         for (ThreatFacts.Foe x : foes) {
             if (x.ranged()) {
-                double out = Math.max(0, ThreatFacts.RANGED_RANGE - x.dist()) / Math.max(0.5, speed - x.speed());
+                double out = Math.max(0, ThreatFacts.rangedRange() - x.dist()) / Math.max(0.5, speed - x.speed());
                 d += x.dps() * Math.min(runT, out);
             } else if (x.flies() || x.speed() >= speed) d += x.dps() * Math.max(0, runT - x.reachT());
             else d += x.reachT() <= 0 ? x.dps() * ThreatFacts.HIT_EVERY_S : 0;
@@ -268,9 +271,12 @@ public final class DangerOptions {
     // ---- AA_STEP2 1: the night ways (one danger desire; night.hide and night.shelter are gone) ----
 
     /** AA_STEP3 (TIME_MODEL): swim 2.2 blocks/s, a place 0.25 s, a straight line x 1.3 before a path exists, 2 s per water edge. */
-    static final double SWIM_BPS = 2.2, PLACE_S = 0.25, PATH_X = 1.3, EDGE_S = 2;
+    static final double SWIM_BPS = 2.2; // game fact: swimming speed 2.2 blocks per second
+    static final double PLACE_S = 0.25; // game fact: placing a block takes 0.25 s (TIME_MODEL)
+    static double pathX() { return Tuning.get("dangerOptions.pathX"); }
+    static double edgeS() { return Tuning.get("dangerOptions.edgeS"); }
     /** Review 0.39.a4 5: sinking held down (sneak) in water, blocks/s (vanilla about 1; a hand number until measured). */
-    static final double SINK_BPS = 1.0;
+    static final double SINK_BPS = 1.0; // game fact: sinking speed 1.0 block per second
 
     /** Backbone step 2 (owner: water is parked): the why of a way whose cell is in or beside water. */
     static final String WATER_NEAR = "water in or beside the cell: not possible here";
@@ -324,7 +330,7 @@ public final class DangerOptions {
         boolean wet = w.inWater() || need.waterHere();
         int blocks = Math.max(w.pillarBlocks(), need.pillarBlocks());
         int air = need.air();
-        String wetWhy = "in water: " + (w.shoreDist() >= 0 ? "the shore row" : "no shore within " + ThreatFacts.SHORE_REACH);
+        String wetWhy = "in water: " + (w.shoreDist() >= 0 ? "the shore row" : "no shore within " + ThreatFacts.shoreReach());
         if (need.sheltered()) all.add(new Priced(Way.WAIT, true, 0, 0, 0, "in my shell"));
         else {
             int box = (int) Tuning.get("danger.boxBlocks");
@@ -336,11 +342,11 @@ public final class DangerOptions {
             boolean wn = w.waterNear();
             all.add(priced(me, death, Way.BURROW, w.burrow() && !wet && !wn, during(near, ut) + amb * ut, nightT(need, ut),
                     wet ? wetWhy : wn ? WATER_NEAR : w.burrow() ? "dig down and seal" : "the fork: " + (w.burrowNo() == null ? "no diggable floor" : w.burrowNo())));
-            all.add(priced(me, death, Way.DIG_IN, w.niche() && !wet && !wn, during(near, DIG_S) + amb * DIG_S, nightT(need, DIG_S),
+            all.add(priced(me, death, Way.DIG_IN, w.niche() && !wet && !wn, during(near, digS()) + amb * digS(), nightT(need, digS()),
                     wet ? wetWhy : wn ? WATER_NEAR : w.niche() ? "a niche in the wall" : "the fork: " + (w.nicheNo() == null ? "no wall to dig into" : w.nicheNo())));
             boolean pil = w.onGround() && !wet && !wn && blocks >= pillarUp() && w.headRoom() >= pillarUp();
             double open = Tuning.get("danger.openS");
-            all.add(priced(me, death, Way.PILLAR, pil, during(near, PILLAR_S) + amb * open, nightT(need, PILLAR_S),
+            all.add(priced(me, death, Way.PILLAR, pil, during(near, pillarS()) + amb * open, nightT(need, pillarS()),
                     pil ? "pillar " + pillarUp() + " up, open to arrows " + Math.round(open) + " s" : wet ? "in water: the pillar-out row" : wn ? WATER_NEAR
                             : "no pillar (" + blocks + " blocks, head room " + w.headRoom() + ")"));
             if (wet) {
@@ -360,7 +366,7 @@ public final class DangerOptions {
                 // there when the bag has its blocks, else a burrow there (its floor unknown from here: tried there)
                 int[] sc = w.shoreCell();
                 if (sc != null && w.shoreDist() >= 0) {
-                    double st = w.shoreDist() * PATH_X / SWIM_BPS + EDGE_S;
+                    double st = w.shoreDist() * pathX() / SWIM_BPS + edgeS();
                     double gt = boxOk ? bt : ut;
                     String ground = boxOk ? "box" : "burrow";
                     double al = airLoss(death, w.headDepth(), 0, air);
@@ -368,11 +374,11 @@ public final class DangerOptions {
                             "swim " + Math.round(w.shoreDist()) + " to the shore " + sc[0] + " " + sc[1] + " " + sc[2] + " " + fmt(st) + " s, then " + ground + " " + fmt(gt) + " s");
                     all.add(plus(sp, al, "air " + Math.round(al) + " s", boxOk ? List.of(new Step.Walk(sc[0], sc[1], sc[2], 0), new Step.Shelter())
                             : List.of(new Step.Walk(sc[0], sc[1], sc[2], 0), new Step.Burrow(), new Step.Wait((int) Tuning.get("steps.burrowWaitS")))));
-                } else all.add(new Priced(Way.SHORE, false, 0, 0, 0, "no dry cell within " + ThreatFacts.SHORE_REACH));
+                } else all.add(new Priced(Way.SHORE, false, 0, 0, 0, "no dry cell within " + ThreatFacts.shoreReach()));
             }
             boolean home = need.base() && w.baseDist() > 0;
-            double ht = home ? w.baseDist() / HOME_SPEED : 0;
-            all.add(priced(me, death, Way.BASE, home, home ? pursuit(near, ht, HOME_SPEED) + amb * ht : 0, nightT(need, ht),
+            double ht = home ? w.baseDist() / homeSpeed() : 0;
+            all.add(priced(me, death, Way.BASE, home, home ? pursuit(near, ht, homeSpeed()) + amb * ht : 0, nightT(need, ht),
                     home ? "flee home " + Math.round(w.baseDist()) + " (" + near.size() + " on the way)" : need.base() ? "the base out of reach" : "no base"));
             double st = Tuning.get("danger.bedS");
             all.add(priced(me, death, Way.SLEEP, need.bed(), during(near, st) + amb * st, nightT(need, st), need.bed() ? "a bed known" : "no bed known"));

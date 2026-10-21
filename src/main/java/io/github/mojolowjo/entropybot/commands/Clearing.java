@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import java.util.ArrayList;
@@ -644,7 +646,7 @@ public final class Clearing {
         Seq.Step craft = new Seq.Step("craftitem");
         craft.text = craftText;
         List<Seq.Step> out = tableAround(spot, choice == PlaceRules.TableChoice.CRAFT_AND_PLACE, List.of(craft), null);
-        LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.TABLE_NEAR, spot.key(), choice);
+        LOG.info("[entropybot] clear: no crafting table within {} blocks - putting one down at {} ({})", PlaceRules.tableNear(), spot.key(), choice);
         return out;
     }
 
@@ -738,7 +740,7 @@ public final class Clearing {
                 com.google.gson.JsonObject o = Core.INSTANCE.knowledge.places().get(mark);
                 if (o == null || !o.has("x") || at == null || !Jobs.dimOf(o).equals(Storage.dim())) continue;
                 int[] cp = Jobs.pos(o);
-                if (Jobs.distSq(cp, at) > (double) io.github.mojolowjo.entropybot.aa.AaLadder.CAMP_R * io.github.mojolowjo.entropybot.aa.AaLadder.CAMP_R) continue;
+                if (Jobs.distSq(cp, at) > (double) io.github.mojolowjo.entropybot.aa.AaLadder.campR() * io.github.mojolowjo.entropybot.aa.AaLadder.campR()) continue;
                 nearCamp = true;
                 campHasTable |= otherTableNear(p.level(), cp, at);
             }
@@ -768,7 +770,7 @@ public final class Clearing {
 
     /** aa-costs: a crafting table other than {@code own} within the camp radius of {@code camp} (y +-3). */
     private static boolean otherTableNear(net.minecraft.world.level.Level lv, int[] camp, int[] own) {
-        int r = io.github.mojolowjo.entropybot.aa.AaLadder.CAMP_R;
+        int r = io.github.mojolowjo.entropybot.aa.AaLadder.campR();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) for (int dy = -3; dy <= 3; dy++) for (int dz = -r; dz <= r; dz++) {
             m.set(camp[0] + dx, camp[1] + dy, camp[2] + dz);
@@ -1346,14 +1348,14 @@ public final class Clearing {
     }
 
     /** 0.30.4 (live: the bot left on a wall top 4 above the floor, Baritone's limit 3): a build may drop 4 (half a heart). */
-    static final int BUILD_FALL = 4;
+    static int buildFall() { return Tuning.i("clearing.buildFall"); }
 
     static void fallOn(BuildState bs) {
         try {
             baritone.api.Settings s = BaritoneAPI.getSettings();
             if (bs.savedFall == null) bs.savedFall = s.maxFallHeightNoWater.value;
             if (FALL_BASE == null) FALL_BASE = bs.savedFall;
-            s.maxFallHeightNoWater.value = Math.max(bs.savedFall, BUILD_FALL);
+            s.maxFallHeightNoWater.value = Math.max(bs.savedFall, buildFall());
         } catch (Throwable t) {
             LOG.warn("[entropybot] build: couldn't raise the fall height: {}", t.toString());
         }
@@ -1417,7 +1419,7 @@ public final class Clearing {
         int baritonePlaced = Math.max(0, bs.startMissing - missing.size() - bs.mine);
         if (missing.isEmpty()) return rimEnd(seq, bs, io.github.mojolowjo.entropybot.clear.RimPlan.doneText(bs.shape, blk, baritonePlaced, bs.mine));
         // review 3: 90 s without a placement of mine ends it, in every stage (a walk that never ends too)
-        if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.LAYER_CAP_TICKS) {
+        if (now - bs.layerStart > io.github.mojolowjo.entropybot.clear.RimPlan.layerCapTicks()) {
             IBaritone wb = Jobs.baritone();
             if (wb != null && !Jobs.idle(wb)) Jobs.cancel(wb);
             return rimStop(seq, bs, w, missing, baritonePlaced, null);
@@ -1540,7 +1542,7 @@ public final class Clearing {
     }
 
     private static void giveUpCell(BuildState bs, Pos c, io.github.mojolowjo.entropybot.clear.RimPlan.Why why) {
-        bs.tries.put(c, io.github.mojolowjo.entropybot.clear.RimPlan.MAX_TRIES);
+        bs.tries.put(c, io.github.mojolowjo.entropybot.clear.RimPlan.maxTries());
         bs.gaveUp.put(c, why);
     }
 

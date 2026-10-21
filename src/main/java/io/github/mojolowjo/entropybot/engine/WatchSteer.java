@@ -51,7 +51,7 @@ public final class WatchSteer {
 
     /** The human drove with remapped keys in the last second: the views hold their yaw (SteerRules.nextYaw). */
     public boolean humanDriving() {
-        return lastAppliedMs != 0 && System.currentTimeMillis() - lastAppliedMs <= SteerRules.DRIVING_MS;
+        return lastAppliedMs != 0 && System.currentTimeMillis() - lastAppliedMs <= SteerRules.drivingMs();
     }
 
     public static void register(net.neoforged.bus.api.IEventBus modBus) {
@@ -64,7 +64,7 @@ public final class WatchSteer {
     // ---- watch turn (2026-10-05) ----------------------------------------------------------------------------------
 
     private volatile boolean turnOn = true;
-    private volatile float turnRate = SteerRules.TURN_RATE_DEFAULT;
+    private volatile float turnRate = SteerRules.turnRateDefault();
     private volatile net.minecraft.client.KeyMapping turnLeftKey, turnRightKey;
     private volatile String keysError;
     private long turnedTicks;
@@ -235,7 +235,7 @@ public final class WatchSteer {
             else if (a == SteerRules.ErrorGate.Action.LOG_SUMMARY)
                 com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch steer: {} errors so far, last {}", gate.total(), lastError);
             if (gate.tripped() && offByErrors == null) {
-                offByErrors = SteerRules.ErrorGate.TRIP + " errors within a minute, last " + lastError;
+                offByErrors = SteerRules.ErrorGate.trip() + " errors within a minute, last " + lastError;
                 String msg = "watch steer turned itself off: " + offByErrors + " (the keys work as normal; watch steer on tries again)";
                 com.mojang.logging.LogUtils.getLogger().error("[entropybot] {}", msg);
                 try {

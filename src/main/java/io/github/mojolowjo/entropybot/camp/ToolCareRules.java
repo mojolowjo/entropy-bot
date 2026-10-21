@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,12 +20,12 @@ import java.util.Set;
 public final class ToolCareRules {
     private ToolCareRules() {}
 
-    public static final double WORN = 0.10;
+    public static double wornV() { return Tuning.get("toolCareRules.worn"); }
     public static final List<String> KINDS = List.of("sword", "axe", "shovel", "hoe", "shield");
 
     /** A damageable item in the bag. */
     public record Tool(String id, int left, int max) {
-        boolean worn() { return max > 0 && left <= max * WORN; }
+        boolean worn() { return max > 0 && left <= max * wornV(); }
     }
 
     /** The tool kind of an id ("pickaxe" is not "axe"), or null. */

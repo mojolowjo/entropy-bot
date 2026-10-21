@@ -27,7 +27,7 @@ public final class Hotbar {
     private static volatile Map<Integer, String> layout = Map.of();
     private static volatile String toolOres = "best";
     /** Ticks of quiet before the first idle swap (HotbarKeeper's). */
-    public static final int IDLE_TICKS = HotbarKeeper.IDLE_TICKS;
+    public static int idleTicks() { return HotbarKeeper.idleTicks(); }
 
     /** V1b: mode = the tools mode (best|cheapest|stone), handed to the engines as their tool policy. */
     public static void set(Map<Integer, String> l, String mode) {

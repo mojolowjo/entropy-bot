@@ -57,16 +57,16 @@ class ConstantsTest {
     }
 
     @Test void legacyNamesAgreeWithTuning() {
-        assertEquals(75, Brain.URGENT, 0);
-        assertEquals(15, Brain.BONUS, 0);
-        assertEquals(90, Brain.CAP_EXEMPT, 0);
-        assertEquals(4, Brain.TRUMP_FOOD);
-        assertEquals(99, Costs.SHELTER_MAX, 0);
-        assertEquals(85, Costs.SHELTER_AT_1, 0);
-        assertEquals(25, Costs.SWORD, 0);
-        assertEquals(60, Kit.DIED_S, 0);
-        assertEquals(74, Kit.STASH_MAX, 0);
-        assertEquals(0.9, Curves.FLOW, 0);
+        assertEquals(75, Brain.urgentV(), 0);
+        assertEquals(15, Brain.bonus(), 0);
+        assertEquals(90, Brain.capExempt(), 0);
+        assertEquals(4, Brain.trumpFood());
+        assertEquals(99, Costs.shelterMax(), 0);
+        assertEquals(85, Costs.shelterAt1(), 0);
+        assertEquals(25, Costs.swordV(), 0);
+        assertEquals(60, Kit.diedS(), 0);
+        assertEquals(74, Kit.stashMax(), 0);
+        assertEquals(0.9, Curves.flow(), 0);
     }
 
     @Test void tuningReachesTheCode() {

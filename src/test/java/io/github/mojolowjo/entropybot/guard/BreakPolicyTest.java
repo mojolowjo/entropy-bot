@@ -56,7 +56,7 @@ class BreakPolicyTest {
         assertFalse(RuleSet.DESTROY.restore());
         assertEquals(6, RuleSet.OUTSIDE_SINGLEPLAYER.travelMultiplier(), "travel x6");
         assertEquals(10, RuleSet.OUTSIDE_MULTIPLAYER.travelMultiplier());
-        assertEquals(24, BreakPolicy.Costs.TRAVEL_CAP);
+        assertEquals(24, BreakPolicy.Costs.travelCapV());
         assertNull(RuleSet.preset(null));
         assertTrue(RuleSet.WORK.describe().startsWith("work: natural lenient, resources yes"));
     }
@@ -228,12 +228,12 @@ class BreakPolicyTest {
         BlockFacts dug = BlockFacts.STONE.withDug(true);
         Verdict out = place(SP, Intent.TRAVEL, 1000, 60, 1000, dug);
         assertTrue(out.allowed(), "outside every area a refill passes the torches-only rule");
-        assertEquals(BreakPolicy.Costs.REFILL, out.multiplier());
+        assertEquals(BreakPolicy.Costs.refill(), out.multiplier());
         assertEquals("travel+refill", out.rule());
-        assertEquals(BreakPolicy.Costs.REFILL, place(SP, Intent.MINE, 120, 60, 120, dug).multiplier());
+        assertEquals(BreakPolicy.Costs.refill(), place(SP, Intent.MINE, 120, 60, 120, dug).multiplier());
         assertEquals("dig_out+refill", place(SP, Intent.DIG_OUT, 1000, 60, 1000, dug).rule());
         assertEquals("build+refill", place(MP, Intent.BUILD, 1000, 60, 1000, dug).rule(), "on a server too");
-        assertTrue(BreakPolicy.Costs.REFILL < 0.1 && BreakPolicy.Costs.REFILL > 0, "near zero, never zero (A* still needs an order)");
+        assertTrue(BreakPolicy.Costs.refill() < 0.1 && BreakPolicy.Costs.refill() > 0, "near zero, never zero (A* still needs an order)");
         // the floor stays the floor
         assertEquals("next to lava", place(SP, Intent.TRAVEL, 1000, 60, 1000, dug.withBelow(Fluid.LAVA)).reason());
         assertTrue(place(SP, Intent.TRAVEL, 305, 60, 305, dug).floor(), "a protect box: nothing placed, dug or not");

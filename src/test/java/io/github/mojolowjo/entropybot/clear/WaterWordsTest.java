@@ -32,8 +32,8 @@ class WaterWordsTest {
         assertNull(WaterPlan.giveUp(t, 0));
         assertEquals("sealing got me no further (3 rounds in a row)", WaterPlan.giveUp(t, 0));
         assertNull(WaterPlan.giveUp(t, 5), "a dig that got on starts the count again");
-        t.rounds = WaterPlan.MAX_ROUNDS;
-        assertEquals("gave up on the water after " + WaterPlan.MAX_ROUNDS + " rounds", WaterPlan.giveUp(t, 5));
+        t.rounds = WaterPlan.maxRounds();
+        assertEquals("gave up on the water after " + WaterPlan.maxRounds() + " rounds", WaterPlan.giveUp(t, 5));
     }
 
     @Test

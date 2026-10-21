@@ -119,7 +119,7 @@ class FoodClimbTest {
         assertNull(ClimbFallback.toward(h, null));
         assertEquals(15, ClimbFallback.stepsUp(75, 90, 85));
         assertEquals(10, ClimbFallback.stepsUp(75, Integer.MIN_VALUE, 85));
-        assertEquals(StairPlan.MAX, ClimbFallback.stepsUp(0, 200, 0));
+        assertEquals(StairPlan.maxV(), ClimbFallback.stepsUp(0, 200, 0));
         assertEquals(1, ClimbFallback.stepsUp(80, 70, 70));
         assertEquals("climb: my own way failed twice, digging stairs up toward the camp (15 blocks up, east)", ClimbFallback.startText(true, "east", 15));
     }

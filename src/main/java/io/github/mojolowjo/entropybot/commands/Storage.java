@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -56,7 +58,8 @@ import java.util.regex.Pattern;
  */
 public final class Storage {
     private static final Logger LOG = LogUtils.getLogger();
-    static final int GUI_SETTLE = 8, POTS_R = 16;
+    static int guiSettle() { return Tuning.i("storage.guiSettle"); }
+    static int potsR() { return Tuning.i("storage.potsR"); }
 
     private final Core core;
     private final Commands commands;
@@ -511,8 +514,8 @@ public final class Storage {
         try {
             int[] c = Jobs.pos(d);
             int[] rim = c == null ? null : StairPlan.shaft(Commands.cells(p.level()), c[0], c[1], c[2]);
-            if (rim != null && p.getBlockY() > c[1] + StairPlan.SHAFT_DROP) {
-                if (rim[5] > StairPlan.MAX) return "error: my corpse is " + rim[5] + " blocks down a shaft at " + c[0] + " " + c[1] + " " + c[2] + " - more than " + StairPlan.MAX + "; dig stairs in parts";
+            if (rim != null && p.getBlockY() > c[1] + StairPlan.shaftDrop()) {
+                if (rim[5] > StairPlan.maxV()) return "error: my corpse is " + rim[5] + " blocks down a shaft at " + c[0] + " " + c[1] + " " + c[2] + " - more than " + StairPlan.maxV() + "; dig stairs in parts";
                 if (commands.chainsRef().running()) return "busy: " + commands.chainsRef().chainStatus() + " (my corpse is down a shaft: stop first, then death)";
                 String text = String.join(" then ", StairPlan.down(rim, c[0], c[1], c[2])) + " then death";
                 String r = commands.chainsRef().startChain(commands.owner(), "death", text, 1);
@@ -740,7 +743,8 @@ public final class Storage {
 
     // ---- Refined Storage disk drives (package F): which disks, and how full when the disk's tooltip says ----
 
-    static final int DRIVE_R = 16, DRIVES_MAX = 4;
+    static int driveR() { return Tuning.i("storage.driveR"); }
+    static int drivesMax() { return Tuning.i("storage.drivesMax"); }
 
     /** "rs disks [x y z|place]": that drive, else every disk drive within 16 of the grid (or of the bot). */
     String rsDisks(LocalPlayer p, String where) {
@@ -765,7 +769,7 @@ public final class Storage {
         here.why = label;
         List<Step> steps = new ArrayList<>();
         // far from the grid: get there first, so the drives' chunks are loaded when it looks for them
-        if (Jobs.distSq(center, me) > DRIVE_R * DRIVE_R) steps.add(Step.walk(center, true));
+        if (Jobs.distSq(center, me) > driveR() * driveR()) steps.add(Step.walk(center, true));
         steps.add(here);
         return startSeq("reading the disk drives near " + label, steps, "always");
     }
@@ -802,12 +806,12 @@ public final class Storage {
 
     /** Seq step "diskshere": arrived near the grid; find the drives now and read each next. */
     String disksHereStep(Seq s, Step st, LocalPlayer p) {
-        List<int[]> drives = findDrives(st.pos, DRIVE_R);
-        if (drives.isEmpty()) return "no disk drive within " + DRIVE_R + " blocks of " + st.why + " - rs disks x y z";
+        List<int[]> drives = findDrives(st.pos, driveR());
+        if (drives.isEmpty()) return "no disk drive within " + driveR() + " blocks of " + st.why + " - rs disks x y z";
         List<Step> add = new ArrayList<>();
-        for (int i = 0; i < drives.size() && i < DRIVES_MAX; i++) add.addAll(driveSteps(null, drives.get(i)));
+        for (int i = 0; i < drives.size() && i < drivesMax(); i++) add.addAll(driveSteps(null, drives.get(i)));
         s.splice(s.idx + 1, add);
-        s.label = "reading " + Math.min(drives.size(), DRIVES_MAX) + " disk drive" + (drives.size() > 1 ? "s" : "") + " near " + st.why;
+        s.label = "reading " + Math.min(drives.size(), drivesMax()) + " disk drive" + (drives.size() > 1 ? "s" : "") + " near " + st.why;
         return "next";
     }
 
@@ -1010,12 +1014,12 @@ public final class Storage {
         if (st.type.equals("potshere")) {
             int[] c = st.center.pos();
             List<int[]> found = new ArrayList<>();
-            for (int dx = -POTS_R; dx <= POTS_R; dx++) for (int dy = -6; dy <= 6; dy++) for (int dz = -POTS_R; dz <= POTS_R; dz++) {
+            for (int dx = -potsR(); dx <= potsR(); dx++) for (int dy = -6; dy <= 6; dy++) for (int dz = -potsR(); dz <= potsR(); dz++) {
                 if (mc.level.getBlockState(new BlockPos(c[0] + dx, c[1] + dy, c[2] + dz)).getBlock().getDescriptionId().contains("botany_pot")) {
                     found.add(new int[]{c[0] + dx, c[1] + dy, c[2] + dz});
                 }
             }
-            if (found.isEmpty()) return "no botany pots within " + POTS_R + " blocks of " + st.center.fmt();
+            if (found.isEmpty()) return "no botany pots within " + potsR() + " blocks of " + st.center.fmt();
             int[] me = Jobs.here(p);
             found.sort((a, b) -> Long.compare(Jobs.distSq(a, me), Jobs.distSq(b, me)));
             List<Step> add = new ArrayList<>();

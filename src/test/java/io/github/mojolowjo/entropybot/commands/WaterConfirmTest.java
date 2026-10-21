@@ -25,6 +25,6 @@ class WaterConfirmTest {
         assertTrue(c.gate(O, "confirm", false, 3000).reply().startsWith("error: nothing to confirm"));
         // too late
         c.offer(O, line, "x", 1000);
-        assertTrue(c.gate(O, "confirm", false, 1000 + ConfirmGate.WINDOW_MS + 1).reply().startsWith("error: too late"));
+        assertTrue(c.gate(O, "confirm", false, 1000 + ConfirmGate.windowMs() + 1).reply().startsWith("error: too late"));
     }
 }

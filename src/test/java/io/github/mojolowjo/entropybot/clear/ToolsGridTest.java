@@ -162,16 +162,16 @@ class ToolsGridTest {
         Bot bot = Bot.at(0.5, 53, 0.5);
         ClearGrid g = ClearGrid.build(w, box, bot, j);
         int[] d = g.walkDistances(bot);
-        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        j.sightBudget = ClearGrid.sightBudget();
         ClearGrid.Spot s = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
         assertNotNull(s);
         assertFalse(s.x() == 4 && s.z() == 0 && s.y() == 53, "never on the block itself");
         assertEquals(53, s.y());
         assertTrue(s.cost() < 1000);
-        assertTrue(j.sightBudget < ClearGrid.SIGHT_BUDGET, "spends the sight budget");
+        assertTrue(j.sightBudget < ClearGrid.sightBudget(), "spends the sight budget");
         // a spot it failed to reach recently is avoided for 10 blocks
         j.badSpots.put(s.key(), 0);
-        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        j.sightBudget = ClearGrid.sightBudget();
         ClearGrid.Spot s2 = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
         assertNotEquals(s.key(), s2.key());
         j.broken = 10;
@@ -199,7 +199,7 @@ class ToolsGridTest {
         Bot bot = Bot.at(3.5, 53, 3.5);
         ClearGrid g = ClearGrid.build(w, box, bot, j);
         int[] d = g.walkDistances(bot);
-        j.sightBudget = ClearGrid.SIGHT_BUDGET;
+        j.sightBudget = ClearGrid.sightBudget();
         ClearGrid.Spot s = ClearGrid.bestSpotFor(w, g, d, t, bot, j);
         assertNotNull(s, "the near spots find the pocket: " + j.noSpotWhy);
         assertEquals(new Pos(0, 51, 0), new Pos(s.x(), s.y(), s.z()));

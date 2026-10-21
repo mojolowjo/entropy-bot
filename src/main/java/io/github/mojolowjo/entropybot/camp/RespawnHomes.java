@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,7 +11,8 @@ import java.util.List;
  * areas" whisper after a join or respawn is gone - the world is open.
  */
 public final class RespawnHomes {
-    public static final int SETTLE_TICKS = 100, MAX_HOMES = 8;
+    public static int settleTicks() { return Tuning.i("respawnHomes.settleTicks"); }
+    public static int maxHomes() { return Tuning.i("respawnHomes.maxHomes"); }
 
     private boolean respawned;
     private long aliveSince = -1;
@@ -24,10 +27,10 @@ public final class RespawnHomes {
         }
         if (pos == null || !respawned) return;
         if (aliveSince < 0) aliveSince = tick;
-        if (tick - aliveSince < SETTLE_TICKS) return;
+        if (tick - aliveSince < settleTicks()) return;
         respawned = false;
         homes.add(pos.clone());
-        while (homes.size() > MAX_HOMES) homes.remove(0);
+        while (homes.size() > maxHomes()) homes.remove(0);
     }
 
     /** Where it respawned (the spawn point or its bed), newest last. */

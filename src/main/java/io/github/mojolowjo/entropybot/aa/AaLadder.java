@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 
 /**
@@ -23,7 +25,7 @@ public final class AaLadder {
         return under ? java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Climb()) : java.util.List.of();
     }
     /** Under this much ground a need whose work wants open ground prices a climb into its row (a tree's leaves never count). */
-    public static final int SURFACE_DEPTH = 3;
+    public static int surfaceDepth() { return Tuning.i("aaLadder.surfaceDepth"); }
 
     private static final java.util.regex.Pattern ZERO_GAIN = java.util.regex.Pattern.compile("\\bgot 0 of [1-9]\\d*\\b");
 
@@ -36,7 +38,7 @@ public final class AaLadder {
     }
 
     /** Seen within this many blocks of the camp or base mark, a table/furnace counts as the camp's (latched). */
-    public static final int CAMP_R = 24;
+    public static int campR() { return Tuning.i("aaLadder.campR"); }
 
     /**
      * 0.36.a6: a table/furnace seen within {@link #CAMP_R} of the camp or base mark is latched and counts wherever the bot
@@ -46,7 +48,7 @@ public final class AaLadder {
      */
     public static boolean campLatch(boolean latched, boolean seenNear, double distToCamp) {
         if (distToCamp < 0) return false;
-        return latched || (seenNear && distToCamp <= CAMP_R);
+        return latched || (seenNear && distToCamp <= campR());
     }
 
     /** The shelter need's SUCCESS is remembered on the blackboard (the adapter persists it). */

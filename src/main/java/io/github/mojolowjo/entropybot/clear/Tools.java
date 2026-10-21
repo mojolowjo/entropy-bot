@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -45,7 +47,7 @@ public final class Tools {
     }
 
     /** The tier an ore pickaxe has to have under "tools ores iron": iron or better (on the MiningTiers scale: iron 3). */
-    public static final int ORE_TIER = 3;
+    public static int oreTier() { return Tuning.i("tools.oreTier"); }
 
     /**
      * The tool policy (package B, 2026-10-03): on an ore under {@code toolOres} "iron" (the default) the cheapest tool
@@ -68,7 +70,7 @@ public final class Tools {
         }
         if (ore && "iron".equals(toolOres)) {
             List<Slot> iron = new ArrayList<>();
-            for (Slot s : slots) if (toolTier(s.id()) >= ORE_TIER) iron.add(s);
+            for (Slot s : slots) if (toolTier(s.id()) >= oreTier()) iron.add(s);
             int best = choose(iron, needsCorrectTool);
             if (best >= 0) return best;
         }
@@ -85,7 +87,7 @@ public final class Tools {
      * #STONE_PICKS} first, or, if that can't start, goes on with the pickaxe it has.
      */
     public static boolean stonePicksFirst(String chosenId, boolean ore, String toolOres, boolean stoneCanBreak, boolean triedAlready) {
-        if (triedAlready || chosenId == null || !isPickaxe(chosenId) || toolTier(chosenId) < ORE_TIER || !stoneCanBreak) return false;
+        if (triedAlready || chosenId == null || !isPickaxe(chosenId) || toolTier(chosenId) < oreTier() || !stoneCanBreak) return false;
         if (!io.github.mojolowjo.entropybot.vocab.ToolMode.makesStonePicks(toolOres)) return false;     // V1b: best mode keeps the best
         return !(ore && "iron".equals(toolOres));
     }

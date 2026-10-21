@@ -27,12 +27,18 @@ public final class Discovery {
 
     public enum Kind { CAVE, STRIP, CLEAR_CHUNK, EXPLORE }
 
-    public static final double CAVE_BLOCKS_MIN = 16, EXPOSED = 8, DEFAULT_TUNNEL_PER_ORE = 60, MIN_TUNNEL = 4, MAX_TUNNEL = 2000;
+    public static double caveBlocksMin() { return Tuning.get("discovery.caveBlocksMin"); }
+    public static double exposed() { return Tuning.get("discovery.exposed"); }
+    public static double defaultTunnelPerOre() { return Tuning.get("discovery.defaultTunnelPerOre"); }
+    public static double minTunnel() { return Tuning.get("discovery.minTunnel"); }
+    public static double maxTunnel() { return Tuning.get("discovery.maxTunnel"); }
     /** AA_ROUND3 5: a seen opening this close is the cheap cave option; the explore walk's cap on blocks per cave expected. */
-    public static final int SEEN_CAVE_WITHIN = 64, MAX_WALK_PER_CAVE = 3000, EXPLORE_MINUTES = 5;
-    public static final int SLAB = 4;
+    public static int seenCaveWithin() { return Tuning.i("discovery.seenCaveWithin"); }
+    public static int maxWalkPerCave() { return Tuning.i("discovery.maxWalkPerCave"); }
+    public static int exploreMinutes() { return Tuning.i("discovery.exploreMinutes"); }
+    public static int slab() { return Tuning.i("discovery.slab"); }
     /** aa-switch2: staircase levels per chain (2 steps each; the chain limit is 100 with the routine after it). */
-    public static final int STAIR_LEG = 30;
+    public static int stairLeg() { return Tuning.i("discovery.stairLeg"); }
 
     /**
      * @param caveDist   blocks to the nearest known cave within reach, -1 none
@@ -136,8 +142,8 @@ public final class Discovery {
 
     /** Tunnel blocks per ore at the learned density (default {@value #DEFAULT_TUNNEL_PER_ORE} unknown). */
     public static double tunnelPerOre(double density) {
-        if (density <= 0) return DEFAULT_TUNNEL_PER_ORE;
-        return Math.max(MIN_TUNNEL, Math.min(MAX_TUNNEL, 1 / (density * EXPOSED)));
+        if (density <= 0) return defaultTunnelPerOre();
+        return Math.max(minTunnel(), Math.min(maxTunnel(), 1 / (density * exposed())));
     }
 
     /** The options for one ore family ({@code word} as the mine verb takes it), cheapest first; the ones that can't run go to dropped. */
@@ -151,12 +157,12 @@ public final class Discovery {
         if (f.seenCave() != null) {
             int[] c = f.seenCave();
             seenDist = (int) Math.round(Math.sqrt((double) (c[0] - f.meX()) * (c[0] - f.meX()) + (double) (c[1] - f.meY()) * (c[1] - f.meY()) + (double) (c[2] - f.meZ()) * (c[2] - f.meZ())));
-            if (seenDist > SEEN_CAVE_WITHIN) seenDist = -1;
+            if (seenDist > seenCaveWithin()) seenDist = -1;
         }
         boolean knownFirst = f.caveDist() >= 0 && (seenDist < 0 || f.caveDist() <= seenDist);
         if (knownFirst) {
             double cost = f.caveDist() + Unit.blocks(60 / rate);
-            out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave %d away, %.2f %s seen per cave-minute, %d blocks explored a minute", f.caveDist(), rate, word, (int) CAVE_BLOCKS_MIN),
+            out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave %d away, %.2f %s seen per cave-minute, %d blocks explored a minute", f.caveDist(), rate, word, (int) caveBlocksMin()),
                     List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE))));
         } else if (seenDist >= 0) {
             int[] c = f.seenCave();
@@ -164,10 +170,10 @@ public final class Discovery {
             // the cave run walks to the seen opening itself (Mining.startCave: no known cave near, a seen one within 64)
             out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave opening I saw at %d %d %d, %d away, %.2f %s seen per cave-minute", c[0], c[1], c[2], seenDist, rate, word),
                     List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE)), c.clone()));
-        } else dropped.add("explore cave: no known cave and no cave opening seen within " + SEEN_CAVE_WITHIN);
+        } else dropped.add("explore cave: no known cave and no cave opening seen within " + seenCaveWithin());
         // none seen: walk new land until a cave opening comes into view, valued by the learned chance per 100 blocks
         if (f.caveDist() < 0 && seenDist < 0 && f.cavesPer100() > 0) {
-            double walk = Math.min(MAX_WALK_PER_CAVE, 100 / f.cavesPer100());
+            double walk = Math.min(maxWalkPerCave(), 100 / f.cavesPer100());
             // no leash: the way home is priced (from about walk past where I am), weighted by the night; past the horizon: dropped
             double night = nightWeight(f.dayTime());
             double home = f.homeDist() < 0 ? 0 : (f.homeDist() + walk) * night;
@@ -175,7 +181,7 @@ public final class Discovery {
             if (f.horizonBlocks() > 0 && walk + home > f.horizonBlocks())
                 dropped.add(String.format(Locale.ROOT, "explore for a cave: the round trip (%.0f out, %.0f home%s) is past the horizon (%.0f)", walk, home, night > 1 ? " at night" : "", f.horizonBlocks()));
             else out.add(new Opt(Kind.EXPLORE, cost, String.format(Locale.ROOT, "no cave seen yet; %.2f cave openings seen per 100 blocks walked, about %.0f blocks to the next, then %.2f %s per cave-minute; the way home %.0f%s",
-                    f.cavesPer100(), walk, rate, word, home, night > 1 ? String.format(Locale.ROOT, " (x%.0f: night)", night) : ""), List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.FindCave(EXPLORE_MINUTES), new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE))));
+                    f.cavesPer100(), walk, rate, word, home, night > 1 ? String.format(Locale.ROOT, " (x%.0f: night)", night) : ""), List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.FindCave(exploreMinutes()), new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE))));
         }
         int y = stripY(f);
         int down = Math.max(0, f.meY() - y);
@@ -195,23 +201,23 @@ public final class Discovery {
             int[] u = io.github.mojolowjo.entropybot.aa.WayUp.dir(dir);
             // aa-switch2 (r2-iron: 17 of 19 pointless): a staircase of 2 steps a level past the chain limit (100) was
             // refused at every start ("123 steps"); a deep band is reached in legs of STAIR_LEG levels, re-decided at each bottom
-            boolean leg = !f.mineMarked() && down > STAIR_LEG;
+            boolean leg = !f.mineMarked() && down > stairLeg();
             List<io.github.mojolowjo.entropybot.aa.moves.Step> cmd = new ArrayList<>();
-            if (!f.mineMarked()) cmd.add(new io.github.mojolowjo.entropybot.aa.moves.Step.StripLeg(f.meX(), f.meY(), f.meZ(), dir, u[0], u[1], leg ? STAIR_LEG : down, !leg));
+            if (!f.mineMarked()) cmd.add(new io.github.mojolowjo.entropybot.aa.moves.Step.StripLeg(f.meX(), f.meY(), f.meZ(), dir, u[0], u[1], leg ? stairLeg() : down, !leg));
             if (!leg) cmd.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.STRIP));
             out.add(new Opt(Kind.STRIP, cost, String.format(Locale.ROOT, "%s, %s, %.0f tunnel blocks per ore, %.1f s a block%s%s",
                     f.mineMarked() ? "the marked mine" : "Y " + y + (down > 0 ? " (" + down + " down)" : ""), dens, per, dig,
-                    (f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : "") + (leg ? ", this leg " + STAIR_LEG + " of " + down + " levels" : ""),
+                    (f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : "") + (leg ? ", this leg " + stairLeg() + " of " + down + " levels" : ""),
                     g == null ? "" : String.format(Locale.ROOT, ", stairs %s ground %.0f s", dir, g.cost())), cmd));
         }
         if (!f.ownerGoal()) dropped.add("clear chunk: the owner's goals only");
         else {
             int x0 = Math.floorDiv(f.meX(), 16) * 16, z0 = Math.floorDiv(f.meZ(), 16) * 16;
-            int cells = 16 * 16 * SLAB;
-            double expect = f.density() > 0 ? f.density() * cells : cells / DEFAULT_TUNNEL_PER_ORE / EXPOSED;
+            int cells = 16 * 16 * slab();
+            double expect = f.density() > 0 ? f.density() * cells : cells / defaultTunnelPerOre() / exposed();
             double cost = (down + Unit.blocks(down * 2 * dig) + Unit.blocks(cells * dig)) / Math.max(0.5, expect);
             out.add(new Opt(Kind.CLEAR_CHUNK, cost, String.format(Locale.ROOT, "%d blocks at Y %d, about %.1f ore in it", cells, y, expect),
-                    List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.ClearChunk(x0, y, z0, SLAB))));
+                    List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.ClearChunk(x0, y, z0, slab()))));
         }
         out.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         return out;

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Map;
 
@@ -70,7 +72,7 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
     }
 
     /** AA_STEP3 A4: how far the shore scan looks (blocks, horizontally). */
-    public static final int SHORE_REACH = 32;
+    public static int shoreReach() { return Tuning.i("threatFacts.shoreReach"); }
 
     public static final ThreatFacts CALM = new ThreatFacts(new Me(20, 20, 0, 1, 20), List.of(), Ways.NONE);
 
@@ -89,11 +91,15 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
             Map.entry("wither_skeleton", new double[]{8, 20}), Map.entry("blaze", new double[]{6, 20}));
 
     /** Light this high is lit (spawning stops); the lit-spot search reaches this far (ThreatRuntime). */
-    public static final int LIT = 8, LIT_MAX_DIST = 24;
+    public static int lit() { return Tuning.i("threatFacts.lit"); }
+    public static int litMaxDist() { return Tuning.i("threatFacts.litMaxDist"); }
     /** A weapon hit at least this (a wooden sword) counts as armed. */
-    public static final double ARMED = 4;
+    public static double armed() { return Tuning.get("danger.fightHit"); }
     /** A melee mob hits once a second; a ranged one every 2 s from up to RANGED_RANGE. */
-    public static final double HIT_EVERY_S = 1.0, SHOT_EVERY_S = 2.0, RANGED_RANGE = 16, MELEE_REACH = 2;
+    public static final double HIT_EVERY_S = 1.0; // game fact: a melee mob hits about once a second
+    public static final double SHOT_EVERY_S = 2.0; // game fact: a skeleton shoots about once every 2 seconds
+    public static double rangedRange() { return Tuning.get("threatFacts.rangedRange"); }
+    public static final double MELEE_REACH = 2; // game fact: a melee mob attacks from about 2 blocks
 
     /** Damage after armour (vanilla, no toughness). */
     public static double taken(double d, int armor) {
@@ -128,14 +134,14 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
         }
         boolean ranged = mv == ThreatRules.Move.RANGED;
         double dps = hit / (ranged ? SHOT_EVERY_S : HIT_EVERY_S);
-        return new Foe(k, dist, mv, dps, m == null ? 20 : m[1], speedOf(mv), ranged ? RANGED_RANGE : MELEE_REACH, basis);
+        return new Foe(k, dist, mv, dps, m == null ? 20 : m[1], speedOf(mv), ranged ? rangedRange() : MELEE_REACH, basis);
     }
 
     /** 0.23.2: sprint whenever a run moves (vanilla needs food above 6). */
     public static boolean sprint(boolean moving, int food) { return moving && food > 6; }
 
     /** The bot's walking pace (a Baritone path), blocks per second on the flat. */
-    public static final double WALK = 4.3;
+    public static final double WALK = 4.3; // game fact: walking speed in blocks per second (about 4.3)
 
     /** The bot's run speed: sprint 5.6 with food above 6, else walk 4.3. */
     public static double runSpeed(int food) { return food > 6 ? 5.6 : WALK; }

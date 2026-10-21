@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -41,11 +43,12 @@ public final class BedSpot {
     }
 
     /** Blocks of cost per block the bed lies away from being next to the table or chest. */
-    public static final double OFF_CAMP = 1.5;
+    public static double offCamp() { return Tuning.get("bedSpot.offCamp"); }
     /** Cost of each head direction that is blocked. */
-    public static final double BLOCKED_HEAD = 0.5;
+    public static double blockedHead() { return Tuning.get("bedSpot.blockedHead"); }
     /** How far from the anchor a bed may stand: the near ring, then the wider one (a night with no room near the camp). */
-    public static final int NEAR = 4, FAR = 10;
+    public static int near() { return Tuning.i("bedSpot.near"); }
+    public static int far() { return Tuning.i("bedSpot.far"); }
 
     private static final int[][] DIRS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
@@ -76,10 +79,10 @@ public final class BedSpot {
             if (table != null) near = Math.min(near, cheb(c, table));
             if (chest != null) near = Math.min(near, cheb(c, chest));
             if (near != Integer.MAX_VALUE) {
-                off = Math.max(0, near - 1) * OFF_CAMP;
+                off = Math.max(0, near - 1) * offCamp();
                 why.append(near <= 1 ? ", next to the camp" : ", " + near + " from the camp");
             }
-            out.add(new Spot(c, heads, walk + off + (4 - heads) * BLOCKED_HEAD, why.toString()));
+            out.add(new Spot(c, heads, walk + off + (4 - heads) * blockedHead(), why.toString()));
         }
         out.sort(Comparator.comparingDouble(Spot::cost).thenComparingInt(s -> s.cell()[0]).thenComparingInt(s -> s.cell()[2]));
         return out;
@@ -93,8 +96,8 @@ public final class BedSpot {
 
     /** The near ring first; when it holds nothing unrefused, the wider ring (the bed is put down elsewhere, as a shelter step). */
     public static Spot choose(int[] anchor, int[] table, int[] chest, int[] me, Predicate<int[]> free, Predicate<int[]> allowed, Set<String> failed) {
-        Spot s = pick(rank(anchor, table, chest, me, NEAR, free, allowed), failed);
-        return s != null ? s : pick(rank(anchor, table, chest, me, FAR, free, allowed), failed);
+        Spot s = pick(rank(anchor, table, chest, me, near(), free, allowed), failed);
+        return s != null ? s : pick(rank(anchor, table, chest, me, far(), free, allowed), failed);
     }
 
     private static int cheb(int[] a, int[] b) { return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[2] - b[2])); }

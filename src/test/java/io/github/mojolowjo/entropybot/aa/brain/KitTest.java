@@ -113,14 +113,14 @@ class KitTest {
     @Test
     void stashRisesBeforeDuskAndBeforeAFarTrip() {
         assertEquals(0, Kit.soon(1000, false, false));
-        assertEquals(0.5, Kit.soon(Night.DUSK - Kit.STASH_LEAD / 2, false, false), 1e-9);
+        assertEquals(0.5, Kit.soon(Night.DUSK - Kit.stashLead() / 2, false, false), 1e-9);
         assertEquals(1, Kit.soon(Night.DUSK + 10, false, false));
         assertEquals(0, Kit.soon(15_000, true, false), "night: the shelter's turn");
         assertEquals(1, Kit.soon(1000, false, true), "a far trip");
         assertEquals(-1, Kit.stashValue(2, 1, 1));
         assertEquals(-1, Kit.stashValue(20, 0, 1), "Peaceful");
         assertEquals(20, Kit.stashValue(20, 1, 1), 1e-9);
-        assertEquals(Kit.STASH_MAX, Kit.stashValue(500, 1, 1));
+        assertEquals(Kit.stashMax(), Kit.stashValue(500, 1, 1));
     }
 
     @Test

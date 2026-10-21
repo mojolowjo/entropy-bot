@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -16,7 +18,9 @@ public final class AreaCandidates {
     private AreaCandidates() {}
 
     /** How far round a candidate the safe area reaches (the 16 blocks explore keeps off), and down/up. */
-    public static final int R = 16, DOWN = 8, UP = 16;
+    public static int r() { return Tuning.i("areaCandidates.r"); }
+    public static int down() { return Tuning.i("areaCandidates.down"); }
+    public static int up() { return Tuning.i("areaCandidates.up"); }
 
     public static final String USAGE = "usage: area candidates | area candidates accept <n> [name] | area candidates reject <n>|all";
 
@@ -56,7 +60,7 @@ public final class AreaCandidates {
         JsonObject o = l.get(n - 1).getAsJsonObject();
         String name = w.size() == 3 ? w.get(2) : "found" + n;
         int x = i(o, "x"), y = i(o, "y"), z = i(o, "z");
-        return new Plan(null, (x - R) + " " + (z - R) + " " + (x + R) + " " + (z + R) + " " + name + " no-break " + (y - DOWN) + " " + (y + UP), n - 1);
+        return new Plan(null, (x - r()) + " " + (z - r()) + " " + (x + r()) + " " + (z + r()) + " " + name + " no-break " + (y - down()) + " " + (y + up()), n - 1);
     }
 
     private static int i(JsonObject o, String k) {

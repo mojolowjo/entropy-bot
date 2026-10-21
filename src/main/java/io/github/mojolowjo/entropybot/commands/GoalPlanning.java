@@ -207,7 +207,7 @@ final class GoalPlanning {
     boolean subgoal(LocalPlayer p, String item, int n, int maxSteps, java.util.function.Consumer<String[]> then) {
         PlanFacts f = facts(p);
         List<Planner.Need> needs = List.of(Planner.Need.item(item, Math.max(1, n)));
-        return async.submit("subgoal:" + item, () -> Planner.plan(f, needs, Planner.MAX_NODES / 2, Planner.BUDGET_MS / 2, maxSteps), d -> {
+        return async.submit("subgoal:" + item, () -> Planner.plan(f, needs, Planner.maxNodesV() / 2, Planner.budgetMsV() / 2, maxSteps), d -> {
             Planner.Result r = d.result();
             String[] out;
             if (r == null) out = new String[]{null, "the search threw: " + d.error()};

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.core;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.guard.AreaType;
 import io.github.mojolowjo.entropybot.guard.Box;
 import io.github.mojolowjo.entropybot.guard.Policy;
@@ -22,9 +24,9 @@ public final class AreaFacts {
      * Ending a walk farther from the nearest base than it started costs this share of the way back (seconds per
      * second of walking away): the old WayBack's x2 return leg, priced softly into every option instead of scripted.
      */
-    public static final double AWAY_WEIGHT = 0.5;
+    public static double awayWeight() { return Tuning.get("areaFacts.awayWeight"); }
     /** Blocks per second of a walk (the sequencer's speed). */
-    static final double SPEED = 4.3;
+    static final double SPEED = 4.3; // game fact: walking speed in blocks per second (about 4.3)
 
     /** What the bot stands in: the meanings at its cell, hardest first ("base,work"), "" with no area. */
     public static String here(Policy p, String dim, int x, int y, int z) {
@@ -66,7 +68,7 @@ public final class AreaFacts {
     public static double awayS(int[] me, int[] dest, int[] base) {
         if (me == null || dest == null || base == null || me.length < 3 || dest.length < 3) return 0;
         double now = baseDist(base, me[0], me[2]), then = baseDist(base, dest[0], dest[2]);
-        return Math.max(0, then - now) / SPEED * AWAY_WEIGHT;
+        return Math.max(0, then - now) / SPEED * awayWeight();
     }
 
     /** The meanings at the cell contain this one ("base" in "base,work"). */
@@ -81,7 +83,8 @@ public final class AreaFacts {
      * rejects it, when it is not plainly the bot's own: a named mob there, or {@code manyEntities} block entities or
      * more. {@code built} alone (a few placed blocks) is not enough: the bot's own paths and torches look like that.
      */
-    public static final int MANY_ENTITIES = 2, MANY_BUILT = 6;
+    public static int manyEntities() { return Tuning.i("areaFacts.manyEntities"); }
+    public static int manyBuilt() { return Tuning.i("areaFacts.manyBuilt"); }
 
     public static boolean autoNoBreak(boolean named, int blockEntities) {
         return autoNoBreak(named, blockEntities, 0, null);
@@ -92,7 +95,7 @@ public final class AreaFacts {
      * paths) and a cluster of {@link #MANY_BUILT} built blocks count too - a lone chest or a few torches do not.
      */
     public static boolean autoNoBreak(boolean named, int blockEntities, int built, String natural) {
-        return named || blockEntities >= MANY_ENTITIES || built >= MANY_BUILT || natural != null;
+        return named || blockEntities >= manyEntities() || built >= manyBuilt() || natural != null;
     }
 
     /** The no-break box for a candidate at (x, y, z): R each way, DOWN below, UP above (the accept command's shape). */

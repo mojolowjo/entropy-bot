@@ -14,9 +14,9 @@ public final class Curves {
     private Curves() {}
 
     /** Seconds at which a progress desire's value halves. */
-    public static final double COST_C = 600;
+    public static double costC() { return Tuning.get("curves.costC"); }
     /** Value flowing to a prerequisite keeps this share (2.2). */
-    public static final double FLOW = Tuning.defOf("flow");
+    public static double flow() { return Tuning.get("flow"); }
 
     /** 0..w: {@code w x ((full - have) / full)^2}, 0 at or above full. */
     public static double upkeep(double w, double have, double full) {
@@ -30,12 +30,13 @@ public final class Curves {
      * {@code 175 x shortfall^2} of 18: 10 -> 35, 8 -> 54, 6 -> 78 (urgent), 5 -> 91, 4 and under -> 100 (over the
      * night shelter: starving outranks everything but danger).
      */
-    public static final double FOOD_W = 175, FOOD_FULL = 18;
+    public static double foodW() { return Tuning.get("curves.foodW"); }
+    public static final double FOOD_FULL = 18; // game fact: natural regeneration needs food level 18
 
-    public static double food(int hunger) { return upkeep(FOOD_W, hunger, FOOD_FULL); }
+    public static double food(int hunger) { return upkeep(foodW(), hunger, FOOD_FULL); }
 
     public static double progress(double value, double p, double costS) {
-        return value * p / (1 + Math.max(0, costS) / COST_C);
+        return value * p / (1 + Math.max(0, costS) / costC());
     }
 
     /** P(success) from the failures in a row and the measured runs (n, ok). */

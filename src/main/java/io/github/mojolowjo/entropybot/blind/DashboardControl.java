@@ -23,7 +23,9 @@ import java.util.List;
  * never shown, never logged: the link on the screen is {@code ?key=****}.
  */
 public final class DashboardControl {
-    public static final int DASHBOARD_PORT = 8765, CONNECT_MS = 300, START_WAIT_MS = 10_000;
+    public static final int DASHBOARD_PORT = 8765; // structural
+    public static final int CONNECT_MS = 300; // structural
+    public static final int START_WAIT_MS = 10_000; // structural
 
     private DashboardControl() {}
 

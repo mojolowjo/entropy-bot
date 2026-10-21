@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderSet;
@@ -42,7 +44,7 @@ final class ItemWorthSource implements ItemWorth.Source {
     private final java.util.Set<String> stoneLike = new java.util.HashSet<>(), junkFood = new java.util.HashSet<>(), effectFood = new java.util.HashSet<>(), risky = new java.util.HashSet<>(), shields = new java.util.HashSet<>(), planks = new java.util.HashSet<>(), stations = new java.util.HashSet<>(), ores = new java.util.HashSet<>();
     int failed;
     /** A harmful effect that happens at least this often makes a food poison (rotten flesh 0.8, spider eye 1.0; raw chicken 0.3 is still food). */
-    static final float HARM_P = 0.5f;
+    static float harmP() { return (float) Tuning.get("itemWorthSource.harmP"); }
 
     static ItemWorthSource read(Level level) {
         ItemWorthSource s = new ItemWorthSource();
@@ -53,11 +55,11 @@ final class ItemWorthSource implements ItemWorth.Source {
             var fp = item.getDefaultInstance().get(DataComponents.FOOD);
             if (fp != null) {
                 boolean bad = fp.nutrition() <= 1;
-                for (var pe : fp.effects()) if (pe.probability() >= HARM_P && pe.effect().getEffect().value().getCategory() == net.minecraft.world.effect.MobEffectCategory.HARMFUL) bad = true;
+                for (var pe : fp.effects()) if (pe.probability() >= harmP() && pe.effect().getEffect().value().getCategory() == net.minecraft.world.effect.MobEffectCategory.HARMFUL) bad = true;
                 for (var pe : fp.effects()) if (pe.effect().getEffect().value().getCategory() == net.minecraft.world.effect.MobEffectCategory.HARMFUL) s.risky.add(id);
                 if (item instanceof net.minecraft.world.item.ChorusFruitItem) bad = true;       // it teleports: by its class, any mod
                 if (bad) s.junkFood.add(id);
-                else for (var pe : fp.effects()) if (pe.probability() >= HARM_P) s.effectFood.add(id);
+                else for (var pe : fp.effects()) if (pe.probability() >= harmP()) s.effectFood.add(id);
             }
             try { ItemWorth.Facts f = factsOf(item); if (f != ItemWorth.Facts.NONE) s.facts.put(id, f); }
             catch (RuntimeException e) { s.failed++; }
@@ -173,7 +175,7 @@ final class ItemWorthSource implements ItemWorth.Source {
         var food = st.get(DataComponents.FOOD);
         if (food != null) {
             boolean harmful = false;
-            for (var pe : food.effects()) if (pe.probability() >= HARM_P && pe.effect().getEffect().value().getCategory() == net.minecraft.world.effect.MobEffectCategory.HARMFUL) harmful = true;
+            for (var pe : food.effects()) if (pe.probability() >= harmP() && pe.effect().getEffect().value().getCategory() == net.minecraft.world.effect.MobEffectCategory.HARMFUL) harmful = true;
             if (!harmful) { nut = food.nutrition(); sat = food.saturation(); }
         }
         if (item instanceof BlockItem bi) {

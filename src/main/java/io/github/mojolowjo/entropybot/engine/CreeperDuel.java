@@ -133,7 +133,7 @@ public final class CreeperDuel {
             if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
             double d = p.distanceTo(e);
             if (e instanceof Creeper) {
-                if (d <= CreeperRules.LOOK) creepers++;
+                if (d <= CreeperRules.look()) creepers++;
                 continue;
             }
             // the same verdict as the fight code (0.19.1): Enemy, hostile list, retaliation; never pets or players
@@ -142,8 +142,8 @@ public final class CreeperDuel {
         }
         String dim = Guard.dimOf(lv);
         var protect = Guard.INSTANCE.core.policy().protect;
-        boolean nearProtect = CreeperRules.nearBox(protect, dim, c.getX(), c.getY(), c.getZ(), CreeperRules.PROTECT_MARGIN)
-                || CreeperRules.nearBox(protect, dim, p.getX(), p.getY(), p.getZ(), CreeperRules.PROTECT_MARGIN);
+        boolean nearProtect = CreeperRules.nearBox(protect, dim, c.getX(), c.getY(), c.getZ(), CreeperRules.protectMargin())
+                || CreeperRules.nearBox(protect, dim, p.getX(), p.getY(), p.getZ(), CreeperRules.protectMargin());
         int be = 0, built = 0;
         BlockPos cp = c.blockPosition();
         for (BlockPos q : BlockPos.betweenClosed(cp.offset(-5, -5, -5), cp.offset(5, 5, 5))) {
@@ -153,7 +153,7 @@ public final class CreeperDuel {
             if (st.hasBlockEntity()) be++;
             else if (Guard.INSTANCE.isProtectedBlock(st.getBlock())) built++;
         }
-        CreeperRules.Line line = withLine ? line(lv, p, p.getX() - c.getX(), p.getZ() - c.getZ()) : new CreeperRules.Line(CreeperRules.LINE_NEED, true, null);
+        CreeperRules.Line line = withLine ? line(lv, p, p.getX() - c.getX(), p.getZ() - c.getZ()) : new CreeperRules.Line(CreeperRules.lineNeed(), true, null);
         return new CreeperRules.Situation(mode, weaponRank(p), p.getHealth(), creepers, others, c.isPowered(), nearProtect,
                 CreeperRules.nearBuilds(be, built), line.clear(), line.open(), line.stop(), banned.getOrDefault(c.getId(), 0L) > now);
     }
@@ -172,7 +172,7 @@ public final class CreeperDuel {
         }
         dist = p.distanceTo(c);
         if (dist > 20) return end(mc, p, now, "the creeper walked off", false, false, false);
-        if (p.getHealth() <= CreeperRules.ABORT_HEALTH) return end(mc, p, now, "health " + Math.round(p.getHealth()) + ", running from the creeper", true, false, false);
+        if (p.getHealth() <= CreeperRules.abortHealth()) return end(mc, p, now, "health " + Math.round(p.getHealth()) + ", running from the creeper", true, false, false);
         if (now >= nextCheck) {
             nextCheck = now + 20;
             CreeperRules.Situation s = situation(mc, p, c, hurt, false, now);
@@ -206,7 +206,7 @@ public final class CreeperDuel {
         }
         boolean weapon = weaponRankOf(p.getMainHandItem()) > 0;
         float cooldown = weapon ? p.getAttackStrengthScale(0f) : 0f;
-        boolean bowReady = mode == Mode.BOW && dist >= CreeperRules.BOW_MIN && dist <= CreeperRules.BOW_MAX && bowSlot(p) >= 0
+        boolean bowReady = mode == Mode.BOW && dist >= CreeperRules.bowMin() && dist <= CreeperRules.bowMax() && bowSlot(p) >= 0
                 && p.hasLineOfSight(c) && !Double.isNaN(aimPitch(p, c));
         // the ground towards it: a charge never runs into a hole or water (the last 1.5 blocks are the creeper's own)
         boolean pathIn = true;
@@ -278,7 +278,7 @@ public final class CreeperDuel {
         Creeper c = creeper;
         stopDrawing(mc, p);
         moveKeys(mc, false, false);
-        if (flee) banned.put(c.getId(), now + CreeperRules.GIVE_UP_TICKS);
+        if (flee) banned.put(c.getId(), now + CreeperRules.giveUpTicks());
         long secs = (now - startTick) / 20;
         LOG.info("[entropybot] creeper duel: {} after {} s, {} hits, {} charges", text, secs, cycle.hits(), cycle.charges());
         events.push("job", "creeper duel: " + text + " (" + secs + " s)", null);
@@ -383,7 +383,7 @@ public final class CreeperDuel {
     // ---- the world as the rules see it ----
 
     private static CreeperRules.Line line(Level lv, LocalPlayer p, double ux, double uz) {
-        return CreeperRules.retreatLine((x, y, z) -> cell(lv, new BlockPos(x, y, z)), p.getX(), footY(lv, p), p.getZ(), ux, uz, CreeperRules.LINE_NEED);
+        return CreeperRules.retreatLine((x, y, z) -> cell(lv, new BlockPos(x, y, z)), p.getX(), footY(lv, p), p.getZ(), ux, uz, CreeperRules.lineNeed());
     }
 
     /** The block the feet are in; one higher when the bot stands on a slab or a path block (its cell is not free). */

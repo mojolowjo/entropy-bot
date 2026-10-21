@@ -61,13 +61,19 @@ import java.util.function.Consumer;
  */
 public final class FastServer {
     /** The default port (the dashboard is 8765). */
-    public static final int DEFAULT_PORT = 8766;
+    public static final int DEFAULT_PORT = 8766; // structural
     /** A key shorter than this is refused (the dashboard's is 32+ characters). */
-    public static final int MIN_KEY = 16;
+    public static final int MIN_KEY = 16; // structural
     /** Ticks the bot has to be idle in a row before a /wait answers (a job that is about to start has a moment). */
-    public static final int SETTLE_TICKS = 10;
-    public static final long CMD_TIMEOUT_MS = 10_000, CMD_TIMEOUT_MAX = 60_000, WAIT_TIMEOUT_MS = 120_000, WAIT_TIMEOUT_MAX = 3_600_000;
-    static final int MAX_BODY = 1 << 20, MAX_WAITERS = 4, TASKS_PER_TICK = 16, THREADS = 8;
+    public static final int SETTLE_TICKS = 10; // structural
+    public static final long CMD_TIMEOUT_MS = 10_000; // structural
+    public static final long CMD_TIMEOUT_MAX = 60_000; // structural
+    public static final long WAIT_TIMEOUT_MS = 120_000; // structural
+    public static final long WAIT_TIMEOUT_MAX = 3_600_000; // structural
+    static final int MAX_BODY = 1 << 20; // structural
+    static final int MAX_WAITERS = 4; // structural
+    static final int TASKS_PER_TICK = 16; // structural
+    static final int THREADS = 8; // structural
 
     /** What the game side does; every method is called on the game thread (from {@link #tick()}). */
     public interface Handler {

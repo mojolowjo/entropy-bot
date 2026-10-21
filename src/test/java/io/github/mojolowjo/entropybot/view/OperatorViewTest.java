@@ -95,9 +95,9 @@ class OperatorViewTest {
     @Test
     void newsHighestFirstOnce() {
         News n = new News();
-        n.push(News.TIME, "night fell");
-        n.push(News.DEATH, "I died at 1 2 3");
-        n.push(News.TIME, "night fell");
+        n.push(News.time(), "night fell");
+        n.push(News.death(), "I died at 1 2 3");
+        n.push(News.time(), "night fell");
         assertEquals(List.of("I died at 1 2 3", "night fell"), n.take());
         assertTrue(n.take().isEmpty());
     }

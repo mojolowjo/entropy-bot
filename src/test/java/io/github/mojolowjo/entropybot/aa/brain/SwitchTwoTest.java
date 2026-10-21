@@ -114,9 +114,9 @@ class SwitchTwoTest {
         var f = new Discovery.Facts(-1, 1, false, 100, 70, 200, 16, 0.002, 0.4, false);
         var strip = Discovery.rank(f, "iron", 3, dd).stream().filter(o -> o.kind() == Discovery.Kind.STRIP).findFirst().orElseThrow();
         String[] steps = io.github.mojolowjo.entropybot.aa.TS.flat(strip.steps()).split(" > ");
-        assertEquals(2 * Discovery.STAIR_LEG, steps.length, strip.command());
+        assertEquals(2 * Discovery.stairLeg(), steps.length, strip.command());
         assertFalse(io.github.mojolowjo.entropybot.aa.TS.flat(strip.steps()).contains("place mine"), strip.command());
-        assertTrue(strip.why().contains("this leg " + Discovery.STAIR_LEG + " of "), strip.why());
+        assertTrue(strip.why().contains("this leg " + Discovery.stairLeg() + " of "), strip.why());
         // a shallow band: the whole way and the mine, as before
         f = new Discovery.Facts(-1, 1, false, 100, 30, 200, 16, 0.002, 0.4, false);
         strip = Discovery.rank(f, "iron", 3, dd).stream().filter(o -> o.kind() == Discovery.Kind.STRIP).findFirst().orElseThrow();

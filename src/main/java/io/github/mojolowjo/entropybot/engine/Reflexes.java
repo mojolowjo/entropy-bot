@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import baritone.api.BaritoneAPI;
@@ -122,8 +124,8 @@ public final class Reflexes {
     public CreeperRules.Mode creeperMode() { return duel.mode(); }
 
     // ---- attack <entityId> | nearest (C1, 0.20.5): one forced fight through the same reflex loop ----
-    static final double FORCED_RANGE = 24;
-    static final long FORCED_TICKS = 600;           // 30 s
+    static double forcedRange() { return Tuning.get("reflexes.forcedRange"); }
+    static long forcedTicks() { return Tuning.l("reflexes.forcedTicks"); }  // 30 s
     private int forcedId = -1;
     private long forcedUntil;
     private String forcedName;
@@ -145,9 +147,9 @@ public final class Reflexes {
                 if (c == p || !(c instanceof LivingEntity le) || !le.isAlive() || !Hostility.mayAttack(c)) continue;
                 if (!Hostility.INSTANCE.kind(c, true).counts()) continue;
                 double d = p.distanceTo(c);
-                if (d <= FORCED_RANGE && d < best) { best = d; e = c; }
+                if (d <= forcedRange() && d < best) { best = d; e = c; }
             }
-            if (e == null) return "no monster within " + (int) FORCED_RANGE + " blocks";
+            if (e == null) return "no monster within " + (int) forcedRange() + " blocks";
         } else {
             int id;
             try { id = Integer.parseInt(a); } catch (NumberFormatException ex) { return "usage: attack <entityId> | nearest"; }
@@ -160,10 +162,10 @@ public final class Reflexes {
         if (!Hostility.mayAttack(e) || !Hostility.INSTANCE.kind(e, true).counts())
             return "error: I won't attack a " + name + " (not a monster, or tamed/owned)";
         double d = p.distanceTo(e);
-        if (d > FORCED_RANGE) return "error: the " + name + " is " + Math.round(d) + " blocks away (" + (int) FORCED_RANGE + " at most)";
+        if (d > forcedRange()) return "error: the " + name + " is " + Math.round(d) + " blocks away (" + (int) forcedRange() + " at most)";
         forcedId = e.getId();
         forcedName = name;
-        forcedUntil = now + FORCED_TICKS;
+        forcedUntil = now + forcedTicks();
         forcedAnyway = false;
         events.push("reflex", "attack " + name + " #" + forcedId, null);
         return "attacking the " + name + " (" + Math.round(d) + " blocks away)";
@@ -189,10 +191,10 @@ public final class Reflexes {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null || e == null) return "error: not in a world";
         double d = p.distanceTo(e);
-        if (d > FORCED_RANGE) return "error: the " + name + " is " + Math.round(d) + " blocks away (" + (int) FORCED_RANGE + " at most)";
+        if (d > forcedRange()) return "error: the " + name + " is " + Math.round(d) + " blocks away (" + (int) forcedRange() + " at most)";
         forcedId = e.getId();
         forcedName = name;
-        forcedUntil = now + FORCED_TICKS;
+        forcedUntil = now + forcedTicks();
         forcedAnyway = true;
         events.push("reflex", "attack " + name + " #" + forcedId + " (rules: go)", null);
         return "ok: attacking the " + name + " (" + Math.round(d) + " blocks away)";
@@ -205,7 +207,7 @@ public final class Reflexes {
         String end = null;
         if (e == null) end = "lost the " + forcedName + " (gone from view)";
         else if (!e.isAlive()) end = "killed a " + forcedName;
-        else if (p.distanceTo(e) > FORCED_RANGE) end = "lost the " + forcedName + " (out of range)";
+        else if (p.distanceTo(e) > forcedRange()) end = "lost the " + forcedName + " (out of range)";
         else if (now > forcedUntil) end = "gave up on the " + forcedName + " (30 s)";
         else if (!forcedAnyway && !Hostility.mayAttack(e)) end = "stopped: the " + forcedName + " may not be attacked";
         if (end != null) {
@@ -340,7 +342,7 @@ public final class Reflexes {
         if (hp < lastHealth - 0.5f) hurtTick = now;
         if (Hostility.INSTANCE.observe(p, now)) hurtTick = now;    // a hit by a mob, even one absorption took
         lastHealth = hp;
-        boolean hurt = now - hurtTick < ReflexRules.HURT_TICKS;
+        boolean hurt = now - hurtTick < ReflexRules.hurtTicks();
         io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.tick(mc, p, now, hurt);     // B2: 1 Hz reach search
         // AA_CLEANUP 4: the lava/fire reflex is a true reflex: it runs under AA too (the milk and potions went)
         if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
@@ -349,12 +351,12 @@ public final class Reflexes {
         }
         // AA_CLEANUP 4: a danger move (AA's or the owner's) runs; only a creeper this close takes over (the creeper flee)
         if (moves.active()) {
-            Threat c = defence ? nearestCreeper(mc, p, CreeperSprint.START) : null;
+            Threat c = defence ? nearestCreeper(mc, p, CreeperSprint.startV()) : null;
             if (c == null || !p.hasLineOfSight(c.e)) {
                 moves.tick(mc, p, now);
                 return;
             }
-            moves.stop("a creeper within " + (int) CreeperSprint.START + ": the creeper flee");
+            moves.stop("a creeper within " + (int) CreeperSprint.startV() + ": the creeper flee");
         }
         if (duel.active()) {
             CreeperDuel.End end = duel.tick(mc, p, now, hurt);
@@ -376,7 +378,7 @@ public final class Reflexes {
         Threat t = ft != null ? ft : defence ? nearestThreat(mc, p, hurt, true) : null;
         // 0.32.1 (P1, the owner's creeper rule; Haiku run: cover from a spider walked the bot into a creeper 13 NE): a
         // creeper within CREEPER_OVERRIDE beats any other target, cover, high ground or job: it is the target now
-        Threat cr = defence ? nearestCreeper(mc, p, CREEPER_OVERRIDE) : null;
+        Threat cr = defence ? nearestCreeper(mc, p, creeperOverride()) : null;
         // review 4: a creeper behind a wall or in a pit (no sight) or one that hasn't come closer in 8 s doesn't override
         // (the flee loop); within 4 it always does. The flee itself keeps off drops, lava and fire (sprint check, Baritone).
         if (cr != null && cr.d > 4 && (!p.hasLineOfSight(cr.e) || !creeperClosing(cr))) cr = null;
@@ -391,7 +393,7 @@ public final class Reflexes {
         // (or the owner pointed at a target with `attack`, C1)
         if (escort.active()) escort.watch(mc);
         Entity ge = ft == null && defence && escort.active() ? escort.threat(mc, p) : null;
-        if (ge != null && (t == null || t.d > ReflexRules.REACH || t.e == ge)) {
+        if (ge != null && (t == null || t.d > ReflexRules.reach() || t.e == ge)) {
             escortFight(mc, p, threatOf(p, ge, hurt), hurt);
             return;
         }
@@ -399,20 +401,20 @@ public final class Reflexes {
         // 0.23.2, the owner's creeper heuristic: a sprint runs to its end (7+ blocks); a creeper within 6 starts one
         // (already sprinting away = keep going, else one hit for the knockback, then sprint straight away)
         if ((cspr.active() || creeperLadderGoverns) && creeperSprintTick(mc, p)) return;     // 0.39.s8: the ladder goes on after the sprint
-        if (t != null && t.creeper && t.d <= CreeperSprint.START) {
+        if (t != null && t.creeper && t.d <= CreeperSprint.startV()) {
             startCreeperSprint(mc, p, t);
             return;
         }
         // then re-evaluate beyond 6: a duel only with the bow setting, or melee with a big margin (armour and health)
         // AA_CLEANUP 4: the duel is the owner's creeper setting (a verb), never under AA
-        if (t != null && t.creeper && hp > ReflexRules.RETREAT_AT && now >= forceFleeUntil && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()
+        if (t != null && t.creeper && hp > ReflexRules.retreatAt() && now >= forceFleeUntil && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()
                 && CreeperSprint.duelAfter(duel.mode(), bigCreeperMargin(p))
                 && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
             startDuel(mc, p, t);
             return;
         }
         // just sprinted from it and no duel: stand still facing it (the job must not walk the bot back past it)
-        if (t != null && t.creeper && t.d < CreeperSprint.WATCH && cspr.watching(now, t.e.getId())) {
+        if (t != null && t.creeper && t.d < CreeperSprint.watch() && cspr.watching(now, t.e.getId())) {
             begin(Reflex.FLEEING, mc, "keeping away from a creeper");
             target = "creeper";
             targetDist = t.d;
@@ -427,12 +429,12 @@ public final class Reflexes {
             if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a " + t.id);
             target = t.id;
             targetDist = t.d;
-            urgent = hurt || t.d < ReflexRules.URGENT;
+            urgent = hurt || t.d < ReflexRules.urgent();
             // AA_CLEANUP 4: no hand-rule retreat, cover, lit spot or high ground: a creeper is fled, a forced target
             // (the owner's or AA's attack) fought; under AA anything else gets only the hit response (AA's danger desire
             // prices fight vs flee vs home vs cover vs dig in vs pillar); with AA off the old self-defence fights
             if (t.creeper) creeper(mc, p, t);
-            else if (ft == null && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn() && hp <= ReflexRules.RETREAT_AT && aaOffMove(mc, p, hurt)) return;
+            else if (ft == null && !io.github.mojolowjo.entropybot.aa.door.Door.aaOn() && hp <= ReflexRules.retreatAt() && aaOffMove(mc, p, hurt)) return;
             else if (ft != null || !io.github.mojolowjo.entropybot.aa.door.Door.aaOn()) fight(mc, p, t);
             else hitResponse(mc, p, t, hurt);
             return;
@@ -667,7 +669,7 @@ public final class Reflexes {
 
     /** Whether the bot was hit in the last {@link ReflexRules#HURT_TICKS} (for debug mobs). */
     public boolean recentlyHurt() {
-        return now - hurtTick < ReflexRules.HURT_TICKS;
+        return now - hurtTick < ReflexRules.hurtTicks();
     }
 
     /**
@@ -693,7 +695,7 @@ public final class Reflexes {
     }
 
     /** 0.32.1: a creeper this close is the target whatever else is near (the owner's rule). */
-    static final double CREEPER_OVERRIDE = 10;
+    static double creeperOverride() { return Tuning.get("reflexes.creeperOverride"); }
     /** 0.32.1: "debug creeper probe on|off": a log line every tick a creeper is within CREEPER_OVERRIDE. */
     public volatile boolean creeperProbe;
 
@@ -758,7 +760,7 @@ public final class Reflexes {
         }
         target = t.id;
         targetDist = t.d;
-        urgent = hurt || t.d < ReflexRules.URGENT;
+        urgent = hurt || t.d < ReflexRules.urgent();
         if (t.creeper) {
             if (duel.mode() == CreeperRules.Mode.BOW && now >= forceFleeUntil && duel.check(mc, p, (Creeper) t.e, now, hurt) == null) {
                 startDuel(mc, p, t);
@@ -769,7 +771,7 @@ public final class Reflexes {
             look(t.e);
             BlockPos ip = escort.interpose(mc, t.e);
             if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));
-            if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+            if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
                 mc.gameMode.attack(p, t.e);         // the knockback sends it away from the bot, which stands between
                 p.swing(InteractionHand.MAIN_HAND);
             }
@@ -790,7 +792,7 @@ public final class Reflexes {
         creeperEnded();
         holdWeapon(mc, p);
         look(t.e);      // backbone step 4: LookBehavior (the strike itself stays the mod's input: Baritone has no combat)
-        if (t.d <= ReflexRules.REACH) {
+        if (t.d <= ReflexRules.reach()) {
             engine.hold();
             if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)
                 mc.gameMode.attack(p, t.e);
@@ -807,11 +809,11 @@ public final class Reflexes {
 
     private void startCreeperSprint(Minecraft mc, LocalPlayer p, Threat t) {
         if (reflex == Reflex.EATING) stopEating(mc, "interrupted by a creeper");
-        if (duel.active()) duel.abort("creeper within " + (int) CreeperSprint.START + ": sprint");
+        if (duel.active()) duel.abort("creeper within " + (int) CreeperSprint.startV() + ": sprint");
         double ax = p.getX() - t.e.getX(), az = p.getZ() - t.e.getZ();
         net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
         boolean away = CreeperSprint.sprintingAway(p.isSprinting(), v.x, v.z, ax, az);
-        boolean mayHit = duel.mode() != CreeperRules.Mode.FLEE && t.d <= ReflexRules.REACH && (Hostility.mayAttack(t.e) || forcedAllows(t.e));
+        boolean mayHit = duel.mode() != CreeperRules.Mode.FLEE && t.d <= ReflexRules.reach() && (Hostility.mayAttack(t.e) || forcedAllows(t.e));
         double[] esc = creeperEscape(mc, p, t.e);         // brain-b1: weighs every hostile, not just this creeper
         CreeperSprint.Act a = cspr.start(now, t.e.getId(), away, mayHit, v.x, v.z, esc[0], esc[1]);
         reflex = Reflex.FLEEING;
@@ -971,11 +973,11 @@ public final class Reflexes {
     }
 
     /** 0.23.2: the blast a melee creeper duel should expect (a hit-and-back-off that fails at about 3 blocks). */
-    static final double CREEPER_BLAST = 12;
+    static double creeperBlast() { return Tuning.get("reflexes.creeperBlast"); }
 
     /** 0.23.2: a melee duel with a lone creeper only with a big margin: health above the retreat line after that blast (armour counted) is at least the buffer. */
     static boolean creeperDuelOk(double health, double maxHealth, int armor) {
-        return health - ReflexRules.RETREAT_AT - ThreatFacts.taken(CREEPER_BLAST, armor) >= Math.max(4, 0.2 * maxHealth);
+        return health - ReflexRules.retreatAt() - ThreatFacts.taken(creeperBlast(), armor) >= Math.max(4, 0.2 * maxHealth);
     }
 
     private static boolean bigCreeperMargin(LocalPlayer p) {
@@ -1004,7 +1006,7 @@ public final class Reflexes {
             fleeRetryAt = now;
         }
         // one that is already right here gets knocked back
-        if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+        if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
             holdWeapon(mc, p);
             mc.gameMode.attack(p, t.e);
             p.swing(InteractionHand.MAIN_HAND);
@@ -1042,7 +1044,7 @@ public final class Reflexes {
      * else is AA's danger desire (AA_CLEANUP 4: DangerOptions prices fight, flee, home, dig in, pillar).
      */
     private void hitResponse(Minecraft mc, LocalPlayer p, Threat t, boolean hurt) {
-        if (hurt && t.d <= ReflexRules.REACH) {
+        if (hurt && t.d <= ReflexRules.reach()) {
             fight(mc, p, t);
             return;
         }

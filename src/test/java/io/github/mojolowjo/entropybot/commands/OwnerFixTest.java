@@ -21,11 +21,11 @@ class OwnerFixTest {
 
     @Test void freshFixInTheBotsDimensionGivesBlockCoordinates() {
         assertArrayEquals(new int[]{10, 64, -31}, OwnerFix.pos(FIX, "mojolowjo", OW, 100_000));
-        assertArrayEquals(new int[]{10, 64, -31}, OwnerFix.pos(FIX, "MojoLowjo", OW, 100_000 + OwnerFix.MAX_AGE_MS), "exactly 10 s still counts, any case");
+        assertArrayEquals(new int[]{10, 64, -31}, OwnerFix.pos(FIX, "MojoLowjo", OW, 100_000 + OwnerFix.maxAgeMs()), "exactly 10 s still counts, any case");
     }
 
     @Test void staleFixGivesNothing() {
-        assertNull(OwnerFix.pos(FIX, "mojolowjo", OW, 100_000 + OwnerFix.MAX_AGE_MS + 1));
+        assertNull(OwnerFix.pos(FIX, "mojolowjo", OW, 100_000 + OwnerFix.maxAgeMs() + 1));
     }
 
     @Test void otherDimensionGivesNothing() {
@@ -40,8 +40,8 @@ class OwnerFixTest {
     }
 
     @Test void aFixFromTheFutureIsRefusedBeyondTheSlack() {
-        assertNotNull(OwnerFix.pos(FIX, "mojolowjo", OW, 100_000 - OwnerFix.FUTURE_SLACK_MS));
-        assertNull(OwnerFix.pos(FIX, "mojolowjo", OW, 100_000 - OwnerFix.FUTURE_SLACK_MS - 1));
+        assertNotNull(OwnerFix.pos(FIX, "mojolowjo", OW, 100_000 - OwnerFix.futureSlackMs()));
+        assertNull(OwnerFix.pos(FIX, "mojolowjo", OW, 100_000 - OwnerFix.futureSlackMs() - 1));
     }
 
     @Test void parseReadsTheDashboardsFileAndRefusesBadOnes() {

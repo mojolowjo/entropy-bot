@@ -19,9 +19,10 @@ public final class Goals {
     private Goals() {}
 
     public static final String FACT = "aa.ownerGoals", KNOWN_FACT = "aa.oreKnown";
-    public static final int HIGH = 20, ORE_DEFAULT = 8;
+    public static int high() { return Tuning.i("goals.high"); }
+    public static int oreDefault() { return Tuning.i("goals.oreDefault"); }
     /** A fresh goal may interrupt the running task (once) within this time. */
-    public static final long FRESH_MS = 5 * 60_000;
+    public static long freshMs() { return Tuning.l("goals.freshMs"); }
 
     public static final class Goal {
         public final Thing.Result r;
@@ -71,7 +72,7 @@ public final class Goals {
 
     /** Adds (or replaces) a goal; the default n is 8 for an ore, 1 for an item. */
     public static Goal add(Blackboard bb, Thing.Result r, int n, int prio, long now) {
-        Goal g = new Goal(r, n > 0 ? n : r.ore() ? ORE_DEFAULT : 1, prio, now);
+        Goal g = new Goal(r, n > 0 ? n : r.ore() ? oreDefault() : 1, prio, now);
         of(bb).removeIf(x -> x.r.key().equals(r.key()));
         of(bb).add(g);
         return g;
@@ -87,7 +88,7 @@ public final class Goals {
     /** The goal's own score: ownerBase +/- HIGH; -1 once done. */
     public static double score(Blackboard bb, Goal g) {
         if (have(bb.in.bag, g) >= g.n) return -1;
-        return Math.max(1, Personality.of(bb).get("ownerBase") + g.prio * HIGH);
+        return Math.max(1, Personality.of(bb).get("ownerBase") + g.prio * high());
     }
 
     /** Why it cannot go on now (another dimension, a diamond pickaxe), else null: parked, said in aa goals (Q6). */

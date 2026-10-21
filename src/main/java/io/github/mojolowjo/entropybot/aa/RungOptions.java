@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
 import io.github.mojolowjo.entropybot.aa.moves.Step;
@@ -20,8 +22,12 @@ public final class RungOptions {
 
     public static final String SURFACE_FACTS = "surface.facts";
     /** S2 review (aa40b risk): "nothing" only with an open-sky cell this close (the next rung's walk is short). */
-    public static final double NOTHING_SKY = 8;
-    public static final double CLIMB_BLOCK = 3, CLIMB_FIX = 10, PILLAR_BLOCK = 1, PILLAR_FIX = 5, SKY_WALK = 2;
+    public static double nothingSky() { return Tuning.get("rungOptions.nothingSky"); }
+    public static double climbBlock() { return Tuning.get("rungOptions.climbBlock"); }
+    public static double climbFix() { return Tuning.get("rungOptions.climbFix"); }
+    public static double pillarBlock() { return Tuning.get("rungOptions.pillarBlock"); }
+    public static double pillarFix() { return Tuning.get("rungOptions.pillarFix"); }
+    public static double skyWalk() { return Tuning.get("rungOptions.skyWalk"); }
 
     /**
      * @param depth          blocks of ground over the bot, or for a hole open to the sky the levels up to step out
@@ -59,7 +65,7 @@ public final class RungOptions {
         static void climbRow(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
             if (f.kit() != null) climb(rows, dropped, m, now, f, d);
             else if (!f.pickaxe()) dropped.add("climb: no pickaxe");
-            else add(rows, dropped, m, now, Options.typed("climb", "climb", List.of(new Step.Climb()), d * CLIMB_BLOCK + CLIMB_FIX, d + " up, a staircase", "climb", m));
+            else add(rows, dropped, m, now, Options.typed("climb", "climb", List.of(new Step.Climb()), d * climbBlock() + climbFix(), d + " up, a staircase", "climb", m));
         }
 
         /**
@@ -68,13 +74,13 @@ public final class RungOptions {
          * and HAND has no verb (dropped with its price, so aa why still shows it). Seconds = walk-blocks.
          */
         static void climb(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
-            int blocks = d * io.github.mojolowjo.entropybot.aa.brain.ToolWear.STAIR_BLOCKS_PER_UP;
+            int blocks = d * io.github.mojolowjo.entropybot.aa.brain.ToolWear.stairBlocksPerUp();
             for (var p : io.github.mojolowjo.entropybot.aa.brain.ToolWear.price(blocks, f.kit())) {
                 String terms = d + " up, a staircase: " + blocks + " blocks, " + p.terms();
                 switch (p.way()) {
-                    case USE -> add(rows, dropped, m, now, Options.typed("climb", "climb", List.of(new Step.Climb()), p.seconds() + d + CLIMB_FIX, terms, "climb", m));
+                    case USE -> add(rows, dropped, m, now, Options.typed("climb", "climb", List.of(new Step.Climb()), p.seconds() + d + climbFix(), terms, "climb", m));
                     case CRAFT -> add(rows, dropped, m, now, Options.typed("craft+climb", "climb",
-                            Options.seq(io.github.mojolowjo.entropybot.aa.brain.ToolWear.prefix(p.way()), new Step.Climb()), p.seconds() + d + CLIMB_FIX, terms, "climb", m));
+                            Options.seq(io.github.mojolowjo.entropybot.aa.brain.ToolWear.prefix(p.way()), new Step.Climb()), p.seconds() + d + climbFix(), terms, "climb", m));
                     case HAND -> dropped.add("climb by hand " + Math.round(p.seconds()) + "s: the climb verb digs with a pickaxe" + (f.kit().pickaxe() ? "" : " and I have none"));
                 }
             }
@@ -91,7 +97,8 @@ public final class RungOptions {
 
     public static final String TOOLS_FACTS = "tools.facts";
     /** Fixed work estimates (walk-blocks; a minute = Options.MINUTE): the whole bootstrap ~3.3 min, its tools part ~2.5. */
-    public static final double BOOTSTRAP_COST = 200, BOOTSTRAP_TOOLS_COST = 150;
+    public static double bootstrapCost() { return Tuning.get("rungOptions.bootstrapCost"); }
+    public static double bootstrapToolsCost() { return Tuning.get("rungOptions.bootstrapToolsCost"); }
 
     /** @param treesNear a log within 16 (the planner's "trees" fact; its goal plan needs them) */
     public record ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table) {
@@ -110,7 +117,7 @@ public final class RungOptions {
             List<String> dropped = new ArrayList<>();
             // round 4A N: the sword alone when the pickaxe is fine (a zombie seen, no weapon): one craft from the bag
             if (f.swordWanted()) {
-                double s = io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S;
+                double s = io.github.mojolowjo.entropybot.aa.brain.ToolWear.craftSV();
                 if (!f.swordMats()) dropped.add("sword only: no 2 cobblestone + a stick + a table (" + f.cobble() + " cobblestone, " + f.sticks() + " sticks, "
                         + f.planks() + " planks, table " + f.table() + "); the planner's goal makes one");
                 else add(rows, dropped, m, now, Options.typed("sword only", "craft", List.of(new Step.Craft("stone_sword", 1)), io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(s),
@@ -125,9 +132,9 @@ public final class RungOptions {
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
             else add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools", "planner", true, m));
             if (f.pickTier() >= 2) dropped.add("bootstrap tools: the stone tools exist (worn: the planner makes new ones)");
-            else add(rows, dropped, m, now, Options.typed("bootstrap tools", "bootstrap", List.of(new Step.Bootstrap(true)), BOOTSTRAP_TOOLS_COST,
+            else add(rows, dropped, m, now, Options.typed("bootstrap tools", "bootstrap", List.of(new Step.Bootstrap(true)), bootstrapToolsCost(),
                     "bootstrap up to the furnace (the rungs do the rest)", "bootstrap tools", m));
-            add(rows, dropped, m, now, Options.typed("bootstrap", "bootstrap", List.of(new Step.Bootstrap(false)), BOOTSTRAP_COST, "the whole bootstrap", "bootstrap", m));
+            add(rows, dropped, m, now, Options.typed("bootstrap", "bootstrap", List.of(new Step.Bootstrap(false)), bootstrapCost(), "the whole bootstrap", "bootstrap", m));
             return Options.Choice.of(rows, dropped, "no way to stone tools");
         }
 

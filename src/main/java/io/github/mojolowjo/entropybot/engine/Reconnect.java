@@ -135,7 +135,7 @@ public final class Reconnect {
 
     // ---- 0.26.3: the connect timeout ----
 
-    private volatile int connectTimeoutS = ReconnectRules.TIMEOUT_DEFAULT_S;
+    private volatile int connectTimeoutS = ReconnectRules.timeoutDefaultS();
     /** Wall clock the current attempt began (-1: none in progress); the last timeout's text and time. */
     private long attemptAt = -1;
     private volatile String lastTimeout;
@@ -147,7 +147,7 @@ public final class Reconnect {
 
     /** check: "reconnect: the last connect attempt timed out after 60 s" within the last 24 h, else null. */
     public String lastTimeout() {
-        return lastTimeout != null && System.currentTimeMillis() - lastTimeoutAt < ReconnectRules.GIVE_UP_MS ? lastTimeout : null;
+        return lastTimeout != null && System.currentTimeMillis() - lastTimeoutAt < ReconnectRules.giveUpMs() ? lastTimeout : null;
     }
 
     /** The attempt is over without a world: back at the title, the server list or vanilla's "disconnected" screen. */

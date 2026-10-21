@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.List;
 import java.util.Locale;
 
@@ -14,15 +16,17 @@ import java.util.Locale;
 public final class EscortRules {
     private EscortRules() {}
 
-    public static final int RADIUS = 6;             // "escort me" fights what comes this close to the player
-    public static final int RADIUS_MAX = 16;
-    public static final double STAND_MIN = 2, STAND_MAX = 4, STAND_AT = 3;   // the bot's distance from the player
-    public static final double AIM_DEG = 35;        // head yaw within this of the player = "looks at them"
-    public static final int FEED_AT = 6;            // the player's food at or below this: throw them food
-    public static final int KEEP_FOOD = 8;          // the bot keeps this many food items for itself
-    public static final int FEED_GIVE = 4;
-    public static final long FEED_COOLDOWN_MS = 60_000;
-    public static final double WARN_DIST = 12;      // a creeper or skeleton this close to the player: whisper once
+    public static int radiusV() { return Tuning.i("escortRules.radius"); }  // "escort me" fights what comes this close to the player
+    public static int radiusMax() { return Tuning.i("escortRules.radiusMax"); }
+    public static double standMin() { return Tuning.get("escortRules.standMin"); }
+    public static double standMax() { return Tuning.get("escortRules.standMax"); }
+    public static double standAt() { return Tuning.get("escortRules.standAt"); }  // the bot's distance from the player
+    public static double aimDeg() { return Tuning.get("escortRules.aimDeg"); }  // head yaw within this of the player = "looks at them"
+    public static int feedAt() { return Tuning.i("escortRules.feedAt"); }  // the player's food at or below this: throw them food
+    public static int keepFood() { return Tuning.i("escortRules.keepFood"); }  // the bot keeps this many food items for itself
+    public static int feedGive() { return Tuning.i("escortRules.feedGive"); }
+    public static long feedCooldownMs() { return Tuning.l("escortRules.feedCooldownMs"); }
+    public static double warnDist() { return Tuning.get("escortRules.warnDist"); }  // a creeper or skeleton this close to the player: whisper once
 
     /** One mob near the guarded player (positions in blocks, yaw in degrees as Minecraft has it: 0 = south). */
     public record Mob(int key, String id, double x, double y, double z, boolean aggressive, float headYaw, boolean creeper) {}
@@ -36,11 +40,11 @@ public final class EscortRules {
         if (w.length == 0 || w[0].isEmpty() || w[0].equals("status")) return new Cmd("status", null, 0, null);
         if (w[0].equals("off") || w[0].equals("stop")) return new Cmd("off", null, 0, null);
         if (w.length > 2) return new Cmd("error", null, 0, "usage: escort me [radius] | escort <player> [radius] | escort off | escort status");
-        int r = RADIUS;
+        int r = radiusV();
         if (w.length == 2) {
-            if (!w[1].matches("\\d{1,3}")) return new Cmd("error", null, 0, "error: the radius is a number of blocks (2-" + RADIUS_MAX + "), e.g. escort me 10");
+            if (!w[1].matches("\\d{1,3}")) return new Cmd("error", null, 0, "error: the radius is a number of blocks (2-" + radiusMax() + "), e.g. escort me 10");
             r = Integer.parseInt(w[1]);
-            if (r < 2 || r > RADIUS_MAX) return new Cmd("error", null, 0, "error: the radius is 2-" + RADIUS_MAX + " blocks");
+            if (r < 2 || r > radiusMax()) return new Cmd("error", null, 0, "error: the radius is 2-" + radiusMax() + " blocks");
         }
         if (w[0].equals("me")) return new Cmd("me", null, r, null);
         if (!w[0].matches("[a-z0-9_]{3,16}")) return new Cmd("error", null, 0, "error: \"" + w[0] + "\" is not a player name");
@@ -64,7 +68,7 @@ public final class EscortRules {
         if (!m.aggressive()) return false;
         double toP = angleDiff(m.headYaw(), yawTo(m.x(), m.z(), px, pz));
         double toB = angleDiff(m.headYaw(), yawTo(m.x(), m.z(), bx, bz));
-        return toP <= AIM_DEG && toP <= toB;
+        return toP <= aimDeg() && toP <= toB;
     }
 
     /**
@@ -96,9 +100,9 @@ public final class EscortRules {
      */
     public static double[] standoff(double px, double pz, double bx, double bz) {
         double dx = bx - px, dz = bz - pz, d = Math.sqrt(dx * dx + dz * dz);
-        if (d >= STAND_MIN && d <= STAND_MAX) return null;
+        if (d >= standMin() && d <= standMax()) return null;
         if (d < 0.1) { dx = 1; dz = 0; d = 1; }
-        return new double[]{px + dx / d * STAND_AT, pz + dz / d * STAND_AT};
+        return new double[]{px + dx / d * standAt(), pz + dz / d * standAt()};
     }
 
     /**
@@ -118,9 +122,9 @@ public final class EscortRules {
      * playerFood -1 = unknown (an old companion without the food field).
      */
     public static int feed(int playerFood, int carried, long nowMs, long lastFedMs) {
-        if (playerFood < 0 || playerFood > FEED_AT) return 0;
-        if (nowMs - lastFedMs < FEED_COOLDOWN_MS) return 0;
-        return Math.max(0, Math.min(FEED_GIVE, carried - KEEP_FOOD));
+        if (playerFood < 0 || playerFood > feedAt()) return 0;
+        if (nowMs - lastFedMs < feedCooldownMs()) return 0;
+        return Math.max(0, Math.min(feedGive(), carried - keepFood()));
     }
 
     /** A creeper or a skeleton kind (stray, wither skeleton, bogged count) is worth a warning. */
@@ -136,7 +140,7 @@ public final class EscortRules {
      * text names the compass side.
      */
     public static String warning(String id, double prevDist, double dist, double px, double pz, double mx, double mz, boolean warnedBefore) {
-        if (warnedBefore || !warnKind(id) || dist > WARN_DIST || !(dist < prevDist)) return null;
+        if (warnedBefore || !warnKind(id) || dist > warnDist() || !(dist < prevDist)) return null;
         String name = id.contains(":") ? id.substring(id.indexOf(':') + 1) : id;
         return "Careful: a " + name.replace('_', ' ') + " approaching from the " + compass(px, pz, mx, mz) + ", " + Math.round(dist) + " blocks from you.";
     }

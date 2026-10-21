@@ -10,7 +10,10 @@ package io.github.mojolowjo.entropybot.surface;
  * Loader notes: none (plain Java).
  */
 public final class SurfaceColumns {
-    public static final int AIR = 0, PLANT = 1, LEAVES = 2, GROUND = 3;
+    public static final int AIR = 0; // structural
+    public static final int PLANT = 1; // structural
+    public static final int LEAVES = 2; // structural
+    public static final int GROUND = 3; // structural
 
     /** The world as the scan sees it (the game side reads the client level). */
     public interface Source {

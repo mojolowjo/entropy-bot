@@ -49,10 +49,10 @@ class MineRulesParseAtTest {
     @Test
     void theVeinFloodsTouchingCellsUpToTheCap() {
         Set<String> ore = Set.of("0 0 0", "1 0 0", "2 0 0", "2 1 0", "5 5 5", "1 1 1");
-        List<int[]> v = MineRules.vein(new int[]{0, 0, 0}, c -> ore.contains(c[0] + " " + c[1] + " " + c[2]), MineRules.AT_VEIN);
+        List<int[]> v = MineRules.vein(new int[]{0, 0, 0}, c -> ore.contains(c[0] + " " + c[1] + " " + c[2]), MineRules.atVein());
         assertEquals(4, v.size(), "faces only: 1 1 1 and 5 5 5 don't touch");
         assertArrayEquals(new int[]{0, 0, 0}, v.get(0));
-        List<int[]> big = MineRules.vein(new int[]{0, 0, 0}, c -> true, MineRules.AT_VEIN);
+        List<int[]> big = MineRules.vein(new int[]{0, 0, 0}, c -> true, MineRules.atVein());
         assertEquals(8, big.size());
         assertEquals(1, MineRules.vein(new int[]{9, 9, 9}, c -> false, 8).size(), "the target itself always (dug already)");
     }

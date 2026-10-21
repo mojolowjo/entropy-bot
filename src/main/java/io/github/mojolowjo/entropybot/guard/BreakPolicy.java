@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.Locale;
 
 /**
@@ -47,22 +49,22 @@ public final class BreakPolicy {
     public static final class Costs {
         private Costs() {}
         /** Default travel multiplier (about 15 blocks of walking per broken stone block). */
-        public static final double TRAVEL = 6;
+        public static double travel() { return Tuning.get("breakPolicy.travel"); }
         /** The camp and a multiplayer world's outside: travel digs only when the detour is long. */
-        public static final double TRAVEL_EXPENSIVE = 10;
+        public static double travelExpensive() { return Tuning.get("breakPolicy.travelExpensive"); }
         /** TRAVEL: a break next to water on top (flow risk). */
-        public static final double TRAVEL_WATER_SIDE = 2;
+        public static double travelWaterSide() { return Tuning.get("breakPolicy.travelWaterSide"); }
         /** MINE: an ore is cheaper than the stone around it (go through the ore). */
-        public static final double MINE_ORE = 0.5;
+        public static double mineOre() { return Tuning.get("breakPolicy.mineOre"); }
         /** TRAVEL placing: x3 (place cost 60 + walk). */
-        public static final double TRAVEL_PLACE = 3;
+        public static double travelPlace() { return Tuning.get("breakPolicy.travelPlace"); }
         /**
          * Owner (aa372): placing into a cell the bot itself broke (the restore ledger, this walk's dug cells) costs
          * about nothing: it puts the world back while getting out (pillar up its own shaft, refill a staircase).
          */
-        public static final double REFILL = 0.05;
+        public static double refill() { return Tuning.get("breakPolicy.refill"); }
         /** Travel breaks per walk, all restored by the ledger (owner's default); the multiplier grows toward it. */
-        public static final int TRAVEL_CAP = 24;
+        public static int travelCapV() { return Tuning.i("breakPolicy.travelCap"); }
     }
 
     /** 3.2: the rules behind one box (or behind the open-world floor, where no typed area holds). */
@@ -70,20 +72,20 @@ public final class BreakPolicy {
                           boolean restore, double travelMultiplier, double mineMultiplier) {
         // AREAS (0.39.0): the presets by meaning; keep-out shares no-break's (nothing breaks or is placed; the walk veto is
         // the guard's and the cost advisor's), storage and danger share work's (they are facts for AA, not break rules)
-        public static final RuleSet NO_BREAK = new RuleSet("no-break", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.TRAVEL, 1);
-        public static final RuleSet KEEP_OUT = new RuleSet("keep-out", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.TRAVEL, 1);
-        public static final RuleSet BASE = new RuleSet("base", Natural.TRAVEL_EXPENSIVE, false, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL_EXPENSIVE, 1);
-        public static final RuleSet WORK = new RuleSet("work", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
-        public static final RuleSet STORAGE = new RuleSet("storage", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
-        public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
-        public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, Built.OWNER_DIG_ONLY, PlaceRule.LENIENT, false, Costs.TRAVEL, 1);
+        public static final RuleSet NO_BREAK = new RuleSet("no-break", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.travel(), 1);
+        public static final RuleSet KEEP_OUT = new RuleSet("keep-out", Natural.NEVER, false, Built.NEVER, PlaceRule.NEVER, false, Costs.travel(), 1);
+        public static final RuleSet BASE = new RuleSet("base", Natural.TRAVEL_EXPENSIVE, false, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travelExpensive(), 1);
+        public static final RuleSet WORK = new RuleSet("work", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travel(), 1);
+        public static final RuleSet STORAGE = new RuleSet("storage", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travel(), 1);
+        public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.travel(), 1);
+        public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, Built.OWNER_DIG_ONLY, PlaceRule.LENIENT, false, Costs.travel(), 1);
         /** The open world (no typed area) in a singleplayer world (owner's note 2026-10-18: follows the connection, no toggle). */
-        public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);      // 0.39.s8 owner: "Place anything outside"
+        public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.travel(), 1);      // 0.39.s8 owner: "Place anything outside"
         /** The open world (no typed area) on a server: natural ground still travelled through, but dearly; built blocks never. */
-        public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.TRAVEL_EXPENSIVE, 1);      // 0.39.s8 owner: "Place anything outside"
+        public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.travelExpensive(), 1);      // 0.39.s8 owner: "Place anything outside"
         /** Server presets for phase 3: walkable, torches allowed, nothing broken; and travel through dirt, no resources taken. */
-        public static final RuleSet NOBREAK = new RuleSet("nobreak", Natural.NEVER, false, Built.NEVER, PlaceRule.TORCHES, false, Costs.TRAVEL, 1);
-        public static final RuleSet NORESOURCES = new RuleSet("noresources", Natural.LENIENT, false, Built.NEVER, PlaceRule.TORCHES, true, Costs.TRAVEL, 1);
+        public static final RuleSet NOBREAK = new RuleSet("nobreak", Natural.NEVER, false, Built.NEVER, PlaceRule.TORCHES, false, Costs.travel(), 1);
+        public static final RuleSet NORESOURCES = new RuleSet("noresources", Natural.LENIENT, false, Built.NEVER, PlaceRule.TORCHES, true, Costs.travel(), 1);
 
         /** The preset of an area type; {@code null} (the open world, no typed area) = the snapshot's outside rule set, not this. */
         public static RuleSet preset(AreaType t) {
@@ -144,9 +146,9 @@ public final class BreakPolicy {
         public static final Where WET = new Where(true, 0);
 
         /** Air unknown (0): a dive is never allowed (the old rule). */
-        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE, DrownRisk.DEFAULT_TIER); }
+        public Where(boolean inWater, int travelBreaks) { this(inWater, travelBreaks, 0, 0, Integer.MIN_VALUE, DrownRisk.defaultTier()); }
 
-        public Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) { this(inWater, travelBreaks, air, waterAbove, feetY, DrownRisk.DEFAULT_TIER); }
+        public Where(boolean inWater, int travelBreaks, int air, int waterAbove, int feetY) { this(inWater, travelBreaks, air, waterAbove, feetY, DrownRisk.defaultTier()); }
 
         /** aa-costs: the drowning risk of digging one block down from here (DrownRisk). */
         public double diveRisk() { return DrownRisk.risk(1, waterAbove, air, pickTier); }
@@ -181,7 +183,7 @@ public final class BreakPolicy {
      */
     public record Snapshot(Policy policy, RuleSet outside, boolean multiplayer, int travelCap) {
         public static Snapshot of(Policy p, boolean multiplayer) {
-            return new Snapshot(p == null ? Policy.EMPTY : p, multiplayer ? RuleSet.OUTSIDE_MULTIPLAYER : RuleSet.OUTSIDE_SINGLEPLAYER, multiplayer, Costs.TRAVEL_CAP);
+            return new Snapshot(p == null ? Policy.EMPTY : p, multiplayer ? RuleSet.OUTSIDE_MULTIPLAYER : RuleSet.OUTSIDE_SINGLEPLAYER, multiplayer, Costs.travelCapV());
         }
 
         /** The rule set at a cell: a protect box (keep-out, no-break) = its preset; else the hardest area's; else the outside rule set. */
@@ -242,12 +244,12 @@ public final class BreakPolicy {
         switch (a.intent()) {
             case TRAVEL, BUILD -> {
                 mult = r.travelMultiplier();
-                if (r.breakNatural() == Natural.TRAVEL_EXPENSIVE) mult = Math.max(mult, Costs.TRAVEL_EXPENSIVE);
+                if (r.breakNatural() == Natural.TRAVEL_EXPENSIVE) mult = Math.max(mult, Costs.travelExpensive());
                 if (dive) return Verdict.deny("digging down from in the water", rule);
                 if (f.fallingAbove()) return Verdict.deny("a falling block above", rule);
-                if (wet) { mult *= Costs.TRAVEL_WATER_SIDE; rule += "+water"; }
+                if (wet) { mult *= Costs.travelWaterSide(); rule += "+water"; }
                 if (a.intent() == Intent.TRAVEL) {              // a build's own cells are not travel breaks: no cap
-                    int cap = s.travelCap() > 0 ? s.travelCap() : Costs.TRAVEL_CAP;
+                    int cap = s.travelCap() > 0 ? s.travelCap() : Costs.travelCapV();
                     if (me.travelBreaks() >= cap) return Verdict.deny("travel break cap " + cap + " reached on this walk", rule);
                     if (me.travelBreaks() > 0) mult *= 1 + 2.0 * me.travelBreaks() / cap;
                 }
@@ -255,7 +257,7 @@ public final class BreakPolicy {
             case MINE -> {
                 mult = r.mineMultiplier();
                 if (dive) return Verdict.deny("digging down from in the water", rule);
-                if (f.ore()) { mult *= Costs.MINE_ORE; rule += "+ore"; }
+                if (f.ore()) { mult *= Costs.mineOre(); rule += "+ore"; }
                 // a falling block above: allowed; Baritone adds the stack's cost (includeFalling)
             }
             case DIG_OUT -> {
@@ -282,10 +284,10 @@ public final class BreakPolicy {
         }
         // the owner's rule (aa372): a cell I broke myself is refilled for about nothing, wherever it is: the break was
         // allowed there, so putting the block back is too (the rule set's place rule is for new blocks)
-        if (f.dugByMe()) return Verdict.ok(Costs.REFILL, a.intent().name().toLowerCase(Locale.ROOT) + "+refill");
+        if (f.dugByMe()) return Verdict.ok(Costs.refill(), a.intent().name().toLowerCase(Locale.ROOT) + "+refill");
         if (r.place() == PlaceRule.NEVER) return Verdict.deny("no placing in " + r.name(), "area");
         if (r.place() == PlaceRule.TORCHES && !f.torch()) return Verdict.deny("nothing but torches placed in " + r.name(), "area");
-        double mult = a.intent() == Intent.TRAVEL ? Costs.TRAVEL_PLACE : 1;
+        double mult = a.intent() == Intent.TRAVEL ? Costs.travelPlace() : 1;
         return Verdict.ok(mult, a.intent().name().toLowerCase(Locale.ROOT));
     }
 

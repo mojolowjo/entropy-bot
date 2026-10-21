@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,11 +19,11 @@ public final class HouseGround {
     private HouseGround() {}
 
     /** The deepest pillar under a floor cell. */
-    public static final int MAX_DEPTH = 4;
+    public static int maxDepth() { return Tuning.i("houseGround.maxDepth"); }
     /** A house chosen from the terrain is this many blocks high (floor to roof). */
-    public static final int HEIGHT = 5;
+    public static int height() { return Tuning.i("houseGround.height"); }
     /** A column with no surface found (not loaded). */
-    public static final int NONE = Integer.MIN_VALUE;
+    public static final int NONE = Integer.MIN_VALUE; // structural
 
     /** The world as the pillar planner sees it: a cell takes a block (air, a snow layer, grass, water). */
     public interface Free {
@@ -49,7 +51,7 @@ public final class HouseGround {
     }
 
     /** A water column in the area: the floor y cannot be chosen. */
-    public static final int WATER = Integer.MIN_VALUE + 1;
+    public static final int WATER = Integer.MIN_VALUE + 1; // structural
 
     public static String waterText(String area, int x1, int z1, int x2, int z2) {
         return "error: water in " + area + ": I can't put a floor on it - next: give heights (area " + x1 + " " + z1 + " " + x2 + " " + z2
@@ -62,7 +64,7 @@ public final class HouseGround {
     public record Pillars(List<int[]> cells, List<String> tooDeep) {
         public String stopText(String area) {
             return "stopped: under the floor of " + area + ": " + tooDeep.size() + " column" + (tooDeep.size() == 1 ? " is" : "s are")
-                    + " too deep (more than " + MAX_DEPTH + " blocks), e.g. " + tooDeep.get(0)
+                    + " too deep (more than " + maxDepth() + " blocks), e.g. " + tooDeep.get(0)
                     + " - next: fill it by hand or move the area (area x z x2 z2 " + area + " house y1 y2 with a higher y1), then house " + area;
         }
     }
@@ -74,9 +76,9 @@ public final class HouseGround {
         for (int x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
             for (int z = Math.min(z1, z2); z <= Math.max(z1, z2); z++) {
                 int d = 0;
-                while (d <= MAX_DEPTH && w.free(x, floorY - 1 - d, z)) d++;
-                if (d > MAX_DEPTH) {
-                    deep.add(x + " " + z + " (more than " + MAX_DEPTH + " deep)");
+                while (d <= maxDepth() && w.free(x, floorY - 1 - d, z)) d++;
+                if (d > maxDepth()) {
+                    deep.add(x + " " + z + " (more than " + maxDepth() + " deep)");
                     continue;
                 }
                 for (int i = d; i >= 1; i--) cells.add(new int[]{x, floorY - i, z});

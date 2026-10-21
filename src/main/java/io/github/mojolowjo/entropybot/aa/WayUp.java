@@ -101,12 +101,12 @@ public final class WayUp {
         double brk = 0, haz = 0;
         int breaks = 0;
         for (Replan.Cell c : h.cells()) {
-            if (c.lava()) haz += Replan.LAVA;
-            if (c.water()) haz += Replan.WATER;
-            if (c.falling()) haz += Replan.FALLING;
+            if (c.lava()) haz += Replan.lavaV();
+            if (c.water()) haz += Replan.waterV();
+            if (c.falling()) haz += Replan.fallingV();
             if (c.open() || c.water() || c.lava()) continue;
             if (Double.isInfinite(c.mult()) || Double.isNaN(c.mult())) return new Ground(0, 0, 0, "a cell may not be broken");
-            brk += (c.ownDug() ? Replan.OWN_BREAK : Replan.FOREIGN_BREAK) * c.mult();
+            brk += (c.ownDug() ? Replan.ownBreak() : Replan.foreignBreak()) * c.mult();
             breaks++;
         }
         return new Ground(brk, haz, breaks, null);
@@ -121,7 +121,7 @@ public final class WayUp {
         int breaks = g.breaks();
         ToolWear.Priced p = tool(breaks, kit, false);
         if (p == null) return new StairPrice(Double.POSITIVE_INFINITY, "no pickaxe and nothing to make one (the dig needs one for stone)", null);
-        double cost = brk + haz + p.seconds() + h.n() + Replan.CLIMB_FIX;
+        double cost = brk + haz + p.seconds() + h.n() + Replan.climbFix();
         return new StairPrice(cost, h.n() + " up, " + breaks + " breaks " + Math.round(brk) + (haz > 0 ? ", hazards " + Math.round(haz) : "")
                 + (breaks > 0 ? ", tools " + p.text() : ""), p.way());
     }
@@ -158,12 +158,12 @@ public final class WayUp {
         else if (!f.placeAllowed()) dropped.add("pillar: placing not allowed here");
         else if (f.throwaway() < d) dropped.add("pillar: " + f.throwaway() + " of " + d + " blocks to place");
         else RungOptions.add(rows, dropped, m, now, Options.typed("pillar", "pillar", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(f.me()[0], f.me()[1] + d, f.me()[2], 0)),
-                d * RungOptions.PILLAR_BLOCK + RungOptions.PILLAR_FIX, "an open shaft, " + f.throwaway() + " blocks", "pillar", m));
+                d * RungOptions.pillarBlock() + RungOptions.pillarFix(), "an open shaft, " + f.throwaway() + " blocks", "pillar", m));
         // sky, nothing (rm-routes: the trail-back row went with the trail; Baritone walks the way to the sky)
         if (f.sky() == null) dropped.add("sky: no open-sky cell found near");
-        else RungOptions.add(rows, dropped, m, now, Options.typed("sky", "goto", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(f.sky()[0], f.sky()[1], f.sky()[2], 0)), f.skyDist() * RungOptions.SKY_WALK, "open sky " + Math.round(f.skyDist()) + " away", "sky", m));
+        else RungOptions.add(rows, dropped, m, now, Options.typed("sky", "goto", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(f.sky()[0], f.sky()[1], f.sky()[2], 0)), f.skyDist() * RungOptions.skyWalk(), "open sky " + Math.round(f.skyDist()) + " away", "sky", m));
         if (!f.tableFurnaceNext()) dropped.add("nothing: the next rung needs open ground itself");
-        else if (f.sky() == null || f.skyDist() > RungOptions.NOTHING_SKY) dropped.add("nothing: no open spot within " + Math.round(RungOptions.NOTHING_SKY) + " for the next rung's walk");
+        else if (f.sky() == null || f.skyDist() > RungOptions.nothingSky()) dropped.add("nothing: no open spot within " + Math.round(RungOptions.nothingSky()) + " for the next rung's walk");
         else RungOptions.add(rows, dropped, m, now, Options.Option.sentinel("nothing", "nothing", Options.NOTHING, 0, "the table/furnace rung walks to its own spot", "nothing"));
         return Options.Choice.of(rows, dropped, "no way up");
     }

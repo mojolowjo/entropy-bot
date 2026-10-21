@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.clear.ClearBox;
@@ -48,7 +50,7 @@ final class FarmPlanting {
     static final String[] HOES = {"minecraft:netherite_hoe", "minecraft:diamond_hoe", "minecraft:iron_hoe", "minecraft:golden_hoe",
             "minecraft:stone_hoe", "minecraft:wooden_hoe"};
     /** The longest planting job, in ticks (5 minutes). */
-    static final long MAX_TICKS = 20L * 60 * 5;
+    static long maxTicks() { return Tuning.l("farmPlanting.maxTicks"); }
 
     final Core core;
     final Commands commands;
@@ -111,7 +113,7 @@ final class FarmPlanting {
         } else {
             JsonFarm f = farmSpot();
             if (f == null) return "error: I don't know a farm - give the box: farm plant " + a.crop() + " here <r> (or x1 z1 x2 z2)";
-            int r = io.github.mojolowjo.entropybot.farm.FarmRules.FARM_R;
+            int r = io.github.mojolowjo.entropybot.farm.FarmRules.farmR();
             box = new int[] {f.spot.x() - r, f.spot.z() - r, f.spot.x() + r, f.spot.z() + r};
             refY = f.spot.y() - 1;
         }
@@ -132,7 +134,7 @@ final class FarmPlanting {
         r.x2 = box[2];
         r.z2 = box[3];
         r.refY = refY;
-        r.deadline = core.tick() + MAX_TICKS;
+        r.deadline = core.tick() + maxTicks();
         FarmPlant.Layout lay = FarmPlant.plan(r.x1, r.z1, r.x2, r.z2, ground(p.level(), refY), bag(p, "minecraft:water_bucket"));
         if (lay.plant().isEmpty() && lay.water().isEmpty()) {
             return "error: nothing to plant in " + boxText(r) + ": " + (lay.dry() > 0 ? lay.dry() + " cells have no water within 4 - give me a water bucket" : "no grass, dirt or free farmland");

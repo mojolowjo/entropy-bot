@@ -21,15 +21,15 @@ class GameTimesTest {
     @Test
     void wearIsOnlyWhatTheCheapestWayAddsOverTheKitsOwnSeconds() {
         // a worn stone pickaxe read under no effects: digCost carries 10 x 0.6 already, wear adds the replacement share only
-        ToolWear.Kit k = new ToolWear.Kit(4f, 20, ToolWear.CRAFT_S);
+        ToolWear.Kit k = new ToolWear.Kit(4f, 20, ToolWear.craftSV());
         IronOptions.Facts f = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0, k);
         double w = IronOptions.wearS(f, 10);
-        assertEquals(10 / 20.0 * ToolWear.CRAFT_S, w, 1e-6);
+        assertEquals(10 / 20.0 * ToolWear.craftSV(), w, 1e-6);
         // the kit's seconds read slower (Mining Fatigue): the hand penalty is not counted twice
         ToolWear.Kit slow = new ToolWear.Kit(4f, 131, ToolWear.INF, 2.0, 25.0);
         IronOptions.Facts fs = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0, slow);
-        assertEquals(10 / 131.0 * ToolWear.GATHER_S, IronOptions.wearS(fs, 10), 1e-6);
-        assertEquals(Unit.blocks(10 / 131.0 * ToolWear.GATHER_S), IronOptions.wear(fs, 10), 1e-6, "round 4A N: the row term is walk-blocks");
+        assertEquals(10 / 131.0 * ToolWear.gatherS(), IronOptions.wearS(fs, 10), 1e-6);
+        assertEquals(Unit.blocks(10 / 131.0 * ToolWear.gatherS()), IronOptions.wear(fs, 10), 1e-6, "round 4A N: the row term is walk-blocks");
     }
 
     @Test
@@ -131,7 +131,7 @@ class GameTimesTest {
         ToolWear.Priced use = ToolWear.best(10, wet);
         assertEquals(ToolWear.Way.USE, use.way());
         assertTrue(use.terms().startsWith("10 x 2.85s"), use.terms());
-        assertEquals(10 * 2.85 + 10 / 131.0 * ToolWear.GATHER_S, use.seconds(), 1e-6);   // the blocks at the game's time + wear
+        assertEquals(10 * 2.85 + 10 / 131.0 * ToolWear.gatherS(), use.seconds(), 1e-6);   // the blocks at the game's time + wear
     }
 
     @Test
@@ -142,7 +142,7 @@ class GameTimesTest {
         IronOptions.Facts f = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0, null, null, null, -1, live);
         assertEquals(live, f.digPerBlock(), 1e-9);
         IronOptions.Facts old = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0);
-        assertEquals(IronOptions.DIG_BLOCK, old.digPerBlock(), 1e-9);
+        assertEquals(IronOptions.digBlockV(), old.digPerBlock(), 1e-9);
         CoalOptions.CoalFacts c = new CoalOptions.CoalFacts(8, 1, List.of(), List.of(), List.of(), 0, 0, false, -1, false, 0, live);
         assertEquals(live, c.withNeed(3).digPerBlock(), 1e-9);
     }

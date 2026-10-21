@@ -15,7 +15,7 @@ class R2FixTest {
 
     @Test void bedNextToTheTableNotUnderTheBot() {
         int[] me = {10, 64, 10}, table = {12, 64, 10};
-        var r = BedSpot.rank(me, table, null, me, BedSpot.NEAR, R2FixTest::freeAll, c -> true);
+        var r = BedSpot.rank(me, table, null, me, BedSpot.near(), R2FixTest::freeAll, c -> true);
         assertFalse(r.isEmpty());
         var best = r.get(0);
         assertEquals(1, Math.max(Math.abs(best.cell()[0] - table[0]), Math.abs(best.cell()[2] - table[2])), "next to the camp: " + best.why());
@@ -25,15 +25,15 @@ class R2FixTest {
 
     @Test void bedSkipsRefusedCellsAndNeedsAFreeHead() {
         int[] me = {0, 64, 0};
-        var all = BedSpot.rank(me, null, null, me, BedSpot.NEAR, R2FixTest::freeAll, c -> true);
+        var all = BedSpot.rank(me, null, null, me, BedSpot.near(), R2FixTest::freeAll, c -> true);
         var first = all.get(0);
         var next = BedSpot.pick(all, Set.of(first.key()));
         assertNotEquals(first.key(), next.key());
         // a lone free cell with no free neighbour cannot take a bed
         int[] lone = {5, 64, 5};
-        assertTrue(BedSpot.rank(me, null, null, me, BedSpot.NEAR, c -> c[0] == lone[0] && c[2] == lone[2], c -> true).isEmpty());
+        assertTrue(BedSpot.rank(me, null, null, me, BedSpot.near(), c -> c[0] == lone[0] && c[2] == lone[2], c -> true).isEmpty());
         // inside the areas only
-        var fenced = BedSpot.rank(me, null, null, me, BedSpot.NEAR, R2FixTest::freeAll, c -> c[0] <= 0);
+        var fenced = BedSpot.rank(me, null, null, me, BedSpot.near(), R2FixTest::freeAll, c -> c[0] <= 0);
         assertTrue(fenced.stream().allMatch(s -> s.cell()[0] <= 0));
     }
 

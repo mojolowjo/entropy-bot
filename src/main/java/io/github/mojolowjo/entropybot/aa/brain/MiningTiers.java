@@ -20,7 +20,8 @@ import java.util.Set;
 public final class MiningTiers {
     private MiningTiers() {}
 
-    public static final int UNKNOWN = -1, UNREACHABLE = Integer.MAX_VALUE;
+    public static final int UNKNOWN = -1; // structural
+    public static final int UNREACHABLE = Integer.MAX_VALUE; // structural
 
     /** The game's mining data. */
     public interface Source {

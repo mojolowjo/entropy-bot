@@ -37,9 +37,9 @@ public final class Escort {
     public record Whisper(String to, String text) {}
 
     private volatile String name, from;
-    private volatile int radius = EscortRules.RADIUS;
+    private volatile int radius = EscortRules.radiusV();
     private int fights;
-    private long startedMs, lastFedMs = -EscortRules.FEED_COOLDOWN_MS, stepUntil;
+    private long startedMs, lastFedMs = -EscortRules.feedCooldownMs(), stepUntil;
     private boolean stepping;
     private final Set<Integer> warned = new HashSet<>();
     private final Map<Integer, Double> lastDist = new HashMap<>();
@@ -153,7 +153,7 @@ public final class Escort {
                 String id = idOf(e);
                 if (!EscortRules.warnKind(id) || !e.isAlive()) continue;
                 double d = e.distanceTo(g);
-                if (d > EscortRules.WARN_DIST + 8) continue;
+                if (d > EscortRules.warnDist() + 8) continue;
                 Double prev = lastDist.put(e.getId(), d);
                 String w = EscortRules.warning(id, prev == null ? Double.MAX_VALUE : prev, d, g.getX(), g.getZ(), e.getX(), e.getZ(), warned.contains(e.getId()));
                 if (w != null) {
@@ -180,7 +180,7 @@ public final class Escort {
             if (stepping && (s == null || now >= stepUntil)) {
                 stepping = false;
                 engine.release();
-            } else if (!stepping && s != null && p.distanceTo(g) < EscortRules.STAND_MIN) {
+            } else if (!stepping && s != null && p.distanceTo(g) < EscortRules.standMin()) {
                 stepping = true;
                 stepUntil = now + 40;
                 engine.override(new GoalNear(BlockPos.containing(s[0], p.getY(), s[1]), 0));

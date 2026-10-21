@@ -96,7 +96,7 @@ class BlueprintTest {
         assertEquals("plan glass 4", text(Blueprint.step(bb, b)));
         b.unresolved.add("glass");
         assertEquals("build schematic house 10 64 -5", text(Blueprint.step(bb, b)));
-        b.fails = Blueprint.MAX_FAILS;
+        b.fails = Blueprint.maxFails();
         assertTrue(Blueprint.blocked(bb, b).startsWith("placed nothing in 3 runs"));
         assertNotNull(Blueprint.parse("../x here").err());
     }

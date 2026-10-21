@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import io.github.mojolowjo.entropybot.clear.ClearWorld.Face;
@@ -177,7 +179,7 @@ public final class ClearEngine {
     }
 
     /** clearPlan gives up after this many failed tries in a row. */
-    public static final int MAX_CONSEC_FAILS = 8;
+    public static int maxConsecFails() { return Tuning.i("clearEngine.maxConsecFails"); }
     public static final String STUCK = "stopped: stuck - 8 tries in a row where I couldn't reach anything";
 
     // ---- the next block from where it stands ----

@@ -60,7 +60,7 @@ class CoalOptionsTest {
         Options.Choice b = CoalOptions.choose(f, m, 1000);
         assertNotEquals(a.best().id(), b.best().id());
         assertTrue(b.line().contains("nothing gained"), b.line());
-        assertTrue(CoalOptions.choose(f, m, Options.RETRY_MS + 1).ranked().stream().anyMatch(o -> o.id().equals(a.best().id())));
+        assertTrue(CoalOptions.choose(f, m, Options.retryMs() + 1).ranked().stream().anyMatch(o -> o.id().equals(a.best().id())));
     }
 
     @Test

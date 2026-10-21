@@ -26,7 +26,7 @@ public final class Thing {
     private Thing() {}
 
     public static final String OVERWORLD = "minecraft:overworld", NETHER = "minecraft:the_nether", END = "minecraft:the_end";
-    public static final int UNKNOWN_Y = Integer.MIN_VALUE;
+    public static final int UNKNOWN_Y = Integer.MIN_VALUE; // structural
 
     /** Where an ore generates (from the worldgen features): dimensions and the Y range over all its placements. */
     public record Gen(Set<String> dims, int minY, int maxY) {}
@@ -44,7 +44,7 @@ public final class Thing {
     public record Learned(String dim, int lowY, int highY, int peakY, int n) {}
 
     /** Samples before what was learned beats the vanilla table (a few veins say little). */
-    public static final int LEARN_MIN = 25;
+    public static int learnMin() { return Tuning.i("thing.learnMin"); }
 
     /** Where to look: a dimension, a Y range (UNKNOWN_Y when unknown), and the source of that answer. */
     public record Where(String dim, int minY, int maxY, String source) {
@@ -184,7 +184,7 @@ public final class Thing {
             return new Where(d, lo == Integer.MAX_VALUE ? UNKNOWN_Y : lo, lo == Integer.MAX_VALUE ? UNKNOWN_Y : hi, "from worldgen");
         }
         Learned l = c.learned() == null ? null : c.learned().apply(fam);
-        if (l != null && l.n() >= LEARN_MIN) return learnedWhere(l);
+        if (l != null && l.n() >= learnMin()) return learnedWhere(l);
         Where v = vanilla(fam);
         if (v != null) return v;
         Where g = guess(ids);

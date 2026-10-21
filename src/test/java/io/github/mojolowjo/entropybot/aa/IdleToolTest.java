@@ -56,7 +56,7 @@ class IdleToolTest {
         String line = tree.brain.whyLines(30).stream().filter(l -> l.startsWith("idle ")).findFirst().orElseThrow();
         assertTrue(line.contains("[idle: stock stone 25 (next stock wood 21, wait 3)]"), line);
         assertTrue(line.contains("(next ") && line.contains("wait 3"), line);
-        assertTrue(Math.round(new AaScorer().score(bb.in)[io.github.mojolowjo.entropybot.aa.core.TaskKind.STOCK_WOOD.ordinal()] * AaDesires.IDLE_SCALE) > 0);
+        assertTrue(Math.round(new AaScorer().score(bb.in)[io.github.mojolowjo.entropybot.aa.core.TaskKind.STOCK_WOOD.ordinal()] * AaDesires.idleScale()) > 0);
     }
 
     @Test
@@ -109,7 +109,7 @@ class IdleToolTest {
 
     @Test
     void aNewPickaxeFirstWinsWhenTheOldOneWouldBreak() {
-        var k = new ToolWear.Kit(4, 29, ToolWear.CRAFT_S);
+        var k = new ToolWear.Kit(4, 29, ToolWear.craftSV());
         assertEquals(ToolWear.Way.CRAFT, ToolWear.best(114, k).way(), ToolWear.text(114, k));
         assertEquals(ToolWear.Way.USE, ToolWear.best(10, k).way(), "a short dig: use it");
     }
@@ -117,7 +117,7 @@ class IdleToolTest {
     @Test
     void handOnlyWinsWithNoPickaxeAndNothingToMakeOne() {
         assertEquals(ToolWear.Way.HAND, ToolWear.best(60, new ToolWear.Kit(0, 0, ToolWear.INF)).way());
-        assertEquals(ToolWear.Way.CRAFT, ToolWear.best(60, new ToolWear.Kit(0, 0, ToolWear.CRAFT_S)).way());
+        assertEquals(ToolWear.Way.CRAFT, ToolWear.best(60, new ToolWear.Kit(0, 0, ToolWear.craftSV())).way());
     }
 
     @Test
@@ -129,7 +129,7 @@ class IdleToolTest {
         in.cobble = 3;
         in.bag = Map.of("stick", 2);
         in.tableInBag = true;
-        assertEquals(ToolWear.CRAFT_S, ToolWear.kit(in).craftS());
+        assertEquals(ToolWear.craftSV(), ToolWear.kit(in).craftS());
         in.cobble = 2;
         assertEquals(ToolWear.INF, ToolWear.kit(in).craftS(), "3 cobblestone needed");
     }
@@ -137,7 +137,7 @@ class IdleToolTest {
     @Test
     void theClimbPricesItsWays() {
         var f = new RungOptions.SurfaceFacts(23, new int[]{0, 40, 0}, false, 0, false, true, null, -1, false,
-                new ToolWear.Kit(4, 29, ToolWear.CRAFT_S));
+                new ToolWear.Kit(4, 29, ToolWear.craftSV()));
         var c = new RungOptions.Surface().choose(f, new Options.OptionMemory(), 0, null, 0, null, null);
         assertTrue(c.best().command().startsWith("craft stone_pickaxe 1 > climb"), c.why());
         assertTrue(c.why().contains("climb by hand"), "hand is shown with its price");

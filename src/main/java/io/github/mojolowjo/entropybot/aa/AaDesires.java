@@ -49,19 +49,19 @@ import java.util.function.ToDoubleFunction;
 public final class AaDesires {
     private AaDesires() {}
 
-    public static final double IDLE_SCALE = 0.25;
+    public static double idleScale() { return Tuning.get("aaDesires.idleScale"); }
     /** Blackboard facts the adapter fills: the {@link TechTree} and the set of item ids had (bag + known stations). */
     public static final String TECH_FACT = "aa.techTree", HAVE_FACT = "aa.have";
 
     /** AA_ROUND4 B2: the most a need scores by itself (100 is the owner's aa do; the night discounts by place, B1). */
-    static final double RUNG_MAX = 99;
+    static double rungMax() { return Tuning.get("aaDesires.rungMax"); }
 
     /** A need's score: 100 for the owner's aa do, -1 when skipped or met, else {@code f}. */
     static double rungScore(Need r, Blackboard bb, ToDoubleFunction<Blackboard> f) {
         AaManual man = AaManual.of(bb);
         if (r.id.equals(man.doRung)) return 100;
         if (man.skipped(r.id)) return -1;
-        return r.unmet(bb) ? Math.min(RUNG_MAX, f.applyAsDouble(bb)) : -1;      // AA_ROUND4 B2: TOOLS_MAX went; no rung reaches the owner's 100
+        return r.unmet(bb) ? Math.min(rungMax(), f.applyAsDouble(bb)) : -1;      // AA_ROUND4 B2: TOOLS_MAX went; no rung reaches the owner's 100
     }
 
     /**
@@ -186,7 +186,7 @@ public final class AaDesires {
                         : null, new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
         Need spare = new Need("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> AaLadder.spareTableWanted(bb.in.tableInBag, bb.in.planks),
-                bb -> null, bb -> List.of(new Step.Craft("crafting_table", 1))).hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
+                bb -> null, bb -> List.of(new Step.Craft("crafting_table", 1))).hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.craftSV());
         Need torch = new Need("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
                 bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : null,
@@ -215,7 +215,7 @@ public final class AaDesires {
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet (needs.tools first)",
                 bb -> plan("iron tools"), new IronOptions.Picker());
         // review 4A-N (1): the dawn climb out of the night stairs is a need of its own, priced by WayUp's ways (no gate)
-        Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.SURFACE_DEPTH), bb -> null, bb -> List.of(new Step.Climb()),
+        Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.surfaceDepth()), bb -> null, bb -> List.of(new Step.Climb()),
                 new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface())
                         .withoutFacts((b, planned) -> noFacts("climb", List.of(new Step.Climb()))));
         return List.of(tools, hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn);
@@ -290,7 +290,7 @@ public final class AaDesires {
     }
 
     /** AA_ROUND2 1+2: a rung desire's probe (may it start?) and, with a picker, its live cost. */
-    public static final long RESCORE_MS = 10_000;
+    public static long rescoreMs() { return Tuning.l("aaDesires.rescoreMs"); }
 
     public static Desire wire(Desire d, Need r) {
         d.probe(r::probe);
@@ -302,8 +302,8 @@ public final class AaDesires {
                 bb -> {
                     // a cooling option is left out (the idle chooser's rule), so the next one gets its turn
                     double s = scorer.score(bb.in)[kind.ordinal()];
-                    return s < 0 ? -1 : s * IDLE_SCALE;
-                }).exposure(exposureOf(kind)).cools(kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS, kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS)
+                    return s < 0 ? -1 : s * idleScale();
+                }).exposure(exposureOf(kind)).cools(kind == TaskKind.WAIT ? 0 : Cooldown.noRunMsV(), kind == TaskKind.WAIT ? 0 : Cooldown.noRunMsV())
                 .lastTry();
     }
 
@@ -462,7 +462,7 @@ public final class AaDesires {
             Pick p = bestIdea(bb);
             return p == null ? -1 : 30 * p.share();
         }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : null)
-                .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+                .cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();
     }
 
     /** The top ideas for aa tree / aa why ("shield 3.0, bucket 3.0"), or why there are none. */
@@ -497,8 +497,8 @@ public final class AaDesires {
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))
                 .infeasible(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.blocked(bb, g))
                 .prereq(bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.prereq(bb, g))
-                .fresh(g.given + io.github.mojolowjo.entropybot.aa.brain.Goals.FRESH_MS)
-                .cost(600).exposure(g.r.ore() ? Desire.Exposure.UNDER : Desire.Exposure.ANY).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+                .fresh(g.given + io.github.mojolowjo.entropybot.aa.brain.Goals.freshMs())
+                .cost(600).exposure(g.r.ore() ? Desire.Exposure.UNDER : Desire.Exposure.ANY).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();
     }
 
     // ---- B7: schematic builds (2.12) ----
@@ -517,13 +517,13 @@ public final class AaDesires {
                 }
                 return r.state() != JobPort.PlanState.READY ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.of(s), "owner build");
             }
-            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, List.of(s), "owner build", 40 * 60_000L, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, List.of(s), "owner build", 40 * 60_000L, JobPort.TaskSpec.noProgressMsV());
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Blueprint.score(bb, b))
                 .infeasible(bb -> io.github.mojolowjo.entropybot.aa.brain.Blueprint.blocked(bb, b))
-                .fresh(b.given + io.github.mojolowjo.entropybot.aa.brain.Goals.FRESH_MS)
-                .cost(1200).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+                .fresh(b.given + io.github.mojolowjo.entropybot.aa.brain.Goals.freshMs())
+                .cost(1200).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();
     }
 
     // ---- B3: wants (2.2, 2.4) and the night (2.10) ----
@@ -538,7 +538,7 @@ public final class AaDesires {
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.WANT, node, bb -> Wants.score(bb, id, key))
                 .infeasible(infeasible)
-                .exposure(exposure).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
+                .exposure(exposure).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();
     }
 
     static String buildInfeasible(Blackboard bb) {
@@ -556,7 +556,7 @@ public final class AaDesires {
                 want("tidy", TaskKind.DEPOSIT, bb -> List.of(new Step.Deposit()), bb -> bb.in.baseChests ? null : "no base chests to put things in", Desire.Exposure.ANY));
     }
 
-    public static final long SHELTER_PATIENCE_MS = 12 * 60_000;
+    public static long shelterPatienceMs() { return Tuning.l("aaDesires.shelterPatienceMs"); }
 
     /** 2.10 sleep: a bed known (or in the bag), rising from dusk; off in Peaceful. Never urgent (waits its turn). */
     static double sleepScore(Blackboard bb) {
@@ -599,14 +599,15 @@ public final class AaDesires {
     /** Why the night need is off here (null = it is not): in my shell with work under ground ready, or deep under ground. */
     static String shelterOff(boolean shelteredWorkReady, int underDepth) {
         if (shelteredWorkReady) return "in my shell, work under ground is ready";
-        if (underDepth >= AaLadder.SURFACE_DEPTH) return underDepth + " blocks under ground";
+        if (underDepth >= AaLadder.surfaceDepth()) return underDepth + " blocks under ground";
         return null;
     }
 
     // ---- aa-night2 P0 1: hide and heal ----
 
     /** Health the hide waits for; health under which it starts by day with hostiles near. */
-    public static final float HEAL_TO = (float) Tuning.defOf("healTo"), HIDE_DAY_UNDER = (float) Tuning.defOf("hideDayUnder");
+    public static float healTo() { return (float) Tuning.get("healTo"); }
+    public static float hideDayUnder() { return (float) Tuning.get("hideDayUnder"); }
     /** Blackboard fact: the hide has started (Boolean): it keeps scoring until health reaches {@link #HEAL_TO}. */
     public static final String HIDE_FACT = "aa.hide";
 
@@ -663,7 +664,7 @@ public final class AaDesires {
     }
 
     /** AA_STEP3 A1: seconds the death screen and the respawn take (the respawn button, the chunks loading). */
-    static final double RESPAWN_S = Tuning.defOf("respawnS");
+    static double respawnS() { return Tuning.get("respawnS"); }
 
     /**
      * AA_STEP3 A1 (TIME_MODEL death cost): {total, kit, walk back, night}: the kit's worth (Kit.worth), the walk from the
@@ -733,11 +734,11 @@ public final class AaDesires {
             bb.fact(WAY_FACT, c.best().way());
             bb.port.log("danger: " + c.terms());
             boolean night = c.best().way().ordinal() >= DangerOptions.Way.BOX.ordinal();
-            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, steps, "danger", night ? JobPort.TaskSpec.TIMEOUT_MS : 3 * 60_000L,
-                    night ? SHELTER_PATIENCE_MS : 90_000L);
+            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, steps, "danger", night ? JobPort.TaskSpec.timeoutMsV() : 3 * 60_000L,
+                    night ? shelterPatienceMs() : 90_000L);
         });
         return new Desire(DANGER_ID, Desire.Kind.UPKEEP, wayHolds(job), AaDesires::dangerScore)
-                .cools(5_000, 0).optionHolds().patient(SHELTER_PATIENCE_MS).overTrumps().lastTry().nightProof()
+                .cools(5_000, 0).optionHolds().patient(shelterPatienceMs()).overTrumps().lastTry().nightProof()
                 .met(AaDesires::dangerMet);
     }
 
@@ -745,11 +746,11 @@ public final class AaDesires {
     static final java.util.Set<DangerOptions.Way> SEALS = java.util.EnumSet.of(DangerOptions.Way.BURROW, DangerOptions.Way.DIG_IN, DangerOptions.Way.BOX);
     public static final String SEALED_FACT = "aa.sealedAt";
     /** Review 2: a failed way's hold when no other way is open (else Failures' 10 min x fails). */
-    static final long SHORT_HOLD_MS = 60_000;
+    static long shortHoldMs() { return Tuning.l("aaDesires.shortHoldMs"); }
 
     static long holdMs(int othersOpen, int fails) {
-        if (othersOpen <= 0) return SHORT_HOLD_MS;
-        return Math.min(io.github.mojolowjo.entropybot.aa.brain.Failures.RETRY_MAX_MS, io.github.mojolowjo.entropybot.aa.brain.Failures.RETRY_MS * Math.max(1, fails));
+        if (othersOpen <= 0) return shortHoldMs();
+        return Math.min(io.github.mojolowjo.entropybot.aa.brain.Failures.retryMaxMs(), io.github.mojolowjo.entropybot.aa.brain.Failures.retryMs() * Math.max(1, fails));
     }
 
     /** Review 4: still in the cell it sealed in (1 across, 3 up or down); moved away = the fact goes. */
@@ -812,7 +813,7 @@ public final class AaDesires {
     }
 
     /** AA_STEP3 A6: how often a running danger way is priced again (the Replan cadence). */
-    static final long REPRICE_MS = 5_000;
+    static long repriceMs() { return Tuning.l("aaDesires.repriceMs"); }
 
     /**
      * AA_STEP3 A6 (step2-watch: health 4 while drowning changed nothing): every {@link #REPRICE_MS} the running way is
@@ -824,8 +825,8 @@ public final class AaDesires {
         if (!job.running() || job.paused() || Boolean.TRUE.equals(bb.fact(MOVE_FACT))) return null;
         if (!(bb.fact(WAY_FACT) instanceof DangerOptions.Way w)) return null;
         long now = bb.clock.now();
-        if (lastAt >= 0 && now - lastAt < REPRICE_MS) return null;
-        if (job.ageS(now) * 1000 < REPRICE_MS) return null;
+        if (lastAt >= 0 && now - lastAt < repriceMs()) return null;
+        if (job.ageS(now) * 1000 < repriceMs()) return null;
         DangerOptions.Choice c = dangerChoice(bb);
         if (c == null || c.best() == null || c.score() < 0 || c.best().way() == w || c.best().way() == DangerOptions.Way.STAY) return null;
         DangerOptions.Priced mine = null;
@@ -865,7 +866,7 @@ public final class AaDesires {
     public static List<Desire> night() {
         Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, List.of(new Step.Sleep()), "night"));
         return List.of(
-                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof());
+                new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry().nightProof());
     }
 
     /** Blackboard fact: when a mining stock-up (UNDER) last scored wanted (ms); the night need yields to it for 10 s after. */
@@ -874,7 +875,7 @@ public final class AaDesires {
     /** In the shell at a hostile night, night work to do (NightWork.pick) and an UNDER stock-up wanted just now. */
     static boolean nightWorkReady(Blackboard bb) {
         if (!NightWork.active(bb) || NightWork.pick(bb.in) == NightWork.Work.NONE) return false;
-        return bb.fact(UNDER_WANTED_FACT) instanceof Long at && bb.clock.now() - at <= RESCORE_MS;
+        return bb.fact(UNDER_WANTED_FACT) instanceof Long at && bb.clock.now() - at <= rescoreMs();
     }
 
     // ---- B6: helping the owner (2.11) ----
@@ -890,18 +891,18 @@ public final class AaDesires {
                     return null;
                 }
             bb.port.log("help: " + p.line());
-            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, p.steps(), "help", HELP_TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, p.steps(), "help", helpTimeoutMs(), JobPort.TaskSpec.noProgressMsV());
         });
         Node node = AaTree.idleCd("help.owner.cd", job);
         // round 2: the brain's own cool-down (Desire.cools, the Failures record) instead of a per-node cooling check
         return new Desire("help.owner", Desire.Kind.UPKEEP, node, bb -> {
             var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, Personality.of(bb).get("help"));
             return p == null ? -1 : p.score();
-        }).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof();     // the owner's call, not cheaper at night
+        }).cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry().nightProof();     // the owner's call, not cheaper at night
     }
 
     /** A help task is short (a walk, a fight, a hand-over); a fetch gets the planner's time. */
-    static final long HELP_TIMEOUT_MS = 10 * 60_000;
+    static long helpTimeoutMs() { return Tuning.l("aaDesires.helpTimeoutMs"); }
 
     /** aa status: "help: give 30 (give me oak_planks 32)" or why it is off. */
     public static String helpLine(Blackboard bb) {
@@ -952,7 +953,7 @@ public final class AaDesires {
     public static Desire recover() {
         RunJob job = new RunJob(RECOVER_ID + ".job", TaskKind.EXPLORE, bb -> {
             Kit.Death d = Kit.of(bb);
-            return d == null ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, Kit.recoverSteps(d), "recover kit", Kit.DESPAWN_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return d == null ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, Kit.recoverSteps(d), "recover kit", Kit.DESPAWN_MS, JobPort.TaskSpec.noProgressMsV());
         });
         return new Desire(RECOVER_ID, Desire.Kind.PROGRESS, AaTree.idleCd(RECOVER_ID + ".cd", job), AaDesires::recoverScore)
                 .liveCost(bb -> {
@@ -961,20 +962,20 @@ public final class AaDesires {
                 })
                 .site(bb -> { Kit.Death d = Kit.of(bb); return d == null ? null : d.site(); })
                 .met(bb -> recoverScore(bb) < 0)
-                .cools(Cooldown.NO_RUN_MS, Kit.DESPAWN_MS).lastTry();     // review: one trip; done = rest out the clock
+                .cools(Cooldown.noRunMsV(), Kit.DESPAWN_MS).lastTry();     // review: one trip; done = rest out the clock
     }
 
     /** A far trip is next: the iron rung is open and its chosen option's site is FAR_TRIP+ from the base. */
     static boolean farTrip(Need iron, Blackboard bb) {
         if (iron == null || bb.in.basePos == null || !iron.unmet(bb) || iron.picker() == null) return false;
         io.github.mojolowjo.entropybot.aa.brain.Site s = iron.picker().lastSite(), base = io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos);
-        return s != null && s.sameDim(base) && s.dist(base) >= Kit.FAR_TRIP;
+        return s != null && s.sameDim(base) && s.dist(base) >= Kit.farTripV();
     }
 
     /** The stash's danger: the night's at the current facts any time of day (as the bed's); Peaceful 0. */
     static double stashScore(Blackboard bb, Need iron) {
         double loot = Kit.lootWorth(bb.in.bag);
-        if (loot < Kit.MIN_STASH) return -1;
+        if (loot < Kit.minStash()) return -1;
         double danger = bedDanger(bb), soon = Kit.soon(bb.in.dayTime, bb.in.night, farTrip(iron, bb));
         double v = Kit.stashValue(loot, danger, soon);
         io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "stash", Kit.terms(loot, danger, soon, v));
@@ -994,8 +995,8 @@ public final class AaDesires {
                 })
                 .site(bb -> io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos))
                 .infeasible(bb -> bb.in.baseChests ? null : "no base chest (the camp rung places one)")
-                .met(bb -> Kit.lootWorth(bb.in.bag) < Kit.MIN_STASH)
-                .cools(Cooldown.NO_RUN_MS, 5 * 60_000L).lastTry();
+                .met(bb -> Kit.lootWorth(bb.in.bag) < Kit.minStash())
+                .cools(Cooldown.noRunMsV(), 5 * 60_000L).lastTry();
     }
 
     /** The brain over the rungs, the idle options and the ideas. */

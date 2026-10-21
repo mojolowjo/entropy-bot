@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalNear;
@@ -405,7 +407,7 @@ final class Mining {
             List<Box> prot = boxes(policy(), "protect");
             java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
             io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.workAllowed(d, x, y, z)
-                    && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.walkVerdict(x, y, z) == null;
+                    && MineRules.protectNear(prot, d, x, y, z, MineRules.protectMargin()) == null && jobs.walkVerdict(x, y, z) == null;
             io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> fairOk(d, x, y, z) && fence.test(x, y, z);     // AA_ROUND3 4: the seen lookup first (cheap, mostly no)
             if (unseen > 0 && io.github.mojolowjo.entropybot.sense.Seen.fair())
                 for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, unseen,
@@ -475,7 +477,7 @@ final class Mining {
         j.loop = j.at == null;
         // the per-ore digs are the job's purpose: never in the restore ledger
         if (jobs.job != null) RestoreLive.INSTANCE.endPathContext(jobs.job.id);
-        if (j.at != null) LOG.info("[entropybot] mine: per-ore step {} - that cell and its vein (at most {})", MineRules.perOre(j.target, j.at, j.dig), MineRules.AT_VEIN);
+        if (j.at != null) LOG.info("[entropybot] mine: per-ore step {} - that cell and its vein (at most {})", MineRules.perOre(j.target, j.at, j.dig), MineRules.atVein());
         else LOG.info("[entropybot] mine: {} {} as per-ore steps, each cell priced by the iron scorer ({})", j.count, sid(j),
                 io.github.mojolowjo.entropybot.sense.Seen.fair() ? "seen ore only: aa fair" : "every indexed ore: aa fair off");
         return true;
@@ -490,7 +492,7 @@ final class Mining {
     private int[] pickNext(LocalPlayer p, MineRun j, String[] why) {
         String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
         long nowMs = System.currentTimeMillis();
-        List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores = new ArrayList<>(aaOres(p, fam, AaRuntime.IRON_ORES));
+        List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores = new ArrayList<>(aaOres(p, fam, AaRuntime.ironOres()));
         int known = ores.size(), held = 0, other = 0, buried = 0;
         Level level = p.level();
         for (java.util.Iterator<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> it = ores.iterator(); it.hasNext(); ) {
@@ -509,7 +511,7 @@ final class Mining {
         }
         var pick = io.github.mojolowjo.entropybot.aa.brain.Goals.pickPriced(ores, Jobs.here(p)[1], p.isInWater(),
                 io.github.mojolowjo.entropybot.aa.AaEscape.throwaway(Gui.inventory(p)),
-                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), io.github.mojolowjo.entropybot.aa.IronOptions.DIG_MAX);
+                io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), io.github.mojolowjo.entropybot.aa.IronOptions.digMax());
         if (pick == null) {
             why[0] = "the iron scorer takes none of the " + ores.size() + " known " + fam + " ore (denied, a fatal wet dig, or too deep)";
             return null;
@@ -648,7 +650,7 @@ final class Mining {
             BlockPos q = new BlockPos(n[0], n[1], n[2]);
             return level.isLoaded(q) && commands.workAllowed(d, n[0], n[1], n[2]) && jobs.walkVerdict(n[0], n[1], n[2]) == null
                     && io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString(), fam);
-        }, MineRules.AT_VEIN)) out.add(new Pos(c[0], c[1], c[2]));
+        }, MineRules.atVein())) out.add(new Pos(c[0], c[1], c[2]));
         return out;
     }
 
@@ -710,7 +712,8 @@ final class Mining {
     }
 
     /** 0.23.1: at most this many gathers (a tree, a surface vein) per explore/find run; a look round every 2 s while out there. */
-    static final int GATHER_MAX = 8, GATHER_EVERY = 40;
+    static int gatherMax() { return Tuning.i("mining.gatherMax"); }
+    static int gatherEvery() { return Tuning.i("mining.gatherEvery"); }
 
     /**
      * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json; never into a keep-out area),
@@ -718,7 +721,7 @@ final class Mining {
      * noted. The report names the new points of interest.
      */
     String explore(LocalPlayer p, String rest) {
-        io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.DEFAULT_MINUTES);
+        io.github.mojolowjo.entropybot.vocab.ExploreWords.Args a = io.github.mojolowjo.entropybot.vocab.ExploreWords.parse(rest, io.github.mojolowjo.entropybot.vocab.ExploreWords.defaultMinutes());
         if (a.error() != null) return a.error();
         return startExplore(p, a.dir(), a.minutes(), null, a.gather());
     }
@@ -858,7 +861,7 @@ final class Mining {
     private io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan baseScan(LocalPlayer p) {
         Level level = p.level();
         int[] me = Jobs.here(p);
-        int built = 0, be = 0, named = 0, villagers = 0, wet = 0, open = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_R;
+        int built = 0, be = 0, named = 0, villagers = 0, wet = 0, open = 0, r = io.github.mojolowjo.entropybot.vocab.ExploreWords.baseR();
         java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
         io.github.mojolowjo.entropybot.guard.Guard g = io.github.mojolowjo.entropybot.guard.Guard.INSTANCE;
@@ -889,9 +892,9 @@ final class Mining {
         } catch (RuntimeException ex) {
             LOG.warn("[entropybot] natural structure check: {}", ex.toString());
         }
-        if (natural != null && (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || be > 0))
+        if (natural != null && (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.baseBuilt() || be > 0))
             LOG.info("[entropybot] base scan: {} built, {} block entities near {} - {} (the world's own), not a base; kinds {}", built, be, Jobs.fmt(me), natural, kinds);
-        else if (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || be > 0)
+        else if (built >= io.github.mojolowjo.entropybot.vocab.ExploreWords.baseBuilt() || be > 0)
             LOG.info("[entropybot] base scan: {} built, {} block entities near {} - no world structure explains it; kinds {}", built, be, Jobs.fmt(me), kinds);
         return new io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan(built, be, named, natural);
     }
@@ -937,7 +940,7 @@ final class Mining {
                 }
                 // AA_ROUND3 5: a cave opening seen (Sightings: in view, line of sight, two glances) within 64
                 var sg = pass().sightings();
-                var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+                var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
                 if (open != null) return "saw a cave opening at " + open.where() + " (" + Math.round(Math.sqrt(Jobs.distSq(me, new int[]{open.x(), open.y(), open.z()}))) + " away; mine cave <ores> starts there)";
             }
             default -> { }
@@ -1001,7 +1004,7 @@ final class Mining {
                 io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc = baseScan(p);
                 // AREAS review 1: a village (the world's own structure) is no base to whisper about, but a candidate AA keeps off
                 boolean village = !io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc) && sc.natural() != null
-                        && (sc.built() >= io.github.mojolowjo.entropybot.vocab.ExploreWords.BASE_BUILT || sc.blockEntities() > 0);
+                        && (sc.built() >= io.github.mojolowjo.entropybot.vocab.ExploreWords.baseBuilt() || sc.blockEntities() > 0);
                 if (io.github.mojolowjo.entropybot.vocab.ExploreWords.isBase(sc) || village) {
                     String key = (me[0] >> 5) + " " + (me[2] >> 5);
                     List<String> around = new ArrayList<>();
@@ -1027,7 +1030,7 @@ final class Mining {
         }
         // 0.23.1 (VOCABULARY 6b): off any base, take what keeps it going: a tree, an exposed ore vein
         // 0.33.1: only as a side effect of the walk (ExploreRules.gatherAllowed), so a short explore still walks
-        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY
+        if (done == null && ex.gather && ex.gathers < gatherMax() && now() - ex.gatherAt >= gatherEvery()
                 && ExploreRules.gatherAllowed(now() - ex.start, ex.until - now(), ex.gatherTicks, ex.chunks, ex.chunksAtGather)) {
             ex.gatherAt = now();
             try {
@@ -1054,7 +1057,7 @@ final class Mining {
                 LOG.warn("[entropybot] explore gather: {}", e.toString());
             }
         }
-        if (done == null && ex.target != null && (now() - ex.targetAt < 20 || (b != null && !Jobs.idle(b) && now() - ex.targetAt < ExploreRules.WALK_TICKS))) {
+        if (done == null && ex.target != null && (now() - ex.targetAt < 20 || (b != null && !Jobs.idle(b) && now() - ex.targetAt < ExploreRules.walkTicks()))) {
             s.setStatus(s.label + " - walking to " + ex.target.x() + " " + ex.target.z() + " (" + ex.chunks + " chunks so far)");
             return "wait";
         }
@@ -1123,16 +1126,16 @@ final class Mining {
     }
 
     String startCave(LocalPlayer p, MineGrammar.Parsed m) {
-        if (bagRoom(p) <= CaveRules.FREE) return "error: my bag is nearly full - \"deposit\" first";
+        if (bagRoom(p) <= CaveRules.free()) return "error: my bag is nearly full - \"deposit\" first";
         protectBoxes();                           // S1: fail closed - a policy it can't read refuses here (BadPolicy, caught in mine())
         int[] me = Jobs.here(p);
         // AA_ROUND3 5: no known cave within reach but a cave opening I have seen within 64: the cave starts there (walk first)
         int[] at = me, walkTo = null;
         if (m.at() == null || m.at().isEmpty()) {
             Caves.Cave k = core.caves.nearest(dim(), me[0], me[1], me[2]);
-            boolean knownNear = k != null && Jobs.distSq(me, new int[]{k.ex, k.ey, k.ez}) <= (long) Caves.PICK_WITHIN * Caves.PICK_WITHIN;
+            boolean knownNear = k != null && Jobs.distSq(me, new int[]{k.ex, k.ey, k.ez}) <= (long) Caves.pickWithin() * Caves.pickWithin();
             var sg = knownNear ? null : pass().sightings();
-            var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.SEEN_CAVE_WITHIN);
+            var open = sg == null ? null : sg.nearestCave(dim(), me[0], me[1], me[2], io.github.mojolowjo.entropybot.aa.brain.Discovery.seenCaveWithin());
             if (open != null) {
                 at = new int[]{open.x(), open.y(), open.z()};
                 if (Jobs.distSq(me, at) > 36) walkTo = at;
@@ -1141,7 +1144,7 @@ final class Mining {
         }
         Caves.Cave c = core.caves.pick(m.at() == null ? "" : m.at(), dim(), at[0], at[1], at[2], System.currentTimeMillis(), now());
         if (c == null) return "error: I know no cave called " + m.at() + " (\"debug caves\" lists them)";
-        int minutes = m.minutes() > 0 ? m.minutes() : CaveRules.MINUTES;
+        int minutes = m.minutes() > 0 ? m.minutes() : CaveRules.minutesV();
         CaveRun cv = new CaveRun();
         cv.name = c.name;
         cv.entrance = new int[]{c.ex, c.ey, c.ez};
@@ -1207,7 +1210,7 @@ final class Mining {
         // walking to a frontier: until Baritone is done (or 60 s)
         if (cv.walk != null) {
             if (now() - cv.walkAt < 20) return "wait";
-            if (b != null && !Jobs.idle(b) && now() - cv.walkAt < CaveRules.WALK_TICKS) {
+            if (b != null && !Jobs.idle(b) && now() - cv.walkAt < CaveRules.walkTicks()) {
                 s.setStatus(s.label + " - walking to " + Jobs.fmt(cv.walk) + " (" + cv.got() + " ores so far)");
                 return "wait";
             }
@@ -1221,7 +1224,7 @@ final class Mining {
             cv.walk = null;
         }
         String why = CaveRules.stopReason(cv.spec, cv.got(), cv.target, now(), cv.until, bagRoom(p), p.getHealth(), p.getFoodData().getFoodLevel(), Gui.inventory(p));
-        if (why == null && cv.missed >= CaveRules.MISSES) {
+        if (why == null && cv.missed >= CaveRules.misses()) {
             why = "I couldn't reach the next dark spot 4 times";
             if (caveEmpty(cv)) return caveMove(s, cv, p, why);          // wave 1, item 2: no cave here, so somewhere else
         }
@@ -1262,7 +1265,7 @@ final class Mining {
         core.caves.visit(c, me[0], me[1], me[2], System.currentTimeMillis(), now());
         // 0.27.3: a dark spot or ore in a keep-out / no-break area is no candidate (AREAS: the world is open otherwise)
         CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || !commands.workAllowed(d, x, y, z);
-        CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE, off);
+        CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.fromEntrance(), off);
         cv.steps++;
         // ores first: one vein at a time
         List<CaveSearch.Ore> vein = CaveRules.pickVein(r.ores(), cv.tried,
@@ -1318,8 +1321,8 @@ final class Mining {
         if (!indexReady()) return null;
         int[] me = Jobs.here(p);
         Level level = p.level();
-        long reach2 = (long) CaveRules.FROM_ENTRANCE * CaveRules.FROM_ENTRANCE;
-        List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> h = pass().nearest(dim(), cv.ids::contains, me[0], me[1], me[2], CaveRules.FROM_ENTRANCE, 1, (x, y, z) -> {
+        long reach2 = (long) CaveRules.fromEntrance() * CaveRules.fromEntrance();
+        List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> h = pass().nearest(dim(), cv.ids::contains, me[0], me[1], me[2], CaveRules.fromEntrance(), 1, (x, y, z) -> {
             if (cv.knownTried.contains(BlockPos.asLong(x, y, z)) || off.test(x, y, z) || jobs.walkVerdict(x, y, z) != null || !fairOk(dim(), x, y, z)) return false;
             long dx = x - c.ex, dy = y - c.ey, dz = z - c.ez;
             if (dx * dx + dy * dy + dz * dz > reach2) return false;
@@ -1364,7 +1367,7 @@ final class Mining {
         cv.noCaveAt.add(cv.name + " (" + Jobs.fmt(cv.entrance != null ? cv.entrance : me) + ")");
         cv.moves++;
         LOG.info("[entropybot] cave: no cave at {} ({}) - move {}", cv.name, why, cv.moves);
-        if (cv.moves > CaveRules.MOVES) return caveFinish(s, cv, CaveRules.noCaveText(cv.noCaveAt, why), false, true);
+        if (cv.moves > CaveRules.moves()) return caveFinish(s, cv, CaveRules.noCaveText(cv.noCaveAt, why), false, true);
         // S1: never a known cave whose entrance lies in or by a protect box
         CaveRules.Known best = CaveRules.nearestKnown(knownCaves(), d, me[0], me[1], me[2], CaveRules.closedNames(cv.noCaveAt),
                 k -> jobs.walkVerdict(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null || outsideFenced(d, k.x(), k.z()));
@@ -1413,7 +1416,7 @@ final class Mining {
             return "wait";
         }
         if (elapsed < 20) return "wait";
-        if (b != null && !Jobs.idle(b) && elapsed < ExploreRules.WALK_TICKS) return "wait";
+        if (b != null && !Jobs.idle(b) && elapsed < ExploreRules.walkTicks()) return "wait";
         if (b != null) Jobs.cancel(b);
         int[] me = Jobs.here(p);
         // didn't get there: the search goes on from here
@@ -1519,7 +1522,7 @@ final class Mining {
         if (!commands.workAllowed(d, me[0], me[2])) return "error: I am " + commands.policy.blockedText(d, me[0], me[2]) + " - I mine nothing here";
         if (Jobs.baritone() == null) return "error: baritone not loaded";
         // wave 1, item 8: Baritone's mine digs where it likes, so never inside or near a protect box (the base)
-        MineRules.Near pn = MineRules.protectNear(boxes(pol, "protect"), d, me[0], me[1], me[2], MineRules.PROTECT_MARGIN);
+        MineRules.Near pn = MineRules.protectNear(boxes(pol, "protect"), d, me[0], me[1], me[2], MineRules.protectMargin());
         if (pn != null) return "error: " + MineRules.protectNearText(pn) + " - walk me further away first";
         MineRun r = new MineRun();
         r.target = a.id();
@@ -1812,7 +1815,7 @@ final class Mining {
         if (b == null) return "stopped: baritone not loaded";
         Jobs.cancel(b);
         int[] me = Jobs.here(p);
-        MineRules.Near pn = MineRules.protectNear(boxes(policy(), "protect"), dim(), me[0], me[1], me[2], MineRules.PROTECT_MARGIN);
+        MineRules.Near pn = MineRules.protectNear(boxes(policy(), "protect"), dim(), me[0], me[1], me[2], MineRules.protectMargin());
         if (pn != null) return "stopped: " + MineRules.protectNearText(pn);
         releaseLeases(j);
         String le = takeLeases(j, me);

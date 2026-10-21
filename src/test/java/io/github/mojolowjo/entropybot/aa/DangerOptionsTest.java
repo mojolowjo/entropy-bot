@@ -27,7 +27,7 @@ class DangerOptionsTest {
     void aZombieAndAPickaxeAtTwelveHealthFleesOrDigsInByNumber() {
         DangerOptions.Choice c = DangerOptions.choose(facts(me(12, 1), OPEN, zombie(3)));
         assertTrue(c.best().way() == DangerOptions.Way.FLEE || c.best().way() == DangerOptions.Way.DIG_IN, c.terms());
-        assertTrue(c.score() >= Brain.URGENT, "a likely death if it stays: urgent " + c.terms());
+        assertTrue(c.score() >= Brain.urgentV(), "a likely death if it stays: urgent " + c.terms());
         assertTrue(c.chain().startsWith("flee > wait") || c.chain().startsWith("burrow > wait"), c.chain());
         // the same zombie, cornered with nowhere to dig: no way out; fighting saves too little over the hit response
         DangerOptions.Choice cornered = DangerOptions.choose(facts(me(12, 1), ThreatFacts.Ways.NONE, zombie(3)));
@@ -49,7 +49,7 @@ class DangerOptionsTest {
         DangerOptions.Choice c = DangerOptions.choose(facts(me(6, 1), home, zombie(15)));          // bare hands: no quick kill
         assertEquals(DangerOptions.Way.HOME, c.best().way(), c.terms());
         assertEquals("go base", c.chain());
-        assertTrue(c.score() >= Brain.URGENT, "a likely death avoided: urgent " + c.terms());
+        assertTrue(c.score() >= Brain.urgentV(), "a likely death avoided: urgent " + c.terms());
         // the same walk with the zombie 3 blocks behind: it follows the whole way (live: slain 14 s into "go base")
         DangerOptions.Choice chased = DangerOptions.choose(facts(me(6, 1), home, zombie(3)));
         assertNotEquals(DangerOptions.Way.HOME, chased.best().way(), chased.terms());
@@ -60,15 +60,15 @@ class DangerOptionsTest {
 
     @Test
     void theWalkHomeCountsEveryChaserOverTheWholeWalk() {
-        double walkT = 40 / DangerOptions.HOME_SPEED;
-        double one = DangerOptions.pursuit(List.of(zombie(3)), walkT, DangerOptions.HOME_SPEED);
-        double two = DangerOptions.pursuit(List.of(zombie(3), zombie(4)), walkT, DangerOptions.HOME_SPEED);
+        double walkT = 40 / DangerOptions.homeSpeed();
+        double one = DangerOptions.pursuit(List.of(zombie(3)), walkT, DangerOptions.homeSpeed());
+        double two = DangerOptions.pursuit(List.of(zombie(3), zombie(4)), walkT, DangerOptions.homeSpeed());
         assertTrue(one > 6, "a zombie 3 behind over a 15 s walk: more than 6 hp, " + one);
         assertTrue(two > one * 1.8, "two chasers add up: " + two);
-        assertEquals(0, DangerOptions.pursuit(List.of(zombie(20)), walkT, DangerOptions.HOME_SPEED), 1e-9, "a zombie 20 behind loses the bot");
+        assertEquals(0, DangerOptions.pursuit(List.of(zombie(20)), walkT, DangerOptions.homeSpeed()), 1e-9, "a zombie 20 behind loses the bot");
         assertTrue(DangerOptions.pursuit(List.of(zombie(3)), walkT, 5.6) < one, "a sprint shakes it off sooner than a walked path");
         ThreatFacts.Foe sk = ThreatFacts.foe("minecraft:skeleton", 12, 0, null);
-        assertTrue(DangerOptions.pursuit(List.of(sk), walkT, DangerOptions.HOME_SPEED) > 0, "a skeleton shoots until the bot is out of range");
+        assertTrue(DangerOptions.pursuit(List.of(sk), walkT, DangerOptions.homeSpeed()) > 0, "a skeleton shoots until the bot is out of range");
     }
 
     @Test
@@ -129,7 +129,7 @@ class DangerOptionsTest {
     @Test
     void tuningMovesTheThreshold() {
         DangerOptions.Choice at20 = DangerOptions.choose(facts(me(20, 1), OPEN, zombie(3)));
-        assertTrue(at20.score() > 0 && at20.score() < Brain.URGENT, "full health, a pickaxe: worth a flee, not urgent " + at20.terms());
+        assertTrue(at20.score() > 0 && at20.score() < Brain.urgentV(), "full health, a pickaxe: worth a flee, not urgent " + at20.terms());
         assertTrue(Tuning.set("danger.minS", 600).startsWith("ok"));
         assertEquals(-1, DangerOptions.choose(facts(me(20, 1), OPEN, zombie(3))).score(), "tuned: not worth it");
     }

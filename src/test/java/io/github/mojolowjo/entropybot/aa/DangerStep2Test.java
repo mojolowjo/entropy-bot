@@ -84,8 +84,8 @@ class DangerStep2Test {
         assertEquals(85, none.score(), "review 2: the night still has an answer " + none.terms());
         assertEquals(DangerOptions.Way.WAIT, none.best().way(), "the open-air fallback, never held: " + none.terms());
         assertEquals(60_000, AaDesires.holdMs(0, 3), "nothing else open: a short hold");
-        assertEquals(Failures.RETRY_MS * 2, AaDesires.holdMs(1, 2));
-        clock.advance(Failures.RETRY_MS + 1);
+        assertEquals(Failures.retryMs() * 2, AaDesires.holdMs(1, 2));
+        clock.advance(Failures.retryMs() + 1);
         assertEquals(DangerOptions.Way.BOX, AaDesires.dangerChoice(bb).best().way(), "the hold runs out");
     }
 
@@ -98,7 +98,7 @@ class DangerStep2Test {
                 new ThreatFacts.Ways(16, -1, true, 0, 3, true, true, true));
         bb.fact(AaDesires.THREAT_FACT, (Supplier<ThreatFacts>) () -> f);
         DangerOptions.Choice c = AaDesires.dangerChoice(bb);
-        assertTrue(c.score() >= Brain.URGENT, c.terms());
+        assertTrue(c.score() >= Brain.urgentV(), c.terms());
         assertNotNull(c.chain());
     }
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * AREAS (0.39.3, AREAS_PLAN 3): the price of a Baritone move by the labelled places, for the fork's
  * {@code CostAdvisor.moveMultiplier} (baritone/CostAdvisorHook). Pure (JUnit: MoveRulesTest); lock-free on an
@@ -9,9 +11,9 @@ public final class MoveRules {
     private MoveRules() {}
 
     /** Baritone's COST_INF (ActionCosts.COST_INF), copied so this class stays free of Baritone types. */
-    public static final double COST_INF = 1000000.0;
+    public static final double COST_INF = 1000000.0; // structural
     /** The owner's default (AREAS_PLAN 10.7): a move inside a danger area costs this much more. */
-    public static final double DEFAULT_DANGER = 4;
+    public static double defaultDanger() { return Tuning.get("moveRules.defaultDanger"); }
 
     /** Bounds 1..64 (1 = a danger area costs nothing extra): the value when in bounds, else {@code was}. */
     public static double danger(double m, double was) {
@@ -40,13 +42,13 @@ public final class MoveRules {
     }
 
     /** Slack beyond the shortest way out a cell may lie and still be walked (round obstacles). */
-    public static final int OUT_SLACK = 2;
+    public static int outSlack() { return Tuning.i("moveRules.outSlack"); }
 
     /** The cell lies within (the start's blocks to the nearest edge + slack) of the start: part of a way out. */
     static boolean wayOut(Box ko, int[] at, int x, int y, int z) {
         int toEdge = edgeGap(ko, at[0], at[2]);
         int d = Math.max(Math.abs(x - at[0]), Math.abs(z - at[2]));
-        return d <= toEdge + OUT_SLACK;
+        return d <= toEdge + outSlack();
     }
 
     /** Blocks from the column to the nearest x/z edge of the box, 0 on the edge (inside). */

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -27,8 +29,8 @@ import java.util.regex.Pattern;
  * game only through {@link Env}, so JUnit drives it with a fake.
  */
 public final class Chains {
-    public static final long FOREVER = Long.MAX_VALUE;
-    static final long RUN_RESUME_MS = 12L * 3600 * 1000;
+    public static final long FOREVER = Long.MAX_VALUE; // structural
+    static long runResumeMs() { return Tuning.l("chains.runResumeMs"); }
 
     /** What the command core gives the chains. */
     public interface Env {
@@ -330,7 +332,7 @@ public final class Chains {
         if (r == null || chain != null) return;
         long age = env.now() - num(r, "savedAt", 0);
         String name = str(r, "name", "run");
-        if (age > RUN_RESUME_MS) {
+        if (age > runResumeMs()) {
             env.whisper(env.owner(), "I had \"" + name + "\" running " + Math.round(age / 3600000.0) + " h ago - too long ago to carry on by myself (PM it again)");
             clearRun();
             return;

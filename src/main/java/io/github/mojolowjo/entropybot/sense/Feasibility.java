@@ -24,7 +24,7 @@ public final class Feasibility {
     private Feasibility() {}
 
     /** The shell blocks shelter needs at the least (ShelterPlan.FULL less the roof support the ground often gives). */
-    public static final int SHELTER_MIN = io.github.mojolowjo.entropybot.camp.ShelterPlan.FULL - 1;
+    public static int shelterMin() { return io.github.mojolowjo.entropybot.camp.ShelterPlan.full() - 1; }
 
     public enum Kind { FEASIBLE, INFEASIBLE, UNKNOWN }
 
@@ -183,8 +183,8 @@ public final class Feasibility {
             case "shelter" -> {
                 if (w.length >= 2 && w[1].matches("status|leave")) return OK;
                 int b = sim.shelterBlocks();
-                if (b >= SHELTER_MIN) return OK;
-                return no(i, st, b + " planks, cobblestone or dirt, I need " + SHELTER_MIN, "planks", 32, Failures.Reason.NO_ITEM);
+                if (b >= shelterMin()) return OK;
+                return no(i, st, b + " planks, cobblestone or dirt, I need " + shelterMin(), "planks", 32, Failures.Reason.NO_ITEM);
             }
             case "eat" -> {
                 if (sim.food() > 0) return OK;

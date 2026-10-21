@@ -10,7 +10,9 @@ import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 public final class Night {
     private Night() {}
 
-    public static final long DUSK = 11_500, BED_FROM = 12_542, BED_TO = 23_460;
+    public static final long DUSK = 11_500; // game fact: vanilla day time in ticks: dusk 11500, a bed can be slept in from 12542 to 23460
+    public static final long BED_FROM = 12_542; // game fact: vanilla day time in ticks: dusk 11500, a bed can be slept in from 12542 to 23460
+    public static final long BED_TO = 23_460; // game fact: vanilla day time in ticks: dusk 11500, a bed can be slept in from 12542 to 23460
 
     /** 0 by day, rising 0..1 at dusk, 1 at night; unknown time ({@code dayTime < 0}): the night flag. */
     public static double dusk(long dayTime, boolean nightFlag) {

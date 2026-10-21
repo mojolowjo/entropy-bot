@@ -12,7 +12,7 @@ public final class HungerConserve {
     private HungerConserve() {}
 
     /** The flag lapses this long after the last renewal (the AA tick runs every 250 ms). */
-    public static final long LAPSE_MS = 3_000;
+    public static long lapseMs() { return Tuning.l("hungerConserve.lapseMs"); }
 
     /**
      * @param drains    hunger drains at all (survival)
@@ -42,6 +42,6 @@ public final class HungerConserve {
 
     public static boolean active(long now) {
         long t = renewedAt;
-        return t >= 0 && now - t < LAPSE_MS;
+        return t >= 0 && now - t < lapseMs();
     }
 }

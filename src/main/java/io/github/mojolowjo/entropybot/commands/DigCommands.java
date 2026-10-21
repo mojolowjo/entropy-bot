@@ -327,16 +327,16 @@ final class DigCommands {
         String[] w = rest.toLowerCase().split("\\s+");
         if (w.length >= 1 && w[0].equals("up")) {      // 0.27.3: "dig stairs up <dir> <n>"
             int[] u = w.length >= 2 ? StairPlan.dir(w[1]) : null;
-            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.MAX + ")";
+            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.maxV() + ")";
             int n = Integer.parseInt(w[2]);
-            if (n < 1 || n > StairPlan.MAX) return "error: dig stairs up takes 1 to " + StairPlan.MAX + " steps";
+            if (n < 1 || n > StairPlan.maxV()) return "error: dig stairs up takes 1 to " + StairPlan.maxV() + " steps";
             if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
             return c.chainsRef().startChain(from, "dig stairs up", String.join(" then ", StairPlan.upSteps(p.getBlockX(), p.getBlockY(), p.getBlockZ(), u[0], u[1], n)), 1);
         }
         int[] d = w.length >= 1 ? StairPlan.dir(w[0]) : null;
-        if (d == null || w.length < 2 || !w[1].matches("\\d+")) return "usage: dig stairs north|south|east|west <n> (n steps down, at most " + StairPlan.MAX + ")";
+        if (d == null || w.length < 2 || !w[1].matches("\\d+")) return "usage: dig stairs north|south|east|west <n> (n steps down, at most " + StairPlan.maxV() + ")";
         int n = Integer.parseInt(w[1]);
-        if (n < 1 || n > StairPlan.MAX) return "error: dig stairs takes 1 to " + StairPlan.MAX + " steps (a longer one: run it again from the bottom)";
+        if (n < 1 || n > StairPlan.maxV()) return "error: dig stairs takes 1 to " + StairPlan.maxV() + " steps (a longer one: run it again from the bottom)";
         int x = p.getBlockX(), y = p.getBlockY(), z = p.getBlockZ();
         if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
         String text = String.join(" then ", StairPlan.steps(x, y, z, d[0], d[1], n));

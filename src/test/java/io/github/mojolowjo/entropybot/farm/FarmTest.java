@@ -373,7 +373,7 @@ class FarmTest {
         FarmRound.Tick t = round.step("farmgrow", w, 1200, 1200);
         assertEquals("wait", t.result());
         FarmRound.Walk walk = (FarmRound.Walk) t.effects().stream().filter(e -> e instanceof FarmRound.Walk).findFirst().orElseThrow();
-        assertTrue(Math.abs(walk.x() - 12) <= FarmRules.SQUAT_R, "the second spot reaches the far crop: " + walk);
+        assertTrue(Math.abs(walk.x() - 12) <= FarmRules.squatR(), "the second spot reaches the far crop: " + walk);
         assertTrue(t.status().contains("2 still growing"), t.status());
         w.at(walk.x() + 0.5, walk.y(), walk.z() + 0.5);
         assertEquals("wait", round.step("farmgrow", w, 1220, 1220).result());   // arrived: twerks there

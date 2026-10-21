@@ -34,7 +34,7 @@ class DamageLogTest {
         for (int i = 0; i < 25; i++) l.add(hit(1_000_000 + i * 1000L, "zombie", 3, 20 - i * 0.5));
         l.add(new HitLog.Hit(1_030_000, "fall", null, null, 4.5, 0, 1, -50, 2, null));
         List<HitLog.Hit> d = l.death(1_031_000);
-        assertEquals(HitLog.DEATH_HITS, d.size());
+        assertEquals(HitLog.deathHits(), d.size());
         assertEquals("fall", d.get(d.size() - 1).source());
         String t = l.deathText(UTC);
         assertTrue(t.startsWith("\nlast death's hits: 20 hits, 61.5 damage:"), t);

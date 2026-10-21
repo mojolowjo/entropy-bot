@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.engine.Hotbar;
@@ -32,8 +34,8 @@ import java.util.Map;
  */
 final class Fishing {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long IDLE_END = 60 * 20;
-    static final int MAX_WALKS = 4;
+    static long idleEnd() { return Tuning.l("fishing.idleEnd"); }
+    static int maxWalks() { return Tuning.i("fishing.maxWalks"); }
 
     private final Commands c;
 
@@ -147,9 +149,9 @@ final class Fishing {
         boolean biting = FishRules.bite(sv);
         if (biting && r.lastBiteCast != r.castAt) { r.bites++; r.lastBiteCast = r.castAt; }
         if (hook != null && r.castAt < 0) r.castAt = now;            // a bobber I did not cast: time it from now
-        if (busy && !(r.goal.timed() ? now - r.started >= r.goal.minutes() * 1200L : caught >= r.goal.n() || now - r.started >= FishRules.COUNT_MAX)) return;
+        if (busy && !(r.goal.timed() ? now - r.started >= r.goal.minutes() * 1200L : caught >= r.goal.n() || now - r.started >= FishRules.countMax())) return;
         int[] spotInfo = null;
-        boolean needSpot = hook == null && haveRod && now - r.reelAt >= FishRules.RECAST_DELAY;
+        boolean needSpot = hook == null && haveRod && now - r.reelAt >= FishRules.recastDelay();
         if (needSpot) spotInfo = FishRules.pick(surface(p), p.getBlockX(), p.getBlockZ(), this::workAllowed);
         boolean spotOk = spotInfo != null && spotInfo[3] == 0, spotFar = spotInfo != null && spotInfo[3] == 1;
         FishRules.State st = new FishRules.State(haveRod, FishRules.canCraftRod(sticks, string), r.craftTried, hook != null, biting,
@@ -158,7 +160,7 @@ final class Fishing {
         switch (act) {
             case DONE_COUNT -> end(r, "ok: fished " + caught + " fish (" + r.casts + " casts, " + r.bites + " bites) - next: cook cod " + caught + " (or salmon)");
             case DONE_TIME -> end(r, "ok: fished " + r.goal.minutes() + " min: " + caught + " fish (" + r.casts + " casts, " + r.bites + " bites)");
-            case TIMED_OUT -> end(r, "stopped: fish " + caught + "/" + r.goal.n() + " after " + FishRules.COUNT_MAX / 1200 + " min (" + r.casts + " casts, " + r.bites + " bites)");
+            case TIMED_OUT -> end(r, "stopped: fish " + caught + "/" + r.goal.n() + " after " + FishRules.countMax() / 1200 + " min (" + r.casts + " casts, " + r.bites + " bites)");
             case CRAFT_ROD -> {
                 r.craftTried = true;
                 Chains.Reply rep = c.handle(r.from, "craft fishing_rod 1", true, null);
@@ -176,17 +178,17 @@ final class Fishing {
                 if (r.castAt >= 0 && now - r.castAt >= 400 && now - r.castAt < 405) LOG.info("[entropybot] fish: no bite yet after 20 s (the bite is a synced flag on the bobber)");
             }
             case GO_WATER -> {
-                if (++r.walks > MAX_WALKS) { end(r, "stopped: fish " + caught + "/" + r.goal.n() + " - could not get within casting distance of water in " + MAX_WALKS + " walks"); return; }
+                if (++r.walks > maxWalks()) { end(r, "stopped: fish " + caught + "/" + r.goal.n() + " - could not get within casting distance of water in " + maxWalks() + " walks"); return; }
                 int[] s = FishRules.standPoint(spotInfo, p.getBlockX(), p.getBlockZ());
                 r.why = "walking to the water at " + spotInfo[0] + " " + spotInfo[1] + " " + spotInfo[2];
                 c.handle(r.from, "goto " + s[0] + " " + s[1] + " " + s[2], true, null);
                 r.nextAt = now + 60;
             }
             case NO_WATER -> {
-                r.why = "I see no water surface (3x3 patch) within " + FishRules.RANGE + " blocks - walk me to some";
+                r.why = "I see no water surface (3x3 patch) within " + FishRules.range() + " blocks - walk me to some";
                 if (r.idleSince < 0) r.idleSince = now;
                 r.nextAt = now + 100;
-                if (now - r.idleSince >= IDLE_END) end(r, "stopped: fish " + caught + "/" + r.goal.n() + " - " + r.why);
+                if (now - r.idleSince >= idleEnd()) end(r, "stopped: fish " + caught + "/" + r.goal.n() + " - " + r.why);
             }
             case CAST -> {
                 r.idleSince = -1;
@@ -236,7 +238,7 @@ final class Fishing {
         List<int[]> out = new ArrayList<>();
         if (level == null) return out;
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
-        int R = FishRules.RANGE;
+        int R = FishRules.range();
         for (int x = p.getBlockX() - R; x <= p.getBlockX() + R; x++)
             for (int z = p.getBlockZ() - R; z <= p.getBlockZ() + R; z++)
                 for (int y = p.getBlockY() - 4; y <= p.getBlockY() + 2; y++) {

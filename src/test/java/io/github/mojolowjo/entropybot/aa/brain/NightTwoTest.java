@@ -48,7 +48,7 @@ class NightTwoTest {
     @Test
     void swordOnceAZombieWasSeen() {
         assertEquals(0, Costs.sword(false, false));
-        assertEquals(Costs.SWORD, Costs.sword(true, false));
+        assertEquals(Costs.swordV(), Costs.sword(true, false));
         assertEquals(0, Costs.sword(true, true));
     }
 

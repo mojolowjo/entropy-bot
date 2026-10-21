@@ -91,7 +91,7 @@ class CompactTest {
         for (String key : chests.keySet()) {
             String[] s = key.split(" ");
             int[] p = {Integer.parseInt(s[0]), Integer.parseInt(s[1]), Integer.parseInt(s[2])};
-            if (Math.abs(p[0] - center[0]) <= Compact.COMPACT_R && Math.abs(p[1] - center[1]) <= Compact.COMPACT_R && Math.abs(p[2] - center[2]) <= Compact.COMPACT_R) out.add(p);
+            if (Math.abs(p[0] - center[0]) <= Compact.compactR() && Math.abs(p[1] - center[1]) <= Compact.compactR() && Math.abs(p[2] - center[2]) <= Compact.compactR()) out.add(p);
         }
         return out;
     }

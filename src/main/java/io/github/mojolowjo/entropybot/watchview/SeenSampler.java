@@ -44,11 +44,14 @@ import java.util.Random;
 public final class SeenSampler {
     public static final SeenSampler INSTANCE = new SeenSampler();
     public static final String FILE = "seenfaces.bin";
-    public static final int RAYS = 480, NEAR_RADIUS = 5, NEAR_EVERY_TICKS = 4;
-    public static final long BUDGET_NS = 1_000_000;
-    static final long SAVE_EVERY_TICKS = 6000;
+    public static final int RAYS = 480; // structural
+    public static final int NEAR_RADIUS = 5; // structural
+    public static final int NEAR_EVERY_TICKS = 4; // structural
+    public static final long BUDGET_NS = 1_000_000; // structural
+    static final long SAVE_EVERY_TICKS = 6000; // structural
     /** A view unchanged this long (same eye block, angles within a degree) is sampled only every IDLE_EVERY ticks. */
-    static final int IDLE_AFTER_TICKS = 40, IDLE_EVERY = 10;
+    static final int IDLE_AFTER_TICKS = 40; // structural
+    static final int IDLE_EVERY = 10; // structural
 
     /**
      * The surface store's cap (0.16.1), in blocks. Sized for the render distance: at 5 chunks (80 blocks, the bot's
@@ -56,10 +59,10 @@ public final class SeenSampler {
      * build about 2.5 visible blocks a column, so ~50,000 blocks; 100,000 is twice that (about 10 MB of map entries).
      * At larger render distances the oldest seen are dropped first, and the mesh keeps only the nearest 60,000 faces anyway.
      */
-    public static final int SURFACE_MAX = 100_000;
+    public static final int SURFACE_MAX = 100_000; // structural
     /** The near pass gets at most this much of the tick's budget; it goes on next tick where it stopped. */
-    public static final long NEAR_BUDGET_NS = 400_000;
-    static final int PRUNE_EVERY_TICKS = 20;
+    public static final long NEAR_BUDGET_NS = 400_000; // structural
+    static final int PRUNE_EVERY_TICKS = 20; // structural
 
     private final SeenFaces store = new SeenFaces();
     /** 0.16.1: faces whose air side sees the sky, in memory only, within the render distance of the eye (never saved). */

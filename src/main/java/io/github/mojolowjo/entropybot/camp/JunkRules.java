@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -22,7 +24,7 @@ import java.util.regex.Pattern;
 public final class JunkRules {
     private JunkRules() {}
 
-    public static final int LOW = 4;
+    public static int low() { return Tuning.i("junkRules.low"); }
     /**
      * 0.28.1: the ids a running or queued job wants, so the junk drop leaves them. texts: the running job's label and
      * status, the chain's steps not done yet, a "need" line. A build/shelter/place text keeps the placeable filler blocks ({@code *placeable}: Junk.placeable), and any item it names ("build shell cobblestone house" keeps cobblestone).

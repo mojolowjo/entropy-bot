@@ -31,7 +31,7 @@ import java.lang.reflect.Proxy;
  */
 public final class CostAdvisorHook {
     private static final Logger LOG = LogUtils.getLogger();
-    private static final double COST_INF = baritone.api.pathing.movement.ActionCosts.COST_INF;
+    private static final double COST_INF = baritone.api.pathing.movement.ActionCosts.COST_INF; // game fact: Baritone ActionCosts.COST_INF, the price of an impossible move
 
     /**
      * What one calculation holds fixed: captured on the thread that builds the context. AREAS: the areas policy (its
@@ -47,7 +47,7 @@ public final class CostAdvisorHook {
 
     private static volatile boolean fork, moveHook;
     /** AREAS (owner's default 10.7): the move multiplier inside a danger area; {@code fence danger <n>} sets it. */
-    private static volatile double dangerMultiplier = io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER;
+    private static volatile double dangerMultiplier = io.github.mojolowjo.entropybot.guard.MoveRules.defaultDanger();
 
     private CostAdvisorHook() {}
 

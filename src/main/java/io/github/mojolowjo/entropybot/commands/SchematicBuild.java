@@ -318,7 +318,7 @@ final class SchematicBuild {
         else {
             String why = switch (e) {
                 case PAUSED -> "Baritone paused (missing blocks or no way to place the rest)";
-                case STALLED -> "nothing placed for " + BuilderReport.STALL_SECONDS + " s";
+                case STALLED -> "nothing placed for " + BuilderReport.stallSeconds() + " s";
                 default -> "Baritone's builder stopped";
             };
             List<String> miss = new ArrayList<>();

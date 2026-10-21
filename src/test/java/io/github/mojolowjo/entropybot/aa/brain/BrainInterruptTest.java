@@ -113,12 +113,12 @@ class BrainInterruptTest {
         assertEquals(2, br.interrupts);
         probe[0] = "no food source";
         s[1] = 95;
-        clock.advance(Brain.PROBE_HOLD_MS);
+        clock.advance(Brain.probeHoldMs());
         br.tick(bb);
         assertEquals(2, br.interrupts, "exempt from the cap, still probed");
         assertEquals("plan do a", last());
         probe[0] = null;
-        clock.advance(Brain.PROBE_HOLD_MS);
+        clock.advance(Brain.probeHoldMs());
         port.progress.put(port.nextId - 1, 1L);
         br.tick(bb);
         assertEquals(3, br.interrupts, "starving passes the cap");

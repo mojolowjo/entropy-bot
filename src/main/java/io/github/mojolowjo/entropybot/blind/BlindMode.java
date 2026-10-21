@@ -26,9 +26,9 @@ public final class BlindMode {
     public static final String FILE = "blind.json";
     public static final String USAGE = "blind on|off|status";
     /** Above this maxFps the status suggests a lower limit. */
-    public static final int FPS_HINT_ABOVE = 20;
+    public static final int FPS_HINT_ABOVE = 20; // structural
     /** Ticks in a row with noRender found false (while enabled) before a finding. */
-    public static final int RESET_TICKS = 3;
+    public static final int RESET_TICKS = 3; // structural
 
     /** The saved settings. sound: "pause" (pause the sound engine while blind) or "off" (leave it). */
     public record Config(boolean enabled, boolean title, String sound) {

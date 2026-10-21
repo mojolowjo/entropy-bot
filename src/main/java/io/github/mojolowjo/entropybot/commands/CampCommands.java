@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -52,7 +54,7 @@ final class CampCommands {
     private final Map<String, Long> careTried = new LinkedHashMap<>();
     /** Tool care: kinds nearly broken that nothing could replace (for "check"). */
     final Map<String, String> careStuck = new LinkedHashMap<>();
-    static final long CARE_RETRY_MS = 10 * 60_000L;
+    static long careRetryMs() { return Tuning.l("campCommands.careRetryMs"); }
 
     private String lastRun;
     CampCommands(Commands c) { this.c = c; }
@@ -163,7 +165,7 @@ final class CampCommands {
     static boolean quarryBlocked(ClientLevel lv, int[] feet, int[] dir) {
         int dx = dir[0], dz = dir[1], px = dz != 0 ? 1 : 0, pz = dx != 0 ? 1 : 0;
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int i = 1; i <= BootstrapPlan.QUARRY_LEN; i++) {
+        for (int i = 1; i <= BootstrapPlan.quarryLen(); i++) {
             int cx = feet[0] + dx * (i + 1), cz = feet[2] + dz * (i + 1);
             for (int a = -1; a <= 1; a++) for (int y = BootstrapPlan.stepBottom(feet[1], i); y <= BootstrapPlan.stepTop(feet[1], i); y++) {
                 m.set(cx + px * a, y, cz + pz * a);
@@ -197,7 +199,7 @@ final class CampCommands {
         if (box == null && err[0] != null && err[0].contains("covers every height") && !ab.has("round") && Minecraft.getInstance().level != null) {
             int ax1 = Math.min(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2")), ax2 = Math.max(PolicyCommands.n(ab, "x1"), PolicyCommands.n(ab, "x2"));
             int az1 = Math.min(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2")), az2 = Math.max(PolicyCommands.n(ab, "z1"), PolicyCommands.n(ab, "z2"));
-            if (ax2 - ax1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE || az2 - az1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.MIN_SIDE)
+            if (ax2 - ax1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.minSide() || az2 - az1 + 1 < io.github.mojolowjo.entropybot.camp.HousePlan.minSide())
                 return io.github.mojolowjo.entropybot.camp.HousePlan.TOO_SMALL;
             if ((long) (ax2 - ax1 + 1) * (az2 - az1 + 1) > 4096) return io.github.mojolowjo.entropybot.camp.HouseGround.TOO_LARGE;
             int[] tops = surfaceTops(Minecraft.getInstance().level, ax1, az1, ax2, az2);
@@ -207,7 +209,7 @@ final class CampCommands {
             for (int t : tops) if (t == io.github.mojolowjo.entropybot.camp.HouseGround.NONE) { fy = t; break; }
             if (fy == io.github.mojolowjo.entropybot.camp.HouseGround.NONE)
                 return "error: I can't see the ground of " + area + " (not loaded) - next: goto " + (ax1 + ax2) / 2 + " ~ " + (az1 + az2) / 2 + ", then house " + area;
-            int fy2 = fy + io.github.mojolowjo.entropybot.camp.HouseGround.HEIGHT - 1;
+            int fy2 = fy + io.github.mojolowjo.entropybot.camp.HouseGround.height() - 1;
             autoY = new int[]{fy, fy2};
             LOG.info("[entropybot] house {}: no heights given, floor at y {} (lowest surface), y {}..{}", area, fy, fy, fy2);
             floorNote = "floor at y " + fy + " (the lowest ground in " + area + ", 5 high), ";
@@ -371,7 +373,7 @@ final class CampCommands {
 
     /** A block whose id contains the word within BootstrapPlan.NEAR blocks (a few levels up and down). */
     static boolean near(ClientLevel lv, int[] c, String word) {
-        int r = BootstrapPlan.NEAR;
+        int r = BootstrapPlan.near();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) for (int dy = -3; dy <= 3; dy++) for (int dz = -r; dz <= r; dz++) {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
@@ -405,7 +407,7 @@ final class CampCommands {
         int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
         for (int[] d : dirs) {
             boolean ok = true;
-            for (int i = 2; i <= BootstrapPlan.QUARRY_LEN + 1 && ok; i++) {
+            for (int i = 2; i <= BootstrapPlan.quarryLen() + 1 && ok; i++) {
                 BlockPos g = new BlockPos(f[0] + d[0] * i, f[1] - 1, f[2] + d[1] * i);
                 BlockState st = lv.getBlockState(g);
                 ok = !st.isAir() && lv.getFluidState(g).isEmpty() && lv.getFluidState(g.above()).isEmpty() && !st.hasBlockEntity();
@@ -625,7 +627,7 @@ final class CampCommands {
             String id = c.crafting.planner.resolveItem(w.get(1), Gui.inventory(p));
             if (id == null) id = JunkRules.full(w.get(1));
             if (!Storage.itemExists(id)) return "error: I don't know an item called " + w.get(1) + " - next: find or recipe the exact id";
-            if (!want.containsKey(id) && want.size() >= StockRules.MAX_ITEMS) return "error: I keep at most " + StockRules.MAX_ITEMS + " stock targets - stock clear <item> first";
+            if (!want.containsKey(id) && want.size() >= StockRules.maxItems()) return "error: I keep at most " + StockRules.maxItems() + " stock targets - stock clear <item> first";
             int n = Integer.parseInt(w.get(2));
             if (n == 0) want.remove(id);
             else want.put(id, n);
@@ -714,7 +716,7 @@ final class CampCommands {
     void junkTick(LocalPlayer p) {
         if (!c.jobs.running() || c.jobs.walking() || Core.INSTANCE.reflexes.hold()) return;
         if (!"drop".equals(junkMode()) || Gui.open(p) || Minecraft.getInstance().screen != null) return;
-        if (c.freeSlots() > JunkRules.LOW) return;
+        if (c.freeSlots() > JunkRules.low()) return;
         // never litter at the owner's feet: with them within 8 blocks the junk waits (the deposit takes it)
         net.minecraft.world.entity.player.Player owner = Jobs.findPlayer(c.owner());
         if (owner != null && owner != p && owner.distanceTo(p) < 8) return;
@@ -788,7 +790,7 @@ final class CampCommands {
         long ms = System.currentTimeMillis();
         for (Map.Entry<String, String> e : needs.entrySet()) {
             String kind = e.getKey();
-            if (ms - careTried.getOrDefault(kind, 0L) < CARE_RETRY_MS) continue;
+            if (ms - careTried.getOrDefault(kind, 0L) < careRetryMs()) continue;
             careTried.put(kind, ms);
             Set<String> stored = new LinkedHashSet<>();
             Map<String, Integer> have = new LinkedHashMap<>(Gui.inventory(p));
@@ -893,7 +895,7 @@ final class CampCommands {
         Map<String, Integer> have = null;
         for (Map.Entry<String, String> e : needs.entrySet()) {
             String slot = e.getKey();
-            if (ms - careTried.getOrDefault("armor:" + slot, 0L) < CARE_RETRY_MS) continue;
+            if (ms - careTried.getOrDefault("armor:" + slot, 0L) < careRetryMs()) continue;
             careTried.put("armor:" + slot, ms);
             if (stored == null) {
                 stored = new LinkedHashSet<>();

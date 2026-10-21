@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonArray;
@@ -27,8 +29,10 @@ import java.util.Set;
  */
 public final class MineNotes {
     public static final String ORES = "ores.json", EXPLORED = "explored.json";
-    public static final int MAX_ORES = 1000, MAX_EXPLORED = 5000, EXPLORED_TO = 4500;
-    static final long FLUSH_AFTER = 100;
+    public static final int MAX_ORES = 1000; // structural
+    public static final int MAX_EXPLORED = 5000; // structural
+    public static final int EXPLORED_TO = 4500; // structural
+    static final long FLUSH_AFTER = 100; // structural
 
     private final Map<String, JsonObject> ores = new LinkedHashMap<>();
     private final Set<String> explored = new LinkedHashSet<>();
@@ -254,7 +258,7 @@ public final class MineNotes {
     }
 
     /** S1: after a failed write the next try waits FLUSH_AFTER, doubling per failure, at most RETRY_MAX ticks (5 min). */
-    static final long RETRY_MAX = 6000;
+    static long retryMax() { return Tuning.l("mineNotes.retryMax"); }
     private long oresRetryAt, exploredRetryAt;
     private int oresFails, exploredFails;
     /** The last write error, once, for the log (null when none). */
@@ -291,7 +295,7 @@ public final class MineNotes {
     }
 
     static long backoff(int fails) {
-        return Math.min(RETRY_MAX, FLUSH_AFTER << Math.min(Math.max(fails - 1, 0), 10));
+        return Math.min(retryMax(), FLUSH_AFTER << Math.min(Math.max(fails - 1, 0), 10));
     }
 
     /** The tick before which no write of ores.json is tried again (0: none pending). For the tests. */

@@ -11,10 +11,13 @@ import java.util.regex.Pattern;
  * vanilla {@code MapItem.update} at scale 0 (one block a pixel), so the map looks like a paper map.
  */
 public final class MapMath {
-    public static final int REGION = 512;               // blocks a side of one region (32x32 chunks)
-    public static final int LOW = 0, NORMAL = 1, HIGH = 2, LOWEST = 3;
+    public static final int REGION = 512; // structural  // blocks a side of one region (32x32 chunks)
+    public static final int LOW = 0; // structural
+    public static final int NORMAL = 1; // structural
+    public static final int HIGH = 2; // structural
+    public static final int LOWEST = 3; // structural
     static final int[] MODIFIER = { 180, 220, 255, 135 }; // MapColor.Brightness, by id
-    public static final int WATER_DEPTH_MAX = 10;       // deeper water shades no darker
+    public static final int WATER_DEPTH_MAX = 10; // structural  // deeper water shades no darker
     private static final Pattern FILE = Pattern.compile("^(-?\\d{1,7})\\.(-?\\d{1,7})\\.png$");
 
     private MapMath() {}

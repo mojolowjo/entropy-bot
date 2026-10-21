@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** AA_ROUND3 1: the one way-up option set, the return levels, the restore progress. */
 class WayUpTest {
     static final int[] ME = {0, 40, 0};
-    static final ToolWear.Kit KIT = new ToolWear.Kit(4, 100, ToolWear.CRAFT_S);
+    static final ToolWear.Kit KIT = new ToolWear.Kit(4, 100, ToolWear.craftSV());
 
     static List<Replan.Cell> col(int n, Replan.Cell c) {
         List<Replan.Cell> out = new ArrayList<>();
@@ -84,7 +84,7 @@ class WayUpTest {
     void aSixDeepOwnShaftIsSixLevels() {
         // aa388: a 1-wide shaft dug from the surface, 6 deep; side walls up to the rim, open above the rim
         int depth = 6;
-        int hole = AaEscape.holeExit(AaEscape.HOLE_MAX_UP, dy -> true, dy -> dy >= depth);
+        int hole = AaEscape.holeExit(AaEscape.holeMaxUp(), dy -> true, dy -> dy >= depth);
         assertEquals(6, hole);
         assertEquals(6, WayUp.returnLevels(0, hole, 1), "never the 1 the sky scan gave");
         assertEquals(12, WayUp.returnLevels(9, -1, 12), "ground overhead: the sky scan");

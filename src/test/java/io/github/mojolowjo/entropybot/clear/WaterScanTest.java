@@ -80,7 +80,7 @@ class WaterScanTest {
         w.fill(6, 14, 38, 40, 2, 10, "water");
         WaterScan.Scan s = WaterScan.scan(w, TUNNEL, new Pos(10, 40, 2));
         assertEquals(WaterScan.Kind.LARGE, s.kind());
-        assertEquals(WaterScan.LARGE_LIMIT + 1, s.sources().size(), "it stops counting past the limit");
+        assertEquals(WaterScan.largeLimit() + 1, s.sources().size(), "it stops counting past the limit");
         assertTrue(s.describe().startsWith("a large body of water (65+ source blocks)"), s.describe());
         // a pool of 64 is not large
         FakeWorld p = new FakeWorld();

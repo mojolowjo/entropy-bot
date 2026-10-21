@@ -52,7 +52,7 @@ class BrainCostPathTest {
         p.cost = 20;
         all = br.scoreAll(bb);
         assertTrue(all.get(0).rank() > all.get(1).rank(), all.toString());
-        assertEquals(70 / (1 + 20 / Curves.COST_C), all.get(0).score(), 1e-9);
+        assertEquals(70 / (1 + 20 / Curves.costC()), all.get(0).score(), 1e-9);
     }
 
     @Test
@@ -86,7 +86,7 @@ class BrainCostPathTest {
         assertEquals(1, p.refreshes);
         br.scoreAll(bb);
         assertEquals(1, p.refreshes, "within 10 s: no new rescore");
-        clock.advance(AaDesires.RESCORE_MS);
+        clock.advance(AaDesires.rescoreMs());
         br.scoreAll(bb);
         assertEquals(2, p.refreshes);
     }

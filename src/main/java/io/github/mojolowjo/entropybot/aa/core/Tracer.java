@@ -14,7 +14,7 @@ import java.util.Map;
  * core needs no Gson; the adapter writes the files.
  */
 public final class Tracer {
-    public static final int KEEP_DECISIONS = 200;
+    public static final int KEEP_DECISIONS = 200; // structural
 
     public static final class Counts {
         public long switches, pointless, preempts, fails, lost, ticks, tickUs;

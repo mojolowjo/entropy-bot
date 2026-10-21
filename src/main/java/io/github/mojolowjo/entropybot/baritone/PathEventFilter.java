@@ -7,7 +7,7 @@ package io.github.mojolowjo.entropybot.baritone;
  * dropped, counted, and summed up in one line at most once a minute. Pure, one instance per hook (client thread).
  */
 public final class PathEventFilter {
-    public static final long SUMMARY_MS = 60_000;
+    public static final long SUMMARY_MS = 60_000; // structural
 
     private String last;
     private long dropped, droppedTotal, lastSummaryMs = Long.MIN_VALUE / 2;

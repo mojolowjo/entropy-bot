@@ -36,7 +36,7 @@ class WoodOptionsTest {
         assertNotNull(d.best());
         assertNotEquals(c.best().id(), d.best().id(), "the held option is not offered again");
         assertTrue(d.line().contains("dropped"), d.line());
-        Options.Choice later = WoodOptions.choose(new WoodFacts(4, trees), m, Options.RETRY_MS + 1);
+        Options.Choice later = WoodOptions.choose(new WoodFacts(4, trees), m, Options.retryMs() + 1);
         assertTrue(later.ranked().stream().anyMatch(o -> o.id().equals(c.best().id())), "after the hold, offered again (at the failure's price)");
         assertTrue(later.ranked().stream().filter(o -> o.id().equals(c.best().id())).findFirst().get().total() > c.best().total());
     }

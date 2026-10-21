@@ -52,12 +52,12 @@ class FishRulesTest {
         assertEquals(FishRules.Act.DONE_COUNT, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 2, n, 100)));
         assertEquals(FishRules.Act.DONE_TIME, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, t, 2400)));
         assertEquals(FishRules.Act.WAIT_BITE, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, t, 100)));
-        assertEquals(FishRules.Act.TIMED_OUT, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, n, FishRules.COUNT_MAX)));
+        assertEquals(FishRules.Act.TIMED_OUT, FishRules.next(st(true, false, false, true, false, 5, 5, true, false, 0, n, FishRules.countMax())));
         assertEquals(FishRules.Act.CRAFT_ROD, FishRules.next(st(false, true, false, false, false, 0, 99, true, false, 0, n, 0)));
         assertEquals(FishRules.Act.NO_ROD, FishRules.next(st(false, true, true, false, false, 0, 99, true, false, 0, n, 0)), "tried once, no loop");
         assertEquals(FishRules.Act.NO_ROD, FishRules.next(st(false, false, false, false, false, 0, 99, true, false, 0, n, 0)));
         assertEquals(FishRules.Act.REEL_BITE, FishRules.next(st(true, false, false, true, true, 30, 99, true, false, 0, n, 100)));
-        assertEquals(FishRules.Act.REEL_TIMEOUT, FishRules.next(st(true, false, false, true, false, FishRules.BITE_WAIT, 99, true, false, 0, n, 100)));
+        assertEquals(FishRules.Act.REEL_TIMEOUT, FishRules.next(st(true, false, false, true, false, FishRules.biteWait(), 99, true, false, 0, n, 100)));
         assertEquals(FishRules.Act.WAIT, FishRules.next(st(true, false, false, false, false, 0, 3, true, false, 0, n, 100)));
         assertEquals(FishRules.Act.CAST, FishRules.next(st(true, false, false, false, false, 0, 40, true, false, 0, n, 100)));
         assertEquals(FishRules.Act.GO_WATER, FishRules.next(st(true, false, false, false, false, 0, 40, false, true, 0, n, 100)));
@@ -75,7 +75,7 @@ class FishRulesTest {
         int[] s = FishRules.pick(pond(5, 0, 6, 6, 63), 0, 2, null);       // water x 5..10, z 0..5; me at 0,2
         assertNotNull(s);
         assertEquals(0, s[3]);
-        assertTrue(Math.hypot(s[0], s[2] - 2) >= FishRules.MIN_CAST && Math.hypot(s[0], s[2] - 2) <= FishRules.MAX_CAST);
+        assertTrue(Math.hypot(s[0], s[2] - 2) >= FishRules.minCast() && Math.hypot(s[0], s[2] - 2) <= FishRules.maxCast());
         assertNull(FishRules.pick(pond(5, 0, 2, 6, 63), 0, 2, null), "2 wide: no 3x3");
         int[] far = FishRules.pick(pond(14, 0, 4, 4, 63), 0, 2, null);
         assertNotNull(far);

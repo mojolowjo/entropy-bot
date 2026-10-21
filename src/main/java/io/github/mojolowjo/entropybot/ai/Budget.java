@@ -14,7 +14,7 @@ public final class Budget {
     public record Cap(String reason, boolean hourly) {}
 
     /** A prompt estimated over this many tokens is refused (a runaway prompt). */
-    public static final long MAX_INPUT_TOKENS = 30_000;
+    public static final long MAX_INPUT_TOKENS = 30_000; // structural
 
     private final AiSettings s;
     private final UsageLedger ledger;

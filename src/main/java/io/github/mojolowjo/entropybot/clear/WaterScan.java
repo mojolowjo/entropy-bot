@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -27,13 +29,13 @@ public final class WaterScan {
     private WaterScan() {}
 
     /** More connected source blocks than this is a large body of water (the owner confirms first). */
-    public static final int LARGE_LIMIT = 64;
+    public static int largeLimit() { return Tuning.i("waterScan.largeLimit"); }
     /** The most fluid cells the upstream search looks at. */
-    public static final int MAX_VISIT = 4096;
+    public static int maxVisit() { return Tuning.i("waterScan.maxVisit"); }
     /** How far (blocks, each axis) from the spot the search goes. */
-    public static final int RADIUS = 32;
+    public static int radius() { return Tuning.i("waterScan.radius"); }
     /** How far (blocks, each axis) from the spot the work's own water cells are gathered. */
-    public static final int NEAR = 12;
+    public static int near() { return Tuning.i("waterScan.near"); }
 
     public enum Kind { NONE, FLOWING_IN, SOURCES_INSIDE, LARGE, LAVA }
 
@@ -94,8 +96,8 @@ public final class WaterScan {
             seeds.add(c);
             for (int[] s : ClearEngine.SIDES6) {
                 Pos n = new Pos(c.x() + s[0], c.y() + s[1], c.z() + s[2]);
-                if (!box.contains(n.x(), n.y(), n.z()) || far(at, n, NEAR) || seen.contains(n) || !w.fluid(n.x(), n.y(), n.z())) continue;
-                if (seen.size() >= MAX_VISIT) {
+                if (!box.contains(n.x(), n.y(), n.z()) || far(at, n, near()) || seen.contains(n) || !w.fluid(n.x(), n.y(), n.z())) continue;
+                if (seen.size() >= maxVisit()) {
                     truncated = true;
                     continue;
                 }
@@ -107,7 +109,7 @@ public final class WaterScan {
         // 2. upstream: stronger flowing water beside, the water above a falling cell; from a source, the sources joined to it
         visited.addAll(seeds);
         q.addAll(seeds);
-        while (!q.isEmpty() && sources.size() <= LARGE_LIMIT) {
+        while (!q.isEmpty() && sources.size() <= largeLimit()) {
             Pos c = q.poll();
             FluidCell f = w.fluidCell(c.x(), c.y(), c.z());
             if (f == null) continue;
@@ -129,7 +131,7 @@ public final class WaterScan {
                 else if (n.y() > c.y()) feeds = true;                                   // the column above a falling cell
                 else feeds = nf.level() > f.level() || (nf.source() && n.y() == c.y());  // stronger water beside
                 if (!feeds) continue;
-                if (far(at, n, RADIUS) || visited.size() >= MAX_VISIT) {
+                if (far(at, n, radius()) || visited.size() >= maxVisit()) {
                     truncated = true;
                     continue;
                 }
@@ -139,7 +141,7 @@ public final class WaterScan {
         }
         int inside = 0;
         for (Pos s : sources) if (work.contains(s.x(), s.y(), s.z())) inside++;
-        if (sources.size() > LARGE_LIMIT || truncated) return new Scan(Kind.LARGE, visited, sources, inside, List.of(), truncated);
+        if (sources.size() > largeLimit() || truncated) return new Scan(Kind.LARGE, visited, sources, inside, List.of(), truncated);
         if (inside > 0) return new Scan(Kind.SOURCES_INSIDE, visited, sources, inside, List.of(), false);
         List<Pos> plug = new ArrayList<>();
         for (Pos c : visited) if (faceShell(box, c.x(), c.y(), c.z())) plug.add(c);

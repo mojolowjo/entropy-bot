@@ -172,8 +172,8 @@ public final class Need extends Node {
         }
         AaManual man = AaManual.of(bb);
         if (man.skipped(id)) return fail(kind + " skipped: the owner's aa skip");
-        if (man.doRung != null && man.doSince >= 0 && now - man.doSince > AaManual.DO_MAX_MS) {
-            bb.port.log("aa do " + man.doRung + " dropped: it did not run within " + AaManual.DO_MAX_MS / 60000 + " min");
+        if (man.doRung != null && man.doSince >= 0 && now - man.doSince > AaManual.doMaxMs()) {
+            bb.port.log("aa do " + man.doRung + " dropped: it did not run within " + AaManual.doMaxMs() / 60000 + " min");
             man.doRung = null;
         }
         boolean forced = id.equals(man.doRung);
@@ -335,7 +335,7 @@ public final class Need extends Node {
     static String sig(Blackboard bb) {
         var in = bb.in;
         return Failures.items(in) + "|" + (in.bag == null ? 0 : in.bag.hashCode()) + "|" + in.tableKnown + in.tableInBag + in.furnaceKnown + in.furnaceInBag
-                + in.baseKnown + in.baseChests + in.bedKnown + in.bedInBag + "|" + (in.underDepth >= AaLadder.SURFACE_DEPTH) + "|" + in.pickTier;
+                + in.baseKnown + in.baseChests + in.bedKnown + in.bedInBag + "|" + (in.underDepth >= AaLadder.surfaceDepth()) + "|" + in.pickTier;
     }
 
     /** The task failed: the row that ran is held (Failures), a switchable end picks the next row at once. */
@@ -358,7 +358,7 @@ public final class Need extends Node {
         if (pre || picker == null) {
             if (ranKey != null) {
                 mem.failed(ranKey, why == null ? "ended failed without an end text while running " + resolved : why, now, bb.in);
-                bb.port.log(kind + ": " + ranKey + " failed (\"" + why + "\"), held " + Options.RETRY_MS / 60000 + " min x fails");
+                bb.port.log(kind + ": " + ranKey + " failed (\"" + why + "\"), held " + Options.retryMs() / 60000 + " min x fails");
             }
             return fail(why);
         }
@@ -406,7 +406,7 @@ public final class Need extends Node {
         if (!job.running() && picker != null) {
             long now = bb.clock.now();
             if (refreshAt < 0 || now >= refreshAt) {
-                refreshAt = now + AaDesires.RESCORE_MS;
+                refreshAt = now + AaDesires.rescoreMs();
                 picker.refresh(bb);
                 Ways.Pre c = surface ? Ways.climb(bb, mem, now) : null;
                 climbS = c == null || c.option() == null ? 0 : c.seconds();

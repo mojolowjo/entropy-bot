@@ -180,7 +180,7 @@ final class WaterSteps {
         long now = seq.now();
         if (ds.start < 0) ds.start = now;
         long el = now - ds.start;
-        if (el >= WaterPlan.DRAIN_TICKS) return "next";
+        if (el >= WaterPlan.drainTicks()) return "next";
         if (el % 20 != 0) return "wait";
         Clearing.LiveWorld w = new Clearing.LiveWorld();
         w.set(p);

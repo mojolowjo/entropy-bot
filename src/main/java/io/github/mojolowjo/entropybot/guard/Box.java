@@ -8,7 +8,8 @@ import com.google.gson.JsonObject;
  */
 public final class Box {
     /** Minecraft's absolute build limits; wider than any world's. */
-    public static final int ALL_Y_MIN = -2048, ALL_Y_MAX = 2047;
+    public static final int ALL_Y_MIN = -2048; // game fact: the build height limits the whole-world box spans (-2048 to 2047)
+    public static final int ALL_Y_MAX = 2047; // game fact: the build height limits the whole-world box spans (-2048 to 2047)
 
     public final String name;
     public final String dim;

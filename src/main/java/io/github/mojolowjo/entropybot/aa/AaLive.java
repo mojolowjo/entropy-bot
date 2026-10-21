@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -33,7 +35,8 @@ import java.util.Map;
 public final class AaLive {
     private AaLive() {}
 
-    public static final int SWITCHES = 12, DEPTH_MAX = 40;
+    public static int switchesV() { return Tuning.i("aaLive.switches"); }
+    public static int depthMax() { return Tuning.i("aaLive.depthMax"); }
 
     public static JsonObject json(AaTree tree, Blackboard bb, boolean on, int switches) {
         long now = bb.clock.now();
@@ -48,7 +51,7 @@ public final class AaLive {
         o.add("tree", node(tree.root, st, 0));
         JsonArray path = new JsonArray();
         Node n = tree.root;
-        for (int d = 0; n != null && d < DEPTH_MAX; d++) {
+        for (int d = 0; n != null && d < depthMax(); d++) {
             path.add(n.id);
             Node next = null;
             for (Node c : n.children()) if (st.get(c.id) == Status.RUNNING) { next = c; break; }
@@ -171,7 +174,7 @@ public final class AaLive {
         j.addProperty("s", s == null ? null : s.name());
         if (s == Status.FAILURE && n.reason() != null) j.addProperty("reason", n.reason());
         List<Node> kids = n.children();
-        if (!kids.isEmpty() && depth < DEPTH_MAX) {
+        if (!kids.isEmpty() && depth < depthMax()) {
             JsonArray a = new JsonArray();
             for (Node c : kids) a.add(node(c, st, depth + 1));
             j.add("kids", a);

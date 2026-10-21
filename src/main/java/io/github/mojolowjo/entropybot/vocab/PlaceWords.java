@@ -16,7 +16,8 @@ import java.util.function.Predicate;
 public final class PlaceWords {
     private PlaceWords() {}
 
-    public static final int MARKER_RANGE = 32, MAX_MARKERS = 16;
+    public static final int MARKER_RANGE = 32; // structural
+    public static final int MAX_MARKERS = 16; // structural
     public static final String NAME_RE = "^[a-z0-9_-]{1,24}$";
 
     public enum Kind { BLOCK, PLACE, ERROR }

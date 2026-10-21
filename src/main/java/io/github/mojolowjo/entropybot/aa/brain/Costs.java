@@ -86,11 +86,12 @@ public final class Costs {
     // ---- 4: sprinting vs hunger ----
 
     /** Minecraft: sprint 0.1 exhaustion per metre, 4 exhaustion = 1 food point; walk 4.317 m/s, sprint 5.612 m/s. */
-    public static final double SPRINT_POINTS_PER_M = 0.1 / 4, SAVED_S_PER_M = 1 / 4.317 - 1 / 5.612;
+    public static final double SPRINT_POINTS_PER_M = 0.1 / 4; // game fact: sprinting costs 0.1 exhaustion per block, 4 exhaustion = one food point
+    public static final double SAVED_S_PER_M = 1 / 4.317 - 1 / 5.612; // game fact: seconds saved per block by sprinting: 1/4.317 walk minus 1/5.612 sprint speed
     /** Seconds of work one food point is worth when food is fully scarce (no source, an empty bag). */
-    public static final double POINT_S = Tuning.defOf("pointS");
+    public static double pointS() { return Tuning.get("pointS"); }
     /** With a food source known, scarcity counts this much. */
-    public static final double SOURCE_FACTOR = Tuning.defOf("sourceFactor");
+    public static double sourceFactor() { return Tuning.get("sourceFactor"); }
 
     public record Sprint(boolean conserve, double savedS, double costS, double scarcity, String terms) {}
 
@@ -127,7 +128,7 @@ public final class Costs {
      * aa-night2 P0 2 (normal run: 11 zombie deaths "fighting zombie" with a pickaxe): once a zombie was seen, no weapon
      * with hit 4+ is a tools need of its own worth {@link #SWORD}, added to the pickaxe's.
      */
-    public static final double SWORD = Tuning.defOf("swordValue");
+    public static double swordV() { return Tuning.get("swordValue"); }
 
     public static boolean swordWanted(boolean zombieSeen, boolean armed) { return zombieSeen && !armed; }
 
@@ -168,14 +169,14 @@ public final class Costs {
      * through the grid); a rise counts at once.
      */
     public static final class ToolSmoother {
-        public static final long HOLD_MS = 4_000;
+        public static long holdMs() { return Tuning.l("costs.holdMs"); }
         private int shown = -1, low = -1;
         private long lowSince;
 
         public int update(int raw, long now) {
             if (shown < 0 || raw >= shown) { shown = raw; low = -1; return shown; }
             if (low != raw) { low = raw; lowSince = now; }
-            if (now - lowSince >= HOLD_MS) { shown = raw; low = -1; }
+            if (now - lowSince >= holdMs()) { shown = raw; low = -1; }
             return shown;
         }
     }
@@ -185,25 +186,27 @@ public final class Costs {
     /** Danger weights per difficulty (peaceful, easy, normal, hard). */
     static final double[] DIFF = {0, 0.6, 1.0, 1.3};
     /** The full-night shelter score at danger 1. */
-    public static final double SHELTER_AT_1 = Tuning.defOf("shelterAt1"), SHELTER_MAX = Tuning.defOf("shelterMax");
+    public static double shelterAt1() { return Tuning.get("shelterAt1"); }
+    public static double shelterMax() { return Tuning.get("shelterMax"); }
 
     /**
      * The danger of staying out at night: difficulty x armour (full iron about halves it) x missing health x light
      * (lit: mobs spawn less) x hostiles near x no bed (no way to skip the night).
      */
     /** Block light this high keeps a point lit (spawning is far rarer there). */
-    public static final int LIT_AT = 8;
+    public static int litAt() { return Tuning.i("costs.litAt"); }
 
     /** The share of sampled points with block light {@link #LIT_AT}+ (0 when none sampled). */
     public static double litShare(int[] lights) {
         if (lights == null || lights.length == 0) return 0;
         int n = 0;
-        for (int l : lights) if (l >= LIT_AT) n++;
+        for (int l : lights) if (l >= litAt()) n++;
         return n / (double) lights.length;
     }
 
     /** AA_ROUND4 B2: each torch within 16 cuts the danger by this share, down to {@link #LIGHT_FLOOR} (Tuning torchCut, lightFloor). */
-    public static final double TORCH_CUT = Tuning.defOf("torchCut"), LIGHT_FLOOR = Tuning.defOf("lightFloor");
+    public static double torchCut() { return Tuning.get("torchCut"); }
+    public static double lightFloor() { return Tuning.get("lightFloor"); }
 
     /** AA_ROUND4 B2: the light term from the torches within 16 of the place (sightings or my own placements). */
     public static double lightF(int torches) {

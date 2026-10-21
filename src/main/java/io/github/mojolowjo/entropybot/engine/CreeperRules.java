@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.guard.Box;
 
 import java.util.List;
@@ -40,25 +42,26 @@ public final class CreeperRules {
         }
     }
 
-    public static final double LOOK = 16;            // the creeper must be the only one within this
-    public static final float ENGAGE_HEALTH = 12f;    // take one on only at this health or more
-    public static final float ABORT_HEALTH = 8f;      // ... and stop the duel at this or less
-    public static final int PROTECT_MARGIN = 16;      // never a duel within this of a protect box
-    public static final double LINE_NEED = 5;         // a clear straight retreat line this long
-    public static final double HIT = 3.0;             // hit from this close (center to center)
-    public static final double WAIT_MIN = 4;          // wait for the cooldown at 4-6 blocks
-    public static final double WAIT_MAX = 6;
-    public static final double SAFE = 7;              // beyond this the fuse cools (SwellGoal: distanceToSqr > 49)
-    public static final double VALVE = 4.5;           // swelling this close with no room: run
-    public static final float READY = 0.95f;          // attack strength for a full (knockback) hit
-    public static final float SWELL_OK = 0.2f;        // charge only while the fuse is below this
-    public static final float SWELL_ABORT = 0.4f;     // a charge that meets a fuse this far along turns back
-    public static final int CHARGE_TICKS = 40;        // a charge that hasn't arrived by then waits again
-    public static final int MAX_MISSES = 4;           // charges in a row without damage, then give up
-    public static final int GIVE_UP_TICKS = 600;      // 30 s per duel
-    public static final double BOW_MIN = 8, BOW_MAX = 15;
-    public static final int BOW_DRAW = 20;            // full draw
-    public static final double ARROW_SPEED = 3.0;
+    public static double look() { return Tuning.get("creeperRules.look"); }  // the creeper must be the only one within this
+    public static float engageHealth() { return (float) Tuning.get("creeperRules.engageHealth"); }  // take one on only at this health or more
+    public static float abortHealth() { return (float) Tuning.get("creeperRules.abortHealth"); }  // ... and stop the duel at this or less
+    public static int protectMargin() { return Tuning.i("creeperRules.protectMargin"); }  // never a duel within this of a protect box
+    public static double lineNeed() { return Tuning.get("creeperRules.lineNeed"); }  // a clear straight retreat line this long
+    public static double hit() { return Tuning.get("creeperRules.hit"); }  // hit from this close (center to center)
+    public static double waitMin() { return Tuning.get("creeperRules.waitMin"); }  // wait for the cooldown at 4-6 blocks
+    public static double waitMax() { return Tuning.get("creeperRules.waitMax"); }
+    public static final double SAFE = 7; // game fact: a creeper fuse cools beyond 7 blocks (SwellGoal distanceToSqr > 49)  // beyond this the fuse cools (SwellGoal: distanceToSqr > 49)
+    public static double valve() { return Tuning.get("creeperRules.valve"); }  // swelling this close with no room: run
+    public static float ready() { return (float) Tuning.get("creeperRules.ready"); }  // attack strength for a full (knockback) hit
+    public static float swellOk() { return (float) Tuning.get("creeperRules.swellOk"); }  // charge only while the fuse is below this
+    public static float swellAbort() { return (float) Tuning.get("creeperRules.swellAbort"); }  // a charge that meets a fuse this far along turns back
+    public static int chargeTicks() { return Tuning.i("creeperRules.chargeTicks"); }  // a charge that hasn't arrived by then waits again
+    public static int maxMisses() { return Tuning.i("creeperRules.maxMisses"); }  // charges in a row without damage, then give up
+    public static int giveUpTicks() { return Tuning.i("creeperRules.giveUpTicks"); }  // 30 s per duel
+    public static double bowMin() { return Tuning.get("creeperRules.bowMin"); }
+    public static double bowMax() { return Tuning.get("creeperRules.bowMax"); }
+    public static final int BOW_DRAW = 20; // game fact: a bow is fully drawn after 20 ticks  // full draw
+    public static final double ARROW_SPEED = 3.0; // game fact: a fully drawn arrow flies 3.0 blocks per tick
 
     // ---- engage or flee ----
 
@@ -76,13 +79,13 @@ public final class CreeperRules {
         if (s.mode() == Mode.FLEE) return "creepers: flee is set";
         if (s.banned()) return "gave up on this one";
         if (s.weaponRank() <= 0) return "no sword or axe";
-        if (s.health() < ENGAGE_HEALTH) return "health " + fmt(s.health()) + " is under " + Math.round(ENGAGE_HEALTH);
-        if (s.creepers() != 1) return s.creepers() + " creepers within " + Math.round(LOOK);
+        if (s.health() < engageHealth()) return "health " + fmt(s.health()) + " is under " + Math.round(engageHealth());
+        if (s.creepers() != 1) return s.creepers() + " creepers within " + Math.round(look());
         if (s.otherMonsters()) return "another monster is near";
         if (s.powered()) return "it is charged";
-        if (s.nearProtect()) return "it is within " + PROTECT_MARGIN + " of a protect box";
+        if (s.nearProtect()) return "it is within " + protectMargin() + " of a protect box";
         if (s.nearBuilds()) return "it is next to built blocks";
-        if (s.lineClear() < LINE_NEED) return "no room to back off (" + (s.lineStop() == null ? "blocked" : s.lineStop()) + " after " + fmt(s.lineClear()) + ")";
+        if (s.lineClear() < lineNeed()) return "no room to back off (" + (s.lineStop() == null ? "blocked" : s.lineStop()) + " after " + fmt(s.lineClear()) + ")";
         if (!s.lineOpen()) return "too narrow here (a tunnel)";
         return null;
     }
@@ -118,8 +121,8 @@ public final class CreeperRules {
     /** clear: how far (blocks) the line is walkable; open: it isn't a 1-3 wide tunnel; stop: why it ended (null = long enough). */
     public record Line(double clear, boolean open, String stop) {}
 
-    static final double STEP = 0.25;
-    static final double HALF_WIDTH = 0.3;             // the player is 0.6 wide
+    static double stepV() { return Tuning.get("creeperRules.step"); }
+    static final double HALF_WIDTH = 0.3; // game fact: the player is 0.6 blocks wide  // the player is 0.6 wide
 
     /**
      * The straight line from (px, pz) in direction (ux, uz) (normalised here): three lanes (the centre and both edges of
@@ -169,11 +172,11 @@ public final class CreeperRules {
     /** {clear (Double), why it stopped (String)} for one lane. */
     private static Object[] lane(Grid g, double sx, double sz, int footY, double ux, double uz, double need) {
         int y = footY, lastX = floor(sx), lastZ = floor(sz);
-        for (double t = STEP; t <= need + 1e-9; t += STEP) {
+        for (double t = stepV(); t <= need + 1e-9; t += stepV()) {
             int bx = floor(sx + ux * t), bz = floor(sz + uz * t);
             if (bx == lastX && bz == lastZ) continue;
             int ny = stepInto(g, lastX, lastZ, bx, bz, y);
-            if (ny == Integer.MIN_VALUE) return new Object[]{t - STEP, why(g, bx, bz, y)};
+            if (ny == Integer.MIN_VALUE) return new Object[]{t - stepV(), why(g, bx, bz, y)};
             y = ny;
             lastX = bx;
             lastZ = bz;
@@ -239,7 +242,7 @@ public final class CreeperRules {
                 start = now;
                 phaseAt = now;
             }
-            if (now - start >= GIVE_UP_TICKS) return flee("gave up after " + GIVE_UP_TICKS / 20 + " s");
+            if (now - start >= giveUpTicks()) return flee("gave up after " + giveUpTicks() / 20 + " s");
             boolean swelling = o.swellDir() > 0;
             switch (phase) {
                 case WAIT, SHOOT -> {
@@ -248,29 +251,29 @@ public final class CreeperRules {
                         if (o.room() >= 1) return to(Phase.BACK, now, Act.BACK);
                         return flee("it is swelling " + fmt(o.dist()) + " away and I can't back off");
                     }
-                    if (o.cooldown() >= READY && o.swelling() < SWELL_OK && o.room() >= LINE_NEED && o.pathIn() && o.dist() <= BOW_MIN) {
+                    if (o.cooldown() >= ready() && o.swelling() < swellOk() && o.room() >= lineNeed() && o.pathIn() && o.dist() <= bowMin()) {
                         // judged only here, so the damage of the last hit has time to show (a server round trip)
-                        if (misses >= MAX_MISSES) return flee("gave up: " + MAX_MISSES + " charges without damage");
+                        if (misses >= maxMisses()) return flee("gave up: " + maxMisses() + " charges without damage");
                         charges++;
                         misses++;
                         return to(Phase.CHARGE, now, Act.CHARGE);
                     }
-                    if (o.bowReady() && o.swelling() < SWELL_OK) return to(Phase.SHOOT, now, Act.SHOOT);
-                    if (o.dist() < WAIT_MIN && o.room() >= 1) return to(Phase.BACK, now, Act.BACK);
+                    if (o.bowReady() && o.swelling() < swellOk()) return to(Phase.SHOOT, now, Act.SHOOT);
+                    if (o.dist() < waitMin() && o.room() >= 1) return to(Phase.BACK, now, Act.BACK);
                     return to(Phase.WAIT, now, Act.WAIT);
                 }
                 case CHARGE -> {
-                    if (o.dist() <= HIT && o.cooldown() >= READY) {
+                    if (o.dist() <= hit() && o.cooldown() >= ready()) {
                         hits++;
                         return to(Phase.BACK, now, Act.HIT);
                     }
-                    if (o.swelling() >= SWELL_ABORT) return to(Phase.BACK, now, Act.BACK);
+                    if (o.swelling() >= swellAbort()) return to(Phase.BACK, now, Act.BACK);
                     if (!o.pathIn()) return to(Phase.WAIT, now, Act.WAIT);
-                    if (now - phaseAt >= CHARGE_TICKS) return to(Phase.WAIT, now, Act.WAIT);
+                    if (now - phaseAt >= chargeTicks()) return to(Phase.WAIT, now, Act.WAIT);
                     return Act.CHARGE;
                 }
                 case BACK -> {
-                    if (o.dist() > SAFE || (!swelling && o.dist() >= VALVE)) return to(Phase.WAIT, now, Act.WAIT);
+                    if (o.dist() > SAFE || (!swelling && o.dist() >= valve())) return to(Phase.WAIT, now, Act.WAIT);
                     if (o.room() < 0.5 || o.stalled()) {
                         if (swelling) return flee("cornered while it swells " + fmt(o.dist()) + " away");
                         return to(Phase.WAIT, now, Act.WAIT);

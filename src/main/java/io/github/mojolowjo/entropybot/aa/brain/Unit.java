@@ -9,7 +9,8 @@ package io.github.mojolowjo.entropybot.aa.brain;
 public final class Unit {
     private Unit() {}
 
-    public static final double WALK_BPS = 4.317, SEC_PER_BLOCK = 1 / WALK_BPS;
+    public static final double WALK_BPS = 4.317; // game fact: vanilla walking speed 4.317 blocks per second (and its inverse)
+    public static final double SEC_PER_BLOCK = 1 / WALK_BPS; // game fact: vanilla walking speed 4.317 blocks per second (and its inverse)
 
     private static volatile double liveBps = 0;
 

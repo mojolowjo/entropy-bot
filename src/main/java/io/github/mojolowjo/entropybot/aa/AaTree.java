@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.aa.core.Band;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Condition;
@@ -26,7 +28,8 @@ import java.util.List;
  * {@link #mermaid()} exports the static tree for the docs; node ids are stable for the snapshot.
  */
 public final class AaTree {
-    public static final long CALM_MS = 3000, AIR_HOLD_MS = 30_000;
+    public static long calmMs() { return Tuning.l("aaTree.calmMs"); }
+    public static long airHoldMs() { return Tuning.l("aaTree.airHoldMs"); }
     /** S1: the spot was lit this night. */
     public static final String LIT_FACT = "litTonight";
     private long airSince = -1;
@@ -50,7 +53,7 @@ public final class AaTree {
     public final Node danger;
     /** BRAIN_PLAN B1: the scored desire list (the ladder's rungs and the idle options); {@code ladder} is the same node. */
     public final io.github.mojolowjo.entropybot.aa.brain.Brain brain, ladder;
-    public final Band.CalmLatch dangerLatch = new Band.CalmLatch(CALM_MS);
+    public final Band.CalmLatch dangerLatch = new Band.CalmLatch(calmMs());
     private String dangerWhy = "";
 
     private AaTree(GuardSelector root, MemoryFallback slot, Node danger, io.github.mojolowjo.entropybot.aa.brain.Brain brain) {
@@ -107,7 +110,7 @@ public final class AaTree {
                 t.pausedSum = 0;
             }
             if (t.airYield) airShort = false;      // the air reflex still moves the bot; AA's slot is no longer held for it
-            boolean airCounts = airShort && now0 - t.airSince < AIR_HOLD_MS;
+            boolean airCounts = airShort && now0 - t.airSince < airHoldMs();
             // AA_CLEANUP 4: low health alone is no reflex any more (no retreat rule): the danger desire and the hide price it;
             // drowning at low health still is (air short and health <= 8)
             boolean drown = airShort && bb.in.health <= 8;
@@ -150,7 +153,7 @@ public final class AaTree {
             Request r = bb.take("ai");
             if (r == null) return null;
             bb.pendingReason("ai: " + r.reason());
-            return new JobPort.TaskSpec(TaskKind.AI, r.chain(), "ai", r.priority(), JobPort.TaskSpec.TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return new JobPort.TaskSpec(TaskKind.AI, r.chain(), "ai", r.priority(), JobPort.TaskSpec.timeoutMsV(), JobPort.TaskSpec.noProgressMsV());
         });
         Node ai = new Seq("ai", "an AI request", new Condition("ai?", "an AI request waits", bb -> bb.peek("ai") != null), aiJob);
         // [2c] BRAIN_PLAN B1: one scored list (the ladder's rungs and the idle options as desires)
@@ -159,13 +162,13 @@ public final class AaTree {
                 // cools down like a rung (2 min doubling); planning and busy refusals do not count
                 // S1 (MINING_PLAN 12): the owner's targets; a planner-null option cools down 30 s (Cooldown.NO_RUN_MS) so the
                 // next option gets its turn (the probe's hypothesis: STOCK_WOOD failing "nothing to run" every tick)
-                java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "wood " + AaScorer.WOOD_HI))),
-                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, "cobblestone " + AaScorer.STONE_HI))),
+                java.util.Map.entry(TaskKind.STOCK_WOOD, (Node) idleCd("idle.wood.cd", goal("idle.wood", TaskKind.STOCK_WOOD, "wood " + AaScorer.woodHi()))),
+                java.util.Map.entry(TaskKind.STOCK_STONE, (Node) idleCd("idle.stone.cd", underGoal("idle.stone", TaskKind.STOCK_STONE, "cobblestone " + AaScorer.stoneHi()))),
                 java.util.Map.entry(TaskKind.STOCK_COAL, (Node) idleCd("idle.coal.cd", coalStock())),
-                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, "iron " + AaScorer.IRON_HI))),
+                java.util.Map.entry(TaskKind.STOCK_IRON, (Node) idleCd("idle.iron.cd", underGoal("idle.iron", TaskKind.STOCK_IRON, "iron " + AaScorer.ironHi()))),
                 java.util.Map.entry(TaskKind.STOCK_TORCHES, (Node) idleCd("idle.torches.cd", torchStock())),
                 java.util.Map.entry(TaskKind.DEPOSIT, (Node) idleCd("idle.deposit.cd", RunJob.of("idle.deposit", TaskKind.DEPOSIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()), "idle"))),
-                java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Light(io.github.mojolowjo.entropybot.aa.brain.Help.LIGHT_R)), "idle")))),
+                java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Light(io.github.mojolowjo.entropybot.aa.brain.Help.lightR())), "idle")))),
                 java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.steps(TaskKind.WAIT, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Wait((int) io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
                         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0))), "idle"))));
         io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaDesires.needs(), idle, scorer);
@@ -220,7 +223,7 @@ public final class AaTree {
                     int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
                     io.github.mojolowjo.entropybot.aa.brain.NightWork.noteDug(bb, w);
                     return JobPort.TaskSpec.steps(kind, io.github.mojolowjo.entropybot.aa.brain.NightWork.steps(bb.in, w, p[0], p[1], p[2], 1, 0),
-                            "night", JobPort.TaskSpec.TIMEOUT_MS, AaDesires.SHELTER_PATIENCE_MS);
+                            "night", JobPort.TaskSpec.timeoutMsV(), AaDesires.shelterPatienceMs());
                 }
             }
             if (kind == TaskKind.STOCK_IRON) {      // aa-r1fix: the ore step first, priced through the iron options
@@ -252,10 +255,10 @@ public final class AaTree {
                     int[] p = bb.in.pos == null ? new int[3] : bb.in.pos;
                     io.github.mojolowjo.entropybot.aa.brain.NightWork.noteDug(bb, w);
                     return JobPort.TaskSpec.steps(TaskKind.STOCK_COAL, io.github.mojolowjo.entropybot.aa.brain.NightWork.steps(bb.in, w, p[0], p[1], p[2], 1, 0),
-                            "night", JobPort.TaskSpec.TIMEOUT_MS, AaDesires.SHELTER_PATIENCE_MS);
+                            "night", JobPort.TaskSpec.timeoutMsV(), AaDesires.shelterPatienceMs());
                 }
             }
-            Options.Choice c = CoalOptions.plan(bb, Math.max(1, AaScorer.COAL_HI - bb.in.coal));
+            Options.Choice c = CoalOptions.plan(bb, Math.max(1, AaScorer.coalHi() - bb.in.coal));
             if (c != null) {
                 if (c.best() == null) {
                     bb.port.log("STOCK_COAL has no coal way: " + c.why());
@@ -264,16 +267,16 @@ public final class AaTree {
                 bb.port.log("STOCK_COAL coal ways: " + c.why());
                 return JobPort.TaskSpec.typed(TaskKind.STOCK_COAL, c.best().command(), c.best().steps(), "idle");
             }
-            return planTask(bb, TaskKind.STOCK_COAL, "coal " + AaScorer.COAL_HI, "idle");
+            return planTask(bb, TaskKind.STOCK_COAL, "coal " + AaScorer.coalHi(), "idle");
         });
     }
 
     /** three-tier r1: torches with no coal in the bag run the best coal way first (CoalOptions.torchesFirst), never a bare craft. */
     private static RunJob torchStock() {
         return new RunJob("idle.torches", TaskKind.STOCK_TORCHES, bb -> {
-            List<io.github.mojolowjo.entropybot.aa.moves.Step> planned = routine(bb, "torch " + AaScorer.TORCH_HI);
+            List<io.github.mojolowjo.entropybot.aa.moves.Step> planned = routine(bb, "torch " + AaScorer.torchHi());
             String[] why = new String[1];
-            List<io.github.mojolowjo.entropybot.aa.moves.Step> steps = CoalOptions.torchesFirst(bb, planned, AaScorer.TORCH_HI, why);
+            List<io.github.mojolowjo.entropybot.aa.moves.Step> steps = CoalOptions.torchesFirst(bb, planned, AaScorer.torchHi(), why);
             if (why[0] != null) bb.port.log("STOCK_TORCHES coal ways: " + why[0]);
             return steps == null ? null : JobPort.TaskSpec.steps(TaskKind.STOCK_TORCHES, steps, "idle");
         });

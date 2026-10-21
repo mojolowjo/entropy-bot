@@ -132,7 +132,7 @@ class FarmP5Test {
             List<Integer> l = FarmPlant.lattice(0, hi);
             for (int v = 0; v <= hi; v++) {
                 int vv = v;
-                assertTrue(l.stream().anyMatch(p -> Math.abs(p - vv) <= FarmPlant.WATER_R), "cell " + v + " of 0.." + hi + ": " + l);
+                assertTrue(l.stream().anyMatch(p -> Math.abs(p - vv) <= FarmPlant.waterR()), "cell " + v + " of 0.." + hi + ": " + l);
             }
         }
     }

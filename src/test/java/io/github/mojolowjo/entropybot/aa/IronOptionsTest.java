@@ -54,13 +54,13 @@ class IronOptionsTest {
         assertEquals(Way.DIG_KNOWN, c.way(), c.why());
         assertEquals("mine iron 1 at 5 40 0 dig", c.command(3));
         assertTrue(c.why().contains("past 16"), c.why());
-        assertEquals(16 * IronOptions.DIG_BLOCK + 2 * IronOptions.DIG_DEEP_BLOCK, IronOptions.digCost(18), 1e-9);
+        assertEquals(16 * IronOptions.digBlockV() + 2 * IronOptions.digDeepBlock(), IronOptions.digCost(18), 1e-9);
         // a shallower ore a little farther still wins over the deep one near
         Choice two = IronOptions.choose(facts(List.of(buried(5, 40, 0, 6, 18, false), buried(20, 55, 0, 20, 6, false)), 60), new Memory(), 0);
         assertEquals("20 55 0", two.target().key(), two.why());
-        Choice past = IronOptions.choose(facts(List.of(buried(5, 10, 0, 6, IronOptions.DIG_HARD + 1, false)), 60), new Memory(), 0);
+        Choice past = IronOptions.choose(facts(List.of(buried(5, 10, 0, 6, IronOptions.digHard() + 1, false)), 60), new Memory(), 0);
         assertNull(past.way());
-        assertTrue(past.why().contains("the dig verb reaches " + IronOptions.DIG_HARD), past.why());
+        assertTrue(past.why().contains("the dig verb reaches " + IronOptions.digHard()), past.why());
     }
 
     @Test
@@ -107,7 +107,7 @@ class IronOptionsTest {
         c = IronOptions.choose(f, m, 1);
         assertEquals(Way.STRIP, c.way(), "a failed option is blocked for a while");
         assertTrue(c.why().contains("cave: no known cave"), c.why());
-        c = IronOptions.choose(f, m, IronOptions.RETRY_MS + 1);
+        c = IronOptions.choose(f, m, IronOptions.retryMs() + 1);
         assertEquals(Way.STRIP, c.way(), "after the retry time the cave counts again, at twice the cost: 300 > 200");
         assertTrue(c.why().contains("cave 300 (a known cave 30 away, failed 1x)"), c.why());
     }
@@ -228,12 +228,12 @@ class IronOptionsTest {
         // walk, dig, pillar, cave, strip: five ways, four switches (MAX_SWITCHES), then the Need fails
         live = new Facts(List.of(open(10, 60, 0, 10, true), buried(5, 56, 0, 6, 5, false), buried(2, 70, 0, 10, 1, false)), 60, false, 12, true, 30, true, null, 10, false, false, 0);
         r.tick(bb);
-        for (long id = 1; id <= IronOptions.MAX_SWITCHES; id++) {
+        for (long id = 1; id <= IronOptions.maxSwitches(); id++) {
             port.fail(id, "stopped at step 1 (" + port.started.get((int) id - 1).steps().get(0).text() + "): no path to the ore");
             assertEquals(Status.RUNNING, r.tick(bb), "switch " + id);
         }
-        assertEquals(IronOptions.MAX_SWITCHES + 1, port.started.size());
-        port.fail(IronOptions.MAX_SWITCHES + 1, "stopped at step 1 (mine strip iron 3): no path to the ore");
+        assertEquals(IronOptions.maxSwitches() + 1, port.started.size());
+        port.fail(IronOptions.maxSwitches() + 1, "stopped at step 1 (mine strip iron 3): no path to the ore");
         assertEquals(Status.FAILURE, r.tick(bb), "nothing left, and the cap is reached");
     }
 

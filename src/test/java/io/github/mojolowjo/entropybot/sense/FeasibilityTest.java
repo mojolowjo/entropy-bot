@@ -68,15 +68,15 @@ class FeasibilityTest {
     }
 
     @Nested class Shelter {
-        @Test void atTheBoundary() { BrainState s = empty(); s.shelterBlocks = Feasibility.SHELTER_MIN; assertEquals(FEASIBLE, v("shelter 5m", s).kind()); }
+        @Test void atTheBoundary() { BrainState s = empty(); s.shelterBlocks = Feasibility.shelterMin(); assertEquals(FEASIBLE, v("shelter 5m", s).kind()); }
         @Test void oneShort() {
-            BrainState s = empty(); s.shelterBlocks = Feasibility.SHELTER_MIN - 1;
+            BrainState s = empty(); s.shelterBlocks = Feasibility.shelterMin() - 1;
             Feasibility.Verdict r = v("shelter", s);
             assertEquals(INFEASIBLE, r.kind());
             assertEquals("planks", r.item());
             assertEquals(Failures.Reason.NO_ITEM, r.cls());
         }
-        @Test void minIsNine() { assertEquals(9, Feasibility.SHELTER_MIN); }
+        @Test void minIsNine() { assertEquals(9, Feasibility.shelterMin()); }
         @Test void theBrainsPrepMakesItFeasibleOrUnknown() { assertNotEquals(INFEASIBLE, v("cut 8 logs then craft planks 32 then shelter 5m", empty()).kind()); }
         @Test void prepWithTreesIsFeasible() { BrainState s = empty(); s.feas.trees = true; assertEquals(FEASIBLE, v("cut 8 logs then craft planks 32 then shelter 5m", s).kind()); }
         @Test void statusAlways() { assertEquals(FEASIBLE, v("shelter status", empty()).kind()); }

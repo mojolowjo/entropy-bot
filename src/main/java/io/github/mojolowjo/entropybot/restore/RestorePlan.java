@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -15,7 +17,8 @@ public final class RestorePlan {
     private RestorePlan() {}
 
     /** The walk-back limit after a job (further entries wait for "restore now"); restore now's default radius. */
-    public static final int AFTER_JOB = 24, NOW_DEFAULT = 32;
+    public static int afterJob() { return Tuning.i("restorePlan.afterJob"); }
+    public static int nowDefault() { return Tuning.i("restorePlan.nowDefault"); }
 
     public record Action(Ledger.Entry entry, String item) {}
 

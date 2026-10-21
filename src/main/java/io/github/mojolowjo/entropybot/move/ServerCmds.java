@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.move;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -14,9 +16,9 @@ import java.util.Set;
 public final class ServerCmds {
     private ServerCmds() {}
 
-    public static final int MAX_WALK_DEFAULT = 2000;
+    public static int maxWalkDefault() { return Tuning.i("serverCmds.maxWalkDefault"); }
     private static volatile boolean on = false;
-    private static volatile int maxWalk = MAX_WALK_DEFAULT;
+    private static volatile int maxWalk = maxWalkDefault();
     private static final Set<String> wouldHave = new LinkedHashSet<>();
 
     public static boolean on() { return on; }

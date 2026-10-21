@@ -20,8 +20,11 @@ import java.util.Map;
  * weighing). In memory only. Pure (JUnit: FailuresTest). Loader notes: none.
  */
 public final class Failures {
-    public static final long RETRY_MS = 10 * 60_000, RETRY_MAX_MS = 60 * 60_000, CD_BASE_MS = 120_000, CD_MAX_MS = 16 * 60_000;
-    public static final double MOVED = 16;
+    public static long retryMs() { return Tuning.l("failures.retryMs"); }
+    public static long retryMaxMs() { return Tuning.l("failures.retryMaxMs"); }
+    public static long cdBaseMs() { return Tuning.l("failures.cdBaseMs"); }
+    public static long cdMaxMs() { return Tuning.l("failures.cdMaxMs"); }
+    public static double movedV() { return Tuning.get("failures.moved"); }
 
     /** The precondition class of a job's end text (moved from the deleted sense/FailMemory; the failure store there is gone). */
     public enum Reason { NO_ITEM, NONE_IN_CHESTS, NO_PATH, NO_BED, GUARD_REFUSED, NO_PLACE }
@@ -72,7 +75,7 @@ public final class Failures {
     public Rec failed(String desire, String option, String reason, long now, Inputs in) {
         Rec r = map.get(key(desire, option));
         int n = r == null ? 1 : r.fails() + 1;
-        long hold = option == null ? Math.min(CD_MAX_MS, CD_BASE_MS << Math.min(n - 1, 20)) : Math.min(RETRY_MAX_MS, RETRY_MS * n);
+        long hold = option == null ? Math.min(cdMaxMs(), cdBaseMs() << Math.min(n - 1, 20)) : Math.min(retryMaxMs(), retryMs() * n);
         Rec x = new Rec(desire, option, Cause.of(reason), in == null || in.pos == null ? null : in.pos.clone(), in == null ? -1 : items(in), n, now + hold, reason);
         map.put(key(desire, option), x);
         return x;
@@ -148,7 +151,7 @@ public final class Failures {
         for (var e : map.entrySet()) {
             Rec r = e.getValue();
             boolean gone = r.cause() == Cause.NO_ITEM && r.items() >= 0 && items(in) > r.items()
-                    || r.cause() == Cause.NO_PATH && r.pos() != null && in.pos != null && moved(r.pos(), in.pos) >= MOVED;
+                    || r.cause() == Cause.NO_PATH && r.pos() != null && in.pos != null && moved(r.pos(), in.pos) >= movedV();
             if (gone && r.until() > 0 && r.option() != null) {          // review: a desire's own hold only runs out
                 out.add(r.desire() + (r.option() == null ? "" : "/" + r.option()) + " " + r.cause());
                 e.setValue(new Rec(r.desire(), r.option(), null, r.pos(), r.items(), r.fails(), 0, r.reason()));

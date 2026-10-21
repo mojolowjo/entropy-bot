@@ -31,14 +31,16 @@ import java.util.Locale;
 public final class ToolWear {
     private ToolWear() {}
 
-    public static final double STONE_HARDNESS = 1.5, CRAFT_S = 10, INF = Double.POSITIVE_INFINITY;
+    public static final double STONE_HARDNESS = 1.5; // game fact: stone hardness 1.5
+    public static double craftSV() { return Tuning.get("toolWear.craftS"); }
+    public static final double INF = Double.POSITIVE_INFINITY; // structural
     /** Review: with nothing to make one, a new pickaxe means gathering its materials first (~2 min), capped by its worth. */
-    public static final double GATHER_S = 120;
+    public static double gatherS() { return Tuning.get("toolWear.gatherS"); }
     /** A stone pickaxe's break speed and uses (the one CRAFT makes). */
-    public static final float STONE_SPEED = 4f;
-    public static final int STONE_USES = 131;
+    public static final float STONE_SPEED = 4f; // game fact: a stone pickaxe digs at speed 4
+    public static final int STONE_USES = 131; // game fact: a stone tool has 131 uses
     /** Blocks a staircase digs per level up (the climb's 3-high headroom). */
-    public static final int STAIR_BLOCKS_PER_UP = 3;
+    public static int stairBlocksPerUp() { return Tuning.i("toolWear.stairBlocksPerUp"); }
 
     public enum Way { USE, CRAFT, HAND }
 
@@ -87,7 +89,7 @@ public final class ToolWear {
         int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
         boolean mats = in.cobble >= 3 && (sticks >= 2 || in.planks >= 2);
         boolean table = in.tableInBag || in.tableKnown;
-        return new Kit(in.pickaxes > 0 ? in.pickSpeed : 0, in.pickaxes > 0 ? in.pickLeft : 0, mats && table ? CRAFT_S : INF,
+        return new Kit(in.pickaxes > 0 ? in.pickSpeed : 0, in.pickaxes > 0 ? in.pickLeft : 0, mats && table ? craftSV() : INF,
                 in.pickaxes > 0 ? in.digStoneS : Double.NaN, in.handStoneS);
     }
 
@@ -100,7 +102,7 @@ public final class ToolWear {
             double tool = k.toolSeconds();
             int uses = Math.min(n, k.left());
             double worth = k.left() * Math.max(0, hand - tool);          // the hand time its uses left save
-            double replace = Math.min(k.craftS() < INF ? k.craftS() : GATHER_S, worth);
+            double replace = Math.min(k.craftS() < INF ? k.craftS() : gatherS(), worth);
             double wear = k.left() <= 0 ? 0 : uses / (double) k.left() * replace;
             double s = uses * tool + (n - uses) * hand + wear;
             out.add(new Priced(Way.USE, s, uses + " x " + r2(tool) + "s" + (n > uses ? " + " + (n - uses) + " by hand x " + r2(hand) + "s" : "")
