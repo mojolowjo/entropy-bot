@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.baritone;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.pathing.movement.CalculationContext;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy;
@@ -132,9 +134,9 @@ public final class CostAdvisorHook {
             if (lv != null) dim = Guard.dimOf(lv);
             var p = Minecraft.getInstance().player;
             if (p != null) at = new int[]{p.getBlockX(), p.getBlockY(), p.getBlockZ()};
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("CostAdvisorHook.begin failed, carrying on with the fallback", caught); }
         io.github.mojolowjo.entropybot.guard.Policy areas = null;
-        try { areas = Guard.INSTANCE.core.policy(); } catch (Throwable ignored) {}
+        try { areas = Guard.INSTANCE.core.policy(); } catch (Throwable caught) { Quiet.warn("CostAdvisorHook.begin failed, carrying on with the fallback", caught); }
         return new Token(pr.snapshot(), pr.intentNow(), dim, pr.where(), areas, at);
     }
 
@@ -213,7 +215,7 @@ public final class CostAdvisorHook {
                 boolean deep = water(at, x + d[0], y + d[1] - 1, z + d[2]);
                 return io.github.mojolowjo.entropybot.guard.DrownRisk.wetBreakMult(true, deep);
             }
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("CostAdvisorHook.wetMult failed, carrying on with the fallback", caught); }
         return 1;
     }
 

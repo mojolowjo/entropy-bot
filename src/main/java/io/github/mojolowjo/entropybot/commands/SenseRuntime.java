@@ -1,5 +1,9 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
+
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
@@ -82,7 +86,8 @@ public final class SenseRuntime {
                 picks++;
                 int left = st.isDamageableItem() ? st.getMaxDamage() - st.getDamageValue() : 1000;
                 dur += left;
-                try { bestSpeed = Math.max(bestSpeed, st.getDestroySpeed(net.minecraft.world.level.block.Blocks.STONE.defaultBlockState())); } catch (RuntimeException e) { bestSpeed = Math.max(bestSpeed, 4f); }
+                try { bestSpeed = Math.max(bestSpeed, st.getDestroySpeed(net.minecraft.world.level.block.Blocks.STONE.defaultBlockState())); } catch (RuntimeException e) {
+            Quiet.warn("SenseRuntime.sense failed, carrying on with the fallback", e); bestSpeed = Math.max(bestSpeed, 4f); }
                 bestPct = Math.max(bestPct, st.isDamageableItem() ? 100 * left / Math.max(1, st.getMaxDamage()) : 100);
             }
         }
@@ -109,7 +114,7 @@ public final class SenseRuntime {
                 stage = GameStage.of(totals);
                 foodStock = edible(totals);          // 0.25.1: bag + storage (the stock view)
                 // 0.26.2 fix: storage only (the totals count the bag too)
-                int h = io.github.mojolowjo.entropybot.sense.FailMemory.storageHash(totals, io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
+                int h = storageHash(totals, io.github.mojolowjo.entropybot.gui.Gui.inventory(p));
                 if (h != stockHash) { stockHash = h; storageSeq++; }
             } catch (RuntimeException e) { LOG.warn("[entropybot] sense stage: {}", e.toString()); }
         }
@@ -249,7 +254,8 @@ public final class SenseRuntime {
                 if (rl == null) continue;
                 var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl);
                 if (item != null && item.getDefaultInstance().has(DataComponents.FOOD)) n += Math.max(0, e.getValue());
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("SenseRuntime.edible failed, carrying on with the fallback", caught);
                 // an odd id: not food
             }
         }
@@ -258,7 +264,19 @@ public final class SenseRuntime {
 
     static int[] xyz(JsonObject o) {
         try { return new int[]{(int) Math.floor(o.get("x").getAsDouble()), (int) Math.floor(o.get("y").getAsDouble()), (int) Math.floor(o.get("z").getAsDouble())}; }
-        catch (RuntimeException e) { return null; }
+        catch (RuntimeException e) {
+            Quiet.warn("SenseRuntime.xyz failed, carrying on with the fallback", e); return null; }
     }
-}
 
+    /** The hash of what storage holds (the stock totals less the bag), so a change counts on a scan or deposit, never on the bag alone. */
+    static int storageHash(java.util.Map<String, Integer> totals, java.util.Map<String, Integer> bag) {
+        java.util.Map<String, Integer> b = new java.util.HashMap<>();
+        if (bag != null) bag.forEach((k, v) -> b.merge(k.substring(k.indexOf(':') + 1), v == null ? 0 : v, Integer::sum));
+        java.util.TreeMap<String, Integer> out = new java.util.TreeMap<>();
+        if (totals != null) totals.forEach((k, v) -> {
+            String s = k.substring(k.indexOf(':') + 1);
+            int n = (v == null ? 0 : v) - b.getOrDefault(s, 0);
+            if (n > 0) out.merge(s, n, Integer::sum);
+        });
+        return out.hashCode();
+    }}

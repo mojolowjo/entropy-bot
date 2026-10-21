@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.baritone;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
@@ -79,7 +81,7 @@ public final class BaritoneHook {
                             case SUMMARY -> ring.push("path", pathFilter.summary(), null);
                             default -> { }
                         }
-                    } catch (RuntimeException ignored) {}
+                    } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onPathEvent failed, carrying on with the fallback", caught); }
                 }
 
                 /** 0.29.0: the builder dig hears changed blocks. */
@@ -90,13 +92,13 @@ public final class BaritoneHook {
                             net.minecraft.core.BlockPos bp = pr.first();
                             io.github.mojolowjo.entropybot.commands.BuilderDig.blockChanged(bp.getX(), bp.getY(), bp.getZ(), pr.second() != null && pr.second().isAir());     // 0.29.0
                         }
-                    } catch (RuntimeException ignored) {}
+                    } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onBlockChange failed, carrying on with the fallback", caught); }
                 }
             });
             Settings s = BaritoneAPI.getSettings();
             Consumer<Component> previous = s.logger.value;
             s.logger.value = previous.andThen(msg -> {
-                try { ring.push("log", msg.getString(), null); } catch (RuntimeException ignored) {}
+                try { ring.push("log", msg.getString(), null); } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onBlockChange failed, carrying on with the fallback", caught); }
             });
             hooked = true;
             lastError = null;

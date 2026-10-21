@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
@@ -81,6 +83,7 @@ public final class PaperPlan {
             var j = Core.INSTANCE.commands.jobs.job;
             return j != null && !j.done && j == o;
         } catch (Throwable t) {
+            Quiet.warn("PaperPlan.owned failed, carrying on with the fallback", t);
             return false;
         }
     }
@@ -110,7 +113,7 @@ public final class PaperPlan {
         goJob = -1;
         last = null;
         if (was) {
-            try { io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore(); } catch (Throwable ignored) {}
+            try { io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.restore(); } catch (Throwable caught) { Quiet.warn("PaperPlan.reset failed, carrying on with the fallback", caught); }
             LOG.info("[entropybot] plan go: {}: breaking/placing off, plan dropped", why);
         }
     }

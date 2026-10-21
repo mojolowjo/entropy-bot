@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.commands.SelfCheck;
@@ -183,7 +185,7 @@ public final class ChunkPass {
         } catch (Throwable t) {
             dropError++;
             error("block change", t);
-            try { schedule.missed(x >> 4, z >> 4, System.currentTimeMillis()); } catch (Throwable ignored) {}
+            try { schedule.missed(x >> 4, z >> 4, System.currentTimeMillis()); } catch (Throwable caught) { Quiet.warn("ChunkPass.blockChanged failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -602,6 +604,7 @@ public final class ChunkPass {
             try {
                 s = index.get(p[0], Integer.parseInt(p[1]), Integer.parseInt(p[2]));
             } catch (RuntimeException e) {
+            Quiet.warn("ChunkPass.writeDue failed, carrying on with the fallback", e);
                 continue;
             }
             if (s == null) continue;                  // left memory: its file has the last written state

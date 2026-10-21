@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -100,6 +102,7 @@ public final class ReconnectRules {
             int s = o.get(TIMEOUT_KEY).getAsInt();
             return timeoutRefusal(s) == null ? s : TIMEOUT_DEFAULT_S;
         } catch (RuntimeException e) {
+            Quiet.warn("ReconnectRules.timeoutOf failed, carrying on with the fallback", e);
             return TIMEOUT_DEFAULT_S;
         }
     }
@@ -111,6 +114,7 @@ public final class ReconnectRules {
             com.google.gson.JsonElement e = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(commandsJson));
             return e.isJsonObject() ? timeoutOf(e.getAsJsonObject()) : TIMEOUT_DEFAULT_S;
         } catch (Exception ex) {
+            Quiet.warn("ReconnectRules.savedTimeout failed, carrying on with the fallback", ex);
             return TIMEOUT_DEFAULT_S;
         }
     }
@@ -135,6 +139,7 @@ public final class ReconnectRules {
             com.google.gson.JsonElement r = e.getAsJsonObject().get("reconnect");
             return r == null || !r.isJsonPrimitive() || r.getAsBoolean();
         } catch (Exception ex) {
+            Quiet.warn("ReconnectRules.savedFlag failed, carrying on with the fallback", ex);
             return true;
         }
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -220,7 +222,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         try {
             if (b.has("selfCheck") && b.get("selfCheck").isJsonObject() && b.getAsJsonObject("selfCheck").has("lastWhisper"))
                 return b.getAsJsonObject("selfCheck").get("lastWhisper").getAsLong();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("SelfCheckLive.lastWhisper failed, carrying on with the fallback", caught); }
         return -1;
     }
 
@@ -291,7 +293,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             try {
                 int[] pos = {Integer.parseInt(q[0]), Integer.parseInt(q[1]), Integer.parseInt(q[2])};
                 if (Jobs.distSq(pos, center) <= 32 * 32) n++;
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException caught) { Quiet.warn("SelfCheckLive.chestsNear failed, carrying on with the fallback", caught); }
         }
         return n;
     }
@@ -312,6 +314,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             OwnerFix.Fix fix = OwnerFix.parse(Files.readString(f));
             return fix == null ? -1 : Math.max(0, System.currentTimeMillis() - fix.received());
         } catch (Exception e) {
+            Quiet.warn("SelfCheckLive.companionAge failed, carrying on with the fallback", e);
             return -1;
         }
     }

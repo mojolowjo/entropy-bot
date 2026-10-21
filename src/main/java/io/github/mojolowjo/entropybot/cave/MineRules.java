@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.clear.Tools;
 import io.github.mojolowjo.entropybot.guard.Box;
 
@@ -47,7 +49,7 @@ public final class MineRules {
                 out.add(Box.fromJson(e.getAsJsonObject(), defaultDim));
             } catch (RuntimeException ex) {
                 String name = "";
-                try { if (e.isJsonObject() && e.getAsJsonObject().has("name")) name = " \"" + e.getAsJsonObject().get("name").getAsString() + "\""; } catch (RuntimeException ignored) {}
+                try { if (e.isJsonObject() && e.getAsJsonObject().has("name")) name = " \"" + e.getAsJsonObject().get("name").getAsString() + "\""; } catch (RuntimeException caught) { Quiet.warn("MineRules.policyBoxes failed, carrying on with the fallback", caught); }
                 throw new BadPolicy("box " + i + name + " in the guard policy's " + key + " list is malformed (" + ex.getMessage() + ")");
             }
         }

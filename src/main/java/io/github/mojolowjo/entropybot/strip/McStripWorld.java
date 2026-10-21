@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.strip;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.clear.McClearWorld;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
@@ -28,6 +30,7 @@ public final class McStripWorld implements StripWorld {
             List<Block> l = baritone.api.BaritoneAPI.getSettings().blocksToAvoidBreaking.value;
             return l == null || l.isEmpty() ? null : l::contains;
         } catch (Throwable t) {
+            Quiet.warn("McStripWorld.avoidList failed, carrying on with the fallback", t);
             return null;
         }
     }

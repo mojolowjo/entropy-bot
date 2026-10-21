@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.util.LinkedHashMap;
@@ -68,7 +70,8 @@ public final class MobDamage {
             try {
                 JsonObject x = e.getValue().getAsJsonObject();
                 m.put(key(e.getKey()), new double[]{x.get("avg").getAsDouble(), x.get("n").getAsDouble()});
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("MobDamage.load failed, carrying on with the fallback", caught);
                 // a broken entry is skipped
             }
         }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -359,7 +361,7 @@ public final class BuilderDig {
         if (b != null) {
             try {
                 if (b.getBuilderProcess().isActive()) b.getBuilderProcess().onLostControl();
-            } catch (Throwable ignored) {}
+            } catch (Throwable caught) { Quiet.warn("BuilderDig.stopBuilder failed, carrying on with the fallback", caught); }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.cancel(b);
         }
         restoreSettings(s);
@@ -373,7 +375,7 @@ public final class BuilderDig {
             for (int y = b.y1() - OUTSIDE_NEAR; y <= b.y2() + OUTSIDE_NEAR; y++)
                 for (int z = b.z1() - OUTSIDE_NEAR; z <= b.z2() + OUTSIDE_NEAR; z++) {
                     if (b.contains(x, y, z) || out.size() >= OUTSIDE_CAP) continue;
-                    try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException ignored) {}
+                    try { if (!w.air(x, y, z) && !w.fluid(x, y, z)) out.add(BaritoneMask.packed(x, y, z)); } catch (RuntimeException caught) { Quiet.warn("BuilderDig.solidAround failed, carrying on with the fallback", caught); }
                 }
         return out;
     }
@@ -382,7 +384,7 @@ public final class BuilderDig {
         int n = 0;
         for (long k : cells) {
             int x = (int) (k >> 38), z = (int) ((k << 26) >> 38), y = (int) ((k << 52) >> 52);
-            try { if (w.air(x, y, z)) n++; } catch (RuntimeException ignored) {}
+            try { if (w.air(x, y, z)) n++; } catch (RuntimeException caught) { Quiet.warn("BuilderDig.goneOf failed, carrying on with the fallback", caught); }
         }
         return n;
     }
@@ -393,7 +395,7 @@ public final class BuilderDig {
             int x = (int) (k >> 38), z = (int) ((k << 26) >> 38), y = (int) ((k << 52) >> 52);
             try {
                 if (s.world.air(x, y, z) || s.world.fluid(x, y, z)) n++;
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("BuilderDig.broke failed, carrying on with the fallback", caught); }
         }
         return n;
     }
@@ -511,7 +513,7 @@ public final class BuilderDig {
                     seen.put(n, bad);
                 }
                 if (bad) return n;
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("BuilderDig.toolMissing failed, carrying on with the fallback", caught); }
         }
         return null;
     }
@@ -590,6 +592,7 @@ public final class BuilderDig {
             var e = Minecraft.getInstance().level.getEntity(Integer.parseInt(id));
             return e instanceof net.minecraft.world.entity.item.ItemEntity ie && ie.isAlive() && !ie.isRemoved() ? ie : null;
         } catch (RuntimeException ex) {
+            Quiet.warn("BuilderDig.dropEntity failed, carrying on with the fallback", ex);
             return null;
         }
     }
@@ -686,7 +689,7 @@ public final class BuilderDig {
                         Object r = rf.get(t);
                         if (r instanceof baritone.api.utils.Rotation rot) target = String.format("%.1f/%.1f", rot.getYaw(), rot.getPitch());
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable caught) { Quiet.warn("BuilderDig.probe failed, carrying on with the fallback", caught); }
             }
             String btr = "?";
             boolean bveto = false;
@@ -711,7 +714,7 @@ public final class BuilderDig {
                 java.lang.reflect.Field pf = net.minecraft.client.multiplayer.MultiPlayerGameMode.class.getDeclaredField("destroyProgress");
                 pf.setAccessible(true);
                 prog = String.format("%.2f", pf.getFloat(mc.gameMode));
-            } catch (Throwable ignored) {}
+            } catch (Throwable caught) { Quiet.warn("BuilderDig.probe failed, carrying on with the fallback", caught); }
             btr += " progress " + prog + " held " + p.getMainHandItem().getItem();
             Settings st = BaritoneAPI.getSettings();
             String line = String.format("yaw %.1f pitch %.1f feet %d %d %d ground %s target %s mcHit %s veto %s bHit %s bveto %s forcedLeft %s keyAttack %s destroying %s screen %s freeLook %s blockFreeLook %s anti %s",
@@ -809,7 +812,7 @@ public final class BuilderDig {
         lastEnd = msg.length() > 160 ? msg.substring(0, 157) + "..." : msg;
         if (gave != null && BuilderReport.gaveUp(gave)) {
             LOG.info("[entropybot] dig via baritone: gave up ({}) in {}: {}", gave, s.job.box, msg);
-            try { Core.INSTANCE.events.push("job", "dig via baritone gave up: " + lastEnd, null); } catch (Throwable ignored) {}
+            try { Core.INSTANCE.events.push("job", "dig via baritone gave up: " + lastEnd, null); } catch (Throwable caught) { Quiet.warn("BuilderDig.end failed, carrying on with the fallback", caught); }
         }
         if (WaterSteps.wants(st, msg)) {
             st.cleared = new Clearing.Outcome(false, broke, leftN, new LinkedHashMap<>(), new ArrayList<>(), msg);
@@ -873,6 +876,6 @@ public final class BuilderDig {
         if (!s.startCells.contains(BaritoneMask.packed(x, y, z))) return;
         s.events.incrementAndGet();
         s.dirty = true;
-        try { s.lastChange = Core.INSTANCE.tick(); } catch (Throwable ignored) {}
+        try { s.lastChange = Core.INSTANCE.tick(); } catch (Throwable caught) { Quiet.warn("BuilderDig.blockChanged failed, carrying on with the fallback", caught); }
     }
 }

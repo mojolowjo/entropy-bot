@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.mixin;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.pathing.movement.MovementHelper;
 import io.github.mojolowjo.entropybot.baritone.ModdedSolids;
 import baritone.pathing.precompute.Ternary;
@@ -37,7 +39,7 @@ public abstract class FarmlandMixinPrecomputedData {
     private Ternary entropybot$canWalkOn(BlockState state) {
         try {
             if (state.getBlock() instanceof FarmBlock) return Ternary.YES;
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("FarmlandMixinPrecomputedData.? failed, carrying on with the fallback", caught); }
         return MovementHelper.canWalkOnBlockState(state);
     }
 
@@ -69,6 +71,7 @@ public abstract class FarmlandMixinPrecomputedData {
             return ModdedSolids.solid(BuiltInRegistries.BLOCK.getKey(b).getNamespace(), opens, empty,
                     empty ? 0 : s.max(Direction.Axis.Y));
         } catch (Throwable e) {
+            Quiet.warn("FarmlandMixinPrecomputedData.? failed, carrying on with the fallback", e);
             return false;                       // a shape that needs a real world: leave Baritone's answer
         }
     }

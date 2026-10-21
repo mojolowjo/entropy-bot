@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.farm;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalBlock;
@@ -66,6 +68,7 @@ public final class McFarmWorld implements FarmWorld {
             if (item == null || item == net.minecraft.world.item.Items.AIR) return null;
             return BuiltInRegistries.ITEM.getKey(item).toString();
         } catch (RuntimeException e) {
+            Quiet.warn("McFarmWorld.McFarmWorld failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -152,7 +155,8 @@ public final class McFarmWorld implements FarmWorld {
     // ---- effects ----
 
     private static IBaritone baritone() {
-        try { return BaritoneAPI.getProvider().getPrimaryBaritone(); } catch (Throwable t) { return null; }
+        try { return BaritoneAPI.getProvider().getPrimaryBaritone(); } catch (Throwable t) {
+            Quiet.warn("McFarmWorld.baritone failed, carrying on with the fallback", t); return null; }
     }
 
     /** Applies one of the round's effects other than Craft and Deposit (those are steps for the engine to splice). */

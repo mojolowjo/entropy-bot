@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.vocab;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -58,6 +60,7 @@ public final class AreaCandidates {
     }
 
     private static int i(JsonObject o, String k) {
-        try { return o.get(k).getAsInt(); } catch (RuntimeException e) { return 0; }
+        try { return o.get(k).getAsInt(); } catch (RuntimeException e) {
+            Quiet.warn("AreaCandidates.i failed, carrying on with the fallback", e); return 0; }
     }
 }

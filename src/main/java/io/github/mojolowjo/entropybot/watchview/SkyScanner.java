@@ -245,8 +245,8 @@ public final class SkyScanner {
                 int light = 15;
                 try {
                     light = level.getRawBrightness(m3.set(fx + o[0], fy + o[1], fz + o[2]), 0);
-                } catch (RuntimeException ignored) {
-                }
+                } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
                 addFace(SkyStore.faceKey(fx, fy, fz, side), light);
             });
             columnsScanned++;

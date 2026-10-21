@@ -135,8 +135,8 @@ public final class SeenSampler {
             store.clear();
             try {
                 Files.move(file, root.resolve("seenfaces.broken.bin"), StandardCopyOption.REPLACE_EXISTING);
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
             fileNote = FILE + ": broken (" + e.getMessage() + "), set aside as seenfaces.broken.bin, starting empty";
         }
     }

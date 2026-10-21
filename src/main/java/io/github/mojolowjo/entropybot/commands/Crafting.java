@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
@@ -282,6 +284,7 @@ final class Crafting {
             if (mc.level == null || !mc.level.isLoaded(bp) || !mc.level.getBlockState(bp).getBlock().getDescriptionId().contains("crafting_table")) return null;
             return t;
         } catch (RuntimeException e) {
+            Quiet.warn("Crafting.mineTable failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -583,6 +586,7 @@ final class Crafting {
             Prepared r = prepareCraft(p, t, null);
             return r.err() == null && needsTable(r.steps());
         } catch (RuntimeException e) {
+            Quiet.warn("Crafting.craftWantsTable failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -1676,6 +1680,7 @@ final class Crafting {
                 int n = stackOf(id).getMaxStackSize();
                 return n > 0 ? n : 64;
             } catch (RuntimeException e) {
+            Quiet.warn("Crafting.maxStack failed, carrying on with the fallback", e);
                 return 64;
             }
         }
@@ -1685,6 +1690,7 @@ final class Crafting {
             try {
                 return stackOf(id).hasCraftingRemainingItem();
             } catch (RuntimeException e) {
+            Quiet.warn("Crafting.remainder failed, carrying on with the fallback", e);
                 return false;
             }
         }
@@ -1698,6 +1704,7 @@ final class Crafting {
                 ItemStack rem = st.getCraftingRemainingItem();
                 return rem != null && !rem.isEmpty() && rem.getItem() == st.getItem();
             } catch (RuntimeException e) {
+            Quiet.warn("Crafting.catalyst failed, carrying on with the fallback", e);
                 return false;
             }
         }

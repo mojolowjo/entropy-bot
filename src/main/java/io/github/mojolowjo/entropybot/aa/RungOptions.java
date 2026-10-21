@@ -1,6 +1,6 @@
 package io.github.mojolowjo.entropybot.aa;
 
-import io.github.mojolowjo.entropybot.sense.FailMemory;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -81,7 +81,7 @@ public final class RungOptions {
 
         @Override public boolean switchable(String end) {
             if (end == null || Options.ownerOrDanger(end)) return false;
-            return FailMemory.classify(end) != null || SURFACE_END.matcher(end.toLowerCase(Locale.ROOT)).find();
+            return Failures.classify(end) != null || SURFACE_END.matcher(end.toLowerCase(Locale.ROOT)).find();
         }
     }
 
@@ -131,7 +131,7 @@ public final class RungOptions {
 
         @Override public boolean switchable(String end) {
             if (end == null || Options.ownerOrDanger(end)) return false;
-            return FailMemory.classify(end) != null || TOOLS_END.matcher(end.toLowerCase(Locale.ROOT)).find();
+            return Failures.classify(end) != null || TOOLS_END.matcher(end.toLowerCase(Locale.ROOT)).find();
         }
     }
 

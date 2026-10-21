@@ -231,9 +231,9 @@ public final class Core {
                 LOG.info("[entropybot] mine notes: {}", mineNotes.load(files, new BotFiles(mc.gameDirectory.toPath().resolve("kubejs/bridge"))));
                 // S1: and when the game quits from inside a world (no tick runs after that)
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    try { mineNotes.flush(); } catch (Throwable ignored) {}
-                    try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable ignored) {}
-                    try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable ignored) {}
+                    try { mineNotes.flush(); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
+                    try { io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.save(true); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
+                    try { io.github.mojolowjo.entropybot.watchview.SeenSampler.INSTANCE.save(true); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
                 }, "entropybot-mine-notes"));
                 io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.load(files.worldRoot());
                 LOG.info("[entropybot] watch tunnel: {}", io.github.mojolowjo.entropybot.watchview.TunnelView.INSTANCE.fileNote());
@@ -287,7 +287,7 @@ public final class Core {
             }
             io.github.mojolowjo.entropybot.baritone.SafetyNet.INSTANCE.tick(tick);
             io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.tick(mc, guard.core);     // mining plan: the rule snapshot (never throws)
-            try { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setCurrentJob(commands.jobs.running() ? commands.jobs.job.id : -1); } catch (Throwable ignored) {}
+            try { io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setCurrentJob(commands.jobs.running() ? commands.jobs.job.id : -1); } catch (Throwable caught) { Quiet.warn("Core.onClientTick failed, carrying on with the fallback", caught); }
             if (tick % 100 == 50) io.github.mojolowjo.entropybot.commands.Clearing.fallWatch(commands.jobs.running());     // 0.31.1 review 1
             io.github.mojolowjo.entropybot.engine.WindowCare.INSTANCE.tick(tick, commands.jobs.running(), reflexes.hold());
             io.github.mojolowjo.entropybot.engine.WatchCamera.INSTANCE.tick();
@@ -336,7 +336,7 @@ public final class Core {
         if (terrain != null) a.add("terrain");
         if (baritone.engineRegistered() && !engine.disabled()) a.add("engine");
         if (baritone.hooked()) a.add("settings:fixed");
-        try { if (baritone.hooked() && io.github.mojolowjo.entropybot.commands.BuilderDig.checkLine().equals("builder: ok")) a.add("builder"); } catch (Throwable ignored) {}
+        try { if (baritone.hooked() && io.github.mojolowjo.entropybot.commands.BuilderDig.checkLine().equals("builder: ok")) a.add("builder"); } catch (Throwable caught) { Quiet.warn("Core.features failed, carrying on with the fallback", caught); }
         return a;
     }
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -173,6 +175,7 @@ public final class OreStats {
             if (e == null || !e.isJsonObject()) { skipped[0]++; return o; }
             root = e.getAsJsonObject();
         } catch (RuntimeException ex) {
+            Quiet.warn("OreStats.fromJson failed, carrying on with the fallback", ex);
             skipped[0]++;
             return o;
         }
@@ -183,20 +186,24 @@ public final class OreStats {
                         try {
                             int yy = Integer.parseInt(y.getKey()), c = y.getValue().getAsInt();
                             if (c > 0) o.hist.computeIfAbsent(d.getKey(), k -> new TreeMap<>()).computeIfAbsent(f.getKey(), k -> new TreeMap<>()).merge(yy, c, Integer::sum);
-                        } catch (RuntimeException ex) { skipped[0]++; }
+                        } catch (RuntimeException ex) {
+            Quiet.warn("OreStats.fromJson failed, carrying on with the fallback", ex); skipped[0]++; }
                     }
             if (root.has("chunks")) for (Map.Entry<String, JsonElement> d : root.getAsJsonObject("chunks").entrySet()) {
                 Set<Long> set = o.counted.computeIfAbsent(d.getKey(), k -> new HashSet<>());
                 for (JsonElement k : d.getValue().getAsJsonArray()) {
-                    try { if (set.add(k.getAsLong())) o.chunks++; } catch (RuntimeException ex) { skipped[0]++; }
+                    try { if (set.add(k.getAsLong())) o.chunks++; } catch (RuntimeException ex) {
+            Quiet.warn("OreStats.fromJson failed, carrying on with the fallback", ex); skipped[0]++; }
                 }
             }
         } catch (RuntimeException ex) {
+            Quiet.warn("OreStats.fromJson failed, carrying on with the fallback", ex);
             skipped[0]++;
         }
         try {
             if (root.has("seen")) o.legacySeen = Seen.fromJson(root.get("seen"), skipped);
         } catch (RuntimeException ex) {
+            Quiet.warn("OreStats.fromJson failed, carrying on with the fallback", ex);
             skipped[0]++;
         }
         o.dirty = false;

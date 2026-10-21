@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.ai;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.ai.provider.Provider;
 import io.github.mojolowjo.entropybot.commands.VerbTable;
 
@@ -42,6 +44,7 @@ public final class PromptBuilder {
         try (InputStream in = PromptBuilder.class.getResourceAsStream("/ai/system.txt")) {
             return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
+            Quiet.warn("PromptBuilder.bundledRules failed, carrying on with the fallback", e);
             return null;
         }
     }

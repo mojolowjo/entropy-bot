@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -279,6 +281,7 @@ public final class Clearing {
             List<Block> l = BaritoneAPI.getSettings().blocksToAvoidBreaking.value;
             return l == null || l.isEmpty() ? null : l::contains;
         } catch (Throwable t) {
+            Quiet.warn("Clearing.avoidPredicate failed, carrying on with the fallback", t);
             return null;
         }
     }
@@ -314,7 +317,7 @@ public final class Clearing {
                 if (g.state instanceof ClearState gs && !gs.done) {
                     gs.done = true;
                     if (gs.run != null && p != null) {
-                        try { gs.run.stop(new McBody(seq, gs, p)); } catch (RuntimeException ignored) {}
+                        try { gs.run.stop(new McBody(seq, gs, p)); } catch (RuntimeException caught) { Quiet.warn("Clearing.caught failed, carrying on with the fallback", caught); }
                     }
                     gs.leases.releaseAll();
                 }
@@ -347,7 +350,7 @@ public final class Clearing {
             if (st.state instanceof ClearState s && !s.done) {
                 s.done = true;
                 if (s.run != null && p != null) {
-                    try { s.run.stop(new McBody(seq, s, p)); } catch (RuntimeException ignored) {}
+                    try { s.run.stop(new McBody(seq, s, p)); } catch (RuntimeException caught) { Quiet.warn("Clearing.ended failed, carrying on with the fallback", caught); }
                 }
                 if (s.job != null) addTally(s.job.oreTally);
                 s.leases.releaseAll();
@@ -1013,6 +1016,7 @@ public final class Clearing {
             if (rl == null) return true;
             return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl) instanceof net.minecraft.world.item.BlockItem;
         } catch (RuntimeException e) {
+            Quiet.warn("Clearing.isBlockItem failed, carrying on with the fallback", e);
             return true;
         }
     }
@@ -1318,7 +1322,7 @@ public final class Clearing {
         IBaritone b = Jobs.baritone();
         if (b != null) {
             Jobs.cancel(b);
-            try { b.getCommandManager().execute("sel clear"); } catch (Throwable ignored) {}
+            try { b.getCommandManager().execute("sel clear"); } catch (Throwable caught) { Quiet.warn("Clearing.stopBuilderPart failed, carrying on with the fallback", caught); }
         }
         Jobs.safeSettings();
         restoreLook(bs);
@@ -1554,7 +1558,7 @@ public final class Clearing {
 
     private static String rimEnd(Seq seq, BuildState bs, String text) {
         if (bs.clearing) {                                   // review a: never leave a half-broken cover clicked
-            try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("Clearing.rimEnd failed, carrying on with the fallback", caught); }
             bs.clearing = false;
         }
         endBuild(bs);
@@ -1571,7 +1575,7 @@ public final class Clearing {
         IBaritone b = Jobs.baritone();
         if (b != null) {
             Jobs.cancel(b);
-            try { b.getCommandManager().execute("sel clear"); } catch (Throwable ignored) {}
+            try { b.getCommandManager().execute("sel clear"); } catch (Throwable caught) { Quiet.warn("Clearing.endBuild failed, carrying on with the fallback", caught); }
         }
         Jobs.safeSettings();
         // B7d review: the build's own settings back too (the bridge's restoreSafeSettings reset all four)
@@ -1579,7 +1583,7 @@ public final class Clearing {
             baritone.api.Settings s = BaritoneAPI.getSettings();
             s.allowInventory.value = false;
             s.buildIgnoreExisting.value = false;
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("Clearing.endBuild failed, carrying on with the fallback", caught); }
         bs.leases.releaseAll();
     }
 
@@ -1657,7 +1661,7 @@ public final class Clearing {
             try {
                 pc.setHittingBlock(true);
                 pc.resetBlockRemoving();
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Clearing.pc failed, carrying on with the fallback", caught); }
         }
 
         @Override public boolean haveTorches() { return Gui.inventory(p).getOrDefault("minecraft:torch", 0) > 0; }
@@ -1718,6 +1722,7 @@ public final class Clearing {
                 Entity e = mc.level.getEntity(Integer.parseInt(d.id()));
                 return e instanceof ItemEntity ie ? ie : null;
             } catch (RuntimeException ex) {
+            Quiet.warn("Clearing.drop failed, carrying on with the fallback", ex);
                 return null;
             }
         }

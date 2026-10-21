@@ -50,8 +50,8 @@ final class TunnelScene {
             RenderSystem.disableBlend();
             RenderSystem.defaultBlendFunc();
             RenderSystem.lineWidth(1f);
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
     }
 
     /**

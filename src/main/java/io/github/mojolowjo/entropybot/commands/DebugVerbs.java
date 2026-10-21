@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
@@ -153,7 +155,7 @@ public final class DebugVerbs {
             boolean enemy = e instanceof net.minecraft.world.entity.monster.Enemy;
             boolean neutral = e instanceof net.minecraft.world.entity.NeutralMob;
             boolean los = false;
-            try { los = p.hasLineOfSight(e); } catch (RuntimeException ignored) {}
+            try { los = p.hasLineOfSight(e); } catch (RuntimeException caught) { Quiet.warn("DebugVerbs.mobs failed, carrying on with the fallback", caught); }
             String verdict;
             var kind = host.kind(e, hurt);
             if (!le.isAlive()) verdict = "dead";
@@ -263,6 +265,7 @@ public final class DebugVerbs {
                 try {
                     v = baritone.api.utils.SettingsUtil.settingValueToString(st);
                 } catch (RuntimeException e) {
+            Quiet.warn("DebugVerbs.baritone failed, carrying on with the fallback", e);
                     v = String.valueOf(st.value);
                 }
                 if (v.length() > 120) v = v.substring(0, 117) + "...";

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.ai.live;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.ai.AiLog;
 import io.github.mojolowjo.entropybot.ai.AiLoop;
@@ -78,6 +80,7 @@ public final class AiRuntime {
         try {
             return Minecraft.getInstance().gameDirectory.toPath().resolve("entropybot");
         } catch (RuntimeException e) {
+            Quiet.warn("AiRuntime.botDir failed, carrying on with the fallback", e);
             return null;
         }
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -117,7 +119,8 @@ public final class PolicyCommands {
 
     /** 0.21.2: the near-me zone is on (areas.json "near.on", default true). */
     public boolean nearOn() {
-        try { return p.getAsJsonObject("near").get("on").getAsBoolean(); } catch (RuntimeException e) { return true; }
+        try { return p.getAsJsonObject("near").get("on").getAsBoolean(); } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.nearOn failed, carrying on with the fallback", e); return true; }
     }
 
     /** 0.21.2: the near-me radius (areas.json "near.r", default 16; out of bounds = the default). */
@@ -126,6 +129,7 @@ public final class PolicyCommands {
             int r = p.getAsJsonObject("near").get("r").getAsInt();
             return io.github.mojolowjo.entropybot.guard.NearZone.checkRadius(r) == null ? r : io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R;
         } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.nearR failed, carrying on with the fallback", e);
             return io.github.mojolowjo.entropybot.guard.NearZone.DEFAULT_R;
         }
     }
@@ -156,7 +160,8 @@ public final class PolicyCommands {
     public JsonArray candidateBoxes() {
         JsonArray out = new JsonArray();
         JsonArray l;
-        try { l = candidates.get(); } catch (RuntimeException e) { return out; }
+        try { l = candidates.get(); } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.candidateBoxes failed, carrying on with the fallback", e); return out; }
         if (l == null) return out;
         for (int i = 0; i < l.size(); i++) {
             if (!l.get(i).isJsonObject()) continue;
@@ -192,7 +197,8 @@ public final class PolicyCommands {
     /** AREAS: the danger multiplier the owner set (areas.json "danger"), else the default. */
     public double dangerMult() {
         try { return p.has("danger") ? p.get("danger").getAsDouble() : io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
-        catch (RuntimeException e) { return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
+        catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.dangerMult failed, carrying on with the fallback", e); return io.github.mojolowjo.entropybot.guard.MoveRules.DEFAULT_DANGER; }
     }
 
     /** Pushes the policy to the guard (at load). The two replies joined, or null. */
@@ -732,6 +738,7 @@ public final class PolicyCommands {
     }
 
     private static long num(JsonObject o, String k) {
-        try { return o.has(k) ? (long) o.get(k).getAsDouble() : 0; } catch (RuntimeException e) { return 0; }
+        try { return o.has(k) ? (long) o.get(k).getAsDouble() : 0; } catch (RuntimeException e) {
+            Quiet.warn("PolicyCommands.num failed, carrying on with the fallback", e); return 0; }
     }
 }

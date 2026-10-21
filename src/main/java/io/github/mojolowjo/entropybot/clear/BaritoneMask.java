@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -258,7 +260,7 @@ public final class BaritoneMask {
                                 out.liquid = liquidNext(w, x, y, z);
                                 if (out.liquid == null && w.fluid(x, y, z)) out.liquid = new Pos(x, y, z);     // waterlogged itself
                                 if (out.liquid != null) out.liquidKind = w.fluidKind(out.liquid.x(), out.liquid.y(), out.liquid.z());
-                            } catch (RuntimeException ignored) {}
+                            } catch (RuntimeException caught) { Quiet.warn("BaritoneMask.leftover failed, carrying on with the fallback", caught); }
                         }
                     }
                 }

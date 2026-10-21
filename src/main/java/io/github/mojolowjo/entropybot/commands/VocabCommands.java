@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -53,6 +55,7 @@ final class VocabCommands {
             if (rl == null || !BuiltInRegistries.ITEM.containsKey(rl)) return false;
             return BuiltInRegistries.ITEM.get(rl) instanceof net.minecraft.world.item.BlockItem;
         } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.isBlockItem failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -337,6 +340,7 @@ final class VocabCommands {
             for (String k : expand(id)) sum += t.getOrDefault(k, 0);
             return sum;
         } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.have failed, carrying on with the fallback", e);
             return 0;
         }
     }
@@ -394,7 +398,7 @@ final class VocabCommands {
                     c.saved();
                     return;
                 }
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("VocabCommands.goalDone failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -542,6 +546,7 @@ final class VocabCommands {
             return rl != null && BuiltInRegistries.ITEM.containsKey(rl)
                     && BuiltInRegistries.ITEM.get(rl).components().has(net.minecraft.core.component.DataComponents.FOOD);
         } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.isFood failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -624,13 +629,14 @@ final class VocabCommands {
         if (w.isEmpty() || !Kinds.isKind(w.get(0))) return null;
         List<String> ids = expand(w.get(0).toLowerCase(Locale.ROOT));
         Map<String, Integer> stock = null;
-        try { stock = fullStock(p); } catch (RuntimeException ignored) {}
+        try { stock = fullStock(p); } catch (RuntimeException caught) { Quiet.warn("VocabCommands.oneOfKind failed, carrying on with the fallback", caught); }
         String kind = w.get(0).toLowerCase(Locale.ROOT);
         String id;
         if (kind.equals("food")) {
             // 0.24.3: stock first, then plain foods (rm-execution: the gather planner is gone; a modded food comes from stock)
             boolean farm;
-            try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
+            try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) {
+            Quiet.warn("VocabCommands.oneOfKind failed, carrying on with the fallback", e); farm = false; }
             id = Kinds.pickFood(ids, stock, farm, c.stepRun.on(), null);
             if (id == null) {
                 err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";

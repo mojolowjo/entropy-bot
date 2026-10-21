@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -446,6 +448,7 @@ public final class ClearRun {
         try {
             return ClearGrid.entryProblem(w, bot, job);
         } catch (RuntimeException e) {
+            Quiet.warn("ClearRun.stuckWhy failed, carrying on with the fallback", e);
             return "";
         }
     }

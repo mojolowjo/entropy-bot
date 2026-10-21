@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.fast;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
@@ -123,6 +125,7 @@ public final class FastServer {
                     key = k.length() >= MIN_KEY ? k.getBytes(StandardCharsets.UTF_8) : null;
                 }
             } catch (IOException | RuntimeException e) {
+            Quiet.warn("FastServer.key failed, carrying on with the fallback", e);
                 seen = null;
                 key = null;
             }
@@ -188,7 +191,7 @@ public final class FastServer {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             // the starter may have started it already: never leave a listening socket behind
             if (s != null) {
-                try { s.stop(0); } catch (RuntimeException ignored) {}
+                try { s.stop(0); } catch (RuntimeException caught) { Quiet.warn("FastServer.start failed, carrying on with the fallback", caught); }
             }
             if (pool != null) pool.shutdownNow();
             pool = null;
@@ -339,7 +342,7 @@ public final class FastServer {
                 default -> send(ex, 404, err("unknown path " + path));
             }
         } catch (RuntimeException e) {
-            try { send(ex, 500, err(String.valueOf(e))); } catch (IOException | RuntimeException ignored) {}
+            try { send(ex, 500, err(String.valueOf(e))); } catch (IOException | RuntimeException caught) { Quiet.warn("FastServer.serve failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -418,6 +421,7 @@ public final class FastServer {
         try {
             cmd = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
         } catch (RuntimeException e) {
+            Quiet.warn("FastServer.cmd failed, carrying on with the fallback", e);
             send(ex, 400, err("body is not a JSON object"));
             return;
         }
@@ -468,6 +472,7 @@ public final class FastServer {
             } catch (TimeoutException e) {
                 idle = false;
             } catch (Exception e) {
+            Quiet.warn("FastServer.waitIdle failed, carrying on with the fallback", e);
                 idle = false;
             }
             w.done.complete(false);            // a timed-out waiter is dropped at the next tick
@@ -563,7 +568,7 @@ public final class FastServer {
     }
 
     private static void drain(InputStream in) {
-        try { in.readNBytes(MAX_BODY); } catch (IOException ignored) {}
+        try { in.readNBytes(MAX_BODY); } catch (IOException caught) { Quiet.warn("FastServer.drain failed, carrying on with the fallback", caught); }
     }
 
     private static JsonObject err(String why) {

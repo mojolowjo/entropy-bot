@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.mixin;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.guard.Guard;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
@@ -26,27 +28,27 @@ public abstract class GuardMixinGameMode {
     private void entropybot$startDestroy(BlockPos loc, Direction face, CallbackInfoReturnable<Boolean> cir) {
         try {
             if (Guard.INSTANCE.vetoBreak(loc)) cir.setReturnValue(false);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinGameMode.? failed, carrying on with the fallback", caught); }
     }
 
     @Inject(method = "continueDestroyBlock", at = @At("HEAD"), cancellable = true)
     private void entropybot$continueDestroy(BlockPos posBlock, Direction directionFacing, CallbackInfoReturnable<Boolean> cir) {
         try {
             if (Guard.INSTANCE.vetoBreak(posBlock)) cir.setReturnValue(false);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinGameMode.? failed, carrying on with the fallback", caught); }
     }
 
     @Inject(method = "useItemOn", at = @At("HEAD"), cancellable = true)
     private void entropybot$useItemOn(LocalPlayer player, InteractionHand hand, BlockHitResult result, CallbackInfoReturnable<InteractionResult> cir) {
         try {
             if (Guard.INSTANCE.vetoUseOn(player, hand, result)) cir.setReturnValue(InteractionResult.FAIL);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinGameMode.? failed, carrying on with the fallback", caught); }
     }
 
     @Inject(method = "useItem", at = @At("HEAD"), cancellable = true)
     private void entropybot$useItem(Player player, InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
         try {
             if (Guard.INSTANCE.vetoUse(player, hand)) cir.setReturnValue(InteractionResult.FAIL);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinGameMode.? failed, carrying on with the fallback", caught); }
     }
 }

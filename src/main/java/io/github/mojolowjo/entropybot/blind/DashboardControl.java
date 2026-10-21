@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.blind;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -53,12 +55,14 @@ public final class DashboardControl {
             if (!o.has("keyFile") || !o.get("keyFile").isJsonPrimitive()) return new Project(null, null, "fast.json has no keyFile");
             keyFile = o.get("keyFile").getAsString();
         } catch (RuntimeException x) {
+            Quiet.warn("DashboardControl.fromFastJson failed, carrying on with the fallback", x);
             return new Project(null, null, "fast.json is not a JSON object");
         }
         Path key;
         try {
             key = Path.of(keyFile);
         } catch (RuntimeException x) {
+            Quiet.warn("DashboardControl.fromFastJson failed, carrying on with the fallback", x);
             return new Project(null, null, "fast.json's keyFile is not a path");
         }
         Path dash = key.getParent();
@@ -86,6 +90,7 @@ public final class DashboardControl {
             s.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_MS);
             return true;
         } catch (IOException | RuntimeException e) {
+            Quiet.warn("DashboardControl.answers failed, carrying on with the fallback", e);
             return false;
         }
     }

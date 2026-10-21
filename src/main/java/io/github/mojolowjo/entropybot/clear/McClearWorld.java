@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.guard.Guard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -154,6 +156,7 @@ public final class McClearWorld implements ClearWorld {
         try {
             return !st.isAir() && st.getFluidState().isEmpty() && st.getDestroySpeed(g, p) == 0 && st.getCollisionShape(g, p).isEmpty();
         } catch (RuntimeException e) {
+            Quiet.warn("McClearWorld.seeThroughPlant failed, carrying on with the fallback", e);
             return false;                               // a modded block that throws here: keep the plain outline ray
         }
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
@@ -104,6 +106,7 @@ public final class StripMine {
         try {
             return Files.exists(bridgeFile("memory.json"));
         } catch (Exception e) {
+            Quiet.warn("StripMine.memoryJsonExists failed, carrying on with the fallback", e);
             return true;
         }
     }
@@ -115,6 +118,7 @@ public final class StripMine {
             if (!Files.exists(p)) return null;
             return JsonStore.parse(Files.readString(p, StandardCharsets.UTF_8));
         } catch (Exception e) {
+            Quiet.warn("StripMine.readMemoryJson failed, carrying on with the fallback", e);
             return null;
         }
     }

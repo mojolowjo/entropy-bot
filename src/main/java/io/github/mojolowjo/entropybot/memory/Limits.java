@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.memory;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -95,6 +97,7 @@ public final class Limits {
         try {
             return note != null && note.has("seen") ? note.get("seen").getAsLong() : 0;
         } catch (RuntimeException e) {
+            Quiet.warn("Limits.seen failed, carrying on with the fallback", e);
             return 0;
         }
     }
@@ -104,6 +107,7 @@ public final class Limits {
         try {
             return t != null && t.isJsonPrimitive() && !t.getAsBoolean();
         } catch (RuntimeException e) {
+            Quiet.warn("Limits.untrusted failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -158,7 +162,7 @@ public final class Limits {
                 if (!str(pl, "dim", "minecraft:overworld").equals(dim)) continue;
                 if (Math.abs(pl.get("x").getAsInt() - x) <= NEAR_PLACE && Math.abs(pl.get("y").getAsInt() - y) <= NEAR_PLACE
                         && Math.abs(pl.get("z").getAsInt() - z) <= NEAR_PLACE) return true;
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Limits.nearPlace failed, carrying on with the fallback", caught); }
         }
         return false;
     }
@@ -167,6 +171,7 @@ public final class Limits {
         try {
             return o != null && o.has(k) && o.get(k).isJsonPrimitive() ? o.get(k).getAsString() : dflt;
         } catch (RuntimeException e) {
+            Quiet.warn("Limits.str failed, carrying on with the fallback", e);
             return dflt;
         }
     }

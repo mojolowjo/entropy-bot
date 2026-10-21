@@ -88,7 +88,8 @@ public final class ViewLive {
                             + compass(best.getX() - p.getX(), best.getZ() - p.getZ()));
                 }
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+
             // the news is a convenience; a failed read only skips this second
         }
     }

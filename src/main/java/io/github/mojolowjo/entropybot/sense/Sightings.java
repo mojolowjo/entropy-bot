@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -342,6 +344,7 @@ public final class Sightings {
             if (e == null || !e.isJsonObject()) { skipped[0]++; return new Sightings(); }
             o = e.getAsJsonObject();
         } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.fromJson failed, carrying on with the fallback", ex);
             skipped[0]++;
             return new Sightings();
         }
@@ -352,7 +355,8 @@ public final class Sightings {
         try {
             if (o.has("walked")) s.walked = Math.max(0, o.get("walked").getAsDouble());
             if (o.has("cavesFound")) s.cavesFound = Math.max(0, o.get("cavesFound").getAsDouble());
-        } catch (RuntimeException ex) { skipped[0]++; }
+        } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.fromJson failed, carrying on with the fallback", ex); skipped[0]++; }
         s.saved();
         return s;
     }
@@ -366,9 +370,11 @@ public final class Sightings {
                         JsonArray a = e.getAsJsonArray();
                         into.computeIfAbsent(d.getKey(), x -> new ArrayList<>()).add(new Rec(k, a.get(0).getAsString(), a.get(1).getAsInt(), a.get(2).getAsInt(),
                                 a.get(3).getAsInt(), a.get(4).getAsLong(), a.get(5).getAsInt(), a.get(6).getAsDouble(), a.get(7).getAsLong()));
-                    } catch (RuntimeException ex) { skipped[0]++; }
+                    } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.read failed, carrying on with the fallback", ex); skipped[0]++; }
                 }
-        } catch (RuntimeException ex) { skipped[0]++; }
+        } catch (RuntimeException ex) {
+            Quiet.warn("Sightings.read failed, carrying on with the fallback", ex); skipped[0]++; }
     }
 
     private static long d2(Rec r, int x, int y, int z) {

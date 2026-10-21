@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
-import io.github.mojolowjo.entropybot.sense.FailMemory;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -549,7 +549,7 @@ public final class IronOptions {
         String t = end.toLowerCase(Locale.ROOT);
         if (Options.ownerOrDanger(end)) return false;
         if (part.equals("smelt")) return true;         // the smelt on the spot did not work out: the camp furnace is the other way
-        return FailMemory.classify(end) != null || MINE_END.matcher(t).find();
+        return Failures.classify(end) != null || MINE_END.matcher(t).find();
     }
 
 

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.aa.moves.BaritoneCar;
 import io.github.mojolowjo.entropybot.aa.moves.Moves;
@@ -507,6 +509,7 @@ public final class DangerMoves {
                     io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, Guard.dimOf(mc.level),
                     q.getX(), q.getY(), q.getZ(), rt.facts(mc.level, q, false), rt.where()).allowed();
         } catch (RuntimeException e) {
+            Quiet.warn("DangerMoves.policyBreaks failed, carrying on with the fallback", e);
             return false;
         }
     }
