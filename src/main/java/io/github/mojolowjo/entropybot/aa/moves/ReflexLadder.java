@@ -72,14 +72,41 @@ public final class ReflexLadder {
 
     /** One failed try charged; returns the way to run next (null = spent: FAILED to the danger desire). */
     public static Way charge(Kind kind, int[] cell, String why, Way from) {
+        Way tried = way(kind, cell, from);
         failures.counted(kind.key(), cell(cell), why == null ? "no reason given" : why);
-        return way(kind, cell, from);
+        Way next = way(kind, cell, from);
+        watch(tryLine(kind, tried, why, next));
+        return next;
     }
 
     public static int fails(Kind kind, int[] cell) { return failures.fails(kind.key(), cell(cell)); }
 
     /** The reflex ended well: its tries are forgotten. */
     public static void ended(Kind kind) { failures.forget(kind.key()); }
+
+    // ---- reflex probe 0.39.s5: the watch aid (one PM line per try, only while aa slow is on) ----
+
+    private static volatile java.util.function.Consumer<String> watcher;
+
+    /** The owner's PM while {@code aa slow} is on; null = quiet (normal play). */
+    public static void watcher(java.util.function.Consumer<String> w) { watcher = w; }
+
+    public static boolean watching() { return watcher != null; }
+
+    public static void watch(String line) {
+        var w = watcher;
+        if (w != null && line != null) {
+            try { w.accept(line); } catch (RuntimeException ignored) { }
+        }
+    }
+
+    /** "air: surface goal -> no path (Baritone found no path ...), next: burrow up". Pure. */
+    public static String tryLine(Kind kind, Way tried, String why, Way next) {
+        String k = kind.key().substring("reflex.".length());
+        String w = why == null ? "no reason given" : why;
+        String what = w.contains("found no path") ? "no path" : w.contains("refused by the break rules") ? "dig refused" : w.contains("timed out") ? "timed out" : "failed";
+        return k + ": " + (tried == null ? "?" : tried.label) + " -> " + what + " (" + w + "), next: " + (next == null ? "FAILED to the danger desire" : next.label);
+    }
 
     /** The line the danger desire gets when every way is spent. */
     public static String spent(Kind kind, int[] cell, String why) {

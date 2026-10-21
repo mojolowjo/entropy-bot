@@ -393,6 +393,51 @@ public final class DangerOptions {
                 + (foes.stay() != null ? " | foes: " + foes.terms() : ""));
     }
 
+    // ---- reflex probe 0.39.s5: a spent reflex goes to the danger desire, which acts ----
+
+    /**
+     * The danger ways that are the same move as a spent reflex's ways (held for this pricing: they just failed): the run
+     * away / run from the hazard = flee, the burrow (down) = burrow. The air reflex's surface goal and burrow up, and the
+     * to-water leg, have no danger way of their own. Pure.
+     */
+    public static java.util.Set<Way> reflexHeld(String reflexLine) {
+        java.util.Set<Way> out = java.util.EnumSet.noneOf(Way.class);
+        if (reflexLine == null) return out;
+        if (reflexLine.contains("run away") || reflexLine.contains("run from the hazard")) out.add(Way.FLEE);
+        if (reflexLine.startsWith("reflex.creeper")) out.add(Way.BURROW);
+        return out;
+    }
+
+    /**
+     * Reflex probe 0.39.s5 (owner's watch: FAILED went to the danger desire, which did nothing): every reflex way is spent,
+     * so the bot faces its death cost. The need scores that ({@code min(99, death x danger.perS)}, the same scale as the
+     * foes' saved seconds), the ways are priced as for the night ({@link #choose(ThreatFacts, Need, java.util.function.Function)})
+     * with the reflex's own ways held ({@link #reflexHeld}), and the pick is the cheapest possible way that acts: the
+     * open-air wait (the "do nothing" fallback) and staying are out. No way left = score -1 with the reasons (never silent).
+     */
+    public static Choice afterReflex(ThreatFacts f, Need need, String reflexLine, java.util.function.Function<String, String> held) {
+        Need base = need == null || need == Need.NONE ? Need.NONE : need;
+        double death = base.deathS() > 0 ? base.deathS() : Tuning.get("danger.deathS");
+        double score = Math.min(99, death * Tuning.get("danger.perS"));
+        String why = "reflex spent (" + reflexLine + ")";
+        Need n = new Need(Math.max(score, base.score()), why, base.danger(), base.sheltered(), base.shellBlocks(), base.bed(), base.base(),
+                base.pillarBlocks(), base.waterHere(), base.air(), base.deathS(), base.deathWhy());
+        java.util.Set<Way> own = reflexHeld(reflexLine);
+        java.util.function.Function<String, String> h = k -> {
+            for (Way w : own) if (w.key().equals(k)) return "the reflex's own way, spent";
+            return held == null ? null : held.apply(k);
+        };
+        Choice c = choose(f, n, h);
+        Priced best = null;
+        for (Priced p : c.all()) {
+            if (!p.possible() || p.way() == Way.WAIT || p.way() == Way.STAY) continue;
+            if (h.apply(p.way().key()) != null) continue;
+            if (best == null || p.costS() < best.costS()) best = p;
+        }
+        if (best == null) return new Choice(null, null, c.all(), 0, -1, c.terms() + " -> after the reflex: no way that acts is open");
+        return new Choice(null, best, c.all(), 0, n.score(), c.terms() + " -> after the reflex: " + best.way().key());
+    }
+
     /** The damage the foes near deal while a way takes {@code t} s (each from when it reaches me). */
     static double during(List<ThreatFacts.Foe> foes, double t) {
         double d = 0;

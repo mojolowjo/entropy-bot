@@ -706,8 +706,13 @@ public final class AaDesires {
         long now = bb.clock.now();
         java.util.function.Function<String, String> held = bb.fact(Brain.FAILURES_FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.Failures fs
                 ? k -> fs.held(DANGER_ID, k, now) : k -> null;
+        // reflex probe 0.39.s5: a spent reflex (its line while it holds) re-prices with its ways held and runs a way that acts
+        if (bb.fact(REFLEX_FAILED_FACT) instanceof String line) return DangerOptions.afterReflex(tf, need(bb), line, held);
         return DangerOptions.choose(tf, need(bb), held);
     }
+
+    /** Reflex probe 0.39.s5: blackboard fact (String), the spent reflex's line while it holds the danger (AaRuntime). */
+    public static final String REFLEX_FAILED_FACT = "aa.reflexFailed";
 
     /** The foes' saved seconds x danger.perS, or the need's score (at most 99: trumps); -1 calm or staying is best. */
     static double dangerScore(Blackboard bb) {

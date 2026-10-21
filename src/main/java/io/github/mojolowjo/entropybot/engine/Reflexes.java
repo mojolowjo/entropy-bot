@@ -597,9 +597,14 @@ public final class Reflexes {
      */
     private void followReflexWay() {
         reflexMoves.tick(now);
+        // reflex probe 0.39.s5: the per-tick debug line, only while aa slow is on (normal play stays quiet)
+        if (io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watching()
+                && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING)
+            ReflexProbe.log(engine, reflexMoves.way(), reflexMoves.why());
         if (!reflexPathLogged && reflexMoves.pathReady()) {
             reflexPathLogged = true;
             LOG.info("[entropybot] reflex {}: Baritone path in {} ticks", reflexMoves.way(), now - reflexMoves.legStart());
+            io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watch(reflexMoves.way() + ": path in " + (now - reflexMoves.legStart()) + " ticks (drawn)");
         }
     }
 

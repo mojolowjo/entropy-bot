@@ -1190,6 +1190,8 @@ public final class AaRuntime implements JobPort {
             in.danger = 2;
             in.dangerWhy = reflexFailedLine;
         } else reflexFailedLine = null;
+        // reflex probe 0.39.s5: the danger desire prices the spent reflex (its ways held) and runs a way that acts
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.REFLEX_FAILED_FACT, reflexFailedLine);
         in.creeperClose = creeperClose();
         in.air = p.getAirSupply();
         in.inLavaOrFire = p.isInLava() || p.isOnFire();
