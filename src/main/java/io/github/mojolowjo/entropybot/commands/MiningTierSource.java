@@ -25,11 +25,14 @@ import java.util.Map;
  */
 final class MiningTierSource implements MiningTiers.Source {
     private final Map<Block, Integer> tiers = new HashMap<>();
-    int pickaxes, blocksNeedingTool;
+    private final Map<String, Integer> drops = new HashMap<>();
+    int pickaxes, blocksNeedingTool, dropFailures;
+    boolean dropsRead;
 
-    private record Pick(int tier, List<HolderSet<Block>> locked) {}
+    private record Pick(int locked, List<HolderSet<Block>> sets) {}
 
-    static MiningTierSource read() {
+    /** @param server the integrated server for the loot tables (null: drops unknown, only the block items count) */
+    static MiningTierSource read(net.minecraft.server.MinecraftServer server) {
         MiningTierSource s = new MiningTierSource();
         List<Pick> picks = new ArrayList<>();
         for (Item item : BuiltInRegistries.ITEM) {
@@ -41,24 +44,51 @@ final class MiningTierSource implements MiningTiers.Source {
                 if (r.speed().isPresent() && r.blocks() instanceof HolderSet.Named<Block> n && n.key().equals(BlockTags.MINEABLE_WITH_PICKAXE)) pickaxe = true;
                 if (r.correctForDrops().isPresent() && !r.correctForDrops().get()) locked.add(r.blocks());
             }
-            if (pickaxe) picks.add(new Pick(ItemWorthSource.levelOf(tool) + 1, locked));
+            if (pickaxe) {
+                java.util.Set<Block> lockedBlocks = new java.util.HashSet<>();
+                for (HolderSet<Block> l : locked) for (var h : l) lockedBlocks.add(h.value());
+                picks.add(new Pick(lockedBlocks.size(), locked));
+            }
         }
         s.pickaxes = picks.size();
         if (picks.isEmpty()) throw new IllegalStateException("no pickaxe with a Tool component in the item registry");
+        List<Integer> rank = MiningTiers.rankTiers(picks.stream().map(Pick::locked).toList());
         for (Block b : BuiltInRegistries.BLOCK) {
             var holder = BuiltInRegistries.BLOCK.wrapAsHolder(b);
             if (!b.defaultBlockState().requiresCorrectToolForDrops() || !holder.is(BlockTags.MINEABLE_WITH_PICKAXE)) { s.tiers.put(b, 0); continue; }
             int best = MiningTiers.UNREACHABLE;
-            for (Pick p : picks) {
+            for (int i = 0; i < picks.size(); i++) {
                 boolean out = false;
-                for (HolderSet<Block> l : p.locked()) if (l.contains(holder)) { out = true; break; }
-                if (!out) best = Math.min(best, p.tier());
+                for (HolderSet<Block> l : picks.get(i).sets()) if (l.contains(holder)) { out = true; break; }
+                if (!out) best = Math.min(best, rank.get(i));
             }
             s.tiers.put(b, best);
             s.blocksNeedingTool++;
         }
+        // the tags are data loaded with the world: none needing a tool means they were not there yet
+        if (s.blocksNeedingTool == 0) throw new IllegalStateException("no block needs a tool: the block tags are not loaded yet");
+        if (server != null) s.readDrops(server);
         return s;
     }
+
+    /** Which items each block drops (the loot tables, on the server thread): the least tier among the blocks dropping it. */
+    private void readDrops(net.minecraft.server.MinecraftServer server) {
+        server.submit(() -> {
+            var level = server.overworld();
+            for (Block b : BuiltInRegistries.BLOCK) {
+                try {
+                    int t = tiers.getOrDefault(b, 0);
+                    for (var st : Block.getDrops(b.defaultBlockState(), level, net.minecraft.core.BlockPos.ZERO, null)) {
+                        if (st.isEmpty()) continue;
+                        drops.merge(BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), t, Math::min);
+                    }
+                } catch (RuntimeException e) { dropFailures++; }
+            }
+            dropsRead = true;
+        }).join();
+    }
+
+    @Override public int dropTier(String itemId) { return drops.getOrDefault(itemId, -1); }
 
     @Override public int blockTier(String itemId) {
         var rl = net.minecraft.resources.ResourceLocation.tryParse(itemId);
@@ -68,3 +98,4 @@ final class MiningTierSource implements MiningTiers.Source {
         return tiers.getOrDefault(bi.getBlock(), 0);
     }
 }
+

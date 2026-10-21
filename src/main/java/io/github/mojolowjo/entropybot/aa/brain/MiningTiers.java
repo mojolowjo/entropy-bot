@@ -26,6 +26,22 @@ public final class MiningTiers {
     public interface Source {
         /** The pickaxe tier that mines the block this item places (0 none needed), or -1 if the item is not a block. */
         int blockTier(String itemId);
+
+        /** The least tier among the blocks whose drops include this item (diamond from its ore), or -1 if no block drops it / unknown. */
+        default int dropTier(String itemId) { return -1; }
+    }
+
+    /**
+     * Pickaxe tiers from how much each pickaxe is locked out of: {@code lockedCounts} (one per pickaxe, the number of blocks
+     * it cannot mine) become 1 for the most locked up to N for the least (equal counts share a tier). A modded tier that mines
+     * what diamond cannot lands above it by its own tag rules.
+     */
+    public static List<Integer> rankTiers(List<Integer> lockedCounts) {
+        List<Integer> distinct = new ArrayList<>(new java.util.TreeSet<>(lockedCounts));
+        java.util.Collections.reverse(distinct);          // most locked first
+        List<Integer> out = new ArrayList<>();
+        for (int c : lockedCounts) out.add(distinct.indexOf(c) + 1);
+        return out;
     }
 
     private static volatile Source source;
@@ -55,8 +71,9 @@ public final class MiningTiers {
             for (Set<String> slot : r.slots()) all.addAll(slot);
         }
         for (String id : all) {
-            int bt = s.blockTier(id);
-            need.put(id, bt >= 0 ? bt : made.contains(id) ? UNREACHABLE : 0);
+            int bt = s.blockTier(id), dt = s.dropTier(id);
+            int base = bt >= 0 && dt >= 0 ? Math.min(bt, dt) : Math.max(bt, dt);       // either way of getting it from a block
+            need.put(id, base >= 0 ? base : made.contains(id) ? UNREACHABLE : 0);
         }
         boolean changed = true;
         for (int pass = 0; changed && pass < 64; pass++) {
@@ -88,6 +105,7 @@ public final class MiningTiers {
      * no recipe or block gives a way to get ({@link #UNREACHABLE}) are not counted as the pickaxe's fault.
      */
     public static Result blocked(TechTree t, Source s, Set<String> have, int pickTier, int top) {
+        pickTier = Math.max(0, pickTier);                  // no pickaxe = 0, never a negative
         Map<String, Integer> need = cachedNeeds(t, s);
         List<TechTree.Idea> ideas = t.top(have, Math.max(1, top));
         List<String> names = new ArrayList<>();

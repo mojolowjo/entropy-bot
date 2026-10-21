@@ -2486,13 +2486,8 @@ public final class AaRuntime implements JobPort {
                     } catch (RuntimeException e) {
                         LOG.warn("[entropybot] aa: item worth data not read - the tables stay in use: {}", e.toString());
                     }
-                    try {       // AA_ROUND4 C: the pickaxe tier each block needs (Costs.blocked)
-                        var mt = MiningTierSource.read();
-                        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(mt);
-                        LOG.info("[entropybot] aa: mining tiers from data: {} pickaxes, {} blocks need a tool", mt.pickaxes, mt.blocksNeedingTool);
-                    } catch (RuntimeException e) {
-                        LOG.warn("[entropybot] aa: mining tier data not read - the blocked share uses the old table: {}", e.toString());
-                    }
+                    io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(null);      // re-read with the recipes
+                    miningTiersWarned = false;
                     treeError = null;
                     LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable)", all.size(), t.size());
                 }
@@ -2500,6 +2495,7 @@ public final class AaRuntime implements JobPort {
                 if (treeError == null) LOG.warn("[entropybot] aa: tech tree: {}", e.toString());
                 treeError = e.toString();
             }
+            loadMiningTiers();
         }
         Path f = statsFile();
         if (f != null && now - statsSavedAt >= 60_000 && tree.brain.stats.takeDirty()) {
@@ -3124,6 +3120,21 @@ public final class AaRuntime implements JobPort {
         return runsText() + "\n" + tree.brain.stats.text() + "\n" + io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 8) + (treeError != null ? "\n!! " + treeError : "");
     }
 
+    private boolean miningTiersWarned;
+
+    /** AA_ROUND4 C: the pickaxe tier each block needs; retried every minute until the tags are there (until then the old table, said in aa why). */
+    private void loadMiningTiers() {
+        if (io.github.mojolowjo.entropybot.aa.brain.MiningTiers.ready() || bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.TECH_FACT) == null) return;
+        try {
+            var mt = MiningTierSource.read(Minecraft.getInstance().getSingleplayerServer());
+            io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(mt);
+            LOG.info("[entropybot] aa: mining tiers from data: {} pickaxes, {} blocks need a tool, drops {} ({} failed)", mt.pickaxes, mt.blocksNeedingTool, mt.dropsRead ? "read" : "not read (no integrated server)", mt.dropFailures);
+        } catch (RuntimeException e) {
+            if (!miningTiersWarned) LOG.warn("[entropybot] aa: mining tier data not read yet - the blocked share uses the old table, retrying every minute: {}", e.toString());
+            miningTiersWarned = true;
+        }
+    }
+
     String ideasLine() { return io.github.mojolowjo.entropybot.aa.AaDesires.ideasLine(bb, 5); }
 
     /** The dashboard's live AA tree (fast channel GET /aa), built from the running tree. */
@@ -3280,3 +3291,4 @@ public final class AaRuntime implements JobPort {
         }
     }
 }
+
