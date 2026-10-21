@@ -57,21 +57,6 @@ class DigArgsTest {
         assertTrue(a.viaBaritone(), "parsed; the verb refuses it for the surface form");
     }
 
-    // 0.30.0: "dig stone [n] [via baritone|via engine]"
-    @Test
-    void stoneWords() {
-        assertEquals(new DigArgs.Stone(64, false, false), DigArgs.stone("stone"));
-        assertEquals(new DigArgs.Stone(32, false, false), DigArgs.stone("stone 32"));
-        assertEquals(new DigArgs.Stone(256, false, false), DigArgs.stone("stone 999"));
-        assertEquals(new DigArgs.Stone(8, true, false), DigArgs.stone("stone 8 via baritone"));
-        assertEquals(new DigArgs.Stone(64, false, true), DigArgs.stone("stone via engine"));
-        assertEquals(new DigArgs.Stone(64, false, true), DigArgs.stone("Stone engine"));
-        assertNull(DigArgs.stone("stone foo"));
-        assertNull(DigArgs.stone("stone 8 via"));
-        assertNull(DigArgs.stone("stairs north 4"));
-        assertNull(DigArgs.stone("0 83 -3 5 83 2"));
-    }
-
     // 0.30.0 (P2): the builder is the default; "via engine" the old path; floor stays on the engine
     @Test
     void builderIsTheDefault() {

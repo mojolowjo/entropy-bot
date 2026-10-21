@@ -250,23 +250,5 @@ class LimitsStressTest {
         for (int i = 0; i < 10_000; i++) ring.push("job", "an event with some text " + i, null);
         row("events", EventRing.CAPACITY, "since(0, all) (a full read)", ms(15, () -> ring.since(0, 0)));
         rowKb("events", EventRing.CAPACITY, "since(0, all) size", ring.since(0, 0).length());
-        // the autominer log: 20 decisions with a 1000-char result each, in commands.json
-        JsonObject mem = new JsonObject();
-        CommandsTest.Fake f = CommandsTest.fake(mem);
-        JsonObject a = new JsonObject();
-        JsonArray log = new JsonArray();
-        for (int i = 0; i < 20; i++) {
-            JsonObject e = new JsonObject();
-            e.addProperty("at", f.now);
-            e.addProperty("what", "mine strip any 32");
-            e.addProperty("why", "my mine is ready");
-            e.addProperty("result", "x".repeat(1000));
-            log.add(e);
-        }
-        a.add("log", log);
-        a.addProperty("on", true);
-        mem.add("autominer", a);
-        row("autominer", 20, "why (5 decisions)", ms(15, f.chains::whyCommand));
-        System.out.printf("H| %-10s | %7d | %-34s | %9d parts%n", "autominer", 20, "whisper parts of \"why\"", Texts.whisperParts(f.chains.whyCommand()).size());
     }
 }

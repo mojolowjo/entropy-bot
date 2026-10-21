@@ -49,8 +49,8 @@ class R2FixTest {
     // ---- stock iron: the routine expanded ----
 
     @Test void expandedRoutineKeepsItsOreStepBeforeTheSmelt() {
-        String chain = IronOptions.idleChain((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(0),
+        Options.Option o = IronOptions.idleOption((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(0),
                 "craft planks 4 then craft furnace 1 then smelt iron_ingot 16 then smelt collect all", 0, new String[1]);
-        if (chain != null) assertTrue(chain.indexOf("mine") >= 0 && chain.indexOf("mine") < chain.indexOf("smelt iron_ingot"), chain);
+        if (o != null) assertTrue(o.command().indexOf("mine") >= 0 && o.command().indexOf("mine") < o.command().indexOf("smelt iron_ingot"), o.command());
     }
 }

@@ -628,31 +628,12 @@ final class VocabCommands {
         String kind = w.get(0).toLowerCase(Locale.ROOT);
         String id;
         if (kind.equals("food")) {
-            // 0.24.3: stock first, then plain foods, a modded food only when its whole plan resolves
-            io.github.mojolowjo.entropybot.gather.GatherPlan.World gw;
-            try { gw = c.gathering.world(p); } catch (RuntimeException e) { gw = null; LOG.warn("[entropybot] food choice: no gather view", e); }
-            final io.github.mojolowjo.entropybot.gather.GatherPlan.World fw = gw;
+            // 0.24.3: stock first, then plain foods (rm-execution: the gather planner is gone; a modded food comes from stock)
             boolean farm;
             try { farm = io.github.mojolowjo.entropybot.Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
-            // 0.27.3 (d6): a modded food counts only when its plan for the wanted count mines at most Kinds.MAX_FOOD_MINING blocks
-            int want = w.size() >= 2 && w.get(1).matches("\\d{1,5}") ? Integer.parseInt(w.get(1)) : 1;
-            List<String> skippedFood = new ArrayList<>();
-            id = Kinds.pickFood(ids, stock, farm, c.hunting.on(), x -> {
-                if (fw == null || !io.github.mojolowjo.entropybot.gather.GatherPlan.resolves(x, want, fw)) return false;
-                int mined = io.github.mojolowjo.entropybot.gather.GatherPlan.miningBlocks(x, want, fw);
-                if (mined > Kinds.MAX_FOOD_MINING) {
-                    skippedFood.add(Texts.shortId(x) + " (its plan mines " + mined + " blocks, over " + Kinds.MAX_FOOD_MINING + ")");
-                    return false;
-                }
-                return true;
-            });
-            if (!skippedFood.isEmpty()) {
-                lastFoodSkip = "food choice skipped " + String.join(", ", skippedFood);
-                LOG.info("[entropybot] {}", lastFoodSkip);
-            }
+            id = Kinds.pickFood(ids, stock, farm, c.stepRun.on(), null);
             if (id == null) {
-                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm)"
-                        + (skippedFood.isEmpty() ? "" : "; skipped " + String.join(", ", skippedFood)) + " - put some food in the base chests";
+                err[0] = "error: no way to get food: none in storage, and no food I know how to make (bread needs wheat: a farm) - put some food in the base chests";
                 return null;
             }
         } else id = Kinds.pick(ids, stock);
@@ -670,7 +651,7 @@ final class VocabCommands {
         if (w.isEmpty()) return null;
         if (w.get(0).equals("logs") || w.get(0).equals("wood")) {
             String n = w.size() > 1 && w.get(1).matches("^\\d+$") ? w.get(1) : "16";
-            redirect[0] = "cut " + n + " logs";
+            redirect[0] = "cut " + n;
             return null;
         }
         if ((w.get(0).equals("strip") || w.get(0).equals("cave")) && w.size() > 1 && w.get(1).equals("ores")) {
@@ -686,21 +667,5 @@ final class VocabCommands {
             return null;
         }
         return null;
-    }
-
-    /** "cut <n> [logs|wood|<log id or type>]" | "cut trees <n> [type]" | "cut status": the chop engine's line. */
-    String cutLine(String rest) {
-        List<String> w = Texts.words(rest == null ? "" : rest.toLowerCase(Locale.ROOT));
-        int i = w.indexOf("logs") >= 0 ? w.indexOf("logs") : w.indexOf("wood");
-        if (i >= 0) {
-            Kinds.Rule r = rule("logs");
-            if (r.exclude().isEmpty()) w.remove(i);
-            else {
-                List<String> ex = new ArrayList<>();
-                for (String s : r.exclude()) ex.add(s.substring(s.indexOf(':') + 1));
-                w.set(i, io.github.mojolowjo.entropybot.chop.ChopRules.EXCEPT + String.join(".", ex));
-            }
-        }
-        return String.join(" ", w);
     }
 }

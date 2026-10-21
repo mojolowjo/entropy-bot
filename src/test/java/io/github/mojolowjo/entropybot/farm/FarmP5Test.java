@@ -1,7 +1,6 @@
 package io.github.mojolowjo.entropybot.farm;
 
 import com.google.gson.JsonObject;
-import io.github.mojolowjo.entropybot.gather.GatherSources;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -210,15 +209,6 @@ class FarmP5Test {
         assertEquals("cooked_beef 2", Cooking.smeltText("cooked_beef 2"));
         assertEquals("minecraft:cooked_porkchop 3", Cooking.smeltText("minecraft:porkchop 3"));
         assertNull(Cooking.smeltText("  "));
-    }
-
-    @Test
-    void rawMeatHasNoGatherSource() {
-        GatherSources.Source s = GatherSources.resolve("beef", null);
-        assertEquals(GatherSources.Kind.NONE, s.kind());
-        assertTrue(s.hint().contains("hunting is off"), s.hint());
-        assertEquals(GatherSources.Kind.CROP, GatherSources.resolve("potato", null).kind(), "crops stay farmable");
-        assertNull(GatherSources.resolve("cooked_beef", null), "cooked: smelted from the raw item");
     }
 
     // ---- the vanilla round ----

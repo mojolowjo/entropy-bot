@@ -46,11 +46,19 @@ public final class Options {
      * @param cost         walk-blocks, already weighted by the failures
      * @param memoryKey    what a failure of it is remembered under
      * @param needsPlanner it is the planner's chain (or a rewrite of it)
+     * @param steps        rm-execution: the typed steps the option runs ({@code aa/moves/Steps}); then {@code command}
+     *                     is only their label (Step.label, never parsed). Empty: a set not on typed steps yet.
      */
     public record Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret,
-                         io.github.mojolowjo.entropybot.aa.brain.Site site) {
+                         io.github.mojolowjo.entropybot.aa.brain.Site site, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
         public Option {
             if (ret == null) ret = Replan.Ret.NONE;
+            steps = steps == null ? List.of() : List.copyOf(steps);
+        }
+
+        public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner, Replan.Ret ret,
+                      io.github.mojolowjo.entropybot.aa.brain.Site site) {
+            this(id, way, command, cost, why, memoryKey, needsPlanner, ret, site, List.of());
         }
 
         /** AA_ROUND3 2: no site known (the sequencer leaves it out). */
@@ -59,8 +67,11 @@ public final class Options {
         }
 
         public Option withSite(io.github.mojolowjo.entropybot.aa.brain.Site s) {
-            return new Option(id, way, command, cost, why, memoryKey, needsPlanner, ret, s);
+            return new Option(id, way, command, cost, why, memoryKey, needsPlanner, ret, s, steps);
         }
+
+        /** rm-execution: runs on typed steps. */
+        public boolean typed() { return !steps.isEmpty(); }
 
         /** An option with no way back to weigh (aa-replan: the return leg is {@link Replan.Ret#NONE}). */
         public Option(String id, String way, String command, double cost, String why, String memoryKey, boolean needsPlanner) {
@@ -102,6 +113,13 @@ public final class Options {
     public static Option scored(String id, String way, String command, double cost, String why, String key, boolean planner, OptionMemory m) {
         int fails = m.fails(key);
         return new Option(id, way, command, cost * (1 + fails), fails > 0 ? why + ", failed " + fails + "x" : why, key, planner);
+    }
+
+    /** rm-execution: a scored row on typed steps (its command is only the steps' label). */
+    public static Option typed(String id, String way, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, double cost, String why, String key, OptionMemory m) {
+        int fails = m.fails(key);
+        return new Option(id, way, io.github.mojolowjo.entropybot.aa.moves.Step.label(steps), cost * (1 + fails), fails > 0 ? why + ", failed " + fails + "x" : why,
+                key, false, Replan.Ret.NONE, null, steps);
     }
 
     // ---- the memory of what failed here ----

@@ -6,7 +6,7 @@ import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
-import io.github.mojolowjo.entropybot.vocab.HuntRules;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -124,19 +124,13 @@ class LootDataTest {
     }
 
     @Test
-    void huntForParsesAndKeepsTheProtections() {
-        Object[] a = HuntRules.parseFor("3 spider for string 6");
-        assertArrayEquals(new Object[]{3, "minecraft:spider", "minecraft:string", 6}, a);
-        assertEquals(3, HuntRules.parseFor("3 cow for leather")[3]);
-        assertNull(HuntRules.parseFor("3 cow leather"));
-        assertNull(HuntRules.parseFor("0 cow for leather"));
-        HuntRules.Target spider = new HuntRules.Target("minecraft:spider", false, false, false, false, false, false);
-        assertFalse(HuntRules.mayTakeFor(spider, false, List.of(), "minecraft:spider"), "hostile, not allowed");
-        assertTrue(HuntRules.mayTakeFor(spider, false, List.of("minecraft:spider"), "minecraft:spider"));
-        HuntRules.Target horse = new HuntRules.Target("minecraft:horse", false, false, false, false, false, false);
-        assertTrue(HuntRules.mayTakeFor(horse, true, List.of(), "minecraft:horse"), "passive");
-        HuntRules.Target pet = new HuntRules.Target("minecraft:horse", true, false, true, false, false, false);
-        assertFalse(HuntRules.mayTakeFor(pet, true, List.of(), "minecraft:horse"), "tamed never");
-        assertFalse(HuntRules.mayTakeFor(horse, true, List.of(), "minecraft:cow"), "only the wanted mob");
+    void huntForIsATypedHuntStep() {
+        // rm-execution: the loot plan's "hunt k mob for item n" is a typed step (the protections are the step's game side)
+        var s = io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt 3 spider for string 6");
+        assertEquals(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt("minecraft:spider", 3, null, "string", 6).text(), s.text());
+        var at = (io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt) io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt 1 cow for leather 2 at 10 -20");
+        assertArrayEquals(new int[]{10, -20}, at.at());
+        assertNull(io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt 3 cow leather"));
+        assertNull(io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt x cow"));
     }
 }

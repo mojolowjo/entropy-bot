@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Site;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,47 +64,61 @@ public final class StationOptions {
         else if (f.knownAt() == null) dropped.add("use known " + item + ": sensed near but its cell is not known (nothing to walk to)");
         else {
             double d = f.knownDist() >= 0 ? f.knownDist() : Price.tune("base.distGuess");
+            int[] at = f.knownAt();
             if (d > near) dropped.add("use known " + item + ": " + Price.r(d) + " away, over " + Price.r(near));
-            else Price.add(rows, dropped, m, now, Options.scored("use known " + item, "known", "goto " + RungOptions.xyz(f.knownAt()), d,
-                    "one " + Price.r(d) + " away" + (f.knownDist() >= 0 ? "" : " (distance not sensed, priced at base.distGuess)"), "known " + item, false, m)
-                    .withSite(Site.of(f.knownAt())));
+            else Price.add(rows, dropped, m, now, Options.typed("use known " + item, "known", List.of(new Step.Walk(at[0], at[1], at[2], (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.walkNear"))), d,
+                    "one " + Price.r(d) + " away" + (f.knownDist() >= 0 ? "" : " (distance not sensed, priced at base.distGuess)"), "known " + item, m)
+                    .withSite(Site.of(at)));
         }
         // a placed chest is noted by a scan round me (the base chests fact reads the noted chests)
-        String place = f.cell() == null ? null : "place " + item + " " + RungOptions.xyz(f.cell()) + (k == Kind.CHEST ? " then scan" : "");
-        if (place == null) dropped.add("place " + item + ": no free cell");
+        List<Step> place = new ArrayList<>();
+        if (f.cell() != null) {
+            place.add(Step.Build.one(item, f.cell()[0], f.cell()[1], f.cell()[2]));
+            if (k == Kind.CHEST) place.add(new Step.Scan());
+        } else dropped.add("place " + item + ": no free cell");
         // 2. from the bag
         if (f.inBag()) {
-            if (place != null) add(rows, dropped, m, now, Options.scored("place " + item, "place", place, Price.s(Price.placeS()),
-                    "in the bag, place " + Price.placeS() + " s", "place " + item, false, m), f);
+            if (!place.isEmpty()) add(rows, dropped, m, now, Options.typed("place " + item, "place", place, Price.s(Price.placeS()),
+                    "in the bag, place " + Price.placeS() + " s", "place " + item, m), f);
         } else dropped.add("place " + item + " from the bag: none in the bag");
         // 3. craft from the bag's materials
         int have = k == Kind.FURNACE ? f.cobble() : f.planks() + 4 * f.logs();
         int lack = Math.max(0, k.amount - have);
         double craftPlace = Price.s(Price.craftS() + Price.placeS());
-        String craft = "craft " + item + " 1";
-        if (!f.inBag() && place != null) {
-            if (lack == 0) add(rows, dropped, m, now, Options.scored("craft " + item, "craft", craft + " then " + place, craftPlace,
-                    have + " " + k.material + " (" + k.amount + " wanted), craft " + Price.craftS() + " s + place " + Price.placeS() + " s", "craft " + item, false, m), f);
+        Step craft = new Step.Craft(item, 1);
+        if (!f.inBag() && !place.isEmpty()) {
+            if (lack == 0) add(rows, dropped, m, now, Options.typed("craft " + item, "craft", join(List.of(craft), place), craftPlace,
+                    have + " " + k.material + " (" + k.amount + " wanted), craft " + Price.craftS() + " s + place " + Price.placeS() + " s", "craft " + item, m), f);
             else if (k == Kind.FURNACE) {
                 if (f.pickTier() < 1) dropped.add("gather + craft furnace: " + lack + " cobblestone short, no pickaxe");
                 else {
-                    add(rows, dropped, m, now, Options.scored("gather + craft furnace", "craft", "gather cobblestone " + k.amount + " then " + craft + " then " + place,
+                    add(rows, dropped, m, now, Options.typed("gather + craft furnace", "craft", join(List.of(new Step.Collect(k.material, lack), craft), place),
                             lack * CoalOptions.MINE_ORE + craftPlace, lack + " cobblestone short x " + Price.r(CoalOptions.MINE_ORE) + ", craft + place",
-                            "gather craft furnace", false, m), f);
+                            "gather craft furnace", m), f);
                 }
             } else if (f.wood() == null) dropped.add("cut + craft " + item + ": " + lack + " planks short, no wood way (" + (f.woodWhy() == null ? "no wood facts" : f.woodWhy()) + ")");
+            else if (!f.wood().typed()) dropped.add("cut + craft " + item + ": the wood way " + f.wood().id() + " has no typed steps");
             else {
                 double climb = Price.climb(f.under(), f.depth());
-                add(rows, dropped, m, now, Options.scored("cut + craft " + item, "craft", (f.under() ? AaLadder.CLIMB + " then " : "") + f.wood().command() + " then " + craft + " then " + place,
+                List<Step> first = new ArrayList<>();
+                if (f.under()) first.add(new Step.Climb());
+                first.addAll(f.wood().steps());
+                first.add(craft);
+                add(rows, dropped, m, now, Options.typed("cut + craft " + item, "craft", join(first, place),
                         climb + f.wood().total() + craftPlace, lack + " planks short: " + f.wood().id() + " " + Price.r(f.wood().total())
-                                + (f.under() ? ", climb " + Price.r(climb) : "") + ", craft + place", "cut craft " + item, false, m), f);
+                                + (f.under() ? ", climb " + Price.r(climb) : "") + ", craft + place", "cut craft " + item, m), f);
             }
-        }
-        // 4. the planner
+        }        // 4. the planner
         if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no chain" : plannerWhy));
         else Price.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, plannedCost * Options.planUnit(),
                 "plan cost " + Price.r(plannedCost) + " x " + Price.r(Options.planUnit()), "planner " + item, true, m));
         return Options.Choice.of(rows, dropped, "no way to a " + item);
+    }
+
+    private static List<Step> join(List<Step> a, List<Step> b) {
+        List<Step> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 
     private static void add(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, Options.Option o, StationFacts f) {

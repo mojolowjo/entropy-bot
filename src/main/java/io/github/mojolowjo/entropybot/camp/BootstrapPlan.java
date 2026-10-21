@@ -165,7 +165,7 @@ public final class BootstrapPlan {
             out.add("setbase " + fmt(f.feet()));
             out.add("place camp " + fmt(f.feet()));          // 0.30.6: "mark" is the old word
         } else skipped.add("camp mark");
-        if (logs > 0) out.add("chop " + Math.max(logs + 2, 6));
+        if (logs > 0) out.add("cut " + Math.max(logs + 2, 6));
         else skipped.add("wood");
         if (needTable) {
             if (count(inv, "minecraft:crafting_table") == 0) out.add("craft crafting_table 1");

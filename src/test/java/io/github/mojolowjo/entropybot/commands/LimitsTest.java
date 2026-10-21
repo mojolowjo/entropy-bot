@@ -265,29 +265,6 @@ class LimitsTest {
     }
 
     @Test
-    void whyShortensTheOlderDecisionsAndKeepsTheLatestWhole() {
-        JsonObject mem = new JsonObject();
-        CommandsTest.Fake f = CommandsTest.fake(mem);
-        JsonObject a = new JsonObject();
-        JsonArray log = new JsonArray();
-        for (int i = 0; i < 20; i++) {
-            JsonObject e = new JsonObject();
-            e.addProperty("at", f.now);
-            e.addProperty("what", "mine strip any 32");
-            e.addProperty("why", "my mine is ready");
-            e.addProperty("result", "r" + i + " " + "x".repeat(990));
-            log.add(e);
-        }
-        a.add("log", log);
-        mem.add("autominer", a);
-        String why = f.chains.whyCommand();
-        String latest = why.substring(why.indexOf("latest: "));
-        assertTrue(latest.contains("r19 " + "x".repeat(990)), "the latest whole");
-        assertTrue(why.substring(0, why.indexOf("\n")).length() < 4 * (Limits.WHY_OLDER + 10));
-        assertTrue(Texts.whisperParts(why).size() <= Limits.WHISPER_PARTS, Texts.whisperParts(why).size() + " parts");
-    }
-
-    @Test
     void longAnswersAreCutToTheWhisperCapWithANote() {
         List<String> parts = Texts.whisperParts("word ".repeat(2000));
         assertTrue(parts.size() > Limits.WHISPER_PARTS);

@@ -5,18 +5,32 @@ package io.github.mojolowjo.entropybot.aa.core;
  * Chains/Jobs; tests use a fake. Only AA's own tasks go through it.
  */
 public interface JobPort {
-    /** What a task asks for: the chain text, who asked, a priority, its time limits (ms). */
-    record TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs) {
+    /**
+     * What a task asks for: the chain text, who asked, a priority, its time limits (ms). rm-execution: {@code steps} the
+     * option's typed steps (aa/moves/Steps runs them; {@code chain} is then only their label); empty: a chain text.
+     */
+    record TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs,
+                    java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) {
         public static final long TIMEOUT_MS = 20 * 60_000, NO_PROGRESS_MS = 180_000, MAX_MS = 60 * 60_000;
 
         /** 0.36.2 (review 7): every limit is finite: 0, negative or over an hour (MAX_VALUE) becomes the default. */
         public TaskSpec {
             if (timeoutMs <= 0 || timeoutMs > MAX_MS) timeoutMs = TIMEOUT_MS;
             if (noProgressMs <= 0 || noProgressMs > MAX_MS) noProgressMs = NO_PROGRESS_MS;
+            steps = steps == null ? java.util.List.of() : java.util.List.copyOf(steps);
+        }
+
+        public TaskSpec(TaskKind kind, String chain, String source, int priority, long timeoutMs, long noProgressMs) {
+            this(kind, chain, source, priority, timeoutMs, noProgressMs, java.util.List.of());
         }
 
         public static TaskSpec of(TaskKind kind, String chain, String source) {
             return new TaskSpec(kind, chain, source, 1, TIMEOUT_MS, NO_PROGRESS_MS);
+        }
+
+        /** rm-execution: a task on typed steps ({@code label} = Step.label of them). */
+        public static TaskSpec typed(TaskKind kind, String label, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String source) {
+            return new TaskSpec(kind, label, source, 1, TIMEOUT_MS, NO_PROGRESS_MS, steps);
         }
     }
 

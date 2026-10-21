@@ -42,7 +42,7 @@ public final class Kinds {
             case "stone": return ItemWorth.stoneLike(id) && ItemWorth.valueOr(id, 1) >= io.github.mojolowjo.entropybot.aa.brain.Tuning.get("junk.maxWorth");       // stone-like and not soft (dirt, gravel)
             case "food": return isFood != null && isFood.test(id);
             case "seeds": return ItemWorth.hasTag(id, "villager_plantable_seeds");
-            case "animals": return HuntRules.animals().contains(id);
+            case "animals": return ItemWorth.mobFood().containsKey(id);
             default: return false;
         }
     }
@@ -56,7 +56,7 @@ public final class Kinds {
     public static List<String> expand(String kind, Collection<String> ids, Predicate<String> isFood, Rule rule) {
         String k = kind.toLowerCase(Locale.ROOT);
         TreeSet<String> out = new TreeSet<>();
-        if (k.equals("animals")) out.addAll(HuntRules.animals());             // entities, not items: their own list
+        if (k.equals("animals")) out.addAll(ItemWorth.mobFood().keySet());   // entities, not items: the food mobs (loot data)
         for (String id : ids) if (byName(k, id, isFood)) out.add(id);
         if (rule != null) {
             out.addAll(rule.include());
@@ -166,7 +166,7 @@ public final class Kinds {
             }
             return id;
         }
-        if (hunting) for (String id : plainFoods(allowed)) if (ItemWorth.rawOf(id) != null && HuntRules.raws().contains(ItemWorth.rawOf(id))) return id;
+        if (hunting) for (String id : plainFoods(allowed)) if (ItemWorth.rawOf(id) != null && ItemWorth.mobFood().containsValue(ItemWorth.rawOf(id))) return id;
         for (String id : allowed) {
             if (id.startsWith("minecraft:")) continue;
             if (resolves != null && resolves.test(id)) return id;

@@ -48,7 +48,7 @@ class IronLitterTest {
         assertEquals(12 + 6 * IronOptions.PLACE_BLOCK + IronOptions.CLEAR + cleanup * io.github.mojolowjo.entropybot.aa.WaterWays.WALK_BPS, p.cost(), 1e-6);
         assertTrue(p.why().contains("litter") && p.why().contains("take down"), p.why());
         assertEquals("restore placed " + io.github.mojolowjo.entropybot.restore.PlacedPlan.DEFAULT_RADIUS, p.after());
-        assertTrue(asChoice(c, p).command(3).endsWith(" then restore placed 24"), asChoice(c, p).command(3));
+        assertTrue(asChoice(c, p).command(3).endsWith(" > restore placed 24"), asChoice(c, p).command(3));
     }
 
     @Test void sealedPillarWithTheReturnLegIsKept() {
@@ -60,7 +60,7 @@ class IronLitterTest {
         assertTrue(p.why().contains("keep"), p.why());
         assertEquals("restore keep pillar", p.after());
         assertEquals(12 + 6 * IronOptions.PLACE_BLOCK + IronOptions.CLEAR + 2.4 * io.github.mojolowjo.entropybot.aa.WaterWays.WALK_BPS, p.cost(), 1e-6);
-        assertTrue(asChoice(c, p).command(3).endsWith(" then restore keep pillar"), asChoice(c, p).command(3));
+        assertTrue(asChoice(c, p).command(3).endsWith(" > restore keep pillar"), asChoice(c, p).command(3));
     }
 
     @Test void ownBoxScaffoldIsFree() {

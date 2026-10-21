@@ -48,7 +48,7 @@ final class Price {
 
     /** A row in, unless held (its reason) or its chain has an unknown verb (dropped: "no verb for ..."). */
     static void add(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, Options.Option o) {
-        String bad = unknownVerb(o.command());
+        String bad = o.typed() ? null : unknownVerb(o.command());      // rm-execution: typed steps have no verb to look up
         if (bad != null) dropped.add(o.id() + ": no verb for \"" + bad + "\"");
         else RungOptions.add(rows, dropped, m, now, o);
     }

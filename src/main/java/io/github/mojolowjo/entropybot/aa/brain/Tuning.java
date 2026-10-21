@@ -147,6 +147,10 @@ public final class Tuning {
         // builder placements (0.39.q1): the movers' time limits and retries, out of aa/moves
         def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
         def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");
+        def("steps.stepMaxS", 600, "rm-execution (was the hunt's 10 min cap)", "seconds one typed step of an option (walk, cut, hunt, mine, craft...) may run before the option fails 'timed out'");
+        def("steps.walkNear", 2, "rm-execution", "blocks from a seen tree or herd at which the walk before the work ends (Baritone GoalNear)");
+        def("steps.huntReach", 20, "rm-execution (was the hunt job's 20-block walk rule; the strike's fight loop reaches 24)", "blocks from an animal within which the hunt step hands it to the strike input instead of walking (Baritone GoalNear) to it");
+        def("steps.huntAtR", 16, "rm-execution (was HuntRules.AT_R)", "blocks round a remembered herd's place within which the hunt step takes animals");
         def("moves.pillarS", 15, "backbone step 2", "seconds a pillar leg may take");
         def("moves.digS", 40, "backbone step 2", "seconds a burrow / dig-in leg may take");
         def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");

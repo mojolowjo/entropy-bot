@@ -101,6 +101,13 @@ public final class LootBook {
         return l;
     }
 
+    /** rm-execution: the blocks whose loot gives the item (the collect step's MineProcess filter), best first. */
+    public List<String> blocksDropping(String item) {
+        List<String> out = new ArrayList<>();
+        for (Source s : sources(item)) if (s.kind() == Kind.BLOCK && s.chance() > 0 && !out.contains(s.from())) out.add(s.from());
+        return out;
+    }
+
     /** "from: kill cow (about 1 each), break gravel (10%); +3 more" (or null when the book has nothing). */
     public String sourcesText(String item, int max) {
         List<Source> l = sources(item);

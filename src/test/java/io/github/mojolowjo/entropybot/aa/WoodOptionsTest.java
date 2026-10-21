@@ -18,10 +18,13 @@ class WoodOptionsTest {
         Options.Choice c = WoodOptions.choose(new WoodFacts(4, List.of(tree(50, 50, null))), m, 0);
         assertEquals(1, c.ranked().size(), c.line());
         assertTrue(c.best().id().startsWith("chop at"), c.line());
-        assertEquals("goto 50 64 0 then cut 4", c.best().command(), "no area command: the world is open");
+        assertEquals("goto 50 64 0 near 2 > cut 4 at 50 64 0", c.best().command(), "no area command: the world is open");
         assertTrue(c.best().why().contains("there and back"), c.best().why());
         assertNotNull(c.best().site());
-        assertTrue(WoodOptions.isWoodCommand(c.best().command()));
+        // rm-execution: typed steps (the walk to the seen tree, then Baritone's tree mining), no chain text
+        assertEquals(List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(50, 64, 50, 2).getClass(), io.github.mojolowjo.entropybot.aa.moves.Step.ChopTree.class),
+                c.best().steps().stream().map(Object::getClass).toList());
+        assertFalse(c.best().command().contains(" then "), c.best().command());
     }
     @Test
     void failedOptionIsHeldAndTheNextTreeOrOptionRuns() {

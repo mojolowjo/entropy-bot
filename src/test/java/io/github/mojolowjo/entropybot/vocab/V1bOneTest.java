@@ -46,10 +46,7 @@ class V1bOneTest {
         assertEquals("minecraft:oak_log", Kinds.pick(List.of("minecraft:cherry_log", "minecraft:oak_log"), Map.of("minecraft:oak_log", 5)));
         assertEquals("minecraft:cherry_log", Kinds.pick(List.of("minecraft:cherry_log", "minecraft:oak_log"), Map.of()));
         assertNull(Kinds.pick(List.of(), Map.of()));
-        // cut ... logs with cherry excluded: the chop filter
-        assertFalse(io.github.mojolowjo.entropybot.chop.ChopRules.matches("except:cherry_log.pale_oak_log", "minecraft:cherry_log"));
-        assertTrue(io.github.mojolowjo.entropybot.chop.ChopRules.matches("except:cherry_log", "minecraft:birch_log"));
-        assertEquals("except:cherry_log", io.github.mojolowjo.entropybot.chop.ChopRules.parse("16 except:cherry_log").type());
+
     }
 
     @Test

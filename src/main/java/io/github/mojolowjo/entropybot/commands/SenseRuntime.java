@@ -57,7 +57,7 @@ public final class SenseRuntime {
             return s;
         }
         Core core = Core.INSTANCE;
-        s.parked = c.chains.parked() || c.chains.corpseBusy();
+        s.parked = c.chains.corpseBusy();
         s.health = p.getHealth();
         s.maxHealth = p.getMaxHealth();
         s.food = p.getFoodData().getFoodLevel();

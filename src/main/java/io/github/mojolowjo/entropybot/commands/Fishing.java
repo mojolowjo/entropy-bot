@@ -62,7 +62,7 @@ final class Fishing {
         FishRules.Parsed g = FishRules.parse(rest);
         if (g == null) return Chains.Reply.now("usage: fish [n] | fish <min>m | fish status");
         if (run != null) return Chains.Reply.now("busy: " + status(p));
-        if (c.kelping.running() || c.hunting.running()) return Chains.Reply.now("busy: another food run is on (stop it first)");
+        if (c.kelping.running() || c.stepRun.running()) return Chains.Reply.now("busy: another food run is on (stop it first)");
         Run k = new Run();
         k.from = from;
         k.goal = g;
@@ -198,12 +198,13 @@ final class Fishing {
                     return;
                 }
                 if (!r.aimed) {                                          // turn first: the server uses the rotation it was last sent
-                    p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(spotInfo[0] + 0.5, spotInfo[1] + 0.5, spotInfo[2] + 0.5));
+                    io.github.mojolowjo.entropybot.aa.moves.Moves.lookAt(new double[]{spotInfo[0] + 0.5, spotInfo[1] + 0.5, spotInfo[2] + 0.5});     // rm-execution: Baritone's look
                     r.aimed = true;
                     r.nextAt = now + 5;
                     return;
                 }
                 r.aimed = false;
+                io.github.mojolowjo.entropybot.aa.moves.Moves.lookAt(new double[]{spotInfo[0] + 0.5, spotInfo[1] + 0.5, spotInfo[2] + 0.5});     // held through the cast tick
                 mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
                 r.castAt = now;
                 r.casts++;

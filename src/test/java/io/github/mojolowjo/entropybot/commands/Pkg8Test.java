@@ -8,12 +8,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.30.7 (package 8): the corpse detour (item 1), the climb target (item 4), the empty ore index end (item 5). */
 class Pkg8Test {
-    @Test void corpseInWayAsksForTheFetch() {
-        assertTrue(Chains.corpseInWay("couldn't place the furnace at 34 131 23: my corpse is in the way at 34 131 23 - next: death"));
-        assertFalse(Chains.corpseInWay("couldn't place the furnace at 34 131 23: a boat is in the way at 34 131 23 - next: move it"));
-        assertFalse(Chains.corpseInWay(null));
-    }
-
     @Test void climbTargetCampThenBaseThenArea() {
         int[] camp = {1, 70, 2}, base = {5, 72, 5}, area = {9, 64, 9};
         assertEquals("the camp", ClimbFallback.target(camp, base, area, "arena").what());

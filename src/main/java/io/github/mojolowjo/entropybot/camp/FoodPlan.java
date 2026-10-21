@@ -11,7 +11,7 @@ import java.util.Set;
  * <p>{@code bootstrap} ends with the step {@link #STEP} ("bootstrap food"): with fewer than {@link #WANT} food items
  * in the bag it hunts the allowed animals within 32 and cooks the meat. Hunting is the owner's setting (off by
  * default, it kills animals), so the step never turns it on: it says "hunting is off - next: hunting on". The hunt
- * and the cook run as soft chain steps ({@link #SOFT}): a failed one is reported and the chain still ends ok.
+ * and the cook are plain chain steps (rm-execution: a failed one ends the chain with its stage and reason).
  * {@link #checkFinding} is the first {@code check} item when food is low.
  *
  * <p>Loader notes: none (no game classes). The game side is {@code commands.CampCommands.bootstrapFood}.
@@ -21,8 +21,6 @@ public final class FoodPlan {
 
     /** The bootstrap chain's last step. */
     public static final String STEP = "bootstrap food";
-    /** A chain step with this prefix may fail: the chain reports it and goes on (commands.Chains). */
-    public static final String SOFT = "soft ";
     /** Food items wanted in the bag at the end of bootstrap. */
     public static final int WANT = 6;
     /** Below this food level (of 20), check lists food first. */
@@ -41,14 +39,14 @@ public final class FoodPlan {
 
     /** Animal (short kind) -> its meat (short), from the loot tables. */
     static String meat(String animal) {
-        String m = io.github.mojolowjo.entropybot.vocab.HuntRules.meatOf("minecraft:" + animal);
+        String m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().get("minecraft:" + animal);
         return m == null ? null : bare(m);
     }
 
     /** Better animals first (more food per kill: the cooked meat's energy, then id). */
     public static List<String> order() {
         List<String> l = new ArrayList<>();
-        for (String a : io.github.mojolowjo.entropybot.vocab.HuntRules.animals()) l.add(bare(a));
+        for (String a : new java.util.TreeSet<>(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().keySet())) l.add(bare(a));
         l.sort(java.util.Comparator.comparingDouble((String a) -> -io.github.mojolowjo.entropybot.aa.brain.FoodModel.energyOf(io.github.mojolowjo.entropybot.aa.brain.FoodModel.cooked(meat(a)) == null ? meat(a) : io.github.mojolowjo.entropybot.aa.brain.FoodModel.cooked(meat(a)))).thenComparing(a -> a));
         return l;
     }
@@ -100,26 +98,26 @@ public final class FoodPlan {
         int rawN = 0;
         for (int v : raw.values()) rawN += v;
         if (rawN >= need) {                                       // enough raw meat: cook it, no hunt
-            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
+            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add("cook " + e.getKey() + " " + e.getValue());
             return new Decision(steps, "ok: food: I carry " + have + " food and " + rawN + " raw - cooking it");
         }
         if (!huntingOn) {
-            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
+            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add("cook " + e.getKey() + " " + e.getValue());
             String a = kind == null ? "cow" : kind;
             return new Decision(steps, "ok: food skipped: I carry " + have + " food and hunting is off"
                     + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunting on then hunt " + need + " " + a + " (then cook " + meat(a) + " " + need + ")");
         }
         if (kind == null) {
-            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
+            for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add("cook " + e.getKey() + " " + e.getValue());
             return new Decision(steps, "ok: food: I carry " + have + " food and see no animals within 32"
                     + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunt " + need + " when you see some");
         }
         String meat = meat(kind);
         int n = Math.min(need, Math.max(1, near.get(kind) * 2));   // a cow drops 1-3: two per animal seen at most
-        steps.add(SOFT + "hunt " + n + " " + kind);
+        steps.add("hunt " + n + " " + kind);
         int cook = n + raw.getOrDefault(meat, 0);
-        steps.add(SOFT + "cook " + meat + " " + cook);
-        for (Map.Entry<String, Integer> e : raw.entrySet()) if (!e.getKey().equals(meat)) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
+        steps.add("cook " + meat + " " + cook);
+        for (Map.Entry<String, Integer> e : raw.entrySet()) if (!e.getKey().equals(meat)) steps.add("cook " + e.getKey() + " " + e.getValue());
         return new Decision(steps, "ok: food: I carry " + have + " food - hunting " + n + " " + kind + " (" + near.get(kind) + " within 32), then cook " + meat + " " + cook);
     }
 

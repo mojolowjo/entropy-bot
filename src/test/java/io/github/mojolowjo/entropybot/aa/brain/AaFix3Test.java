@@ -4,7 +4,6 @@ import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
 import io.github.mojolowjo.entropybot.aa.core.Tracer;
-import io.github.mojolowjo.entropybot.vocab.HuntRules;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -74,9 +73,4 @@ class AaFix3Test {
         assertEquals("craft torch 16", NightWork.craft(bb.in));
     }
 
-    @Test
-    void theHuntHasNoOutWord() {
-        assertArrayEquals(new Object[]{4, "minecraft:cow"}, HuntRules.parse("4 cow"));
-        assertNull(HuntRules.parse("4 cow out"), "no out hunt: the walk to the animals is priced");
-    }
 }

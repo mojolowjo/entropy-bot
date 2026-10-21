@@ -14,22 +14,28 @@ class R1FixTest {
 
     @Test void idleIronMinesBeforeItSmelts() {
         String[] why = new String[1];
-        String chain = IronOptions.idleChain((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(0),
+        Options.Option o = IronOptions.idleOption((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(0),
                 "smelt iron_ingot 16", 0, why);
         // either an ore way runs (mine before smelt) or nothing runs; never the bare smelt
-        if (chain == null) assertNotNull(why[0]);
-        else assertTrue(chain.indexOf("mine") >= 0 && chain.indexOf("mine") < chain.indexOf("smelt"), chain);
+        if (o == null) assertNotNull(why[0]);
+        else {
+            String chain = o.command();
+            assertTrue(o.typed(), "rm-execution: typed steps");
+            assertTrue(chain.indexOf("mine") >= 0 && chain.indexOf("mine") < chain.indexOf("smelt"), chain);
+        }
     }
 
     @Test void idleIronEnoughRawIronKeepsTheSmelt() {
-        String chain = IronOptions.idleChain((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(16),
+        Options.Option o = IronOptions.idleOption((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(16),
                 "smelt iron_ingot 16", 0, new String[1]);
-        assertNotNull(chain);
-        assertTrue(chain.contains("smelt"), chain);
+        assertNotNull(o);
+        assertTrue(o.steps().stream().anyMatch(s -> s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Smelt), o.command());
     }
 
-    @Test void idleIronNoFactsRunsThePlannersChain() {
-        assertEquals("smelt iron_ingot 16", IronOptions.idleChain(null, "smelt iron_ingot 16", 0, new String[1]));
+    @Test void idleIronNoFactsRunsNothing() {
+        String[] why = new String[1];
+        assertNull(IronOptions.idleOption(null, "smelt iron_ingot 16", 0, why), "rm-execution: no planner chain text runs bare");
+        assertEquals("no iron facts", why[0]);
     }
 
     // ---- the camp chest's cell ----

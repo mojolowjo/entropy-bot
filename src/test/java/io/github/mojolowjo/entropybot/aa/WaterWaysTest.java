@@ -47,9 +47,9 @@ class WaterWaysTest {
         assertTrue(c.ranked().stream().anyMatch(s -> s.way() == IronOptions.Way.WATER_STAND));
         var place = c.ranked().stream().filter(s -> s.way() == IronOptions.Way.WATER_PLACE).findFirst().orElseThrow();
         var one = new IronOptions.Choice(place.way(), place.target(), IronOptions.Smelt.CAMP, c.ranked(), c.dropped(), place.stand(), place.place());
-        assertEquals("place cobblestone 6 39 5 then goto 6 40 5 then mine iron 1 at 5 40 6 dig", one.command(3));
+        assertEquals("place cobblestone 6 39 5 > goto 6 40 5 > mine iron 1 at 5 40 6 dig", one.command(3));
         var stand = c.ranked().stream().filter(s -> s.way() == IronOptions.Way.WATER_STAND).findFirst().orElseThrow();
-        assertEquals("goto 5 40 5 then mine iron 1 at 5 40 6 dig",
+        assertEquals("goto 5 40 5 > mine iron 1 at 5 40 6 dig",
                 new IronOptions.Choice(stand.way(), stand.target(), IronOptions.Smelt.CAMP, c.ranked(), c.dropped(), stand.stand(), null).command(3));
     }
 

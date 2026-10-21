@@ -56,7 +56,7 @@ final class Kelping {
         KelpRules.Parsed g = KelpRules.parse(rest);
         if (g == null) return Chains.Reply.now("usage: gather kelp [n] [<min>m] [cook] | gather kelp status");
         if (run != null) return Chains.Reply.now("busy: " + status(p));
-        if (c.fishing.running() || c.hunting.running()) return Chains.Reply.now("busy: another food run is on (stop it first)");
+        if (c.fishing.running() || c.stepRun.running()) return Chains.Reply.now("busy: another food run is on (stop it first)");
         Run k = new Run();
         k.from = from;
         k.goal = g;

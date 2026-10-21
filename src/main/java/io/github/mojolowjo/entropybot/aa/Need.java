@@ -106,7 +106,7 @@ public final class Need extends Node {
         this.noWay = noWay;
         this.goal = goal;
         this.picker = picker;
-        this.job = new RunJob(id + ".job", kind, bb -> resolved == null ? null : JobPort.TaskSpec.of(kind, resolved, "needs"));
+        this.job = new RunJob(id + ".job", kind, bb -> resolved == null ? null : spec(kind, resolved));
     }
 
     public Need(String id, TaskKind kind, Predicate<Blackboard> unmet, Function<Blackboard, String> noWay, Function<Blackboard, String> goal) {
@@ -272,6 +272,13 @@ public final class Need extends Node {
         lastWhy = p.why;
         lastCostS = costS;
         return p;
+    }
+
+    /** rm-execution: the row that runs as a task; a typed option's steps go with it (its command is only their label). */
+    private JobPort.TaskSpec spec(TaskKind kind, String cmd) {
+        if (picker instanceof Options.Picker<?> op && op.ran() != null && op.ran().typed() && cmd.equals(op.ran().command()))
+            return JobPort.TaskSpec.typed(kind, cmd, op.ran().steps(), "needs");
+        return JobPort.TaskSpec.of(kind, cmd, "needs");
     }
 
     private Status start(Blackboard bb, String cmd, boolean pre, String key, String why, long now) {

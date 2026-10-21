@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** AA_ROUND4A O: a station's ways priced; known beats craft beats cut; no way says every reason. */
 class StationOptionsTest {
     static final int[] CELL = {1, 64, 0};
-    static final Options.Option WOOD = new Options.Option("cut 2 trees", "wood", "cut 2", 40, "trees 10 away", "cut", false);
+    static final Options.Option WOOD = Options.typed("cut 2 trees", "wood", java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.ChopTree(null, 2, null)), 40, "trees 10 away", "cut", new Options.OptionMemory());
 
     static StationFacts f(Kind k, boolean bag, boolean known, double dist, int planks, int logs, int cobble, int pick, int[] cell, Options.Option wood, boolean under) {
         return new StationFacts(k, bag, known, known ? new int[]{5, 64, 5} : null, dist, planks, logs, cobble, pick, cell, wood, "no trees", under, under ? 10 : 0);
@@ -19,7 +19,8 @@ class StationOptionsTest {
     void theStationSetOwnsTheChestAndScansIt() {
         // rm-areas: the camp chest chain is gone; the placed chest is noted by a scan (the base chests fact)
         Options.Choice c = StationOptions.choose(f(Kind.CHEST, true, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, null, 0, null);
-        assertEquals("place chest 1 64 0 then scan", c.best().command());
+        assertEquals("place chest 1 64 0 > scan", c.best().command());
+        assertTrue(c.best().typed(), "rm-execution: typed steps");
         Options.Choice t = StationOptions.choose(f(Kind.TABLE, true, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, null, 0, null);
         assertEquals("place crafting_table 1 64 0", t.best().command(), "only the chest scans");
     }
@@ -27,7 +28,7 @@ class StationOptionsTest {
     @Test
     void materialsInTheBagCraftAndPlaceAtTheTimeModelsPrice() {
         Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 4, 0, 0, 0, CELL, WOOD, false), new Options.OptionMemory(), 0, null, 0, "none");
-        assertEquals("craft crafting_table 1 then place crafting_table 1 64 0", c.best().command());
+        assertEquals("craft crafting_table 1 > place crafting_table 1 64 0", c.best().command());
         assertEquals(0.75 * 4.317, c.best().cost(), 1e-6);
         assertTrue(c.why().contains("craft 0.5 s + place 0.25 s"), c.why());
         assertNotNull(c.best().site());
@@ -36,16 +37,16 @@ class StationOptionsTest {
     @Test
     void aKnownStationNearIsUsedAndAFarOneDropped() {
         Options.Choice near = StationOptions.choose(f(Kind.FURNACE, false, true, 20, 0, 0, 0, 1, CELL, null, false), new Options.OptionMemory(), 0, null, 0, null);
-        assertEquals("goto 5 64 5", near.best().command());
+        assertEquals("goto 5 64 5 near 2", near.best().command());
         Options.Choice far = StationOptions.choose(f(Kind.FURNACE, false, true, 60, 0, 0, 8, 1, CELL, null, false), new Options.OptionMemory(), 0, null, 0, null);
-        assertEquals("craft furnace 1 then place furnace 1 64 0", far.best().command());
+        assertEquals("craft furnace 1 > place furnace 1 64 0", far.best().command());
         assertTrue(far.why().contains("60 away, over 48"), far.why());
     }
 
     @Test
     void woodShortPrependsTheWoodRowAndTheClimbUnderGround() {
         Options.Choice c = StationOptions.choose(f(Kind.CHEST, false, false, -1, 2, 0, 0, 0, CELL, WOOD, true), new Options.OptionMemory(), 0, null, 0, null);
-        assertEquals("climb then cut 2 then craft chest 1 then place chest 1 64 0 then scan", c.best().command());
+        assertEquals("climb > cut 2 > craft chest 1 > place chest 1 64 0 > scan", c.best().command());
         assertTrue(c.best().cost() > 40, "the wood row's price is in it");
         assertTrue(c.why().contains("climb"), c.why());
     }
@@ -84,11 +85,12 @@ class StationOptionsTest {
     }
 
     @Test
-    void aRowWithAnUnknownVerbIsDroppedWithTheStep() {
+    void aWoodWayWithoutTypedStepsIsDroppedWithItsReason() {
+        // rm-execution: a wood way that is chain text (not typed steps) is never prepended
         Options.Option bad = new Options.Option("cut", "wood", "chop 3", 10, "x", "cut", false);
         Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 0, 0, 0, 0, CELL, bad, false), new Options.OptionMemory(), 0, null, 0, null);
         assertNull(c.best());
-        assertTrue(c.why().contains("no verb for \"chop 3\""), c.why());
+        assertTrue(c.why().contains("the wood way cut has no typed steps"), c.why());
     }
 
     @Test
@@ -106,7 +108,12 @@ class StationOptionsTest {
         all.add(BedOptions.choose(new BedOptions.BedFacts(3, 0, null, CELL), new Options.OptionMemory(), 0));
         int rows = 0;
         for (Options.Choice c : all) {
-            for (Options.Option o : c.ranked()) { rows++; assertNull(Price.unknownVerb(o.command()), o.command()); }
+            for (Options.Option o : c.ranked()) {
+                rows++;
+                // rm-execution: a typed row is steps (its label never parsed); a row still on text has known verbs
+                if (o.typed()) assertFalse(o.command().contains(" then "), o.command());
+                else assertNull(Price.unknownVerb(o.command()), o.command());
+            }
             for (String d : c.dropped()) assertFalse(d.contains("no verb"), d);
         }
         assertTrue(rows >= 20, "rows checked: " + rows);

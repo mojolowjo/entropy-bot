@@ -341,95 +341,9 @@ final class DigCommands {
         return c.chainsRef().startChain(from, "dig stairs", text, 1);
     }
 
-    /** 0.28.2 (B1): one cell for StonePit (vanilla BlockState and tags only). */
-    static io.github.mojolowjo.entropybot.gather.StonePit.Cell stoneCell(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
-        if (!lv.isLoaded(bp)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
-        var st = lv.getBlockState(bp);
-        if (!st.getFluidState().isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.LIQUID;
-        if (st.hasBlockEntity() || st.getDestroySpeed(lv, bp) < 0) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.HARD;
-        if (st.getCollisionShape(lv, bp).isEmpty()) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.AIR;
-        if (st.is(net.minecraft.tags.BlockTags.BASE_STONE_OVERWORLD) || st.is(net.minecraft.world.level.block.Blocks.COBBLESTONE)) return io.github.mojolowjo.entropybot.gather.StonePit.Cell.STONE;
-        return io.github.mojolowjo.entropybot.gather.StonePit.Cell.SOFT;
-    }
-
-    /**
-     * 0.28.2 (B1, trial fix package 2) "dig stone [n]": gather's cobblestone source. A walkable staircase quarry (StonePit)
-     * from my feet, long enough for n stone; one careful clear of exactly those cells (the policy, leases, tools, base
-     * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
-     */
-    static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from, boolean via) {
-        int n = rest.isEmpty() ? 64 : Math.max(1, Math.min(256, Integer.parseInt(rest)));
-        net.minecraft.world.level.Level lv = p.level();
-        int[] here = Jobs.here(p);
-        int[] feet = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) lv, here[0], here[1], here[2]);
-        int[] dir = CampCommands.quarryDir((net.minecraft.client.multiplayer.ClientLevel) lv, feet);
-        var plan = io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), feet, dir, n);
-        if (plan.err() != null) {          // regression o1: a fact for every caller, never a retry at the same spot
-            io.github.mojolowjo.entropybot.gather.QuarrySites.charge(feet, plan.err().replaceFirst("^error: ", "").replaceFirst(" - next:.*$", ""), System.currentTimeMillis());
-            return plan.err();
-        }
-        String dim = Storage.dim();
-        var g = Core.INSTANCE.guard.core;
-        for (int[] cell : plan.cells()) {
-            var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
-            if (ar == null || ar.name == null) continue;
-            JsonObject ab = c.policyArea(ar.name);
-            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE) {
-                io.github.mojolowjo.entropybot.gather.QuarrySites.charge(feet, "the quarry would dig into the main area " + ar.name, System.currentTimeMillis());
-                return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
-            }
-        }
-        String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
-        LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns, {}", n, Jobs.fmt(feet), plan.cells().size(), plan.stone(), plan.columns(),
-                via ? "via baritone" : "via engine");
-        // 0.30.0 (P2): the same cells, broken by Baritone's builder (only those cells: the staircase keeps its shape)
-        ClearJob.Options o = io.github.mojolowjo.entropybot.gather.StonePit.options(plan, n, label, via);
-        List<Seq.Step> before = restockSteps(c, p, plan.cells().size());
-        if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.counted());
-        return startClear(c, p, o, before);
-    }
-
-    /**
-     * regression o1: the quarry site for {@code n} cobblestone among my feet and the exposed stone columns within
-     * QuarrySites.RADIUS (top solid block is stone; scanned every 4 blocks, cached 10 s), priced walk + dig.
-     */
-    static io.github.mojolowjo.entropybot.gather.QuarrySites.Pick quarrySite(Commands c, LocalPlayer p, int n) {
-        var lv = (net.minecraft.client.multiplayer.ClientLevel) p.level();
-        int[] here = Jobs.here(p);
-        int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
-        long now = System.currentTimeMillis();
-        int R = io.github.mojolowjo.entropybot.gather.QuarrySites.radius();
-        List<int[]> cand = new java.util.ArrayList<>(io.github.mojolowjo.entropybot.gather.QuarrySites.candidates(feet, now, () -> {
-            List<int[]> out = new java.util.ArrayList<>();
-            for (int x = feet[0] - R; x <= feet[0] + R; x += 4)
-                for (int z = feet[2] - R; z <= feet[2] + R; z += 4) {
-                    if ((x - feet[0]) * (x - feet[0]) + (z - feet[2]) * (z - feet[2]) > R * R) continue;
-                    if (!lv.isLoaded(new net.minecraft.core.BlockPos(x, feet[1], z))) continue;
-                    int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
-                    if (stoneCell(lv, x, top, z) == io.github.mojolowjo.entropybot.gather.StonePit.Cell.STONE) out.add(new int[]{x, top + 1, z});
-                }
-            return out;
-        }));
-        cand.add(0, feet);
-        String dim = Storage.dim();
-        var g = Core.INSTANCE.guard.core;
-        return io.github.mojolowjo.entropybot.gather.QuarrySites.choose(cand, feet, io.github.mojolowjo.entropybot.gather.QuarrySites.avoiding(
-                f -> io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), f, CampCommands.quarryDir(lv, f), n),
-                cell -> {                                   // review p2: the base place and the policy's keep-out / no-break
-                    if (!c.workAllowed(dim, cell[0], cell[1], cell[2])) return c.policy.blockedText(dim, cell[0], cell[2]);
-                    var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
-                    if (ar == null || ar.name == null) return null;
-                    var t = PolicyCommands.typeOf(c.policyArea(ar.name));
-                    return t == io.github.mojolowjo.entropybot.guard.AreaType.BASE || t == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK ? "the area " + ar.name : null;
-                }), now);
-    }
-
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
         int[] feet = {(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
         if (rest != null && rest.trim().toLowerCase().startsWith("stairs")) return stairs(c, p, rest.trim().substring(6).trim(), from);     // 0.24.4
-        DigArgs.Stone sw = DigArgs.stone(rest);                // 0.28.2; 0.30.0: [via baritone|via engine]
-        if (sw != null) return stoneQuarry(c, p, String.valueOf(sw.n()), from, DigArgs.useBuilder(sw.viaEngine(), false));
         String areaName = ConfirmGate.digArea(Texts.words(rest == null ? "" : rest.trim().toLowerCase()));
         if (areaName != null) return digArea(c, p, areaName, rest, from);
         DigArgs a = DigArgs.parse(rest, feet);

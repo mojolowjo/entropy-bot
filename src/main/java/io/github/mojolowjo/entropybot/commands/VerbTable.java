@@ -98,12 +98,12 @@ public final class VerbTable {
                 "house house|house house oak_planks", "deposit");
         v("climb", "", "digging", O, "climb", "out of a hole: a 1-wide staircase dug up to the surface (from my cell or the pit's edge, the side with fewest blocks to dig; needs a pickaxe if it has to dig); a walk or dig that ends in a hole says next: climb; at the surface but walled in by my own blocks (my walls, my shelter, or at my base): it digs the one side open (feet and head, toward the camp if it can)",
                 "climb", "goto <x y z>");
-        v("cut", "", "digging", O, "cut <n> [logs|<log type>] | cut trees <n> [log type] | cut status",
-                "fell trees near me for n logs (logs: any kind but what kinds logs leaves out), never next to builds; pick up, replant; 20 min at most", "cut 16|cut 16 logs|cut trees 3 birch", "deposit");
-        v("gather", "", "digging", O, "gather <item|kind> [n] [<min>m] | gather kelp [n] [<min>m] [cook] | gather status | gather sources [item] | gather source <item> <command with {n}> | gather source <item> clear",
-                "get n of an item into my bag: from storage first, else crafted or smelted, the raw items mined (strip mine, ore in view, cave; cobblestone: dig stone n, a staircase quarry at my feet dug by Baritone's builder; the bag count decides when n is reached), "
-                        + "cut or farmed, step by step; 60 min at most, 3 failed tries at one thing stop it; kelp: cut the kelp columns near me (water, air reflex first) until n, cook: then dried kelp",
-                "gather cobblestone 64|gather iron_ingot 16|gather oak_planks 32 20m|gather sources torch", "deposit");
+        v("cut", "", "digging", O, "cut <n> [logs|<log type>]",
+                "n more logs in my bag: Baritone's own tree mining (its mine process on the blocks the game tags as logs, or that one kind); fails with the count got when it reaches no more", "cut 16|cut 16 logs|cut 8 birch_log", "deposit");
+        v("gather", "", "digging", O, "gather <item> <n> | gather kelp [n] [<min>m] [cook]",
+                "n more of an item in my bag, as typed steps: logs = cut; a fuel no block gives (charcoal) = cut + smelt; a food mob's drop = hunt; else Baritone mines the blocks the game's loot data says give it (cobblestone from stone); a step that fails ends it with why; "
+                        + "kelp: cut the kelp columns near me (water, air reflex first) until n, cook: then dried kelp",
+                "gather cobblestone 64|gather charcoal 8|gather leather 4", "deposit");
         v("light", "", "digging", O, "light here <r> | light x1 z1 x2 z2", "torches on the ground every 6 blocks (fetches or crafts torches first)",
                 "light here 8|light 0 0 30 30", "status");
         v("junk", "", "digging", O, "junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest",
@@ -147,8 +147,7 @@ public final class VerbTable {
         v("reply", "", "jobs", O, "reply full | reply short", "answers short (RESULT/HERE/NEW/OPTIONS, about 600 characters) or the whole text", "reply full|reply short", "why");
         v("why", "", "jobs", G, "why | why cut | why brain | why threats", "the last failure in full; why cut: the last answer the short shape cut; why brain: the brain's last decision: the branch, each need's score, what was skipped (and why), the stage; why threats: the threat test's last fight-or-flee verdict, each mob near now (aggro y/n, path N (straight M), distance -1/s -> counts|noted) and the last 32 changes",
                 "why|why cut|why brain|why threats", "status");
-        v("deaths", "", "jobs", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not (5 deaths an hour park me at base)", "deaths", "resume", "deaths");
-        v("resume", "", "jobs", O, "resume", "carry on after 5 deaths in an hour parked me", "resume", "status");
+        v("deaths", "", "jobs", P, "deaths | death policy on|off", "deaths in the last hour; fetch my corpse after a death or not", "deaths", "status", "deaths");
         // ---- kinds and tools (VOCABULARY 6)
         v("kinds", "", "materials", O, "kinds | kinds <kind> | kinds <kind> exclude|include <id>",
                 "the kind-words logs, wood, ores, stone, food, seeds (usable for any item word: mine, get, cut, gather, need, fetch) and what each leaves out", "kinds|kinds logs exclude cherry_log", "cut 16 logs");
@@ -180,9 +179,9 @@ public final class VerbTable {
                 "build a 1x2 shell around me from my planks, cobblestone or dirt (cut logs first when short), a torch inside, wait until day (or the timer), open my own wall and step out; keep: close it behind me; \"night status\" shows how safe a night out is (score, band, time to dusk; brain set night.shelterBelow|night.workBelow|night.duskHours <n>)",
                 "shelter|shelter status", "sleep");
         v("hunting", "", "brain", O, "hunting | hunting on|off", "may I hunt farm animals (default off; gather food and the food need hunt when on)", "hunting on", "hunt");
-        v("hunt", "", "brain", O, "hunt <n> [cow|pig|chicken|sheep] | hunt status",
-                "with hunting on: kill the allowed animals (kinds animals; never pets, named ones, babies, villagers or players) within 32 until I have n raw meat, picking up the drops; then cook",
-                "hunt 3 cow", "hunting");
+        v("hunt", "", "brain", O, "hunt <n> [animal] [for <item> <count>] [at x z]",
+                "with hunting on: n more raw meat (or the item) from the animal (kinds animals; never pets, named ones or babies): Baritone walks to the nearest in view, the strike input takes it, I walk over the drops; none in view ends it with why",
+                "hunt 3 cow|hunt 2 sheep for white_wool 2", "hunting");
         v("fish", "", "brain", O, "fish [n] | fish <min>m | fish status",
                 "craft a rod when I carry 3 sticks + 2 string, cast at a water patch near me, reel in on the bite; stops at n fish (cod, salmon, tropical fish; default 4), the minutes, or stop; then cook the catch (cook cod n)",
                 "fish 4|fish 5m", "cook");
