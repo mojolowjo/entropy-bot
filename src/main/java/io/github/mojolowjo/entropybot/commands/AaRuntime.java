@@ -1371,6 +1371,19 @@ public final class AaRuntime implements JobPort {
     }
 
     /** {@code house} takes a box of 7x7 up to 4096 blocks (CampCommands.house); a round area or a bigger box does not fit. */
+    /** AA_ROUND4A O: the centre of area {@code name} at my feet's height (for the house row's site), null none or unreadable. */
+    int[] areaCell(String name) {
+        if (name == null || bb.in.pos == null) return null;
+        try {
+            JsonObject a = c.policyArea(name);
+            if (a == null || !a.has("x1")) return null;
+            return new int[]{(int) ((PolicyCommands.n(a, "x1") + PolicyCommands.n(a, "x2")) / 2), bb.in.pos[1], (int) ((PolicyCommands.n(a, "z1") + PolicyCommands.n(a, "z2")) / 2)};
+        } catch (RuntimeException e) {
+            LOG.debug("[entropybot] aa: area cell {}: {}", name, e.toString());
+            return null;
+        }
+    }
+
     private static boolean houseFits(JsonObject a) {
         try {
             if (a.has("round")) return false;

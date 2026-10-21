@@ -27,13 +27,14 @@ public final class BaseOptions {
      * @param blocks building blocks in the bag (cobblestone + planks + dirt)
      * @param night  it is night; {@code danger} the night danger (0..1+, 1 = full night on normal)
      * @param under  under ground, {@code depth} blocks
+     * @param burrowCell the danger facts' burrow check: a diggable floor that can be sealed here (ThreatFacts.Ways.burrow)
      */
-    public record BaseFacts(String area, int[] areaAt, int blocks, boolean night, double danger, boolean under, int depth) {}
+    public record BaseFacts(String area, int[] areaAt, int blocks, boolean night, double danger, boolean under, int depth, boolean burrowCell) {}
 
     /** The open-night price of {@code seconds} spent setting a way up (0 by day). */
     static double nightCost(BaseFacts f, double seconds) {
         if (!f.night()) return 0;
-        return Price.s(seconds * Price.tune("danger.nightHpS", 0.05) * Price.tune("danger.hpS", 6) * Math.max(0, f.danger()) * Price.tune("base.nightW", 1));
+        return Price.s(seconds * Price.tune("danger.nightHpS") * Price.tune("danger.hpS") * Math.max(0, f.danger()) * Price.tune("base.nightW"));
     }
 
     public static Options.Choice choose(BaseFacts f, Options.OptionMemory m, long now) {
@@ -44,25 +45,27 @@ public final class BaseOptions {
         // 1. the house in the marked area
         if (f.area() == null) dropped.add("house: no area marked");
         else {
-            double s = Price.tune("base.houseS", 300), night = nightCost(f, s);
+            double s = Price.tune("base.houseS"), night = nightCost(f, s);
             Options.Option o = Options.scored("house " + f.area(), "house", pre + "house " + f.area(), climb + Price.s(s) + night,
                     "build " + Price.r(s) + " s" + (f.night() ? ", open night " + Price.r(night) : "") + climbWhy, "house", false, m);
-            RungOptions.add(rows, dropped, m, now, f.areaAt() == null ? o : o.withSite(Site.of(f.areaAt())));
+            Price.add(rows, dropped, m, now, f.areaAt() == null ? o : o.withSite(Site.of(f.areaAt())));
         }
         // 2. the box here
-        int need = (int) Price.tune("danger.boxBlocks", 12);
+        int need = (int) Price.tune("danger.boxBlocks");
         if (f.blocks() < need) dropped.add("shelter here: " + f.blocks() + " blocks in the bag, " + need + " wanted");
         else {
-            double s = Price.tune("danger.boxS", 20), night = nightCost(f, s);
-            RungOptions.add(rows, dropped, m, now, Options.scored("shelter here", "shelter", pre + "goal shelter", climb + Price.s(s) + night,
+            double s = Price.tune("danger.boxS"), night = nightCost(f, s);
+            Price.add(rows, dropped, m, now, Options.scored("shelter here", "shelter", pre + "goal shelter", climb + Price.s(s) + night,
                     f.blocks() + " blocks, build " + Price.r(s) + " s" + (f.night() ? ", open night " + Price.r(night) : "") + climbWhy, "shelter here", false, m));
         }
         // 3. the burrow (night only; no climb: it digs down where it is)
         if (!f.night()) dropped.add("burrow: a night way only");
+        else if (!f.burrowCell()) dropped.add("burrow: no diggable floor to seal here");
+        else if (f.blocks() < 1) dropped.add("burrow: no block in the bag to seal with");
         else {
-            double s = Price.tune("danger.burrowS", 6), night = nightCost(f, s);
-            RungOptions.add(rows, dropped, m, now, Options.scored("burrow", "burrow", "burrow then wait 120", Price.s(s) + night,
-                    "dig 2 and seal " + Price.r(s) + " s, open night " + Price.r(night), "burrow", false, m));
+            double s = Price.tune("danger.burrowS"), night = nightCost(f, s);
+            Price.add(rows, dropped, m, now, Options.scored("burrow", "burrow", "burrow then wait 120", Price.s(s) + night,
+                    f.blocks() + " blocks, dig 2 and seal " + Price.r(s) + " s, open night " + Price.r(night), "burrow", false, m));
         }
         return Options.Choice.of(rows, dropped, "no way to a base");
     }

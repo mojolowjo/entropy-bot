@@ -10,7 +10,15 @@ import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
 import io.github.mojolowjo.entropybot.camp.JunkRules;
 
+import io.github.mojolowjo.entropybot.aa.AaDesires;
+import io.github.mojolowjo.entropybot.aa.brain.Brain;
+import io.github.mojolowjo.entropybot.aa.brain.Costs;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
+import io.github.mojolowjo.entropybot.threat.ThreatFacts;
+
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -25,19 +33,31 @@ import java.util.function.Supplier;
 public final class NeedFacts {
     private NeedFacts() {}
 
-    /** Registers every supplier on the blackboard (station x 3, bed, base, bag). */
+    /**
+     * Registers every supplier on the blackboard (station x 3, bed, base, bag). One wood memory for the station's cut
+     * rows, bound to the brain's failure record ("station.wood") when one is on the board, so a failed cut stays held.
+     */
     public static void install(Blackboard bb, AaRuntime rt) {
+        Options.OptionMemory woodMem = new Options.OptionMemory();
         for (StationOptions.Kind k : StationOptions.Kind.values())
-            bb.fact(k.factsKey(), (Supplier<StationOptions.StationFacts>) () -> station(k, bb.in, bb.in.bag, wood(rt, bb.clock.now())));
+            bb.fact(k.factsKey(), (Supplier<StationOptions.StationFacts>) () -> station(k, bb.in, bb.in.bag, wood(bb, rt, woodMem)));
         bb.fact(BedOptions.FACTS, (Supplier<BedOptions.BedFacts>) () -> bed(rt.bedFacts(), bb.in));
-        bb.fact(BaseOptions.FACTS, (Supplier<BaseOptions.BaseFacts>) () -> base(bb.in, bb.in.bag));
+        bb.fact(BaseOptions.FACTS, (Supplier<BaseOptions.BaseFacts>) () -> base(bb.in, bb.in.bag, rt.areaCell(bb.in.areaName), burrowCell(bb)));
         bb.fact(BagOptions.FACTS, (Supplier<BagOptions.BagFacts>) () -> bag(bb.in, bb.in.bag, JunkRules.DEFAULT, 1));
     }
 
-    /** The wood set's best row now (null: none or no facts; the station set drops its cut row with the reason). */
-    private static Options.Choice wood(AaRuntime rt, long now) {
+    /** The wood set's best row now through the one memory (null: no wood facts; the station set drops its cut row with the reason). */
+    private static Options.Choice wood(Blackboard bb, AaRuntime rt, Options.OptionMemory mem) {
+        if (bb.fact(Brain.FAILURES_FACT) instanceof Failures f) mem.bind(f, "station.wood");
+        mem.sweep(bb.in);
         WoodOptions.WoodFacts f = rt.woodFacts();
-        return f == null ? null : WoodOptions.choose(f, new Options.OptionMemory(), now);
+        return f == null ? null : WoodOptions.choose(f, mem, bb.clock.now());
+    }
+
+    /** The danger facts' burrow check (ThreatFacts.Ways.burrow: a diggable floor that seals), false when not readable. */
+    static boolean burrowCell(Blackboard bb) {
+        if (!(bb.fact(AaDesires.THREAT_FACT) instanceof Supplier<?> s)) return false;
+        return s.get() instanceof ThreatFacts tf && tf.ways() != null && tf.ways().burrow();
     }
 
     /** The bag by item path (Inputs.bag: "chest" -> 1); a namespaced id is looked up by its path. */
@@ -47,6 +67,10 @@ public final class NeedFacts {
         return bag.getOrDefault(c >= 0 ? id.substring(c + 1) : id, 0);
     }
 
+    /**
+     * A known table or furnace is only sensed as "near" (no cell), the base chests' cells are not in the senses either:
+     * knownAt stays null and the station set drops its "use known" row with that reason (never a walk to nowhere).
+     */
     public static StationOptions.StationFacts station(StationOptions.Kind k, Inputs in, Map<String, Integer> bag, Options.Choice wood) {
         boolean inBag = switch (k) {
             case TABLE -> in.tableInBag;
@@ -58,28 +82,34 @@ public final class NeedFacts {
             case FURNACE -> in.furnaceKnown;
             case CHEST -> in.baseChests;
         };
-        double dist = k == StationOptions.Kind.CHEST && in.baseChests ? in.baseDist : -1;
-        int[] at = k == StationOptions.Kind.CHEST && in.baseChests ? in.basePos : null;
-        return new StationOptions.StationFacts(k, inBag, known, at, dist, in.planks, in.wood, in.cobble, in.pickTier, in.chestCell,
+        return new StationOptions.StationFacts(k, inBag, known, null, -1, in.planks, in.wood, in.cobble, in.pickTier, in.chestCell,
                 wood == null ? null : wood.best(), wood == null ? null : wood.why(), in.underGround, in.underDepth);
     }
 
+    /** AaRuntime's bed facts plus the bed, night and depth; with none readable, the bag and Inputs alone (no herd). */
     public static BedOptions.BedFacts bed(BedOptions.BedFacts old, Inputs in) {
-        if (old == null) return null;
+        if (old == null) return new BedOptions.BedFacts(in.wool, 0, null, in.pos, in.bedKnown, in.night, in.underGround, in.underDepth);
         return new BedOptions.BedFacts(old.wool(), old.sheepInView(), old.herd(), old.me(), in.bedKnown, in.night, in.underGround, in.underDepth);
     }
 
-    public static BaseOptions.BaseFacts base(Inputs in, Map<String, Integer> bag) {
+    /** @param areaCell the marked area's centre (AaRuntime.areaCell), null none */
+    public static BaseOptions.BaseFacts base(Inputs in, Map<String, Integer> bag, int[] areaCell, boolean burrowCell) {
         int blocks = in.cobble + in.planks + count(bag, "minecraft:dirt") + count(bag, "minecraft:cobbled_deepslate");
-        double danger = in.night ? (in.thunder ? 1.5 : 1.0) : 0;
-        return new BaseOptions.BaseFacts(in.areaName, in.basePos, blocks, in.night, danger, in.underGround, in.underDepth);
+        double danger = in.night ? Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.torchesNear, in.hostilesNear) : 0;
+        return new BaseOptions.BaseFacts(in.areaName, areaCell, blocks, in.night, danger, in.underGround, in.underDepth, burrowCell);
     }
 
     /** @param want slots the need wants free */
     public static BagOptions.BagFacts bag(Inputs in, Map<String, Integer> bag, Collection<String> junk, int want) {
         int junkSlots = 0;
-        for (String id : junk) junkSlots += (count(bag, id) + 63) / 64;
+        List<String> drops = new ArrayList<>();
+        for (String id : junk) {
+            int n = count(bag, id);
+            if (n <= 0) continue;
+            junkSlots += (n + 63) / 64;
+            drops.add("drop " + (id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id) + " " + n);
+        }
         return new BagOptions.BagFacts(in.freeSlots, want, in.baseChests, in.baseDist, in.basePos, count(bag, "minecraft:chest") > 0,
-                in.planks, in.wood, in.chestCell, in.pos, junkSlots);
+                in.planks, in.wood, in.chestCell, in.pos, junkSlots, drops);
     }
 }

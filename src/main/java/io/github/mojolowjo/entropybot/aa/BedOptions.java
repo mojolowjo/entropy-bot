@@ -53,10 +53,10 @@ public final class BedOptions {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         // AA_ROUND4A O: a known bed is slept in at night (nothing to craft)
-        double bedS = Price.tune("danger.bedS", 20);
+        double bedS = Price.tune("danger.bedS");
         if (!f.bedKnown()) dropped.add("sleep in a known bed: none known");
         else if (!f.night()) dropped.add("sleep in a known bed: not night");
-        else RungOptions.add(rows, dropped, m, now, Options.scored("sleep in known bed", "sleep", "sleep", Price.s(bedS),
+        else Price.add(rows, dropped, m, now, Options.scored("sleep in known bed", "sleep", "sleep", Price.s(bedS),
                 "a bed known, walk + lie down " + Price.r(bedS) + " s", "sleep known bed", false, m));
         double climb = Price.climb(f.under(), f.depth());
         String climbWhy = f.under() ? ", climb " + f.depth() + " up " + Price.r(climb) : "";

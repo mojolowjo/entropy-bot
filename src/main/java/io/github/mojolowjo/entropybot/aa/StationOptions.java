@@ -9,8 +9,8 @@ import java.util.Locale;
 /**
  * AA_ROUND4A O (AA_ROUND4 A3): a station (crafting table, furnace, chest) as a priced option set, the ways:
  * <ul>
- * <li><b>use known</b>: one is known within {@code station.near} (48): walk there (its distance, or
- *     {@code station.nearGuess} when only "near" is sensed).</li>
+ * <li><b>use known</b>: one is known within {@code station.near} (48): walk to its cell (its distance, or
+ *     {@code base.distGuess}); sensed near with no cell: dropped (nothing to walk to).</li>
  * <li><b>place from bag</b>: the item in the bag and a free cell (ChestSpot / the table cell): place 0.25 s.</li>
  * <li><b>craft + place</b>: the materials in the bag (table 4 planks, chest 8 planks, furnace 8 cobblestone; a log is 4
  *     planks): craft 0.5 s + place 0.25 s.</li>
@@ -57,16 +57,16 @@ public final class StationOptions {
         List<String> dropped = new ArrayList<>();
         Kind k = f.kind();
         String item = k.item;
-        double near = Price.tune("station.near", 48);
+        double near = Price.tune("station.near");
         // 1. a known one
         if (!f.known()) dropped.add("use known " + item + ": none sensed near");
-        else if (f.knownDist() > near) dropped.add("use known " + item + ": " + Price.r(f.knownDist()) + " away, over " + Price.r(near));
+        else if (f.knownAt() == null) dropped.add("use known " + item + ": sensed near but its cell is not known (nothing to walk to)");
         else {
-            double d = f.knownDist() >= 0 ? f.knownDist() : Price.tune("station.nearGuess", 16);
-            String cmd = f.knownAt() == null ? Options.NOTHING : "goto " + RungOptions.xyz(f.knownAt());
-            Options.Option o = Options.scored("use known " + item, "known", cmd, d,
-                    "one " + (f.knownDist() >= 0 ? Price.r(d) + " away" : "near (distance not sensed, priced " + Price.r(d) + ")"), "known " + item, false, m);
-            RungOptions.add(rows, dropped, m, now, f.knownAt() == null ? o : o.withSite(Site.of(f.knownAt())));
+            double d = f.knownDist() >= 0 ? f.knownDist() : Price.tune("base.distGuess");
+            if (d > near) dropped.add("use known " + item + ": " + Price.r(d) + " away, over " + Price.r(near));
+            else Price.add(rows, dropped, m, now, Options.scored("use known " + item, "known", "goto " + RungOptions.xyz(f.knownAt()), d,
+                    "one " + Price.r(d) + " away" + (f.knownDist() >= 0 ? "" : " (distance not sensed, priced at base.distGuess)"), "known " + item, false, m)
+                    .withSite(Site.of(f.knownAt())));
         }
         String place = f.cell() == null ? null : "place " + item + " " + RungOptions.xyz(f.cell());
         if (place == null) dropped.add("place " + item + ": no free cell");
@@ -100,13 +100,13 @@ public final class StationOptions {
         }
         // 4. the planner
         if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no chain" : plannerWhy));
-        else RungOptions.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, plannedCost * Options.PLAN_UNIT,
+        else Price.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, plannedCost * Options.PLAN_UNIT,
                 "plan cost " + Price.r(plannedCost) + " x " + Price.r(Options.PLAN_UNIT), "planner " + item, true, m));
         return Options.Choice.of(rows, dropped, "no way to a " + item);
     }
 
     private static void add(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, Options.Option o, StationFacts f) {
-        RungOptions.add(rows, dropped, m, now, f.cell() == null ? o : o.withSite(Site.of(f.cell())));
+        Price.add(rows, dropped, m, now, f.cell() == null ? o : o.withSite(Site.of(f.cell())));
     }
 
     /** A failed place or craft may be answered with the next way (never the owner's stop, a fight, a death). */

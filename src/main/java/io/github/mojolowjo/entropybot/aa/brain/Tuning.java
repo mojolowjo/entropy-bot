@@ -66,6 +66,16 @@ public final class Tuning {
         // AA_STEP3 A (TIME_MODEL loss terms): only the curve's shape is a hand number; its ends are the facts (hpS, the death cost)
         def("danger.hpCurve", 3, "AA_STEP3 A1", "the cost_of_hp curve's power: hpS at full health rising to the death cost at 1 hp");
         def("pausedRepriceS", 10, "AA_STEP3 A5", "seconds a job may sit paused by a reflex within a minute before it ends and the brain picks again");
+        // AA_ROUND4A O: the station, base and bag option sets (TIME_MODEL craft 0.5 s, place 0.25 s)
+        def("station.craftS", 0.5, "AA_ROUND4A O", "seconds one craft takes (TIME_MODEL)");
+        def("station.placeS", 0.25, "AA_ROUND4A O", "seconds one place takes (TIME_MODEL)");
+        def("station.near", 48, "AA_ROUND4A O", "blocks within which a known station is walked to instead of made");
+        def("base.distGuess", 16, "AA_ROUND4A O", "blocks a base is priced at when its distance is not sensed");
+        def("climbPerBlockS", 1.5, "AA_ROUND4A O", "seconds per block of a climb out from under ground (dig + step)");
+        def("base.houseS", 300, "AA_ROUND4A O", "seconds BuilderProcess takes to build the house in an area");
+        def("base.nightW", 1, "AA_ROUND4A O", "weight of the open-night cost while a base way is set up");
+        def("bag.depositS", 5, "AA_ROUND4A O", "seconds to put the bag into the base chests once there");
+        def("bag.dropS", 2, "AA_ROUND4A O", "seconds to throw the junk out");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }
