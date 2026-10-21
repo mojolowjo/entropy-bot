@@ -48,6 +48,8 @@ final class Gathering {
     static final class Run {
         String from, item;
         int want, minutes, steps, noProgress;
+        boolean siteWalk;
+        int[] quarryAt;
         long deadline, retryAt;
         JobRequests.Request req, sub;
         GatherPlan.Step step;
@@ -218,6 +220,33 @@ final class Gathering {
                 LOG.warn("[entropybot] gather: face dig plan failed: {}", e.toString());
             }
         }
+        // regression o1: the quarry's site is a priced choice (QuarrySites); a held or wet site is skipped by every caller
+        r.siteWalk = false;
+        r.quarryAt = null;
+        if (r.command.startsWith("dig stone")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^dig stone (\\d+)").matcher(r.command);
+            int qn = m.find() ? Integer.parseInt(m.group(1)) : 64;
+            io.github.mojolowjo.entropybot.gather.QuarrySites.Pick pick;
+            try {
+                pick = DigCommands.quarrySite(p, qn);
+            } catch (RuntimeException e) {
+                LOG.warn("[entropybot] gather: quarry site choice failed", e);
+                pick = null;
+            }
+            if (pick != null) {
+                LOG.info("[entropybot] gather {}: {}", GatherSources.shortId(r.item), pick.terms());
+                if (pick.site() == null) {
+                    end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, r.command + " - " + pick.terms(), "goto a hillside or a cave mouth, then gather cobblestone again"));
+                    return;
+                }
+                int[] me3 = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) p.level(), Jobs.here(p)[0], Jobs.here(p)[1], Jobs.here(p)[2]);
+                if (!pick.here(me3)) {
+                    r.command = "goto " + pick.site()[0] + " " + pick.site()[1] + " " + pick.site()[2];
+                    r.siteWalk = true;
+                    whisper(r, "walking to the quarry site (" + pick.terms() + ")");
+                } else r.quarryAt = pick.site();
+            }
+        }
         r.beforeLeaf = measure(p, s.leaf());
         r.beforeBag = bag(p, s.leaf());
         r.steps++;
@@ -281,9 +310,17 @@ final class Gathering {
             fixDone(r, p, rep.text() == null ? "" : rep.text());
             return;
         }
+        if (r.siteWalk) {                                      // regression o1: the walk to a quarry site is not a gather step
+            r.siteWalk = false;
+            r.steps--;
+            whisper(r, "at the quarry site: " + shortMsg(msg));
+            return;
+        }
         r.quarryGiveUps = GatherRules.quarryGiveUps(r.quarryGiveUps, r.command, msg);
         GatherPlan.Step s = r.step;
         int gainLeaf = measure(p, s.leaf()) - r.beforeLeaf, gainBag = bag(p, s.leaf()) - r.beforeBag;
+        if (r.quarryAt != null && gainLeaf <= 0 && gainBag <= 0)    // a dug site that gave nothing: the next caller moves on
+            io.github.mojolowjo.entropybot.gather.QuarrySites.charge(r.quarryAt, "dug, gave nothing: " + shortMsg(msg), System.currentTimeMillis());
         switch (s.kind()) {
             case GET -> r.tally.add("took", s.leaf(), gainBag);
             case CRAFT -> r.tally.add(smeltOnly(s.leaf()) || msg.contains("with the furnace") ? "smelted" : "crafted", s.leaf(), gainBag);

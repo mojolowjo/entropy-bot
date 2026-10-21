@@ -2239,6 +2239,7 @@ public final class AaRuntime implements JobPort {
                     f.trailEnd(), f.trailLen(), f.sky(), f.skyDist(), false, f.kit(), f.column(), f.headings());
             // AA_ROUND3 1: the one way-up set, priced; a failed way is held in Failures under "wayup/<id>"
             wayMem.bind(tree.brain.failures, WAYUP);
+            io.github.mojolowjo.entropybot.gather.QuarrySites.bind(tree.brain.failures);     // regression o1: "quarry <x z>" holds
             var ch = io.github.mojolowjo.entropybot.aa.AaEscape.chooseAll(f, wayMem, bb.clock.now());
             var o = ch.best();
             LOG.info("[entropybot] aa: stuck {} at {} ({} {} up): wayup: {} - {}", hole ? "in a hole" : "under ground", Jobs.fmt(me), hole ? "the way out" : "surface", f.depth(),

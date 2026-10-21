@@ -108,14 +108,37 @@ public final class MiningTiers {
         pickTier = Math.max(0, pickTier);                  // no pickaxe = 0, never a negative
         Map<String, Integer> need = cachedNeeds(t, s);
         List<TechTree.Idea> ideas = t.top(have, Math.max(1, top));
-        List<String> names = new ArrayList<>();
+        // regression o1: the counted set is every reachable item that needs ANY pickaxe among the top ideas and their mined
+        // inputs (the cobble for a furnace, the ore of an ingot); the share is the part of it above the current tier. A
+        // fresh start is near 1 (everything pickaxe-bound waits on the first pickaxe), falling as tiers open.
+        java.util.LinkedHashSet<String> pool = new java.util.LinkedHashSet<>();
+        Set<String> made = new HashSet<>();
+        for (TechTree.Recipe r : t.recipes()) made.add(r.result());
+        Set<String> h = new HashSet<>();
+        for (String x : have) h.add(TechTree.id(x));
         for (TechTree.Idea i : ideas) {
-            int n = need.getOrDefault(i.item(), 0);
-            if (n != UNREACHABLE && n > pickTier) names.add(i.item().startsWith("minecraft:") ? i.item().substring(10) : i.item());
+            pool.add(i.item());
+            for (TechTree.Recipe r : t.recipes()) {
+                if (!r.result().equals(i.item())) continue;
+                for (Set<String> slot : r.slots()) {
+                    String bestAlt = null;
+                    int best = UNREACHABLE;
+                    for (String alt : slot) { int n = need.getOrDefault(alt, 0); if (bestAlt == null || n < best) { best = n; bestAlt = alt; } }
+                    if (bestAlt != null && !made.contains(bestAlt) && !h.contains(bestAlt)) pool.add(bestAlt);   // a mined input
+                }
+            }
         }
-        double share = ideas.isEmpty() ? 0 : (double) names.size() / ideas.size();
-        String terms = String.format(Locale.ROOT, "%d of the top %d ideas need a better pickaxe than tier %d%s",
-                names.size(), ideas.size(), pickTier, names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
-        return new Result(names.size(), ideas.size(), share, names, terms);
+        List<String> names = new ArrayList<>();
+        int of = 0;
+        for (String id : pool) {
+            int n = need.getOrDefault(id, 0);
+            if (n == UNREACHABLE || n < 1) continue;           // needs no pickaxe, or no way known: not the pickaxe's share
+            of++;
+            if (n > pickTier) names.add(id.startsWith("minecraft:") ? id.substring(10) : id);
+        }
+        double share = of == 0 ? 0 : (double) names.size() / of;
+        String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound next items (top %d ideas + mined inputs) need better than tier %d%s",
+                names.size(), of, ideas.size(), pickTier, names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
+        return new Result(names.size(), of, share, names, terms);
     }
 }

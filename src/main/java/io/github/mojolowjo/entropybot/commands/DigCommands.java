@@ -365,15 +365,20 @@ final class DigCommands {
         int[] feet = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) lv, here[0], here[1], here[2]);
         int[] dir = CampCommands.quarryDir((net.minecraft.client.multiplayer.ClientLevel) lv, feet);
         var plan = io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), feet, dir, n);
-        if (plan.err() != null) return plan.err();
+        if (plan.err() != null) {          // regression o1: a fact for every caller, never a retry at the same spot
+            io.github.mojolowjo.entropybot.gather.QuarrySites.charge(feet, plan.err().replaceFirst("^error: ", "").replaceFirst(" - next:.*$", ""), System.currentTimeMillis());
+            return plan.err();
+        }
         String dim = Storage.dim();
         var g = Core.INSTANCE.guard.core;
         for (int[] cell : plan.cells()) {
             var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
             if (ar == null || ar.name == null) continue;
             JsonObject ab = c.policyArea(ar.name);
-            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE)
+            if (ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE) {
+                io.github.mojolowjo.entropybot.gather.QuarrySites.charge(feet, "the quarry would dig into the main area " + ar.name, System.currentTimeMillis());
                 return "error: the quarry would dig into the main area " + ar.name + " (the house goes there) - next: goto a spot outside it, then gather cobblestone " + n;
+            }
         }
         String label = "quarrying stone for " + n + " cobblestone (" + io.github.mojolowjo.entropybot.gather.StonePit.note(plan, dir, n) + ")";
         LOG.info("[entropybot] dig stone {} at {}: {} cells, {} stone, {} columns, {}", n, Jobs.fmt(feet), plan.cells().size(), plan.stone(), plan.columns(),
@@ -383,6 +388,32 @@ final class DigCommands {
         List<Seq.Step> before = restockSteps(c, p, plan.cells().size());
         if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.COUNTED);
         return startClear(c, p, o, before);
+    }
+
+    /**
+     * regression o1: the quarry site for {@code n} cobblestone among my feet and the exposed stone columns within
+     * QuarrySites.RADIUS (top solid block is stone; scanned every 4 blocks, cached 10 s), priced walk + dig.
+     */
+    static io.github.mojolowjo.entropybot.gather.QuarrySites.Pick quarrySite(LocalPlayer p, int n) {
+        var lv = (net.minecraft.client.multiplayer.ClientLevel) p.level();
+        int[] here = Jobs.here(p);
+        int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
+        long now = System.currentTimeMillis();
+        int R = io.github.mojolowjo.entropybot.gather.QuarrySites.RADIUS;
+        List<int[]> cand = new java.util.ArrayList<>(io.github.mojolowjo.entropybot.gather.QuarrySites.candidates(feet, now, () -> {
+            List<int[]> out = new java.util.ArrayList<>();
+            for (int x = feet[0] - R; x <= feet[0] + R; x += 4)
+                for (int z = feet[2] - R; z <= feet[2] + R; z += 4) {
+                    if ((x - feet[0]) * (x - feet[0]) + (z - feet[2]) * (z - feet[2]) > R * R) continue;
+                    if (!lv.isLoaded(new net.minecraft.core.BlockPos(x, feet[1], z))) continue;
+                    int top = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                    if (stoneCell(lv, x, top, z) == io.github.mojolowjo.entropybot.gather.StonePit.Cell.STONE) out.add(new int[]{x, top + 1, z});
+                }
+            return out;
+        }));
+        cand.add(0, feet);
+        return io.github.mojolowjo.entropybot.gather.QuarrySites.choose(cand, feet,
+                f -> io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), f, CampCommands.quarryDir(lv, f), n), now);
     }
 
     static String dig(Commands c, LocalPlayer p, String rest, String from) {

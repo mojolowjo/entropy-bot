@@ -82,7 +82,7 @@ class MiningTiersTest {
 
     @Test void theTermsNameTheCountAndTheIdeas() {
         var r = at(2);
-        assertTrue(r.terms().startsWith(r.blocked() + " of the top " + r.of()), r.terms());
+        assertTrue(r.terms().startsWith(r.blocked() + " of " + r.of() + " pickaxe-bound"), r.terms());
         assertEquals((double) r.blocked() / r.of(), r.share(), 1e-9);
     }
 
@@ -113,7 +113,8 @@ class MiningTiersTest {
         double fresh = Costs.blocked(MiningTiers.blocked(tree, src, STICK, 0, 8), 0, false);
         double stone = Costs.blocked(MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe", "minecraft:cobblestone"), 2, 8), 2, false);
         double oldFresh = Costs.blocked(0, false, 0, 0, false), oldStone = Costs.blocked(2, true, 5, 16, false);
-        assertTrue(fresh < 1.0, "fresh " + fresh + " (old table " + oldFresh + ")");
+        assertTrue(fresh > 0.9, "fresh " + fresh + " (old table " + oldFresh + ")");
+        assertTrue(Costs.tools(0, 0, fresh) > 60, "fresh tools " + Costs.tools(0, 0, fresh) + " must beat the food stock 60");
         assertTrue(stone < fresh, "stone " + stone + " fresh " + fresh + " (old table " + oldStone + ")");
     }
 }
