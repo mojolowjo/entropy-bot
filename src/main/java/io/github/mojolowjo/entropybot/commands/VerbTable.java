@@ -63,7 +63,6 @@ public final class VerbTable {
                 "the fence: its mode, the areas, what it refused, dry runs (naming the area and its type); rules = the break policy (intent, cost hook, counters), why = its verdict for one cell",
                 "fence|fence check 10 64 20 break", "area list", "fence, fence vetoes");
         // ---- stock (VOCABULARY 2)
-        v("fetch", "", "stocking", O, "fetch <item|kind> [n]", "take it from storage (else gather it), then bring it to you", "fetch torch 32|fetch logs 16", "inv");
         v("need", "", "stocking", O, "need <item|kind> <n> | need <item>", "a standing need (the brain works toward it: it gathers when it has under half of n, then up to n); without a count: what it takes and what is missing (that becomes cost <item> in 0.24)",
                 "need torch 64|need refinedstorage:basic_processor", "needs");
         v("needs", "", "stocking", O, "needs | needs clear <item>|all", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)", "needs|needs clear torch", "need <item> <n>");
@@ -80,12 +79,6 @@ public final class VerbTable {
                 "supplies set torch 32, bread 16, iron_pickaxe 1|supplies", "supplies");
         v("deposit", "", "stocking", O, "deposit [item ...]", "put loot away in the base chests (keeps tools, armor, food, supplies)", "deposit|deposit cobblestone dirt", "inv");
         v("restock", "", "stocking", O, "restock", "top my supplies up: from storage first, the rest crafted", "restock", "supplies");
-        v("hold", "", "stocking", G, "hold this", "pick up the items you throw me in the next 15 s (within 4 blocks)", "hold this", "inv");
-        v("give", "", "stocking", O, "give me <item> [n] | give <player> <item> [n]", "walk to you (or them) and throw the items (never my tools, armor, last 8 food, 16 torches or supplies)",
-                "give me cobblestone 32|give Steve bread 4", "inv");
-        v("carry", "", "stocking", O, "carry <item> [item ...] | carry all | carry off | carry list", "follow you and pick up those drops (all: every drop) within 6 blocks of you; off = plain follow",
-                "carry oak_log cobblestone|carry off", "unload");
-        v("unload", "", "stocking", O, "unload", "go home, deposit (keeping tools, food, torches, supplies), then come back to you", "unload", "carry list");
         // ---- digging (VOCABULARY 3)
         v("mine", "", "digging", O, "mine strip [<ores>] [n] [at <mine>] | mine strip status|reset|turn left|right|ores collect|list | mine cave <ores> [n | <min>m] [at <cave>] | mine <ore> [n] [dig]",
                 "strip-mine at the mine (place mine north starts one; reset asks to confirm), go caving, or mine ores in view (dig: may dig to them); ores: iron,diamond or iron_ore or any or the kind ores; a strip mine needs room in its area: 17 blocks each side of the corridor (16-long branches + torches) and the corridor's length ahead, else it turns at the edge (blocked:area)",
@@ -167,8 +160,6 @@ public final class VerbTable {
                 "walk land I've never seen and not on the map (that way), inside or outside my areas, then home; out there I cut a tree or mine a surface ore on the way (gather off: not), the report says what I took; someone's base: I keep 16 off, take nothing, and tell you", "explore 5|explore north 10|explore west 5 gather off", "places");
         v("find", "", "exploring", G, "find <block> | find nearest <poi kind|ore> | find cave|<poi kind>|<biome> [minutes]",
                 "find <block>: the nearest block of that kind; find cave, village, mineshaft, a biome...: walk until I find one (the owner), then note it as a point of interest", "find chest|find village|find cave|find cherry_grove", "go poi <id>");
-        v("scout", "", "exploring", O, "scout <north|south|east|west|x z> [n] [<min>m] [from me] | scout status",
-                "walk up to n blocks (64, max 256) that way inside my areas, come back and report places, ores and mobs seen", "scout north 64|scout 120 -40", "find nearest <poi kind|ore>");
         // ---- the brain's words (VOCABULARY 7, BRAIN_LOOP)
         v("brain", "", "brain", O, "brain on|off|status | brain copy on|off|status | brain get [key] | brain set <key> <value> | brain reset <key>|all|parks | brain tree [reload] | brain learned [job kind] | brain learned reset", "removed in 0.38.b7 (the old brain): AA does this (aa on, aa want <thing>)",
                 "brain on|brain status|brain copy on", "why");
@@ -241,7 +232,7 @@ public final class VerbTable {
         v("farm", "", "crafting", O, "farm | farm here | farm status | farm mode modded|vanilla|auto | farm grow twerk on|off|auto | farm plant <crop> [x1 z1 x2 z2 | here <r>] | farm compact block|prudentium|off",
                 "one farm round (harvest, replant or let Harvest with Ease replant, pick up); plant a new field", "farm|farm plant wheat here 4|farm status", "deposit");
         v("compact", "", "crafting", O, "compact <item> [here|<place>|x y z]", "turn 9 (or 4) into a block in the chests near you (or me)", "compact inferium_essence", "have <item>");
-        v("infuse", "", "crafting", O, "infuse <seed> [n]", "make seeds on the infusion altar (never touches what isn't mine)", "infuse silicon 2", "inv");
+        v("give", "", "stocking", O, "give me <item> [n]", "walk to you and throw the items (only what my bag holds)", "give me cobblestone 32", "inv");
         v("upgrade", "", "crafting", O, "upgrade <essence> [n]", "climb the essence tiers with the infusion crystal", "upgrade imperium 4", "inv");
         // ---- other
         // 0.35.0 the AI operator (off by default; the owner only; the model itself can never send ai)
@@ -260,7 +251,7 @@ public final class VerbTable {
                 "blind on|blind status", "blind status");
         v("sense", "", "other", O, "sense | sense status", "the one chunk pass (and ores known [family] [r]: the ores it knows within r, nearest first): chunks read (load, resend, rescans), patches applied and dropped, tick time, the summaries and the ore index, files, the self-audit", "sense status", "ores known");
         v("surface", "", "other", O, "surface | surface status | surface on|off", "the ground round the bot for the dashboard's 3D view (one file per loaded chunk; on by default)", "surface status", "status");
-        v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] | debug hits [n] | debug motor "
+        v("debug", "", "other", O, "debug gui|inv|baritone|mobs | debug block x y z | debug blocks x1 y1 z1 x2 y2 z2 [at <time>] | debug events [n] | debug guard x y z | debug threats [x y z] | debug changes x y z [r] [since <time>] | debug trail [minutes] | debug incident [n] | debug hits [n] "
                         + "| debug <plumbing verb> ...: b, memory, watch, recorder, mouse, route, autominer, reconnect, sethome, use, caves, ores, poi",
                 "read-only looks inside the game, and the plumbing verbs that left the main list (they work as before after the word debug: debug autominer on, debug b set allowSprint true, debug watch tunnel)",
                 "debug inv|debug autominer on|debug watch|debug autominer status", "debug");

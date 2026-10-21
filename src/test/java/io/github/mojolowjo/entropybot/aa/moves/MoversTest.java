@@ -42,7 +42,6 @@ class MoversTest {
             // the mixin names the vanilla method it intercepts (not a caller)
             Map.entry("mixin/GuardMixinGameMode.java", 1),
             // to move in backbone steps 3-4 (movers-audit.md items 4-21)
-            Map.entry("motor/Motor.java", 1),
             Map.entry("engine/CreeperDuel.java", 12),
             Map.entry("engine/Escort.java", 1),
             // backbone step 3: Jobs keeps the twerk / farm-round crouch (keyShift x2) and useBlock (the "use x y z" interact, synchronous reply)
@@ -51,9 +50,7 @@ class MoversTest {
             Map.entry("farm/McFarmWorld.java", 5),
             Map.entry("commands/FloorSteps.java", 2),
             Map.entry("commands/Fishing.java", 1),
-            Map.entry("commands/Mule.java", 1),
             Map.entry("commands/Crafting.java", 2),
-            Map.entry("altar/McAltarWorld.java", 1),
             Map.entry("move/MovePackage.java", 5),
             Map.entry("commands/Commands.java", 2),
             Map.entry("commands/AaRuntime.java", 2)));
