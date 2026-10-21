@@ -46,6 +46,7 @@ public final class Tuning {
         def("danger.burrowS", 6, "AA_STEP2 1", "seconds to dig down two and seal over the head");
         def("danger.bedS", 20, "AA_STEP2 1", "seconds to reach a known bed and lie down (no bed distance in the facts)");
         def("danger.nightHpS", 0.05, "AA_STEP2 1", "health per second the open night costs at night danger 1 (fresh spawns, while a way is set up)");
+        def("slowPauseS", 20, "AA_STEP3 B", "seconds slow mode waits for go (PM or the dashboard) before it goes on by itself");
         def("danger.openS", 60, "AA_STEP2 1", "seconds a pillar top stays open to arrows and phantoms at night");
         // AA_STEP3 A (TIME_MODEL loss terms): only the curve's shape is a hand number; its ends are the facts (hpS, the death cost)
         def("danger.hpCurve", 3, "AA_STEP3 A1", "the cost_of_hp curve's power: hpS at full health rising to the death cost at 1 hp");
