@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy.Action;
 import io.github.mojolowjo.entropybot.guard.BreakPolicy.BlockFacts;
@@ -305,7 +307,7 @@ public final class PolicyRuntime {
     public static int waterAbove(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos feet) {
         int n = 0;
         var m = feet.mutable();
-        while (n < 32 && fluidOf(lv.getBlockState(m)) == Fluid.WATER) {
+        while (n < Tuning.i("policyRuntime.waterColumnMax") && fluidOf(lv.getBlockState(m)) == Fluid.WATER) {
             n++;
             m.move(0, 1, 0);
         }
@@ -343,7 +345,7 @@ public final class PolicyRuntime {
             return v;
         } catch (Throwable t) {
             stats.error(site + ": " + t);
-            if (stats.errors() <= 5) LOG.warn("[entropybot] rules: policy error at {}: {}", site, t.toString());
+            if (stats.errors() <= 5) LOG.warn("[entropybot] rules: policy error at {}: {}", site, t.toString());  // structural: log throttle: only the first few errors are logged
             return new BreakPolicy.Verdict(false, Double.POSITIVE_INFINITY, "policy error: " + t.getClass().getSimpleName(), false, "error");
         }
     }
@@ -407,7 +409,7 @@ public final class PolicyRuntime {
     public void logOverride(String site, String what, int x, int y, int z, BreakPolicy.Verdict v, String todayReason) {
         stats.travelOverride(site);
         long now = System.currentTimeMillis();
-        if (overrideLogged < 5 || now - lastOverrideLogMs >= PolicyStats.LOG_EVERY_MS) {
+        if (overrideLogged < 5 || now - lastOverrideLogMs >= PolicyStats.LOG_EVERY_MS) {  // structural: log throttle: only the first few errors are logged
             overrideLogged++;
             lastOverrideLogMs = now;
             LOG.info("[entropybot] rules: {} at {} {} {} ({}; the fence alone said: {})", what, x, y, z, v.text(), todayReason);

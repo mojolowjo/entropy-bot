@@ -108,7 +108,7 @@ public final class ShelterPlan {
             String p = e.getKey().substring(e.getKey().indexOf(':') + 1);
             if ((p.endsWith("_log") || p.endsWith("_stem")) && !p.startsWith("stripped_")) logs += e.getValue();
         }
-        return logs >= 3 ? "craft planks " + (logs * 4) : "cut 8 logs then craft planks 32";
+        return logs >= 3 ? "craft planks " + (logs * 4) : "cut 8 logs then craft planks 32";  // game fact: a log makes 4 planks
     }
 
     /** The shell blocks (planks, cobblestone, dirt, logs as 4 planks) the bag holds, for the brain's prep. */
@@ -117,7 +117,7 @@ public final class ShelterPlan {
         for (Map.Entry<String, Integer> e : bag.entrySet()) {
             String k = e.getKey().toLowerCase(Locale.ROOT), p = k.substring(k.indexOf(':') + 1);
             if (p.endsWith("_planks") || k.equals("minecraft:cobblestone") || k.equals("minecraft:dirt")) n += e.getValue();
-            else if ((p.endsWith("_log") || p.endsWith("_stem")) && !p.startsWith("stripped_")) n += e.getValue() * 4;
+            else if ((p.endsWith("_log") || p.endsWith("_stem")) && !p.startsWith("stripped_")) n += e.getValue() * 4;  // game fact: a log makes 4 planks
         }
         return n;
     }
@@ -136,7 +136,7 @@ public final class ShelterPlan {
     public static List<String> keepOwn(java.util.Collection<String> own, Predicate<String> stands) {
         List<String> out = new ArrayList<>();
         for (String k : new java.util.LinkedHashSet<>(own)) if (stands == null || stands.test(k)) out.add(k);
-        return out.size() > 200 ? new ArrayList<>(out.subList(out.size() - 200, out.size())) : out;
+        return out.size() > 200 ? new ArrayList<>(out.subList(out.size() - 200, out.size())) : out;  // structural: log keeps the last 200 lines
     }
 
     /** The own-block rule: the bot may break a shell block only when it placed that block itself. */
@@ -185,7 +185,7 @@ public final class ShelterPlan {
      */
     /** day-check: the day time jumped (a command or a skipped night): back, or on to a later day number. */
     public static boolean jumped(long last, long now) {
-        return last >= 0 && (now < last || now / 24000 > last / 24000 && now - last > 1);
+        return last >= 0 && (now < last || now / 24000 > last / 24000 && now - last > 1);  // game fact: a Minecraft day is 24000 ticks
     }
 
     public static Stage next(Stage s, boolean night, boolean sawNight, boolean timed, boolean timerUp, boolean leave, boolean done, boolean keep) {
@@ -205,8 +205,8 @@ public final class ShelterPlan {
         for (String w : (rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT)).split("\\s+")) {
             if (w.isEmpty()) continue;
             if (w.equals("keep")) keep = 1;
-            else if (w.matches("^\\d{1,4}m$")) ticks = Long.parseLong(w.substring(0, w.length() - 1)) * 1200;
-            else if (w.matches("^\\d{1,5}s$")) ticks = Long.parseLong(w.substring(0, w.length() - 1)) * 20;
+            else if (w.matches("^\\d{1,4}m$")) ticks = Long.parseLong(w.substring(0, w.length() - 1)) * 1200;  // game fact: 1200 ticks in a minute
+            else if (w.matches("^\\d{1,5}s$")) ticks = Long.parseLong(w.substring(0, w.length() - 1)) * 20;  // game fact: 20 game ticks per second
             else return null;
         }
         return new long[]{ticks, keep};

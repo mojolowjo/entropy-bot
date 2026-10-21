@@ -89,7 +89,7 @@ public final class AaManual {
         if (pending == null || !pending.rung().equals(rung)) {
             pending = new Ask(rung, List.copyOf(rows), now);
             pick = 0;
-            log.accept("ask: " + rung.substring(rung.indexOf('.') + 1) + " waits for aa pick (" + askMs() / 1000 + " s, then my first): " + rowsText(rows));
+            log.accept("ask: " + rung.substring(rung.indexOf('.') + 1) + " waits for aa pick (" + askMs() / 1000 + " s, then my first): " + rowsText(rows));  // structural: milliseconds per second
             return null;
         }
         List<Row> r = pending.rows();
@@ -106,7 +106,7 @@ public final class AaManual {
             return chosen.command();
         }
         if (now - pending.since() >= askMs()) {
-            log.accept("ask: " + rung + ": no pick in " + askMs() / 1000 + " s - my first choice (" + r.get(0).label() + ")");
+            log.accept("ask: " + rung + ": no pick in " + askMs() / 1000 + " s - my first choice (" + r.get(0).label() + ")");  // structural: milliseconds per second
             pending = null;
             pick = 0;
             return r.get(0).command();
@@ -145,14 +145,14 @@ public final class AaManual {
 
     public static String rowsText(List<Row> rows) {
         List<String> out = new ArrayList<>();
-        for (int i = 0; i < rows.size() && i < 9; i++) out.add((i + 1) + ") " + rows.get(i).label());
+        for (int i = 0; i < rows.size() && i < 9; i++) out.add((i + 1) + ") " + rows.get(i).label());  // structural: display: how many items a text lists
         return String.join("  ", out);
     }
 
     /** For aa status. */
     public String describe(long now) {
         StringBuilder b = new StringBuilder("manual: ask ").append(ask ? "on" : "off");
-        if (pending != null) b.append(" (").append(pending.rung()).append(" waits ").append(Math.max(0, (askMs() - (now - pending.since())) / 1000))
+        if (pending != null) b.append(" (").append(pending.rung()).append(" waits ").append(Math.max(0, (askMs() - (now - pending.since())) / 1000))  // structural: milliseconds per second
                 .append(" s for aa pick: ").append(rowsText(pending.rows())).append(')');
         if (doRung != null) b.append("; aa do ").append(doRung);
         if (!skipped.isEmpty()) b.append("; skipped ").append(String.join(", ", skipped));

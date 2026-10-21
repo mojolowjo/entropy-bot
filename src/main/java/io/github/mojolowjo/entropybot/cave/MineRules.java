@@ -247,7 +247,7 @@ public final class MineRules {
 
     /** The mine job's box around the bot (32 x 33 x 32): {x1, y1, z1, x2, y2, z2}. */
     public static int[] mineBox(int x, int y, int z) {
-        return new int[]{x - 16, y - 16, z - 16, x + 15, y + 16, z + 15};
+        return new int[]{x - 16, y - 16, z - 16, x + 15, y + 16, z + 15};  // structural: a 32-block box round the vein (16 each side)
     }
 
     /**
@@ -361,7 +361,7 @@ public final class MineRules {
         l.sort((a, b) -> b.getValue() - a.getValue());
         List<String> out = new ArrayList<>();
         for (int i = 0; i < Math.min(4, l.size()); i++) out.add(l.get(i).getValue() + " " + shortId(l.get(i).getKey()));
-        if (l.size() > 4) out.add("+" + (l.size() - 4) + " more");
+        if (l.size() > 4) out.add("+" + (l.size() - 4) + " more");  // structural: display: how many items a text lists
         return " - got " + String.join(", ", out);
     }
 
@@ -376,18 +376,18 @@ public final class MineRules {
     }
 
     public static String stalledText(String target, String at, String gains) {
-        return "stopped: stall: no progress for " + stallTicks() / 20 + " s mining " + shortId(target) + " at " + at + gains;
+        return "stopped: stall: no progress for " + stallTicks() / 20 + " s mining " + shortId(target) + " at " + at + gains;  // game fact: 20 game ticks per second
     }
 
     public static String noPickText(String target, String gains) {
         return "stopped: tool: I have no pickaxe left that can mine " + shortId(target) + gains;
     }
 
-    public static String timeUpText() { return "time is up (" + maxTicks() / 1200 + " min)"; }
+    public static String timeUpText() { return "time is up (" + maxTicks() / 1200 + " min)"; }  // game fact: 1200 ticks in a minute
 
     /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
     static int safeInt(String s) {
-        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
+        return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);  // structural: an int parse guard: a number over 9 digits is capped
     }
 
     // ---- rm-mining: the per-ore step and its failures (the old known-target list, its 5 tries and water skips are gone) ----

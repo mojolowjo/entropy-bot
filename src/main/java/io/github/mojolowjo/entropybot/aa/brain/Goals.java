@@ -53,7 +53,7 @@ public final class Goals {
             else words.add(t);
         }
         if (words.isEmpty()) return new Args(null, 0, 0, "usage: aa want <thing> [n] [high|low] (e.g. aa want iron_ore 8)");
-        if (n < 0 || n > 4096) return new Args(null, 0, 0, "error: n must be 1..4096");
+        if (n < 0 || n > Tuning.i("goals.maxN")) return new Args(null, 0, 0, "error: n must be 1..4096");
         return new Args(String.join("_", words), n, prio, null);
     }
 
@@ -96,13 +96,13 @@ public final class Goals {
         Thing.Where w = g.r.where();
         if (w != null && w.dim() != null && !w.dim().equals(bb.in.dimension))
             return g.r.key() + " is only in " + Thing.dimName(w.dim()) + "; I don't travel there yet";
-        if (g.r.tier() >= 4 && bb.in.pickTier < 4) return "needs a diamond pickaxe (aa want diamond_pickaxe first)";
+        if (g.r.tier() >= 4 && bb.in.pickTier < 4) return "needs a diamond pickaxe (aa want diamond_pickaxe first)";  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
         return null;
     }
 
     /** The desire that supplies the missing pickaxe (value flows to it, 2.2), else null. */
     public static String prereq(Blackboard bb, Goal g) {
-        if (g.r.tier() >= 3 && bb.in.pickTier < 3) return "needs.iron";
+        if (g.r.tier() >= 3 && bb.in.pickTier < 3) return "needs.iron";  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
         if (g.r.tier() >= 1 && bb.in.pickTier < Math.max(1, g.r.tier())) return "needs.tools";
         return null;
     }
@@ -128,7 +128,7 @@ public final class Goals {
             for (Object o : ws) if (o instanceof Step s) out.add(s instanceof Step.MineAt m ? new Step.MineAt(w, m.x(), m.y(), m.z(), m.dig()) : s);
             if (!out.isEmpty()) return out;
         }
-        if (at != null) return List.of(new Step.MineAt(w, at[0], at[1], at[2], !(at.length > 3 && at[3] == 0)));
+        if (at != null) return List.of(new Step.MineAt(w, at[0], at[1], at[2], !(at.length > 3 && at[3] == 0)));  // structural: a position array is x y z, with an optional 4th flag
         if (known(bb, g.r.key()) > 0) return List.of(new Step.Mine(w, left, Step.Mine.How.DIG));
         // AA_ROUND3 3 (aa fair): no ore seen: the cheapest discovery way (explore cave, strip at Y, clear chunk), priced
         Discovery.Opt d = discovery(bb, g.r.key());
@@ -196,7 +196,7 @@ public final class Goals {
     }
 
     public static int[] nearest(Blackboard bb, String key) {
-        return bb.fact(NEAREST_FACT) instanceof Map<?, ?> m && m.get(key) instanceof int[] a && a.length >= 3 ? a : null;
+        return bb.fact(NEAREST_FACT) instanceof Map<?, ?> m && m.get(key) instanceof int[] a && a.length >= 3 ? a : null;  // structural: a position has 3 coordinates
     }
 
     /**
@@ -229,7 +229,7 @@ public final class Goals {
 
     /** The brain's fight rule for a hunt of a hostile mob: armed, health 14+, no danger or creeper near. */
     public static boolean fightOk(Blackboard bb, LootBook.Ctx ctx) {
-        return ctx.armed() && bb.in.health >= 14 && bb.in.danger == 0 && !bb.in.creeperClose && !bb.in.hurtRecently;
+        return ctx.armed() && bb.in.health >= Tuning.i("goals.fightHealth") && bb.in.danger == 0 && !bb.in.creeperClose && !bb.in.hurtRecently;
     }
 
     /** Known positions of the family (the adapter refreshes {@link #KNOWN_FACT}). */

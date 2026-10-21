@@ -44,7 +44,7 @@ public final class HitLog {
     private final Map<String, Double> today = new LinkedHashMap<>();
 
     static String fmt(double d) {
-        double r = Math.round(d * 10) / 10.0;
+        double r = Math.round(d * 10) / 10.0;  // structural: rounded to one decimal for the text
         return r == Math.rint(r) ? String.valueOf((long) r) : String.valueOf(r);
     }
 
@@ -64,7 +64,7 @@ public final class HitLog {
     /** A death: the last 20 hits within 5 minutes before it (and after the death before) become that death's list. */
     public synchronized List<Hit> death(long now) {
         List<Hit> l = new ArrayList<>();
-        for (Hit h : last(deathHits())) if (now - h.atMs() <= 300_000 && h.atMs() > lastDeathMs) l.add(h);
+        for (Hit h : last(deathHits())) if (now - h.atMs() <= Tuning.i("hitLog.deathLookbackMs") && h.atMs() > lastDeathMs) l.add(h);
         lastDeath = List.copyOf(l);
         lastDeathMs = now;
         return lastDeath;

@@ -236,7 +236,7 @@ public final class BreakPolicy {
         // aa-costs: a dive is denied only while one more block down leaves no air to come back (DrownRisk); else it costs
         double diveRisk = f.above() == Fluid.WATER && me.inWater() ? me.diveRisk(a.y()) : 0;
         boolean dive = DrownRisk.fatal(diveRisk);
-        double diveMult = 1 + diveRisk * diveRisk * 4;
+        double diveMult = 1 + diveRisk * diveRisk * Tuning.i("breakPolicy.diveRiskK");
         boolean wet = f.above() == Fluid.WATER || f.sides() == Fluid.WATER;
         // ---- the intent model (3.3)
         double mult;

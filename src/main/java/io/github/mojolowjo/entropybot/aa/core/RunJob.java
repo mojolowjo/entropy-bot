@@ -59,7 +59,7 @@ public final class RunJob extends Node {
         JobPort.JobState st = bb.port.poll(taskId);
         switch (st.state()) {
             case DONE -> {
-                bb.port.log("done " + running.kind() + " in " + (now - startedAt) / 1000 + "s" + (st.text() == null ? "" : ": " + st.text()));
+                bb.port.log("done " + running.kind() + " in " + (now - startedAt) / 1000 + "s" + (st.text() == null ? "" : ": " + st.text()));  // structural: milliseconds per second
                 bb.tracer.outcome(now, "done");
                 return end(bb, Status.SUCCESS, null);
             }
@@ -84,16 +84,16 @@ public final class RunJob extends Node {
             lastProgressAt = now;
         }
         if (now - startedAt > running.timeoutMs()) {
-            String why = "timeout after " + (now - startedAt) / 1000 + "s";
+            String why = "timeout after " + (now - startedAt) / 1000 + "s";  // structural: milliseconds per second
             bb.port.cancel(taskId, why);
-            bb.port.log("timeout " + running.kind() + " after " + (now - startedAt) / 1000 + "s");
+            bb.port.log("timeout " + running.kind() + " after " + (now - startedAt) / 1000 + "s");  // structural: milliseconds per second
             bb.port.incident("aa timeout " + running.kind() + " \"" + running.chain() + "\"");
             bb.tracer.outcome(now, "timeout");
             bb.tracer.counts.fails++;
             return end(bb, Status.FAILURE, "timeout");
         }
         if (now - lastProgressAt > running.noProgressMs()) {
-            long s = (now - lastProgressAt) / 1000;
+            long s = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
             bb.port.cancel(taskId, "no progress " + s + "s");
             bb.port.log("stuck " + running.kind() + ": no progress " + s + "s");
             bb.port.incident("aa stuck " + running.kind() + " \"" + running.chain() + "\": no progress " + s + "s");
@@ -167,7 +167,7 @@ public final class RunJob extends Node {
     public String source() { return source; }
 
     /** Seconds since the start (0 when idle). */
-    public long ageS(long now) { return taskId < 0 ? 0 : (now - startedAt) / 1000; }
+    public long ageS(long now) { return taskId < 0 ? 0 : (now - startedAt) / 1000; }  // structural: milliseconds per second
 
     public long progressValue() { return lastProgress; }
 }

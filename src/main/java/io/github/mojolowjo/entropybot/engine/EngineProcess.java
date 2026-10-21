@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import baritone.api.pathing.goals.Goal;
 import baritone.api.process.IBaritoneProcess;
 import baritone.api.process.PathingCommand;
@@ -25,7 +27,7 @@ public final class EngineProcess implements IBaritoneProcess {
 
     public synchronized Mode mode() { return Mode.valueOf(slot.mode().name()); }
 
-    public boolean disabled() { return errors >= 5; }
+    public boolean disabled() { return errors >= Tuning.i("engineProcess.errorsOff"); }
 
     /** Backbone step 2: ticks Baritone reported a failed path calculation for an override goal (Moves fails a leg on it). */
     private volatile long calcFails;

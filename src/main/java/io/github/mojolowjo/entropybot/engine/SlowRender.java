@@ -47,7 +47,7 @@ public final class SlowRender {
                 baritoneDraw = false;
                 LogUtils.getLogger().warn("[entropybot] aa: slow route: Baritone's renderer is missing ({}), drawing without see-through", le.toString());
             } catch (Throwable t) {
-                if (errors++ < 5) LogUtils.getLogger().warn("[entropybot] aa: slow route draw failed: {}", t.toString());
+                if (errors++ < 5) LogUtils.getLogger().warn("[entropybot] aa: slow route draw failed: {}", t.toString());  // structural: log throttle: only the first few errors are logged
                 return;
             }
         }
@@ -101,7 +101,7 @@ public final class SlowRender {
                         int[] q = pts.get(i - 1);
                         float dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2];
                         float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-                        if (len < 1e-3f) continue;
+                        if (len < 1e-3f) continue;  // structural: epsilon
                         dx /= len;
                         dy /= len;
                         dz /= len;
@@ -119,7 +119,7 @@ public final class SlowRender {
                 ps.popPose();
             }
         } catch (Throwable t) {
-            if (errors++ < 5) LogUtils.getLogger().warn("[entropybot] aa: slow route draw failed: {}", t.toString());
+            if (errors++ < 5) LogUtils.getLogger().warn("[entropybot] aa: slow route draw failed: {}", t.toString());  // structural: log throttle: only the first few errors are logged
         }
     }
 }

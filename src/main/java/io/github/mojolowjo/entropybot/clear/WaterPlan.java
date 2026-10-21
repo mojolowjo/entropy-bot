@@ -93,7 +93,7 @@ public final class WaterPlan {
         // the slices that need anything (the water may lie a few slices ahead); a slice it can't seal, or may not place
         // in, ends the list - or the round, when it is the first
         List<List<WaterShell.Cell>> slices = new ArrayList<>();
-        for (int t = s, k = 0; WaterShell.inBox(in.box(), a, t) && k < 8 && slices.size() < slices(); t += a.sign(), k++) {
+        for (int t = s, k = 0; WaterShell.inBox(in.box(), a, t) && k < Tuning.i("waterPlan.sliceCap") && slices.size() < slices(); t += a.sign(), k++) {
             WaterShell.SliceNeeds n = WaterShell.sliceNeeds(w, in.box(), a, t);
             String why = !n.problems().isEmpty() ? "I can't seal " + n.problems().get(0) : refused(in, n.cells());
             if (why != null) {

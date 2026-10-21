@@ -50,18 +50,18 @@ public final class Help {
     public static Pick pick(Inputs in, double weight) {
         if (off(in, weight) != null) return null;
         if (in.ownerHostiles > 0)
-            return new Pick("fight", List.of(new Step.Come(), new Step.Attack()), Math.min(capV(), 2 * weight + 10 * Math.min(mobsMax(), in.ownerHostiles)));
+            return new Pick("fight", List.of(new Step.Come(), new Step.Attack()), Math.min(capV(), 2 * weight + Tuning.i("help.perMob") * Math.min(mobsMax(), in.ownerHostiles)));
         boolean busy = in.ownerAct != null && !in.ownerAct.equals("idle");
         double f = busy ? 1 : 0.5;
         if ("building".equals(in.ownerAct) && in.ownerPlaced != null) {
             String b = path(in.ownerPlaced);
             int have = in.bag.getOrDefault(b, 0);
-            Pick p = have >= giveMin() ? new Pick("give", List.of(new Step.Give(b, Math.min(giveN(), have))), cap(1.5 * weight * f))
+            Pick p = have >= giveMin() ? new Pick("give", List.of(new Step.Give(b, Math.min(giveN(), have))), cap(Tuning.get("help.giveWeight") * weight * f))
                     : new Pick("fetch", List.of(new Step.Plan(b + " " + giveN()), new Step.Give(b, giveN())), cap(weight * f));
             if (p.score() > 0) return p;
         }
         if (in.ownerDark && busy && in.torches >= torchesMin()) {
-            Pick p = new Pick("light", List.of(new Step.Come(), new Step.Light(lightR())), cap(1.25 * weight));
+            Pick p = new Pick("light", List.of(new Step.Come(), new Step.Light(lightR())), cap(Tuning.get("help.lightWeight") * weight));
             if (p.score() > 0) return p;
         }
         if (busy && in.ownerDist > comeFrom()) {

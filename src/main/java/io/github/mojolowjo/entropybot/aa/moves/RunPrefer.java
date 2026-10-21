@@ -21,7 +21,7 @@ public final class RunPrefer {
     public static double[] unit(double[] h) {
         if (h == null || h.length < 2) return null;
         double n = Math.hypot(h[0], h[1]);
-        if (!(n > 1e-6)) return null;
+        if (!(n > 1e-6)) return null;  // structural: epsilon
         return new double[]{h[0] / n, h[1] / n};
     }
 }

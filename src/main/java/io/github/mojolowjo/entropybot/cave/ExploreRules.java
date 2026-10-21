@@ -70,7 +70,7 @@ public final class ExploreRules {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 String k = key(dim, cx + dx, cz + dz);
                 if (land.explored(k) || (skip != null && skip.contains(k))) continue;
-                int tx = ((cx + dx) << 4) + 8, tz = ((cz + dz) << 4) + 8;
+                int tx = ((cx + dx) << 4) + 8, tz = ((cz + dz) << 4) + 8;  // game fact: the centre of a chunk is 8 blocks in (a chunk is 16 wide)
                 if (!land.allowed(tx, tz)) continue;
                 if (land.refused(tx, y, tz)) {
                     land.markRefused(k);
@@ -119,7 +119,7 @@ public final class ExploreRules {
      * "; went 225 blocks west, ended at -268 63 117" right after the time, before the finds (a cut reply keeps it).
      */
     public static String note(int chunks, long ticks, String why, List<Poi> fresh, int[] from, int[] to) {
-        StringBuilder sb = new StringBuilder("explored " + chunks + " chunks in " + Math.round(ticks / 1200.0) + " min (" + why + ")");
+        StringBuilder sb = new StringBuilder("explored " + chunks + " chunks in " + Math.round(ticks / 1200.0) + " min (" + why + ")");  // game fact: 1200 ticks in a minute
         if (from != null && to != null) sb.append("; ").append(travel(from, to));
         if (fresh.isEmpty()) return sb.append("; nothing new to note").toString();
         List<String> parts = new ArrayList<>();
@@ -128,7 +128,7 @@ public final class ExploreRules {
             parts.add(p.kind() + " at " + p.x() + " " + p.y() + " " + p.z());
         }
         sb.append("; new: ").append(String.join(", ", parts));
-        if (fresh.size() > 6) sb.append(" (+").append(fresh.size() - 6).append(" more, \"poi\")");
+        if (fresh.size() > 6) sb.append(" (+").append(fresh.size() - 6).append(" more, \"poi\")");  // structural: display: how many items a text lists
         return sb.toString();
     }
 
@@ -137,10 +137,10 @@ public final class ExploreRules {
         int dx = to[0] - from[0], dz = to[2] - from[2];
         long d = Math.round(Math.sqrt((double) dx * dx + (double) dz * dz));
         String at = "ended at " + to[0] + " " + to[1] + " " + to[2];
-        if (d < 4) return "ended where I started, at " + to[0] + " " + to[1] + " " + to[2];
+        if (d < Tuning.i("exploreRules.endedNear")) return "ended where I started, at " + to[0] + " " + to[1] + " " + to[2];
         String[] names = {"east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"};
         double deg = Math.toDegrees(Math.atan2(dz, dx));                 // +z is south in Minecraft
-        int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);
+        int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);  // structural: compass: 8 points of 45 degrees
         return "went " + d + " blocks " + names[i] + ", " + at;
     }
 }

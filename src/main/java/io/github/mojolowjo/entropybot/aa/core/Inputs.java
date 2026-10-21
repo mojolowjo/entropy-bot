@@ -112,9 +112,9 @@ public final class Inputs {
     /** The inputs as a fixed vector, 0..1 (counts capped at 64, iron at 32). */
     public float[] vector() {
         return new float[]{
-                health / Math.max(1, maxHealth), food / 20f, b(hurtRecently), danger / 2f, b(creeperClose), air / 300f,
-                b(inLavaOrFire), freeSlots / 36f, cap(foodItems), cap(torches), cap(wood), cap(cobble), cap(coal),
-                Math.min(32, ironIngots) / 32f, cap(wool), pickTier / 4f, pickPct / 100f, b(bedKnown || bedInBag),
+                health / Math.max(1, maxHealth), food / 20f, b(hurtRecently), danger / 2f, b(creeperClose), air / 300f,  // game fact: feature scaling to 0..1: food 20, air 300 ticks, 36 inventory slots, 32 ingots, tier 4, 100 percent, a stack of 64
+                b(inLavaOrFire), freeSlots / 36f, cap(foodItems), cap(torches), cap(wood), cap(cobble), cap(coal),  // game fact: feature scaling to 0..1: food 20, air 300 ticks, 36 inventory slots, 32 ingots, tier 4, 100 percent, a stack of 64
+                Math.min(32, ironIngots) / 32f, cap(wool), pickTier / 4f, pickPct / 100f, b(bedKnown || bedInBag),  // game fact: feature scaling to 0..1: food 20, air 300 ticks, 36 inventory slots, 32 ingots, tier 4, 100 percent, a stack of 64
                 b(tableKnown), b(furnaceKnown), b(baseChests), b(baseKnown), b(shelterBuilt), b(nearestBase != null), b(night),
                 b(thunder), b(underGround), b(nearOwner), b(ownerOnline), b(ownerOrderPending), b(aiRequestPending),
                 b(menuOpen), b(parked), b(otherJob != null)};
@@ -122,5 +122,5 @@ public final class Inputs {
 
     private static float b(boolean v) { return v ? 1 : 0; }
 
-    private static float cap(int n) { return Math.min(64, Math.max(0, n)) / 64f; }
+    private static float cap(int n) { return Math.min(64, Math.max(0, n)) / 64f; }  // game fact: feature scaling to 0..1: food 20, air 300 ticks, 36 inventory slots, 32 ingots, tier 4, 100 percent, a stack of 64
 }

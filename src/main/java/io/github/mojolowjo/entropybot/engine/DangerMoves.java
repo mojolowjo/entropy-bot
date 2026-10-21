@@ -165,7 +165,7 @@ public final class DangerMoves {
         BlockPos feet = p.blockPosition();
         if (!wet(mc, feet)) return new int[]{0, 0, 0, 0};
         int up = feet.getY();
-        while (up - feet.getY() < 64 && wet(mc, new BlockPos(feet.getX(), up, feet.getZ()))) up++;
+        while (up - feet.getY() < Tuning.i("dangerMoves.wetUpMax") && wet(mc, new BlockPos(feet.getX(), up, feet.getZ()))) up++;
         int floor = feet.getY() - 1;
         while (feet.getY() - floor <= waterFloorScan() && !solid(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) {
             if (!wet(mc, new BlockPos(feet.getX(), floor, feet.getZ()))) break;      // air under water: no floor to build on
@@ -224,7 +224,7 @@ public final class DangerMoves {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                     int x = feet.getX() + dx, z = feet.getZ() + dz;
                     if (!mc.level.hasChunkAt(new BlockPos(x, surfaceY, z))) continue;
-                    for (int y = surfaceY - 2; y <= surfaceY + 3; y++) {
+                    for (int y = surfaceY - 2; y <= surfaceY + Tuning.i("dangerMoves.surfaceUp"); y++) {
                         BlockPos c = new BlockPos(x, y, z);
                         if (!solid(mc, c.below()) || !free(mc, c) || !free(mc, c.above()) || !shoreOk(mc, c)) continue;
                         double d = Math.sqrt(dx * dx + dz * dz + (y - feet.getY()) * (y - feet.getY()));
@@ -313,7 +313,7 @@ public final class DangerMoves {
         try {
             Entity t = nearest(mc, p);
             if (t != null) calmSince = now;
-            if (now - start >= maxTicks()) { fail("gave up at " + move.name().toLowerCase() + " after " + maxTicks() / 20 + " s at " + c(p.blockPosition()) + " (" + moves.why() + ")" + verdict(mc)); return; }
+            if (now - start >= maxTicks()) { fail("gave up at " + move.name().toLowerCase() + " after " + maxTicks() / 20 + " s at " + c(p.blockPosition()) + " (" + moves.why() + ")" + verdict(mc)); return; }  // game fact: 20 game ticks per second
             Moves.Phase ph = moves.tick(now);
             if (ph == Moves.Phase.FAILED) { fail(moves.why() + verdict(mc)); return; }
             boolean arrived = ph == Moves.Phase.ARRIVED;
@@ -392,7 +392,7 @@ public final class DangerMoves {
                 if (e == p || !(e instanceof LivingEntity le) || !le.isAlive() || e instanceof Creeper) continue;
                 double d = p.distanceTo(e);
                 if (d > ReflexRules.lookRadius(hurt) || !h.kind(e, hurt).counts()) continue;
-                boolean seen = hurt || d <= 2.5 || p.hasLineOfSight(e);
+                boolean seen = hurt || d <= Tuning.get("dangerMoves.seenDist") || p.hasLineOfSight(e);
                 if (!ReflexRules.counts(d, hurt, seen) || !ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
                 ThreatFacts.Foe f = ThreatFacts.foe(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString(), d, armor,
                         io.github.mojolowjo.entropybot.threat.MobDamage.INSTANCE);
@@ -406,7 +406,7 @@ public final class DangerMoves {
             double baseDist = -1;
             if (base != null && (baseDim == null || baseDim.equals(Guard.dimOf(mc.level)))) {
                 double dx = p.getX() - base[0] - 0.5, dy = p.getY() - base[1], dz = p.getZ() - base[2] - 0.5, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                if (d > 8 && d <= io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk()) baseDist = d;
+                if (d > Tuning.i("dangerMoves.baseFar") && d <= io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk()) baseDist = d;
             }
             int[] tw = throwaway(p);
             // AA_STEP3 A3/A4: the water facts (the column to fill, the swim up, the nearest shore)
@@ -464,7 +464,7 @@ public final class DangerMoves {
         if (t == null || p.distanceTo(t) > ReflexRules.reach() || !Hostility.mayAttack(t)) return;
         Vec3 eye = t.getEyePosition();
         moves.lookAt(eye.x, eye.y, eye.z);
-        if (p.getAttackStrengthScale(0f) < 0.9f) return;
+        if (p.getAttackStrengthScale(0f) < 0.9f) return;  // game fact: a swing at 90% attack strength or more is a full hit
         mc.gameMode.attack(p, t);
         p.swing(InteractionHand.MAIN_HAND);
     }
@@ -483,15 +483,15 @@ public final class DangerMoves {
         int slot = -1, plankSlot = -1;
         List<java.util.Map.Entry<String, Integer>> items = new ArrayList<>();
         var inv = p.getInventory();
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = inv.getItem(i);
             if (s.isEmpty() || !(s.getItem() instanceof net.minecraft.world.item.BlockItem)) continue;
             String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
             if (!io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(id)) continue;
             items.add(java.util.Map.entry(id, s.getCount()));
             boolean plank = id.endsWith("_planks");
-            if (plank) { if (plankSlot < 0 || (plankSlot >= 9 && i < 9)) plankSlot = i; }
-            else if (slot < 0 || (slot >= 9 && i < 9)) slot = i;
+            if (plank) { if (plankSlot < 0 || (plankSlot >= 9 && i < 9)) plankSlot = i; }  // game fact: the hotbar is inventory slots 0-8
+            else if (slot < 0 || (slot >= 9 && i < 9)) slot = i;  // game fact: the hotbar is inventory slots 0-8
         }
         int n = io.github.mojolowjo.entropybot.aa.AaEscape.placeable(items);
         return new int[]{n, n <= 0 ? -1 : slot >= 0 ? slot : plankSlot};

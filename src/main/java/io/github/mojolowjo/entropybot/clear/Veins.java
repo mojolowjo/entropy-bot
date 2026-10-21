@@ -58,7 +58,7 @@ public final class Veins {
                         if (seen.contains(key) || !area.contains(x, z)) continue;
                         if (!veinBlock(w, x, y, z, wanted)) continue;
                         boolean exposed = false;
-                        for (int n = 0; n < 6 && !exposed; n++) {
+                        for (int n = 0; n < 6 && !exposed; n++) {  // game fact: a block has 6 sides
                             int[] s = ClearEngine.SIDES6[n];
                             exposed = w.noCollision(x + s[0], y + s[1], z + s[2]);
                         }

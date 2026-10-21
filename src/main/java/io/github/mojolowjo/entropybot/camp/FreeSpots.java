@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -18,7 +20,7 @@ public final class FreeSpots {
     /** placeable: the cell can take a block now; airAbove: the cell above it is free. */
     public static List<int[]> find(int[] f, int[] dir, Predicate<int[]> placeable, Predicate<int[]> airAbove) {
         List<int[]> out = new ArrayList<>();
-        for (int r = 1; r <= 3; r++) {
+        for (int r = 1; r <= Tuning.i("freeSpots.maxRing"); r++) {
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 int[] c = {f[0] + dx, f[1], f[2] + dz};

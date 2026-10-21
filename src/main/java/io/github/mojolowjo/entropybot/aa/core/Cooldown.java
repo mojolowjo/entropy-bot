@@ -59,7 +59,7 @@ public final class Cooldown extends Node {
 
     @Override protected Status run(Blackboard bb) {
         long now = bb.clock.now();
-        if (until > now) return fail("cooling down " + (until - now + 999) / 1000 + "s after: " + lastWhy);
+        if (until > now) return fail("cooling down " + (until - now + 999) / 1000 + "s after: " + lastWhy);  // structural: round up to whole seconds
         Status s = child.tick(bb);
         if (s == Status.RUNNING) ran = true;
         if (s == Status.SUCCESS) {

@@ -29,8 +29,8 @@ public final class RunLedger {
         public void tick(long elapsedMs, int pickTier, boolean table, boolean furnace, int food) {
             if (stoneMs < 0 && pickTier >= 2) stoneMs = elapsedMs;
             if (tfMs < 0 && table && furnace) tfMs = elapsedMs;
-            if (ironMs < 0 && pickTier >= 3) ironMs = elapsedMs;
-            boolean low = food < 6;
+            if (ironMs < 0 && pickTier >= 3) ironMs = elapsedMs;  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
+            boolean low = food < Tuning.i("runLedger.lowFood");
             if (low && !foodLow) foodEvents++;
             foodLow = low;
         }
@@ -40,7 +40,7 @@ public final class RunLedger {
         public double ironMin() { return min(ironMs); }
         public long foodEvents() { return foodEvents; }
 
-        private static double min(long ms) { return ms < 0 ? -1 : ms / 60000.0; }
+        private static double min(long ms) { return ms < 0 ? -1 : ms / 60000.0; }  // structural: milliseconds per minute
     }
 
     /** The CSV line (no newline). Text fields lose commas and line breaks so a row always has the header's columns. */

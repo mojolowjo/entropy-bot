@@ -158,7 +158,7 @@ public final class Moves {
             default -> {
                 if (now - legStart > leg.limit()) {
                     car.stop("timed out");
-                    fail("timed out after " + leg.limit() / 20 + " s (" + s.why() + ")");
+                    fail("timed out after " + leg.limit() / 20 + " s (" + s.why() + ")");  // game fact: 20 game ticks per second
                 } else if (s.why() != null) why = leg.name() + ": " + s.why();
             }
         }

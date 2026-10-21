@@ -52,7 +52,7 @@ public final class ReconnectRules {
      */
     public static long nextTryMs(long waited, int tries, ArrayDeque<Long> recent, long nowMs, long firstOutMs) {
         if (gaveUp(nowMs, firstOutMs)) return -1;
-        long at = nowMs + Math.max(0, waitFor(tries) - waited) * 50L;
+        long at = nowMs + Math.max(0, waitFor(tries) - waited) * 50L;  // game fact: a game tick is 50 ms
         int inHour = 0;
         Long oldest = null;
         for (Long t : recent) {
@@ -128,7 +128,7 @@ public final class ReconnectRules {
      * more after it began. In a world never.
      */
     public static boolean connectTimedOut(long attemptStartMs, long nowMs, int timeoutS, boolean inWorld) {
-        return attemptStartMs >= 0 && !inWorld && nowMs - attemptStartMs >= timeoutS * 1000L;
+        return attemptStartMs >= 0 && !inWorld && nowMs - attemptStartMs >= timeoutS * 1000L;  // structural: milliseconds per second
     }
 
     /** check's line for a timed-out attempt. */

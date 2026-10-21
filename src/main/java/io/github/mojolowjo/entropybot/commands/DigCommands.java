@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import java.nio.charset.StandardCharsets;
@@ -327,7 +329,7 @@ final class DigCommands {
         String[] w = rest.toLowerCase().split("\\s+");
         if (w.length >= 1 && w[0].equals("up")) {      // 0.27.3: "dig stairs up <dir> <n>"
             int[] u = w.length >= 2 ? StairPlan.dir(w[1]) : null;
-            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.maxV() + ")";
+            if (u == null || w.length < 3 || !w[2].matches("\\d+")) return "usage: dig stairs up north|south|east|west <n> (n steps up, at most " + StairPlan.maxV() + ")";  // structural: argument count of the dig stairs command
             int n = Integer.parseInt(w[2]);
             if (n < 1 || n > StairPlan.maxV()) return "error: dig stairs up takes 1 to " + StairPlan.maxV() + " steps";
             if (c.chainsRef().running()) return "busy: " + c.chainsRef().chainStatus() + " (pm \"stop\" first)";
@@ -364,8 +366,8 @@ final class DigCommands {
             if (bad != null) return "error: I won't make a floor of " + GuiCore.shortId(floorId) + " - " + bad;
         }
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
-        if (box.volume() > 20000) return "error: that box is too big (20000 blocks max)";
-        if (force && box.volume() > 64) return "error: dig ... force is for small boxes (64 blocks max)";
+        if (box.volume() > Tuning.i("digCommands.maxBox")) return "error: that box is too big (20000 blocks max)";
+        if (force && box.volume() > Tuning.i("digCommands.forceBox")) return "error: dig ... force is for small boxes (64 blocks max)";
         // force is the owner's (guests never get dig at all; this is the second lock)
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
         // V1a: a dig box that touches a safe area is refused whole, not block by block
@@ -417,7 +419,7 @@ final class DigCommands {
         List<String> why = new ArrayList<>();
         for (int[] q : io.github.mojolowjo.entropybot.clear.OwnStations.cellsIn(box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2())) {
             String w = io.github.mojolowjo.entropybot.clear.OwnStations.whyNot(q[0], q[1], q[2]);
-            if (w != null && !w.startsWith("no station") && why.size() < 3) why.add("left " + w);
+            if (w != null && !w.startsWith("no station") && why.size() < 3) why.add("left " + w);  // structural: display: how many items a text lists
         }
         return why.isEmpty() ? null : String.join("; ", why);
     }
@@ -470,7 +472,7 @@ final class DigCommands {
         List<String> words = Texts.words(rest.trim().toLowerCase());
         boolean ores = words.contains("ores"), junk = words.contains("junk") && words.contains("drop"), water = words.contains("water") || words.contains("large"), large = words.contains("large");
         ClearBox box = ClearBox.of(n[0], n[1], n[2], n[3], n[4], n[5]);
-        if (box.volume() > 20000) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
+        if (box.volume() > Tuning.i("digCommands.maxBox")) return "error: " + name + " is too big to dig in one go (" + box.volume() + " blocks, 20000 max)";
         boolean owner = from == null || from.equalsIgnoreCase(c.owner());
         boolean destroy = io.github.mojolowjo.entropybot.guard.AreaTypeRules.breakBuilt(t, owner);
         String label = "digging " + name + " (" + t.word() + ", " + box.volume() + " blocks)" + (destroy ? " (built blocks too)" : "") + (ores ? " (ores too)" : "");
@@ -512,7 +514,7 @@ final class DigCommands {
         if (plan.error() != null) return plan.error();
         if (plan.blocks().isEmpty()) return "ok: nothing to dig there (" + plan.columns() + " columns" + (plan.noSurface() > 0 ? ", " + plan.noSurface() + " not loaded or empty" : "") + ")";
         ClearBox box = SurfaceDig.bounds(plan.blocks());
-        if (force && plan.blocks().size() > 64) return "error: dig ... force is for small digs (64 blocks max)";
+        if (force && plan.blocks().size() > Tuning.i("digCommands.forceBox")) return "error: dig ... force is for small digs (64 blocks max)";
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
         if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxAllowed(box)) {
             List<String> names = new ArrayList<>();
@@ -607,7 +609,7 @@ final class DigCommands {
         int need = shape.equals("clear") ? 2 : 3;
         // 0.30.2: "build walls <block> <area> door x z": the door's two cells (the floor + 1 and + 2) stay open
         int[] doorXz = null;
-        if (!shape.equals("clear") && parts.length == need + 3 && parts[need].equalsIgnoreCase("door")
+        if (!shape.equals("clear") && parts.length == need + 3 && parts[need].equalsIgnoreCase("door")  // structural: argument count of the place command
                 && parts[need + 1].matches("-?\\d+") && parts[need + 2].matches("-?\\d+")) {
             doorXz = new int[]{Integer.parseInt(parts[need + 1]), Integer.parseInt(parts[need + 2])};
             parts = java.util.Arrays.copyOf(parts, need);
@@ -624,7 +626,7 @@ final class DigCommands {
         z.addProperty("x2", an[3]); z.addProperty("y2", an[4]); z.addProperty("z2", an[5]);
         if (shape.equals("clear")) {
             ClearBox cb = ClearBox.of(an[0], an[1], an[2], an[3], an[4], an[5]);
-            if (cb.volume() > 20000) return "error: " + areaName + " is too big to clear in one go (20000 blocks max)";
+            if (cb.volume() > Tuning.i("digCommands.maxBox")) return "error: " + areaName + " is too big to clear in one go (20000 blocks max)";
             return startClear(c, p, new ClearJob.Options().box(cb).label("clearing " + areaName), List.of());
         }
         Map<String, Integer> counts = Gui.inventory(p);
@@ -724,7 +726,7 @@ final class DigCommands {
     /** "place <block> x y z": at once when it is in reach (as the bridge), else a job that walks into reach first. */
     static String place(Commands c, LocalPlayer p, String rest, String from) {
         String[] pp = rest == null ? new String[0] : rest.trim().split("\\s+");
-        if (pp.length != 4) return PLACE_USAGE;
+        if (pp.length != 4) return PLACE_USAGE;  // structural: argument count of the place command
         int x, y, z;
         try {
             x = Integer.parseInt(pp[1]);

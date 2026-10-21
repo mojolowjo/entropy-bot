@@ -107,7 +107,7 @@ public final class Options {
             StringBuilder b = new StringBuilder(ranked.isEmpty() ? none : ranked.get(0).text());
             if (ranked.size() > 1) {
                 b.append("; then ");
-                for (int i = 1; i < ranked.size() && i < 4; i++) b.append(i > 1 ? ", " : "").append(ranked.get(i).text());
+                for (int i = 1; i < ranked.size() && i < 4; i++) b.append(i > 1 ? ", " : "").append(ranked.get(i).text());  // structural: display: how many items a text lists
             }
             if (!dropped.isEmpty()) b.append("; dropped: ").append(String.join(", ", dropped));
             return b.toString();
@@ -181,7 +181,7 @@ public final class Options {
         public String describe(long now) {
             List<String> w = new ArrayList<>();
             for (Failures.Rec r : f.of(desire))
-                w.add(r.option() + " x" + r.fails() + (r.until() > now ? " (" + Math.max(1, (r.until() - now + 59_999) / 60_000) + " min left)" : ""));
+                w.add(r.option() + " x" + r.fails() + (r.until() > now ? " (" + Math.max(1, (r.until() - now + 59_999) / 60_000) + " min left)" : ""));  // structural: round up to whole minutes
             return String.join(", ", w);
         }
     }
@@ -251,7 +251,7 @@ public final class Options {
             b.append(", last pick ").append(lastPickUs).append(" us");
             if (!d.isEmpty()) {
                 b.append(", drops: ");
-                for (int i = 0; i < d.size() && i < 5; i++) b.append(i > 0 ? ", " : "").append(d.get(i).getKey()).append(" x").append(d.get(i).getValue());
+                for (int i = 0; i < d.size() && i < 5; i++) b.append(i > 0 ? ", " : "").append(d.get(i).getKey()).append(" x").append(d.get(i).getValue());  // structural: display: how many items a text lists
             }
             return b.toString();
         }
@@ -303,7 +303,7 @@ public final class Options {
             try {
                 return pick0(bb, planned, plannedCost, plannerWhy);
             } finally {
-                counters.lastPickUs = (System.nanoTime() - t0) / 1000;
+                counters.lastPickUs = (System.nanoTime() - t0) / 1000;  // structural: milliseconds per second
             }
         }
 
@@ -383,7 +383,7 @@ public final class Options {
                 fo = s.get();
             } catch (RuntimeException e) {
                 // PLANNING 3: logged once a minute (the first in full), counted for aa status (red for a minute)
-                if (counters.lastFactErrorAt < 0 || now - counters.lastFactErrorAt >= 60_000) bb.port.log(rung + " facts: " + e);
+                if (counters.lastFactErrorAt < 0 || now - counters.lastFactErrorAt >= Tuning.i("options.factErrorLogMs")) bb.port.log(rung + " facts: " + e);
                 counters.factErrors++;
                 counters.lastFactErrorAt = now;
                 if (errors != null) errors.accept(rung + " facts: " + e);

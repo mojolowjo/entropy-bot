@@ -130,14 +130,14 @@ public final class Discovery {
     /** The way home's night weight: 1 by day, 2 at dusk (11000..13000), 3 at night (13000..23000); unknown 1. */
     public static double nightWeight(long dayTime) {
         if (dayTime < 0) return 1;
-        long t = dayTime % 24000;
-        return t >= 13000 && t < 23000 ? 3 : t >= 11000 && t < 13000 ? 2 : 1;
+        long t = dayTime % 24000;  // game fact: a Minecraft day is 24000 ticks
+        return t >= 13000 && t < 23000 ? 3 : t >= 11000 && t < 13000 ? 2 : 1;  // game fact: vanilla day time in ticks: 11000 dusk begins, 13000 night, 23000 dawn
     }
 
     /** The strip's Y:the best band, never above my feet (unknown: my level), the world's floor kept. */
     public static int stripY(Facts f) {
         if (f.bestY() == Integer.MIN_VALUE) return f.meY();
-        return Math.max(-58, Math.min(f.bestY(), f.meY()));
+        return Math.max(-Tuning.i("discovery.floorY"), Math.min(f.bestY(), f.meY()));
     }
 
     /** Tunnel blocks per ore at the learned density (default {@value #DEFAULT_TUNNEL_PER_ORE} unknown). */
@@ -161,23 +161,23 @@ public final class Discovery {
         }
         boolean knownFirst = f.caveDist() >= 0 && (seenDist < 0 || f.caveDist() <= seenDist);
         if (knownFirst) {
-            double cost = f.caveDist() + Unit.blocks(60 / rate);
+            double cost = f.caveDist() + Unit.blocks(60 / rate);  // structural: seconds per minute
             out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave %d away, %.2f %s seen per cave-minute, %d blocks explored a minute", f.caveDist(), rate, word, (int) caveBlocksMin()),
                     List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE))));
         } else if (seenDist >= 0) {
             int[] c = f.seenCave();
-            double cost = seenDist + Unit.blocks(60 / rate);
+            double cost = seenDist + Unit.blocks(60 / rate);  // structural: seconds per minute
             // the cave run walks to the seen opening itself (Mining.startCave: no known cave near, a seen one within 64)
             out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave opening I saw at %d %d %d, %d away, %.2f %s seen per cave-minute", c[0], c[1], c[2], seenDist, rate, word),
                     List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE)), c.clone()));
         } else dropped.add("explore cave: no known cave and no cave opening seen within " + seenCaveWithin());
         // none seen: walk new land until a cave opening comes into view, valued by the learned chance per 100 blocks
         if (f.caveDist() < 0 && seenDist < 0 && f.cavesPer100() > 0) {
-            double walk = Math.min(maxWalkPerCave(), 100 / f.cavesPer100());
+            double walk = Math.min(maxWalkPerCave(), 100 / f.cavesPer100());  // structural: percent
             // no leash: the way home is priced (from about walk past where I am), weighted by the night; past the horizon: dropped
             double night = nightWeight(f.dayTime());
             double home = f.homeDist() < 0 ? 0 : (f.homeDist() + walk) * night;
-            double cost = walk + Unit.blocks(60 / rate) + home;
+            double cost = walk + Unit.blocks(60 / rate) + home;  // structural: seconds per minute
             if (f.horizonBlocks() > 0 && walk + home > f.horizonBlocks())
                 dropped.add(String.format(Locale.ROOT, "explore for a cave: the round trip (%.0f out, %.0f home%s) is past the horizon (%.0f)", walk, home, night > 1 ? " at night" : "", f.horizonBlocks()));
             else out.add(new Opt(Kind.EXPLORE, cost, String.format(Locale.ROOT, "no cave seen yet; %.2f cave openings seen per 100 blocks walked, about %.0f blocks to the next, then %.2f %s per cave-minute; the way home %.0f%s",
@@ -212,8 +212,8 @@ public final class Discovery {
         }
         if (!f.ownerGoal()) dropped.add("clear chunk: the owner's goals only");
         else {
-            int x0 = Math.floorDiv(f.meX(), 16) * 16, z0 = Math.floorDiv(f.meZ(), 16) * 16;
-            int cells = 16 * 16 * slab();
+            int x0 = Math.floorDiv(f.meX(), 16) * 16, z0 = Math.floorDiv(f.meZ(), 16) * 16;  // game fact: a chunk is 16 blocks
+            int cells = 16 * 16 * slab();  // game fact: a chunk is 16 blocks
             double expect = f.density() > 0 ? f.density() * cells : cells / defaultTunnelPerOre() / exposed();
             double cost = (down + Unit.blocks(down * 2 * dig) + Unit.blocks(cells * dig)) / Math.max(0.5, expect);
             out.add(new Opt(Kind.CLEAR_CHUNK, cost, String.format(Locale.ROOT, "%d blocks at Y %d, about %.1f ore in it", cells, y, expect),

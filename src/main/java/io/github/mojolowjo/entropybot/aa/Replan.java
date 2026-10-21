@@ -111,15 +111,15 @@ public final class Replan {
         return new Way(Leg.WALK, walk, both + ": walking");
     }
 
-    private static String fmt(double d) { return Double.isInfinite(d) ? "inf" : d < 10 ? String.format(Locale.ROOT, "%.1f", d) : String.valueOf(Math.round(d)); }
+    private static String fmt(double d) { return Double.isInfinite(d) ? "inf" : d < 10 ? String.format(Locale.ROOT, "%.1f", d) : String.valueOf(Math.round(d)); }  // structural: display: one decimal under 10
 
     /** The target cell in an option id like "dig_known -65 57 -10" (the last three ints), or null. */
     public static int[] targetOf(String id) {
         if (id == null) return null;
         String[] w = id.trim().split("\\s+");
-        if (w.length != 4 || !w[0].endsWith("_known")) return null;
+        if (w.length != 4 || !w[0].endsWith("_known")) return null;  // structural: token count of a *_known fact name
         try {
-            return new int[]{Integer.parseInt(w[w.length - 3]), Integer.parseInt(w[w.length - 2]), Integer.parseInt(w[w.length - 1])};
+            return new int[]{Integer.parseInt(w[w.length - 3]), Integer.parseInt(w[w.length - 2]), Integer.parseInt(w[w.length - 1])};  // structural: index of the coordinates in a fact name
         } catch (NumberFormatException e) {
             return null;
         }
@@ -266,7 +266,7 @@ public final class Replan {
         double a = alt.total();
         String scores = (wandered ? "bug signal: wandered >" + wander() + " from the target (a per-ore mine never should): " : "") + (cur == null ? running.id() + " gone" : cur.id() + " " + Math.round(c)) + " vs " + alt.id() + " " + Math.round(a);
         if (!(a <= c * (1 - cheaper()) && c - a >= minSave())) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
-        if (lastSwitchAt >= 0 && now - lastSwitchAt < lockMs()) return new Decision(null, -1, c, a, scores + ": locked " + (lockMs() - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");
+        if (lastSwitchAt >= 0 && now - lastSwitchAt < lockMs()) return new Decision(null, -1, c, a, scores + ": locked " + (lockMs() - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");  // structural: round up to whole seconds
         if (midDigOrPillar) return new Decision(null, -1, c, a, scores + ": mid dig-down or pillar");
         List<String> rs = lines(running), as = lines(alt);
         int p = commonPrefix(rs, as), s = commonSuffix(rs, as, p);
@@ -324,7 +324,7 @@ public final class Replan {
 
         public void add(String line) {
             lines.add(line);
-            while (lines.size() > 5) lines.remove(0);
+            while (lines.size() > 5) lines.remove(0);  // structural: display: how many items a text lists
         }
 
         public String text(boolean on) {

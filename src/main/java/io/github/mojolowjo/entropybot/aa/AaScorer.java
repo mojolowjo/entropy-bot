@@ -34,13 +34,13 @@ public final class AaScorer implements Scorer {
     public static double onFloor() { return Tuning.get("aaScorer.onFloor"); }
 
     final Band wood = new Band(woodLo(), woodHi()), stone = new Band(stoneLo(), stoneHi()), coal = new Band(coalLo(), coalHi()),
-            iron = new Band(ironLo(), ironHi()), torches = new Band(torchLo(), torchHi()), bag = new Band(depositBelow(), depositBelow() + 6);
+            iron = new Band(ironLo(), ironHi()), torches = new Band(torchLo(), torchHi()), bag = new Band(depositBelow(), depositBelow() + Tuning.i("aaScorer.bagBandWidth"));
 
     /** The band's deficit 0..100, or -1 when it is off. */
     static double deficit(Band b, int have) {
         if (!b.update(have)) return -1;
         // review: a band that is on never scores under WAIT (else it stays on and never runs)
-        return Math.max(onFloor(), Math.min(100, 100.0 * (b.leaveAt - have) / b.leaveAt));
+        return Math.max(onFloor(), Math.min(100, 100.0 * (b.leaveAt - have) / b.leaveAt));  // structural: percent
     }
 
     @Override public double[] score(Inputs in) {

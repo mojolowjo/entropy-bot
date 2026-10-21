@@ -84,9 +84,9 @@ public final class BedOptions {
             RungOptions.add(rows, dropped, m, now, Options.typed("hunt sheep here", "hunt", after(f, huntSteps(f.wool(), null)), climb + kill() * k + craft(),
                     f.sheepInView() + " sheep in view, " + k + " to kill" + climbWhy, "hunt sheep here", m));
         } else dropped.add("hunt sheep here: none in view");
-        if (f.herd() != null && f.herd().length >= 4) {
+        if (f.herd() != null && f.herd().length >= 4) {  // structural: a herd entry carries its count as the 4th field
             int[] h = f.herd();
-            double conf = Math.max(1, h[3]) / 100.0;
+            double conf = Math.max(1, h[3]) / 100.0;  // structural: percent
             double cost = climb + (2 * h[2] + kill() * k + craft() + herdFix()) / conf;
             Options.Option o = Options.typed("hunt sheep at " + h[0] + " " + h[1], "hunt", after(f, huntSteps(f.wool(), h)), cost,
                     "a herd I saw " + h[2] + " away (confidence " + h[3] + "%), " + k + " to kill, there and back" + climbWhy, "hunt sheep at " + h[0] + " " + h[1], m);

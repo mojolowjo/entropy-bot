@@ -103,8 +103,8 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
 
     /** Damage after armour (vanilla, no toughness). */
     public static double taken(double d, int armor) {
-        double a = Math.min(20, Math.max(armor / 5.0, armor - d / 2.0));
-        return d * (1 - a / 25.0);
+        double a = Math.min(20, Math.max(armor / 5.0, armor - d / 2.0));  // game fact: armour: each point cuts 4% (1/25) up to 80%, at least a fifth of the points
+        return d * (1 - a / 25.0);  // game fact: armour: each point cuts 4% (1/25) up to 80%
     }
 
     /** Blocks per second (vanilla-ish): walkers 2.3, spiders 3, fliers 4, the rest 2.5. */
@@ -127,10 +127,10 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
         String basis;
         if (!Double.isNaN(obs)) {
             hit = obs;
-            basis = "observed " + ThreatRules.fmt(Math.round(obs * 10) / 10.0) + "/hit";
+            basis = "observed " + ThreatRules.fmt(Math.round(obs * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
         } else {
             hit = taken(m == null ? 5 : m[0], armor);
-            basis = (m == null ? "unknown kind, assumed " : "table ") + ThreatRules.fmt(Math.round(hit * 10) / 10.0) + "/hit";
+            basis = (m == null ? "unknown kind, assumed " : "table ") + ThreatRules.fmt(Math.round(hit * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
         }
         boolean ranged = mv == ThreatRules.Move.RANGED;
         double dps = hit / (ranged ? SHOT_EVERY_S : HIT_EVERY_S);
@@ -138,13 +138,13 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
     }
 
     /** 0.23.2: sprint whenever a run moves (vanilla needs food above 6). */
-    public static boolean sprint(boolean moving, int food) { return moving && food > 6; }
+    public static boolean sprint(boolean moving, int food) { return moving && food > Tuning.i("threatFacts.sprintFood"); }
 
     /** The bot's walking pace (a Baritone path), blocks per second on the flat. */
     public static final double WALK = 4.3; // game fact: walking speed in blocks per second (about 4.3)
 
     /** The bot's run speed: sprint 5.6 with food above 6, else walk 4.3. */
-    public static double runSpeed(int food) { return food > 6 ? 5.6 : WALK; }
+    public static double runSpeed(int food) { return food > Tuning.i("threatFacts.sprintFood") ? 5.6 : WALK; }
 
     /** "zombie 3.0 (table 3/hit), skeleton 12.0 (...)" for aa why. */
     public String foesText() {
@@ -152,7 +152,7 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
         StringBuilder b = new StringBuilder();
         for (Foe f : foes) {
             if (b.length() > 0) b.append(", ");
-            b.append(f.kind()).append(' ').append(ThreatRules.fmt(Math.round(f.dist() * 10) / 10.0)).append(" (").append(f.basis()).append(')');
+            b.append(f.kind()).append(' ').append(ThreatRules.fmt(Math.round(f.dist() * 10) / 10.0)).append(" (").append(f.basis()).append(')');  // structural: rounded to one decimal for the text
         }
         return b.toString();
     }

@@ -17,7 +17,7 @@ public final class Night {
     /** 0 by day, rising 0..1 at dusk, 1 at night; unknown time ({@code dayTime < 0}): the night flag. */
     public static double dusk(long dayTime, boolean nightFlag) {
         if (dayTime < 0) return nightFlag ? 1 : 0;
-        long t = dayTime % 24_000;
+        long t = dayTime % 24_000;  // game fact: a Minecraft day is 24000 ticks
         if (t >= BED_FROM && t < BED_TO) return 1;
         if (t >= DUSK && t < BED_FROM) return (t - DUSK) / (double) (BED_FROM - DUSK);
         return 0;

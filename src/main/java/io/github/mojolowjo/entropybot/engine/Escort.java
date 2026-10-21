@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import baritone.api.pathing.goals.GoalNear;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
@@ -77,7 +79,7 @@ public final class Escort {
 
     public String statusText() {
         if (name == null) return "not escorting anyone (escort me [radius] | escort <player> [radius])";
-        long min = (System.currentTimeMillis() - startedMs) / 60000;
+        long min = (System.currentTimeMillis() - startedMs) / 60000;  // structural: milliseconds per minute
         return "escorting " + name + " (radius " + radius + ", " + fights + " fight" + (fights == 1 ? "" : "s") + " in " + min + " min, food throws "
                 + (lastFedMs > startedMs ? "done" : "none yet") + ")";
     }
@@ -124,7 +126,7 @@ public final class Escort {
             if (e.distanceTo(g) > r * 2.0 + 1) continue;
             if (!Hostility.INSTANCE.kind(e, false).counts() || !Hostility.mayAttack(e)) continue;   // never a player or a pet
             // B2: with the player beside the bot (4 blocks), the bot's reach grid stands for theirs: a mob with no path is noted
-            if (g.distanceTo(p) <= 4 && !(e instanceof Creeper) && io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.gridOk()) {
+            if (g.distanceTo(p) <= Tuning.i("escort.fightDist") && !(e instanceof Creeper) && io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.gridOk()) {
                 var td = io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.decision(e.getId());
                 if (td != null && Double.isNaN(td.reach()) && !Hostility.INSTANCE.hitMe(e)) continue;
             }
@@ -153,7 +155,7 @@ public final class Escort {
                 String id = idOf(e);
                 if (!EscortRules.warnKind(id) || !e.isAlive()) continue;
                 double d = e.distanceTo(g);
-                if (d > EscortRules.warnDist() + 8) continue;
+                if (d > EscortRules.warnDist() + Tuning.i("escort.warnMargin")) continue;
                 Double prev = lastDist.put(e.getId(), d);
                 String w = EscortRules.warning(id, prev == null ? Double.MAX_VALUE : prev, d, g.getX(), g.getZ(), e.getX(), e.getZ(), warned.contains(e.getId()));
                 if (w != null) {
@@ -161,8 +163,8 @@ public final class Escort {
                     say(w);
                 }
             }
-            if (lastDist.size() > 200) lastDist.clear();
-            if (warned.size() > 500) warned.clear();
+            if (lastDist.size() > 200) lastDist.clear();  // structural: memory cap of the distance map
+            if (warned.size() > 500) warned.clear();  // structural: memory cap of the warned set
         } catch (RuntimeException ex) {
             LOG.warn("[entropybot] escort watch: {}", ex.toString());
         }
@@ -182,10 +184,10 @@ public final class Escort {
                 engine.release();
             } else if (!stepping && s != null && p.distanceTo(g) < EscortRules.standMin()) {
                 stepping = true;
-                stepUntil = now + 40;
+                stepUntil = now + Tuning.i("escort.stepTicks");
                 engine.override(new GoalNear(BlockPos.containing(s[0], p.getY(), s[1]), 0));
             }
-            if (now % 20 == 0) feed(mc, p, g);
+            if (now % 20 == 0) feed(mc, p, g);  // structural: periodic cadence in ticks (20 ticks = 1 s)
         } catch (RuntimeException ex) {
             LOG.warn("[entropybot] escort: {}", ex.toString());
         }
@@ -195,12 +197,12 @@ public final class Escort {
     void interrupted() { stepping = false; }
 
     private void feed(Minecraft mc, LocalPlayer p, Player g) {
-        if (mc.screen != null || p.containerMenu != p.inventoryMenu || p.distanceTo(g) > 5) return;
+        if (mc.screen != null || p.containerMenu != p.inventoryMenu || p.distanceTo(g) > Tuning.i("escort.feedDist")) return;
         int[] v = vitals.apply(name);
         int food = v == null ? -1 : v[0];
         int carried = 0, bestSlot = -1, bestCount = 0;
         var inv = p.getInventory();
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack st = inv.getItem(i);
             if (Reflexes.foodScore(st, 20f) < 0) continue;          // never golden apples, never harmful food
             carried += st.getCount();

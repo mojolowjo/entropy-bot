@@ -70,7 +70,7 @@ public final class Reflexes {
     private double targetDist;
     private boolean urgent;
     private float lastHealth = 20;
-    private long hurtTick = -10000;
+    private long hurtTick = -10000;  // structural: a time long ago (sentinel)
     private int errors;
     // eating
     private int eatTicks, bites, eatStartFood;
@@ -278,7 +278,7 @@ public final class Reflexes {
         o.addProperty("on", defence);
         if (target != null) {
             o.addProperty("target", target);
-            o.addProperty("dist", Math.round(targetDist * 10) / 10.0);
+            o.addProperty("dist", Math.round(targetDist * 10) / 10.0);  // structural: rounded to one decimal for the text
         }
         o.addProperty("urgent", urgent);
         o.addProperty("creepers", duel.mode().word());
@@ -311,7 +311,7 @@ public final class Reflexes {
             step();
         } catch (Throwable t) {
             errors++;
-            if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] reflex error #{}: {}", errors, t.toString());
+            if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] reflex error #{}: {}", errors, t.toString());  // structural: log throttle: only the first few errors are logged
             try { settle("error"); } catch (Throwable caught) { Quiet.warn("Reflexes.tick failed, carrying on with the fallback", caught); }
         }
     }
@@ -381,13 +381,13 @@ public final class Reflexes {
         Threat cr = defence ? nearestCreeper(mc, p, creeperOverride()) : null;
         // review 4: a creeper behind a wall or in a pit (no sight) or one that hasn't come closer in 8 s doesn't override
         // (the flee loop); within 4 it always does. The flee itself keeps off drops, lava and fire (sprint check, Baritone).
-        if (cr != null && cr.d > 4 && (!p.hasLineOfSight(cr.e) || !creeperClosing(cr))) cr = null;
+        if (cr != null && cr.d > Tuning.i("reflexes.creeperKeep") && (!p.hasLineOfSight(cr.e) || !creeperClosing(cr))) cr = null;
         if (cr != null && (t == null || !t.creeper)) {
             t = cr;
-            if (cr.d < ReflexRules.creeperRunTo()) forceFleeUntil = Math.max(forceFleeUntil, now + 20);
+            if (cr.d < ReflexRules.creeperRunTo()) forceFleeUntil = Math.max(forceFleeUntil, now + Tuning.i("reflexes.fleeKeepTicks"));
         }
         if (creeperProbe && cr != null) LOG.info("[entropybot] creeper probe: tick {} creeper {} at {} | target {} {} | reflex {} | hp {}",
-                now, cr.e.getId(), Math.round(cr.d * 10) / 10.0, t == null ? "none" : t.id, t == null ? "" : Math.round(t.d * 10) / 10.0,
+                now, cr.e.getId(), Math.round(cr.d * 10) / 10.0, t == null ? "none" : t.id, t == null ? "" : Math.round(t.d * 10) / 10.0,  // structural: rounded to one decimal for the text
                 reflex, Math.round(hp));
         // C7 escort: what threatens the guarded player comes first, unless something is at the bot's own throat
         // (or the owner pointed at a target with `attack`, C1)
@@ -454,7 +454,7 @@ public final class Reflexes {
     /** Every reflex ends here: keys up, Baritone back to whatever it was doing. */
     /** 0.33.1: holding jump because of the air reflex (released when it ends). */
     private boolean swimming;
-    private long swimLogAt = -1000;
+    private long swimLogAt = -1000;  // structural: a time long ago (sentinel)
     /** 0.36.a1: the air reflex took over from Baritone (engine hold); deferred to it (logged once per dive). */
     private boolean airHeld, airDeferred;
 
@@ -491,7 +491,7 @@ public final class Reflexes {
         ReflexRules.Air a = ReflexRules.air(p.isUnderWater(), p.isInWater(), p.getAirSupply(), p.getMaxAirSupply(), drives, airHeld);
         if (a == ReflexRules.Air.DEFER) {
             if (!airDeferred) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - Baritone drives, leaving jump to it until air < {}",
-                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), p.getMaxAirSupply() / 3);
+                    (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply(), p.getMaxAirSupply() / 3);  // structural: a third of the air supply
             airDeferred = true;
         } else if (!p.isUnderWater()) airDeferred = false;
         if (a == ReflexRules.Air.SWIM || a == ReflexRules.Air.TAKEOVER) {
@@ -499,7 +499,7 @@ public final class Reflexes {
             if (take && !airHeld) {
                 LOG.info("[entropybot] air reflex: air {}/{} at {} {} {} - taking over: Baritone swims up at the reflex priority until the air is full",
                         p.getAirSupply(), p.getMaxAirSupply(), (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()));
-            } else if (!take && !swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - swimming up",
+            } else if (!take && !swimming && now - swimLogAt > Tuning.i("reflexes.swimLogTicks") && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - swimming up",
                     (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply());
             airHeld = take;
             // reflex choosers: Baritone swims up to any cell with the head in air (it picks the cell; in the gap before
@@ -515,7 +515,7 @@ public final class Reflexes {
     private boolean airGoal, airSpent;
     private int[] airCell;
     private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way airWay;
-    private long airTryAt = -1000;
+    private long airTryAt = -1000;  // structural: a time long ago (sentinel)
     private int airAtTry;
 
     private boolean airWayRunning() {
@@ -685,7 +685,7 @@ public final class Reflexes {
             if (d > ReflexRules.lookRadius(hurt) || (best != null && d >= best.d)) continue;
             HostileRules.Kind k = h.kind(e, hurt);
             if (!k.counts()) continue;
-            boolean seen = hurt || d <= 2.5 || p.hasLineOfSight(e);
+            boolean seen = hurt || d <= Tuning.get("reflexes.seenDist") || p.hasLineOfSight(e);
             if (!ReflexRules.counts(d, hurt, seen)) continue;
             // B2: aggro + reach by path + closing in (a mob that hit the bot, or a creeper within 6, always counts)
             if (filter && !io.github.mojolowjo.entropybot.threat.ThreatRuntime.INSTANCE.counts(e, d, h.hitMe(e))) continue;
@@ -727,7 +727,7 @@ public final class Reflexes {
             watchCreeperBest = cr.d;
             watchCreeperAt = now;
         }
-        return now - watchCreeperAt <= 160;
+        return now - watchCreeperAt <= Tuning.i("reflexes.watchCreeperTicks");
     }
 
     private Threat threatOf(LocalPlayer p, Entity e, boolean hurt) {
@@ -770,8 +770,8 @@ public final class Reflexes {
             holdWeapon(mc, p);
             look(t.e);
             BlockPos ip = escort.interpose(mc, t.e);
-            if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));
-            if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+            if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));  // structural: periodic cadence in ticks (20 ticks = 1 s)
+            if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {  // game fact: a swing at 90% attack strength or more is a full hit
                 mc.gameMode.attack(p, t.e);         // the knockback sends it away from the bot, which stands between
                 p.swing(InteractionHand.MAIN_HAND);
             }
@@ -794,11 +794,11 @@ public final class Reflexes {
         look(t.e);      // backbone step 4: LookBehavior (the strike itself stays the mod's input: Baritone has no combat)
         if (t.d <= ReflexRules.reach()) {
             engine.hold();
-            if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)
+            if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)  // game fact: a swing at 90% attack strength or more is a full hit
                 mc.gameMode.attack(p, t.e);
                 p.swing(InteractionHand.MAIN_HAND);
             }
-        } else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) {
+        } else if (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
             // close the distance (skeletons shoot from range)
             engine.override(new GoalNear(t.e.blockPosition(), 1));
         }
@@ -830,7 +830,7 @@ public final class Reflexes {
         // (Baritone sprints, and keeps off drops, lava and fire itself); started this tick
         runFrom(mc, p, t.e, esc);
         long seen = ThreatRuntime.INSTANCE.firstSeen(t.e.getId());
-        String line = "creeper at " + Math.round(t.d * 10) / 10.0 + ": " + cspr.how() + " (heading run " + (int) esc[2]
+        String line = "creeper at " + Math.round(t.d * 10) / 10.0 + ": " + cspr.how() + " (heading run " + (int) esc[2]  // structural: rounded to one decimal for the text
                 + (seen < 0 ? "" : ", " + (now - seen) + " ticks after it appeared") + ")";
         events.push("reflex", line, null);
         LOG.info("[entropybot] creeper sprint: {}", line);
@@ -846,7 +846,7 @@ public final class Reflexes {
         if (creeperLadderGoverns) {
             boolean digging = creeperWayRunning() && creeperWay != io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.RUN_AWAY;   // a burrow / pillar runs or holds
             if (Double.isNaN(d) || (d >= cspr.safe() && !digging) || creeperSpent) {
-                String why = "creeper ladder: " + (Double.isNaN(d) ? "it is gone" : creeperSpent ? "every way spent" : "it is " + Math.round(d * 10) / 10.0 + " away");
+                String why = "creeper ladder: " + (Double.isNaN(d) ? "it is gone" : creeperSpent ? "every way spent" : "it is " + Math.round(d * 10) / 10.0 + " away");  // structural: rounded to one decimal for the text
                 LOG.info("[entropybot] {}", why);
                 settle(why);
                 return false;
@@ -854,7 +854,7 @@ public final class Reflexes {
         } else if (cspr.step(now, d) == CreeperSprint.Act.DONE) {
             if (io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.sprintGaveUpGoesOn(cspr.endWhy(), c != null && !Double.isNaN(d), creeperSpent)) {
                 creeperLadderGoverns = true;
-                LOG.info("[entropybot] creeper sprint: {} with the creeper at {} - the run is charged, the ladder goes on", cspr.endWhy(), Math.round(d * 10) / 10.0);
+                LOG.info("[entropybot] creeper sprint: {} with the creeper at {} - the run is charged, the ladder goes on", cspr.endWhy(), Math.round(d * 10) / 10.0);  // structural: rounded to one decimal for the text
                 fleeRetryAt = now;
                 creeperTry(mc, p, c, creeperEscape(mc, p, c), true);
                 return true;
@@ -880,7 +880,7 @@ public final class Reflexes {
         return true;
     }
 
-    private long fleeRetryAt = -1000;
+    private long fleeRetryAt = -1000;  // structural: a time long ago (sentinel)
     /** 0.39.s8: the sprint gave up with the creeper still near; the ladder's legs govern until it ends. */
     private boolean creeperLadderGoverns;
 
@@ -977,7 +977,7 @@ public final class Reflexes {
 
     /** 0.23.2: a melee duel with a lone creeper only with a big margin: health above the retreat line after that blast (armour counted) is at least the buffer. */
     static boolean creeperDuelOk(double health, double maxHealth, int armor) {
-        return health - ReflexRules.retreatAt() - ThreatFacts.taken(creeperBlast(), armor) >= Math.max(4, 0.2 * maxHealth);
+        return health - ReflexRules.retreatAt() - ThreatFacts.taken(creeperBlast(), armor) >= Math.max(4, Tuning.get("reflexes.blastHealthShare") * maxHealth);
     }
 
     private static boolean bigCreeperMargin(LocalPlayer p) {
@@ -1000,13 +1000,13 @@ public final class Reflexes {
         } else if (t.d < ReflexRules.creeperRun() && now - fleeRetryAt >= io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()
                 && (reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING || !creeperWayRunning())) {
             // reflex choosers: the try failed, timed out or ended with the creeper still close: charged, the ladder's next way
-            LOG.info("[entropybot] creeper flee: {} with the creeper at {}", reflexMoves.why(), Math.round(t.d * 10) / 10.0);
+            LOG.info("[entropybot] creeper flee: {} with the creeper at {}", reflexMoves.why(), Math.round(t.d * 10) / 10.0);  // structural: rounded to one decimal for the text
             creeperTry(mc, p, t.e, fleeDir(mc, p, t.e), true);
             fleeUntil = now + (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.refleeTicks");
             fleeRetryAt = now;
         }
         // one that is already right here gets knocked back
-        if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
+        if (t.d <= ReflexRules.reach() && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {  // game fact: a swing at 90% attack strength or more is a full hit
             holdWeapon(mc, p);
             mc.gameMode.attack(p, t.e);
             p.swing(InteractionHand.MAIN_HAND);
@@ -1030,7 +1030,7 @@ public final class Reflexes {
     private static void holdWeapon(Minecraft mc, LocalPlayer p) {
         var inv = p.getInventory();
         int best = -1, bestRank = 0;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = inv.getItem(i);
             int rank = s.getItem() instanceof SwordItem ? 2 : s.getItem() instanceof AxeItem ? 1 : 0;
             if (rank > bestRank) { bestRank = rank; best = i; }
@@ -1090,10 +1090,10 @@ public final class Reflexes {
             LOG.warn("[entropybot] threat: creeper heading failed, straight away instead: {}", e.toString());
         }
         double ax = c == null ? 0 : p.getX() - c.getX(), az = c == null ? 0 : p.getZ() - c.getZ(), n = Math.hypot(ax, az);
-        return n < 1e-6 ? new double[]{1, 0, run} : new double[]{ax / n, az / n, run};
+        return n < 1e-6 ? new double[]{1, 0, run} : new double[]{ax / n, az / n, run};  // structural: epsilon
     }
 
-    private long aaOffPricedAt = -1000;
+    private long aaOffPricedAt = -1000;  // structural: a time long ago (sentinel)
 
     /**
      * 0.38.b9 (review: with AA off a low-health bot fought to the death): at or under the old retreat health, the same
@@ -1101,7 +1101,7 @@ public final class Reflexes {
      * false (the fight goes on). Once a second at most; the pick is logged. Never throws.
      */
     private boolean aaOffMove(Minecraft mc, LocalPlayer p, boolean hurt) {
-        if (now - aaOffPricedAt < 20) return false;
+        if (now - aaOffPricedAt < Tuning.i("reflexes.aaOffRepriceTicks")) return false;
         aaOffPricedAt = now;
         try {
             Place b = base;
@@ -1129,10 +1129,10 @@ public final class Reflexes {
     private int bestFood(LocalPlayer p) {
         var inv = p.getInventory();
         int best = -1, bestScore = -1;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             int sc = foodScore(inv.getItem(i), p.getHealth());
             // the hotbar first when it's as good: no inventory click needed
-            if (sc > bestScore || (sc == bestScore && sc >= 0 && i < 9 && best >= 9)) { bestScore = sc; best = i; }
+            if (sc > bestScore || (sc == bestScore && sc >= 0 && i < 9 && best >= 9)) { bestScore = sc; best = i; }  // game fact: the hotbar is inventory slots 0-8
         }
         return bestScore < 0 ? -1 : best;
     }
@@ -1171,7 +1171,7 @@ public final class Reflexes {
             if (!noFood) events.push("reflex", "out of food (food " + p.getFoodData().getFoodLevel() + "/20)", null);
             noFood = true;
             eatRequested = false;
-            eatCooldownUntil = now + 200;
+            eatCooldownUntil = now + Tuning.i("reflexes.eatCoolTicks");
             return;
         }
         noFood = false;
@@ -1194,17 +1194,17 @@ public final class Reflexes {
             }
             mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
         }
-        mc.options.keyUse.setDown(eatTicks >= 2 && eatTicks < 50);
-        if (eatTicks > 6 && !p.isUsingItem()) {
+        mc.options.keyUse.setDown(eatTicks >= Tuning.i("reflexes.eatUseFrom") && eatTicks < Tuning.i("reflexes.eatUseTo"));
+        if (eatTicks > Tuning.i("reflexes.eatCheckTicks") && !p.isUsingItem()) {
             bites++;
             // aa-food: the next bite only while it is not wasted (or the owner asked)
-            if (p.getFoodData().needsFood() && bites < 10 && (eatRequested || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), p.getHealth(), bestNutrition(p)))) {
+            if (p.getFoodData().needsFood() && bites < Tuning.i("reflexes.bitesMax") && (eatRequested || ReflexRules.wantsMeal(p.getFoodData().getFoodLevel(), p.getHealth(), bestNutrition(p)))) {
                 eatTicks = 0;
                 return;
             }
             finishEating(mc, p, "full");
-        } else if (eatTicks > 60) {
-            eatCooldownUntil = now + 600;
+        } else if (eatTicks > Tuning.i("reflexes.eatMaxTicks")) {
+            eatCooldownUntil = now + Tuning.i("reflexes.eatDoneCoolTicks");
             finishEating(mc, p, "could not eat");
         }
     }
@@ -1230,7 +1230,7 @@ public final class Reflexes {
             events.push("reflex", "died at " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ(), null);
         }
         // respawn after 2 seconds, and again every 10 s if the first click didn't take
-        if (deadTicks == 40 || (deadTicks > 40 && (deadTicks - 40) % 200 == 0)) {
+        if (deadTicks == Tuning.i("reflexes.deadWaitTicks") || (deadTicks > Tuning.i("reflexes.deadWaitTicks") && (deadTicks - Tuning.i("reflexes.deadWaitTicks")) % Tuning.i("reflexes.deadRetryTicks") == 0)) {
             p.respawn();
             mc.setScreen(null);
         }
@@ -1255,7 +1255,7 @@ public final class Reflexes {
             }
         }
         // /home 2 s after arriving, then once a minute until it works
-        if (deniedDim != null && now - deniedAt >= 40 && (now - deniedAt - 40) % 1200 == 0
+        if (deniedDim != null && now - deniedAt >= Tuning.i("reflexes.deniedWaitTicks") && (now - deniedAt - Tuning.i("reflexes.deniedWaitTicks")) % Tuning.i("reflexes.deniedRetryTicks") == 0
                 && io.github.mojolowjo.entropybot.move.ServerCmds.allowed("leaving " + deniedDim + " by /home (no walk out of another dimension)")) p.connection.sendCommand("home");
     }
 }

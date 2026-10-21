@@ -58,7 +58,7 @@ public final class ThreatRules {
     public static boolean aggroFlagReliable(String id) { return !NO_AGGRO_FLAG.contains(path(id)); }
 
     /** Path budget: a walk longer than this is "no reach" (owner: max(24, 1.6 x straight)). */
-    public static double pathBudget(double straight) { return Math.max(24, 1.6 * straight); }
+    public static double pathBudget(double straight) { return Math.max(24, Tuning.get("threatRules.pathBudgetK") * straight); }
 
     /**
      * One sample of one mob. pathDist: moves from the grid (-1 = no path, -2 = outside the grid / no grid: straight
@@ -80,7 +80,7 @@ public final class ThreatRules {
         }
     }
 
-    static String fmt(double d) { return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(Math.round(d * 10) / 10.0); }
+    static String fmt(double d) { return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(Math.round(d * 10) / 10.0); }  // structural: rounded to one decimal for the text
 
     public static boolean aggro(MobSample s) {
         if (s.hitMe()) return true;

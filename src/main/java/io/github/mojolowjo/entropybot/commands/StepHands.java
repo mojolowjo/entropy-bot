@@ -352,7 +352,7 @@ public final class StepHands implements Steps.Hands {
             if (b != null) Jobs.cancel(b);
             return Car.Status.done("ok: hunted " + got + " " + countIds.get(0).replaceFirst("^minecraft:", ""));
         }
-        if (++huntTicks % 10 != 0) return Car.Status.running(huntWhy == null ? step.text() : huntWhy);
+        if (++huntTicks % 10 != 0) return Car.Status.running(huntWhy == null ? step.text() : huntWhy);  // structural: periodic cadence in ticks (20 ticks = 1 s)
         var refl = Core.INSTANCE.reflexes;
         Minecraft mc = Minecraft.getInstance();
         if (refl.forcing()) {                                        // the strike runs on the animal: follow its spot
@@ -421,7 +421,7 @@ public final class StepHands implements Steps.Hands {
             var lv = Minecraft.getInstance().level;
             String dim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
             if (sg == null || lv == null || dim == null) return;
-            sg.visit(dim, h.type(), h.at()[0], h.at()[1], found, count, lv.getGameTime() * 50);
+            sg.visit(dim, h.type(), h.at()[0], h.at()[1], found, count, lv.getGameTime() * 50);  // game fact: a game tick is 50 ms
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] steps: hunt sighting visit: {}", e.toString());
         }

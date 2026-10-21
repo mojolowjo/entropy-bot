@@ -200,13 +200,13 @@ public final class Thing {
     static Where vanilla(String fam) {
         int[] r = switch (fam) {
             case "coal" -> new int[]{0, 320};
-            case "iron" -> new int[]{-64, 320};
-            case "copper" -> new int[]{-16, 112};
-            case "gold" -> new int[]{-64, 32};
-            case "redstone" -> new int[]{-64, 15};
-            case "lapis" -> new int[]{-64, 64};
-            case "diamond" -> new int[]{-64, 16};
-            case "emerald" -> new int[]{-16, 320};
+            case "iron" -> new int[]{-64, 320};  // game fact: vanilla ore generation height range of iron
+            case "copper" -> new int[]{-16, 112};  // game fact: vanilla ore generation height range of copper
+            case "gold" -> new int[]{-64, 32};  // game fact: vanilla ore generation height range of gold
+            case "redstone" -> new int[]{-64, 15};  // game fact: vanilla ore generation height range of redstone
+            case "lapis" -> new int[]{-64, 64};  // game fact: vanilla ore generation height range of lapis
+            case "diamond" -> new int[]{-64, 16};  // game fact: vanilla ore generation height range of diamond
+            case "emerald" -> new int[]{-16, 320};  // game fact: vanilla ore generation height range of emerald
             case "nether_gold", "nether_quartz" -> new int[]{10, 117};
             case "ancient_debris" -> new int[]{8, 119};
             default -> null;
@@ -227,7 +227,7 @@ public final class Thing {
         }
         if (nether) return new Where(NETHER, 10, 117, "a guess from the name; exploring tells");
         if (end) return new Where(END, UNKNOWN_Y, UNKNOWN_Y, "a guess from the name");
-        if (allDeep) return new Where(OVERWORLD, -64, 0, "a guess: deepslate only");
+        if (allDeep) return new Where(OVERWORLD, -64, 0, "a guess: deepslate only");  // game fact: the overworld bottom is y -64
         return new Where(OVERWORLD, UNKNOWN_Y, UNKNOWN_Y, "unknown, exploring");
     }
 

@@ -92,7 +92,7 @@ public final class CreeperRules {
 
     /** Built things an explosion would hurt: any block entity (chest, furnace, sign...) or 6+ built blocks near it. */
     public static boolean nearBuilds(int blockEntities, int builtBlocks) {
-        return blockEntities > 0 || builtBlocks >= 6;
+        return blockEntities > 0 || builtBlocks >= Tuning.i("creeperRules.builtBlocks");
     }
 
     /** True when (x, y, z) lies within margin blocks of one of the boxes in dim. */
@@ -131,7 +131,7 @@ public final class CreeperRules {
      */
     public static Line retreatLine(Grid g, double px, int footY, double pz, double ux, double uz, double need) {
         double len = Math.sqrt(ux * ux + uz * uz);
-        if (len < 1e-6) return new Line(0, false, "no direction");
+        if (len < 1e-6) return new Line(0, false, "no direction");  // structural: epsilon
         ux /= len;
         uz /= len;
         double perpX = -uz, perpZ = ux;
@@ -148,7 +148,7 @@ public final class CreeperRules {
         // the tunnel test on the centre lane
         int opens = 0, ys = footY;
         int lastX = floor(px), lastZ = floor(pz);
-        for (int k = 1; k <= 5; k++) {
+        for (int k = 1; k <= Tuning.i("creeperRules.lineLen"); k++) {
             double cx = px + ux * k, cz = pz + uz * k;
             int bx = floor(cx), bz = floor(cz);
             if (bx != lastX || bz != lastZ) {
@@ -159,11 +159,11 @@ public final class CreeperRules {
             }
             if (sideOpen(g, cx, cz, ys, perpX, perpZ, 1) || sideOpen(g, cx, cz, ys, perpX, perpZ, -1)) opens++;
         }
-        return new Line(clear, opens >= 4, clear >= need ? null : stop);
+        return new Line(clear, opens >= Tuning.i("creeperRules.opensMin"), clear >= need ? null : stop);
     }
 
     private static boolean sideOpen(Grid g, double cx, double cz, int y, double perpX, double perpZ, int sign) {
-        for (int d = 1; d <= 3; d++) {
+        for (int d = 1; d <= Tuning.i("creeperRules.dropMax"); d++) {
             if (g.at(floor(cx + perpX * d * sign), y + 1, floor(cz + perpZ * d * sign)) != Cell.FREE) return false;
         }
         return true;
@@ -172,7 +172,7 @@ public final class CreeperRules {
     /** {clear (Double), why it stopped (String)} for one lane. */
     private static Object[] lane(Grid g, double sx, double sz, int footY, double ux, double uz, double need) {
         int y = footY, lastX = floor(sx), lastZ = floor(sz);
-        for (double t = stepV(); t <= need + 1e-9; t += stepV()) {
+        for (double t = stepV(); t <= need + 1e-9; t += stepV()) {  // structural: epsilon
             int bx = floor(sx + ux * t), bz = floor(sz + uz * t);
             if (bx == lastX && bz == lastZ) continue;
             int ny = stepInto(g, lastX, lastZ, bx, bz, y);
@@ -242,7 +242,7 @@ public final class CreeperRules {
                 start = now;
                 phaseAt = now;
             }
-            if (now - start >= giveUpTicks()) return flee("gave up after " + giveUpTicks() / 20 + " s");
+            if (now - start >= giveUpTicks()) return flee("gave up after " + giveUpTicks() / 20 + " s");  // game fact: 20 game ticks per second
             boolean swelling = o.swellDir() > 0;
             switch (phase) {
                 case WAIT, SHOOT -> {
@@ -303,7 +303,7 @@ public final class CreeperRules {
     /** {height of the arrow when it has flown horiz blocks, ticks it took}, or null when it never gets that far (40 ticks). */
     static double[] arrowAt(double speed, double elevRad, double horiz) {
         double x = 0, y = 0, vx = speed * Math.cos(elevRad), vy = speed * Math.sin(elevRad);
-        for (int t = 1; t <= 40; t++) {
+        for (int t = 1; t <= 40; t++) {  // structural: ticks of arrow flight simulated
             double nx = x + vx, ny = y + vy;
             if (nx >= horiz) {
                 double f = vx <= 0 ? 0 : (horiz - x) / vx;
@@ -311,8 +311,8 @@ public final class CreeperRules {
             }
             x = nx;
             y = ny;
-            vx *= 0.99;
-            vy = vy * 0.99 - 0.05;
+            vx *= 0.99;  // game fact: an arrow loses 1% of its speed per tick
+            vy = vy * 0.99 - 0.05;  // game fact: an arrow loses 1% of its speed and 0.05 height per tick to gravity
         }
         return null;
     }
@@ -322,13 +322,13 @@ public final class CreeperRules {
      * horiz blocks away on the low arc, or NaN out of range.
      */
     public static double bowPitch(double horiz, double dy, double speed) {
-        if (horiz <= 0) return dy >= 0 ? -90 : 90;
-        double lo = Math.toRadians(-45), hi = Math.toRadians(40);
+        if (horiz <= 0) return dy >= 0 ? -90 : 90;  // structural: a pitch of straight up or down in degrees
+        double lo = Math.toRadians(-45), hi = Math.toRadians(40);  // structural: the bow pitch search range in degrees
         double[] top = arrowAt(speed, hi, horiz);
         if (top == null || top[0] < dy) return Double.NaN;
         double[] bottom = arrowAt(speed, lo, horiz);
         if (bottom != null && bottom[0] > dy) return -Math.toDegrees(lo);
-        for (int i = 0; i < 40; i++) {
+        for (int i = 0; i < 40; i++) {  // structural: bisection steps of the bow pitch search
             double mid = (lo + hi) / 2;
             double[] h = arrowAt(speed, mid, horiz);
             if (h != null && h[0] >= dy) hi = mid;

@@ -66,7 +66,7 @@ public final class AreaFacts {
      * back later, weighted. 0 with no base, when dest is nearer the base, or when either spot is unknown.
      */
     public static double awayS(int[] me, int[] dest, int[] base) {
-        if (me == null || dest == null || base == null || me.length < 3 || dest.length < 3) return 0;
+        if (me == null || dest == null || base == null || me.length < 3 || dest.length < 3) return 0;  // structural: a position has 3 coordinates
         double now = baseDist(base, me[0], me[2]), then = baseDist(base, dest[0], dest[2]);
         return Math.max(0, then - now) / SPEED * awayWeight();
     }

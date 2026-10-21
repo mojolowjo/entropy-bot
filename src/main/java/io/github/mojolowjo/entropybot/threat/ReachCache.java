@@ -116,7 +116,7 @@ public final class ReachCache {
         ReachGrid g = grid;
         if (g == null) return false;
         int x0 = cx << 4, z0 = cz << 4;
-        return x0 <= g.ox + sx - 1 && x0 + 15 >= g.ox && z0 <= g.oz + sz - 1 && z0 + 15 >= g.oz;
+        return x0 <= g.ox + sx - 1 && x0 + 15 >= g.ox && z0 <= g.oz + sz - 1 && z0 + 15 >= g.oz;  // game fact: a chunk is 16 blocks wide (x0 + 15)
     }
 
     /**
@@ -141,7 +141,7 @@ public final class ReachCache {
         sbz = bwz;
         dirty = false;
         searches++;
-        lastSearchMs = (System.nanoTime() - t0) / 1e6;
+        lastSearchMs = (System.nanoTime() - t0) / 1e6;  // structural: nanoseconds to milliseconds
         return true;
     }
 

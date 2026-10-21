@@ -101,7 +101,7 @@ public final class DangerOptions {
         // AA_STEP2 1: fight only armed (Tuning danger.fightHit), with the exchange in my favour (the expected damage under my
         // health by the measured numbers) and never at a shooter out of reach
         boolean shooterOff = false;
-        for (ThreatFacts.Foe x : foes) shooterOff |= x.ranged() && x.dist() > 3.5;
+        for (ThreatFacts.Foe x : foes) shooterOff |= x.ranged() && x.dist() > Tuning.get("dangerOptions.shooterDist");
         String fightOff = me.weaponHit() < Tuning.get("danger.fightHit") ? "hit " + fmt(me.weaponHit()) + " under " + fmt(Tuning.get("danger.fightHit"))
                 : fight[0] >= me.health() ? "the exchange is against me (" + fmt(fight[0]) + " hp taken, " + fmt(me.health()) + " left)"
                 : shooterOff ? "a shooter out of reach in the open" : null;
@@ -161,7 +161,7 @@ public final class DangerOptions {
     /** 0..1: how likely this damage kills (its high band 1.25x reaches the health left). */
     static double risk(ThreatFacts.Me me, double damage) {
         if (damage <= 0) return 0;
-        return Math.max(0, Math.min(1, (1.25 * damage - (me.health() - 1)) / Math.max(1, 0.5 * damage)));
+        return Math.max(0, Math.min(1, (Tuning.get("dangerOptions.damageMargin") * damage - (me.health() - 1)) / Math.max(1, 0.5 * damage)));
     }
 
     static Priced priced(ThreatFacts.Me me, double death, Way way, boolean possible, double damage, double timeS, String why) {
@@ -183,9 +183,9 @@ public final class DangerOptions {
         order.sort((a, b) -> Double.compare(kill(me, a), kill(me, b)));
         double t = 0, dmg = 0;
         for (ThreatFacts.Foe x : order) {
-            if (x.ranged() && x.dist() > 3.5) {
+            if (x.ranged() && x.dist() > Tuning.get("dangerOptions.shooterDist")) {
                 if (stay) { dmg += x.dps() * h; continue; }
-                t += (x.dist() - 2) / 4.3;
+                t += (x.dist() - 2) / 4.3;  // game fact: walking speed 4.3 blocks per second
             }
             if (x.flies() && stay) { dmg += x.dps() * h; continue; }
             // staying, a walker reaches me first; fighting, I meet it halfway
@@ -358,7 +358,7 @@ public final class DangerOptions {
                 double r = io.github.mojolowjo.entropybot.guard.DrownRisk.cellRisk(col, pt, air);
                 boolean ok = col > 0 && blocks >= col && r < 1 && !wn;
                 String why = wn ? "water ways parked (owner): no pillar out of water" : col <= 0 ? "no floor under the water in reach" : blocks < col ? "needs " + col + " blocks, " + blocks + " in the bag"
-                        : r >= 1 ? "not enough air (" + col + " deep, " + fmt(pt) + " s, air " + air / 20 + " s, risk " + fmt(r) + ")"
+                        : r >= 1 ? "not enough air (" + col + " deep, " + fmt(pt) + " s, air " + air / 20 + " s, risk " + fmt(r) + ")"  // game fact: 20 game ticks per second
                         : col + " blocks up out of the water, " + fmt(pt) + " s, air risk " + fmt(r) + ", then open " + Math.round(open) + " s";
                 Priced po = priced(me, death, Way.PILLAR_OUT, ok, during(near, pt) + amb * (pt + open), nightT(need, pt), why);
                 all.add(ok ? plus(po, airLoss(death, col, pt, air), "air " + Math.round(airLoss(death, col, pt, air)) + " s", null) : po);
@@ -408,7 +408,7 @@ public final class DangerOptions {
         }
         String night = nightTerms(all, held) + (holds.isEmpty() ? "" : "; " + String.join(", ", holds))
                 + "; hp " + fmt(me.health()) + " at " + Math.round(hpS(me, death)) + " s a point, death " + Math.round(death) + " s"
-                + (need.deathWhy() == null || need.deathWhy().isEmpty() ? "" : " (" + need.deathWhy() + ")") + (wet ? ", in water, air " + air / 20 + " s" : "");
+                + (need.deathWhy() == null || need.deathWhy().isEmpty() ? "" : " (" + need.deathWhy() + ")") + (wet ? ", in water, air " + air / 20 + " s" : "");  // game fact: 20 game ticks per second
         if (foes.score() > need.score() && foes.best() != null && foes.best().way() != Way.STAY)
             return new Choice(foes.stay(), foes.best(), foes.all(), foes.savedS(), foes.score(), foes.terms() + " | night: " + night + " -> the foes first");
         if (best == null) return new Choice(null, null, all, 0, -1, need.why() + ": " + night + " -> no way open");

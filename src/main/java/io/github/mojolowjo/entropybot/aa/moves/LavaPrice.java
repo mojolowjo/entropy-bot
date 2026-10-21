@@ -18,12 +18,12 @@ public final class LavaPrice {
 
     /** Seconds of loss one lava cell costs at this health. */
     public static double cellS(double health, double maxHealth) {
-        double inCellS = CELL_TICKS / 20.0;
+        double inCellS = CELL_TICKS / 20.0;  // game fact: 20 game ticks per second
         return inCellS * Tuning.get("game.lavaHpPerS") * DangerOptions.hpS(health, maxHealth);
     }
 
     /** The same in Baritone ticks (its cost unit), for {@code Settings.lavaCellCost}. */
     public static double cellTicks(double health, double maxHealth) {
-        return 20 * cellS(health, maxHealth);
+        return 20 * cellS(health, maxHealth);  // game fact: 20 game ticks per second
     }
 }

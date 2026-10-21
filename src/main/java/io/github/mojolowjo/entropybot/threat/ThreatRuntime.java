@@ -55,7 +55,7 @@ public final class ThreatRuntime {
     private final ReachCache cache = new ReachCache(2 * r() + 1, down() + up() + 1, 2 * r() + 1);
     private Level lastLevel;
     private boolean needFull = true;
-    private long lastFullTick = -100000, lastPeriod = -100000;
+    private long lastFullTick = -100000, lastPeriod = -100000;  // structural: a time long ago (sentinel)
     private volatile long lastFullMs;
     private volatile Map<Integer, ThreatRules.Decision> latest = Map.of();
     private final Map<Integer, Double> prevReach = new HashMap<>();
@@ -202,7 +202,7 @@ public final class ThreatRuntime {
             return;
         }
         if (tick - winStart < WINDOW) return;
-        double s = (tick - winStart) / 20.0;
+        double s = (tick - winStart) / 20.0;  // game fact: 20 game ticks per second
         patchRate = (cache.patches - wPatches) / s;
         searchRate = (cache.searches - wSearches) / s;
         fullRate = (cache.fulls - wFulls) / s;
@@ -257,9 +257,9 @@ public final class ThreatRuntime {
         String id = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
         boolean aggressive = e instanceof Mob m && m.isAggressive();
         double dx = p.getX() - e.getX(), dz = p.getZ() - e.getZ();
-        float toBot = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float toBot = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);  // structural: degrees
         double yawOff = Mth.wrapDegrees(toBot - e.getYHeadRot());
-        boolean seen = d <= 2.5 || (e instanceof LivingEntity le && le.hasLineOfSight(p));
+        boolean seen = d <= Tuning.get("threatRuntime.seenDist") || (e instanceof LivingEntity le && le.hasLineOfSight(p));
         return new ThreatRules.MobSample(e.getId(), id, d, aggressive, yawOff, seen, hitMe, -2, Double.NaN);
     }
 
@@ -300,7 +300,7 @@ public final class ThreatRuntime {
     public synchronized String why() {
         StringBuilder b = new StringBuilder();
         b.append("threat test: ").append(gridOk() ? "grid ok" : "fallback (straight distance)");
-        if (verdictLine != null) b.append("\nlast verdict (").append((System.currentTimeMillis() - verdictAt) / 1000).append(" s ago): ").append(verdictLine);
+        if (verdictLine != null) b.append("\nlast verdict (").append((System.currentTimeMillis() - verdictAt) / 1000).append(" s ago): ").append(verdictLine);  // structural: milliseconds per second
         Map<Integer, ThreatRules.Decision> now = latest;
         if (!now.isEmpty() && gridOk()) {
             b.append("\nnow:");
@@ -339,16 +339,16 @@ public final class ThreatRuntime {
                 + " | new mobs: " + newMobReads + " answered by a read, " + newMobSearches + " bursts needed a search"
                 + " | mobs near " + mobsNear + " | counted " + counted + ", noted " + noted + " | errors " + errors
                 + (lastError != null ? " (last: " + lastError + ")" : "")
-                + " | last full copy " + (lastFullMs == 0 ? "never" : (System.currentTimeMillis() - lastFullMs) / 1000 + " s ago");
+                + " | last full copy " + (lastFullMs == 0 ? "never" : (System.currentTimeMillis() - lastFullMs) / 1000 + " s ago");  // structural: milliseconds per second
     }
 
-    static double r1(double d) { return Math.round(d * 100) / 100.0; }
+    static double r1(double d) { return Math.round(d * 100) / 100.0; }  // structural: percent
 
     /** For "check": {key, line, fix} findings. */
     public List<String[]> findings() {
         List<String[]> f = new ArrayList<>();
         if (cache.lastSearchMs > overrunMs()) f.add(new String[]{"threatslow", "the threat search took " + r1(cache.lastSearchMs) + " ms (over " + (int) overrunMs() + ")", "debug threats"});
-        if (mobsNear > 0 && cache.fulls > 0 && System.currentTimeMillis() - lastFullMs > 15_000)
+        if (mobsNear > 0 && cache.fulls > 0 && System.currentTimeMillis() - lastFullMs > Tuning.i("threatRuntime.fullEveryMs"))
             f.add(new String[]{"threatworker", "the threat grid hasn't refreshed for 15 s with mobs near (the fight code uses straight distance)", "debug threats; the game log has [entropybot] threat lines"});
         return f;
     }
@@ -367,9 +367,9 @@ public final class ThreatRuntime {
         errors++;
         lastError = where + ": " + t;
         long now = System.currentTimeMillis();
-        if (errors <= 5 || now - lastErrorLog >= 60_000) {
+        if (errors <= Tuning.i("threatRuntime.errorsLogged") || now - lastErrorLog >= Tuning.i("threatRuntime.errorLogMs")) {
             lastErrorLog = now;
-            LOG.error("[entropybot] threat: {} error #{}: {}", where, errors, t.toString(), errors <= 5 ? t : null);
+            LOG.error("[entropybot] threat: {} error #{}: {}", where, errors, t.toString(), errors <= Tuning.i("threatRuntime.errorsLogged") ? t : null);
         }
     }
 }

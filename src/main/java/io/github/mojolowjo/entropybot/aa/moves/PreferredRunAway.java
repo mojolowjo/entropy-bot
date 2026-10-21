@@ -30,6 +30,6 @@ final class PreferredRunAway extends GoalRunAway {
     @Override public int hashCode() { return System.identityHashCode(this); }
 
     @Override public String toString() {
-        return "PreferredRunAway heading " + Math.round(hx * 100) / 100.0 + " " + Math.round(hz * 100) / 100.0 + " " + super.toString();
+        return "PreferredRunAway heading " + Math.round(hx * 100) / 100.0 + " " + Math.round(hz * 100) / 100.0 + " " + super.toString();  // structural: percent
     }
 }

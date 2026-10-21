@@ -138,11 +138,11 @@ public final class BootstrapPlan {
         int torches = count(inv, "minecraft:torch");
         int torchMissing = Math.max(0, torches() - torches);
         int coalHave = count(inv, "minecraft:coal", "minecraft:charcoal");
-        int coalNeed = Math.max(0, (torchMissing + 3) / 4 - coalHave);
+        int coalNeed = Math.max(0, (torchMissing + 3) / 4 - coalHave);  // game fact: a coal makes 4 torches (rounded up)
         // cobblestone (or cobbled deepslate: both are stone tool and furnace material)
         int cobbleNeed = 0;
         for (String k : tools) cobbleNeed += headCost(k);
-        if (needFurnace && count(inv, "minecraft:furnace") == 0) cobbleNeed += 8;
+        if (needFurnace && count(inv, "minecraft:furnace") == 0) cobbleNeed += 8;  // game fact: a furnace takes 8 cobblestone
         int cobbleHave = count(inv, "minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:blackstone");
         boolean quarry = cobbleNeed > cobbleHave;
         // planks: table 4, chest 8, the wooden pickaxe 3, sticks (2 per plank), charcoal fuel (1 plank per 1.5 items)
@@ -152,16 +152,16 @@ public final class BootstrapPlan {
         // 0.28.1 (trial fix D): in snow a wooden shovel right after the table (snow blocks drop only for a shovel; the stone one comes later)
         boolean woodShovel = f.snowy() && best(inv, "shovel") == 0;
         if (woodShovel) sticks += 2;
-        sticks += (torchMissing + 3) / 4;
+        sticks += (torchMissing + 3) / 4;  // game fact: a coal makes 4 torches (rounded up)
         sticks = Math.max(0, sticks - count(inv, "minecraft:stick"));
-        int planks = (sticks + 3) / 4 * 2;
-        if (needTable && count(inv, "minecraft:crafting_table") == 0) planks += 4;
-        if (needChest && count(inv, "minecraft:chest") == 0) planks += 8;
-        if (needWoodPick && quarry) planks += 3;
+        int planks = (sticks + 3) / 4 * 2;  // game fact: 2 planks make 4 sticks (rounded up)
+        if (needTable && count(inv, "minecraft:crafting_table") == 0) planks += 4;  // game fact: a crafting table takes 4 planks
+        if (needChest && count(inv, "minecraft:chest") == 0) planks += 8;  // game fact: a chest takes 8 planks
+        if (needWoodPick && quarry) planks += 3;  // game fact: a wooden pickaxe takes 3 planks
         if (woodShovel) planks += 1;
-        if (coalNeed > 0) planks += (coalNeed * 2 + 2) / 3;
-        int plankHave = sumSuffix(inv, "_planks") + 4 * sumSuffix(inv, "_log", "_wood", "_stem", "_hyphae");
-        int logs = (Math.max(0, planks + 4 * coalNeed - plankHave) + 3) / 4;          // a charcoal takes a whole log
+        if (coalNeed > 0) planks += (coalNeed * 2 + 2) / 3;  // game fact: planks for the coal torches: recipe arithmetic
+        int plankHave = sumSuffix(inv, "_planks") + 4 * sumSuffix(inv, "_log", "_wood", "_stem", "_hyphae");  // game fact: a log makes 4 planks
+        int logs = (Math.max(0, planks + 4 * coalNeed - plankHave) + 3) / 4;          // a charcoal takes a whole log  // game fact: a log makes 4 planks
         // the marks first: the furnace steps (gather charcoal) use a furnace near the base
         if (!f.campMarked()) {
             out.add("setbase " + fmt(f.feet()));
@@ -178,7 +178,7 @@ public final class BootstrapPlan {
         if (quarry) {
             if (needWoodPick) out.add("craft wooden_pickaxe 1");
             // 0.28.2 (B3): ice, snow or water in the staircase's way (trial 2: it broke 0): gather's quarry finds its own way
-            if (f.quarryBlocked()) out.add("gather cobblestone " + (cobbleNeed - cobbleHave + 4));
+            if (f.quarryBlocked()) out.add("gather cobblestone " + (cobbleNeed - cobbleHave + Tuning.i("bootstrapPlan.cobbleSpare")));
             else out.addAll(quarrySteps(f.feet(), f.dir()));
         }
         for (String k : tools) out.add("craft stone_" + k + " 1");

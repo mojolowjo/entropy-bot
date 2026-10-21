@@ -75,7 +75,7 @@ public final class WatchCamera {
     /** Pure: the hook report. registered = the event listeners are in; calls/ms-since-last/seconds-watched. */
     public static String hookReport(boolean applied, boolean on, long callsPerSec, long sinceLastMs, long onForMs) {
         if (!applied) return "hook: NOT in (the camera event listeners are not registered: plain third person only)";
-        if (on && onForMs > 1500 && (sinceLastMs < 0 || sinceLastMs > 1000)) return "hook: NOT running (registered, but no camera setup seen in the last second)";
+        if (on && onForMs > 1500 && (sinceLastMs < 0 || sinceLastMs > 1000)) return "hook: NOT running (registered, but no camera setup seen in the last second)";  // structural: diagnostic: the hook is judged after 1.5 s on, 1 s without a camera setup
         return "hook: active" + (callsPerSec >= 0 ? " (" + callsPerSec + " calls/s)" : "");
     }
 
@@ -83,7 +83,7 @@ public final class WatchCamera {
     public static float parseDistance(String s) {
         try {
             float d = Float.parseFloat(s.trim());
-            return d >= 1f && d <= 8f ? d : -1f;
+            return d >= 1f && d <= 8f ? d : -1f;  // structural: camera distance setting range 1..8
         } catch (RuntimeException e) {
             Quiet.warn("WatchCamera.parseDistance failed, carrying on with the fallback", e);
             return -1f;
@@ -94,7 +94,7 @@ public final class WatchCamera {
     public static double parseHeight(String s) {
         try {
             double d = Double.parseDouble(s.trim());
-            return d >= 1 && d <= 40 ? d : -1;
+            return d >= 1 && d <= 40 ? d : -1;  // structural: camera height setting range 1..40
         } catch (RuntimeException e) {
             Quiet.warn("WatchCamera.parseHeight failed, carrying on with the fallback", e);
             return -1;
@@ -104,7 +104,7 @@ public final class WatchCamera {
     private String hookLine() {
         long now = System.currentTimeMillis();
         long calls = hookCalls.get();
-        long rate = statusMs > 0 && now > statusMs ? (calls - statusCalls) * 1000 / (now - statusMs) : -1;
+        long rate = statusMs > 0 && now > statusMs ? (calls - statusCalls) * 1000 / (now - statusMs) : -1;  // structural: milliseconds per second
         statusCalls = calls;
         statusMs = now;
         long since = lastHookMs == 0 ? -1 : now - lastHookMs;
@@ -119,9 +119,9 @@ public final class WatchCamera {
 
     /** The shortest signed turn from a to b, in (-180, 180]. */
     public static float turn(float a, float b) {
-        float d = (b - a) % 360f;
-        if (d > 180f) d -= 360f;
-        if (d <= -180f) d += 360f;
+        float d = (b - a) % 360f;  // structural: degrees
+        if (d > 180f) d -= 360f;  // structural: degrees
+        if (d <= -180f) d += 360f;  // structural: degrees
         return d;
     }
 
@@ -327,7 +327,7 @@ public final class WatchCamera {
     /** Pure: the compass word for a Minecraft yaw (0 = south). */
     public static String compass(float yaw) {
         String[] w = {"south", "south-west", "west", "north-west", "north", "north-east", "east", "south-east"};
-        int i = Math.floorMod(Math.round(yaw / 45f), 8);
+        int i = Math.floorMod(Math.round(yaw / 45f), 8);  // structural: compass: 8 points of 45 degrees
         return w[i];
     }
 
@@ -349,7 +349,7 @@ public final class WatchCamera {
             if (savedCamera instanceof net.minecraft.client.CameraType c) mc.options.setCameraType(c);
             mc.getWindow().setFramerateLimit(mc.options.framerateLimit().get());
         } catch (Throwable e) {
-            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: couldn't restore the view: {}", e.toString());
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: couldn't restore the view: {}", e.toString());  // structural: log throttle: only the first few errors are logged
         }
         savedCamera = null;
     }
@@ -393,7 +393,7 @@ public final class WatchCamera {
     /** No frame rendered since the shot was asked for (a stalled or minimised window): take it from the last frame. */
     private void shotFallback() {
         String name = shotName;
-        if (name == null || System.currentTimeMillis() - shotAskedMs < 2000) return;
+        if (name == null || System.currentTimeMillis() - shotAskedMs < 2000) return;  // structural: a screenshot is asked at most once every 2 s
         shotName = null;
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         mc.execute(() -> net.minecraft.client.Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), msg -> {}));
@@ -425,7 +425,7 @@ public final class WatchCamera {
             TunnelView.INSTANCE.stop();
             endViewIfIdle();
         } catch (Throwable e) {
-            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: {}", e.toString());
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: {}", e.toString());  // structural: log throttle: only the first few errors are logged
         }
     }
 
@@ -436,7 +436,7 @@ public final class WatchCamera {
         try {
             shotFallback();
         } catch (Throwable e) {
-            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch shot: {}", e.toString());
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch shot: {}", e.toString());  // structural: log throttle: only the first few errors are logged
         }
         if (!on) return;
         try {
@@ -458,7 +458,7 @@ public final class WatchCamera {
             haveLast = true;
             tickEndYaw = yaw;
         } catch (Throwable e) {
-            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: {}", e.toString());
+            if (errors++ < 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera: {}", e.toString());  // structural: log throttle: only the first few errors are logged
         }
     }
 }

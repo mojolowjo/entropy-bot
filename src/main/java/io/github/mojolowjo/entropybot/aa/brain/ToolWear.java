@@ -87,7 +87,7 @@ public final class ToolWear {
      */
     public static Kit kit(Inputs in) {
         int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
-        boolean mats = in.cobble >= 3 && (sticks >= 2 || in.planks >= 2);
+        boolean mats = in.cobble >= 3 && (sticks >= 2 || in.planks >= 2);  // game fact: a stone pickaxe takes 3 cobblestone
         boolean table = in.tableInBag || in.tableKnown;
         return new Kit(in.pickaxes > 0 ? in.pickSpeed : 0, in.pickaxes > 0 ? in.pickLeft : 0, mats && table ? craftSV() : INF,
                 in.pickaxes > 0 ? in.digStoneS : Double.NaN, in.handStoneS);
@@ -138,5 +138,5 @@ public final class ToolWear {
         return w == Way.CRAFT ? java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Craft("stone_pickaxe", 1)) : java.util.List.of();
     }
 
-    private static String r2(double v) { return String.valueOf(Math.round(v * 100) / 100.0); }
+    private static String r2(double v) { return String.valueOf(Math.round(v * 100) / 100.0); }  // structural: percent
 }

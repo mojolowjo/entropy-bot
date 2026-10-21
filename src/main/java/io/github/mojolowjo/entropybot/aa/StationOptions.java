@@ -84,7 +84,7 @@ public final class StationOptions {
                     "in the bag, place " + Price.placeS() + " s", "place " + item, m), f);
         } else dropped.add("place " + item + " from the bag: none in the bag");
         // 3. craft from the bag's materials
-        int have = k == Kind.FURNACE ? f.cobble() : f.planks() + 4 * f.logs();
+        int have = k == Kind.FURNACE ? f.cobble() : f.planks() + 4 * f.logs();  // game fact: a log makes 4 planks
         int lack = Math.max(0, k.amount - have);
         double craftPlace = Price.s(Price.craftS() + Price.placeS());
         Step craft = new Step.Craft(item, 1);

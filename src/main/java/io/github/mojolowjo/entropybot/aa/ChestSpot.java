@@ -46,7 +46,7 @@ public final class ChestSpot {
             if (same(c, me) || same(c, table)) continue;
             if (!free.test(c) || !allowed.test(c)) continue;
             double walk = Math.sqrt(dx * dx + dz * dz), off = 0;
-            String why = "walk " + Math.round(walk * 10) / 10.0;
+            String why = "walk " + Math.round(walk * 10) / 10.0;  // structural: rounded to one decimal for the text
             if (table != null) {
                 int beside = Math.max(Math.abs(c[0] - table[0]), Math.abs(c[2] - table[2]));
                 off = Math.max(0, beside - 1) * offTable();

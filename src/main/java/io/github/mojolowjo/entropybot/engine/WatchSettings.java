@@ -65,7 +65,7 @@ public final class WatchSettings {
         try {
             if (o.has("distance")) {
                 float v = o.get("distance").getAsFloat();
-                if (v >= 1f && v <= 8f) distance = v;
+                if (v >= 1f && v <= 8f) distance = v;  // structural: camera distance setting range 1..8
                 else bad.append(" distance ").append(v).append(" (1-8)");
             }
         } catch (RuntimeException e) {
@@ -75,7 +75,7 @@ public final class WatchSettings {
         try {
             if (o.has("tunnelHeight")) {
                 double v = o.get("tunnelHeight").getAsDouble();
-                if (v >= 1 && v <= 40) height = v;
+                if (v >= 1 && v <= 40) height = v;  // structural: camera height setting range 1..40
                 else bad.append(" tunnelHeight ").append(v).append(" (1-40)");
             }
         } catch (RuntimeException e) {

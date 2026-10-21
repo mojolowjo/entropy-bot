@@ -160,9 +160,9 @@ public final class ArmorCareRules {
         for (Map.Entry<String, Integer> e : bag.entrySet()) {
             String k = e.getKey();
             if (k.endsWith("_planks")) planks += e.getValue();
-            else if (k.endsWith("_log") || k.endsWith("_stem") || k.endsWith("_wood") || k.endsWith("_hyphae")) planks += 4 * e.getValue();
+            else if (k.endsWith("_log") || k.endsWith("_stem") || k.endsWith("_wood") || k.endsWith("_hyphae")) planks += 4 * e.getValue();  // game fact: a log makes 4 planks
         }
-        return planks >= 4 ? cmd : "cut 4 then " + cmd;
+        return planks >= 4 ? cmd : "cut 4 then " + cmd;  // game fact: a crafting table takes 4 planks
     }
 
     /** The "tools" line: "armour: iron_helmet 150/165, chestplate -, ..." */
@@ -180,7 +180,7 @@ public final class ArmorCareRules {
     public static String lowest(List<Piece> worn) {
         for (Piece p : worn) {
             if (p.empty()) continue;
-            if (p.worn()) return "my " + StockRules.shortId(p.id()) + " is at " + (100 * p.left() / Math.max(1, p.max())) + " %";
+            if (p.worn()) return "my " + StockRules.shortId(p.id()) + " is at " + (100 * p.left() / Math.max(1, p.max())) + " %";  // structural: percent
         }
         return null;
     }

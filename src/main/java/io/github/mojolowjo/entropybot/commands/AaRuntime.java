@@ -172,9 +172,9 @@ public final class AaRuntime implements JobPort {
             long t0 = System.nanoTime();
             factsParts = "";
             T v = s.get();
-            long us = (System.nanoTime() - t0) / 1000;
+            long us = (System.nanoTime() - t0) / 1000;  // structural: milliseconds per second
             long now = System.currentTimeMillis();
-            if (us > 2000 && now - slowLogAt.getOrDefault(name, 0L) >= 10_000) {
+            if (us > Tuning.i("aaRuntime.slowCallUs") && now - slowLogAt.getOrDefault(name, 0L) >= Tuning.i("aaRuntime.slowLogMs")) {
                 slowLogAt.put(name, now);
                 LOG.info("[entropybot] aa: facts {} took {} us{}", name, us, factsParts.isEmpty() ? "" : " (" + factsParts + ")");
             }
@@ -219,7 +219,7 @@ public final class AaRuntime implements JobPort {
         var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
         String dim = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim();
         if (sg == null || dim == null || lv == null) return out;
-        long game = lv.getGameTime() * 50;
+        long game = lv.getGameTime() * 50;  // game fact: a game tick is 50 ms
         for (var r : sg.animals(dim, null)) {
             String type = r.id().startsWith("minecraft:") ? r.id().substring(10) : r.id();
             out.add(new io.github.mojolowjo.entropybot.aa.FoodOptions.Herd(type, r.x(), r.y(), r.z(), r.count(),
@@ -243,10 +243,10 @@ public final class AaRuntime implements JobPort {
         for (var h : herds(lv, me)) {
             String id = h.type().indexOf(':') >= 0 ? h.type() : "minecraft:" + h.type();
             if (inView.contains(id) || h.conf() < io.github.mojolowjo.entropybot.aa.FoodOptions.herdMinConf() || h.dist() > io.github.mojolowjo.entropybot.aa.FoodOptions.herdMax()) continue;
-            double s = (2 * h.dist() + 60) / h.conf();
+            double s = (2 * h.dist() + Tuning.i("aaRuntime.herdSetupS")) / h.conf();
             if (s < score.getOrDefault(id, Double.MAX_VALUE)) {
                 score.put(id, s);
-                out.put(id, new int[]{h.x(), h.z(), (int) Math.round(h.dist()), (int) Math.round(h.conf() * 100)});
+                out.put(id, new int[]{h.x(), h.z(), (int) Math.round(h.dist()), (int) Math.round(h.conf() * 100)});  // structural: percent
             }
         }
         return out;
@@ -306,7 +306,7 @@ public final class AaRuntime implements JobPort {
                         grassCells.merge(((long) (x >> 3) << 32) | ((z >> 3) & 0xffffffffL), 1, Integer::sum);
                     }
                     if (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.getFluidState().isSource()) {
-                        if (d <= 12) water = true;
+                        if (d <= Tuning.i("aaRuntime.waterNear")) water = true;
                         // aa383 (a field "no water within 4"): a dry cell beside the water to stand on and plant around
                         if (d < waterSpotD) {
                             int[] s = fieldSpot(lv, x, y, z, wdim);
@@ -322,9 +322,9 @@ public final class AaRuntime implements JobPort {
             if (e.getValue() <= bestG) continue;
             long k = e.getKey();
             int cx = ((int) (k >> 32)) << 3, cz = ((int) k) << 3;
-            if (!c.workAllowed(dim, cx + 4, cz + 4)) continue;
+            if (!c.workAllowed(dim, cx + 4, cz + 4)) continue;  // structural: centre of an 8x8 cell
             bestG = e.getValue();
-            grass = new int[]{cx, cz, cx + 7, cz + 7};
+            grass = new int[]{cx, cz, cx + 7, cz + 7};  // structural: corner of an 8x8 cell
         }
         boolean farm;
         try { farm = Core.INSTANCE.knowledge.places().get("farm") != null; } catch (RuntimeException e) { farm = false; }
@@ -400,9 +400,9 @@ public final class AaRuntime implements JobPort {
         double e = bb.in.food + bb.in.saturation;
         String kind = (bb.task() == null ? io.github.mojolowjo.entropybot.aa.core.TaskKind.NONE : bb.task().kind).name();
         if (drainE0 < 0) { drainE0 = e; drainT0 = now; drainKind = kind; return; }
-        boolean ate = e > drainE0 + 0.01;
+        boolean ate = e > drainE0 + 0.01;  // structural: epsilon: a food reading rose
         if (ate || !kind.equals(drainKind) || now - drainT0 >= drainWindowMs()) {
-            double minutes = (now - drainT0) / 60_000.0;
+            double minutes = (now - drainT0) / 60_000.0;  // structural: milliseconds per minute
             if (!ate && tree.brain.stats.recordDrain(drainKind, drainE0 - e, minutes))
                 LOG.info("[entropybot] aa: food drain {}: {} points in {} min", drainKind, String.format(java.util.Locale.ROOT, "%.1f", drainE0 - e), String.format(java.util.Locale.ROOT, "%.1f", minutes));
             drainE0 = e;
@@ -446,7 +446,7 @@ public final class AaRuntime implements JobPort {
             }
             long t2 = System.nanoTime();
             int[] furnace = furnaceMemo.get(gameTick(), System.currentTimeMillis(), dim + " " + me[0] + " " + me[1] + " " + me[2] + " " + bb.in.furnaceKnown + " " + bb.in.furnaceInBag + " " + bag.getOrDefault("furnace", 0), () -> c.crafting.findFurnace(p));     // AA_ROUND3 4: 1-3 ms a read
-            factsParts = "ores " + (t1 - t0) / 1000 + " us [" + Mining.aaOresParts + "], cave+discovery " + (t2 - t1) / 1000 + " us, furnace " + (System.nanoTime() - t2) / 1000 + " us";
+            factsParts = "ores " + (t1 - t0) / 1000 + " us [" + Mining.aaOresParts + "], cave+discovery " + (t2 - t1) / 1000 + " us, furnace " + (System.nanoTime() - t2) / 1000 + " us";  // structural: milliseconds per second
             int furnaceDist = furnace == null ? -1 : (int) Math.round(Math.sqrt(Jobs.distSq(me, furnace)));
             return new IronOptions.Facts(ores, me[1], p.isInWater(), AaEscape.throwaway(bag),
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
@@ -611,7 +611,7 @@ public final class AaRuntime implements JobPort {
         var sn = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.seen();
         if (sn == null) return;
         boolean caving = currentChain != null && current >= 0 && currentChain.contains("mine cave");
-        if (caving && sn.caving && caveTickAt >= 0) sn.caveTime((now - caveTickAt) / 60_000.0);
+        if (caving && sn.caving && caveTickAt >= 0) sn.caveTime((now - caveTickAt) / 60_000.0);  // structural: milliseconds per minute
         sn.caving = caving;
         caveTickAt = now;
     }
@@ -668,7 +668,7 @@ public final class AaRuntime implements JobPort {
                 best = d;
                 sky = new int[]{x, y, z};
             }
-        factsParts = "sky scan " + (System.nanoTime() - t0) / 1000 + " us";
+        factsParts = "sky scan " + (System.nanoTime() - t0) / 1000 + " us";  // structural: milliseconds per second
         boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
                 io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), bb.in.pickaxes > 0,
@@ -685,7 +685,7 @@ public final class AaRuntime implements JobPort {
         var in = bb.in;
         // round 4A N: the sword-only row reads the bag (sticks from the bag map, the rest from the inputs)
         int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
-        boolean pick = in.pickTier < 2 || (in.pickPct < 15 && in.pickaxes < 2);
+        boolean pick = in.pickTier < 2 || (in.pickPct < Tuning.i("aaRuntime.wornPct") && in.pickaxes < 2);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(in.pickTier, sensed.feas.trees, pick,
                 io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag);
     }
@@ -724,7 +724,7 @@ public final class AaRuntime implements JobPort {
         boolean red = false;
         for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) {
             if (r.picker() == null) continue;
-            red |= r.picker().factsFailedSince(now - 60_000);
+            red |= r.picker().factsFailedSince(now - 60_000);  // structural: per minute window
             String k = r.picker().counters(now);
             if (k != null) b.append('\n').append(r.id.substring(6)).append(": ").append(k);
         }
@@ -761,7 +761,7 @@ public final class AaRuntime implements JobPort {
                 man.ask = a.equals("on");
                 if (!man.ask) man.pending = null;
                 LOG.info("[entropybot] aa: ask {}", a);
-                return "ok: aa ask " + a + (man.ask ? " - before each task I show my options and wait " + io.github.mojolowjo.entropybot.aa.AaManual.askMs() / 1000 + " s for aa pick <n>, then take my first" : "");
+                return "ok: aa ask " + a + (man.ask ? " - before each task I show my options and wait " + io.github.mojolowjo.entropybot.aa.AaManual.askMs() / 1000 + " s for aa pick <n>, then take my first" : "");  // structural: milliseconds per second
             }
             case "pick" -> {
                 if (man.pending == null) return "nothing to pick: no rung is asking now (aa ask on makes them ask)";
@@ -966,7 +966,7 @@ public final class AaRuntime implements JobPort {
         heldUntil = System.currentTimeMillis() + holdMs();
         data().addProperty("heldUntil", heldUntil);
         c.saved();
-        return "; aa waits " + holdMs() / 60000 + " min (aa on, or your next order, to go on now)";
+        return "; aa waits " + holdMs() / 60000 + " min (aa on, or your next order, to go on now)";  // structural: milliseconds per minute
     }
 
     /** AA's chain runs (the AI operator's request: the owner's vocabulary on the interpreter). */
@@ -1037,7 +1037,7 @@ public final class AaRuntime implements JobPort {
                 }
                 return;
             }
-            if (sensedTick < 0 || tick - sensedTick >= 10) {
+            if (sensedTick < 0 || tick - sensedTick >= 10) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
                 sensed = c.senses.sense();      // AA_CLEANUP 3: was BrainRuntime.sense()
                 sensedTick = tick;
             }
@@ -1062,7 +1062,7 @@ public final class AaRuntime implements JobPort {
             }
             // 0.36.1 (review 1): the owner's queue ("queue <task>") is an owner order: the next queued line starts
             // when the slot is free and is adopted as the owner's job on the next tick
-            if (bb.in.otherJob == null && bb.task() == null && !c.vocab.queued.isEmpty() && (tick % 20) == 2) {
+            if (bb.in.otherJob == null && bb.task() == null && !c.vocab.queued.isEmpty() && (tick % 20) == 2) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
                 c.vocab.tick();
                 return;
             }
@@ -1090,12 +1090,12 @@ public final class AaRuntime implements JobPort {
                 data().addProperty(AaLadder.SHELTER_FACT, true);
                 c.saved();
             }
-            if (s == Status.FAILURE && tracer.counts.ticks % 240 == 1) LOG.info("[entropybot] aa: nothing to do: {}", tree.root.reason());
+            if (s == Status.FAILURE && tracer.counts.ticks % 240 == 1) LOG.info("[entropybot] aa: nothing to do: {}", tree.root.reason());  // structural: periodic cadence in ticks (20 ticks = 1 s)
             snapshot(now, tree.driver());
         } catch (Throwable e) {
             tickFailed(e);
         } finally {
-            tracer.counts.tickUs = (System.nanoTime() - t0) / 1000;
+            tracer.counts.tickUs = (System.nanoTime() - t0) / 1000;  // structural: milliseconds per second
         }
     }
 
@@ -1103,14 +1103,14 @@ public final class AaRuntime implements JobPort {
         long now = System.currentTimeMillis();
         errors++;
         lastError = e.toString();
-        if (now - minuteStart > 60_000) {
+        if (now - minuteStart > 60_000) {  // structural: per minute window
             minuteStart = now;
             errorsThisMinute = 0;
         }
         errorsThisMinute++;
-        if (errors <= 3 || now - lastErrorAt > 60_000) {
+        if (errors <= Tuning.i("aaRuntime.errorsLogged") || now - lastErrorAt > Tuning.i("aaRuntime.errorWindowMs")) {
             lastErrorAt = now;
-            LOG.warn("[entropybot] aa: tick failed: {}", errors <= 3 ? stack(e) : e.toString());
+            LOG.warn("[entropybot] aa: tick failed: {}", errors <= Tuning.i("aaRuntime.errorsLogged") ? stack(e) : e.toString());
         }
         if (errorsThisMinute >= errorsPerMinuteOff()) {
             offReason = "turned itself off after " + errorsThisMinute + " tick errors in a minute: " + e;
@@ -1123,7 +1123,7 @@ public final class AaRuntime implements JobPort {
         StringBuilder b = new StringBuilder(e.toString());
         int n = 0;
         for (StackTraceElement s : e.getStackTrace()) {
-            if (n++ >= 6) break;
+            if (n++ >= 6) break;  // structural: display: how many items a text lists
             b.append("\n    at ").append(s);
         }
         return b.toString();
@@ -1329,7 +1329,7 @@ public final class AaRuntime implements JobPort {
             in.ownerDist = (int) Math.round(Math.hypot(at.x - p.getX(), at.z - p.getZ()));
             net.minecraft.core.BlockPos bp = net.minecraft.core.BlockPos.containing(at);
             if (mc.level.isLoaded(bp)) {
-                in.ownerDark = mc.level.getMaxLocalRawBrightness(bp) < 8;
+                in.ownerDark = mc.level.getMaxLocalRawBrightness(bp) < 8;  // game fact: hostile mobs spawn in light level 7 or less; the dark check is under 8
                 in.ownerHostiles = mc.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                         new net.minecraft.world.phys.AABB(bp).inflate(12), net.minecraft.world.entity.LivingEntity::isAlive).size();
             }
@@ -1368,7 +1368,7 @@ public final class AaRuntime implements JobPort {
             if (r.has("duel")) return true;
             if (!r.has("target")) return false;
             String t = r.get("target").getAsString();
-            return t != null && t.contains("creeper") && (!r.has("dist") || r.get("dist").getAsDouble() <= 10);
+            return t != null && t.contains("creeper") && (!r.has("dist") || r.get("dist").getAsDouble() <= Tuning.i("aaRuntime.creeperNear"));
         } catch (RuntimeException e) {
             return false;
         }
@@ -1412,7 +1412,7 @@ public final class AaRuntime implements JobPort {
         try {
             if (a.has("round")) return false;
             long w = Math.abs(PolicyCommands.n(a, "x2") - PolicyCommands.n(a, "x1")) + 1, d = Math.abs(PolicyCommands.n(a, "z2") - PolicyCommands.n(a, "z1")) + 1;
-            return w >= 7 && d >= 7 && w * d <= 4096;
+            return w >= Tuning.i("aaRuntime.minSide") && d >= Tuning.i("aaRuntime.minSide") && w * d <= Tuning.i("aaRuntime.maxArea");
         } catch (RuntimeException e) {
             return false;
         }
@@ -1447,7 +1447,7 @@ public final class AaRuntime implements JobPort {
         progress = io.github.mojolowjo.entropybot.aa.core.RestoreProgress.tick(progress, lastRestoreWork, rw);
         lastRestoreWork = rw;
         int bagTotal = 0;
-        for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();
+        for (int i = 0; i < 36; i++) bagTotal += p.getInventory().getItem(i).getCount();  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
         if (lastBag >= 0 && bagTotal > lastBag) progress++;          // gained (a deposit's drop is no progress by itself)
         // aa-night2 P0 3 (normal run: BASE_BED "stuck 40 s, no move, no bag change" while placing): a build's placed
         // blocks leave the bag, and that is its progress
@@ -1460,7 +1460,7 @@ public final class AaRuntime implements JobPort {
             if (lastGoalDist >= 0 && d < lastGoalDist - 1) progress++;
             lastGoalDist = d;
         } else lastGoalDist = -1;
-        if (lastPos == null || Math.abs(pos[0] - lastPos[0]) + Math.abs(pos[1] - lastPos[1]) + Math.abs(pos[2] - lastPos[2]) >= 8) {
+        if (lastPos == null || Math.abs(pos[0] - lastPos[0]) + Math.abs(pos[1] - lastPos[1]) + Math.abs(pos[2] - lastPos[2]) >= Tuning.i("aaRuntime.movedBlocks")) {
             if (lastPos != null) progress++;
             lastPos = pos;
         }
@@ -1570,7 +1570,7 @@ public final class AaRuntime implements JobPort {
         } catch (NumberFormatException e) {
             return "usage: aa look [smooth <ticks>] (1..60, now " + now + ")";
         }
-        if (s < 1 || s > 60) return "usage: aa look smooth <ticks> (1..60, now " + now + ")";
+        if (s < 1 || s > 60) return "usage: aa look smooth <ticks> (1..60, now " + now + ")";  // structural: range of the aa look smooth command
         data().addProperty("lookTicks", s);
         c.saved();
         if (on()) lookApply();
@@ -1588,7 +1588,7 @@ public final class AaRuntime implements JobPort {
         } catch (NumberFormatException e) {
             return "usage: aa horizon <seconds> (30..7200, now " + now + ")";
         }
-        if (s < 30 || s > 7200) return "usage: aa horizon <seconds> (30..7200, now " + now + ")";
+        if (s < 30 || s > 7200) return "usage: aa horizon <seconds> (30..7200, now " + now + ")";  // structural: range of the aa horizon command (seconds)
         data().addProperty("horizon", s);
         c.saved();
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.HORIZON_FACT, s);
@@ -1601,7 +1601,7 @@ public final class AaRuntime implements JobPort {
     /** The nearest known coal ore (Mining.aaOres, family coal), cached 10 s; null none or unreadable (logged). */
     int[] coalSite() {
         long now = System.currentTimeMillis();
-        if (coalAtMs >= 0 && now - coalAtMs < 10_000) return coalAt;
+        if (coalAtMs >= 0 && now - coalAtMs < Tuning.i("aaRuntime.coalMemoMs")) return coalAt;
         coalAtMs = now;
         try {
             LocalPlayer p = Minecraft.getInstance().player;
@@ -2063,7 +2063,7 @@ public final class AaRuntime implements JobPort {
     /** The danger desire's facts (DangerMoves.facts), at most once a second. Never throws (calm facts, logged there). */
     private io.github.mojolowjo.entropybot.threat.ThreatFacts threatFacts() {
         long now = System.currentTimeMillis();
-        if (threatMemo != null && now - threatAt < 1000) return threatMemo;
+        if (threatMemo != null && now - threatAt < Tuning.i("aaRuntime.threatMemoMs")) return threatMemo;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return io.github.mojolowjo.entropybot.threat.ThreatFacts.CALM;
         threatAt = now;
@@ -2084,17 +2084,17 @@ public final class AaRuntime implements JobPort {
     /** Torches (and lanterns) within 16 across and 4 up or down, counted every 5 s. */
     private int torchesNear(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos at) {
         long now = System.currentTimeMillis();
-        if (torchAt >= 0 && now - torchAt < 5000) return torchMemo;
+        if (torchAt >= 0 && now - torchAt < Tuning.i("aaRuntime.torchMemoMs")) return torchMemo;
         torchAt = now;
         int n = 0;
         net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
-        for (int dx = -16; dx <= 16; dx++)
-            for (int dz = -16; dz <= 16; dz++)
-                for (int dy = -4; dy <= 4; dy++) {
+        for (int dx = -Tuning.i("aaRuntime.torchR"); dx <= Tuning.i("aaRuntime.torchR"); dx++)
+            for (int dz = -Tuning.i("aaRuntime.torchR"); dz <= Tuning.i("aaRuntime.torchR"); dz++)
+                for (int dy = -Tuning.i("aaRuntime.torchDy"); dy <= Tuning.i("aaRuntime.torchDy"); dy++) {
                     m.set(at.getX() + dx, at.getY() + dy, at.getZ() + dz);
                     if (!lv.isLoaded(m)) continue;
                     var st = lv.getBlockState(m);
-                    if (st.isAir() || st.getLightEmission() < 10) continue;
+                    if (st.isAir() || st.getLightEmission() < Tuning.i("aaRuntime.torchLight")) continue;
                     String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
                     if (id.contains("torch") || id.contains("lantern")) n++;
                 }
@@ -2179,8 +2179,8 @@ public final class AaRuntime implements JobPort {
     private static double litShare(net.minecraft.world.level.Level lv, net.minecraft.core.BlockPos at) {
         int[] l = new int[81];
         int i = 0;
-        for (int dx = -16; dx <= 16; dx += 4)
-            for (int dz = -16; dz <= 16; dz += 4)
+        for (int dx = -Tuning.i("aaRuntime.torchR"); dx <= Tuning.i("aaRuntime.torchR"); dx += Tuning.i("aaRuntime.lightStep"))
+            for (int dz = -Tuning.i("aaRuntime.torchR"); dz <= Tuning.i("aaRuntime.torchR"); dz += Tuning.i("aaRuntime.lightStep"))
                 l[i++] = lv.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, at.offset(dx, 0, dz));
         return io.github.mojolowjo.entropybot.aa.brain.Costs.litShare(l);
     }
@@ -2411,7 +2411,7 @@ public final class AaRuntime implements JobPort {
         long now = System.currentTimeMillis();
         if (!on()) return "AA: off" + (offReason != null ? " (" + offReason + ")" : "");
         StringBuilder b = new StringBuilder("AA: ");
-        if (now < heldUntil) b.append("held ").append((heldUntil - now + 59_999) / 60_000).append(" min after a stop");
+        if (now < heldUntil) b.append("held ").append((heldUntil - now + 59_999) / 60_000).append(" min after a stop");  // structural: round up to whole minutes
         else b.append(tree.driver()).append('>').append(bb.taskText(now));
         b.append(" | danger: ").append(tree.dangerWhy());
         if (conserving) b.append(" | conserving hunger");
@@ -2465,7 +2465,7 @@ public final class AaRuntime implements JobPort {
     // ---- BRAIN_PLAN B2: the recipe tech tree, what is had, measured costs ----
 
     private int treeRecipes = -1;
-    private long treeCheckedAt = -60_000, statsSavedAt, haveAt = -10_000;
+    private long treeCheckedAt = -Tuning.i("aaRuntime.treeEveryMs"), statsSavedAt, haveAt = -Tuning.i("aaRuntime.haveEveryMs");
     private boolean statsLoaded;
     private String treeError;
 
@@ -2489,7 +2489,7 @@ public final class AaRuntime implements JobPort {
             loadPersonality();
         }
         // review: the bag set at most every 10 s (the tech tree's caches are per bag; mining changes it all the time)
-        if (now - haveAt >= 10_000) {
+        if (now - haveAt >= Tuning.i("aaRuntime.haveEveryMs")) {
             haveAt = now;
             java.util.Set<String> have = new java.util.HashSet<>();
             if (sensed != null && sensed.feas != null) for (var e : sensed.feas.bag.entrySet()) if (e.getValue() > 0) have.add(e.getKey());
@@ -2497,7 +2497,7 @@ public final class AaRuntime implements JobPort {
             if (bb.in.furnaceKnown) have.add("furnace");
             if (!have.equals(bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT))) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.HAVE_FACT, java.util.Set.copyOf(have));
         }
-        if (now - treeCheckedAt >= 60_000) {
+        if (now - treeCheckedAt >= Tuning.i("aaRuntime.treeEveryMs")) {
             treeCheckedAt = now;
             try {
                 var rm = mc.level.getRecipeManager();
@@ -2538,7 +2538,7 @@ public final class AaRuntime implements JobPort {
             loadMiningTiers();
         }
         Path f = statsFile();
-        if (f != null && now - statsSavedAt >= 60_000 && tree.brain.stats.takeDirty()) {
+        if (f != null && now - statsSavedAt >= Tuning.i("aaRuntime.statsSaveMs") && tree.brain.stats.takeDirty()) {
             statsSavedAt = now;
             String json = tree.brain.stats.toJson();
             WRITER.submit(() -> {
@@ -2814,7 +2814,7 @@ public final class AaRuntime implements JobPort {
             return io.github.mojolowjo.entropybot.aa.brain.LootBook.empty("read failed: " + e.getClass().getSimpleName());
         }
         var book = new io.github.mojolowjo.entropybot.aa.brain.LootBook(all, "read from the game at load");
-        LOG.info("[entropybot] aa: loot data: {}; {} tables/trades skipped; {} ms", book.counts(), bad[0], (System.nanoTime() - t0) / 1_000_000);
+        LOG.info("[entropybot] aa: loot data: {}; {} tables/trades skipped; {} ms", book.counts(), bad[0], (System.nanoTime() - t0) / 1_000_000);  // structural: nanoseconds to milliseconds
         return book;
     }
 
@@ -2909,7 +2909,7 @@ public final class AaRuntime implements JobPort {
         buildsTick(p, tick);
         var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
         if (goals.isEmpty()) { bb.fact(io.github.mojolowjo.entropybot.aa.brain.Discovery.FACT, Map.of()); return; }
-        if (tick % 200 != 7 && !knownDue) return;
+        if (tick % 200 != 7 && !knownDue) return;  // structural: periodic cadence in ticks (20 ticks = 1 s)
         knownDue = false;
         lootCtx();
         for (var g : io.github.mojolowjo.entropybot.aa.brain.Goals.done(bb)) {
@@ -2993,7 +2993,7 @@ public final class AaRuntime implements JobPort {
     /** Every 10 s while builds exist (at once after aa build): each build scanned in its dimension, a finished one said and dropped. */
     private void buildsTick(LocalPlayer p, long tick) {
         var builds = io.github.mojolowjo.entropybot.aa.brain.Blueprint.of(bb);
-        if (builds.isEmpty() || (tick % 200 != 11 && !buildsDue)) return;
+        if (builds.isEmpty() || (tick % 200 != 11 && !buildsDue)) return;  // structural: periodic cadence in ticks (20 ticks = 1 s)
         buildsDue = false;
         String dim = p.level().dimension().location().toString();
         for (var b : new ArrayList<>(builds)) {
@@ -3064,7 +3064,7 @@ public final class AaRuntime implements JobPort {
         };
         long now = System.currentTimeMillis();
         if (wantKey != null) {         // a want by name: bored now (it wins by its weight when nothing more urgent runs)
-            io.github.mojolowjo.entropybot.aa.brain.Wants.done(bb, "want." + wantKey, now - (long) (100 * io.github.mojolowjo.entropybot.aa.brain.Wants.DAY_MS));
+            io.github.mojolowjo.entropybot.aa.brain.Wants.done(bb, "want." + wantKey, now - (long) (100 * io.github.mojolowjo.entropybot.aa.brain.Wants.DAY_MS));  // structural: percent
             return "ok: want." + wantKey + " is bored now (weight " + io.github.mojolowjo.entropybot.aa.brain.Personality.fmt(io.github.mojolowjo.entropybot.aa.brain.Personality.of(bb).get(wantKey))
                     + "; aa like " + wantKey + " <n> to raise it)";
         }
@@ -3250,7 +3250,7 @@ public final class AaRuntime implements JobPort {
     private volatile long writeErrors, lastWriteErrorAt;
 
     private void snapshot(long now, String driver) {
-        if (now - lastSnapshotAt < 1000) return;
+        if (now - lastSnapshotAt < Tuning.i("aaRuntime.snapshotMs")) return;
         lastSnapshotAt = now;
         Path d = dir();
         if (d == null) return;
@@ -3311,7 +3311,7 @@ public final class AaRuntime implements JobPort {
             var r = new io.github.mojolowjo.entropybot.aa.brain.RunLedger.Row(Core.INSTANCE.version(), world, diff,
                     runMarks.stoneMin(), runMarks.tableFurnaceMin(), runMarks.ironMin(), runPicks,
                     tracer.counts.switches - runSwitches0, tracer.counts.pointless - runPointless0, tracer.counts.preempts - runPreempts0,
-                    runStuckHalts, runDeaths, runMarks.foodEvents(), (System.currentTimeMillis() - start) / 60000.0);
+                    runStuckHalts, runDeaths, runMarks.foodEvents(), (System.currentTimeMillis() - start) / 60000.0);  // structural: milliseconds per minute
             boolean has = Files.exists(f) && Files.size(f) > 0;
             String text = io.github.mojolowjo.entropybot.aa.brain.RunLedger.append(has, r);
             WRITER.submit(() -> {
@@ -3331,7 +3331,7 @@ public final class AaRuntime implements JobPort {
     private void writeFailed(String what, Exception e) {
         writeErrors++;
         long now = System.currentTimeMillis();
-        if (now - lastWriteErrorAt > 60_000) {
+        if (now - lastWriteErrorAt > Tuning.i("aaRuntime.writeErrorMs")) {
             lastWriteErrorAt = now;
             LOG.warn("[entropybot] aa: {} write failed ({} so far): {}", what, writeErrors, e.toString());
         }

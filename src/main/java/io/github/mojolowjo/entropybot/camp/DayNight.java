@@ -17,13 +17,13 @@ public final class DayNight {
 
     public static boolean night(long dayTime) {
         if (dayTime < 0) return false;
-        long t = dayTime % 24000;
+        long t = dayTime % 24000;  // game fact: a Minecraft day is 24000 ticks
         return t >= NIGHT_FROM && t <= NIGHT_TO;
     }
 
     /** "n<day>" or "d<day>"; a night belongs to the day it began on, the morning after it to the next day. */
     public static String key(long dayTime) {
-        long day = dayTime / 24000, t = dayTime % 24000;
+        long day = dayTime / 24000, t = dayTime % 24000;  // game fact: a Minecraft day is 24000 ticks
         if (night(dayTime)) return "n" + day;
         return "d" + (t > NIGHT_TO ? day + 1 : day);
     }
@@ -39,8 +39,8 @@ public final class DayNight {
 
     /** "6:30" style clock for messages (day time 0 = 06:00). */
     public static String clock(long dayTime) {
-        long t = ((dayTime % 24000) + 24000) % 24000;
-        long h = (t / 1000 + 6) % 24, m = (t % 1000) * 60 / 1000;
+        long t = ((dayTime % 24000) + 24000) % 24000;  // game fact: a Minecraft day is 24000 ticks
+        long h = (t / 1000 + 6) % 24, m = (t % 1000) * 60 / 1000;  // game fact: vanilla time: tick 0 is 6:00, 1000 ticks an hour, 24 hours
         return String.format("%02d:%02d", h, m);
     }
 }

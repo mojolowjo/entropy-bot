@@ -107,7 +107,7 @@ public final class Kit {
 
     /** P(the drops are still there on arrival): the 5 min clock less the time gone and the walk; 0..1. */
     public static double pThere(long sinceMs, double walkS) {
-        return Math.max(0, Math.min(1, 1 - (sinceMs + walkS * 1000) / (double) DESPAWN_MS));
+        return Math.max(0, Math.min(1, 1 - (sinceMs + walkS * 1000) / (double) DESPAWN_MS));  // structural: milliseconds per second
     }
 
     /** The death tick: the last live position and bag become the record (nothing to record: none). */
@@ -157,7 +157,7 @@ public final class Kit {
     public static double soon(long dayTime, boolean nightFlag, boolean farTrip) {
         if (farTrip) return 1;
         if (dayTime < 0) return 0;
-        long t = dayTime % 24_000, from = Night.DUSK - stashLead();
+        long t = dayTime % 24_000, from = Night.DUSK - stashLead();  // game fact: a Minecraft day is 24000 ticks
         if (t >= from && t < Night.DUSK) return (t - from) / (double) stashLead();
         if (t >= Night.DUSK && t < Night.BED_FROM) return 1;     // dusk: still daylight enough to walk home
         return 0;
@@ -173,6 +173,6 @@ public final class Kit {
         return "loot " + r(loot) + " x danger " + r(danger) + " x soon " + r(soon) + " -> " + (v < 0 ? "-" : String.valueOf(Math.round(v)));
     }
 
-    static double r(double v) { return Math.round(v * 100) / 100.0; }
+    static double r(double v) { return Math.round(v * 100) / 100.0; }  // structural: percent
 }
 

@@ -104,13 +104,13 @@ public final class Reconnect {
             }
             if (mc.screen instanceof ConnectScreen) {
                 statusText = "connecting to " + server + (tries > 0 ? " (try " + tries + ")" : "")
-                        + (attemptAt >= 0 ? ", " + (now - attemptAt) / 1000 + " s of " + connectTimeoutS : "");
+                        + (attemptAt >= 0 ? ", " + (now - attemptAt) / 1000 + " s of " + connectTimeoutS : "");  // structural: milliseconds per second
                 return;
             }
             if (outSince < 0) outSince = tick;
             if (firstOutMs < 0) firstOutMs = now;
             long waited = tick - outSince;
-            if (tick % 20 == 0) {
+            if (tick % 20 == 0) {  // structural: periodic cadence in ticks (20 ticks = 1 s)
                 long next = ReconnectRules.nextTryMs(waited, tries, recent, now, firstOutMs);
                 statusText = ReconnectRules.statusText(true, server, tries, next, ZoneId.systemDefault());
                 if (next < 0 && !gaveUpLogged) {

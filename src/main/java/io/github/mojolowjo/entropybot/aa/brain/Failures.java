@@ -185,7 +185,7 @@ public final class Failures {
     }
 
     static String left(long ms) {
-        return ms >= 60_000 ? (ms + 59_999) / 60_000 + " min" : (ms + 999) / 1000 + "s";
+        return ms >= 60_000 ? (ms + 59_999) / 60_000 + " min" : (ms + 999) / 1000 + "s";  // structural: display: round up to whole minutes or seconds
     }
 
     /** AA_ROUND2 6: the bag's total count (any item, modded too); the named counts only when no bag map was filled. */

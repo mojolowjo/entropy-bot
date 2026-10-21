@@ -59,7 +59,7 @@ public final class EscortRules {
     }
 
     static double angleDiff(double a, double b) {
-        double d = ((a - b) % 360 + 540) % 360 - 180;
+        double d = ((a - b) % 360 + 540) % 360 - 180;  // structural: degrees: normalises an angle difference to -180..180
         return Math.abs(d);
     }
 
@@ -101,7 +101,7 @@ public final class EscortRules {
     public static double[] standoff(double px, double pz, double bx, double bz) {
         double dx = bx - px, dz = bz - pz, d = Math.sqrt(dx * dx + dz * dz);
         if (d >= standMin() && d <= standMax()) return null;
-        if (d < 0.1) { dx = 1; dz = 0; d = 1; }
+        if (d < 0.1) { dx = 1; dz = 0; d = 1; }  // structural: epsilon: a zero distance
         return new double[]{px + dx / d * standAt(), pz + dz / d * standAt()};
     }
 
@@ -111,8 +111,8 @@ public final class EscortRules {
      */
     public static double[] interpose(double px, double pz, double cx, double cz) {
         double dx = cx - px, dz = cz - pz, d = Math.sqrt(dx * dx + dz * dz);
-        if (d < 0.1) return new double[]{px, pz};
-        double at = Math.max(Math.min(d / 2, d - 1.5), Math.min(1.5, d / 2));
+        if (d < 0.1) return new double[]{px, pz};  // structural: epsilon: a zero distance
+        double at = Math.max(Math.min(d / 2, d - Tuning.get("escortRules.standSlack")), Math.min(Tuning.get("escortRules.standSlack"), d / 2));
         return new double[]{px + dx / d * at, pz + dz / d * at};
     }
 
@@ -148,9 +148,9 @@ public final class EscortRules {
     /** The compass side of m seen from p (north = -z). */
     public static String compass(double px, double pz, double mx, double mz) {
         double deg = Math.toDegrees(Math.atan2(mx - px, -(mz - pz)));     // 0 = north, 90 = east
-        deg = (deg + 360) % 360;
+        deg = (deg + 360) % 360;  // structural: degrees
         String[] n = {"north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"};
-        return n[(int) Math.round(deg / 45) % 8];
+        return n[(int) Math.round(deg / 45) % 8];  // structural: compass: 8 points of 45 degrees
     }
 
     static double dist(double ax, double ay, double az, double bx, double by, double bz) {

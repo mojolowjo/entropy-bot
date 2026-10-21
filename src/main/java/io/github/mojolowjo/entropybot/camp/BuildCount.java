@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.camp;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /**
  * 0.28.1 (trial fix G, docs/TRIAL_FIX_PLAN.md): how many blocks a {@code build floor|walls|shell|fill} needs, said at the
  * start, and the refusal when the bag has under a tenth of it. Pure (JUnit: {@code TrialFixTest}).
@@ -40,7 +42,7 @@ public final class BuildCount {
 
     /** Null when it may start, else the refusal: fewer than 10% of the blocks it needs. */
     public static String refusal(int need, int have, String item) {
-        if (need <= 0 || have * 10L >= need) return null;
+        if (need <= 0 || have * Tuning.l("buildCount.fractionDiv") >= need) return null;
         return "error: that needs " + need + " " + item + " and I have " + have + " - next: gather " + item + " " + (need - have) + ", then build again";
     }
 }

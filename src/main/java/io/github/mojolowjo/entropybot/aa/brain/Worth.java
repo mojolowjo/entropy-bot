@@ -43,8 +43,8 @@ public final class Worth {
     public static double spareTable(TechTree tree, Set<String> have) { return 0.5 * table(tree, have); }
 
     /** 20 + 60 x danger (danger 0..~1.5; at most 99). */
-    public static double bed(double danger) { return Math.min(99, 20 + 60 * Math.max(0, danger)); }
+    public static double bed(double danger) { return Math.min(99, Tuning.i("worth.bedBase") + Tuning.i("worth.bedSpan") * Math.max(0, danger)); }
 
-    public static double base(double danger) { return 0.8 * bed(danger); }
+    public static double base(double danger) { return Tuning.get("worth.baseShare") * bed(danger); }
 }
 

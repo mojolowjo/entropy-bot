@@ -84,7 +84,7 @@ public final class ReflexProbe {
         }
         double mm = ok == 0 ? Double.NaN : c.moveMultiplier(r.x, r.y, r.z);
         return "from " + feet.x + "," + feet.y + "," + feet.z + " " + ok + " moves possible, cheapest " + bestAt
-                + (ok == 0 ? "" : " cost " + Math.round(best * 10) / 10.0) + " (fresh ctx break=" + c.allowBreak + " intent="
+                + (ok == 0 ? "" : " cost " + Math.round(best * 10) / 10.0) + " (fresh ctx break=" + c.allowBreak + " intent="  // structural: rounded to one decimal for the text
                 + (c.advisorToken instanceof CostAdvisorHook.Token t ? t.intent() : "-") + " move mult " + mm + ")";
     }
 

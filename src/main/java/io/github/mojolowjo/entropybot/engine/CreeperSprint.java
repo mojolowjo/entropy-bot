@@ -42,7 +42,7 @@ public final class CreeperSprint {
     /** Whether the bot is already sprinting away from the creeper: sprinting, moving, and heading within 60 degrees of away. */
     public static boolean sprintingAway(boolean sprinting, double vx, double vz, double awayX, double awayZ) {
         double v = Math.sqrt(vx * vx + vz * vz), a = Math.sqrt(awayX * awayX + awayZ * awayZ);
-        if (!sprinting || v < moving() || a < 1e-6) return false;
+        if (!sprinting || v < moving() || a < 1e-6) return false;  // structural: epsilon
         return (vx * awayX + vz * awayZ) / (v * a) >= awayDot();
     }
 
@@ -52,7 +52,7 @@ public final class CreeperSprint {
      */
     public Act start(long now, int id, boolean sprintingAway, boolean mayHit, double vx, double vz, double escX, double escZ) {
         chain = id == lastId && now - lastEnd < chaseTicks() ? chain + 1 : 0;
-        safe = Math.min(SAFE + 5 * chain, 17);
+        safe = Math.min(SAFE + Tuning.i("creeperSprint.safePerChain") * chain, Tuning.i("creeperSprint.safeMax"));
         active = true;
         creeperId = id;
         startTick = now;
@@ -95,8 +95,8 @@ public final class CreeperSprint {
         if (!active) return Act.DONE;
         endTick = now;
         if (Double.isNaN(dist)) return end("it is gone");
-        if (dist >= safe) return end("got " + Math.round(dist * 10) / 10.0 + " blocks away");
-        if (now - startTick >= maxTicks()) return end("gave up after " + maxTicks() / 20 + " s");
+        if (dist >= safe) return end("got " + Math.round(dist * 10) / 10.0 + " blocks away");  // structural: rounded to one decimal for the text
+        if (now - startTick >= maxTicks()) return end("gave up after " + maxTicks() / 20 + " s");  // game fact: 20 game ticks per second
         last = Act.SPRINT;
         return last;
     }

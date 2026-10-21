@@ -174,7 +174,7 @@ public final class LeaseSet {
         List<Object[]> again = new ArrayList<>(taken);
         taken.clear();
         for (Object[] t : again) {
-            String r = t.length > 4 ? takeDestroy((String) t[0], (ClearBox) t[1], (String) t[4])
+            String r = t.length > 4 ? takeDestroy((String) t[0], (ClearBox) t[1], (String) t[4])  // structural: a lease tuple has an optional 5th field
                     : take((String) t[0], (ClearBox) t[1], (Boolean) t[2], (Boolean) t[3]);
             if (r != null) {
                 releaseAll();

@@ -65,7 +65,7 @@ public final class CoalOptions {
     }
 
     /** Logs a charcoal batch burns: one per item and a log of planks-fuel (6 items) per 6 smelted. */
-    public static int logsFor(int need) { return need + (need + 5) / 6; }
+    public static int logsFor(int need) { return need + (need + 5) / 6; }  // structural: recipe arithmetic: one fuel log per 6 items smelted, rounded up
 
     public static Options.Choice choose(CoalFacts f, Options.OptionMemory m, long now) {
         List<Options.Option> rows = new ArrayList<>();
@@ -105,7 +105,7 @@ public final class CoalOptions {
             }
         }
         // 3. charcoal: logs smelted
-        int want = logsFor(need), have = f.logs() + f.planks() / 4, missing = Math.max(0, want - have);
+        int want = logsFor(need), have = f.logs() + f.planks() / 4, missing = Math.max(0, want - have);  // game fact: a log makes 4 planks
         boolean noFurnace = !f.furnaceInBag() && f.furnaceDist() < 0;
         int cobbleLack = Math.max(0, IronOptions.furnaceCobble() - f.cobble());
         if (noFurnace && cobbleLack > 0 && f.pickTier() < 1) dropped.add("charcoal: no furnace and no pickaxe for the " + IronOptions.furnaceCobble() + " cobblestone to make one");
@@ -121,7 +121,7 @@ public final class CoalOptions {
             if (missing > 0) st.add(new Step.ChopTree(null, missing, null));
             st.add(new Step.Smelt("charcoal", need, false));
             double cut = missing == 0 ? 0 : WoodOptions.cutLog() * missing + (f.treesKnown() ? 0 : WoodOptions.search());
-            rows.add(Options.typed("charcoal", "coal", st, trip + station + cut + smeltItem() * need + 10,
+            rows.add(Options.typed("charcoal", "coal", st, trip + station + cut + smeltItem() * need + Tuning.i("coalOptions.charcoalExtraS"),
                     want + " logs (" + have + " in the bag" + (missing > 0 ? ", cut " + missing + (f.treesKnown() ? "" : ", no tree seen yet") : "") + "), smelt " + need
                             + (noFurnace ? ", first a furnace (" + (cobbleLack > 0 ? cobbleLack + " cobblestone short, " : "") + "make it)" : f.furnaceInBag() ? " at a placed furnace" : ", a furnace " + f.furnaceDist() + " away"), "charcoal", m));
         }        return Options.Choice.of(rows, dropped, "no way to coal");
@@ -173,13 +173,13 @@ public final class CoalOptions {
         for (Map.Entry<String, String> e : mem.ran.entrySet())
             if (chain.contains(e.getKey())) {
                 mem.held.failed(e.getValue(), end == null ? "ended failed without an end text while running " + chain : end, bb.clock.now(), bb.in);
-                bb.port.log("coal way " + e.getValue() + " failed (\"" + end + "\"), held " + Options.retryMs() / 60000 + " min; the next way runs");
+                bb.port.log("coal way " + e.getValue() + " failed (\"" + end + "\"), held " + Options.retryMs() / 60000 + " min; the next way runs");  // structural: milliseconds per minute
                 return;
             }
     }
 
     /** Coal for the torches: one coal makes 4. */
-    public static int coalForTorches(int have, int target) { return Math.max(1, (Math.max(0, target - have) + 3) / 4); }
+    public static int coalForTorches(int have, int target) { return Math.max(1, (Math.max(0, target - have) + 3) / 4); }  // game fact: a coal makes 4 torches (rounded up)
 
     /** The coal way's steps first, then the torches' craft (never a bare craft without its input). */
     public static List<Step> torchSteps(List<Step> coal, int target) { return Options.seq(coal, new Step.Craft("torch", target)); }

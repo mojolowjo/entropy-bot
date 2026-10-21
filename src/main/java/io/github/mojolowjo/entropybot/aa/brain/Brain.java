@@ -54,7 +54,7 @@ public final class Brain extends Node {
     /** small-4: seconds the idle wait lasts: min(60, until the next hold lapses), at least 3. */
     public static int waitSeconds(long now, long nextLapseAt) {
         if (nextLapseAt <= now) return (int) waitMaxS();
-        return (int) Math.max(waitMinS(), Math.min(waitMaxS(), (nextLapseAt - now + 999) / 1000));
+        return (int) Math.max(waitMinS(), Math.min(waitMaxS(), (nextLapseAt - now + 999) / 1000));  // structural: round up to whole seconds
     }
 
     private long startedAt, lastProgressAt, lastMoveAt, lastTickAt = -1;
@@ -150,7 +150,7 @@ public final class Brain extends Node {
             return new Scored(d, -1, -1, "score failed", "score failed: " + e);
         }
         String parkedWhy = null;
-        if (v >= 0 && v < 100) {                       // feasibility: no source for a required input = parked, not worth 38
+        if (v >= 0 && v < 100) {                       // feasibility: no source for a required input = parked, not worth 38  // structural: the score scale tops at 100 (the owner's aa do); under it a desire is not an order
             try {
                 parkedWhy = d.infeasible.apply(bb);
             } catch (RuntimeException e) {
@@ -160,7 +160,7 @@ public final class Brain extends Node {
         String skip = v < 0 ? "not wanted" : null;
         long cu = failures.until(d.id, null);
         // the owner's aa do (100) is never held by the brain's own cooling (the rung forgets its cooldown itself)
-        if (skip == null && cu > now && v < 100) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + failures.fails(d.id, null) + " fails)";
+        if (skip == null && cu > now && v < 100) skip = "cooling " + (cu - now + 999) / 1000 + "s (" + failures.fails(d.id, null) + " fails)";  // structural: the score scale tops at 100; round up to whole seconds
         String parts = String.valueOf(Math.round(v));
         if (d.detail != null) {
             try {
@@ -170,14 +170,14 @@ public final class Brain extends Node {
             }
         }
         double live = parkedWhy != null ? Double.NaN : liveCost(bb, d);
-        if (d.kind == Desire.Kind.PROGRESS && v >= 0 && v < 100) {
+        if (d.kind == Desire.Kind.PROGRESS && v >= 0 && v < 100) {  // structural: the score scale tops at 100 (the owner's aa do)
             // B2 (2.2, 2.9): value x P(success) / (1 + cost / C), cost and P measured after 3 runs; AA_ROUND2 1: the
             // picker's live cost first
             double p = Curves.pSuccess(failures.fails(d.id, null), stats.n(d.id), stats.ok(d.id));
             double c = Double.isNaN(live) ? stats.cost(d.id, d.handCostS) : live;
             double value = v;
             v = Curves.progress(value, p, c);
-            parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s "
+            parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s "  // structural: percent
                     + (!Double.isNaN(live) ? "live" : stats.n(d.id) >= BrainStats.minRuns() ? "measured" : "hand");
         } else if (d.kind == Desire.Kind.UPKEEP && v >= 0 && v < Tuning.get("urgent") && !Double.isNaN(live)) {
             // AA_ROUND2 1: a far source does not pull the bot off a task it is close to finishing; urgent is never divided
@@ -186,12 +186,12 @@ public final class Brain extends Node {
             parts = "value " + Math.round(value) + " / cost " + Math.round(live) + "s live";
         }
         Desire.Exposure ex = workExposure(bb, d);
-        if (v >= 0 && v < 100 && ex != Desire.Exposure.ANY && Night.hostile(bb)) {
+        if (v >= 0 && v < 100 && ex != Desire.Exposure.ANY && Night.hostile(bb)) {  // structural: the score scale tops at 100 (the owner's aa do)
             // AA_ROUND2 4 (was B3's +/-10): the night's danger makes surface work dearer and work under ground cheaper;
             // review 2 item 1: before the urgent test, so post-death tools at the surface (98) fall under the shelter
             double danger = danger(bb), m = exposureFactor(ex, danger);
             v = v >= Tuning.get("urgent") ? v * m : Math.min(Tuning.get("urgent") - 1, v * m);      // review: the night never makes a desire urgent
-            parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";
+            parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";  // structural: percent
         }
         if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, cu > now ? 0 : Math.max(0, v));
         double rank = v + (urgent(d, v) ? 1000 : 0);
@@ -251,7 +251,7 @@ public final class Brain extends Node {
         }
         if (surface == Integer.MIN_VALUE) {
             int[] me = bb.in.pos;
-            if (me == null || me.length < 3) return false;
+            if (me == null || me.length < 3) return false;  // structural: a position has 3 coordinates
             surface = me[1] + Math.max(0, bb.in.underDepth);
         }
         return s.y() <= surface - surfaceDepth();
@@ -449,9 +449,9 @@ public final class Brain extends Node {
         List<Scored> cands = new ArrayList<>();
         for (Scored s : all) {
             // 100 is the owner's aa do (its command preempts by itself): never an interrupt here
-            boolean canUrge = s.d() != cur && s.skip() == null && s.score() < 100 && urgent(s.d(), s.own());
+            boolean canUrge = s.d() != cur && s.skip() == null && s.score() < 100 && urgent(s.d(), s.own());  // structural: the score scale tops at 100 (the owner's aa do)
             if (!canUrge) s.d().urgentSince = -1;          // review: the grace starts afresh every time
-            if (s.d() == cur || s.skip() != null || s.score() >= 100) continue;
+            if (s.d() == cur || s.skip() != null || s.score() >= 100) continue;  // structural: the score scale tops at 100 (the owner's aa do)
             // grace: an urgent challenger with a grace waits that long after it turned urgent (the running step finishes)
             if (canUrge) {
                 if (s.d().urgentSince < 0) s.d().urgentSince = now;
@@ -476,7 +476,7 @@ public final class Brain extends Node {
         if (cands.isEmpty()) return null;
         cands.sort((a, b) -> Double.compare(b.rank(), a.rank()));
         // AA_ROUND2 2: at most MAX_INTERRUPTS_PER_MIN; over the cap a challenger waits
-        while (!interruptTimes.isEmpty() && now - interruptTimes.peekFirst() >= 60_000) interruptTimes.removeFirst();
+        while (!interruptTimes.isEmpty() && now - interruptTimes.peekFirst() >= 60_000) interruptTimes.removeFirst();  // structural: the interrupt limit counts per minute (60 000 ms)
         if (interruptTimes.size() >= maxInterruptsPerMin()) {
             // director 2026-10-19: upkeep at CAP_EXEMPT+ (starving) is not capped; it still needs the probe below
             cands.removeIf(s -> {
@@ -666,7 +666,7 @@ public final class Brain extends Node {
             return;
         }
         Scored top = all.get(order.get(0));
-        if (top.rank() >= 100) { planNote = null; planNext = next; return; }     // review: the next waits out urgent work
+        if (top.rank() >= 100) { planNote = null; planNext = next; return; }     // review: the next waits out urgent work  // structural: the score scale tops at 100 (the owner's aa do)
         String want = null;
         if (next != null) {
             int j = indexOf(all, order, next);
@@ -757,7 +757,7 @@ public final class Brain extends Node {
 
     /** B2: a measured run. */
     void onEnd(Desire d, boolean ok, boolean ran, long ms) {
-        if (ran) stats.record(d.id, ok, ms / 1000.0);       // B2 (2.9): only runs that started a task are measured
+        if (ran) stats.record(d.id, ok, ms / 1000.0);       // B2 (2.9): only runs that started a task are measured  // structural: milliseconds per second
     }
 
     private Status watchdog(Blackboard bb, Desire cur, long now) {
@@ -787,7 +787,7 @@ public final class Brain extends Node {
         boolean fast = !waiting && cur.stuckMs == stuckMs() && now - lastMoveAt >= fastStuckMs() && now - lastProgressAt >= fastStuckMs();
         if (!fast && now - lastProgressAt < cur.stuckMs) return Status.RUNNING;
         stuck++;
-        String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s" + (fast ? " (no move, no bag change)" : "");
+        String why = "stuck: " + cur.id + " made no progress for " + (now - lastProgressAt) / 1000 + "s" + (fast ? " (no move, no bag change)" : "");  // structural: milliseconds per second
         bb.port.log("brain " + why + " - halted, cooling down, the next desire runs");
         bb.port.incident("aa " + why);
         cur.node.halt(why);
@@ -887,8 +887,8 @@ public final class Brain extends Node {
 
     /** "picks 12 (3.1/min), interrupts 0, stuck 0" for aa status. */
     public String counters(long now) {
-        double min = Math.max(1, (now - Math.max(0, bornAt)) / 60000.0);
-        return "brain: picks " + picks + " (" + Math.round(picks / min * 10) / 10.0 + "/min), interrupts " + interrupts
+        double min = Math.max(1, (now - Math.max(0, bornAt)) / 60000.0);  // structural: milliseconds per minute
+        return "brain: picks " + picks + " (" + Math.round(picks / min * 10) / 10.0 + "/min), interrupts " + interrupts  // structural: rounded to one decimal for the text
                 + (interruptsByKind.isEmpty() ? "" : " " + interruptsByKind) + " (false " + falseInterrupts + "), stuck halts " + stuck + ", held " + failures.heldCount(now);
     }
 

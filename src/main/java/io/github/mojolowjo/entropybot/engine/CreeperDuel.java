@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.mojang.logging.LogUtils;
@@ -85,12 +87,12 @@ public final class CreeperDuel {
     /** Whether to take the creeper on: null = yes ({@link #start} next), else why not (an event once per creeper and reason). */
     public String check(Minecraft mc, LocalPlayer p, Creeper c, long now, boolean hurt) {
         if (mode == Mode.FLEE) return "flee is set";
-        if (c.getId() == refusedId && now - refusedAt < 10) return refusedWhy;
+        if (c.getId() == refusedId && now - refusedAt < Tuning.i("creeperDuel.refuseTicks")) return refusedWhy;
         banned.values().removeIf(until -> until <= now);
         CreeperRules.Situation s = situation(mc, p, c, hurt, true, now);
         String why = CreeperRules.refusal(s);
         // review: no sprint at food 6 or less (the back-off is too slow for the fuse); never with a menu open (a job's chest)
-        if (why == null && p.getFoodData().getFoodLevel() <= 6) why = "food " + p.getFoodData().getFoodLevel() + " is too low to sprint";
+        if (why == null && p.getFoodData().getFoodLevel() <= Tuning.i("creeperDuel.sprintFood")) why = "food " + p.getFoodData().getFoodLevel() + " is too low to sprint";
         if (why == null && (mc.screen != null || p.containerMenu != p.inventoryMenu)) why = "a menu is open";
         if (why != null) {
             if (c.getId() != refusedId || !why.equals(refusedWhy)) {
@@ -109,7 +111,7 @@ public final class CreeperDuel {
         creeper = c;
         cycle = new CreeperRules.Cycle();
         startTick = now;
-        nextCheck = now + 20;
+        nextCheck = now + Tuning.i("creeperDuel.checkTicks");
         creeperHp = c.getHealth();
         maxSwelling = 0;
         lastSwelling = 0;
@@ -138,7 +140,7 @@ public final class CreeperDuel {
             }
             // the same verdict as the fight code (0.19.1): Enemy, hostile list, retaliation; never pets or players
             if (d > ReflexRules.lookRadius(hurt) || !Hostility.INSTANCE.kind(e, hurt).counts()) continue;
-            if (ReflexRules.counts(d, hurt, hurt || d <= 2.5 || p.hasLineOfSight(e))) others = true;
+            if (ReflexRules.counts(d, hurt, hurt || d <= Tuning.get("creeperDuel.seenDist") || p.hasLineOfSight(e))) others = true;
         }
         String dim = Guard.dimOf(lv);
         var protect = Guard.INSTANCE.core.policy().protect;
@@ -146,8 +148,8 @@ public final class CreeperDuel {
                 || CreeperRules.nearBox(protect, dim, p.getX(), p.getY(), p.getZ(), CreeperRules.protectMargin());
         int be = 0, built = 0;
         BlockPos cp = c.blockPosition();
-        for (BlockPos q : BlockPos.betweenClosed(cp.offset(-5, -5, -5), cp.offset(5, 5, 5))) {
-            if (q.distSqr(cp) > 25) continue;
+        for (BlockPos q : BlockPos.betweenClosed(cp.offset(-Tuning.i("creeperDuel.scanR"), -Tuning.i("creeperDuel.scanR"), -Tuning.i("creeperDuel.scanR")), cp.offset(Tuning.i("creeperDuel.scanR"), Tuning.i("creeperDuel.scanR"), Tuning.i("creeperDuel.scanR")))) {
+            if (q.distSqr(cp) > Tuning.i("creeperDuel.scanDistSq")) continue;
             BlockState st = lv.getBlockState(q);
             if (st.isAir()) continue;
             if (st.hasBlockEntity()) be++;
@@ -171,21 +173,21 @@ public final class CreeperDuel {
             return end(mc, p, now, "lost the creeper (" + (c.getRemovalReason() == null ? "gone" : c.getRemovalReason().name().toLowerCase()) + ")", false, false, false);
         }
         dist = p.distanceTo(c);
-        if (dist > 20) return end(mc, p, now, "the creeper walked off", false, false, false);
+        if (dist > Tuning.i("creeperDuel.walkedOff")) return end(mc, p, now, "the creeper walked off", false, false, false);
         if (p.getHealth() <= CreeperRules.abortHealth()) return end(mc, p, now, "health " + Math.round(p.getHealth()) + ", running from the creeper", true, false, false);
         if (now >= nextCheck) {
-            nextCheck = now + 20;
+            nextCheck = now + Tuning.i("creeperDuel.checkTicks");
             CreeperRules.Situation s = situation(mc, p, c, hurt, false, now);
             String why = s.creepers() != 1 ? s.creepers() + " creepers now" : s.otherMonsters() ? "another monster came" : s.powered() ? "it is charged"
                     : s.nearProtect() ? "too close to a protect box" : s.nearBuilds() ? "it is next to built blocks" : null;
             if (why != null) return end(mc, p, now, "stopped the creeper duel: " + why, true, false, false);
         }
         float hp = c.getHealth();
-        if (hp < creeperHp - 0.01f) cycle.damaged();
+        if (hp < creeperHp - 0.01f) cycle.damaged();  // structural: epsilon: a health drop
         creeperHp = hp;
         int dir = c.getSwellDir();
         lastSwelling = c.getSwelling(1f);
-        maxSwelling = Math.max(maxSwelling * 0.98f, lastSwelling);
+        maxSwelling = Math.max(maxSwelling * (float) Tuning.get("creeperDuel.swellDecay"), lastSwelling);
         cvx = cvx * 0.5 + (c.getX() - lastCx) * 0.5;
         cvz = cvz * 0.5 + (c.getZ() - lastCz) * 0.5;
         lastCx = c.getX();
@@ -198,11 +200,11 @@ public final class CreeperDuel {
         if (backing) {
             // progress along the line (the bot's own, whatever the creeper does)
             double along = p.getX() * backX + p.getZ() * backZ;
-            if (along > bestBack + 0.05) {
+            if (along > bestBack + Tuning.get("creeperDuel.backGain")) {
                 bestBack = along;
                 bestBackTick = now;
             }
-            stalled = now - bestBackTick > 12;
+            stalled = now - bestBackTick > Tuning.i("creeperDuel.stallTicks");
         }
         boolean weapon = weaponRankOf(p.getMainHandItem()) > 0;
         float cooldown = weapon ? p.getAttackStrengthScale(0f) : 0f;
@@ -211,7 +213,7 @@ public final class CreeperDuel {
         // the ground towards it: a charge never runs into a hole or water (the last 1.5 blocks are the creeper's own)
         boolean pathIn = true;
         if (!backing) {
-            double need = Math.min(Math.max(dist - 1.5, 0), 6);
+            double need = Math.min(Math.max(dist - Tuning.get("creeperDuel.stopMargin"), 0), 6);
             pathIn = need < 0.5 || CreeperRules.retreatLine((x, y, z) -> cell(mc.level, new BlockPos(x, y, z)), p.getX(), footY(mc.level, p), p.getZ(),
                     c.getX() - p.getX(), c.getZ() - p.getZ(), need).clear() >= need;
         }
@@ -227,7 +229,7 @@ public final class CreeperDuel {
                 holdWeapon(mc, p);
                 face(p, c);
                 moveKeys(mc, true, p.horizontalCollision && p.onGround());
-                if (p.getFoodData().getFoodLevel() > 6 && !p.isSprinting()) p.setSprinting(true);
+                if (p.getFoodData().getFoodLevel() > Tuning.i("creeperDuel.sprintFood") && !p.isSprinting()) p.setSprinting(true);
             }
             case HIT -> {
                 face(p, c);
@@ -238,9 +240,9 @@ public final class CreeperDuel {
             }
             case BACK -> {
                 if (lastAct != Act.BACK && lastAct != Act.HIT) startBack(p, c, now);
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(p.getX() + backX * 5, p.getEyeY(), p.getZ() + backZ * 5)); } catch (RuntimeException caught) { Quiet.warn("CreeperDuel.tick failed, carrying on with the fallback", caught); }
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(p.getX() + backX * Tuning.i("creeperDuel.lookBack"), p.getEyeY(), p.getZ() + backZ * Tuning.i("creeperDuel.lookBack"))); } catch (RuntimeException caught) { Quiet.warn("CreeperDuel.tick failed, carrying on with the fallback", caught); }
                 moveKeys(mc, true, p.horizontalCollision && p.onGround());
-                if (p.getFoodData().getFoodLevel() > 6 && !p.isSprinting()) p.setSprinting(true);
+                if (p.getFoodData().getFoodLevel() > Tuning.i("creeperDuel.sprintFood") && !p.isSprinting()) p.setSprinting(true);
             }
             case SHOOT -> {
                 moveKeys(mc, false, false);
@@ -279,7 +281,7 @@ public final class CreeperDuel {
         stopDrawing(mc, p);
         moveKeys(mc, false, false);
         if (flee) banned.put(c.getId(), now + CreeperRules.giveUpTicks());
-        long secs = (now - startTick) / 20;
+        long secs = (now - startTick) / 20;  // game fact: 20 game ticks per second
         LOG.info("[entropybot] creeper duel: {} after {} s, {} hits, {} charges", text, secs, cycle.hits(), cycle.charges());
         events.push("job", "creeper duel: " + text + " (" + secs + " s)", null);
         creeper = null;
@@ -305,7 +307,7 @@ public final class CreeperDuel {
 
     private static int weaponRank(LocalPlayer p) {
         int best = 0;
-        for (int i = 0; i < 36; i++) best = Math.max(best, weaponRankOf(p.getInventory().getItem(i)));
+        for (int i = 0; i < 36; i++) best = Math.max(best, weaponRankOf(p.getInventory().getItem(i)));  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
         return best;
     }
 
@@ -313,7 +315,7 @@ public final class CreeperDuel {
     private static void holdWeapon(Minecraft mc, LocalPlayer p) {
         var inv = p.getInventory();
         int best = -1, bestRank = 0;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             int r = weaponRankOf(inv.getItem(i));
             if (r > bestRank) { bestRank = r; best = i; }
         }
@@ -325,7 +327,7 @@ public final class CreeperDuel {
 
     private static int bowSlot(LocalPlayer p) {
         var inv = p.getInventory();
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = inv.getItem(i);
             if (s.getItem() instanceof BowItem && !p.getProjectile(s).isEmpty()) return i;
         }
@@ -336,7 +338,7 @@ public final class CreeperDuel {
     private double aimPitch(LocalPlayer p, Creeper c) {
         Vec3 eye = p.getEyePosition();
         double dx = c.getX() - eye.x, dz = c.getZ() - eye.z;
-        return CreeperRules.bowPitch(Math.sqrt(dx * dx + dz * dz), c.getY() + c.getBbHeight() * 0.5 - (eye.y - 0.1), CreeperRules.ARROW_SPEED);
+        return CreeperRules.bowPitch(Math.sqrt(dx * dx + dz * dz), c.getY() + c.getBbHeight() * 0.5 - (eye.y - 0.1), CreeperRules.ARROW_SPEED);  // structural: aim at the eye of the target: 0.1 block correction
     }
 
     private void shoot(Minecraft mc, LocalPlayer p, Creeper c, long now) {
@@ -353,9 +355,9 @@ public final class CreeperDuel {
         double ft = CreeperRules.flightTicks(Math.sqrt(dx0 * dx0 + dz0 * dz0), pitch, CreeperRules.ARROW_SPEED);
         double tx = c.getX() + cvx * ft, tz = c.getZ() + cvz * ft;
         double dx = tx - eye.x, dz = tz - eye.z;
-        pitch = CreeperRules.bowPitch(Math.sqrt(dx * dx + dz * dz), c.getY() + c.getBbHeight() * 0.5 - (eye.y - 0.1), CreeperRules.ARROW_SPEED);
+        pitch = CreeperRules.bowPitch(Math.sqrt(dx * dx + dz * dz), c.getY() + c.getBbHeight() * 0.5 - (eye.y - 0.1), CreeperRules.ARROW_SPEED);  // structural: aim at the eye of the target: 0.1 block correction
         if (Double.isNaN(pitch)) return;
-        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);  // structural: degrees
         p.setYRot(yaw);
         p.setYHeadRot(yaw);
         p.setXRot((float) pitch);
@@ -371,7 +373,7 @@ public final class CreeperDuel {
             mc.gameMode.releaseUsingItem(p);
             mc.options.keyUse.setDown(false);
             arrows++;
-            nextDraw = now + 5;
+            nextDraw = now + Tuning.i("creeperDuel.drawGapTicks");
         }
     }
 
@@ -388,7 +390,7 @@ public final class CreeperDuel {
 
     /** The block the feet are in; one higher when the bot stands on a slab or a path block (its cell is not free). */
     static int footY(Level lv, LocalPlayer p) {
-        int y = (int) Math.floor(p.getY() + 1e-3);
+        int y = (int) Math.floor(p.getY() + 1e-3);  // structural: epsilon
         if (cell(lv, BlockPos.containing(p.getX(), y, p.getZ())) == Cell.FLOOR) y++;
         return y;
     }
@@ -403,7 +405,7 @@ public final class CreeperDuel {
         VoxelShape sh = st.getCollisionShape(lv, pos);
         if (sh.isEmpty()) return Cell.FREE;
         double top = sh.max(Direction.Axis.Y);
-        if (top <= 0.2) return Cell.FREE;          // carpets, a thin snow layer: walked over
+        if (top <= 0.2) return Cell.FREE;          // carpets, a thin snow layer: walked over  // game fact: a block up to 0.2 high (carpet, thin snow) is walked over
         if (top > 1.0) return Cell.BAD;            // fences, walls
         return top >= 0.5 ? Cell.FLOOR : Cell.BAD;
     }

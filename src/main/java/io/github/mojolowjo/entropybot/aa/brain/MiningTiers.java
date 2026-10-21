@@ -63,7 +63,7 @@ public final class MiningTiers {
         if (itemId == null || kind == null) return 0;
         if (!ItemWorth.hasData()) { ItemWorth.warnOnce("tier", "no item data loaded: no tool has a tier"); return 0; }
         var f = ItemWorth.facts(itemId);
-        if (kind.equalsIgnoreCase("sword")) return f.role() == ItemWorth.Role.WEAPON ? (int) Math.max(1, Math.round(f.attack() - 3)) : 0;      // a weapon's tier is its hit: 4 -> 1 ... 8 -> 5
+        if (kind.equalsIgnoreCase("sword")) return f.role() == ItemWorth.Role.WEAPON ? (int) Math.max(1, Math.round(f.attack() - Tuning.i("miningTiers.swordBase"))) : 0;      // a weapon's tier is its hit: 4 -> 1 ... 8 -> 5
         if (f.digSpeed() <= 0 || !f.role().name().equalsIgnoreCase(kind)) return 0;
         return f.digLevel() + 1;
     }
@@ -117,7 +117,7 @@ public final class MiningTiers {
             need.put(id, base >= 0 ? base : made.contains(id) ? UNREACHABLE : 0);
         }
         boolean changed = true;
-        for (int pass = 0; changed && pass < 64; pass++) {
+        for (int pass = 0; changed && pass < 64; pass++) {  // structural: iteration cap of the tier fix-point
             changed = false;
             for (TechTree.Recipe r : t.recipes()) {
                 int worst = 0;
@@ -175,7 +175,7 @@ public final class MiningTiers {
         java.util.Collections.sort(names);
         double share = of == 0 ? 0 : w / of;
         String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound items not had need better than tier %d, weighted by the tier still missing %.2f%s",
-                names.size(), of, pickTier, share, names.size() > 8 ? " (" + String.join(", ", names.subList(0, 8)) + ", ...)" : names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
+                names.size(), of, pickTier, share, names.size() > 8 ? " (" + String.join(", ", names.subList(0, 8)) + ", ...)" : names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");  // structural: display: how many items a text lists
         Result res = new Result(names.size(), of, share, names, terms);
         synchronized (MiningTiers.class) { lastTree = t; lastSource = s; lastKey = ck; lastResult = res; }
         return res;

@@ -108,7 +108,7 @@ public final class FoodOptions {
 
     static double eatCost() { return Tuning.get("foodOptions.eatCost"); }
     /** Energy per round of the slow ways, read from the food data when scored (the data loads after the class does). */
-    static double berryYield() { return 2.5 * FoodModel.energyOf("sweet_berries"); }
+    static double berryYield() { return Tuning.get("foodOptions.berryYieldK") * FoodModel.energyOf("sweet_berries"); }
     static double appleYield() { return FoodModel.energyOf("apple"); }
     static double stewYield() { return FoodModel.energyOf("mushroom_stew"); }
 
@@ -133,7 +133,7 @@ public final class FoodOptions {
             List<String> dropped = new ArrayList<>();
             double bagE = FoodModel.energy(f.bag());
             // review: a slow way picked again with no food gained since is charged as a failure (no endless re-runs)
-            if (lastKey != null && SLOW.contains(lastKey) && bagE <= lastE + 0.1 && !m.blocked(lastKey, now)) {
+            if (lastKey != null && SLOW.contains(lastKey) && bagE <= lastE + Tuning.get("foodOptions.noGain") && !m.blocked(lastKey, now)) {
                 m.failed(lastKey, "no food gained last time", now);
                 lastKey = null;
             }
@@ -142,7 +142,7 @@ public final class FoodOptions {
             int best = FoodModel.bestNutrition(f.bag());
 
             // eat from the bag first
-            if (best > 0 && (urgent || 20 - f.food() >= best))
+            if (best > 0 && (urgent || 20 - f.food() >= best))  // game fact: the food bar is 20 points
                 RungOptions.add(rows, dropped, m, now, Options.typed("eat", "eat", List.of(new Step.Eat()), eatCost(), "the bag's best gives " + best, "eat", m));
 
             // cook what is raw
@@ -157,7 +157,7 @@ public final class FoodOptions {
                 int n = Math.min(16, f.has(raw));
                 if (!f.furnace()) dropped.add("cook " + raw + ": no furnace known or in the bag");
                 else RungOptions.add(rows, dropped, m, now, Options.typed("cook " + raw, "cook", List.of(new Step.Cook(raw, n)),
-                        Options.MINUTE * (0.5 + n / 6.0), n + " raw " + raw + " in the bag", "cook", m));
+                        Options.MINUTE * (0.5 + n / Tuning.get("foodOptions.cookPerMin")), n + " raw " + raw + " in the bag", "cook", m));
             }
 
             hunt(f, m, now, rows, dropped, short_);
@@ -165,20 +165,20 @@ public final class FoodOptions {
             // berries, stew, apples: little per round, charged per round needed
             if (f.berry() != null)
                 RungOptions.add(rows, dropped, m, now, Options.typed("berries", "forage", List.of(dig(f.berry())),
-                        (f.berryDist() + Options.MINUTE * 0.3) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", m));
+                        (f.berryDist() + Options.MINUTE * Tuning.get("foodOptions.berryMin")) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", m));
             stew(f, m, now, rows, dropped, short_);
             if (f.oak() != null)
                 RungOptions.add(rows, dropped, m, now, Options.typed("apples", "apples", List.of(
                                 new Step.Walk(f.oak()[0], f.oak()[1], f.oak()[2], (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.walkNear")),
                                 new Step.ChopTree(f.oak(), 16, "minecraft:" + f.oakType() + "_log")),
-                        Options.MINUTE * 4 * rounds(short_, appleYield()), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", m));
+                        Options.MINUTE * Tuning.i("foodOptions.appleMin") * rounds(short_, appleYield()), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", m));
 
             wheat(f, m, now, rows, dropped, urgent);
 
             // water ways (aa-kelpfish): kelp columns -> dried kelp, a rod -> fish; costed per round like the other slow ways
             for (var w : io.github.mojolowjo.entropybot.camp.FoodPlan.waterWays(f.bag() == null ? Map.of() : f.bag(), f.kelpNear(), f.waterNear(), f.furnace(), dropped)) {
                 boolean kelp = w.name().equals("kelp");
-                double each = kelp ? 8 * FoodModel.energyOf("dried_kelp") : 4 * FoodModel.energyOf(f.furnace() ? "cooked_cod" : "cod");
+                double each = kelp ? Tuning.i("foodOptions.kelpPerTrip") * FoodModel.energyOf("dried_kelp") : Tuning.i("foodOptions.fishPerTrip") * FoodModel.energyOf(f.furnace() ? "cooked_cod" : "cod");
                 RungOptions.add(rows, dropped, m, now, Options.typed(w.name(), "water", w.steps(),
                         Options.MINUTE * (kelp ? 4 : 5) * rounds(short_, each), w.why(), w.name(), m));
             }
@@ -223,7 +223,7 @@ public final class FoodOptions {
             String meat = meatOf(h.type()), cooked = FoodModel.cooked(meat);
             double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
             int n = Math.max(2, Math.min(Math.min(8, Math.max(2, h.count())), FoodModel.count(short_, each)));
-            double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
+            double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / Tuning.get("foodOptions.cookPerMin")) : 0);
             double cost = trip / Math.max(herdMinConf(), h.conf());
             String key = "sighting/animal " + h.type() + " " + h.x() + " " + h.z();
             Options.Option o = Options.typed("go hunt " + h.type(), "hunt", huntSteps(h.type(), n, new int[]{h.x(), h.z()}, f.furnace() ? meat : null), cost,
@@ -273,7 +273,7 @@ public final class FoodOptions {
         double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
         // owner's rule 2026-10-19: the walk to the animals is priced (there and back, divided by the food urgency)
-        double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0)
+        double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / Tuning.get("foodOptions.cookPerMin")) : 0)
                 + io.github.mojolowjo.entropybot.aa.brain.Costs.huntTravel(f.huntDist(), f.food(), f.health());
         RungOptions.add(rows, dropped, m, now, Options.typed("hunt " + animal, "hunt", huntSteps(animal, n, null, f.furnace() ? meat : null), cost,
                 most + " " + animal + " in reach (" + io.github.mojolowjo.entropybot.aa.brain.Costs.huntTerms(f.huntDist(), f.food(), f.health()) + ")"
@@ -294,7 +294,7 @@ public final class FoodOptions {
         if (!red || !brown) { dropped.add("stew: only a " + (red ? "red" : "brown") + " mushroom seen"); return; }
         int planks = 0;
         if (f.bag() != null) for (var e : f.bag().entrySet()) if (e.getKey().endsWith("_planks")) planks += e.getValue();
-        if (f.has("bowl") == 0 && planks < 3) { dropped.add("stew: no bowl and under 3 planks"); return; }
+        if (f.has("bowl") == 0 && planks < 3) { dropped.add("stew: no bowl and under 3 planks"); return; }  // game fact: a bowl takes 3 planks
         List<Step> steps = new ArrayList<>();
         double walk = 0;
         if (f.has("red_mushroom") == 0) { steps.add(dig(f.red())); walk += dist(f.me(), f.red()); }
@@ -311,23 +311,23 @@ public final class FoodOptions {
         int seeds = f.has("wheat_seeds");
         List<Step> seedsStep = new ArrayList<>();
         double seedsCost;
-        if (seeds >= 4) seedsCost = 0;
+        if (seeds >= Tuning.i("foodOptions.seedsEnough")) seedsCost = 0;
         else if (f.grass() != null) {
             seedsStep.add(new Step.DigArea(f.grass(), 1));
-            seedsCost = Options.MINUTE * 3;
+            seedsCost = Options.MINUTE * Tuning.i("foodOptions.seedMin");
         } else { dropped.add("wheat: " + seeds + "/4 seeds and no grass patch near"); return; }
-        String seedWhy = seeds >= 4 ? seeds + " seeds" : "seeds from a grass patch";
+        String seedWhy = seeds >= Tuning.i("foodOptions.seedsEnough") ? seeds + " seeds" : "seeds from a grass patch";
         // aa383 (the field failed "no water within 4 - give me a water bucket"): the field goes where water is (a dry cell
         // next to a water source, AaRuntime.foodFacts), or here with a water bucket from the bag; each costed
         if (f.waterSpot() != null) {
             int[] w = f.waterSpot();
             RungOptions.add(rows, dropped, m, now, Options.typed("wheat by water", "farm",
                     Options.seq(seedsStep, new Step.Walk(w[0], w[1], w[2], 0), new Step.FarmPlant("wheat", 4), new Step.MarkFarm(w)),
-                    Options.MINUTE * 6 + seedsCost + dist(f.me(), w), seedWhy + ", a field by the water at " + w[0] + " " + w[1] + " " + w[2] + " (slow, endless)", "wheat", m));
+                    Options.MINUTE * Tuning.i("foodOptions.wheatFieldMin") + seedsCost + dist(f.me(), w), seedWhy + ", a field by the water at " + w[0] + " " + w[1] + " " + w[2] + " (slow, endless)", "wheat", m));
         } else dropped.add("wheat by water: no dry spot next to water near");
         if (f.has("water_bucket") > 0) {
             RungOptions.add(rows, dropped, m, now, Options.typed("wheat with a bucket", "farm", Options.seq(seedsStep, new Step.FarmPlant("wheat", 4), new Step.MarkFarm(f.me())),
-                    Options.MINUTE * 7 + seedsCost, seedWhy + ", water from my bucket: a field here (slow, endless)", "wheat bucket", m));
+                    Options.MINUTE * Tuning.i("foodOptions.wheatBucketMin") + seedsCost, seedWhy + ", water from my bucket: a field here (slow, endless)", "wheat bucket", m));
         } else dropped.add("wheat with a bucket: no water bucket" + (f.has("bucket") > 0 ? " (an empty one: no verb fills it yet)" : ""));
     }
 

@@ -17,7 +17,7 @@ public final class MoveRules {
 
     /** Bounds 1..64 (1 = a danger area costs nothing extra): the value when in bounds, else {@code was}. */
     public static double danger(double m, double was) {
-        return !Double.isNaN(m) && m >= 1 && m <= 64 ? m : was;
+        return !Double.isNaN(m) && m >= 1 && m <= 64 ? m : was;  // structural: a walk distance setting range 1..64
     }
 
     /**
@@ -33,7 +33,7 @@ public final class MoveRules {
         Box ko = p.keepOutAt(dim, x, y, z);
         if (ko == null) ko = p.keepOutAt(dim, x, y + 1, z);
         if (ko != null) {
-            boolean startedInside = at != null && at.length >= 3 && (ko.contains(dim, at[0], at[1], at[2]) || ko.contains(dim, at[0], at[1] + 1, at[2]));
+            boolean startedInside = at != null && at.length >= 3 && (ko.contains(dim, at[0], at[1], at[2]) || ko.contains(dim, at[0], at[1] + 1, at[2]));  // structural: a position has 3 coordinates
             // review 2: only the way out is dear - cells within the start's distance to the box's edge (plus the slack), the
             // rest of the box stays impassable, so the bot leaves by the nearest side and never crosses the box
             return startedInside && wayOut(ko, at, x, y, z) ? dear : COST_INF;

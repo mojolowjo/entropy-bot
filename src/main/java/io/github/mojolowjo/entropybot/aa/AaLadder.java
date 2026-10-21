@@ -34,7 +34,7 @@ public final class AaLadder {
 
     /** No table in the bag and planks for one (4): make the spare. */
     public static boolean spareTableWanted(boolean tableInBag, int planks) {
-        return !tableInBag && planks >= 4;
+        return !tableInBag && planks >= 4;  // game fact: a crafting table takes 4 planks
     }
 
     /** Seen within this many blocks of the camp or base mark, a table/furnace counts as the camp's (latched). */

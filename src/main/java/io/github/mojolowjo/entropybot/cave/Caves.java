@@ -197,7 +197,7 @@ public final class Caves {
     /** The bot is at x y z inside the cave: the coarse cells within 4 blocks count as explored. */
     public synchronized void visit(Cave c, int x, int y, int z, long nowMs, long tick) {
         int before = c.visited.size();
-        for (int dx = -4; dx <= 4; dx += 4) for (int dy = -4; dy <= 4; dy += 4) for (int dz = -4; dz <= 4; dz += 4) {
+        for (int dx = -Tuning.i("caves.probeStep"); dx <= Tuning.i("caves.probeStep"); dx += Tuning.i("caves.probeStep")) for (int dy = -Tuning.i("caves.probeStep"); dy <= Tuning.i("caves.probeStep"); dy += Tuning.i("caves.probeStep")) for (int dz = -Tuning.i("caves.probeStep"); dz <= Tuning.i("caves.probeStep"); dz += Tuning.i("caves.probeStep")) {
             if (c.visited.size() >= MAX_VISITED) break;
             c.visited.add(CaveSearch.coarse(x + dx, y + dy, z + dz));
         }

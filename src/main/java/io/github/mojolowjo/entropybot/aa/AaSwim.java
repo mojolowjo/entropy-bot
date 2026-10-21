@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 /** 0.36.a2: pure decision for AA's swim-up (hold jump in water). Only the air danger, never while the air reflex or another danger has the bot. */
 public final class AaSwim {
     private AaSwim() {}
@@ -17,6 +19,6 @@ public final class AaSwim {
                                boolean otherDanger, boolean wasSwimming) {
         if (!dangerDrives || !inWater || reflexHolds || otherDanger) return false;
         if (air >= maxAir) return false;
-        return wasSwimming || air < 100;
+        return wasSwimming || air < Tuning.i("aaSwim.airUrgent");
     }
 }

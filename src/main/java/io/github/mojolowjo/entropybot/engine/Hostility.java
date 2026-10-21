@@ -149,7 +149,7 @@ public final class Hostility {
     public static double weaponHit(net.minecraft.client.player.LocalPlayer p) {
         var inv = p.getInventory();
         double best = 1;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = inv.getItem(i);
             if (!(s.getItem() instanceof SwordItem) && !(s.getItem() instanceof AxeItem)) continue;
             double[] add = {0};

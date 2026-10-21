@@ -69,7 +69,7 @@ public final class JunkDrop {
     /** Notes a throw from feet x y z at tick now (the last 8 are kept). */
     public static void noteThrow(ClearJob job, double x, double y, double z, long now) {
         job.thrown.add(new double[]{x, y, z, now});
-        while (job.thrown.size() > 8) job.thrown.remove(0);
+        while (job.thrown.size() > Tuning.i("junkDrop.thrownKeep")) job.thrown.remove(0);
     }
 
     /** A drop at x y z lies where it threw junk within the last {@link #THROWN_TICKS}. */
@@ -116,9 +116,9 @@ public final class JunkDrop {
         } else {
             dx = x - (box.x1() + box.x2() + 1) / 2.0;
             dz = z - (box.z1() + box.z2() + 1) / 2.0;
-            if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) dx = -1;
+            if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) dx = -1;  // structural: epsilon
         }
-        return (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90);
+        return (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90);  // structural: degrees
     }
 
     /** "threw away 320 cobbled_deepslate, 64 tuff". */

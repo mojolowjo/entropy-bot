@@ -56,7 +56,7 @@ public final class LootBook {
         }
 
         private String odds() {
-            return chance >= 0.995 ? "about " + fmt(per) + " each" : Math.round(chance * 100) + "%";
+            return chance >= 0.995 ? "about " + fmt(per) + " each" : Math.round(chance * 100) + "%";  // structural: display: a chance of 99.5% or more is shown as per-item; percent
         }
     }
 
@@ -139,7 +139,7 @@ public final class LootBook {
         if (p.text() == null || herds == null || !(p.step() instanceof io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt hu)) return p;
         int[] h = herds.get(hu.type());
         if (h == null) return p;
-        return new Plan(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt(hu.type(), hu.n(), new int[]{h[0], h[1]}, hu.forItem(), hu.forCount()), p.text() + " at " + h[0] + " " + h[1] + " (seen there, " + h[2] + " away, confidence " + String.format(Locale.ROOT, "%.2f", h[3] / 100.0) + ")");
+        return new Plan(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt(hu.type(), hu.n(), new int[]{h[0], h[1]}, hu.forItem(), hu.forCount()), p.text() + " at " + h[0] + " " + h[1] + " (seen there, " + h[2] + " away, confidence " + String.format(Locale.ROOT, "%.2f", h[3] / 100.0) + ")");  // structural: percent
     }
 
     private Plan plan0(String item, int n, int stopAt, Ctx ctx, boolean fightOk) {
@@ -162,7 +162,7 @@ public final class LootBook {
             if (!c.huntingOn()) { if (why == null) why = "kill " + m + ": hunting is off (hunting on)"; continue; }
             if (!passive && !allowed) { if (why == null) why = "kill " + m + ": hostile, not in the animals kind (kinds animals add " + m + ")"; continue; }
             if (!passive && !fightOk) { if (why == null) why = "kill " + m + ": the fight rules say no now (weapon, health or danger)"; continue; }
-            if (s.player() && s.chance() < 0.01) continue;
+            if (s.player() && s.chance() < Tuning.get("lootBook.minChance")) continue;
             int k = (int) Math.ceil(n / Math.max(0.05, s.per()));
             return new Plan(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt(s.from(), Math.min(k, 64), null, id, Math.max(n, stopAt)), "kill " + m + " for " + Thing.shortId(id));
         }
@@ -184,7 +184,7 @@ public final class LootBook {
 
     private static void parse(JsonElement table, Function<String, JsonElement> lookup, double mult, boolean player,
                               Map<String, double[]> out, Set<String> path, int depth) {
-        if (table == null || !table.isJsonObject() || depth > 4) return;
+        if (table == null || !table.isJsonObject() || depth > 4) return;  // structural: loot table nesting depth cap
         JsonObject t = table.getAsJsonObject();
         if (!t.has("pools") || !t.get("pools").isJsonArray()) return;
         for (JsonElement pe : t.getAsJsonArray("pools")) {
@@ -315,7 +315,7 @@ public final class LootBook {
     }
 
     static String fmt(double v) {
-        return v >= 10 ? String.valueOf(Math.round(v)) : String.valueOf(Math.round(v * 10) / 10.0);
+        return v >= 10 ? String.valueOf(Math.round(v)) : String.valueOf(Math.round(v * 10) / 10.0);  // structural: rounded to one decimal for the text
     }
 }
 

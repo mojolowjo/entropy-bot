@@ -65,7 +65,7 @@ public final class LightGrid {
         if (stored >= missing) return new Supply(Source.FETCH, missing, "get torch " + missing);
         // coal or charcoal first, and then only what it makes (no furnace trip that a busy furnace can sink, live 0.23.1);
         // logs (charcoal at a furnace) only when there is no coal at all
-        int canMake = fuel > 0 ? fuel * 4 : furnaceNear ? logs * 4 : 0;
+        int canMake = fuel > 0 ? fuel * 4 : furnaceNear ? logs * 4 : 0;  // game fact: a coal makes 4 torches / a log makes 4 planks
         if (canMake > 0) {
             int n = Math.min(missing, canMake);
             return new Supply(Source.CRAFT, n, "craft torch " + n + (fuel == 0 ? " (charcoal from my logs first)" : ""));

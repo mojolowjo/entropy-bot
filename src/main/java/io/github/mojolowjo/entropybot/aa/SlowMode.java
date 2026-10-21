@@ -80,7 +80,7 @@ public final class SlowMode {
             return true;
         }
         if (goFlag) return release(key, "go");
-        if (now - since >= Math.round(pauseS * 1000)) {
+        if (now - since >= Math.round(pauseS * 1000)) {  // structural: milliseconds per second
             timeouts++;
             return release(key, "no word in " + Math.round(pauseS) + " s");
         }
@@ -111,7 +111,7 @@ public final class SlowMode {
 
     public String status(long now, double pauseS) {
         String s = "slow " + mode.name().toLowerCase(Locale.ROOT);
-        if (pending != null) s += " (waiting for go: " + pending.kind() + " " + pending.key() + ", " + Math.max(0, Math.round(pauseS - (now - since) / 1000.0)) + " s left)";
+        if (pending != null) s += " (waiting for go: " + pending.kind() + " " + pending.key() + ", " + Math.max(0, Math.round(pauseS - (now - since) / 1000.0)) + " s left)";  // structural: milliseconds per second
         return s + "; gates " + gates + ", go " + goes + ", silence " + timeouts + (lastRelease.isEmpty() ? "" : ", last " + lastRelease);
     }
 
@@ -130,7 +130,7 @@ public final class SlowMode {
         j.addProperty("desire", p.desire());
         j.addProperty("way", p.way());
         j.addProperty("totalS", num(p.totalS()));
-        j.addProperty("secondsLeft", Math.max(0, Math.round(pauseS - (now - since) / 1000.0)));
+        j.addProperty("secondsLeft", Math.max(0, Math.round(pauseS - (now - since) / 1000.0)));  // structural: milliseconds per second
         j.addProperty("next", p.next());
         JsonArray st = new JsonArray();
         for (Step s : p.steps()) {
@@ -157,5 +157,5 @@ public final class SlowMode {
         return o;
     }
 
-    private static double num(double v) { return Double.isFinite(v) ? Math.round(v * 10) / 10.0 : -1; }
+    private static double num(double v) { return Double.isFinite(v) ? Math.round(v * 10) / 10.0 : -1; }  // structural: rounded to one decimal for the text
 }

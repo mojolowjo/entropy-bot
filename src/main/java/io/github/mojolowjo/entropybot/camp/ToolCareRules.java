@@ -75,7 +75,7 @@ public final class ToolCareRules {
      */
     public static String replacement(String kind, String same, Set<String> stored, Map<String, Integer> have) {
         if (same != null && stored.contains(same)) return "get " + shortId(same) + " 1";
-        if (kind.equals("shield")) return have.getOrDefault("minecraft:iron_ingot", 0) >= 1 && planks(have) >= 6 ? "craft shield 1" : null;
+        if (kind.equals("shield")) return have.getOrDefault("minecraft:iron_ingot", 0) >= 1 && planks(have) >= 6 ? "craft shield 1" : null;  // game fact: a shield takes 6 planks and 1 iron ingot
         int head = switch (kind) {
             case "axe" -> 3;
             case "sword", "hoe" -> 2;
@@ -84,7 +84,7 @@ public final class ToolCareRules {
         int sticks = kind.equals("sword") ? 1 : 2;
         boolean wood = planks(have) * 2 + have.getOrDefault("minecraft:stick", 0) >= sticks + 2;
         if (!wood) return null;
-        if (have.getOrDefault("minecraft:iron_ingot", 0) >= head && tier(same) >= 3) return "craft iron_" + kind + " 1";
+        if (have.getOrDefault("minecraft:iron_ingot", 0) >= head && tier(same) >= 3) return "craft iron_" + kind + " 1";  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
         int stone = have.getOrDefault("minecraft:cobblestone", 0) + have.getOrDefault("minecraft:cobbled_deepslate", 0);
         if (stone >= head) return "craft stone_" + kind + " 1";
         if (planks(have) >= head + 2) return "craft wooden_" + kind + " 1";
@@ -95,7 +95,7 @@ public final class ToolCareRules {
         int n = 0;
         for (Map.Entry<String, Integer> e : have.entrySet()) {
             if (e.getKey().endsWith("_planks")) n += e.getValue();
-            else if (e.getKey().endsWith("_log")) n += 4 * e.getValue();
+            else if (e.getKey().endsWith("_log")) n += 4 * e.getValue();  // game fact: a log makes 4 planks
         }
         return n;
     }

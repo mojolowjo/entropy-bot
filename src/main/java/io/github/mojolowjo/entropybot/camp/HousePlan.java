@@ -139,7 +139,7 @@ public final class HousePlan {
         int[] door = doorXz(side, cx, cz, x1, z1, x2, z2);
         // the stations against the back wall (opposite the door), side by side at the middle
         int[][] st = new int[3][];
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 3; i++) {  // structural: fixed three-step loop over the wall layers
             int o = i - 1;
             st[i] = switch (side) {
                 case 'n' -> new int[]{cx + o, iy, z2 - 1};
@@ -199,7 +199,7 @@ public final class HousePlan {
         // through the door to the middle of the room first; every station is within 3 blocks of it
         out.add("goto " + cx + " " + iy + " " + cz);
         List<String> missing = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 3; i++) {  // structural: fixed three-step loop over the wall layers
             String s = STATIONS[i];
             if (Boolean.TRUE.equals(f.standing().get(s))) { if (pr != null) skipped.add(s); continue; }
             if (f.inv().getOrDefault("minecraft:" + s, 0) <= 0) {

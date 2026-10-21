@@ -178,7 +178,7 @@ public final class McClearWorld implements ClearWorld {
         BlockState st = at(x, y, z);
         Inventory inv = p.getInventory();
         List<Tools.Slot> out = new ArrayList<>();
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack s = inv.getItem(i);
             if (s.isEmpty()) continue;
             out.add(new Tools.Slot(i, BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), s.isCorrectToolForDrops(st), s.getDestroySpeed(st)));

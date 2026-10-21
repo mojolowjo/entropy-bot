@@ -57,18 +57,18 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
      * coordinate follows; "+N" is always the surface form.
      */
     public static String signedForm(String[] w) {
-        if (w.length < 5 || !w[4].matches("^[+-]\\d{1,4}$")) return null;
+        if (w.length < 5 || !w[4].matches("^[+-]\\d{1,4}$")) return null;  // structural: argument positions of the dig command
         if (w[4].startsWith("+")) return "up";
-        if (w.length > 5 && RelCoord.parse(w[5], 0) != null) return null;
+        if (w.length > 5 && RelCoord.parse(w[5], 0) != null) return null;  // structural: argument positions of the dig command
         return "down";
     }
 
     /** The new form of an old "dig x1 z1 x2 z2 down|up N [words]" (V1b), or null when the line isn't one. */
     public static String oldSurfaceHint(String rest) {
         String[] w = rest == null ? new String[0] : rest.trim().split("\\s+");
-        if (w.length < 6 || !(w[4].equalsIgnoreCase("down") || w[4].equalsIgnoreCase("up")) || !w[5].matches("^\\d{1,4}$")) return null;
+        if (w.length < 6 || !(w[4].equalsIgnoreCase("down") || w[4].equalsIgnoreCase("up")) || !w[5].matches("^\\d{1,4}$")) return null;  // structural: argument positions of the dig command
         StringBuilder sb = new StringBuilder("dig ");
-        for (int i = 0; i < 4; i++) sb.append(w[i]).append(' ');
+        for (int i = 0; i < 4; i++) sb.append(w[i]).append(' ');  // structural: argument positions of the dig command
         sb.append(w[4].equalsIgnoreCase("down") ? "-" : "+").append(w[5]);
         for (int i = 6; i < w.length; i++) sb.append(' ').append(w[i]);
         return sb.toString();
@@ -83,7 +83,7 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
     public static DigArgs parse(String rest, int[] base) {
         int[] b = base == null ? new int[3] : base;
         String[] w = rest == null ? new String[0] : rest.trim().split("\\s+");
-        if (w.length < 5) return null;
+        if (w.length < 5) return null;  // structural: argument positions of the dig command
         String surface = null;
         int depth = 0, from;
         int[] n;
@@ -92,7 +92,7 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
         if (signed != null) {
             n = new int[4];
             int[] axis = {0, 2, 0, 2};
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 4; i++) {  // structural: argument positions of the dig command
                 Integer v = RelCoord.parse(w[i], b[axis[i]]);
                 if (v == null) return null;
                 n[i] = v;
@@ -105,12 +105,12 @@ public record DigArgs(int[] n, boolean force, boolean ores, boolean floor, Strin
             depth = SurfaceDig.clampN(depth);
             surface = signed;
             from = 5;
-        } else if (w.length < 6 || w[4].equalsIgnoreCase("down") || w[4].equalsIgnoreCase("up")) {
+        } else if (w.length < 6 || w[4].equalsIgnoreCase("down") || w[4].equalsIgnoreCase("up")) {  // structural: argument positions of the dig command
             return null;
         } else {
             n = new int[6];
-            for (int i = 0; i < 6; i++) {
-                Integer v = RelCoord.parse(w[i], b[i % 3]);
+            for (int i = 0; i < 6; i++) {  // structural: argument positions of the dig command
+                Integer v = RelCoord.parse(w[i], b[i % 3]);  // structural: argument positions of the dig command
                 if (v == null) return null;
                 n[i] = v;
             }

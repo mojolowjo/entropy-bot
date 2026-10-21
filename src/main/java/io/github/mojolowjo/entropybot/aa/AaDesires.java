@@ -82,7 +82,7 @@ public final class AaDesires {
             why = r.terms();
             if (!why.equals(lastToolsWhy)) {            // regression o1: the share's terms in the log when they change
                 lastToolsWhy = why;
-                org.slf4j.LoggerFactory.getLogger(AaDesires.class).info("[entropybot] aa: tools blocked share {}: {}", Math.round(blocked * 100), why);
+                org.slf4j.LoggerFactory.getLogger(AaDesires.class).info("[entropybot] aa: tools blocked share {}: {}", Math.round(blocked * 100), why);  // structural: percent
             }
         } else {                                     // no recipe graph or mining tags read yet: the old table, said so
             blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(bb.in.pickTier, bb.in.furnaceKnown || bb.in.furnaceInBag,
@@ -112,7 +112,7 @@ public final class AaDesires {
 
     /** Wool for a bed (3) needs a source: wool or 12 string had, or a sheep seen. Null = feasible. */
     public static String woolSource(int wool, int string, boolean sheepSeen) {
-        return wool >= 3 || string >= 12 || sheepSeen ? null : "no wool source (" + wool + "/3 wool, " + string + "/12 string, no sheep seen)";
+        return wool >= 3 || string >= 12 || sheepSeen ? null : "no wool source (" + wool + "/3 wool, " + string + "/12 string, no sheep seen)";  // game fact: a bed needs 3 wool; 4 string craft 1 wool
     }
 
     static String bedInfeasible(Blackboard bb) {
@@ -124,7 +124,7 @@ public final class AaDesires {
     /** Iron's value: 40 + 30 x the tech tree's share of iron ingots (no tree yet: the full 30). */
     static double ironValue(Blackboard bb) {
         TechTree t = tree(bb);
-        return 40 + 30 * (t == null || t.size() == 0 ? 1 : t.norm("iron_ingot", have(bb)));
+        return Tuning.i("aaDesires.ironBase") + Tuning.i("aaDesires.ironSpan") * (t == null || t.size() == 0 ? 1 : t.norm("iron_ingot", have(bb)));
     }
 
     // ---- round 4A N: the needs (Need + Ways; the ladder's rungs and gates are gone) ----
@@ -200,7 +200,7 @@ public final class AaDesires {
         // round 4 fix 4: the ways to a bed are priced (BedOptions); the climb is the first step of its row under ground
         Need bed = new Need("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
-                bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
+                bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",  // game fact: a bed needs 3 wool
                 bb -> BedOptions.steps(bb.in.wool, sheepHerd(bb)),
                 new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set()));      // its rows price the climb (BedOptions)
         Need deposit = new Need("needs.bag", TaskKind.BAG,
@@ -211,7 +211,7 @@ public final class AaDesires {
                         .withoutFacts((b, planned) -> b.in.baseChests ? noFacts("deposit", List.of(new Step.Deposit())) : null));
         // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
         Need iron = new Need("needs.iron", TaskKind.IRON,
-                bb -> bb.in.pickTier < 3,
+                bb -> bb.in.pickTier < 3,  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet (needs.tools first)",
                 bb -> plan("iron tools"), new IronOptions.Picker());
         // review 4A-N (1): the dawn climb out of the night stairs is a need of its own, priced by WayUp's ways (no gate)
@@ -337,7 +337,7 @@ public final class AaDesires {
                     Brain.Scored p = bestParked(set.lastScored());
                     return p == null ? 0 : p.parked();
                 })
-                .patient(Long.MAX_VALUE / 4)          // the options' own watchdog halts a stalled one (the next option runs)
+                .patient(Long.MAX_VALUE / 4)          // the options' own watchdog halts a stalled one (the next option runs)  // structural: a patience far beyond any option (a quarter of Long.MAX_VALUE ms)
                 .lastTry();
     }
 
@@ -355,7 +355,7 @@ public final class AaDesires {
         ok.sort((a, b) -> Double.compare(b.rank(), a.rank()));
         if (ok.isEmpty()) return "idle: no option can run";
         StringBuilder b = new StringBuilder("idle: ").append(optName(ok.get(0).d().id)).append(' ').append(Math.round(ok.get(0).score()));
-        for (int i = 1; i < ok.size() && i < 4; i++) b.append(i == 1 ? " (next " : ", ").append(optName(ok.get(i).d().id)).append(' ').append(Math.round(ok.get(i).score()));
+        for (int i = 1; i < ok.size() && i < 4; i++) b.append(i == 1 ? " (next " : ", ").append(optName(ok.get(i).d().id)).append(' ').append(Math.round(ok.get(i).score()));  // structural: display: how many items a text lists
         if (ok.size() > 1) b.append(')');
         return b.toString();
     }
@@ -423,7 +423,7 @@ public final class AaDesires {
 
     static Pick bestIdea(Blackboard bb) {
         TechTree t = tree(bb);
-        if (t == null || bb.in.pickTier < 3) return null;
+        if (t == null || bb.in.pickTier < 3) return null;  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
         Set<String> have = have(bb);
         for (TechTree.Idea i : t.ideas(have, 8)) {
             if (bad(bb).contains(i.item())) continue;
@@ -460,8 +460,8 @@ public final class AaDesires {
         Node node = AaTree.idleCd("ideas.cd", job);
         return new Desire("ideas", Desire.Kind.PROGRESS, node, bb -> {
             Pick p = bestIdea(bb);
-            return p == null ? -1 : 30 * p.share();
-        }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : null)
+            return p == null ? -1 : Tuning.i("aaDesires.shareScore") * p.share();
+        }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : null)  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
                 .cools(Cooldown.noRunMsV(), Cooldown.noRunMsV()).lastTry();
     }
 
@@ -470,8 +470,8 @@ public final class AaDesires {
         TechTree t = tree(bb);
         if (t == null) return "ideas: no recipe graph yet";
         List<String> out = new ArrayList<>();
-        for (TechTree.Idea i : t.ideas(have(bb), n)) out.add(goalName(i.item()) + " " + Math.round(i.worth() * 10) / 10.0);
-        return "ideas (" + t.size() + " recipes" + (bb.in.pickTier < 3 ? "; worked on from an iron pickaxe" : "") + "): "
+        for (TechTree.Idea i : t.ideas(have(bb), n)) out.add(goalName(i.item()) + " " + Math.round(i.worth() * 10) / 10.0);  // structural: rounded to one decimal for the text
+        return "ideas (" + t.size() + " recipes" + (bb.in.pickTier < 3 ? "; worked on from an iron pickaxe" : "") + "): "  // game fact: pickaxe tier scale: wood 1, stone 2, iron 3, diamond 4
                 + (out.isEmpty() ? "none" : String.join(", ", out));
     }
 
@@ -517,7 +517,7 @@ public final class AaDesires {
                 }
                 return r.state() != JobPort.PlanState.READY ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.of(s), "owner build");
             }
-            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, List.of(s), "owner build", 40 * 60_000L, JobPort.TaskSpec.noProgressMsV());
+            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, List.of(s), "owner build", Tuning.i("aaDesires.ownerBuildMin") * 60_000L, JobPort.TaskSpec.noProgressMsV());
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Blueprint.score(bb, b))
@@ -631,7 +631,7 @@ public final class AaDesires {
         double v = hideScore(Night.hostile(bb), bb.in.hostilesNear, bb.in.health, bb.in.maxHealth, danger, started && bb.in.health < Tuning.get("healTo"));
         if (v >= Tuning.get("urgent")) bb.fact(HIDE_FACT, Boolean.TRUE);
         if (v > 0) io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "hide", "health " + Math.round(bb.in.health) + "/" + Math.round(bb.in.maxHealth)
-                + ", danger " + Math.round(danger * 100) / 100.0 + ", hostiles " + bb.in.hostilesNear + " -> " + Math.round(v));
+                + ", danger " + Math.round(danger * 100) / 100.0 + ", hostiles " + bb.in.hostilesNear + " -> " + Math.round(v));  // structural: percent
         return v;
     }
 
@@ -654,7 +654,7 @@ public final class AaDesires {
         double night = shelterScore(bb), hide = bb.in.sheltered ? -1 : hideScore(bb);
         double v = Math.max(night, hide);
         if (v < 0) return DangerOptions.Need.NONE;
-        String why = (hide > night ? "hide and heal " + Math.round(hide) : "night " + Math.round(night)) + " (danger " + Math.round(danger * 100) / 100.0 + ")";
+        String why = (hide > night ? "hide and heal " + Math.round(hide) : "night " + Math.round(night)) + " (danger " + Math.round(danger * 100) / 100.0 + ")";  // structural: percent
         double nd = Night.hostile(bb) ? danger : 0;
         double[] dc = deathCost(bb.in.bag, bb.in.pos, bb.in.spawnPos, nd);
         String dw = "kit " + Math.round(dc[1]) + " + walk back " + (bb.in.spawnPos == null ? "0 (spawn unknown)" : String.valueOf(Math.round(dc[2])))
@@ -689,8 +689,8 @@ public final class AaDesires {
     static boolean waterHere(Blackboard bb) {
         if (!(bb.fact(WATER_HERE_FACT) instanceof long[] a) || bb.in.pos == null) return false;
         int[] p = bb.in.pos;
-        if (bb.clock.now() - a[3] > 60_000) return false;
-        return Math.abs(p[0] - a[0]) <= 4 && Math.abs(p[1] - a[1]) <= 4 && Math.abs(p[2] - a[2]) <= 4;
+        if (bb.clock.now() - a[3] > Tuning.i("aaDesires.pointAgeMs")) return false;
+        return Math.abs(p[0] - a[0]) <= Tuning.i("aaDesires.samePointR") && Math.abs(p[1] - a[1]) <= Tuning.i("aaDesires.samePointR") && Math.abs(p[2] - a[2]) <= Tuning.i("aaDesires.samePointR");
     }
 
     /** The priced ways now (null: no facts supplier); the held ways (Failures, this desire's options) are out. */
@@ -734,7 +734,7 @@ public final class AaDesires {
             bb.fact(WAY_FACT, c.best().way());
             bb.port.log("danger: " + c.terms());
             boolean night = c.best().way().ordinal() >= DangerOptions.Way.BOX.ordinal();
-            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, steps, "danger", night ? JobPort.TaskSpec.timeoutMsV() : 3 * 60_000L,
+            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, steps, "danger", night ? JobPort.TaskSpec.timeoutMsV() : Tuning.i("aaDesires.dangerBedMin") * 60_000L,
                     night ? shelterPatienceMs() : 90_000L);
         });
         return new Desire(DANGER_ID, Desire.Kind.UPKEEP, wayHolds(job), AaDesires::dangerScore)
@@ -757,7 +757,7 @@ public final class AaDesires {
     static boolean sealedHere(Blackboard bb) {
         if (!(bb.fact(SEALED_FACT) instanceof int[] at) || bb.in.pos == null) return false;
         int[] p = bb.in.pos;
-        boolean here = Math.abs(p[0] - at[0]) <= 1 && Math.abs(p[2] - at[2]) <= 1 && Math.abs(p[1] - at[1]) <= 3;
+        boolean here = Math.abs(p[0] - at[0]) <= 1 && Math.abs(p[2] - at[2]) <= 1 && Math.abs(p[1] - at[1]) <= Tuning.i("aaDesires.hereDy");
         if (!here) bb.fact(SEALED_FACT, null);
         return here;
     }
@@ -792,7 +792,7 @@ public final class AaDesires {
                         int open = DangerOptions.openWays(dangerChoice(bb), held);
                         long ms = holdMs(open, fs.fails(DANGER_ID, w.key()) + 1);
                         fs.failedFor(DANGER_ID, w.key(), job.reason(), now, bb.in, ms);
-                        bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "): held " + ms / 1000 + " s, " + open + " other way(s) open");
+                        bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "): held " + ms / 1000 + " s, " + open + " other way(s) open");  // structural: milliseconds per second
                     } else bb.port.log("danger: " + w.key() + " failed (" + job.reason() + "), no failure record to hold it");
                 }
                 if (s == Status.SUCCESS) {
@@ -826,7 +826,7 @@ public final class AaDesires {
         if (!(bb.fact(WAY_FACT) instanceof DangerOptions.Way w)) return null;
         long now = bb.clock.now();
         if (lastAt >= 0 && now - lastAt < repriceMs()) return null;
-        if (job.ageS(now) * 1000 < repriceMs()) return null;
+        if (job.ageS(now) * 1000 < repriceMs()) return null;  // structural: milliseconds per second
         DangerOptions.Choice c = dangerChoice(bb);
         if (c == null || c.best() == null || c.score() < 0 || c.best().way() == w || c.best().way() == DangerOptions.Way.STAY) return null;
         DangerOptions.Priced mine = null;
@@ -923,12 +923,12 @@ public final class AaDesires {
             if (s.d().kind == Desire.Kind.WANT) {
                 String key = id.substring(5);
                 w.add(key + " " + v + " (weight " + Personality.fmt(p.get(key)) + ", bored "
-                        + Math.round(Wants.boredom(bb, id, p.get("boredomDays")) * 100) / 100.0 + ")");
+                        + Math.round(Wants.boredom(bb, id, p.get("boredomDays")) * 100) / 100.0 + ")");  // structural: percent
             } else if (id.startsWith("night.")) n.add(id.substring(6) + " " + v);
             else if (id.equals(DANGER_ID)) n.add("danger " + v);          // AA_STEP2 1: the one answer to the night
         }
         double d = Night.dusk(bb.in.dayTime, bb.in.night);
-        String time = !bb.in.hungerDrains ? "Peaceful (night desires off)" : d >= 1 ? "night (danger " + Math.round(Brain.danger(bb) * 100) / 100.0 + ": under x" + Math.round(Brain.exposureFactor(Desire.Exposure.UNDER, Brain.danger(bb)) * 100) / 100.0 + ", surface x" + Math.round(Brain.exposureFactor(Desire.Exposure.SURFACE, Brain.danger(bb)) * 100) / 100.0 + ")" : d > 0 ? "dusk" : "day";
+        String time = !bb.in.hungerDrains ? "Peaceful (night desires off)" : d >= 1 ? "night (danger " + Math.round(Brain.danger(bb) * 100) / 100.0 + ": under x" + Math.round(Brain.exposureFactor(Desire.Exposure.UNDER, Brain.danger(bb)) * 100) / 100.0 + ", surface x" + Math.round(Brain.exposureFactor(Desire.Exposure.SURFACE, Brain.danger(bb)) * 100) / 100.0 + ")" : d > 0 ? "dusk" : "day";  // structural: percent
         return "wants: " + (w.isEmpty() ? "none" : String.join(", ", w)) + " | " + time + ": " + String.join(", ", n) + " | " + helpLine(bb)
                 + (p.errors.isEmpty() ? "" : " | !! personality: " + String.join("; ", p.errors) + " (defaults used)");
     }
@@ -944,8 +944,8 @@ public final class AaDesires {
         double walk = Kit.walkS(bb, d), miss = Kit.missing(d.bag(), bb.in.bag);
         double p = Kit.pThere(bb.clock.now() - d.at(), walk);
         double v = Kit.recoverValue(miss, p);
-        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "kit", "missing " + Math.round(miss) + " x P(there) " + Math.round(p * 100) / 100.0
-                + " (" + (bb.clock.now() - d.at()) / 1000 + "s of 300 + walk " + Math.round(walk) + "s) / cost " + Math.round(Kit.recoverCost(walk, Brain.danger(bb))) + "s -> " + Math.round(v));
+        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "kit", "missing " + Math.round(miss) + " x P(there) " + Math.round(p * 100) / 100.0  // structural: percent
+                + " (" + (bb.clock.now() - d.at()) / 1000 + "s of 300 + walk " + Math.round(walk) + "s) / cost " + Math.round(Kit.recoverCost(walk, Brain.danger(bb))) + "s -> " + Math.round(v));  // structural: milliseconds per second
         return v;
     }
 
@@ -996,7 +996,7 @@ public final class AaDesires {
                 .site(bb -> io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos))
                 .infeasible(bb -> bb.in.baseChests ? null : "no base chest (the camp rung places one)")
                 .met(bb -> Kit.lootWorth(bb.in.bag) < Kit.minStash())
-                .cools(Cooldown.noRunMsV(), 5 * 60_000L).lastTry();
+                .cools(Cooldown.noRunMsV(), Tuning.i("aaDesires.coolMin") * 60_000L).lastTry();
     }
 
     /** The brain over the rungs, the idle options and the ideas. */

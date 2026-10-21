@@ -317,7 +317,7 @@ public sealed interface Step {
     record ClearChunk(int x0, int y, int z0, int slab) implements Compound {
         public String text() { return "clear chunk " + x0 + " " + y + " " + z0 + " slab " + slab; }
 
-        public List<Step> parts() { return List.of(new Dig(new int[]{x0, y, z0}, new int[]{x0 + 15, y + slab - 1, z0 + 15}, true, false)); }
+        public List<Step> parts() { return List.of(new Dig(new int[]{x0, y, z0}, new int[]{x0 + 15, y + slab - 1, z0 + 15}, true, false)); }  // game fact: a chunk is 16 blocks wide (x0 + 15)
     }
 
     /**

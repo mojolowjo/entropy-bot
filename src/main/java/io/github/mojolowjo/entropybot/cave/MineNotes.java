@@ -277,7 +277,7 @@ public final class MineNotes {
             } else {
                 oresFails++;
                 oresRetryAt = tick + backoff(oresFails);
-                writeError = ORES + ": " + r + " (next try in " + backoff(oresFails) / 20 + " s)";
+                writeError = ORES + ": " + r + " (next try in " + backoff(oresFails) / 20 + " s)";  // game fact: 20 game ticks per second
             }
         }
         if (exploredDirty >= 0 && !exploredLocked && tick - exploredDirty >= FLUSH_AFTER && tick >= exploredRetryAt) {
@@ -289,7 +289,7 @@ public final class MineNotes {
             } else {
                 exploredFails++;
                 exploredRetryAt = tick + backoff(exploredFails);
-                writeError = EXPLORED + ": " + r + " (next try in " + backoff(exploredFails) / 20 + " s)";
+                writeError = EXPLORED + ": " + r + " (next try in " + backoff(exploredFails) / 20 + " s)";  // game fact: 20 game ticks per second
             }
         }
     }

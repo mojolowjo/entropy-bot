@@ -42,7 +42,7 @@ public final class Curves {
     /** P(success) from the failures in a row and the measured runs (n, ok). */
     public static double pSuccess(int streak, int n, int ok) {
         // review: one source, never both (the same failures would count twice): measured after 3 runs, else the streak
-        if (n >= 3) return (ok + 1.0) / (n + 2.0);
+        if (n >= Tuning.i("curves.minSamples")) return (ok + 1.0) / (n + 2.0);
         return streak >= 2 ? 1.0 / streak : 1;
     }
 }

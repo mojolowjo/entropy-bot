@@ -38,8 +38,8 @@ public final class NightWork {
 
     /** The craft, or null: an iron pickaxe from 3 ingots, torches from coal and sticks/planks. */
     public static Step craft(Inputs in) {
-        if (in.pickTier < 3 && in.ironIngots >= 3 && (in.tableKnown || in.tableInBag)) return new Step.Craft("iron_pickaxe", 1);
-        if (in.torches < 8 && in.coal >= 1 && in.torchCoal() && (in.planks >= 2 || in.wood >= 1) && (in.tableKnown || in.tableInBag)) return new Step.Craft("torch", 16);
+        if (in.pickTier < 3 && in.ironIngots >= 3 && (in.tableKnown || in.tableInBag)) return new Step.Craft("iron_pickaxe", 1);  // game fact: an iron pickaxe is tier 3 and takes 3 iron ingots
+        if (in.torches < Tuning.i("nightWork.torchesLow") && in.coal >= 1 && in.torchCoal() && (in.planks >= 2 || in.wood >= 1) && (in.tableKnown || in.tableInBag)) return new Step.Craft("torch", 16);
         return null;
     }
 

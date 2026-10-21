@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import java.util.HashSet;
@@ -150,7 +152,7 @@ public final class ClearRun {
         if (ended != null) return Out.end(ended);
         long now = b.now();
         // a reflex (a fight, a meal) held the job: start over from wherever the bot is now
-        if (lastTick >= 0 && now - lastTick > 5 && trip == null) interrupted(b);
+        if (lastTick >= 0 && now - lastTick > Tuning.i("clearRun.gapTicks") && trip == null) interrupted(b);
         lastTick = now;
         switch (phase) {
             case "pick": return pick(b, now);
@@ -159,7 +161,7 @@ public final class ClearRun {
             case "plan": return plan(b, now);
             case "walk": return walk(b, now);
             case "settle":
-                if (now - phaseStart >= 30) phase = "pick";
+                if (now - phaseStart >= Tuning.i("clearRun.pickTicks")) phase = "pick";
                 return Out.RUN;
             default:
                 phase = "pick";
@@ -294,7 +296,7 @@ public final class ClearRun {
             phase = "pick";
             return Out.RUN;
         }
-        if (breakTicks % 10 == 9) {
+        if (breakTicks % 10 == 9) {  // structural: every 10th break tick (9 of 10)
             // knocked back, or something moved in the way: choose again
             Bot bot = b.bot();
             double r = CLEAR_REACH + 0.5;
@@ -308,7 +310,7 @@ public final class ClearRun {
             sight = s;
         }
         // like a player, pause 6 ticks after each block before starting the next (a lagging server may put it back)
-        if (breakTicks == 0 && now - (lastBreakTick == null ? -100 : lastBreakTick) < 6) return Out.RUN;
+        if (breakTicks == 0 && now - (lastBreakTick == null ? -100 : lastBreakTick) < Tuning.i("clearRun.breakGapTicks")) return Out.RUN;
         b.hit(t, sight, breakTicks == 0);
         breaking = true;
         breakTicks++;
@@ -328,11 +330,11 @@ public final class ClearRun {
         long el = now - phaseStart;
         if (collectItem != null) {
             boolean gone = !b.dropAlive(collectItem);
-            if (!gone && el < 80 && !(el > 15 && b.walkIdle())) return Out.RUN;
+            if (!gone && el < Tuning.i("clearRun.breakWaitTicks") && !(el > Tuning.i("clearRun.idleAfterTicks") && b.walkIdle())) return Out.RUN;
             if (!gone) b.cancelWalk();
             collectItem = null;
         }
-        if (collectCount >= 10) {
+        if (collectCount >= Tuning.i("clearRun.collectEvery")) {
             phase = "plan";
             return Out.RUN;
         }
@@ -347,7 +349,7 @@ public final class ClearRun {
                     Bot bot = b.bot();
                     int bx = (int) Math.floor(bot.x()), bz = (int) Math.floor(bot.z());
                     ClearBox jb = job.box;
-                    int x1 = Math.max(jb.x1(), bx - 10), x2 = Math.min(jb.x2(), bx + 10), z1 = Math.max(jb.z1(), bz - 10), z2 = Math.min(jb.z2(), bz + 10);
+                    int x1 = Math.max(jb.x1(), bx - Tuning.i("clearRun.collectR")), x2 = Math.min(jb.x2(), bx + Tuning.i("clearRun.collectR")), z1 = Math.max(jb.z1(), bz - Tuning.i("clearRun.collectR")), z2 = Math.min(jb.z2(), bz + Tuning.i("clearRun.collectR"));
                     ClearBox near = x1 <= x2 && z1 <= z2 ? new ClearBox(x1, jb.y1(), z1, x2, jb.y2(), z2) : ClearBox.of(bx, jb.y1(), bz, bx, jb.y2(), bz);
                     dg = ClearGrid.build(w, near, bot, null);
                     dd = dg.walkDistances(bot);
@@ -379,7 +381,7 @@ public final class ClearRun {
 
     /** Full bag mid-clear: a trip to the chests, at most once per 50 blocks, never again once the chests were full too. */
     private Out maybeDeposit(Body b) {
-        if (noDeposit || job.broken - (lastDeposit == null ? -1000 : lastDeposit) < 50) return null;
+        if (noDeposit || job.broken - (lastDeposit == null ? -1000 : lastDeposit) < Tuning.i("clearRun.depositEvery")) return null;
         lastDeposit = job.broken;
         endBreak(b);
         b.cancelWalk();
@@ -396,14 +398,14 @@ public final class ClearRun {
         Bot bot = b.bot();
         ClearBox box = job.box;
         double far = box.distTo(bot.x(), bot.y(), bot.z());
-        if (far <= 24) {
+        if (far <= Tuning.i("clearRun.nearFar")) {
             approachTries = 0;
             approachDist = null;
         } else {
             // far away (a long tunnel, or back from a chest or table trip): walk over while each walk gets closer
-            if (approachTries >= 5 || (approachDist != null && far > approachDist - 2)) {
+            if (approachTries >= Tuning.i("clearRun.approachTries") || (approachDist != null && far > approachDist - 2)) {
                 // TLL 30: water across the way there is named (the water plan takes it), not "couldn't get there"
-                if (far <= 64 && cutOffByWater(bot)) return end(b, ClearEngine.finishMessage(w, job, null));
+                if (far <= Tuning.i("clearRun.waterFar") && cutOffByWater(bot)) return end(b, ClearEngine.finishMessage(w, job, null));
                 return end(b, ClearEngine.finishMessage(w, job, "stopped: couldn't get there (" + Math.round(far) + " blocks away)"));
             }
             approachTries++;
@@ -424,7 +426,7 @@ public final class ClearRun {
         }
         ClearGrid.Plan p = ClearGrid.planWalk(w, bot, job);
         if (p == null && ClearEngine.retryRound(job)) p = ClearGrid.planWalk(w, bot, job);
-        if (p == null && now - (lastBreakTick == null ? -1000 : lastBreakTick) < 30) {
+        if (p == null && now - (lastBreakTick == null ? -1000 : lastBreakTick) < Tuning.i("clearRun.rebreakTicks")) {
             // just broke something: give the server a moment to put back a break it refused, then look again
             phase = "settle";
             phaseStart = now;
@@ -496,17 +498,17 @@ public final class ClearRun {
             phase = "pick";
             return Out.RUN;
         }
-        if (t != null && el > 0 && el % 10 == 0) {
+        if (t != null && el > 0 && el % 10 == 0) {  // structural: every 10th tick
             ClearEngine.Sight s = inSight(b.bot(), t);
             if (s != null && ClearEngine.breakHazard(w, b.bot(), job, t.x(), t.y(), t.z()) == null) {
                 b.cancelWalk();
                 return beginBreak(b, t, s, now);
             }
         }
-        if (el < 20) return Out.RUN;
+        if (el < Tuning.i("clearRun.minTicks")) return Out.RUN;
         boolean idle = b.walkIdle(), stuck = false;
         Bot bot = b.bot();
-        if (!idle && now - moveTick >= 160) {
+        if (!idle && now - moveTick >= Tuning.i("clearRun.stuckTicks")) {
             // hasn't moved half a block in 8 seconds
             stuck = Math.abs(bot.x() - mx) + Math.abs(bot.y() - my) + Math.abs(bot.z() - mz) < 0.5;
             mx = bot.x();
@@ -515,13 +517,13 @@ public final class ClearRun {
             moveTick = now;
         }
         // long walks (to a far box) get more time than walks to a spot next to a block
-        if (!idle && !stuck && el < 20L * (t != null ? 30 : 120)) return Out.RUN;
+        if (!idle && !stuck && el < 20L * (t != null ? Tuning.i("clearRun.walkNearS") : Tuning.i("clearRun.walkFarS"))) return Out.RUN;
         if (!idle) b.cancelWalk();
         phase = "pick";
         target = null;
         if (t == null) return Out.RUN;
         ClearGrid.Spot sp = spot;
-        if (sp != null && Math.abs(bot.x() - sp.x() - 0.5) + Math.abs(bot.z() - sp.z() - 0.5) + Math.abs(bot.y() - sp.y()) > 1.5) {
+        if (sp != null && Math.abs(bot.x() - sp.x() - 0.5) + Math.abs(bot.z() - sp.z() - 0.5) + Math.abs(bot.y() - sp.y()) > Tuning.get("clearRun.atSpotTol")) {
             job.badSpots.put(sp.key(), job.broken);       // didn't get there: not that spot again for a while
         }
         ClearEngine.Sight s = inSight(bot, t);

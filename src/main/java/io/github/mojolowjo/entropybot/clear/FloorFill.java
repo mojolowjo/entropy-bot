@@ -341,11 +341,11 @@ public final class FloorFill {
             if (!failed.isEmpty()) {
                 List<String> ex = new ArrayList<>();
                 for (Map.Entry<Pos, String> e : failed.entrySet()) {
-                    if (ex.size() >= 5) break;
+                    if (ex.size() >= 5) break;  // structural: display: how many items a text lists
                     ex.add(e.getKey().key() + " (" + e.getValue() + ")");
                 }
                 sb.append("; couldn't fill ").append(failed.size()).append(": ").append(String.join(", ", ex));
-                if (failed.size() > 5) sb.append(", +").append(failed.size() - 5).append(" more");
+                if (failed.size() > 5) sb.append(", +").append(failed.size() - 5).append(" more");  // structural: display: how many items a text lists
             }
             if (endNote != null) sb.append("; ").append(endNote);
             return sb.toString();
@@ -365,7 +365,7 @@ public final class FloorFill {
             if (done) return true;
             long now = b.now();
             // a reflex (a fight, a meal) held the job: the walk it was on is stale
-            if (lastTick >= 0 && now - lastTick > 5 && phase.equals("walk")) {
+            if (lastTick >= 0 && now - lastTick > Tuning.i("floorFill.gapTicks") && phase.equals("walk")) {
                 b.cancelWalk();
                 if (climbing) b.climbEnded();
                 climbing = false;
@@ -376,7 +376,7 @@ public final class FloorFill {
             switch (phase) {
                 case "check": return check(b, now);
                 case "wait":
-                    if (now - phaseStart >= 10) phase = "pick";
+                    if (now - phaseStart >= Tuning.i("floorFill.pickTicks")) phase = "pick";
                     return false;
                 case "walk": return walk(b, now);
                 default: return pick(b, now);
@@ -391,7 +391,7 @@ public final class FloorFill {
         private boolean pick(Body b, long now) {
             Bot bot = b.bot();
             double far = box.distTo(bot.x(), bot.y(), bot.z());
-            if (far > 24) {
+            if (far > Tuning.i("floorFill.far")) {
                 for (Pos c : new ArrayList<>(todo)) fail(c, "too far away (" + Math.round(far) + " blocks)");
                 return end();
             }
@@ -491,7 +491,7 @@ public final class FloorFill {
                 phase = "pick";
                 return false;
             }
-            if (tries.merge(c, 1, Integer::sum) >= 3) {
+            if (tries.merge(c, 1, Integer::sum) >= Tuning.i("floorFill.tries")) {
                 if (step) badSteps.add(c);
                 else fail(c, why);
             }
@@ -502,7 +502,7 @@ public final class FloorFill {
 
         /** Placed blocks show up a few ticks later; 3 tries a cell. */
         private boolean check(Body b, long now) {
-            if (now - phaseStart < 6) return false;
+            if (now - phaseStart < Tuning.i("floorFill.minPhaseTicks")) return false;
             if (target != null && b.placing(target) && now - phaseStart < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return false;     // the builder walks and places
             Pos c = target;
             target = null;
@@ -519,7 +519,7 @@ public final class FloorFill {
                 consecWalkFails = 0;
                 return false;
             }
-            if (tries.merge(c, 1, Integer::sum) >= 3) {
+            if (tries.merge(c, 1, Integer::sum) >= Tuning.i("floorFill.tries")) {
                 if (targetStep) badSteps.add(c);
                 else fail(c, DIDNT_STAY);
             }
@@ -564,9 +564,9 @@ public final class FloorFill {
         private boolean walk(Body b, long now) {
             long el = now - phaseStart;
             Bot bot = b.bot();
-            if (el < 20) return false;
+            if (el < Tuning.i("floorFill.minTicks")) return false;
             boolean idle = b.walkIdle(), stuck = false;
-            if (!idle && now - moveTick >= 160) {
+            if (!idle && now - moveTick >= Tuning.i("floorFill.stuckTicks")) {
                 stuck = Math.abs(bot.x() - mx) + Math.abs(bot.y() - my) + Math.abs(bot.z() - mz) < 0.5;
                 mx = bot.x();
                 my = bot.y();
@@ -602,8 +602,8 @@ public final class FloorFill {
             if (z1 > z2) { z1 = Math.min(Math.max(fz, box.z1()), box.z2()); z2 = z1; }
             ClearBox region = new ClearBox(x1, fy, z1, x2, box.y2(), z2);
             int bx = floor(bot.x()), by = feet(bot), bz = floor(bot.z());
-            boolean onIt = cached != null && cached.idx(bx - 2, by - 3, bz - 2) >= 0 && cached.idx(bx + 2, by + 3, bz + 2) >= 0;
-            if (onIt && region.equals(cachedRegion) && lastTick - cachedAt <= 200) return cached;
+            boolean onIt = cached != null && cached.idx(bx - Tuning.i("floorFill.cacheR"), by - Tuning.i("floorFill.cacheH"), bz - Tuning.i("floorFill.cacheR")) >= 0 && cached.idx(bx + Tuning.i("floorFill.cacheR"), by + Tuning.i("floorFill.cacheH"), bz + Tuning.i("floorFill.cacheR")) >= 0;
+            if (onIt && region.equals(cachedRegion) && lastTick - cachedAt <= Tuning.i("floorFill.cacheTicks")) return cached;
             cached = ClearGrid.build(w, region, bot, null, 2, 2);
             cachedRegion = region;
             cachedAt = lastTick;
@@ -620,7 +620,7 @@ public final class FloorFill {
         }
 
         private static int feet(Bot b) {
-            return floor(b.y() + 0.01);
+            return floor(b.y() + 0.01);  // structural: epsilon: standing check
         }
 
         private static String key(Bot b) {
@@ -631,8 +631,8 @@ public final class FloorFill {
     /** The bot's body (0.6 wide, 1.8 tall, feet at x y z) overlaps cell c. */
     public static boolean bodyHits(double x, double y, double z, Pos c) {
         double e = 1e-3;
-        return x + 0.3 > c.x() + e && x - 0.3 < c.x() + 1 - e && y + 1.8 > c.y() + e && y < c.y() + 1 - e
-                && z + 0.3 > c.z() + e && z - 0.3 < c.z() + 1 - e;
+        return x + 0.3 > c.x() + e && x - 0.3 < c.x() + 1 - e && y + 1.8 > c.y() + e && y < c.y() + 1 - e  // game fact: the player hitbox is 0.6 wide (0.3 each side); the player is 1.8 tall
+                && z + 0.3 > c.z() + e && z - 0.3 < c.z() + 1 - e;  // game fact: the player hitbox is 0.6 wide (0.3 each side)
     }
 
     private static double sq(double v) {

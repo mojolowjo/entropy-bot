@@ -45,7 +45,7 @@ public final class AaTree {
             pauseLog.addLast(new long[]{now, dt});
             pausedSum += dt;
         }
-        while (!pauseLog.isEmpty() && now - pauseLog.peekFirst()[0] > 60_000) pausedSum -= pauseLog.pollFirst()[1];
+        while (!pauseLog.isEmpty() && now - pauseLog.peekFirst()[0] > Tuning.i("aaTree.pauseWindowMs")) pausedSum -= pauseLog.pollFirst()[1];
     }
 
     public final GuardSelector root;
@@ -86,7 +86,7 @@ public final class AaTree {
             // the bot): air alone holds the guard at most AIR_HOLD_MS; then the job resumes (its walk gets the bot out),
             // and real drowning still comes back through health <= 8
             long now0 = bb.clock.now();
-            boolean airShort = bb.in.air < 300;
+            boolean airShort = bb.in.air < Tuning.i("aaTree.airShort");
             if (!airShort) {
                 t.airSince = -1;
                 t.airYield = false;
@@ -99,8 +99,8 @@ public final class AaTree {
             t.pausedMs(now0, t.root != null && t.root.hasPaused() && airShort && !bb.in.inLavaOrFire && !bb.in.creeperClose);
             double limitMs = io.github.mojolowjo.entropybot.aa.brain.Tuning.get("pausedRepriceS") * 1000;
             if (airShort && !t.airYield && t.root != null && t.root.hasPaused() && t.pausedSum > limitMs) {
-                String why = "paused too long: " + t.dangerWhy + " (" + t.pausedSum / 1000 + " s paused in the last 60 s, over pausedRepriceS "
-                        + Math.round(limitMs / 1000) + "): the job ends, the brain picks again";
+                String why = "paused too long: " + t.dangerWhy + " (" + t.pausedSum / 1000 + " s paused in the last 60 s, over pausedRepriceS "  // structural: milliseconds per second
+                        + Math.round(limitMs / 1000) + "): the job ends, the brain picks again";  // structural: milliseconds per second
                 bb.port.log(why);
                 bb.tracer.event(why);
                 t.root.endPaused(why);
@@ -113,16 +113,16 @@ public final class AaTree {
             boolean airCounts = airShort && now0 - t.airSince < airHoldMs();
             // AA_CLEANUP 4: low health alone is no reflex any more (no retreat rule): the danger desire and the hide price it;
             // drowning at low health still is (air short and health <= 8)
-            boolean drown = airShort && bb.in.health <= 8;
-            boolean urgent = drown || (airCounts && bb.in.air < 100) || bb.in.inLavaOrFire || bb.in.creeperClose;
+            boolean drown = airShort && bb.in.health <= Tuning.i("aaTree.drownHealth");
+            boolean urgent = drown || (airCounts && bb.in.air < Tuning.i("aaTree.airUrgent")) || bb.in.inLavaOrFire || bb.in.creeperClose;
             boolean notCalm = t.dangerLatch.active() && (airCounts || drown || bb.in.creeperClose);
             boolean on = t.dangerLatch.update(urgent || notCalm, bb.clock.now());
-            if (on) t.dangerWhy = bb.in.air < 100 ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : drown ? "drowning, health " + Math.round(bb.in.health)
+            if (on) t.dangerWhy = bb.in.air < Tuning.i("aaTree.airUrgent") ? "drowning" : bb.in.inLavaOrFire ? "lava or fire" : drown ? "drowning, health " + Math.round(bb.in.health)
                     : bb.in.creeperClose ? "creeper close" : "calming down";
             return on;
         });
         Node dangerBranch = new Fallback("danger.reflex", "the reflex that moves",
-                new Seq("danger.air", "drowning", new Condition("danger.air?", "air < 100", bb -> bb.in.air < 100), observe("danger.air.reflex", "air reflex")),
+                new Seq("danger.air", "drowning", new Condition("danger.air?", "air < 100", bb -> bb.in.air < Tuning.i("aaTree.airUrgent")), observe("danger.air.reflex", "air reflex")),
                 new Seq("danger.lava", "lava or fire", new Condition("danger.lava?", "in lava or fire", bb -> bb.in.inLavaOrFire), observe("danger.lava.reflex", "escape reflex")),
                 new Seq("danger.creeper", "creeper", new Condition("danger.creeper?", "creeper close", bb -> bb.in.creeperClose), observe("danger.creeper.reflex", "creeper sprint")),
                 observe("danger.calm", "calming down"));
@@ -141,7 +141,7 @@ public final class AaTree {
                 }
                 if (bb.in.otherJob != null) return Status.RUNNING;
                 bb.tracer.outcome(bb.clock.now(), "done");
-                bb.port.log("owner's job ended after " + (bb.clock.now() - since) / 1000 + "s: " + seen);
+                bb.port.log("owner's job ended after " + (bb.clock.now() - since) / 1000 + "s: " + seen);  // structural: milliseconds per second
                 seen = null;
                 return Status.SUCCESS;
             }

@@ -180,7 +180,7 @@ public final class Clearing {
         boolean inTrip;
         String tripKind, caught;
         boolean caughtSet;
-        long lastBeat = -1000;
+        long lastBeat = -1000;  // structural: a time long ago (sentinel)
         /** the job's label for the trips' whispers, the requester */
         String note;
         /** table pickups a failed trip took out of the Seq (B7d review 3): the job's end names a table still there */
@@ -525,7 +525,7 @@ public final class Clearing {
             return "wait";
         }
         long now = seq.now();
-        if (now - s.lastBeat >= 20) {
+        if (now - s.lastBeat >= Tuning.i("clearing.beatTicks")) {
             s.lastBeat = now;
             String le = checkLeases(s, true);
             if (le != null) return finish(seq, st, s, body, ClearEngine.finishMessage(s.world, s.job, "stopped: " + le.replaceFirst("^error: ", "")));
@@ -750,7 +750,7 @@ public final class Clearing {
         Map<String, Integer> inv = Gui.inventory(p);
         int planks = 0;
         for (var e : inv.entrySet()) if (e.getKey().endsWith("_planks") || e.getKey().endsWith("_log")) planks += e.getValue();
-        boolean remake = planks >= 4 || inv.getOrDefault("minecraft:crafting_table", 0) > 0;
+        boolean remake = planks >= 4 || inv.getOrDefault("minecraft:crafting_table", 0) > 0;  // game fact: a crafting table takes 4 planks
         var end = io.github.mojolowjo.entropybot.craft.OwnTable.decide(failed, nextCrafts, nearCamp, campHasTable, remake);
         String terms = io.github.mojolowjo.entropybot.craft.OwnTable.terms(failed, nextCrafts, nearCamp, campHasTable, remake);
         switch (end) {
@@ -772,7 +772,7 @@ public final class Clearing {
     private static boolean otherTableNear(net.minecraft.world.level.Level lv, int[] camp, int[] own) {
         int r = io.github.mojolowjo.entropybot.aa.AaLadder.campR();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int dx = -r; dx <= r; dx++) for (int dy = -3; dy <= 3; dy++) for (int dz = -r; dz <= r; dz++) {
+        for (int dx = -r; dx <= r; dx++) for (int dy = -Tuning.i("clearing.findDy"); dy <= Tuning.i("clearing.findDy"); dy++) for (int dz = -r; dz <= r; dz++) {
             m.set(camp[0] + dx, camp[1] + dy, camp[2] + dz);
             if (own != null && m.getX() == own[0] && m.getY() == own[1] && m.getZ() == own[2]) continue;
             if (lv.isLoaded(m) && lv.getBlockState(m).is(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)) return true;
@@ -798,7 +798,7 @@ public final class Clearing {
             return out;
         }
         Double dist = known == null ? null : p.getEyePosition().distanceTo(new Vec3(known[0] + 0.5, known[1] + 0.5, known[2] + 0.5));
-        int dy = known == null ? 0 : known[1] - (int) Math.floor(p.getY() + 0.01);
+        int dy = known == null ? 0 : known[1] - (int) Math.floor(p.getY() + 0.01);  // structural: epsilon: standing check
         Map<String, Integer> inv = Gui.inventory(p);
         boolean carries = inv.getOrDefault(PlaceRules.TABLE_ID, 0) > 0, wood = false;
         for (String id : inv.keySet()) wood |= PlaceRules.wood(id);
@@ -1003,7 +1003,7 @@ public final class Clearing {
     static boolean holdItem(LocalPlayer p, String id) {
         var inv = p.getInventory();
         if (Gui.itemId(inv.getItem(inv.selected)).equals(id)) return true;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             if (inv.getItem(i).isEmpty() || !Gui.itemId(inv.getItem(i)).equals(id)) continue;
             Hotbar.toHand(Minecraft.getInstance(), p, i);
             return true;
@@ -1204,7 +1204,7 @@ public final class Clearing {
             ps.stage = "place";
         }
         if (ps.stage.equals("retry")) {
-            if (now - ps.stageTick < 10) return "wait";
+            if (now - ps.stageTick < Tuning.i("clearing.stageWaitTicks")) return "wait";
             ps.stage = "place";
         }
         if (ps.stage.equals("place")) {
@@ -1224,7 +1224,7 @@ public final class Clearing {
                         if (ps.mobSince < 0 || who != null && !who.equals(ps.mobId)) {
                             ps.mobSince = now;
                             ps.mobId = who;
-                            LOG.info("[entropybot] place: {} - waiting up to {} s", r, PlaceRules.waitTicks(r) / 20);
+                            LOG.info("[entropybot] place: {} - waiting up to {} s", r, PlaceRules.waitTicks(r) / 20);  // game fact: 20 game ticks per second
                         }
                         if (now - ps.mobSince < PlaceRules.waitTicks(r)) {
                             seq.setStatus(seq.label + " - " + r.replaceFirst("^error: ", ""));
@@ -1238,7 +1238,7 @@ public final class Clearing {
                 }
                 // a placement that fails 3 times ends the step and says why (it never stands there for good)
                 ps.tries++;
-                if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
+                if (ps.tries >= Tuning.i("clearing.placeTries")) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
                 ps.stage = "retry";
                 ps.stageTick = now;
                 return "wait";
@@ -1248,9 +1248,9 @@ public final class Clearing {
             return "wait";
         }
         // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
-        if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
+        if (now - ps.stageTick < Tuning.i("clearing.placeWaitTicks") || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
         ps.tries++;
-        if (ps.tries >= 3) {
+        if (ps.tries >= Tuning.i("clearing.placeTries")) {
             String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]);
             return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": it didn't stay there (3 tries)" + (last == null ? "" : "; Baritone: " + last);
         }
@@ -1265,7 +1265,7 @@ public final class Clearing {
         if (!(st.state instanceof BuildState bs)) return "the build was not set up";
         if (bs.done) return "next";
         long now = seq.now();
-        if (now % 20 == 0) bs.leases.beat();
+        if (now % 20 == 0) bs.leases.beat();  // structural: periodic cadence in ticks (20 ticks = 1 s)
         // B7d review 7: a reflex hold longer than 100 ticks lets the guard drop the zone's place lease: take it again at
         // once (as the clear step does), or every Baritone placement after the hold is vetoed
         String le = bs.leases.ensure();
@@ -1275,13 +1275,13 @@ public final class Clearing {
             return "wait";
         }
         if (bs.rim) return rimTick(seq, bs, p, now);
-        if (now - bs.start < 60 || now % 20 != 0) return "wait";
+        if (now - bs.start < Tuning.i("clearing.startWaitTicks") || now % 20 != 0) return "wait";
         IBaritone b = Jobs.baritone();
         // 0.30.1: the dig step's watch: no cell placed for 60 s, or the builder paused itself = Baritone's part is over
         LiveWorld w = new LiveWorld();
         w.set(p);
         int miss = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells).size();
-        if (!bs.clockOn && (miss < bs.lastMissing || bs.box == null || bs.box.distTo(p.getX(), p.getY(), p.getZ()) <= 8)) {
+        if (!bs.clockOn && (miss < bs.lastMissing || bs.box == null || bs.box.distTo(p.getX(), p.getY(), p.getZ()) <= Tuning.i("clearing.nearBox"))) {
             bs.clockOn = true;
             bs.lastChange = now;
         }
@@ -1301,7 +1301,7 @@ public final class Clearing {
         if (e == null && b != null && bs.clockOn) {
             try {
                 var pb = b.getPathingBehavior();
-                if (b.getBuilderProcess().isActive() && !pb.isPathing() && pb.getGoal() != null && now - bs.stillSince >= 200) {
+                if (b.getBuilderProcess().isActive() && !pb.isPathing() && pb.getGoal() != null && now - bs.stillSince >= Tuning.i("clearing.stillTicks")) {
                     LOG.info("[entropybot] build: Baritone has goals but no path and I stood still 10 s - placing the rest myself");
                     e = io.github.mojolowjo.entropybot.clear.BuilderReport.End.STALLED;
                 }
@@ -1408,7 +1408,7 @@ public final class Clearing {
     private static String rimTick(Seq seq, BuildState bs, LocalPlayer p, long now) {
         LiveWorld w = new LiveWorld();
         w.set(p);
-        boolean recount = bs.missing == null || bs.stage.equals("pick") || bs.stage.equals("check") || now - bs.missingAt >= 20;
+        boolean recount = bs.missing == null || bs.stage.equals("pick") || bs.stage.equals("check") || now - bs.missingAt >= Tuning.i("clearing.recountTicks");
         if (recount) {
             bs.missing = io.github.mojolowjo.entropybot.clear.RimPlan.missing(w, bs.cells);
             bs.missingAt = now;
@@ -1507,14 +1507,14 @@ public final class Clearing {
                 Pos c = bs.pick.cell();
                 Minecraft mc = Minecraft.getInstance();
                 var hands = io.github.mojolowjo.entropybot.aa.moves.JobHands.get();
-                if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > 5 * 20) {   // gone (or 5 s): place again
+                if (w.air(c.x(), c.y(), c.z()) || now - bs.stageTick > Tuning.i("clearing.placeAgainS") * 20) {   // gone (or 5 s): place again
                     hands.stop("the cell is clear");
                     bs.stage = "place";
                     return "wait";
                 }
                 // backbone step 3 ("Baritone is the car"): Baritone's look and click break what is in the cell
                 bs.clearStarted = true;
-                var hr = hands.dig(new int[]{c.x(), c.y(), c.z()}, 5 * 20, "clearing " + c.key() + " for " + blk);
+                var hr = hands.dig(new int[]{c.x(), c.y(), c.z()}, Tuning.i("clearing.digS") * 20, "clearing " + c.key() + " for " + blk);
                 if (hr.failed()) {
                     LOG.info("[entropybot] build rim: clearing {} for {}: {} - placing again", c.key(), blk, hr.why());
                     bs.stage = "place";
@@ -1522,9 +1522,9 @@ public final class Clearing {
                 return "wait";
             }
             default -> {                                            // check: placed blocks show up a tick or two later
-                if (now - bs.stageTick < 6) return "wait";
+                if (now - bs.stageTick < Tuning.i("clearing.placeWaitTicks")) return "wait";
                 Pos c = bs.pick.cell();
-                if (placing(c.x(), c.y(), c.z()) && now - bs.stageTick < 20 * 10) return "wait";       // backbone step 3: Baritone still places
+                if (placing(c.x(), c.y(), c.z()) && now - bs.stageTick < 20 * Tuning.i("clearing.baritonePlaceS")) return "wait";       // backbone step 3: Baritone still places
                 if (PlaceRules.free(w, c.x(), c.y(), c.z())) triedCell(bs, c, io.github.mojolowjo.entropybot.clear.RimPlan.Why.TRIES);
                 else {
                     if (!bs.pick.filler()) bs.mine++;
@@ -1623,7 +1623,7 @@ public final class Clearing {
         }
 
         @Override public boolean hasPickaxe() {
-            for (int i = 0; i < 36; i++) {
+            for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
                 if (!p.getInventory().getItem(i).isEmpty() && Tools.isPickaxe(Gui.itemId(p.getInventory().getItem(i)))) return true;
             }
             return false;
@@ -1700,13 +1700,13 @@ public final class Clearing {
             List<ClearRun.Drop> out = new ArrayList<>();
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (!(e instanceof ItemEntity) || !e.isAlive()) continue;
-                int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
+                int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());  // structural: epsilon: standing check
                 // near the box, not down a hole under the walkway, and (T3) never where the policy refuses with the fence on
                 if (!job.dropWanted(x, y, z)) continue;
                 // B7e F: with "junk drop", junk drops stay where they lie (but the floor's block while it has few)
                 if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv(), x, y, z, seq.now())) continue;
                 double d = e.distanceTo(p);
-                if (d > 1.2 && d < 8) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
+                if (d > Tuning.get("clearing.dropMin") && d < Tuning.i("clearing.dropMax")) out.add(new ClearRun.Drop(String.valueOf(e.getId()), x, y, z, d));
             }
             out.sort((a, b) -> Double.compare(a.d(), b.d()));
             return out;

@@ -39,7 +39,7 @@ public final class JunkRules {
             if (!builds) continue;
             out.add("*placeable");
             for (String w : t.split("[^a-z0-9_:]+")) {
-                if (w.length() < 3 || w.matches("^-?\\d+$")) continue;
+                if (w.length() < 3 || w.matches("^-?\\d+$")) continue;  // structural: a word under 3 letters is no item name
                 if (w.matches("^(build|building|shelter|place|placing|need|shell|walls|floor|fill|roof|house|camp|started|status|then|here|the)$")) continue;
                 out.add(full(w));
             }

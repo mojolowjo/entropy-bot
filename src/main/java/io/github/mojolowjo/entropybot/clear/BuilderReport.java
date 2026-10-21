@@ -38,7 +38,7 @@ public final class BuilderReport {
     public static End watch(boolean active, boolean paused, long ticksSinceChange) {
         if (!active) return End.IDLE;
         if (paused) return End.PAUSED;
-        if (ticksSinceChange >= stallSeconds() * 20L) return End.STALLED;
+        if (ticksSinceChange >= stallSeconds() * 20L) return End.STALLED;  // game fact: 20 game ticks per second
         return null;
     }
 

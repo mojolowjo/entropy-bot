@@ -47,7 +47,7 @@ public final class Costs {
 
     /** 0.05..1: how badly food is needed (the bar from 20 down to 6, or health from 20 down to 10). */
     public static double foodUrgency(int food, float health) {
-        double u = Math.max((20 - food) / 14.0, (20 - health) / 10.0);
+        double u = Math.max((20 - food) / Tuning.get("costs.foodNeedSpan"), (20 - health) / Tuning.get("costs.healthNeedSpan"));
         return Math.max(0.05, Math.min(1, u));
     }
 
@@ -64,11 +64,11 @@ public final class Costs {
 
     /** The torch desire's curve at {@code torches} (30 + 30 x shortfall^2 of 16; its floor 30 from 16 on). */
     public static double torchScore(int torches) {
-        return 30 + Curves.upkeep(30, Math.min(16, Math.max(0, torches)), 16);
+        return Tuning.i("torch.base") + Curves.upkeep(Tuning.i("torch.span"), Math.min(Tuning.i("torch.target"), Math.max(0, torches)), Tuning.i("torch.target"));
     }
 
     /** One coal makes 4 torches: what the torch score gains by them. */
-    public static double torchGain(int torches) { return torchScore(torches) - torchScore(torches + 4); }
+    public static double torchGain(int torches) { return torchScore(torches) - torchScore(torches + Tuning.i("costs.torchGainStep")); }
 
     /** One coal burnt sets the coal goal back by 1 of its n: the goal's score / n (0 without a goal). */
     public static double coalLoss(double goalScore, int goalN) { return goalScore <= 0 || goalN <= 0 ? 0 : goalScore / goalN; }
@@ -160,7 +160,7 @@ public final class Costs {
     }
 
     public static String toolsTerms(int pickTier, int pickPct, double blocked) {
-        return "pickaxe tier " + pickTier + (pickTier >= 2 ? " at " + pickPct + "%" : ", blocks " + Math.round(blocked * 100) + "% of what is next")
+        return "pickaxe tier " + pickTier + (pickTier >= 2 ? " at " + pickPct + "%" : ", blocks " + Math.round(blocked * 100) + "% of what is next")  // structural: percent
                 + " -> " + Math.round(tools(pickTier, pickPct, blocked));
     }
 
@@ -219,9 +219,9 @@ public final class Costs {
      */
     public static double nightDanger(int difficulty, int armor, float health, float maxHealth, int torches, int hostiles) {
         double d = DIFF[Math.max(0, Math.min(3, difficulty))];
-        double armorF = 1 - 0.6 * Math.min(20, Math.max(0, armor)) / 20.0;
+        double armorF = 1 - Tuning.get("costs.armorCut") * Math.min(20, Math.max(0, armor)) / 20.0;
         double healthF = 1 + 0.5 * (1 - Math.max(0, health) / Math.max(1, maxHealth));
-        double hostF = 1 + 0.15 * Math.min(6, Math.max(0, hostiles));
+        double hostF = 1 + Tuning.get("costs.hostileStep") * Math.min(6, Math.max(0, hostiles));
         return d * armorF * healthF * lightF(torches) * hostF;
     }
 

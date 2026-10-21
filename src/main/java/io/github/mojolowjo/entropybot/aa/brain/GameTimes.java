@@ -70,16 +70,16 @@ public final class GameTimes {
         double f = toolSpeed;
         if (f > 1) f += d.miningEfficiency();
         // rule 3 fact: vanilla Player.getDigSpeed (Haste/Conduit +20% per level, Mining Fatigue 0.3 / 0.09 / 0.0027 / 8.1e-4, water 0.2, air 1/5)
-        if (d.hasteLevel() >= 0) f *= 1 + (d.hasteLevel() + 1) * 0.2;
+        if (d.hasteLevel() >= 0) f *= 1 + (d.hasteLevel() + 1) * 0.2;  // game fact: haste speeds digging by 20% per level
         if (d.fatigueLevel() >= 0) f *= switch (d.fatigueLevel()) {
             case 0 -> 0.3;
             case 1 -> 0.09;
             case 2 -> 0.0027;
-            default -> 8.1e-4;
+            default -> 8.1e-4;  // structural: epsilon
         };
         f *= d.blockBreakSpeed();
         if (d.inWater()) f *= d.submergedSpeed();
-        if (!d.onGround()) f /= 5;
+        if (!d.onGround()) f /= 5;  // game fact: digging in the air is 5 times slower
         return f;
     }
 
@@ -97,7 +97,7 @@ public final class GameTimes {
         double speed = digSpeed(toolSpeed, d);
         if (speed <= 0) return Double.POSITIVE_INFINITY;
         double progress = speed / hardness / (correctTool ? 30 : 100);
-        double ticks = Math.max(1, Math.ceil(1 / progress - 1e-9));
+        double ticks = Math.max(1, Math.ceil(1 / progress - 1e-9));  // structural: epsilon
         return ticks / TPS;
     }
 

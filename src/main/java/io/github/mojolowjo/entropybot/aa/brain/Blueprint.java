@@ -64,10 +64,10 @@ public final class Blueprint {
             else if (w.equals("high")) prio = 1;
             else if (w.equals("low")) prio = -1;
             else if (w.equals("at")) {
-                if (i + 3 >= t.length || !t[i + 1].matches("-?\\d{1,8}") || !t[i + 2].matches("-?\\d{1,4}") || !t[i + 3].matches("-?\\d{1,8}"))
+                if (i + 3 >= t.length || !t[i + 1].matches("-?\\d{1,8}") || !t[i + 2].matches("-?\\d{1,4}") || !t[i + 3].matches("-?\\d{1,8}"))  // structural: token positions of x y z in a blueprint line
                     return new Args(null, null, false, 0, USAGE);
-                at = new int[]{Integer.parseInt(t[i + 1]), Integer.parseInt(t[i + 2]), Integer.parseInt(t[i + 3])};
-                i += 3;
+                at = new int[]{Integer.parseInt(t[i + 1]), Integer.parseInt(t[i + 2]), Integer.parseInt(t[i + 3])};  // structural: token positions of x y z in a blueprint line
+                i += 3;  // structural: token positions of x y z in a blueprint line
             } else if (name == null && w.matches("[a-z0-9_][a-z0-9_\\-]{0,63}(\\.(litematic|schem|schematic))?")) name = w.replaceFirst("\\.(litematic|schem|schematic)$", "");
             else return new Args(null, null, false, 0, USAGE);
         }
@@ -201,7 +201,7 @@ public final class Blueprint {
         if (!m.isEmpty()) {
             List<String> parts = new ArrayList<>();
             for (Map.Entry<String, Integer> e : m.entrySet()) {
-                if (parts.size() == 4) { parts.add("+" + (m.size() - 4) + " more"); break; }
+                if (parts.size() == 4) { parts.add("+" + (m.size() - 4) + " more"); break; }  // structural: display: how many items a text lists
                 parts.add(e.getValue() + " " + bagKey(e.getKey()));
             }
             sb.append(", missing ").append(String.join(", ", parts));
@@ -222,9 +222,9 @@ public final class Blueprint {
         List<String> parts = new ArrayList<>();
         for (Map.Entry<String, Integer> e : l) {
             sum += e.getValue();
-            if (parts.size() < 8) parts.add(e.getValue() + " " + bagKey(e.getKey()));
+            if (parts.size() < 8) parts.add(e.getValue() + " " + bagKey(e.getKey()));  // structural: display: how many items a text lists
         }
-        if (l.size() > 8) parts.add("+" + (l.size() - 8) + " more kinds");
+        if (l.size() > 8) parts.add("+" + (l.size() - 8) + " more kinds");  // structural: display: how many items a text lists
         return sum + " blocks: " + String.join(", ", parts);
     }
 }

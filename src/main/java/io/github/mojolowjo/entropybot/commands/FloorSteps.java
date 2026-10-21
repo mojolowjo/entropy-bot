@@ -52,7 +52,7 @@ final class FloorSteps {
         FloorFill.Run prev, run;
         LeaseSet leases;
         final Clearing.LiveWorld world = new Clearing.LiveWorld();
-        long lastBeat = -1000;
+        long lastBeat = -1000;  // structural: a time long ago (sentinel)
         boolean done;
         /** 0.39.q4: the settings from before a running climb, put back at its end */
         Jobs.Saved climbSaved;
@@ -130,7 +130,7 @@ final class FloorSteps {
                     fs.climbOnly).carry(fs.prev);
         }
         long now = seq.now();
-        if (now - fs.lastBeat >= 20) {
+        if (now - fs.lastBeat >= Tuning.i("floorSteps.beatTicks")) {
             fs.lastBeat = now;
             fs.leases.beat();
             fs.leases.ensure();                 // a lease that died during a hold: the next placement takes its cell again
@@ -268,12 +268,12 @@ final class FloorSteps {
             float yaw = JunkDrop.throwYaw(js.start, p.getX(), p.getZ(), js.job.box);
             p.setYRot(yaw);
             p.setYHeadRot(yaw);
-            p.setXRot(-10f);
+            p.setXRot(-10f);  // structural: look pitch up in degrees
             js.t0 = now;
             seq.setStatus(seq.label + " - throwing junk blocks away");
             return "wait";
         }
-        if (now - js.t0 < 4) return "wait";
+        if (now - js.t0 < Tuning.i("floorSteps.settleTicks")) return "wait";
         if (mc.screen != null || Gui.open(p)) Gui.close(p);
         for (Map.Entry<String, Integer> e : js.plan.entrySet()) {
             String r = GuiCore.drop(new McMenu(p), e.getKey() + " " + e.getValue());

@@ -74,7 +74,7 @@ public final class Predictions {
             if (l.isEmpty() || l.startsWith("time,")) continue;
             try {
                 List<String> c = split(l);
-                if (c.size() != 8) throw new IllegalArgumentException("columns " + c.size());
+                if (c.size() != 8) throw new IllegalArgumentException("columns " + c.size());  // structural: the ledger has 8 columns
                 rows.add(new Row(Long.parseLong(c.get(0)), c.get(1), c.get(2), c.get(3), d(c.get(4)), d(c.get(5)), d(c.get(6)), d(c.get(7))));
             } catch (RuntimeException e) {
                 if (bad != null && bad.length > 0) bad[0]++;
@@ -117,15 +117,15 @@ public final class Predictions {
             Row r = rows.get(i);
             b.append('\n').append(r.step()).append(": ").append(f(r.predictedS()).isEmpty() ? "?" : f(r.predictedS())).append(" -> ").append(f(r.actualS()))
                     .append(" s, ").append(f(r.blocks())).append(" blocks, ").append(f(r.damage())).append(" hp")
-                    .append(Double.isNaN(r.error()) ? "" : String.format(Locale.ROOT, " (%+.0f%%)", r.error() * 100));
+                    .append(Double.isNaN(r.error()) ? "" : String.format(Locale.ROOT, " (%+.0f%%)", r.error() * 100));  // structural: percent
         }
         List<Off> off = off(rows);
-        if (off.isEmpty()) b.append("\nno step kind is off by more than ").append(Math.round(tolerance() * 100)).append("% over ").append(minSamples()).append("+ samples");
+        if (off.isEmpty()) b.append("\nno step kind is off by more than ").append(Math.round(tolerance() * 100)).append("% over ").append(minSamples()).append("+ samples");  // structural: percent
         else {
-            b.append("\nwhere the model is wrong (over ").append(Math.round(tolerance() * 100)).append("% off, ").append(minSamples()).append("+ samples):");
+            b.append("\nwhere the model is wrong (over ").append(Math.round(tolerance() * 100)).append("% off, ").append(minSamples()).append("+ samples):");  // structural: percent
             for (Off o : off)
                 b.append('\n').append(o.key()).append(": ").append(o.n()).append(" samples, predicted ").append(f(o.predictedS())).append(" s, took ").append(f(o.actualS()))
-                        .append(" s (").append(String.format(Locale.ROOT, "%+.0f%%", o.error() * 100)).append(')');
+                        .append(" s (").append(String.format(Locale.ROOT, "%+.0f%%", o.error() * 100)).append(')');  // structural: percent
         }
         if (bad > 0) b.append("\n").append(bad).append(" unreadable line(s) skipped");
         return b.toString();

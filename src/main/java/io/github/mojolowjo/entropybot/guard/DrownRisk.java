@@ -48,7 +48,7 @@ public final class DrownRisk {
     /** need x margin / air seconds; air in ticks (300 full = 15 s). */
     public static double risk(int digDown, int waterAbove, int air, int tier) {
         double need = needS(digDown, waterAbove, tier) * margin();
-        double a = Math.max(0, air) / 20.0;
+        double a = Math.max(0, air) / 20.0;  // game fact: air is counted in ticks, 20 per second
         if (a <= 0) return need > 0 ? Double.POSITIVE_INFINITY : 0;
         return need / a;
     }
@@ -69,7 +69,7 @@ public final class DrownRisk {
      */
     public static double cellRisk(int depth, double workS, int air) {
         double need = (Math.max(0, workS) + Math.max(0, depth) / swimUp()) * margin();
-        double a = Math.max(0, air) / 20.0;
+        double a = Math.max(0, air) / 20.0;  // game fact: air is counted in ticks, 20 per second
         if (a <= 0) return need > 0 ? Double.POSITIVE_INFINITY : 0;
         return need / a;
     }
@@ -77,13 +77,13 @@ public final class DrownRisk {
     /** A* break multiplier for a cell under water: 1 + 4 risk^2, infinite when fatal. */
     public static double breakMult(int depth, int air, int tier) {
         double r = cellRisk(depth, digS(tier), air);
-        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + 4 * r * r;
+        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + Tuning.i("drownRisk.riskK") * r * r;
     }
 
     /** A* place multiplier for a cell in water: 1 + 4 risk^2, infinite when fatal. */
     public static double placeMult(int depth, int air) {
         double r = cellRisk(depth, placeS(), air);
-        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + 4 * r * r;
+        return fatal(r) ? Double.POSITIVE_INFINITY : 1 + Tuning.i("drownRisk.riskK") * r * r;
     }
 
     /** Walk-blocks: K x risk^2 under 1, infinite from 1. */
@@ -92,7 +92,7 @@ public final class DrownRisk {
     public static String terms(int digDown, int waterAbove, int air, int tier) {
         double r = risk(digDown, waterAbove, air, tier);
         return String.format(Locale.ROOT, "dig %d down under %d water (pickaxe tier %d, %.1f s/block): needs %.1f s x%.1f, air %.1f s, drown risk %s",
-                digDown, waterAbove, tier, digS(tier), needS(digDown, waterAbove, tier), margin(), Math.max(0, air) / 20.0,
+                digDown, waterAbove, tier, digS(tier), needS(digDown, waterAbove, tier), margin(), Math.max(0, air) / 20.0,  // game fact: air is counted in ticks, 20 per second
                 Double.isInfinite(r) ? "max" : String.format(Locale.ROOT, "%.2f", r));
     }
 

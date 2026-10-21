@@ -29,7 +29,7 @@ public final class OreValue {
         String p = ore.substring(ore.indexOf(':') + 1);
         if (p.startsWith("deepslate_")) p = p.substring(10);
         if (p.startsWith("nether_")) p = p.substring(7);
-        return p.endsWith("_ore") ? p.substring(0, p.length() - 4) : p;
+        return p.endsWith("_ore") ? p.substring(0, p.length() - 4) : p;  // structural: length of the "_ore" suffix
     }
 
     /** The item an ore block drops ("iron" -> raw_iron). */

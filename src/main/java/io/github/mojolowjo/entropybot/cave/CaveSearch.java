@@ -119,7 +119,7 @@ public final class CaveSearch {
                 if (standable(w, nx, y, nz)) ny = y;
                 else if (w.open(x, y + 2, z) && standable(w, nx, y + 1, nz)) ny = y + 1;
                 else if (w.open(nx, y, nz) && w.open(nx, y + 1, nz)) {
-                    for (int drop = 1; drop <= 3; drop++) {
+                    for (int drop = 1; drop <= Tuning.i("caveSearch.maxDrop"); drop++) {
                         if (standable(w, nx, y - drop, nz)) { ny = y - drop; break; }
                         if (!w.open(nx, y - drop, nz)) break;
                     }

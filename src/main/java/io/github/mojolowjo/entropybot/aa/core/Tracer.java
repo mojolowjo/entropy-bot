@@ -97,8 +97,8 @@ public final class Tracer {
     /** "2m ago: done TOOLS" or "never". */
     public String lastSwitchText(long now) {
         if (lastSwitchAt < 0) return "never";
-        long s = (now - lastSwitchAt) / 1000;
-        return (s < 120 ? s + "s" : s / 60 + "m") + " ago: " + lastSwitch;
+        long s = (now - lastSwitchAt) / 1000;  // structural: milliseconds per second
+        return (s < 120 ? s + "s" : s / 60 + "m") + " ago: " + lastSwitch;  // structural: display: seconds under 2 minutes, then minutes
     }
 
     /** The snapshot JSON (AA_PLAN 6), with the caller's header fields and the inputs block. */
@@ -115,7 +115,7 @@ public final class Tracer {
         float[] v = in.vector();
         for (int i = 0; i < v.length; i++) {
             if (i > 0) b.append(',');
-            b.append(q(Inputs.NAMES[i])).append(':').append(Math.round(v[i] * 1000) / 1000.0);
+            b.append(q(Inputs.NAMES[i])).append(':').append(Math.round(v[i] * 1000) / 1000.0);  // structural: milliseconds per second
         }
         b.append("},\"counts\":{\"switches\":").append(counts.switches).append(",\"pointless\":").append(counts.pointless)
                 .append(",\"preempts\":").append(counts.preempts).append(",\"fails\":").append(counts.fails).append(",\"lost\":").append(counts.lost)

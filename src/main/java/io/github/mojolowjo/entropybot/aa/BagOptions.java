@@ -46,10 +46,10 @@ public final class BagOptions {
             Price.add(rows, dropped, m, now, f.base() == null ? o : o.withSite(Site.of(f.base())));
         }
         // 2. a chest here (no base chests)
-        int planks = f.planks() + 4 * f.logs();
+        int planks = f.planks() + 4 * f.logs();  // game fact: a log makes 4 planks
         if (f.baseChests()) dropped.add("chest here: base chests known");
         else if (f.cell() == null || f.me() == null) dropped.add("chest here: no free cell");
-        else if (!f.chestInBag() && planks < 8) dropped.add("chest here: " + planks + " planks, 8 wanted");
+        else if (!f.chestInBag() && planks < 8) dropped.add("chest here: " + planks + " planks, 8 wanted");  // game fact: a chest takes 8 planks
         else {
             double s = (f.chestInBag() ? 0 : Price.craftS()) + Price.placeS() + dep;
             List<Step> st = new java.util.ArrayList<>();

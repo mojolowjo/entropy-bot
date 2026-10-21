@@ -78,7 +78,7 @@ public final class Ways {
         if (r.infeasible()) {
             // live 2026-10-18: a verdict that disagrees with the saved routine spun every tick; held like a failed plan
             st.searchSince = -1;
-            f.failedFor(need, key, r.why(), now, bb.in, (long) (s("plannerHoldS") * 1000));
+            f.failedFor(need, key, r.why(), now, bb.in, (long) (s("plannerHoldS") * 1000));  // structural: milliseconds per second
             bb.port.log(need + ": planner routine for " + goal + " held " + Math.round(s("plannerHoldS")) + " s: " + r.why());
             return new Plan(goal, JobPort.PlanState.NONE, null, 0, r.why(), 0, null);
         }
@@ -97,18 +97,18 @@ public final class Ways {
                 }
                 st.lastAsk = now;
                 long waited = now - st.searchSince;
-                if (waited > s("plannerWaitS") * 1000) {
+                if (waited > s("plannerWaitS") * 1000) {  // structural: milliseconds per second
                     st.searchSince = -1;
                     String why = "the planner still searched after " + Math.round(s("plannerWaitS")) + " s";
-                    f.failedFor(need, key, why, now, bb.in, (long) (s("plannerHoldS") * 1000));
+                    f.failedFor(need, key, why, now, bb.in, (long) (s("plannerHoldS") * 1000));  // structural: milliseconds per second
                     bb.port.log(need + ": planner row for " + goal + " dropped, held " + Math.round(s("plannerHoldS")) + " s: " + why);
                     return new Plan(goal, JobPort.PlanState.NONE, null, 0, why, 0, null);
                 }
-                return new Plan(goal, JobPort.PlanState.SEARCHING, null, 0, "still searching (" + waited / 1000 + " s)", waited, null);
+                return new Plan(goal, JobPort.PlanState.SEARCHING, null, 0, "still searching (" + waited / 1000 + " s)", waited, null);  // structural: milliseconds per second
             }
             default -> {
                 st.searchSince = -1;
-                if (!java.util.Objects.equals(st.woodFor, r.why()) || st.woodAt < 0 || now - st.woodAt >= 1000) {
+                if (!java.util.Objects.equals(st.woodFor, r.why()) || st.woodAt < 0 || now - st.woodAt >= Tuning.i("ways.woodRetryMs")) {
                     st.woodRow = wood(bb, woodMem, r.logsMissing(), now);
                     st.woodFor = r.why();
                     st.woodAt = now;

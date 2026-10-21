@@ -26,7 +26,7 @@ public final class ReflexRules {
      */
     public static boolean swimUp(boolean eyesInWater, int air, int maxAir, boolean somethingDrives) {
         if (!eyesInWater) return false;
-        if (air * 3 < maxAir) return true;
+        if (air * Tuning.i("reflexRules.airDiv") < maxAir) return true;
         return !somethingDrives;
     }
 
@@ -43,7 +43,7 @@ public final class ReflexRules {
         if (tookOver && inWater && air < maxAir) return Air.TAKEOVER;
         if (!eyesInWater) return Air.NONE;
         if (!somethingDrives) return Air.SWIM;
-        return air * 3 < maxAir ? Air.TAKEOVER : Air.DEFER;
+        return air * Tuning.i("reflexRules.airDiv") < maxAir ? Air.TAKEOVER : Air.DEFER;
     }
 
     /** 0.34.3: a dry cell to stand on (solid ground under it, feet and head free of blocks and fluid). */
@@ -100,7 +100,7 @@ public final class ReflexRules {
      */
     public static boolean wantsMeal(int food, float health, int bestNutrition) {
         if (bestNutrition <= 0) return wantsMeal(food, health);
-        return food <= eatUrgent() || 20 - food >= bestNutrition || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);
+        return food <= eatUrgent() || 20 - food >= bestNutrition || (food < EAT_FOOD_HURT && health < EAT_FOOD_HURT);  // game fact: the food bar is 20 points
     }
 
     /**
@@ -111,7 +111,7 @@ public final class ReflexRules {
         if (id == null || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.junkFood(id) || harmful) return -1;
         if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.effectFood(id) && health >= goldenBelow()) return -1;
         if (nutrition <= 0) return -1;
-        return nutrition * 10 + Math.round(saturation * 10);
+        return nutrition * 10 + Math.round(saturation * 10);  // structural: ranking: nutrition and saturation in tenths
     }
 
     /** How far monsters count: 8 blocks, 24 right after a hit. */
@@ -125,7 +125,7 @@ public final class ReflexRules {
      */
     public static boolean counts(double dist, boolean recentlyHurt, boolean seen) {
         if (dist > lookRadius(recentlyHurt)) return false;
-        return recentlyHurt || dist <= 2.5 || seen;
+        return recentlyHurt || dist <= Tuning.get("reflexRules.seenDist") || seen;
     }
 
     /** A spot dist blocks straight away from the threat: {x, z}. */

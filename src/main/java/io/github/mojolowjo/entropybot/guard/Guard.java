@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import io.github.mojolowjo.entropybot.Quiet;
 
 import com.google.gson.JsonObject;
@@ -66,7 +68,7 @@ public final class Guard {
     private volatile Set<Block> protectedBlocks;   // null until built on the client thread
     private volatile int blockEntityCount, namedCount;
     private EventRing events;
-    private long lastAstarLogTick = -1000;
+    private long lastAstarLogTick = -1000;  // structural: a time long ago (sentinel)
 
     private Guard() {}
 
@@ -401,7 +403,7 @@ public final class Guard {
         if (!v.allowed()) return true;
         if (v.wouldVeto()) {
             long t = core.tick();
-            if (t - lastAstarLogTick >= 100) {
+            if (t - lastAstarLogTick >= Tuning.i("guard.astarLogTicks")) {
                 lastAstarLogTick = t;
                 EventRing ring = events;
                 if (ring != null) ring.push("guard", "A* would refuse breaking at " + x + " " + y + " " + z + ": " + v.reason(), null);

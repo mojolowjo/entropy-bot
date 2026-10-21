@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+
 import baritone.api.pathing.goals.GoalNear;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.events.EventRing;
@@ -58,8 +60,8 @@ public final class FireReflex {
     private BlockPos waterAt;
     private net.minecraft.world.item.Item drinkItem;
     private String[] leases;
-    private long lastWhyLog = -100000;
-    private long lastStep = -100000;
+    private long lastWhyLog = -100000;  // structural: a time long ago (sentinel)
+    private long lastStep = -100000;  // structural: a time long ago (sentinel)
     private int errors;
 
     public FireReflex(EventRing events, EngineProcess engine, io.github.mojolowjo.entropybot.aa.moves.Moves moves) {
@@ -78,7 +80,7 @@ public final class FireReflex {
             return step(mc, p, now, fighting);
         } catch (Throwable t) {
             errors++;
-            if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] fire reflex error #{}: {}", errors, t.toString());
+            if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] fire reflex error #{}: {}", errors, t.toString());  // structural: log throttle: only the first few errors are logged
             stand(mc, "error");
             return false;
         }
@@ -119,11 +121,11 @@ public final class FireReflex {
         }
         if (use == Use.DRINK) {
             useTicks++;
-            moves.lookAt(p.getX(), p.getEyeY() + 10, p.getZ());     // the sky, through LookBehavior (see drink)
+            moves.lookAt(p.getX(), p.getEyeY() + 10, p.getZ());     // the sky, through LookBehavior (see drink)  // structural: look at the sky: 10 blocks up
             // the drink is gone from the hand (an empty bucket or bottle now): let go at once, never a second use
             boolean gone = drinkItem != null && !p.getMainHandItem().is(drinkItem);
             if (!gone) mc.options.keyUse.setDown(true);
-            if (gone || useTicks > 45 || !p.isUsingItem() && useTicks > 5) {
+            if (gone || useTicks > Tuning.i("fireReflex.useMaxTicks") || !p.isUsingItem() && useTicks > Tuning.i("fireReflex.useStartTicks")) {
                 mc.options.keyUse.setDown(false);
                 use = Use.NONE;
                 note("drank (" + doing + ")");
@@ -134,8 +136,8 @@ public final class FireReflex {
         if (use == Use.WATER_PLACED) {
             useTicks++;
             moves.lookAt(waterAt.getX() + 0.5, waterAt.getY() + 0.5, waterAt.getZ() + 0.5);
-            if (useTicks == 4 || useTicks == 12) pickUpWater(mc, p);
-            if (useTicks >= 16 || !p.level().getFluidState(waterAt).is(FluidTags.WATER)) {
+            if (useTicks == Tuning.i("fireReflex.pickUpAt") || useTicks == Tuning.i("fireReflex.pickUpAgainAt")) pickUpWater(mc, p);
+            if (useTicks >= Tuning.i("fireReflex.useEndTicks") || !p.level().getFluidState(waterAt).is(FluidTags.WATER)) {
                 use = Use.NONE;
                 stand(mc, "water picked up");
             }
@@ -160,7 +162,7 @@ public final class FireReflex {
             boolean pre = bucket >= 0 && onFire && !resistant && !inHazard && SurvivalRules.mayPlaceWater(true, nether, containerNear(level, feet), feetFree(level, feet));
             String[] got = pre ? Guard.INSTANCE.waterAtFeet(level, feet) : null;
             boolean may = pre && got != null;
-            if (bucket >= 0 && onFire && !inHazard && !may && now - lastWhyLog > 100) {
+            if (bucket >= 0 && onFire && !inHazard && !may && now - lastWhyLog > Tuning.i("fireReflex.whyLogTicks")) {
                 lastWhyLog = now;
                 LOG.info("[entropybot] fire reflex: water bucket not used: {}", nether ? "the Nether" : containerNear(level, feet) ? "a container near"
                         : !feetFree(level, feet) ? "my feet cell is taken" : resistant ? "fire resistant" : "the guard (see above)");
@@ -355,7 +357,7 @@ public final class FireReflex {
         // look at the sky: the key is still down the tick the drink ends, and an empty bottle's use then hits nothing
         // (backbone step 4: through LookBehavior, held every drink tick; the drink takes 32 ticks, the look a few)
         endWay();
-        moves.lookAt(p.getX(), p.getEyeY() + 10, p.getZ());
+        moves.lookAt(p.getX(), p.getEyeY() + 10, p.getZ());  // structural: look at the sky: 10 blocks up
         engine.hold();
         use = Use.DRINK;
         useTicks = 0;
@@ -367,13 +369,13 @@ public final class FireReflex {
     private void pickUpWater(Minecraft mc, LocalPlayer p) {
         int b = find(p, s -> s.is(Items.BUCKET));
         if (b < 0 || !select(mc, p, b)) return;
-        if (p.getXRot() < 60) LOG.info("[entropybot] fire reflex: picking the water up with the look at pitch {} (LookBehavior not down yet)", Math.round(p.getXRot()));
+        if (p.getXRot() < 60) LOG.info("[entropybot] fire reflex: picking the water up with the look at pitch {} (LookBehavior not down yet)", Math.round(p.getXRot()));  // structural: pitch above which the look is counted as down (degrees)
         mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
     }
 
     /** The slot (0..35) of the first matching stack, or -1. */
     static int find(LocalPlayer p, Predicate<ItemStack> f) {
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots (hotbar is slots 0-8)
             ItemStack st = p.getInventory().getItem(i);
             if (!st.isEmpty() && f.test(st)) return i;
         }
@@ -384,7 +386,7 @@ public final class FireReflex {
     private static boolean select(Minecraft mc, LocalPlayer p, int slot) {
         if (slot < 0) return false;
         var inv = p.getInventory();
-        if (slot < 9) inv.selected = slot;
+        if (slot < 9) inv.selected = slot;  // game fact: the hotbar is inventory slots 0-8
         else mc.gameMode.handleInventoryMouseClick(p.inventoryMenu.containerId, slot, inv.selected, ClickType.SWAP, p);
         return true;
     }
@@ -445,7 +447,7 @@ public final class FireReflex {
         int bx = p.getBlockX(), by = p.getBlockY(), bz = p.getBlockZ(), r = (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.fire.waterR");
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
-        for (int dy = -3; dy <= 2; dy++) for (int dz = -r; dz <= r; dz++) for (int dx = -r; dx <= r; dx++) {
+        for (int dy = -Tuning.i("fireReflex.scanDown"); dy <= 2; dy++) for (int dz = -r; dz <= r; dz++) for (int dx = -r; dx <= r; dx++) {
             int x = bx + dx - g.ox, y = by + dy - g.oy, z = bz + dz - g.oz;
             if (!g.in(x, y, z) || g.codes[g.idx(x, y, z)] != ReachGrid.WATER) continue;
             double d = dx * dx + dy * dy + dz * dz;

@@ -106,7 +106,7 @@ public final class WatchEvents {
 
     private static void fail(String where, Throwable t) {
         errors++;
-        if (errors <= 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): ", where, t);
-        else if (errors % 1000 == 0) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): {} errors so far, last {}", where, errors, t.toString());
+        if (errors <= 5) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): ", where, t);  // structural: log throttle: only the first few errors are logged
+        else if (errors % 1000 == 0) com.mojang.logging.LogUtils.getLogger().warn("[entropybot] watch camera ({}): {} errors so far, last {}", where, errors, t.toString());  // structural: log throttle: only the first few errors are logged
     }
 }

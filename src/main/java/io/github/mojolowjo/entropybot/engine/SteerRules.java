@@ -66,7 +66,7 @@ public final class SteerRules {
 
     /** Rounding noise (cos 90 = 6e-17) to a clean 0, so "no forward impulse" stays exactly that. */
     private static float clean(float v) {
-        return Math.abs(v) < 1e-6f ? 0f : v;
+        return Math.abs(v) < 1e-6f ? 0f : v;  // structural: epsilon
     }
 
     /**
@@ -123,9 +123,9 @@ public final class SteerRules {
 
     /** Pure: a yaw wrapped into [-180, 180), so a long turn never grows the number (float precision). */
     public static float wrap(float yaw) {
-        float y = (yaw + 180f) % 360f;
-        if (y < 0f) y += 360f;
-        return y - 180f;
+        float y = (yaw + 180f) % 360f;  // structural: degrees
+        if (y < 0f) y += 360f;  // structural: degrees
+        return y - 180f;  // structural: degrees
     }
 
     /**

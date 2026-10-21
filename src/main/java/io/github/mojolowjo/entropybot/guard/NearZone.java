@@ -112,7 +112,7 @@ public final class NearZone {
             where = "around you at " + b.cx + " " + (b.y1 + yHalf()) + " " + b.cz + (lastSource == null ? "" : " via " + lastSource);
         } else {
             long u = unknownForMs(nowMs);
-            where = "I don't know where you are" + (u > 0 ? " (" + u / 1000 + " s)" : "") + " - the zone is off until I see you or your companion";
+            where = "I don't know where you are" + (u > 0 ? " (" + u / 1000 + " s)" : "") + " - the zone is off until I see you or your companion";  // structural: milliseconds per second
         }
         return "near me: a circle of " + r + " blocks (on, " + where + ")" + (errors > 0 ? " [" + errors + " errors, last: " + lastError + "]" : "");
     }

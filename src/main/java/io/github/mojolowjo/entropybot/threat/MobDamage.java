@@ -26,7 +26,7 @@ public final class MobDamage {
     static String key(String kind) { return kind == null ? "" : kind.replaceFirst("^minecraft:", ""); }
 
     public synchronized void add(String kind, double amount) {
-        if (!(amount > 0) || amount > 100) return;
+        if (!(amount > 0) || amount > Tuning.i("mobDamage.maxHit")) return;
         double[] s = m.get(key(kind));
         if (s == null) m.put(key(kind), new double[]{amount, 1});
         else {
@@ -58,7 +58,7 @@ public final class MobDamage {
         JsonObject o = new JsonObject();
         for (Map.Entry<String, double[]> e : m.entrySet()) {
             JsonObject x = new JsonObject();
-            x.addProperty("avg", Math.round(e.getValue()[0] * 100) / 100.0);
+            x.addProperty("avg", Math.round(e.getValue()[0] * 100) / 100.0);  // structural: percent
             x.addProperty("n", (long) e.getValue()[1]);
             o.add(e.getKey(), x);
         }

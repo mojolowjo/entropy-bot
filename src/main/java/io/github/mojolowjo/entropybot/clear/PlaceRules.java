@@ -93,7 +93,7 @@ public final class PlaceRules {
      * first; ties go by the order above.
      */
     public static Pos tableSpot(ClearWorld w, Bot bot, ClearBox avoid, java.util.function.Predicate<Pos> allowed) {
-        int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());
+        int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());  // structural: epsilon: standing check
         int[][] offs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 },
                 { 2, 0 }, { -2, 0 }, { 0, 2 }, { 0, -2 } };
         Pos best = null;
@@ -101,11 +101,11 @@ public final class PlaceRules {
         for (int[] o : offs) {
             int x = bx + o[0], z = bz + o[1];
             // the bot's own body: its feet cell may overlap a neighbour when it stands near an edge
-            if (Math.abs(x + 0.5 - bot.x()) < 0.8 && Math.abs(z + 0.5 - bot.z()) < 0.8) continue;
+            if (Math.abs(x + 0.5 - bot.x()) < Tuning.get("placeRules.selfClear") && Math.abs(z + 0.5 - bot.z()) < Tuning.get("placeRules.selfClear")) continue;
             if (!free(w, x, by, z) || !clickable(w, x, by - 1, z) || ClearEngine.nextToLiquid(w, x, by, z)) continue;
             Pos p = new Pos(x, by, z);
             if (allowed != null && !allowed.test(p)) continue;
-            int score = (avoid != null && avoid.contains(x, by, z) ? 10 : 0) + (3 - Math.min(3, wallSides(w, x, by, z)));
+            int score = (avoid != null && avoid.contains(x, by, z) ? Tuning.i("placeRules.avoidPenalty") : 0) + (3 - Math.min(3, wallSides(w, x, by, z)));
             if (score < bestScore) {
                 bestScore = score;
                 best = p;
@@ -177,7 +177,7 @@ public final class PlaceRules {
 
     /** 0.30.7: the place step's end after waiting (waitTicks) for what did not move. what: "a cow". */
     public static String mobStayedText(String what, int x, int y, int z) {
-        long s = (what.startsWith("my emptied corpse") ? emptyCorpseWaitTicks() : mobWaitTicks()) / 20;
+        long s = (what.startsWith("my emptied corpse") ? emptyCorpseWaitTicks() : mobWaitTicks()) / 20;  // game fact: 20 game ticks per second
         return what + " stayed in the way at " + x + " " + y + " " + z + " for " + s + " s - next: place again when it has moved";
     }
 

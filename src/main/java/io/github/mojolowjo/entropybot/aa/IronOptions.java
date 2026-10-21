@@ -260,7 +260,7 @@ public final class IronOptions {
             else b.append(ranked.get(0).text());
             if (ranked.size() > 1) {
                 b.append("; then ");
-                for (int i = 1; i < ranked.size() && i < 4; i++) b.append(i > 1 ? ", " : "").append(ranked.get(i).text());
+                for (int i = 1; i < ranked.size() && i < 4; i++) b.append(i > 1 ? ", " : "").append(ranked.get(i).text());  // structural: display: how many items a text lists
             }
             if (!dropped.isEmpty()) b.append("; dropped: ").append(String.join(", ", dropped));
             b.append("; smelt ").append(smelt.name().toLowerCase(Locale.ROOT));

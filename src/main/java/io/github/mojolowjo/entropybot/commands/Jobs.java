@@ -92,7 +92,7 @@ public final class Jobs {
     private final Core core;
     private final Commands commands;
     public Job job;
-    private long tpFailedAt = -100000, holdStart = -1;
+    private long tpFailedAt = -100000, holdStart = -1;  // structural: a time long ago (sentinel)
     private Reflexes.Reflex reflexWas = Reflexes.Reflex.NONE;
     /** A follow the fence keeps an eye on: {name, from}. */
     String[] followWatch;
@@ -572,7 +572,7 @@ public final class Jobs {
         if (!door("home")) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("home");
         JsonObject h = commands.home();
         int[] me = here(p);
-        if (h != null && dimOf(h).equals(Guard.dimOf(p.level())) && distSq(pos(h), me) <= 64) return "ok: already home (" + fmt(pos(h)) + ")";
+        if (h != null && dimOf(h).equals(Guard.dimOf(p.level())) && distSq(pos(h), me) <= Tuning.i("jobs.homeDistSq")) return "ok: already home (" + fmt(pos(h)) + ")";
         // 0.24.1: server commands off: walk home (one Baritone goal), never /home
         if (!io.github.mojolowjo.entropybot.move.ServerCmds.allowed("home")) {
             if (h == null) return "error: server commands are off and I know no home - place base, or server commands on";
@@ -620,7 +620,7 @@ public final class Jobs {
         int s = (int) Math.min(Math.max(Chains.leadingInt(text) == 0 ? 10 : Chains.leadingInt(text), 1), 3600);
         Job j = new Job();
         j.type = "wait";
-        j.until = core.tick() + s * 20L;
+        j.until = core.tick() + s * 20L;  // game fact: 20 game ticks per second
         j.status = "waiting " + s + "s";
         job = j;
         return "started: waiting " + s + "s";
@@ -643,7 +643,7 @@ public final class Jobs {
         Job j = new Job();
         j.type = "twerk";
         if (seconds > 0) {
-            j.total = Math.min(seconds, 60) * 20;
+            j.total = Math.min(seconds, 60) * 20;  // game fact: 20 game ticks per second
             j.status = "twerking";
             job = j;
             return "started: twerking for " + Math.min(seconds, 60) + "s";
@@ -742,7 +742,7 @@ public final class Jobs {
         if (d == null) return false;
         double dist = Math.sqrt(distSq(here(p), d));
         long now = core.tick();
-        if (j.lastStepTick < 0 || now - j.lastStepTick > 40) {
+        if (j.lastStepTick < 0 || now - j.lastStepTick > Tuning.i("jobs.stepGapTicks")) {
             j.bestDist = dist;
             j.bestTick = now;
         }
@@ -761,8 +761,8 @@ public final class Jobs {
         long now = core.tick();
         io.github.mojolowjo.entropybot.aa.moves.JobHands.get().tick();      // backbone step 3: the job hands follow Baritone
         reflexWatch(p);
-        if (now % 20 == 10) fenceWatch(p);
-        if (now % 20 == 15) followFixTick(p);
+        if (now % 20 == 10) fenceWatch(p);  // structural: periodic cadence in ticks (20 ticks = 1 s)
+        if (now % 20 == 15) followFixTick(p);  // structural: periodic cadence in ticks (20 ticks = 1 s)
         if (!running()) return;
         if (core.reflexes.hold()) return;                // a reflex holds the job still
         Job j = job;
@@ -773,11 +773,11 @@ public final class Jobs {
         switch (j.type) {
             case "twerk" -> {
                 j.ticks++;
-                Minecraft.getInstance().options.keyShift.setDown(j.ticks < j.total && (j.ticks / 4) % 2 == 0);
+                Minecraft.getInstance().options.keyShift.setDown(j.ticks < j.total && (j.ticks / 4) % 2 == 0);  // structural: sneak blink: toggles every 4 ticks
                 if (j.ticks >= j.total) finish("ok: twerked");
             }
             case "wait" -> { if (now >= j.until) finish("ok: waited"); }
-            case "travel", "spawn" -> { if (now % 20 == 0) stepWalk(p, j); }
+            case "travel", "spawn" -> { if (now % 20 == 0) stepWalk(p, j); }  // structural: periodic cadence in ticks (20 ticks = 1 s)
             case "seq" -> { if (now % 2 == 0 || j.seq.everyTick()) j.seq.tick(p); }
             default -> {}
         }
@@ -820,7 +820,7 @@ public final class Jobs {
             finish(noPathResult(p, j) + " (walk: Baritone found no path)");
             return;
         }
-        if (ev == null && core.tick() - j.startTick < 40) return;
+        if (ev == null && core.tick() - j.startTick < Tuning.i("jobs.startWaitTicks")) return;
         if (b != null && !idle(b)) return;
         if (j.finalGoal != null && b != null) {            // far walk: GoalXZ reached, now the block itself
             baritone.api.pathing.goals.Goal g = j.finalGoal;
@@ -1072,9 +1072,9 @@ public final class Jobs {
         }
         // re-aim only when the player moved a fair share of the way (5 blocks, or 1/8 of the distance when far): every
         // new goal is a whole new Baritone search, and far away a few blocks change nothing about the way there
-        double far = Math.sqrt(distSq(t, here(p))) / 8;
+        double far = Math.sqrt(distSq(t, here(p))) / 8;  // structural: a trip is checked in eighths of the distance
         long moved = (long) Math.max(5, far);
-        if (System.currentTimeMillis() - followFixAt < 1500 || distSq(t, followFixGoal) <= moved * moved) return;
+        if (System.currentTimeMillis() - followFixAt < Tuning.i("jobs.followFixMs") || distSq(t, followFixGoal) <= moved * moved) return;
         String r = followFixGo(name, from, t);
         if (!r.startsWith("ok")) stopFollowFix("stopped: " + r.replaceFirst("^error: ", ""));
     }
@@ -1147,7 +1147,7 @@ public final class Jobs {
         int x = Integer.parseInt(c[0]), y = Integer.parseInt(c[1]), z = Integer.parseInt(c[2]);
         Vec3 center = new Vec3(x + 0.5, y + 0.5, z + 0.5);
         double dist = p.getEyePosition().distanceTo(center);
-        if (dist > 4.5) return "error: too far (" + Math.round(dist * 10) / 10.0 + " blocks), walk closer first";
+        if (dist > 4.5) return "error: too far (" + Math.round(dist * 10) / 10.0 + " blocks), walk closer first";  // game fact: survival interaction range 4.5
         p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
         Minecraft mc = Minecraft.getInstance();
         InteractionResult r = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(center, Direction.UP, new BlockPos(x, y, z), false));

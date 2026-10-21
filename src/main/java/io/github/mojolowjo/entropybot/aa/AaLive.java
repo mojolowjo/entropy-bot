@@ -188,5 +188,5 @@ public final class AaLive {
         return a;
     }
 
-    private static double r1(double v) { return Double.isFinite(v) ? Math.round(v * 10) / 10.0 : -1; }
+    private static double r1(double v) { return Double.isFinite(v) ? Math.round(v * 10) / 10.0 : -1; }  // structural: rounded to one decimal for the text
 }

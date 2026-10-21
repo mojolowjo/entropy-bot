@@ -184,7 +184,7 @@ public final class Steps {
             default -> {
                 if (now - stepStart > stepTicks()) {
                     safeCancel("timed out");
-                    fail("timed out after " + stepTicks() / 20 + " s" + (st.why() == null ? "" : " (" + st.why() + ")"));
+                    fail("timed out after " + stepTicks() / 20 + " s" + (st.why() == null ? "" : " (" + st.why() + ")"));  // game fact: 20 game ticks per second
                 } else if (st.why() != null) why = stage() + ": " + st.why();
             }
         }

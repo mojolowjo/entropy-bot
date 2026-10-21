@@ -476,7 +476,7 @@ public final class BaritoneCar implements Car {
         List<Item> out = new ArrayList<>();
         var p = Minecraft.getInstance().player;
         if (p == null) return out;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 36; i++) {  // game fact: the player inventory has 36 slots
             ItemStack s = p.getInventory().getItem(i);
             if (s.isEmpty() || !(s.getItem() instanceof BlockItem)) continue;
             String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();

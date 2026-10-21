@@ -324,7 +324,7 @@ final class Crafting {
 
     /** Within 16 of the base on each axis (the base's furnaces). */
     static boolean nearBase(int[] f, int[] b) {
-        return Math.abs(f[0] - b[0]) <= 16 && Math.abs(f[1] - b[1]) <= 16 && Math.abs(f[2] - b[2]) <= 16;
+        return Math.abs(f[0] - b[0]) <= Tuning.i("crafting.nearR") && Math.abs(f[1] - b[1]) <= Tuning.i("crafting.nearR") && Math.abs(f[2] - b[2]) <= Tuning.i("crafting.nearR");
     }
 
     /** The owner said "untrust x y z" for this block: the bot never uses it. */
@@ -778,7 +778,7 @@ final class Crafting {
         if (m.isEmpty()) return CraftTexts.KIT_USAGE;
         // pieces it carries or wears count as had
         Map<String, Integer> have = new LinkedHashMap<>(Gui.inventory(p));
-        for (int i = 5; i <= 8; i++) {
+        for (int i = 5; i <= 8; i++) {  // game fact: the crafting grid slots 5 to 8 are the 2x2 grid result row
             ItemStack s = p.inventoryMenu.getSlot(i).getItem();
             if (!s.isEmpty()) have.merge(Gui.itemId(s), 1, Integer::sum);
         }
@@ -951,7 +951,7 @@ final class Crafting {
                 return "next";
             }
             case "wear":
-                if (elapsed < 10) return "wait";         // let the crafting screen close first
+                if (elapsed < Tuning.i("crafting.closeTicks")) return "wait";         // let the crafting screen close first
                 s.wore = Gui.wearArmor(p);
                 return "next";
             case "restocknote": {
@@ -1072,7 +1072,7 @@ final class Crafting {
         st.state = ps;
         if (ps.waitUntil >= 0) {
             if (now() < ps.waitUntil) {
-                s.setStatus(s.label + " - every furnace is busy, looking again in " + Math.max(1, (ps.waitUntil - now()) / 20) + " s");
+                s.setStatus(s.label + " - every furnace is busy, looking again in " + Math.max(1, (ps.waitUntil - now()) / 20) + " s");  // game fact: 20 game ticks per second
                 return "wait";
             }
             ps.waitUntil = -1;
@@ -1144,7 +1144,7 @@ final class Crafting {
     /** At the open furnace: busy (someone's smelting, or output nobody took) -> close it and pick another; else put input and fuel in. */
     private String smeltPut(Seq s, Step st, LocalPlayer p) {
         if (!Gui.open(p)) return "no container open";
-        if (now() - s.stepStart < 4) return "wait";            // let its slots arrive
+        if (now() - s.stepStart < Tuning.i("crafting.slotsTicks")) return "wait";            // let its slots arrive
         String bad = Gui.wrongScreen(p);
         if (bad != null) return bad;
         if (!furnaceMenu(p)) return "the block at " + Jobs.fmt(st.pos) + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
@@ -1195,7 +1195,7 @@ final class Crafting {
             Step burn = new Step("smeltfuelwait");
             burn.pos = st.pos;
             burn.smelt = st.smelt;
-            burn.ticks = (FurnaceJobs.burnSeconds(slots.fuel(), slots.fuelN()) + 20) * 20;
+            burn.ticks = (FurnaceJobs.burnSeconds(slots.fuel(), slots.fuelN()) + 20) * 20;  // game fact: 20 game ticks per second
             Step top = new Step("ops");
             top.pos = st.pos;
             top.ops = List.of(fuel);
@@ -1281,7 +1281,7 @@ final class Crafting {
     /** smelttake's state: taken so far, the last time more came out, a take waiting for the server. */
     static final class TakeState {
         int took, before = -1, asked, lastInput = -1;
-        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;
+        long lastProgress = System.currentTimeMillis(), settleTick, lookTick = -100, reopenAt = -1;  // structural: a time long ago (sentinel)
     }
 
     /** The open furnace: take our output as it comes until the target is reached; wait, or say it is gone or stopped. */
@@ -1313,7 +1313,7 @@ final class Crafting {
             } else if (ts.asked > 0) {
                 if (st.pickup) {
                     // a full bag: say so once, try again in half an hour (not every 5 minutes)
-                    fj.later(List.of(j), nowMs(), 30 * 60_000L);
+                    fj.later(List.of(j), nowMs(), Tuning.i("crafting.laterMin") * 60_000L);
                     addNote(s, "my inventory is full - left " + j.remaining() + " " + CraftPlanner.shortId(j.item) + " in the furnace at " + j.where());
                     return "next";
                 }
@@ -1333,7 +1333,7 @@ final class Crafting {
             s.stage = null;
             return "wait";
         }
-        if (now() - ts.lookTick < 10) return "wait";            // look twice a second
+        if (now() - ts.lookTick < Tuning.i("crafting.lookTicks")) return "wait";            // look twice a second
         ts.lookTick = now();
         if (!furnaceMenu(p)) return "the block at " + j.where() + " opened a " + Gui.menuName(p).replaceFirst("Menu$", "") + ", not a furnace";
         FurnaceJobs.Slots sl = furnaceSlots(p);
@@ -1410,7 +1410,7 @@ final class Crafting {
                 if (err == null) {
                     for (Step r : redo) {
                         if (r.type.equals("smeltpick")) r.redo = true;
-                        if (r.smeltKey >= 0) r.smeltKey += 1000 * (s.idx + 1);      // its own keys, apart from the plan's
+                        if (r.smeltKey >= 0) r.smeltKey += 1000 * (s.idx + 1);      // its own keys, apart from the plan's  // structural: milliseconds per second
                     }
                     redo.removeIf(r -> r.type.equals("smeltnote"));
                     add.addAll(redo);
@@ -1447,7 +1447,7 @@ final class Crafting {
                     leases = Clearing.newLeases();
                     int r = io.github.mojolowjo.entropybot.farm.FarmRules.farmR() + 1;
                     FarmSpot f = s.farm.farm;
-                    io.github.mojolowjo.entropybot.clear.ClearBox b = new io.github.mojolowjo.entropybot.clear.ClearBox(f.x() - r, f.y() - 3, f.z() - r, f.x() + r, f.y() + 3, f.z() + r);
+                    io.github.mojolowjo.entropybot.clear.ClearBox b = new io.github.mojolowjo.entropybot.clear.ClearBox(f.x() - r, f.y() - Tuning.i("crafting.boxDy"), f.z() - r, f.x() + r, f.y() + Tuning.i("crafting.boxDy"), f.z() + r);
                     String le = leases.take("farm replant " + f.fmt(), b, true, false);
                     if (le != null) {
                         leases.releaseAll();
@@ -1586,11 +1586,11 @@ final class Crafting {
                 c.stageTick = now();
                 return "wait";
             }
-            if (gridSize(p) == 3) {
+            if (gridSize(p) == 3) {  // game fact: a crafting table has a 3x3 grid
                 c.stage = null;
                 return "wait";
             }
-            if (now() - c.stageTick <= 60) return "wait";
+            if (now() - c.stageTick <= Tuning.i("crafting.tableWaitTicks")) return "wait";
             // P2: this table answers clicks but never opens (see DEAD_TABLES): skip it from now on, try another once
             DEAD_TABLES.add(tableKey(c.table));
             int[] other = c.deadRetried ? null : findTable(p);
@@ -1598,7 +1598,7 @@ final class Crafting {
             c.deadRetried = true;
             c.table = other;
             c.stageTick = -1;
-            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(other[0] + 0.5, other[1] + 0.5, other[2] + 0.5)) > 4.4) {
+            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(other[0] + 0.5, other[1] + 0.5, other[2] + 0.5)) > 4.4) {  // game fact: survival interaction range 4.5 minus a margin
                 Step walk = Step.walk(other, false);
                 walk.why = "the crafting table at " + Jobs.fmt(other);
                 s.splice(s.idx, List.of(walk));
@@ -1627,7 +1627,7 @@ final class Crafting {
             c.table = t;
             c.stage = "opentable";
             c.stageTick = -1;
-            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(t[0] + 0.5, t[1] + 0.5, t[2] + 0.5)) > 4.4) {
+            if (p.getEyePosition().distanceTo(new net.minecraft.world.phys.Vec3(t[0] + 0.5, t[1] + 0.5, t[2] + 0.5)) > 4.4) {  // game fact: survival interaction range 4.5 minus a margin
                 Step walk = Step.walk(t, false);
                 walk.why = "the crafting table at " + Jobs.fmt(t);
                 s.splice(s.idx, List.of(walk));
@@ -1666,7 +1666,7 @@ final class Crafting {
         c.ci++;
         c.made = 0;
         if (c.ci < st.crafts.size()) return "wait";
-        if (gridSize(p) == 3) Gui.close(p);
+        if (gridSize(p) == 3) Gui.close(p);  // game fact: a crafting table has a 3x3 grid
         if (st.direct) {
             jobs.finish(CraftJob.done(st.text));
             return "wait";

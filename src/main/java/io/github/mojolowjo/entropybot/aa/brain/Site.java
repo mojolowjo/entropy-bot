@@ -12,7 +12,7 @@ public record Site(String dim, int x, int y, int z, int r) {
 
     public static Site at(int x, int y, int z) { return new Site(null, x, y, z, 0); }
 
-    public static Site of(int[] p) { return p == null || p.length < 3 ? null : at(p[0], p[1], p[2]); }
+    public static Site of(int[] p) { return p == null || p.length < 3 ? null : at(p[0], p[1], p[2]); }  // structural: a position has 3 coordinates
 
     public double dist(Site o) {
         double dx = x - o.x, dy = y - o.y, dz = z - o.z;

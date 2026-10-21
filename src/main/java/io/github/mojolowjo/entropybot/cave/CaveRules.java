@@ -36,10 +36,10 @@ public final class CaveRules {
         if (target > 0 && got >= target) return "that makes " + spec.word(target);
         if (now > until) return "the time is up";
         if (bagRoom <= free()) return "my bag is nearly full";
-        if (health < 10) return "my health is low (" + Math.round(health) + ")";
+        if (health < Tuning.i("caveRules.lowHealth")) return "my health is low (" + Math.round(health) + ")";
         int edible = 0;
         for (Map.Entry<String, Integer> e : inv.entrySet()) if (FOOD.matcher(e.getKey()).find()) edible += e.getValue();
-        if (food < 8 && edible == 0) return "I am hungry and carry no food";
+        if (food < Tuning.i("caveRules.lowFood") && edible == 0) return "I am hungry and carry no food";
         return null;
     }
 

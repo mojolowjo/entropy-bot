@@ -161,10 +161,10 @@ public final class Need extends Node {
                 bb.pendingReason("needs: " + kind + " [prerequisite done, " + WAIT_FACTS + "]");
                 return Status.RUNNING;
             }
-            bb.port.log(kind + ": " + WAIT_FACTS + " over after " + waited / 1000 + " s (" + (changed ? "the facts changed" : "settleMaxS") + "), picking again");
+            bb.port.log(kind + ": " + WAIT_FACTS + " over after " + waited / 1000 + " s (" + (changed ? "the facts changed" : "settleMaxS") + "), picking again");  // structural: milliseconds per second
             // review 4A-N (2): a prerequisite that ended done and moved no fact is held, never run again in a loop
             if (!changed && ranKey != null) {
-                mem.failed(ranKey, "no change after the prerequisite (" + waited / 1000 + " s)", now, bb.in);
+                mem.failed(ranKey, "no change after the prerequisite (" + waited / 1000 + " s)", now, bb.in);  // structural: milliseconds per second
                 bb.port.log(kind + ": " + ranKey + " held: no change after the prerequisite");
             }
             waitSince = -1;
@@ -173,7 +173,7 @@ public final class Need extends Node {
         AaManual man = AaManual.of(bb);
         if (man.skipped(id)) return fail(kind + " skipped: the owner's aa skip");
         if (man.doRung != null && man.doSince >= 0 && now - man.doSince > AaManual.doMaxMs()) {
-            bb.port.log("aa do " + man.doRung + " dropped: it did not run within " + AaManual.doMaxMs() / 60000 + " min");
+            bb.port.log("aa do " + man.doRung + " dropped: it did not run within " + AaManual.doMaxMs() / 60000 + " min");  // structural: milliseconds per minute
             man.doRung = null;
         }
         boolean forced = id.equals(man.doRung);
@@ -358,7 +358,7 @@ public final class Need extends Node {
         if (pre || picker == null) {
             if (ranKey != null) {
                 mem.failed(ranKey, why == null ? "ended failed without an end text while running " + resolved : why, now, bb.in);
-                bb.port.log(kind + ": " + ranKey + " failed (\"" + why + "\"), held " + Options.retryMs() / 60000 + " min x fails");
+                bb.port.log(kind + ": " + ranKey + " failed (\"" + why + "\"), held " + Options.retryMs() / 60000 + " min x fails");  // structural: milliseconds per minute
             }
             return fail(why);
         }

@@ -74,7 +74,7 @@ public final class BedSpot {
             }
             if (heads == 0) continue;
             double walk = Math.sqrt(dx * dx + dz * dz), off = 0;
-            StringBuilder why = new StringBuilder("walk ").append(Math.round(walk * 10) / 10.0).append(", ").append(heads).append(" free head side").append(heads == 1 ? "" : "s");
+            StringBuilder why = new StringBuilder("walk ").append(Math.round(walk * 10) / 10.0).append(", ").append(heads).append(" free head side").append(heads == 1 ? "" : "s");  // structural: rounded to one decimal for the text
             int near = Integer.MAX_VALUE;
             if (table != null) near = Math.min(near, cheb(c, table));
             if (chest != null) near = Math.min(near, cheb(c, chest));
@@ -82,7 +82,7 @@ public final class BedSpot {
                 off = Math.max(0, near - 1) * offCamp();
                 why.append(near <= 1 ? ", next to the camp" : ", " + near + " from the camp");
             }
-            out.add(new Spot(c, heads, walk + off + (4 - heads) * blockedHead(), why.toString()));
+            out.add(new Spot(c, heads, walk + off + (4 - heads) * blockedHead(), why.toString()));  // game fact: a bed has 4 sides to stand at
         }
         out.sort(Comparator.comparingDouble(Spot::cost).thenComparingInt(s -> s.cell()[0]).thenComparingInt(s -> s.cell()[2]));
         return out;
