@@ -30,7 +30,7 @@ class NeedTest {
         port.noPlanLogs = 1;
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0, List.of(new WoodOptions.Tree(10, 64, 0, 10, null))));
         assertEquals(Status.RUNNING, n.tick(bb));
-        assertTrue(port.started.get(0).chain().endsWith("then cut 4"), port.started.get(0).chain());
+        assertTrue(port.started.get(0).chain().endsWith("> cut 4 at 10 64 0"), port.started.get(0).chain());
         assertTrue(n.options().contains("cut + planner"), n.options());
         port.done(1, "done");
         for (int i = 0; i < 10; i++) {

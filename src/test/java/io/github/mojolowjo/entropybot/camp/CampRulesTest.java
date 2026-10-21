@@ -28,7 +28,7 @@ class CampRulesTest {
         List<String> s = p.steps();
         assertEquals("setbase 10 64 20", s.get(0));
         assertEquals("place camp 10 64 20", s.get(1));
-        assertTrue(s.get(2).startsWith("chop "), s.toString());
+        assertTrue(s.get(2).startsWith("cut "), s.toString());
         int chop = Integer.parseInt(s.get(2).split(" ")[1]);
         assertTrue(chop >= 12, "enough logs for table, chest, sticks, wooden pick and charcoal: " + chop);
         assertTrue(s.indexOf("craft crafting_table 1") < s.indexOf("place crafting_table 8 64 20"));
@@ -67,7 +67,7 @@ class CampRulesTest {
         BootstrapPlan.Plan p = BootstrapPlan.plan(facts(inv, true, true, true, true));
         assertFalse(p.steps().contains("craft wooden_pickaxe 1"), "it has a pickaxe");
         assertTrue(p.steps().contains("craft stone_pickaxe 1"));
-        assertFalse(p.steps().stream().anyMatch(x -> x.startsWith("chop")), "20 logs are enough: " + p.steps());
+        assertFalse(p.steps().stream().anyMatch(x -> x.startsWith("cut")), "20 logs are enough: " + p.steps());
     }
 
     @Test

@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.sense;
 
-import io.github.mojolowjo.entropybot.gather.GatherSources;
 import io.github.mojolowjo.entropybot.poi.Pois;
 import org.junit.jupiter.api.Test;
 
@@ -21,13 +20,6 @@ class SenseReadersTest {
         assertEquals(a.id(), p.gone("spawner", 10, 20, 30, "minecraft:overworld", 2, x -> false).id());
         assertEquals(1, p.size());
         assertNull(p.gone("spawner", 10, 20, 30, "minecraft:the_nether", 2, null));
-    }
-
-    @Test
-    void gatherMinesKnownOreFirst() {
-        GatherSources.Source iron = GatherSources.resolve("raw_iron", Map.of());
-        assertEquals(List.of("mine iron_ore 5", "mine strip iron 5", "mine cave iron 5 10m"), GatherSources.commands(iron, 5, true, false, true));
-        assertEquals(List.of("mine strip iron 5", "mine iron_ore 5", "mine cave iron 5 10m"), GatherSources.commands(iron, 5, true, false, false));
     }
 
     @Test

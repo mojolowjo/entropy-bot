@@ -171,7 +171,6 @@ public final class Seq {
         if (Clearing.ownTableCaught(this, r)) return;    // 0.28.2: the craft's own table is always taken back
         if (Clearing.caught(this, r)) return;            // B7d D1: a trip a clear spliced in failed: the clear hears it and goes on
 
-        if (Chopping.caught(this, r, p)) return;          // P2: a failed axe fetch/craft in a chop goes on by hand
         if (steps.get(idx).optional && Mining.get().caught(this, r)) return;     // 0.28.0: a known-ore walk/dig failed: the mine tries the next one
         jobs.finish("error: " + r + " (while " + label + ")");
     }
@@ -260,7 +259,7 @@ public final class Seq {
             case "lightnote": return CampCommands.lightNote(this, st);          // C4: the light job's end line       // B7d D1: dig, build, place
             default:
                 if (st.type.startsWith("strip")) return StripSteps.step(this, st, p, elapsed);             // B7d D2
-                if (st.type.startsWith("chop")) return Chopping.get().step(this, st, p, elapsed);          // P3
+
                 if (st.type.startsWith("plant")) return FarmPlanting.get().step(this, st, p, elapsed);     // P5: farm plant
                 if (st.type.startsWith("cave") || st.type.startsWith("explore") || st.type.startsWith("mineore"))
                     return CaveSteps.step(this, st, p, elapsed);                                            // B7d D3
@@ -654,7 +653,7 @@ public final class Seq {
             if (mc.screen != null || Gui.open(p)) Gui.close(p);
             storage.lastOpened = null;       // not a chest: don't remember its contents as one
             lootBefore = Gui.totalItems(p);
-            try { p.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, c.position()); } catch (RuntimeException ignored) {}
+            io.github.mojolowjo.entropybot.aa.moves.Moves.lookAt(new double[]{c.getX(), c.getY(), c.getZ()});      // rm-execution: Baritone's look (never throws: JobHands logs)
             mc.gameMode.interact(p, c, net.minecraft.world.InteractionHand.MAIN_HAND);
             stage = "opening";
             stageTick = now();

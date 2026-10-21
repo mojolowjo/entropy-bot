@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.FoodModel;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.sense.FailMemory;
 
 import java.util.ArrayList;
@@ -94,11 +95,11 @@ public final class FoodOptions {
     /** The short names of the animals whose loot table drops a food, and the raw meat each gives (LootBook data via HuntRules). */
     static java.util.Set<String> meatAnimals() {
         java.util.Set<String> s = new java.util.TreeSet<>();
-        for (String a : io.github.mojolowjo.entropybot.vocab.HuntRules.animals()) s.add(a.substring(a.indexOf(':') + 1));
+        for (String a : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().keySet()) s.add(a.substring(a.indexOf(':') + 1));
         return s;
     }
     static String meatOf(String animal) {
-        String m = io.github.mojolowjo.entropybot.vocab.HuntRules.meatOf("minecraft:" + animal);
+        String m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().get("minecraft:" + animal);
         return m == null ? null : m.substring(m.indexOf(':') + 1);
     }
 
@@ -152,8 +153,8 @@ public final class FoodOptions {
             if (raw != null) {
                 int n = Math.min(16, f.has(raw));
                 if (!f.furnace()) dropped.add("cook " + raw + ": no furnace known or in the bag");
-                else RungOptions.add(rows, dropped, m, now, Options.scored("cook " + raw, "cook", "cook " + raw + " " + n,
-                        Options.MINUTE * (0.5 + n / 6.0), n + " raw " + raw + " in the bag", "cook", false, m));
+                else RungOptions.add(rows, dropped, m, now, Options.typed("cook " + raw, "cook", List.of(new Step.Cook(raw, n)),
+                        Options.MINUTE * (0.5 + n / 6.0), n + " raw " + raw + " in the bag", "cook", m));
             }
 
             hunt(f, m, now, rows, dropped, short_);
@@ -164,8 +165,10 @@ public final class FoodOptions {
                         (f.berryDist() + Options.MINUTE * 0.3) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", false, m));
             stew(f, m, now, rows, dropped, short_);
             if (f.oak() != null)
-                RungOptions.add(rows, dropped, m, now, Options.scored("apples", "apples", "cut 16 " + f.oakType(),
-                        Options.MINUTE * 4 * rounds(short_, appleYield()), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", false, m));
+                RungOptions.add(rows, dropped, m, now, Options.typed("apples", "apples", List.of(
+                                new Step.Walk(f.oak()[0], f.oak()[1], f.oak()[2], (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.walkNear")),
+                                new Step.ChopTree(f.oak(), 16, "minecraft:" + f.oakType() + "_log")),
+                        Options.MINUTE * 4 * rounds(short_, appleYield()), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", m));
 
             wheat(f, m, now, rows, dropped, urgent);
 
@@ -220,10 +223,9 @@ public final class FoodOptions {
             double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
             double cost = trip / Math.max(HERD_MIN_CONF, h.conf());
             String key = "sighting/animal " + h.type() + " " + h.x() + " " + h.z();
-            String chain = "hunt " + n + " " + h.type() + " at " + h.x() + " " + h.z() + (f.furnace() ? " then cook " + meat + " " + n : "");
-            Options.Option o = Options.scored("go hunt " + h.type(), "hunt", chain, cost,
+            Options.Option o = Options.typed("go hunt " + h.type(), "hunt", huntSteps(h.type(), n, new int[]{h.x(), h.z()}, f.furnace() ? meat : null), cost,
                     String.format(Locale.ROOT, "%d %s seen at %d %d, %.0f away, round trip %.0f / confidence %.2f", h.count(), h.type(), h.x(), h.z(), h.dist(), trip, h.conf())
-                            + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), key, false, m)
+                            + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), key, m)
                     .withSite(io.github.mojolowjo.entropybot.aa.brain.Site.at(h.x(), h.y(), h.z()));      // the sequencer chains by it
             Options.Option was = best.get(h.type());
             if (was == null || o.cost() < was.cost()) best.put(h.type(), o);
@@ -269,13 +271,20 @@ public final class FoodOptions {
         String meat = meatOf(animal), cooked = FoodModel.cooked(meat);
         double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
-        String chain = "hunt " + n + " " + animal + (f.furnace() ? " then cook " + meat + " " + n : "");
         // owner's rule 2026-10-19: the walk to the animals is priced (there and back, divided by the food urgency)
         double cost = Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0)
                 + io.github.mojolowjo.entropybot.aa.brain.Costs.huntTravel(f.huntDist(), f.food(), f.health());
-        RungOptions.add(rows, dropped, m, now, Options.scored("hunt " + animal, "hunt", chain, cost,
+        RungOptions.add(rows, dropped, m, now, Options.typed("hunt " + animal, "hunt", huntSteps(animal, n, null, f.furnace() ? meat : null), cost,
                 most + " " + animal + " in reach (" + io.github.mojolowjo.entropybot.aa.brain.Costs.huntTerms(f.huntDist(), f.food(), f.health()) + ")"
-                        + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", false, m));
+                        + (f.furnace() ? ", cooked" : ", eaten raw: no furnace"), "hunt", m));
+    }
+
+    /** rm-execution: a hunt row's steps: hunt n of the animal (near {x, z} when given), then cook its meat when a furnace is known. */
+    static List<Step> huntSteps(String animal, int n, int[] at, String cookMeat) {
+        List<Step> s = new ArrayList<>();
+        s.add(new Step.HuntAt("minecraft:" + animal, n, at));
+        if (cookMeat != null) s.add(new Step.Cook(cookMeat, n));
+        return s;
     }
 
     static void stew(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_) {

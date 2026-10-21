@@ -121,7 +121,10 @@ public final class AaRuntime implements JobPort {
 
     long taskSeq() { return current; }
 
-    boolean ownChainRunning() { return chainRunning() && CHAIN.equals(myChain); }
+    boolean ownChainRunning() { return ownRunning(); }
+
+    /** rm-execution: AA's own task runs: its typed steps, or its chain (an option set not on typed steps yet). */
+    private boolean ownRunning() { return typedRun ? c.stepRun.running() : chainRunning() && CHAIN.equals(myChain); }
 
     /** Danger and the way out of a hole are never held by slow mode. */
     boolean slowSkip() { return "danger".equals(tree.driver()) || escapePending || escapeWay != null; }
@@ -230,7 +233,7 @@ public final class AaRuntime implements JobPort {
         Map<String, int[]> out = new java.util.HashMap<>();
         if (lv == null || p == null) return out;
         java.util.Set<String> inView = new java.util.HashSet<>();
-        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.RANGE)))
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.ANIMAL_RANGE)))
             inView.add(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
         int[] me = Jobs.here(p);
         Map<String, Double> score = new java.util.HashMap<>();
@@ -258,11 +261,11 @@ public final class AaRuntime implements JobPort {
         var lv = mc.level;
         int[] me = Jobs.here(p);
         Map<String, Integer> bag = sensed.feas.bag;
-        Map<String, Integer> animals = c.hunting.animalsNear(p);
+        Map<String, Integer> animals = c.stepRun.animalsNear(p);
         // owner's rule 2026-10-19: the walk to the animals is priced (FoodOptions.huntRow): the nearest one the hunt may take
         double huntDist = 0;
         double nearest = Double.MAX_VALUE;
-        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.RANGE))) {
+        for (var e : lv.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.ANIMAL_RANGE))) {
             String type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
             if (!animals.containsKey(type) || e.isBaby() || e.hasCustomName() || io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e)) continue;
             nearest = Math.min(nearest, p.distanceTo(e));
@@ -334,7 +337,7 @@ public final class AaRuntime implements JobPort {
         }
         foodCache = new io.github.mojolowjo.entropybot.aa.FoodOptions.FoodFacts(bb.in.food, bb.in.saturation, bag,
                 io.github.mojolowjo.entropybot.aa.AaDesires.foodTarget(bb), bb.in.furnaceKnown || bb.in.furnaceInBag,
-                animals, c.hunting.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
+                animals, c.stepRun.ownerOff() ? "hunting is off (the owner's hunting off; hunting on lets me)" : null,
                 oak, oakType, oak == null ? -1 : oakD, berry, berry == null ? -1 : berryD, red, brown, grass, water, farm,
                 Math.max(0, stored), kelp, me, p.getHealth(), huntDist, waterSpot, herds(lv, me));
         foodCacheAt = now;
@@ -939,6 +942,8 @@ public final class AaRuntime implements JobPort {
         tree.root.halt("aa off: " + why);
         releaseSwim(Minecraft.getInstance());
         if (chainRunning()) c.chains.clear();
+        if (typedRun) c.stepRun.stop("aa off");
+        typedRun = false;
         // 0.36.5 (review 6): nothing of this run carries into the next aa on (queued AI requests, the last task's state)
         int dropped = bb.drop("ai");
         bb.fact(io.github.mojolowjo.entropybot.aa.AaManual.FACT, null);     // S0: ask/do/skip/use are per run
@@ -979,7 +984,7 @@ public final class AaRuntime implements JobPort {
 
     /** The owner's order while AA's needs/idle task runs: the task is preempted (logged), the order runs (AA_PLAN 4). */
     void yieldToOwner(String verb) {
-        if (!on() || !chainRunning()) return;
+        if (!on() || !(chainRunning() || (typedRun && c.stepRun.running()))) return;
         if (tree.preemptForOwner(bb, verb)) {
             heldUntil = 0;
             LOG.info("[entropybot] aa: steps aside for the owner's {}", verb);
@@ -1029,6 +1034,7 @@ public final class AaRuntime implements JobPort {
                 if (bb.task() != null) {
                     tree.root.halt("died");
                     c.chains.clear();
+                    c.stepRun.stop("died");
                 }
                 return;
             }
@@ -1061,7 +1067,6 @@ public final class AaRuntime implements JobPort {
                 c.vocab.tick();
                 return;
             }
-            io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files() == null ? "" : Core.INSTANCE.files().worldRoot().toString());
             Status s = tree.tick(bb);
             swimTick(p, now);
             replanTick(p, now);
@@ -1260,7 +1265,7 @@ public final class AaRuntime implements JobPort {
         areaFacts(in, me);                                      // AREAS: the labelled places as facts (the same tick as in.pos)
         in.ownerOnline = s.ownerOnline;
         in.hungerDrains = mc.level.getDifficulty() != net.minecraft.world.Difficulty.PEACEFUL;
-        in.menuOpen = mc.screen != null && !chainRunning() && !c.jobs.running();
+        in.menuOpen = mc.screen != null && !chainRunning() && !c.stepRun.running() && !c.jobs.running();
         in.parked = s.parked;
         in.otherJob = otherJob();
         in.ownerOrderPending = in.otherJob != null;
@@ -1418,10 +1423,9 @@ public final class AaRuntime implements JobPort {
     private String otherJob() {
         if (escapePending || escapeWay != null) return null;       // 0.36.a6: AA's own way out (pillar job / climb chain)
         if (c.chains.running()) return chainRunning() ? null : "chain " + c.chains.name();
+        if (c.stepRun.running()) return typedRun && current >= 0 ? null : "steps " + c.stepRun.status();
         if (restoreInSlot()) return null;          // AA_STEP2 3: putting back blocks is AA's own work, never the owner's job
         if (c.jobs.running()) return c.jobs.job.type + " (" + c.jobs.job.status + ")";
-        if (c.gathering.running()) return "gather";
-        if (c.hunting.running()) return "hunt";
         if (c.requests.busy()) return "a request";
         return null;
     }
@@ -1432,7 +1436,7 @@ public final class AaRuntime implements JobPort {
      * as a fallback, and then only a move of 8+ blocks from the last counted spot (standing and shuffling is no progress).
      */
     private void progressTick(LocalPlayer p) {
-        String step = chainRunning() ? c.chains.stepText() : null;
+        String step = typedRun ? c.stepRun.steps.stepText() : chainRunning() ? c.chains.stepText() : null;
         if (step != null && !step.equals(lastStep)) progress++;
         lastStep = step;
         String js = c.jobs.running() ? c.jobs.job.status : null;
@@ -1474,6 +1478,7 @@ public final class AaRuntime implements JobPort {
     @Override public long start(TaskSpec t) {
         refusal = null;
         if (c.chains.running()) { refusal = "busy: " + c.chains.chainStatus(); return -1; }
+        if (c.stepRun.running()) { refusal = "busy: " + c.stepRun.status(); return -1; }
         if (io.github.mojolowjo.entropybot.aa.door.Door.aaSlot(false, c.jobs.running(), restoreInSlot()) == io.github.mojolowjo.entropybot.aa.door.Door.Slot.HALT_RESTORE) {
             // AA_STEP2 3: the restore is AA's own, below every desire: halted, its blocks wait in the ledger
             String was = c.jobs.job.status;
@@ -1482,11 +1487,12 @@ public final class AaRuntime implements JobPort {
             if (c.jobs.running()) { refusal = "busy: the restore did not stop (" + c.jobs.job.status + ")"; return -1; }
         }
         if (c.jobs.running()) { refusal = "busy: " + c.jobs.job.status; return -1; }      // 0.36.1: any job, as otherJob() sees it
-        if (c.gathering.running()) { refusal = "busy: " + c.gathering.statusText(); return -1; }
-        if (c.hunting.running()) { refusal = "busy: a hunt runs"; return -1; }
         if (c.requests.busy()) { refusal = "busy: a request is open"; return -1; }
         lastEnd = null;
         myChain = CHAIN;
+        typedRun = false;
+        pendingReturnSteps = null;
+        escapeResumeSteps = null;
         startedKind = t.kind();
         clearEscape();
         escapes = 0;
@@ -1513,6 +1519,20 @@ public final class AaRuntime implements JobPort {
             return current;
         }
         io.github.mojolowjo.entropybot.aa.Options.Option opt = optionFor(t.chain());
+        // rm-execution: an option on typed steps runs on aa/moves/Steps (StepRun), never as chain text
+        if (!t.steps().isEmpty() || (opt != null && opt.typed())) {
+            List<io.github.mojolowjo.entropybot.aa.moves.Step> run = opt != null && opt.typed() ? stepsFrom(opt, 0) : t.steps();
+            String r = runTyped(opt == null ? t.kind() + " " + t.source() : opt.memoryKey(), run, t.kind() + " " + (opt == null ? t.source() : opt.id()));
+            if (r != null) {
+                refusal = r;
+                runningOpt = null;
+                pendingReturnSteps = null;
+                return -1;
+            }
+            current = ++seq;
+            currentChain = t.chain();
+            return current;
+        }
         String head = opt == null ? t.chain() : chainFrom(opt, 0);
         String r = c.chains.startChain(c.owner(), CHAIN, head, 1);
         if (r == null || !r.startsWith("started")) {
@@ -1662,6 +1682,75 @@ public final class AaRuntime implements JobPort {
         return String.join(" then ", steps.subList(Math.min(from, steps.size()), steps.size()));
     }
 
+    // ---- rm-execution: AA's typed steps (StepRun) ----
+
+    /** AA's task runs on typed steps (StepRun), not a chain. */
+    private boolean typedRun;
+    /** The typed run's end was read (typedEnded ran for it). */
+    private boolean typedEndSeen;
+    /** The typed steps after the ore step, held while the return leg runs; the typed steps to go on with after an escape. */
+    private List<io.github.mojolowjo.entropybot.aa.moves.Step> pendingReturnSteps, escapeResumeSteps;
+    private String typedKey;
+
+    /** Starts AA's typed steps; null when they run, else why not. */
+    private String runTyped(String key, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String label) {
+        typedKey = key;
+        String r = c.stepRun.start(key, steps, label);
+        typedRun = true;
+        typedEndSeen = r != null;
+        if (r == null) slow.chainStarted();
+        return r;
+    }
+
+    /** The option's typed steps from {@code from}; with a way back after its ore step, only up to that step (the rest waits). */
+    private List<io.github.mojolowjo.entropybot.aa.moves.Step> stepsFrom(io.github.mojolowjo.entropybot.aa.Options.Option o, int from) {
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> steps = o.steps();
+        stepOffset = from;
+        pendingReturnSteps = null;
+        int a = o.ret().afterStep();
+        if (o.ret().leg() != io.github.mojolowjo.entropybot.aa.Replan.Leg.NONE && a >= from && a < steps.size()) {
+            pendingReturnSteps = new ArrayList<>(steps.subList(a + 1, steps.size()));
+            return new ArrayList<>(steps.subList(from, a + 1));
+        }
+        return new ArrayList<>(steps.subList(Math.min(from, steps.size()), steps.size()));
+    }
+
+    /**
+     * The typed run ended (StepRun's Steps: DONE or FAILED with its stage and reason): as chainEnded does for a chain, a
+     * stuck walk under ground starts the escape and goes on with the failed step afterwards; a done ore step with a way
+     * back stored runs the return leg; else the end is the task's end.
+     */
+    private void typedEnded() {
+        var st = c.stepRun.steps;
+        String msg = st.why();
+        boolean done = st.phase() == io.github.mojolowjo.entropybot.aa.moves.Steps.Phase.DONE;
+        if (!done && on() && (AaEscape.stuck(msg) || holeStuckNow(msg)) && escapes < AaEscape.MAX_PER_TASK) {
+            int i = Math.max(0, AaEscape.failedStep(msg) - 1);
+            List<io.github.mojolowjo.entropybot.aa.moves.Step> all = st.steps();
+            if (i < all.size()) {
+                stepOffset += i;
+                escapes++;
+                runStuckHalts++;
+                escapePending = true;
+                escapeResumeSteps = new ArrayList<>(all.subList(i, all.size()));
+                escapeFail = msg;
+                LOG.info("[entropybot] aa: the step ended stuck under ground - getting out myself (escape {} of this task), then: {}", escapes,
+                        io.github.mojolowjo.entropybot.aa.moves.Step.label(escapeResumeSteps));
+                return;
+            }
+        }
+        if (done && pendingReturnSteps != null && on()) {
+            returnDone = msg;
+            escapeResumeSteps = pendingReturnSteps.isEmpty() ? null : pendingReturnSteps;
+            pendingReturnSteps = null;
+            escapeWay = "return";
+            escapePending = true;
+            return;
+        }
+        lastEnd = msg;
+        pendingReturnSteps = null;
+    }
+
     /** The ore step is done and a pillar way back is stored: check the shaft and the blocks again, pillar or walk. */
     private void startReturn(LocalPlayer p, Minecraft mc) {
         escapeOpt = null;
@@ -1711,21 +1800,22 @@ public final class AaRuntime implements JobPort {
      * option (Failures) and answers with the next one.
      */
     private void swimTick(LocalPlayer p, long now) {
-        boolean running = runningOpt != null && chainRunning() && CHAIN.equals(myChain);
+        boolean running = runningOpt != null && ownRunning();
         var ev = swimWatch.tick(p.isInWater(), running, progress, now);
         if (ev == io.github.mojolowjo.entropybot.aa.SwimWatch.Event.ENTERED) {
             wetReplan = true;
             LOG.info("[entropybot] aa: in the water during {} - re-scoring", runningOpt.id());
-        } else if (ev == io.github.mojolowjo.entropybot.aa.SwimWatch.Event.STALLED && c.jobs.running()) {
+        } else if (ev == io.github.mojolowjo.entropybot.aa.SwimWatch.Event.STALLED && (typedRun || c.jobs.running())) {
             LOG.info("[entropybot] aa: {} during {} (air {}) - that option failed", io.github.mojolowjo.entropybot.aa.SwimWatch.REASON, runningOpt.id(), p.getAirSupply());
-            c.jobs.finish(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON);
+            if (typedRun) c.stepRun.steps.cancel(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON);
+            else c.jobs.finish(io.github.mojolowjo.entropybot.aa.SwimWatch.REASON);
         }
     }
     private void replanTick(LocalPlayer p, long now) {
         if (current < 0) { replanTimer.reset(); wetReplan = false; return; }
-        if (!replanOn() || runningOpt == null || !chainRunning() || !CHAIN.equals(myChain) || escapePending || escapeWay != null
+        if (!replanOn() || runningOpt == null || !ownRunning() || escapePending || escapeWay != null
                 || "danger".equals(tree.driver())) return;
-        String st = c.chains.stepText();
+        String st = typedRun ? c.stepRun.steps.stepText() : c.chains.stepText();
         int[] me = Jobs.here(p);
         String body = io.github.mojolowjo.entropybot.aa.Replan.stepBody(st);
         // aa-replan 2 (aa381): the ore step went cave to cave far from the planned target: re-plan (every 5 s while so)
@@ -1755,9 +1845,24 @@ public final class AaRuntime implements JobPort {
         LOG.info("[entropybot] aa: {}", line);
         tracer.decision(now, "replan", bb.task() == null ? TaskKind.NONE : bb.task().kind, d.to().command(), line);
         c.chains.clear();                    // first: a step's end then reaches no chain (clear fires no end)
+        if (typedRun) {
+            c.stepRun.steps.clear();         // the switch is no failure of the running way: no end is read for it
+            typedEndSeen = true;
+        }
         if (c.jobs.running()) c.jobs.finish("stopped: aa replan");
-        if (c.gathering.running()) c.gathering.stop("stopped: aa replan");
-        if (c.hunting.running()) c.hunting.stop("stopped: aa replan");
+        if (d.to().typed()) {
+            String tr = runTyped(d.to().memoryKey(), stepsFrom(d.to(), d.from()), "replan " + d.to().id());
+            op.adopt(fresh, d.to());
+            runningOpt = d.to();
+            lastSwitchAt = now;
+            replanTimer.reset();
+            replanLog.switches++;
+            replanLog.add(new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date(now)) + " " + from + " " + Math.round(d.cur()) + " -> " + d.to().id() + " " + Math.round(d.alt()));
+            if (tr != null) lastEnd = "error: the replan switch to " + d.to().id() + " did not start: " + tr;
+            else currentChain = d.to().command();
+            return;
+        }
+        typedRun = false;
         String head = chainFrom(d.to(), d.from());
         String r = c.chains.startChain(c.owner(), CHAIN, head, 1);
         op.adopt(fresh, d.to());
@@ -1778,6 +1883,10 @@ public final class AaRuntime implements JobPort {
 
     @Override public JobState poll(long taskId) {
         if (taskId != current) return JobState.gone("an older task");
+        if (typedRun && !typedEndSeen && lastEnd == null && !escapePending && escapeWay == null && !c.stepRun.running()) {
+            typedEndSeen = true;
+            typedEnded();
+        }
         if (lastEnd != null) {
             String e = lastEnd;
             lastEnd = null;
@@ -1794,6 +1903,7 @@ public final class AaRuntime implements JobPort {
             return e.startsWith("done") ? JobState.done(e) : JobState.failed(e);
         }
         if (escapePending || escapeWay != null) return JobState.RUNNING;      // 0.36.a6: getting out, then the task goes on
+        if (typedRun) return JobState.RUNNING;                                  // its end comes through typedEnded above
         if (!chainRunning()) {
             current = -1;
             String who = c.chains.running() ? "chain " + c.chains.name() : c.jobs.running() ? "job " + c.jobs.job.type : "someone (stop or a clear)";
@@ -1807,9 +1917,11 @@ public final class AaRuntime implements JobPort {
         current = -1;
         clearEscape();
         if (chainRunning()) c.chains.clear();
+        if (typedRun) {
+            typedEndSeen = true;
+            c.stepRun.stop("aa " + why);
+        }
         if (c.jobs.running()) c.jobs.finish("stopped: aa " + why);
-        if (c.gathering.running()) c.gathering.stop("stopped: aa " + why);
-        if (c.hunting.running()) c.hunting.stop("stopped: aa " + why);
     }
 
     @Override public long progress(long taskId) { return progress; }
@@ -1820,9 +1932,17 @@ public final class AaRuntime implements JobPort {
      * itself stays, so the task is still RUNNING for AA. Resume needs nothing: the chain's own retry clock goes on.
      */
     @Override public void pause(long taskId, String why) {
-        if (taskId != current || !chainRunning()) return;
+        if (taskId != current) return;
+        if (typedRun) {                  // rm-execution: the step's Baritone work stops, its clock stands still; resume starts it again
+            c.stepRun.steps.pause(why);
+            return;
+        }
+        if (!chainRunning()) return;
         if (c.jobs.running()) c.jobs.finish("interrupted: low health or danger - aa paused the step (" + why + ")");
-        if (c.gathering.running()) c.gathering.stop("interrupted: low health or danger - aa paused (" + why + ")");
+    }
+
+    @Override public void resume(long taskId) {
+        if (taskId == current && typedRun) c.stepRun.steps.resume();
     }
 
     @Override public String resolve(String chain) {
@@ -2182,6 +2302,7 @@ public final class AaRuntime implements JobPort {
         escapeOpt = null;
         myChain = CHAIN;
         returnDone = null;
+        escapeResumeSteps = null;
     }
 
     /** 0.36.a6: starts the pending escape once the stuck walk has settled; a pillar job's end -> go on, or climb. */
@@ -2191,7 +2312,7 @@ public final class AaRuntime implements JobPort {
             return;
         }
         if (escapePending) {
-            if (c.chains.running() || c.jobs.running()) return;
+            if (c.chains.running() || c.jobs.running() || c.stepRun.running()) return;
             escapePending = false;
             if ("return".equals(escapeWay)) {
                 escapeWay = null;
@@ -2226,7 +2347,7 @@ public final class AaRuntime implements JobPort {
                     f.sky(), f.skyDist(), false, f.kit(), f.column(), f.headings());
             // AA_ROUND3 1: the one way-up set, priced; a failed way is held in Failures under "wayup/<id>"
             wayMem.bind(tree.brain.failures, WAYUP);
-            io.github.mojolowjo.entropybot.gather.QuarrySites.bind(tree.brain.failures);     // regression o1: "quarry <x z>" holds
+
             io.github.mojolowjo.entropybot.cave.MineRules.bind(tree.brain.failures);          // rm-mining: a failed per-ore cell holds in aa why
             var ch = io.github.mojolowjo.entropybot.aa.AaEscape.chooseAll(f, wayMem, bb.clock.now());
             var o = ch.best();
@@ -2265,6 +2386,8 @@ public final class AaRuntime implements JobPort {
     /** Out: the task goes on with the step that ended stuck (same task, no failure, no cooldown). */
     private void escapeResumeNow(String how) {
         String resume = escapeResume;
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> resumeSteps = escapeResumeSteps;
+        escapeResumeSteps = null;
         String fail = escapeFail;
         escapeResume = null;
         myChain = CHAIN;
@@ -2272,12 +2395,23 @@ public final class AaRuntime implements JobPort {
         returnDone = null;
         if (back != null) {                  // aa-replan: the way back after the ore step is over
             if (runningOpt != null) stepOffset = runningOpt.ret().afterStep() + 1;
-            if (resume == null) {
+            if (resume == null && resumeSteps == null) {
                 escapeFail = null;
                 lastEnd = back + " (back: " + how + ")";
                 LOG.info("[entropybot] aa: back up ({}) - the task is done", how);
                 return;
             }
+        }
+        if (resumeSteps != null) {             // rm-execution: the typed task goes on with its steps
+            String tr = runTyped(typedKey, resumeSteps, "resume");
+            if (tr == null) {
+                escapeFail = null;
+                LOG.info("[entropybot] aa: out from under ground ({}) - going on with: {}", how, io.github.mojolowjo.entropybot.aa.moves.Step.label(resumeSteps));
+            } else {
+                escapeFail = fail;
+                escapeFailNow("out (" + how + "), but the task did not go on: " + tr);
+            }
+            return;
         }
         String r = resume == null ? null : c.chains.startChain(c.owner(), CHAIN, resume, 1);
         if (r != null && r.startsWith("started")) {
@@ -2307,7 +2441,7 @@ public final class AaRuntime implements JobPort {
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) return null;
             int wool = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault("minecraft:white_wool", 0);
-            int sheep = mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.vocab.HuntRules.RANGE),
+            int sheep = mc.level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, p.getBoundingBox().inflate(io.github.mojolowjo.entropybot.commands.StepRun.ANIMAL_RANGE),
                     e -> e.isAlive() && !e.isBaby() && !e.hasCustomName()).size();
             int[] herd = herdsSeen(mc.level, p).get("minecraft:sheep");
             return new io.github.mojolowjo.entropybot.aa.BedOptions.BedFacts(wool, sheep, herd, Jobs.here(p));
@@ -2319,7 +2453,7 @@ public final class AaRuntime implements JobPort {
 
     /**
      * aa-trees: the trees the bot has SEEN (sense/Sightings kind TREE) as wood options facts: distance, and a deny reason
-     * (the policy's keep-out / no-break, remembered unreachable, a protected build near). A seen tree whose chunk is
+     * (the policy's keep-out / no-break, a protected build near; a tree that failed is held by its option's key). A seen tree whose chunk is
      * loaded and whose lowest log is gone is exhausted here. Null when nothing can be read; never throws.
      */
     io.github.mojolowjo.entropybot.aa.WoodOptions.WoodFacts woodFacts() {
@@ -2340,7 +2474,6 @@ public final class AaRuntime implements JobPort {
                     continue;
                 }
                 String deny = !c.workAllowed(adim, r.x(), r.y(), r.z()) ? c.policy.blockedText(adim, r.x(), r.z())
-                        : io.github.mojolowjo.entropybot.chop.Unreachable.blocked(r.x(), r.z(), now) ? "remembered as unreachable"
                         : io.github.mojolowjo.entropybot.cave.MineRules.protectNear(prot, adim, r.x(), r.y(), r.z(), io.github.mojolowjo.entropybot.cave.MineRules.PROTECT_MARGIN) != null ? "a protected build is near" : null;
                 out.add(new io.github.mojolowjo.entropybot.aa.WoodOptions.Tree(r.x(), r.y(), r.z(), Math.hypot(r.x() - me[0], r.z() - me[2]), deny));
             }
@@ -2639,6 +2772,11 @@ public final class AaRuntime implements JobPort {
         return catalog;
     }
 
+    /** rm-execution: the loot book read for this world (the collect step's blocks), or null before the first read. */
+    io.github.mojolowjo.entropybot.aa.brain.LootBook currentLootBook() {
+        return bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.FACT) instanceof io.github.mojolowjo.entropybot.aa.brain.LootBook b ? b : null;
+    }
+
     /**
      * Singleplayer only: every ore feature (OreConfiguration targets) in each level's possible biomes (NeoForge biome
      * modifiers included), with the Y range from its height_range placement (encoded to JSON: the anchors). Null when
@@ -2785,7 +2923,7 @@ public final class AaRuntime implements JobPort {
         boolean armed = false;
         for (var e : bb.in.bag.entrySet()) if (e.getValue() > 0 && armedSet.contains(e.getKey().replaceFirst("^minecraft:", ""))) armed = true;
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.CTX_FACT, new io.github.mojolowjo.entropybot.aa.brain.LootBook.Ctx(
-                c.hunting != null && c.hunting.on(), lootPassive, java.util.Set.copyOf(c.vocab.expand("animals")),
+                c.stepRun != null && c.stepRun.on(), lootPassive, java.util.Set.copyOf(c.vocab.expand("animals")),
                 b -> io.github.mojolowjo.entropybot.cave.MineRules.EXTRA.matcher(b).find(), armed));
         try {         // AA_ROUND3 5: herds seen earlier, for the loot plan's "hunt ... at x z"
             Minecraft mc = Minecraft.getInstance();

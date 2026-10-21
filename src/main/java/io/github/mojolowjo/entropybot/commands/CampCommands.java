@@ -140,7 +140,7 @@ final class CampCommands {
     String bootstrapFood(LocalPlayer p, String from, boolean internal) {
         io.github.mojolowjo.entropybot.camp.FoodPlan.Decision d;
         try {
-            d = io.github.mojolowjo.entropybot.camp.FoodPlan.decide(Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
+            d = io.github.mojolowjo.entropybot.camp.FoodPlan.decide(Gui.inventory(p), c.stepRun.on(), c.stepRun.animalsNear(p));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] bootstrap food: {}", e.toString());
             return "ok: food skipped: couldn't look for food (" + e + ") - next: hunt 4 cow when you see some";
@@ -494,12 +494,12 @@ final class CampCommands {
         if (have < spots.size()) {
             if (c.jobs.running() && !c.jobs.walking()) return Chains.Reply.now("busy: " + c.jobs.job.status + " (pm \"stop\" first)");
             int stored = 0, fuel = bag.getOrDefault("minecraft:coal", 0) + bag.getOrDefault("minecraft:charcoal", 0), logs = 0;
-            for (Map.Entry<String, Integer> e : bag.entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+            for (Map.Entry<String, Integer> e : bag.entrySet()) if (StepRun.isLogItem(e.getKey())) logs += e.getValue();
             List<Crafting.Source> src = c.crafting.storageSources(p);
             for (Crafting.Source s : src) {
                 stored += s.items().getOrDefault("minecraft:torch", 0);
                 fuel += s.items().getOrDefault("minecraft:coal", 0) + s.items().getOrDefault("minecraft:charcoal", 0);
-                for (Map.Entry<String, Integer> e : s.items().entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
+                for (Map.Entry<String, Integer> e : s.items().entrySet()) if (StepRun.isLogItem(e.getKey())) logs += e.getValue();
             }
             LightGrid.Supply sup = LightGrid.supply(have, spots.size(), stored, fuel, logs, near(lv, me, "furnace"));
             LOG.info("[entropybot] light: {} torches for {} spots: {} ({} stored, {} coal/charcoal, {} logs)", have, spots.size(), sup.source(), stored, fuel, logs);

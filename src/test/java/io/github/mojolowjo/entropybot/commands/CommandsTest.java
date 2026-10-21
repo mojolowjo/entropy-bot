@@ -193,8 +193,7 @@ class CommandsTest {
         @Override public void saved() {}
         int[] pos;                                            // (wave 1) where the bot stands; null = unknown
         @Override public int[] pos() { return pos; }
-        int furnaceDue;                                       // (package D) how many step boundaries see a furnace due
-        @Override public boolean furnaceDue() { return furnaceDue > 0 && furnaceDue-- > 0; }
+
 
         void run(int ticks) {
             for (int i = 0; i < ticks; i++) {
@@ -252,24 +251,17 @@ class CommandsTest {
     }
 
     @Test
-    void aFailedStepEndsTheChainAndAFightIsRetried() {
+    void aFailedStepEndsTheChainAndAFightIsNotRetried() {
         Fake f = fake(new JsonObject());
         f.chains.startChain("owner", "chain", "goto 1 2 3 then places", 1);
         f.replies.add("ok: going");
         f.run(5);
         f.link.done(f.takeNext().id, "stopped: attacked by zombie");
         f.run(5);
-        assertTrue(f.chains.running(), "a fight is retried");
-        f.fighting = true;
-        f.run(400);
-        assertEquals(1, f.ran.size(), "not while fighting");
-        f.replies.add("error: no path to 1 2 3");
-        f.fighting = false;
-        f.run(10);
-        assertEquals(2, f.ran.size(), "then the same step again");
-        f.run(10);
-        assertFalse(f.chains.running());
-        assertEquals("chain: stopped at step 1 (goto 1 2 3): no path to 1 2 3", f.whispers.get(f.whispers.size() - 1));
+        // rm-execution (rule 7): no retry of its own: a step cut short ends the chain with its stage and reason
+        assertFalse(f.chains.running(), "no retry");
+        assertEquals(1, f.ran.size(), "the step ran once");
+        assertEquals("chain: stopped at step 1 (goto 1 2 3): stopped: attacked by zombie", f.whispers.get(f.whispers.size() - 1));
     }
 
     @Test
@@ -356,9 +348,9 @@ class CommandsTest {
         f.run(5);
         assertEquals("farm", f.ran.get(f.ran.size() - 1), "the step the death cut short runs again");
         for (int i = 0; i < 4; i++) f.chains.noteDeath();
-        assertTrue(f.chains.parked());
-        assertTrue(f.chains.deathsCommand("").contains("PARKED"));
-        assertTrue(f.chains.resumeCommand().startsWith("ok: back to work"));
+        // rm-execution: no parking after 5 deaths (DEATHS_PARK is gone): the deaths are counted, nothing is held
+        assertTrue(f.chains.deathsCommand("").startsWith("5 deaths in the last hour"), f.chains.deathsCommand(""));
+        assertFalse(f.chains.deathsCommand("").contains("PARKED"));
     }
 
     @Test
@@ -394,24 +386,6 @@ class CommandsTest {
         f.dayTime = 24000 + 1000;
         f.chains.rulesTick();
         assertEquals("rule #2", f.chains.name());
-    }
-
-    @Test
-    void theAutominerDecidesAndSaysWhy() {
-        JsonObject mem = new JsonObject();
-        Fake f = fake(mem);
-        assertTrue(f.chains.autominerCommand("on").startsWith("ok: autominer on"));
-        f.free = 2;
-        f.tick = 1000;
-        f.chains.autominerTick();
-        assertEquals("autominer", f.chains.name());
-        assertTrue(f.chains.whyCommand().contains("deposit because my bag is nearly full (2 free slots)"));
-        f.chains.clear();
-        f.free = 20;
-        f.mine = JsonParser.parseString("{\"x\":5,\"y\":-54,\"z\":5,\"dir\":\"west\"}").getAsJsonObject();
-        f.tick += 300;
-        f.chains.autominerTick();
-        assertTrue(f.chains.whyCommand().contains("mine strip any 32 because my mine at 5 -54 5 is ready"), f.chains.whyCommand());
     }
 
     // ---- the policy verbs ----

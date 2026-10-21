@@ -59,7 +59,7 @@ final class GoalPlanning {
 
     PlanFacts facts(LocalPlayer p) {
         PlanFacts f = new PlanFacts();
-        if (Core.INSTANCE.files() != null) io.github.mojolowjo.entropybot.chop.Unreachable.world(Core.INSTANCE.files().worldRoot().toString());
+
         Map<String, Integer> inv = Gui.inventory(p);
         Set<String> food = new HashSet<>();
         for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
@@ -130,10 +130,7 @@ final class GoalPlanning {
             m.set(c[0] + dx, c[1] + dy, c[2] + dz);
             if (!lv.isLoaded(m)) continue;
             String id = lv.getBlockState(m).getBlock().getDescriptionId();
-            if (id.endsWith("_log") || id.endsWith("_stem")) {
-                // 0.36.3: a trunk the chopper could not get at is no tree for the plan
-                if (!io.github.mojolowjo.entropybot.chop.Unreachable.blocked(c[0] + dx, c[2] + dz, now)) f.flag("trees");
-            }
+            if (id.endsWith("_log") || id.endsWith("_stem")) f.flag("trees");
             else if (id.endsWith("_ore")) {
                 String fam = id.substring(id.lastIndexOf('.') + 1).replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
                 f.flag("ore:" + fam);

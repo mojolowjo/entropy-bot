@@ -1110,21 +1110,29 @@ public final class Jobs {
     }
 
     /**
-     * 0.34.0: nothing within the radius - Baritone's live scanner (loaded chunks), then its chunk cache (our build
-     * remembers logs and ores besides chests and the like), then the mod's ore notes. The reply says which one answered.
+     * rm-execution: nothing within the radius - what the bot has seen: the ore index (under fair play only the ore cells
+     * seen), then the trees in Sightings for a log word. The reply says which one answered.
      */
     static String findFar(LocalPlayer p, String needle, int radius) {
-        java.util.List<String> all = new java.util.ArrayList<>();
-        for (net.minecraft.resources.ResourceLocation k : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()) all.add(k.toString());
-        java.util.List<String> ids = io.github.mojolowjo.entropybot.sense.MemoryPick.ids(needle, all, 16);   // 0.34.1: exact ids first
-        if (ids.isEmpty()) return "none within " + radius;
         int[] me = here(p);
-        java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> live = io.github.mojolowjo.entropybot.sense.BaritoneMemory.live(p, ids, 8, 8);
-        io.github.mojolowjo.entropybot.sense.MemoryPick.Result lr = io.github.mojolowjo.entropybot.sense.MemoryPick.pick(live, me, null, null, 1);
-        if (!lr.kept().isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(lr.kept().get(0), me) + " (loaded chunks)";
-        java.util.List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> rem = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, null, 1, "find");
-        if (!rem.isEmpty()) return io.github.mojolowjo.entropybot.sense.MemoryPick.text(rem.get(0), me) + " (Baritone's memory)";
-        return "none within " + radius + ", in loaded chunks or remembered";
+        var pass = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE;
+        String d = pass.dim();
+        if (d == null) return "none within " + radius;
+        String n = needle.toLowerCase(java.util.Locale.ROOT);
+        var hits = pass.nearest(d, id -> id.contains(n), me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, Mining.fairAllow(d));
+        if (!hits.isEmpty()) {
+            var h = hits.get(0);
+            return "found " + h.x() + " " + h.y() + " " + h.z() + " " + h.id() + " dist " + Math.round(Math.sqrt(h.d2())) + " (the ores I have seen)";
+        }
+        var sg = pass.sightings();
+        if (sg != null && (n.contains("log") || n.contains("wood") || n.contains("tree"))) {
+            var trees = sg.treesNear(d, me[0], me[2], 1);
+            if (!trees.isEmpty()) {
+                var t = trees.get(0);
+                return "found " + t.where() + " a tree (" + t.count() + " logs) dist " + Math.round(Math.hypot(t.x() - me[0], t.z() - me[2])) + " (the trees I have seen)";
+            }
+        }
+        return "none within " + radius + ", nor among the ores and trees I have seen";
     }
 
     /** Right-clicks the block at "x y z" (within reach). */

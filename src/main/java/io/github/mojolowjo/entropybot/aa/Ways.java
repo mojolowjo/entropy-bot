@@ -163,7 +163,7 @@ public final class Ways {
                 if (m.blocked(key, now)) { dropped.add("cut + planner: " + m.reason(key)); return; }
                 double a = after(p, st);
                 rows.add(new Options.Option("cut + planner", PREREQ, w.command(), w.total() + a,
-                        w.id() + " " + Math.round(w.total()) + " + planner " + Math.round(a) + " = " + Math.round(w.total() + a) + " (" + w.why() + ")", key, false, null, w.site()));
+                        w.id() + " " + Math.round(w.total()) + " + planner " + Math.round(a) + " = " + Math.round(w.total() + a) + " (" + w.why() + ")", key, false, null, w.site(), w.steps()));
             }
             default -> { }
         }

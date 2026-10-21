@@ -27,13 +27,13 @@ class FoodClimbTest {
     }
 
     @Test
-    void huntsTheBestAnimalThenCooksSoftly() {
+    void huntsTheBestAnimalThenCooks() {
         FoodPlan.Decision d = FoodPlan.decide(Map.of(), true, Map.of("chicken", 5, "cow", 3));
-        assertEquals(List.of("soft hunt 6 cow", "soft cook beef 6"), d.steps());
+        assertEquals(List.of("hunt 6 cow", "cook beef 6"), d.steps());
         assertTrue(d.text().startsWith("ok: "));
         assertFalse(Texts.stepFailed(d.text()));
         FoodPlan.Decision one = FoodPlan.decide(Map.of("minecraft:beef", 2), true, Map.of("pig", 1));
-        assertEquals(List.of("soft hunt 2 porkchop".replace("porkchop", "pig"), "soft cook porkchop 2", "soft cook beef 2"), one.steps());
+        assertEquals(List.of("hunt 2 pig", "cook porkchop 2", "cook beef 2"), one.steps());
     }
 
     @Test
@@ -51,7 +51,7 @@ class FoodClimbTest {
         assertTrue(d.text().contains("no animals within 32 - next: hunt 5 when you see some"), d.text());
         assertFalse(Texts.stepFailed(d.text()));
         FoodPlan.Decision raw = FoodPlan.decide(Map.of("minecraft:mutton", 3), true, Map.of());
-        assertEquals(List.of("soft cook mutton 3"), raw.steps());
+        assertEquals(List.of("cook mutton 3"), raw.steps());
     }
 
     @Test
@@ -150,38 +150,12 @@ class FoodClimbTest {
     void rawMeatIsCookedNotEaten() {
         assertEquals(0, FoodPlan.count(Map.of("minecraft:beef", 6)));
         FoodPlan.Decision d = FoodPlan.decide(Map.of("minecraft:beef", 6), false, Map.of());
-        assertEquals(List.of("soft cook beef 6"), d.steps());
+        assertEquals(List.of("cook beef 6"), d.steps());
         FoodPlan.Decision on = FoodPlan.decide(Map.of("minecraft:beef", 6), true, Map.of("cow", 4));
-        assertEquals(List.of("soft cook beef 6"), on.steps(), "enough raw: no hunt");
+        assertEquals(List.of("cook beef 6"), on.steps(), "enough raw: no hunt");
         String[] h = FoodPlan.checkFinding(5, Map.of("minecraft:beef", 6), true, Map.of());
         assertEquals("cook beef 6", h[2]);
         assertNotEquals("eat", h[2]);
-    }
-
-    @Test
-    void aSoftStepFailsAndTheChainGoesOnButAHardOneStillEndsIt() {
-        CommandsTest.Fake f = CommandsTest.fake(new com.google.gson.JsonObject());
-        f.instant.put("craft", "error: can't craft 1 beacon");
-        f.instant.put("cook", "error: no furnace");
-        f.chains.startChain("owner", "chain", "soft craft beacon 1 then places then cook beef 2 then places", 1);
-        f.run(40);
-        assertEquals(List.of("craft beacon 1", "places", "cook beef 2"), f.ran);
-        assertTrue(f.whispers.stream().anyMatch(w -> w.contains("craft beacon 1 didn't work")), f.whispers.toString());
-        assertTrue(f.whispers.get(f.whispers.size() - 1).contains("stopped at step 3 (cook beef 2)"), f.whispers.toString());
-        assertFalse(f.chains.running());
-    }
-
-    @Test
-    void aSoftJobStepThatEndsBadlyGoesOn() {
-        CommandsTest.Fake f = CommandsTest.fake(new com.google.gson.JsonObject());
-        f.chains.startChain("owner", "chain", "soft hunt 4 cow then places", 1);
-        f.run(5);
-        JobRequests.Request r = f.takeNext();
-        assertEquals("hunt 4 cow", r.text);
-        f.link.done(r.id, "stopped: hunt: 1/4 after 10 min");
-        f.run(20);
-        assertEquals(List.of("hunt 4 cow", "places"), f.ran);
-        assertTrue(f.whispers.get(f.whispers.size() - 1).startsWith("chain: done"), f.whispers.toString());
     }
 
     @Test

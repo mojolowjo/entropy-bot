@@ -38,9 +38,9 @@ class ModdedDataTest {
 
     @Test void huntAndFoodKindsReadTheLootAndRecipes() {
         pack();
-        assertTrue(HuntRules.animals().contains("moddium:boar"), "a mob whose loot table drops a food is huntable");
-        assertEquals("moddium:boar_meat", HuntRules.meatOf("moddium:boar"));
-        assertTrue(HuntRules.raws().contains("moddium:boar_meat"));
+        assertTrue(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().containsKey("moddium:boar"), "a mob whose loot table drops a food is huntable");
+        assertEquals("moddium:boar_meat", io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().get("moddium:boar"));
+        assertTrue(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().containsValue("moddium:boar_meat"));
         assertEquals("cooked_boar", io.github.mojolowjo.entropybot.aa.brain.FoodModel.cooked("boar_meat"));
         assertTrue(FoodPlan.raw("moddium:boar_meat") && !FoodPlan.edible("moddium:boar_meat") && FoodPlan.edible("moddium:cooked_boar"));
         assertFalse(FoodPlan.edible("moddium:spoiled_pie"));

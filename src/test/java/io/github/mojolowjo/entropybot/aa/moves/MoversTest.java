@@ -46,10 +46,8 @@ class MoversTest {
             Map.entry("engine/Escort.java", 1),
             // backbone step 3: Jobs keeps the twerk / farm-round crouch (keyShift x2) and useBlock (the "use x y z" interact, synchronous reply)
             Map.entry("commands/Jobs.java", 4),
-            Map.entry("commands/Seq.java", 1),
             Map.entry("farm/McFarmWorld.java", 5),
             Map.entry("commands/FloorSteps.java", 2),
-            Map.entry("commands/Fishing.java", 1),
             Map.entry("commands/Crafting.java", 2),
             Map.entry("commands/Commands.java", 2),
             Map.entry("commands/AaRuntime.java", 2)));

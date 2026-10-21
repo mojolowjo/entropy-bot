@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.guard;
 
-import io.github.mojolowjo.entropybot.chop.ChopLoop;
 import io.github.mojolowjo.entropybot.guard.Litter.Context;
 import io.github.mojolowjo.entropybot.guard.Litter.Facts;
 import org.junit.jupiter.api.Test;
@@ -152,14 +151,4 @@ class LitterTest {
         assertEquals(Litter.FAR, Litter.nearestBoxGap(List.of(), "minecraft:overworld", 1, 1));
     }
 
-    @Test void chopOrderPricesTheScaffoldInSeconds() {
-        // two reachable real trees: the nearer one is tall and its scaffold adds 30 s, so the farther plain one comes first
-        var near = new ChopLoop.Cand(new int[]{10, 64, 0}, 100, true, false, 30);                 // 10 blocks = 2.3 s + 30 s
-        var far = new ChopLoop.Cand(new int[]{30, 64, 0}, 900, true, false, 0);                   // 30 blocks = 7 s
-        var out = ChopLoop.order(List.of(near, far));
-        assertSame(far, out.get(0));
-        // without the extra the nearer comes first, as before
-        var near0 = new ChopLoop.Cand(new int[]{10, 64, 0}, 100, true);
-        assertSame(near0, ChopLoop.order(List.of(far, near0)).get(0));
-    }
 }

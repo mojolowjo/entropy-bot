@@ -57,7 +57,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         try {
             if (p != null) {
                 String[] h = io.github.mojolowjo.entropybot.camp.FoodPlan.checkFinding(p.getFoodData().getFoodLevel(),
-                        io.github.mojolowjo.entropybot.gui.Gui.inventory(p), c.hunting.on(), c.hunting.animalsNear(p));
+                        io.github.mojolowjo.entropybot.gui.Gui.inventory(p), c.stepRun.on(), c.stepRun.animalsNear(p));
                 if (h != null) f.add(0, new SelfCheck.Finding(h[0], h[1], h[2]));
             }
         } catch (RuntimeException e) {
@@ -276,7 +276,7 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             }
         }
         return new SelfCheck.State(g.mode() == GuardCore.Mode.STRICT, areas, base != null, baseChests, places.containsKey("food"), c.home() != null,
-                minePos, mineDir, mine == null ? null : mineGaveUp(), c.suppliesMap(), free, tools, ownerOnline(), companionAge(core));
+                minePos, mineDir, null, c.suppliesMap(), free, tools, ownerOnline(), companionAge(core));
     }
 
     /** Trusted container notes within 32 blocks of the base (as Storage.baseChests, without looking at the blocks). */
@@ -294,22 +294,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
             } catch (NumberFormatException ignored) {}
         }
         return n;
-    }
-
-    /** The last strip run's end when it gave up (the autominer's log), else null. */
-    private String mineGaveUp() {
-        JsonObject b = c.brainData();
-        JsonObject a = b.has("autominer") && b.get("autominer").isJsonObject() ? b.getAsJsonObject("autominer") : null;
-        if (a == null || !a.has("log") || !a.get("log").isJsonArray()) return null;
-        JsonArray log = a.getAsJsonArray("log");
-        for (int i = log.size() - 1; i >= 0; i--) {
-            JsonObject e = log.get(i).getAsJsonObject();
-            String what = e.has("what") ? e.get("what").getAsString() : "";
-            if (!what.startsWith("mine strip")) continue;
-            if (!Chains.stripGaveUp(e)) return null;
-            return e.get("result").getAsString().replaceFirst("^stopped at step \\d+ \\([^)]*\\): ", "");
-        }
-        return null;
     }
 
     private boolean ownerOnline() {

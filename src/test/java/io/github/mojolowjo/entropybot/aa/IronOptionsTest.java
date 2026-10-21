@@ -89,7 +89,7 @@ class IronOptionsTest {
         m.failed(Way.DIG_KNOWN, up, "no path", 0);
         c = IronOptions.choose(f, m, 1);
         assertEquals(Way.PILLAR_KNOWN, c.way());
-        assertEquals("goto 2 71 0 then mine iron 1 at 2 70 0 dig", c.command(3));
+        assertEquals("goto 2 71 0 > mine iron 1 at 2 70 0 dig", c.command(3));
         Facts few = new Facts(List.of(up), 60, false, 4, true, -1, false, null, -1, false, false, 0);
         c = IronOptions.choose(few, m, 1);
         assertNull(c.way());
@@ -128,9 +128,9 @@ class IronOptionsTest {
         Choice c = IronOptions.choose(new Facts(List.of(open(10, 60, 0, 10, true)), 60, false, 0, true, -1, false, null, 80, true, false, 0), new Memory(), 0);
         assertEquals(Smelt.HERE, c.smelt());
         assertEquals("mine iron 1 at 10 60 0 walk", IronOptions.rewrite(IronOptions.split(PLANNED), c), "one ore of 3: the chain ends after it, the Need picks again");
-        assertEquals("mine iron 1 at 10 60 0 walk then smelt raw_iron 1 here", IronOptions.rewrite(IronOptions.split("mine iron 1 then smelt raw_iron 1"), c), "one ore left: the rest stays");
+        assertEquals("mine iron 1 at 10 60 0 walk > smelt raw_iron 1 here", IronOptions.rewrite(IronOptions.split("mine iron 1 then smelt raw_iron 1"), c), "one ore left: the rest stays");
         Choice none = new Choice(null, null, Smelt.CAMP, List.of(), List.of());
-        assertEquals(PLANNED, IronOptions.rewrite(IronOptions.split(PLANNED), none), "nothing chosen: the planner's steps stay");
+        assertEquals(String.join(" > ", IronOptions.split(PLANNED)), IronOptions.rewrite(IronOptions.split(PLANNED), none), "nothing chosen: the planner's steps stay (typed)");
         assertTrue(IronOptions.hasMineStep(IronOptions.split("mine strip iron 3 then craft x 1")));
         assertFalse(IronOptions.hasMineStep(IronOptions.split("smelt raw_iron 3 then craft iron_pickaxe 1")));
     }
@@ -180,7 +180,7 @@ class IronOptionsTest {
         // the dig fails too: the cave is next
         port.fail(2, "stopped at step 1 (mine iron 3 dig): couldn't get to the known iron at 5 56 0");
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("mine cave iron 3 then smelt raw_iron 3 then smelt collect all then craft iron_pickaxe 1", port.started.get(2).chain());
+        assertEquals("mine cave iron 3 > smelt raw_iron 3 > smelt collect all > craft iron_pickaxe 1", port.started.get(2).chain());
         // the cave fails: nothing left (strip has no mine) -> the Need fails with the options line, and cools down
         port.fail(3, "stopped at step 1 (mine cave iron 3): no known cave");
         assertEquals(Status.FAILURE, r.tick(bb));
@@ -246,6 +246,6 @@ class IronOptionsTest {
         assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());
         port.fail(1, "stopped at step 2 (smelt raw_iron 3 here): no free spot next to me for mine");
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("smelt raw_iron 3 then smelt collect all then craft iron_pickaxe 1", port.started.get(1).chain());
+        assertEquals("smelt raw_iron 3 > smelt collect all > craft iron_pickaxe 1", port.started.get(1).chain());
     }
 }

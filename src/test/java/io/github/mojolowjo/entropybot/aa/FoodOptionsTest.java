@@ -43,7 +43,8 @@ class FoodOptionsTest {
         Options.Choice c = choose(withHerds(Map.of(), java.util.List.of(fresh)));
         assertNotNull(c.best(), c.why());
         assertEquals("go hunt cow", c.best().id());
-        assertEquals("hunt 2 cow at 80 0 then cook beef 2", c.best().command());
+        assertEquals("hunt 2 cow at 80 0 > cook beef 2", c.best().command());
+        assertTrue(c.best().typed() && c.best().steps().get(0) instanceof io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt, "rm-execution: typed hunt step");
         assertEquals("sighting/animal cow 80 0", c.best().memoryKey());
         assertNotNull(c.best().site(), "the site feeds the sequencer");
         // an older sighting costs more: x 1 / confidence
@@ -52,7 +53,7 @@ class FoodOptionsTest {
         assertEquals(4 * cFresh, cOld, 1e-6);
         // the best herd of a type wins; a type in reach is the plain hunt, not a walk to memory
         var near = new FoodOptions.Herd("cow", 20, 64, 0, 3, 1.0, 20);
-        assertEquals("hunt 2 cow at 20 0 then cook beef 2", choose(withHerds(Map.of(), java.util.List.of(fresh, near))).best().command());
+        assertEquals("hunt 2 cow at 20 0 > cook beef 2", choose(withHerds(Map.of(), java.util.List.of(fresh, near))).best().command());
         Options.Choice inReach = choose(withHerds(Map.of("cow", 4), java.util.List.of(fresh)));
         assertEquals("hunt cow", inReach.best().id());
         assertTrue(inReach.ranked().stream().noneMatch(o -> o.id().equals("go hunt cow")));
@@ -68,7 +69,7 @@ class FoodOptionsTest {
         Options.Choice c = choose(facts(6, Map.of(), true, Map.of("cow", 9, "sheep", 4, "chicken", 3), null));
         assertNotNull(c.best(), c.why());
         assertEquals("hunt cow", c.best().id());
-        assertEquals("hunt 2 cow then cook beef 2", c.best().command(), "24 points: 2 cooked beef (20.8 each)");
+        assertEquals("hunt 2 cow > cook beef 2", c.best().command(), "24 points: 2 cooked beef (20.8 each)");
     }
 
     @Test
@@ -78,7 +79,9 @@ class FoodOptionsTest {
         Options.Choice c = choose(f);
         assertNotNull(c.best(), c.why());
         assertEquals("hunt cow", c.best().id());
-        assertEquals("hunt 2 cow then cook beef 2", c.best().command(), "no out word: the hunt walks to the animals itself");
+        assertEquals("hunt 2 cow > cook beef 2", c.best().command(), "no out word: the hunt walks to the animals itself");
+        assertEquals(java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt("minecraft:cow", 2, null), new io.github.mojolowjo.entropybot.aa.moves.Step.Cook("beef", 2)).toString(),
+                c.best().steps().toString(), "rm-execution: the hunt row emits typed steps, no chain text");
         assertTrue(c.best().why().contains("travel 2x30"), c.best().why());
         FoodOptions.FoodFacts calm = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
                 null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 30, null);

@@ -708,7 +708,7 @@ final class Mining {
     }
 
     /** 0.23.1: at most this many gathers (a tree, a surface vein) per explore/find run; a look round every 2 s while out there. */
-    static final int GATHER_MAX = 8, GATHER_EVERY = 40, GATHER_LOGS_BELOW = 32;
+    static final int GATHER_MAX = 8, GATHER_EVERY = 40;
 
     /**
      * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json; never into a keep-out area),
@@ -776,15 +776,9 @@ final class Mining {
             for (int[] b : bases) if (Math.abs(c[0] - b[0]) <= 16 && Math.abs(c[2] - b[2]) <= 16) return false;
             return true;
         };
-        int logs = 0;
-        for (Map.Entry<String, Integer> e : Gui.inventory(p).entrySet()) if (Chopping.isLogItem(e.getKey())) logs += e.getValue();
-        if (logs < GATHER_LOGS_BELOW) {
-            List<Seq.Step> t = Chopping.get().gatherTree(s, p, ok);
-            if (t != null) return t;
-        }
         List<Pos> vein = surfaceVein(p, ok);
         if (vein.isEmpty()) {
-            if (ex.gatherMisses++ < 3) LOG.info("[entropybot] explore: nothing to take near {} {} (logs on me {})", Jobs.here(p)[0], Jobs.here(p)[2], logs);
+            if (ex.gatherMisses++ < 3) LOG.info("[entropybot] explore: nothing to take near {} {}", Jobs.here(p)[0], Jobs.here(p)[2]);
             return null;
         }
         Pos f = vein.get(0);

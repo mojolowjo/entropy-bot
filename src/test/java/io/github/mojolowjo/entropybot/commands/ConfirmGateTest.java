@@ -220,5 +220,4 @@ class ConfirmGateTest {
         assertNull(ConfirmGate.digArea(java.util.List.of("stone", "8", "via", "engine")));
         assertEquals("base", ConfirmGate.digArea(java.util.List.of("base", "-3")));
         assertTrue(PolicyCommands.AREA_WORDS.contains("stone"), "no area may be named stone");
-        assertEquals(24, io.github.mojolowjo.entropybot.clear.DigArgs.stone("stone 24").n());
     }}

@@ -91,7 +91,8 @@ class OptionsTest {
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
                 List.of(new WoodOptions.Tree(50, 64, 0, 50, null))));
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("goto 50 64 0 then cut 4", port.started.get(0).chain(), "the priced wood prerequisite, not the picker's alpha");
+        assertEquals("goto 50 64 0 near 2 > cut 4 at 50 64 0", port.started.get(0).chain(), "the priced wood prerequisite, not the picker's alpha");
+        assertEquals(2, port.started.get(0).steps().size(), "rm-execution: the wood way's typed steps go with the task");
         port.fail(1, "error: chopped nothing - no trees within 32");
         r.tick(bb);
         clock.advance(1000);

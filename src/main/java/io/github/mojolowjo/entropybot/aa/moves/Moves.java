@@ -101,6 +101,14 @@ public final class Moves {
         car.look(x, y, z);
     }
 
+    /**
+     * rm-execution: the camera for an item use that needs a facing (the fishing cast, a chest's open): Baritone's
+     * LookBehavior target this tick ({@code at} = {x, y, z}), through the job hands' Baritone (the one camera owner).
+     */
+    public static void lookAt(double[] at) {
+        JobHands.get().look(at[0], at[1], at[2]);
+    }
+
     // ---- the state machine ----
 
     private void begin(String way, Leg first) {
