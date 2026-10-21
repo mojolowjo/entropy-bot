@@ -17,14 +17,23 @@ import java.util.List;
  */
 public final class ReflexLadder {
     public enum Kind {
-        AIR(Way.SURFACE, Way.BURROW_UP), LAVA(Way.RUN_FROM_HAZARD, Way.TO_WATER), FIRE(Way.RUN_FROM_HAZARD, Way.TO_WATER),
-        CREEPER(Way.RUN_AWAY, Way.BURROW);
+        AIR("air", Way.SURFACE, Way.BURROW_UP), LAVA("lava", Way.RUN_FROM_HAZARD, Way.TO_WATER), FIRE("fire", Way.RUN_FROM_HAZARD, Way.TO_WATER),
+        /** Water seen near: the same records (reflex.lava / reflex.fire), water first, then the run (staged 0.39.s1: never only one). */
+        LAVA_WATER_NEAR("lava", Way.TO_WATER, Way.RUN_FROM_HAZARD), FIRE_WATER_NEAR("fire", Way.TO_WATER, Way.RUN_FROM_HAZARD),
+        CREEPER("creeper", Way.RUN_AWAY, Way.BURROW);
 
         final List<Way> ways;
+        private final String key;
 
-        Kind(Way... ways) { this.ways = List.of(ways); }
+        Kind(String key, Way... ways) {
+            this.key = "reflex." + key;
+            this.ways = List.of(ways);
+        }
 
-        public String key() { return "reflex." + name().toLowerCase(java.util.Locale.ROOT); }
+        public String key() { return key; }
+
+        /** The water-first order of a lava / fire ladder (itself for the others). */
+        public Kind waterNear() { return this == LAVA ? LAVA_WATER_NEAR : this == FIRE ? FIRE_WATER_NEAR : this; }
     }
 
     public enum Way {

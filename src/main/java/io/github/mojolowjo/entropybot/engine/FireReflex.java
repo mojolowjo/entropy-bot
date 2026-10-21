@@ -174,7 +174,7 @@ public final class FireReflex {
                     // backbone step 4: GoalRunAway from the lava / fire cells around, at the reflex priority, at once
                     String what = level.getBlockState(feet).getFluidState().is(FluidTags.LAVA) ? "lava" : "fire";
                     begin("stepping out of " + what);
-                    escape(now, what, ESCAPE_STEP, hazards(level, feet, 2), feet, null);
+                    escape(now, what, ESCAPE_STEP, hazards(level, feet, 2), feet, false);
                     return true;
                 }
                 case PLACE_WATER -> {
@@ -201,13 +201,13 @@ public final class FireReflex {
                 case WALK_WATER -> {
                     // reflex choosers: water seen near is a fact; the goal is "feet in water", Baritone picks the water
                     begin("on fire: walking into water (water near)");
-                    escape(now, "fire", ESCAPE_AWAY, java.util.List.of(), feet, io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.TO_WATER);
+                    escape(now, "fire", ESCAPE_AWAY, hazards(level, feet, 3), feet, true);
                     return true;
                 }
                 case MOVE_AWAY -> {
                     begin("on fire: moving away from the fire");
                     // backbone step 4: GoalRunAway from the fire / lava near (none seen: from where I burn)
-                    escape(now, "fire", ESCAPE_AWAY, hazards(level, feet, 3), feet, null);
+                    escape(now, "fire", ESCAPE_AWAY, hazards(level, feet, 3), feet, false);
                     return true;
                 }
                 default -> { }
@@ -231,7 +231,7 @@ public final class FireReflex {
 
     /** Reflex choosers: the ladder's cell and kind (set when the reflex starts), the way running, spent = FAILED sent. */
     private int[] fireCell;
-    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind fireKind = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.FIRE;
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind fireKind = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.FIRE, curKind = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.FIRE;
     private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way fireWay;
     private boolean spent, bucketOff;
     private volatile String failure;
@@ -255,9 +255,9 @@ public final class FireReflex {
     /** One failed try charged under {@code reflex.lava|fire <cell>}; true when a way is left. */
     private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way charge(String why) {
         if (fireCell == null) return null;
-        var w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(fireKind, fireCell, why, null);
+        var w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(curKind, fireCell, why, null);
         LOG.info("[entropybot] fire reflex: charged {} {} ({} tries): {}, next: {}", fireKind.key(), io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.cell(fireCell),
-                io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.fails(fireKind, fireCell), why, w == null ? "FAILED" : w.label);
+                io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.fails(curKind, fireCell), why, w == null ? "FAILED" : w.label);
         if (w == null) spend(why);
         return w;
     }
@@ -266,7 +266,7 @@ public final class FireReflex {
         if (spent) return;
         spent = true;
         endWay();
-        failure = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.spent(fireKind, fireCell, why);
+        failure = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.spent(curKind, fireCell, why);
         events.push("reflex", failure, null);
         LOG.warn("[entropybot] {} - to the danger desire", failure);
     }
@@ -275,21 +275,22 @@ public final class FireReflex {
      * Reflex choosers: the lava / fire ladder on the reflexes' Moves (run from the hazard = GoalRunAway from the lava /
      * fire cells, none seen = from the feet; to water = feet in water, Baritone picks the water; then FAILED to the
      * danger desire). A try that failed, or arrived with the bot still burning, is charged in Failures and the ladder's
-     * way for the count runs, never before {@code from}. No mod-picked cell, no key fallback.
+     * way for the count runs; {@code waterNear}: the water-first order (same record). No mod-picked cell, no key fallback.
      */
     private void escape(long now, String what, int dist, java.util.List<int[]> cells, BlockPos feet,
-                        io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way from) {
+                        boolean waterNear) {
+        curKind = waterNear ? fireKind.waterNear() : fireKind;
         if (spent) return;
         if (cells.isEmpty()) cells = java.util.List.of(new int[]{feet.getX(), feet.getY(), feet.getZ()});
         var ph = moves.phase();
         boolean mine = fireWayRunning();
-        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING && (from == null || fireWay == from || fireWay.ordinal() > from.ordinal())) return;
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING) return;
         if (now - lastStep < io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()) return;
         io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way w;
         if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) w = charge(moves.why());
+        else if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED && fireWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.TO_WATER) return;   // in water: the burn goes out by itself (staged: one tick late)
         else if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED) w = charge(moves.why() + ", still " + (what.equals("lava") ? "in lava" : "burning"));
-        else w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.way(fireKind, fireCell, from);
-        if (w != null && from != null && w.ordinal() < from.ordinal()) w = from;
+        else w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.way(curKind, fireCell);
         if (w == null) {
             spend(moves.why());
             return;

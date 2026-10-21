@@ -77,10 +77,11 @@ class ReflexLadderTest {
     }
 
     @Test
-    void fireWalkingToWaterStartsAtToWater() {
-        List<String> calls = failAll(Kind.FIRE, Way.TO_WATER, null);
+    void fireWithWaterNearGoesToWaterFirstThenStillRuns() {
+        List<String> calls = failAll(Kind.FIRE.waterNear(), null, null);
         assertEquals("toWater", calls.get(0));
-        assertFalse(calls.stream().anyMatch(c -> c.startsWith("runAway")), "never back to an earlier way than asked");
+        assertTrue(calls.stream().anyMatch(c -> c.startsWith("runAway")), "staged 0.39.s1: unreachable water must not skip the run");
+        assertEquals(2 * ReflexLadder.triesPerWay(), f.fails("reflex.fire", "10 55 -4"), "the same record as the plain fire ladder");
     }
 
     @Test
