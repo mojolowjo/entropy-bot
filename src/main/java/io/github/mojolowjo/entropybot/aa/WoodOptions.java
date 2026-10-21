@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Site;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
-import io.github.mojolowjo.entropybot.sense.FailMemory;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +79,6 @@ public final class WoodOptions {
     /** A failed wood prerequisite may be answered with the next option (never the owner's stop or danger). */
     public static boolean switchable(String end) {
         if (end == null || Options.ownerOrDanger(end)) return false;
-        return FailMemory.classify(end) != null || WOOD_END.matcher(end.toLowerCase(Locale.ROOT)).find();
+        return Failures.classify(end) != null || WOOD_END.matcher(end.toLowerCase(Locale.ROOT)).find();
     }
 }

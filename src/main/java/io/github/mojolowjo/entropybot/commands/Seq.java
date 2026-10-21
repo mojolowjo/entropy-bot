@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
@@ -330,7 +332,8 @@ public final class Seq {
                 net.minecraft.world.item.ItemStack s = p.getInventory().getItem(i);
                 if (!s.isEmpty() && Gui.itemId(s).endsWith("_pickaxe") && s.isCorrectToolForDrops(bs)) return true;
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException caught) {
+            Quiet.warn("Seq.canMine failed, carrying on with the fallback", caught);
             // an odd id: not minable here
         }
         return false;

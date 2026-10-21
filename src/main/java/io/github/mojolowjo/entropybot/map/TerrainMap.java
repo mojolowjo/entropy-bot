@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.map;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import net.minecraft.client.Minecraft;
@@ -134,6 +136,7 @@ public final class TerrainMap {
             int[] px = r.px;
             return px == null ? null : MapMath.chunkPainted(px, cx, cz);
         } catch (Throwable t) {
+            Quiet.warn("TerrainMap.painted failed, carrying on with the fallback", t);
             return null;
         }
     }

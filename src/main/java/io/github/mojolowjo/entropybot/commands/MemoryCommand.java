@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.Core;
 import io.github.mojolowjo.entropybot.cave.Caves;
@@ -40,7 +42,8 @@ public final class MemoryCommand {
     }
 
     static long sessionStart() {
-        try { return java.lang.management.ManagementFactory.getRuntimeMXBean().getStartTime(); } catch (Throwable t) { return 0; }
+        try { return java.lang.management.ManagementFactory.getRuntimeMXBean().getStartTime(); } catch (Throwable t) {
+            Quiet.warn("MemoryCommand.sessionStart failed, carrying on with the fallback", t); return 0; }
     }
 
     static List<MemoryStatus.Store> gather(Core core, Commands c) {
@@ -84,6 +87,7 @@ public final class MemoryCommand {
     }
 
     private static long mtime(Path p) {
-        try { return Files.exists(p) ? Files.getLastModifiedTime(p).toMillis() : -1; } catch (Exception e) { return -1; }
+        try { return Files.exists(p) ? Files.getLastModifiedTime(p).toMillis() : -1; } catch (Exception e) {
+            Quiet.warn("MemoryCommand.mtime failed, carrying on with the fallback", e); return -1; }
     }
 }

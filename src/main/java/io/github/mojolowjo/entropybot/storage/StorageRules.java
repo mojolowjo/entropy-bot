@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.storage;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.mojolowjo.entropybot.clear.Tools;
@@ -274,7 +276,8 @@ public final class StorageRules {
     }
 
     static long seen(JsonObject note) {
-        try { return note.has("seen") ? note.get("seen").getAsLong() : 0; } catch (RuntimeException e) { return 0; }
+        try { return note.has("seen") ? note.get("seen").getAsLong() : 0; } catch (RuntimeException e) {
+            Quiet.warn("StorageRules.seen failed, carrying on with the fallback", e); return 0; }
     }
 
     /** "where <item>": what the bot carries, what the RS network held at its last reading, then the chests (6 at most). */

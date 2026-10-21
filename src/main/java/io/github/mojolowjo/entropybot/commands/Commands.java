@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import com.google.gson.JsonArray;
@@ -113,6 +115,7 @@ public final class Commands implements Chains.Env {
             net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(id);
             return rl != null && mc.level != null && mc.level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME).containsKey(rl);
         } catch (RuntimeException e) {
+            Quiet.warn("Commands.isBiome failed, carrying on with the fallback", e);
             return false;
         }
     }
@@ -242,6 +245,7 @@ public final class Commands implements Chains.Env {
             return "error: " + gx + " " + gy + " " + gz + " is straight down a shaft (" + rim[5] + " blocks) - I can't climb down or back up a sheer hole; dig a staircase: goto "
                     + rim[0] + " " + rim[1] + " " + rim[2] + " then dig stairs " + StairPlan.dirName(rim[3], rim[4]) + " " + Math.min(StairPlan.MAX, rim[5]);
         } catch (RuntimeException e) {
+            Quiet.warn("Commands.shaftRefusal failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -637,6 +641,7 @@ public final class Commands implements Chains.Env {
             if (!Files.exists(p)) return null;
             return JsonStore.parse(Files.readString(p, StandardCharsets.UTF_8));
         } catch (Exception e) {
+            Quiet.warn("Commands.readBridgeJson failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -826,10 +831,10 @@ public final class Commands implements Chains.Env {
             String chatType = null;
             try {
                 if (event.getBoundChatType() != null) chatType = event.getBoundChatType().chatType().unwrapKey().map(k -> k.location().toString()).orElse(null);
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Commands.onChat failed, carrying on with the fallback", caught); }
             String signed = null;
             if (event instanceof ClientChatReceivedEvent.Player pe) {
-                try { signed = pe.getPlayerChatMessage().signedContent(); } catch (RuntimeException ignored) {}
+                try { signed = pe.getPlayerChatMessage().signedContent(); } catch (RuntimeException caught) { Quiet.warn("Commands.onChat failed, carrying on with the fallback", caught); }
             }
             ChatParse.Pm pm = ChatParse.parse(text, chatType, sender, signed, self, publicPrefix());
             if (pm == null) return;
@@ -1778,7 +1783,7 @@ public final class Commands implements Chains.Env {
         try {
             IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
             if (b != null) b.getPathingBehavior().cancelEverything();
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("Commands.stopAll failed, carrying on with the fallback", caught); }
         core.guard.core.releaseAll(core.token);
         Minecraft mc = Minecraft.getInstance();
         mc.options.keyUse.setDown(false);
@@ -1841,6 +1846,7 @@ public final class Commands implements Chains.Env {
         try {
             return mb != null && mb.getFollowProcess().isActive();
         } catch (RuntimeException e) {
+            Quiet.warn("Commands.stillFollowing failed, carrying on with the fallback", e);
             return true;        // can't tell: keep the escort rather than drop it on a hiccup
         }
     }
@@ -2014,7 +2020,8 @@ public final class Commands implements Chains.Env {
     }
 
     private static String baritonePrefix() {
-        try { return String.valueOf(BaritoneAPI.getSettings().prefix.value); } catch (Throwable t) { return "#"; }
+        try { return String.valueOf(BaritoneAPI.getSettings().prefix.value); } catch (Throwable t) {
+            Quiet.warn("Commands.baritonePrefix failed, carrying on with the fallback", t); return "#"; }
     }
 
     // ---- deaths ----
@@ -2048,6 +2055,7 @@ public final class Commands implements Chains.Env {
             if (killer == null) return target != null ? " fighting " + target : "";
             return " - killed by " + killer + (target != null && !killer.contains(target) ? " (while fighting " + target + ")" : "");
         } catch (RuntimeException e) {
+            Quiet.warn("Commands.deathCause failed, carrying on with the fallback", e);
             return target != null ? " fighting " + target : "";
         }
     }
@@ -2593,7 +2601,7 @@ public final class Commands implements Chains.Env {
         try {
             JsonElement m = core.guardStatus().get("mode");
             if (m != null && !m.isJsonNull()) mode = m.getAsString();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("Commands.settingsJson failed, carrying on with the fallback", caught); }
         SettingsBlock.Live live = new SettingsBlock.Live(policy.strict(), mode, core.reflexes.defence(), core.reconnect.on(), orePrefer(),
                 chains.running() ? chains.name() : null, chains.running() ? chains.chainStatus() : null);
         return SettingsBlock.build(brainStore.data(), areaStore.data(), live);

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.watchview.TunnelPose;
 import io.github.mojolowjo.entropybot.watchview.TunnelView;
 
@@ -81,6 +83,7 @@ public final class WatchCamera {
             float d = Float.parseFloat(s.trim());
             return d >= 1f && d <= 8f ? d : -1f;
         } catch (RuntimeException e) {
+            Quiet.warn("WatchCamera.parseDistance failed, carrying on with the fallback", e);
             return -1f;
         }
     }
@@ -91,6 +94,7 @@ public final class WatchCamera {
             double d = Double.parseDouble(s.trim());
             return d >= 1 && d <= 40 ? d : -1;
         } catch (RuntimeException e) {
+            Quiet.warn("WatchCamera.parseHeight failed, carrying on with the fallback", e);
             return -1;
         }
     }

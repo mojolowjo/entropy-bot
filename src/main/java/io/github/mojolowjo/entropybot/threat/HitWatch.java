@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.threat;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
 import net.minecraft.client.player.LocalPlayer;
@@ -52,7 +54,8 @@ public final class HitWatch {
                 try {
                     var j = Core.INSTANCE.commands.jobs.job;
                     job = j != null && !j.done ? j.type + " " + j.label : null;
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException caught) {
+            Quiet.warn("HitWatch.observe failed, carrying on with the fallback", caught);
                     // no job
                 }
                 HitLog.Hit h = new HitLog.Hit(System.currentTimeMillis(), type, id, name, amt, Math.max(0, hp), p.getBlockX(), p.getBlockY(), p.getBlockZ(), job);

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.io;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -88,7 +90,7 @@ public final class WorldState {
                 String k = key(true, null, Files.readString(f, StandardCharsets.UTF_8).lines().findFirst().orElse(""));
                 if (k != null) return k;
             }
-        } catch (IOException | RuntimeException ignored) {}
+        } catch (IOException | RuntimeException caught) { Quiet.warn("WorldState.mainKey failed, carrying on with the fallback", caught); }
         return null;
     }
 

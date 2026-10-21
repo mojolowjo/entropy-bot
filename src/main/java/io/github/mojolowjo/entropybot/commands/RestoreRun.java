@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalBlock;
 import com.mojang.logging.LogUtils;
@@ -74,7 +76,7 @@ final class RestoreRun {
     void end() {
         if (ended) return;
         ended = true;
-        if (placedMode && breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+        if (placedMode && breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("RestoreRun.end failed, carrying on with the fallback", caught); }
         leases.releaseAll();
         Jobs.safeSettings();
     }
@@ -92,7 +94,7 @@ final class RestoreRun {
         IBaritone b = Jobs.baritone();
         if (b != null && "walking".equals(stage)) Jobs.cancel(b);
         if (placedMode) {
-            if (breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+            if (breakStarted) try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException caught) { Quiet.warn("RestoreRun.skip failed, carrying on with the fallback", caught); }
             breakStarted = false;
             leases.releaseAll();
         }

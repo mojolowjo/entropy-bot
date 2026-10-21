@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -112,6 +114,7 @@ public final class SettingsBlock {
         try {
             return e == null || e.isJsonNull() ? dflt : e.getAsBoolean();
         } catch (RuntimeException x) {
+            Quiet.warn("SettingsBlock.bool failed, carrying on with the fallback", x);
             return dflt;
         }
     }
@@ -120,6 +123,7 @@ public final class SettingsBlock {
         try {
             return e == null || e.isJsonNull() ? 0 : e.getAsInt();
         } catch (RuntimeException x) {
+            Quiet.warn("SettingsBlock.intOf failed, carrying on with the fallback", x);
             return 0;
         }
     }
@@ -128,6 +132,7 @@ public final class SettingsBlock {
         try {
             return e == null || e.isJsonNull() ? 0 : e.getAsLong();
         } catch (RuntimeException x) {
+            Quiet.warn("SettingsBlock.longOf failed, carrying on with the fallback", x);
             return 0;
         }
     }

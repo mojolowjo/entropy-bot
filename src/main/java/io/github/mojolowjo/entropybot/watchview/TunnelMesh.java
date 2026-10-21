@@ -140,7 +140,8 @@ final class TunnelMesh {
                 int[] lv = SkyScan.cornerShade(x - ox, y - oy, z - oz, side, c, centre,
                         (ax, ay, az) -> SkyScan.shades(SkyScanner.kind(level, tmp.set(ax + ox, ay + oy, az + oz))));
                 for (int i = 0; i < 4; i++) ao[i] = SkyScan.shadeFactor(lv[i]);
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+
                 // no corner shading for this face
             }
             TextureAtlasSprite sprite = null;

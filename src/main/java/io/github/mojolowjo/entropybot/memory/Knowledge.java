@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.memory;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -92,6 +94,7 @@ public final class Knowledge {
             }
             return RS + ": " + rs.size() + " readings";
         } catch (RuntimeException e) {
+            Quiet.warn("Knowledge.loadRs failed, carrying on with the fallback", e);
             setAside(RS, text);
             return RS + ": broken, starting empty";
         }

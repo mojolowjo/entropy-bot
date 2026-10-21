@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalNear;
@@ -285,7 +287,7 @@ public final class Reflexes {
         o.addProperty("engine", engine.disabled() ? "off" : engine.mode().name().toLowerCase());
         try {
             o.add("threat", ThreatRuntime.INSTANCE.status());      // B2: grid ok|fallback, ms a second
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("Reflexes.status failed, carrying on with the fallback", caught); }
         return o;
     }
 
@@ -308,7 +310,7 @@ public final class Reflexes {
         } catch (Throwable t) {
             errors++;
             if (errors <= 5 || errors % 1200 == 0) LOG.error("[entropybot] reflex error #{}: {}", errors, t.toString());
-            try { settle("error"); } catch (Throwable ignored) {}
+            try { settle("error"); } catch (Throwable caught) { Quiet.warn("Reflexes.tick failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -469,6 +471,7 @@ public final class Reflexes {
                 var cmds = io.github.mojolowjo.entropybot.Core.INSTANCE.commands;
                 drives = cmds != null && (cmds.chainRunning() || cmds.jobs.running() && !"travel".equals(cmds.jobs.job.type));
             } catch (RuntimeException e) {
+            Quiet.warn("Reflexes.airWatch failed, carrying on with the fallback", e);
                 drives = false;
             }
         }
@@ -1243,7 +1246,7 @@ public final class Reflexes {
                 try {
                     IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
                     if (b != null) b.getPathingBehavior().cancelEverything();
-                } catch (Throwable ignored) {}
+                } catch (Throwable caught) { Quiet.warn("Reflexes.dimensionWatch failed, carrying on with the fallback", caught); }
                 events.push("reflex", "in " + dim + ", which is off limits: going home", null);
             } else {
                 deniedDim = null;

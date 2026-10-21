@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -585,7 +587,7 @@ final class DigCommands {
         try {                                       // P1: someone's build next to the dig? (a whisper, never a box)
             io.github.mojolowjo.entropybot.clear.ClearBox bb = s.job.breakLeaseBox();
             RestoreLive.INSTANCE.scanBuilds(p, new int[]{(bb.x1() + bb.x2()) / 2, (bb.y1() + bb.y2()) / 2, (bb.z1() + bb.z2()) / 2});
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("DigCommands.startClear failed, carrying on with the fallback", caught); }
         c.jobs.job.holdOnFight = true;             // the bridge never ended a clear for a fight: a reflex holds it
         seq.setStatus(s.job.status("starting"));
         JsonObject z = o.box == null && o.only == null ? zone(c) : null;

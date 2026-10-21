@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.io;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonParser;
 
 import java.io.IOException;
@@ -79,7 +81,7 @@ public final class BotFiles {
             }
             return "ok: " + bytes.length + " bytes";
         } catch (IOException e) {
-            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            try { Files.deleteIfExists(tmp); } catch (IOException caught) { Quiet.warn("BotFiles.writeJson failed, carrying on with the fallback", caught); }
             return "error: " + e.getMessage();
         }
     }
@@ -107,7 +109,7 @@ public final class BotFiles {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
-            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            try { Files.deleteIfExists(tmp); } catch (IOException caught) { Quiet.warn("BotFiles.writeAtomicAnywhere failed, carrying on with the fallback", caught); }
             throw e;
         }
     }

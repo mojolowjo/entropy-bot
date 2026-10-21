@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -216,12 +218,14 @@ public final class Seen {
                         int x = a.get(0).getAsInt(), y = a.get(1).getAsInt(), z = a.get(2).getAsInt();
                         String f = a.get(3).getAsString();
                         s.dims.computeIfAbsent(d.getKey(), k -> new LinkedHashMap<>()).put(key(x, y, z), new Cell(x, y, z, f.isEmpty() ? null : f, a.get(4).getAsLong()));
-                    } catch (RuntimeException ex) { skipped[0]++; }
+                    } catch (RuntimeException ex) {
+            Quiet.warn("Seen.fromJson failed, carrying on with the fallback", ex); skipped[0]++; }
                 }
             if (o.has("caveMinutes")) s.caveMinutes = Math.max(0, o.get("caveMinutes").getAsDouble());
             if (o.has("caveOres") && o.get("caveOres").isJsonObject())
                 for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("caveOres").entrySet()) s.caveOres.put(e.getKey(), Math.max(0, e.getValue().getAsDouble()));
         } catch (RuntimeException ex) {
+            Quiet.warn("Seen.fromJson failed, carrying on with the fallback", ex);
             skipped[0]++;
         }
         return s;

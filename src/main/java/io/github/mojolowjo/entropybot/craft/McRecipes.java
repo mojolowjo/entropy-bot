@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -70,6 +72,7 @@ public final class McRecipes implements RecipeSource {
             try {
                 d = convert(holder, level);
             } catch (RuntimeException e) {
+            Quiet.warn("McRecipes.rebuild failed, carrying on with the fallback", e);
                 continue;   // a modded recipe that can't answer on the client: not one the bot can make
             }
             if (d == null) continue;
@@ -164,6 +167,7 @@ public final class McRecipes implements RecipeSource {
                 ItemStack rem = st.getCraftingRemainingItem();
                 return rem != null && !rem.isEmpty() && rem.getItem() == st.getItem();
             } catch (RuntimeException e) {
+            Quiet.warn("McRecipes.catalyst failed, carrying on with the fallback", e);
                 return false;
             }
         });

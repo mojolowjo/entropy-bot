@@ -15,7 +15,7 @@ public final class Lease {
     public final boolean force;
     public final long createdTick;
     /**
-     * Water plan: a one-cell place lease just outside the areas, within one block of a break lease of the same owner
+     * Water plan: a one-cell place lease anywhere outside keep-out and no-break, within one block of a break lease of the same owner
      * (a dig sealing water off at its edge). It lets a block go only into water or air ({@link GuardCore#sealLease}).
      */
     public final boolean seal;
@@ -30,7 +30,7 @@ public final class Lease {
      */
     public boolean destroy;
     public String area;
-    /** 0.23.1: granted under the roaming permission of a running explore/find (outside the areas, natural blocks only). */
+    /** 0.23.1: granted under the roaming permission of a running explore/find (outside the typed areas (open world), natural blocks only). */
     public boolean roam;
     volatile long lastHeartbeat;
 

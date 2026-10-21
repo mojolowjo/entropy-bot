@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.Core;
@@ -270,6 +272,7 @@ final class Assist {
                 if (r != null) report = r;
             }
         } catch (Exception e) {
+            Quiet.warn("Assist.readReport failed, carrying on with the fallback", e);
             // caught mid-replace: the next second reads again
         }
         return report;

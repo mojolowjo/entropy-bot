@@ -81,7 +81,7 @@ public final class PolicyRuntime {
     private volatile String dimNow;
 
     /**
-     * AREAS review 1 (BuiltNear): a natural-looking block outside every area counts as built when a built block or a
+     * AREAS review 1 (BuiltNear): a natural-looking block in the open world (no typed area) counts as built when a built block or a
      * block entity stands within reach of it (an unlabelled cobble hut, a village). Any thread (array reads on {@code at}).
      */
     public boolean builtNear(StateAt at, int x, int y, int z, boolean ore) {

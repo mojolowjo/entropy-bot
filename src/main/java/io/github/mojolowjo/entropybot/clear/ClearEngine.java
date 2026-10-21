@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import io.github.mojolowjo.entropybot.clear.ClearWorld.Face;
 import io.github.mojolowjo.entropybot.clear.ClearWorld.Hit;
 
@@ -273,7 +275,7 @@ public final class ClearEngine {
     public static boolean onBroken(ClearJob job, Pos t, boolean falling, String oreId) {
         java.util.function.Consumer<Pos> sink = brokenSink;
         if (sink != null) {
-            try { sink.accept(t); } catch (RuntimeException ignored) {}   // camera v2's known air: never stops a dig
+            try { sink.accept(t); } catch (RuntimeException caught) { Quiet.warn("ClearEngine.onBroken failed, carrying on with the fallback", caught); }   // camera v2's known air: never stops a dig
         }
         String key = t.key();
         job.broken++;
@@ -461,7 +463,8 @@ public final class ClearEngine {
                         names.put(key, n);
                     }
                 }
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("ClearEngine.finishMessage failed, carrying on with the fallback", caught);
             }
             String why = DigWhy.reason(prefix, job.broken, left, job.skip, fw, job.noSpot, job.protectedLeft, names);
             if (why != null) msg.append(" - ").append(why);

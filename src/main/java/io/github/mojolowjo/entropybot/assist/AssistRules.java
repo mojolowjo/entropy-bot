@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.assist;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -59,6 +61,7 @@ public final class AssistRules {
                     (int) Math.floor(o.get("z").getAsDouble()), o.get("dim").getAsString(), received, held, action,
                     ev(o.get("broke"), received), ev(o.get("placed"), received));
         } catch (RuntimeException e) {
+            Quiet.warn("AssistRules.parse failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -71,6 +74,7 @@ public final class AssistRules {
             return new Ev(b.get("id").getAsString(), b.get("x").getAsInt(), b.get("y").getAsInt(), b.get("z").getAsInt(), at,
                     b.has("left") ? b.get("left").getAsInt() : -1);
         } catch (RuntimeException x) {
+            Quiet.warn("AssistRules.ev failed, carrying on with the fallback", x);
             return null;
         }
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
+
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,7 +41,7 @@ class FeasibilityTest {
             Feasibility.Verdict r = v("light here 8", s);
             assertEquals(INFEASIBLE, r.kind());
             assertEquals("torch", r.item());
-            assertEquals(FailMemory.Reason.NO_ITEM, r.cls());
+            assertEquals(Failures.Reason.NO_ITEM, r.cls());
         }
         @Test void nothingAtAll() {
             Feasibility.Verdict r = v("light here 8", empty());
@@ -57,12 +59,12 @@ class FeasibilityTest {
         @Test void byDayNot() { BrainState s = empty(); s.bedNear = true; Feasibility.Verdict r = v("sleep", s); assertEquals(INFEASIBLE, r.kind()); assertNull(r.cls()); }
         @Test void nightBedNear() { BrainState s = empty(); s.night = true; s.bedNear = true; assertEquals(FEASIBLE, v("sleep", s).kind()); }
         @Test void nightBedInBag() { BrainState s = empty(); s.night = true; s.bedInBag = true; assertEquals(FEASIBLE, v("sleep", s).kind()); }
-        @Test void nightNoBed() { BrainState s = empty(); s.night = true; Feasibility.Verdict r = v("sleep", s); assertEquals(FailMemory.Reason.NO_BED, r.cls()); assertEquals("white_bed", r.item()); }
+        @Test void nightNoBed() { BrainState s = empty(); s.night = true; Feasibility.Verdict r = v("sleep", s); assertEquals(Failures.Reason.NO_BED, r.cls()); assertEquals("white_bed", r.item()); }
     }
 
     @Nested class Spawn {
         @Test void bedNear() { BrainState s = empty(); s.bedNear = true; assertEquals(FEASIBLE, v("spawn", s).kind()); }
-        @Test void bagBedIsNotEnough() { BrainState s = empty(); s.bedInBag = true; assertEquals(FailMemory.Reason.NO_BED, v("spawn", s).cls()); }
+        @Test void bagBedIsNotEnough() { BrainState s = empty(); s.bedInBag = true; assertEquals(Failures.Reason.NO_BED, v("spawn", s).cls()); }
     }
 
     @Nested class Shelter {
@@ -72,7 +74,7 @@ class FeasibilityTest {
             Feasibility.Verdict r = v("shelter", s);
             assertEquals(INFEASIBLE, r.kind());
             assertEquals("planks", r.item());
-            assertEquals(FailMemory.Reason.NO_ITEM, r.cls());
+            assertEquals(Failures.Reason.NO_ITEM, r.cls());
         }
         @Test void minIsNine() { assertEquals(9, Feasibility.SHELTER_MIN); }
         @Test void theBrainsPrepMakesItFeasibleOrUnknown() { assertNotEquals(INFEASIBLE, v("cut 8 logs then craft planks 32 then shelter 5m", empty()).kind()); }
@@ -82,18 +84,18 @@ class FeasibilityTest {
 
     @Nested class Deposit {
         @Test void scanned() { assertEquals(FEASIBLE, v("deposit", empty()).kind()); }
-        @Test void notScanned() { BrainState s = empty(); s.feas.baseChests = false; assertEquals(FailMemory.Reason.NONE_IN_CHESTS, v("deposit", s).cls()); }
-        @Test void noBase() { BrainState s = empty(); s.feas.places.remove("base"); assertEquals(FailMemory.Reason.NO_PLACE, v("deposit", s).cls()); }
+        @Test void notScanned() { BrainState s = empty(); s.feas.baseChests = false; assertEquals(Failures.Reason.NONE_IN_CHESTS, v("deposit", s).cls()); }
+        @Test void noBase() { BrainState s = empty(); s.feas.places.remove("base"); assertEquals(Failures.Reason.NO_PLACE, v("deposit", s).cls()); }
         @Test void unknownFacts() { assertEquals(UNKNOWN, v("deposit", new BrainState()).kind()); }
         @Test void noItemForASubPlan() { BrainState s = empty(); s.feas.baseChests = false; assertNull(v("deposit", s).item()); }
     }
 
     @Nested class Get {
         @Test void inStock() { BrainState s = empty(); s.feas.stock.put("iron_ingot", 3); assertEquals(FEASIBLE, v("get iron_ingot 3", s).kind()); }
-        @Test void notInStock() { assertEquals(FailMemory.Reason.NONE_IN_CHESTS, v("get iron_ingot 3", empty()).cls()); }
+        @Test void notInStock() { assertEquals(Failures.Reason.NONE_IN_CHESTS, v("get iron_ingot 3", empty()).cls()); }
         @Test void namespaced() { BrainState s = empty(); s.feas.stock.put("iron_ingot", 1); assertEquals(FEASIBLE, v("get minecraft:iron_ingot 3", s).kind()); }
         @Test void foodInStorage() { BrainState s = empty(); s.foodStock = 4; assertEquals(FEASIBLE, v("get food 8", s).kind()); }
-        @Test void foodNowhere() { assertEquals(FailMemory.Reason.NONE_IN_CHESTS, v("get food 8", empty()).cls()); }
+        @Test void foodNowhere() { assertEquals(Failures.Reason.NONE_IN_CHESTS, v("get food 8", empty()).cls()); }
         @Test void unknownStock() { assertEquals(UNKNOWN, v("get iron_ingot 3", new BrainState()).kind()); }
     }
 
@@ -133,8 +135,8 @@ class FeasibilityTest {
 
     @Nested class Mine {
         @Test void stripWithPick() { BrainState s = empty(); s.feas.pickTier = 2; assertEquals(FEASIBLE, v("mine strip any 32", s).kind()); }
-        @Test void stripNoMine() { BrainState s = empty(); s.feas.pickTier = 2; s.feas.mineMarked = false; assertEquals(FailMemory.Reason.NO_PLACE, v("mine strip any 32", s).cls()); }
-        @Test void stripNoPick() { Feasibility.Verdict r = v("mine strip any 32", empty()); assertEquals("wooden_pickaxe", r.item()); assertEquals(FailMemory.Reason.NO_ITEM, r.cls()); }
+        @Test void stripNoMine() { BrainState s = empty(); s.feas.pickTier = 2; s.feas.mineMarked = false; assertEquals(Failures.Reason.NO_PLACE, v("mine strip any 32", s).cls()); }
+        @Test void stripNoPick() { Feasibility.Verdict r = v("mine strip any 32", empty()); assertEquals("wooden_pickaxe", r.item()); assertEquals(Failures.Reason.NO_ITEM, r.cls()); }
         @Test void tierBoundary() {
             BrainState s = empty(); s.feas.pickTier = 2;
             assertEquals(FEASIBLE, v("mine strip iron 16", s).kind());
@@ -154,12 +156,12 @@ class FeasibilityTest {
     @Nested class Walk {
         @Test void goKnown() { assertEquals(FEASIBLE, v("go base", empty()).kind()); }
         @Test void goArea() { assertEquals(FEASIBLE, v("go yard", empty()).kind()); }
-        @Test void goUnknownPlace() { assertEquals(FailMemory.Reason.NO_PLACE, v("go village", empty()).cls()); }
-        @Test void goIntoKeepOutIsRefused() { BrainState s = empty(); s.feas.places.put("camp", new int[]{500, 64, 0}); assertEquals(FailMemory.Reason.GUARD_REFUSED, v("go camp", s).cls()); }
+        @Test void goUnknownPlace() { assertEquals(Failures.Reason.NO_PLACE, v("go village", empty()).cls()); }
+        @Test void goIntoKeepOutIsRefused() { BrainState s = empty(); s.feas.places.put("camp", new int[]{500, 64, 0}); assertEquals(Failures.Reason.GUARD_REFUSED, v("go camp", s).cls()); }
         @Test void gotoInside() { assertEquals(FEASIBLE, v("goto 10 64 10", empty()).kind()); }
-        @Test void gotoIntoKeepOutIsRefused() { assertEquals(FailMemory.Reason.GUARD_REFUSED, v("goto 500 64 10", empty()).cls()); }
+        @Test void gotoIntoKeepOutIsRefused() { assertEquals(Failures.Reason.GUARD_REFUSED, v("goto 500 64 10", empty()).cls()); }
         @Test void gotoFenceUnknown() { BrainState s = empty(); s.feas.walkAllowed = null; assertEquals(UNKNOWN, v("goto 500 64 10", s).kind()); }
-        @Test void homeNeedsBase() { BrainState s = empty(); s.feas.places.clear(); assertEquals(FailMemory.Reason.NO_PLACE, v("dismiss then home", s).cls()); }
+        @Test void homeNeedsBase() { BrainState s = empty(); s.feas.places.clear(); assertEquals(Failures.Reason.NO_PLACE, v("dismiss then home", s).cls()); }
     }
 
     @Nested class Whole {
