@@ -12,18 +12,18 @@ import org.slf4j.Logger;
  * processes (-1), below its pause (0). Temporary, so the walk a bridge job asked for keeps its goal
  * while a reflex holds it (a meal: REQUEST_PAUSE) or takes over (a fight, a flight, a retreat:
  * SET_GOAL_AND_PATH), and goes on once the reflex lets go. Five caught errors switch it off; the
- * reflexes then still eat and fight, standing still.
+ * reflexes then still eat and fight, standing still. The state is {@link EngineSlot} (0.39.m2: a reflex goal saves and
+ * restores what it replaced).
  */
 public final class EngineProcess implements IBaritoneProcess {
     private static final Logger LOG = LogUtils.getLogger();
 
     public enum Mode { NONE, HOLD, OVERRIDE }
 
-    private Mode mode = Mode.NONE;
-    private Goal goal;
+    private final EngineSlot<Goal> slot = new EngineSlot<>();
     private int errors;
 
-    public Mode mode() { return mode; }
+    public synchronized Mode mode() { return Mode.valueOf(slot.mode().name()); }
 
     public boolean disabled() { return errors >= 5; }
 
@@ -32,30 +32,35 @@ public final class EngineProcess implements IBaritoneProcess {
 
     public long calcFails() { return calcFails; }
 
-    /** Baritone stands still, keeping the goal it had. */
-    public void hold() {
-        reflex = false;
-        mode = Mode.HOLD;
-        goal = null;
-    }
+    /** Baritone stands still, keeping the goal it had (during a reflex: the state after it). */
+    public synchronized void hold() { slot.hold(); }
 
-    /** Baritone walks to this goal instead, until {@link #release()}. */
-    public void override(Goal g) {
-        reflex = false;
-        mode = Mode.OVERRIDE;
-        goal = g;
-    }
+    /** Baritone walks to this goal instead, until {@link #release()} (during a reflex: after it). */
+    public synchronized void override(Goal g) { slot.override(g); }
 
-    public void release() {
-        reflex = false;
-        mode = Mode.NONE;
-        goal = null;
-    }
+    public synchronized void release() { slot.release(); }
+
+    /**
+     * Backbone step 4: a reflex goal (the air swim-up, the creeper flee, the lava/fire escape) runs above every other
+     * Baritone process (the fork's BurrowProcess -0.25, Baritone's own -1, its pause 0): {@link #REFLEX_PRIORITY} while
+     * it lasts. PathingControlManager sorts the active processes by priority every tick, so the goal is taken on
+     * Baritone's next tick. A BurrowProcess running then loses control and fails (its chain moves on, logged).
+     */
+    public static final double REFLEX_PRIORITY = 10;
+
+    /** Backbone step 4: the reflex goal; the mode and goal it replaces come back at {@link #endReflex()}. */
+    public synchronized void overrideReflex(Goal g) { slot.overrideReflex(g); }
+
+    /** 0.39.m2: the reflex goal ends; the job's hold / override before it is back. */
+    public synchronized void endReflex() { slot.endReflex(); }
+
+    /** A reflex goal holds the engine now. */
+    public synchronized boolean reflexGoal() { return slot.reflexGoal(); }
 
     @Override
     public boolean isActive() {
         try {
-            return !disabled() && mode != Mode.NONE;
+            return !disabled() && mode() != Mode.NONE;
         } catch (Throwable t) {
             error(t);
             return false;
@@ -65,14 +70,17 @@ public final class EngineProcess implements IBaritoneProcess {
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
         try {
-            if (mode == Mode.OVERRIDE && calcFailed) calcFails++;
-            if (mode == Mode.HOLD) return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
-            if (mode == Mode.OVERRIDE && goal != null) return new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
+            Mode m = mode();
+            Goal g;
+            synchronized (this) { g = slot.goal(); }
+            if (m == Mode.OVERRIDE && calcFailed) calcFails++;
+            if (m == Mode.HOLD) return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            if (m == Mode.OVERRIDE && g != null) return new PathingCommand(g, PathingCommandType.SET_GOAL_AND_PATH);
         } catch (Throwable t) {
             error(t);
         }
         // isActive() is false by now: Baritone moves on to the next process
-        mode = Mode.NONE;
+        synchronized (this) { slot.lostControl(); }
         return null;
     }
 
@@ -83,29 +91,9 @@ public final class EngineProcess implements IBaritoneProcess {
 
     /** Baritone's cancel (the bridge's stop): drop the goal; a reflex still running asks again next tick. */
     @Override
-    public void onLostControl() {
-        reflex = false;
-        mode = Mode.NONE;
-        goal = null;
+    public synchronized void onLostControl() {
+        slot.lostControl();
     }
-
-    /**
-     * Backbone step 4: a reflex goal (the air swim-up, the creeper flee, the lava/fire escape) runs above every other
-     * Baritone process (the fork's BurrowProcess -0.25, Baritone's own -1, its pause 0): {@link #REFLEX_PRIORITY} while
-     * this override lasts. PathingControlManager sorts the active processes by priority every tick, so the goal is
-     * taken on Baritone's next tick.
-     */
-    public static final double REFLEX_PRIORITY = 10;
-    private volatile boolean reflex;
-
-    /** Backbone step 4: {@link #override} at {@link #REFLEX_PRIORITY}, until hold/override/release/lost control. */
-    public void overrideReflex(Goal g) {
-        override(g);
-        reflex = true;
-    }
-
-    /** A reflex goal holds the engine now. */
-    public boolean reflexGoal() { return reflex && mode == Mode.OVERRIDE; }
 
     @Override
     public double priority() {
@@ -114,14 +102,14 @@ public final class EngineProcess implements IBaritoneProcess {
 
     @Override
     public String displayName0() {
-        return "Entropy Bot " + mode.name().toLowerCase();
+        return "Entropy Bot " + mode().name().toLowerCase() + (reflexGoal() ? " (reflex)" : "");
     }
 
     private void error(Throwable t) {
         errors++;
         LOG.error("[entropybot] engine process error #{}: {}", errors, t.toString());
         if (disabled()) {
-            mode = Mode.NONE;
+            synchronized (this) { slot.lostControl(); }
             LOG.error("[entropybot] engine process switched off after 5 errors; reflexes go on without moving");
         }
     }

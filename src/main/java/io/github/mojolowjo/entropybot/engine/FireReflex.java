@@ -157,7 +157,7 @@ public final class FireReflex {
                     // backbone step 4: GoalRunAway from the lava / fire cells around, at the reflex priority, at once
                     String what = level.getBlockState(feet).getFluidState().is(FluidTags.LAVA) ? "lava" : "fire";
                     begin("stepping out of " + what);
-                    escape(now, what, ESCAPE_STEP, hazards(level, feet, 2), feet);
+                    escape(now, level, what, ESCAPE_STEP, hazards(level, feet, 2), feet);
                     return true;
                 }
                 case PLACE_WATER -> {
@@ -196,7 +196,7 @@ public final class FireReflex {
                 case MOVE_AWAY -> {
                     begin("on fire: moving away from the fire");
                     // backbone step 4: GoalRunAway from the fire / lava near (none seen: from where I burn)
-                    escape(now, "fire", ESCAPE_AWAY, hazards(level, feet, 3), feet);
+                    escape(now, level, "fire", ESCAPE_AWAY, hazards(level, feet, 3), feet);
                     return true;
                 }
                 default -> { }
@@ -214,16 +214,29 @@ public final class FireReflex {
      * Backbone step 4: the escape way on the reflexes' Moves: started once (the car re-asks after a Baritone cancel), a
      * failed or finished one started again after a second (a failure logged). No hazard cells: from the feet.
      */
-    private void escape(long now, String what, int dist, java.util.List<int[]> cells, BlockPos feet) {
+    private void escape(long now, Level level, String what, int dist, java.util.List<int[]> cells, BlockPos feet) {
         if (cells.isEmpty()) cells = java.util.List.of(new int[]{feet.getX(), feet.getY(), feet.getZ()});
         var ph = moves.phase();
-        boolean mine = ("escape " + what).equals(moves.way());
-        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING) return;
-        if (mine && ph != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && now - lastStep < 20) return;
-        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) LOG.info("[entropybot] fire reflex: {} - again", moves.why());
+        String w = moves.way();
+        boolean mine = ("escape " + what).equals(w), fallback = STEP_OUT_WAY.equals(w);
+        if ((mine || fallback) && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING) return;
+        // 0.39.m2 (documented exception to "GoalRunAway"): Baritone found no run-away cell: at once the old step-out,
+        // GoalBlock on a dry neighbour (safeNeighbour), so a failed path never leaves the bot burning
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) {
+            BlockPos out = safeNeighbour(level, feet);
+            LOG.info("[entropybot] fire reflex: {} - {}", moves.why(), out == null ? "no dry neighbour either, the run again" : "stepping to the dry cell " + out.getX() + " " + out.getY() + " " + out.getZ());
+            if (out != null) {
+                moves.reach(STEP_OUT_WAY, new int[]{out.getX(), out.getY(), out.getZ()});
+                lastStep = now;
+                return;
+            }
+        } else if ((mine || fallback) && ph != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && now - lastStep < 20) return;
+        if (fallback && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) LOG.info("[entropybot] fire reflex: {} - the run again", moves.why());
         moves.escape(what, dist, cells);
         lastStep = now;
     }
+
+    static final String STEP_OUT_WAY = "step out";
 
     /** The lava / fire cells within r of the feet (dy -1..2). */
     private static java.util.List<int[]> hazards(Level level, BlockPos feet, int r) {
@@ -236,7 +249,7 @@ public final class FireReflex {
     /** Ends the reflexes' way when it is one of the fire reflex's own. */
     private void endWay() {
         String w = moves.way();
-        if (moves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && (w.startsWith("escape ") || w.equals("walk into water"))) moves.release();
+        if (moves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && (w.startsWith("escape ") || w.equals("walk into water") || w.equals(STEP_OUT_WAY))) moves.release();
     }
 
     private void begin(String what) {

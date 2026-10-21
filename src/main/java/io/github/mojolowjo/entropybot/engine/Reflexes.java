@@ -344,6 +344,7 @@ public final class Reflexes {
         Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
         // AA_CLEANUP 4: the lava/fire reflex is a true reflex: it runs under AA too (the milk and potions went)
         if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
+            releaseSwim(mc);        // 0.39.m2: the fire reflex drives; no swim jump held into lava / fire
             return;
         }
         // AA_CLEANUP 4: a danger move (AA's or the owner's) runs; only a creeper this close takes over (the creeper flee)
@@ -459,6 +460,7 @@ public final class Reflexes {
     private void airWatch(Minecraft mc, LocalPlayer p) {
         // a screen open (chest, inventory): no input of ours; let go of a held jump
         if (mc.screen != null) { releaseSwim(mc); shore.reset(); return; }
+        if (fire.active()) { releaseSwim(mc); return; }      // 0.39.m2: lava / fire first (its way owns the reflex car)
         IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
         // backbone step 4: our own swim-up goal is not "something else driving"
         boolean ownAir = airGoal && engine.reflexGoal();
@@ -502,6 +504,7 @@ public final class Reflexes {
             if (!airGoal && now >= airRetryAt) {
                 int[] s = surfaceCell(p);
                 if (s != null) {
+                    airSurface = s;
                     reflexMoves.swimUp(s);
                     airGoal = true;
                     reflexPathLogged = false;
@@ -519,7 +522,25 @@ public final class Reflexes {
             }
             // the documented exception (MoversTest): jump held only in the gap - head under water and no Baritone path
             // for the swim-up yet (calculating, failed, or no surface cell) - so the bot never sinks while it computes
-            boolean jump = p.isUnderWater() && !(airGoal && reflexMoves.pathReady());
+            // 0.39.m2: a path is not enough under a third of the air: Baritone must be taking the bot up, else jump
+            boolean ready = airGoal && reflexMoves.pathReady();
+            boolean rising = p.getDeltaMovement().y > 0.01;
+            // a swim-up with its path that has neither risen nor come closer to the surface cell for SWIM_STALL_TICKS:
+            // that column is bad, a new one at once
+            double toCell = airSurface == null ? 0 : Math.hypot(p.getX() - airSurface[0] - 0.5, p.getZ() - airSurface[2] - 0.5);
+            boolean closer = toCell < lastToCell - 0.02;
+            lastToCell = toCell;
+            swimStall = ready && p.isUnderWater() && !rising && !closer ? swimStall + 1 : 0;
+            if (swimStall >= ReflexRules.SWIM_STALL_TICKS && airSurface != null) {
+                LOG.info("[entropybot] air reflex: the swim-up to {} {} {} did not rise in {} ticks - that column is out, another one now",
+                        airSurface[0], airSurface[1], airSurface[2], ReflexRules.SWIM_STALL_TICKS);
+                badColumns.add(((long) airSurface[0] << 32) ^ (airSurface[2] & 0xffffffffL));
+                swimStall = 0;
+                airGoal = false;
+                airRetryAt = 0;
+                ready = false;
+            }
+            boolean jump = ReflexRules.airJump(p.isUnderWater(), ready, p.getAirSupply(), p.getMaxAirSupply(), rising);
             if (jump != swimming) mc.options.keyJump.setDown(jump);
             swimming = jump;
         } else releaseSwim(mc);
@@ -528,6 +549,8 @@ public final class Reflexes {
 
     /** Backbone step 4: the air reflex's Baritone swim-up runs (released with the reflex). */
     private boolean airGoal, airNoSurfaceLogged;
+    private int[] airSurface;
+    private double lastToCell;
     private long airRetryAt;
 
     /** Backbone step 4: the top water cell with air over it, straight up or close around (ReflexRules.surface), or null. */
@@ -536,10 +559,16 @@ public final class Reflexes {
         return ReflexRules.surface(p.getBlockX(), p.getBlockY(), p.getBlockZ(), (x, y, z) -> {
             BlockPos q = new BlockPos(x, y, z);
             var st = lv.getBlockState(q);
+            boolean free = st.getCollisionShape(lv, q).isEmpty();
+            if (!free) return ReflexRules.Cell.SOLID;          // 0.39.m2: a waterlogged slab, ice, a lily pad
             if (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) return ReflexRules.Cell.WATER;
-            return st.getCollisionShape(lv, q).isEmpty() && st.getFluidState().isEmpty() ? ReflexRules.Cell.OPEN : ReflexRules.Cell.SOLID;
-        });
+            return st.getFluidState().isEmpty() ? ReflexRules.Cell.OPEN : ReflexRules.Cell.SOLID;
+        }, (x, z) -> badColumns.contains(((long) x << 32) ^ (z & 0xffffffffL)));
     }
+
+    /** 0.39.m2: columns where a swim-up stalled (cleared when the air reflex ends). */
+    private static final java.util.Set<Long> badColumns = new java.util.HashSet<>();
+    private int swimStall;
 
     /**
      * Backbone step 4: follows the reflex way each tick (the car re-asks for its goal after a Baritone cancel) and logs
@@ -576,6 +605,8 @@ public final class Reflexes {
     private void releaseSwim(Minecraft mc) {
         airNoSurfaceLogged = false;
         airRetryAt = 0;
+        swimStall = 0;
+        if (!badColumns.isEmpty() && (mc == null || mc.player == null || !mc.player.isInWater())) badColumns.clear();
         if (airGoal) {
             airGoal = false;
             endWay("swim up", "air reflex ended");      // backbone step 4: the swim-up goal goes, the job's process resumes
@@ -815,14 +846,19 @@ public final class Reflexes {
         wayStarted();
     }
 
-    /** The cells of every counted hostile near, {@code from} always included. */
+    /** 0.39.m2: how far the flee looks for mobs to run from (the run's length + 6). */
+    static final double FLEE_SEE = ReflexRules.CREEPER_RUN_TO + 6;
+
+    /** The cells of every hostile within {@link #FLEE_SEE}, {@code from} always included. */
     private List<int[]> fleeCells(Minecraft mc, LocalPlayer p, Entity from) {
         List<int[]> out = new java.util.ArrayList<>();
         Hostility h = Hostility.INSTANCE;
         boolean seenFrom = false;
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
-            if (e != from && (p.distanceTo(e) > ReflexRules.lookRadius(true) || !h.kind(e, true).counts())) continue;
+            // 0.39.m2: every hostile within the run's reach, counted by the threat filter or not (a quiet one on the
+            // heading must not be run into)
+            if (e != from && (p.distanceTo(e) > FLEE_SEE || !(e instanceof net.minecraft.world.entity.monster.Enemy || h.kind(e, true).counts()))) continue;
             seenFrom |= e == from;
             out.add(new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
         }
@@ -854,6 +890,14 @@ public final class Reflexes {
         if ((t.d < ReflexRules.CREEPER_RUN || now < forceFleeUntil) && now >= fleeUntil) {
             runFrom(mc, p, t.e, fleeDir(mc, p, t.e));
             fleeUntil = now + 60;
+            fleeRetryAt = now;
+        } else if (t.d < ReflexRules.CREEPER_RUN && now - fleeRetryAt >= 10
+                && (reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING || !reflexMoves.way().equals("flee"))) {
+            // 0.39.m2: the run failed, timed out or ended with the creeper still close: a new one now, not in 3 s
+            LOG.info("[entropybot] creeper flee: {} with the creeper at {} - a new run", reflexMoves.why(), Math.round(t.d * 10) / 10.0);
+            runFrom(mc, p, t.e, fleeDir(mc, p, t.e));
+            fleeUntil = now + 60;
+            fleeRetryAt = now;
         }
         // one that is already right here gets knocked back
         if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {

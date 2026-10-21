@@ -29,5 +29,16 @@ class AirReflexTest {
     @Test void aRoofSendsItToTheNearestOpenColumn() { assertArrayEquals(new int[]{2, 62, 0}, ReflexRules.surface(0, 58, 0, sea(true, 2))); }
     @Test void noOpeningInReachIsNull() { assertNull(ReflexRules.surface(0, 58, 0, sea(true, 9))); }
     @Test void tooDeepIsNull() { assertNull(ReflexRules.surface(0, 62 - ReflexRules.SURFACE_UP - 1, 0, sea(false, 0))); }
+    // 0.39.m2: a stalled column is skipped; the jump stays while the air is low unless the bot rises
+    @Test void aBadColumnIsSkipped() {
+        int[] s = ReflexRules.surface(0, 55, 0, sea(false, 0), (x, z) -> x == 0 && z == 0);
+        assertEquals(62, s[1]);
+        assertEquals(1, Math.abs(s[0]) + Math.abs(s[2]), "the nearest good column");
+    }
+    @Test void noPathHoldsJump() { assertTrue(ReflexRules.airJump(true, false, 300, 300, false)); }
+    @Test void aPathWithAirLeftLetsBaritoneSwim() { assertFalse(ReflexRules.airJump(true, true, 200, 300, false)); }
+    @Test void lowAirAndNotRisingHoldsJumpDespiteThePath() { assertTrue(ReflexRules.airJump(true, true, 90, 300, false)); }
+    @Test void lowAirButRisingLetsBaritoneSwim() { assertFalse(ReflexRules.airJump(true, true, 90, 300, true)); }
+    @Test void headOutNoJump() { assertFalse(ReflexRules.airJump(false, false, 0, 300, false)); }
     @Test void dryDoesNothing() { assertEquals(ReflexRules.Air.NONE, ReflexRules.air(false, false, 0, 300, false, false)); }
 }

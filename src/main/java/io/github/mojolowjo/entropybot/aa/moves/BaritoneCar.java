@@ -211,12 +211,14 @@ public final class BaritoneCar implements Car {
             LOG.warn("[entropybot] moves: burrow cancel failed: {}", e.toString());
         }
         fresh();
-        engine.hold();
+        // 0.39.m2: a reflex car gives back what its goal replaced (the job's goal / hold), never a hold of its own
+        if (reflex) engine.endReflex();
+        else engine.hold();
     }
 
     @Override public void release() {
         stop("released");
-        engine.release();
+        if (!reflex) engine.release();
     }
 
     private void restore() {

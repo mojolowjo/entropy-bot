@@ -64,6 +64,31 @@ public final class ReflexRules {
      * (from the first water cell in it at most 2 under). Null: no air within reach (the jump fallback alone).
      */
     public static int[] surface(int x, int y, int z, Cells c) {
+        return surface(x, y, z, c, (bx, bz) -> false);
+    }
+
+    /**
+     * 0.39.m2: the same, skipping the columns {@code bad} names (a swim-up there stalled: the GoalBlock was not
+     * reachable). The caller makes a cell WATER only when it has no collision (a waterlogged slab, ice, a lily pad are
+     * SOLID), and the cell over the surface must be OPEN (no collision, no fluid), so the head fits there.
+     */
+    public static int[] surface(int x, int y, int z, Cells c, java.util.function.BiPredicate<Integer, Integer> bad) {
+        Cells cc = (qx, qy, qz) -> bad.test(qx, qz) ? Cell.SOLID : c.at(qx, qy, qz);
+        return surface0(x, y, z, cc);
+    }
+
+    /** 0.39.m2: the air reflex's jump. Head under water: held unless Baritone has the swim-up path and either the air
+     * lasts (a third or more) or the bot is rising; a path that goes down or sideways first never costs the air. */
+    public static boolean airJump(boolean underWater, boolean pathReady, int air, int maxAir, boolean rising) {
+        if (!underWater) return false;
+        if (!pathReady) return true;
+        return air * 3 < maxAir && !rising;
+    }
+
+    /** 0.39.m2: ticks a swim-up may run under water with its path and no rise before its column is marked bad. */
+    public static final int SWIM_STALL_TICKS = 40;
+
+    private static int[] surface0(int x, int y, int z, Cells c) {
         int[] up = column(x, y, z, c);
         if (up != null) return up;
         for (int r = 1; r <= SURFACE_R; r++) {
