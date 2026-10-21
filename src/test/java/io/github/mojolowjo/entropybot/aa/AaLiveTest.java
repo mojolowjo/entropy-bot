@@ -72,6 +72,36 @@ class AaLiveTest {
     }
 
     @Test
+    void picksListsTheRunningPickWithTimeDesireScoreAndOption() {
+        assertEquals(0, AaLive.json(tree, bb, true, 5).getAsJsonArray("picks").size());     // nothing picked before the first tick
+        bb.in.pickTier = 0;
+        assertEquals(Status.RUNNING, tree.tick(bb));
+        JsonArray pk = AaLive.json(tree, bb, true, 5).getAsJsonArray("picks");
+        assertEquals(1, pk.size());
+        JsonObject p = pk.get(0).getAsJsonObject();
+        assertEquals("needs.tools", p.get("desire").getAsString());
+        assertEquals(clock.now(), p.get("t").getAsLong());
+        assertTrue(p.get("score").getAsDouble() > 0);
+        assertTrue(p.has("option"));
+    }
+
+    @Test
+    void picksKeepTheLastTenNewestFirst() {
+        // the Brain's own list is capped at PICKS_KEPT, oldest dropped; the JSON lists newest first
+        bb.in.pickTier = 0;
+        for (int i = 0; i < 15; i++) {
+            tree.tick(bb);
+            clock.advance(1000);
+        }
+        var kept = tree.brain.lastPicks();
+        assertTrue(kept.size() <= io.github.mojolowjo.entropybot.aa.brain.Brain.PICKS_KEPT);
+        JsonArray pk = AaLive.json(tree, bb, true, 5).getAsJsonArray("picks");
+        assertEquals(kept.size(), pk.size());
+        for (int i = 1; i < pk.size(); i++)
+            assertTrue(pk.get(i - 1).getAsJsonObject().get("t").getAsLong() >= pk.get(i).getAsJsonObject().get("t").getAsLong());
+    }
+
+    @Test
     void switchesKeepOnlyTheLastN() {
         for (int i = 0; i < 8; i++) bb.tracer.decision(clock.now() + i, "t", null, "c" + i, "r");
         JsonArray sw = AaLive.json(tree, bb, true, 3).getAsJsonArray("switches");
