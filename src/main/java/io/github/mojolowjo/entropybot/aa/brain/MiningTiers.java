@@ -144,6 +144,10 @@ public final class MiningTiers {
             }
             if (!h.addAll(got)) break;
         }
+        // the waves can stay among wood and wool variants in a big tree: every item not had that needs a pickaxe counts too
+        Set<String> had = new HashSet<>();
+        for (String x : have) had.add(TechTree.id(x));
+        for (var e : need.entrySet()) if (!had.contains(e.getKey()) && e.getValue() >= 1 && e.getValue() != UNREACHABLE) pool.add(e.getKey());
         List<String> names = new ArrayList<>();
         int of = 0;
         for (String id : pool) {
@@ -153,7 +157,7 @@ public final class MiningTiers {
             if (n > pickTier) names.add(id.startsWith("minecraft:") ? id.substring(10) : id);
         }
         double share = of == 0 ? 0 : (double) names.size() / of;
-        String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound next items (top %d ideas + mined inputs) need better than tier %d%s",
+        String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound items not had (top %d ideas, their mined inputs, the tree) need better than tier %d%s",
                 names.size(), of, ideas.size(), pickTier, names.size() > 8 ? " (" + String.join(", ", names.subList(0, 8)) + ", ...)" : names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
         Result res = new Result(names.size(), of, share, names, terms);
         synchronized (MiningTiers.class) { lastTree = t; lastSource = s; lastKey = ck; lastResult = res; }
