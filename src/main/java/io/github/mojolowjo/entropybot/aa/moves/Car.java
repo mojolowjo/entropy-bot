@@ -22,6 +22,18 @@ public interface Car {
     /** GoalRunAway: {@code dist} blocks from every one of these points. */
     void runAway(int dist, List<int[]> from);
 
+    /**
+     * Backbone step 4 (the reflexes): GoalRunAway {@code dist} from these points, the goal's heuristic leaning toward
+     * {@code prefer} ({dx, dz}, a unit heading; null = none, plain GoalRunAway).
+     */
+    void runAway(int dist, List<int[]> from, double[] prefer);
+
+    /** Backbone step 4: GoalBlock, feet in this cell (the air reflex's surface cell, the fire reflex's water). */
+    void reach(int[] cell);
+
+    /** Backbone step 4: Baritone holds a calculated path for the last goal command (the air reflex's jump gap ends). */
+    boolean pathReady();
+
     /** GoalBlock {@code top} with allowPlace on and the bag's throwaway list (planks, cobble, dirt...): Baritone pillars. */
     void pillar(int[] top);
 

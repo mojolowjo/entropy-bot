@@ -33,9 +33,12 @@ class MoversTest {
 
     /** The reflexes (allowed by the design) and the audit's sites still to move: path -> the exact number of calls. */
     static final Map<String, Integer> CEILING = new TreeMap<>(Map.ofEntries(
-            // allowed by the design: the air reflex and the hit response, the lava / fire reflex
-            Map.entry("engine/Reflexes.java", 19),
-            Map.entry("engine/FireReflex.java", 8),
+            // backbone step 4: the reflexes move through Baritone goals and look through LookBehavior; left are item
+            // inputs and one documented exception. Reflexes: the eat key x2, the crouch let go when a fight / duel / meal
+            // starts x3, and the air reflex's jump x2 (held only in the gap until Baritone's swim-up path exists, so the
+            // bot never sinks while it computes). FireReflex: the drink / bucket use key x4 and the bucket's useItemOn.
+            Map.entry("engine/Reflexes.java", 7),
+            Map.entry("engine/FireReflex.java", 5),
             // the mixin names the vanilla method it intercepts (not a caller)
             Map.entry("mixin/GuardMixinGameMode.java", 1),
             // to move in backbone steps 3-4 (movers-audit.md items 4-21)
