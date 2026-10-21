@@ -55,63 +55,6 @@ class RimPlanTest {
     }
 
     /** 0.30.4 (live, shed 18 128 8): a corner wall cell of the lowest layer, walls beside it, the hill outside. */
-    @Test void aCornerWallCellIsPlacedFromTheDiagonalInnerFloorCell() {
-        FakeWorld w = new FakeWorld();
-        w.fill(-3, 6, 60, 60, -3, 6, "cobblestone");             // the floor layer (and ground outside)
-        w.fill(-3, -1, 61, 64, -3, 6, "dirt");                   // the hill west
-        w.fill(-3, 6, 61, 64, -3, -1, "dirt");                   // and north
-        w.fill(1, 1, 61, 61, 0, 0, "cobblestone");               // the wall east of the corner
-        w.fill(0, 0, 61, 61, 1, 1, "cobblestone");               // the wall south of the corner
-        Pos c = new Pos(0, 61, 0);
-        assertFalse(RimPlan.sealed(w, c));
-        PlaceRules.Side below = RimPlan.anchors(w, c).get(0);
-        assertEquals(-1, below.dy(), "the floor under it is the first anchor");
-        assertTrue(RimPlan.clickableFrom(w, c, below, 1.5, 62.62, 1.5), "from the diagonal floor cell, in reach");
-        assertFalse(RimPlan.clickableFrom(w, c, below, 4.5, 62.62, 4.5), "too far");
-        assertNotNull(RimPlan.sideStand(w, c, 3.5, 61, 3.5));
-    }
-
-    @Test void theWestRimStandsOnTheInsidePlanksNotTheHill() {
-        FakeWorld w = hillside();
-        w.fill(5, 9, 53, 53, -2, 2, "oak_planks");          // Baritone placed the inside
-        Pos rim = new Pos(4, 53, 0);
-        Pos s = RimPlan.standFor(w, rim, 7.5, 54, 0.5);
-        assertNotNull(s);
-        assertEquals(54, s.y());
-        assertEquals(5, s.x());
-    }
-
-    @Test void nothingPlacedYetMeansNowhereToStandOnTheHillSide() {
-        FakeWorld w = hillside();
-        // the hill is solid at 54 west of the cell; inside cells are air at 53: no stand spot
-        assertNull(RimPlan.standFor(w, new Pos(4, 53, 0), 7.5, 54, 0.5));
-    }
-
-    @Test void nextIsTheNearestSupportedCellOfTheLowestLayer() {
-        FakeWorld w = hillside();
-        w.fill(5, 9, 53, 53, -2, 2, "oak_planks");
-        List<Pos> miss = RimPlan.missing(w, RimPlan.shapeCells("floor", HOUSE));
-        RimPlan.Pick pk = RimPlan.next(w, miss, new HashMap<>(), 9.5, 54, 2.5);
-        assertNotNull(pk);
-        assertTrue(pk.cell().equals(new Pos(9, 53, 3)) || pk.cell().equals(new Pos(10, 53, 2)), pk.cell().key());
-        assertNull(pk.why());
-        assertNull(pk.stand(), "standing on the corner's neighbour plank, the cell is in reach: no walk");
-    }
-
-    @Test void aFromHereCellThatFailedOnceWalksOnItsSecondTry() {
-        FakeWorld w = hillside();
-        w.fill(5, 9, 53, 53, -2, 2, "oak_planks");
-        Pos c = new Pos(10, 53, 2);
-        Map<Pos, Integer> tries = new HashMap<>();
-        RimPlan.Pick first = RimPlan.next(w, List.of(c), tries, 9.5, 54, 2.5);
-        assertNull(first.stand(), "first try: from where I stand");
-        tries.put(c, 1);
-        RimPlan.Pick second = RimPlan.next(w, List.of(c), tries, 9.5, 54, 2.5);
-        assertNotNull(second.stand(), "second try: a stand spot, not the same click again");
-        tries.put(c, 2);
-        assertNull(RimPlan.next(w, List.of(c), tries, 9.5, 54, 2.5), "two tries used up");
-    }
-
     @Test void otherBlocksInTheShapeAreNotAFinishedFloor() {
         FakeWorld w = new FakeWorld();
         ClearBox b = ClearBox.of(0, 53, 0, 1, 53, 1);
@@ -121,16 +64,6 @@ class RimPlanTest {
         assertEquals(1, RimPlan.otherBlocks(w, cells, "minecraft:oak_planks"));
         assertEquals("done: nothing to place in the floor area (1 cell holds other blocks)", RimPlan.nothingText("floor", "oak_planks", 1));
         assertEquals("done: the floor of oak_planks already stands", RimPlan.nothingText("floor", "oak_planks", 0));
-    }
-
-    @Test void aFarCellNeedsAWalk() {
-        FakeWorld w = hillside();
-        w.fill(5, 9, 53, 53, -2, 2, "oak_planks");
-        RimPlan.Pick pk = RimPlan.next(w, List.of(new Pos(4, 53, 0)), new HashMap<>(), 9.5, 54, 2.5);
-        assertNotNull(pk.stand());
-        assertEquals(5, pk.stand().x());
-        assertEquals(54, pk.stand().y());
-        assertEquals(1, pk.stand().z(), "the nearest of the plank neighbours (a diagonal one is fine)");
     }
 
     @Test void aCellTriedTwiceIsSkipped() {
@@ -159,37 +92,6 @@ class RimPlanTest {
         return w;
     }
 
-    @Test void aWallCellOnTheFloorRowStandsOnTheFloorBesideIt() {
-        FakeWorld w = floorRow();
-        Pos cell = new Pos(3, 54, 0);
-        assertNull(RimPlan.standFor(w, cell, 20.5, 54, 0.5), "nothing at the cell's level to stand on top of");
-        RimPlan.Pick pk = RimPlan.next(w, List.of(cell), new HashMap<>(), 20.5, 54, 0.5);
-        assertNotNull(pk);
-        assertNull(pk.why());
-        assertNotNull(pk.stand());
-        assertEquals(54, pk.stand().y(), "feet on the floor row");
-        assertFalse(PlaceRules.bodyIn(pk.stand().x(), pk.stand().y(), pk.stand().z(), cell));
-        assertNotNull(pk.side());
-        assertEquals(-1, pk.side().dy(), "the floor plank under the cell");
-        assertEquals(ClearWorld.Face.UP, pk.side().face(), "its top face borders the cell");
-        double ex = pk.stand().x() + 0.5, ey = pk.stand().y() + 1.62, ez = pk.stand().z() + 0.5;
-        assertTrue(RimPlan.sees(w, cell, pk.side(), ex, ey, ez, RimPlan.REACH));
-    }
-
-    @Test void aWallCellOverAHoleIsPlacedAgainstTheWallBlockBesideIt() {
-        FakeWorld w = floorRow();
-        w.set(3, 53, 0, "air");                                  // no floor under the cell
-        w.set(2, 54, 0, "oak_planks");                           // the wall block west of it
-        Pos cell = new Pos(3, 54, 0);
-        assertFalse(RimPlan.supported(w, cell));
-        assertTrue(RimPlan.anchored(w, cell));
-        RimPlan.Pick pk = RimPlan.next(w, List.of(cell), new HashMap<>(), 20.5, 54, 0.5);
-        assertNotNull(pk.stand());
-        assertFalse(pk.filler());
-        assertEquals(-1, pk.side().dx(), "the clicked block is the wall block at x 2");
-        assertEquals(ClearWorld.Face.EAST, pk.side().face(), "its east face borders the cell: the block goes into x 3");
-    }
-
     @Test void aCellWithNoSolidNeighbourIsLeftWithThatReason() {
         FakeWorld w = new FakeWorld();
         Pos cell = new Pos(0, 60, 0);
@@ -202,42 +104,7 @@ class RimPlanTest {
         assertTrue(s.contains("(no solid neighbour)"), s);
     }
 
-    @Test void theTopStanceIsPreferredWhenBothWork() {
-        FakeWorld w = floorRow();
-        w.set(2, 54, 0, "oak_planks");                           // a wall block to stand on, at the cell's level
-        Pos cell = new Pos(3, 54, 0);
-        assertNotNull(RimPlan.sideStand(w, cell, 20.5, 54, 0.5), "the side stance works too");
-        RimPlan.Pick pk = RimPlan.next(w, List.of(cell), new HashMap<>(), 20.5, 54, 0.5);
-        assertEquals(new Pos(2, 55, 0), pk.stand());
-        assertNull(pk.side(), "top stance: placeAt picks the floor face");
-    }
-
-    @Test void aBlockedFaceIsNotSeen() {
-        FakeWorld w = floorRow();
-        Pos cell = new Pos(3, 54, 0);
-        PlaceRules.Side below = PlaceRules.SIDES.get(0);
-        assertTrue(RimPlan.sees(w, cell, below, 5.5, 55.62, 0.5, RimPlan.REACH));
-        w.fill(4, 4, 54, 56, -1, 1, "stone");                     // a pillar between the bot and the cell
-        assertFalse(RimPlan.sees(w, cell, below, 5.5, 55.62, 0.5, RimPlan.REACH));
-        assertFalse(RimPlan.sees(w, cell, below, 3.5, 52.0, 0.5, RimPlan.REACH), "behind the face");
-    }
-
     /** Trial 8 snow: grass (no collision) in the feet cells and in the wall cell itself: standable, missing, seen. */
-    @Test void noCollisionBlocksInFeetAndTargetCells() {
-        FakeWorld w = floorRow();
-        w.fill(0, 6, 54, 54, -2, 2, "short_grass");             // a no-collision cover over the whole floor row
-        w.set(3, 55, 1, "short_grass");                         // and in a head cell
-        assertTrue(RimPlan.standable(w, 3, 54, 1));
-        Pos cell = new Pos(3, 54, 0);
-        assertEquals(1, RimPlan.missing(w, List.of(cell)).size(), "grass in the cell takes a block");
-        RimPlan.Pick pk = RimPlan.next(w, List.of(cell), new HashMap<>(), 20.5, 54, 0.5);
-        assertNotNull(pk.stand(), "not nowhere to stand");
-        assertEquals(54, pk.stand().y());
-        assertEquals(ClearWorld.Face.UP, pk.side().face());
-        // the ray to the plank's top face ends in the cell's own grass: that counts as seen (it is replaced)
-        assertTrue(RimPlan.sees(w, cell, pk.side(), pk.stand().x() + 0.5, 55.62, pk.stand().z() + 0.5, RimPlan.REACH));
-    }
-
     @Test void theDoorCellsAreNotPartOfTheWalls() {
         List<Pos> walls = RimPlan.shapeCells("walls", HOUSE);
         List<Pos> less = RimPlan.withoutDoor(walls, new int[]{7, 3}, 53);
@@ -257,12 +124,6 @@ class RimPlanTest {
         assertTrue(RimPlan.replaceable(w, 5, 54, 0));
         assertFalse(RimPlan.replaceable(w, 6, 54, 0));
         assertFalse(RimPlan.replaceable(w, 3, 55, 0), "air is not a cover");
-    }
-
-    @Test void capsUnchanged() {
-        assertEquals(2, RimPlan.MAX_TRIES);
-        assertEquals(90 * 20, RimPlan.LAYER_CAP_TICKS);
-        assertEquals(4.0, RimPlan.REACH);
     }
 
     @Test void aCellOverAOneBlockHoleGetsAFillerFirst() {

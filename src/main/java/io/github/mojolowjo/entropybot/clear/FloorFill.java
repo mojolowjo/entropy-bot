@@ -223,7 +223,8 @@ public final class FloorFill {
             /** Backbone step 3: Baritone is still placing into the cell (the check waits, up to 10 s). */
             default boolean placing(Pos cell) { return false; }
 
-            void walkBlock(int x, int y, int z);
+            /** A Baritone goal to feet level y (GoalYLevel): Baritone finds the way up, pillaring where it must. */
+            void climbTo(int y);
 
             boolean walkIdle();
 
@@ -479,7 +480,7 @@ public final class FloorFill {
         /** Placed blocks show up a few ticks later; 3 tries a cell. */
         private boolean check(Body b, long now) {
             if (now - phaseStart < 6) return false;
-            if (target != null && b.placing(target) && now - phaseStart < 20 * 65) return false;     // the builder walks and places
+            if (target != null && b.placing(target) && now - phaseStart < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return false;     // the builder walks and places
             Pos c = target;
             target = null;
             phase = "pick";
@@ -502,30 +503,39 @@ public final class FloorFill {
             return false;
         }
 
-        // ---- walking ----
+        // ---- getting back up onto the walkway (builder placements: Baritone climbs, pillars and picks the spots) ----
 
-        private void startWalk(Body b, ClearGrid.Spot s, long now) {
-            spot = s;
-            b.walkBlock(s.x(), s.y(), s.z());
-            Bot bot = b.bot();
+        /**
+         * Below the floor layer (in the cave or the hole): a Baritone goal to the walkway's level ({@link Body#climbTo});
+         * Baritone finds the way up, pillaring with the bag's blocks where it must. Two climbs that end below: it says
+         * where it is stuck and ends.
+         */
+        private boolean climb(Body b, Bot bot, long now) {
+            if (climbWalkFails >= 2) {
+                endNote = "I'm below the floor at " + key(bot) + " and Baritone found no way up (2 tries)";
+                return end();
+            }
+            if (chooseBlock(named, b.inventory()) == null && climbWalkFails >= 1) {
+                endNote = "I'm below the floor at " + key(bot) + " and have no blocks to climb out";
+                noBlocks = todo.size();
+                return end();
+            }
+            target = null;
+            climbing = true;
+            b.climbTo(fy + 1);
             phase = "walk";
             phaseStart = now;
             mx = bot.x();
             my = bot.y();
             mz = bot.z();
             moveTick = now;
+            b.status("filling the floor: climbing back up to y " + (fy + 1));
+            return false;
         }
 
         private boolean walk(Body b, long now) {
             long el = now - phaseStart;
             Bot bot = b.bot();
-            Pos t = target;
-            // in reach on the way (and on the walkway, unless this is a step): place it now
-            if (t != null && el > 0 && el % 10 == 0 && (targetStep || feet(bot) > fy) && placeableFrom(bot.x(), bot.y(), bot.z(), bot.eyeY(), t)) {
-                b.cancelWalk();
-                String id = chooseBlock(named, b.inventory());
-                if (id != null) return placeNow(b, t, id, targetStep, now);
-            }
             if (el < 20) return false;
             boolean idle = b.walkIdle(), stuck = false;
             if (!idle && now - moveTick >= 160) {
@@ -535,199 +545,12 @@ public final class FloorFill {
                 mz = bot.z();
                 moveTick = now;
             }
-            if (!idle && !stuck && el < 20L * 30) return false;
+            if (!idle && !stuck && el < 20L * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("moves.climbS")) return false;
             if (!idle) b.cancelWalk();
             phase = "pick";
-            boolean there = spot != null && Math.abs(bot.x() - spot.x() - 0.5) + Math.abs(bot.z() - spot.z() - 0.5) + Math.abs(bot.y() - spot.y()) <= 1.5;
-            if (!there && spot != null) badSpots.add(spot.key());
-            if (climbing) {
-                climbing = false;
-                if (feet(bot) <= fy) climbWalkFails++;
-                target = null;
-                return false;
-            }
-            if (t == null) return false;
-            target = null;
-            boolean ok = (targetStep || feet(bot) > fy) && placeableFrom(bot.x(), bot.y(), bot.z(), bot.eyeY(), t);
-            if (ok) return false;                    // the next pick places it from here
-            if (targetStep) {
-                badSteps.add(t);
-                return false;
-            }
-            consecWalkFails++;
-            if (walkFails.merge(t, 1, Integer::sum) >= 2) fail(t, NO_REACH);
-            if (consecWalkFails >= 4) {
-                for (Pos c : new ArrayList<>(todo)) fail(c, NO_REACH);
-                return end();
-            }
-            return false;
-        }
-
-        // ---- getting back up onto the walkway ----
-
-        /**
-         * Below the floor layer (in the cave or the hole): walk to a walkway spot when a walk gets there; else put down the
-         * one block at its feet that lets it climb highest (a step), from where it stands or a spot it can walk to; at most
-         * {@link #MAX_STEPS}. Nothing helps: it says where it is stuck and ends.
-         */
-        private boolean climb(Body b, Bot bot, long now) {
-            ClearGrid g = grid(bot, null);
-            int[] dist = g.walkDistances(bot);
-            ClearGrid.Spot up = climbable(g, dist);
-            if (up != null && climbWalkFails < 2) {
-                target = null;
-                climbing = true;
-                startWalk(b, up, now);
-                b.status("filling the floor: climbing back up to " + up.key());
-                return false;
-            }
-            String id = chooseBlock(named, b.inventory());
-            if (id == null) {
-                endNote = "I'm below the floor at " + key(bot) + " and have no blocks to climb out";
-                noBlocks = todo.size();
-                return end();
-            }
-            if (steps >= MAX_STEPS) {
-                endNote = "I'm below the floor at " + key(bot) + " - " + MAX_STEPS + " steps didn't get me out";
-                return end();
-            }
-            Step st = chooseStep(g, dist, bot);
-            if (st == null) {
-                endNote = "I'm below the floor at " + key(bot) + " and can't climb out (no step I may place)";
-                return end();
-            }
-            if (st.from() == null) return placeNow(b, st.cell(), id, true, now);
-            target = st.cell();
-            targetStep = true;
             climbing = false;
-            startWalk(b, st.from(), now);
-            b.status("filling the floor: going to " + st.from().key() + " to put a step at " + st.cell().key());
+            if (feet(bot) <= fy) climbWalkFails++;
             return false;
-        }
-
-        /** The nearest walkway spot (feet on the floor layer inside the footprint, or higher in the box) a walk reaches. */
-        private ClearGrid.Spot climbable(ClearGrid g, int[] dist) {
-            ClearGrid.Spot best = null;
-            for (int x = Math.max(box.x1(), g.ax); x <= Math.min(box.x2(), g.bx); x++) {
-                for (int z = Math.max(box.z1(), g.az); z <= Math.min(box.z2(), g.bz); z++) {
-                    for (int y = fy + 1; y <= box.y2(); y++) {
-                        int i = g.idx(x, y, z);
-                        if (i < 0 || dist[i] < 0 || !g.stand(x, y, z) || g.wet(x, y, z)) continue;
-                        if (standOk != null && !standOk.ok(x, y, z)) continue;
-                        if (badSpots.contains(Pos.key(x, y, z))) continue;
-                        if (best == null || dist[i] < best.cost()) best = new ClearGrid.Spot(x, y, z, dist[i], x + 0.5, y + Bot.EYE, z + 0.5);
-                    }
-                }
-            }
-            return best;
-        }
-
-        /** A step: the cell, and the spot to place it from (null: from where it stands). */
-        record Step(Pos cell, ClearGrid.Spot from) {}
-
-        /** A step candidate before its what-if: the cell, where it is placed from, the walk there, a guess of its worth. */
-        private record Cand(Pos cell, ClearGrid.Spot from, double ox, double oy, double oz, int cost, int guess) {}
-
-        /** The most step candidates tried as a what-if per decision. */
-        static final int MAX_SIM = 24;
-
-        /**
-         * The step block: a free cell at the feet level of a spot it can walk to (beside it, at most 8 steps away), at or
-         * below the floor layer, with room to stand on it, that it may place (lease, no liquid), placeable from where it
-         * stands or from that spot. The likeliest {@link #MAX_SIM} (highest, next to a ledge one up) are tried on the
-         * walking map itself (the cell made solid, the flood fill again, the cell back): the best gets it onto the walkway,
-         * else highest, then the shortest walk. Null when none raises it.
-         */
-        Step chooseStep(ClearGrid g, int[] dist, Bot bot) {
-            int curMax = maxFeetIn(g, dist);
-            int[][] dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
-            List<Cand> cands = new ArrayList<>();
-            Set<Pos> seen = new HashSet<>();
-            for (int x = g.ax; x <= g.bx; x++) {
-                for (int y = g.ay; y <= Math.min(g.by, fy); y++) {
-                    for (int z = g.az; z <= g.bz; z++) {
-                        int i = g.idx(x, y, z);
-                        if (dist[i] < 0 || dist[i] > 8) continue;
-                        if (standOk != null && !standOk.ok(x, y, z)) continue;
-                        for (int[] d : dirs) {
-                            Pos c = new Pos(x + d[0], y, z + d[1]);
-                            if (!seen.add(c) || badSteps.contains(c) || c.y() > fy || g.idx(c.x(), c.y(), c.z()) < 0) continue;
-                            if (!fillable(w, c.x(), c.y(), c.z()) || !fillable(w, c.x(), c.y() + 1, c.z()) || !fillable(w, c.x(), c.y() + 2, c.z())) continue;
-                            if (liquidAround(w, c.x(), c.y(), c.z())) continue;
-                            if (allowed != null && !allowed.test(c)) continue;
-                            if (!supported(w, c)) continue;
-                            ClearGrid.Spot from = null;
-                            double ox = bot.x(), oy = bot.y(), oz = bot.z();
-                            int cost = 0;
-                            if (!placeableFrom(ox, oy, oz, bot.eyeY(), c)) {
-                                if (!placeableFrom(x + 0.5, y, z + 0.5, y + Bot.EYE, c)) continue;
-                                from = new ClearGrid.Spot(x, y, z, dist[i], x + 0.5, y + Bot.EYE, z + 0.5);
-                                ox = x + 0.5;
-                                oy = y;
-                                oz = z + 0.5;
-                                cost = dist[i];
-                            }
-                            // a ledge one above the step's top: standing on it, the bot steps up there
-                            boolean ledge = false;
-                            for (int[] e : dirs) ledge |= g.stand(c.x() + e[0], c.y() + 2, c.z() + e[1]);
-                            cands.add(new Cand(c, from, ox, oy, oz, cost, c.y() * 100 + (ledge ? 50 : 0) - cost));
-                        }
-                    }
-                }
-            }
-            cands.sort(Comparator.comparingInt(Cand::guess).reversed());
-            Step best = null;
-            boolean bestUp = false;
-            int bestMax = curMax, bestCost = Integer.MAX_VALUE;
-            for (int k = 0; k < cands.size() && k < MAX_SIM; k++) {
-                Cand c = cands.get(k);
-                int i = g.idx(c.cell().x(), c.cell().y(), c.cell().z());
-                boolean o0 = g.open[i], s0 = g.solid[i];
-                g.open[i] = false;
-                g.solid[i] = true;
-                int[] d2;
-                try {
-                    d2 = g.walkDistances(Bot.at(c.ox(), c.oy(), c.oz()));
-                } finally {
-                    g.open[i] = o0;
-                    g.solid[i] = s0;
-                }
-                boolean up = climbable(g, d2) != null;
-                int mx2 = maxFeetIn(g, d2);
-                if (!up && mx2 <= curMax) continue;
-                boolean better = best == null || (up && !bestUp) || (up == bestUp && (mx2 > bestMax || (mx2 == bestMax && c.cost() < bestCost)));
-                if (!better) continue;
-                best = new Step(c.cell(), c.from());
-                bestUp = up;
-                bestMax = mx2;
-                bestCost = c.cost();
-                if (up && c.cost() == 0) break;            // onto the walkway from where it stands: nothing beats it
-            }
-            return best;
-        }
-
-        private int maxFeetIn(ClearGrid g, int[] dist) {
-            int m = Integer.MIN_VALUE;
-            for (int x = g.ax; x <= g.bx; x++) {
-                for (int y = g.ay; y <= g.by; y++) {
-                    for (int z = g.az; z <= g.bz; z++) {
-                        int i = g.idx(x, y, z);
-                        if (dist[i] >= 0 && y > m && (standOk == null || standOk.ok(x, y, z))) m = y;
-                    }
-                }
-            }
-            return m;
-        }
-
-        // ---- reach and stand spots ----
-
-        /**
-         * The climb-out step: from feet x y z (eye ey) the cell is within reach and the body isn't in it (no face is
-         * picked: the builder chooses it).
-         */
-        boolean placeableFrom(double x, double y, double z, double ey, Pos c) {
-            if (bodyHits(x, y, z, c)) return false;
-            return ClearEngine.eyeDistSq(x, ey, z, c.x(), c.y(), c.z()) <= PlaceRules.PLACE_REACH * PlaceRules.PLACE_REACH;
         }
 
         /** How far (sideways) from its focus the walking map reaches. */

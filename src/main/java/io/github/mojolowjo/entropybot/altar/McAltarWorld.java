@@ -158,10 +158,9 @@ public final class McAltarWorld implements AltarWorld {
         if (dist > range) return "it is out of my reach (" + Math.round(dist * 10) / 10.0 + " of " + range + " blocks)";
         String h = hold(item);
         if (h != null) return h;
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
-        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(center, Direction.UP, bp(pos), false));
-        p.swing(InteractionHand.MAIN_HAND);
-        return null;
+        // builder placements: the right-click is Baritone's (the fork's job hands pick the face, look and click)
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().click(pos.clone(), item, 100, "altar: use " + (item == null ? "hand" : item), null);
+        return r.failed() ? r.why() : null;
     }
 
     /** Feet and head free, something solid underneath (as the farm's standable). */

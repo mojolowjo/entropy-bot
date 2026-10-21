@@ -46,7 +46,6 @@ final class BaritoneHand implements JobHands.Hand {
     @Override public void start(List<int[]> dig, List<JobHands.Click> clicks, int timeoutTicks) {
         proc = null;
         builder = null;
-        restoreLeg();
         forced = null;
         try {
             List<BlockPos> d = new ArrayList<>();
@@ -75,27 +74,25 @@ final class BaritoneHand implements JobHands.Hand {
         }
     }
 
-    // ---- builder placements (fork: IBuilderProcess.buildLeg) ----
+    // ---- builder placements (fork: IBuilderProcess.buildLeg; its settings are set and put back by the fork) ----
     private baritone.api.process.IBuilderProcess builder;
     private int buildRun = -1;
-    /** Builder settings this leg set, with the value before it (put back at the end, only while still ours). */
-    private final java.util.Map<baritone.api.Settings.Setting<Object>, Object[]> legSettings = new java.util.LinkedHashMap<>();
 
-    @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks) {
+    @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace) {
         proc = null;
         builder = null;
         forced = null;
-        restoreLeg();
         try {
             var p = Minecraft.getInstance().player;
-            if (p == null) { forced = Car.Status.failed("no player"); return; }
+            var lv = Minecraft.getInstance().level;
+            if (p == null || lv == null) { forced = Car.Status.failed("stage plan: no player"); return; }
             java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> want = new java.util.LinkedHashMap<>();
             java.util.Map<Item, Integer> need = new java.util.LinkedHashMap<>();
             for (int i = 0; i < cells.size(); i++) {
                 ResourceLocation rl = ResourceLocation.tryParse(items.get(i));
                 Item it = rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
                 if (!(it instanceof net.minecraft.world.item.BlockItem bi)) {
-                    forced = Car.Status.failed("stage plan: " + items.get(i) + " is not a block item (the builder places blocks only)");
+                    forced = Car.Status.failed("stage plan: " + items.get(i) + " is not a block item (the builder places blocks only)", cells.get(i));
                     return;
                 }
                 want.put(pos(cells.get(i)), bi.getBlock().defaultBlockState());
@@ -105,18 +102,25 @@ final class BaritoneHand implements JobHands.Hand {
             for (var e : need.entrySet()) {
                 int have = p.getInventory().countItem(e.getKey());
                 if (have < e.getValue()) {
-                    forced = Car.Status.failed("stage items: need " + e.getValue() + " " + BuiltInRegistries.ITEM.getKey(e.getKey()).getPath() + ", the bag has " + have);
+                    forced = Car.Status.failed("stage items: need " + e.getValue() + " " + BuiltInRegistries.ITEM.getKey(e.getKey()).getPath() + ", the bag has " + have, cells.get(0));
                     return;
                 }
             }
-            var s = BaritoneAPI.getSettings();
-            setForLeg(s.allowInventory, true);
-            setForLeg(s.buildInLayers, false);
-            setForLeg(s.buildIgnoreExisting, false);
-            setForLeg(s.buildRepeat, net.minecraft.core.Vec3i.ZERO);
-            setForLeg(s.okIfWater, false);
+            String dim = Guard.dimOf(lv);
+            baritone.api.process.IBuilderProcess.LegGuard g = new baritone.api.process.IBuilderProcess.LegGuard() {
+                @Override public String cell(BlockPos q) {
+                    var v = Guard.INSTANCE.core.checkUnlogged(dim, q.getX(), q.getY(), q.getZ(), "place", Guard.INSTANCE.infoFor(lv, q));
+                    return v.allowed() ? null : "the guard: " + v.reason();
+                }
+
+                @Override public String stand(BlockPos f) {
+                    var c = io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.commands();
+                    return io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(
+                            io.github.mojolowjo.entropybot.api.BotAPI.check(dim, f.getX(), f.getY(), f.getZ(), "go"), c != null && c.fenceOn());
+                }
+            };
             builder = b().getBuilderProcess();
-            builder.buildLeg("place " + String.join(",", items), want, timeoutTicks);
+            builder.buildLeg("place " + String.join(",", items), want, timeoutTicks, g, replace);
             buildRun = builder.legRun();
         } catch (LinkageError e) {
             forced = Car.Status.failed("this Baritone has no build legs (an older jar? install the entropy fork from baritone-builder): " + e);
@@ -124,42 +128,42 @@ final class BaritoneHand implements JobHands.Hand {
                 warned = true;
                 LOG.warn("[entropybot] job hands: {}", forced.why());
             }
-            restoreLeg();
         } catch (RuntimeException e) {
             forced = Car.Status.failed("start: " + e);
-            restoreLeg();
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private <T> void setForLeg(baritone.api.Settings.Setting<T> st, T v) {
-        var key = (baritone.api.Settings.Setting<Object>) st;
-        if (!legSettings.containsKey(key)) legSettings.put(key, new Object[]{st.value, v});
-        st.value = v;
-    }
-
-    /** Puts back each builder setting this leg set, unless someone else changed it meanwhile (then theirs stays). */
-    private void restoreLeg() {
-        for (var e : legSettings.entrySet()) {
-            if (java.util.Objects.equals(e.getKey().value, e.getValue()[1])) e.getKey().value = e.getValue()[0];
-        }
-        legSettings.clear();
+    private static int[] cellOf(BlockPos q) {
+        return q == null ? null : new int[]{q.getX(), q.getY(), q.getZ()};
     }
 
     private Car.Status buildStatus() {
-        if (builder.legRun() != buildRun) { restoreLeg(); return Car.Status.failed("another build leg took the builder (run " + builder.legRun() + ", mine " + buildRun + ")"); }
+        if (builder.legRun() != buildRun) return Car.Status.failed("another build leg took the builder (run " + builder.legRun() + ", mine " + buildRun + ")");
+        int[] at = cellOf(builder.legCell());
         return switch (builder.legStatus()) {
-            case DONE -> { restoreLeg(); yield Car.Status.done(builder.legWhy()); }
-            case FAILED -> { restoreLeg(); yield Car.Status.failed("stage build: " + builder.legWhy()); }
-            case IDLE -> { restoreLeg(); yield Car.Status.failed("never started"); }
+            case DONE -> Car.Status.done(builder.legWhy());
+            case FAILED -> builder.legEnd() == baritone.api.process.LegEnd.LOST_CONTROL
+                    ? Car.Status.lost("stage build: " + builder.legWhy())
+                    : Car.Status.failed("stage build: " + builder.legWhy(), at);
+            case IDLE -> Car.Status.failed("never started");
             default -> Car.Status.running(builder.legWhy());
         };
     }
 
+    /** A higher temporary process (a reflex goal, the pause, a danger burrow) holds Baritone now. */
+    @Override public boolean reflexActive() {
+        try {
+            var in = b().getPathingControlManager().mostRecentInControl();
+            return in.isPresent() && in.get().isTemporary() && in.get().priority() > baritone.api.process.IBuilderProcess.LEG_PRIORITY;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] job hands: who holds Baritone unreadable: {}", e.toString());
+            return false;
+        }
+    }
     @Override public Car.Status status() {
         if (forced != null) return forced;
         if (builder != null) {
-            try { return buildStatus(); } catch (RuntimeException | LinkageError e) { restoreLeg(); return Car.Status.failed("status: " + e); }
+            try { return buildStatus(); } catch (RuntimeException | LinkageError e) { return Car.Status.failed("status: " + e); }
         }
         if (proc == null) return Car.Status.failed("nothing started");
         try {
@@ -168,7 +172,7 @@ final class BaritoneHand implements JobHands.Hand {
             if (now != mine) return Car.Status.failed("another Baritone burrow run took the process (run " + now + ", mine " + mine + ")");
             return switch (proc.status()) {
                 case DONE -> Car.Status.done(proc.why());
-                case FAILED -> Car.Status.failed(proc.why());
+                case FAILED -> proc.end() == baritone.api.process.LegEnd.LOST_CONTROL ? Car.Status.lost(proc.why()) : Car.Status.failed(proc.why(), cellOf(proc.clickedCell()));
                 case IDLE -> Car.Status.failed("never started");
                 default -> Car.Status.running(proc.why());
             };
@@ -184,7 +188,6 @@ final class BaritoneHand implements JobHands.Hand {
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] job hands: cancel failed: {}", e.toString());
         }
-        restoreLeg();
         builder = null;
         proc = null;
         forced = null;

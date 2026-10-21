@@ -108,6 +108,7 @@ public final class Tuning {
         def("moves.digS", 40, "backbone step 2", "seconds a burrow / dig-in leg may take");
         def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");
         def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
+        def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");
         def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
     }
 

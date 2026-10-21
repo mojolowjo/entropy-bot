@@ -1263,7 +1263,7 @@ public final class Clearing {
             return "wait";
         }
         // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
-        if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < 20 * 65) return "wait";
+        if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
         ps.tries++;
         if (ps.tries >= 3) {
             String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]);
@@ -1465,31 +1465,8 @@ public final class Clearing {
                     return "wait";
                 }
                 seq.setStatus(bs.status + " - placing the rest myself (" + missing.size() + " left)");
-                // 0.31.0: the pick in the log (cell, stance, face, from where), for "nowhere to stand" reports
-                LOG.info("[entropybot] build rim: pick {} stand {} side {} (try {}) from {} {} {}", pk.cell().key(), pk.stand() == null ? "here" : pk.stand().key(),
-                        pk.side(), bs.tries.getOrDefault(pk.cell(), 0) + 1, String.format("%.1f", p.getX()), String.format("%.1f", p.getY()), String.format("%.1f", p.getZ()));
-                if (pk.stand() == null) {
-                    bs.stage = "place";
-                    return "wait";
-                }
-                Pos s = pk.stand();
-                String fence = seq.jobs.goalAllowed(s.x(), s.y(), s.z());
-                IBaritone b = Jobs.baritone();
-                if (fence != null || b == null) {
-                    giveUpCell(bs, pk.cell(), io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
-                    return "wait";
-                }
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(s.x(), s.y(), s.z())));
-                bs.stage = "walking";
-                bs.stageTick = now;
-                return "wait";
-            }
-            case "walking" -> {
-                if (now - bs.stageTick < 20) return "wait";
-                IBaritone b = Jobs.baritone();
-                if (b != null && !Jobs.idle(b) && now - bs.stageTick < 30 * 20) return "wait";
-                if (b != null && !Jobs.idle(b)) Jobs.cancel(b);
+                // builder placements: the cell only; Baritone's builder walks to its own spot and face
+                LOG.info("[entropybot] build rim: pick {} (try {})", pk.cell().key(), bs.tries.getOrDefault(pk.cell(), 0) + 1);
                 bs.stage = "place";
                 return "wait";
             }

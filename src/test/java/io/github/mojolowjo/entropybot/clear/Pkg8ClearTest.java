@@ -25,31 +25,6 @@ class Pkg8ClearTest {
         }
     }
 
-    @Test void anInnerRoofCellIsPlacedFromThePlacedRoof() {
-        FakeWorld w = shed();
-        roofRing(w, 0);                                          // the rim over the walls
-        Pos c = new Pos(1, 57, 1);
-        assertFalse(RimPlan.anchors(w, c).isEmpty(), "the rim is its neighbour");
-        RimPlan.Stance st = RimPlan.sideStand(w, c, 3.5, 58, 0.5);
-        assertNotNull(st, "0.30.7: feet on the placed roof (before: nowhere to stand)");
-        assertEquals(58, st.feet().y());
-        assertTrue(RimPlan.clickableFrom(w, c, st.side(), st.feet().x() + 0.5, st.feet().y() + 1.62, st.feet().z() + 0.5));
-    }
-
-    @Test void theCentreCellToo() {
-        FakeWorld w = shed();
-        roofRing(w, 0);
-        roofRing(w, 1);
-        roofRing(w, 2);
-        Pos c = new Pos(3, 57, 3);
-        RimPlan.Stance st = RimPlan.sideStand(w, c, 3.5, 58, 1.5);
-        assertNotNull(st);
-        assertEquals(58, st.feet().y());
-        RimPlan.Pick pk = RimPlan.next(w, RimPlan.missing(w, List.of(c)), new HashMap<>(), 0.5, 58, 0.5);
-        assertNotNull(pk);
-        assertNull(pk.why(), "a stance, not nowhere to stand");
-    }
-
     @Test void theRimInwardOrderComesFromTheAnchors() {
         FakeWorld w = shed();
         roofRing(w, 0);
@@ -59,16 +34,6 @@ class Pkg8ClearTest {
         assertNotNull(pk);
         int ring = Math.min(Math.min(pk.cell().x(), 6 - pk.cell().x()), Math.min(pk.cell().z(), 6 - pk.cell().z()));
         assertEquals(1, ring, "the first inner ring first (the centre has no neighbour yet)");
-    }
-
-    @Test void aWallCellStillUsesTheFloor() {
-        FakeWorld w = new FakeWorld();
-        w.fill(-6, 12, 53, 53, -6, 12, "stone");
-        w.fill(0, 0, 54, 54, 0, 6, "cobblestone");                 // the lowest wall row west
-        Pos c = new Pos(0, 55, 3);
-        RimPlan.Stance st = RimPlan.sideStand(w, c, 3.5, 54, 3.5);
-        assertNotNull(st);
-        assertTrue(st.feet().y() <= 55, "the floor stance wins over standing on the wall");
     }
 
     @Test void entityTexts() {

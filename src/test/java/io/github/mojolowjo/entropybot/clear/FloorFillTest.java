@@ -203,14 +203,11 @@ class FloorFillTest {
         FillDriver d = new FillDriver(w, Bot.at(265.5, -49, 854.5));           // at the cave bottom, 2 below the hole's rim
         d.bag.put(CD, 200);
         FloorFill.Run r = d.fill(new FloorFill.Run(w, BOX, null, AREA_ONLY, IN_AREA, false));
+        // builder placements: Baritone climbs out by itself (the fake pillars one column)
         assertEquals(30, filledLayer(w, 261, 270), r.report());
         assertTrue(d.y >= -46, "back up on the walkway: " + d.y);
-        assertTrue(r.stepsTotal() >= 1 && r.stepsTotal() <= 3, r.report());
-        assertTrue(r.report().contains("below it to climb out of the cave"), r.report());
-        int below = 0;
-        for (Pos c : d.placedCells) if (c.y() < -47) below++;
-        assertEquals(r.stepsTotal(), below, "only the steps went below the floor");
-        assertEquals(0, d.wildWalks);
+        assertEquals(0, r.stepsTotal(), "no step chosen by the mod: " + r.report());
+        for (Pos c : d.placedCells) assertTrue(c.y() >= -47, "nothing placed below the floor by the mod: " + c);
     }
 
     @Test

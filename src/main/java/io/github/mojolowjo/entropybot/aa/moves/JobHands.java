@@ -34,7 +34,10 @@ public final class JobHands {
          * Builder placements: Baritone's BuilderProcess builds these cells, each with its item from the bag (a
          * schematic leg); it picks the stand spot, the face, the look and the click. Status / cancel then follow it.
          */
-        void startBuild(List<int[]> cells, List<String> items, int timeoutTicks);
+        void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace);
+
+        /** A higher temporary Baritone process (a reflex goal, the pause, a danger burrow) holds control now. */
+        boolean reflexActive();
 
         /** RUNNING / DONE / FAILED of the last start, with its line. */
         Car.Status status();
@@ -51,6 +54,12 @@ public final class JobHands {
 
     /** Lost-control restarts (a pause or a cancel from elsewhere) before a request fails. */
     static int retriesMax() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.retries"); }
+
+    /**
+     * Ticks a caller waits for a running build / click before it counts a try: twice a builder leg's limit (a reflex
+     * pause in between resumes the leg within that).
+     */
+    public static long waitTicks() { return (long) (2 * 20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS")); }
 
     private static JobHands live;
 
@@ -83,8 +92,18 @@ public final class JobHands {
     private String lastFailWhy;
     private List<int[]> lastFailCells = List.of();
 
+    private final java.util.function.LongSupplier clock;
+    private long startedMs;
+    private boolean buildReplace;
+
     public JobHands(Hand hand) {
+        this(hand, System::currentTimeMillis);
+    }
+
+    /** With a clock (JUnit): a reflex pause resumes the request until twice its time limit has passed on this clock. */
+    public JobHands(Hand hand, java.util.function.LongSupplier clock) {
         this.hand = hand;
+        this.clock = clock;
     }
 
     /** Break cell x y z (until air) for {@code who}; {@code timeoutTicks} for it. */
@@ -95,6 +114,7 @@ public final class JobHands {
     /** Right-click block {@code on} with {@code item} (Baritone picks the face); {@code onDone} runs once when the world changed. */
     public Result click(int[] on, String item, int timeoutTicks, String who, Runnable onDone) {
         Click k = new Click(on.clone(), item);
+        // the face (so the cell a block lands in) is the fork's pick: the verdict cell comes from its status
         return request("click " + c(on) + " " + item, List.of(), List.of(k), timeoutTicks, who, onDone, "place", on.clone());
     }
 
@@ -103,11 +123,14 @@ public final class JobHands {
      * where to stand, the face and the click); {@code onDone} runs once when the block is there.
      */
     public Result build(int[] cell, String item, int timeoutTicks, String who, Runnable onDone) {
-        return build(List.of(cell.clone()), List.of(item), timeoutTicks, who, onDone);
+        return build(List.of(cell.clone()), List.of(item), timeoutTicks, who, onDone, false);
     }
 
-    /** A few-block schematic leg (a shell, a seal): cells.get(i) gets items.get(i). */
-    public synchronized Result build(List<int[]> cells, List<String> items, int timeoutTicks, String who, Runnable onDone) {
+    /**
+     * A few-block schematic leg (a shell, a seal): cells.get(i) gets items.get(i). {@code replace}: the job asks for
+     * cells holding a block to be broken first (else such a cell fails the leg at its start).
+     */
+    public synchronized Result build(List<int[]> cells, List<String> items, int timeoutTicks, String who, Runnable onDone, boolean replace) {
         StringBuilder k = new StringBuilder("build");
         for (int i = 0; i < cells.size(); i++) k.append(i == 0 ? " " : ", ").append(c(cells.get(i))).append(' ').append(items.get(i));
         String ks = k.toString();
@@ -120,6 +143,8 @@ public final class JobHands {
         clicks = List.of();
         buildCells = List.copyOf(cells);
         buildItems = List.copyOf(items);
+        buildReplace = replace;
+        startedMs = clock.getAsLong();
         timeout = timeoutTicks;
         this.onDone = onDone;
         action = "place";
@@ -161,10 +186,13 @@ public final class JobHands {
         action = act;
         verdictCell = vc;
         retries = 0;
+        startedMs = clock.getAsLong();
         List<int[]> all = new ArrayList<>(d);
         for (Click x : cl) {
-            all.add(x.on());
-            all.add(new int[]{x.on()[0], x.on()[1] + 1, x.on()[2]});
+            // the face is the fork's pick: the clicked block and every cell beside it count as touched
+            int[] o = x.on();
+            all.add(o);
+            for (int[] dd : new int[][]{{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}}) all.add(new int[]{o[0] + dd[0], o[1] + dd[1], o[2] + dd[2]});
         }
         cells = all;
         Result r = start();
@@ -178,7 +206,7 @@ public final class JobHands {
 
     private Result start() {
         try {
-            if (buildCells != null) hand.startBuild(buildCells, buildItems, timeout);
+            if (buildCells != null) hand.startBuild(buildCells, buildItems, timeout, buildReplace);
             else hand.start(dig, clicks, timeout);
         } catch (RuntimeException e) {
             return finish(new Result(State.FAILED, key + ": start: " + e));
@@ -212,14 +240,24 @@ public final class JobHands {
                 yield finish(new Result(State.DONE, why));
             }
             case FAILED -> {
-                if (why.contains("took control away") && retries < retriesMax()) {
-                    retries++;
+                if (s.lostControl()) {
+                    // a reflex (or the pause, a burrow) took Baritone: a pause, resumed while within twice the time limit
+                    boolean reflex = false;
+                    try { reflex = hand.reflexActive(); } catch (RuntimeException e) { warn.accept("[entropybot] job hands: reflex check for " + key + ": " + e); }
                     String k = key;
-                    Result r = start();
-                    yield r.failed() ? r : new Result(State.RUNNING, "restarted " + k + " (" + retries + "/" + retriesMax() + ") after: " + why);
+                    if (reflex && clock.getAsLong() - startedMs <= 2L * timeout * 50) {
+                        Result r = start();
+                        yield r.failed() ? r : new Result(State.RUNNING, "paused by a reflex, resumed " + k + " after: " + why);
+                    }
+                    if (retries < retriesMax()) {
+                        retries++;
+                        Result r = start();
+                        yield r.failed() ? r : new Result(State.RUNNING, "restarted " + k + " (" + retries + "/" + retriesMax() + ") after: " + why);
+                    }
                 }
                 String v = "";
-                try { v = hand.verdict(action, verdictCell); } catch (RuntimeException e) { v = "; guard verdict unknown (" + e + ")"; warn.accept("[entropybot] job hands: verdict for " + key + ": " + e); }
+                int[] vc = s.cell() != null ? s.cell() : verdictCell;
+                try { v = hand.verdict(action, vc); } catch (RuntimeException e) { v = "; guard verdict unknown (" + e + ")"; warn.accept("[entropybot] job hands: verdict for " + key + ": " + e); }
                 yield finish(new Result(State.FAILED, "gave up at " + key + ": " + why + (v == null ? "" : v)));
             }
         };

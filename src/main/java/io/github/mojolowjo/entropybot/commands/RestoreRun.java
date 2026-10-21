@@ -170,7 +170,7 @@ final class RestoreRun {
             }
             case "check" -> {
                 if (now - stageTick < CHECK_TICKS) return false;
-                if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < 20 * 65) return false;     // the builder still walks / places
+                if (Clearing.placing(e.x, e.y, e.z) && now - stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return false;     // the builder still walks / places
                 if (!level.getBlockState(pos).canBeReplaced()) {
                     done(e);
                     return false;

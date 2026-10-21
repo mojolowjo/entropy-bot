@@ -24,7 +24,12 @@ class JobHandsTest {
         int builds;
         List<String> builtItems;
 
-        @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks) {
+        boolean reflex, lastReplace;
+
+        @Override public boolean reflexActive() { return reflex; }
+
+        @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace) {
+            lastReplace = replace;
             starts++;
             builds++;
             builtItems = items;
@@ -82,7 +87,7 @@ class JobHandsTest {
         h.tick();
         assertTrue(h.click(new int[]{5, 6, 7}, "minecraft:wheat_seeds", 100, "b", null).running());
         assertEquals(2, f.starts, "a finished request makes room for the next");
-        assertTrue(h.busy(5, 7, 7), "the cell beside the clicked face is the request's too");
+        assertTrue(h.busy(5, 7, 7), "every cell beside the clicked block is the request's too (the fork picks the face)");
     }
     @Test
     void aFailureNamesTheStageAndTheGuardVerdictOnce() {
@@ -104,10 +109,10 @@ class JobHandsTest {
         JobHands h = new JobHands(f);
         h.dig(new int[]{0, 0, 0}, 100, "t");
         for (int i = 0; i < JobHands.retriesMax(); i++) {
-            f.status = Car.Status.failed("break 1/1: Baritone took control away (cancel or pause)");
+            f.status = Car.Status.lost("break 1/1: Baritone took control away (cancel or pause)");
             assertTrue(h.dig(new int[]{0, 0, 0}, 100, "t").running(), "retry " + i);
         }
-        f.status = Car.Status.failed("break 1/1: Baritone took control away (cancel or pause)");
+        f.status = Car.Status.lost("break 1/1: Baritone took control away (cancel or pause)");
         assertTrue(h.dig(new int[]{0, 0, 0}, 100, "t").failed());
         assertEquals(1 + JobHands.retriesMax(), f.starts);
     }
@@ -212,8 +217,8 @@ class JobHandsTest {
     @Test
     void aMissingItemIsAClearFailureNotAStall() {
         Fake f = new Fake() {
-            @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks) {
-                super.startBuild(cells, items, timeoutTicks);
+            @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace) {
+                super.startBuild(cells, items, timeoutTicks, replace);
                 status = Car.Status.failed("stage items: need 1 torch, the bag has 0");
             }
         };
@@ -231,10 +236,10 @@ class JobHandsTest {
         JobHands h = new JobHands(f);
         h.build(new int[]{0, 0, 0}, "minecraft:furnace", 1200, "t", null);
         for (int i = 0; i < JobHands.retriesMax(); i++) {
-            f.status = Car.Status.failed("stage build: place furnace: another Baritone process took control away");
+            f.status = Car.Status.lost("stage build: place furnace: another Baritone process took control away");
             assertTrue(h.build(new int[]{0, 0, 0}, "minecraft:furnace", 1200, "t", null).running(), "retry " + i);
         }
-        f.status = Car.Status.failed("stage build: place furnace: another Baritone process took control away");
+        f.status = Car.Status.lost("stage build: place furnace: another Baritone process took control away");
         assertTrue(h.build(new int[]{0, 0, 0}, "minecraft:furnace", 1200, "t", null).failed());
         assertEquals(1 + JobHands.retriesMax(), f.builds);
     }
@@ -254,8 +259,62 @@ class JobHandsTest {
     void aFewBlockShellIsOneLeg() {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
-        assertTrue(h.build(List.of(new int[]{0, 1, 0}, new int[]{0, 2, 0}), List.of("minecraft:dirt", "minecraft:dirt"), 1200, "t", null).running());
+        assertTrue(h.build(List.of(new int[]{0, 1, 0}, new int[]{0, 2, 0}), List.of("minecraft:dirt", "minecraft:dirt"), 1200, "t", null, false).running());
         assertEquals(1, f.builds);
         assertTrue(h.busy(0, 2, 0));
+    }
+
+    // ---- review round (0.39.q2) ----
+
+    @Test
+    void aTextThatMerelySaysTookControlAwayIsAFailureNotARetry() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.dig(new int[]{0, 0, 0}, 100, "t");
+        f.status = Car.Status.failed("break 1/1: the guard said something about took control away");
+        assertTrue(h.dig(new int[]{0, 0, 0}, 100, "t").failed(), "only the fork's typed end restarts");
+        assertEquals(1, f.starts);
+    }
+
+    @Test
+    void aReflexPauseResumesWithoutUsingARetryUntilTwiceTheLimit() {
+        Fake f = new Fake();
+        long[] now = {0};
+        JobHands h = new JobHands(f, () -> now[0]);
+        h.build(new int[]{0, 0, 0}, "minecraft:furnace", 100, "t", null);
+        f.reflex = true;
+        for (int i = 0; i < 5; i++) {
+            f.status = Car.Status.lost("stage build: another Baritone process took control away");
+            JobHands.Result r = h.build(new int[]{0, 0, 0}, "minecraft:furnace", 100, "t", null);
+            assertTrue(r.running() && r.why().startsWith("paused by a reflex"), r.why());
+        }
+        now[0] = 2 * 100 * 50 + 1;      // past twice the leg's limit: the retries count again, then it fails
+        for (int i = 0; i < JobHands.retriesMax(); i++) {
+            f.status = Car.Status.lost("stage build: another Baritone process took control away");
+            assertTrue(h.build(new int[]{0, 0, 0}, "minecraft:furnace", 100, "t", null).running());
+        }
+        f.status = Car.Status.lost("stage build: another Baritone process took control away");
+        assertTrue(h.build(new int[]{0, 0, 0}, "minecraft:furnace", 100, "t", null).failed());
+    }
+
+    @Test
+    void theVerdictCellIsTheOneTheForkReports() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.click(new int[]{5, 6, 7}, "minecraft:wheat_seeds", 100, "b", null);
+        f.status = Car.Status.failed("click 1/1 on 5 6 7 north: nothing changed", new int[]{5, 6, 6});
+        JobHands.Result r = h.click(new int[]{5, 6, 7}, "minecraft:wheat_seeds", 100, "b", null);
+        assertTrue(r.why().contains("guard (place) at 5 6 6"), r.why());
+    }
+
+    @Test
+    void aPlacementNeverAsksToReplaceUnlessTheJobDoes() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.build(new int[]{1, 1, 1}, "minecraft:dirt", 100, "t", null);
+        assertFalse(f.lastReplace);
+        h.stop("next");
+        h.build(List.of(new int[]{2, 2, 2}), List.of("minecraft:dirt"), 100, "t", null, true);
+        assertTrue(f.lastReplace);
     }
 }

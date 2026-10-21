@@ -41,6 +41,16 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
         minZ = Math.min(minZ, nz);
     }
 
+    /** The fake Baritone climb: up to feet level y where it stands (Baritone would pillar or find stairs). */
+    @Override public void climbTo(int y) {
+        walks++;
+        Bot b = bot();
+        int x = (int) Math.floor(b.x()), z = (int) Math.floor(b.z());
+        // Baritone pillars under itself with the bag's blocks: a column up to the level, the bot on top
+        for (int yy = (int) Math.floor(b.y() + 0.01); yy < y; yy++) w.set(new Pos(x, yy, z), "cobblestone");
+        moveTo(b.x(), y, b.z());
+    }
+
     /** A walk arrives only when the bot can walk there without breaking or placing. */
     @Override public void walkBlock(int gx, int gy, int gz) {
         long t0 = System.nanoTime();
