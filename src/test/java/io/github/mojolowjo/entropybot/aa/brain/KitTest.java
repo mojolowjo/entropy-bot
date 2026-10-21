@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** aa-kit: the kit's worth, the recover after a death, the stash before dusk, the camp's chest chain. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class KitTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
@@ -19,23 +20,55 @@ class KitTest {
 
     @Test
     void worthOfToolsFoodAndLoot() {
-        assertEquals(15, Kit.toolValue("minecraft:stone_pickaxe"));
-        assertEquals(9, Kit.toolValue("stone_sword"), 1e-9);
-        assertEquals(5, Kit.toolValue("iron_chestplate"));
+        double stonePick = ItemWorth.of("minecraft:stone_pickaxe").value();
+        assertEquals(stonePick, Kit.toolValue("minecraft:stone_pickaxe"), 1e-9);
+        assertTrue(Kit.toolValue("stone_sword") > 0 && Kit.toolValue("iron_chestplate") > 0);
         assertEquals(0, Kit.toolValue("iron_ore"));
         assertTrue(Kit.foodValue("cooked_beef") > 5);
         assertTrue(Kit.kept("bread") && Kit.kept("torch") && !Kit.kept("raw_iron"));
         Map<String, Integer> bag = Map.of("stone_pickaxe", 1, "raw_iron", 10, "cobblestone", 50);
-        assertEquals(15 + 15 + 1, Kit.worth(bag), 1e-9);
-        assertEquals(15, Kit.lootWorth(bag), 1e-9);      // plain blocks are no loot
+        double prior = Tuning.get("kit.unknown");
+        assertEquals(stonePick + 10 * prior + 50 * Kit.itemValue("cobblestone"), Kit.worth(bag), 1e-9);
+        assertEquals(10 * prior, Kit.lootWorth(bag), 1e-9);      // plain blocks are no loot; raw_iron has no data: the logged prior
     }
 
     @Test
     void missingIsWhatTheBagLacks() {
         Map<String, Integer> dead = Map.of("stone_pickaxe", 1, "raw_iron", 10);
-        assertEquals(30, Kit.missing(dead, Map.of()), 1e-9);
+        double pick = Kit.itemValue("stone_pickaxe"), raw = Kit.itemValue("raw_iron");
+        assertEquals(pick + 10 * raw, Kit.missing(dead, Map.of()), 1e-9);
         assertEquals(0, Kit.missing(dead, dead), "keepInventory: nothing to go back for");
-        assertEquals(7.5, Kit.missing(dead, Map.of("stone_pickaxe", 1, "raw_iron", 5)), 1e-9);
+        assertEquals(5 * raw, Kit.missing(dead, Map.of("stone_pickaxe", 1, "raw_iron", 5)), 1e-9);
+    }
+
+    /** A modded pack: nothing here is in any list, the roles come from the item data alone. */
+    @Test
+    void moddedGearFoodLightBenchAndOreAreHandledByRole() {
+        TestData d = TestData.vanilla();
+        d.tool("moddium:drill", ItemWorth.Role.PICKAXE, 9, 2, 700).food("moddium:glow_stew", 8, 3).block("moddium:lamp", 0, 15).block("moddium:bench", 2.5, 0)
+                .block("moddium:rune_ore", 3, 0).block("moddium:rubble", 0.3, 0);
+        d.station.add("moddium:bench");
+        d.ore.add("moddium:rune_ore");
+        d.stone.add("moddium:rubble");
+        d.install();
+        assertTrue(Kit.toolValue("moddium:drill") > 0, "a fake tool with speed 9 is gear");
+        assertEquals(ItemWorth.of("moddium:drill").value(), Kit.toolValue("moddium:drill"), 1e-9);
+        assertTrue(Kit.foodValue("moddium:glow_stew") > 0 && Kit.kept("moddium:glow_stew"));
+        assertTrue(Kit.kept("moddium:drill") && Kit.kept("moddium:lamp") && Kit.kept("moddium:bench"), "gear, light and a bench are kept by role");
+        assertFalse(Kit.kept("moddium:rune_ore") || Kit.kept("moddium:rubble"));
+        assertEquals(0.01 * 3 * Tuning.get("worth.oreK"), Kit.itemValue("moddium:rune_ore"), 1e-9, "a modded ore: the ore tag stands for rarity");
+        assertTrue(Kit.lootWorth(Map.of("moddium:rune_ore", 2)) > 0);
+        assertEquals(0, Kit.lootWorth(Map.of("moddium:rubble", 50)), "filler is no loot");
+    }
+
+    @Test
+    void anItemWithNoDataIsTheLoggedPriorNeverZero() {
+        java.util.List<String> said = new java.util.ArrayList<>();
+        ItemWorth.logTo(said::add);
+        assertEquals(Tuning.get("kit.unknown"), Kit.itemValue("moddium:mystery"));
+        Kit.itemValue("moddium:mystery");
+        assertEquals(1, said.stream().filter(s -> s.contains("mystery")).count(), "said once");
+        ItemWorth.logTo(null);
     }
 
     @Test
@@ -93,7 +126,7 @@ class KitTest {
     @Test
     void stashParkedWithoutAChestAndScoredWithOne() {
         bb.in.hungerDrains = true;
-        bb.in.bag = Map.of("raw_iron", 20);
+        bb.in.bag = Map.of("raw_iron", 40);
         bb.in.dayTime = Night.DUSK - 10;
         bb.in.basePos = new int[]{0, 64, 0};
         bb.in.pos = new int[]{0, 64, 0};

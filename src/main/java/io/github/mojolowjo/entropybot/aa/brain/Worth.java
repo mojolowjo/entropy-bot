@@ -12,9 +12,6 @@ import java.util.Set;
 public final class Worth {
     private Worth() {}
 
-    /** What a furnace makes that recipes go on from (its share is the best of these in the tree). */
-    public static final java.util.List<String> SMELTS = java.util.List.of("iron_ingot", "gold_ingot", "copper_ingot", "glass", "charcoal", "smooth_stone");
-
     /**
      * 40 + 40 x the share of what the table unlocks: the weighted share of the recipes not had that need a 3x3 grid (more
      * than 4 ingredients). A station is no recipe ingredient, so its own norm in the tree would be 0. No tree yet: 1.
@@ -24,7 +21,7 @@ public final class Worth {
         return Tuning.get("stationBase") + Tuning.get("stationShare") * tree.share(r -> r.slots().size() > 4, have == null ? Set.of() : have);
     }
 
-    /** 40 + 40 x the best tree share among what a furnace makes ({@link #SMELTS}). No tree yet: 1. */
+    /** 40 + 40 x the best tree share among what a furnace makes (the smelting recipes' results). No tree yet: 1. */
     private static TechTree furnaceTree;
     private static Set<String> furnaceHave;
     private static java.util.List<String> furnaceOuts;
@@ -37,7 +34,8 @@ public final class Worth {
         if (tree == furnaceTree && o0 == furnaceOuts && h0.equals(furnaceHave)) return Tuning.get("stationBase") + Tuning.get("stationShare") * furnaceBest;   // AA_ROUND4 C review: one tree walk per tree/bag snapshot
         double best = 0;
         java.util.List<String> outs = ItemWorth.smelts();      // AA_ROUND4 C: what the recipes say a furnace makes; SMELTS only without data
-        for (String s : outs.isEmpty() ? SMELTS : outs) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
+        if (outs.isEmpty()) ItemWorth.warnOnce("smelts", "no smelting recipes loaded: a furnace unlocks nothing yet");
+        for (String s : outs) best = Math.max(best, tree.norm(s, have == null ? Set.of() : have));
         furnaceTree = tree; furnaceHave = Set.copyOf(h0); furnaceOuts = o0; furnaceBest = best;
         return Tuning.get("stationBase") + Tuning.get("stationShare") * best;
     }
@@ -49,3 +47,4 @@ public final class Worth {
 
     public static double base(double danger) { return 0.8 * bed(danger); }
 }
+

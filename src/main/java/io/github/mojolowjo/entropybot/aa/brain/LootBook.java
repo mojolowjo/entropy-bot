@@ -32,20 +32,10 @@ public final class LootBook {
     public static final String HERDS_FACT = "aa.herdsSeen";
 
     /**
-     * AA_ROUND3 5 (pitfall 4): a multiplayer client has no loot tables; the farm animals' drops are known anyway (the
-     * vanilla tables: cow beef + leather, pig porkchop, sheep mutton + white wool, chicken chicken + feather).
+     * A multiplayer client has no loot tables. No vanilla table is hard-coded (rm-names, RULES 4): the book is empty with
+     * its reason, which {@code aa want} shows and the log says.
      */
-    public static LootBook vanilla() {
-        List<Source> l = new ArrayList<>();
-        l.add(new Source(Kind.MOB, "minecraft:cow", "minecraft:beef", 2, 1, false, null));
-        l.add(new Source(Kind.MOB, "minecraft:cow", "minecraft:leather", 1, 0.67, false, null));
-        l.add(new Source(Kind.MOB, "minecraft:pig", "minecraft:porkchop", 2, 1, false, null));
-        l.add(new Source(Kind.MOB, "minecraft:sheep", "minecraft:mutton", 1.5, 1, false, null));
-        l.add(new Source(Kind.MOB, "minecraft:sheep", "minecraft:white_wool", 1, 1, false, null));
-        l.add(new Source(Kind.MOB, "minecraft:chicken", "minecraft:chicken", 1, 1, false, null));
-        l.add(new Source(Kind.MOB, "minecraft:chicken", "minecraft:feather", 1, 0.67, false, null));
-        return new LootBook(l, "the vanilla farm-animal table (multiplayer client: no loot tables)");
-    }
+    public static LootBook vanilla() { return empty("no loot tables on a multiplayer client: mob drops are unknown, not guessed"); }
 
     public enum Kind { MOB, BLOCK, CHEST, TRADE }
 
@@ -320,3 +310,4 @@ public final class LootBook {
         return v >= 10 ? String.valueOf(Math.round(v)) : String.valueOf(Math.round(v * 10) / 10.0);
     }
 }
+

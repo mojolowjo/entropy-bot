@@ -205,7 +205,7 @@ public final class SenseRuntime {
                 if (n > 0) f.stock.merge(k, n, Integer::sum);
             }
             int t = 0;
-            for (String k : bag.keySet()) if (k.endsWith("_pickaxe")) t = Math.max(t, io.github.mojolowjo.entropybot.plan.PlanFacts.tier(k.substring(0, k.length() - 8)));
+            for (String k : bag.keySet()) if (k.endsWith("_pickaxe")) t = Math.max(t, io.github.mojolowjo.entropybot.plan.PlanFacts.tier(k));
             f.pickTier = t;
             Core core = Core.INSTANCE;
             for (Map.Entry<String, JsonObject> e : core.knowledge.places().entrySet()) f.places.put(e.getKey(), xyz(e.getValue()));
@@ -261,3 +261,4 @@ public final class SenseRuntime {
         catch (RuntimeException e) { return null; }
     }
 }
+

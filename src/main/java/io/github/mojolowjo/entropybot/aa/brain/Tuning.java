@@ -41,6 +41,14 @@ public final class Tuning {
         def("worth.role.shovel", 0.3, "AA_ROUND4 C", "a shovel's weight (the kit's old shovel 0.3)");
         def("worth.role.hoe", 0.15, "AA_ROUND4 C", "a hoe's weight");
         def("worth.role.other", 0.3, "AA_ROUND4 C", "weight of a digging tool whose role the data does not name (shears, a modded tool)");
+        def("worth.oreK", 100, "rm-names", "rarity is in no item component: an ore block (the ores tag) is worth this x its hardness worth; its smelted ingot and gem follow through the recipe");
+        def("kit.unknown", 1.0, "rm-names", "prior: an item the game gives no data for (no tool/food/block facts, no recipe) is worth this in a kit; logged once per item");
+        def("kit.lightMin", 7, "rm-names", "a held item that gives this much light and breaks at once is a torch-like light source the deposit keeps");
+        def("junk.hardBand", 3.5, "rm-names", "a pickaxe/shovel block with no ore tag, no storage-block tag and no block entity up to this hardness is stone-like filler (cobbled deepslate 3.5)");
+        def("junk.placeWorth", 0.02, "rm-names", "a block item worth no more than this (hardness 2: cobblestone, dirt, planks, logs) is a filler the danger moves may place and a build keeps; an ore is worth more");
+        def("junk.neverWorth", 2, "rm-names", "an item worth more than this is never put on the owner's junk list (ores, gems, ingots)");
+        def("tech.keyWeight", 3, "rm-names", "a recipe result that is gear (tool, armour, shield, bow: damageable) or a workstation (opens a menu) weighs this in the tech tree, any other result 1");
+        def("junk.maxWorth", 0.015, "rm-names", "an item worth less than this (soft blocks: dirt, gravel, sand, leaves) is junk; stone-like blocks are junk by tag; an unknown worth is never junk");
         def("urgent", 75, "aa-brain 1", "the score from which an upkeep may interrupt the running desire (food near empty)");
         def("margin", 15, "aa-brain 1", "the commitment bonus: a challenger must beat the running desire by this much");
         def("capExempt", 90, "director 2026-10-19", "upkeep at this score (starving) is not capped by the night");
@@ -245,3 +253,6 @@ public final class Tuning {
 
     static String fmt(double v) { return v == Math.rint(v) ? String.valueOf((long) v) : String.format(Locale.ROOT, "%.3f", v).replaceAll("0+$", ""); }
 }
+
+
+

@@ -17,6 +17,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.28.1: trial fix package 1 (docs/TRIAL_FIX_PLAN.md in the bridge repo), the pure rules. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class TrialFixTest {
 
     // ---- B: chains with area ----
@@ -143,8 +144,7 @@ class TrialFixTest {
 
     @Test
     void snowballsAreJunkAndBuildBlocksStayWhileWanted() {
-        assertTrue(JunkRules.DEFAULT.contains("minecraft:snowball"));
-        Set<String> junk = Set.copyOf(JunkRules.DEFAULT);
+        Set<String> junk = Set.of("minecraft:cobblestone", "minecraft:snowball", "minecraft:dirt");
         Map<String, Integer> dep = Map.of("minecraft:cobblestone", 64, "minecraft:snowball", 0, "minecraft:dirt", 0);
         Map<String, Integer> inv = Map.of("minecraft:cobblestone", 170, "minecraft:snowball", 63, "minecraft:dirt", 20);
         Map<String, Integer> none = JunkRules.plan(junk, dep, inv, "", JunkRules.wanted(List.of("chopping 6")));
@@ -156,7 +156,7 @@ class TrialFixTest {
         assertNull(keep.get("minecraft:cobblestone"), "a build keeps its cobblestone");
         assertNull(keep.get("minecraft:dirt"));
         assertEquals(63, keep.get("minecraft:snowball"));
-        assertTrue(JunkRules.wanted(List.of("shelter")).contains("*_planks"));
+        assertTrue(JunkRules.wanted(List.of("shelter")).contains("*placeable"));
         assertTrue(JunkRules.wanted(null).isEmpty());
     }
 

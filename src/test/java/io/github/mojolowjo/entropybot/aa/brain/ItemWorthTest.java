@@ -110,21 +110,20 @@ class ItemWorthTest {
     }
 
     @Test
-    void withoutDataEveryoneKeepsTheirTables() {
+    void withoutDataTheAnswerIsAnExplicitUnknown() {
         ItemWorth.use(null);
         assertFalse(ItemWorth.of("iron_pickaxe").known());
-        assertEquals(30, Kit.toolValue("iron_pickaxe"));
-        assertEquals(1.5, Kit.itemValue("raw_iron"));
-        assertEquals(0.02, Kit.itemValue("cobblestone"));
-        assertTrue(Worth.SMELTS.contains("iron_ingot") && ItemWorth.smelts().isEmpty());
+        assertEquals(0, Kit.toolValue("iron_pickaxe"), "no data: not a tool, said once");
+        assertEquals(Tuning.get("kit.unknown"), Kit.itemValue("raw_iron"), "no data: the explicit prior, never 0");
+        assertTrue(ItemWorth.smelts().isEmpty());
     }
 
     @Test
-    void kitReadsTheDataFirstAndTheTableForWhatItGivesNone() {
+    void kitReadsTheData() {
         assertEquals(v("osmium:osmium_pickaxe"), Kit.toolValue("osmium:osmium_pickaxe"), 1e-9);   // a modded kit is recovered
         assertEquals(v("iron_pickaxe"), Kit.toolValue("minecraft:iron_pickaxe"), 1e-9);
         assertTrue(Kit.kept("osmium:osmium_pickaxe"));
-        assertEquals(1.5, Kit.itemValue("raw_iron"));                          // scarcity: no component says it, the table stays
+                          // scarcity: no component says it, the table stays
         assertEquals(v("osmium:gear"), Kit.itemValue("osmium:gear"), 1e-9);
         assertEquals(List.of("minecraft:iron_ingot"), ItemWorth.smelts());
     }

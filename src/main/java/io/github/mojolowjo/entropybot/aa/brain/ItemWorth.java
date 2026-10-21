@@ -58,7 +58,28 @@ public final class ItemWorth {
         List<Recipe> recipes(String id);
         /** Items a furnace makes (smelting recipe results), for the furnace's worth. */
         default List<String> smeltResults() { return List.of(); }
+        /** Raw item id -> cooked item id, from the cooking recipes (smelting, smoking, campfire) whose result is food. */
+        default Map<String, String> cooks() { return Map.of(); }
+        /** A plain stone-like block item: in the base-stone tags, or a soft pickaxe/shovel block that is no ore and no block entity. */
+        default boolean stoneLike(String id) { return false; }
+        /** A workstation block (it opens a menu: the crafting table, any modded bench). */
+        default boolean station(String id) { return false; }
+        /** An ore block (the game's ores tag): rarity is in no item component, so the tag stands for it. */
+        default boolean ore(String id) { return false; }
+        /** An item in the game's planks tag. */
+        default boolean plank(String id) { return false; }
     }
+
+    /** Where a once-only note goes (the adapter sets the mod log; tests may collect). */
+    private static volatile java.util.function.Consumer<String> sink = s -> {};
+    private static final Set<String> SAID = new HashSet<>();
+    public static void logTo(java.util.function.Consumer<String> c) { sink = c == null ? s -> {} : c; }
+    /** Says {@code msg} once per {@code key} (an explicit unknown is never silent, never repeated every tick). */
+    public static void warnOnce(String key, String msg) {
+        boolean first; synchronized (SAID) { first = SAID.add(key); }
+        if (first) sink.accept("item data: " + msg);
+    }
+    public static void resetWarnings() { synchronized (SAID) { SAID.clear(); } }
 
     /** A worth, or an explicit unknown, with the terms. */
     public record Worth(double value, boolean known, String why) {
@@ -117,9 +138,45 @@ public final class ItemWorth {
     public static double energy(String id) {
         Source s = source;
         if (s == null) return 0;
+        if (id == null) return 0;
         Facts f = s.facts(full(id));
         return f.nutrition > 0 ? f.nutrition + f.saturation : 0;
     }
+
+    /** The facts of one item (Facts.NONE without data or for an item the game gives none). */
+    public static Facts facts(String id) { Source s = source; return s == null || id == null ? Facts.NONE : s.facts(full(id)); }
+
+    /** Raw -> cooked item ids from the cooking recipes (empty: no data; said once). */
+    public static Map<String, String> cooks() {
+        Source s = source;
+        if (s == null) { warnOnce("cooks", "no cooking recipes loaded (nothing is cookable)"); return Map.of(); }
+        return s.cooks();
+    }
+
+    /** Nutrition of one item from the game's FOOD component (0 none or unknown). */
+    public static double nutrition(String id) {
+        Source s = source;
+        if (s == null) { warnOnce("food", "no item data loaded: no food is known"); return 0; }
+        return s.facts(full(id)).nutrition;
+    }
+
+    /** What a tool, armour piece, shield or bow is: it has durability (the game's MAX_DAMAGE component), whatever its name or mod. */
+    public static boolean damageable(String id) { Source s = source; return s != null && s.facts(full(id)).durability > 0; }
+
+    /** A block item the game gives hardness to (placeable filler or ore); false without data. */
+    public static boolean block(String id) { Source s = source; return s != null && s.facts(full(id)).hardness > 0; }
+
+    /** A held light source that breaks at once (a torch-like item): light emission at or over kit.lightMin and no hardness. */
+    public static boolean lightSource(String id) {
+        Source s = source;
+        if (s == null) return false;
+        Facts f = s.facts(full(id));
+        return f.light >= Tuning.get("kit.lightMin") && f.hardness <= 0;
+    }
+
+    public static boolean plank(String id) { Source s = source; return s != null && s.plank(full(id)); }
+    public static boolean station(String id) { Source s = source; return s != null && s.station(full(id)); }
+    public static boolean stoneLike(String id) { Source s = source; return s != null && s.stoneLike(full(id)); }
 
     /** The items a furnace makes, from the recipes (empty: none loaded; the caller keeps its list). */
     public static List<String> smelts() {
@@ -162,6 +219,7 @@ public final class ItemWorth {
         }
         if (f.hardness > 0 || f.light > 0) {
             double v = cap(Tuning.get("worth.hardK") * f.hardness + Tuning.get("worth.lightK") * f.light);
+            if (s.ore(id)) v = cap(v * Tuning.get("worth.oreK"));
             return Worth.of(v, String.format(Locale.ROOT, "block: %.3f x hardness %.1f + %.3f x light %d = %.3f", Tuning.get("worth.hardK"), f.hardness, Tuning.get("worth.lightK"), f.light, v));
         }
         // a recipe only
@@ -226,3 +284,7 @@ public final class ItemWorth {
                 + (w.known() ? "" : " (the caller's fallback table applies)");
     }
 }
+
+
+
+

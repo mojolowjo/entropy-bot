@@ -37,14 +37,23 @@ final class ItemWorthSource implements ItemWorth.Source {
     private final Map<String, ItemWorth.Facts> facts = new HashMap<>();
     private final Map<String, List<ItemWorth.Recipe>> recipes = new HashMap<>();
     private final List<String> smelts = new ArrayList<>();
+    private final Map<String, String> cooks = new HashMap<>();
+    private final java.util.Set<String> stoneLike = new java.util.HashSet<>(), planks = new java.util.HashSet<>(), stations = new java.util.HashSet<>(), ores = new java.util.HashSet<>();
     int failed;
 
     static ItemWorthSource read(Level level) {
         ItemWorthSource s = new ItemWorthSource();
+        ItemWorth.logTo(m -> org.slf4j.LoggerFactory.getLogger("entropybot").warn("[entropybot] {}", m));
         for (Item item : BuiltInRegistries.ITEM) {
             String id = BuiltInRegistries.ITEM.getKey(item).toString();
+            if (item.getDefaultInstance().is(net.minecraft.tags.ItemTags.PLANKS)) s.planks.add(id);
             try { ItemWorth.Facts f = factsOf(item); if (f != ItemWorth.Facts.NONE) s.facts.put(id, f); }
             catch (RuntimeException e) { s.failed++; }
+        }
+        for (Item item : BuiltInRegistries.ITEM) {
+            if (!(item instanceof BlockItem bi)) continue;
+            String id = BuiltInRegistries.ITEM.getKey(item).toString();
+            try { s.blockRoles(id, bi.getBlock().defaultBlockState(), level); } catch (RuntimeException e) { s.failed++; }
         }
         RecipeManager rm = level.getRecipeManager();
         for (var h : rm.getRecipes()) {
@@ -63,8 +72,24 @@ final class ItemWorthSource implements ItemWorth.Source {
             if (!ok || in.isEmpty()) continue;
             s.recipes.computeIfAbsent(oid, k -> new ArrayList<>()).add(new ItemWorth.Recipe(Math.max(1, out.getCount()), in));
             if (r.getType() == RecipeType.SMELTING && !s.smelts.contains(oid)) s.smelts.add(oid);
+            if ((r.getType() == RecipeType.SMELTING || r.getType() == RecipeType.SMOKING || r.getType() == RecipeType.CAMPFIRE_COOKING)
+                    && out.getItem().getDefaultInstance().get(DataComponents.FOOD) != null) {
+                for (var ing : r.getIngredients()) for (ItemStack raw : ing.getItems()) s.cooks.putIfAbsent(BuiltInRegistries.ITEM.getKey(raw.getItem()).toString(), oid);   // the game's cooking recipes: raw -> cooked, any mod
+            }
         }
         return s;
+    }
+
+    /** Block roles from the game's tags and block class: ore, workstation (opens a menu), stone-like filler. */
+    private void blockRoles(String id, BlockState bs, Level level) {
+        if (bs.is(net.neoforged.neoforge.common.Tags.Blocks.ORES)) ores.add(id);
+        boolean entity = bs.getBlock() instanceof net.minecraft.world.level.block.EntityBlock;
+        try { if (bs.getMenuProvider(level, BlockPos.ZERO) != null) stations.add(id); } catch (RuntimeException e) { failed++; }
+        if (bs.is(BlockTags.BASE_STONE_OVERWORLD) || bs.is(BlockTags.BASE_STONE_NETHER)) { stoneLike.add(id); return; }
+        double hard = bs.getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
+        if (!entity && hard > 0 && hard <= io.github.mojolowjo.entropybot.aa.brain.Tuning.get("junk.hardBand")
+                && (bs.is(BlockTags.MINEABLE_WITH_PICKAXE) || bs.is(BlockTags.MINEABLE_WITH_SHOVEL))
+                && !bs.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && !bs.is(net.neoforged.neoforge.common.Tags.Blocks.STORAGE_BLOCKS)) stoneLike.add(id);
     }
 
     private static ItemWorth.Facts factsOf(Item item) {
@@ -126,6 +151,13 @@ final class ItemWorthSource implements ItemWorth.Source {
     @Override public ItemWorth.Facts facts(String id) { return facts.getOrDefault(id, ItemWorth.Facts.NONE); }
     @Override public List<ItemWorth.Recipe> recipes(String id) { return recipes.getOrDefault(id, List.of()); }
     @Override public List<String> smeltResults() { return smelts; }
+    @Override public Map<String, String> cooks() { return cooks; }
+    @Override public boolean stoneLike(String id) { return stoneLike.contains(id); }
+    @Override public boolean station(String id) { return stations.contains(id); }
+    @Override public boolean plank(String id) { return planks.contains(id); }
+    @Override public boolean ore(String id) { return ores.contains(id); }
     int itemsWithFacts() { return facts.size(); }
     int itemsWithRecipes() { return recipes.size(); }
 }
+
+

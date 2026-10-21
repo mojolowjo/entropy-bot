@@ -33,40 +33,22 @@ public final class FoodModel {
     /** Energy points per minute when nothing is measured for a kind yet (hand values, replaced after 2 samples). */
     public static final double HAND_MEAN = 0.4;
 
-    /** item path -> {nutrition, saturation} (vanilla values). */
-    public static final Map<String, double[]> FOODS = Map.ofEntries(
-            Map.entry("apple", new double[]{4, 2.4}), Map.entry("baked_potato", new double[]{5, 6}),
-            Map.entry("beetroot", new double[]{1, 1.2}), Map.entry("beetroot_soup", new double[]{6, 7.2}),
-            Map.entry("bread", new double[]{5, 6}), Map.entry("carrot", new double[]{3, 3.6}),
-            Map.entry("cooked_beef", new double[]{8, 12.8}), Map.entry("cooked_porkchop", new double[]{8, 12.8}),
-            Map.entry("cooked_chicken", new double[]{6, 7.2}), Map.entry("cooked_mutton", new double[]{6, 9.6}),
-            Map.entry("cooked_rabbit", new double[]{5, 6}), Map.entry("cooked_cod", new double[]{5, 6}),
-            Map.entry("cooked_salmon", new double[]{6, 9.6}), Map.entry("cookie", new double[]{2, 0.4}),
-            Map.entry("dried_kelp", new double[]{1, 0.6}), Map.entry("glow_berries", new double[]{2, 0.4}),
-            Map.entry("sweet_berries", new double[]{2, 0.4}), Map.entry("golden_carrot", new double[]{6, 14.4}),
-            Map.entry("melon_slice", new double[]{2, 1.2}), Map.entry("mushroom_stew", new double[]{6, 7.2}),
-            Map.entry("rabbit_stew", new double[]{10, 12}), Map.entry("potato", new double[]{1, 0.6}),
-            Map.entry("pumpkin_pie", new double[]{8, 4.8}), Map.entry("honey_bottle", new double[]{6, 1.2}),
-            Map.entry("beef", new double[]{3, 1.8}), Map.entry("porkchop", new double[]{3, 1.8}),
-            Map.entry("mutton", new double[]{2, 1.2}), Map.entry("rabbit", new double[]{3, 1.8}),
-            Map.entry("cod", new double[]{2, 0.4}), Map.entry("salmon", new double[]{2, 0.4}));
-
-    /** Raw food a furnace turns into the cooked one (the cook verb's names). */
-    public static final Map<String, String> COOKS = Map.of("beef", "cooked_beef", "porkchop", "cooked_porkchop",
-            "chicken", "cooked_chicken", "mutton", "cooked_mutton", "rabbit", "cooked_rabbit", "cod", "cooked_cod",
-            "salmon", "cooked_salmon", "potato", "baked_potato", "kelp", "dried_kelp");
-
-    /** Nutrition + saturation of one item (0: not plannable food). */
-    public static double energyOf(String path) {
-        double[] f = FOODS.get(path);
-        return f == null ? 0 : f[0] + f[1];
+    /** Raw food -> the cooked food (item paths), from the game's cooking recipes whose result is food (empty without data). */
+    public static Map<String, String> cooks() {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (var e : ItemWorth.cooks().entrySet()) out.put(path(e.getKey()), path(e.getValue()));
+        return out;
     }
 
-    public static int nutritionOf(String path) {
-        double[] f = FOODS.get(path);
-        return f == null ? 0 : (int) f[0];
-    }
+    /** The cooked item of a raw one (null: nothing cooks it). */
+    public static String cooked(String rawPath) { return cooks().get(path(rawPath)); }
 
+    static String path(String id) { int i = id.indexOf(':'); return i < 0 ? id : id.substring(i + 1); }
+
+    /** Nutrition + saturation of one item from its FOOD component (0: not plannable food; harmful food is no food). */
+    public static double energyOf(String id) { return ItemWorth.energy(id); }
+
+    public static int nutritionOf(String id) { return (int) ItemWorth.nutrition(id); }
     /** The bag's food energy (item path -> count). */
     public static double energy(Map<String, Integer> bag) {
         double e = 0;
@@ -124,3 +106,4 @@ public final class FoodModel {
         return Math.max(stats.meanDrain(HAND_MEAN), stats.drain(running == null ? TaskKind.NONE.name() : running.name(), handRate(running)));
     }
 }
+

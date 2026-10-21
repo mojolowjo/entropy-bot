@@ -10,6 +10,7 @@ import static io.github.mojolowjo.entropybot.sense.Feasibility.Kind.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.26.2 "feasibility before every pick": the precondition table over fake facts, and the brain's use of it. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FeasibilityTest {
 
     /** Known facts, nothing in the bag or storage, no torches/coal/logs/wood/food, no bed; base, camp, mine and farm known. */

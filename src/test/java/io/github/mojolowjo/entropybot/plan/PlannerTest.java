@@ -10,6 +10,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** B3: the action table, the goal search, its bound, the routine rule, the goal grammar and the document. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class PlannerTest {
 
     /** A fresh spot with trees, free cells for the table and furnace, and the quarry's ground. */

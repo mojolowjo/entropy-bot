@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * C5 (inventory hygiene): the junk list ({@code junk add|remove|list|default|mode drop|chest}, commands.json "junk"
+ * C5 (inventory hygiene): the junk list (one definition of junk: {@link io.github.mojolowjo.entropybot.aa.brain.Junk}, from the game's data; the owner's {@code junk add|remove|list|default|mode drop|chest}, commands.json "junk"
  * [ids] and "junkMode"), and what goes when the bag has {@link #LOW} or fewer free slots in the middle of a job. Pure.
  *
  * <p>Never junk, whatever the list says: tools, armor, food, torches, supplies, the hotbar layout, ore drops and other
@@ -23,19 +23,9 @@ public final class JunkRules {
     private JunkRules() {}
 
     public static final int LOW = 4;
-    /** The default list (the owner's plan, 2026-10-05): string is kept on purpose. */
-    public static final List<String> DEFAULT = List.of("minecraft:cobblestone", "minecraft:dirt", "minecraft:gravel", "minecraft:rotten_flesh",
-            "minecraft:spider_eye", "minecraft:cobbled_deepslate", "minecraft:netherrack", "minecraft:andesite", "minecraft:diorite",
-            "minecraft:granite", "minecraft:tuff", "minecraft:poisonous_potato", "minecraft:snowball");
-
-    /** 0.28.1 (trial fix F): what a build or shelter places; kept while such a job runs or waits in the chain. */
-    static final List<String> BUILD_BLOCKS = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:dirt");
-
     /**
      * 0.28.1: the ids a running or queued job wants, so the junk drop leaves them. texts: the running job's label and
-     * status, the chain's steps not done yet, a "need" line. A build/shelter/place text keeps cobblestone, cobbled
-     * deepslate, dirt and planks (planks are never on the default list; their suffix is matched in {@link #plan}), and
-     * any item it names ("build shell cobblestone house" keeps cobblestone).
+     * status, the chain's steps not done yet, a "need" line. A build/shelter/place text keeps the placeable filler blocks ({@code *placeable}: Junk.placeable), and any item it names ("build shell cobblestone house" keeps cobblestone).
      */
     public static Set<String> wanted(List<String> texts) {
         Set<String> out = new LinkedHashSet<>();
@@ -45,8 +35,7 @@ public final class JunkRules {
             String t = t0.trim().toLowerCase(Locale.ROOT);
             boolean builds = t.matches("(?s)^(build|building|shelter|place|placing|need)\\b.*") || t.contains("build ") || t.contains("shelter");
             if (!builds) continue;
-            out.addAll(BUILD_BLOCKS);
-            out.add("*_planks");
+            out.add("*placeable");
             for (String w : t.split("[^a-z0-9_:]+")) {
                 if (w.length() < 3 || w.matches("^-?\\d+$")) continue;
                 if (w.matches("^(build|building|shelter|place|placing|need|shell|walls|floor|fill|roof|house|camp|started|status|then|here|the)$")) continue;
@@ -56,16 +45,18 @@ public final class JunkRules {
         return out;
     }
 
-    /** {@link #plan} that also leaves the wanted ids ({@link #wanted}; "*_planks" = any planks). */
+    /** {@link #plan} that also leaves the wanted ids ({@link #wanted}; "*placeable" = any filler block). */
     public static Map<String, Integer> plan(Set<String> junk, Map<String, Integer> depositables, Map<String, Integer> inv, String collecting,
                                             Set<String> wanted) {
         Map<String, Integer> out = plan(junk, depositables, inv, collecting);
         if (wanted == null || wanted.isEmpty()) return out;
-        out.keySet().removeIf(id -> wanted.contains(id) || (wanted.contains("*_planks") && id.endsWith("_planks")));
+        out.keySet().removeIf(id -> wanted.contains(id) || (wanted.contains("*placeable") && io.github.mojolowjo.entropybot.aa.brain.Junk.placeable(id)));
         return out;
     }
-    /** Never on the list (a typo or a bad idea): these are tools, fuel, food or valuables. */
-    static final Pattern NEVER = Pattern.compile("_(pickaxe|axe|shovel|hoe|sword|helmet|chestplate|leggings|boots)$|(^|:)(torch|shield|bow|crossbow|coal|charcoal|diamond|emerald|bread)$|(^|:)raw_");
+    /** Never on the owner's list (a typo or a bad idea): what the deposit keeps (gear, food, light, bench) and anything worth over {@code junk.neverWorth}. */
+    static boolean never(String id) {
+        return io.github.mojolowjo.entropybot.aa.brain.Kit.kept(id) || io.github.mojolowjo.entropybot.aa.brain.Kit.itemValue(id) > io.github.mojolowjo.entropybot.aa.brain.Tuning.get("junk.neverWorth");
+    }
 
     public static final String USAGE = "usage: junk list | junk add <item> ... | junk remove <item> ... | junk default | junk mode drop|chest";
 
@@ -79,7 +70,7 @@ public final class JunkRules {
         Set<String> out = new LinkedHashSet<>(list);
         for (String i : ids) {
             String id = full(i);
-            if (NEVER.matcher(id).find()) refused.add(StockRules.shortId(id));
+            if (never(id)) refused.add(StockRules.shortId(id));
             else out.add(id);
         }
         return out;
@@ -100,7 +91,7 @@ public final class JunkRules {
         String job = collecting == null ? "" : collecting.toLowerCase(Locale.ROOT);
         for (Map.Entry<String, Integer> e : depositables.entrySet()) {
             String id = e.getKey();
-            if (!junk.contains(id) || NEVER.matcher(id).find()) continue;
+            if (!(junk.contains(id) ? !never(id) : io.github.mojolowjo.entropybot.aa.brain.Junk.is(id))) continue;
             String bare = id.substring(id.indexOf(':') + 1);
             if (!job.isEmpty() && job.matches("(?s).*\\b" + Pattern.quote(bare) + "\\b.*")) continue;
             int n = inv.getOrDefault(id, 0) - (e.getValue() == null ? 0 : e.getValue());
@@ -122,3 +113,6 @@ public final class JunkRules {
                 + (s.isEmpty() ? "nothing" : String.join(", ", s)) + " - cobblestone keeps 64; tools, food, torches, supplies and ores never go";
     }
 }
+
+
+

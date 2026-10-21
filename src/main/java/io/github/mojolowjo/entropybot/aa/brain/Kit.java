@@ -45,65 +45,32 @@ public final class Kit {
 
     // ---- worth ----
 
-    static final Map<String, Double> TIER = Map.of("wooden", 8.0, "golden", 5.0, "stone", 15.0, "iron", 30.0, "diamond", 45.0, "netherite", 55.0);
-    static final Map<String, Double> ARMOUR = Map.of("leather", 1.0, "golden", 2.0, "chainmail", 4.0, "iron", 5.0, "diamond", 8.0, "netherite", 10.0);
-    static final Map<String, Double> LOOT = Map.ofEntries(
-            Map.entry("raw_iron", 1.5), Map.entry("iron_ingot", 2.0), Map.entry("iron_ore", 1.5), Map.entry("deepslate_iron_ore", 1.5),
-            Map.entry("raw_gold", 1.5), Map.entry("gold_ingot", 2.0), Map.entry("raw_copper", 0.3), Map.entry("copper_ingot", 0.4),
-            Map.entry("coal", 0.3), Map.entry("charcoal", 0.3), Map.entry("diamond", 8.0), Map.entry("emerald", 3.0),
-            Map.entry("redstone", 0.2), Map.entry("lapis_lazuli", 0.3), Map.entry("string", 0.2), Map.entry("white_wool", 0.5),
-            Map.entry("leather", 0.5), Map.entry("bucket", 3.0), Map.entry("water_bucket", 3.0), Map.entry("shield", 4.0), Map.entry("bow", 4.0),
-            Map.entry("arrow", 0.1), Map.entry("bed", 4.0), Map.entry("white_bed", 4.0));
-    static final double BLOCK = 0.02;
+    static final double BLOCK = 0.02;      // = Tuning worth.floor: a plain block, the line under which an item is no loot
 
     static String path(String id) { int i = id.indexOf(':'); return i < 0 ? id : id.substring(i + 1); }
 
-    /** A tool's or armour piece's worth (0: not one). */
-    public static double toolValue(String id) {
-        double data = ItemWorth.gear(id);                 // AA_ROUND4 C: the game's own item data first, the tables below only when it gives none
-        if (data > 0) return data;
-        String p = path(id);
-        int u = p.indexOf('_');
-        if (u < 0) return 0;
-        String mat = p.substring(0, u), kind = p.substring(u + 1);
-        Double t = TIER.get(mat);
-        if (t != null) {
-            switch (kind) {
-                case "pickaxe": return t;
-                case "sword": return 0.6 * t;
-                case "axe": return 0.4 * t;
-                case "shovel": return 0.3 * t;
-                default: break;
-            }
-        }
-        Double a = ARMOUR.get(mat);
-        if (a != null && (kind.equals("helmet") || kind.equals("chestplate") || kind.equals("leggings") || kind.equals("boots"))) return a;
-        return 0;
-    }
+    /** A tool's or armour piece's worth from the game's item data (0: not one, or no data: said once by ItemWorth). */
+    public static double toolValue(String id) { return ItemWorth.gear(id); }
 
-    /** One food item: 0.25 per energy point. */
-    public static double foodValue(String id) {
-        double data = ItemWorth.food(id);
-        return data > 0 ? data : 0.25 * FoodModel.energyOf(path(id));
-    }
+    /** One food item: the data's food worth (0 none). */
+    public static double foodValue(String id) { return ItemWorth.food(id); }
 
-    /** What the deposit verb keeps: tools, armour, food, torches. */
+    /** What the deposit verb keeps, by role and never by name: damageable gear (tools, armour, shield, bow), food, torch-like light, workstations. */
     public static boolean kept(String id) {
-        String p = path(id);
-        return toolValue(id) > 0 || foodValue(id) > 0 || p.equals("torch") || p.equals("shield") || p.equals("crafting_table");
+        return toolValue(id) > 0 || foodValue(id) > 0 || ItemWorth.damageable(id) || ItemWorth.lightSource(id) || ItemWorth.station(id);
     }
 
-    /** One item's worth (any kind). */
+    /** One item's worth (any kind): the data; an item the game gives no data for is {@code kit.unknown}, said once. */
     public static double itemValue(String id) {
         double t = toolValue(id);
         if (t > 0) return t;
         double f = foodValue(id);
         if (f > 0) return f;
-        String p = path(id);
-        if (p.equals("torch")) return 0.1;
-        Double l = LOOT.get(p);
-        if (l != null) return l;                           // scarcity (ores, gems) is in no item component: the loot table stays first for those
-        return ItemWorth.valueOr(id, BLOCK);               // the rest: the data (blocks by hardness/light, a recipe-only modded item), BLOCK when unknown
+        if (ItemWorth.lightSource(id)) return Tuning.get("worth.lightK") * 14;
+        var w = ItemWorth.of(id);
+        if (w.known() && w.value() > 0) return w.value();
+        ItemWorth.warnOnce("kit:" + id, path(id) + " has no worth in the game's data (" + w.why() + "); using the prior " + Tuning.get("kit.unknown"));
+        return Tuning.get("kit.unknown");
     }
 
     public static double worth(Map<String, Integer> bag) {
@@ -112,13 +79,17 @@ public final class Kit {
         return w;
     }
 
-    /** The loot the deposit verb moves: the LOOT items (not {@link #kept}; plain blocks left out so the stash can end). */
+    /** The loot the deposit verb moves: not {@link #kept}, not junk, worth over a plain block (plain blocks left out so the stash can end). */
     public static double lootWorth(Map<String, Integer> bag) {
         double w = 0;
-        if (bag != null) for (var e : bag.entrySet()) if (!kept(e.getKey()) && LOOT.containsKey(path(e.getKey()))) w += itemValue(e.getKey()) * Math.max(0, e.getValue());
+        if (bag != null) for (var e : bag.entrySet()) {
+            String id = e.getKey();
+            if (kept(id) || Junk.is(id)) continue;
+            double v = itemValue(id);
+            if (v > BLOCK) w += v * Math.max(0, e.getValue());
+        }
         return w;
     }
-
     /** The worth of what the dead bag held and the bag now lacks (keepInventory or picked up: 0). */
     public static double missing(Map<String, Integer> dead, Map<String, Integer> now) {
         double w = 0;
@@ -202,3 +173,4 @@ public final class Kit {
 
     static double r(double v) { return Math.round(v * 100) / 100.0; }
 }
+

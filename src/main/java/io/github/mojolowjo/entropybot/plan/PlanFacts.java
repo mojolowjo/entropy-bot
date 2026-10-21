@@ -37,7 +37,7 @@ public final class PlanFacts {
         for (Map.Entry<String, Integer> e : inv.entrySet()) {
             String p = canon(e.getKey());
             if (e.getValue() <= 0) continue;
-            int t = p.endsWith("_pickaxe") ? tier(p.substring(0, p.length() - 8)) : 0;
+            int t = tier(p);
             for (int i = 1; i <= t; i++) flags.add("pick" + i);
         }
         return this;
@@ -70,16 +70,8 @@ public final class PlanFacts {
         }
     }
 
-    /** Pickaxe material tier: wooden/golden 1, stone/copper 2, iron 3, diamond/netherite 4. */
-    public static int tier(String material) {
-        return switch (material) {
-            case "wooden", "golden" -> 1;
-            case "stone", "copper" -> 2;
-            case "iron" -> 3;
-            case "diamond", "netherite" -> 4;
-            default -> 0;
-        };
-    }
+    /** Pickaxe tier of a held pickaxe id, from the game's tool data ({@code MiningTiers}); 0 when it is none. */
+    public static int tier(String pickaxeId) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(pickaxeId, "pickaxe"); }
 
     public PlanFacts flag(String... f) {
         for (String s : f) flags.add(s);
@@ -88,7 +80,7 @@ public final class PlanFacts {
 
     public PlanFacts bag(String item, int n) {
         bag.merge(canon(item), n, Integer::sum);
-        if (canon(item).endsWith("_pickaxe")) for (int i = 1; i <= tier(canon(item).replace("_pickaxe", "")); i++) flags.add("pick" + i);
+        for (int i = 1; i <= tier(canon(item)); i++) flags.add("pick" + i);
         return this;
     }
 
@@ -102,3 +94,4 @@ public final class PlanFacts {
         return "bag " + bag + ", stock " + stock.size() + " kinds, flags " + flags;
     }
 }
+

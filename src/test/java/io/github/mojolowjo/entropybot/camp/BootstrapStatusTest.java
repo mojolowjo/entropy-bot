@@ -7,6 +7,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.21.1: `bootstrap status` only reports (pure text from facts; the game side starts nothing on that form). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class BootstrapStatusTest {
     @Test
     void statusReportsTheCampAndStartsNothing() {

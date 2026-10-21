@@ -306,17 +306,13 @@ public final class Feasibility {
         return OK;
     }
 
-    /** The pickaxe tier an ore list needs at the least ("any" 1; iron/copper/lapis 2; gold/diamond/redstone/emerald 3). */
+    /** The pickaxe tier an ore list needs at the least, from the game's block tags (MiningTiers); a block with no data counts as 1. */
     static int oreTier(String ores) {
         int min = 4;
         for (String o : ores.split(",")) {
-            String p = o.replace("deepslate_", "").replace("_ore", "").replace("minecraft:", "");
-            int t = switch (p) {
-                case "iron", "copper", "lapis" -> 2;
-                case "gold", "diamond", "redstone", "emerald" -> 3;
-                default -> 1;
-            };
-            min = Math.min(min, t);
+            String p = o.trim();
+            int t = p.isEmpty() || p.equals("any") ? 1 : io.github.mojolowjo.entropybot.aa.brain.MiningTiers.blockTierOf(p.contains("_") || p.contains(":") ? p : p + "_ore");
+            min = Math.min(min, Math.max(1, t));
         }
         return min;
     }
@@ -343,3 +339,4 @@ public final class Feasibility {
         return OK;
     }
 }
+

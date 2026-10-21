@@ -17,6 +17,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** BRAIN_PLAN "knowledge from the game at load": the loot JSON parser, the book's plan and the hunt-for rules. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class LootDataTest {
     static JsonElement j(String s) { return JsonParser.parseString(s.replace('\'', '"')); }
 
@@ -80,9 +81,9 @@ class LootDataTest {
         assertEquals("hunt 3 cow for leather 3", b.plan("leather", 3, 3, ctx(true, Set.of(), false), false, Map.of()).command(), "none seen: the plain hunt");
         assertEquals("mine gravel 30", b.plan("flint", 3, 3, ctx(true, Set.of(), false), false, Map.of("minecraft:cow", new int[]{1, 2, 3, 4})).command());
         LootBook v = LootBook.vanilla();
-        assertFalse(v.isEmpty());
-        assertEquals("hunt 2 cow for leather 3", v.plan("leather", 2, 3, ctx(true, Set.of(), false), false).command());
-        assertEquals("hunt 3 sheep for white_wool 3", v.plan("white_wool", 3, new LootBook.Ctx(true, Set.of("minecraft:sheep"), Set.of(), x -> false, false), false).command());
+        assertTrue(v.isEmpty(), "no vanilla drop table is hard-coded: a client with no loot tables knows nothing");
+        assertTrue(v.origin.contains("no loot tables"), v.origin);
+        assertNull(v.plan("leather", 2, 3, ctx(true, Set.of(), false), false).command());
     }
 
     @Test

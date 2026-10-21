@@ -9,6 +9,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** aa-food: the curve, the drain model, the stock target and the eat rule. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FoodModelTest {
 
     @Test
@@ -26,7 +27,19 @@ class FoodModelTest {
         Map<String, Integer> bag = Map.of("cooked_beef", 2, "bread", 1, "rotten_flesh", 5, "cobblestone", 64);
         assertEquals(2 * 20.8 + 11, FoodModel.energy(bag), 1e-9, "rotten flesh is no plannable food");
         assertEquals(8, FoodModel.bestNutrition(bag));
-        assertEquals(0, FoodModel.bestNutrition(Map.of("chicken", 3)), "raw chicken poisons: not counted");
+        assertEquals(0, FoodModel.bestNutrition(Map.of("chicken", 3)), "raw chicken has no usable food data: not counted");
+        TestData.vanilla().food("moddium:glow_stew", 8, 3).install();
+        assertEquals(11, FoodModel.energyOf("moddium:glow_stew"), 1e-9, "a fake food with nutrition 8: read from its FOOD data, no list");
+        assertEquals(8, FoodModel.nutritionOf("glow_stew".isEmpty() ? "" : "moddium:glow_stew"));
+        assertEquals(8, FoodModel.bestNutrition(Map.of("moddium:glow_stew", 2, "bread", 1)));
+        var d = TestData.vanilla().food("moddium:raw_glow", 2, 1).food("moddium:cooked_glow", 7, 4);
+        d.cooks.put("moddium:raw_glow", "moddium:cooked_glow");
+        d.install();
+        assertEquals("cooked_glow", FoodModel.cooked("raw_glow"), "cooking comes from the recipes");
+        assertEquals("cooked_beef", FoodModel.cooked("beef"));
+        TestData.clear();
+        assertEquals(0, FoodModel.energyOf("bread"), "no data: unknown, not a table value");
+        assertTrue(FoodModel.cooks().isEmpty());
         assertEquals(0, FoodModel.energy(null));
     }
 

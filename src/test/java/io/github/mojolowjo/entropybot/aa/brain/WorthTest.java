@@ -8,6 +8,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** AA_ROUND2 4: the Need values move with the tech tree and the night's danger. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class WorthTest {
     static TechTree tree() {
         return new TechTree(List.of(
@@ -24,8 +25,9 @@ class WorthTest {
         double table = Worth.table(t, Set.of());
         assertTrue(table > 40 && table < 80, "two of five results need the 3x3 grid: " + table);
         assertEquals(40, Worth.table(t, Set.of("iron_pickaxe", "stone_pickaxe")), 1e-9, "nothing left that needs the grid");
-        assertEquals(80, Worth.furnace(t, Set.of()), 1e-9, "iron is the best item here");
-        assertTrue(Worth.furnace(t, Set.of("iron_pickaxe", "bucket")) < 80, "iron's uses had: the furnace is worth less");
+        double f = Worth.furnace(t, Set.of());
+        assertTrue(f > 40 && f <= 80, "the best of what the smelting recipes make, by the tree: " + f);
+        assertTrue(Worth.furnace(t, Set.of("iron_pickaxe", "bucket", "iron_ingot")) <= f, "its uses had: the furnace is worth no more");
         assertEquals(80, Worth.table(null, Set.of()), 1e-9, "no tree yet: the full share");
         assertEquals(Worth.table(t, Set.of()) / 2, Worth.spareTable(t, Set.of()), 1e-9);
     }

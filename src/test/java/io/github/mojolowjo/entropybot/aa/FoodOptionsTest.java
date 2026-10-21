@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** aa-food: the FOOD rung's ways, the park reason, the desire's score. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FoodOptionsTest {
     static final int[] ME = {0, 64, 0};
 

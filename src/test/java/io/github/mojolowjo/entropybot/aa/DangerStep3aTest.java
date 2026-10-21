@@ -15,6 +15,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** AA_STEP3 A: the loss terms by situation (hp curve, air), the wait where it stands, pillar from the bag and out of water, the shore. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class DangerStep3aTest {
     @AfterEach
     void defaults() { Tuning.reset(); }
@@ -73,7 +74,7 @@ class DangerStep3aTest {
         assertEquals(16 - AaEscape.PLANK_RESERVE, AaEscape.pillarBlocks(Map.of("oak_planks", 16, "log", 35)), "a table and sticks kept back");
         assertEquals(0, AaEscape.pillarBlocks(Map.of("oak_planks", 4)));
         assertEquals(AaDesires.shellBlocks(Map.of("oak_planks", 16, "dirt", 3)), AaEscape.pillarBlocks(Map.of("oak_planks", 16, "dirt", 3)), "one list");
-        assertEquals(14, AaEscape.pillarBlocks(Map.of("minecraft:cobblestone", 4, "planks", 16)));
+        assertEquals(14, AaEscape.pillarBlocks(Map.of("minecraft:cobblestone", 4, "oak_planks", 16)));
         // the facts said 0 (an older count), the bag 16: the pillar is possible
         ThreatFacts.Ways land = new ThreatFacts.Ways(0, -1, false, 0, 3, true, false, false);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(20), List.of(), land), night(16, false, 300, 200));

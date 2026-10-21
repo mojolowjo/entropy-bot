@@ -8,6 +8,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** BRAIN_PLAN B2: curves, P(success), measured costs, the recipe tech tree. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class BrainB2Test {
     @Test
     void foodCurveIsFlatThenSteep() {

@@ -53,6 +53,27 @@ public final class MiningTiers {
 
     public static Source source() { return source; }
 
+    /**
+     * The one tier switch (rm-names): the pickaxe tier of a held digging tool of {@code kind} (pickaxe, axe, shovel, hoe), on
+     * the bot's scale (1 wooden .. 4 diamond; a modded tier lands where its needs_* tags put it), from the item's own TOOL
+     * component and tags ({@link ItemWorth#facts}); 0 when the item is no such tool; no data: 0, said once.
+     */
+    public static int toolTier(String itemId, String kind) {
+        if (itemId == null || kind == null) return 0;
+        if (!ItemWorth.hasData()) { ItemWorth.warnOnce("tier", "no item data loaded: no tool has a tier"); return 0; }
+        var f = ItemWorth.facts(itemId);
+        if (kind.equalsIgnoreCase("sword")) return f.role() == ItemWorth.Role.WEAPON ? (int) Math.max(1, Math.round(f.attack() - 3)) : 0;      // a weapon's tier is its hit: 4 -> 1 ... 8 -> 5
+        if (f.digSpeed() <= 0 || !f.role().name().equalsIgnoreCase(kind)) return 0;
+        return f.digLevel() + 1;
+    }
+
+    /** The pickaxe tier the block (or the block an item places) needs, from the game's tags; {@link #UNKNOWN} (said once) without data. */
+    public static int blockTierOf(String id) {
+        Source s = source;
+        if (s == null) { ItemWorth.warnOnce("tier", "no mining-tier data loaded: no block has a tier"); return UNKNOWN; }
+        return s.blockTier(id.indexOf(':') < 0 ? "minecraft:" + id : id);
+    }
+
     /** The result: how many of the top ideas the tier holds back, which, and the line for {@code aa why}. */
     public record Result(int blocked, int of, double share, List<String> names, String terms) {}
 
@@ -144,3 +165,5 @@ public final class MiningTiers {
     private static String lastKey;
     private static Result lastResult;
 }
+
+

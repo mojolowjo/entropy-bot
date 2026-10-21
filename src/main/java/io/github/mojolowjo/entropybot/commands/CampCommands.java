@@ -656,7 +656,7 @@ final class CampCommands {
 
     Set<String> junkList() {
         JsonObject b = brain();
-        if (!b.has("junk") || !b.get("junk").isJsonArray()) return new LinkedHashSet<>(JunkRules.DEFAULT);
+        if (!b.has("junk") || !b.get("junk").isJsonArray()) return new LinkedHashSet<>();
         Set<String> out = new LinkedHashSet<>();
         for (JsonElement e : b.getAsJsonArray("junk")) out.add(e.getAsString());
         return out;
@@ -692,7 +692,7 @@ final class CampCommands {
                 return "ok: " + JunkRules.listText(junkList(), junkMode());
             }
             case "default" -> {
-                saveJunk(new LinkedHashSet<>(JunkRules.DEFAULT));
+                saveJunk(new LinkedHashSet<>());
                 return "ok: " + JunkRules.listText(junkList(), junkMode());
             }
             case "mode" -> {
@@ -926,3 +926,4 @@ final class CampCommands {
         return out;
     }
 }
+

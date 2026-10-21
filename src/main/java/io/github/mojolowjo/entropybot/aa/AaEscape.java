@@ -30,7 +30,6 @@ public final class AaEscape {
     public static final int MAX_PER_TASK = 2;
 
     /** Baritone's default acceptableThrowawayItems that a bag has (dirt, cobblestone, netherrack, stone). */
-    public static final List<String> THROWAWAY = List.of("cobblestone", "dirt", "netherrack", "stone");
 
     private static final Pattern STEP = Pattern.compile("^stopped at step (\\d+) \\(");
     private static final Pattern NO_PATH = Pattern.compile("no path to (-?\\d+) (-?\\d+) (-?\\d+)");
@@ -98,13 +97,13 @@ public final class AaEscape {
      */
     public static boolean pillarBlock(String id) {
         String k = id == null ? "" : id.replaceFirst("^minecraft:", "");
-        return THROWAWAY.contains(k) || k.endsWith("_planks") || k.equals("planks");
+        return io.github.mojolowjo.entropybot.aa.brain.Junk.placeable(k);
     }
 
     /** Review 0.39.a4 4: planks kept back from placing (a crafting table 4 + sticks 2), so a pillar or a box never eats the next craft. */
     public static final int PLANK_RESERVE = 6;
 
-    static boolean plank(String k) { return k.endsWith("_planks") || k.equals("planks"); }
+    static boolean plank(String k) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plank(k); }
 
     /** One count for every placing danger way (pillar, pillar out, box): {@link #pillarBlock} blocks, planks over {@link #PLANK_RESERVE}. */
     public static int pillarBlocks(Map<String, Integer> bag) {
@@ -125,7 +124,7 @@ public final class AaEscape {
 
     public static int throwaway(Map<String, Integer> bag) {
         int n = 0;
-        for (String k : THROWAWAY) n += bag.getOrDefault(k, 0);
+        for (var e : bag.entrySet()) if (io.github.mojolowjo.entropybot.aa.brain.Junk.is(e.getKey())) n += Math.max(0, e.getValue());
         return n;
     }
 
@@ -150,3 +149,4 @@ public final class AaEscape {
         return WayUp.choose(f, m, now);
     }
 }
+

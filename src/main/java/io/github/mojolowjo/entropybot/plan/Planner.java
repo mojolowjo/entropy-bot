@@ -278,7 +278,7 @@ public final class Planner {
 
     /** A pickaxe made or fetched by step s makes the pick facts of its tier and below true. */
     static void toolFacts(Node k, String item, int s) {
-        if (item.endsWith("_pickaxe")) for (int t = 1; t <= PlanFacts.tier(item.replace("_pickaxe", "")); t++) addFlag(k, "pick" + t, s);
+        for (int t = 1; t <= PlanFacts.tier(item); t++) addFlag(k, "pick" + t, s);
     }
 
     static void give(Node k, String item, int step, int n) {

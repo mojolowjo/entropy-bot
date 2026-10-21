@@ -82,20 +82,7 @@ public final class BootstrapPlan {
     }
 
     /** Tool tier: wooden/golden 1, stone 2, copper 2, iron 3, diamond 4, netherite 5; 0 = not that kind of tool. */
-    public static int tier(String id, String kind) {
-        String p = id.substring(id.indexOf(':') + 1).toLowerCase(Locale.ROOT);
-        if (!p.endsWith("_" + kind)) return 0;
-        if (kind.equals("axe") && p.endsWith("_pickaxe")) return 0;
-        String m = p.substring(0, p.length() - kind.length() - 1);
-        return switch (m) {
-            case "wooden", "golden" -> 1;
-            case "stone", "copper" -> 2;
-            case "iron" -> 3;
-            case "diamond" -> 4;
-            case "netherite" -> 5;
-            default -> 2;           // a modded material: count it as good enough
-        };
-    }
+    public static int tier(String id, String kind) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(id, kind); }
 
     /** The best tier of that tool kind in the bag (0: none). */
     public static int best(Map<String, Integer> inv, String kind) {
@@ -247,3 +234,4 @@ public final class BootstrapPlan {
                 + ", ceiling y " + stepTop(feet[1], 1) + ".." + stepTop(feet[1], QUARRY_LEN) + " (" + HEADROOM + " headroom, 1-high steps)";
     }
 }
+

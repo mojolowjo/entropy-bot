@@ -94,8 +94,11 @@ public final class FoodOptions {
     public static final java.util.Set<String> MEAT_ANIMALS = java.util.Set.of("cow", "pig", "sheep", "chicken");
     static final Map<String, String> MEAT =Map.of("cow", "beef", "pig", "porkchop", "sheep", "mutton", "chicken", "chicken");
 
-    static final double EAT_COST = 2, BERRY_YIELD = 2.5 * FoodModel.energyOf("sweet_berries"),
-            APPLE_YIELD = FoodModel.energyOf("apple"), STEW_YIELD = FoodModel.energyOf("mushroom_stew");
+    static final double EAT_COST = 2;
+    /** Energy per round of the slow ways, read from the food data when scored (the data loads after the class does). */
+    static double berryYield() { return 2.5 * FoodModel.energyOf("sweet_berries"); }
+    static double appleYield() { return FoodModel.energyOf("apple"); }
+    static double stewYield() { return FoodModel.energyOf("mushroom_stew"); }
 
     private static final Pattern END = Pattern.compile("no path|no progress|timeout|stuck|couldn't|can't|missing|no animal|nothing|no furnace|no seeds|no water|not found|none");
 
@@ -133,7 +136,7 @@ public final class FoodOptions {
             // cook what is raw
             String raw = null;
             double gain = 0;
-            for (var e : FoodModel.COOKS.entrySet()) {
+            for (var e : FoodModel.cooks().entrySet()) {
                 int n = f.has(e.getKey());
                 double g = n * (FoodModel.energyOf(e.getValue()) - FoodModel.energyOf(e.getKey()));
                 if (n > 0 && g > gain) { raw = e.getKey(); gain = g; }
@@ -150,11 +153,11 @@ public final class FoodOptions {
             // berries, stew, apples: little per round, charged per round needed
             if (f.berry() != null)
                 RungOptions.add(rows, dropped, m, now, Options.scored("berries", "forage", "dig " + box(f.berry(), f.berry()),
-                        (f.berryDist() + Options.MINUTE * 0.3) * rounds(short_, BERRY_YIELD), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", false, m));
+                        (f.berryDist() + Options.MINUTE * 0.3) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", false, m));
             stew(f, m, now, rows, dropped, short_);
             if (f.oak() != null)
                 RungOptions.add(rows, dropped, m, now, Options.scored("apples", "apples", "cut 16 " + f.oakType(),
-                        Options.MINUTE * 4 * rounds(short_, APPLE_YIELD), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", false, m));
+                        Options.MINUTE * 4 * rounds(short_, appleYield()), "apples fall from decaying " + f.oakType() + " leaves, about 1 per 16 logs", "apples", false, m));
 
             wheat(f, m, now, rows, dropped, urgent);
 
@@ -203,7 +206,7 @@ public final class FoodOptions {
             if (f.animals() != null && f.animals().getOrDefault(h.type(), 0) > 0) continue;     // in reach: the plain hunt
             if (h.conf() < HERD_MIN_CONF) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": seen too long ago (confidence " + String.format(Locale.ROOT, "%.2f", h.conf()) + ")"); continue; }
             if (h.dist() > HERD_MAX) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": " + Math.round(h.dist()) + " away"); continue; }
-            String meat = MEAT.get(h.type()), cooked = FoodModel.COOKS.get(meat);
+            String meat = MEAT.get(h.type()), cooked = FoodModel.cooked(meat);
             double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
             int n = Math.max(2, Math.min(Math.min(8, Math.max(2, h.count())), FoodModel.count(short_, each)));
             double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
@@ -254,7 +257,7 @@ public final class FoodOptions {
 
     private static void huntRow(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_,
                                 String animal, int most) {
-        String meat = MEAT.get(animal), cooked = FoodModel.COOKS.get(meat);
+        String meat = MEAT.get(animal), cooked = FoodModel.cooked(meat);
         double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
         String chain = "hunt " + n + " " + animal + (f.furnace() ? " then cook " + meat + " " + n : "");
@@ -280,7 +283,7 @@ public final class FoodOptions {
         if (f.has("bowl") == 0) steps.add("craft bowl 1");
         steps.add("craft mushroom_stew 1");
         RungOptions.add(rows, dropped, m, now, Options.scored("stew", "forage", String.join(" then ", steps),
-                (walk + Options.MINUTE) * rounds(short_, STEW_YIELD), "a red and a brown mushroom", "stew", false, m));
+                (walk + Options.MINUTE) * rounds(short_, stewYield()), "a red and a brown mushroom", "stew", false, m));
     }
 
     static void wheat(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, boolean urgent) {
@@ -335,3 +338,4 @@ public final class FoodOptions {
         return c.best() != null ? null : "no food source: " + String.join("; ", c.dropped());
     }
 }
+

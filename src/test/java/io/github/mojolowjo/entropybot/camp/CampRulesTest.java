@@ -12,6 +12,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** C4 + C5 (0.20.1): the bootstrap planner, day/night triggers, the light grid, stock math, junk rules, tool care. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class CampRulesTest {
     static final int[] FEET = {10, 64, 20}, DIR = {1, 0};
     static final int[] T = {8, 64, 20}, F = {8, 64, 21}, C = {8, 64, 19};
@@ -162,12 +163,12 @@ class CampRulesTest {
 
     @Test
     void junkRules() {
-        Set<String> junk = new LinkedHashSet<>(JunkRules.DEFAULT);
+        Set<String> junk = new LinkedHashSet<>(List.of("minecraft:dirt", "minecraft:cobblestone", "minecraft:gravel"));
         assertFalse(junk.contains("minecraft:string"), "string is kept");
         List<String> refused = new ArrayList<>();
-        Set<String> j2 = JunkRules.add(junk, List.of("sand", "diamond_pickaxe", "raw_iron", "torch"), refused);
+        Set<String> j2 = JunkRules.add(junk, List.of("sand", "diamond_pickaxe", "iron_ore", "torch"), refused);
         assertTrue(j2.contains("minecraft:sand"));
-        assertEquals(List.of("diamond_pickaxe", "raw_iron", "torch"), refused);
+        assertEquals(List.of("diamond_pickaxe", "iron_ore", "torch"), refused);
         assertFalse(JunkRules.remove(j2, List.of("dirt")).contains("minecraft:dirt"));
         // depositables says how many stay (cobblestone keeps 64)
         Map<String, Integer> dep = new LinkedHashMap<>();
@@ -177,8 +178,8 @@ class CampRulesTest {
         dep.put("minecraft:gravel", 0);
         Map<String, Integer> inv = Map.of("minecraft:dirt", 128, "minecraft:cobblestone", 100, "minecraft:sand", 30, "minecraft:gravel", 20);
         Map<String, Integer> plan = JunkRules.plan(junk, dep, inv, "mining gravel 20");
-        assertEquals(Map.of("minecraft:dirt", 128, "minecraft:cobblestone", 36), plan, "gravel is what the job collects; sand isn't junk");
-        assertEquals(164, JunkRules.total(plan));
+        assertEquals(Map.of("minecraft:dirt", 128, "minecraft:cobblestone", 36, "minecraft:sand", 30), plan, "gravel is what the job collects; sand is junk by the data (stone-like), listed or not");
+        assertEquals(194, JunkRules.total(plan));
         assertTrue(JunkRules.listText(junk, "drop").contains("dirt"));
     }
 

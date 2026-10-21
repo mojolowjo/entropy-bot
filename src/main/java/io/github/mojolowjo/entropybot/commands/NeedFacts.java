@@ -47,7 +47,7 @@ public final class NeedFacts {
         bb.fact(AaDesires.STATION_FACTS, memo(() -> station(AaDesires.stationKind(bb.in), bb.in, bb.in.bag, wood.get())));
         bb.fact(BedOptions.FACTS, memo(() -> bed(rt.bedFacts(), bb.in)));
         bb.fact(BaseOptions.FACTS, memo(() -> base(bb.in, bb.in.bag, rt.areaCell(bb.in.basePlace), burrowCell(bb))));
-        bb.fact(BagOptions.FACTS, memo(() -> bag(bb.in, bb.in.bag, JunkRules.DEFAULT, AaDesires.bagLeave())));      // the need's own band: slots it wants free
+        bb.fact(BagOptions.FACTS, memo(() -> bag(bb.in, bb.in.bag, bb.in.bag == null ? java.util.List.<String>of() : bb.in.bag.keySet().stream().filter(io.github.mojolowjo.entropybot.aa.brain.Junk::is).toList(), AaDesires.bagLeave())));      // the need's own band: slots it wants free
     }
 
     /** One read per game tick. */
