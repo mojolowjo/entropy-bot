@@ -1022,6 +1022,7 @@ public final class AaRuntime implements JobPort {
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null) {
                 appendRun();                // the world unloaded: the run ends here
+                slow.reset();               // AA_STEP3 B: slow mode, the drawn route and Baritone's render settings do not outlive the world
                 return;
             }
             long now = System.currentTimeMillis();

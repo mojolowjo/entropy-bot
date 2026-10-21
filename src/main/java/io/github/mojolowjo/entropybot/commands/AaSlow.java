@@ -66,6 +66,8 @@ final class AaSlow {
     private int rows, unpredicted;
     private volatile long writeErrors, lastWriteErrorAt;
     private Boolean fileHasContent;
+    private long fileBytes = -1;
+    static final long MAX_BYTES = 5_000_000;
     private Boolean savedRenderPath, savedRenderGoal;
 
     AaSlow(Commands c, AaRuntime rt) {
@@ -116,11 +118,11 @@ final class AaSlow {
     // ---- the gate (Chains.StepGate) ----
 
     boolean hold(String chain, int idx, String step) {
-        if (!mode.on() || !AaRuntime.CHAIN.equals(chain) || !rt.on() || rt.slowSkip()) return false;
+        if (!mode.on() || !AaRuntime.CHAIN.equals(chain) || !rt.on() || rt.slowSkip() || hazard()) return false;
         boolean each = mode.mode() == SlowMode.Mode.STEP;
         if (!each && idx != 0) return false;
         long now = System.currentTimeMillis();
-        String key = "task " + rt.taskSeq() + (each ? "#" + (idx + 1) : "");
+        String key = "task " + rt.taskSeq() + "." + switches + (each ? "#" + (idx + 1) : "");
         boolean held;
         try {
             held = mode.hold(key, now, pauseS(), () -> plan(key, each ? "step" : "objective", idx));
@@ -135,6 +137,16 @@ final class AaSlow {
         SlowRoute.waiting = held;
         return held;
     }
+
+    /** Never hold a step while the bot stands in a hazard: water, lava, fire, short air, low health. */
+    private static boolean hazard() {
+        LocalPlayer p = Minecraft.getInstance().player;
+        if (p == null) return false;
+        return p.isInWater() || p.isInLava() || p.isOnFire() || p.isUnderWater() || p.getAirSupply() < p.getMaxAirSupply()
+                || p.getHealth() < 8 || p.isSwimming() || p.hurtTime > 0;
+    }
+
+    private int switches;
 
     private SlowMode.Plan plan(String key, String kind, int idx) {
         Minecraft mc = Minecraft.getInstance();
@@ -184,6 +196,7 @@ final class AaSlow {
         List<String> steps = c.chains.stepsNow();
         Options.Option opt = rt.runningOption();
         List<StepTimes.Est> est = StepTimes.estimate(steps, me, opt == null ? Double.NaN : opt.seconds());
+        switches++;                                       // a replan switch is a new way: the slow-mode gate asks again
         preds.clear();
         for (StepTimes.Est e : est) preds.add(new Pred(StepTimes.clean(e.step()), e.seconds(), e.known()));
         objective = rt.objective();
@@ -245,9 +258,15 @@ final class AaSlow {
         Path f = file();
         if (f == null) return;
         try {
-            if (fileHasContent == null) fileHasContent = Files.exists(f) && Files.size(f) > 0;
+            if (fileBytes < 0) fileBytes = Files.exists(f) ? Files.size(f) : 0;
+            if (fileBytes > MAX_BYTES) {                  // keep the ledger bounded: the old one stays as predictions.old.csv
+                Files.move(f, f.resolveSibling("predictions.old.csv"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                fileBytes = 0;
+                LOG.info("[entropybot] aa: predictions.csv rotated to predictions.old.csv");
+            }
+            fileHasContent = fileBytes > 0;
             String text = Predictions.append(fileHasContent, r);
-            fileHasContent = true;
+            fileBytes += text.length();
             AaRuntime.background(() -> {
                 try {
                     Files.createDirectories(f.getParent());
@@ -317,8 +336,8 @@ final class AaSlow {
         if (savedRenderPath == null) return;
         try {
             var s = baritone.api.BaritoneAPI.getSettings();
-            s.renderPath.value = savedRenderPath;
-            s.renderGoal.value = savedRenderGoal;
+            if (s.renderPath.value) s.renderPath.value = savedRenderPath;      // only while still the value slow mode set
+            if (s.renderGoal.value) s.renderGoal.value = savedRenderGoal;
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] aa: slow: Baritone's render settings could not be restored: {}", e.toString());
         }

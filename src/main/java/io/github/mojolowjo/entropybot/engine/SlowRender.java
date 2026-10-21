@@ -29,6 +29,8 @@ public final class SlowRender {
     private SlowRender() {}
 
     private static int errors;
+    // Cosmetic, not done: an AABB per point per frame, and RenderType.lines() keeps its own depth state at endBatch, so the
+    // lines may not show through terrain; a see-through line needs a custom RenderType (left out on purpose).
 
     public static void onStage(RenderLevelStageEvent e) {
         if (e.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
