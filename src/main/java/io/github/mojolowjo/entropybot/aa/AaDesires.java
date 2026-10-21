@@ -68,6 +68,8 @@ public final class AaDesires {
      * aa-costs (was: no pickaxe 74, wooden 65, capped under 75): the tool's real value, what it blocks next
      * (Costs.tools); the anti-flicker is the adapter's smoothed pickaxe tier (Costs.ToolSmoother), not a cap.
      */
+    private static volatile String lastToolsWhy;
+
     static double tools(Blackboard bb) {
         double blocked;
         String why;
@@ -78,6 +80,10 @@ public final class AaDesires {
                     (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("blockedTop"));
             blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(r, bb.in.pickTier, ownerOreGoal(bb));
             why = r.terms();
+            if (!why.equals(lastToolsWhy)) {            // regression o1: the share's terms in the log when they change
+                lastToolsWhy = why;
+                org.slf4j.LoggerFactory.getLogger(AaDesires.class).info("[entropybot] aa: tools blocked share {}: {}", Math.round(blocked * 100), why);
+            }
         } else {                                     // no recipe graph or mining tags read yet: the old table, said so
             blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(bb.in.pickTier, bb.in.furnaceKnown || bb.in.furnaceInBag,
                     bb.in.coal, bb.in.torches, ownerOreGoal(bb));

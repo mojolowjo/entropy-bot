@@ -109,6 +109,20 @@ class MiningTiersTest {
         assertFalse(MiningTiers.blocked(tree, src, STICK, 5, 50).names().contains("tier:far_tool"));
     }
 
+    /** regression o1: the top ideas of a fresh start are wood things; the waves still reach the pickaxe-bound ones. */
+    @Test void aFreshStartWhoseTopIdeasAreWoodStillCountsThePickaxeBound() {
+        TechTree wood = new TechTree(List.of(
+                r("minecraft:oak_planks", "minecraft:oak_log"), r("minecraft:stick", "minecraft:oak_planks"),
+                r("minecraft:crafting_table", "minecraft:oak_planks"), r("minecraft:wooden_pickaxe", "minecraft:oak_planks", "minecraft:stick"),
+                r("minecraft:stone_pickaxe", "minecraft:cobblestone", "minecraft:stick"), r("minecraft:furnace", "minecraft:cobblestone"),
+                r("minecraft:iron_ingot", "minecraft:iron_ore"), r("minecraft:torch", "minecraft:coal", "minecraft:stick")));
+        var fresh = MiningTiers.blocked(wood, src, Set.of(), 0, 1);
+        assertTrue(fresh.of() > 0 && fresh.share() > 0.9, fresh.terms());
+        assertTrue(Costs.tools(0, 0, Costs.blocked(fresh, 0, false)) > 60);
+        var stone = MiningTiers.blocked(wood, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe"), 2, 1);
+        assertTrue(stone.share() < fresh.share(), stone.terms());
+    }
+
     @Test void freshVersusStoneToolsAgainstTheOldTable() {
         double fresh = Costs.blocked(MiningTiers.blocked(tree, src, STICK, 0, 8), 0, false);
         double stone = Costs.blocked(MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe", "minecraft:cobblestone"), 2, 8), 2, false);

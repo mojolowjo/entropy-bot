@@ -107,26 +107,42 @@ public final class MiningTiers {
     public static Result blocked(TechTree t, Source s, Set<String> have, int pickTier, int top) {
         pickTier = Math.max(0, pickTier);                  // no pickaxe = 0, never a negative
         Map<String, Integer> need = cachedNeeds(t, s);
-        List<TechTree.Idea> ideas = t.top(have, Math.max(1, top));
-        // regression o1: the counted set is every reachable item that needs ANY pickaxe among the top ideas and their mined
-        // inputs (the cobble for a furnace, the ore of an ingot); the share is the part of it above the current tier. A
+        String ck = have.hashCode() + "/" + have.size() + "/" + pickTier + "/" + top;
+        synchronized (MiningTiers.class) {
+            if (t == lastTree && s == lastSource && ck.equals(lastKey)) return lastResult;
+        }
+        // regression o1: the counted set is every reachable item that needs ANY pickaxe among the next ideas and their
+        // mined inputs (the cobble for a furnace, the ore of an ingot), over WAVES waves: each wave's items the current
+        // tier can get count as had for the next (the tree opening). The share is the part above the current tier: a
         // fresh start is near 1 (everything pickaxe-bound waits on the first pickaxe), falling as tiers open.
         java.util.LinkedHashSet<String> pool = new java.util.LinkedHashSet<>();
         Set<String> made = new HashSet<>();
         for (TechTree.Recipe r : t.recipes()) made.add(r.result());
         Set<String> h = new HashSet<>();
         for (String x : have) h.add(TechTree.id(x));
-        for (TechTree.Idea i : ideas) {
-            pool.add(i.item());
-            for (TechTree.Recipe r : t.recipes()) {
-                if (!r.result().equals(i.item())) continue;
-                for (Set<String> slot : r.slots()) {
-                    String bestAlt = null;
-                    int best = UNREACHABLE;
-                    for (String alt : slot) { int n = need.getOrDefault(alt, 0); if (bestAlt == null || n < best) { best = n; bestAlt = alt; } }
-                    if (bestAlt != null && !made.contains(bestAlt) && !h.contains(bestAlt)) pool.add(bestAlt);   // a mined input
+        List<TechTree.Idea> ideas = new ArrayList<>();
+        for (int wave = 0; wave < WAVES; wave++) {
+            List<TechTree.Idea> w = t.top(new HashSet<>(h), Math.max(1, top));
+            if (w.isEmpty()) break;
+            if (wave == 0) ideas.addAll(w);
+            Set<String> got = new HashSet<>();
+            for (TechTree.Idea i : w) {
+                pool.add(i.item());
+                if (need.getOrDefault(i.item(), 0) <= pickTier) got.add(i.item());
+                for (TechTree.Recipe r : t.recipes()) {
+                    if (!r.result().equals(i.item())) continue;
+                    for (Set<String> slot : r.slots()) {
+                        String bestAlt = null;
+                        int best = UNREACHABLE;
+                        for (String alt : slot) { int n = need.getOrDefault(alt, 0); if (bestAlt == null || n < best) { best = n; bestAlt = alt; } }
+                        if (bestAlt != null && !made.contains(bestAlt) && !h.contains(bestAlt)) {   // a mined input
+                            pool.add(bestAlt);
+                            if (best <= pickTier) got.add(bestAlt);
+                        }
+                    }
                 }
             }
+            if (!h.addAll(got)) break;
         }
         List<String> names = new ArrayList<>();
         int of = 0;
@@ -138,7 +154,16 @@ public final class MiningTiers {
         }
         double share = of == 0 ? 0 : (double) names.size() / of;
         String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound next items (top %d ideas + mined inputs) need better than tier %d%s",
-                names.size(), of, ideas.size(), pickTier, names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
-        return new Result(names.size(), of, share, names, terms);
+                names.size(), of, ideas.size(), pickTier, names.size() > 8 ? " (" + String.join(", ", names.subList(0, 8)) + ", ...)" : names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
+        Result res = new Result(names.size(), of, share, names, terms);
+        synchronized (MiningTiers.class) { lastTree = t; lastSource = s; lastKey = ck; lastResult = res; }
+        return res;
     }
+
+    /** How many waves of next ideas the blocked share looks ahead (the tree opening by what the tier can get). */
+    public static final int WAVES = 4;
+    private static TechTree lastTree;
+    private static Source lastSource;
+    private static String lastKey;
+    private static Result lastResult;
 }
