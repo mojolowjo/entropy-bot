@@ -58,17 +58,21 @@ class JobHandsTest {
     }
 
     @Test
-    void aDifferentRequestReplacesTheRunningOne() {
+    void review3_aSecondCallerWaitsWhileBusyAndNeverCancels() {
         Fake f = new Fake();
         JobHands h = new JobHands(f);
         h.dig(new int[]{0, 0, 0}, 100, "a");
-        h.click(new int[]{5, 6, 7}, "up", "minecraft:wheat_seeds", 100, "b", null);
-        assertEquals(1, f.cancels);
-        assertEquals(2, f.starts);
-        assertTrue(h.busy(5, 6, 7));
+        JobHands.Result r = h.click(new int[]{5, 6, 7}, "up", "minecraft:wheat_seeds", 100, "b", null);
+        assertTrue(r.running());
+        assertTrue(r.why().startsWith("waiting: my hands are busy with dig 0 0 0"), r.why());
+        assertEquals(0, f.cancels);
+        assertEquals(1, f.starts);
+        f.status = Car.Status.done("dug");
+        h.tick();
+        assertTrue(h.click(new int[]{5, 6, 7}, "up", "minecraft:wheat_seeds", 100, "b", null).running());
+        assertEquals(2, f.starts, "a finished request makes room for the next");
         assertTrue(h.busy(5, 7, 7), "the cell beside the clicked face is the request's too");
     }
-
     @Test
     void aFailureNamesTheStageAndTheGuardVerdictOnce() {
         Fake f = new Fake();
@@ -129,6 +133,48 @@ class JobHandsTest {
         assertTrue(r.why().contains("boom"));
         h.look(1, 2, 3);
         assertArrayEquals(new double[]{1, 2, 3}, f.looked);
+    }
+
+    @Test
+    void review2_aDangerMovePreemptsWithAReasonAndNoDoneIsRead() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        int[] ran = {0};
+        h.click(new int[]{2, 2, 2}, "up", "minecraft:crafting_table", 100, "t", () -> ran[0]++);
+        h.preempt("danger move burrow");
+        assertEquals(1, f.cancels);
+        f.status = Car.Status.done("the burrow's own DONE");      // the other run's end must not count
+        h.tick();
+        JobHands.Result r = h.click(new int[]{2, 2, 2}, "up", "minecraft:crafting_table", 100, "t", () -> ran[0]++);
+        assertTrue(r.failed());
+        assertTrue(r.why().contains("preempted by danger move burrow"), r.why());
+        assertEquals(0, ran[0], "no station note for a block never placed");
+        assertEquals("gave up at click 2 2 2 up minecraft:crafting_table: preempted by danger move burrow", h.lastFailure(2, 3, 2));
+    }
+
+    @Test
+    void review5_aResultIsReadOnceThenTheSameCellStartsAFreshRun() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.dig(new int[]{9, 9, 9}, 100, "t");
+        f.status = Car.Status.done("dug");
+        h.tick();
+        assertTrue(h.dig(new int[]{9, 9, 9}, 100, "t").done());
+        // gravel fell back in: the retry clicks again (no cached DONE)
+        assertTrue(h.dig(new int[]{9, 9, 9}, 100, "t").running());
+        assertEquals(2, f.starts);
+    }
+
+    @Test
+    void review4_stopEndsTheRunAndLeavesNothingBusy() {
+        Fake f = new Fake();
+        JobHands h = new JobHands(f);
+        h.dig(new int[]{1, 1, 1}, 100, "t");
+        h.stop("left the world");
+        assertEquals(1, f.cancels);
+        assertFalse(h.busy(1, 1, 1));
+        h.tick();
+        assertEquals(1, f.starts, "nothing resumes");
     }
 
     @Test

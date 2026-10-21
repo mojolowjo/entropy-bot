@@ -105,6 +105,7 @@ public final class BaritoneCar implements Car {
 
     @Override public void burrow(List<int[]> dig, int[] stand, List<int[]> seal, int timeoutTicks) {
         fresh();
+        JobHands.get().preempt("danger move burrow");     // step 3 review: a job's hands end with a reason, never silently
         engine.hold();          // the job stays paused; BurrowProcess (-0.25) outranks the hold (-0.5)
         try {
             var s = BaritoneAPI.getSettings();

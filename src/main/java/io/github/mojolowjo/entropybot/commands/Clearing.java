@@ -1530,7 +1530,10 @@ public final class Clearing {
                     return "wait";
                 }
                 String r;
-                try {
+                // step 3 review 6: a cover in the cell (snow layer, grass) goes first, before any click (the click is Baritone's and slow)
+                boolean coverFirst = !bs.clearing && !w.air(c.x(), c.y(), c.z()) && io.github.mojolowjo.entropybot.clear.RimPlan.replaceable(w, c.x(), c.y(), c.z());
+                if (coverFirst) r = "error: a cover in the cell";
+                else try {
                     String pid = bs.placeId != null ? bs.placeId : bs.id;
                     // the side stance clicks its anchor's face (seen from the feet cell); the top stance lets placeAt pick
                     PlaceRules.Side side = bs.pick.side();
@@ -1740,6 +1743,8 @@ public final class Clearing {
         @Override public boolean haveTorches() { return Gui.inventory(p).getOrDefault("minecraft:torch", 0) > 0; }
 
         @Override public String placeTorch(Pos t) { return placeAt(p, "minecraft:torch", t.x(), t.y(), t.z(), s.leases); }
+
+        @Override public boolean handsBusy() { return !io.github.mojolowjo.entropybot.aa.moves.JobHands.get().idle(); }
 
         @Override public void walkBlock(int x, int y, int z) {
             IBaritone b = Jobs.baritone();

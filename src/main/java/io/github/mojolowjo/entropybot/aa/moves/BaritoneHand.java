@@ -34,6 +34,7 @@ final class BaritoneHand implements JobHands.Hand {
 
     private static boolean warned;
     private IBurrowProcess proc;
+    private int mine = -1;
     private Car.Status forced;
 
     private static IBaritone b() {
@@ -60,6 +61,7 @@ final class BaritoneHand implements JobHands.Hand {
             }
             proc = b().getBurrowProcess();
             proc.startJob(d, k, timeoutTicks);
+            mine = proc.run();
         } catch (LinkageError e) {
             forced = Car.Status.failed("this Baritone has no job hands (an older jar? install the entropy fork from baritone-backbone3): " + e);
             if (!warned) {
@@ -75,6 +77,9 @@ final class BaritoneHand implements JobHands.Hand {
         if (forced != null) return forced;
         if (proc == null) return Car.Status.failed("nothing started");
         try {
+            // review 2: another run (a danger move's burrow) took the process: its status is not mine
+            int now = proc.run();
+            if (now != mine) return Car.Status.failed("another Baritone burrow run took the process (run " + now + ", mine " + mine + ")");
             return switch (proc.status()) {
                 case DONE -> Car.Status.done(proc.why());
                 case FAILED -> Car.Status.failed(proc.why());
@@ -88,7 +93,7 @@ final class BaritoneHand implements JobHands.Hand {
 
     @Override public void cancel(String why) {
         try {
-            if (proc != null && proc.status() == IBurrowProcess.Status.RUNNING) proc.cancel(why);
+            if (proc != null && proc.run() == mine && proc.status() == IBurrowProcess.Status.RUNNING) proc.cancel(why);
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] job hands: cancel failed: {}", e.toString());
         }

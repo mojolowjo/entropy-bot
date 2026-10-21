@@ -148,6 +148,16 @@ class RunDriver extends ClearDriver implements ClearRun.Body {
 
     @Override public boolean haveTorches() { return torches > 0; }
 
+    /** step 3 review 1: ticks Baritone is still placing (the run must wait) */
+    int busyTicks, busySeen;
+
+    @Override public boolean handsBusy() {
+        if (busyTicks <= 0) return false;
+        busyTicks--;
+        busySeen++;
+        return true;
+    }
+
     @Override public String placeTorch(Pos t) {
         w.set(t, "torch");
         torches--;

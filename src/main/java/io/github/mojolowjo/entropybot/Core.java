@@ -215,6 +215,7 @@ public final class Core {
                 if (inWorld) io.github.mojolowjo.entropybot.routing.RouteRuntime.INSTANCE.leftWorld();   // routing R2: stop + save
                 if (inWorld) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.savePenalties();
                 if (inWorld) io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.save();             // 0.32.2
+                if (inWorld) io.github.mojolowjo.entropybot.aa.moves.JobHands.leftWorld();      // backbone step 3 review 4
                 if (inWorld) io.github.mojolowjo.entropybot.commands.PaperPlan.INSTANCE.reset("left the world");     // review 3         // 0.23.3: edge penalties saved
                 inWorld = false;
                 return;

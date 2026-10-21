@@ -71,6 +71,16 @@ class ClearRunLoopTest {
     }
 
     @Test
+    void step3Review1_theRunWaitsWhileBaritoneStillPlaces() {
+        RunDriver d = new RunDriver(new FakeWorld(), Bot.at(0.5, 53, 0.5));
+        d.items[0] = new ClearDriver.Item("minecraft:iron_pickaxe", 6, 1000);
+        d.busyTicks = 5;
+        String msg = d.clear(new ClearJob.Options().box(ClearBox.of(-1, 52, -1, 1, 52, 1)).label("digging the floor"));
+        assertEquals("ok: done digging the floor - broke 9 blocks", msg);
+        assertEquals(5, d.busySeen, "five ticks of waiting before the run went on");
+    }
+
+    @Test
     void cheapestPickaxeFirst() {
         RunDriver d = new RunDriver(new FakeWorld(), Bot.at(0.5, 53, 0.5));
         d.items[0] = new ClearDriver.Item("minecraft:iron_pickaxe", 6, 1000);

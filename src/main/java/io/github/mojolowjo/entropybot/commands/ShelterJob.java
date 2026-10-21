@@ -41,7 +41,7 @@ public final class ShelterJob {
         int[] feet;
         String block;
         long timer = -1, keep, startedAt, stageAt, lastAct;
-        long lastTime = -1;
+        long lastTime = -1, torchSince = -1;
         boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
@@ -243,9 +243,18 @@ public final class ShelterJob {
         if (ps.idx >= ps.todo.size() && !ps.skipped.isEmpty()) return retrySkipped(ps, lv, p, now);
         if (ps.idx >= ps.todo.size()) {
             if (!ps.torchDone) {
-                ps.torchDone = true;
-                if (Gui.inventory(p).getOrDefault("minecraft:torch", 0) > 0) {
-                    String r = Clearing.placeAt(p, "minecraft:torch", ps.feet[0], ps.feet[1] + 1, ps.feet[2], ps.leases);
+                // step 3 review 1: Baritone's click takes ticks: done only when the cell holds the torch (or it failed / 10 s)
+                int[] tc = {ps.feet[0], ps.feet[1] + 1, ps.feet[2]};
+                if (ps.torchSince < 0) ps.torchSince = now;
+                boolean there = Clearing.blockId(tc).endsWith("torch");
+                if (there || Gui.inventory(p).getOrDefault("minecraft:torch", 0) <= 0 || now - ps.torchSince > 200) {
+                    ps.torchDone = true;
+                    LOG.info("[entropybot] shelter: torch inside: {}", there ? "placed" : "none placed (" + (now - ps.torchSince > 200 ? "10 s passed" : "no torch") + ")");
+                    return false;
+                }
+                String r = Clearing.placeAt(p, "minecraft:torch", tc[0], tc[1], tc[2], ps.leases);
+                if (r.startsWith("error")) {
+                    ps.torchDone = true;
                     LOG.info("[entropybot] shelter: torch inside: {}", r);
                 }
                 return false;
