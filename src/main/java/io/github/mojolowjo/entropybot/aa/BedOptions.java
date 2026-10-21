@@ -35,7 +35,13 @@ public final class BedOptions {
      * @param herd        the best remembered sheep herd not in view ({x, z, distance, confidence x 100}), or null
      * @param me          the bot's cell (for the herd's site), may be null
      */
-    public record BedFacts(int wool, int sheepInView, int[] herd, int[] me) {}
+    public record BedFacts(int wool, int sheepInView, int[] herd, int[] me, boolean bedKnown, boolean night, boolean under, int depth) {
+        /** 0.39.7's facts: no known bed, day, on the surface. */
+        public BedFacts(int wool, int sheepInView, int[] herd, int[] me) { this(wool, sheepInView, herd, me, false, false, false, 0); }
+    }
+
+    /** AA_ROUND4A O: the climb out, prepended to a surface way when under ground ("" on the surface). */
+    static String climbFirst(BedFacts f) { return f.under() ? AaLadder.CLIMB + " then " : ""; }
 
     /** The hunt chain the ladder used before (kept: the planner-free fallback without facts). */
     public static String huntChain(int wool, int[] herd) {
@@ -46,25 +52,33 @@ public final class BedOptions {
     public static Options.Choice choose(BedFacts f, Options.OptionMemory m, long now) {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
+        // AA_ROUND4A O: a known bed is slept in at night (nothing to craft)
+        double bedS = Price.tune("danger.bedS", 20);
+        if (!f.bedKnown()) dropped.add("sleep in a known bed: none known");
+        else if (!f.night()) dropped.add("sleep in a known bed: not night");
+        else RungOptions.add(rows, dropped, m, now, Options.scored("sleep in known bed", "sleep", "sleep", Price.s(bedS),
+                "a bed known, walk + lie down " + Price.r(bedS) + " s", "sleep known bed", false, m));
+        double climb = Price.climb(f.under(), f.depth());
+        String climbWhy = f.under() ? ", climb " + f.depth() + " up " + Price.r(climb) : "";
         if (f.wool() >= WOOL) {
             RungOptions.add(rows, dropped, m, now, Options.scored("craft bed", "craft", "goal bed", CRAFT, f.wool() + " wool in the bag", "craft bed", true, m));
             return Options.Choice.of(rows, dropped, "no way to a bed");
         }
         int k = WOOL - Math.max(0, f.wool());
         if (f.sheepInView() > 0) {
-            RungOptions.add(rows, dropped, m, now, Options.scored("hunt sheep here", "hunt", huntChain(f.wool(), null), KILL * k + CRAFT,
-                    f.sheepInView() + " sheep in view, " + k + " to kill", "hunt sheep here", false, m));
+            RungOptions.add(rows, dropped, m, now, Options.scored("hunt sheep here", "hunt", climbFirst(f) + huntChain(f.wool(), null), climb + KILL * k + CRAFT,
+                    f.sheepInView() + " sheep in view, " + k + " to kill" + climbWhy, "hunt sheep here", false, m));
         } else dropped.add("hunt sheep here: none in view");
         if (f.herd() != null && f.herd().length >= 4) {
             int[] h = f.herd();
             double conf = Math.max(1, h[3]) / 100.0;
-            double cost = (2 * h[2] + KILL * k + CRAFT + HERD_FIX) / conf;
-            Options.Option o = Options.scored("hunt sheep at " + h[0] + " " + h[1], "hunt", huntChain(f.wool(), h), cost,
-                    "a herd I saw " + h[2] + " away (confidence " + h[3] + "%), " + k + " to kill, there and back", "hunt sheep at " + h[0] + " " + h[1], false, m);
+            double cost = climb + (2 * h[2] + KILL * k + CRAFT + HERD_FIX) / conf;
+            Options.Option o = Options.scored("hunt sheep at " + h[0] + " " + h[1], "hunt", climbFirst(f) + huntChain(f.wool(), h), cost,
+                    "a herd I saw " + h[2] + " away (confidence " + h[3] + "%), " + k + " to kill, there and back" + climbWhy, "hunt sheep at " + h[0] + " " + h[1], false, m);
             if (f.me() != null) o = o.withSite(Site.at(h[0], f.me()[1], h[1]));
             RungOptions.add(rows, dropped, m, now, o);
         } else dropped.add("hunt at a herd: none remembered");
-        return Options.Choice.of(rows, dropped, "no wool (" + f.wool() + "/" + WOOL + ") and no sheep seen");
+        return Options.Choice.of(rows, dropped, "no wool (" + f.wool() + "/" + WOOL + ") and no sheep seen, no known bed");
     }
 
     private static final Pattern BED_END = Pattern.compile("hunt:|no sheep|none i may take|nothing to take|no path|no progress|timeout|stuck|couldn't|can't|gave up|refused");

@@ -56,4 +56,16 @@ class BedOptionsTest {
         assertEquals("hunt 3 sheep for white_wool 3 then goal bed", BedOptions.huntChain(0, null));
         assertEquals("hunt 1 sheep for white_wool 3 at 5 6 then goal bed", BedOptions.huntChain(2, new int[]{5, 6, 10, 90}));
     }
+
+    @Test
+    void aKnownBedAtNightIsSleptInAndUnderGroundTheHuntClimbsFirst() {
+        Options.Choice night = BedOptions.choose(new BedOptions.BedFacts(0, 0, null, ME, true, true, false, 0), new Options.OptionMemory(), 0);
+        assertEquals("sleep", night.best().command());
+        Options.Choice day = BedOptions.choose(new BedOptions.BedFacts(0, 0, null, ME, true, false, false, 0), new Options.OptionMemory(), 0);
+        assertNull(day.best());
+        assertTrue(day.why().contains("sleep in a known bed: not night"), day.why());
+        Options.Choice under = BedOptions.choose(new BedOptions.BedFacts(0, 2, null, ME, false, false, true, 10), new Options.OptionMemory(), 0);
+        assertEquals("climb then hunt 3 sheep for white_wool 3 then goal bed", under.best().command());
+        assertTrue(under.why().contains("climb 10 up"), under.why());
+    }
 }
