@@ -144,6 +144,20 @@ public final class Costs {
         return (double) n / of;
     }
 
+    /**
+     * The blocked share from the mining data: the top ideas the tier cannot mine; an open owner goal that needs ore while
+     * the pickaxe is under stone counts as one more blocked item.
+     */
+    public static double blocked(MiningTiers.Result r, int pickTier, boolean ownerOreGoal) {
+        int add = ownerOreGoal && pickTier < 2 ? 1 : 0;
+        int of = r.of() + add;
+        return of <= 0 ? 0 : (double) (r.blocked() + add) / of;
+    }
+
+    public static String toolsTerms(int pickTier, int pickPct, double blocked, String why) {
+        return toolsTerms(pickTier, pickPct, blocked) + "; " + why;
+    }
+
     public static String toolsTerms(int pickTier, int pickPct, double blocked) {
         return "pickaxe tier " + pickTier + (pickTier >= 2 ? " at " + pickPct + "%" : ", blocks " + Math.round(blocked * 100) + "% of what is next")
                 + " -> " + Math.round(tools(pickTier, pickPct, blocked));

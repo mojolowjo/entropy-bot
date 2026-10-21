@@ -108,7 +108,7 @@ final class ItemWorthSource implements ItemWorth.Source {
     }
 
     /** The harvest level from the tool's own "incorrect for" rule: how many of the needs_* block tags it is not locked out of. */
-    private static int levelOf(Tool tool) {
+    static int levelOf(Tool tool) {
         List<HolderSet<Block>> locked = new ArrayList<>();
         for (Tool.Rule r : tool.rules()) if (r.correctForDrops().isPresent() && !r.correctForDrops().get()) locked.add(r.blocks());
         if (locked.isEmpty()) return 0;

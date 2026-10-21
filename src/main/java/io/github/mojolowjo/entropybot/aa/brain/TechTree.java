@@ -138,15 +138,45 @@ public final class TechTree {
     private int ideasN;
     private List<Idea> ideasLast = List.of();
 
-    private List<Idea> ideas0(Set<String> have, int n) {
+    /** All recipes (normalised ids), read-only: the mining-tier pass walks them. */
+    public List<Recipe> recipes() { return java.util.Collections.unmodifiableList(recipes); }
+
+    /**
+     * The top {@code n} next things: not had, every ingredient slot had or a primitive (mined or dropped, no recipe makes
+     * it), best first (what {@link MiningTiers} asks: which of these does the pickaxe tier hold back). Cached per bag.
+     */
+    public synchronized List<Idea> top(Set<String> have, int n) {
+        if (have.equals(topFor) && topN >= n) return topLast.size() > n ? topLast.subList(0, n) : topLast;
+        List<Idea> r = ideas0(have, Math.max(n, 8), true);
+        topFor = have;
+        topN = Math.max(n, 8);
+        topLast = List.copyOf(r);
+        return topLast.size() > n ? topLast.subList(0, n) : topLast;
+    }
+
+    private Set<String> topFor;
+    private int topN;
+    private List<Idea> topLast = List.of();
+    private Set<String> madeCache;
+
+    private Set<String> made() {
+        if (madeCache == null) { Set<String> m = new HashSet<>(); for (Recipe r : recipes) m.add(r.result()); madeCache = m; }
+        return madeCache;
+    }
+
+    private List<Idea> ideas0(Set<String> have, int n) { return ideas0(have, n, false); }
+
+    /** {@code reach}: a slot also counts when it holds a primitive (mined or dropped, no recipe makes it): the next steps, not only the ready ones. */
+    private List<Idea> ideas0(Set<String> have, int n, boolean reach) {
         Set<String> h = norm(have);
+        Set<String> made = reach ? made() : Set.of();
         Map<String, Double> best = new HashMap<>();
         for (Recipe r : recipes) {
             if (h.contains(r.result()) || best.containsKey(r.result())) continue;
             boolean ok = true;
             for (Set<String> s : r.slots()) {
                 boolean any = false;
-                for (String i : s) if (h.contains(i)) { any = true; break; }
+                for (String i : s) if (h.contains(i) || (reach && !made.contains(i))) { any = true; break; }
                 if (!any) { ok = false; break; }
             }
             if (ok) best.put(r.result(), weight(r.result()) + value(r.result(), h, DEPTH, new HashSet<>()) * ANCHORS.getOrDefault(r.result(), 1.0));
