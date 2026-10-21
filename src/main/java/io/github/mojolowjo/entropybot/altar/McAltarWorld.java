@@ -159,8 +159,25 @@ public final class McAltarWorld implements AltarWorld {
         String h = hold(item);
         if (h != null) return h;
         // builder placements: the right-click is Baritone's (the fork's job hands pick the face, look and click)
-        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().click(pos.clone(), item, 100, "altar: use " + (item == null ? "hand" : item), null);
+        lastPos = pos.clone();
+        lastItem = item;
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().click(lastPos, item, clickTicks(), "altar: use " + (item == null ? "hand" : item), null);
+        lastState = r.failed() ? r.why() : r.done() ? null : CLICK_RUNNING;
         return r.failed() ? r.why() : null;
+    }
+
+    private int[] lastPos;
+    private String lastItem, lastState;
+
+    private static int clickTicks() { return (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.need("hands.clickS")); }
+
+    /** Follows the last use's click to its end (the same request: JobHands follows, never restarts it). */
+    @Override
+    public String clickState() {
+        if (!CLICK_RUNNING.equals(lastState) || lastPos == null) return lastState;
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().click(lastPos, lastItem, clickTicks(), "altar: use " + (lastItem == null ? "hand" : lastItem), null);
+        lastState = r.running() ? CLICK_RUNNING : r.failed() ? r.why() : null;
+        return lastState;
     }
 
     /** Feet and head free, something solid underneath (as the farm's standable). */

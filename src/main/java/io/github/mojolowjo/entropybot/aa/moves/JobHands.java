@@ -53,13 +53,13 @@ public final class JobHands {
 
 
     /** Lost-control restarts (a pause or a cancel from elsewhere) before a request fails. */
-    static int retriesMax() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.retries"); }
+    static int retriesMax() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.need("hands.retries"); }
 
     /**
      * Ticks a caller waits for a running build / click before it counts a try: twice a builder leg's limit (a reflex
      * pause in between resumes the leg within that).
      */
-    public static long waitTicks() { return (long) (2 * 20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS")); }
+    public static long waitTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.need("hands.waitS")); }
 
     private static JobHands live;
 
@@ -245,7 +245,7 @@ public final class JobHands {
                     boolean reflex = false;
                     try { reflex = hand.reflexActive(); } catch (RuntimeException e) { warn.accept("[entropybot] job hands: reflex check for " + key + ": " + e); }
                     String k = key;
-                    if (reflex && clock.getAsLong() - startedMs <= 2L * timeout * 50) {
+                    if (reflex && clock.getAsLong() - startedMs <= (long) (io.github.mojolowjo.entropybot.aa.brain.Tuning.need("hands.reflexResume") * timeout * 50)) {
                         Result r = start();
                         yield r.failed() ? r : new Result(State.RUNNING, "paused by a reflex, resumed " + k + " after: " + why);
                     }

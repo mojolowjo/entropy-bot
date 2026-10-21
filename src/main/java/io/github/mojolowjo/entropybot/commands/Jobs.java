@@ -655,6 +655,21 @@ public final class Jobs {
         } catch (Throwable ignored) {}
     }
 
+    /**
+     * Builder placements (floor fill climb-out): a walk under the TRAVEL intent whatever job runs, so Baritone may
+     * pillar out (allowPlace under the travel costs). The job's next {@link #safeSettings()} puts its own intent back.
+     */
+    static void travelSettings() {
+        try {
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            pr.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "climb out");
+            BaritoneAPI.getSettings().allowBreak.value = pr.travelMayBreak();
+            BaritoneAPI.getSettings().allowPlace.value = pr.travelMayPlace();
+        } catch (Throwable t) {
+            LOG.warn("[entropybot] climb out: travel settings not set: {}", t.toString());
+        }
+    }
+
     static int[] here(Player p) {
         return new int[]{(int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ())};
     }

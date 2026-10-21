@@ -177,15 +177,16 @@ final class FloorSteps {
 
         @Override public boolean placing(Pos cell) { return Clearing.placing(cell.x(), cell.y(), cell.z()); }
 
-        @Override public void climbTo(int y) {
+        @Override public void climbTo(int y, io.github.mojolowjo.entropybot.clear.ClearBox box) {
             IBaritone b = Jobs.baritone();
             if (b == null) {
                 LOG.warn("[entropybot] floor: no Baritone to climb out with");
                 return;
             }
-            // Baritone finds the way up (its own pillaring with the throwaway blocks; the guard prices every break/place)
-            Jobs.safeSettings();
-            b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalYLevel(y));
+            // Baritone finds the way up (its own pillaring under the TRAVEL intent; the guard prices every break/place);
+            // the goal: feet at y or higher inside the fill's footprint, on a cell the fence lets it walk to
+            Jobs.travelSettings();
+            b.getCustomGoalProcess().setGoalAndPath(new ClimbGoal(new ClimbRule(y, box, (x, yy, z) -> seq.jobs.goalAllowed(x, yy, z) == null)));
         }
 
         @Override public boolean walkIdle() {

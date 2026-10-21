@@ -223,8 +223,8 @@ public final class FloorFill {
             /** Backbone step 3: Baritone is still placing into the cell (the check waits, up to 10 s). */
             default boolean placing(Pos cell) { return false; }
 
-            /** A Baritone goal to feet level y (GoalYLevel): Baritone finds the way up, pillaring where it must. */
-            void climbTo(int y);
+            /** A Baritone goal: feet at level y or higher inside the footprint (the fence allowing); Baritone finds the way up. */
+            void climbTo(int y, ClearBox footprint);
 
             boolean walkIdle();
 
@@ -522,7 +522,7 @@ public final class FloorFill {
             }
             target = null;
             climbing = true;
-            b.climbTo(fy + 1);
+            b.climbTo(fy + 1, box);
             phase = "walk";
             phaseStart = now;
             mx = bot.x();

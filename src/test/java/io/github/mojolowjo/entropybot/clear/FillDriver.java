@@ -42,7 +42,7 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
     }
 
     /** The fake Baritone climb: up to feet level y where it stands (Baritone would pillar or find stairs). */
-    @Override public void climbTo(int y) {
+    @Override public void climbTo(int y, ClearBox footprint) {
         walks++;
         Bot b = bot();
         int x = (int) Math.floor(b.x()), z = (int) Math.floor(b.z());

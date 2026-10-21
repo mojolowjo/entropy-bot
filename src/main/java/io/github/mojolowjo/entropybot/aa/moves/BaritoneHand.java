@@ -61,7 +61,14 @@ final class BaritoneHand implements JobHands.Hand {
                 k.add(new IBurrowProcess.Click(pos(c.on()), null, it));      // null face: Baritone picks the face
             }
             proc = b().getBurrowProcess();
-            proc.startJob(d, k, timeoutTicks);
+            var lv = Minecraft.getInstance().level;
+            if (lv == null) { forced = Car.Status.failed("stage plan: no world"); return; }
+            String dim = Guard.dimOf(lv);
+            proc.startJob(d, k, timeoutTicks, new IBurrowProcess.JobGuard() {
+                @Override public String stand(BlockPos f) { return standVerdict(dim, f); }
+
+                @Override public String breakCell(BlockPos q) { return guardVerdict(lv, dim, q, "break"); }
+            });
             mine = proc.run();
         } catch (LinkageError e) {
             forced = Car.Status.failed("this Baritone has no job hands (an older jar? install the entropy fork from baritone-backbone3): " + e);
@@ -108,16 +115,11 @@ final class BaritoneHand implements JobHands.Hand {
             }
             String dim = Guard.dimOf(lv);
             baritone.api.process.IBuilderProcess.LegGuard g = new baritone.api.process.IBuilderProcess.LegGuard() {
-                @Override public String cell(BlockPos q) {
-                    var v = Guard.INSTANCE.core.checkUnlogged(dim, q.getX(), q.getY(), q.getZ(), "place", Guard.INSTANCE.infoFor(lv, q));
-                    return v.allowed() ? null : "the guard: " + v.reason();
-                }
+                @Override public String cell(BlockPos q) { return guardVerdict(lv, dim, q, "place"); }
 
-                @Override public String stand(BlockPos f) {
-                    var c = io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.commands();
-                    return io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(
-                            io.github.mojolowjo.entropybot.api.BotAPI.check(dim, f.getX(), f.getY(), f.getZ(), "go"), c != null && c.fenceOn());
-                }
+                @Override public String stand(BlockPos f) { return standVerdict(dim, f); }
+
+                @Override public String breakCell(BlockPos q) { return guardVerdict(lv, dim, q, "break"); }
             };
             builder = b().getBuilderProcess();
             builder.buildLeg("place " + String.join(",", items), want, timeoutTicks, g, replace);
@@ -131,6 +133,19 @@ final class BaritoneHand implements JobHands.Hand {
         } catch (RuntimeException e) {
             forced = Car.Status.failed("start: " + e);
         }
+    }
+
+    /** The guard's dry run for this action on the cell: null = allowed, else "the guard: why". */
+    private static String guardVerdict(net.minecraft.world.level.Level lv, String dim, BlockPos q, String action) {
+        var v = Guard.INSTANCE.core.checkUnlogged(dim, q.getX(), q.getY(), q.getZ(), action, Guard.INSTANCE.infoFor(lv, q));
+        return v.allowed() ? null : "the guard (" + action + "): " + v.reason();
+    }
+
+    /** The fence's walk check for a feet cell Baritone chose (keep-out and portals always, the rest with the fence on). */
+    private static String standVerdict(String dim, BlockPos f) {
+        var c = io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.commands();
+        return io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(
+                io.github.mojolowjo.entropybot.api.BotAPI.check(dim, f.getX(), f.getY(), f.getZ(), "go"), c != null && c.fenceOn());
     }
 
     private static int[] cellOf(BlockPos q) {

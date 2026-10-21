@@ -109,6 +109,9 @@ public final class Tuning {
         def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");
         def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
         def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");
+        def("hands.waitS", 120, "builder placements", "seconds a caller waits for a running build / click before it counts a try (twice a leg, a reflex pause in between)");
+        def("hands.reflexResume", 2, "builder placements", "a reflex pause resumes a request while its age is under this many times its limit");
+        def("hands.clickS", 5, "builder placements", "seconds one right-click stage (altar use) may take");
         def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
     }
 
@@ -118,6 +121,13 @@ public final class Tuning {
     public static double get(String name) {
         Entry e = ALL.get(name);
         return e == null ? Double.NaN : e.value();
+    }
+
+    /** The value of a name code must have: an unknown name is loud (throws with the name), never a silent NaN. */
+    public static double need(String name) {
+        double v = get(name);
+        if (Double.isNaN(v)) throw new IllegalStateException("no tuning \"" + name + "\"");
+        return v;
     }
 
     /** Sets one; returns the reply line ("ok: ..." or "error: ..."). */
