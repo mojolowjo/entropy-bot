@@ -11,6 +11,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** B7e (E1): the mod's own bag room ("rule when full") against the bridge's bagRoom, on one inventory. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class BagRoomTest {
     static StorageRules.Held h(String id, int n, int slot) { return new StorageRules.Held(id, n, false, slot); }
 
@@ -72,7 +73,7 @@ class BagRoomTest {
         List<StorageRules.Held> s = new ArrayList<>();
         for (int i = 0; i < 36; i++) s.add(h("minecraft:raw_copper", 64, i));
         assertEquals(0, BagRoom.count(s, StorageRules.Keeps.NONE), "all valuables: no room ('rule when full' fires at 4 or less)");
-        s.set(10, h("minecraft:cobbled_deepslate", 64, 10));
+        s.set(10, h("minecraft:dirt", 64, 10));
         assertEquals(1, BagRoom.count(s, StorageRules.Keeps.NONE));
     }
 }

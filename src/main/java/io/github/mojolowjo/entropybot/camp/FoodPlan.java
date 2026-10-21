@@ -28,50 +28,58 @@ public final class FoodPlan {
     /** Below this food level (of 20), check lists food first. */
     public static final int LOW = 10;
 
-    static final Set<String> EDIBLE = Set.of("cooked_beef", "cooked_porkchop", "cooked_chicken", "cooked_mutton", "cooked_rabbit",
-            "cooked_cod", "cooked_salmon", "bread", "apple", "golden_apple", "carrot", "golden_carrot", "baked_potato", "potato",
-            "beetroot", "beetroot_soup", "mushroom_stew", "rabbit_stew", "sweet_berries", "glow_berries", "melon_slice",
-            "pumpkin_pie", "cookie", "dried_kelp");          // ready food only: raw meat goes to the cook step
+    /** Ready food by the game's FOOD data: food, not poison (harmful or nutrition 1 or less is junk), not raw (a cooking recipe makes something of it). */
+    static boolean ready(String id) {
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.food(id) > 0 && !io.github.mojolowjo.entropybot.aa.brain.ItemWorth.junkFood(id) && !raw(id);
+    }
 
-    /** Raw meat -> the word cook takes. */
-    static final Map<String, String> RAW = Map.of("beef", "beef", "porkchop", "porkchop", "chicken", "chicken", "mutton", "mutton",
-            "rabbit", "rabbit", "cod", "cod", "salmon", "salmon");
+    /** Raw food that cook takes: a cooking recipe's input that is no plantable crop. */
+    public static boolean raw(String id) {
+        String f = id.contains(":") ? id : "minecraft:" + id;
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.cooks().containsKey(f) && !io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(f, "villager_plantable_seeds");
+    }
 
-    /** Animal -> its meat. */
-    static final Map<String, String> MEAT = Map.of("cow", "beef", "pig", "porkchop", "chicken", "chicken", "sheep", "mutton");
+    /** Animal (short kind) -> its meat (short), from the loot tables. */
+    static String meat(String animal) {
+        String m = io.github.mojolowjo.entropybot.vocab.HuntRules.meatOf("minecraft:" + animal);
+        return m == null ? null : bare(m);
+    }
 
-    /** Better animals first (more food per kill). */
-    static final List<String> ORDER = List.of("cow", "pig", "sheep", "chicken");
+    /** Better animals first (more food per kill: the cooked meat's energy, then id). */
+    public static List<String> order() {
+        List<String> l = new ArrayList<>();
+        for (String a : io.github.mojolowjo.entropybot.vocab.HuntRules.animals()) l.add(bare(a));
+        l.sort(java.util.Comparator.comparingDouble((String a) -> -io.github.mojolowjo.entropybot.aa.brain.FoodModel.energyOf(io.github.mojolowjo.entropybot.aa.brain.FoodModel.cooked(meat(a)) == null ? meat(a) : io.github.mojolowjo.entropybot.aa.brain.FoodModel.cooked(meat(a)))).thenComparing(a -> a));
+        return l;
+    }
 
     static String bare(String id) {
         return id.substring(id.indexOf(':') + 1);
     }
 
     public static boolean edible(String id) {
-        return id != null && EDIBLE.contains(bare(id));
+        return id != null && ready(id);
     }
 
-    /** Food items in the bag (raw chicken is left out: it poisons). */
+    /** Food items in the bag (raw meat is left out: it goes to the cook step). */
     public static int count(Map<String, Integer> inv) {
         int n = 0;
         for (Map.Entry<String, Integer> e : inv.entrySet()) if (e.getValue() > 0 && edible(e.getKey())) n += e.getValue();
         return n;
     }
 
-    /** The raw meat in the bag that cook takes, by its cook word (beef -> 3). */
+    /** The raw food in the bag that cook takes, by its cook word (beef -> 3). */
     public static Map<String, Integer> raw(Map<String, Integer> inv) {
         Map<String, Integer> out = new java.util.LinkedHashMap<>();
         for (Map.Entry<String, Integer> e : inv.entrySet()) {
-            String w = RAW.get(bare(e.getKey()));
-            if (w != null && e.getValue() > 0) out.merge(w, e.getValue(), Integer::sum);
+            if (e.getValue() > 0 && raw(e.getKey())) out.merge(bare(e.getKey()), e.getValue(), Integer::sum);
         }
         return out;
     }
-
     /** The animal to hunt: the best kind seen (near: short kind -> count), null when none. */
     public static String pick(Map<String, Integer> near) {
         if (near == null) return null;
-        for (String k : ORDER) if (near.getOrDefault(k, 0) > 0) return k;
+        for (String k : order()) if (near.getOrDefault(k, 0) > 0) return k;
         return null;
     }
 
@@ -99,14 +107,14 @@ public final class FoodPlan {
             for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
             String a = kind == null ? "cow" : kind;
             return new Decision(steps, "ok: food skipped: I carry " + have + " food and hunting is off"
-                    + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunting on then hunt " + need + " " + a + " (then cook " + MEAT.get(a) + " " + need + ")");
+                    + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunting on then hunt " + need + " " + a + " (then cook " + meat(a) + " " + need + ")");
         }
         if (kind == null) {
             for (Map.Entry<String, Integer> e : raw.entrySet()) steps.add(SOFT + "cook " + e.getKey() + " " + e.getValue());
             return new Decision(steps, "ok: food: I carry " + have + " food and see no animals within 32"
                     + (steps.isEmpty() ? "" : " (cooking the raw meat I have)") + " - next: hunt " + need + " when you see some");
         }
-        String meat = MEAT.get(kind);
+        String meat = meat(kind);
         int n = Math.min(need, Math.max(1, near.get(kind) * 2));   // a cow drops 1-3: two per animal seen at most
         steps.add(SOFT + "hunt " + n + " " + kind);
         int cook = n + raw.getOrDefault(meat, 0);
@@ -136,7 +144,7 @@ public final class FoodPlan {
         }
         String k = pick(near);
         String a = k == null ? "cow" : k;
-        String hunt = "hunt 4 " + a + " (then cook " + MEAT.get(a) + " 4)";
+        String hunt = "hunt 4 " + a + " (then cook " + meat(a) + " 4)";
         String next = huntingOn ? hunt : "hunting on then " + hunt;
         if (k == null) next += " when you see some";
         return new String[]{"hunger", "food " + food + "/20 and nothing to eat", next};

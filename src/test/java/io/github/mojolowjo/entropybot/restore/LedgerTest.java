@@ -11,6 +11,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** P1: the restore ledger: pending -> confirmed or dropped, the cap, the JSON round trip, restore.json's book. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class LedgerTest {
     static final String OW = "minecraft:overworld";
 
@@ -77,7 +78,8 @@ class LedgerTest {
         Ledger back = Ledger.fromJson(j, Ledger.CAP, new StringBuilder());
         assertEquals(2, back.size());
         Ledger.Entry d = back.all().get(0);
-        assertEquals(List.of("minecraft:cobbled_deepslate", "minecraft:cobblestone"), d.items);
+        assertEquals("minecraft:deepslate", d.items.get(0), "its own item first, then the stone materials");
+        assertTrue(d.items.contains("minecraft:cobblestone"));
         assertEquals(42, d.job);
         assertEquals("mine iron_ore", d.jobLabel);
         assertFalse(d.pending);

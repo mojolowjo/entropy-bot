@@ -71,7 +71,7 @@ class AaQuickTest {
         List<String> steps = List.of("a", "b", "c", "d", "goto -53 67 -7", "smelt iron");
         assertEquals("goto -53 67 -7 then smelt iron", AaEscape.resume(steps, 5));
         assertNull(AaEscape.resume(steps, 7));
-        assertEquals(12, AaEscape.throwaway(Map.of("cobblestone", 10, "dirt", 2, "cobbled_deepslate", 5)));
+        assertEquals(17, AaEscape.throwaway(Map.of("cobblestone", 10, "dirt", 2, "cobbled_deepslate", 5)));
     }
 
     /** aa372 gap: a 1x1 shaft open to the sky is "not under ground", but still a hole to get out of. */

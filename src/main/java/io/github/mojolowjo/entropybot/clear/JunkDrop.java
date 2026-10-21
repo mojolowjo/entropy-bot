@@ -11,23 +11,18 @@ import java.util.Set;
  * /home trip ended "couldn't get there (745 blocks away)" and the chain stopped), so the bag's plain junk blocks are
  * thrown away and the clear goes on. Game-free: which items go.
  *
- * <p>Only plain stone-like blocks ({@link #JUNK}) are ever thrown, and only what a deposit would put away anyway (the
+ * <p>Only plain stone-like blocks (FloorFill.isFallback) are ever thrown, and only what a deposit would put away anyway (the
  * caller passes StorageRules.depositables: tools, armor, food, torches, supplies, the hotbar layout and the 64
  * cobblestone kept for pickaxes stay out of it). A floor dig keeps {@link #FLOOR_KEEP} of the block its fill will use.
  */
 public final class JunkDrop {
     private JunkDrop() {}
 
-    /** The blocks it may throw away (never valuables, ores, tools, food: none of those is here). */
-    public static final Set<String> JUNK = Set.of("minecraft:cobbled_deepslate", "minecraft:cobblestone", "minecraft:deepslate",
-            "minecraft:tuff", "minecraft:stone", "minecraft:dirt", "minecraft:gravel", "minecraft:andesite", "minecraft:diorite",
-            "minecraft:granite");
-
     /** What a floor dig keeps of its fill block. */
     public static final int FLOOR_KEEP = 64;
 
     public static boolean isJunk(String id) {
-        return id != null && JUNK.contains(ClearRules.fullId(id));
+        return id != null && FloorFill.isFallback(ClearRules.fullId(id));
     }
 
     /**
@@ -49,11 +44,11 @@ public final class JunkDrop {
             if (n > 0) out.put(id, n);
         }
         // the stone pickaxe material left after the throw: at least 64 together (plus the floor's keep when it is one)
-        int need = FloorFill.STONE_KEEP + (kid != null && FloorFill.STONE_MATERIAL.contains(kid) ? keep : 0), left = 0;
-        for (String m : FloorFill.STONE_MATERIAL) left += inv.getOrDefault(m, 0) - out.getOrDefault(m, 0);
+        int need = FloorFill.STONE_KEEP + (kid != null && FloorFill.stoneMaterial().contains(kid) ? keep : 0), left = 0;
+        for (String m : FloorFill.stoneMaterial()) left += inv.getOrDefault(m, 0) - out.getOrDefault(m, 0);
         List<String> order = new ArrayList<>();
-        if (kid != null && FloorFill.STONE_MATERIAL.contains(kid)) order.add(kid);
-        for (String m : FloorFill.STONE_MATERIAL) if (!order.contains(m)) order.add(m);
+        if (kid != null && FloorFill.stoneMaterial().contains(kid)) order.add(kid);
+        for (String m : FloorFill.stoneMaterial()) if (!order.contains(m)) order.add(m);
         for (String m : order) {
             if (left >= need) break;
             int t = out.getOrDefault(m, 0), back = Math.min(t, need - left);
@@ -99,11 +94,11 @@ public final class JunkDrop {
     public static boolean chase(String id, ClearJob job, Map<String, Integer> inv) {
         if (!job.junkDrop || !isJunk(id)) return true;
         // water plan: a "water" dig picks junk up again while it has less than twice the sealing reserve
-        if (job.water && FloorFill.FALLBACK.contains(ClearRules.fullId(id)) && WaterPlan.available(inv) < 2 * WaterPlan.RESERVE) return true;
+        if (job.water && FloorFill.isFallback(ClearRules.fullId(id)) && WaterPlan.available(inv) < 2 * WaterPlan.RESERVE) return true;
         if (!job.floor) return false;
         String full = ClearRules.fullId(id);
         String fb = FloorFill.chooseBlock(job.floorBlock, inv);
-        if (fb == null) return job.floorBlock != null ? ClearRules.fullId(job.floorBlock).equals(full) : FloorFill.FALLBACK.contains(full);
+        if (fb == null) return job.floorBlock != null ? ClearRules.fullId(job.floorBlock).equals(full) : FloorFill.isFallback(full);
         return fb.equals(full) && inv.getOrDefault(fb, 0) < 2 * FLOOR_KEEP;
     }
 

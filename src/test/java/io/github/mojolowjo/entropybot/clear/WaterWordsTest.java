@@ -8,6 +8,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Water plan, the dig's side: the words, when it gives up, the end messages, the junk it keeps and picks up. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class WaterWordsTest {
     @Test
     void digWords() {

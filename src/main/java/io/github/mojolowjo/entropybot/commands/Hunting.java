@@ -103,7 +103,7 @@ final class Hunting {
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !e.isAlive() || p.distanceTo(e) > HuntRules.RANGE) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
-            if (!HuntRules.MEAT.containsKey(type)) continue;
+            if (HuntRules.meatOf(type) == null) continue;
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, false, false, e instanceof AgeableMob am && am.isBaby());
             if (HuntRules.mayTake(t, allowed, null)) out.merge(type.substring(10), 1, Integer::sum);
@@ -157,7 +157,7 @@ final class Hunting {
         r.want = (String) a[1];
         r.started = Core.INSTANCE.tick();
         r.at = HuntRules.at(rest);
-        String reply = "started: hunting until I have " + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + " (hunt status)";
+        String reply = "started: hunting until I have " + r.n + " raw " + (r.want == null ? "meat" : HuntRules.meatOf(r.want).substring(10)) + " (hunt status)";
         r.req = c.requests.local("hunt", from, raw, reply, l);
         run = r;
         driver = io.github.mojolowjo.entropybot.aa.door.Door.current();     // AA_CLEANUP 2: its ticks run as its starter
@@ -182,7 +182,7 @@ final class Hunting {
     private static int goal(Run r) { return r.item != null ? r.itemWant : r.n; }
 
     private static String what(Run r) {
-        return r.item != null ? r.item.replaceFirst("^minecraft:", "") + " from " + r.want.replaceFirst("^minecraft:", "") : "raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10));
+        return r.item != null ? r.item.replaceFirst("^minecraft:", "") + " from " + r.want.replaceFirst("^minecraft:", "") : "raw " + (r.want == null ? "meat" : HuntRules.meatOf(r.want).substring(10));
     }
 
     String stop(String why) {
@@ -254,7 +254,7 @@ final class Hunting {
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !e.isAlive()) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
-            boolean target = r.item != null ? type.equals(r.want) : HuntRules.MEAT.containsKey(type);
+            boolean target = r.item != null ? type.equals(r.want) : HuntRules.meatOf(type) != null;
             if (!target && !(e instanceof Player) && !(e instanceof AbstractVillager)) continue;
             // AA_ROUND3 5: an "at" hunt takes only animals within 16 of the place it was told (never "the exact cell")
             if (r.at != null && !HuntRules.atOk(r.at, e.getBlockX(), e.getBlockZ())) continue;

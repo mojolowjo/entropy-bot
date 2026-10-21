@@ -9,6 +9,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Package 4: the rim placer's decisions (trial 8: a floor cut into a hillside, Baritone stuck at the rim). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class RimPlanTest {
     /** The trial 8 house floor, moved onto the fake world's ground (stone up to y 52): x 4..10, z -3..3, y 53. */
     static final ClearBox HOUSE = ClearBox.of(4, 53, -3, 10, 57, 3);

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * B7e F: {@code dig ... floor [block]} over the tunnel's cave crossing: the tunnel x 247..310, y -46..-44, z 853..855
  * (the area "tunnel" x -110..8591, z 852..856, y -50..-44), its floor y -47 missing for x 261..270, the cave under it.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FloorFillTest {
     static final String OW = "minecraft:overworld";
     static final ClearBox BOX = ClearBox.of(247, -46, 853, 310, -44, 855);

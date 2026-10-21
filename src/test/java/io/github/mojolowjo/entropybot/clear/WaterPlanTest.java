@@ -8,6 +8,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Water plan: the blocks (count, choice, the junk reserve), the guard's rule, the fence, the report. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class WaterPlanTest {
     static final ClearBox TUNNEL = WaterScanTest.TUNNEL;
 
@@ -15,10 +16,10 @@ class WaterPlanTest {
     void blocksComeFromJunkAndThePickaxeMaterialStays() {
         Map<String, Integer> inv = Map.of("minecraft:cobblestone", 70, "minecraft:dirt", 5, "minecraft:diamond", 3);
         assertEquals(6 + 5, WaterPlan.available(inv), "64 cobblestone stay for pickaxes");
-        assertEquals(List.of("minecraft:cobblestone", "minecraft:cobblestone"), WaterPlan.assignBlocks(2, inv), "FALLBACK order: cobblestone before dirt");
+        assertEquals(List.of("minecraft:cobblestone", "minecraft:cobblestone"), WaterPlan.assignBlocks(2, inv), "stone material before soft blocks");
         assertNull(WaterPlan.assignBlocks(12, inv));
         Map<String, Integer> two = Map.of("minecraft:cobbled_deepslate", 66, "minecraft:tuff", 1);
-        assertEquals(List.of("minecraft:cobbled_deepslate", "minecraft:cobbled_deepslate", "minecraft:tuff"), WaterPlan.assignBlocks(3, two));
+        assertEquals(List.of("minecraft:tuff", "minecraft:cobbled_deepslate", "minecraft:cobbled_deepslate"), WaterPlan.assignBlocks(3, two), "the spared non-material first");
     }
 
     @Test
@@ -27,7 +28,7 @@ class WaterPlanTest {
         // junk drop alone would throw all but the pickaxes' 64
         Map<String, Integer> thrown = Map.of("minecraft:cobbled_deepslate", 236, "minecraft:tuff", 40);
         Map<String, Integer> kept = WaterPlan.keepReserve(thrown, inv, WaterPlan.RESERVE);
-        assertEquals(Map.of("minecraft:cobbled_deepslate", 172, "minecraft:tuff", 40), kept, "64 more cobbled deepslate stay");
+        assertEquals(Map.of("minecraft:cobbled_deepslate", 212), kept, "the tuff (placed first) gives back whole, then 24 cobbled deepslate bring the reserve");
         // already enough left: nothing changes
         assertEquals(Map.of("minecraft:tuff", 40), WaterPlan.keepReserve(Map.of("minecraft:tuff", 40), inv, WaterPlan.RESERVE));
         // too little to keep a whole reserve: all of it stays

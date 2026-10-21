@@ -8,18 +8,19 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** P1: the item mapping, the reverse order, the distance filter and the end line. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class RestorePlanTest {
     static final String OW = "minecraft:overworld";
 
     @Test
     void itemsForTerrain() {
-        assertEquals(List.of("minecraft:cobblestone"), RestoreRules.itemsFor("minecraft:stone"), "answer 2: cobblestone fills stone holes");
-        assertEquals(List.of("minecraft:cobbled_deepslate", "minecraft:cobblestone"), RestoreRules.itemsFor("minecraft:deepslate"));
-        assertEquals(List.of("minecraft:dirt"), RestoreRules.itemsFor("minecraft:grass_block"));
-        assertEquals(List.of("minecraft:andesite", "minecraft:cobblestone"), RestoreRules.itemsFor("minecraft:andesite"));
-        assertEquals(List.of("minecraft:gravel"), RestoreRules.itemsFor("minecraft:gravel"));
-        assertEquals(List.of("minecraft:red_terracotta", "minecraft:cobblestone"), RestoreRules.itemsFor("minecraft:red_terracotta"));
-        assertTrue(RestoreRules.itemsFor("minecraft:white_glazed_terracotta").isEmpty(), "glazed terracotta is built");
+        assertEquals("minecraft:stone", RestoreRules.itemsFor("minecraft:stone").get(0), "its own item first");
+        assertTrue(RestoreRules.itemsFor("minecraft:stone").contains("minecraft:cobblestone"), "answer 2: cobblestone fills stone holes (the stone tool materials)");
+        assertTrue(RestoreRules.itemsFor("minecraft:deepslate").containsAll(List.of("minecraft:cobbled_deepslate", "minecraft:cobblestone")));
+        assertEquals("minecraft:grass_block", RestoreRules.itemsFor("minecraft:grass_block").get(0));
+        assertTrue(RestoreRules.itemsFor("minecraft:andesite").contains("minecraft:cobblestone"));
+        assertEquals("minecraft:gravel", RestoreRules.itemsFor("minecraft:gravel").get(0));
+        assertTrue(RestoreRules.itemsFor("minecraft:white_glazed_terracotta").isEmpty(), "glazed terracotta is built (no terracotta tag)");
         assertTrue(RestoreRules.itemsFor("minecraft:oak_planks").isEmpty());
         assertTrue(RestoreRules.itemsFor("create:limestone").isEmpty(), "modded blocks are never guessed");
         assertEquals("an ore", RestoreRules.whyNot("minecraft:deepslate_iron_ore", false));

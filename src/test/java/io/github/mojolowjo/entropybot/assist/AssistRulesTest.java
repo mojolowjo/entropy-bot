@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.24.2 assist: parsing, the action guess, the switch rule, the half-cut tree finder, the mining targets, the give rule. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class AssistRulesTest {
     static final long NOW = 2_000_000;
 

@@ -11,6 +11,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** B7e F: {@code dig ... junk drop}: which items a full bag throws away, and which drops the clear still picks up. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class JunkDropTest {
     static final String CD = "minecraft:cobbled_deepslate";
 
@@ -40,7 +41,7 @@ class JunkDropTest {
         List<Held> held = bag();
         Map<String, Integer> dep = StorageRules.depositables(held, "", false, null, StorageRules.Keeps.NONE);
         Map<String, Integer> t = JunkDrop.plan(dep, counts(held), null, 0);
-        assertEquals(232, t.get(CD), "all of it without a floor");
+        assertEquals(168, t.get(CD), "all of it but the 64 the deposit keeps of each stone material");
         assertEquals(30, t.get("minecraft:cobblestone"), "64 cobblestone stay for pickaxes (deposit's rule)");
         assertEquals(50, t.get("minecraft:tuff"));
         assertEquals(12, t.get("minecraft:dirt"));
@@ -50,7 +51,7 @@ class JunkDropTest {
                 "minecraft:iron_pickaxe", "minecraft:bread", "minecraft:torch", "minecraft:flint", "minecraft:clay_ball")) {
             assertFalse(t.containsKey(keep), keep + " is never thrown");
         }
-        assertEquals("threw away 232 cobbled_deepslate, 30 cobblestone, 50 tuff, 12 dirt, 9 gravel, 5 diorite", JunkDrop.summary(t));
+        assertEquals("threw away 168 cobbled_deepslate, 30 cobblestone, 50 tuff, 12 dirt, 9 gravel, 5 diorite", JunkDrop.summary(t));
     }
 
     @Test
@@ -59,13 +60,14 @@ class JunkDropTest {
         Map<String, Integer> dep = StorageRules.depositables(held, "", false, null, StorageRules.Keeps.NONE);
         Map<String, Integer> inv = counts(held);
         String block = FloorFill.chooseBlock(null, inv);
-        assertEquals(CD, block);
+        assertEquals("minecraft:diorite", block, "stone-like filler that is no pickaxe material is spared first");
+        block = CD;
         Map<String, Integer> t = JunkDrop.plan(dep, inv, block, JunkDrop.FLOOR_KEEP);
-        assertEquals(232 - 64, t.get(CD));
+        assertEquals(168, t.get(CD), "the deposit's 64 of it already stay");
         // a named cobblestone floor: 64 for the floor and 64 pickaxe material together stay (cobblestone kept first)
         Map<String, Integer> t2 = JunkDrop.plan(dep, inv, "cobblestone", JunkDrop.FLOOR_KEEP);
-        assertNull(t2.get("minecraft:cobblestone"));
-        assertEquals(232 - 34, t2.get(CD));
+        assertEquals(30, t2.get("minecraft:cobblestone"), "64 of it stay for the floor and the pickaxes; the cobbled deepslate's own 64 count as material");
+        assertEquals(168, t2.get(CD));
         // a supplies entry keeps more
         Map<String, Integer> dep3 = StorageRules.depositables(held, "", false, null, new StorageRules.Keeps(Map.of("minecraft:tuff", 48), Map.of()));
         assertEquals(2, JunkDrop.plan(dep3, inv, null, 0).get("minecraft:tuff"));
@@ -102,7 +104,7 @@ class JunkDropTest {
         // blackstone counts toward the 64 (and is never thrown)
         List<Held> held2 = List.of(h(CD, 100), h("minecraft:blackstone", 40));
         Map<String, Integer> dep2 = StorageRules.depositables(held2, "", false, null, StorageRules.Keeps.NONE);
-        assertEquals(76, JunkDrop.plan(dep2, counts(held2), null, 0).get(CD));
+        assertEquals(36, JunkDrop.plan(dep2, counts(held2), null, 0).get(CD), "100 less the 64 the deposit keeps");
         assertNull(JunkDrop.plan(dep2, counts(held2), null, 0).get("minecraft:blackstone"));
     }
 

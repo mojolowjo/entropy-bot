@@ -127,11 +127,9 @@ public final class RimPlan {
     public record Pick(Pos cell, Why why, boolean filler) {}
 
     /** Filler blocks for a hole under a cell, in order (then the build block itself). */
-    public static final List<String> FILLERS = List.of("minecraft:cobblestone", "minecraft:dirt");
-
     /** The filler to use: cobblestone, dirt, else the build block; null when the bag has none. */
     public static String filler(Map<String, Integer> bag, String block) {
-        for (String f : FILLERS) if (bag.getOrDefault(f, 0) > 0) return f;
+        for (String f : FloorFill.fallback(bag)) return f;
         return bag.getOrDefault(block, 0) > 0 ? block : null;
     }
 

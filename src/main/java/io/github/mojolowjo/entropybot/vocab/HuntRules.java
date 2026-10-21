@@ -13,12 +13,14 @@ import java.util.Set;
 public final class HuntRules {
     private HuntRules() {}
 
-    /** The animals hunt may take (the "animals" kind before exclusions). */
-    public static final List<String> ANIMALS = List.of("minecraft:cow", "minecraft:pig", "minecraft:chicken", "minecraft:sheep");
-    /** Animal -> its raw meat. */
-    public static final Map<String, String> MEAT = Map.of("minecraft:cow", "minecraft:beef", "minecraft:pig", "minecraft:porkchop",
-            "minecraft:chicken", "minecraft:chicken", "minecraft:sheep", "minecraft:mutton");
-    public static final Set<String> RAW = Set.of("minecraft:beef", "minecraft:porkchop", "minecraft:chicken", "minecraft:mutton");
+    /** The animals hunt may take (the "animals" kind before exclusions): the friendly mobs whose loot table drops a food (LootBook data via ItemWorth.mobFood). */
+    public static List<String> animals() { return new java.util.ArrayList<>(new java.util.TreeSet<>(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().keySet())); }
+
+    /** Animal -> its raw meat (the food its loot table drops most), or null. */
+    public static String meatOf(String animal) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().get(animal); }
+
+    /** The raw meats the animals give. */
+    public static Set<String> raws() { return new java.util.TreeSet<>(io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mobFood().values()); }
     public static final int RANGE = 32;
 
     /** One seen entity. */
@@ -34,7 +36,7 @@ public final class HuntRules {
     /** Raw meat in the bag (all kinds, or the wanted animal's). */
     public static int meat(Map<String, Integer> bag, String want) {
         int n = 0;
-        for (String r : RAW) if (want == null || r.equals(MEAT.get(want))) n += bag.getOrDefault(r, 0);
+        for (String r : raws()) if (want == null || r.equals(meatOf(want))) n += bag.getOrDefault(r, 0);
         return n;
     }
 
@@ -89,7 +91,7 @@ public final class HuntRules {
             if (a.equals("minecraft:cows")) a = "minecraft:cow";
             if (a.equals("minecraft:pigs")) a = "minecraft:pig";
             if (a.equals("minecraft:chickens")) a = "minecraft:chicken";
-            if (!MEAT.containsKey(a)) return null;
+            if (meatOf(a) == null) return null;
         }
         if (w.length > 2) return null;
         return new Object[]{n, a};
@@ -126,8 +128,8 @@ public final class HuntRules {
 
     /** gather's source for a raw meat while hunting is on: "hunt {n} <animal>"; null for anything else. */
     public static String source(String rawId) {
-        for (Map.Entry<String, String> e : MEAT.entrySet())
-            if (e.getValue().equals(rawId)) return "hunt {n} " + e.getKey().substring(10);
+        for (String a : animals())
+            if (rawId.equals(meatOf(a))) return "hunt {n} " + a.substring(10);
         return null;
     }
 }

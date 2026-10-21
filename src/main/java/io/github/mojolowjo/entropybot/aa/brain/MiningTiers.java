@@ -67,6 +67,25 @@ public final class MiningTiers {
         return f.digLevel() + 1;
     }
 
+    /** The tier of any digging tool (pickaxe, axe, shovel, hoe) on the same scale: 0 when it digs nothing or no data is loaded (said once). */
+    public static int anyToolTier(String itemId) {
+        if (itemId == null) return 0;
+        if (!ItemWorth.hasData()) { ItemWorth.warnOnce("tier", "no item data loaded: no tool has a tier"); return 0; }
+        var f = ItemWorth.facts(itemId);
+        return f.digSpeed() > 0 ? f.digLevel() + 1 : 0;
+    }
+
+    /**
+     * The tier a mining need word asks of the pickaxe. A need names the pickaxe material that does the job ("stone", "iron",
+     * "diamond", or a modded material id): its tier is that pickaxe's own, read from its TOOL data. An unreadable need is
+     * {@code tools.unknownNeedTier}.
+     */
+    public static int needTier(String need) {
+        int t = need == null ? 0 : anyToolTier(need.contains("_pickaxe") ? need : (need.contains(":") ? need.replace(":", ":") + "_pickaxe" : "minecraft:" + need + "_pickaxe"));
+        if (t <= 0) { ItemWorth.warnOnce("need:" + need, "no mining tier for the need \"" + need + "\": using tools.unknownNeedTier"); return (int) Tuning.get("tools.unknownNeedTier"); }
+        return Math.max(1, t);
+    }
+
     /** The pickaxe tier the block (or the block an item places) needs, from the game's tags; {@link #UNKNOWN} (said once) without data. */
     public static int blockTierOf(String id) {
         Source s = source;

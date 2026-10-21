@@ -14,6 +14,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** B7d D3: the ore lists, the "mine" grammar, the cave decisions and the Baritone mine's rules (sim "mining" checks, ported). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class MiningRulesTest {
     static final List<String> ORES = OreSpec.oreIds(List.of("minecraft:stone", "minecraft:iron_ore", "minecraft:deepslate_iron_ore", "minecraft:coal_ore",
             "minecraft:deepslate_coal_ore", "oritech:nickel_ore", "minecraft:diamond_ore", "minecraft:deepslate_diamond_ore", "minecraft:redstone_ore",
@@ -265,7 +266,7 @@ class MiningRulesTest {
         assertNull(MineRules.pickNeed(false, "stone", false));
         assertEquals(List.of("minecraft:iron_pickaxe", "minecraft:diamond_pickaxe", "minecraft:netherite_pickaxe"), MineRules.pickIds("iron"));
         assertEquals(List.of("minecraft:stone_pickaxe", "minecraft:diamond_pickaxe", "minecraft:netherite_pickaxe"), MineRules.pickIds("stone"));
-        assertEquals(4, MineRules.bestPickTier(List.of("minecraft:stone_pickaxe", "minecraft:iron_pickaxe", "minecraft:dirt")));
+        assertEquals(3, MineRules.bestPickTier(List.of("minecraft:stone_pickaxe", "minecraft:iron_pickaxe", "minecraft:dirt")));
         assertEquals(0, MineRules.bestPickTier(List.of("minecraft:dirt")));
         assertEquals("an iron", MineRules.anA("iron"));
         assertEquals("a stone", MineRules.anA("stone"));

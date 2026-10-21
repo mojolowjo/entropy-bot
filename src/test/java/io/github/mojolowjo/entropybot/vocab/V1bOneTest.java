@@ -13,6 +13,7 @@ import java.util.TreeSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** V1b-1 (0.22.2): kinds, tools mode, dig +N/-N, places and markers, the queue, the game stage. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class V1bOneTest {
     static final List<String> IDS = List.of("minecraft:oak_log", "minecraft:cherry_log", "minecraft:stripped_oak_log", "minecraft:crimson_stem",
             "minecraft:oak_planks", "minecraft:iron_ore", "minecraft:deepslate_iron_ore", "minecraft:ancient_debris", "minecraft:stone",

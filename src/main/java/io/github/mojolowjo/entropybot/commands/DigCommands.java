@@ -386,7 +386,7 @@ final class DigCommands {
         // 0.30.0 (P2): the same cells, broken by Baritone's builder (only those cells: the staircase keeps its shape)
         ClearJob.Options o = io.github.mojolowjo.entropybot.gather.StonePit.options(plan, n, label, via);
         List<Seq.Step> before = restockSteps(c, p, plan.cells().size());
-        if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.COUNTED);
+        if (via) return BuilderDig.start(c, p, o, before, io.github.mojolowjo.entropybot.gather.StonePit.counted());
         return startClear(c, p, o, before);
     }
 

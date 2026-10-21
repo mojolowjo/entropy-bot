@@ -91,8 +91,16 @@ public final class FoodOptions {
     public static final double HERD_MAX = 400, HERD_MIN_CONF = 0.05;
 
     /** Meat per animal (the hunt verb's names) and the cooked food's energy. */
-    public static final java.util.Set<String> MEAT_ANIMALS = java.util.Set.of("cow", "pig", "sheep", "chicken");
-    static final Map<String, String> MEAT =Map.of("cow", "beef", "pig", "porkchop", "sheep", "mutton", "chicken", "chicken");
+    /** The short names of the animals whose loot table drops a food, and the raw meat each gives (LootBook data via HuntRules). */
+    static java.util.Set<String> meatAnimals() {
+        java.util.Set<String> s = new java.util.TreeSet<>();
+        for (String a : io.github.mojolowjo.entropybot.vocab.HuntRules.animals()) s.add(a.substring(a.indexOf(':') + 1));
+        return s;
+    }
+    static String meatOf(String animal) {
+        String m = io.github.mojolowjo.entropybot.vocab.HuntRules.meatOf("minecraft:" + animal);
+        return m == null ? null : m.substring(m.indexOf(':') + 1);
+    }
 
     static final double EAT_COST = 2;
     /** Energy per round of the slow ways, read from the food data when scored (the data loads after the class does). */
@@ -201,12 +209,12 @@ public final class FoodOptions {
         if (f.herds() == null || f.herds().isEmpty()) return;
         Map<String, Options.Option> best = new java.util.HashMap<>();
         for (Herd h : f.herds()) {
-            if (!MEAT_ANIMALS.contains(h.type())) continue;
+            if (!meatAnimals().contains(h.type())) continue;
             if (h.type().equals("chicken") && !f.furnace()) continue;
             if (f.animals() != null && f.animals().getOrDefault(h.type(), 0) > 0) continue;     // in reach: the plain hunt
             if (h.conf() < HERD_MIN_CONF) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": seen too long ago (confidence " + String.format(Locale.ROOT, "%.2f", h.conf()) + ")"); continue; }
             if (h.dist() > HERD_MAX) { dropped.add("go hunt " + h.type() + " at " + h.x() + " " + h.z() + ": " + Math.round(h.dist()) + " away"); continue; }
-            String meat = MEAT.get(h.type()), cooked = FoodModel.cooked(meat);
+            String meat = meatOf(h.type()), cooked = FoodModel.cooked(meat);
             double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
             int n = Math.max(2, Math.min(Math.min(8, Math.max(2, h.count())), FoodModel.count(short_, each)));
             double trip = 2 * h.dist() + Options.MINUTE * (1 + n * 0.5) + (f.furnace() ? Options.MINUTE * (0.5 + n / 6.0) : 0);
@@ -247,9 +255,10 @@ public final class FoodOptions {
         if (animals == null) return null;
         String animal = null;
         int most = 0;
-        for (String a : List.of("cow", "pig", "sheep", "chicken")) {
+        for (String a : io.github.mojolowjo.entropybot.camp.FoodPlan.order()) {
             int n = animals.getOrDefault(a, 0);
-            if (a.equals("chicken") && !furnace) continue;
+            String raw = meatOf(a);
+            if (!furnace && raw != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.riskyFood("minecraft:" + raw)) continue;      // raw meat that can poison: only with a furnace to cook it
             if (n > most) { animal = a; most = n; }
         }
         return animal;
@@ -257,7 +266,7 @@ public final class FoodOptions {
 
     private static void huntRow(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, double short_,
                                 String animal, int most) {
-        String meat = MEAT.get(animal), cooked = FoodModel.cooked(meat);
+        String meat = meatOf(animal), cooked = FoodModel.cooked(meat);
         double each = f.furnace() ? FoodModel.energyOf(cooked) : FoodModel.energyOf(meat);
         int n = Math.max(2, Math.min(8, FoodModel.count(short_, each)));
         String chain = "hunt " + n + " " + animal + (f.furnace() ? " then cook " + meat + " " + n : "");

@@ -10,6 +10,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** 0.24.3: the shelter's shell, material order, own-block rule and stage machine. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ShelterPlanTest {
     static final int[] F = {10, 64, 20};
 

@@ -9,12 +9,7 @@ import java.util.Set;
 public final class ReflexRules {
     private ReflexRules() {}
 
-    /** Never eaten: they poison, cause hunger, or teleport. */
-    public static final Set<String> FOOD_BLACKLIST = Set.of(
-            "minecraft:rotten_flesh", "minecraft:spider_eye", "minecraft:chorus_fruit", "minecraft:pufferfish",
-            "minecraft:poisonous_potato", "minecraft:suspicious_stew");
-    /** Only eaten below 6 hearts. */
-    public static final Set<String> GOLDEN = Set.of("minecraft:golden_apple", "minecraft:enchanted_golden_apple");
+    /** Never eaten: they poison, cause hunger or teleport (the game's FOOD effects and the teleporting item class: ItemWorth.junkFood). Foods with a good effect (golden apples) are only eaten below 6 hearts (ItemWorth.effectFood). */
 
     public static final int EAT_FOOD = 14;          // eat at this food level or below
     public static final int EAT_FOOD_HURT = 18;     // ... or below this while hurt (natural healing needs 18)
@@ -110,8 +105,8 @@ public final class ReflexRules {
      * nausea...), which also catches modded foods the blacklist doesn't name.
      */
     public static int foodScore(String id, int nutrition, float saturation, boolean harmful, float health) {
-        if (id == null || FOOD_BLACKLIST.contains(id) || harmful) return -1;
-        if (GOLDEN.contains(id) && health >= GOLDEN_BELOW) return -1;
+        if (id == null || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.junkFood(id) || harmful) return -1;
+        if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.effectFood(id) && health >= GOLDEN_BELOW) return -1;
         if (nutrition <= 0) return -1;
         return nutrition * 10 + Math.round(saturation * 10);
     }

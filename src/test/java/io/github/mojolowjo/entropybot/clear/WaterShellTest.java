@@ -9,6 +9,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Water plan: the shell geometry (the 5x5 ring and the front cap of a 3x3 tunnel), the slice order, the block count. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class WaterShellTest {
     static final ClearBox TUNNEL = WaterScanTest.TUNNEL;      // x 0..20, y 40..42, z -1..1
     static final WaterShell.Axis EAST = new WaterShell.Axis(true, 1);
@@ -93,6 +94,6 @@ class WaterShellTest {
     void shellBlocksAreNeverBuiltBlocks() {
         // the shell stays as the tunnel's wall: a later dig must still be free to take it, so its blocks are never on the
         // protected (built) list
-        for (String id : FloorFill.FALLBACK) assertFalse(ClearRules.builtId(id), id);
+        for (String id : List.of("minecraft:cobblestone", "minecraft:dirt", "minecraft:stone")) assertFalse(ClearRules.builtId(id), id);
     }
 }

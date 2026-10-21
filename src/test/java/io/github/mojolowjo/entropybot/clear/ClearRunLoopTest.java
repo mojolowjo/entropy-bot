@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * are the bridge's, word for word: the same ones ClearRunTest and StripTest get from ClearDriver's stand-in. Plus the
  * leases ({@link LeaseSet}), the placing rules and the table decision ({@link PlaceRules}), and the honest end reasons.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ClearRunLoopTest {
     static RunDriver hill(boolean bumpy, int pickDur) {
         return new RunDriver(SimWorlds.hill(bumpy), SimWorlds.home()).simInventory(pickDur);

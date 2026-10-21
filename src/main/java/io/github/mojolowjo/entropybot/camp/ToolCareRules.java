@@ -28,11 +28,15 @@ public final class ToolCareRules {
 
     /** The tool kind of an id ("pickaxe" is not "axe"), or null. */
     public static String kind(String id) {
-        String p = id.substring(id.indexOf(':') + 1).toLowerCase(Locale.ROOT);
-        if (p.equals("shield")) return "shield";
-        if (p.endsWith("_pickaxe")) return "pickaxe";
-        for (String k : KINDS) if (p.endsWith("_" + k)) return k;
-        return null;
+        if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.shield(id)) return "shield";
+        return switch (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.facts(id).role()) {          // the game's item tags and components, never the id
+            case PICKAXE -> "pickaxe";
+            case AXE -> "axe";
+            case SHOVEL -> "shovel";
+            case HOE -> "hoe";
+            case WEAPON -> "sword";
+            default -> null;
+        };
     }
 
     /** The kinds (of {@link #KINDS}) that need a new one: kind -> the id to copy (the worn or broken one's). */
@@ -96,8 +100,8 @@ public final class ToolCareRules {
 
     static int tier(String id) {
         if (id == null) return 0;
-        String p = id.substring(id.indexOf(':') + 1);
-        return p.startsWith("iron_") ? 3 : p.startsWith("diamond_") ? 4 : p.startsWith("netherite_") ? 5 : p.startsWith("stone_") ? 2 : 1;
+        int t = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.anyToolTier(id);
+        return t > 0 ? t : (int) io.github.mojolowjo.entropybot.aa.brain.MiningTiers.toolTier(id, "sword");
     }
 
     /** "tools" adds this: "care: sword 120/131, axe -" (each kind's best uses left / max). */

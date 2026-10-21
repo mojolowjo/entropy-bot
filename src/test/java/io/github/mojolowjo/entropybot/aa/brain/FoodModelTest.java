@@ -27,7 +27,7 @@ class FoodModelTest {
         Map<String, Integer> bag = Map.of("cooked_beef", 2, "bread", 1, "rotten_flesh", 5, "cobblestone", 64);
         assertEquals(2 * 20.8 + 11, FoodModel.energy(bag), 1e-9, "rotten flesh is no plannable food");
         assertEquals(8, FoodModel.bestNutrition(bag));
-        assertEquals(0, FoodModel.bestNutrition(Map.of("chicken", 3)), "raw chicken has no usable food data: not counted");
+        assertEquals(2, FoodModel.bestNutrition(Map.of("chicken", 3)), "raw chicken: a 30 % hunger chance is not poison, it is food by its data");
         TestData.vanilla().food("moddium:glow_stew", 8, 3).install();
         assertEquals(11, FoodModel.energyOf("moddium:glow_stew"), 1e-9, "a fake food with nutrition 8: read from its FOOD data, no list");
         assertEquals(8, FoodModel.nutritionOf("glow_stew".isEmpty() ? "" : "moddium:glow_stew"));

@@ -79,17 +79,14 @@ public final class AssistRules {
 
     public static String path(String id) { return id == null ? "" : id.substring(id.indexOf(':') + 1); }
 
-    public static boolean isLog(String id) { String p = path(id); return p.endsWith("_log") || p.endsWith("_stem"); }
+    public static boolean isLog(String id) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(id, "logs"); }
 
-    public static boolean isLeaves(String id) { return path(id).endsWith("_leaves"); }
+    public static boolean isLeaves(String id) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(id, "leaves"); }
 
-    public static boolean isOre(String id) { String p = path(id); return p.endsWith("_ore") || p.equals("ancient_debris"); }
-
-    static final Set<String> STONE = Set.of("stone", "deepslate", "andesite", "diorite", "granite", "tuff", "calcite", "netherrack",
-            "blackstone", "basalt", "sandstone", "dripstone_block", "end_stone");
+    public static boolean isOre(String id) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasTag(id, "c:ores"); }
 
     /** What mining mirrors: ores and natural stone (cobblestone is a built block for the guard, never mirrored). */
-    public static boolean mineable(String id) { return isOre(id) || STONE.contains(path(id)); }
+    public static boolean mineable(String id) { return isOre(id) || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.stoneLike(id); }
 
     public static boolean isCrop(String id) {
         String p = path(id);

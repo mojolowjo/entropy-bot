@@ -9,6 +9,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.30.5 (trial 9, findings 3 and 4): the food step, the check's food item, climb's fallback and the honest stair end. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FoodClimbTest {
 
     @Test

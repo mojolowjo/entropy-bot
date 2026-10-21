@@ -11,6 +11,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** P5: farm settings (mode detection), the plant layout, seeds, cooking and the vanilla round. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FarmP5Test {
 
     // ---- settings ----

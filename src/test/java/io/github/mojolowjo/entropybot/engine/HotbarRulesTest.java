@@ -9,6 +9,7 @@ import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class HotbarRulesTest {
     static HotbarRules.Item it(int slot, String id, int n) { return new HotbarRules.Item(slot, id, n, -1); }
 

@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Overnight 2026-10-19 fixes: climb out at dawn, the coal goal's ways and reserve, the hunt priced by its walk (no out hunt). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class AaFix3Test {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());

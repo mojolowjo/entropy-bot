@@ -69,7 +69,12 @@ public final class MineRules {
     /** A lease covers at most this many blocks (GuardCore.MAX_LEASE_VOLUME): bigger boxes are sliced. */
     public static final long LEASE_MAX = 4096;
     static final Map<String, Integer> DROPS_PER = Map.of("redstone", 4, "lapis", 4, "copper", 3);
-    public static final Map<String, Integer> PICK_TIER = Map.of("stone", 2, "iron", 4, "diamond", 5);
+    /** The pickaxe tier a need asks of the tool, from the block tags (MiningTiers.needTier): the one scale; the caller's default is for an unreadable need and is replaced by tools.unknownNeedTier. */
+    public static final NeedTiers PICK_TIER = new NeedTiers();
+
+    public static final class NeedTiers {
+        public int getOrDefault(String need, int unused) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.needTier(need); }
+    }
 
     /** "mine iron_ore 10 dig": the block id (normalised), the count (1 without), dig. */
     public record Args(String id, String word, int count, boolean dig) {}

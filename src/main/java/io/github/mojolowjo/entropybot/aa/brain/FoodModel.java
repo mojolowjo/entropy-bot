@@ -41,7 +41,7 @@ public final class FoodModel {
     }
 
     /** The cooked item of a raw one (null: nothing cooks it). */
-    public static String cooked(String rawPath) { return cooks().get(path(rawPath)); }
+    public static String cooked(String rawPath) { return rawPath == null ? null : cooks().get(path(rawPath)); }
 
     static String path(String id) { int i = id.indexOf(':'); return i < 0 ? id : id.substring(i + 1); }
 

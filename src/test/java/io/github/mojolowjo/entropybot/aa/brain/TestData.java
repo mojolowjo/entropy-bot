@@ -24,6 +24,13 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     public final Map<String, Facts> facts = new HashMap<>();
     public final Map<String, List<Recipe>> recipes = new HashMap<>();
     public final Map<String, String> cooks = new HashMap<>();
+    public final Map<String, Set<String>> tags = new HashMap<>();
+    public final Map<String, String> mobFood = new HashMap<>();
+    public final Set<String> shields = new HashSet<>();
+    public TestData tag(String id, String... t) { tags.computeIfAbsent(id(id), k -> new HashSet<>()).addAll(Arrays.asList(t)); return this; }
+    public final Set<String> riskyFood = new HashSet<>();
+    @Override public boolean riskyFood(String id) { return riskyFood.contains(id); }
+    public final Set<String> junkFood = new HashSet<>(), effectFood = new HashSet<>();
     public final Set<String> stone = new HashSet<>(), station = new HashSet<>(), ore = new HashSet<>(), plank = new HashSet<>();
 
     public static String id(String s) { return s.contains(":") ? s : "minecraft:" + s; }
@@ -53,7 +60,7 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
                 .armour("shield", 0, 0, 336).armour("bow", 0, 0, 384)
                 .food("cooked_beef", 8, 12.8).food("beef", 3, 1.8).food("cooked_porkchop", 8, 12.8).food("porkchop", 3, 1.8).food("bread", 5, 6)
                 .food("apple", 4, 2.4).food("sweet_berries", 2, 0.4).food("mushroom_stew", 6, 7.2).food("cod", 2, 0.4).food("cooked_cod", 5, 6)
-                .food("dried_kelp", 1, 0.6).food("kelp", 1, 0.6).food("baked_potato", 5, 6).food("potato", 1, 0.6).food("cooked_chicken", 6, 7.2)
+                .food("dried_kelp", 1, 0.6).food("kelp", 1, 0.6).food("baked_potato", 5, 6).food("potato", 1, 0.6).food("cooked_chicken", 6, 7.2).food("chicken", 2, 1.2)
                 .food("mutton", 2, 1.2).food("cooked_mutton", 6, 9.6)
                 .block("cobblestone", 2, 0).block("stone", 1.5, 0).block("dirt", 0.5, 0).block("gravel", 0.6, 0).block("sand", 0.5, 0).block("netherrack", 0.4, 0)
                 .block("oak_planks", 2, 0).block("oak_log", 2, 0).block("iron_ore", 3, 0).block("diamond_ore", 3, 0).block("coal_ore", 3, 0).block("crafting_table", 2.5, 0)
@@ -67,6 +74,31 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
         for (String s : List.of("gold_ore", "diamond_ore", "redstone_ore", "emerald_ore", "deepslate_diamond_ore")) d.tiers.put(id(s), 3);
         for (String s : List.of("coal_ore", "stone", "cobblestone")) d.tiers.put(id(s), 1);
         d.tiers.put(id("dirt"), 0);
+        for (String s : List.of("cobbled_deepslate", "deepslate", "tuff", "andesite", "diorite", "granite", "blackstone", "coarse_dirt", "red_sand", "calcite", "basalt")) d.block(s, s.equals("cobbled_deepslate") ? 3.5 : s.equals("deepslate") ? 3 : 1.5, 0);
+        for (String s : List.of("cobbled_deepslate", "deepslate", "tuff", "andesite", "diorite", "granite", "blackstone", "calcite", "basalt")) { d.stone.add(id(s)); d.tiers.put(id(s), 1); }
+        d.stone.addAll(List.of(id("coarse_dirt"), id("red_sand")));
+        d.tag("coarse_dirt", "minecraft:dirt").tag("red_sand", "minecraft:sand").tag("grass_block", "minecraft:dirt").tag("podzol", "minecraft:dirt");
+        for (String w : List.of("spruce", "birch", "jungle", "acacia", "cherry", "dark_oak")) { d.block(w + "_planks", 2, 0).block(w + "_log", 2, 0); d.plank.add(id(w + "_planks")); d.tag(w + "_planks", "minecraft:planks").tag(w + "_log", "minecraft:logs"); }
+        d.tag("crimson_stem", "minecraft:logs").tag("stripped_oak_log", "minecraft:logs").block("crimson_stem", 2, 0).block("stripped_oak_log", 2, 0);
+        for (String w : List.of("oak", "birch", "spruce")) { d.block(w + "_leaves", 0.2, 0).tag(w + "_leaves", "minecraft:leaves"); }
+        d.tag("birch_log", "minecraft:logs").tag("deepslate_iron_ore", "c:ores").block("deepslate_iron_ore", 4.5, 0).ore.add(id("deepslate_iron_ore"));
+        d.tool("leafscopperbackport:copper_pickaxe", Role.PICKAXE, 5, 1, 190).tool("minecraft:wooden_shovel", Role.SHOVEL, 2, 0, 59);
+        for (String s : List.of("stone", "deepslate", "andesite", "diorite", "granite", "tuff", "calcite")) d.tag(s, "minecraft:base_stone_overworld");
+        for (String s : List.of("gravel", "clay", "mud", "red_sand", "sand", "dirt", "coarse_dirt")) d.tag(s, "minecraft:mineable/shovel");
+        d.tag("clay", "minecraft:clay_like").tag("mud", "minecraft:mud_like").tag("wheat", "minecraft:crops").tag("pumpkin_stem", "minecraft:crops");
+        d.riskyFood.add(id("chicken"));
+        d.tag("coal", "minecraft:coals").tag("charcoal", "minecraft:coals").tag("ancient_debris", "c:ores").tag("wheat_seeds", "minecraft:villager_plantable_seeds").tag("mysticalagriculture:inferium_seeds", "minecraft:villager_plantable_seeds");
+        d.food("golden_carrot", 6, 14.4).food("golden_apple", 4, 9.6).food("carrot", 3, 3.6).food("suspicious_stew", 6, 7.2).food("pumpkin_pie", 8, 4.8).food("cookie", 2, 0.4).food("melon_slice", 2, 1.2);
+        d.effectFood.addAll(List.of(id("golden_carrot"), id("golden_apple"), id("enchanted_golden_apple"), id("suspicious_stew")));
+        d.junkFood.addAll(List.of(id("rotten_flesh"), id("spider_eye"), id("poisonous_potato"), id("chorus_fruit"), id("pufferfish"), id("snowball_junk")));
+        d.tag("carrot", "minecraft:villager_plantable_seeds").tag("potato", "minecraft:villager_plantable_seeds").tag("wheat_seeds", "minecraft:villager_plantable_seeds");
+        d.recipe("bread", 1, "wheat", "wheat", "wheat");
+        d.mobFood.putAll(Map.of(id("cow"), id("beef"), id("pig"), id("porkchop"), id("sheep"), id("mutton"), id("chicken"), id("chicken")));
+        d.shields.add(id("shield"));
+        for (String s : List.of("oak_log")) d.tag(s, "minecraft:logs");
+        d.tag("oak_planks", "minecraft:planks").tag("dirt", "minecraft:dirt").tag("sand", "minecraft:sand").tag("stone", "minecraft:base_stone_overworld")
+                .tag("cobblestone", "minecraft:stone_tool_materials").tag("cobbled_deepslate", "minecraft:stone_tool_materials").tag("blackstone", "minecraft:stone_tool_materials").tag("iron_ore", "c:ores", "minecraft:mineable/pickaxe").tag("diamond_ore", "c:ores")
+                .tag("coal_ore", "c:ores");
         d.recipe("iron_ingot", 1, "iron_ore").recipe("diamond", 1, "diamond_ore").recipe("coal", 1, "coal_ore");
         d.cooks.putAll(Map.of(id("beef"), id("cooked_beef"), id("porkchop"), id("cooked_porkchop"), id("chicken"), id("cooked_chicken"), id("mutton"), id("cooked_mutton"),
                 id("cod"), id("cooked_cod"), id("potato"), id("baked_potato"), id("kelp"), id("dried_kelp")));
@@ -85,5 +117,15 @@ public final class TestData implements ItemWorth.Source, MiningTiers.Source {
     @Override public boolean stoneLike(String id) { return stone.contains(id); }
     @Override public boolean station(String id) { return station.contains(id); }
     @Override public boolean ore(String id) { return ore.contains(id); }
+    @Override public Set<String> withTag(String tag) {
+        Set<String> out = new HashSet<>();
+        for (var e : tags.entrySet()) if (e.getValue().contains(tag)) out.add(e.getKey());
+        return out;
+    }
+    @Override public Set<String> tags(String id) { return tags.getOrDefault(id, Set.of()); }
+    @Override public Map<String, String> mobFood() { return mobFood; }
+    @Override public boolean shield(String id) { return shields.contains(id); }
+    @Override public boolean junkFood(String id) { return junkFood.contains(id); }
+    @Override public boolean effectFood(String id) { return effectFood.contains(id); }
     @Override public boolean plank(String id) { return plank.contains(id); }
 }

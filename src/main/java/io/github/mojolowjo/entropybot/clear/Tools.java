@@ -12,16 +12,8 @@ import java.util.regex.Pattern;
 public final class Tools {
     private Tools() {}
 
-    private static final Pattern[] TIERS = {
-            Pattern.compile("(^|:)wooden_"), Pattern.compile("(^|:)stone_"), Pattern.compile("(^|:)(copper|golden)_"),
-            Pattern.compile("(^|:)iron_"), Pattern.compile("(^|:)diamond_"), Pattern.compile("(^|:)netherite_") };
-    private static final int[] TIER_OF = { 1, 2, 3, 4, 5, 6 };
-
-    /** Tool material, cheapest first: wooden 1, stone 2, copper/golden 3, iron 4, diamond 5, netherite 6; unknown 4. */
-    public static int toolTier(String id) {
-        for (int i = 0; i < TIERS.length; i++) if (TIERS[i].matcher(id).find()) return TIER_OF[i];
-        return 4;
-    }
+    /** A digging tool's tier on the one scale (MiningTiers: wooden/golden 1, stone 2, iron 3, diamond 4, a modded tier by its tags), from the item data; 0 for a non-tool. */
+    public static int toolTier(String id) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.anyToolTier(id); }
 
     public static boolean isPickaxe(String id) {
         return id.endsWith("_pickaxe");
@@ -52,8 +44,8 @@ public final class Tools {
         return best;
     }
 
-    /** The tier an ore pickaxe has to have under "tools ores iron": iron or better (unknown modded tools count as iron). */
-    public static final int ORE_TIER = 4;
+    /** The tier an ore pickaxe has to have under "tools ores iron": iron or better (on the MiningTiers scale: iron 3). */
+    public static final int ORE_TIER = 3;
 
     /**
      * The tool policy (package B, 2026-10-03): on an ore under {@code toolOres} "iron" (the default) the cheapest tool

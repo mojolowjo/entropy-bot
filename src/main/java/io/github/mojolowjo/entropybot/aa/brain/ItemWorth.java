@@ -68,6 +68,20 @@ public final class ItemWorth {
         default boolean ore(String id) { return false; }
         /** An item in the game's planks tag. */
         default boolean plank(String id) { return false; }
+        /** A food whose FOOD component carries a harmful effect (hunger, poison, nausea) or gives nutrition 1 or less. */
+        default boolean junkFood(String id) { return false; }
+        /** The game's block and item tags of an id, as "namespace:path" (minecraft:logs, c:ores, minecraft:base_stone_overworld...). */
+        default Set<String> tags(String id) { return Set.of(); }
+        /** A food whose FOOD component carries a beneficial effect (golden apple, golden carrot, suspicious stew): a special, not plain food. */
+        default boolean effectFood(String id) { return false; }
+        /** A food with any harmful effect, however unlikely (raw chicken 30 % hunger): fine in a pinch, never a plan's food without cooking. */
+        default boolean riskyFood(String id) { return false; }
+        /** Every id carrying the tag ("namespace:path"), for the lists a rule once spelled out. */
+        default Set<String> withTag(String tag) { return Set.of(); }
+        /** Mob id -> the food item its loot table drops (animals the bot may hunt are the friendly ones); empty on a client with no loot tables. */
+        default Map<String, String> mobFood() { return Map.of(); }
+        /** An item that blocks attacks when used (a shield: the game's BLOCK use animation). */
+        default boolean shield(String id) { return false; }
     }
 
     /** Where a once-only note goes (the adapter sets the mod log; tests may collect). */
@@ -174,6 +188,48 @@ public final class ItemWorth {
         return f.light >= Tuning.get("kit.lightMin") && f.hardness <= 0;
     }
 
+    /** True when the game tags the id ({@code logs} = minecraft:logs; {@code c:ores} as written). */
+    public static boolean hasTag(String id, String tag) {
+        Source s = source;
+        if (s == null || id == null || tag == null) return false;
+        return s.tags(full(id)).contains(tag.indexOf(':') < 0 ? "minecraft:" + tag : tag);
+    }
+    /** The ids the game tags with {@code tag}, sorted (empty without data: said once). */
+    public static List<String> withTag(String tag) {
+        Source s = source;
+        if (s == null) { warnOnce("tag:" + tag, "no item data loaded: the tag " + tag + " is empty"); return List.of(); }
+        List<String> out = new java.util.ArrayList<>(s.withTag(tag.indexOf(':') < 0 ? "minecraft:" + tag : tag));
+        java.util.Collections.sort(out);
+        return out;
+    }
+    public static boolean riskyFood(String id) { Source s = source; return s != null && s.riskyFood(full(id)); }
+    public static boolean effectFood(String id) { Source s = source; return s != null && s.effectFood(full(id)); }
+
+    /** The raw item a cooking recipe makes this from (null: nothing cooks into it). */
+    public static String rawOf(String id) {
+        Source s = source;
+        if (s == null || id == null) return null;
+        String f = full(id);
+        for (var e : s.cooks().entrySet()) if (e.getValue().equals(f)) return e.getKey();
+        return null;
+    }
+
+    /** The first ingredient of the item's cheapest-listed recipe (bread: wheat), or null. */
+    public static String firstIngredient(String id) {
+        Source s = source;
+        if (s == null || id == null) return null;
+        for (Recipe r : s.recipes(full(id))) if (!r.inputs().isEmpty()) return r.inputs().get(0);
+        return null;
+    }
+    public static boolean shield(String id) { Source s = source; return s != null && s.shield(full(id)); }
+
+    /** Mob id -> the food its loot table drops (empty without data: said once). */
+    public static Map<String, String> mobFood() {
+        Source s = source;
+        if (s == null || s.mobFood().isEmpty()) { warnOnce("mobFood", "no mob loot tables loaded: no animal is known as food"); return Map.of(); }
+        return s.mobFood();
+    }
+    public static boolean junkFood(String id) { Source s = source; return s != null && s.junkFood(full(id)); }
     public static boolean plank(String id) { Source s = source; return s != null && s.plank(full(id)); }
     public static boolean station(String id) { Source s = source; return s != null && s.station(full(id)); }
     public static boolean stoneLike(String id) { Source s = source; return s != null && s.stoneLike(full(id)); }

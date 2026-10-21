@@ -9,6 +9,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** 0.24.3: the food kind picks stock, then plain foods, a modded food only when its plan resolves. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class FoodChoiceTest {
     static final List<String> IDS = List.of("arphex:abyssal_stew", "minecraft:apple", "minecraft:baked_potato", "minecraft:beef", "minecraft:bread",
             "minecraft:carrot", "minecraft:cooked_beef", "minecraft:golden_carrot", "minecraft:potato", "othermod:pie");

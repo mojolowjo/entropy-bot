@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * reach (Baritone's partial path) took it down the cave. The bot came from x 243 along the dug tunnel; an old restock
  * table stands at 264 -48 854.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class LiveCaveTest {
     /** One z row of the map, x 252..270: '.' air, '#' stone. */
     static void row(FakeWorld w, int y, int z, String cells) {

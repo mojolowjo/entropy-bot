@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * every dig the water model ({@link FluidSim}, with the game's new-source rule) settles: no water (and so no new source)
  * may ever show up in a cell the dig has opened.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class WaterModelTest {
     static final ClearBox TUNNEL = WaterScanTest.TUNNEL;      // x 0..20, y 40..42, z -1..1
     static final ClearBox SIM = ClearBox.of(-4, 34, -9, 26, 50, 9);

@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * "lowtools") and the dig checks of the "safety" scenario. The expected reports are the bridge's own, taken from
  * runs of test/sim.js.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ClearRunTest {
     static final Set<String> NEXT_TO_WATER = Set.of("-6 55 145", "-5 54 145", "-5 55 144", "-5 55 146", "-4 55 145");
 

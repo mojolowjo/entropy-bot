@@ -7,6 +7,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** 0.24.3: hunt's target filter, stop rule and the food source order with hunting on/off. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class HuntRulesTest {
     static HuntRules.Target t(String type) { return new HuntRules.Target(type, false, false, false, false, false, false); }
 
@@ -22,7 +23,7 @@ class HuntRulesTest {
     }
 
     @Test void targetFilter() {
-        List<String> ok = HuntRules.ANIMALS;
+        List<String> ok = HuntRules.animals();
         assertTrue(HuntRules.mayTake(t("minecraft:cow"), ok, null));
         assertFalse(HuntRules.mayTake(t("minecraft:wolf"), ok, null));
         assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", true, false, false, false, false, false), ok, null));   // tamed
@@ -61,6 +62,6 @@ class HuntRulesTest {
     }
 
     @Test void animalsKind() {
-        assertEquals(HuntRules.ANIMALS.size(), Kinds.expand("animals", List.of("minecraft:stone"), x -> false, Kinds.Rule.none()).size());
+        assertEquals(HuntRules.animals().size(), Kinds.expand("animals", List.of("minecraft:stone"), x -> false, Kinds.Rule.none()).size());
     }
 }

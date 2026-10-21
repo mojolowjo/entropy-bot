@@ -19,7 +19,7 @@ import java.util.function.Predicate;
  * </ul>
  * or why it can't (lava, a cell it may not or can't place into, nowhere dry to stand, too few blocks). Each placement
  * comes in an order where the cell has a solid face to click when its turn comes (the earlier placements count), with
- * a dry stand spot in reach (never in water). The blocks are plain junk ({@link FloorFill#FALLBACK}, which never counts
+ * a dry stand spot in reach (never in water). The blocks are plain junk ({@link FloorFill#fallback}, which never counts
  * as a built block, so a later dig may still take them) and the 64 stone pickaxe material stays ({@link FloorFill#usable}).
  */
 public final class WaterPlan {
@@ -221,11 +221,11 @@ public final class WaterPlan {
 
     // ---- blocks ----
 
-    /** The junk blocks it may place: {@link FloorFill#FALLBACK}, each as far as {@link FloorFill#usable} allows. */
+    /** The junk blocks it may place: {@link FloorFill#fallback}, each as far as {@link FloorFill#usable} allows. */
     public static int available(Map<String, Integer> inv) {
         int n = 0;
         Map<String, Integer> left = new LinkedHashMap<>(inv);
-        for (String id : FloorFill.FALLBACK) {
+        for (String id : FloorFill.fallback(inv)) {
             int u = FloorFill.usable(id, left);
             n += u;
             left.put(id, left.getOrDefault(id, 0) - u);
@@ -233,11 +233,11 @@ public final class WaterPlan {
         return n;
     }
 
-    /** A block id for each of n placements (FALLBACK order, as far as each lasts), or null when there aren't enough. */
+    /** A block id for each of n placements (fallback order, as far as each lasts), or null when there aren't enough. */
     public static List<String> assignBlocks(int n, Map<String, Integer> inv) {
         Map<String, Integer> left = new LinkedHashMap<>(inv);
         List<String> out = new ArrayList<>();
-        for (String id : FloorFill.FALLBACK) {
+        for (String id : FloorFill.fallback(inv)) {
             while (out.size() < n && FloorFill.usable(id, left) > 0) {
                 out.add(id);
                 left.put(id, left.get(id) - 1);
@@ -248,7 +248,7 @@ public final class WaterPlan {
 
     /**
      * "junk drop" with "water": what to throw after keeping {@link #RESERVE} placeable junk blocks (on top of what
-     * {@link FloorFill#usable} keeps for pickaxes). Gives back from the throw, in FALLBACK order, until the reserve is
+     * {@link FloorFill#usable} keeps for pickaxes). Gives back from the throw, in fallback order, until the reserve is
      * there or nothing is left to give back.
      */
     public static Map<String, Integer> keepReserve(Map<String, Integer> thrown, Map<String, Integer> inv, int reserve) {
@@ -256,7 +256,7 @@ public final class WaterPlan {
         Map<String, Integer> after = new LinkedHashMap<>(inv);
         for (Map.Entry<String, Integer> e : out.entrySet()) after.put(e.getKey(), after.getOrDefault(e.getKey(), 0) - e.getValue());
         // one at a time: stone pickaxe material given back fills the pickaxes' 64 before it becomes placeable
-        for (String id : FloorFill.FALLBACK) {
+        for (String id : FloorFill.fallback(inv)) {
             while (out.getOrDefault(id, 0) > 0 && available(after) < reserve) {
                 out.merge(id, -1, Integer::sum);
                 after.merge(id, 1, Integer::sum);

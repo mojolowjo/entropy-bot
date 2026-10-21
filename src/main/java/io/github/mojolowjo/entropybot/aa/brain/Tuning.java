@@ -48,6 +48,7 @@ public final class Tuning {
         def("junk.placeWorth", 0.02, "rm-names", "a block item worth no more than this (hardness 2: cobblestone, dirt, planks, logs) is a filler the danger moves may place and a build keeps; an ore is worth more");
         def("junk.neverWorth", 2, "rm-names", "an item worth more than this is never put on the owner's junk list (ores, gems, ingots)");
         def("tech.keyWeight", 3, "rm-names", "a recipe result that is gear (tool, armour, shield, bow: damageable) or a workstation (opens a menu) weighs this in the tech tree, any other result 1");
+        def("tools.unknownNeedTier", 3, "rm-names", "the pickaxe tier asked for a mining need the block data cannot read (iron: what the old default 4 on the clear scale meant)");
         def("junk.maxWorth", 0.015, "rm-names", "an item worth less than this (soft blocks: dirt, gravel, sand, leaves) is junk; stone-like blocks are junk by tag; an unknown worth is never junk");
         def("urgent", 75, "aa-brain 1", "the score from which an upkeep may interrupt the running desire (food near empty)");
         def("margin", 15, "aa-brain 1", "the commitment bonus: a challenger must beat the running desire by this much");

@@ -115,7 +115,7 @@ public final class StonePit {
     }
 
     /** The items a quarry is for (its end text says how many of them it got). */
-    public static final List<String> COUNTED = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate");
+    public static List<String> counted() { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.withTag("stone_tool_materials"); }
 
     /**
      * 0.30.0 (P2): the clear options of "dig stone n": exactly the plan's cells (in the plan's order) as the only list, ores

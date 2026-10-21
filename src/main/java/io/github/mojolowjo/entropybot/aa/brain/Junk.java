@@ -10,7 +10,9 @@ public final class Junk {
     private Junk() {}
 
     public static boolean is(String id) {
-        if (id == null || Kit.kept(id)) return false;
+        if (id == null) return false;
+        if (ItemWorth.junkFood(id)) return true;           // harmful or nutrition <= 1: junk by the FOOD data
+        if (Kit.kept(id)) return false;
         if (ItemWorth.stoneLike(id)) return true;
         var w = ItemWorth.of(id);
         return w.known() && w.value() < Tuning.get("junk.maxWorth");

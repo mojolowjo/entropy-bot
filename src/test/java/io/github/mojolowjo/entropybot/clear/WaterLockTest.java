@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * and the water plan (which starts from a "blocked by water" end) never ran. Now the walk map stays dry and the dig ends
  * "blocked by water at x y z (it cuts me off ...)", naming the first water cell on the way, which the plug case takes.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class WaterLockTest {
     /** The box: x -10..20, y 50..51, z -1..1 (3 wide, 2 high, floor y 49), like the tunnel's dig from 567. */
     static final ClearBox BOX = ClearBox.of(-10, 50, -1, 20, 51, 1);

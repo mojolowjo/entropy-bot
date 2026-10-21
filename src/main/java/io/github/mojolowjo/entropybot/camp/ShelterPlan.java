@@ -18,8 +18,6 @@ public final class ShelterPlan {
 
     /** Sides in the order they are tried for the way out: north, east, south, west (dx, dz). */
     public static final int[][] SIDES = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
-    /** Materials in the owner's order: any planks, then cobblestone, then dirt. */
-    public static final List<String> ORDER = List.of("planks", "minecraft:cobblestone", "minecraft:dirt");
     /** Blocks the full shell takes (4 at the feet, 4 at the head, the roof's support, the roof). */
     public static final int FULL = 10;
 
@@ -92,15 +90,12 @@ public final class ShelterPlan {
 
     /** The block to build with: the first of planks (any), cobblestone, dirt the bag holds at least n of; null if none. */
     public static String material(Map<String, Integer> bag, int n) {
-        for (String m : ORDER) {
-            if (m.equals("planks")) {
-                String best = null;
-                int bestN = 0;
-                for (Map.Entry<String, Integer> e : bag.entrySet())
-                    if (e.getKey().endsWith("_planks") && e.getValue() > bestN) { best = e.getKey(); bestN = e.getValue(); }
-                if (best != null && bestN >= n) return best;
-            } else if (bag.getOrDefault(m, 0) >= n) return m;
-        }
+        String best = null;
+        int bestN = 0;
+        for (Map.Entry<String, Integer> e : bag.entrySet())
+            if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.plank(e.getKey()) && e.getValue() > bestN) { best = e.getKey(); bestN = e.getValue(); }
+        if (best != null && bestN >= n) return best;
+        for (String m : io.github.mojolowjo.entropybot.clear.FloorFill.fallback(bag)) if (bag.getOrDefault(m, 0) >= n) return m;      // stone-like filler first, then soft blocks
         return null;
     }
 

@@ -32,21 +32,37 @@ import static io.github.mojolowjo.entropybot.clear.ClearRules.floor;
 public final class FloorFill {
     private FloorFill() {}
 
-    /** Without a named block: the first of these it carries (plain stone-like junk, nothing that falls or opens). */
-    public static final List<String> FALLBACK = List.of("minecraft:cobbled_deepslate", "minecraft:deepslate", "minecraft:tuff",
-            "minecraft:stone", "minecraft:andesite", "minecraft:diorite", "minecraft:granite", "minecraft:cobblestone",
-            "minecraft:dirt");
+    /**
+     * Without a named block: the junk blocks it carries (plain stone-like filler by the game's tags and hardness, soft blocks
+     * by worth; nothing that falls or opens by the cell rules), stone-like first, then dearer first, then by id.
+     */
+    public static List<String> fallback(Map<String, Integer> inv) {
+        List<String> out = new java.util.ArrayList<>();
+        for (var e : inv.entrySet()) if (e.getValue() != null && e.getValue() > 0 && isFallback(ClearRules.fullId(e.getKey()))) out.add(ClearRules.fullId(e.getKey()));
+        List<String> mat = stoneMaterial();
+        // stone-like that is no pickaxe material first (spared), then the pickaxe material, then soft blocks; by id inside
+        out.sort(java.util.Comparator.comparingInt((String id) -> soft(id) ? 2 : mat.contains(id) ? 1 : 0).thenComparing(id -> id));
+        return out;
+    }
 
-    /** Stone pickaxe material (vanilla's stone_tool_materials): together the last {@link #STONE_KEEP} are never used up. */
-    public static final List<String> STONE_MATERIAL = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:blackstone");
-    public static final int STONE_KEEP = 64;
+    /** Soft filler (dirt, gravel, sand): worth under junk.maxWorth. */
+    static boolean soft(String id) { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.valueOr(id, 1) < io.github.mojolowjo.entropybot.aa.brain.Tuning.get("junk.maxWorth"); }
+
+    /** A block the fill may place and a junk drop may throw: junk by the data (Junk) and a block. */
+    public static boolean isFallback(String fullId) {
+        return fullId != null && io.github.mojolowjo.entropybot.aa.brain.Junk.is(fullId) && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.block(fullId);
+    }
+
+    /** Stone pickaxe material (the game's stone_tool_materials tag): together the last {@link #STONE_KEEP} are never used up. */
+    public static List<String> stoneMaterial() { return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.withTag("stone_tool_materials"); }    public static final int STONE_KEEP = 64;
 
     /** How many of id the fill (or a junk throw) may use: all, but stone pickaxe material only above 64 of all three together. */
     public static int usable(String id, Map<String, Integer> inv) {
         int n = inv.getOrDefault(id, 0);
-        if (!STONE_MATERIAL.contains(id)) return Math.max(0, n);
+        List<String> sm = stoneMaterial();
+        if (!sm.contains(id)) return Math.max(0, n);
         int all = 0;
-        for (String m : STONE_MATERIAL) all += inv.getOrDefault(m, 0);
+        for (String m : sm) all += inv.getOrDefault(m, 0);
         return Math.max(0, Math.min(n, all - STONE_KEEP));
     }
 
@@ -155,12 +171,12 @@ public final class FloorFill {
     // ---- the block ----
 
     /**
-     * The block to place: the named one while it has any (nothing else then), else the first of {@link #FALLBACK} it
+     * The block to place: the named one while it has any (nothing else then), else the first of {@link #fallback} it
      * carries; never the last {@link #STONE_KEEP} stone pickaxe material ({@link #usable}). Null: none.
      */
     public static String chooseBlock(String named, Map<String, Integer> inv) {
         if (named != null) return usable(named, inv) > 0 ? named : null;
-        for (String id : FALLBACK) if (usable(id, inv) > 0) return id;
+        for (String id : fallback(inv)) if (usable(id, inv) > 0) return id;
         return null;
     }
 
@@ -265,7 +281,7 @@ public final class FloorFill {
         private boolean done;
 
         /**
-         * @param named     the block the owner named (full id), or null for {@link #FALLBACK}
+         * @param named     the block the owner named (full id), or null for {@link #fallback}
          * @param allowed   cells the guard would lease for placing (null: all)
          * @param standOk   where it may stand (null: anywhere)
          * @param climbOnly only get back up onto the walkway (before the clear), never fill

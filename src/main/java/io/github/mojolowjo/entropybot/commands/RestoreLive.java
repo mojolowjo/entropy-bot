@@ -462,7 +462,7 @@ public final class RestoreLive {
     // ---- aa-litter: the scaffold the bot placed on the way ----
 
     /** What Baritone throws away as scaffold: only these, placed under a walk's travel intent, are litter. */
-    private static final Set<String> SCAFFOLD = Set.of("cobblestone", "cobbled_deepslate", "dirt", "netherrack", "stone");
+    private static boolean scaffold(String itemPath) { return io.github.mojolowjo.entropybot.clear.FloorFill.isFallback(itemPath.contains(":") ? itemPath : "minecraft:" + itemPath); }
 
     /**
      * From the place hook (client thread, after the guard let the placement through): a walk (travel intent, a job
@@ -473,7 +473,7 @@ public final class RestoreLive {
         try {
             Minecraft mc = Minecraft.getInstance();
             Commands cm = c;
-            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null || !SCAFFOLD.contains(itemPath)) return;
+            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null || !scaffold(itemPath)) return;
             if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() != io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) return;
             String dim = Guard.dimOf(mc.level);
             if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole

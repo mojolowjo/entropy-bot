@@ -29,15 +29,8 @@ public final class StripRules {
     /** "mine strip" starts no new run after an hour. */
     public static final long MAX_TICKS = 20L * 60 * 60;
 
-    /** The pickaxe tier a block needs: stone 2, iron 4, diamond 5 (the clear's toolTier scale). */
-    public static int pickTier(String need) {
-        return switch (need == null ? "" : need) {
-            case "stone" -> 2;
-            case "iron" -> 4;
-            case "diamond" -> 5;
-            default -> 4;
-        };
-    }
+    /** The pickaxe tier a block needs, from the block tags on the one scale (MiningTiers.needTier). */
+    public static int pickTier(String need) { return io.github.mojolowjo.entropybot.aa.brain.MiningTiers.needTier(need); }
 
     /** What stops a corridor: kind (tool, liquid, protected, unbreakable, stuck), the "blocked:..." text, and the tool tier it needs. */
     public record Block(String kind, String text, String need) {}

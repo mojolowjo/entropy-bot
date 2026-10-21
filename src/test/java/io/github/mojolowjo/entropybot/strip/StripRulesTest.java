@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * blocks a corridor (strip2's bedrock, stripblocked's ore, water, planks, a stuck clear), the run's verdict and
  * stripRecover's choice, the turns, mark-mine's stand check, the mine's table and chests, the base trip.
  */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class StripRulesTest {
     static final MineGeom MINE = new MineGeom(0, 40, 0, "north");
 
@@ -66,12 +67,12 @@ class StripRulesTest {
         MineGeom g = new MineGeom(100, 40, 0, "north");
         w.fill(g.corridor(2), "air").set(100, 40, -5, "deepslate_redstone_ore");
         String report = "ok: finished digging the mine corridor (branch 2) - broke 5 blocks; 1 left, e.g. 100 40 -5 needs a better tool (deepslate_redstone_ore)";
-        StripRules.Block b = StripRules.corridorBlock(w, g.corridor(2), new int[]{100, 40, -3}, report, 3);
+        StripRules.Block b = StripRules.corridorBlock(w, g.corridor(2), new int[]{100, 40, -3}, report, 2);
         assertEquals(new StripRules.Block("tool", "blocked:tool deepslate_redstone_ore at 100 40 -5 needs iron", "iron"), b);
         // without the clear's note it still knows: no pickaxe of that tier in the bag (copper = 3)
-        assertEquals("tool", StripRules.corridorBlock(w, g.corridor(2), new int[]{100, 40, -3}, "ok: done", 3).kind());
+        assertEquals("tool", StripRules.corridorBlock(w, g.corridor(2), new int[]{100, 40, -3}, "ok: done", 2).kind());
         // with an iron pickaxe and no note, it was something else: stuck
-        assertEquals("blocked:stuck deepslate_redstone_ore at 100 40 -5", StripRules.corridorBlock(w, g.corridor(2), new int[]{100, 40, -3}, "ok: done", 4).text());
+        assertEquals("blocked:stuck deepslate_redstone_ore at 100 40 -5", StripRules.corridorBlock(w, g.corridor(2), new int[]{100, 40, -3}, "ok: done", 3).text());
         assertEquals(StripRules.Action.TOOL, StripRules.recover("tool", "corridor", 1));
         assertEquals(StripRules.Action.FAIL, StripRules.recover("tool", "corridor", 2), "it had the pickaxe, and the block still stopped it");
         assertEquals("fetched an iron pickaxe for the deepslate_redstone_ore at 100 40 -5", StripTexts.toolNote("fetched", "iron", b.text()));
