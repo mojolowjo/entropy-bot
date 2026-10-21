@@ -1,75 +1,24 @@
 package io.github.mojolowjo.entropybot.aa;
 
-import io.github.mojolowjo.entropybot.aa.core.Band;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
-import io.github.mojolowjo.entropybot.aa.core.MemoryFallback;
-import io.github.mojolowjo.entropybot.aa.core.Node;
-import io.github.mojolowjo.entropybot.aa.core.TaskKind;
-
-import java.util.List;
 
 /**
- * AA v0 (AA_PLAN 9, checked against the 0.35.4 source, build notes): the basic-needs ladder for Peaceful. Rungs top to
- * bottom, the first unmet one that can start runs. Verbs are the existing ones; a "goal ..." text goes to the planner
- * through {@code JobPort.resolve}.
- *
- * <ol>
- * <li value="0">AREAS (0.39.2): no area rung any more - the world is open (AREAS_PLAN 5), AA works where it stands and
- *     the labelled places are facts (AreaFacts). The base rung builds a shelter unless a base/work area fits a house.</li>
- * <li>TOOLS: no pickaxe at all -> {@code bootstrap} (the from-nothing job); a wooden one, or the best under 15 % with
- *     no spare -> {@code goal stone tools}.</li>
- * <li>FOOD: on a hungry difficulty only (Peaceful: the bar never drains): food under 10 until 18, or the bag under its stock target (aa-food,
- *     FoodModel) -> the best of FoodOptions' ways (eat, cook, hunt, forage, apples, a wheat field, {@code goal food 8}).</li>
- * <li>TABLE_FURNACE: no table known -> {@code goal table}; no furnace -> {@code goal furnace}.</li>
- * <li>TORCHES: under 8 until 16 -> {@code goal torch 16} (planner: coal or charcoal).</li>
- * <li>BASE_BED: no base/shelter -> {@code house <area>} when a buildable area exists, else {@code goal shelter} (once:
- *     the shelter fact is AA's own, the world has none); then the bed only with 3 wool or a bed in the bag:
- *     {@code goal bed}. Without wool the bed is skipped with the reason (no sheep on the template, {@code hunt} needs
- *     areas; assumption 9.4 was false).</li>
- * <li>BAG: free slots under 3 until 10 -> {@code deposit}, only with base chests scanned (assumption 9.5: no chest on a
- *     fresh world, so the rung says why it is skipped; the idle junk tick keeps dropping junk).</li>
- * <li>IRON: no iron pickaxe -> {@code goal iron tools}.</li>
- * </ol>
+ * What is left of the AA v0 ladder after round 4A N: the rungs, the gates ({@code openGate}, {@code needsOpenGround},
+ * needs.surface/area/woodArea) and the ladder order are gone - the needs are {@link Need}s with option sets
+ * ({@link AaDesires#needs}), the climb is a priced first step ({@link Ways#climb}). Kept: the shared names and pure
+ * helpers below. Loader notes: none.
  */
 public final class AaLadder {
     private AaLadder() {}
 
     public static final String SHELTER_FACT = "shelterBuilt";
 
-    /**
-     * The from-nothing job (live check 2026-10-18: the planner's "trees" fact scans 16 blocks around the bot, so from a
-     * spawn with the nearest oak 52 blocks away {@code goal stone tools} has no plan; {@code bootstrap} fells trees
-     * anywhere in the areas and makes the table, wooden then stone tools, furnace, chest, charcoal, torches, base, camp).
-     */
+    /** The from-nothing job (fells trees, table, wooden then stone tools, furnace, chest, charcoal, torches, base, camp). */
     public static final String BOOTSTRAP = "bootstrap";
 
     public static final String CLIMB = "climb";
-    /** Under this much ground the table/furnace/house/iron rungs climb out first (a tree's leaves never count). */
+    /** Under this much ground a need whose work wants open ground prices a climb into its row (a tree's leaves never count). */
     public static final int SURFACE_DEPTH = 3;
-
-    /** A later rung that places a table or furnace, builds the base or plans iron (it places a table and furnace). */
-    /**
-     * aa-costs: the gate rung still open (needs.surface; AREAS: the area gates are gone), else null. An upkeep that may
-     * now score urgent (tools) waits for it: nothing it runs can work before the gate is met.
-     */
-    public static String openGate(Blackboard bb) { return openGate(bb, io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.SURFACE); }
-
-    /**
-     * small-1: the surface gate (climb out first) binds only a desire whose exposure is SURFACE; UNDER and ANY desires
-     * never wait for it (the dawn climb is the surface rung's own score).
-     */
-    public static String openGate(Blackboard bb, io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure e) {
-        if (e != io.github.mojolowjo.entropybot.aa.brain.Desire.Exposure.SURFACE) return null;
-        if (io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb))) return "needs.surface";
-        return null;
-    }
-
-    static boolean needsOpenGround(Blackboard bb) {
-        boolean table = bb.in.tableKnown || bb.in.tableInBag, furnace = bb.in.furnaceKnown || bb.in.furnaceInBag;
-        // review 2 item 3: no pickTier clause (a stone pickaxe 3+ under opened the gate on every iron dig: the yo-yo); the
-        // climb is the SURFACE picker's own first step, priced by WayUp (RungOptions.Surface)
-        return !table || !furnace || (!bb.in.baseKnown && !bb.flag(SHELTER_FACT));
-    }
 
     private static final java.util.regex.Pattern ZERO_GAIN = java.util.regex.Pattern.compile("\\bgot 0 of [1-9]\\d*\\b");
 
@@ -85,10 +34,8 @@ public final class AaLadder {
     public static final int CAMP_R = 24;
 
     /**
-     * 0.36.a6 (aa371: under ground, away from the camp, the table/furnace rung planned a new furnace: "no a free spot
-     * next to me for the furnace"): the near-block sense is true only near the block, so a table/furnace seen within
-     * {@link #CAMP_R} of the camp or base mark is latched and counts wherever the bot is. Cleared only when neither a
-     * camp nor a base is known any more.
+     * 0.36.a6: a table/furnace seen within {@link #CAMP_R} of the camp or base mark is latched and counts wherever the bot
+     * is. Cleared only when neither a camp nor a base is known any more.
      *
      * @param distToCamp blocks to the nearer of the camp and base marks, -1 when neither is known
      */
@@ -97,93 +44,12 @@ public final class AaLadder {
         return latched || (seenNear && distToCamp <= CAMP_R);
     }
 
-    /** BRAIN_PLAN B1: the rungs in ladder order; the brain (AaDesires) scores them instead of trying them in order. */
-    public static List<Rung> build() {
-        Band torches = new Band(8, 16), bag = new Band(3, 10), food = new Band(10, 18);
-        Rung tools = new Rung("needs.tools", TaskKind.TOOLS,
-                // aa-night2 P0 2: a stone sword too once a zombie was seen (the planner's "goal stone tools" makes one)
-                bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
-                // S2 (MINING_PLAN 11): bootstrap tools / bootstrap / the planner, scored (RungOptions.Tools)
-                bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
-                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? BOOTSTRAP : planned));
-        // 0.36.3 (aa40b: bootstrap left the bot in its quarry hole, 9 under the surface, and "goal table" / "goal iron
-        // tools" had no free spot for the table for 30 minutes): a rung that needs open ground waits for a climb first
-        Rung surface = new Rung("needs.surface", TaskKind.TABLE_FURNACE,
-                // overnight 2026-10-19: also at dawn after the night work dug down (it clears its note near the surface)
-                bb -> io.github.mojolowjo.entropybot.aa.brain.NightWork.climbAtDawn(bb, SURFACE_DEPTH) | (bb.in.underDepth >= SURFACE_DEPTH && needsOpenGround(bb)),
-                // S2: climb / pillar / trail / goto open sky / nothing, scored (RungOptions.Surface)
-                bb -> null, bb -> CLIMB, new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface()));
-        // aa-food: the bar's band, or the bag under the stock target (FoodModel); the ways are scored (FoodOptions)
-        Rung hunger = new Rung("needs.food", TaskKind.FOOD,
-                bb -> bb.in.hungerDrains && (food.update(bb.in.food) | AaDesires.foodStockLow(bb)),
-                bb -> null, bb -> "goal food 8",
-                new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
-        // a table or furnace in the bag counts (live 2026-10-18: "goal table" with one in the bag is "nothing to do",
-        // which the planner hook reports as no plan; the near-block fact is false as soon as the bot walks away)
-        Rung tableFurnace = new Rung("needs.tableFurnace", TaskKind.TABLE_FURNACE,
-                // aa-kit: the "camp" rung: table + furnace + a chest at the base (the stash needs one)
-                bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !AaDesires.campChest(bb),
-                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
-                        : AaDesires.chestChain(bb.in));
-        // a spare table in the bag at all times (owner 2026-10-18): crafts away from the camp never walk back to it
-        Rung spare = new Rung("needs.spareTable", TaskKind.TABLE_FURNACE,
-                bb -> spareTableWanted(bb.in.tableInBag, bb.in.planks),
-                bb -> null, bb -> "craft crafting_table 1");
-        Rung torch = new Rung("needs.torches", TaskKind.TORCHES,
-                bb -> torches.update(bb.in.torches),
-                bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : CoalOptions.torchBlock(bb, 16), bb -> torchGoal(bb));
-        Rung base = new Rung("needs.base", TaskKind.BASE_BED,
-                bb -> !bb.in.baseKnown && !bb.flag(SHELTER_FACT),
-                bb -> null,
-                bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter");
-        // round 4 fix 4: the ways to a bed are priced (BedOptions): a failed wool hunt is held and the next way runs
-        Rung bed = new Rung("needs.bed", TaskKind.BASE_BED,
-                bb -> !bb.in.bedKnown && !bb.in.bedInBag,
-                bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
-                bb -> bedChain(bb.in.wool, sheepHerd(bb)),
-                new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set()));
-        Rung deposit = new Rung("needs.bag", TaskKind.BAG,
-                bb -> bag.update(bb.in.freeSlots),
-                bb -> bb.in.baseChests ? null : "no base chests scanned (scan base)",
-                bb -> "deposit");
-        // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
-        Rung iron = new Rung("needs.iron", TaskKind.IRON,
-                bb -> bb.in.pickTier < 3,
-                bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet",
-                bb -> "goal iron tools", new IronOptions.Picker());
-        // the brain runs a started desire to its end (live check 2026-10-18: a reactive Fallback let an earlier rung that
-        // started *planning* cancel a lower rung's job: a pointless switch)
-        return List.of(tools, surface, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
-    }
-
-    /** three-tier r1: "goal torch 16", or with no coal in the bag the best coal way first (CoalOptions.torchesFirst; no way: the planner's goal, which fails with its own reason). */
-    static String torchGoal(Blackboard bb) {
-        String c = CoalOptions.torchesFirst(bb, null, 16, null);
-        return c == null ? "goal torch 16" : c;
-    }
-
-    /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */
-    static int[] sheepHerd(io.github.mojolowjo.entropybot.aa.core.Blackboard bb) {
-        return bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.HERDS_FACT) instanceof java.util.Map<?, ?> m
-                && m.get("minecraft:sheep") instanceof int[] h ? h : null;
-    }
-
-    /**
-     * AA_ROUND3 5 (owner 2026-10-20: it never made a bed): short of wool, the bed rung first hunts sheep for it, at the
-     * remembered herd when none is in view (Sightings), then {@code goal bed}.
-     */
+    /** AA_ROUND3 5: short of wool, the bed first hunts sheep (at the remembered herd when none is in view), then {@code goal bed}. */
     public static String bedChain(int wool, int[] herd) {
         if (wool >= BedOptions.WOOL) return "goal bed";
         return BedOptions.huntChain(wool, herd);
     }
 
-    /** The rungs under the brain (or any node), in order (for tests and the status line). */
-    public static List<Rung> rungs(Node ladder) {
-        List<Rung> out = new java.util.ArrayList<>();
-        for (Node n : ladder.children()) if (n instanceof Rung r) out.add(r);
-        return out;
-    }
-
-    /** The shelter rung's SUCCESS is remembered on the blackboard (the adapter persists it). */
+    /** The shelter need's SUCCESS is remembered on the blackboard (the adapter persists it). */
     public static void noteShelter(Blackboard bb) { bb.fact(SHELTER_FACT, Boolean.TRUE); }
 }

@@ -58,7 +58,7 @@ public final class AaLive {
         Brain b = tree.brain;
         List<Brain.Scored> sc = new ArrayList<>(b.lastScored());
         sc.sort((x, y) -> Double.compare(y.rank(), x.rank()));
-        List<Rung> rungs = AaLadder.rungs(tree.ladder);
+        List<Need> rungs = Need.all(tree.ladder);
         JsonArray ds = new JsonArray();
         for (Brain.Scored s : sc) {
             JsonObject d = new JsonObject();
@@ -95,9 +95,15 @@ public final class AaLive {
                 op.add("rows", rows);
                 d.add("options", op);
             }
-            for (Rung r : rungs) {
-                if (r != s.d().node || r.picker() == null) continue;
-                Rung.Picker p = r.picker();
+            for (Need r : rungs) {
+                if (r != s.d().node) continue;
+                if (r.picker() == null) {          // round 4A N: a need without a set shows its Ways rows line
+                    JsonObject op = new JsonObject();
+                    op.addProperty("why", r.options());
+                    d.add("options", op);
+                    continue;
+                }
+                Need.Picker p = r.picker();
                 JsonObject op = new JsonObject();
                 op.addProperty("why", p.why());
                 op.addProperty("chosen", p.chosenId());

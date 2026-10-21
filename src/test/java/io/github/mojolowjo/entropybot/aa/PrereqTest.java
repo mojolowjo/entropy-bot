@@ -10,13 +10,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class PrereqTest {
     @Test void woodPrereqFromPlannerWhy() {
         String why = "missing 1 logs - none in storage; no trees in my areas (area here 48 woods neutral where trees grow)";
-        assertEquals("cut 4", Rung.woodPrereq(why));
-        assertEquals("cut 64", Rung.woodPrereq("missing 64 logs - none in storage; no trees in my areas"));
-        assertNull(Rung.woodPrereq("missing 24 cobblestone - none in storage; one quarry per plan"));
-        assertNull(Rung.woodPrereq(null));
-        assertTrue(Rung.isPrereq("cut 4"));
-        assertFalse(Rung.isPrereq("goal torch 16"));
-        assertEquals(44, Rung.prereqSeconds("cut 4"));
+        assertEquals(4, Ways.logsMissing(why));
+        assertEquals(64, Ways.logsMissing("missing 64 logs - none in storage; no trees in my areas"));
+        assertEquals(0, Ways.logsMissing("missing 24 cobblestone - none in storage; one quarry per plan"));
+        assertEquals(0, Ways.logsMissing(null));
     }
 
     @Test void zeroGainIsFailure() {

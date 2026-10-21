@@ -93,7 +93,13 @@ public final class RungOptions {
     public static final double BOOTSTRAP_COST = 200, BOOTSTRAP_TOOLS_COST = 150;
 
     /** @param treesNear a log within 16 (the planner's "trees" fact; its goal plan needs them) */
-    public record ToolsFacts(int pickTier, boolean treesNear) {}
+    public record ToolsFacts(int pickTier, boolean treesNear, boolean pickWanted, boolean swordWanted, int cobble, int sticks, int planks, boolean table) {
+        /** The pickaxe facts only (no sword wanted). */
+        public ToolsFacts(int pickTier, boolean treesNear) { this(pickTier, treesNear, true, false, 0, 0, 0, false); }
+
+        /** Round 4A N: a stone sword from the bag (2 cobblestone, a stick or 2 planks for one, a table known). */
+        public boolean swordMats() { return cobble >= 2 && (sticks >= 1 || planks >= 2) && table; }
+    }
 
     private static final Pattern TOOLS_END = Pattern.compile("no chests|scan base|no free spot|no trees|chopped nothing|no path|no progress|timeout|stuck|couldn't|can't|missing");
 
@@ -101,9 +107,22 @@ public final class RungOptions {
         @Override public Options.Choice choose(ToolsFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
             List<Options.Option> rows = new ArrayList<>();
             List<String> dropped = new ArrayList<>();
+            // round 4A N: the sword alone when the pickaxe is fine (a zombie seen, no weapon): one craft from the bag
+            if (f.swordWanted()) {
+                double s = io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S;
+                if (!f.swordMats()) dropped.add("sword only: no 2 cobblestone + a stick + a table (" + f.cobble() + " cobblestone, " + f.sticks() + " sticks, "
+                        + f.planks() + " planks, table " + f.table() + "); the planner's goal makes one");
+                else add(rows, dropped, m, now, Options.scored("sword only", "craft", "craft stone_sword 1", io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(s),
+                        "a stone sword from the bag: craft " + Math.round(s) + " s", "sword only", false, m));
+                if (!f.pickWanted()) {
+                    if (planned != null) add(rows, dropped, m, now, Options.scored("planner", "planner", planned, cost * Options.planUnit(), "goal stone tools (the sword in it)", "planner", true, m));
+                    dropped.add("bootstrap: the pickaxe is fine (the sword alone is wanted)");
+                    return Options.Choice.of(rows, dropped, "no way to a sword");
+                }
+            }
             // the planner's goal stone tools covers a chest's stock too (PlanFacts.addStock: fetch steps)
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
-            else add(rows, dropped, m, now, Options.scored("planner", "planner", planned, cost * Options.PLAN_UNIT, "goal stone tools", "planner", true, m));
+            else add(rows, dropped, m, now, Options.scored("planner", "planner", planned, cost * Options.planUnit(), "goal stone tools", "planner", true, m));
             if (f.pickTier() >= 2) dropped.add("bootstrap tools: the stone tools exist (worn: the planner makes new ones)");
             else add(rows, dropped, m, now, Options.scored("bootstrap tools", "bootstrap", AaLadder.BOOTSTRAP + " tools", BOOTSTRAP_TOOLS_COST,
                     "bootstrap up to the furnace (the rungs do the rest)", "bootstrap tools", false, m));

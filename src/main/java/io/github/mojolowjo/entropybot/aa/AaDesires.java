@@ -53,19 +53,11 @@ public final class AaDesires {
     /** Blackboard facts the adapter fills: the {@link TechTree} and the set of item ids had (bag + known stations). */
     public static final String TECH_FACT = "aa.techTree", HAVE_FACT = "aa.have";
 
-    static Desire.Kind kindOf(String rungId) {
-        return switch (rungId) {
-            case "needs.surface" -> Desire.Kind.GATE;
-            case "needs.tools", "needs.food", "needs.torches", "needs.bag" -> Desire.Kind.UPKEEP;
-            default -> Desire.Kind.PROGRESS;
-        };
-    }
-
-    /** AA_ROUND4 B2: the most a rung scores by itself (100 is the owner's aa do; the night discounts by place, B1). */
+    /** AA_ROUND4 B2: the most a need scores by itself (100 is the owner's aa do; the night discounts by place, B1). */
     static final double RUNG_MAX = 99;
 
-    /** A rung's score: 100 for the owner's aa do, -1 when skipped or met, else {@code f}. */
-    static double rungScore(Rung r, Blackboard bb, ToDoubleFunction<Blackboard> f) {
+    /** A need's score: 100 for the owner's aa do, -1 when skipped or met, else {@code f}. */
+    static double rungScore(Need r, Blackboard bb, ToDoubleFunction<Blackboard> f) {
         AaManual man = AaManual.of(bb);
         if (r.id.equals(man.doRung)) return 100;
         if (man.skipped(r.id)) return -1;
@@ -117,44 +109,81 @@ public final class AaDesires {
         return 40 + 30 * (t == null || t.size() == 0 ? 1 : t.norm("iron_ingot", have(bb)));
     }
 
-    /** small-1: the surface rung's own score when a night mine is to be left at dawn. */
-    static final double DAWN_CLIMB = Tuning.defOf("dawnClimb");
+    // ---- round 4A N: the needs (Need + Ways; the ladder's rungs and gates are gone) ----
 
+    /**
+     * The basic needs, each an option set: tools (RungOptions.Tools + the Ways rows), food (FoodOptions), table/furnace/
+     * chest, spare table, torches (CoalOptions.Torches), base, bed (BedOptions), bag, iron (IronOptions). The brain
+     * scores them; no ladder order, no gate: a need whose work wants open ground prices the climb into its row.
+     * Round 4A O (StationOptions, BaseOptions, BagOptions) replaces the station, base and bag lines here.
+     */
+    public static List<Need> needs() {
+        io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(8, 16),
+                bag = new io.github.mojolowjo.entropybot.aa.core.Band(3, 10), food = new io.github.mojolowjo.entropybot.aa.core.Band(10, 18);
+        Need tools = new Need("needs.tools", TaskKind.TOOLS,
+                // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
+                bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
+                bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
+                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? AaLadder.BOOTSTRAP : planned));
+        Need hunger = new Need("needs.food", TaskKind.FOOD,
+                bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
+                bb -> null, bb -> "goal food 8", new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
+        // a table or furnace in the bag counts (the near-block fact is false as soon as the bot walks away)
+        Need tableFurnace = new Need("needs.tableFurnace", TaskKind.TABLE_FURNACE,
+                bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !campChest(bb),
+                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
+                        : chestChain(bb.in)).surface().hand(60);
+        Need spare = new Need("needs.spareTable", TaskKind.TABLE_FURNACE,
+                bb -> AaLadder.spareTableWanted(bb.in.tableInBag, bb.in.planks),
+                bb -> null, bb -> "craft crafting_table 1").hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
+        Need torch = new Need("needs.torches", TaskKind.TORCHES,
+                bb -> torches.update(bb.in.torches),
+                bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : null,
+                bb -> "goal torch " + CoalOptions.Torches.TARGET, new CoalOptions.Torches());
+        Need base = new Need("needs.base", TaskKind.BASE_BED,
+                bb -> !bb.in.baseKnown && !bb.flag(AaLadder.SHELTER_FACT),
+                bb -> null, bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter").surface().hand(240);
+        // round 4 fix 4: the ways to a bed are priced (BedOptions); the climb is the first step of its row under ground
+        Need bed = new Need("needs.bed", TaskKind.BASE_BED,
+                bb -> !bb.in.bedKnown && !bb.in.bedInBag,
+                bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
+                bb -> AaLadder.bedChain(bb.in.wool, sheepHerd(bb)),
+                new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set())).surface();
+        Need deposit = new Need("needs.bag", TaskKind.BAG,
+                bb -> bag.update(bb.in.freeSlots),
+                bb -> bb.in.baseChests ? null : "no base chests scanned (scan base)",
+                bb -> "deposit").hand(60);
+        // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
+        Need iron = new Need("needs.iron", TaskKind.IRON,
+                bb -> bb.in.pickTier < 3,
+                bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet (needs.tools first)",
+                bb -> "goal iron tools", new IronOptions.Picker());
+        return List.of(tools, hunger, tableFurnace, spare, torch, base, bed, deposit, iron);
+    }
 
-    public static Desire rung(Rung r) {
+    /** AA_ROUND3 5: the best sheep herd remembered and not in view ({x, z, dist, conf%}; LootBook.HERDS_FACT), or null. */
+    static int[] sheepHerd(Blackboard bb) {
+        return bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.HERDS_FACT) instanceof java.util.Map<?, ?> m
+                && m.get("minecraft:sheep") instanceof int[] h ? h : null;
+    }
+
+    /** Round 4A N: a need as a desire (its score, value-flow prerequisite, feasibility, live cost, probe and site). */
+    public static Desire need(Need r) {
         Desire d = switch (r.id) {
-            // AA_ROUND2 4 (were 100/95/90): a gate scores nothing itself; what it blocks flows to it (FLOW of the best)
-            // small-1: the surface gate binds SURFACE desires only; the dawn climb out of a night mine is its own SURFACE desire
-            case "needs.surface" -> new Desire(r.id, Desire.Kind.GATE, r, bb -> rungScore(r, bb, b -> NightWork.climbAtDawn(b, AaLadder.SURFACE_DEPTH) ? Tuning.get("dawnClimb") : 0)).exposure(Desire.Exposure.SURFACE);
-            case "needs.tools" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b))), b -> null, b -> null);
-            // urgent food is never parked by a gate (starving is starving); a stock-up waits for it
-            case "needs.food" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)), b -> null, AaDesires::foodInfeasible)
-                    .infeasible(b -> {
-                        String no = foodInfeasible(b);
-                        if (no != null || b.in.food <= 6) return no;
-                        return gateWhy(b, Desire.Exposure.ANY);
-                    }).prereq(b -> b.in.food <= 6 ? null : AaLadder.openGate(b, Desire.Exposure.ANY));      // review: urgent food gives no gate its value
-            case "needs.torches" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches")))),
-                    b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace", b -> null);
-            case "needs.bag" -> gated(new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag")))), b -> null, b -> null);
-            case "needs.tableFurnace" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::stationValue)).cost(60).exposure(Desire.Exposure.SURFACE), b -> null, b -> null);
-            case "needs.spareTable" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.spareTable(tree(b), have(b)))).cost(10).exposure(Desire.Exposure.SURFACE), b -> null, b -> null);
-            case "needs.base" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.base(bedDanger(b)))).cost(240).exposure(Desire.Exposure.SURFACE), b -> null, b -> null);
-            case "needs.bed" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(120).exposure(Desire.Exposure.SURFACE), b -> null, AaDesires::bedInfeasible);
-            case "needs.iron" -> gated(new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600),
-                    b -> b.in.pickTier < 2 ? "needs.tools" : null, b -> null).exposure(Desire.Exposure.UNDER);
-            default -> new Desire(r.id, kindOf(r.id), r, bb -> rungScore(r, bb, b -> 30));
+            case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b)));
+            case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)).infeasible(AaDesires::foodInfeasible);
+            case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches"))))
+                    .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
+            case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag"))));
+            case "needs.tableFurnace" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::stationValue)).cost(60).exposure(Desire.Exposure.SURFACE);
+            case "needs.spareTable" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.spareTable(tree(b), have(b)))).cost(10);
+            case "needs.base" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.base(bedDanger(b)))).cost(240).exposure(Desire.Exposure.SURFACE);
+            case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(120).exposure(Desire.Exposure.SURFACE)
+                    .infeasible(AaDesires::bedInfeasible);
+            case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600)
+                    .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null).exposure(Desire.Exposure.UNDER);
+            default -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 30));
         };
-        // aa-night2 P0 3: a running rung ends on its own predicate only (skipped or met); the surface climb is done once
-        // up (its unmet also reads needsOpenGround, which flickers with what the other rungs want)
-        if (d.kind == Desire.Kind.GATE) d.met(b -> {
-            AaManual man = AaManual.of(b);
-            if (r.id.equals(man.doRung)) return false;          // the owner's aa do runs until its job ends
-            if (man.skipped(r.id)) return true;
-            // aa-gate (normal3: 8 of 17 pointless "needs.surface wanted -1"): a running climb ends on its own result only;
-            // under 3 deep came before the climb's last steps
-            return !r.id.equals("needs.surface") && !r.unmet(b);
-        });
         return wire(d, r).site(b -> rungSite(r, b));
     }
 
@@ -162,11 +191,10 @@ public final class AaDesires {
     public static final String COAL_SITE_FACT = "aa.coalSite";
 
     /**
-     * AA_ROUND3 2: a rung's site for the sequencer: iron from its chosen option, torches at the nearest known coal,
-     * the table/furnace at the camp (else the base), base/bed/bag at the base; the gates and the rest none.
+     * AA_ROUND3 2: a need's site for the sequencer: iron from its chosen option, torches at the nearest known coal,
+     * the table/furnace at the camp (else the base), base/bed/bag at the base; the rest none.
      */
-    @SuppressWarnings("unchecked")
-    static io.github.mojolowjo.entropybot.aa.brain.Site rungSite(Rung r, Blackboard b) {
+    static io.github.mojolowjo.entropybot.aa.brain.Site rungSite(Need r, Blackboard b) {
         int[] place = b.in.campPos != null ? b.in.campPos : b.in.basePos;
         return switch (r.id) {
             case "needs.iron" -> r.picker() == null ? null : r.picker().lastSite();
@@ -175,28 +203,6 @@ public final class AaDesires {
             case "needs.base", "needs.bed", "needs.bag" -> io.github.mojolowjo.entropybot.aa.brain.Site.of(b.in.basePos);
             default -> null;
         };
-    }
-
-    /** "needs.surface first" while a gate is open (AaLadder.openGate), else null. */
-    static String gateWhy(Blackboard b) { return gateWhy(b, Desire.Exposure.SURFACE); }
-
-    static String gateWhy(Blackboard b, Desire.Exposure e) {
-        String g = AaLadder.openGate(b, e);
-        return g == null ? null : g + " first";
-    }
-
-    /**
-     * AA_ROUND2 4: gates as prerequisites. While a gate is open the desire is parked ({@code <gate> first}) and its
-     * value flows to the gate (Brain.scoreAll); otherwise its own prerequisite and feasibility apply.
-     */
-    static Desire gated(Desire d, Function<Blackboard, String> prereq, Function<Blackboard, String> infeasible) {
-        return d.prereq(b -> {
-            String g = AaLadder.openGate(b, d.exposure());
-            return g != null ? g : prereq.apply(b);
-        }).infeasible(b -> {
-            String g = gateWhy(b, d.exposure());
-            return g != null ? g : infeasible.apply(b);
-        });
     }
 
     /** The table/furnace rung's value: the table's while no table, else the furnace's (Worth.station). */
@@ -252,24 +258,9 @@ public final class AaDesires {
     /** AA_ROUND2 1+2: a rung desire's probe (may it start?) and, with a picker, its live cost. */
     public static final long RESCORE_MS = 10_000;
 
-    public static Desire wire(Desire d, Rung r) {
+    public static Desire wire(Desire d, Need r) {
         d.probe(r::probe);
-        Rung.Picker p = r.picker();
-        if (p == null) return d;
-        String key = "aa.rescoreAt." + r.id;
-        return d.liveCost(bb -> {
-            // while not running the picker is re-scored at most every RESCORE_MS (a near ore raises iron before it runs);
-            // while running aa-replan re-scores it every 5 s
-            if (!r.job().running()) {
-                long now = bb.clock.now();
-                Object at = bb.fact(key);
-                if (!(at instanceof Long t) || now >= t) {
-                    bb.fact(key, now + RESCORE_MS);
-                    p.refresh(bb);
-                }
-            }
-            return p.lastCostS();
-        });
+        return d.liveCost(r::liveCostS);
     }
 
     public static Desire idle(TaskKind kind, Node node, Scorer scorer) {
@@ -279,7 +270,7 @@ public final class AaDesires {
                     double s = scorer.score(bb.in)[kind.ordinal()];
                     return s < 0 ? -1 : s * IDLE_SCALE;
                 }).exposure(exposureOf(kind)).cools(kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS, kind == TaskKind.WAIT ? 0 : Cooldown.NO_RUN_MS)
-                .infeasible(b -> gateWhy(b, exposureOf(kind))).prereq(b -> AaLadder.openGate(b, exposureOf(kind))).lastTry();
+                .lastTry();
     }
 
     // ---- director 2026-10-19: idle as one desire ----
@@ -311,10 +302,6 @@ public final class AaDesires {
                 .parkedValue(bb -> {
                     Brain.Scored p = bestParked(set.lastScored());
                     return p == null ? 0 : p.parked();
-                })
-                .prereq(bb -> {
-                    Brain.Scored p = bestParked(set.lastScored());
-                    return p == null ? null : AaLadder.openGate(bb, exposureOf(kinds.get(p.d().id)));
                 })
                 .patient(Long.MAX_VALUE / 4)          // the options' own watchdog halts a stalled one (the next option runs)
                 .lastTry();
@@ -439,7 +426,7 @@ public final class AaDesires {
         return new Desire("ideas", Desire.Kind.PROGRESS, node, bb -> {
             Pick p = bestIdea(bb);
             return p == null ? -1 : 30 * p.share();
-        }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : AaLadder.openGate(b, Desire.Exposure.ANY)).infeasible(b -> gateWhy(b, Desire.Exposure.ANY))
+        }).cost(300).prereq(b -> b.in.pickTier < 3 ? "needs.iron" : null)
                 .cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
     }
 
@@ -509,7 +496,7 @@ public final class AaDesires {
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.WANT, node, bb -> Wants.score(bb, id, key))
-                .infeasible(b -> { String g = gateWhy(b, exposure); return g != null ? g : infeasible.apply(b); }).prereq(b -> AaLadder.openGate(b, exposure))
+                .infeasible(infeasible)
                 .exposure(exposure).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry();
     }
 
@@ -936,14 +923,14 @@ public final class AaDesires {
     }
 
     /** A far trip is next: the iron rung is open and its chosen option's site is FAR_TRIP+ from the base. */
-    static boolean farTrip(Rung iron, Blackboard bb) {
+    static boolean farTrip(Need iron, Blackboard bb) {
         if (iron == null || bb.in.basePos == null || !iron.unmet(bb) || iron.picker() == null) return false;
         io.github.mojolowjo.entropybot.aa.brain.Site s = iron.picker().lastSite(), base = io.github.mojolowjo.entropybot.aa.brain.Site.of(bb.in.basePos);
         return s != null && s.sameDim(base) && s.dist(base) >= Kit.FAR_TRIP;
     }
 
     /** The stash's danger: the night's at the current facts any time of day (as the bed's); Peaceful 0. */
-    static double stashScore(Blackboard bb, Rung iron) {
+    static double stashScore(Blackboard bb, Need iron) {
         double loot = Kit.lootWorth(bb.in.bag);
         if (loot < Kit.MIN_STASH) return -1;
         double danger = bedDanger(bb), soon = Kit.soon(bb.in.dayTime, bb.in.night, farTrip(iron, bb));
@@ -953,7 +940,7 @@ public final class AaDesires {
     }
 
     /** stash (UPKEEP, never urgent): the loot into the base chest; no chest: the camp rung's value. */
-    public static Desire stash(Rung iron) {
+    public static Desire stash(Need iron) {
         Node node = AaTree.idleCd(STASH_ID + ".cd", RunJob.of(STASH_ID + ".job", TaskKind.DEPOSIT, "deposit", "stash"));
         return new Desire(STASH_ID, Desire.Kind.UPKEEP, node, bb -> stashScore(bb, iron))
                 .liveCost(bb -> {
@@ -970,25 +957,22 @@ public final class AaDesires {
     }
 
     /** The brain over the rungs, the idle options and the ideas. */
-    public static Brain build(List<Rung> rungs, List<Map.Entry<TaskKind, Node>> idle, Scorer scorer) {
+    public static Brain build(List<Need> rungs, List<Map.Entry<TaskKind, Node>> idle, Scorer scorer) {
         List<Desire> ds = new ArrayList<>();
-        for (Rung r : rungs) ds.add(rung(r));
+        for (Need r : rungs) ds.add(need(r));
         ds.add(ideas());
         ds.addAll(night());
         ds.add(danger());           // AA_CLEANUP 4
         ds.addAll(wants());
         ds.add(help());
-        Rung iron = null;
-        for (Rung r : rungs) if (r.id.equals("needs.iron")) iron = r;
+        Need iron = null;
+        for (Need r : rungs) if (r.id.equals("needs.iron")) iron = r;
         ds.add(recover());
         ds.add(stash(iron));
         if (!idle.isEmpty()) ds.add(idleSet(idle, scorer));
         Brain brain = new Brain("brain", "the scored desires", ds.toArray(new Desire[0]));
         // AA_ROUND2 3: the rung pickers' option memories are views over the brain's one failure record
-        for (Rung r : rungs) {
-            if (r.picker() instanceof Options.Picker<?> op) op.memory.bind(brain.failures, r.id);
-            r.bindFailures(brain.failures);          // review 2 (4): the wood prerequisite's memory too
-        }
+        for (Need r : rungs) r.bindFailures(brain.failures);          // the pickers' and the Ways rows' memories
         return brain;
     }
 }

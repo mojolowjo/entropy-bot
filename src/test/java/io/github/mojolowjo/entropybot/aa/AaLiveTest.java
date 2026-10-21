@@ -44,7 +44,7 @@ class AaLiveTest {
 
     @Test
     void aRunningTickLightsThePathAndRanksTheDesires() {
-        bb.in.pickTier = 0;                                            // a fresh world: the tools rung runs (bootstrap)
+        bb.in.pickTier = 0;                                            // a fresh world: the tools Need runs (bootstrap)
         assertEquals(Status.RUNNING, tree.tick(bb));
         JsonObject o = AaLive.json(tree, bb, true, 5);
         JsonArray path = o.getAsJsonArray("path");

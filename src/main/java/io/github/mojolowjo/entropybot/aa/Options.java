@@ -18,10 +18,10 @@ import java.util.regex.Pattern;
  * MINING_PLAN 10 (S0, "Scoring every rung"): the option scorer every rung uses, extracted from the IRON rung's
  * (0.36.a8 IronOptions). A rung's {@link OptionSet} turns its facts (a {@code Supplier} on the blackboard, read once per
  * pick) and the planner's chain into ranked {@link Option}s with a reason each; {@link Picker} is the rung's
- * {@link Rung.Picker}: it runs the best, remembers failures per option ({@link OptionMemory}) and switches to the next
+ * {@link Need.Picker}: it runs the best, remembers failures per option ({@link OptionMemory}) and switches to the next
  * best on a failure the set calls switchable (at most {@link #MAX_SWITCHES} per task).
  *
- * <p>Cost unit: walk-blocks; 1 minute of work = {@link #MINUTE} blocks, a planner step-cost unit = {@link #PLAN_UNIT}
+ * <p>Cost unit: walk-blocks; 1 minute of work = {@link #MINUTE} blocks, a planner step-cost unit = Tuning {@code planUnit}
  * blocks (owner's defaults, 2026-10-18; tuned from the decision log). Score = cost x (1 + fails of that option); a
  * floor deny or a live memory block drops the row with its reason; a tie goes to the earlier option. Pure (JUnit:
  * OptionsTest, IronOptionsTest). Loader notes: none.
@@ -29,7 +29,10 @@ import java.util.regex.Pattern;
 public final class Options {
     private Options() {}
 
-    public static final double MINUTE = 60, PLAN_UNIT = 5;
+    public static final double MINUTE = 60;
+
+    /** Round 4A N: walk-blocks per planner step-cost unit (Tuning planUnit, was the constant PLAN_UNIT 5). */
+    public static double planUnit() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("planUnit"); }
     public static final int MAX_SWITCHES = 4;
     /** A failed option is skipped this long per failure (at most an hour). */
     public static final long RETRY_MS = 10 * 60_000, RETRY_MAX_MS = 60 * 60_000;
@@ -236,11 +239,11 @@ public final class Options {
     }
 
     /**
-     * A rung's {@link Rung.Picker} over an {@link OptionSet}: facts from the blackboard supplier under {@code factsKey}
+     * A rung's {@link Need.Picker} over an {@link OptionSet}: facts from the blackboard supplier under {@code factsKey}
      * (none or unreadable: the planner's chain as it is), the best option out, a switchable failure charged to the
      * option that ran and the next best at once. {@code aa use} (AaManual) forces a ranked option by its id.
      */
-    public static class Picker<F> implements Rung.Picker {
+    public static class Picker<F> implements Need.Picker {
         public final String rung, factsKey;
         private final Class<F> type;
         private final OptionSet<F> set;
@@ -305,6 +308,7 @@ public final class Options {
             }
             if (!type.isInstance(fo)) return null;
             Choice c = set.choose(type.cast(fo), memory, bb.clock.now(), lastPlanned, lastPlannedCost, lastPlannerWhy, null);
+            if (c != null && extra != null) c = extra.apply(c);
             if (c != null) lastCostS = c.best() == null ? Double.NaN : c.best().seconds();
             lastRescore = c;
             return c;
@@ -371,6 +375,7 @@ public final class Options {
             }
             memory.sweep(bb.in);
             Choice c = set.choose(type.cast(fo), memory, now, planned, plannedCost, plannerWhy, after);
+            if (extra != null) c = extra.apply(c);
             last = c;
             why = c.why();
             for (String d : c.dropped()) {
@@ -379,7 +384,7 @@ public final class Options {
             }
             ran = c.best();
             AaManual man = AaManual.of(bb);
-            String use = man.useFor(bb.fact(Rung.CURRENT_RUNG) instanceof String r ? r : null);
+            String use = man.useFor(bb.fact(Need.CURRENT) instanceof String r ? r : null);
             if (use != null) {
                 Option forced = null;
                 String u = use.toLowerCase(Locale.ROOT);
@@ -388,7 +393,7 @@ public final class Options {
                 if (forced != null) ran = forced;
             }
             // the owner's aa do: "nothing" (pass to the next rung) is no answer to a forced rung; the next real way runs
-            if (ran != null && NOTHING.equals(ran.command()) && man.doRung != null && man.doRung.equals(bb.fact(Rung.CURRENT_RUNG))) {
+            if (ran != null && NOTHING.equals(ran.command()) && man.doRung != null && man.doRung.equals(bb.fact(Need.CURRENT))) {
                 Option real = null;
                 for (Option o : c.ranked()) if (!NOTHING.equals(o.command())) { real = o; break; }
                 bb.port.log(rung + ": aa do - not passing, " + (real == null ? "no real way" : real.id() + " runs"));
@@ -403,6 +408,20 @@ public final class Options {
             // "nothing" (the rung passes) is tried once: if the rung comes back within the retry time, a real way runs
             if (NOTHING.equals(ran.command())) memory.failed(ran.memoryKey(), "passed once already", now);
             return ran.command();
+        }
+
+        /**
+         * Round 4A N: the rows the need's {@link Ways} adds to the set's choice (the planner while it searches, cut N +
+         * planner); set by the need before each pick, null none.
+         */
+        public java.util.function.UnaryOperator<Choice> extra;
+
+        @Override public void bind(Failures f, String need) { memory.bind(f, need); }
+
+        /** Round 4A N: a failed end that does not switch still holds the way that ran (Failures is the one memory). */
+        @Override public void charge(Blackboard bb, String end) {
+            if (ran == null || NOTHING.equals(ran.command())) return;
+            memory.failed(ran.memoryKey(), end == null ? "failed" : end, bb.clock.now(), bb.in);
         }
 
         @Override public void stalled(Blackboard bb, String why) {

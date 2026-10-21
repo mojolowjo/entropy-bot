@@ -21,16 +21,6 @@ class SmallTest {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
 
     @Test
-    void surfaceGateBindsOnlySurfaceDesires() {
-        bb.in.underDepth = 12;                 // deep, no table/furnace yet: needs open ground
-        assertEquals("needs.surface", AaLadder.openGate(bb, Desire.Exposure.SURFACE));
-        assertNull(AaLadder.openGate(bb, Desire.Exposure.UNDER), "under ground work never waits for the surface");
-        assertNull(AaLadder.openGate(bb, Desire.Exposure.ANY));
-        bb.in.underDepth = 0;
-        assertNull(AaLadder.openGate(bb, Desire.Exposure.SURFACE), "AREAS: no area gate; at the surface nothing binds");
-    }
-
-    @Test
     void movingOrBaggingWorkKeepsTheShortClockQuiet() {
         Brain br = new Brain("brain", "t", new Desire("a", Desire.Kind.PROGRESS, RunJob.of("a.job", TaskKind.WAIT, "do a", "brain"), b -> 40).cost(0));
         br.tick(bb);

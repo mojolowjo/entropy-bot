@@ -190,7 +190,7 @@ public final class FoodOptions {
             String huntGap = planned == null ? null : plannerHuntGap(planned, f);
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
             else if (huntGap != null) dropped.add("planner: its chain \"" + planned + "\" " + huntGap);
-            else RungOptions.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, pc * Options.PLAN_UNIT,
+            else RungOptions.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, pc * Options.planUnit(),
                     "goal food (storage" + (f.farmKnown() ? ", bread from the farm" : "") + ")", "planner", true, m));
             return Options.Choice.of(rows, dropped, "no way to food");
         }

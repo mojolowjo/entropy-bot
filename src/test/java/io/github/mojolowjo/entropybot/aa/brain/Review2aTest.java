@@ -64,18 +64,6 @@ class Review2aTest {
     }
 
     @Test
-    void item3AStonePickaxeUnderGroundOpensNoSurfaceGate() {
-        bb.in.tableKnown = true;
-        bb.in.furnaceKnown = true;
-        bb.in.baseKnown = true;
-        bb.in.pickTier = 2;
-        bb.in.underDepth = 10;
-        assertNull(AaLadder.openGate(bb), "iron dig with a stone pickaxe: no yo-yo");
-        bb.in.tableKnown = false;
-        assertEquals("needs.surface", AaLadder.openGate(bb), "a missing table still wants open ground");
-    }
-
-    @Test
     void round4B2TorchesWithin16CutTheDangerFivePercentEach() {
         double dark = Costs.nightDanger(2, 0, 20, 20, 0, 0);
         assertEquals(1.0, dark, 1e-9, "Normal, no armour, full health, no torches, no hostiles: 1 (the bed term went)");

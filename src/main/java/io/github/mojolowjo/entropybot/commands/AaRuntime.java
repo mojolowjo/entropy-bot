@@ -700,7 +700,12 @@ public final class AaRuntime implements JobPort {
     /** S2: the TOOLS rung's facts (the pickaxe tier, trees within 16 as the planner sees them). */
     io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts toolsFacts() {
         if (sensed == null || sensed.feas == null) return null;
-        return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(bb.in.pickTier, sensed.feas.trees);
+        var in = bb.in;
+        // round 4A N: the sword-only row reads the bag (sticks from the bag map, the rest from the inputs)
+        int sticks = in.bag == null ? 0 : in.bag.getOrDefault("stick", 0);
+        boolean pick = in.pickTier < 2 || (in.pickPct < 15 && in.pickaxes < 2);
+        return new io.github.mojolowjo.entropybot.aa.RungOptions.ToolsFacts(in.pickTier, sensed.feas.trees, pick,
+                io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(in.zombieSeen, in.armed), in.cobble, sticks, in.planks, in.tableKnown || in.tableInBag);
     }
 
     /** The nearest known iron positions the scorer weighs. */
@@ -708,7 +713,7 @@ public final class AaRuntime implements JobPort {
 
     /** The IRON rung's options line ("aa why"), or null. */
     String ironOptions() {
-        for (var r : AaLadder.rungs(tree.ladder)) if (r.kind == TaskKind.IRON) return r.options();
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) if (r.kind == TaskKind.IRON) return r.options();
         return null;
     }
 
@@ -718,10 +723,16 @@ public final class AaRuntime implements JobPort {
     List<String> optionLines() {
         List<String> out = new ArrayList<>();
         if (tree.brain.planText() != null) out.add(tree.brain.planText());          // AA_ROUND3 2: the sequencer's plan
-        for (var r : AaLadder.rungs(tree.ladder)) if (r.picker() != null) out.add(r.id.substring(6) + " options: " + r.options());
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) out.add(r.id.substring(6) + " options: " + r.options() + priced(r));      // round 4A N: every need as rows with prices
         out.addAll(io.github.mojolowjo.entropybot.aa.brain.Costs.lines(bb));      // aa-costs: the cost terms
         out.addAll(tree.brain.heldLines(bb.clock.now()));                          // AA_ROUND2 3: the failure holds
         return out;
+    }
+
+    /** Round 4A N: the need's live price for aa why (" = 42 s"), "" while unknown. */
+    private String priced(io.github.mojolowjo.entropybot.aa.Need r) {
+        double c = r.liveCostS(bb);
+        return Double.isNaN(c) ? "" : " = " + Math.round(c) + " s" + (r.wantsSurface() && bb.in.underDepth >= io.github.mojolowjo.entropybot.aa.AaLadder.SURFACE_DEPTH ? " (the climb priced in)" : "");
     }
 
     /** Per-rung picker counters and the manual state (aa status); "!!" first when a facts supplier failed in the last minute. */
@@ -729,7 +740,7 @@ public final class AaRuntime implements JobPort {
         long now = System.currentTimeMillis();
         StringBuilder b = new StringBuilder();
         boolean red = false;
-        for (var r : AaLadder.rungs(tree.ladder)) {
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) {
             if (r.picker() == null) continue;
             red |= r.picker().factsFailedSince(now - 60_000);
             String k = r.picker().counters(now);
@@ -742,10 +753,10 @@ public final class AaRuntime implements JobPort {
     /** The rung AA works on now (the ladder's running rung), else the one that picked last; null none. */
     private String currentRung() {
         Node n = tree.slot.runningChild();
-        if (n == tree.brain && tree.brain.runningChild() instanceof io.github.mojolowjo.entropybot.aa.Rung rr) return rr.id;
+        if (n == tree.brain && tree.brain.runningChild() instanceof io.github.mojolowjo.entropybot.aa.Need rr) return rr.id;
         // review: the last picker only while it still runs (a stale one would preempt an unrelated task)
-        Object o = bb.fact(io.github.mojolowjo.entropybot.aa.Rung.CURRENT_RUNG);
-        for (var r : AaLadder.rungs(tree.ladder)) if (r.id.equals(o) && r.last() == Status.RUNNING) return r.id;
+        Object o = bb.fact(io.github.mojolowjo.entropybot.aa.Need.CURRENT);
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) if (r.id.equals(o) && r.last() == Status.RUNNING) return r.id;
         return null;
     }
 
@@ -806,8 +817,8 @@ public final class AaRuntime implements JobPort {
                 String rung = currentRung();
                 man.use = a.toLowerCase(java.util.Locale.ROOT);
                 man.useRung = rung;
-                io.github.mojolowjo.entropybot.aa.Rung r = null;
-                for (var x : AaLadder.rungs(tree.ladder)) if (x.id.equals(rung)) r = x;
+                io.github.mojolowjo.entropybot.aa.Need r = null;
+                for (var x : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) if (x.id.equals(rung)) r = x;
                 if (r != null && r.picker() == null) {
                     man.use = null;
                     man.useRung = null;
@@ -1604,7 +1615,7 @@ public final class AaRuntime implements JobPort {
 
     /** The picked option whose command is this chain (a rung's picker chose it just now), or null. */
     private io.github.mojolowjo.entropybot.aa.Options.Option optionFor(String chain) {
-        for (var r : AaLadder.rungs(tree.ladder))
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder))
             if (r.picker() instanceof io.github.mojolowjo.entropybot.aa.Options.Picker<?> op && op.ran() != null && op.ran().command().equals(chain)) {
                 runningOpt = op.ran();
                 LocalPlayer pl = Minecraft.getInstance().player;
@@ -1618,7 +1629,7 @@ public final class AaRuntime implements JobPort {
     }
 
     private io.github.mojolowjo.entropybot.aa.Options.Picker<?> pickerOf(io.github.mojolowjo.entropybot.aa.Options.Option o) {
-        for (var r : AaLadder.rungs(tree.ladder))
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder))
             if (r.picker() instanceof io.github.mojolowjo.entropybot.aa.Options.Picker<?> op && op.ran() == o) return op;
         return null;
     }
@@ -2390,7 +2401,7 @@ public final class AaRuntime implements JobPort {
     /** The ladder's reasons this tick ("needs.tools: TOOLS met; needs.torches: TORCHES planning ..."). */
     String ladderLine() {
         StringBuilder b = new StringBuilder();
-        for (var r : AaLadder.rungs(tree.ladder)) {
+        for (var r : io.github.mojolowjo.entropybot.aa.Need.all(tree.ladder)) {
             if (b.length() > 0) b.append("; ");
             b.append(r.id.substring(6)).append(": ").append(r.last() == null ? "not checked" : r.last() == Status.FAILURE ? r.reason() : r.last().name());
         }

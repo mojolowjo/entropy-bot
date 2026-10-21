@@ -166,7 +166,7 @@ public final class AaTree {
                 java.util.Map.entry(TaskKind.LIGHT, (Node) idleCd("idle.light.cd", oncePerNight(RunJob.of("idle.light", TaskKind.LIGHT, "light here 8", "idle")))),
                 java.util.Map.entry(TaskKind.WAIT, (Node) new RunJob("idle.wait", TaskKind.WAIT, bb -> JobPort.TaskSpec.of(TaskKind.WAIT, "wait " + io.github.mojolowjo.entropybot.aa.brain.Brain.waitSeconds(bb.clock.now(),
                         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.NEXT_LAPSE_FACT) instanceof Long l ? l : 0), "idle"))));
-        io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaLadder.build(), idle, scorer);
+        io.github.mojolowjo.entropybot.aa.brain.Brain brain = AaDesires.build(AaDesires.needs(), idle, scorer);
         MemoryFallback slot = new MemoryFallback("slot", "the task slot", owner, ai, brain);
         GuardSelector root = new GuardSelector("root", "AA",
                 new GuardSelector.Branch(dangerGuard, dangerBranch),
@@ -277,7 +277,7 @@ public final class AaTree {
         if (!bb.in.night) bb.fact(LIT_FACT, null);         // review: reset by the tree each day (the node is not ticked by day)
         bb.in.litTonight = bb.flag(LIT_FACT);
         Status s = root.tick(bb);
-        for (Rung r : AaLadder.rungs(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.areaName == null) AaLadder.noteShelter(bb);
+        for (Need r : Need.all(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.areaName == null) AaLadder.noteShelter(bb);
         bb.tracer.counts.ticks++;
         return s;
     }

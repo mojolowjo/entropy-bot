@@ -551,8 +551,8 @@ public final class Brain extends Node {
             why.append(d.node.reason());
             if (d == checkFalse && taskSeen) ended(bb, d, s, now);     // it started a task: a real run, not a false interrupt
             else if (d.selfCool && d != checkFalse) ended(bb, d, s, now);
-            else if (!taskSeen && d != checkFalse && d.node instanceof io.github.mojolowjo.entropybot.aa.Rung)
-                failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());      // review 2 (4): a no-task rung fail rests
+            else if (!taskSeen && d != checkFalse && !(d.node instanceof Brain))
+                failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());      // round 4A N: a no-task fail rests every desire (A1)
             if (d == checkFalse && !taskSeen) {
                 // AA_ROUND2 2: the interrupter could not even start: a false interrupt. It cools down (its own streak),
                 // and the interrupted desire is tried next (its commitment bonus kept: lastWinner untouched)
@@ -723,7 +723,7 @@ public final class Brain extends Node {
         } else if (d.selfCool && d.noRunMs > 0) {
             // AA_ROUND2 3 (was the idle Cooldown's ranOnly): a failure before any task rests it, the next option gets its turn
             failures.rest(d.id, d.noRunMs, now, d.node.reason());
-        } else if (!d.selfCool && d.node instanceof io.github.mojolowjo.entropybot.aa.Rung) {
+        } else if (!d.selfCool && !(d.node instanceof Brain)) {      // a nested option set (idle) gives its next option the turn
             // review 2 (4, 07:52: seven picks in 60 s, each a one-second no-task fail): a rung that failed without
             // starting a task rests NO_RUN_MS in the one record, so the next desire gets its turn
             failures.rest(d.id, io.github.mojolowjo.entropybot.aa.core.Cooldown.NO_RUN_MS, now, d.node.reason());
@@ -740,7 +740,7 @@ public final class Brain extends Node {
         String s = progressSig(bb);
         Object plan = bb.fact("planning");          // review: an ask waiting for the owner's aa pick is no stall
         boolean asking = plan != null && (plan.toString().contains("asking the owner")
-                || plan.toString().contains(io.github.mojolowjo.entropybot.aa.Rung.SETTLE_WAIT));      // review 2: a bounded settle wait is no stall
+                || plan.toString().contains(io.github.mojolowjo.entropybot.aa.Need.WAIT_FACTS));      // review 2: a bounded settle wait is no stall
         if (!s.equals(sig) || asking || (bb.task() != null && bb.task().paused())) {
             sig = s;
             lastProgressAt = now;

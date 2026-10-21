@@ -1,7 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.AaDesires;
-import io.github.mojolowjo.entropybot.aa.Rung;
+import io.github.mojolowjo.entropybot.aa.Need;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
@@ -19,7 +19,7 @@ class BrainCostPathTest {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
 
     /** A picker whose last cost the test sets; counts refreshes. */
-    static final class FakePicker implements Rung.Picker {
+    static final class FakePicker implements Need.Picker {
         double cost = Double.NaN;
         int refreshes;
 
@@ -78,8 +78,8 @@ class BrainCostPathTest {
         FakePicker p = new FakePicker();
         p.cost = 30;
         // AREAS: no area gate any more
-        Rung r = new Rung("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> "goal iron 3", p);
-        Desire d = AaDesires.rung(r);
+        Need r = new Need("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> "goal iron 3", p);
+        Desire d = AaDesires.need(r);
         Brain br = new Brain("brain", "t", d);
         var s = br.scoreAll(bb).get(0);
         assertTrue(s.parts().contains("cost 30s live"), s.parts());

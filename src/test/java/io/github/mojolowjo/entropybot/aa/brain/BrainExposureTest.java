@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.AaDesires;
 import io.github.mojolowjo.entropybot.aa.AaLadder;
-import io.github.mojolowjo.entropybot.aa.Rung;
+import io.github.mojolowjo.entropybot.aa.Need;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
@@ -60,26 +60,6 @@ class BrainExposureTest {
         var s = br.scoreAll(bb);
         assertEquals(20, s.get(0).score(), 1e-9);
         assertEquals(16, s.get(1).score(), 1e-9);
-    }
-
-    @Test
-    void ironParkedByTheSurfaceGateLiftsTheGateToFlowOfIron() {
-        Rung surface = AaLadder.build().stream().filter(r -> r.id.equals("needs.surface")).findFirst().orElseThrow();
-        Rung iron = AaLadder.build().stream().filter(r -> r.id.equals("needs.tableFurnace")).findFirst().orElseThrow();
-        Brain br = new Brain("brain", "t", AaDesires.rung(surface), AaDesires.rung(iron));
-        // small-1: the SURFACE desire (table/furnace) is parked, the UNDER one (iron) is not
-        bb.in.pickTier = 2;
-        bb.in.pickaxes = 1;
-        bb.in.pickPct = 100;
-        bb.in.underDepth = 10;
-        var s = br.scoreAll(bb);
-        assertTrue(s.get(1).skip() != null && s.get(1).skip().contains("needs.surface first"), s.get(1).toString());
-        assertTrue(s.get(1).parked() > 0, "the value iron would have");
-        assertEquals(Curves.FLOW * s.get(1).parked(), s.get(0).score(), 1e-9, s.get(0).parts());
-        bb.in.underDepth = 0;
-        var t = br.scoreAll(bb);
-        assertEquals(-1, t.get(0).score(), 1e-9, "at the surface the gate is met");
-        assertNull(t.get(1).skip(), t.get(1).toString());
     }
 
     @Test

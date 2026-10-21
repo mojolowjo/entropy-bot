@@ -7,7 +7,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** AA_ROUND2 4: the rung values move with the tech tree and the night's danger. */
+/** AA_ROUND2 4: the Need values move with the tech tree and the night's danger. */
 class WorthTest {
     static TechTree tree() {
         return new TechTree(List.of(

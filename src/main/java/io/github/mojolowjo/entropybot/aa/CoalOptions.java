@@ -195,5 +195,98 @@ public final class CoalOptions {
         if (c.best() == null) return null;
         return torchChain(c.best().command(), target);
     }
+
+    /**
+     * Round 4A N: the torches need's rows. Coal in the bag: the craft (ToolWear.CRAFT_S); none: each coal way of
+     * {@link #plan} then the craft (its price + the craft's); the planner's chain at its cost x planUnit. A failed coal
+     * way is held by {@link #noteEnd} (the adapter calls it on every end); the craft and planner rows here.
+     */
+    public static final class Torches implements Need.Picker {
+        public static final int TARGET = 16;
+        public final Options.OptionMemory memory = new Options.OptionMemory();
+        private Options.Choice last;
+        private Options.Option ran;
+        private String why = "no choice yet";
+        private int switches;
+        private boolean switching;
+
+        public Options.Choice choose(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+            long now = bb.clock.now();
+            List<Options.Option> rows = new ArrayList<>();
+            List<String> dropped = new ArrayList<>();
+            double craft = io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
+            String craftWhy = "craft " + Math.round(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S) + " s";
+            if (bb.in.coal >= 1) add(rows, dropped, now, new Options.Option("craft", "craft", "craft torch " + TARGET, craft, "coal in the bag: " + craftWhy, "craft torch", false));
+            else {
+                Options.Choice c = plan(bb, coalForTorches(bb.in.torches, TARGET));
+                if (c == null) dropped.add("coal ways: no coal facts readable");
+                else {
+                    for (Options.Option r : c.ranked())
+                        rows.add(new Options.Option("coal " + r.id() + " + craft", "coal", torchChain(r.command(), TARGET), r.total() + craft,
+                                r.why() + " " + Math.round(r.total()) + " + " + craftWhy, "coal " + r.memoryKey(), false, null, r.site()));
+                    for (String d : c.dropped()) dropped.add("coal " + d);
+                }
+            }
+            if (planned != null) add(rows, dropped, now, new Options.Option("planner", "planner", planned, plannedCost * Options.planUnit(),
+                    "goal torch " + TARGET + ": plan cost " + Math.round(plannedCost) + " x planUnit " + Options.planUnit(), "planner", true));
+            else if (plannerWhy != null) dropped.add("planner: " + plannerWhy);
+            return Options.Choice.of(rows, dropped, "no way to torches");
+        }
+
+        private void add(List<Options.Option> rows, List<String> dropped, long now, Options.Option o) {
+            if (memory.blocked(o.memoryKey(), now)) dropped.add(o.id() + ": " + memory.reason(o.memoryKey()));
+            else rows.add(o);
+        }
+
+        @Override public String pick(Blackboard bb, String planned) { return pick(bb, planned, 0, null); }
+
+        @Override public String pick(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+            if (!switching) switches = 0;
+            switching = false;
+            memory.sweep(bb.in);
+            last = choose(bb, planned, plannedCost, plannerWhy);
+            why = last.why();
+            ran = last.best();
+            return ran == null ? null : ran.command();
+        }
+
+        @Override public boolean failed(Blackboard bb, String end) {
+            if (ran == null || end == null || Options.ownerOrDanger(end) || switches >= Options.MAX_SWITCHES) return false;
+            if (!ran.way().equals("coal")) memory.failed(ran.memoryKey(), end, bb.clock.now(), bb.in);       // a coal way: held by noteEnd
+            switches++;
+            switching = true;
+            return true;
+        }
+
+        @Override public void charge(Blackboard bb, String end) {
+            if (ran != null && !ran.way().equals("coal")) memory.failed(ran.memoryKey(), end == null ? "failed" : end, bb.clock.now(), bb.in);
+        }
+
+        @Override public void stalled(Blackboard bb, String w) { charge(bb, w); }
+
+        @Override public void bind(io.github.mojolowjo.entropybot.aa.brain.Failures f, String need) { memory.bind(f, need); }
+
+        @Override public String why() { return why; }
+
+        @Override public void chose(String command) {
+            if (last == null || command == null) return;
+            ran = null;
+            for (Options.Option o : last.ranked()) if (command.equals(o.command())) ran = o;
+        }
+
+        @Override public List<AaManual.Row> rows() {
+            List<AaManual.Row> out = new ArrayList<>();
+            if (last != null) for (Options.Option o : last.ranked()) out.add(new AaManual.Row(o.text(), o.command()));
+            return out;
+        }
+
+        @Override public String chosenId() { return ran == null ? null : ran.id(); }
+
+        @Override public double lastCostS() { return ran == null ? Double.NaN : ran.seconds(); }
+
+        @Override public io.github.mojolowjo.entropybot.aa.brain.Site lastSite() { return ran == null ? null : ran.site(); }
+
+        @Override public String counters(long now) { return memory.size() > 0 ? "memory: " + memory.describe(now) : null; }
+    }
 }
 

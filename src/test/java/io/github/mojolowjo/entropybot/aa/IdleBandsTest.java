@@ -49,7 +49,7 @@ class IdleBandsTest {
     @Test
     void aPlannerNullOptionGivesTheNextOneItsTurn() {
         AaTree tree = AaTree.build(new AaScorer());
-        bb.in.pickTier = 2;            // every rung met
+        bb.in.pickTier = 2;            // every Need met
         bb.in.pickaxes = 1;
         bb.in.pickPct = 100;
         bb.in.tableKnown = bb.in.furnaceKnown = bb.in.baseKnown = bb.in.tableInBag = true;

@@ -184,12 +184,20 @@ public final class IronOptions {
         var b = io.github.mojolowjo.entropybot.aa.brain.ToolWear.best(blocks, f.kit());
         // aa-times review: digCost already holds the blocks at the kit's own (live) seconds, so only what the cheapest
         // way adds over that stays here (the wear / replacement, a craft first); never the fixed stone baseline
+        // round 4A N (unit mix): ToolWear answers seconds, the option rows are walk-blocks: converted here
+        return io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(wearS(f, blocks));
+    }
+
+    /** The wear term in seconds (aa why prints both). */
+    public static double wearS(Facts f, int blocks) {
+        if (f.kit() == null) return 0;
+        var b = io.github.mojolowjo.entropybot.aa.brain.ToolWear.best(blocks, f.kit());
         return Math.max(0, b.seconds() - blocks * f.kit().toolSeconds());
     }
 
     static String wearWhy(Facts f, int blocks) {
         if (f.kit() == null) return "";
-        return ", tools " + io.github.mojolowjo.entropybot.aa.brain.ToolWear.text(blocks, f.kit()) + " +" + Math.round(wear(f, blocks));
+        return ", tools " + io.github.mojolowjo.entropybot.aa.brain.ToolWear.text(blocks, f.kit()) + " +" + Math.round(wearS(f, blocks)) + " s = +" + Math.round(wear(f, blocks)) + " blocks";
     }
 
     /** The dig's cost for an ore {@code depth} blocks under the surface (walk-blocks), at the constant {@link #DIG_BLOCK}. */
@@ -531,7 +539,7 @@ public final class IronOptions {
             }
             if (c.way() == null) {
                 if (hasMineStep(steps)) return new Options.Choice(null, List.of(), c.dropped(), c.why());
-                Options.Option o = new Options.Option("planner", "planner", rewrite(steps, c), plannedCost * Options.PLAN_UNIT, "the planner's chain, no ore step", "planner", true);
+                Options.Option o = new Options.Option("planner", "planner", rewrite(steps, c), plannedCost * Options.planUnit(), "the planner's chain, no ore step", "planner", true);
                 return new Options.Choice(o, List.of(o), c.dropped(), c.why());
             }
             List<Options.Option> rows = new ArrayList<>();

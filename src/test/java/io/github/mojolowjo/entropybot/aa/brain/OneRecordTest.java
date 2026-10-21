@@ -1,7 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.CoalOptions;
-import io.github.mojolowjo.entropybot.aa.Rung;
+import io.github.mojolowjo.entropybot.aa.Need;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.Cooldown;
@@ -20,7 +20,7 @@ class OneRecordTest {
 
     @Test
     void aNoTaskRungFailureRestsTheRung() {
-        Rung r = new Rung("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> "no base chests scanned", b -> "goal table");
+        Need r = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> "no base chests scanned", b -> "goal table");
         Brain brain = new Brain("brain", "test", new Desire("needs.table", Desire.Kind.UPKEEP, r, b -> 50));
         brain.tick(bb);
         assertEquals(0, port.started.size());

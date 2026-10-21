@@ -1,7 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.AaDesires;
-import io.github.mojolowjo.entropybot.aa.Rung;
+import io.github.mojolowjo.entropybot.aa.Need;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Clock;
 import io.github.mojolowjo.entropybot.aa.core.FakePort;
@@ -129,11 +129,11 @@ class BrainInterruptTest {
     @Test
     void overnightFoodWithNoSourceNeverInterruptsExplore() {
         port.noPlan = "no food source known";
-        Rung food = new Rung("needs.food", TaskKind.FOOD, b -> true, b -> null, b -> "goal food 8");
+        Need food = new Need("needs.food", TaskKind.FOOD, b -> true, b -> null, b -> "goal food 8");
         Desire foodD = AaDesires.wire(new Desire("needs.food", Desire.Kind.UPKEEP, food, b -> 77), food);
         Desire explore = new Desire("idle.explore", Desire.Kind.UPKEEP, RunJob.of("explore.job", TaskKind.EXPLORE, "explore 5", "brain"), b -> 15);
         Brain br = new Brain("brain", "t", explore, foodD);
-        // explore is running when food turns urgent (the food rung cannot plan: it is passed over at the first pick)
+        // explore is running when food turns urgent (the food Need cannot plan: it is passed over at the first pick)
         br.tick(bb);
         assertEquals("explore 5", last());
         for (int i = 0; i < 600; i++) {

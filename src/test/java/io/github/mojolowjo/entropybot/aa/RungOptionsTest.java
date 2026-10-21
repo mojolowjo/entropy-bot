@@ -39,23 +39,6 @@ class RungOptionsTest {
     }
 
     @Test
-    void aFailedClimbSwitchesAndNothingIsTriedOnce() {
-        SurfaceFacts f = new SurfaceFacts(10, ME, false, 0, true, true, null, 0, new int[]{4, 60, 0}, 6, true);
-        bb.fact(RungOptions.SURFACE_FACTS, (Supplier<SurfaceFacts>) () -> f);
-        Rung r = new Rung("needs.surface", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> AaLadder.CLIMB,
-                new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, SurfaceFacts.class, new RungOptions.Surface()));
-        assertEquals(Status.FAILURE, r.tick(bb), "nothing (0) wins: the rung passes");
-        assertTrue(r.reason().contains("passed"), r.reason());
-        clock.advance(2 * 60_000 + 1);
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("goto 4 60 0", port.started.get(0).chain(), "nothing was tried: the cheapest real way (sky 12 < climb 40)");
-        port.fail(1, "stopped at step 1 (goto 4 60 0): no path to 4 60 0");
-        assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("climb", port.started.get(1).chain());
-        assertTrue(String.join("|", port.log).contains("-> switching: climb"), port.log.toString());
-    }
-
-    @Test
     void toolsPrefersBootstrapToolsUnlessThePlanIsCheaper() {
         Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false), m, 0, null, 0, "missing trees", null);
         assertEquals("bootstrap tools", c.best().command());
@@ -81,12 +64,11 @@ class RungOptionsTest {
     @Test
     void aFailedTailAfterTheNeedIsMetCountsAsDone() {
         bb.in.pickTier = 0;
-        Rung r = new Rung("needs.tools", TaskKind.TOOLS, b -> b.in.pickTier < 2, b -> null, b -> "bootstrap");
+        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> b.in.pickTier < 2, b -> null, b -> "bootstrap");
         assertEquals(Status.RUNNING, r.tick(bb));
         bb.in.pickTier = 2;
         port.fail(1, "stopped at step 12 (scan base): no chests within 16");
         assertEquals(Status.SUCCESS, r.tick(bb));
         assertTrue(String.join("|", port.log).contains("the need is met - counted done"), port.log.toString());
-        assertFalse(r.cooldown().cooling(clock.now()));
     }
 }

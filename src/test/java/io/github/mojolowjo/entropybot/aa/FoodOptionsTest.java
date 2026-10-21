@@ -216,7 +216,7 @@ class FoodOptionsTest {
         assertTrue(s >= 25 && s < 75, "a stock-up, never urgent: " + s);
         bb.in.bag = Map.of("cooked_beef", 2);
         assertFalse(AaDesires.foodStockLow(bb));
-        Rung food = AaLadder.build().stream().filter(r -> r.id.equals("needs.food")).findFirst().orElseThrow();
+        Need food = AaDesires.needs().stream().filter(r -> r.id.equals("needs.food")).findFirst().orElseThrow();
         assertFalse(food.unmet(bb), "full and stocked: met");
         bb.in.bag = Map.of();
         assertTrue(food.unmet(bb), "full but empty bag: gather before hunger");

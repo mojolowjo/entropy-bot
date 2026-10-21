@@ -83,6 +83,13 @@ public final class Tuning {
         // AA_STEP3 A (TIME_MODEL loss terms): only the curve's shape is a hand number; its ends are the facts (hpS, the death cost)
         def("danger.hpCurve", 3, "AA_STEP3 A1", "the cost_of_hp curve's power: hpS at full health rising to the death cost at 1 hp");
         def("pausedRepriceS", 10, "AA_STEP3 A5", "seconds a job may sit paused by a reflex within a minute before it ends and the brain picks again");
+        // round 4A N: the needs' ways (Need, Ways): the planner as a priced row, the facts wait after a prerequisite
+        def("planUnit", 5, "MINING_PLAN 3.6", "walk-blocks per planner step-cost unit (a planner chain's price = its cost x this)");
+        def("searchPenalty", 60, "AA_ROUND4 A2", "seconds added to the planner row while it still searches (a known way wins while it thinks)");
+        def("plannerHandS", 60, "AA_ROUND4 A2", "seconds the planner row is priced at while its own cost is unknown (searching, or after a prerequisite)");
+        def("plannerWaitS", 45, "aa371", "seconds the planner may search before its row is dropped");
+        def("plannerHoldS", 120, "AA_ROUND4 A2", "seconds a planner row dropped for searching too long stays held (key planner <goal>)");
+        def("settleMaxS", 75, "review 2 (2b)", "the most seconds a need waits for the facts after a prerequisite ended (bag or station facts change ends it sooner)");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

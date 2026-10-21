@@ -127,7 +127,7 @@ class IronOptionsTest {
     void theRewriteReplacesTheOreAndSmeltStepsOnly() {
         Choice c = IronOptions.choose(new Facts(List.of(open(10, 60, 0, 10, true)), 60, false, 0, true, -1, false, null, 80, true, false, 0), new Memory(), 0);
         assertEquals(Smelt.HERE, c.smelt());
-        assertEquals("mine iron 1 at 10 60 0 walk", IronOptions.rewrite(IronOptions.split(PLANNED), c), "one ore of 3: the chain ends after it, the rung picks again");
+        assertEquals("mine iron 1 at 10 60 0 walk", IronOptions.rewrite(IronOptions.split(PLANNED), c), "one ore of 3: the chain ends after it, the Need picks again");
         assertEquals("mine iron 1 at 10 60 0 walk then smelt raw_iron 1 here", IronOptions.rewrite(IronOptions.split("mine iron 1 then smelt raw_iron 1"), c), "one ore left: the rest stays");
         Choice none = new Choice(null, null, Smelt.CAMP, List.of(), List.of());
         assertEquals(PLANNED, IronOptions.rewrite(IronOptions.split(PLANNED), none), "nothing chosen: the planner's steps stay");
@@ -150,7 +150,7 @@ class IronOptionsTest {
         assertEquals("other", IronOptions.failedPart("stopped at step 4 (craft iron_pickaxe 1): missing 2 stick"));
     }
 
-    // ---- the rung with the picker ----
+    // ---- the Need with the picker ----
 
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final FakePort port = new FakePort();
@@ -158,17 +158,17 @@ class IronOptionsTest {
 
     Facts live = new Facts(List.of(open(10, 60, 0, 10, true), buried(5, 56, 0, 6, 5, false)), 60, false, 0, true, 40, false, "no mine marked", 10, false, false, 0);
 
-    Rung ironRung() {
+    Need ironRung() {
         bb.in.pickTier = 2;
         bb.in.pickaxes = 1;
         bb.fact(IronOptions.FACTS, (Supplier<Facts>) () -> live);
         port.resolveTo = PLANNED;
-        return new Rung("needs.iron", io.github.mojolowjo.entropybot.aa.core.TaskKind.IRON, b -> b.in.pickTier < 3, b -> null, b -> "goal iron tools", new IronOptions.Picker());
+        return new Need("needs.iron", io.github.mojolowjo.entropybot.aa.core.TaskKind.IRON, b -> b.in.pickTier < 3, b -> null, b -> "goal iron tools", new IronOptions.Picker());
     }
 
     @Test
     void aFailedWaySwitchesToTheNextAtOnceWithoutACooldown() {
-        Rung r = ironRung();
+        Need r = ironRung();
         assertEquals(Status.RUNNING, r.tick(bb));
         assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());
         port.fail(1, "stopped at step 1 (mine iron 3): 2 iron ore known within 96 but none I could reach (tried 5)");
@@ -176,25 +176,25 @@ class IronOptionsTest {
         assertEquals(2, port.started.size());
         assertEquals("mine iron 1 at 5 56 0 dig", port.started.get(1).chain());
         assertTrue(r.options().contains("dig_known 5 56 0"), r.options());
-        assertTrue(String.join("|", port.log).contains("switching: dig_known 5 56 0"), port.log.toString());
+        assertTrue(String.join("|", port.log).contains("options: dig_known 5 56 0"), port.log.toString());
         // the dig fails too: the cave is next
         port.fail(2, "stopped at step 1 (mine iron 3 dig): couldn't get to the known iron at 5 56 0");
         assertEquals(Status.RUNNING, r.tick(bb));
         assertEquals("mine cave iron 3 then smelt raw_iron 3 then smelt collect all then craft iron_pickaxe 1", port.started.get(2).chain());
-        // the cave fails: nothing left (strip has no mine) -> the rung fails with the options line, and cools down
+        // the cave fails: nothing left (strip has no mine) -> the Need fails with the options line, and cools down
         port.fail(3, "stopped at step 1 (mine cave iron 3): no known cave");
         assertEquals(Status.FAILURE, r.tick(bb));
-        assertTrue(r.reason().contains("options: no way to iron"), r.reason());
+        assertTrue(r.reason().contains("no way can run"), r.reason());
         assertTrue(r.reason().contains("walk 10 60 0:"), r.reason());
         assertEquals(3, port.started.size());
         clock.advance(1000);
-        assertEquals(Status.FAILURE, r.tick(bb), "cooling down");
-        assertTrue(r.reason().startsWith("cooling down"), r.reason());
+        assertEquals(Status.FAILURE, r.tick(bb), "every row held: no retry");
+        assertTrue(r.reason().contains("no way can run") && port.started.size() == 3, r.reason());
     }
 
     @Test
     void theOwnersStopAndACraftFailureEndTheRungAsBefore() {
-        Rung r = ironRung();
+        Need r = ironRung();
         r.tick(bb);
         port.fail(1, "stopped at step 4 (craft iron_pickaxe 1): missing 2 stick");
         assertEquals(Status.FAILURE, r.tick(bb));
@@ -204,7 +204,7 @@ class IronOptionsTest {
 
     @Test
     void withoutFactsThePlannersChainRunsAsItIs() {
-        Rung r = ironRung();
+        Need r = ironRung();
         bb.fact(IronOptions.FACTS, null);
         r.tick(bb);
         assertEquals(PLANNED, port.started.get(0).chain());
@@ -214,7 +214,7 @@ class IronOptionsTest {
     /** Round 2 item 5: the walk names its ore, so a failed walk blocks that ore only: the next open ore is the next option. */
     @Test
     void aWalkFailureBlocksThatOreOnly() {
-        Rung r = ironRung();
+        Need r = ironRung();
         live = new Facts(List.of(open(10, 60, 0, 10, true), open(12, 60, 0, 12, true), open(14, 60, 0, 14, true)), 60, false, 0, true, -1, false, null, 10, false, false, 0);
         r.tick(bb);
         assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());
@@ -224,8 +224,8 @@ class IronOptionsTest {
     }
     @Test
     void switchesRunThroughEveryWayThenTheRungFails() {
-        Rung r = ironRung();
-        // walk, dig, pillar, cave, strip: five ways, four switches (MAX_SWITCHES), then the rung fails
+        Need r = ironRung();
+        // walk, dig, pillar, cave, strip: five ways, four switches (MAX_SWITCHES), then the Need fails
         live = new Facts(List.of(open(10, 60, 0, 10, true), buried(5, 56, 0, 6, 5, false), buried(2, 70, 0, 10, 1, false)), 60, false, 12, true, 30, true, null, 10, false, false, 0);
         r.tick(bb);
         for (long id = 1; id <= IronOptions.MAX_SWITCHES; id++) {
@@ -240,7 +240,7 @@ class IronOptionsTest {
     /** Review: smelting on the spot failed: the ore is mined already, the chain goes on at the camp without the ore step. */
     @Test
     void aSmeltHereFailureGoesOnWithoutTheOreStep() {
-        Rung r = ironRung();
+        Need r = ironRung();
         live = new Facts(List.of(open(10, 60, 0, 10, true)), 60, false, 0, true, -1, false, null, 80, true, false, 0);
         r.tick(bb);
         assertEquals("mine iron 1 at 10 60 0 walk", port.started.get(0).chain());

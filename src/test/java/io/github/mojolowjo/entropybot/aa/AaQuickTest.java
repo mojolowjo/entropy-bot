@@ -21,10 +21,10 @@ class AaQuickTest {
 
     @Test
     void aStaleWaitClockNeverSkipsAFreshPlan() {
-        Rung r = new Rung("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal furnace");
+        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal furnace");
         port.resolveTo = null;
         assertEquals(Status.RUNNING, r.tick(bb), "planning starts");
-        clock.advance(Rung.PLAN_WAIT_MS + 60_000);              // another rung's job ran meanwhile
+        clock.advance(45_000L + 60_000);              // another rung's job ran meanwhile
         assertEquals(Status.RUNNING, r.tick(bb), "a fresh ask waits again, not 'found none in 45s'");
         port.resolveTo = "goal_furnace";
         clock.advance(250);
@@ -35,7 +35,7 @@ class AaQuickTest {
     @Test
     void anotherGoalRestartsTheWait() {
         String[] g = {"goal table"};
-        Rung r = new Rung("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> g[0]);
+        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> g[0]);
         port.resolveTo = null;
         for (int i = 0; i < 40; i++) { r.tick(bb); clock.advance(1000); }
         g[0] = "goal furnace";
