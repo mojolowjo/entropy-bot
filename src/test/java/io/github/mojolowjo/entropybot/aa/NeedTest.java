@@ -25,7 +25,7 @@ class NeedTest {
 
     @Test
     void aPrerequisiteEndKeepsTheNeedRunningNoSettleHole() {
-        Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal table");
+        Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("table")));
         port.noPlan = "missing 1 log - none in storage";
         port.noPlanLogs = 1;
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0, List.of(new WoodOptions.Tree(10, 64, 0, 10, null))));
@@ -47,7 +47,7 @@ class NeedTest {
 
     @Test
     void theWaitIsBoundedBySettleMaxS() {
-        Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal table");
+        Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("table")));
         port.noPlan = "missing 1 log - none in storage";
         port.noPlanLogs = 1;
         n.tick(bb);
@@ -90,10 +90,10 @@ class NeedTest {
         Ways.State st = new Ways.State();
         var f = new io.github.mojolowjo.entropybot.aa.brain.Failures();
         Options.OptionMemory m = new Options.OptionMemory();
-        for (int i = 0; i < 4; i++) Ways.plan(bb, st, f, "n", m, "goal table", clock.now());
+        for (int i = 0; i < 4; i++) Ways.plan(bb, st, f, "n", m, TS.plan("table"), clock.now());
         assertEquals(1, reads[0]);
         clock.advance(1000);
-        Ways.plan(bb, st, f, "n", m, "goal table", clock.now());
+        Ways.plan(bb, st, f, "n", m, TS.plan("table"), clock.now());
         assertEquals(2, reads[0]);
     }
 
@@ -120,7 +120,7 @@ class NeedTest {
 
     @Test
     void aNeedWithEveryRowHeldRestsNoPerTickRetry() {
-        Need n = new Need("needs.bag", TaskKind.BAG, b -> true, b -> null, b -> "deposit");
+        Need n = new Need("needs.bag", TaskKind.BAG, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit()));
         Brain br = new Brain("brain", "t", AaDesires.need(n));
         n.bindFailures(br.failures);
         assertEquals(Status.RUNNING, br.tick(bb));
@@ -137,7 +137,7 @@ class NeedTest {
 
     @Test
     void theSurfaceClimbIsAPricedFirstStepNotAGate() {
-        Need bed = new Need("needs.bed", TaskKind.BASE_BED, b -> true, b -> null, b -> "goal bed").surface();
+        Need bed = new Need("needs.bed", TaskKind.BASE_BED, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("bed"))).surface();
         bb.in.underDepth = 10;
         assertEquals(Status.RUNNING, bed.tick(bb));
         assertEquals(AaLadder.CLIMB, port.started.get(0).chain(), "the climb first");
@@ -149,7 +149,7 @@ class NeedTest {
         assertEquals(Status.RUNNING, bed.tick(bb));
         assertEquals("goal bed", port.started.get(1).chain(), "up: the bed's own row");
         // an under-ground need that wants no surface prices no climb
-        Need iron = new Need("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> "goal iron tools");
+        Need iron = new Need("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("iron tools")));
         bb.in.underDepth = 10;
         iron.tick(bb);
         assertEquals("goal iron tools", port.started.get(2).chain(), "a dig for iron is not followed by a climb");

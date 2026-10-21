@@ -2,6 +2,8 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
+import io.github.mojolowjo.entropybot.aa.moves.Step;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -49,7 +51,7 @@ public final class RungOptions {
 
     public static final class Surface implements Options.OptionSet<SurfaceFacts> {
         /** AA_ROUND3 1: the SURFACE rung is the one way-up set ({@link WayUp}). */
-        @Override public Options.Choice choose(SurfaceFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(SurfaceFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
             return WayUp.choose(f, m, now);
         }
 
@@ -57,12 +59,12 @@ public final class RungOptions {
         static void climbRow(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
             if (f.kit() != null) climb(rows, dropped, m, now, f, d);
             else if (!f.pickaxe()) dropped.add("climb: no pickaxe");
-            else add(rows, dropped, m, now, Options.scored("climb", "climb", AaLadder.CLIMB, d * CLIMB_BLOCK + CLIMB_FIX, d + " up, a staircase", "climb", false, m));
+            else add(rows, dropped, m, now, Options.typed("climb", "climb", List.of(new Step.Climb()), d * CLIMB_BLOCK + CLIMB_FIX, d + " up, a staircase", "climb", m));
         }
 
         /**
          * Tool wear as a cost (ToolWear): the staircase's blocks ({@value ToolWear#STAIR_BLOCKS_PER_UP} per level) priced
-         * per way; the climb verb digs with a pickaxe, so USE is "climb", CRAFT is "craft stone_pickaxe 1 then climb",
+         * per way; the climb verb digs with a pickaxe, so USE is the climb, CRAFT is a stone pickaxe's craft and the climb,
          * and HAND has no verb (dropped with its price, so aa why still shows it). Seconds = walk-blocks.
          */
         static void climb(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, SurfaceFacts f, int d) {
@@ -70,9 +72,9 @@ public final class RungOptions {
             for (var p : io.github.mojolowjo.entropybot.aa.brain.ToolWear.price(blocks, f.kit())) {
                 String terms = d + " up, a staircase: " + blocks + " blocks, " + p.terms();
                 switch (p.way()) {
-                    case USE -> add(rows, dropped, m, now, Options.scored("climb", "climb", AaLadder.CLIMB, p.seconds() + d + CLIMB_FIX, terms, "climb", false, m));
-                    case CRAFT -> add(rows, dropped, m, now, Options.scored("craft+climb", "climb",
-                            io.github.mojolowjo.entropybot.aa.brain.ToolWear.prefix(p.way()) + AaLadder.CLIMB, p.seconds() + d + CLIMB_FIX, terms, "climb", false, m));
+                    case USE -> add(rows, dropped, m, now, Options.typed("climb", "climb", List.of(new Step.Climb()), p.seconds() + d + CLIMB_FIX, terms, "climb", m));
+                    case CRAFT -> add(rows, dropped, m, now, Options.typed("craft+climb", "climb",
+                            Options.seq(io.github.mojolowjo.entropybot.aa.brain.ToolWear.prefix(p.way()), new Step.Climb()), p.seconds() + d + CLIMB_FIX, terms, "climb", m));
                     case HAND -> dropped.add("climb by hand " + Math.round(p.seconds()) + "s: the climb verb digs with a pickaxe" + (f.kit().pickaxe() ? "" : " and I have none"));
                 }
             }
@@ -103,7 +105,7 @@ public final class RungOptions {
     private static final Pattern TOOLS_END = Pattern.compile("no chests|scan base|no free spot|no trees|chopped nothing|no path|no progress|timeout|stuck|couldn't|can't|missing");
 
     public static final class Tools implements Options.OptionSet<ToolsFacts> {
-        @Override public Options.Choice choose(ToolsFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(ToolsFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
             List<Options.Option> rows = new ArrayList<>();
             List<String> dropped = new ArrayList<>();
             // round 4A N: the sword alone when the pickaxe is fine (a zombie seen, no weapon): one craft from the bag
@@ -111,21 +113,21 @@ public final class RungOptions {
                 double s = io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S;
                 if (!f.swordMats()) dropped.add("sword only: no 2 cobblestone + a stick + a table (" + f.cobble() + " cobblestone, " + f.sticks() + " sticks, "
                         + f.planks() + " planks, table " + f.table() + "); the planner's goal makes one");
-                else add(rows, dropped, m, now, Options.scored("sword only", "craft", "craft stone_sword 1", io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(s),
-                        "a stone sword from the bag: craft " + Math.round(s) + " s", "sword only", false, m));
+                else add(rows, dropped, m, now, Options.typed("sword only", "craft", List.of(new Step.Craft("stone_sword", 1)), io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(s),
+                        "a stone sword from the bag: craft " + Math.round(s) + " s", "sword only", m));
                 if (!f.pickWanted()) {
-                    if (planned != null) add(rows, dropped, m, now, Options.scored("planner", "planner", planned, cost * Options.planUnit(), "goal stone tools (the sword in it)", "planner", true, m));
+                    if (planned != null) add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools (the sword in it)", "planner", true, m));
                     dropped.add("bootstrap: the pickaxe is fine (the sword alone is wanted)");
                     return Options.Choice.of(rows, dropped, "no way to a sword");
                 }
             }
             // the planner's goal stone tools covers a chest's stock too (PlanFacts.addStock: fetch steps)
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
-            else add(rows, dropped, m, now, Options.scored("planner", "planner", planned, cost * Options.planUnit(), "goal stone tools", "planner", true, m));
+            else add(rows, dropped, m, now, Options.typed("planner", "planner", planned, cost * Options.planUnit(), "the planner's stone tools", "planner", true, m));
             if (f.pickTier() >= 2) dropped.add("bootstrap tools: the stone tools exist (worn: the planner makes new ones)");
-            else add(rows, dropped, m, now, Options.scored("bootstrap tools", "bootstrap", AaLadder.BOOTSTRAP + " tools", BOOTSTRAP_TOOLS_COST,
-                    "bootstrap up to the furnace (the rungs do the rest)", "bootstrap tools", false, m));
-            add(rows, dropped, m, now, Options.scored("bootstrap", "bootstrap", AaLadder.BOOTSTRAP, BOOTSTRAP_COST, "the whole bootstrap", "bootstrap", false, m));
+            else add(rows, dropped, m, now, Options.typed("bootstrap tools", "bootstrap", List.of(new Step.Bootstrap(true)), BOOTSTRAP_TOOLS_COST,
+                    "bootstrap up to the furnace (the rungs do the rest)", "bootstrap tools", m));
+            add(rows, dropped, m, now, Options.typed("bootstrap", "bootstrap", List.of(new Step.Bootstrap(false)), BOOTSTRAP_COST, "the whole bootstrap", "bootstrap", m));
             return Options.Choice.of(rows, dropped, "no way to stone tools");
         }
 
@@ -141,5 +143,4 @@ public final class RungOptions {
         else rows.add(o);
     }
 
-    static String xyz(int[] p) { return p[0] + " " + p[1] + " " + p[2]; }
 }

@@ -20,7 +20,7 @@ class OneRecordTest {
 
     @Test
     void aNoTaskRungFailureRestsTheRung() {
-        Need r = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> "no base chests scanned", b -> "goal table");
+        Need r = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> "no base chests scanned", b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("table")));
         Brain brain = new Brain("brain", "test", new Desire("needs.table", Desire.Kind.UPKEEP, r, b -> 50));
         brain.tick(bb);
         assertEquals(0, port.started.size());

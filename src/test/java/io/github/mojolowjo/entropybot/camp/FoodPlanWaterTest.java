@@ -14,8 +14,8 @@ class FoodPlanWaterTest {
         List<String> dropped = new ArrayList<>();
         List<FoodPlan.Way> w = FoodPlan.waterWays(Map.of("minecraft:stick", 3, "minecraft:string", 2), true, true, true, dropped);
         assertEquals(2, w.size());
-        assertEquals("gather kelp 8 cook", w.get(0).chain());
-        assertEquals("fish 4", w.get(1).chain());
+        assertEquals("kelp 8 cook", io.github.mojolowjo.entropybot.aa.moves.Step.label(w.get(0).steps()));
+        assertEquals("fish 5m", io.github.mojolowjo.entropybot.aa.moves.Step.label(w.get(1).steps()));
         assertTrue(dropped.isEmpty());
         assertTrue(FoodPlan.waterWays(Map.of(), true, false, false, null).isEmpty(), "raw kelp without a furnace is no food");
     }
@@ -30,6 +30,6 @@ class FoodPlanWaterTest {
         dropped.clear();
         assertTrue(FoodPlan.waterWays(Map.of("minecraft:fishing_rod", 1), false, false, false, dropped).isEmpty());
         assertTrue(dropped.get(1).contains("no water"));
-        assertEquals("fish 4", FoodPlan.waterWays(Map.of("minecraft:fishing_rod", 1), false, true, false, null).get(0).chain());
+        assertEquals("fish 5m", io.github.mojolowjo.entropybot.aa.moves.Step.label(FoodPlan.waterWays(Map.of("minecraft:fishing_rod", 1), false, true, false, null).get(0).steps()));
     }
 }

@@ -69,14 +69,14 @@ class NightWorkTest {
         bb.in.bag = Map.of("raw_iron", 5);
         bb.in.furnaceInBag = true;
         assertEquals(NightWork.Work.SMELT, NightWork.pick(bb.in));
-        assertEquals("smelt iron_ingot 5 here", NightWork.chain(bb.in, NightWork.Work.SMELT, 0, 64, 0, 0, -1));
+        assertEquals("smelt iron_ingot 5 here", TS.label(NightWork.steps(bb.in, NightWork.Work.SMELT, 0, 64, 0, 0, -1)));
     }
 
     @Test
     void stairsDigDownThroughTheFloorFirstNeverThroughTheWall() {
         var s = NightWork.stairs(10, 64, 20, 0, -1);
-        assertEquals("dig 10 62 20 10 63 20 ores via engine", s.get(0), "the shaft is straight under the feet");
-        assertEquals("goto 10 62 20", s.get(1));
-        assertTrue(s.get(2).startsWith("dig 10 61 19 10 63 19"), "first stair column is below the wall's foot: " + s.get(2));
+        assertEquals("dig 10 62 20 10 63 20 ores via engine", s.get(0).text(), "the shaft is straight under the feet");
+        assertEquals("goto 10 62 20", s.get(1).text());
+        assertTrue(s.get(2).text().startsWith("dig 10 61 19 10 63 19"), "first stair column is below the wall's foot: " + s.get(2));
     }
 }

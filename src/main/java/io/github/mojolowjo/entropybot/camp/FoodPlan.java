@@ -149,7 +149,8 @@ public final class FoodPlan {
     }
 
     /** One water food way for the FOOD options (aa/FoodOptions on aa-food): name, the command chain, why; or why not. */
-    public record Way(String name, String chain, String why) {}
+    /** rm-execution2: a water way's typed steps (AA's food set runs them on aa/moves/Steps). */
+    public record Way(String name, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, String why) {}
 
     /**
      * aa-kelpfish: the two water ways. kelp: kelp seen in water near -> {@code gather kelp 8} (+ {@code cook} with a furnace:
@@ -158,7 +159,7 @@ public final class FoodPlan {
      */
     public static List<Way> waterWays(Map<String, Integer> inv, boolean kelpNear, boolean waterNear, boolean furnace, List<String> dropped) {
         List<Way> out = new ArrayList<>();
-        if (kelpNear && furnace) out.add(new Way("kelp", "gather kelp 8 cook", "kelp columns seen in the water, smelted to dried kelp"));
+        if (kelpNear && furnace) out.add(new Way("kelp", java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Kelp((int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.kelpN"))), "kelp columns seen in the water, smelted to dried kelp"));
         else if (dropped != null) dropped.add(kelpNear ? "kelp: seen, but raw kelp is no food and there is no furnace" : "kelp: none seen in the water near");
         int rod = inv.getOrDefault("minecraft:fishing_rod", 0) + inv.getOrDefault("fishing_rod", 0);
         int sticks = inv.getOrDefault("minecraft:stick", 0) + inv.getOrDefault("stick", 0);
@@ -166,7 +167,7 @@ public final class FoodPlan {
         String why = io.github.mojolowjo.entropybot.vocab.FishRules.rodWhy(rod > 0, sticks, string);
         if (!waterNear) { if (dropped != null) dropped.add("fishing: no water near"); }
         else if (why != null) { if (dropped != null) dropped.add("fishing: " + why); }
-        else out.add(new Way("fish", "fish 4", "water near and " + (rod > 0 ? "a rod in the bag" : "sticks and string for a rod")));
+        else out.add(new Way("fish", java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Fish((int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("steps.fishMin"))), "water near and " + (rod > 0 ? "a rod in the bag" : "sticks and string for a rod")));
         return out;
     }
 }

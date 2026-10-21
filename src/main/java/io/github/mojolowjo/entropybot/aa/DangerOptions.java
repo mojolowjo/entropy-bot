@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 import io.github.mojolowjo.entropybot.threat.ThreatFacts;
 import io.github.mojolowjo.entropybot.threat.ThreatRules;
 
@@ -46,15 +47,21 @@ public final class DangerOptions {
         }
     }
 
-    /** One way: possible here, the expected damage (hp), the time lost (s), the cost (s) and its terms; run = its chain when it needs facts (a shore cell). */
-    public record Priced(Way way, boolean possible, double damage, double timeS, double costS, String why, String run) {
+    /** One way: possible here, the expected damage (hp), the time lost (s), the cost (s) and its terms; run = its steps when it needs facts (a shore cell). */
+    public record Priced(Way way, boolean possible, double damage, double timeS, double costS, String why, List<io.github.mojolowjo.entropybot.aa.moves.Step> run) {
         public Priced(Way way, boolean possible, double damage, double timeS, double costS, String why) { this(way, possible, damage, timeS, costS, why, null); }
     }
 
     /** The pick: the baseline, the best possible way, every way, the seconds saved and the desire's score (-1 none). */
     public record Choice(Priced stay, Priced best, List<Priced> all, double savedS, double score, String terms) {
-        /** The chain for the best way, or null (staying is cheapest). */
-        public String chain() { return best == null || best.way() == Way.STAY || score < 0 ? null : chainOf(best); }
+        /** The typed steps for the best way, or null (staying is cheapest). */
+        public List<io.github.mojolowjo.entropybot.aa.moves.Step> steps() { return best == null || best.way() == Way.STAY || score < 0 ? null : stepsOf(best); }
+
+        /** The best way's steps' line (logs, aa why), or null. */
+        public String chain() {
+            var s = steps();
+            return s == null ? null : io.github.mojolowjo.entropybot.aa.moves.Step.label(s);
+        }
     }
 
     /** A swing every 0.65 s with a sword or axe; a bare hand (hit 1) every 0.25 s. */
@@ -161,7 +168,7 @@ public final class DangerOptions {
     }
 
     /** The way with {@code extraS} more cost (an air loss), its terms added. */
-    static Priced plus(Priced p, double extraS, String note, String run) {
+    static Priced plus(Priced p, double extraS, String note, List<io.github.mojolowjo.entropybot.aa.moves.Step> run) {
         return new Priced(p.way(), p.possible(), p.damage(), p.timeS(), p.costS() + extraS, p.why() + (note == null ? "" : ", " + note), run);
     }
 
@@ -236,23 +243,24 @@ public final class DangerOptions {
         return d;
     }
 
-    /** The chain the danger desire runs for a way. */
-    static String chainOf(Priced p) {
+    /** The typed steps the danger desire runs for a way (Moves underneath: the flee, burrow and pillar moves). */
+    static List<io.github.mojolowjo.entropybot.aa.moves.Step> stepsOf(Priced p) {
         if (p.run() != null) return p.run();
         int wait = (int) Math.max(3, Math.min(60, Math.round(p.timeS())));
+        int calm = (int) Tuning.get("steps.calmWaitS"), sealed = (int) Tuning.get("steps.burrowWaitS");
         return switch (p.way()) {
-            case FIGHT -> "attack nearest then wait " + wait;
-            case FLEE -> "flee then wait " + wait;
-            case HOME -> "go base";
-            case DIG_IN -> "burrow then wait " + wait;
-            case PILLAR -> "pillar then wait " + wait;
-            case BOX -> "shelter";
-            case BURROW -> "burrow then wait 120";
-            case BASE -> "go base then shelter";
-            case SLEEP -> "sleep";
-            case WAIT -> "wait 60";
-            case PILLAR_OUT -> "pillar then wait 60";
-            case SHORE -> null;                  // its chain names the shore cell (run)
+            case FIGHT -> List.of(new Step.Attack(), new Step.Wait(wait));
+            case FLEE -> List.of(new Step.Flee(), new Step.Wait(wait));
+            case HOME -> List.of(new Step.GoBase());
+            case DIG_IN -> List.of(new Step.Burrow(), new Step.Wait(wait));
+            case PILLAR -> List.of(new Step.Pillar(), new Step.Wait(wait));
+            case BOX -> List.of(new Step.Shelter());
+            case BURROW -> List.of(new Step.Burrow(), new Step.Wait(sealed));
+            case BASE -> List.of(new Step.GoBase(), new Step.Shelter());
+            case SLEEP -> List.of(new Step.Sleep());
+            case WAIT -> List.of(new Step.Wait(calm));
+            case PILLAR_OUT -> List.of(new Step.Pillar(), new Step.Wait(calm));
+            case SHORE -> null;                  // its steps name the shore cell (run)
             case STAY -> null;
         };
     }
@@ -358,7 +366,8 @@ public final class DangerOptions {
                     double al = airLoss(death, w.headDepth(), 0, air);
                     Priced sp = priced(me, death, Way.SHORE, true, during(near, st + gt) + amb * (st + gt), nightT(need, st + gt),
                             "swim " + Math.round(w.shoreDist()) + " to the shore " + sc[0] + " " + sc[1] + " " + sc[2] + " " + fmt(st) + " s, then " + ground + " " + fmt(gt) + " s");
-                    all.add(plus(sp, al, "air " + Math.round(al) + " s", "goto " + sc[0] + " " + sc[1] + " " + sc[2] + (boxOk ? " then shelter" : " then burrow then wait 120")));
+                    all.add(plus(sp, al, "air " + Math.round(al) + " s", boxOk ? List.of(new Step.Walk(sc[0], sc[1], sc[2], 0), new Step.Shelter())
+                            : List.of(new Step.Walk(sc[0], sc[1], sc[2], 0), new Step.Burrow(), new Step.Wait((int) Tuning.get("steps.burrowWaitS")))));
                 } else all.add(new Priced(Way.SHORE, false, 0, 0, 0, "no dry cell within " + ThreatFacts.SHORE_REACH));
             }
             boolean home = need.base() && w.baseDist() > 0;

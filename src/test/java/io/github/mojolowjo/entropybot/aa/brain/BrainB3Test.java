@@ -55,7 +55,7 @@ class BrainB3Test {
     }
 
     Desire d(String id, Desire.Kind k, double v, Desire.Exposure e) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).exposure(e);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).exposure(e);
     }
 
     @Test
@@ -82,8 +82,8 @@ class BrainB3Test {
         bb.fact(Personality.FACT, p);
         double[] v = {70, 0};
         Brain br = new Brain("brain", "t",
-                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do a", "brain"), b -> v[0]),
-                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, "do b", "brain"), b -> v[1]));
+                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do a")), "brain"), b -> v[0]),
+                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do b")), "brain"), b -> v[1]));
         br.tick(bb);
         v[1] = 80;                                       // urgent, beats 70 + 0 (the default 15 would hold it)
         br.tick(bb);
@@ -92,7 +92,7 @@ class BrainB3Test {
 
     @Test
     void aWantThatSucceedsIsBoredAgainFromZero() {
-        Desire w = new Desire("want.tidy", Desire.Kind.WANT, RunJob.of("t.job", TaskKind.DEPOSIT, "deposit", "want"),
+        Desire w = new Desire("want.tidy", Desire.Kind.WANT, RunJob.of("t.job", TaskKind.DEPOSIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("deposit")), "want"),
                 b -> Wants.score(b, "want.tidy", "tidy"));
         Brain br = new Brain("brain", "t", w);
         br.scoreAll(bb);                                 // first seen now

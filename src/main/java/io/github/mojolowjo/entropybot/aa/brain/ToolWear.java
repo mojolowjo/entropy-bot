@@ -104,7 +104,7 @@ public final class ToolWear {
             double wear = k.left() <= 0 ? 0 : uses / (double) k.left() * replace;
             double s = uses * tool + (n - uses) * hand + wear;
             out.add(new Priced(Way.USE, s, uses + " x " + r2(tool) + "s" + (n > uses ? " + " + (n - uses) + " by hand x " + r2(hand) + "s" : "")
-                    + " + wear " + uses + "/" + k.left() + " x " + (replace < worth ? (k.craftS() < INF ? "craft " : "gather and craft ") + Math.round(replace) + "s" : "its worth " + Math.round(worth) + "s")
+                    + " + wear " + uses + "/" + k.left() + " x " + (replace < worth ? (k.craftS() < INF ? "a new one " : "gather and make one ") + Math.round(replace) + "s" : "its worth " + Math.round(worth) + "s")
                     + " = " + Math.round(wear) + "s"));
         }
         if (k.craftS() < INF) {
@@ -112,7 +112,7 @@ public final class ToolWear {
             int uses = Math.min(n, STONE_USES);
             double wear = uses / (double) STONE_USES * k.craftS();
             double s = k.craftS() + uses * tool + (n - uses) * hand + wear;
-            out.add(new Priced(Way.CRAFT, s, "craft " + Math.round(k.craftS()) + "s + " + uses + " x " + r2(tool) + "s + wear " + Math.round(wear) + "s"));
+            out.add(new Priced(Way.CRAFT, s, "a new one " + Math.round(k.craftS()) + "s + " + uses + " x " + r2(tool) + "s + wear " + Math.round(wear) + "s"));
         }
         out.add(new Priced(Way.HAND, n * hand, n + " x " + r2(hand) + "s by hand"));
         out.sort((a, b) -> Double.compare(a.seconds(), b.seconds()));      // stable: ties keep USE, CRAFT, HAND
@@ -131,7 +131,10 @@ public final class ToolWear {
     }
 
     /** The command prefix for a way: CRAFT makes the pickaxe first. */
-    public static String prefix(Way w) { return w == Way.CRAFT ? "craft stone_pickaxe 1 then " : ""; }
+    /** The steps before the work for way {@code w}: CRAFT makes a stone pickaxe first; the others nothing. */
+    public static java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> prefix(Way w) {
+        return w == Way.CRAFT ? java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Craft("stone_pickaxe", 1)) : java.util.List.of();
+    }
 
     private static String r2(double v) { return String.valueOf(Math.round(v * 100) / 100.0); }
 }

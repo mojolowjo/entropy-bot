@@ -2,6 +2,7 @@ package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 import io.github.mojolowjo.entropybot.aa.core.Inputs;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,10 +35,10 @@ public final class NightWork {
         return Work.NONE;
     }
 
-    /** The craft chain, or null: an iron pickaxe from 3 ingots, torches from coal and sticks/planks. */
-    public static String craft(Inputs in) {
-        if (in.pickTier < 3 && in.ironIngots >= 3 && (in.tableKnown || in.tableInBag)) return "craft iron_pickaxe";
-        if (in.torches < 8 && in.coal >= 1 && in.torchCoal() && (in.planks >= 2 || in.wood >= 1) && (in.tableKnown || in.tableInBag)) return "craft torch 16";
+    /** The craft, or null: an iron pickaxe from 3 ingots, torches from coal and sticks/planks. */
+    public static Step craft(Inputs in) {
+        if (in.pickTier < 3 && in.ironIngots >= 3 && (in.tableKnown || in.tableInBag)) return new Step.Craft("iron_pickaxe", 1);
+        if (in.torches < 8 && in.coal >= 1 && in.torchCoal() && (in.planks >= 2 || in.wood >= 1) && (in.tableKnown || in.tableInBag)) return new Step.Craft("torch", 16);
         return null;
     }
 
@@ -58,12 +59,12 @@ public final class NightWork {
         return !Night.hostile(bb);
     }
 
-    /** The chain for {@code work} at feet (x, y, z); null for NONE. */
-    public static String chain(Inputs in, Work work, int x, int y, int z, int dx, int dz) {
+    /** The typed steps for {@code work} at feet (x, y, z); null for NONE. */
+    public static List<Step> steps(Inputs in, Work work, int x, int y, int z, int dx, int dz) {
         return switch (work) {
-            case SMELT -> "smelt iron_ingot " + Math.min(64, in.bag.getOrDefault("raw_iron", 0)) + " here";
-            case CRAFT -> craft(in);
-            case STAIRS -> String.join(" then ", stairs(x, y, z, dx, dz));
+            case SMELT -> List.of(new Step.Smelt("iron_ingot", Math.min(64, in.bag.getOrDefault("raw_iron", 0)), true));
+            case CRAFT -> craft(in) == null ? null : List.of(craft(in));
+            case STAIRS -> stairs(x, y, z, dx, dz);
             case NONE -> null;
         };
     }
@@ -72,11 +73,17 @@ public final class NightWork {
      * Down the floor cell first (SHAFT deep, straight below: a hole that only joins the shell), then a staircase from its
      * bottom. The staircase's first column then lies under the shell wall's foot, never in it.
      */
-    public static List<String> stairs(int x, int y, int z, int dx, int dz) {
-        List<String> out = new ArrayList<>();
-        out.add("dig " + x + " " + (y - SHAFT) + " " + z + " " + x + " " + (y - 1) + " " + z + " ores via engine");
-        out.add("goto " + x + " " + (y - SHAFT) + " " + z);
-        out.addAll(io.github.mojolowjo.entropybot.commands.StairPlan.steps(x, y - SHAFT, z, dx, dz, STAIRS));
+    public static List<Step> stairs(int x, int y, int z, int dx, int dz) {
+        List<Step> out = new ArrayList<>();
+        out.add(new Step.Dig(new int[]{x, y - SHAFT, z}, new int[]{x, y - 1, z}, true, true));
+        out.add(new Step.Walk(x, y - SHAFT, z, 0));
+        int sy = y - SHAFT, every = io.github.mojolowjo.entropybot.commands.StairPlan.TORCH_EVERY;
+        for (int i = 1; i <= STAIRS; i++) {
+            int cx = x + dx * i, cz = z + dz * i;
+            out.add(new Step.Dig(new int[]{cx, sy - i, cz}, new int[]{cx, sy - i + 2, cz}, true, true));
+            out.add(new Step.Walk(cx, sy - i, cz, 0));
+            if (i % every == 0) out.add(Step.Build.one("torch", x + dx * (i - 1), sy - i + 1, z + dz * (i - 1)));
+        }
         return out;
     }
 }

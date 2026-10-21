@@ -85,12 +85,6 @@ public final class AaEscape {
         return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 
-    /** The chain from step n (1-based, the step that ended stuck: it did not get there) to the end; null if out of range. */
-    public static String resume(List<String> steps, int n) {
-        if (steps == null || n < 1 || n > steps.size()) return null;
-        return String.join(" then ", steps.subList(n - 1, steps.size()));
-    }
-
     /**
      * AA_STEP3 A3 (step2-watch: "no pillar (0 blocks)" with 16 oak planks in the bag): the danger moves place their own
      * blocks (useItemOn, not Baritone's throwaway list), so planks count with the throwaway blocks.

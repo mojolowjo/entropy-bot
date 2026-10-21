@@ -21,7 +21,7 @@ class BrainExposureTest {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
 
     Desire d(String id, Desire.Kind k, double v, Desire.Exposure e) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).exposure(e);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).exposure(e);
     }
 
     void night(int difficulty) {
@@ -66,7 +66,7 @@ class BrainExposureTest {
     void aSelfCoolingDesireRestsAfterANoRunFailureAndCoolsAfterARealOne() {
         RunJob none = new RunJob("w.job", TaskKind.STOCK_WOOD, b -> null);
         Desire w = new Desire("idle.wood", Desire.Kind.UPKEEP, none, b -> 20).cools(30_000, 30_000).lastTry();
-        Desire wait = new Desire("idle.wait", Desire.Kind.UPKEEP, RunJob.of("wait", TaskKind.WAIT, "wait 60", "idle"), b -> 1).lastTry();
+        Desire wait = new Desire("idle.wait", Desire.Kind.UPKEEP, RunJob.of("wait", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("wait 60")), "idle"), b -> 1).lastTry();
         Brain br = new Brain("brain", "t", w, wait);
         assertEquals(Status.FAILURE, br.tick(bb));
         assertTrue(br.failures.held("idle.wood", null, clock.now()) != null, "rests 30 s");

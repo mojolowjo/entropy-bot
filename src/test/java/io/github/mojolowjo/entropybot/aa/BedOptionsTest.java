@@ -53,8 +53,8 @@ class BedOptionsTest {
 
     @Test
     void theOldChainIsTheFallbackWithoutFacts() {
-        assertEquals("hunt 3 sheep for white_wool 3 then goal bed", BedOptions.huntChain(0, null));
-        assertEquals("hunt 1 sheep for white_wool 3 at 5 6 then goal bed", BedOptions.huntChain(2, new int[]{5, 6, 10, 90}));
+        assertEquals("hunt 3 sheep for white_wool 3 > plan bed", TS.label(BedOptions.huntSteps(0, null)));
+        assertEquals("hunt 1 sheep for white_wool 3 at 5 6 > plan bed", TS.label(BedOptions.huntSteps(2, new int[]{5, 6, 10, 90})));
     }
 
     @Test

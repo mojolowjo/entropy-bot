@@ -66,7 +66,7 @@ public final class BaseOptions {
         else if (f.blocks() < 1) dropped.add("burrow: no block in the bag to seal with");
         else {
             double s = Price.tune("danger.burrowS"), night = nightCost(f, s);
-            Price.add(rows, dropped, m, now, Options.typed("burrow", "burrow", List.of(new Step.Burrow(), new Step.Wait((int) Price.tune("base.burrowWaitS"))), Price.s(s) + night,
+            Price.add(rows, dropped, m, now, Options.typed("burrow", "burrow", List.of(new Step.Burrow(), new Step.Wait((int) Price.tune("steps.burrowWaitS"))), Price.s(s) + night,
                     f.blocks() + " blocks, dig 2 and seal " + Price.r(s) + " s, open night " + Price.r(night), "burrow", m));
         }
         return Options.Choice.of(rows, dropped, "no way to a base");

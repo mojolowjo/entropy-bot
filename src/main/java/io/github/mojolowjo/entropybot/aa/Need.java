@@ -40,9 +40,12 @@ public final class Need extends Node {
      * passes); a failed end is offered back ({@code true}: another row runs at once, the failed one held).
      */
     public interface Picker {
-        String pick(Blackboard bb, String planned);
+        String pick(Blackboard bb, List<Step> planned);
 
-        default String pick(Blackboard bb, String planned, double plannedCost, String plannerWhy) { return pick(bb, planned); }
+        default String pick(Blackboard bb, List<Step> planned, double plannedCost, String plannerWhy) { return pick(bb, planned); }
+
+        /** rm-execution2: the row the last pick (or the owner's choice) runs, with its typed steps; null none. */
+        default Options.Option ranOption() { return null; }
 
         boolean failed(Blackboard bb, String end);
 

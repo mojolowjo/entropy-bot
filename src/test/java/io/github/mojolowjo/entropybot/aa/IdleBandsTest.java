@@ -64,7 +64,7 @@ class IdleBandsTest {
 
     @Test
     void lightingRunsOncePerNight() {
-        var light = AaTree.oncePerNight(io.github.mojolowjo.entropybot.aa.core.RunJob.of("l", TaskKind.LIGHT, "light here 8", "idle"));
+        var light = AaTree.oncePerNight(io.github.mojolowjo.entropybot.aa.core.RunJob.of("l", TaskKind.LIGHT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("light here 8")), "idle"));
         bb.in.night = true;
         assertEquals(Status.RUNNING, light.tick(bb));
         port.done(1, "done");

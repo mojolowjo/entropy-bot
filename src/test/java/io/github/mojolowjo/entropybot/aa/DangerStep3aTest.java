@@ -146,7 +146,7 @@ class DangerStep3aTest {
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) (x, z) -> 64);
         ThreatFacts land = new ThreatFacts(ThreatFacts.CALM.me(), List.of(), new ThreatFacts.Ways(0, -1, false, 0, 3, true, false, false));
         bb.fact(AaDesires.THREAT_FACT, (java.util.function.Supplier<ThreatFacts>) () -> land);
-        io.github.mojolowjo.entropybot.aa.core.RunJob job = io.github.mojolowjo.entropybot.aa.core.RunJob.of("j", io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, "goto 5 64 5 then shelter", "danger");
+        io.github.mojolowjo.entropybot.aa.core.RunJob job = io.github.mojolowjo.entropybot.aa.core.RunJob.of("j", io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, TS.s("goto 5 64 5 then shelter"), "danger");
         job.tick(bb);
         bb.fact(AaDesires.WAY_FACT, DangerOptions.Way.SHORE);        // swam ashore: the shore row is not priced on land
         clock.advance(10_000);

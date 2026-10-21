@@ -42,15 +42,15 @@ class AaFix3Test {
         var cat = BrainB5Test.withLearned(null, 80);
         bb.in.pickTier = 2;
         Goals.Goal g = Goals.add(bb, COAL, 16, 0, clock.now());
-        assertEquals("mine strip coal 16", Goals.chain(bb, g), "no facts: as before");
+        assertEquals("mine strip coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "no facts: as before");
         bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, false));
-        assertEquals("place mine north then mine strip coal 16", Goals.chain(bb, g), "no mine marked: place one where I stand (the world is open)");
+        assertEquals("place mine north > mine strip coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "no mine marked: place one where I stand (the world is open)");
         bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, true));
-        assertEquals("mine strip coal 16", Goals.chain(bb, g));
+        assertEquals("mine strip coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
         bb.fact(Goals.WAYS_FACT, new Goals.Ways(30, true));
-        assertEquals("mine cave coal 16", Goals.chain(bb, g), "a known cave first");
+        assertEquals("mine cave coal 16", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "a known cave first");
         bb.fact(Goals.KNOWN_FACT, Map.of(g.r.key(), 5));
-        assertEquals("mine coal 16 dig", Goals.chain(bb, g), "known ore: dig to it");
+        assertEquals("mine coal 16 dig", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "known ore: dig to it");
     }
 
     @Test

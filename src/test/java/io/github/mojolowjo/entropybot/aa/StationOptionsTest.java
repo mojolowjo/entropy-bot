@@ -53,7 +53,7 @@ class StationOptionsTest {
 
     @Test
     void thePlannerIsARowAtPlanCost() {
-        Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, "goal crafting_table", 30, null);
+        Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, io.github.mojolowjo.entropybot.aa.TS.plan("crafting_table"), 30, null);
         assertEquals("goal crafting_table", c.best().command());
         assertEquals(150, c.best().cost(), 1e-6);
         assertTrue(c.best().needsPlanner());
@@ -71,7 +71,7 @@ class StationOptionsTest {
     void aHeldRowIsDroppedWithItsReason() {
         Options.OptionMemory m = new Options.OptionMemory();
         m.failed("craft crafting_table", "the game refused placing", 0);
-        Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 4, 0, 0, 0, CELL, null, false), m, 1000, "goal crafting_table", 30, null);
+        Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 4, 0, 0, 0, CELL, null, false), m, 1000, io.github.mojolowjo.entropybot.aa.TS.plan("crafting_table"), 30, null);
         assertEquals("planner", c.best().id());
         assertTrue(c.why().contains("the game refused placing"), c.why());
     }
@@ -87,32 +87,36 @@ class StationOptionsTest {
     @Test
     void aWoodWayWithoutTypedStepsIsDroppedWithItsReason() {
         // rm-execution: a wood way that is chain text (not typed steps) is never prepended
-        Options.Option bad = new Options.Option("cut", "wood", "chop 3", 10, "x", "cut", false);
-        Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 0, 0, 0, 0, CELL, bad, false), new Options.OptionMemory(), 0, null, 0, null);
+        // rm-execution2: an option is typed steps or it cannot exist (the sentinels only: nothing, the planner's wait)
+        assertThrows(IllegalArgumentException.class, () -> new Options.Option("cut", "wood", "chop 3", 10, "x", "cut", false, null, null, java.util.List.of()));
+        Options.Option nothing = Options.Option.sentinel("nothing", "nothing", Options.NOTHING, 0, "x", "nothing");
+        Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 0, 0, 0, 0, CELL, nothing, false), new Options.OptionMemory(), 0, null, 0, null);
         assertNull(c.best());
-        assertTrue(c.why().contains("the wood way cut has no typed steps"), c.why());
+        assertTrue(c.why().contains("the wood way nothing has no typed steps"), c.why());
     }
 
     @Test
     void everyChainTheFourSetsEmitParses() {
         java.util.List<Options.Choice> all = new java.util.ArrayList<>();
         for (Kind k : Kind.values()) {
-            all.add(StationOptions.choose(f(k, false, true, 5, 8, 0, 8, 1, CELL, WOOD, true), new Options.OptionMemory(), 0, "goal table", 3, null));
+            all.add(StationOptions.choose(f(k, false, true, 5, 8, 0, 8, 1, CELL, WOOD, true), new Options.OptionMemory(), 0, io.github.mojolowjo.entropybot.aa.TS.plan("table"), 3, null));
             all.add(StationOptions.choose(f(k, false, false, -1, 0, 0, 0, 1, CELL, WOOD, true), new Options.OptionMemory(), 0, null, 0, null));
             all.add(StationOptions.choose(f(k, true, false, -1, 0, 0, 0, 1, CELL, WOOD, false), new Options.OptionMemory(), 0, null, 0, null));
         }
         all.add(BaseOptions.choose(new BaseOptions.BaseFacts("home", null, 20, true, 1, true, 5, true), new Options.OptionMemory(), 0));
-        all.add(BagOptions.choose(new BagOptions.BagFacts(0, 1, true, 5, CELL, false, 8, 0, CELL, CELL, 1, java.util.List.of("drop dirt 3")), new Options.OptionMemory(), 0));
-        all.add(BagOptions.choose(new BagOptions.BagFacts(0, 1, false, -1, null, false, 8, 0, CELL, CELL, 0, java.util.List.of()), new Options.OptionMemory(), 0));
+        all.add(BagOptions.choose(new BagOptions.BagFacts(0, 1, true, 5, CELL, false, 8, 0, CELL, CELL, 1, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk("dirt", 3))), new Options.OptionMemory(), 0));
+        all.add(BagOptions.choose(new BagOptions.BagFacts(0, 1, false, -1, null, false, 8, 0, CELL, CELL, 0, java.util.List.<io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk>of()), new Options.OptionMemory(), 0));
         all.add(BedOptions.choose(new BedOptions.BedFacts(0, 2, new int[]{9, 9, 30, 50}, CELL, true, true, true, 4), new Options.OptionMemory(), 0));
         all.add(BedOptions.choose(new BedOptions.BedFacts(3, 0, null, CELL), new Options.OptionMemory(), 0));
         int rows = 0;
         for (Options.Choice c : all) {
             for (Options.Option o : c.ranked()) {
                 rows++;
-                // rm-execution: a typed row is steps (its label never parsed); a row still on text has known verbs
-                if (o.typed()) assertFalse(o.command().contains(" then "), o.command());
-                else assertNull(Price.unknownVerb(o.command()), o.command());
+                // rm-execution2: every row is typed steps (its label never parsed), each with a verb the game side runs
+                assertTrue(o.typed(), o.command());
+                for (var s : o.steps())
+                    if (!(s instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Plan))
+                        assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(io.github.mojolowjo.entropybot.commands.StepHands.command(s).split("\\s+")[0]), s.text());
             }
             for (String d : c.dropped()) assertFalse(d.contains("no verb"), d);
         }

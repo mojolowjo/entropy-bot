@@ -64,15 +64,15 @@ class WoodOptionsTest {
     @Test
     void ironChainThatSmeltsWhatItLacksGetsAnOreStep() {
         IronOptions.Facts none = facts(0);
-        List<String> chain = IronOptions.split("fetch stone_pickaxe 1 then smelt iron_ingot 16");
-        assertEquals(List.of("fetch stone_pickaxe 1", "mine iron 16", "smelt iron_ingot 16"), IronOptions.withOreStep(chain, none));
-        assertEquals(List.of("fetch stone_pickaxe 1", "mine iron 10", "smelt iron_ingot 16"), IronOptions.withOreStep(chain, facts(6)));
+        var chain = io.github.mojolowjo.entropybot.aa.TS.s("get stone_pickaxe 1 then smelt iron_ingot 16");
+        assertEquals("get stone_pickaxe 1 > mine iron 16 > smelt iron_ingot 16", TS.label(IronOptions.withOreStep(chain, none)));
+        assertEquals("get stone_pickaxe 1 > mine iron 10 > smelt iron_ingot 16", TS.label(IronOptions.withOreStep(chain, facts(6))));
         assertSame(chain, IronOptions.withOreStep(chain, facts(16)), "enough raw iron: as it is");
         assertSame(chain, IronOptions.withOreStep(chain, facts(-1)), "bag unknown: as it is");
-        List<String> withMine = IronOptions.split("mine iron 16 then smelt iron_ingot 16");
+        var withMine = io.github.mojolowjo.entropybot.aa.TS.s("mine iron 16 then smelt iron_ingot 16");
         assertSame(withMine, IronOptions.withOreStep(withMine, none));
         // no ore seen, no cave, no mine: no instant "missing raw_iron" - no option, the reasons listed
-        Options.Choice c = new IronOptions.Set().choose(none, new Options.OptionMemory(), 0, "smelt iron_ingot 16", 5, null, null);
+        Options.Choice c = new IronOptions.Set().choose(none, new Options.OptionMemory(), 0, io.github.mojolowjo.entropybot.aa.TS.s("smelt iron_ingot 16"), 5, null, null);
         assertNull(c.best());
         assertTrue(c.line().contains("no way to iron"), c.line());
     }
@@ -80,7 +80,7 @@ class WoodOptionsTest {
     @Test
     void missingRawIronIsChargedToTheOreWay() {
         IronOptions.Set set = new IronOptions.Set();
-        Options.Option ran = new Options.Option("cave", "cave", "find cave 5 then mine cave iron 16 then smelt iron_ingot 16", 100, "x", "CAVE", true);
+        Options.Option ran = new Options.Option("cave", "cave", TS.s("find cave 5 then mine cave iron 16 then smelt iron_ingot 16"), 100, "x", "CAVE", true);
         String end = "stopped at step 3 (smelt iron_ingot 16): can't smelt 16 iron_ingot - missing 16 raw_iron";
         assertEquals("CAVE", set.blame(null, ran, end));
         assertTrue(set.switchable(end));

@@ -72,7 +72,8 @@ public final class StepHands implements Steps.Hands {
                 case Step.Collect k -> collect(p, k);
                 case Step.HuntAt h -> hunt(p, h);
                 case Step.Build b -> build(b);
-                default -> verb(s.text());     // the item actions and the mine verb's steps: one command, its own job
+                case Step.Climb k -> climb(p);
+                default -> verb(command(s));   // the item actions and the mine verb's steps: one command, its own job
             };
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] steps: {} did not start: {}", s.text(), e.toString());
@@ -90,6 +91,7 @@ public final class StepHands implements Steps.Hands {
                 case Step.Collect k -> mineStatus(p);
                 case Step.HuntAt h -> huntStatus(p, h);
                 case Step.Build b -> buildStatus(b);
+                case Step.Climb k -> climbStatus();
                 default -> requestStatus();
             };
         } catch (RuntimeException e) {
@@ -111,6 +113,7 @@ public final class StepHands implements Steps.Hands {
                 if (b != null) Jobs.cancel(b);
             }
             if (step instanceof Step.Build) io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
+            if (step instanceof Step.Climb && climbing && c.chains.running() && "climb".equals(c.chains.name())) c.chains.clear();
             if ((req != null && !req.finished) || walkJob != null) {
                 if (c.jobs.running()) c.jobs.finish("stopped: " + why);
             }
@@ -135,6 +138,113 @@ public final class StepHands implements Steps.Hands {
         huntVisited = false;
         huntWalkAt = -1;
         huntWhy = null;
+        climbing = false;
+        climbEnd = null;
+    }
+
+    // ---- rm-execution2: the owner verb each step runs (built from the step's fields here, the game side; never its text()) ----
+
+    /** The command a step runs through its job; the walks, trees, collects, hunts, builds and the climb have hands of their own. */
+    public static String command(Step s) {
+        return switch (s) {
+            case Step.Walk w -> "goto " + w.x() + " " + w.y() + " " + w.z();
+            case Step.MineAt m -> "mine " + m.family() + " 1 at " + m.x() + " " + m.y() + " " + m.z() + (m.dig() ? " dig" : " walk");
+            case Step.Mine m -> switch (m.how()) {
+                case KNOWN -> "mine " + m.family() + " " + m.n();
+                case DIG -> "mine " + m.family() + " " + m.n() + " dig";
+                case CAVE -> "mine cave " + m.family() + " " + m.n();
+                case STRIP -> "mine strip " + m.family() + " " + m.n();
+            };
+            case Step.ChopTree t -> "cut " + t.logs() + (t.log() == null ? "" : " " + t.log());
+            case Step.HuntAt h -> "hunt " + h.n() + " " + h.type();
+            case Step.Build b -> "place " + b.items().get(0);
+            case Step.Craft k -> "craft " + k.item() + " " + k.n();
+            case Step.Smelt k -> "smelt " + k.item() + " " + k.n() + (k.here() ? " here" : "");
+            case Step.Cook k -> "cook " + k.item() + " " + k.n();
+            case Step.Collect k -> "gather " + k.item() + " " + k.n();
+            case Step.Fetch k -> "get " + k.item() + " " + k.n();
+            case Step.SmeltCollect k -> "smelt collect all";
+            case Step.Shelter k -> "shelter";
+            case Step.Wait k -> "wait " + k.seconds();
+            case Step.Climb k -> "climb";
+            case Step.Scan k -> k.base() ? "scan base" : "scan";
+            case Step.FindCave k -> "find cave " + k.minutes();
+            case Step.Explore k -> "explore " + k.minutes();
+            case Step.Dig d -> "dig " + d.from()[0] + " " + d.from()[1] + " " + d.from()[2] + " " + d.to()[0] + " " + d.to()[1] + " " + d.to()[2]
+                    + (d.ores() ? " ores" : "") + (d.viaEngine() ? " via engine" : "");
+            case Step.MarkMine k -> "place mine " + (k.at() == null ? "" : k.at()[0] + " " + k.at()[1] + " " + k.at()[2] + " ") + k.dir();
+            case Step.Restore k -> k.keep() ? "restore keep pillar" : "restore placed " + k.radius();
+            case Step.Deposit k -> "deposit";
+            case Step.DropJunk k -> "drop " + k.item() + " " + k.n();
+            case Step.PlaceChest k -> "place chest " + k.x() + " " + k.y() + " " + k.z();
+            case Step.MarkBase k -> "place base " + k.x() + " " + k.y() + " " + k.z();
+            case Step.Sleep k -> "sleep";
+            case Step.Burrow k -> "burrow";
+            case Step.Flee k -> "flee";
+            case Step.Attack k -> "attack nearest";
+            case Step.Pillar k -> "pillar";
+            case Step.GoBase k -> "go base";
+            case Step.House k -> "house " + k.area();
+            case Step.Come k -> "come";
+            case Step.Give k -> "give me " + k.item() + " " + k.n();
+            case Step.Light k -> "light here " + k.radius();
+            case Step.Bootstrap k -> k.toolsOnly() ? "bootstrap tools" : "bootstrap";
+            case Step.Fish k -> "fish " + k.minutes() + "m";
+            case Step.Kelp k -> "gather kelp " + k.n() + " cook";
+            case Step.Eat k -> "eat";
+            case Step.DigArea k -> "dig " + k.box()[0] + " " + k.box()[1] + " " + k.box()[2] + " " + k.box()[3] + " +" + k.up();
+            case Step.FarmPlant k -> "farm plant " + k.crop() + " here " + k.n();
+            case Step.MarkFarm k -> "place farm" + (k.at() == null ? "" : " " + k.at()[0] + " " + k.at()[1] + " " + k.at()[2]);
+            case Step.BuildSchematic k -> "build schematic " + k.name() + " " + k.x() + " " + k.y() + " " + k.z();
+            case Step.Plan k -> throw new IllegalStateException("a plan step is expanded by Steps, never run by the hands");
+            case Step.StripLeg k -> throw new IllegalStateException("a compound step is expanded by Steps, never run by the hands");
+            case Step.ClearChunk k -> throw new IllegalStateException("a compound step is expanded by Steps, never run by the hands");
+        };
+    }
+
+    /** rm-execution2: the planner's routine for a Plan step, typed at the planner's side (AaRuntime.resolveState). */
+    @Override public Steps.Routine routine(Step.Plan p) {
+        if (c.aaRuntime == null) return new Steps.Routine(null, "no planner (aa not loaded)");
+        var r = c.aaRuntime.resolveState(p.goal());
+        return switch (r.state()) {
+            case READY -> new Steps.Routine(r.steps(), null);
+            case SEARCHING -> new Steps.Routine(null, "the planner still searches for " + p.goal());
+            case NONE -> new Steps.Routine(null, r.why());
+        };
+    }
+
+    // ---- the climb: the climb verb plans its own staircase and runs it as a chain of its own ----
+
+    private boolean climbing, climbHooked;
+    private String climbEnd;
+
+    private String climb(LocalPlayer p) {
+        if (!climbHooked) {
+            climbHooked = true;
+            c.chains.onEnd((name, msg) -> {
+                if (climbing && "climb".equals(name)) climbEnd = msg == null ? "ended without a word" : msg;
+            });
+        }
+        String r = DigCommands.climb(c, p, "", c.owner());
+        if (r != null && r.startsWith("ok")) {
+            instant = r;
+            return null;
+        }
+        if (r == null || !r.startsWith("started")) return "error: climb: " + (r == null ? "no answer" : r);
+        climbing = true;
+        return null;
+    }
+
+    private Car.Status climbStatus() {
+        if (instant != null) return Car.Status.done(instant);
+        if (climbEnd != null) {
+            String m = climbEnd;
+            climbing = false;
+            return m.startsWith("done") ? Car.Status.done(m) : Car.Status.failed("climb: " + m);
+        }
+        if (c.chains.running() && "climb".equals(c.chains.name())) return Car.Status.running("climbing: " + c.chains.stepText());
+        climbing = false;
+        return Car.Status.failed("climb: its chain went without an end (stopped by someone)");
     }
 
     // ---- the item actions and the mine verb's steps: one command, its job's request ----

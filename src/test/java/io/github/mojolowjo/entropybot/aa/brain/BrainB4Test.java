@@ -119,13 +119,13 @@ class BrainB4Test {
         g = Goals.of(bb).get(0);
 
         bb.in.pickTier = 1;
-        assertNull(Goals.chain(bb, g), "a stone pickaxe first");
+        assertNull(io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "a stone pickaxe first");
         assertEquals("needs.tools", Goals.prereq(bb, g));
         bb.in.pickTier = 2;
-        assertEquals("mine strip iron 5", Goals.chain(bb, g));
+        assertEquals("mine strip iron 5", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
         bb.fact(Goals.KNOWN_FACT, Map.of("iron", 12));
         bb.in.bag = Map.of("raw_iron", 2, "deepslate_iron_ore", 1);
-        assertEquals("mine iron 2 dig", Goals.chain(bb, g));
+        assertEquals("mine iron 2 dig", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
         assertTrue(Goals.done(bb).isEmpty());
         bb.in.bag = Map.of("raw_iron", 5);
         assertEquals(-1, Goals.score(bb, g), 1e-9);
@@ -145,7 +145,7 @@ class BrainB4Test {
         assertEquals(50, Goals.score(bb, s), 1e-9, "low");
         bb.in.dimension = Thing.OVERWORLD;
         assertNull(Goals.blocked(bb, s));
-        assertEquals("goal shield 1", Goals.chain(bb, s));
+        assertEquals("plan shield 1", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, s)));
         assertTrue(Goals.line(bb, s, "score 50").startsWith("shield 0/1 low: score 50 - next: goal shield 1"), Goals.line(bb, s, "score 50"));
     }
 }

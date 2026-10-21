@@ -18,7 +18,7 @@ class BrainNightTest {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
 
     Desire d(String id, double v, Site site) {
-        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).site(b -> site);
+        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).site(b -> site);
     }
 
     void normalNight() {

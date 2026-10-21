@@ -22,24 +22,24 @@ class AaQuickTest {
 
     @Test
     void aStaleWaitClockNeverSkipsAFreshPlan() {
-        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal furnace");
+        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("furnace")));
         port.resolveTo = null;
         assertEquals(Status.RUNNING, r.tick(bb), "planning starts");
         clock.advance(45_000L + 60_000);              // another rung's job ran meanwhile
         assertEquals(Status.RUNNING, r.tick(bb), "a fresh ask waits again, not 'found none in 45s'");
-        port.resolveTo = "goal_furnace";
+        port.resolveTo = "craft furnace 1";
         clock.advance(250);
         r.tick(bb);
-        assertEquals("goal_furnace", port.started.get(port.started.size() - 1).chain(), "the planner's answer runs");
+        assertEquals("plan furnace", port.started.get(port.started.size() - 1).chain(), "the planner's routine runs (asked again by the Plan step)");
     }
 
     @Test
     void anotherGoalRestartsTheWait() {
-        String[] g = {"goal table"};
-        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> g[0]);
+        String[] g = {"table"};
+        Need r = new Need("t", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> TS.plan(g[0]));
         port.resolveTo = null;
         for (int i = 0; i < 40; i++) { r.tick(bb); clock.advance(1000); }
-        g[0] = "goal furnace";
+        g[0] = "furnace";
         for (int i = 0; i < 10; i++) { assertEquals(Status.RUNNING, r.tick(bb)); clock.advance(1000); }
     }
 
@@ -68,9 +68,6 @@ class AaQuickTest {
         assertTrue(AaEscape.stuck(end));
         assertEquals(5, AaEscape.failedStep(end));
         assertEquals(-1, AaEscape.failedStep("done"));
-        List<String> steps = List.of("a", "b", "c", "d", "goto -53 67 -7", "smelt iron");
-        assertEquals("goto -53 67 -7 then smelt iron", AaEscape.resume(steps, 5));
-        assertNull(AaEscape.resume(steps, 7));
         assertEquals(17, AaEscape.throwaway(Map.of("cobblestone", 10, "dirt", 2, "cobbled_deepslate", 5)));
     }
 

@@ -8,7 +8,10 @@ import java.util.Map;
 /** A JobPort for the tests: the test moves the task along (done, fail, gone, progress) by hand. */
 public final class FakePort implements JobPort {
     public long nextId = 1;
-    /** A refusal for every start (null = starts); resolve's answer: "*" = the text itself, null = still planning, else the chain. */
+    /**
+     * A refusal for every start (null = starts); the planner's answer: "*" = one Plan step of the goal itself, null = still
+     * planning, else the routine's text (typed here as the adapter types it: PlanLines, the planner's side).
+     */
     public String refuse, resolveTo = "*";
     public String lastRefusal;
     public final Map<Long, JobState> states = new HashMap<>();
@@ -42,7 +45,12 @@ public final class FakePort implements JobPort {
 
     @Override public void resume(long taskId) { resumed++; }
 
-    @Override public String resolve(String chain) { return "*".equals(resolveTo) ? chain : resolveTo; }
+    /** The routine's text as typed steps (test helper; null: a line has no typed step). */
+    public static List<io.github.mojolowjo.entropybot.aa.moves.Step> steps(String routine) {
+        List<String> lines = new ArrayList<>();
+        for (String s : routine.split("\\s+then\\s+")) if (!s.isBlank()) lines.add(s.trim());
+        return io.github.mojolowjo.entropybot.commands.PlanLines.of(lines, null);
+    }
 
     /** Non-null: the planner answers NONE with this reason (and noPlanLogs: the logs its dead end lacked). */
     public String noPlan;
@@ -53,8 +61,10 @@ public final class FakePort implements JobPort {
     @Override public Resolved resolveState(String text) {
         resolveCalls++;
         if (noPlan != null) return Resolved.none(noPlan, noPlanLogs);
-        String c = resolve(text);
-        return c == null ? Resolved.searching() : Resolved.ready(c, planCost);
+        if (resolveTo == null) return Resolved.searching();
+        if ("*".equals(resolveTo)) return Resolved.ready(List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan(text)), planCost);
+        var s = steps(resolveTo);
+        return s == null ? Resolved.none("the planner's step has no typed step: " + resolveTo) : Resolved.ready(s, planCost);
     }
 
     @Override public long progress(long taskId) { return progress.getOrDefault(taskId, 0L); }

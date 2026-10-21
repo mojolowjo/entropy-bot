@@ -43,7 +43,7 @@ class RungOptionsTest {
         Options.Choice c = new RungOptions.Tools().choose(new ToolsFacts(0, false), m, 0, null, 0, "missing trees", null);
         assertEquals("bootstrap tools", c.best().command());
         assertTrue(c.why().contains("planner: missing trees"), c.why());
-        c = new RungOptions.Tools().choose(new ToolsFacts(1, true), m, 0, "cut 3 logs then craft stone_pickaxe 1", 12, null, null);
+        c = new RungOptions.Tools().choose(new ToolsFacts(1, true), m, 0, io.github.mojolowjo.entropybot.aa.TS.s("cut 3 logs then craft stone_pickaxe 1"), 12, null, null);
         assertEquals("planner", c.best().id(), "60 < 150");
         m.failed("bootstrap tools", "stopped at step 3 (chop 6): no trees in my areas", 0);
         c = new RungOptions.Tools().choose(new ToolsFacts(0, false), m, 1, null, 0, "x", null);
@@ -64,7 +64,7 @@ class RungOptionsTest {
     @Test
     void aFailedTailAfterTheNeedIsMetCountsAsDone() {
         bb.in.pickTier = 0;
-        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> b.in.pickTier < 2, b -> null, b -> "bootstrap");
+        Need r = new Need("needs.tools", TaskKind.TOOLS, b -> b.in.pickTier < 2, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Bootstrap(false)));
         assertEquals(Status.RUNNING, r.tick(bb));
         bb.in.pickTier = 2;
         port.fail(1, "stopped at step 12 (scan base): no chests within 16");

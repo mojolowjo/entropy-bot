@@ -65,8 +65,11 @@ public final class LootBook {
         public static final Ctx NONE = new Ctx(false, Set.of(), Set.of(), b -> false, false);
     }
 
-    /** A plan for n of an item: the command to run (null = none) and the line that explains it. */
-    public record Plan(String command, String text) {}
+    /** A plan for n of an item: the typed step to run (null = none) and the line that explains it. */
+    public record Plan(io.github.mojolowjo.entropybot.aa.moves.Step step, String text) {
+        /** The step's line (logs), or null. */
+        public String command() { return step == null ? null : step.text(); }
+    }
 
     private final Map<String, List<Source>> byItem = new HashMap<>();
     private int mobs, blocks, chests, trades;
@@ -133,12 +136,10 @@ public final class LootBook {
      */
     public Plan plan(String item, int n, int stopAt, Ctx ctx, boolean fightOk, Map<String, int[]> herds) {
         Plan p = plan0(item, n, stopAt, ctx, fightOk);
-        if (p.command() == null || p.text() == null || herds == null || !p.command().startsWith("hunt ")) return p;
-        String[] w = p.command().split(" ");
-        String mob = w.length > 2 ? (w[2].indexOf(':') >= 0 ? w[2] : "minecraft:" + w[2]) : null;
-        int[] h = mob == null ? null : herds.get(mob);
+        if (p.text() == null || herds == null || !(p.step() instanceof io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt hu)) return p;
+        int[] h = herds.get(hu.type());
         if (h == null) return p;
-        return new Plan(p.command() + " at " + h[0] + " " + h[1], p.text() + " at " + h[0] + " " + h[1] + " (seen there, " + h[2] + " away, confidence " + String.format(Locale.ROOT, "%.2f", h[3] / 100.0) + ")");
+        return new Plan(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt(hu.type(), hu.n(), new int[]{h[0], h[1]}, hu.forItem(), hu.forCount()), p.text() + " at " + h[0] + " " + h[1] + " (seen there, " + h[2] + " away, confidence " + String.format(Locale.ROOT, "%.2f", h[3] / 100.0) + ")");
     }
 
     private Plan plan0(String item, int n, int stopAt, Ctx ctx, boolean fightOk) {
@@ -151,7 +152,7 @@ public final class LootBook {
             if (s.kind() == Kind.BLOCK && !s.from().equals(id)) {          // the block itself is gather/mine's job
                 if (!c.breakable().test(s.from())) { if (why == null) why = "break " + Thing.shortId(s.from()) + ": my mine verb does not take that block"; continue; }
                 int k = (int) Math.ceil(n / Math.max(0.05, s.per()));
-                return new Plan("mine " + Thing.shortId(s.from()) + " " + Math.min(k, 512), "break " + Thing.shortId(s.from()) + " for " + Thing.shortId(id));
+                return new Plan(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(Thing.shortId(s.from()), Math.min(k, 512), io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.KNOWN), "break " + Thing.shortId(s.from()) + " for " + Thing.shortId(id));
             }
         }
         for (Source s : l) {
@@ -163,7 +164,7 @@ public final class LootBook {
             if (!passive && !fightOk) { if (why == null) why = "kill " + m + ": the fight rules say no now (weapon, health or danger)"; continue; }
             if (s.player() && s.chance() < 0.01) continue;
             int k = (int) Math.ceil(n / Math.max(0.05, s.per()));
-            return new Plan("hunt " + Math.min(k, 64) + " " + m + " for " + Thing.shortId(id) + " " + Math.max(n, stopAt), "kill " + m + " for " + Thing.shortId(id));
+            return new Plan(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt(s.from(), Math.min(k, 64), null, id, Math.max(n, stopAt)), "kill " + m + " for " + Thing.shortId(id));
         }
         if (why == null) why = sources(id).get(0).text() + ": no verb for that yet";
         return new Plan(null, why);

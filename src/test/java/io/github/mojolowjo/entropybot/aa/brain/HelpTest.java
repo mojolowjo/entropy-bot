@@ -48,13 +48,12 @@ class HelpTest {
         in.ownerPlaced = "minecraft:oak_planks";
         in.bag = Map.of("oak_planks", 50);
         Help.Pick p = Help.pick(in, 20);
-        assertEquals("give me oak_planks 32", p.chain());
+        assertEquals("give oak_planks 32", io.github.mojolowjo.entropybot.aa.TS.label(p.steps()));
         assertEquals(30, p.score(), 1e-9);
         in.bag = Map.of("oak_planks", 3);
         p = Help.pick(in, 20);
         assertEquals("fetch", p.what());
-        assertEquals("goal oak_planks 32", p.goal());
-        assertEquals("give me oak_planks 32", p.chain());
+        assertEquals("plan oak_planks 32 > give oak_planks 32", io.github.mojolowjo.entropybot.aa.TS.label(p.steps()));
     }
 
     @Test void everyPickRunsOnlyVerbsThatExist() {
@@ -70,9 +69,11 @@ class HelpTest {
         picks.add(Help.pick(f, 20));
         for (Help.Pick p : picks) {
             assertNotNull(p);
-            if (p.goal() != null) assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(p.goal().split("\\s+")[0]), p.goal());
-            for (String step : p.chain().split(" then "))
-                assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(step.trim().split("\\s+")[0]), step);
+            for (var step : p.steps()) {
+                if (step instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Plan) continue;      // the planner's routine, typed at its side
+                String cmd = io.github.mojolowjo.entropybot.commands.StepHands.command(step);
+                assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(cmd.split("\\s+")[0]), cmd);
+            }
         }
     }
 
@@ -80,9 +81,9 @@ class HelpTest {
         Inputs in = owner(30, "mining");
         in.ownerDark = true;
         in.torches = 10;
-        assertEquals("come then light here 8", Help.pick(in, 20).chain());
+        assertEquals("come > light here 8", io.github.mojolowjo.entropybot.aa.TS.label(Help.pick(in, 20).steps()));
         in.torches = 2;
-        assertEquals("come", Help.pick(in, 20).chain());
+        assertEquals("come", io.github.mojolowjo.entropybot.aa.TS.label(Help.pick(in, 20).steps()));
         in.ownerDist = 10;
         assertNull(Help.pick(in, 20));
     }

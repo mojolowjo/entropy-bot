@@ -62,8 +62,8 @@ class NightShelterTest {
     void fullNightShelterTrumpsAHighToolsRunButNotStarvingFood() {
         double[] v = {88, 0};
         Brain br = new Brain("brain", "t",
-                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do food", "brain"), b -> v[0]),
-                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, "do shelter", "brain"), b -> v[1]).trumps());
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do food")), "brain"), b -> v[0]),
+                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do shelter")), "brain"), b -> v[1]).trumps());
         bb.in.food = 2;
         br.tick(bb);
         assertEquals("do food", port.started.get(port.started.size() - 1).chain());
@@ -90,8 +90,8 @@ class NightShelterTest {
     void urgentWithGraceWaitsForTheStepThenInterrupts() {
         double[] v = {74, 0};
         Brain br = new Brain("brain", "t",
-                new Desire("tools", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do tools", "brain"), b -> v[0]),
-                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, "do shelter", "brain"), b -> v[1]).grace(8_000));
+                new Desire("tools", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do tools")), "brain"), b -> v[0]),
+                new Desire("night.shelter", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do shelter")), "brain"), b -> v[1]).grace(8_000));
         br.tick(bb);
         assertEquals("do tools", port.started.get(port.started.size() - 1).chain());
         v[1] = 90;

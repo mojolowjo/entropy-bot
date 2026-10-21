@@ -53,7 +53,7 @@ public final class StationOptions {
     public record StationFacts(Kind kind, boolean inBag, boolean known, int[] knownAt, double knownDist, int planks, int logs, int cobble,
                                int pickTier, int[] cell, Options.Option wood, String woodWhy, boolean under, int depth) {}
 
-    public static Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, String planned, double plannedCost, String plannerWhy) {
+    public static Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double plannedCost, String plannerWhy) {
         List<Options.Option> rows = new ArrayList<>();
         List<String> dropped = new ArrayList<>();
         Kind k = f.kind();
@@ -87,8 +87,8 @@ public final class StationOptions {
         double craftPlace = Price.s(Price.craftS() + Price.placeS());
         Step craft = new Step.Craft(item, 1);
         if (!f.inBag() && !place.isEmpty()) {
-            if (lack == 0) add(rows, dropped, m, now, Options.typed("craft " + item, "craft", join(List.of(craft), place), craftPlace,
-                    have + " " + k.material + " (" + k.amount + " wanted), craft " + Price.craftS() + " s + place " + Price.placeS() + " s", "craft " + item, m), f);
+            if (lack == 0) add(rows, dropped, m, now, Options.typed("make " + item, "craft", join(List.of(craft), place), craftPlace,
+                    have + " " + k.material + " (" + k.amount + " wanted), craft " + Price.craftS() + " s + place " + Price.placeS() + " s", "make " + item, m), f);
             else if (k == Kind.FURNACE) {
                 if (f.pickTier() < 1) dropped.add("gather + craft furnace: " + lack + " cobblestone short, no pickaxe");
                 else {
@@ -110,7 +110,7 @@ public final class StationOptions {
             }
         }        // 4. the planner
         if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no chain" : plannerWhy));
-        else Price.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, plannedCost * Options.planUnit(),
+        else Price.add(rows, dropped, m, now, Options.typed("planner", "planner", planned, plannedCost * Options.planUnit(),
                 "plan cost " + Price.r(plannedCost) + " x " + Price.r(Options.planUnit()), "planner " + item, true, m));
         return Options.Choice.of(rows, dropped, "no way to a " + item);
     }
@@ -129,7 +129,7 @@ public final class StationOptions {
     public static boolean switchable(String end) { return end != null && !Options.ownerOrDanger(end); }
 
     public static final class Set implements Options.OptionSet<StationFacts> {
-        @Override public Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, String planned, double cost, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(StationFacts f, Options.OptionMemory m, long now, List<Step> planned, double cost, String plannerWhy, String afterFail) {
             return StationOptions.choose(f, m, now, planned, cost, plannerWhy);
         }
 

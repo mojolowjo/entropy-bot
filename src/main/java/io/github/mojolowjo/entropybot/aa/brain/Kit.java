@@ -147,7 +147,9 @@ public final class Kit {
     }
 
     /** The chain: walk onto the spot, then a short wait for the drops to come to me. */
-    public static String recoverChain(Death d) { return "goto " + d.x + " " + d.y + " " + d.z + " then wait 3"; }
+    public static java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> recoverSteps(Death d) {
+        return java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(d.x, d.y, d.z, 0), new io.github.mojolowjo.entropybot.aa.moves.Step.Wait((int) Tuning.get("steps.recoverWaitS")));
+    }
 
     // ---- the stash ----
 

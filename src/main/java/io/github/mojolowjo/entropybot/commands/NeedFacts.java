@@ -109,12 +109,12 @@ public final class NeedFacts {
     /** @param want slots the need wants free */
     public static BagOptions.BagFacts bag(Inputs in, Map<String, Integer> bag, Collection<String> junk, int want) {
         int junkSlots = 0;
-        List<String> drops = new ArrayList<>();
+        List<io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk> drops = new ArrayList<>();
         for (String id : junk) {
             int n = count(bag, id);
             if (n <= 0) continue;
             junkSlots += (n + 63) / 64;
-            drops.add("drop " + (id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id) + " " + n);
+            drops.add(new io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk(id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id, n));
         }
         return new BagOptions.BagFacts(in.freeSlots, want, in.baseChests, in.baseDist, in.basePos, count(bag, "minecraft:chest") > 0,
                 in.planks, in.wood, in.chestCell, in.pos, junkSlots, drops);

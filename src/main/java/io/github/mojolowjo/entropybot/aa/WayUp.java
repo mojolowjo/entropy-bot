@@ -97,7 +97,7 @@ public final class WayUp {
     }
 
     public static Ground ground(Heading h) {
-        if (h.refusedAt() != null) return new Ground(0, 0, 0, "the policy refuses a cell at " + RungOptions.xyz(h.refusedAt()));
+        if (h.refusedAt() != null) return new Ground(0, 0, 0, "the policy refuses a cell at " + xyz(h.refusedAt()));
         double brk = 0, haz = 0;
         int breaks = 0;
         for (Replan.Cell c : h.cells()) {
@@ -113,7 +113,7 @@ public final class WayUp {
     }
 
     public static StairPrice stairs(Heading h, int levels, ToolWear.Kit kit) {
-        if (h.refusedAt() != null) return new StairPrice(Double.POSITIVE_INFINITY, "the policy refuses a cell at " + RungOptions.xyz(h.refusedAt()), null);
+        if (h.refusedAt() != null) return new StairPrice(Double.POSITIVE_INFINITY, "the policy refuses a cell at " + xyz(h.refusedAt()), null);
         if (h.n() < levels) return new StairPrice(Double.POSITIVE_INFINITY, h.n() + " steps reach only " + h.n() + " of " + levels + " up", null);
         Ground g = ground(h);
         if (!g.ok()) return new StairPrice(Double.POSITIVE_INFINITY, g.dropWhy(), null);
@@ -138,8 +138,9 @@ public final class WayUp {
                 StairPrice p = stairs(h, d, f.kit());
                 if (Double.isInfinite(p.cost())) { dropped.add(id + ": " + p.why()); continue; }
                 int[] u = dir(h.dir());
-                String cmd = ToolWear.prefix(p.way()) + String.join(" then ", stairSteps(f.me()[0], f.me()[1], f.me()[2], u[0], u[1], h.n()));
-                RungOptions.add(rows, dropped, m, now, Options.scored(id, "stairs", cmd, p.cost(), p.why(), id, false, m));
+                List<io.github.mojolowjo.entropybot.aa.moves.Step> st = new ArrayList<>(ToolWear.prefix(p.way()));
+                st.addAll(stairSteps(f.me()[0], f.me()[1], f.me()[2], u[0], u[1], h.n()));
+                RungOptions.add(rows, dropped, m, now, Options.typed(id, "stairs", st, p.cost(), p.why(), id, m));
             }
             if (f.headings().isEmpty()) dropped.add("stairs: no heading read");
         } else RungOptions.Surface.climbRow(rows, dropped, m, now, f, d);
@@ -151,35 +152,37 @@ public final class WayUp {
                 String id = w.leg() == Replan.Leg.PILLAR ? "pillar" : "tunnel";
                 if (Double.isInfinite(w.cost())) dropped.add(id + ": " + w.why());
                 else if (f.throwaway() < d) dropped.add(id + ": " + f.throwaway() + " of " + d + " blocks to place");
-                else RungOptions.add(rows, dropped, m, now, Options.scored(id, id, "goto " + f.me()[0] + " " + (f.me()[1] + d) + " " + f.me()[2], w.cost(), w.why(), id, false, m));
+                else RungOptions.add(rows, dropped, m, now, Options.typed(id, id, List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(f.me()[0], f.me()[1] + d, f.me()[2], 0)), w.cost(), w.why(), id, m));
             }
         } else if (!f.shaftOpen()) dropped.add("pillar: no open shaft above");
         else if (!f.placeAllowed()) dropped.add("pillar: placing not allowed here");
         else if (f.throwaway() < d) dropped.add("pillar: " + f.throwaway() + " of " + d + " blocks to place");
-        else RungOptions.add(rows, dropped, m, now, Options.scored("pillar", "pillar", "goto " + f.me()[0] + " " + (f.me()[1] + d) + " " + f.me()[2],
-                d * RungOptions.PILLAR_BLOCK + RungOptions.PILLAR_FIX, "an open shaft, " + f.throwaway() + " blocks", "pillar", false, m));
+        else RungOptions.add(rows, dropped, m, now, Options.typed("pillar", "pillar", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(f.me()[0], f.me()[1] + d, f.me()[2], 0)),
+                d * RungOptions.PILLAR_BLOCK + RungOptions.PILLAR_FIX, "an open shaft, " + f.throwaway() + " blocks", "pillar", m));
         // sky, nothing (rm-routes: the trail-back row went with the trail; Baritone walks the way to the sky)
         if (f.sky() == null) dropped.add("sky: no open-sky cell found near");
-        else RungOptions.add(rows, dropped, m, now, Options.scored("sky", "goto", "goto " + RungOptions.xyz(f.sky()), f.skyDist() * RungOptions.SKY_WALK, "open sky " + Math.round(f.skyDist()) + " away", "sky", false, m));
+        else RungOptions.add(rows, dropped, m, now, Options.typed("sky", "goto", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(f.sky()[0], f.sky()[1], f.sky()[2], 0)), f.skyDist() * RungOptions.SKY_WALK, "open sky " + Math.round(f.skyDist()) + " away", "sky", m));
         if (!f.tableFurnaceNext()) dropped.add("nothing: the next rung needs open ground itself");
         else if (f.sky() == null || f.skyDist() > RungOptions.NOTHING_SKY) dropped.add("nothing: no open spot within " + Math.round(RungOptions.NOTHING_SKY) + " for the next rung's walk");
-        else RungOptions.add(rows, dropped, m, now, new Options.Option("nothing", "nothing", Options.NOTHING, 0, "the table/furnace rung walks to its own spot", "nothing", false));
+        else RungOptions.add(rows, dropped, m, now, Options.Option.sentinel("nothing", "nothing", Options.NOTHING, 0, "the table/furnace rung walks to its own spot", "nothing"));
         return Options.Choice.of(rows, dropped, "no way up");
     }
 
     /**
-     * The chain steps of {@code dig stairs up <dir> n} (StairPlan.upSteps, same text; WayUpTest checks they match), run
-     * as plain steps so the stairs stay inside the running chain (the verb would start a chain of its own).
+     * The staircase up as typed steps (the cells of StairPlan.upSteps; WayUpTest checks they match): per level the 2-high
+     * box is dug (ores kept, the engine's break order) and walked into.
      */
-    public static List<String> stairSteps(int x, int y, int z, int dx, int dz, int n) {
-        List<String> out = new ArrayList<>();
+    public static List<io.github.mojolowjo.entropybot.aa.moves.Step> stairSteps(int x, int y, int z, int dx, int dz, int n) {
+        List<io.github.mojolowjo.entropybot.aa.moves.Step> out = new ArrayList<>();
         for (int i = 1; i <= n; i++) {
             int px = x + dx * (i - 1), pz = z + dz * (i - 1), cx = x + dx * i, cz = z + dz * i;
-            out.add("dig " + Math.min(px, cx) + " " + (y + i) + " " + Math.min(pz, cz) + " " + Math.max(px, cx) + " " + (y + i + 1) + " " + Math.max(pz, cz) + " ores via engine");
-            out.add("goto " + cx + " " + (y + i) + " " + cz);
+            out.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Dig(new int[]{Math.min(px, cx), y + i, Math.min(pz, cz)}, new int[]{Math.max(px, cx), y + i + 1, Math.max(pz, cz)}, true, true));
+            out.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Walk(cx, y + i, cz, 0));
         }
         return out;
     }
+
+    static String xyz(int[] p) { return p[0] + " " + p[1] + " " + p[2]; }
 
     /** "stairs east" -> "east"; else null. */
     public static String headingOf(String id) {

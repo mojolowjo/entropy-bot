@@ -127,12 +127,12 @@ class IronOptionsTest {
     void theRewriteReplacesTheOreAndSmeltStepsOnly() {
         Choice c = IronOptions.choose(new Facts(List.of(open(10, 60, 0, 10, true)), 60, false, 0, true, -1, false, null, 80, true, false, 0), new Memory(), 0);
         assertEquals(Smelt.HERE, c.smelt());
-        assertEquals("mine iron 1 at 10 60 0 walk", IronOptions.rewrite(IronOptions.split(PLANNED), c), "one ore of 3: the chain ends after it, the Need picks again");
-        assertEquals("mine iron 1 at 10 60 0 walk > smelt raw_iron 1 here", IronOptions.rewrite(IronOptions.split("mine iron 1 then smelt raw_iron 1"), c), "one ore left: the rest stays");
+        assertEquals("mine iron 1 at 10 60 0 walk", IronOptions.rewrite(io.github.mojolowjo.entropybot.aa.TS.s(PLANNED), c), "one ore of 3: the chain ends after it, the Need picks again");
+        assertEquals("mine iron 1 at 10 60 0 walk > smelt raw_iron 1 here", IronOptions.rewrite(io.github.mojolowjo.entropybot.aa.TS.s("mine iron 1 then smelt raw_iron 1"), c), "one ore left: the rest stays");
         Choice none = new Choice(null, null, Smelt.CAMP, List.of(), List.of());
-        assertEquals(String.join(" > ", IronOptions.split(PLANNED)), IronOptions.rewrite(IronOptions.split(PLANNED), none), "nothing chosen: the planner's steps stay (typed)");
-        assertTrue(IronOptions.hasMineStep(IronOptions.split("mine strip iron 3 then craft x 1")));
-        assertFalse(IronOptions.hasMineStep(IronOptions.split("smelt raw_iron 3 then craft iron_pickaxe 1")));
+        assertEquals(TS.label(TS.s(PLANNED)), IronOptions.rewrite(io.github.mojolowjo.entropybot.aa.TS.s(PLANNED), none), "nothing chosen: the planner's steps stay (typed)");
+        assertTrue(IronOptions.hasMineStep(io.github.mojolowjo.entropybot.aa.TS.s("mine strip iron 3 then craft x 1")));
+        assertFalse(IronOptions.hasMineStep(io.github.mojolowjo.entropybot.aa.TS.s("smelt raw_iron 3 then craft iron_pickaxe 1")));
     }
 
     @Test
@@ -163,7 +163,7 @@ class IronOptionsTest {
         bb.in.pickaxes = 1;
         bb.fact(IronOptions.FACTS, (Supplier<Facts>) () -> live);
         port.resolveTo = PLANNED;
-        return new Need("needs.iron", io.github.mojolowjo.entropybot.aa.core.TaskKind.IRON, b -> b.in.pickTier < 3, b -> null, b -> "goal iron tools", new IronOptions.Picker());
+        return new Need("needs.iron", io.github.mojolowjo.entropybot.aa.core.TaskKind.IRON, b -> b.in.pickTier < 3, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("iron tools")), new IronOptions.Picker());
     }
 
     @Test
@@ -229,7 +229,7 @@ class IronOptionsTest {
         live = new Facts(List.of(open(10, 60, 0, 10, true), buried(5, 56, 0, 6, 5, false), buried(2, 70, 0, 10, 1, false)), 60, false, 12, true, 30, true, null, 10, false, false, 0);
         r.tick(bb);
         for (long id = 1; id <= IronOptions.MAX_SWITCHES; id++) {
-            port.fail(id, "stopped at step 1 (" + IronOptions.split(port.started.get((int) id - 1).chain()).get(0) + "): no path to the ore");
+            port.fail(id, "stopped at step 1 (" + port.started.get((int) id - 1).steps().get(0).text() + "): no path to the ore");
             assertEquals(Status.RUNNING, r.tick(bb), "switch " + id);
         }
         assertEquals(IronOptions.MAX_SWITCHES + 1, port.started.size());

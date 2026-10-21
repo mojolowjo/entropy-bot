@@ -50,7 +50,7 @@ class R2FixTest {
 
     @Test void expandedRoutineKeepsItsOreStepBeforeTheSmelt() {
         Options.Option o = IronOptions.idleOption((java.util.function.Supplier<IronOptions.Facts>) () -> WoodOptionsTest.facts(0),
-                "craft planks 4 then craft furnace 1 then smelt iron_ingot 16 then smelt collect all", 0, new String[1]);
+                io.github.mojolowjo.entropybot.aa.TS.s("craft planks 4 then craft furnace 1 then smelt iron_ingot 16 then smelt collect all"), 0, new String[1]);
         if (o != null) assertTrue(o.command().indexOf("mine") >= 0 && o.command().indexOf("mine") < o.command().indexOf("smelt iron_ingot"), o.command());
     }
 }

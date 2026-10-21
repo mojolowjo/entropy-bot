@@ -253,27 +253,34 @@ public final class Replan {
         if (!(a <= c * (1 - CHEAPER) && c - a >= MIN_SAVE)) return new Decision(null, -1, c, a, scores + ": not 30% and 3 s cheaper");
         if (lastSwitchAt >= 0 && now - lastSwitchAt < LOCK_MS) return new Decision(null, -1, c, a, scores + ": locked " + (LOCK_MS - (now - lastSwitchAt) + 999) / 1000 + " s after a switch");
         if (midDigOrPillar) return new Decision(null, -1, c, a, scores + ": mid dig-down or pillar");
-        List<String> rs = Options.Chains.split(running.command()), as = Options.Chains.split(alt.command());
+        List<String> rs = lines(running), as = lines(alt);
         int p = commonPrefix(rs, as), s = commonSuffix(rs, as, p);
         if (stepIdx < p) return new Decision(null, -1, c, a, scores + ": the step that differs has not started");
         if (stepIdx >= rs.size() - s) return new Decision(null, -1, c, a, scores + ": past the part that differs");
         return new Decision(alt, p, c, a, scores);
     }
 
-    /** True for a step that digs straight down (a mine ... dig step) or walks up (a pillar goto). */
-    public static boolean digOrPillarStep(String step, int[] me) {
-        if (step == null) return false;
-        String t = step.trim().toLowerCase(Locale.ROOT);
-        if (t.startsWith("mine ") && t.matches(".*\\bdig\\b.*")) return true;
-        if (t.startsWith("goto ") && me != null) {
-            String[] w = t.split("\\s+");
-            try {
-                if (w.length >= 4) return Integer.parseInt(w[2]) > me[1] + 2;
-            } catch (NumberFormatException e) {
-                return false;
-            }
-        }
-        return false;
+    /** The option's step lines (compared step by step: where two options start to differ). */
+    static List<String> lines(Options.Option o) {
+        List<String> out = new java.util.ArrayList<>();
+        for (var s : o.steps()) out.add(s.text());
+        return out;
+    }
+
+    /** True for a step that digs straight down (an ore step that digs) or walks up (a pillar walk 3+ above me). */
+    public static boolean digOrPillarStep(io.github.mojolowjo.entropybot.aa.moves.Step step, int[] me) {
+        return switch (step) {
+            case null -> false;
+            case io.github.mojolowjo.entropybot.aa.moves.Step.MineAt m -> m.dig();
+            case io.github.mojolowjo.entropybot.aa.moves.Step.Mine m -> m.how() == io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.DIG;
+            case io.github.mojolowjo.entropybot.aa.moves.Step.Walk w -> me != null && w.y() > me[1] + 2;
+            default -> false;
+        };
+    }
+
+    /** An ore step (the wander watch follows it). */
+    public static boolean oreStep(io.github.mojolowjo.entropybot.aa.moves.Step step) {
+        return step instanceof io.github.mojolowjo.entropybot.aa.moves.Step.MineAt || step instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Mine;
     }
 
     /** "3/7 craft ..." -> 2 (0-based), else -1. */

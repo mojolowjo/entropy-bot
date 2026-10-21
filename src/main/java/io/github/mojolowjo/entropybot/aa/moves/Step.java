@@ -192,11 +192,6 @@ public sealed interface Step {
         public String text() { return "burrow"; }
     }
 
-    /** Dig into the wall beside me and seal it (the dig-in way; Moves.burrow takes the niche when the floor is out). */
-    record DigIn() implements Step {
-        public String text() { return "dig in"; }
-    }
-
     /** Run from the foes (Moves.flee: Baritone's goal away from them). */
     record Flee() implements Step {
         public String text() { return "flee"; }
@@ -222,6 +217,11 @@ public sealed interface Step {
         public String text() { return "house " + area; }
     }
 
+    /** Build the owner's schematic {@code name} at its origin (Baritone's builder, what the bag holds). */
+    record BuildSchematic(String name, int x, int y, int z) implements Step {
+        public String text() { return "build schematic " + name + " " + x + " " + y + " " + z; }
+    }
+
     /** Walk to the owner. */
     record Come() implements Step {
         public String text() { return "come"; }
@@ -244,12 +244,40 @@ public sealed interface Step {
 
     /** Fish for {@code minutes} at the nearest water (the fishing job: cast, wait, reel). */
     record Fish(int minutes) implements Step {
-        public String text() { return "fish " + minutes; }
+        public String text() { return "fish " + minutes + "m"; }
     }
 
-    /** Harvest {@code n} kelp (the kelp job). */
+    /** Cut {@code n} kelp and smelt it to dried kelp (the kelp job). */
     record Kelp(int n) implements Step {
-        public String text() { return "kelp " + n; }
+        public String text() { return "kelp " + n + " cook"; }
+    }
+
+    /** Eat the bag's best food (the eat reflex's verb). */
+    record Eat() implements Step {
+        public String text() { return "eat"; }
+    }
+
+    /** Break the plants in the column box {@code box} ({x1, z1, x2, z2}, the surface) {@code up} high: forage, seeds. */
+    record DigArea(int[] box, int up) implements Step {
+        public DigArea {
+            box = box.clone();
+        }
+
+        public String text() { return "dig " + box[0] + " " + box[1] + " " + box[2] + " " + box[3] + " +" + up; }
+    }
+
+    /** Plant {@code n} of {@code crop} by water here (the farm job). */
+    record FarmPlant(String crop, int n) implements Step {
+        public String text() { return "farm plant " + crop + " here " + n; }
+    }
+
+    /** Mark the farm at x y z ({@code at} null: here). */
+    record MarkFarm(int[] at) implements Step {
+        public MarkFarm {
+            at = at == null ? null : at.clone();
+        }
+
+        public String text() { return "place farm" + (at == null ? "" : " " + at[0] + " " + at[1] + " " + at[2]); }
     }
 
     /**

@@ -148,6 +148,12 @@ public final class Tuning {
         def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
         def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");
         def("steps.stepMaxS", 600, "rm-execution (was the hunt's 10 min cap)", "seconds one typed step of an option (walk, cut, hunt, mine, craft...) may run before the option fails 'timed out'");
+        def("steps.burrowWaitS", 120, "rm-execution2 (was the chain text 'burrow then wait 120')", "seconds the bot waits sealed in after a night burrow (base and danger ways) before the need picks again");
+        def("steps.calmWaitS", 60, "rm-execution2 (was the chain text 'wait 60')", "seconds the danger desire's wait and pillar-out ways hold still");
+        def("steps.recoverWaitS", 3, "rm-execution2 (was Kit.recoverChain's 'wait 3')", "seconds the kit recovery waits on its death spot for the drops to come in");
+        def("steps.fishMin", 5, "rm-execution2 (was the food way's 'fish 4')", "minutes the food set's fishing way fishes for");
+        def("steps.kelpN", 8, "rm-execution2 (was the food way's 'gather kelp 8 cook')", "kelp the food set's kelp way cuts and smelts");
+        def("steps.exploreMin", 5, "rm-execution2 (was the want's 'explore 5')", "minutes the explore want walks new land");
         def("steps.walkNear", 2, "rm-execution", "blocks from a seen tree or herd at which the walk before the work ends (Baritone GoalNear)");
         def("steps.huntReach", 20, "rm-execution (was the hunt job's 20-block walk rule; the strike's fight loop reaches 24)", "blocks from an animal within which the hunt step hands it to the strike input instead of walking (Baritone GoalNear) to it");
         def("steps.huntAtR", 16, "rm-execution (was HuntRules.AT_R)", "blocks round a remembered herd's place within which the hunt step takes animals");

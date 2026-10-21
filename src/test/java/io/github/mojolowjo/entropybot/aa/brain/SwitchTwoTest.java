@@ -23,7 +23,7 @@ class SwitchTwoTest {
     final double[] s = new double[3];
 
     Desire d(int i, String id, TaskKind k) {
-        return new Desire(id, Desire.Kind.PROGRESS, RunJob.of(id + ".job", k, "do " + id, "brain"), b -> s[i]).cost(0);
+        return new Desire(id, Desire.Kind.PROGRESS, RunJob.of(id + ".job", k, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> s[i]).cost(0);
     }
 
     /** 17 of 19: STOCK_IRON refused ("123 steps"), the next start counted it as a live switch. */

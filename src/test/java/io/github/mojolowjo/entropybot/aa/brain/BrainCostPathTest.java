@@ -23,7 +23,7 @@ class BrainCostPathTest {
         double cost = Double.NaN;
         int refreshes;
 
-        @Override public String pick(Blackboard bb, String planned) { return planned; }
+        @Override public String pick(Blackboard bb, java.util.List<io.github.mojolowjo.entropybot.aa.moves.Step> planned) { return planned == null ? null : io.github.mojolowjo.entropybot.aa.moves.Step.label(planned); }
 
         @Override public boolean failed(Blackboard bb, String end) { return false; }
 
@@ -35,7 +35,7 @@ class BrainCostPathTest {
     }
 
     static Desire plain(String id, Desire.Kind k, double v) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v);
     }
 
     @Test
@@ -78,7 +78,7 @@ class BrainCostPathTest {
         FakePicker p = new FakePicker();
         p.cost = 30;
         // AREAS: no area gate any more
-        Need r = new Need("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> "goal iron 3", p);
+        Need r = new Need("needs.iron", TaskKind.IRON, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("iron 3")), p);
         Desire d = AaDesires.need(r);
         Brain br = new Brain("brain", "t", d);
         var s = br.scoreAll(bb).get(0);

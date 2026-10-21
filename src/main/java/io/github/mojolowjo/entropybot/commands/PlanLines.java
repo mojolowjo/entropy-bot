@@ -1,4 +1,4 @@
-package io.github.mojolowjo.entropybot.aa;
+package io.github.mojolowjo.entropybot.commands;
 
 import io.github.mojolowjo.entropybot.aa.moves.Step;
 
@@ -7,13 +7,13 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * rm-execution: the planner's and the discovery ways' step lines (their own text, e.g. "craft iron_pickaxe 1",
- * "find cave 5", a staircase's "dig ... via engine") as typed {@link Step}s, so an option built on them runs on
- * {@code aa/moves/Steps} and never hands text to the chain interpreter. A line with no typed step is named (the option
- * is dropped with it: no silent fallback). Pure (JUnit: PlanStepsTest via IronOptionsTest).
+ * rm-execution2: the planner's side of the boundary. The planner's routine (its own text, e.g. "craft iron_pickaxe 1",
+ * "smelt raw_iron 3") is typed ONCE here into {@link Step}s when AA asks for a goal (AaRuntime.resolveState, StepHands'
+ * Plan step); AA never reads or builds the routine's text. The owner's typed verbs (hunt) read their words here too. A
+ * line with no typed step is named (the plan is NONE with it: no silent fallback). Pure (JUnit: TypedOptionsTest).
  */
-public final class PlanSteps {
-    private PlanSteps() {}
+public final class PlanLines {
+    private PlanLines() {}
 
     /** The typed steps, or null with {@code bad[0]} = the first line that has none. */
     public static List<Step> of(List<String> lines, String[] bad) {
@@ -50,6 +50,18 @@ public final class PlanSteps {
                 case "shelter" -> {
                     if (w.length == 1) return new Step.Shelter();
                 }
+                case "deposit" -> {
+                    if (w.length == 1) return new Step.Deposit();
+                }
+                case "sleep" -> {
+                    if (w.length == 1) return new Step.Sleep();
+                }
+                case "explore" -> {
+                    if (w.length == 2) return new Step.Explore(i(w[1]));
+                }
+                case "drop" -> {
+                    if (w.length == 3) return new Step.DropJunk(w[1], i(w[2]));
+                }
                 case "smelt" -> {
                     if (t.equals("smelt collect all")) return new Step.SmeltCollect();
                     if (w.length == 3) return new Step.Smelt(w[1], i(w[2]), false);
@@ -63,6 +75,7 @@ public final class PlanSteps {
                 }
                 case "scan" -> {
                     if (w.length == 1) return new Step.Scan();
+                    if (w.length == 2 && w[1].equals("base")) return new Step.Scan(true);
                 }
                 case "wait" -> {
                     if (w.length == 2) return new Step.Wait(i(w[1]));

@@ -173,19 +173,19 @@ public final class Blueprint {
 
     /**
      * The next step: null before the first scan or when done; the current layer lacks an item that the bag has none of
-     * -> {@code goal <item> <bag + whole-build shortfall>} (one trip per item); else the build step itself (Baritone
+     * -> the planner's {@code <item> <bag + whole-build shortfall>} (one trip per item); else the build step itself (Baritone
      * places what it carries and the next round gathers the rest).
      */
-    public static String chain(Blackboard bb, Build b) {
+    public static io.github.mojolowjo.entropybot.aa.moves.Step step(Blackboard bb, Build b) {
         Scan s = b.scan;
         if (s == null || s.done()) return null;
         Map<String, Integer> bag = bb.in.bag;
         for (Map.Entry<String, Integer> e : missing(s.layerLeft, bag).entrySet()) {
             String k = bagKey(e.getKey());
             if (bag.getOrDefault(k, 0) > 0 || b.unresolved.contains(k)) continue;   // in the bag: build with it first; no plan: skip
-            return "goal " + k + " " + Math.max(e.getValue(), s.left.getOrDefault(e.getKey(), 0));   // none in the bag: the whole build's need
+            return new io.github.mojolowjo.entropybot.aa.moves.Step.Plan(k + " " + Math.max(e.getValue(), s.left.getOrDefault(e.getKey(), 0)));   // none in the bag: the whole build's need
         }
-        return "build schematic " + b.name + " " + b.origin[0] + " " + b.origin[1] + " " + b.origin[2];
+        return new io.github.mojolowjo.entropybot.aa.moves.Step.BuildSchematic(b.name, b.origin[0], b.origin[1], b.origin[2]);
     }
 
     /** "house: layer 4/12, 230/400 placed, missing 30 spruce_planks, 12 held by other blocks - next: ...". */
@@ -207,8 +207,8 @@ public final class Blueprint {
         }
         if (s.occupied > 0) sb.append(", ").append(s.occupied).append(" held by other blocks (I only place)");
         sb.append(" - ").append(scoreText);
-        String c = chain(bb, b);
-        if (c != null) sb.append(" - next: ").append(c);
+        var c = step(bb, b);
+        if (c != null) sb.append(" - next: ").append(c.text());
         if (b.lastStop != null) sb.append(" [last stop: ").append(b.lastStop).append("]");
         return sb.toString();
     }

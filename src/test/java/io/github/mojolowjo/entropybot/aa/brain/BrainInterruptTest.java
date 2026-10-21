@@ -23,7 +23,7 @@ class BrainInterruptTest {
     final double[] s = new double[4];
 
     Desire d(int i, String id, Desire.Kind k) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> s[i]).cost(0);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> s[i]).cost(0);
     }
 
     String last() { return port.started.get(port.started.size() - 1).chain(); }
@@ -129,9 +129,9 @@ class BrainInterruptTest {
     @Test
     void overnightFoodWithNoSourceNeverInterruptsExplore() {
         port.noPlan = "no food source known";
-        Need food = new Need("needs.food", TaskKind.FOOD, b -> true, b -> null, b -> "goal food 8");
+        Need food = new Need("needs.food", TaskKind.FOOD, b -> true, b -> null, b -> java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("food 8")));
         Desire foodD = AaDesires.wire(new Desire("needs.food", Desire.Kind.UPKEEP, food, b -> 77), food);
-        Desire explore = new Desire("idle.explore", Desire.Kind.UPKEEP, RunJob.of("explore.job", TaskKind.EXPLORE, "explore 5", "brain"), b -> 15);
+        Desire explore = new Desire("idle.explore", Desire.Kind.UPKEEP, RunJob.of("explore.job", TaskKind.EXPLORE, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("explore 5")), "brain"), b -> 15);
         Brain br = new Brain("brain", "t", explore, foodD);
         // explore is running when food turns urgent (the food Need cannot plan: it is passed over at the first pick)
         br.tick(bb);

@@ -109,16 +109,16 @@ class LootDataTest {
         Blackboard bb = new Blackboard(new Clock.Fake(1_000), new FakePort(), new Tracer());
         Thing.Catalog cat = new Thing.Catalog(List.of("minecraft:flint", "minecraft:leather"), List.of("minecraft:gravel"), Map.of(), Map.of(), null);
         Goals.Goal flint = Goals.add(bb, Thing.resolve("flint", cat), 3, 0, 0);
-        assertEquals("goal flint 3", Goals.chain(bb, flint), "no book: the planner");
+        assertEquals("plan flint 3", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, flint)), "no book: the planner");
         bb.fact(LootBook.FACT, book());
         bb.fact(LootBook.CTX_FACT, ctx(true, Set.of(), false));
-        assertEquals("mine gravel 30", Goals.chain(bb, flint));
+        assertEquals("mine gravel 30", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, flint)));
         bb.fact(TechTree.FACT, new TechTree(List.of(new TechTree.Recipe("minecraft:flint", List.of(Set.of("minecraft:gravel"))))));
-        assertEquals("goal flint 3", Goals.chain(bb, flint), "a recipe makes it: the planner first");
+        assertEquals("plan flint 3", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, flint)), "a recipe makes it: the planner first");
         Goals.Goal leather = Goals.add(bb, Thing.resolve("leather", cat), 2, 0, 0);
-        assertEquals("hunt 2 cow for leather 2", Goals.chain(bb, leather));
+        assertEquals("hunt 2 cow for leather 2", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, leather)));
         bb.in.bag = Map.of("leather", 1);
-        assertEquals("hunt 1 cow for leather 2", Goals.chain(bb, leather), "the hunt stops at the bag total");
+        assertEquals("hunt 1 cow for leather 2", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, leather)), "the hunt stops at the bag total");
         bb.in.bag = Map.of();
         assertTrue(Goals.line(bb, leather, "70").contains("kill cow for leather"), Goals.line(bb, leather, "70"));
     }
@@ -126,11 +126,11 @@ class LootDataTest {
     @Test
     void huntForIsATypedHuntStep() {
         // rm-execution: the loot plan's "hunt k mob for item n" is a typed step (the protections are the step's game side)
-        var s = io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt 3 spider for string 6");
+        var s = io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt 3 spider for string 6");
         assertEquals(new io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt("minecraft:spider", 3, null, "string", 6).text(), s.text());
-        var at = (io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt) io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt 1 cow for leather 2 at 10 -20");
+        var at = (io.github.mojolowjo.entropybot.aa.moves.Step.HuntAt) io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt 1 cow for leather 2 at 10 -20");
         assertArrayEquals(new int[]{10, -20}, at.at());
-        assertNull(io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt 3 cow leather"));
-        assertNull(io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt x cow"));
+        assertNull(io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt 3 cow leather"));
+        assertNull(io.github.mojolowjo.entropybot.commands.PlanLines.one("hunt x cow"));
     }
 }

@@ -20,7 +20,7 @@ class GateSwitchTest {
         boolean[] met = {false};
         double[] v = {40};
         Brain br = new Brain("brain", "t",
-                new Desire("needs.tools", Desire.Kind.UPKEEP, RunJob.of("t.job", TaskKind.TOOLS, "goal stone tools", "brain"), b -> v[0]).met(b -> met[0]));
+                new Desire("needs.tools", Desire.Kind.UPKEEP, RunJob.of("t.job", TaskKind.TOOLS, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("goal stone tools")), "brain"), b -> v[0]).met(b -> met[0]));
         br.tick(bb);
         v[0] = -1;
         met[0] = true;

@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class CoalOptionsTest {
     static IronOptions.Ore ore(double dist, boolean open) { return new IronOptions.Ore(10, 40, 10, dist, true, open, false, 6, false, null, false); }
 
-    static Discovery.Opt strip(double cost) { return new Discovery.Opt(Discovery.Kind.STRIP, cost, "Y 40", "mine strip coal 8"); }
+    static Discovery.Opt strip(double cost) { return new Discovery.Opt(Discovery.Kind.STRIP, cost, "Y 40", List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine("coal", 8, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.STRIP))); }
 
     static CoalFacts facts(List<IronOptions.Ore> ores, List<Discovery.Opt> disc, int logs, boolean furnace) {
         return new CoalFacts(8, 1, ores, disc, List.of(), logs, 0, furnace, -1, true, 0);
@@ -81,7 +81,7 @@ class CoalOptionsTest {
 
     @Test
     void torchesAreCoalFirstNeverABareCraft() {
-        assertEquals("gather charcoal 2 then craft torch 16", CoalOptions.torchChain("gather charcoal 2", 16));
+        assertEquals("smelt charcoal 2 > craft torch 16", TS.label(CoalOptions.torchSteps(TS.s("smelt charcoal 2"), 16)));
         assertEquals(2, CoalOptions.coalForTorches(8, 16));
         assertEquals(1, CoalOptions.coalForTorches(15, 16));
         assertEquals(4, CoalOptions.coalForTorches(0, 16));

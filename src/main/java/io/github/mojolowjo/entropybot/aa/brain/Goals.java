@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -105,34 +106,41 @@ public final class Goals {
         return null;
     }
 
-    /** The command for what is left, or null (done, or the pickaxe missing: the prereq works first). */
-    public static String chain(Blackboard bb, Goal g) {
+    /**
+     * rm-execution2: the typed steps for what is left, or null (done, or the pickaxe missing: the prereq works first). A
+     * goal a recipe makes is the planner's ({@link Step.Plan}); an ore is a per-ore {@link Step.MineAt} at the nearest
+     * cell, else the mine verb's ways; a dropped item its loot step.
+     */
+    public static List<Step> steps(Blackboard bb, Goal g) {
         int left = g.n - have(bb.in.bag, g);
         if (left <= 0 || bb.in.pickTier < g.r.tier()) return null;
         if (!g.r.ore()) {
             LootBook.Plan lp = loot(bb, g, left);
-            return lp != null && lp.command() != null ? lp.command() : "goal " + g.r.key() + " " + left;
+            return List.of(lp != null && lp.step() != null ? lp.step() : new Step.Plan(g.r.key() + " " + left));
         }
         String w = g.r.key().replaceFirst("^.*:", "");
         // round 2 item 5: the nearest known ore by name (that cell and its vein); the goal picks again for the next one
         int[] at = nearest(bb, g.r.key());
         // aa-water (1f): a wet ore whose cheapest way stands first (a floor, a placed block, a dry side): that way's steps
-        if (at != null && bb.fact(WATER_CMD_FACT) instanceof Map<?, ?> wc && wc.get(g.r.key()) instanceof String cmd)
-            return cmd.replace("mine " + io.github.mojolowjo.entropybot.aa.IronOptions.FAMILY + " 1 at", "mine " + w + " 1 at");
-        if (at != null) return "mine " + w + " 1 at " + at[0] + " " + at[1] + " " + at[2] + (at.length > 3 && at[3] == 0 ? " walk" : " dig");
-        if (known(bb, g.r.key()) > 0) return "mine " + w + " " + left + " dig";
+        if (at != null && bb.fact(WATER_CMD_FACT) instanceof Map<?, ?> wc && wc.get(g.r.key()) instanceof List<?> ws) {
+            List<Step> out = new ArrayList<>();
+            for (Object o : ws) if (o instanceof Step s) out.add(s instanceof Step.MineAt m ? new Step.MineAt(w, m.x(), m.y(), m.z(), m.dig()) : s);
+            if (!out.isEmpty()) return out;
+        }
+        if (at != null) return List.of(new Step.MineAt(w, at[0], at[1], at[2], !(at.length > 3 && at[3] == 0)));
+        if (known(bb, g.r.key()) > 0) return List.of(new Step.Mine(w, left, Step.Mine.How.DIG));
         // AA_ROUND3 3 (aa fair): no ore seen: the cheapest discovery way (explore cave, strip at Y, clear chunk), priced
         Discovery.Opt d = discovery(bb, g.r.key());
-        if (d != null) return d.command();
+        if (d != null) return d.steps();
         // B5: no known ore and no idea at what height it lives (not learned yet): look around first, the chunk pass learns
-        if (g.r.where() != null && !g.r.where().yKnown()) return "explore 5";
+        if (g.r.where() != null && !g.r.where().yKnown()) return List.of(new Step.Explore((int) Tuning.get("steps.exploreMin")));
         // overnight 2026-10-19 (coal goal: "mine strip" with no mine marked failed twice): the iron-style ways in order
         if (bb.fact(WAYS_FACT) instanceof Ways ws) {
-            if (ws.caveDist() >= 0) return "mine cave " + w + " " + left;
-            if (ws.mineMarked()) return "mine strip " + w + " " + left;
-            return "place mine north then mine strip " + w + " " + left;
+            if (ws.caveDist() >= 0) return List.of(new Step.Mine(w, left, Step.Mine.How.CAVE));
+            if (ws.mineMarked()) return List.of(new Step.Mine(w, left, Step.Mine.How.STRIP));
+            return List.of(new Step.MarkMine(null, "north"), new Step.Mine(w, left, Step.Mine.How.STRIP));
         }
-        return "mine strip " + w + " " + left;
+        return List.of(new Step.Mine(w, left, Step.Mine.How.STRIP));
     }
 
     /** The adapter's ore-goal facts (set with {@link #KNOWN_FACT}): a known cave within reach (-1 none), a mine marked. */
@@ -159,7 +167,7 @@ public final class Goals {
      * aa-water (1f): the ore goal's pick by the iron scorer's prices (the water ways weigh against a floating dig and
      * the other ores): the cheapest per-ore row; {x, y, z, dig 1 | walk 0} and, for a water way, its steps. Null none.
      */
-    public record Pick(int[] at, String waterCmd) {}
+    public record Pick(int[] at, List<Step> waterSteps) {}
 
     public static Pick pickPriced(List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int digMax) {
         var f = new io.github.mojolowjo.entropybot.aa.IronOptions.Facts(ores, meY, inWater, throwaway, placeAllowed, -1, false, null, -1, false, false, 0);
@@ -170,7 +178,7 @@ public final class Goals {
             if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WATER_STAND || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WATER_PLACE
                     || s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.DRY_SIDE) {
                 var one = new io.github.mojolowjo.entropybot.aa.IronOptions.Choice(s.way(), o, c.smelt(), c.ranked(), c.dropped(), s.stand(), s.place());
-                return new Pick(new int[]{o.x(), o.y(), o.z(), 1}, one.command(1));
+                return new Pick(new int[]{o.x(), o.y(), o.z(), 1}, one.steps(1));
             }
             // the cheapest walk/dig row (the floating dig priced in: "another ore" wins over a wet one)
             if (s.way() == io.github.mojolowjo.entropybot.aa.IronOptions.Way.WALK_KNOWN) return new Pick(new int[]{o.x(), o.y(), o.z(), o.loaded() ? 0 : 1}, null);
@@ -244,7 +252,8 @@ public final class Goals {
     /** One aa goals line: "iron 2/8 high: score 90 - mine iron 6 dig | ...". */
     public static String line(Blackboard bb, Goal g, String scoreText) {
         String b = blocked(bb, g);
-        String c = b == null ? chain(bb, g) : null;
+        List<Step> st = b == null ? steps(bb, g) : null;
+        String c = st == null ? null : Step.label(st);
         String p = b == null && c == null ? prereq(bb, g) : null;
         return g.r.key() + " " + have(bb.in.bag, g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + ": " + scoreText
                 + (b != null ? " - parked: " + b : c != null ? " - next: " + c : p != null ? " - first " + p : "")

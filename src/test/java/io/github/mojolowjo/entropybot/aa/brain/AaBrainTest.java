@@ -20,7 +20,7 @@ class AaBrainTest {
     final double[] s = new double[4];
 
     Desire d(int i, String id, Desire.Kind k) {
-        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> s[i]).cost(0);
+        return new Desire(id, k, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> s[i]).cost(0);
     }
 
     String last() { return port.started.get(port.started.size() - 1).chain(); }

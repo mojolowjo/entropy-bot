@@ -20,6 +20,7 @@ import io.github.mojolowjo.entropybot.aa.core.RunJob;
 import io.github.mojolowjo.entropybot.aa.core.Scorer;
 import io.github.mojolowjo.entropybot.aa.core.Status;
 import io.github.mojolowjo.entropybot.aa.core.TaskKind;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -152,58 +153,71 @@ public final class AaDesires {
 
     private static int t(String name) { return (int) Tuning.get(name); }
 
+    /** rm-execution2: a need's planner goal (one Step.Plan; Ways asks the planner about it). */
+    static List<Step> plan(String goal) { return List.of(new Step.Plan(goal)); }
+
+    /** A row for a need whose facts are not readable (its fixed way). */
+    static Options.Option noFacts(String id, List<Step> steps) {
+        return new Options.Option(id, id, steps, 0, "no facts: the fixed way", id, false);
+    }
+
+    /** Without facts: the planner's routine as it is (null: none). */
+    static Options.Option plannerRow(List<Step> planned) {
+        return planned == null ? null : new Options.Option("planner", "planner", planned, 0, "no facts: the planner's routine as it is", "planner", true);
+    }
+
     public static List<Need> needs() {
         io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.torchOn"), t("band.torchOff")),
                 bag = new io.github.mojolowjo.entropybot.aa.core.Band(t("bag.enter"), t("bag.leave")), food = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.foodOn"), t("band.foodOff"));
         Need tools = new Need("needs.tools", TaskKind.TOOLS,
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
                 bb -> bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares")) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
-                bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
-                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? AaLadder.BOOTSTRAP : planned)).surface();      // trees and stone at hand up there: under ground the climb is its first row
+                bb -> null, bb -> plan("stone tools"), new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
+                        .withoutFacts((b, planned) -> b.in.pickTier == 0 ? noFacts("bootstrap", List.of(new Step.Bootstrap(false))) : plannerRow(planned))).surface();      // trees and stone at hand up there: under ground the climb is its first row
         Need hunger = new Need("needs.food", TaskKind.FOOD,
                 bb -> bb.in.hungerDrains && (food.update(bb.in.food) | foodStockLow(bb)),
-                bb -> null, bb -> "goal food 8", new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
+                bb -> null, bb -> plan("food 8"), new Options.Picker<>("FOOD", FoodOptions.FACTS, FoodOptions.FoodFacts.class, new FoodOptions.Food()));
         // a table or furnace in the bag counts (the near-block fact is false as soon as the bot walks away)
         // round 4A O: craft+place at the cell, cut + craft, the planner, a known one (StationOptions); a gather climbs first there
         Need tableFurnace = new Need(STATION_ID, TaskKind.TABLE_FURNACE,
                 bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !campChest(bb),
                 // rm-areas: the chest has no chain of its own: the station set's place / craft rows own it
-                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
+                bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? plan("table") : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? plan("furnace")
                         : null, new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
         Need spare = new Need("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> AaLadder.spareTableWanted(bb.in.tableInBag, bb.in.planks),
-                bb -> null, bb -> "craft crafting_table 1").hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
+                bb -> null, bb -> List.of(new Step.Craft("crafting_table", 1))).hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
         Need torch = new Need("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
                 bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : null,
-                bb -> "goal torch " + CoalOptions.Torches.target(), new CoalOptions.Torches());
+                bb -> plan("torch " + CoalOptions.Torches.target()), new CoalOptions.Torches());
         Need base = new Need("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(AaLadder.SHELTER_FACT),
-                bb -> null, bb -> bb.in.basePlace != null ? "house " + bb.in.basePlace : "goal shelter",
+                bb -> null, bb -> bb.in.basePlace != null ? List.of(new Step.House(bb.in.basePlace)) : List.of(new Step.Shelter()),
                 // round 4A O: house <area>, shelter here, burrow, priced with the night (BaseOptions; its rows climb first)
                 new Options.Picker<>("BASE", BaseOptions.FACTS, BaseOptions.BaseFacts.class, new BaseOptions.Set())
-                        .withoutFacts((b, planned) -> b.in.basePlace != null ? "house " + b.in.basePlace : planned));
+                        .withoutFacts((b, planned) -> b.in.basePlace != null ? noFacts("house", List.of(new Step.House(b.in.basePlace))) : noFacts("shelter", List.of(new Step.Shelter()))));
         // round 4 fix 4: the ways to a bed are priced (BedOptions); the climb is the first step of its row under ground
         Need bed = new Need("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
                 bb -> bb.in.wool >= 3 || bb.in.sheepSeen || sheepHerd(bb) != null ? null : "no wool for a bed (" + bb.in.wool + "/3; no sheep seen)",
-                bb -> AaLadder.bedChain(bb.in.wool, sheepHerd(bb)),
+                bb -> BedOptions.steps(bb.in.wool, sheepHerd(bb)),
                 new Options.Picker<>("BED", BedOptions.FACTS, BedOptions.BedFacts.class, new BedOptions.Set()));      // its rows price the climb (BedOptions)
         Need deposit = new Need("needs.bag", TaskKind.BAG,
                 bb -> bag.update(bb.in.freeSlots),
                 bb -> null,
                 // round 4A O: deposit at the base chest, craft+place a chest here, drop junk (BagOptions)
-                bb -> "deposit", new Options.Picker<>("BAG", BagOptions.FACTS, BagOptions.BagFacts.class, new BagOptions.Set())
-                        .withoutFacts((b, planned) -> b.in.baseChests ? "deposit" : null));
+                bb -> List.of(new Step.Deposit()), new Options.Picker<>("BAG", BagOptions.FACTS, BagOptions.BagFacts.class, new BagOptions.Set())
+                        .withoutFacts((b, planned) -> b.in.baseChests ? noFacts("deposit", List.of(new Step.Deposit())) : null));
         // 0.36.a8 (MINING_PLAN 3.6): the option scorer chooses how the planner's ore and smelt steps run (IronOptions)
         Need iron = new Need("needs.iron", TaskKind.IRON,
                 bb -> bb.in.pickTier < 3,
                 bb -> bb.in.pickTier >= 2 ? null : "no stone pickaxe yet (needs.tools first)",
-                bb -> "goal iron tools", new IronOptions.Picker());
+                bb -> plan("iron tools"), new IronOptions.Picker());
         // review 4A-N (1): the dawn climb out of the night stairs is a need of its own, priced by WayUp's ways (no gate)
-        Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.SURFACE_DEPTH), bb -> null, bb -> AaLadder.CLIMB,
+        Need dawn = new Need(DAWN_ID, TaskKind.TABLE_FURNACE, bb -> NightWork.climbAtDawn(bb, AaLadder.SURFACE_DEPTH), bb -> null, bb -> List.of(new Step.Climb()),
                 new Options.Picker<>("SURFACE", RungOptions.SURFACE_FACTS, RungOptions.SurfaceFacts.class, new RungOptions.Surface())
-                        .withoutFacts((b, planned) -> AaLadder.CLIMB));
+                        .withoutFacts((b, planned) -> noFacts("climb", List.of(new Step.Climb()))));
         return List.of(tools, hunger, tableFurnace, spare, torch, base, bed, deposit, iron, dawn);
     }
 
@@ -435,12 +449,13 @@ public final class AaDesires {
         RunJob job = new RunJob("ideas.job", TaskKind.EXPLORE, bb -> {
             Pick p = bestIdea(bb);
             if (p == null) return null;
-            String chain = bb.port.resolve("goal " + goalName(p.item()) + " 1");
-            if (chain == null) {             // review: no plan for it: left out for this session, the next idea gets its turn
+            String goal = goalName(p.item()) + " 1";
+            JobPort.Resolved r = bb.port.resolveState(goal);
+            if (r.state() == JobPort.PlanState.NONE) {             // review: no plan for it: left out for this session, the next idea gets its turn
                 bad(bb).add(p.item());
-                bb.port.log("ideas: no plan for " + goalName(p.item()) + " - left out this session");
+                bb.port.log("ideas: no plan for " + goalName(p.item()) + " - left out this session (" + r.why() + ")");
             }
-            return chain == null ? null : JobPort.TaskSpec.of(TaskKind.EXPLORE, chain, "ideas");
+            return r.state() != JobPort.PlanState.READY ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, plan(goal), "ideas");
         });
         Node node = AaTree.idleCd("ideas.cd", job);
         return new Desire("ideas", Desire.Kind.PROGRESS, node, bb -> {
@@ -466,11 +481,17 @@ public final class AaDesires {
     public static Desire ownerGoal(io.github.mojolowjo.entropybot.aa.brain.Goals.Goal g) {
         String id = g.id();
         RunJob job = new RunJob(id + ".job", TaskKind.EXPLORE, bb -> {
-            String c = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(bb, g);
-            if (c == null) return null;
-            String chain = c.startsWith("goal ") ? bb.port.resolve(c) : c;
-            if (chain == null) bb.port.log("aa goal " + g.r.key() + ": no plan for \"" + c + "\"");
-            return chain == null ? null : JobPort.TaskSpec.of(TaskKind.EXPLORE, chain, "owner goal");
+            List<Step> s = io.github.mojolowjo.entropybot.aa.brain.Goals.steps(bb, g);
+            if (s == null) return null;
+            String pg = Ways.planGoal(s);
+            if (pg != null) {
+                JobPort.Resolved r = bb.port.resolveState(pg);
+                if (r.state() != JobPort.PlanState.READY) {
+                    bb.port.log("aa goal " + g.r.key() + ": no plan for " + pg + " (" + (r.state() == JobPort.PlanState.SEARCHING ? "still searching" : r.why()) + ")");
+                    return null;
+                }
+            }
+            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, s, "owner goal");
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Goals.score(bb, g))
@@ -486,17 +507,17 @@ public final class AaDesires {
     public static Desire ownerBuild(io.github.mojolowjo.entropybot.aa.brain.Blueprint.Build b) {
         String id = b.id();
         RunJob job = new RunJob(id + ".job", TaskKind.BASE_BED, bb -> {
-            String c = io.github.mojolowjo.entropybot.aa.brain.Blueprint.chain(bb, b);
-            if (c == null) return null;
-            if (c.startsWith("goal ")) {
-                String chain = bb.port.resolve(c);
-                if (chain == null) {                     // review 1: skip it next pick; Baritone builds the rest
-                    bb.port.log("aa build " + b.name + ": no plan for \"" + c + "\" - building without it");
-                    b.unresolved.add(c.split(" ")[1]);
+            Step s = io.github.mojolowjo.entropybot.aa.brain.Blueprint.step(bb, b);
+            if (s == null) return null;
+            if (s instanceof Step.Plan p) {
+                JobPort.Resolved r = bb.port.resolveState(p.goal());
+                if (r.state() == JobPort.PlanState.NONE) {                     // review 1: skip it next pick; Baritone builds the rest
+                    bb.port.log("aa build " + b.name + ": no plan for " + p.goal() + " - building without it (" + r.why() + ")");
+                    b.unresolved.add(p.goal().split(" ")[0]);
                 }
-                return chain == null ? null : JobPort.TaskSpec.of(TaskKind.EXPLORE, chain, "owner build");
+                return r.state() != JobPort.PlanState.READY ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.of(s), "owner build");
             }
-            return new JobPort.TaskSpec(TaskKind.BASE_BED, c, "owner build", 1, 40 * 60_000L, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, List.of(s), "owner build", 40 * 60_000L, JobPort.TaskSpec.NO_PROGRESS_MS);
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.OWNER, node, bb -> io.github.mojolowjo.entropybot.aa.brain.Blueprint.score(bb, b))
@@ -508,11 +529,11 @@ public final class AaDesires {
     // ---- B3: wants (2.2, 2.4) and the night (2.10) ----
 
     /** A want: personality weight x boredom; its job cools down like an idle option. */
-    static Desire want(String key, TaskKind kind, Function<Blackboard, String> chain, Function<Blackboard, String> infeasible, Desire.Exposure exposure) {
+    static Desire want(String key, TaskKind kind, Function<Blackboard, List<Step>> steps, Function<Blackboard, String> infeasible, Desire.Exposure exposure) {
         String id = "want." + key;
         RunJob job = new RunJob(id + ".job", kind, bb -> {
-            String c = chain.apply(bb);
-            return c == null ? null : JobPort.TaskSpec.of(kind, c, "want");
+            List<Step> s = steps.apply(bb);
+            return s == null ? null : JobPort.TaskSpec.steps(kind, s, "want");
         });
         Node node = AaTree.idleCd(id + ".cd", job);
         return new Desire(id, Desire.Kind.WANT, node, bb -> Wants.score(bb, id, key))
@@ -530,9 +551,9 @@ public final class AaDesires {
     /** Owner default (Q3): build a house (where only a shelter stands), explore, tidy the bag into the chests. */
     public static List<Desire> wants() {
         return List.of(
-                want("build", TaskKind.BASE_BED, bb -> bb.in.basePlace == null ? null : "house " + bb.in.basePlace, AaDesires::buildInfeasible, Desire.Exposure.SURFACE),
-                want("explore", TaskKind.EXPLORE, bb -> "explore 5", bb -> null, Desire.Exposure.SURFACE),
-                want("tidy", TaskKind.DEPOSIT, bb -> "deposit", bb -> bb.in.baseChests ? null : "no base chests to put things in", Desire.Exposure.ANY));
+                want("build", TaskKind.BASE_BED, bb -> bb.in.basePlace == null ? null : List.of(new Step.House(bb.in.basePlace)), AaDesires::buildInfeasible, Desire.Exposure.SURFACE),
+                want("explore", TaskKind.EXPLORE, bb -> List.of(new Step.Explore((int) t("steps.exploreMin"))), bb -> null, Desire.Exposure.SURFACE),
+                want("tidy", TaskKind.DEPOSIT, bb -> List.of(new Step.Deposit()), bb -> bb.in.baseChests ? null : "no base chests to put things in", Desire.Exposure.ANY));
     }
 
     public static final long SHELTER_PATIENCE_MS = 12 * 60_000;
@@ -697,22 +718,22 @@ public final class AaDesires {
 
     /**
      * AA_CLEANUP 4 + AA_STEP2 1: the danger desire (UPKEEP, trumps, never discounted by the night): its job runs the
-     * best way's chain ("flee then wait 6", "burrow then wait 120", "shelter", "sleep", "go base then shelter", "wait
-     * 60"...); it ends when staying is cheapest and the night is over. A failed run holds that way only (10 min x fails),
+     * best way's typed steps (DangerOptions.stepsOf: flee and wait, burrow and wait sealed, the shelter, sleep, the walk
+     * home and the shelter, a wait...); it ends when staying is cheapest and the night is over. A failed run holds that way only (10 min x fails),
      * the next way runs at once. The reflexes keep only air, lava/fire, fall, the creeper flee and the hit response.
      */
     public static Desire danger() {
         RunJob job = new RunJob(DANGER_ID + ".job", TaskKind.BASE_BED, bb -> {
             DangerOptions.Choice c = dangerChoice(bb);
-            String chain = c == null || c.score() < 0 ? null : c.chain();
-            if (chain == null) {
+            List<Step> steps = c == null || c.score() < 0 ? null : c.steps();
+            if (steps == null) {
                 bb.port.log("danger: nothing to run (" + (c == null ? "no threat facts" : c.terms()) + ")");
                 return null;
             }
             bb.fact(WAY_FACT, c.best().way());
             bb.port.log("danger: " + c.terms());
             boolean night = c.best().way().ordinal() >= DangerOptions.Way.BOX.ordinal();
-            return new JobPort.TaskSpec(TaskKind.BASE_BED, chain, "danger", 1, night ? JobPort.TaskSpec.TIMEOUT_MS : 3 * 60_000L,
+            return JobPort.TaskSpec.steps(TaskKind.BASE_BED, steps, "danger", night ? JobPort.TaskSpec.TIMEOUT_MS : 3 * 60_000L,
                     night ? SHELTER_PATIENCE_MS : 90_000L);
         });
         return new Desire(DANGER_ID, Desire.Kind.UPKEEP, wayHolds(job), AaDesires::dangerScore)
@@ -842,7 +863,7 @@ public final class AaDesires {
      * answer the night. In the shell with work under ground ready the need is off, so that work runs.
      */
     public static List<Desire> night() {
-        Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, "sleep", "night"));
+        Node sleep = AaTree.idleCd("night.sleep.cd", RunJob.of("night.sleep.job", TaskKind.BASE_BED, List.of(new Step.Sleep()), "night"));
         return List.of(
                 new Desire("night.sleep", Desire.Kind.UPKEEP, sleep, AaDesires::sleepScore).cools(Cooldown.NO_RUN_MS, Cooldown.NO_RUN_MS).lastTry().nightProof());
     }
@@ -863,17 +884,13 @@ public final class AaDesires {
         RunJob job = new RunJob("help.owner.job", TaskKind.EXPLORE, bb -> {
             var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(bb.in, Personality.of(bb).get("help"));
             if (p == null) return null;
-            String chain = p.chain();
-            if (p.goal() != null) {
-                String g = bb.port.resolve(p.goal());
-                if (g == null) {
-                    bb.port.log("help: no plan for \"" + p.goal() + "\" (or still searching)");
+            for (Step s : p.steps())
+                if (s instanceof Step.Plan pl && bb.port.resolveState(pl.goal()).state() != JobPort.PlanState.READY) {
+                    bb.port.log("help: no plan for " + pl.goal() + " (or still searching)");
                     return null;
                 }
-                chain = g + " then " + chain;
-            }
             bb.port.log("help: " + p.line());
-            return new JobPort.TaskSpec(TaskKind.EXPLORE, chain, "help", 1, HELP_TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return JobPort.TaskSpec.steps(TaskKind.EXPLORE, p.steps(), "help", HELP_TIMEOUT_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
         });
         Node node = AaTree.idleCd("help.owner.cd", job);
         // round 2: the brain's own cool-down (Desire.cools, the Failures record) instead of a per-node cooling check
@@ -935,7 +952,7 @@ public final class AaDesires {
     public static Desire recover() {
         RunJob job = new RunJob(RECOVER_ID + ".job", TaskKind.EXPLORE, bb -> {
             Kit.Death d = Kit.of(bb);
-            return d == null ? null : new JobPort.TaskSpec(TaskKind.EXPLORE, Kit.recoverChain(d), "recover kit", 1, Kit.DESPAWN_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
+            return d == null ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, Kit.recoverSteps(d), "recover kit", Kit.DESPAWN_MS, JobPort.TaskSpec.NO_PROGRESS_MS);
         });
         return new Desire(RECOVER_ID, Desire.Kind.PROGRESS, AaTree.idleCd(RECOVER_ID + ".cd", job), AaDesires::recoverScore)
                 .liveCost(bb -> {
@@ -966,7 +983,7 @@ public final class AaDesires {
 
     /** stash (UPKEEP, never urgent): the loot into the base chest; no chest: the camp rung's value. */
     public static Desire stash(Need iron) {
-        Node node = AaTree.idleCd(STASH_ID + ".cd", RunJob.of(STASH_ID + ".job", TaskKind.DEPOSIT, "deposit", "stash"));
+        Node node = AaTree.idleCd(STASH_ID + ".cd", RunJob.of(STASH_ID + ".job", TaskKind.DEPOSIT, List.of(new Step.Deposit()), "stash"));
         return new Desire(STASH_ID, Desire.Kind.UPKEEP, node, bb -> stashScore(bb, iron))
                 .liveCost(bb -> {
                     int[] p = bb.in.pos;

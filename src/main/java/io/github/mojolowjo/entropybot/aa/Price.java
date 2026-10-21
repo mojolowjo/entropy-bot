@@ -36,20 +36,8 @@ final class Price {
 
     static String r(double v) { return String.valueOf(Math.round(v)); }
 
-    /** The first step of {@code chain} whose verb the parser does not know, or null (all known, or the "nothing" row). */
-    static String unknownVerb(String chain) {
-        if (chain == null || Options.NOTHING.equals(chain)) return null;
-        for (String step : Options.Chains.split(chain)) {
-            String w = step.split("\\s+")[0];
-            if (VerbTable.of(w) == null) return step;
-        }
-        return null;
-    }
-
-    /** A row in, unless held (its reason) or its chain has an unknown verb (dropped: "no verb for ..."). */
+    /** A row in, unless held (its reason). rm-execution2: every row is typed steps (no verb to look up). */
     static void add(List<Options.Option> rows, List<String> dropped, Options.OptionMemory m, long now, Options.Option o) {
-        String bad = o.typed() ? null : unknownVerb(o.command());      // rm-execution: typed steps have no verb to look up
-        if (bad != null) dropped.add(o.id() + ": no verb for \"" + bad + "\"");
-        else RungOptions.add(rows, dropped, m, now, o);
+        RungOptions.add(rows, dropped, m, now, o);
     }
 }

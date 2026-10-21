@@ -120,8 +120,8 @@ class DangerStep2Test {
     void twoDesiresAtTheCapCannotAlternate() {
         double[] v = {99, -1};
         Brain br = new Brain("brain", "t",
-                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do a", "brain"), b -> v[0]).trumps(),
-                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, "do b", "brain"), b -> v[1]).overTrumps());
+                new Desire("a", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do a")), "brain"), b -> v[0]).trumps(),
+                new Desire("b", Desire.Kind.UPKEEP, RunJob.of("b.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do b")), "brain"), b -> v[1]).overTrumps());
         bb.in.food = 20;
         br.tick(bb);
         assertEquals("do a", port.started.get(port.started.size() - 1).chain());
@@ -137,8 +137,8 @@ class DangerStep2Test {
     void review1FoodUnder4AndTheOwnersOrderStillBeatADangerAt99() {
         double[] v = {99, -1};
         Brain br = new Brain("brain", "t",
-                new Desire("danger", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, "do danger", "brain"), b -> v[0]).overTrumps(),
-                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, "do food", "brain"), b -> v[1]));
+                new Desire("danger", Desire.Kind.UPKEEP, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do danger")), "brain"), b -> v[0]).overTrumps(),
+                new Desire("needs.food", Desire.Kind.UPKEEP, RunJob.of("f.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do food")), "brain"), b -> v[1]));
         bb.in.food = 10;
         br.tick(bb);
         assertEquals("do danger", port.started.get(port.started.size() - 1).chain());
@@ -196,7 +196,7 @@ class DangerStep2Test {
     }
 
     Desire siteDesire(String id, double v, Site s) {
-        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> v).cost(0).site(b -> s);
+        return new Desire(id, Desire.Kind.UPKEEP, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> v).cost(0).site(b -> s);
     }
 
     @Test

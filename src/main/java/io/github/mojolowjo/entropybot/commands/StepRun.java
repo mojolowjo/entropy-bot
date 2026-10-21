@@ -154,7 +154,7 @@ public final class StepRun {
             if (most == null) return Chains.Reply.now("error: no animal I may take in view - walk me to some");
             r = r + " " + most;
         }
-        Step s = io.github.mojolowjo.entropybot.aa.PlanSteps.one("hunt " + r);
+        Step s = PlanLines.one("hunt " + r);
         if (!(s instanceof Step.HuntAt h)) return Chains.Reply.now("usage: hunt <n> [animal] [for <item> <count>] [at x z]");
         return verb(from, raw, l, "hunt", List.of(h), h.text());
     }

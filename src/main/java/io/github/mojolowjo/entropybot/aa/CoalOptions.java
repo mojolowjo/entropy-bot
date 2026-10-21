@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.brain.Discovery;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
+import io.github.mojolowjo.entropybot.aa.moves.Step;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,12 +21,12 @@ import java.util.function.IntFunction;
  *     distance + the dig + {@value #MINE_ORE} per ore. Needs a pickaxe.</li>
  * <li><b>discovery</b>: the ways to find coal when none is seen (explore a cave, strip at coal's learned Y), priced by
  *     {@link Discovery} (the iron rung's rows; the first ore found, then {@value #MINE_ORE} per further one).</li>
- * <li><b>charcoal</b>: logs smelted in a furnace ({@code gather charcoal N}); the missing logs are cut
+ * <li><b>charcoal</b>: logs smelted in a furnace (the missing logs cut first, then the smelt); the missing logs are cut
  *     ({@link WoodOptions#CUT_LOG} each, {@link WoodOptions#SEARCH} to find trees when none is known), the smelt costs
- *     {@value #SMELT_ITEM} per item. No furnace known: "craft furnace 1" (8 cobblestone, gathered first when short) is prepended and priced, so charcoal can win early.</li>
+ *     {@value #SMELT_ITEM} per item. No furnace known: a furnace craft (8 cobblestone, collected first when short) is prepended and priced, so charcoal can win early.</li>
  * </ul>
  * Charcoal counts as coal everywhere the bag does (SenseRuntime: coal + charcoal), so the stock goal and the torches take
- * it. Torches whose coal is missing run the best row first ({@link #torchChain}), never a bare "can't craft". A failed
+ * it. Torches whose coal is missing run the best row first ({@link #torchSteps}), never a bare "can't craft". A failed
  * row is held per option ({@link Options#RETRY_MS}) in {@link Memory}; zero gained stays a failure (AaRuntime.poll).
  * Pure (JUnit: CoalOptionsTest). Loader notes: none (the facts come from {@code AaRuntime.coalFacts}).
  */
@@ -78,13 +79,14 @@ public final class CoalOptions {
             }
             if (pick == null) dropped.add("mine seen coal: " + (f.ores().isEmpty() ? "no coal ore known yet" : "none of the " + f.ores().size() + " seen can be taken"));
             else {
-                String key = "mine " + pick.x() + " " + pick.y() + " " + pick.z();
+                String key = "seen coal " + pick.x() + " " + pick.y() + " " + pick.z();
                 if (m.blocked(key, now)) dropped.add(key + ": " + m.reason(key));
                 else {
                     double dig = pick.openFace() ? 0 : Math.max(1, pick.depth()) * f.digPerBlock();      // aa-times: the game's dig term
-                    rows.add(Options.scored("mine seen coal", "coal", "mine coal " + need + (pick.openFace() ? "" : " dig"),
+                    // rm-execution2: the priced ore is the step's target (that cell and its vein; the need picks again for more)
+                    rows.add(Options.typed("mine seen coal", "coal", List.of(new Step.MineAt(FAMILY, pick.x(), pick.y(), pick.z(), !pick.openFace())),
                             pick.dist() + dig + MINE_ORE * need + IronOptions.CLEAR,
-                            "coal seen " + Math.round(pick.dist()) + " away" + (pick.openFace() ? ", an open face" : ", dig " + pick.depth() + " deep"), key, false, m)
+                            "coal seen " + Math.round(pick.dist()) + " away" + (pick.openFace() ? ", an open face" : ", dig " + pick.depth() + " deep"), key, m)
                             .withSite(io.github.mojolowjo.entropybot.aa.brain.Site.at(pick.x(), pick.y(), pick.z())));
                 }
             }
@@ -95,7 +97,7 @@ public final class CoalOptions {
             for (Discovery.Opt o : f.discovery()) {
                 String key = "discover " + o.kind().name().toLowerCase(Locale.ROOT);
                 if (m.blocked(key, now)) { dropped.add(o.label() + ": " + m.reason(key)); continue; }
-                Options.Option r = Options.scored(o.label() + " for coal", "coal", o.command(), o.cost() + MINE_ORE * (need - 1), o.why(), key, false, m);
+                Options.Option r = Options.typed(o.label() + " for coal", "coal", o.steps(), o.cost() + MINE_ORE * (need - 1), o.why(), key, m);
                 rows.add(o.site() == null ? r : r.withSite(io.github.mojolowjo.entropybot.aa.brain.Site.of(o.site())));
             }
         }
@@ -110,11 +112,15 @@ public final class CoalOptions {
             double trip = f.furnaceInBag() || f.furnaceDist() < 0 ? 0 : FURNACE_TRIP * f.furnaceDist();
             // the station prerequisite, prepended: no furnace known -> craft one (8 cobblestone, gathered first when short); the smelt places it from the bag
             double station = noFurnace ? FURNACE_MAKE + cobbleLack * MINE_ORE : 0;
-            String pre = !noFurnace ? "" : (cobbleLack > 0 ? "gather cobblestone " + IronOptions.FURNACE_COBBLE + " then " : "") + "craft furnace 1 then ";
+            List<Step> st = new ArrayList<>();
+            if (noFurnace && cobbleLack > 0) st.add(new Step.Collect("cobblestone", IronOptions.FURNACE_COBBLE));
+            if (noFurnace) st.add(new Step.Craft("furnace", 1));
+            if (missing > 0) st.add(new Step.ChopTree(null, missing, null));
+            st.add(new Step.Smelt("charcoal", need, false));
             double cut = missing == 0 ? 0 : WoodOptions.CUT_LOG * missing + (f.treesKnown() ? 0 : WoodOptions.SEARCH);
-            rows.add(Options.scored("charcoal", "coal", pre + "gather charcoal " + need, trip + station + cut + SMELT_ITEM * need + 10,
+            rows.add(Options.typed("charcoal", "coal", st, trip + station + cut + SMELT_ITEM * need + 10,
                     want + " logs (" + have + " in the bag" + (missing > 0 ? ", cut " + missing + (f.treesKnown() ? "" : ", no tree seen yet") : "") + "), smelt " + need
-                            + (noFurnace ? ", first a furnace (" + (cobbleLack > 0 ? cobbleLack + " cobblestone short, " : "") + "craft it)" : f.furnaceInBag() ? " at a placed furnace" : ", a furnace " + f.furnaceDist() + " away"), "charcoal", false, m));
+                            + (noFurnace ? ", first a furnace (" + (cobbleLack > 0 ? cobbleLack + " cobblestone short, " : "") + "craft it)" : f.furnaceInBag() ? " at a placed furnace" : ", a furnace " + f.furnaceDist() + " away"), "charcoal", m));
         }        return Options.Choice.of(rows, dropped, "no way to coal");
     }
 
@@ -172,8 +178,8 @@ public final class CoalOptions {
     /** Coal for the torches: one coal makes 4. */
     public static int coalForTorches(int have, int target) { return Math.max(1, (Math.max(0, target - have) + 3) / 4); }
 
-    /** The coal way first, then the torches: "gather charcoal 2 then craft torch 16" (never a bare craft without its input). */
-    public static String torchChain(String coalCommand, int target) { return coalCommand + " then craft torch " + target; }
+    /** The coal way's steps first, then the torches' craft (never a bare craft without its input). */
+    public static List<Step> torchSteps(List<Step> coal, int target) { return Options.seq(coal, new Step.Craft("torch", target)); }
 
     /** Why the torches cannot start (no coal in the bag and no way to get any now, every reason), else null. */
     public static String torchBlock(Blackboard bb, int target) {
@@ -183,18 +189,19 @@ public final class CoalOptions {
     }
 
     /**
-     * Torches short of coal: the chain that prices their missing input through the coal set ({@code planned} the planner's
-     * chain, null none), or {@code planned} unchanged when coal is in the bag, the chain already fetches coal itself, or no
-     * facts are readable. No runnable way: null (the caller logs the choice's reasons; the cooldown holds the retry).
+     * Torches short of coal: the steps that price their missing input through the coal set ({@code planned} the planner's
+     * routine, null none), or {@code planned} unchanged when coal is in the bag, the routine does more than the torch
+     * craft (it gets the coal itself), or no facts are readable. No runnable way: null (the caller logs the choice's
+     * reasons; the cooldown holds the retry).
      */
-    public static String torchesFirst(Blackboard bb, String planned, int target, String[] whyOut) {
+    public static List<Step> torchesFirst(Blackboard bb, List<Step> planned, int target, String[] whyOut) {
         if (bb.in.coal >= 1) return planned;
-        if (planned != null && !planned.startsWith("craft torch") && !planned.startsWith("goal ")) return planned;
+        if (planned != null && !(planned.size() == 1 && planned.get(0) instanceof Step.Craft k && k.item().endsWith("torch"))) return planned;
         Options.Choice c = plan(bb, coalForTorches(bb.in.torches, target));
         if (c == null) return planned;
         if (whyOut != null) whyOut[0] = c.why();
         if (c.best() == null) return null;
-        return torchChain(c.best().command(), target);
+        return torchSteps(c.best().steps(), target);
     }
 
     /**
@@ -211,25 +218,25 @@ public final class CoalOptions {
         private int switches;
         private boolean switching;
 
-        public Options.Choice choose(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+        public Options.Choice choose(Blackboard bb, List<Step> planned, double plannedCost, String plannerWhy) {
             long now = bb.clock.now();
             List<Options.Option> rows = new ArrayList<>();
             List<String> dropped = new ArrayList<>();
             double craft = io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
-            String craftWhy = "craft " + Math.round(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S) + " s";
-            if (bb.in.coal >= 1) add(rows, dropped, now, new Options.Option("craft", "craft", "craft torch " + target(), craft, "coal in the bag: " + craftWhy, "craft torch", false));
+            String craftWhy = "the craft " + Math.round(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S) + " s";
+            if (bb.in.coal >= 1) add(rows, dropped, now, new Options.Option("craft", "craft", List.of(new Step.Craft("torch", target())), craft, "coal in the bag: " + craftWhy, "craft torch", false));
             else {
                 Options.Choice c = plan(bb, coalForTorches(bb.in.torches, target()));
                 if (c == null) dropped.add("coal ways: no coal facts readable");
                 else {
                     for (Options.Option r : c.ranked())
-                        rows.add(new Options.Option("coal " + r.id() + " + craft", "coal", torchChain(r.command(), target()), r.total() + craft,
+                        rows.add(new Options.Option("coal " + r.id() + " + craft", "coal", torchSteps(r.steps(), target()), r.total() + craft,
                                 r.why() + " " + Math.round(r.total()) + " + " + craftWhy, "coal " + r.memoryKey(), false, null, r.site()));
                     for (String d : c.dropped()) dropped.add("coal " + d);
                 }
             }
             if (planned != null) add(rows, dropped, now, new Options.Option("planner", "planner", planned, plannedCost * Options.planUnit(),
-                    "goal torch " + target() + ": plan cost " + Math.round(plannedCost) + " x planUnit " + Options.planUnit(), "planner", true));
+                    "the planner's torch " + target() + ": plan cost " + Math.round(plannedCost) + " x planUnit " + Options.planUnit(), "planner", true));
             else if (plannerWhy != null) dropped.add("planner: " + plannerWhy);
             return Options.Choice.of(rows, dropped, "no way to torches");
         }
@@ -239,9 +246,11 @@ public final class CoalOptions {
             else rows.add(o);
         }
 
-        @Override public String pick(Blackboard bb, String planned) { return pick(bb, planned, 0, null); }
+        @Override public String pick(Blackboard bb, List<Step> planned) { return pick(bb, planned, 0, null); }
 
-        @Override public String pick(Blackboard bb, String planned, double plannedCost, String plannerWhy) {
+        @Override public Options.Option ranOption() { return ran; }
+
+        @Override public String pick(Blackboard bb, List<Step> planned, double plannedCost, String plannerWhy) {
             if (!switching) switches = 0;
             switching = false;
             memory.sweep(bb.in);

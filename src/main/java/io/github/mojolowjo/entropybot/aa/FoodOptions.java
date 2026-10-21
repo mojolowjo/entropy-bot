@@ -118,14 +118,14 @@ public final class FoodOptions {
         private String lastKey;
         private double lastE;
 
-        @Override public Options.Choice choose(FoodFacts f, Options.OptionMemory m, long now, String planned, double pc, String plannerWhy, String afterFail) {
+        @Override public Options.Choice choose(FoodFacts f, Options.OptionMemory m, long now, List<Step> planned, double pc, String plannerWhy, String afterFail) {
             Options.Choice c = choose0(f, m, now, planned, pc, plannerWhy);
             lastKey = c.best() == null ? null : c.best().memoryKey();
             lastE = FoodModel.energy(f.bag());
             return c;
         }
 
-        private Options.Choice choose0(FoodFacts f, Options.OptionMemory m, long now, String planned, double pc, String plannerWhy) {
+        private Options.Choice choose0(FoodFacts f, Options.OptionMemory m, long now, List<Step> planned, double pc, String plannerWhy) {
             List<Options.Option> rows = new ArrayList<>();
             List<String> dropped = new ArrayList<>();
             double bagE = FoodModel.energy(f.bag());
@@ -140,7 +140,7 @@ public final class FoodOptions {
 
             // eat from the bag first
             if (best > 0 && (urgent || 20 - f.food() >= best))
-                RungOptions.add(rows, dropped, m, now, Options.scored("eat", "eat", "eat", EAT_COST, "the bag's best gives " + best, "eat", false, m));
+                RungOptions.add(rows, dropped, m, now, Options.typed("eat", "eat", List.of(new Step.Eat()), EAT_COST, "the bag's best gives " + best, "eat", m));
 
             // cook what is raw
             String raw = null;
@@ -161,8 +161,8 @@ public final class FoodOptions {
 
             // berries, stew, apples: little per round, charged per round needed
             if (f.berry() != null)
-                RungOptions.add(rows, dropped, m, now, Options.scored("berries", "forage", "dig " + box(f.berry(), f.berry()),
-                        (f.berryDist() + Options.MINUTE * 0.3) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", false, m));
+                RungOptions.add(rows, dropped, m, now, Options.typed("berries", "forage", List.of(dig(f.berry())),
+                        (f.berryDist() + Options.MINUTE * 0.3) * rounds(short_, berryYield()), "a ripe berry bush " + Math.round(f.berryDist()) + " away", "berries", m));
             stew(f, m, now, rows, dropped, short_);
             if (f.oak() != null)
                 RungOptions.add(rows, dropped, m, now, Options.typed("apples", "apples", List.of(
@@ -176,15 +176,15 @@ public final class FoodOptions {
             for (var w : io.github.mojolowjo.entropybot.camp.FoodPlan.waterWays(f.bag() == null ? Map.of() : f.bag(), f.kelpNear(), f.waterNear(), f.furnace(), dropped)) {
                 boolean kelp = w.name().equals("kelp");
                 double each = kelp ? 8 * FoodModel.energyOf("dried_kelp") : 4 * FoodModel.energyOf(f.furnace() ? "cooked_cod" : "cod");
-                RungOptions.add(rows, dropped, m, now, Options.scored(w.name(), "water", w.chain(),
-                        Options.MINUTE * (kelp ? 4 : 5) * rounds(short_, each), w.why(), w.name(), false, m));
+                RungOptions.add(rows, dropped, m, now, Options.typed(w.name(), "water", w.steps(),
+                        Options.MINUTE * (kelp ? 4 : 5) * rounds(short_, each), w.why(), w.name(), m));
             }
 
             String huntGap = planned == null ? null : plannerHuntGap(planned, f);
             if (planned == null) dropped.add("planner: " + (plannerWhy == null ? "no plan" : plannerWhy));
-            else if (huntGap != null) dropped.add("planner: its chain \"" + planned + "\" " + huntGap);
-            else RungOptions.add(rows, dropped, m, now, Options.scored("planner", "planner", planned, pc * Options.planUnit(),
-                    "goal food (storage" + (f.farmKnown() ? ", bread from the farm" : "") + ")", "planner", true, m));
+            else if (huntGap != null) dropped.add("planner: its routine \"" + Step.label(planned) + "\" " + huntGap);
+            else RungOptions.add(rows, dropped, m, now, Options.typed("planner", "planner", planned, pc * Options.planUnit(),
+                    "the planner's food (storage" + (f.farmKnown() ? ", bread from the farm" : "") + ")", "planner", true, m));
             return Options.Choice.of(rows, dropped, "no way to food");
         }
 
@@ -233,17 +233,15 @@ public final class FoodOptions {
         for (Options.Option o : best.values()) RungOptions.add(rows, dropped, m, now, o);
     }
 
-    private static final Pattern HUNT_STEP = Pattern.compile("\\bhunt\\s+(?:\\d+\\s+)?(cow|pig|sheep|chicken)\\b");
-
     /**
      * aa395 (131 picks of "gather food 8 -> hunt 8 cow" with no cow within 64): a planner chain that hunts an animal
      * type with none in reach and no remembered herd is not runnable. Returns why, or null
      * (no hunt step, or the animal is known somewhere).
      */
-    static String plannerHuntGap(String planned, FoodFacts f) {
-        var m = HUNT_STEP.matcher(planned.toLowerCase(Locale.ROOT));
-        while (m.find()) {
-            String a = m.group(1);
+    static String plannerHuntGap(List<Step> planned, FoodFacts f) {
+        for (Step s : planned) {
+            if (!(s instanceof Step.HuntAt hunt)) continue;
+            String a = hunt.type().replaceFirst("^minecraft:", "");
             if (f.animals() != null && f.animals().getOrDefault(a, 0) > 0) continue;
             boolean herd = false;
             if (f.herds() != null) for (Herd h : f.herds()) if (h.type().equals(a) && h.conf() >= HERD_MIN_CONF && h.dist() <= HERD_MAX) herd = true;
@@ -294,26 +292,25 @@ public final class FoodOptions {
         int planks = 0;
         if (f.bag() != null) for (var e : f.bag().entrySet()) if (e.getKey().endsWith("_planks")) planks += e.getValue();
         if (f.has("bowl") == 0 && planks < 3) { dropped.add("stew: no bowl and under 3 planks"); return; }
-        List<String> steps = new ArrayList<>();
+        List<Step> steps = new ArrayList<>();
         double walk = 0;
-        if (f.has("red_mushroom") == 0) { steps.add("dig " + box(f.red(), f.red())); walk += dist(f.me(), f.red()); }
-        if (f.has("brown_mushroom") == 0) { steps.add("dig " + box(f.brown(), f.brown())); walk += dist(f.me(), f.brown()); }
-        if (f.has("bowl") == 0) steps.add("craft bowl 1");
-        steps.add("craft mushroom_stew 1");
-        RungOptions.add(rows, dropped, m, now, Options.scored("stew", "forage", String.join(" then ", steps),
-                (walk + Options.MINUTE) * rounds(short_, stewYield()), "a red and a brown mushroom", "stew", false, m));
+        if (f.has("red_mushroom") == 0) { steps.add(dig(f.red())); walk += dist(f.me(), f.red()); }
+        if (f.has("brown_mushroom") == 0) { steps.add(dig(f.brown())); walk += dist(f.me(), f.brown()); }
+        if (f.has("bowl") == 0) steps.add(new Step.Craft("bowl", 1));
+        steps.add(new Step.Craft("mushroom_stew", 1));
+        RungOptions.add(rows, dropped, m, now, Options.typed("stew", "forage", steps,
+                (walk + Options.MINUTE) * rounds(short_, stewYield()), "a red and a brown mushroom", "stew", m));
     }
 
     static void wheat(FoodFacts f, Options.OptionMemory m, long now, List<Options.Option> rows, List<String> dropped, boolean urgent) {
         if (f.farmKnown()) return;                          // the planner's bread has its source
         if (urgent) { dropped.add("wheat: too slow while hungry (8 min to grow)"); return; }
         int seeds = f.has("wheat_seeds");
-        String seedsStep;
+        List<Step> seedsStep = new ArrayList<>();
         double seedsCost;
-        if (seeds >= 4) { seedsStep = ""; seedsCost = 0; }
+        if (seeds >= 4) seedsCost = 0;
         else if (f.grass() != null) {
-            int[] g = f.grass();
-            seedsStep = "dig " + g[0] + " " + g[1] + " " + g[2] + " " + g[3] + " +1 then ";
+            seedsStep.add(new Step.DigArea(f.grass(), 1));
             seedsCost = Options.MINUTE * 3;
         } else { dropped.add("wheat: " + seeds + "/4 seeds and no grass patch near"); return; }
         String seedWhy = seeds >= 4 ? seeds + " seeds" : "seeds from a grass patch";
@@ -321,14 +318,13 @@ public final class FoodOptions {
         // next to a water source, AaRuntime.foodFacts), or here with a water bucket from the bag; each costed
         if (f.waterSpot() != null) {
             int[] w = f.waterSpot();
-            RungOptions.add(rows, dropped, m, now, Options.scored("wheat by water", "farm",
-                    seedsStep + "goto " + RungOptions.xyz(w) + " then farm plant wheat here 4 then place farm " + RungOptions.xyz(w),
-                    Options.MINUTE * 6 + seedsCost + dist(f.me(), w), seedWhy + ", a field by the water at " + RungOptions.xyz(w) + " (slow, endless)", "wheat", false, m));
+            RungOptions.add(rows, dropped, m, now, Options.typed("wheat by water", "farm",
+                    Options.seq(seedsStep, new Step.Walk(w[0], w[1], w[2], 0), new Step.FarmPlant("wheat", 4), new Step.MarkFarm(w)),
+                    Options.MINUTE * 6 + seedsCost + dist(f.me(), w), seedWhy + ", a field by the water at " + w[0] + " " + w[1] + " " + w[2] + " (slow, endless)", "wheat", m));
         } else dropped.add("wheat by water: no dry spot next to water near");
         if (f.has("water_bucket") > 0) {
-            String mark = f.me() == null ? "place farm" : "place farm " + RungOptions.xyz(f.me());
-            RungOptions.add(rows, dropped, m, now, Options.scored("wheat with a bucket", "farm", seedsStep + "farm plant wheat here 4 then " + mark,
-                    Options.MINUTE * 7 + seedsCost, seedWhy + ", water from my bucket: a field here (slow, endless)", "wheat bucket", false, m));
+            RungOptions.add(rows, dropped, m, now, Options.typed("wheat with a bucket", "farm", Options.seq(seedsStep, new Step.FarmPlant("wheat", 4), new Step.MarkFarm(f.me())),
+                    Options.MINUTE * 7 + seedsCost, seedWhy + ", water from my bucket: a field here (slow, endless)", "wheat bucket", m));
         } else dropped.add("wheat with a bucket: no water bucket" + (f.has("bucket") > 0 ? " (an empty one: no verb fills it yet)" : ""));
     }
 
@@ -337,7 +333,8 @@ public final class FoodOptions {
         return each <= 0 ? 8 : Math.max(1, Math.min(8, Math.ceil(shortfall / each)));
     }
 
-    static String box(int[] a, int[] b) { return RungOptions.xyz(a) + " " + RungOptions.xyz(b); }
+    /** Break the one block at {@code a} (a bush, a mushroom). */
+    static Step dig(int[] a) { return new Step.Dig(a, a, false, false); }
 
     static double dist(int[] a, int[] b) {
         if (a == null || b == null) return 16;

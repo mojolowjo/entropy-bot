@@ -39,7 +39,7 @@ public final class Sequencer {
             StringBuilder b = new StringBuilder();
             for (int i = 0; i < steps.size(); i++) {
                 Step s = steps.get(i);
-                if (i > 0) b.append(" then ");
+                if (i > 0) b.append(" > ");
                 b.append(s.id());
                 if (i == 0 && s.site() != null) b.append(" (at ").append(s.site().text()).append(")");
                 if (s.how().equals("first")) { if (i > 0) b.append(" (the top pick)"); }

@@ -39,8 +39,8 @@ class BrainB5Test {
                 new io.github.mojolowjo.entropybot.aa.core.FakePort(), new io.github.mojolowjo.entropybot.aa.core.Tracer());
         bb.in.pickTier = 4;
         var g = Goals.add(bb, Thing.resolve("mythril", BrainB4Test.cat(null)), 3, 0, 1);
-        assertEquals("explore 5", Goals.chain(bb, g));
+        assertEquals("explore 5", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
         var g2 = Goals.add(bb, Thing.resolve("mythril", withLearned(null, 5)), 3, 0, 1);
-        assertEquals("mine strip mythril 3", Goals.chain(bb, g2));
+        assertEquals("mine strip mythril 3", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g2)));
     }
 }

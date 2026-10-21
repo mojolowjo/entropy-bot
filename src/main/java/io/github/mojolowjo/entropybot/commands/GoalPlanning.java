@@ -381,7 +381,10 @@ final class GoalPlanning {
      * S0 (MINING_PLAN 10.1): {@link #chainFor} with its state: READY (the chain and the planner's cost from the plans
      * store, 0 when unknown), NONE (a fresh "no plan" answer in the cache, with why), else SEARCHING (the worker runs).
      */
-    io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved chainState(String goalText) {
+    /** The planner's answer in its own text (the routine name or chain, READY), turned into typed steps by AaRuntime.resolveState. */
+    record Answer(String chain, double cost, io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState state, String why, int logsMissing) {}
+
+    Answer chainState(String goalText) {
         String ch = chainFor(goalText);
         if (ch != null) {
             double cost = 0;
@@ -392,12 +395,12 @@ final class GoalPlanning {
             Quiet.warn("GoalPlanning.chainState failed, carrying on with the fallback", caught);
                 // the cost is a ranking hint only; 0 when the store cannot say
             }
-            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.ready(ch, cost);
+            return new Answer(ch, cost, io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.READY, null, 0);
         }
         Object[] hit = hookCache.get(goalText);
         if (hit != null && System.currentTimeMillis() - (Long) hit[0] < 60_000 && hit[1] == null)
-            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.none(hit.length > 2 ? (String) hit[2] : null, hit.length > 3 ? (Integer) hit[3] : 0);
-        return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.searching();
+            return new Answer(null, 0, io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.NONE, hit.length > 2 ? (String) hit[2] : null, hit.length > 3 ? (Integer) hit[3] : 0);
+        return new Answer(null, 0, io.github.mojolowjo.entropybot.aa.core.JobPort.PlanState.SEARCHING, null, 0);
     }
 
     String actions(String rest) { return ActionTable.shortText(rest); }

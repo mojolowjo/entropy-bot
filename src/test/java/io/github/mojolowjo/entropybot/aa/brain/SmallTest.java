@@ -22,7 +22,7 @@ class SmallTest {
 
     @Test
     void movingOrBaggingWorkKeepsTheShortClockQuiet() {
-        Brain br = new Brain("brain", "t", new Desire("a", Desire.Kind.PROGRESS, RunJob.of("a.job", TaskKind.WAIT, "do a", "brain"), b -> 40).cost(0));
+        Brain br = new Brain("brain", "t", new Desire("a", Desire.Kind.PROGRESS, RunJob.of("a.job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do a")), "brain"), b -> 40).cost(0));
         br.tick(bb);
         for (int i = 0; i < 100; i++) {
             clock.advance(1000);

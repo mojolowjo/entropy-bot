@@ -7,7 +7,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ReplanTest {
-    private static Options.Option opt(String id, String cmd, double cost) { return new Options.Option(id, id, cmd, cost, "t", id, true); }
+    private static Options.Option opt(String id, String cmd, double cost) { return new Options.Option(id, id, TS.s(cmd), cost, "t", id, true); }
 
     @Test void pillarBeatsWalkForOwnShaft() {
         Replan.Ret r = Replan.chooseReturn(20, true, 32, true, 0, 0);
@@ -31,7 +31,7 @@ class ReplanTest {
         IronOptions.Ore buried = new IronOptions.Ore(0, 40, 0, 10, true, false, false, 12, false, null, false);
         IronOptions.Ore cave = new IronOptions.Ore(30, 60, 0, 30, true, true, false, 5, false, null, false);
         IronOptions.Facts f = new IronOptions.Facts(List.of(buried, cave), 64, false, 64, true, -1, false, "no", -1, false, false, 0);
-        Options.Choice c = new IronOptions.Set().choose(f, new Options.OptionMemory(), 0, "mine iron 3 then smelt raw_iron 3", 1, null, null);
+        Options.Choice c = new IronOptions.Set().choose(f, new Options.OptionMemory(), 0, io.github.mojolowjo.entropybot.aa.TS.s("mine iron 3 then smelt raw_iron 3"), 1, null, null);
         Options.Option dig = c.ranked().stream().filter(o -> o.way().equals("dig_known")).findFirst().orElseThrow();
         assertEquals(Replan.Leg.PILLAR, dig.ret().leg());
         assertEquals(0, dig.ret().afterStep());
@@ -115,9 +115,9 @@ class ReplanTest {
     @Test void stepHelpers() {
         assertEquals(2, Replan.stepIndex("3/7 craft iron_pickaxe 1"));
         assertEquals("craft iron_pickaxe 1", Replan.stepBody("3/7 craft iron_pickaxe 1"));
-        assertTrue(Replan.digOrPillarStep("mine iron 3 dig", new int[]{0, 64, 0}));
-        assertTrue(Replan.digOrPillarStep("goto 1 70 1", new int[]{0, 64, 0}));
-        assertFalse(Replan.digOrPillarStep("goto 1 64 1", new int[]{0, 64, 0}));
-        assertFalse(Replan.digOrPillarStep("mine iron 3", new int[]{0, 64, 0}));
+        assertTrue(Replan.digOrPillarStep(TS.s("mine iron 3 dig").get(0), new int[]{0, 64, 0}));
+        assertTrue(Replan.digOrPillarStep(TS.s("goto 1 70 1").get(0), new int[]{0, 64, 0}));
+        assertFalse(Replan.digOrPillarStep(TS.s("goto 1 64 1").get(0), new int[]{0, 64, 0}));
+        assertFalse(Replan.digOrPillarStep(TS.s("mine iron 3").get(0), new int[]{0, 64, 0}));
     }
 }

@@ -99,8 +99,15 @@ public final class Discovery {
     }
 
     /** site: where it happens (a seen cave opening), null when not one place (AA_ROUND3 5: the sequencer reads it). */
-    public record Opt(Kind kind, double cost, String why, String command, int[] site) {
-        public Opt(Kind kind, double cost, String why, String command) { this(kind, cost, why, command, null); }
+    public record Opt(Kind kind, double cost, String why, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps, int[] site) {
+        public Opt {
+            steps = List.copyOf(steps);
+        }
+
+        public Opt(Kind kind, double cost, String why, List<io.github.mojolowjo.entropybot.aa.moves.Step> steps) { this(kind, cost, why, steps, null); }
+
+        /** The steps' line (logs, aa why). */
+        public String command() { return io.github.mojolowjo.entropybot.aa.moves.Step.label(steps); }
 
         public String label() {
             return switch (kind) {
@@ -150,13 +157,13 @@ public final class Discovery {
         if (knownFirst) {
             double cost = f.caveDist() + Unit.blocks(60 / rate);
             out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave %d away, %.2f %s seen per cave-minute, %d blocks explored a minute", f.caveDist(), rate, word, (int) CAVE_BLOCKS_MIN),
-                    "mine cave " + word + " " + left));
+                    List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE))));
         } else if (seenDist >= 0) {
             int[] c = f.seenCave();
             double cost = seenDist + Unit.blocks(60 / rate);
             // the cave run walks to the seen opening itself (Mining.startCave: no known cave near, a seen one within 64)
             out.add(new Opt(Kind.CAVE, cost, String.format(Locale.ROOT, "a cave opening I saw at %d %d %d, %d away, %.2f %s seen per cave-minute", c[0], c[1], c[2], seenDist, rate, word),
-                    "mine cave " + word + " " + left, c.clone()));
+                    List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE)), c.clone()));
         } else dropped.add("explore cave: no known cave and no cave opening seen within " + SEEN_CAVE_WITHIN);
         // none seen: walk new land until a cave opening comes into view, valued by the learned chance per 100 blocks
         if (f.caveDist() < 0 && seenDist < 0 && f.cavesPer100() > 0) {
@@ -168,7 +175,7 @@ public final class Discovery {
             if (f.horizonBlocks() > 0 && walk + home > f.horizonBlocks())
                 dropped.add(String.format(Locale.ROOT, "explore for a cave: the round trip (%.0f out, %.0f home%s) is past the horizon (%.0f)", walk, home, night > 1 ? " at night" : "", f.horizonBlocks()));
             else out.add(new Opt(Kind.EXPLORE, cost, String.format(Locale.ROOT, "no cave seen yet; %.2f cave openings seen per 100 blocks walked, about %.0f blocks to the next, then %.2f %s per cave-minute; the way home %.0f%s",
-                    f.cavesPer100(), walk, rate, word, home, night > 1 ? String.format(Locale.ROOT, " (x%.0f: night)", night) : ""), "find cave " + EXPLORE_MINUTES + " then mine cave " + word + " " + left));
+                    f.cavesPer100(), walk, rate, word, home, night > 1 ? String.format(Locale.ROOT, " (x%.0f: night)", night) : ""), List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.FindCave(EXPLORE_MINUTES), new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.CAVE))));
         }
         int y = stripY(f);
         int down = Math.max(0, f.meY() - y);
@@ -189,12 +196,9 @@ public final class Discovery {
             // aa-switch2 (r2-iron: 17 of 19 pointless): a staircase of 2 steps a level past the chain limit (100) was
             // refused at every start ("123 steps"); a deep band is reached in legs of STAIR_LEG levels, re-decided at each bottom
             boolean leg = !f.mineMarked() && down > STAIR_LEG;
-            StringBuilder sb = new StringBuilder();
-            for (String st : io.github.mojolowjo.entropybot.commands.StairPlan.steps(f.meX(), f.meY(), f.meZ(), u[0], u[1], leg ? STAIR_LEG : down))
-                if (!st.startsWith("place torch")) sb.append(st).append(" then ");
-            String cmd = f.mineMarked() ? "mine strip " + word + " " + left
-                    : leg ? sb.substring(0, sb.length() - " then ".length())
-                    : sb + "place mine " + dir + " then mine strip " + word + " " + left;
+            List<io.github.mojolowjo.entropybot.aa.moves.Step> cmd = new ArrayList<>();
+            if (!f.mineMarked()) cmd.add(new io.github.mojolowjo.entropybot.aa.moves.Step.StripLeg(f.meX(), f.meY(), f.meZ(), dir, u[0], u[1], leg ? STAIR_LEG : down, !leg));
+            if (!leg) cmd.add(new io.github.mojolowjo.entropybot.aa.moves.Step.Mine(word, left, io.github.mojolowjo.entropybot.aa.moves.Step.Mine.How.STRIP));
             out.add(new Opt(Kind.STRIP, cost, String.format(Locale.ROOT, "%s, %s, %.0f tunnel blocks per ore, %.1f s a block%s%s",
                     f.mineMarked() ? "the marked mine" : "Y " + y + (down > 0 ? " (" + down + " down)" : ""), dens, per, dig,
                     (f.bestY() == Integer.MIN_VALUE ? ", best band not learned" : "") + (leg ? ", this leg " + STAIR_LEG + " of " + down + " levels" : ""),
@@ -207,7 +211,7 @@ public final class Discovery {
             double expect = f.density() > 0 ? f.density() * cells : cells / DEFAULT_TUNNEL_PER_ORE / EXPOSED;
             double cost = (down + Unit.blocks(down * 2 * dig) + Unit.blocks(cells * dig)) / Math.max(0.5, expect);
             out.add(new Opt(Kind.CLEAR_CHUNK, cost, String.format(Locale.ROOT, "%d blocks at Y %d, about %.1f ore in it", cells, y, expect),
-                    "dig " + x0 + " " + y + " " + z0 + " " + (x0 + 15) + " " + (y + SLAB - 1) + " " + (z0 + 15) + " ores"));
+                    List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.ClearChunk(x0, y, z0, SLAB))));
         }
         out.sort((a, b) -> Double.compare(a.cost(), b.cost()));
         return out;

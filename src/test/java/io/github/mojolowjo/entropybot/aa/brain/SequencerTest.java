@@ -67,7 +67,7 @@ class SequencerTest {
     final double[] s = new double[3];
 
     Desire d(int i, String id, double cost, Site site) {
-        Desire x = new Desire(id, Desire.Kind.WANT, RunJob.of(id + ".job", TaskKind.WAIT, "do " + id, "brain"), b -> s[i]).cost(cost);
+        Desire x = new Desire(id, Desire.Kind.WANT, RunJob.of(id + ".job", TaskKind.WAIT, java.util.List.of(new io.github.mojolowjo.entropybot.aa.moves.Step.Plan("do " + id)), "brain"), b -> s[i]).cost(cost);
         return site == null ? x : x.site(b -> site);
     }
 

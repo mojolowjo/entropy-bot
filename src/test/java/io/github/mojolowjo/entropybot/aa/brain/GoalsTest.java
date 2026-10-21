@@ -23,11 +23,11 @@ class GoalsTest {
         bb.in.pickTier = 2;
         Goals.Goal g = Goals.add(bb, AaFix3Test.COAL, 16, 0, clock.now());
         bb.fact(Goals.KNOWN_FACT, Map.of(g.r.key(), 5));
-        assertEquals("mine coal 16 dig", Goals.chain(bb, g), "no nearest fact: as before");
+        assertEquals("mine coal 16 dig", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)), "no nearest fact: as before");
         bb.fact(Goals.NEAREST_FACT, Map.of(g.r.key(), new int[]{4, 60, -2, 0}));
-        assertEquals("mine coal 1 at 4 60 -2 walk", Goals.chain(bb, g));
+        assertEquals("mine coal 1 at 4 60 -2 walk", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
         bb.fact(Goals.NEAREST_FACT, Map.of(g.r.key(), new int[]{4, 50, -2, 1}));
-        assertEquals("mine coal 1 at 4 50 -2 dig", Goals.chain(bb, g));
+        assertEquals("mine coal 1 at 4 50 -2 dig", io.github.mojolowjo.entropybot.aa.TS.label(Goals.steps(bb, g)));
     }
 
     @Test
