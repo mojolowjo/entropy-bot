@@ -78,10 +78,133 @@ public final class BaritoneCar implements Car {
 
     private void drive(Goal g, String what) {
         fresh();
+        reflexContext();
         goal = g;
         this.what = what;
         calcAtStart = engine.calcFails();
         push(g);
+    }
+
+    // ---- reflex probe 0.39.s5 / review 0.39.s6: the reflex leg's Baritone context ----
+    private io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent savedIntent;
+    private String savedIntentBy;
+    private Boolean savedBreak, savedReflexPlace, savedUnder, savedLava;
+    private boolean setBreak, setReflexPlace, setLava;
+    private Double savedLavaCost;
+    private double setLavaCost;
+    static final String REFLEX_INTENT_BY = "reflex";
+
+    /** 0.39.s6 review: a reflex leg owns Baritone's breaking/placing (ReflexOwners: per car, stale when dropped). */
+    public static boolean reflexOwns() { return ReflexOwners.any(System.currentTimeMillis()); }
+
+    private void beat() { if (savedBreak != null) ReflexOwners.beat(this, System.currentTimeMillis()); }
+    /**
+     * Reflex probe 0.39.s5 (the cause): a reflex fired while no job ran inherited the idle walking-only context
+     * (allowBreak / allowPlace off), so a bot shut in rock, glass or a closed tank had no path and every burrow dig was
+     * refused. A reflex leg now runs like a walk: the TRAVEL intent, so the break policy prices every break and place
+     * (outside the areas the travel costs, inside its areas anything; the click veto asks the same policy), Baritone's
+     * allowBreak / allowPlace as the travel rule set allows them, the bag's pillar blocks as throwaway, and the fork's
+     * {@code pathUnderWater} (a swim under the surface); in lava the fork's lava wade. Baritone picks the cells;
+     * everything goes back when the leg ends.
+     */
+    private void reflexContext() {
+        // 0.39.s7 (staged: the danger desire's burrow, the night answer, was refused on grass the same way): AA's danger
+        // car runs its moves under the same travel rule set as the reflex car
+        var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+        try {
+            savedIntent = pr.intent();
+            savedIntentBy = pr.intentBy();
+            pr.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, REFLEX_INTENT_BY);
+            var s = BaritoneAPI.getSettings();
+            savedBreak = s.allowBreak.value;
+            savedReflexPlace = s.allowPlace.value;
+            setBreak = pr.travelMayBreak();
+            setReflexPlace = pr.travelMayPlace();
+            s.allowBreak.value = setBreak;
+            s.allowPlace.value = setReflexPlace;
+            beat();
+            if (savedThrow == null) {
+                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
+                List<Item> list = new ArrayList<>(savedThrow);
+                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
+                s.acceptableThrowawayItems.value = list;
+                setThrow = list;
+            }
+            try {
+                savedUnder = s.pathUnderWater.value;
+                s.pathUnderWater.value = true;
+            } catch (LinkageError e) {
+                savedUnder = null;
+                LOG.warn("[entropybot] moves: this Baritone has no pathUnderWater (the stock jar?) - reflexes swim the surface only: {}", e.toString());
+            }
+            var p = Minecraft.getInstance().player;
+            if (p != null && p.isInLava()) lavaWade();
+            if (!setBreak || !setReflexPlace)
+                LOG.info("[entropybot] moves: reflex leg under the travel rule set: break {}, place {} (the rule set says so)", setBreak, setReflexPlace);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] moves: reflex context not set ({}): {}", what, e.toString());
+        }
+    }
+
+    /** The lava wade on for this leg (the fork's allowBreakNextToLava, lavaCellCost priced by LavaPrice), logged. */
+    private void lavaWade() {
+        var s = BaritoneAPI.getSettings();
+        try {
+            if (savedLava == null) savedLava = s.allowBreakNextToLava.value;
+            setLava = true;
+            s.allowBreakNextToLava.value = true;
+        } catch (LinkageError e) {
+            LOG.warn("[entropybot] moves: this Baritone has no allowBreakNextToLava (the stock jar?) - no dig beside lava: {}", e.toString());
+        }
+        try {
+            if (savedLavaCost == null) savedLavaCost = s.lavaCellCost.value;
+            var p = Minecraft.getInstance().player;
+            setLavaCost = p == null ? 0 : LavaPrice.cellTicks(p.getHealth(), p.getMaxHealth());
+            s.lavaCellCost.value = setLavaCost;
+            LOG.info("[entropybot] moves: {}: in lava - the lava wade on ({} ticks a cell, breaks beside lava allowed)", what, Math.round(setLavaCost));
+        } catch (LinkageError e) {
+            LOG.warn("[entropybot] moves: this Baritone has no lavaCellCost (the stock jar?) - lava stays a wall: {}", e.toString());
+        }
+    }
+
+    /** 0.39.s6 review: out of the lava, the wade and the dig beside lava go off again (stock lava rules). */
+    private void lavaWadeOff() {
+        try {
+            var s = BaritoneAPI.getSettings();
+            if (s.lavaCellCost.value == setLavaCost) s.lavaCellCost.value = savedLavaCost == null ? 0.0 : savedLavaCost;
+            if (s.allowBreakNextToLava.value == setLava) s.allowBreakNextToLava.value = savedLava != null && savedLava;
+            LOG.info("[entropybot] moves: {}: out of the lava - the lava wade off", what);
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] moves: lava wade not put back: {}", e.toString());
+        }
+        setLava = false;
+        setLavaCost = 0;
+        savedLava = null;
+        savedLavaCost = null;
+    }
+
+    private void restoreReflexContext() {
+        if (savedBreak == null && savedIntent == null) return;
+        ReflexOwners.release(this);
+        try {
+            var s = BaritoneAPI.getSettings();
+            // only what is still the value this car set (an owner change during the leg wins)
+            if (savedBreak != null && s.allowBreak.value == setBreak) s.allowBreak.value = savedBreak;
+            if (savedReflexPlace != null && s.allowPlace.value == setReflexPlace) s.allowPlace.value = savedReflexPlace;
+            try {
+                if (savedUnder != null && Boolean.TRUE.equals(s.pathUnderWater.value)) s.pathUnderWater.value = savedUnder;
+            } catch (LinkageError ignored) { }
+            if (savedLava != null || savedLavaCost != null) lavaWadeOff();
+            // 0.39.s6 review: the intent goes back only if it is still ours (a job that set its own during the leg keeps it)
+            var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+            if (savedIntent != null && pr.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL
+                    && REFLEX_INTENT_BY.equals(pr.intentBy())) pr.setIntent(savedIntent, savedIntentBy);
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] moves: reflex context restore failed: {}", e.toString());
+        }
+        savedBreak = savedReflexPlace = savedUnder = null;
+        savedIntent = null;
+        savedIntentBy = null;
     }
 
     @Override public void runAway(int dist, List<int[]> from, double[] prefer) {
@@ -139,14 +262,20 @@ public final class BaritoneCar implements Car {
         if (!reflex) {
             JobHands.get().preempt("danger move burrow");
             engine.hold();
-        } else engine.endReflex();      // a reflex goal before it (the run) would sit at 10 over the burrow
+            reflexContext();         // 0.39.s7: the danger burrow digs under the travel rule set too
+        } else {
+            engine.endReflex();      // a reflex goal before it (the run) would sit at 10 over the burrow
+            reflexContext();         // reflex probe 0.39.s5: the burrow's digs under the travel rule set, not walking-only
+        }
         try {
             var s = BaritoneAPI.getSettings();
-            savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-            List<Item> list = new ArrayList<>(savedThrow);
-            for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-            s.acceptableThrowawayItems.value = list;
-            setThrow = list;
+            if (savedThrow == null) {
+                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
+                List<Item> list = new ArrayList<>(savedThrow);
+                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
+                s.acceptableThrowawayItems.value = list;
+                setThrow = list;
+            }
             burrow = b().getBurrowProcess();
             burrow.burrowHere(depth, up, timeoutTicks, reflex);     // a reflex car's burrow at priority 10 (the reflex level)
             what = "burrow " + (up ? "up " : "down ") + depth;
@@ -212,13 +341,16 @@ public final class BaritoneCar implements Car {
         fresh();
         JobHands.get().preempt("danger move dig in");     // step 3 review: a job's hands end with a reason, never silently
         engine.hold();          // the job stays paused; BurrowProcess (-0.25) outranks the hold (-0.5)
+        reflexContext();        // 0.39.s7: the dig-in under the travel rule set
         try {
             var s = BaritoneAPI.getSettings();
-            savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-            List<Item> list = new ArrayList<>(savedThrow);
-            for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-            s.acceptableThrowawayItems.value = list;
-            setThrow = list;
+            if (savedThrow == null) {           // reflexContext set the list already (the bag's blocks)
+                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
+                List<Item> list = new ArrayList<>(savedThrow);
+                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
+                s.acceptableThrowawayItems.value = list;
+                setThrow = list;
+            }
             burrow = b().getBurrowProcess();
             burrow.digInHere(timeoutTicks);          // rm-threat: the fork picks the wall
             what = "dig in";
@@ -274,6 +406,7 @@ public final class BaritoneCar implements Car {
     private Status status0() {
         try {
             if (forced != null) return forced;
+            if (savedBreak != null) beat();      // 0.39.s7: a burrow leg beats too (its status returns before the goal part)
             if (burrow != null) {
                 return switch (burrow.status()) {
                     case DONE -> Status.done(burrow.why());
@@ -286,6 +419,16 @@ public final class BaritoneCar implements Car {
             var ctx = b().getPlayerContext();
             if (ctx.player() == null) return Status.failed("no player");
             if (goal.isInGoal(ctx.playerFeet())) return Status.done(what);
+            // reflex probe 0.39.s5: "no path" = calcFails failed ticks with no path running; a replan that fails while a
+            // path is still being walked (a dug cell changed the world) is not the leg's end
+            if (reflex && pathReady()) calcAtStart = engine.calcFails();
+            // staged 0.39.s5: a leg that started a tick before the bot fell into the lava gets the lava wade once it is in
+            if (savedBreak != null) {
+                beat();
+                boolean inLava = ctx.player().isInLava();
+                if (setLavaCost == 0 && inLava) lavaWade();
+                else if (setLavaCost > 0 && !inLava) lavaWadeOff();      // 0.39.s6 review: out of it = stock lava rules
+            }
             if (engine.calcFails() - calcAtStart >= calcFails()) return Status.failed("Baritone found no path (" + what + ")");
             if (engine.mode() != EngineProcess.Mode.OVERRIDE || reflex != engine.reflexGoal()) push(goal);     // a cancel dropped it
             return Status.running(what);
@@ -325,6 +468,7 @@ public final class BaritoneCar implements Car {
         savedSwim = null;
         savedThrow = null;
         setThrow = null;
+        restoreReflexContext();
     }
 
     /** The bag's blocks the danger ways may place (AaEscape.pillarBlock: throwaway and planks). */

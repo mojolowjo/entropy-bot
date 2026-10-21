@@ -20,7 +20,7 @@ public final class ReflexLadder {
         AIR("air", Way.SURFACE, Way.BURROW_UP), LAVA("lava", Way.RUN_FROM_HAZARD, Way.TO_WATER), FIRE("fire", Way.RUN_FROM_HAZARD, Way.TO_WATER),
         /** Water seen near: the same records (reflex.lava / reflex.fire), water first, then the run (staged 0.39.s1: never only one). */
         LAVA_WATER_NEAR("lava", Way.TO_WATER, Way.RUN_FROM_HAZARD), FIRE_WATER_NEAR("fire", Way.TO_WATER, Way.RUN_FROM_HAZARD),
-        CREEPER("creeper", Way.RUN_AWAY, Way.BURROW);
+        CREEPER("creeper", Way.RUN_AWAY, Way.BURROW, Way.PILLAR);      // 0.39.s8: then the pillar
 
         final List<Way> ways;
         private final String key;
@@ -37,12 +37,40 @@ public final class ReflexLadder {
     }
 
     public enum Way {
-        SURFACE("surface goal"), BURROW_UP("burrow up"), RUN_FROM_HAZARD("run from the hazard"), TO_WATER("to water"),
-        RUN_AWAY("run away"), BURROW("burrow");
+        SURFACE("surface goal", "shore"), BURROW_UP("burrow up", null), RUN_FROM_HAZARD("run from the hazard", "flee"), TO_WATER("to water", null),
+        RUN_AWAY("run away", "flee"), BURROW("burrow", "burrow"), PILLAR("pillar", "pillar");
 
         public final String label;
+        /**
+         * 0.39.s6 review: the danger desire's way (DangerOptions.Way key) that is the same move, held when this reflex
+         * way is spent; null = none (burrow up digs up and to-water goes into water: no danger way does). The air
+         * reflex's surface goal is the swim to air, the danger desire's shore swim.
+         */
+        public final String dangerKey;
 
-        Way(String label) { this.label = label; }
+        Way(String label, String dangerKey) {
+            this.label = label;
+            this.dangerKey = dangerKey;
+        }
+    }
+
+    /** 0.39.s6 review: what a spent reflex hands the danger desire as data: its line and the danger ways to hold. */
+    public record Spent(String line, java.util.Set<String> held) { }
+
+    private static volatile Spent lastSpent;
+
+    /** The last spent reflex (its line and held ways), once; null none. */
+    public static Spent takeSpent() {
+        Spent s = lastSpent;
+        lastSpent = null;
+        return s;
+    }
+
+    /** The danger ways the same as a kind's ways. Pure. */
+    public static java.util.Set<String> dangerHeld(Kind kind) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (Way w : kind.ways) if (w.dangerKey != null) out.add(w.dangerKey);
+        return out;
     }
 
     private static volatile Failures failures = new Failures();
@@ -55,6 +83,11 @@ public final class ReflexLadder {
     static Failures failures() { return failures; }
 
     public static int triesPerWay() { return Math.max(1, (int) Tuning.get("reflex.triesPerWay")); }
+
+    /** 0.39.s8: the creeper sprint's own give-up (not "got away") with the creeper still there and ways left: the ladder goes on. */
+    public static boolean sprintGaveUpGoesOn(String sprintEndWhy, boolean creeperThere, boolean spent) {
+        return sprintEndWhy != null && sprintEndWhy.startsWith("gave up") && creeperThere && !spent;
+    }
 
     public static long retryTicks() { return Math.max(1, (long) Tuning.get("reflex.retryTicks")); }
 
@@ -72,8 +105,11 @@ public final class ReflexLadder {
 
     /** One failed try charged; returns the way to run next (null = spent: FAILED to the danger desire). */
     public static Way charge(Kind kind, int[] cell, String why, Way from) {
+        Way tried = way(kind, cell, from);
         failures.counted(kind.key(), cell(cell), why == null ? "no reason given" : why);
-        return way(kind, cell, from);
+        Way next = way(kind, cell, from);
+        watch(tryLine(kind, tried, why, next));
+        return next;
     }
 
     public static int fails(Kind kind, int[] cell) { return failures.fails(kind.key(), cell(cell)); }
@@ -81,11 +117,37 @@ public final class ReflexLadder {
     /** The reflex ended well: its tries are forgotten. */
     public static void ended(Kind kind) { failures.forget(kind.key()); }
 
+    // ---- reflex probe 0.39.s5: the watch aid (one PM line per try, only while aa slow is on) ----
+
+    private static volatile java.util.function.Consumer<String> watcher;
+
+    /** The owner's PM while {@code aa slow} is on; null = quiet (normal play). */
+    public static void watcher(java.util.function.Consumer<String> w) { watcher = w; }
+
+    public static boolean watching() { return watcher != null; }
+
+    public static void watch(String line) {
+        var w = watcher;
+        if (w != null && line != null) {
+            try { w.accept(line); } catch (RuntimeException ignored) { }
+        }
+    }
+
+    /** "air: surface goal -> no path (Baritone found no path ...), next: burrow up". Pure. */
+    public static String tryLine(Kind kind, Way tried, String why, Way next) {
+        String k = kind.key().substring("reflex.".length());
+        String w = why == null ? "no reason given" : why;
+        String what = w.contains("found no path") ? "no path" : w.contains("refused by the break rules") ? "dig refused" : w.contains("timed out") ? "timed out" : "failed";
+        return k + ": " + (tried == null ? "?" : tried.label) + " -> " + what + " (" + w + "), next: " + (next == null ? "FAILED to the danger desire" : next.label);
+    }
+
     /** The line the danger desire gets when every way is spent. */
     public static String spent(Kind kind, int[] cell, String why) {
         StringBuilder w = new StringBuilder();
         for (Way x : kind.ways) w.append(w.length() == 0 ? "" : ", ").append(x.label);
-        return kind.key() + " " + cell(cell) + ": FAILED after " + fails(kind, cell) + " tries (" + w + "): " + why;
+        String line = kind.key() + " " + cell(cell) + ": FAILED after " + fails(kind, cell) + " tries (" + w + "): " + why;
+        lastSpent = new Spent(line, java.util.Set.copyOf(dangerHeld(kind)));
+        return line;
     }
 
     private ReflexLadder() { }

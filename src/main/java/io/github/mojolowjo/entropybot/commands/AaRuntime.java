@@ -1129,6 +1129,7 @@ public final class AaRuntime implements JobPort {
     private boolean sheepLatch;
     /** Reflex choosers: the last spent reflex's line and until when it holds the danger at 2 (bb clock ms). */
     private String reflexFailedLine;
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Spent reflexFailedSpent;
     private long reflexFailedUntil;
     private final io.github.mojolowjo.entropybot.aa.brain.Costs.ToolSmoother toolSmoother = new io.github.mojolowjo.entropybot.aa.brain.Costs.ToolSmoother();
 
@@ -1157,6 +1158,8 @@ public final class AaRuntime implements JobPort {
         String reflexFailed = Core.INSTANCE.reflexes.takeReflexFailure();
         if (reflexFailed != null) {
             reflexFailedLine = reflexFailed;
+            var sp = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.takeSpent();      // 0.39.s6: the spent ways as data
+            reflexFailedSpent = sp != null ? sp : new io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Spent(reflexFailed, java.util.Set.of());
             reflexFailedUntil = bb.clock.now() + (long) (1000 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.failedS"));
             LOG.info("[entropybot] aa: {} - the danger desire takes it", reflexFailed);
             if (dangerJob) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.MOVE_FAILED_FACT, reflexFailed);
@@ -1164,7 +1167,9 @@ public final class AaRuntime implements JobPort {
         if (reflexFailedLine != null && bb.clock.now() < reflexFailedUntil) {
             in.danger = 2;
             in.dangerWhy = reflexFailedLine;
-        } else reflexFailedLine = null;
+        } else { reflexFailedLine = null; reflexFailedSpent = null; }
+        // reflex probe 0.39.s5: the danger desire prices the spent reflex (its ways held) and runs a way that acts
+        bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.REFLEX_FAILED_FACT, reflexFailedSpent);
         in.creeperClose = creeperClose();
         in.air = p.getAirSupply();
         in.inLavaOrFire = p.isInLava() || p.isOnFire();

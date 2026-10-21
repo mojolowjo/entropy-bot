@@ -396,7 +396,7 @@ public final class Reflexes {
         if (reflex != Reflex.FIGHTING) escortFighting = false;
         // 0.23.2, the owner's creeper heuristic: a sprint runs to its end (7+ blocks); a creeper within 6 starts one
         // (already sprinting away = keep going, else one hit for the knockback, then sprint straight away)
-        if (cspr.active() && creeperSprintTick(mc, p)) return;
+        if ((cspr.active() || creeperLadderGoverns) && creeperSprintTick(mc, p)) return;     // 0.39.s8: the ladder goes on after the sprint
         if (t != null && t.creeper && t.d <= CreeperSprint.START) {
             startCreeperSprint(mc, p, t);
             return;
@@ -594,9 +594,14 @@ public final class Reflexes {
      */
     private void followReflexWay() {
         reflexMoves.tick(now);
+        // reflex probe 0.39.s5: the per-tick debug line, only while aa slow is on (normal play stays quiet)
+        if (io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watching()
+                && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING)
+            ReflexProbe.log(engine, reflexMoves.way(), reflexMoves.why());
         if (!reflexPathLogged && reflexMoves.pathReady()) {
             reflexPathLogged = true;
             LOG.info("[entropybot] reflex {}: Baritone path in {} ticks", reflexMoves.way(), now - reflexMoves.legStart());
+            io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watch(reflexMoves.way() + ": path in " + (now - reflexMoves.legStart()) + " ticks (drawn)");
         }
     }
 
@@ -830,7 +835,25 @@ public final class Reflexes {
     private boolean creeperSprintTick(Minecraft mc, LocalPlayer p) {
         Entity c = mc.level.getEntity(cspr.creeperId());
         double d = c == null || !c.isAlive() ? Double.NaN : p.distanceTo(c);
-        if (cspr.step(now, d) == CreeperSprint.Act.DONE) {
+        // 0.39.s8 (director): the sprint's 5 s end charges the run way and the ladder goes on to its next way (burrow,
+        // pillar) within the same reflex; from then the ladder's leg timeouts govern, not the sprint's. The reflex ends
+        // when the creeper is gone or past cspr.safe() (the sprint's own end distance), or every way is spent.
+        if (creeperLadderGoverns) {
+            boolean digging = creeperWayRunning() && creeperWay != io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.RUN_AWAY;   // a burrow / pillar runs or holds
+            if (Double.isNaN(d) || (d >= cspr.safe() && !digging) || creeperSpent) {
+                String why = "creeper ladder: " + (Double.isNaN(d) ? "it is gone" : creeperSpent ? "every way spent" : "it is " + Math.round(d * 10) / 10.0 + " away");
+                LOG.info("[entropybot] {}", why);
+                settle(why);
+                return false;
+            }
+        } else if (cspr.step(now, d) == CreeperSprint.Act.DONE) {
+            if (io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.sprintGaveUpGoesOn(cspr.endWhy(), c != null && !Double.isNaN(d), creeperSpent)) {
+                creeperLadderGoverns = true;
+                LOG.info("[entropybot] creeper sprint: {} with the creeper at {} - the run is charged, the ladder goes on", cspr.endWhy(), Math.round(d * 10) / 10.0);
+                fleeRetryAt = now;
+                creeperTry(mc, p, c, creeperEscape(mc, p, c), true);
+                return true;
+            }
             String why = "creeper sprint: " + cspr.endWhy() + " (" + (now - cspr.startTick()) + " ticks)";
             LOG.info("[entropybot] {}", why);
             settle(why);
@@ -853,6 +876,8 @@ public final class Reflexes {
     }
 
     private long fleeRetryAt = -1000;
+    /** 0.39.s8: the sprint gave up with the creeper still near; the ladder's legs govern until it ends. */
+    private boolean creeperLadderGoverns;
 
     /**
      * Backbone step 4: the creeper flee on Baritone: GoalRunAway {@link ReflexRules#creeperRunTo()} from every counted
@@ -869,7 +894,7 @@ public final class Reflexes {
 
     private boolean creeperWayRunning() {
         String w = reflexMoves.way();
-        return creeperWay != null && (w.equals("flee") || w.equals(CREEPER_BURROW_WAY));
+        return creeperWay != null && (w.equals("flee") || w.equals(CREEPER_BURROW_WAY) || w.equals("pillar"));
     }
 
     static final String CREEPER_BURROW_WAY = "burrow";
@@ -887,8 +912,8 @@ public final class Reflexes {
         boolean mine = creeperWayRunning();
         if (mine && creeperWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW
                 && reflexMoves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED && !retry) return;   // digging in / sealed: no run over it
-        if (mine && creeperWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW
-                && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED) return;
+        if (mine && (creeperWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW || creeperWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.PILLAR)
+                && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED) return;     // sealed in / up top: held
         io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way w;
         if (retry) {
             String why = reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING ? "replaced while running"
@@ -904,7 +929,9 @@ public final class Reflexes {
             return;
         }
         creeperWay = w;
-        if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW)
+        if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.PILLAR)
+            reflexMoves.pillar(new int[]{p.getBlockX(), p.getBlockY(), p.getBlockZ()}, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.pillar"));
+        else if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.BURROW)
             reflexMoves.burrowHere(CREEPER_BURROW_WAY, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.burrow"), false);
         else reflexMoves.flee(ReflexRules.creeperRunTo(), fleeCells(mc, p, from), dir == null ? null : new double[]{dir[0], dir[1]});
         wayStarted();
@@ -917,6 +944,7 @@ public final class Reflexes {
         creeperCell = null;
         creeperWay = null;
         creeperSpent = false;
+        creeperLadderGoverns = false;
     }
 
     /** 0.39.m2: how far the flee looks for mobs to run from (the run's length + 6). */

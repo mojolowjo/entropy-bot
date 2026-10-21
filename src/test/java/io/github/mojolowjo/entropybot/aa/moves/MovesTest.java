@@ -73,6 +73,17 @@ class MovesTest {
         assertEquals("burrow up", m.way());
     }
     @Test
+    void aWayStartedAfterALongIdleGetsTodaysClock() {
+        // 0.39.s7 staged: a danger burrow "timed out after 40 s" on its first tick (the leg took the last tick a way ran)
+        FakeCar car = new FakeCar();
+        Moves m = new Moves(car);
+        m.tick(100);
+        m.clock(100_000);
+        m.pillar(new int[]{1, 64, 1}, 3);
+        assertEquals(Moves.Phase.RUNNING, m.tick(100_001));
+    }
+
+    @Test
     void aLegOverItsTimeFailsAndStopsTheCar() {
         FakeCar car = new FakeCar();
         Moves m = new Moves(car);

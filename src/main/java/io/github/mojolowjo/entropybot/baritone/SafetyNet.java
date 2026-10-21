@@ -145,6 +145,7 @@ public final class SafetyNet {
     /** A mod job turned Baritone's breaking on and Baritone's mine really runs (S1: not during its walks or holds). */
     static boolean breakingOwned(IBaritone b) {
         if (builderBreakingOwned(b)) return true;
+        if (io.github.mojolowjo.entropybot.aa.moves.BaritoneCar.reflexOwns()) return true;           // reflex probe 0.39.s5: a reflex leg
         if (io.github.mojolowjo.entropybot.commands.PaperPlan.ownsBreak()) return true;                      // 0.32.3: the fourth owner, a plan-go walk
         if (io.github.mojolowjo.entropybot.commands.MineWater.walkDig()) return true;                        // 0.36.8: a mine job's walk to a known ore
         try {
@@ -177,6 +178,7 @@ public final class SafetyNet {
     static boolean placingOwned() {
         try {
             if (io.github.mojolowjo.entropybot.commands.Clearing.placingOwned() || io.github.mojolowjo.entropybot.commands.PaperPlan.ownsPlace()) return true;
+            if (io.github.mojolowjo.entropybot.aa.moves.BaritoneCar.reflexOwns()) return true;       // reflex probe 0.39.s5: a reflex leg
             // owner's place rule (aa372): a running job's walk keeps placing on under the policy's costs; idle = off again
             var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
             return pr.travelMayPlace() && pr.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL && Core.INSTANCE.commands.jobs.running();

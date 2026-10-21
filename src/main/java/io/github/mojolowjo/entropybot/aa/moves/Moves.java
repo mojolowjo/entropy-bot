@@ -119,6 +119,14 @@ public final class Moves {
         l.start().accept(car);
     }
 
+    /**
+     * 0.39.s7 (staged: a danger burrow 'timed out after 40 s' on its first tick): the clock while no way runs, so a way
+     * started between ticks starts its leg at the tick now, not at the last tick a way ran.
+     */
+    public void clock(long tick) {
+        if (phase != Phase.RUNNING) now = tick;
+    }
+
     /** One tick: follows the car. Returns the phase after it. */
     public Phase tick(long tick) {
         now = tick;

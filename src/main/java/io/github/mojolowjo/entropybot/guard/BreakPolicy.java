@@ -78,9 +78,9 @@ public final class BreakPolicy {
         public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
         public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, Built.OWNER_DIG_ONLY, PlaceRule.LENIENT, false, Costs.TRAVEL, 1);
         /** Outside every area in a singleplayer world (owner's note 2026-10-18: follows the connection, no toggle). */
-        public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.TORCHES, true, Costs.TRAVEL, 1);
+        public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);      // 0.39.s8 owner: "Place anything outside"
         /** Outside every area on a server: natural ground still travelled through, but dearly; built blocks never. */
-        public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, Built.NEVER, PlaceRule.TORCHES, true, Costs.TRAVEL_EXPENSIVE, 1);
+        public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.TRAVEL_EXPENSIVE, 1);      // 0.39.s8 owner: "Place anything outside"
         /** Server presets for phase 3: walkable, torches allowed, nothing broken; and travel through dirt, no resources taken. */
         public static final RuleSet NOBREAK = new RuleSet("nobreak", Natural.NEVER, false, Built.NEVER, PlaceRule.TORCHES, false, Costs.TRAVEL, 1);
         public static final RuleSet NORESOURCES = new RuleSet("noresources", Natural.LENIENT, false, Built.NEVER, PlaceRule.TORCHES, true, Costs.TRAVEL, 1);

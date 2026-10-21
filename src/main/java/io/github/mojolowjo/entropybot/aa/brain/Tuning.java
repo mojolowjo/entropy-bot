@@ -156,8 +156,11 @@ public final class Tuning {
         def("reflex.retryTicks", 10, "reflex choosers", "ticks between two tries of a reflex way (a failed run is not re-asked every tick)");
         def("reflex.air.pullUp", 24, "reflex choosers", "blocks over the feet the swim-up goal's heuristic pulls toward (Baritone's search tries up first; the goal itself is any cell with the head in air)");
         def("reflex.air.burrowUp", 3, "reflex choosers", "cells over the head the air reflex's burrow-up asks the fork to break when no swim-up path is found");
+        def("reflex.creeper.pillar", 3, "0.39.s8", "blocks the creeper ladder's third way pillars up (Baritone places the bag's blocks; out of a creeper's reach of the ground blast)");
         def("reflex.creeper.burrow", 2, "reflex choosers", "cells under the feet the creeper reflex's burrow asks the fork to dig (then sealed over the head)");
         def("reflex.failedS", 30, "reflex choosers", "seconds a reflex whose every way failed keeps the danger at full for the danger desire (its line is the reason)");
+        def("game.lavaHpPerS", 8, "0.39.s6 review (vanilla Entity.lavaHurt)", "health a player loses in lava per second: 4 a hit, a hit every 10 ticks (the invulnerability time); LavaPrice prices the reflex's lava wade from it");
+        def("moves.ownerStaleS", 2, "0.39.s6 review", "seconds after its last status tick a reflex car stops owning Baritone's breaking/placing (a car dropped without stop: the SafetyNet then puts them back)");
         def("reflex.fire.aimTicks", 10, "reflex choosers", "ticks the water bucket waits for Baritone's look to land on the block under the feet before that try fails");
         def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
         def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");

@@ -89,10 +89,14 @@ final class AaSlow {
                 + (writeErrors > 0 ? ", " + writeErrors + " write error(s)" : "");
         String r = mode.set(a);
         if (r == null) return "usage: aa slow on|off|step (now " + mode.mode().name().toLowerCase() + ") - on: pause before each chosen way; step: before every step; go (PM or the dashboard) or " + Math.round(pauseS()) + " s of silence starts it";
-        if (mode.on()) renderOn();
-        else {
+        if (mode.on()) {
+            renderOn();
+            // reflex probe 0.39.s5: the reflex watch aid - one PM line per try, the debug line in the log, the route drawn
+            io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watcher(t -> c.whisper(c.owner(), t));
+        } else {
             renderRestore();
             SlowRoute.clear();
+            io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watcher(null);
         }
         LOG.info("[entropybot] aa: slow mode {}", mode.mode().name().toLowerCase());
         return r + (rt.on() ? "" : " (aa is off: it takes effect when aa on starts a task)");
@@ -111,6 +115,7 @@ final class AaSlow {
         mode.set("off");
         renderRestore();
         SlowRoute.clear();
+        io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.watcher(null);
         preds.clear();
         stepNow = null;
     }
