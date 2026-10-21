@@ -101,6 +101,33 @@ public final class Tuning {
         def("base.nightW", 1, "AA_ROUND4A O", "weight of the open-night cost while a base way is set up");
         def("bag.depositS", 5, "AA_ROUND4A O", "seconds to put the bag into the base chests once there");
         def("bag.dropS", 2, "AA_ROUND4A O", "seconds to throw the junk out");
+        // aa-cleanup C (RULES 1): hand numbers that sat in code, moved here with their old values
+        def("bag.enter", 3, "aa-brain 1", "the bag need switches on under this many free slots");
+        def("bag.leave", 10, "aa-brain 1", "the bag need switches off at this many free slots (the slots the deposit keeps free)");
+        def("band.torchOn", 8, "aa-brain 1", "the torches need switches on under this many torches");
+        def("band.torchOff", 16, "aa-brain 1", "the torches need switches off at this many torches");
+        def("band.foodOn", 10, "aa-brain 1", "the food need switches on under this much food energy");
+        def("band.foodOff", 18, "aa-brain 1", "the food need switches off at this much food energy");
+        def("torch.target", 16, "aa-night2 P0 1", "torches the coal and craft rows stock up to");
+        def("tools.stoneTier", 2, "aa-costs", "the pickaxe tier (kit scale: wood 1, stone 2) from which iron, furnace and coal work is not blocked");
+        def("tools.wearPct", 15, "aa-night2 P0 1", "pickaxe durability percent under which a single pickaxe counts as worn out");
+        def("tools.spares", 2, "aa-night2 P0 1", "pickaxes in the bag from which a worn one needs no new tools need");
+        def("torch.base", 30, "aa-costs", "the torches need's score floor before its upkeep curve");
+        def("torch.span", 30, "aa-costs", "the torches need's upkeep curve span (empty bag adds this)");
+        def("bag.base", 20, "aa-costs", "the bag need's score floor before its upkeep curve");
+        def("bag.span", 60, "aa-costs", "the bag need's upkeep curve span (no free slot adds this)");
+        def("cost.station", 60, "AA_ROUND4 A", "seconds the station need (table, furnace) is priced at before its own facts");
+        def("cost.spareTable", 10, "AA_ROUND4 A", "seconds the spare table need is priced at");
+        def("cost.base", 240, "AA_ROUND4 A", "seconds the base need is priced at before its own facts");
+        def("cost.bed", 120, "AA_ROUND4 A", "seconds the bed need is priced at before its own facts");
+        def("cost.iron", 600, "AA_ROUND4 A", "seconds the iron need is priced at before its own facts");
+        def("need.defaultScore", 30, "AA_ROUND4 A", "the score of a need that has no formula of its own");
+        def("sprint.drainFloor", 0.25, "aa-costs 4", "the least measured-drain scale the sprint price trusts (a low reading cannot make sprinting free)");
+        def("quarry.radius", 48, "AA_ROUND4 C", "blocks around the bot the quarry scan looks at");
+        def("quarry.cacheMs", 10000, "AA_ROUND4 C", "milliseconds the quarry scan is reused while the bot stays near");
+        def("quarry.digK", 1.5, "AA_ROUND4 C", "walk-blocks one planned dig cell costs in a quarry site's price");
+        def("run.weight", 2, "aa-danger 2", "heuristic units per block along the preferred run heading (Baritone walks ~4.6 per block)");
+        def("planner.gapMs", 5000, "aa371", "milliseconds between two planner asks after which the earlier search wait is over (AA ticks at 4 Hz)");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

@@ -1,6 +1,7 @@
 package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.Discovery;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 
 import java.util.ArrayList;
@@ -202,7 +203,7 @@ public final class CoalOptions {
      * way is held by {@link #noteEnd} (the adapter calls it on every end); the craft and planner rows here.
      */
     public static final class Torches implements Need.Picker {
-        public static final int TARGET = 16;
+        public static int target() { return (int) Tuning.get("torch.target"); }
         public final Options.OptionMemory memory = new Options.OptionMemory();
         private Options.Choice last;
         private Options.Option ran;
@@ -216,19 +217,19 @@ public final class CoalOptions {
             List<String> dropped = new ArrayList<>();
             double craft = io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
             String craftWhy = "craft " + Math.round(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S) + " s";
-            if (bb.in.coal >= 1) add(rows, dropped, now, new Options.Option("craft", "craft", "craft torch " + TARGET, craft, "coal in the bag: " + craftWhy, "craft torch", false));
+            if (bb.in.coal >= 1) add(rows, dropped, now, new Options.Option("craft", "craft", "craft torch " + target(), craft, "coal in the bag: " + craftWhy, "craft torch", false));
             else {
-                Options.Choice c = plan(bb, coalForTorches(bb.in.torches, TARGET));
+                Options.Choice c = plan(bb, coalForTorches(bb.in.torches, target()));
                 if (c == null) dropped.add("coal ways: no coal facts readable");
                 else {
                     for (Options.Option r : c.ranked())
-                        rows.add(new Options.Option("coal " + r.id() + " + craft", "coal", torchChain(r.command(), TARGET), r.total() + craft,
+                        rows.add(new Options.Option("coal " + r.id() + " + craft", "coal", torchChain(r.command(), target()), r.total() + craft,
                                 r.why() + " " + Math.round(r.total()) + " + " + craftWhy, "coal " + r.memoryKey(), false, null, r.site()));
                     for (String d : c.dropped()) dropped.add("coal " + d);
                 }
             }
             if (planned != null) add(rows, dropped, now, new Options.Option("planner", "planner", planned, plannedCost * Options.planUnit(),
-                    "goal torch " + TARGET + ": plan cost " + Math.round(plannedCost) + " x planUnit " + Options.planUnit(), "planner", true));
+                    "goal torch " + target() + ": plan cost " + Math.round(plannedCost) + " x planUnit " + Options.planUnit(), "planner", true));
             else if (plannerWhy != null) dropped.add("planner: " + plannerWhy);
             return Options.Choice.of(rows, dropped, "no way to torches");
         }

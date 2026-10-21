@@ -93,7 +93,7 @@ public final class AaDesires {
         io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "tools", io.github.mojolowjo.entropybot.aa.brain.Costs.toolsTerms(bb.in.pickTier, bb.in.pickPct, blocked, why)
                 + (sword > 0 ? ", + " + Math.round(sword) + " no weapon (a zombie seen)" : ""));
         // the pickaxe's worth only while it is wanted (a stone pickaxe at 100%: the sword alone)
-        boolean pickWanted = bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2);
+        boolean pickWanted = bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares"));
         return (pickWanted ? io.github.mojolowjo.entropybot.aa.brain.Costs.tools(bb.in.pickTier, bb.in.pickPct, blocked) : 30) + sword;
     }
 
@@ -138,7 +138,8 @@ public final class AaDesires {
     /** Round 4A N wiring: the station need's id and its facts key (NeedFacts registers the supplier). */
     public static final String STATION_ID = "needs.tableFurnace", STATION_FACTS = "station.facts";
     /** The bag need's band: on under BAG_ENTER free slots, off at BAG_LEAVE (BagOptions' want). */
-    public static final int BAG_ENTER = 3, BAG_LEAVE = 10;
+    public static int bagEnter() { return (int) Tuning.get("bag.enter"); }
+    public static int bagLeave() { return (int) Tuning.get("bag.leave"); }
 
     /** The station the camp lacks now: the table, then the furnace, then the chest. */
     public static StationOptions.Kind stationKind(Inputs in) {
@@ -150,12 +151,14 @@ public final class AaDesires {
     /** The dawn climb-out need (scores Tuning dawnClimb while NightWork.climbAtDawn). */
     public static final String DAWN_ID = "night.dawnClimb";
 
+    private static int t(String name) { return (int) Tuning.get(name); }
+
     public static List<Need> needs() {
-        io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(8, 16),
-                bag = new io.github.mojolowjo.entropybot.aa.core.Band(BAG_ENTER, BAG_LEAVE), food = new io.github.mojolowjo.entropybot.aa.core.Band(10, 18);
+        io.github.mojolowjo.entropybot.aa.core.Band torches = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.torchOn"), t("band.torchOff")),
+                bag = new io.github.mojolowjo.entropybot.aa.core.Band(t("bag.enter"), t("bag.leave")), food = new io.github.mojolowjo.entropybot.aa.core.Band(t("band.foodOn"), t("band.foodOff"));
         Need tools = new Need("needs.tools", TaskKind.TOOLS,
                 // aa-night2 P0 2: a stone sword too once a zombie was seen (the sword-only row, or the planner's goal)
-                bb -> bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
+                bb -> bb.in.pickTier < t("tools.stoneTier") || (bb.in.pickPct < t("tools.wearPct") && bb.in.pickaxes < t("tools.spares")) || io.github.mojolowjo.entropybot.aa.brain.Costs.swordWanted(bb.in.zombieSeen, bb.in.armed),
                 bb -> null, bb -> "goal stone tools", new Options.Picker<>("TOOLS", RungOptions.TOOLS_FACTS, RungOptions.ToolsFacts.class, new RungOptions.Tools())
                         .withoutFacts((b, planned) -> b.in.pickTier == 0 ? AaLadder.BOOTSTRAP : planned)).surface();      // trees and stone at hand up there: under ground the climb is its first row
         Need hunger = new Need("needs.food", TaskKind.FOOD,
@@ -173,7 +176,7 @@ public final class AaDesires {
         Need torch = new Need("needs.torches", TaskKind.TORCHES,
                 bb -> torches.update(bb.in.torches),
                 bb -> !bb.in.torchCoal() ? "coal kept for the coal goal (" + bb.in.torchCoalTerms() + ")" : null,
-                bb -> "goal torch " + CoalOptions.Torches.TARGET, new CoalOptions.Torches());
+                bb -> "goal torch " + CoalOptions.Torches.target(), new CoalOptions.Torches());
         Need base = new Need("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(AaLadder.SHELTER_FACT),
                 bb -> null, bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter",
@@ -215,18 +218,18 @@ public final class AaDesires {
         Desire d = switch (r.id) {
             case "needs.tools" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> factor(b, "tools") * tools(b)));
             case "needs.food" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, AaDesires::foodScore)).infeasible(AaDesires::foodInfeasible);
-            case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(30 + Curves.upkeep(30, b.in.torches, 16), factor(b, "torches"))))
+            case "needs.torches" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("torch.base") + Curves.upkeep(Tuning.get("torch.span"), b.in.torches, t("torch.target")), factor(b, "torches"))))
                     .prereq(b -> b.in.tableKnown || b.in.tableInBag ? null : "needs.tableFurnace");
-            case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(20 + Curves.upkeep(60, b.in.freeSlots, 10), factor(b, "bag"))));
-            case "needs.tableFurnace" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::stationValue)).cost(60).exposure(Desire.Exposure.SURFACE);
-            case "needs.spareTable" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.spareTable(tree(b), have(b)))).cost(10);
-            case "needs.base" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.base(bedDanger(b)))).cost(240).exposure(Desire.Exposure.SURFACE);
-            case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(120).exposure(Desire.Exposure.SURFACE)
+            case "needs.bag" -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> scaled(Tuning.get("bag.base") + Curves.upkeep(Tuning.get("bag.span"), b.in.freeSlots, t("bag.leave")), factor(b, "bag"))));
+            case "needs.tableFurnace" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::stationValue)).cost(Tuning.get("cost.station")).exposure(Desire.Exposure.SURFACE);
+            case "needs.spareTable" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.spareTable(tree(b), have(b)))).cost(Tuning.get("cost.spareTable"));
+            case "needs.base" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.base(bedDanger(b)))).cost(Tuning.get("cost.base")).exposure(Desire.Exposure.SURFACE);
+            case "needs.bed" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Worth.bed(bedDanger(b)))).cost(Tuning.get("cost.bed")).exposure(Desire.Exposure.SURFACE)
                     .infeasible(AaDesires::bedInfeasible);
-            case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(600)
-                    .prereq(b -> b.in.pickTier < 2 ? "needs.tools" : null).exposure(Desire.Exposure.UNDER);
+            case "needs.iron" -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, AaDesires::ironValue)).cost(Tuning.get("cost.iron"))
+                    .prereq(b -> b.in.pickTier < t("tools.stoneTier") ? "needs.tools" : null).exposure(Desire.Exposure.UNDER);
             case DAWN_ID -> new Desire(r.id, Desire.Kind.UPKEEP, r, bb -> rungScore(r, bb, b -> Tuning.get("dawnClimb")));
-            default -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> 30));
+            default -> new Desire(r.id, Desire.Kind.PROGRESS, r, bb -> rungScore(r, bb, b -> Tuning.get("need.defaultScore")));
         };
         return wire(d, r).site(b -> rungSite(r, b));
     }

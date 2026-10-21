@@ -30,6 +30,8 @@ package io.github.mojolowjo.entropybot.aa.brain;
 public final class GameTimes {
     private GameTimes() {}
 
+    // Rule 3 facts, not Tuning: the constants below are the game's own (Attributes.MOVEMENT_SPEED default 0.1, Player.getDigSpeed
+    // and its effect multipliers, the 20 tick second, Minecraft.missTime = 5 after a break), not choices of the brain.
     /** Vanilla walking speed: MOVEMENT_SPEED 0.1 = 4.317 blocks a second (the number Unit has always used). */
     public static final double BASE_SPEED_ATTR = 0.1, BASE_WALK_BPS = Unit.WALK_BPS, SPRINT_FACTOR = 1.3;
     /** Swimming at the surface without Depth Strider, about 2.2 blocks a second (the wiki's number; the adapter does not measure it). */
@@ -64,6 +66,7 @@ public final class GameTimes {
     public static double digSpeed(double toolSpeed, Dig d) {
         double f = toolSpeed;
         if (f > 1) f += d.miningEfficiency();
+        // rule 3 fact: vanilla Player.getDigSpeed (Haste/Conduit +20% per level, Mining Fatigue 0.3 / 0.09 / 0.0027 / 8.1e-4, water 0.2, air 1/5)
         if (d.hasteLevel() >= 0) f *= 1 + (d.hasteLevel() + 1) * 0.2;
         if (d.fatigueLevel() >= 0) f *= switch (d.fatigueLevel()) {
             case 0 -> 0.3;

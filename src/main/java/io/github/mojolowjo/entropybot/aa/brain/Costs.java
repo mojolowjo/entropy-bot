@@ -102,7 +102,7 @@ public final class Costs {
      */
     public static Sprint sprint(boolean drains, boolean noSource, double bagEnergy, double target, double drainScale) {
         double scarcity = target <= 0 ? 0 : Math.max(0, Math.min(1, 1 - bagEnergy / target)) * (noSource ? 1 : Tuning.get("sourceFactor"));
-        double cost = drains ? SPRINT_POINTS_PER_M * Math.max(0.25, drainScale) * Tuning.get("pointS") * scarcity : 0;
+        double cost = drains ? SPRINT_POINTS_PER_M * Math.max(Tuning.get("sprint.drainFloor"), drainScale) * Tuning.get("pointS") * scarcity : 0;
         boolean conserve = drains && cost > SAVED_S_PER_M;
         String terms = String.format(Locale.ROOT, "sprint saves %.3f s/m, costs %.3f s/m (scarcity %.2f%s, drain x%.2f) -> %s",
                 SAVED_S_PER_M, cost, scarcity, noSource ? " no source" : "", drainScale, conserve ? "walk" : "sprint");
@@ -119,7 +119,7 @@ public final class Costs {
     public static double tools(int pickTier, int pickPct, double blocked) {
         double b = Math.max(0, Math.min(1, blocked));
         if (pickTier == 0) return 55 + 30 * b;
-        if (pickTier < 2) return 55 + 20 * b;
+        if (pickTier < Tuning.get("tools.stoneTier")) return 55 + 20 * b;
         return 40 + Curves.upkeep(30, pickPct, 15);
     }
 
@@ -137,7 +137,7 @@ public final class Costs {
     public static double blocked(int pickTier, boolean furnace, int coal, int torches, boolean ownerOreGoal) {
         int n = 0, of = 4;
         if (!furnace) n++;                              // cobble for the furnace
-        if (pickTier < 2) n++;                          // iron needs a stone pickaxe
+        if (pickTier < Tuning.get("tools.stoneTier")) n++;                          // iron needs a stone pickaxe
         if (coal == 0 && torches < 16) n++;             // coal for torches
         if (ownerOreGoal) n++;
         if (pickTier == 1) n = Math.max(0, n - (furnace ? 0 : 1));      // a wooden pickaxe mines cobble already
@@ -149,7 +149,7 @@ public final class Costs {
      * the pickaxe is under stone counts as one more blocked item.
      */
     public static double blocked(MiningTiers.Result r, int pickTier, boolean ownerOreGoal) {
-        int add = ownerOreGoal && pickTier < 2 ? 1 : 0;
+        int add = ownerOreGoal && pickTier < Tuning.get("tools.stoneTier") ? 1 : 0;
         int of = r.of() + add;
         return of <= 0 ? 0 : (r.share() * r.of() + add) / of;       // review p2: the weighted share
     }

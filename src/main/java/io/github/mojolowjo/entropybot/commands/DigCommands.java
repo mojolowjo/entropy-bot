@@ -399,7 +399,7 @@ final class DigCommands {
         int[] here = Jobs.here(p);
         int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
         long now = System.currentTimeMillis();
-        int R = io.github.mojolowjo.entropybot.gather.QuarrySites.RADIUS;
+        int R = io.github.mojolowjo.entropybot.gather.QuarrySites.radius();
         List<int[]> cand = new java.util.ArrayList<>(io.github.mojolowjo.entropybot.gather.QuarrySites.candidates(feet, now, () -> {
             List<int[]> out = new java.util.ArrayList<>();
             for (int x = feet[0] - R; x <= feet[0] + R; x += 4)

@@ -90,6 +90,11 @@ final class ItemWorthSource implements ItemWorth.Source {
                 }
             }
             if (speed > 0) level = levelOf(tool);
+            // rule 4: the role is the game's item tag (a modded tool carrying c:/minecraft: pickaxes is a pickaxe), not its id
+            if (st.is(net.minecraft.tags.ItemTags.PICKAXES)) role = "pickaxe";
+            else if (st.is(net.minecraft.tags.ItemTags.AXES)) role = "axe";
+            else if (st.is(net.minecraft.tags.ItemTags.SHOVELS)) role = "shovel";
+            else if (st.is(net.minecraft.tags.ItemTags.HOES)) role = "hoe";
         }
         var food = st.get(DataComponents.FOOD);
         if (food != null) {

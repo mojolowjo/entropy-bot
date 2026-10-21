@@ -8,13 +8,13 @@ package io.github.mojolowjo.entropybot.aa.moves;
  */
 public final class RunPrefer {
     /** Heuristic units per block along the heading (Baritone's walk costs about 4.6 per block; GoalXZ's ~3.6). */
-    public static final double WEIGHT = 2.0;
+    public static double weight() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("run.weight"); }
 
     private RunPrefer() {}
 
     /** The added heuristic at (x, z) for a run from (ox, oz) toward the unit heading (hx, hz): lower is better. */
     public static double bias(int x, int z, int ox, int oz, double hx, double hz) {
-        return -WEIGHT * ((x - ox) * hx + (z - oz) * hz);
+        return -weight() * ((x - ox) * hx + (z - oz) * hz);
     }
 
     /** The heading as a unit vector, or null for none / zero. */

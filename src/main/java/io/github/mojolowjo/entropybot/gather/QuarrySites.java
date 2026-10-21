@@ -19,10 +19,10 @@ public final class QuarrySites {
     private QuarrySites() {}
 
     public static final String DESIRE = "site.quarry";        // review p2: a prefix no desire uses
-    public static final int RADIUS = 48;
-    public static final long CACHE_MS = 10_000;
+    public static int radius() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("quarry.radius"); }
+    public static long cacheMs() { return (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("quarry.cacheMs"); }
     /** Dig cost per planned cell, in walk-blocks. */
-    public static final double DIG = 1.5;
+    public static double dig() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("quarry.digK"); }
 
     private static volatile Failures failures = new Failures();
 
@@ -98,11 +98,11 @@ public final class QuarrySites {
                 dropped.add(option(s) + ": " + why);
                 continue;
             }
-            double price = walk + DIG * p.cells().size();
+            double price = walk + dig() * p.cells().size();
             if (price < bestPrice) { bestPrice = price; best = s; bestPlan = p; }
         }
         String terms = best == null
-                ? "no quarry site within " + RADIUS + " (" + (dropped.isEmpty() ? "no exposed stone seen" : String.join("; ", dropped)) + ")"
+                ? "no quarry site within " + radius() + " (" + (dropped.isEmpty() ? "no exposed stone seen" : String.join("; ", dropped)) + ")"
                 : String.format(Locale.ROOT, "quarry at %s: walk %.0f + dig %d cells = %.0f%s", option(best), dist(best, me), bestPlan.cells().size(), bestPrice,
                         dropped.isEmpty() ? "" : " (dropped " + String.join("; ", dropped) + ")");
         return new Pick(best, bestPlan, best == null ? 0 : bestPrice, dropped, terms);
@@ -116,7 +116,7 @@ public final class QuarrySites {
 
     /** The scan's result around {@code me}, reused for {@link #CACHE_MS} while I stay within 8 blocks. */
     public static synchronized List<int[]> candidates(int[] me, long now, java.util.function.Supplier<List<int[]>> scan) {
-        if (now - cachedAt > CACHE_MS || cachedAround == null || dist(cachedAround, me) > 8) {
+        if (now - cachedAt > cacheMs() || cachedAround == null || dist(cachedAround, me) > 8) {
             cached = List.copyOf(scan.get());
             cachedAt = now;
             cachedAround = me.clone();

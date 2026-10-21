@@ -51,7 +51,7 @@ public final class Ways {
     }
 
     /** A gap this long between two asks means the earlier search wait is over (AA ticks at 4 Hz). */
-    static final long GAP_MS = 5_000;
+    static long gapMs() { return (long) Tuning.get("planner.gapMs"); }
 
     /**
      * Asks the planner about {@code goal} ("goal ..."; any other text: null, it is a command) and folds the answer into a
@@ -79,7 +79,7 @@ public final class Ways {
                 return new Plan(goal, JobPort.PlanState.READY, exp == null ? r.chain() : exp, r.cost(), null, 0, null);
             }
             case SEARCHING -> {
-                if (st.searchSince < 0 || !goal.equals(st.searchGoal) || now - st.lastAsk > GAP_MS) {
+                if (st.searchSince < 0 || !goal.equals(st.searchGoal) || now - st.lastAsk > gapMs()) {
                     st.searchSince = now;
                     st.searchGoal = goal;
                     bb.port.log("planning " + goal + " for " + need);
