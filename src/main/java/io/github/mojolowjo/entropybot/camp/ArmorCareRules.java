@@ -21,13 +21,50 @@ public final class ArmorCareRules {
     private ArmorCareRules() {}
 
     public static final List<String> SLOTS = List.of("helmet", "chestplate", "leggings", "boots");
-    /** Material per piece (vanilla recipes). */
-    public static final Map<String, Integer> COST = Map.of("helmet", 5, "chestplate", 8, "leggings", 7, "boots", 4);
-    /** Best first: tier name -> its material id. */
-    static final List<String[]> TIERS = List.of(
-            new String[]{"diamond", "minecraft:diamond"},
-            new String[]{"iron", "minecraft:iron_ingot"},
-            new String[]{"leather", "minecraft:leather"});
+    /** The armour pieces of the game (the trimmable-armour tag): [tier name, chestplate id], the chestplates only. */
+    private static List<String> chestplates() {
+        List<String> out = new ArrayList<>();
+        for (String id : io.github.mojolowjo.entropybot.aa.brain.ItemWorth.withTag("trimmable_armor")) if ("chestplate".equals(slot(id))) out.add(id);
+        return out;
+    }
+
+    /**
+     * Best first: [tier name, its material id]. Read from the game: each tier's chestplate recipe names the material (its
+     * first ingredient), the tiers go by the chestplate's defence then toughness. A tier whose chestplate has no crafting
+     * recipe (chainmail, netherite) is no tier to craft.
+     */
+    static List<String[]> tiers() {
+        List<String> chest = new ArrayList<>(chestplates());
+        chest.sort((a, b) -> {
+            var fa = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.facts(a);
+            var fb = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.facts(b);
+            int c = Double.compare(fb.defence(), fa.defence());
+            return c != 0 ? c : Double.compare(fb.toughness(), fa.toughness());
+        });
+        List<String[]> out = new ArrayList<>();
+        for (String id : chest) {
+            String m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.firstIngredient(id);
+            if (m != null) out.add(new String[]{tier(id), m});
+        }
+        return out;
+    }
+
+    /** The material one piece of the slot takes in the tier: the piece's recipe (a big number when the tier has none for the slot). */
+    public static int cost(String slot, String tier) {
+        for (String c : chestplates()) {
+            if (!tier(c).equals(tier)) continue;
+            String piece = c.substring(0, c.length() - "chestplate".length()) + slot;
+            var r = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.recipes(piece);
+            if (!r.isEmpty()) return r.get(0).inputs().size();
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    /** The material id of a tier word ("iron" -> the ingot), or null when the game has no such tier to craft. */
+    public static String material(String tier) {
+        for (String[] t : tiers()) if (t[0].equals(tier)) return t[1];
+        return null;
+    }
 
     /** A worn piece: slot (helmet..boots), id, uses left, max (id null = the slot is empty). */
     public record Piece(String slot, String id, int left, int max) {
@@ -51,15 +88,14 @@ public final class ArmorCareRules {
         return u < 0 ? "" : p.substring(0, u);
     }
 
-    static int rank(String tier) {
-        return switch (tier) {
-            case "leather" -> 1;
-            case "golden", "chainmail" -> 2;
-            case "iron" -> 3;
-            case "diamond" -> 4;
-            case "netherite" -> 5;
-            default -> 0;
-        };
+    /** A tier's rank: its chestplate's defence, then toughness (the game's own numbers); 0 for a tier the game doesn't know. */
+    static double rank(String tier) {
+        for (String c : chestplates()) {
+            if (!tier(c).equals(tier)) continue;
+            var f = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.facts(c);
+            return f.defence() + f.toughness() / 100.0;    // structural: toughness only breaks a tie in defence
+        }
+        return 0;
     }
 
     /**
@@ -101,16 +137,17 @@ public final class ArmorCareRules {
      * or for the chestplate/leggings themselves: have as given.
      */
     public static Map<String, Integer> spendable(String slot, List<Piece> worn, Map<String, Integer> have, boolean ironFirst) {
-        if (!ironFirst || slot.equals("chestplate") || slot.equals("leggings") || have == null) return have;
+        String iron = ironFirst ? material("iron") : null;          // the owner's word "iron" (gear.ironFirst), read from the game
+        if (iron == null || slot.equals("chestplate") || slot.equals("leggings") || have == null) return have;
         int hold = 0;
         for (String body : List.of("chestplate", "leggings")) {
             Piece on = null;
             for (Piece p : worn) if (body.equals(p.slot())) on = p;
-            if (on == null || on.empty() || on.worn() || rank(tier(on.id())) < rank("iron")) hold += COST.get(body);
+            if (on == null || on.empty() || on.worn() || rank(tier(on.id())) < rank("iron")) hold += Math.min(cost(body, "iron"), Integer.MAX_VALUE - hold);
         }
         if (hold == 0) return have;
         Map<String, Integer> out = new LinkedHashMap<>(have);
-        out.put("minecraft:iron_ingot", Math.max(0, have.getOrDefault("minecraft:iron_ingot", 0) - hold));
+        out.put(iron, Math.max(0, have.getOrDefault(iron, 0) - hold));
         return out;
     }
 
@@ -132,10 +169,10 @@ public final class ArmorCareRules {
      */
     public static String replacement(String slot, String worn, Set<String> stored, Map<String, Integer> have) {
         if (worn != null && stored.contains(worn)) return "get " + StockRules.shortId(worn) + " 1 then wear";
-        int floor = worn == null ? 0 : rank(tier(worn));
+        double floor = worn == null ? 0 : rank(tier(worn));
         String best = null;
-        for (String[] t : TIERS) {
-            if (have.getOrDefault(t[1], 0) < COST.get(slot)) continue;
+        for (String[] t : tiers()) {
+            if (have.getOrDefault(t[1], 0) < cost(slot, t[0])) continue;
             if (best == null) best = t[0];
             if (rank(t[0]) >= floor) { best = t[0]; break; }
         }

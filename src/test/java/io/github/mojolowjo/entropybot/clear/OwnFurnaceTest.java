@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.36.a9: the pickup of the furnace "smelt ... here" put down (mining-policy Phase 4 open item). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class OwnFurnaceTest {
     @Test
     void thePickupIsArmedOnlyByOurClickAndExactlyThatBlock() {

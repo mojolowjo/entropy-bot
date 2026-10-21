@@ -27,8 +27,8 @@ public final class HostileRules {
     public static final String FILE = "defence.json";
     /** At most this many ids on the list. */
     public static int cap() { return Tuning.i("hostileRules.cap"); }
-    /** Seeded when there is no file yet (the owner confirmed it hostile, 2026-10-05). */
-    public static final List<String> DEFAULTS = List.of("arphex:spider_lunger");
+    /** Seeded when there is no file yet: nothing. The game says which mobs are hostile (the Enemy class); a pack mob that is not one is the owner's to add (defence hostile add <id>). */
+    public static final List<String> DEFAULTS = List.of();
     /** A mob that hit the bot counts as a threat for this long after its last hit (the "hurt" window). */
     public static int retaliateTicks() { return ReflexRules.hurtTicks(); }
     /** At most this many attackers are remembered at once (oldest dropped). */

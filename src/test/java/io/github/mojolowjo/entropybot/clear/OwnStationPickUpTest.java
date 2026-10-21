@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.33.0 review 5: a station of mine is picked up only when it is still the one I placed, and a container only when empty. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class OwnStationPickUpTest {
     @Test
     void matchesKindAndPlacement() {

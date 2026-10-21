@@ -10,6 +10,7 @@ import java.util.TreeMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Package B round 2: when the hotbar keeper swaps (idle, at a job's start, a refill mid-job) and when it never does. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class HotbarKeeperTest {
     static final Map<Integer, String> LAYOUT = new TreeMap<>(Map.of(1, "pickaxe", 2, "sword", 3, "food", 4, "torch"));
 

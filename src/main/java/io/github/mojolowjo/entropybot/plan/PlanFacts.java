@@ -19,6 +19,9 @@ public final class PlanFacts {
     public final Set<String> flags = new LinkedHashSet<>();
     public int[] feet = {0, 64, 0}, table, furnace, dir = {1, 0};
 
+    /** The planner's words for the two shelter materials (see {@link #canon}). */
+    public static final String STONE = "cobblestone", PLANKS = "planks";
+
     /** The planner's word for an item id ("minecraft:oak_log" -> "log"). */
     public static String canon(String id) {
         String p = id == null ? "" : id.toLowerCase(java.util.Locale.ROOT).trim();

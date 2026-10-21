@@ -344,7 +344,7 @@ public final class Planner {
             }
         }
         // smelt
-        String raw = PlanRecipes.SMELT.get(x);
+        String raw = PlanRecipes.smelted(x);
         int sgrow = raw == null ? -1 : growable(n, "smelt:" + x, r.forStep());
         if (sgrow >= 0) {
             // one smelt step makes more (more raw, maybe one more fuel)
@@ -370,16 +370,16 @@ public final class Planner {
             }
         }
         // mine (ore drops; coal is "fuel")
-        Object[] ore = PlanRecipes.ORES.get(x);
+        PlanRecipes.Ore ore = PlanRecipes.ore(x);
         if (ore != null) {
-            String fam = (String) ore[0];
+            String fam = ore.family();
             String src = n.flags.containsKey("ore:" + fam) ? "ore" : n.flags.containsKey("mine") ? "strip" : n.flags.containsKey("cave") ? "cave" : null;
             if (src != null) {
                 Node k = child(n);
                 int s = addStep(k, r, "mine", x, "mine:" + x, d, 10, 3, true);
                 if (s >= 0) {
                     k.steps.get(s).extra = src;
-                    k.open.addFirst(new Req("pick" + ore[1], 1, true, s));
+                    k.open.addFirst(new Req("pick" + ore.pick(), 1, true, s));
                     out.add(k);
                 }
             } else why.add("nowhere to mine " + fam + " (place mine north, an ore in view, or a known cave)");
@@ -437,7 +437,7 @@ public final class Planner {
             return out;
         }
         if (x.equals("shelter")) {
-            for (String block : List.of("cobblestone", "planks")) {
+            for (String block : List.of(PlanFacts.STONE, PlanFacts.PLANKS)) {       // the shelter is built of stone or of planks: the planner's own words
                 Node k = child(n);
                 int s = addStep(k, r, "build", block, "build:shelter", shelterBlocks(), 10, 0, false);
                 if (s >= 0) {
@@ -497,7 +497,7 @@ public final class Planner {
                 }
                 case "smelt" -> "smelt " + s.item + " " + s.amount + " then smelt collect all";
                 case "mine" -> {
-                    String fam = (String) PlanRecipes.ORES.get(s.item)[0];
+                    String fam = PlanRecipes.ore(s.item).family();
                     yield switch (s.extra == null ? "strip" : s.extra) {
                         case "ore" -> "mine " + fam + "_ore " + s.amount + " dig";     // 0.36.a4 (owner): buried known ore is dug to from dry ground
                         case "cave" -> "mine cave " + fam + " " + s.amount;

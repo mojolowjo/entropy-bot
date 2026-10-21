@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.aa.brain.ItemWorth;
 import io.github.mojolowjo.entropybot.clear.Tools;
 
 import java.util.ArrayList;
@@ -52,9 +53,11 @@ public final class HotbarRules {
         return switch (spec) {
             case "pickaxe", "sword", "axe", "shovel", "hoe" -> true;
             case "food", "torch" -> false;
-            default -> spec.matches(".*_(pickaxe|sword|axe|shovel|hoe)$");
+            default -> role(spec) != ItemWorth.Role.OTHER;
         };
     }
+
+    private static ItemWorth.Role role(String id) { return ItemWorth.facts(id).role(); }
 
     static String path(String id) { return id.substring(id.indexOf(':') + 1); }
 
@@ -62,13 +65,14 @@ public final class HotbarRules {
     public static boolean matches(String spec, String id, int food) {
         if (spec == null || id == null || id.isEmpty() || id.equals("minecraft:air")) return false;
         return switch (spec) {
-            case "pickaxe" -> id.endsWith("_pickaxe");
-            case "sword" -> id.endsWith("_sword");
-            case "axe" -> id.endsWith("_axe");          // "_pickaxe" ends in "kaxe", not "_axe"
-            case "shovel" -> id.endsWith("_shovel");
-            case "hoe" -> id.endsWith("_hoe");
+            // the owner's words; what each one is comes from the game (the item's tool tags and components, its light)
+            case "pickaxe" -> role(id) == ItemWorth.Role.PICKAXE;
+            case "sword" -> role(id) == ItemWorth.Role.WEAPON;
+            case "axe" -> role(id) == ItemWorth.Role.AXE;
+            case "shovel" -> role(id) == ItemWorth.Role.SHOVEL;
+            case "hoe" -> role(id) == ItemWorth.Role.HOE;
             case "food" -> food >= 0;
-            case "torch" -> path(id).equals("torch") || path(id).equals("soul_torch");
+            case "torch" -> ItemWorth.lightSource(id);
             default -> id.equals(spec);
         };
     }

@@ -12,6 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Reflex probe 0.39.s5: a spent reflex goes to the danger desire, which re-prices with the reflex's ways held and acts. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ReflexAfterTest {
     @AfterEach
     void defaults() {

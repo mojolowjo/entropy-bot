@@ -49,6 +49,16 @@ public final class ItemWorth {
         return Role.OTHER;
     }
 
+    /** How a mob gets at the bot: by its entity class and attributes (spiders climb, fliers fly, shooters keep range, endermen teleport). */
+    public enum MobMove { WALK, SPIDER, FLY, RANGED, TELEPORT }
+
+    /**
+     * A mob kind as the game defines it: max health and the attack-damage attribute (NaN: the mob has none, a shooter's damage
+     * is its projectile's), how it moves, and whether it sets its synced aggressive flag when it attacks (a slime or a
+     * fireball shooter never does: there \"aggro\" is \"it can see the bot\").
+     */
+    public record Mob(double health, double damage, MobMove move, boolean flagged) {}
+
     /** One recipe for an item: the output count and the ingredient ids (one per slot, the first choice). */
     public record Recipe(int outCount, List<String> inputs) {}
 
@@ -64,6 +74,8 @@ public final class ItemWorth {
         default boolean stoneLike(String id) { return false; }
         /** A workstation block (it opens a menu: the crafting table, any modded bench). */
         default boolean station(String id) { return false; }
+        /** A block whose block entity holds items (a chest, a barrel, a furnace: the game's Container block entities). */
+        default boolean container(String id) { return false; }
         /** An ore block (the game's ores tag): rarity is in no item component, so the tag stands for it. */
         default boolean ore(String id) { return false; }
         /** An item in the game's planks tag. */
@@ -80,6 +92,14 @@ public final class ItemWorth {
         default Set<String> withTag(String tag) { return Set.of(); }
         /** Mob id -> the food item its loot table drops (animals the bot may hunt are the friendly ones); empty on a client with no loot tables. */
         default Map<String, String> mobFood() { return Map.of(); }
+        /** What the game says of a mob kind (full entity id); null = not read. */
+        default Mob mob(String id) { return null; }
+        /** The first ingredient of the furnace (smelting) recipe that makes the item (iron_ingot: raw_iron), or null. */
+        default String smeltInput(String result) { return null; }
+        /** True when the item's first crafting recipe does not fit the 2x2 grid of the inventory (it needs a crafting table). */
+        default boolean needsTable(String id) { var r = recipes(id); return !r.isEmpty() && r.get(0).inputs().size() > 4; }   // game fact: the inventory's crafting grid is 2x2: more than 4 ingredients need a table
+        /** The ore block (the game's ores tag) whose loot table drops the item (raw_iron: iron_ore), or null. */
+        default String oreDropping(String item) { return null; }
         /** An item that blocks attacks when used (a shield: the game's BLOCK use animation). */
         default boolean shield(String id) { return false; }
     }
@@ -205,6 +225,9 @@ public final class ItemWorth {
     public static boolean riskyFood(String id) { Source s = source; return s != null && s.riskyFood(full(id)); }
     public static boolean effectFood(String id) { Source s = source; return s != null && s.effectFood(full(id)); }
 
+    /** The recipes that make the item, ingredients one id per piece (empty without data). */
+    public static List<Recipe> recipes(String id) { Source s = source; return s == null || id == null ? List.of() : s.recipes(full(id)); }
+
     /** The raw item a cooking recipe makes this from (null: nothing cooks into it). */
     public static String rawOf(String id) {
         Source s = source;
@@ -221,6 +244,12 @@ public final class ItemWorth {
         for (Recipe r : s.recipes(full(id))) if (!r.inputs().isEmpty()) return r.inputs().get(0);
         return null;
     }
+    public static String smeltInput(String result) { Source s = source; return s == null || result == null ? null : s.smeltInput(full(result)); }
+    public static boolean needsTable(String id) { Source s = source; return s != null && id != null && s.needsTable(full(id)); }
+    public static String oreDropping(String item) { Source s = source; return s == null || item == null ? null : s.oreDropping(full(item)); }
+
+    /** The mob kind's facts from the game (null: no data for it, or no data loaded). */
+    public static Mob mob(String id) { Source s = source; return s == null || id == null ? null : s.mob(full(id)); }
     public static boolean shield(String id) { Source s = source; return s != null && s.shield(full(id)); }
 
     /** Mob id -> the food its loot table drops (empty without data: said once). */
@@ -232,6 +261,7 @@ public final class ItemWorth {
     public static boolean junkFood(String id) { Source s = source; return s != null && s.junkFood(full(id)); }
     public static boolean plank(String id) { Source s = source; return s != null && s.plank(full(id)); }
     public static boolean station(String id) { Source s = source; return s != null && s.station(full(id)); }
+    public static boolean container(String id) { Source s = source; return s != null && s.container(full(id)); }
     public static boolean stoneLike(String id) { Source s = source; return s != null && s.stoneLike(full(id)); }
 
     /** The items a furnace makes, from the recipes (empty: none loaded; the caller keeps its list). */

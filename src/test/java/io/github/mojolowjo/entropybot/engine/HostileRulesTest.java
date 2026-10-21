@@ -59,11 +59,11 @@ class HostileRulesTest {
     }
 
     @Test
-    void theSpiderLungerCountsOnlyThroughTheList() {
+    void aModMobThatIsNoEnemyCountsOnlyThroughTheList() {
         Mob lunger = Mob.of("arphex:spider_lunger");        // a TamableAnimal, not an Enemy
         assertEquals(Kind.NOT_HOSTILE, new World().kind(lunger));
         assertFalse(new World().kind(lunger).counts());
-        World w = new World(HostileRules.DEFAULTS.toArray(new String[0]));
+        World w = new World("arphex:spider_lunger");
         assertEquals(Kind.HOSTILE_LIST, w.kind(lunger));
         assertTrue(w.kind(lunger).counts());
         assertEquals(Kind.NOT_HOSTILE, w.kind(Mob.of("arphex:spider_jump")), "spider_jump is not seeded");
@@ -160,7 +160,7 @@ class HostileRulesTest {
         HostileRules.Parsed none = HostileRules.parse(null);
         assertEquals(HostileRules.DEFAULTS, none.ids());
         assertFalse(none.failed());
-        assertEquals(List.of("arphex:spider_lunger"), HostileRules.DEFAULTS);
+        assertEquals(List.of(), HostileRules.DEFAULTS, "no mod mob is seeded: the owner adds it");
         List<String> ids = List.of("arphex:spider_lunger", "arphex:spider_jump");
         HostileRules.Parsed back = HostileRules.parse(HostileRules.toJson(ids));
         assertEquals(ids, back.ids());
@@ -193,7 +193,7 @@ class HostileRulesTest {
 
     @Test
     void listAddRemove() {
-        List<String> cur = HostileRules.DEFAULTS;
+        List<String> cur = List.of("arphex:spider_lunger");
         HostileRules.Result r = HostileRules.command("", cur, REGISTRY::contains);
         assertNull(r.changed());
         assertTrue(r.text().contains("arphex:spider_lunger"), r.text());

@@ -33,7 +33,9 @@ class NoNameListsTest {
     /** Tag paths (the game's own tag names, not items) a converted file passes to the tag reader. */
     static final java.util.Map<String, Set<String>> ALLOWED_IN = java.util.Map.of("restore/RestoreRules.java", Set.of("dirt", "sand", "mud"));
     static final Set<String> VOCABULARY = Set.of("aa/AaManual.java", "aa/AaTree.java", "commands/VerbTable.java", "commands/PolicyCommands.java",
-            "vocab/Kinds.java", "surface/SurfaceFamily.java", "surface/SurfaceExport.java", "aa/FoodOptions.java");
+            "vocab/Kinds.java", "surface/SurfaceFamily.java", "surface/SurfaceExport.java", "aa/FoodOptions.java",
+            // the owner's typed words: the hotbar kinds (pickaxe, sword, ... torch), the goal grammar's verbs (furnace, table...); what a word is comes from the game
+            "engine/HotbarRules.java", "plan/GoalGrammar.java");
     /**
      * Not converted yet (named for the next pass, each a name list with a game-data replacement still to write): crafting by material
      * (ArmorCareRules, Chains, PlanRecipes, Planner, GatherSources, GatherPlan), mob and structure lists (ThreatFacts, ThreatRules,

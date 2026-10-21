@@ -576,8 +576,6 @@ public final class RestoreLive {
         List<Box> protect = protectBoxes();
         List<int[]> built = new ArrayList<>();
         java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();   // 0.19.7: what the count is made of, in the log
-        java.util.Map<String, Integer> clues = new java.util.TreeMap<>();
-        int wet = 0, open = 0;
         int r = BuildSpotter.radius();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = -r; dx <= r; dx++) {
@@ -588,13 +586,7 @@ public final class RestoreLive {
                     if (!level.isLoaded(m)) continue;
                     BlockState st = level.getBlockState(m);
                     if (st.isAir()) continue;
-                    if (!g.isProtectedBlock(st.getBlock())) {                    // 0.33.0: a natural structure's clue (cobweb, spawner...)
-                        String cid = BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
-                        if (io.github.mojolowjo.entropybot.vocab.NaturalStructures.clue(cid)) clues.merge(cid, 1, Integer::sum);
-                        continue;
-                    }
-                    if (!st.getFluidState().isEmpty()) wet++;
-                    if (level.canSeeSky(m.above())) open++;
+                    if (!g.isProtectedBlock(st.getBlock())) continue;
                     if (BuildSpotter.ownKind(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) continue;
                     boolean covered = false;
                     for (Box b : protect) if (b.contains(dim, x, y, z)) { covered = true; break; }
@@ -611,22 +603,19 @@ public final class RestoreLive {
             return null;
         }
         if (h != null) {
-            // 0.33.0: mineshaft planks and fences, a village, a ruined portal... are the world's own, not a build
-            java.util.Map<String, Integer> all = new java.util.TreeMap<>(kinds);
-            clues.forEach((k, v) -> all.merge(k, v, Integer::sum));
-            int villagers = level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,
-                    new net.minecraft.world.phys.AABB(new BlockPos(center[0], center[1], center[2])).inflate(r),
-                    e -> e instanceof net.minecraft.world.entity.npc.AbstractVillager || e instanceof net.minecraft.world.entity.animal.IronGolem).size();
+            // 0.33.0: mineshaft planks and fences, a village, a ruined portal... are the world's own, not a build: the game's structure data says
             String natural = null;
+            StructureSource.install();
             try {
-                natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(new io.github.mojolowjo.entropybot.vocab.NaturalStructures.Seen(all, villagers, wet, open));
+                natural = io.github.mojolowjo.entropybot.vocab.NaturalStructures.explains(dim, center[0], center[1], center[2], r);
             } catch (RuntimeException ex) {
-                LOG.warn("[entropybot] natural structure check: {}", ex.toString());
+                LOG.warn("[entropybot] natural structure check failed: {}", ex.toString());
             }
             if (natural != null) {
-                LOG.info("[entropybot] build scan near {}: {} (the world's own) - no hint; kinds {}", Jobs.fmt(center), natural, all);
+                LOG.info("[entropybot] build scan near {}: {} (the world's own) - no hint; kinds {}", Jobs.fmt(center), natural, kinds);
                 return null;
             }
+            if (!io.github.mojolowjo.entropybot.vocab.NaturalStructures.known()) LOG.info("[entropybot] build scan near {}: no structure data on a server, cannot say whether it is the world's own", Jobs.fmt(center));
             LOG.debug("[entropybot] build scan near {}: kinds {}", Jobs.fmt(center), kinds);
         }
         return h;

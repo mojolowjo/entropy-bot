@@ -28,7 +28,13 @@ public final class GuardCore {
 
     public enum Mode { STRICT, LOG }
 
-    public static final Set<String> DENIED_DIMS = Set.of("minecraft:the_nether", "minecraft:the_end");
+    /**
+     * The dimensions the bot never digs or places in: the owner's floor, an explicit prior. The game has no "forbidden dimension"
+     * data to read (a dimension type says whether beds work, not whether a bot may dig), so vanilla's Nether and End ids stand
+     * here; the overworld and modded dimensions are open.
+     */
+    private static final String[] DENIED = {"minecraft:the_nether", "minecraft:the_end"};
+    public static final Set<String> DENIED_DIMS = Set.copyOf(java.util.Arrays.asList(DENIED));
     /** The biggest box a lease may cover (the bridge's {@code dig} limit). */
     public static long maxLeaseVolume() { return Tuning.l("guardCore.maxLeaseVolume"); }
     /** A force lease (the owner's {@code dig ... force}) is smaller still. */

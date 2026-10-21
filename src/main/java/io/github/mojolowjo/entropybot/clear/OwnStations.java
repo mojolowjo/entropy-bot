@@ -13,10 +13,6 @@ import java.util.Set;
 public final class OwnStations {
     private OwnStations() {}
 
-    /** The stations the bot places and may pick up again (ids without the namespace). */
-    public static final Set<String> STATIONS = Set.of("crafting_table", "furnace", "blast_furnace", "smoker", "chest", "barrel",
-            "trapped_chest", "smithing_table", "stonecutter", "cartography_table", "fletching_table", "loom", "anvil");
-
     public interface Mine {
         boolean at(int x, int y, int z);
     }
@@ -24,22 +20,17 @@ public final class OwnStations {
     /** Set by the game side: the cell holds a station I placed myself (ledger). Null: none. */
     public static volatile Mine mine;
 
+    /** A workstation or container block of the game (it opens a menu: ItemWorth's station), vanilla ids only. */
     public static boolean station(String id) {
         if (id == null) return false;
         String s = id.toLowerCase();
-        int c = s.indexOf(':');
-        if (c >= 0) {
-            if (!s.startsWith("minecraft:")) return false;
-            s = s.substring(c + 1);
-        }
-        return STATIONS.contains(s);
+        if (s.indexOf(':') >= 0 && !s.startsWith("minecraft:")) return false;
+        return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.station(s);
     }
 
-    /** 0.33.0 review: the stations that hold items; one is picked up only when it is known to be empty. */
-    public static final Set<String> CONTAINERS = Set.of("chest", "trapped_chest", "barrel", "furnace", "blast_furnace", "smoker");
-
+    /** 0.33.0 review: the stations that hold items (the game's Container block entities); one is picked up only when it is known to be empty. */
     public static boolean container(String id) {
-        return id != null && CONTAINERS.contains(id.toLowerCase().replaceFirst("^minecraft:", ""));
+        return id != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.container(id.toLowerCase());
     }
 
     /**

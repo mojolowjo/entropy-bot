@@ -9,6 +9,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 0.23.6 armour care: which slots need a piece, and the replacement by stock and tier. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ArmorCareRulesTest {
     static ArmorCareRules.Piece on(String slot, String id, int left, int max) { return new ArmorCareRules.Piece(slot, id, left, max); }
 

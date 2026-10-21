@@ -30,13 +30,6 @@ public final class ThreatRules {
     /** Mobs further than this are not sampled at all (the reflexes look at most 24). */
     public static double sampleRadius() { return Tuning.get("threatRules.sampleRadius"); }
 
-    static final Set<String> FLIERS = Set.of("phantom", "ghast", "blaze", "vex", "breeze", "allay", "bee", "wither");
-    static final Set<String> RANGED = Set.of("skeleton", "stray", "bogged", "wither_skeleton", "pillager", "witch", "piglin",
-            "illusioner", "evoker", "shulker", "guardian", "elder_guardian", "drowned");
-    /** Kinds whose synced aggressive flag is never set by vanilla AI: there "aggro" is "it can see the bot". */
-    static final Set<String> NO_AGGRO_FLAG = Set.of("slime", "magma_cube", "phantom", "ghast", "blaze", "witch", "guardian",
-            "elder_guardian", "shulker", "vex", "breeze", "hoglin", "zoglin", "ravager");
-
     /** "minecraft:zombie" -> "zombie"; "nyfsspiders:big_spider" -> "big_spider". */
     public static String path(String id) {
         if (id == null) return "";
@@ -45,17 +38,18 @@ public final class ThreatRules {
     }
 
     public static Move moveOf(String id) {
-        String p = path(id);
-        if (p.contains("spider")) return Move.SPIDER;
-        if (FLIERS.contains(p)) return Move.FLY;
-        if (p.equals("enderman")) return Move.TELEPORT;
-        if (RANGED.contains(p)) return Move.RANGED;
-        return Move.WALK;
+        // from the game's entity class and attributes (ItemWorth.mob); a kind the game data does not know walks
+        var m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mob(id);
+        return m == null ? Move.WALK : Move.valueOf(m.move().name());
     }
 
     public static boolean creeper(String id) { return path(id).endsWith("creeper"); }
 
-    public static boolean aggroFlagReliable(String id) { return !NO_AGGRO_FLAG.contains(path(id)); }
+    /** Kinds whose synced aggressive flag vanilla AI never sets say "aggro" only as "it can see the bot" (from the game's entity class). */
+    public static boolean aggroFlagReliable(String id) {
+        var m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mob(id);
+        return m == null || m.flagged();
+    }
 
     /** Path budget: a walk longer than this is "no reach" (owner: max(24, 1.6 x straight)). */
     public static double pathBudget(double straight) { return Math.max(24, Tuning.get("threatRules.pathBudgetK") * straight); }

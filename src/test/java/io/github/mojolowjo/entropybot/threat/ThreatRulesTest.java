@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class ThreatRulesTest {
     static ThreatRules.MobSample s(String kind, double straight, boolean aggressive, double yawOff, boolean seen, boolean hit, int path, double prev) {
         return new ThreatRules.MobSample(1, kind, straight, aggressive, yawOff, seen, hit, path, prev);

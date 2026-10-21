@@ -11,6 +11,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** AA_CLEANUP 4: the danger desire's ways priced on the threat facts (by number, no rule). */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class DangerOptionsTest {
     static final ThreatFacts.Ways OPEN = new ThreatFacts.Ways(16, -1, true, 0, 3, true);
 

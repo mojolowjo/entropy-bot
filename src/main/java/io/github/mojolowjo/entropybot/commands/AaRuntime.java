@@ -2721,10 +2721,11 @@ public final class AaRuntime implements JobPort {
     }
 
     private java.util.Set<String> lootPassive = java.util.Set.of();
-    /** Friendly-category mobs that fight back: never "passive" for a loot hunt (the animals kind may still allow them). */
-    static final java.util.Set<String> NEUTRAL = java.util.Set.of("minecraft:wolf", "minecraft:llama", "minecraft:trader_llama", "minecraft:polar_bear",
-            "minecraft:bee", "minecraft:panda", "minecraft:goat", "minecraft:iron_golem", "minecraft:dolphin", "minecraft:fox");
-
+    /** A friendly-category mob that fights back (a wolf, a bee, a polar bear, a llama): the game gives it an attack-damage attribute or a ranged attack; never "passive" for a loot hunt. */
+    static boolean fightsBack(String id) {
+        var m = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mob(id);
+        return m != null && (!Double.isNaN(m.damage()) || m.move() == io.github.mojolowjo.entropybot.aa.brain.ItemWorth.MobMove.RANGED);
+    }
     /**
      * Loot data (BRAIN_PLAN "knowledge from the game at load"), singleplayer only: every mob's and block's loot table and
      * the chests/ tables, encoded to JSON with LootTable.DIRECT_CODEC (registry ops) and parsed by the pure LootBook;
@@ -2765,7 +2766,7 @@ public final class AaRuntime implements JobPort {
                 var type = e.getValue();
                 if (type.getCategory() == net.minecraft.world.entity.MobCategory.MISC) continue;
                 String id = e.getKey().location().toString();
-                if (type.getCategory().isFriendly() && !NEUTRAL.contains(id)) passive.add(id);   // review: neutral ones fight back
+                if (type.getCategory().isFriendly() && !fightsBack(id)) passive.add(id);   // review: neutral ones fight back
                 String table = type.getDefaultLootTable().location().toString();
                 var parsed = io.github.mojolowjo.entropybot.aa.brain.LootBook.parse(lookup.apply(table), lookup);
                 all.addAll(io.github.mojolowjo.entropybot.aa.brain.LootBook.sources(io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.MOB, id, parsed));
@@ -2820,9 +2821,8 @@ public final class AaRuntime implements JobPort {
 
     /** The loot plan's context: hunting on, passive mobs, the owner's animals kind, the mine verb's blocks, armed. */
     private void lootCtx() {
-        java.util.Set<String> armedSet = java.util.Set.of("stone_sword", "iron_sword", "diamond_sword", "netherite_sword", "stone_axe", "iron_axe", "diamond_axe", "netherite_axe");
-        boolean armed = false;
-        for (var e : bb.in.bag.entrySet()) if (e.getValue() > 0 && armedSet.contains(e.getKey().replaceFirst("^minecraft:", ""))) armed = true;
+        boolean armed = false;       // a weapon in the bag that hits as hard as the danger model's armed bar (the game's attack-damage component)
+        for (var e : bb.in.bag.entrySet()) if (e.getValue() > 0 && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.facts(e.getKey()).attack() >= io.github.mojolowjo.entropybot.threat.ThreatFacts.armed()) armed = true;
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.LootBook.CTX_FACT, new io.github.mojolowjo.entropybot.aa.brain.LootBook.Ctx(
                 c.stepRun != null && c.stepRun.on(), lootPassive, java.util.Set.copyOf(c.vocab.expand("animals")),
                 b -> io.github.mojolowjo.entropybot.cave.MineRules.EXTRA.matcher(b).find(), armed));

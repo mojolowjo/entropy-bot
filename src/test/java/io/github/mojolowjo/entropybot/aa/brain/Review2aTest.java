@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** AA_REVIEW review 2 items 1, 3, 5: the night factor by where the work is, no pickTier surface gate, light as an area. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class Review2aTest {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());

@@ -80,16 +80,6 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
 
     // ---- the mob model (from FightOrFlee, AA_CLEANUP 4) ----
 
-    /** Vanilla Normal: {raw damage per hit, health}. Unknown: 5 / 20. */
-    static final Map<String, double[]> MOBS = Map.ofEntries(
-            Map.entry("zombie", new double[]{3, 20}), Map.entry("husk", new double[]{3, 20}), Map.entry("drowned", new double[]{3, 20}),
-            Map.entry("zombie_villager", new double[]{3, 20}), Map.entry("skeleton", new double[]{3, 20}), Map.entry("stray", new double[]{3, 20}),
-            Map.entry("bogged", new double[]{3, 16}), Map.entry("spider", new double[]{2, 16}), Map.entry("cave_spider", new double[]{3, 12}),
-            Map.entry("enderman", new double[]{7, 40}), Map.entry("witch", new double[]{6, 26}), Map.entry("pillager", new double[]{4, 24}),
-            Map.entry("vindicator", new double[]{13, 24}), Map.entry("silverfish", new double[]{1, 8}), Map.entry("slime", new double[]{4, 16}),
-            Map.entry("magma_cube", new double[]{6, 16}), Map.entry("phantom", new double[]{2, 20}), Map.entry("piglin_brute", new double[]{13, 50}),
-            Map.entry("wither_skeleton", new double[]{8, 20}), Map.entry("blaze", new double[]{6, 20}));
-
     /** Light this high is lit (spawning stops); the lit-spot search reaches this far (ThreatRuntime). */
     public static int lit() { return Tuning.i("threatFacts.lit"); }
     public static int litMaxDist() { return Tuning.i("threatFacts.litMaxDist"); }
@@ -121,7 +111,7 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
     public static Foe foe(String kind, double dist, int armor, MobDamage seen) {
         String k = ThreatRules.path(kind);
         ThreatRules.Move mv = ThreatRules.moveOf(kind);
-        double[] m = MOBS.get(k);
+        var mob = io.github.mojolowjo.entropybot.aa.brain.ItemWorth.mob(kind);       // the game's attributes (health, attack damage)
         double obs = seen == null ? Double.NaN : seen.observed(kind);
         double hit;
         String basis;
@@ -129,12 +119,14 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
             hit = obs;
             basis = "observed " + ThreatRules.fmt(Math.round(obs * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
         } else {
-            hit = taken(m == null ? 5 : m[0], armor);
-            basis = (m == null ? "unknown kind, assumed " : "table ") + ThreatRules.fmt(Math.round(hit * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
+            // a shooter has no attack-damage attribute (its arrow carries the damage): the game has no number, so a prior
+            boolean noAttr = mob == null || Double.isNaN(mob.damage());
+            hit = taken(mob == null ? Tuning.get("threatFacts.unknownHit") : noAttr ? Tuning.get("threatFacts.shooterHit") : mob.damage(), armor);
+            basis = (mob == null ? "unknown kind, assumed " : noAttr ? "shooter prior " : "game attribute ") + ThreatRules.fmt(Math.round(hit * 10) / 10.0) + "/hit";  // structural: rounded to one decimal for the text
         }
         boolean ranged = mv == ThreatRules.Move.RANGED;
         double dps = hit / (ranged ? SHOT_EVERY_S : HIT_EVERY_S);
-        return new Foe(k, dist, mv, dps, m == null ? 20 : m[1], speedOf(mv), ranged ? rangedRange() : MELEE_REACH, basis);
+        return new Foe(k, dist, mv, dps, mob == null || Double.isNaN(mob.health()) ? Tuning.get("threatFacts.unknownHealth") : mob.health(), speedOf(mv), ranged ? rangedRange() : MELEE_REACH, basis);
     }
 
     /** 0.23.2: sprint whenever a run moves (vanilla needs food above 6). */

@@ -75,7 +75,6 @@ public final class MineRules {
     public static int protectMargin() { return Tuning.i("mineRules.protectMargin"); }
     /** A lease covers at most this many blocks (GuardCore.MAX_LEASE_VOLUME): bigger boxes are sliced. */
     public static long leaseMax() { return Tuning.l("mineRules.leaseMax"); }
-    static final Map<String, Integer> DROPS_PER = Map.of("redstone", 4, "lapis", 4, "copper", 3);
     /** The pickaxe tier a need asks of the tool, from the block tags (MiningTiers.needTier): the one scale; the caller's default is for an unreadable need and is replaced by tools.unknownNeedTier. */
     public static final NeedTiers PICK_TIER = new NeedTiers();
 
@@ -332,18 +331,25 @@ public final class MineRules {
 
     // ---- the count ----
 
-    /** How many of the target it mined, from what it picked up: the block, its raw ore, its drop (redstone and lapis drop ~4). */
-    public static int count(String target, Map<String, Integer> gained) {
-        String path = target.replaceFirst("^.*:", "");
-        String base = path.replaceFirst("^(deepslate|nether)_", "").replaceFirst("_ore$", "");
-        int n = 0;
-        for (Map.Entry<String, Integer> e : gained.entrySet()) {
-            String k = e.getKey(), nm = k.replaceFirst("^.*:", "");
-            if (k.equals(target) || nm.equals("raw_" + base) || nm.equals(base) || nm.equals(base + "_lazuli")) n += e.getValue();
+    /**
+     * How many of the target it mined, from what it picked up: the block itself and what its loot table drops, divided by the
+     * expected drops a block gives (the game's loot table: redstone about 4.5 a block). Without a loot book (no loot tables
+     * on a multiplayer client) every pickup counts as one block, and the book's origin says so wherever it is shown.
+     */
+    public static int count(String target, Map<String, Integer> gained, io.github.mojolowjo.entropybot.aa.brain.LootBook book) {
+        java.util.Set<String> drops = new java.util.HashSet<>();
+        double per = 0;
+        if (book != null) {
+            for (var s : book.blockDrops(target)) {
+                if (s.item().equals(target)) continue;
+                drops.add(s.item());
+                per += s.per() * s.chance();
+            }
         }
-        return n / DROPS_PER.getOrDefault(base, 1);
+        double n = 0;
+        for (Map.Entry<String, Integer> e : gained.entrySet()) if (e.getKey().equals(target) || drops.contains(e.getKey())) n += e.getValue();
+        return (int) (per > 1 ? n / per : n);
     }
-
     /** What the bag gained since before (countsDiff's gained). */
     public static Map<String, Integer> gained(Map<String, Integer> before, Map<String, Integer> after) {
         Map<String, Integer> out = new java.util.LinkedHashMap<>();

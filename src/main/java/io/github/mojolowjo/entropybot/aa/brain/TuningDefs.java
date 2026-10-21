@@ -947,6 +947,9 @@ final class TuningDefs {
         Tuning.def("escort.feedDist", 5, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks within which the bot feeds the player");
         Tuning.def("floorSteps.throwLookDist", 8, "rm-final 0.39.u3", "blocks ahead of the bot the camera is aimed at for the junk throw");
         Tuning.def("floorSteps.throwLookUp", 1.4, "rm-final 0.39.u3", "blocks above eye level the throw aims (about 10 degrees up at 8 blocks)");
+        Tuning.def("threatFacts.unknownHit", 5, "rm-final 0.39.u3 (was the table's default)", "raw damage per hit assumed for a mob kind the game data does not know");
+        Tuning.def("threatFacts.shooterHit", 3, "rm-final 0.39.u3 (prior: no attribute exists)", "raw damage per shot assumed for a shooter: its arrow carries the damage, the game has no per-mob number (vanilla arrows hurt about 3 at Normal)");
+        Tuning.def("threatFacts.unknownHealth", 20, "rm-final 0.39.u3 (was the table's default)", "health assumed for a mob kind the game data does not know (the player's own 20)");
         Tuning.def("escort.throwLookTicks", 3, "rm-final 0.39.u3", "ticks the camera (Baritone's LookBehavior) gets to face the player before the food is thrown");
         Tuning.def("escort.fightDist", 4, "rm-constants 0.39.u2 (inline literal in Escort)", "blocks within which an escort fights a mob");
         Tuning.def("escort.stepTicks", 40, "rm-constants 0.39.u2 (inline literal in Escort)", "ticks a step lasts");

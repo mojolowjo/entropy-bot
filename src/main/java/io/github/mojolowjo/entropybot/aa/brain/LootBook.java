@@ -96,6 +96,13 @@ public final class LootBook {
         return mobs + " mob drops, " + blocks + " block drops, " + chests + " chest items, " + trades + " trades (" + origin + ")";
     }
 
+    /** What one block of the id drops: the BLOCK sources whose from is the block (item, expected count). */
+    public List<Source> blockDrops(String block) {
+        List<Source> out = new ArrayList<>();
+        for (List<Source> l : byItem.values()) for (Source s : l) if (s.kind() == Kind.BLOCK && s.from().equals(block) && s.chance() > 0) out.add(s);
+        return out;
+    }
+
     /** Every source of the item, best first (mobs and blocks by per, then chests, then trades). */
     public List<Source> sources(String item) {
         List<Source> l = new ArrayList<>(byItem.getOrDefault(TechTree.id(item), List.of()));

@@ -188,11 +188,18 @@ class MiningRulesTest {
         g.put("minecraft:raw_iron", 3);
         g.put("minecraft:cobblestone", 9);
         g.put("minecraft:iron_ore", 1);
-        assertEquals(4, MineRules.count("minecraft:iron_ore", g), "raw iron and the block itself");
-        assertEquals(3, MineRules.count("minecraft:deepslate_iron_ore", g), "another block of the family is no block of it (as the bridge)");
-        assertEquals(2, MineRules.count("minecraft:redstone_ore", Map.of("minecraft:redstone", 9)), "redstone drops about 4 a block");
-        assertEquals(1, MineRules.count("minecraft:deepslate_lapis_ore", Map.of("minecraft:lapis_lazuli", 5)));
-        assertEquals(2, MineRules.count("minecraft:sand", Map.of("minecraft:sand", 2)));
+        var B = io.github.mojolowjo.entropybot.aa.brain.LootBook.Kind.BLOCK;
+        var book = new io.github.mojolowjo.entropybot.aa.brain.LootBook(List.of(
+                new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(B, "minecraft:iron_ore", "minecraft:raw_iron", 1, 1, false, null),
+                new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(B, "minecraft:redstone_ore", "minecraft:redstone", 4.5, 1, false, null),
+                new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(B, "minecraft:deepslate_lapis_ore", "minecraft:lapis_lazuli", 6.5, 1, false, null),
+                new io.github.mojolowjo.entropybot.aa.brain.LootBook.Source(B, "minecraft:sand", "minecraft:sand", 1, 1, false, null)), "test");
+        assertEquals(4, MineRules.count("minecraft:iron_ore", g, book), "raw iron and the block itself");
+        assertEquals(0, MineRules.count("minecraft:deepslate_iron_ore", g, book), "another block of the family is no block of it, and the book knows no drop for it");
+        assertEquals(2, MineRules.count("minecraft:redstone_ore", Map.of("minecraft:redstone", 9), book), "redstone drops about 4.5 a block: from the loot table");
+        assertEquals(1, MineRules.count("minecraft:deepslate_lapis_ore", Map.of("minecraft:lapis_lazuli", 7), book));
+        assertEquals(2, MineRules.count("minecraft:sand", Map.of("minecraft:sand", 2), book));
+        assertEquals(9, MineRules.count("minecraft:redstone_ore", Map.of("minecraft:redstone_ore", 9), null), "no loot book: each pickup is one block");
         assertEquals(" - got 9 cobblestone, 3 raw_iron, 1 iron_ore", MineRules.gains(g));
         assertEquals(" - got nothing", MineRules.gains(Map.of()));
         Map<String, Integer> five = new LinkedHashMap<>();

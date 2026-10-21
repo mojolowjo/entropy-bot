@@ -9,6 +9,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** 0.25.1 gear.ironFirst: iron to chestplate then leggings; leather fills helmet and boots meanwhile. */
+@org.junit.jupiter.api.extension.ExtendWith(io.github.mojolowjo.entropybot.aa.brain.VanillaData.class)
 class GearOrderTest {
     static final List<ArmorCareRules.Piece> NAKED = List.of(new ArmorCareRules.Piece("helmet", null, 0, 0), new ArmorCareRules.Piece("chestplate", null, 0, 0),
             new ArmorCareRules.Piece("leggings", null, 0, 0), new ArmorCareRules.Piece("boots", null, 0, 0));
