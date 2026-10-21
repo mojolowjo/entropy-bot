@@ -83,7 +83,7 @@ class MiningTiersTest {
     @Test void theTermsNameTheCountAndTheIdeas() {
         var r = at(2);
         assertTrue(r.terms().startsWith(r.blocked() + " of " + r.of() + " pickaxe-bound"), r.terms());
-        assertEquals((double) r.blocked() / r.of(), r.share(), 1e-9);
+        assertTrue(r.share() <= (double) r.blocked() / r.of() + 1e-9);      // weighted by tier distance, at most the plain part
     }
 
     @Test void ownerOreGoalCountsOnlyUnderStone() {
@@ -117,17 +117,30 @@ class MiningTiersTest {
                 r("minecraft:stone_pickaxe", "minecraft:cobblestone", "minecraft:stick"), r("minecraft:furnace", "minecraft:cobblestone"),
                 r("minecraft:iron_ingot", "minecraft:iron_ore"), r("minecraft:torch", "minecraft:coal", "minecraft:stick")));
         var fresh = MiningTiers.blocked(wood, src, Set.of(), 0, 1);
-        assertTrue(fresh.of() > 0 && fresh.share() > 0.9, fresh.terms());
+        assertTrue(fresh.of() > 0 && fresh.share() > 0.6, fresh.terms());
+        var wooden = MiningTiers.blocked(wood, src, Set.of("minecraft:wooden_pickaxe"), 1, 1);
+        assertTrue(wooden.share() < fresh.share(), wooden.terms());
+        // review p2: with stone tools had, tools falls under the food stock and the torches
+        double stoneTools = Costs.tools(2, 100, Costs.blocked(MiningTiers.blocked(wood, src, Set.of("minecraft:stone_pickaxe"), 2, 1), 2, false));
+        assertTrue(stoneTools < 60 && stoneTools < Costs.torchScore(0), "tools at stone " + stoneTools);
         assertTrue(Costs.tools(0, 0, Costs.blocked(fresh, 0, false)) > 60);
         var stone = MiningTiers.blocked(wood, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe"), 2, 1);
         assertTrue(stone.share() < fresh.share(), stone.terms());
+    }
+
+    /** review p2: the cache keys on the tier and the pickaxe-bound part of the bag: a log picked up keeps the result. */
+    @Test void theCacheKeysOnThePickaxeBoundBag() {
+        var a = MiningTiers.blocked(tree, src, Set.of("minecraft:stick"), 1, 8);
+        assertSame(a, MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:oak_log"), 1, 8));
+        assertNotSame(a, MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:iron_ingot"), 1, 8));
+        assertNotSame(a, MiningTiers.blocked(tree, src, Set.of("minecraft:stick"), 2, 8));
     }
 
     @Test void freshVersusStoneToolsAgainstTheOldTable() {
         double fresh = Costs.blocked(MiningTiers.blocked(tree, src, STICK, 0, 8), 0, false);
         double stone = Costs.blocked(MiningTiers.blocked(tree, src, Set.of("minecraft:stick", "minecraft:stone_pickaxe", "minecraft:cobblestone"), 2, 8), 2, false);
         double oldFresh = Costs.blocked(0, false, 0, 0, false), oldStone = Costs.blocked(2, true, 5, 16, false);
-        assertTrue(fresh > 0.9, "fresh " + fresh + " (old table " + oldFresh + ")");
+        assertTrue(fresh > 0.4, "fresh " + fresh + " (old table " + oldFresh + ")");
         assertTrue(Costs.tools(0, 0, fresh) > 60, "fresh tools " + Costs.tools(0, 0, fresh) + " must beat the food stock 60");
         assertTrue(stone < fresh, "stone " + stone + " fresh " + fresh + " (old table " + oldStone + ")");
     }

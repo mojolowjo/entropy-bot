@@ -151,7 +151,7 @@ public final class Costs {
     public static double blocked(MiningTiers.Result r, int pickTier, boolean ownerOreGoal) {
         int add = ownerOreGoal && pickTier < 2 ? 1 : 0;
         int of = r.of() + add;
-        return of <= 0 ? 0 : (double) (r.blocked() + add) / of;
+        return of <= 0 ? 0 : (r.share() * r.of() + add) / of;       // review p2: the weighted share
     }
 
     public static String toolsTerms(int pickTier, int pickPct, double blocked, String why) {

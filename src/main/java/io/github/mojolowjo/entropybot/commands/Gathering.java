@@ -49,7 +49,7 @@ final class Gathering {
         String from, item;
         int want, minutes, steps, noProgress;
         boolean siteWalk;
-        int[] quarryAt;
+        int[] quarryAt, siteTarget;
         long deadline, retryAt;
         JobRequests.Request req, sub;
         GatherPlan.Step step;
@@ -228,7 +228,7 @@ final class Gathering {
             int qn = m.find() ? Integer.parseInt(m.group(1)) : 64;
             io.github.mojolowjo.entropybot.gather.QuarrySites.Pick pick;
             try {
-                pick = DigCommands.quarrySite(p, qn);
+                pick = DigCommands.quarrySite(commands, p, qn);
             } catch (RuntimeException e) {
                 LOG.warn("[entropybot] gather: quarry site choice failed", e);
                 pick = null;
@@ -243,6 +243,7 @@ final class Gathering {
                 if (!pick.here(me3)) {
                     r.command = "goto " + pick.site()[0] + " " + pick.site()[1] + " " + pick.site()[2];
                     r.siteWalk = true;
+                    r.siteTarget = pick.site();
                     whisper(r, "walking to the quarry site (" + pick.terms() + ")");
                 } else r.quarryAt = pick.site();
             }
@@ -270,6 +271,8 @@ final class Gathering {
         }
         if (Texts.stepFailed(text)) {
             // refused at once: another source command may still work (the strip mine refused -> the ore in view)
+            if (r.siteWalk && r.siteTarget != null)              // review p2: a refused walk to a quarry site is charged too
+                io.github.mojolowjo.entropybot.gather.QuarrySites.charge(r.siteTarget, "walk refused: " + text.replaceFirst("^error: ", ""), System.currentTimeMillis());
             int f = r.leafFails.merge(s.leaf(), 1, Integer::sum);
             r.noProgress++;
             r.lastFail = r.command + ": " + text;
@@ -313,6 +316,14 @@ final class Gathering {
         if (r.siteWalk) {                                      // regression o1: the walk to a quarry site is not a gather step
             r.siteWalk = false;
             r.steps--;
+            int[] at = Jobs.groundUnder((net.minecraft.client.multiplayer.ClientLevel) p.level(), Jobs.here(p)[0], Jobs.here(p)[1], Jobs.here(p)[2]);
+            if (r.siteTarget != null && io.github.mojolowjo.entropybot.gather.QuarrySites.missed(r.siteTarget, at)) {   // review p2: an unreachable site is a fact
+                io.github.mojolowjo.entropybot.gather.QuarrySites.charge(r.siteTarget, "walk failed: " + shortMsg(msg), System.currentTimeMillis());
+                r.noProgress++;
+                r.lastFail = r.command + ": " + msg;
+                whisper(r, "couldn't reach the quarry site (" + shortMsg(msg) + ") - the next site goes next");
+                return;
+            }
             whisper(r, "at the quarry site: " + shortMsg(msg));
             return;
         }

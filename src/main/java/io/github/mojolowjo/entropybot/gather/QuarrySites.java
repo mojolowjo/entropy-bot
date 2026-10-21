@@ -11,14 +11,14 @@ import java.util.Locale;
  * regression o1 (0.39.p1): where the cobblestone quarry runs is a priced choice among stone sites, not "here". The sites
  * are my feet plus the exposed stone columns within {@link #RADIUS} (the adapter's loaded-chunk pass, cached
  * {@link #CACHE_MS}); each is priced walk + dig (the planned cells). A site whose plan meets water or lava (or that
- * failed when dug) is charged in {@link Failures} under desire {@code quarry}, option {@code "<x> <z>"}, and every
+ * failed when dug) is charged in {@link Failures} under desire {@code quarry}, option {@code "<x> <y> <z>"}, and every
  * caller (bootstrap, TOOLS, TORCHES: all go through gather) skips it while held. Pure (JUnit: QuarrySitesTest).
  * Loader notes: none (the world reads are the caller's StonePit.World).
  */
 public final class QuarrySites {
     private QuarrySites() {}
 
-    public static final String DESIRE = "quarry";
+    public static final String DESIRE = "site.quarry";        // review p2: a prefix no desire uses
     public static final int RADIUS = 48;
     public static final long CACHE_MS = 10_000;
     /** Dig cost per planned cell, in walk-blocks. */
@@ -31,16 +31,35 @@ public final class QuarrySites {
 
     public static Failures failures() { return failures; }
 
-    public static String option(int[] feet) { return feet[0] + " " + feet[2]; }
+    public static String option(int[] feet) { return feet[0] + " " + feet[1] + " " + feet[2]; }
 
     /** Charges a failed site (water or lava by it, dug and failed): held for every caller. */
     public static void charge(int[] feet, String reason, long now) {
         failures.failed(DESIRE, option(feet), reason, now, null);
     }
 
+    /** review p2: the walk to a site ended more than 2 blocks from it (it failed, whatever its text said). */
+    public static boolean missed(int[] site, int[] at) { return dist(site, at) > 2; }
+
     public static boolean held(int[] feet, long now) { return failures.blocked(DESIRE, option(feet), now); }
 
     public interface Planner { StonePit.Plan plan(int[] feet); }
+
+    /**
+     * review p2: the area facts inside the planner: a plan with a cell where {@code banned} names an area (main, safe,
+     * keep-out) is an error, so that site is charged and dropped before any walk.
+     */
+    public static Planner avoiding(Planner pl, java.util.function.Function<int[], String> banned) {
+        return f -> {
+            StonePit.Plan p = pl.plan(f);
+            if (p.err() != null) return p;
+            for (int[] c : p.cells()) {
+                String a = banned.apply(c);
+                if (a != null) return new StonePit.Plan(List.of(), 0, p.columns(), "error: the quarry would dig into " + a + " at " + c[0] + " " + c[1] + " " + c[2]);
+            }
+            return p;
+        };
+    }
 
     /** site: the feet to dig from (null: none); dropped: the sites left out and why; terms for the log. */
     public record Pick(int[] site, StonePit.Plan plan, double price, List<String> dropped, String terms) {

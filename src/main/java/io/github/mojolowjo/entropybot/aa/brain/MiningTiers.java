@@ -107,65 +107,38 @@ public final class MiningTiers {
     public static Result blocked(TechTree t, Source s, Set<String> have, int pickTier, int top) {
         pickTier = Math.max(0, pickTier);                  // no pickaxe = 0, never a negative
         Map<String, Integer> need = cachedNeeds(t, s);
-        String ck = have.hashCode() + "/" + have.size() + "/" + pickTier + "/" + top;
+        Set<String> had = new HashSet<>();
+        for (String x : have) had.add(TechTree.id(x));
+        // review p2: the cache key is the tier and the pickaxe-bound part of the bag (the only part the share reads)
+        java.util.TreeSet<String> bound = new java.util.TreeSet<>();
+        for (String x : had) { int n = need.getOrDefault(x, 0); if (n >= 1 && n != UNREACHABLE) bound.add(x); }
+        String ck = pickTier + "|" + String.join(",", bound);
         synchronized (MiningTiers.class) {
             if (t == lastTree && s == lastSource && ck.equals(lastKey)) return lastResult;
         }
-        // regression o1: the counted set is every reachable item that needs ANY pickaxe among the next ideas and their
-        // mined inputs (the cobble for a furnace, the ore of an ingot), over WAVES waves: each wave's items the current
-        // tier can get count as had for the next (the tree opening). The share is the part above the current tier: a
-        // fresh start is near 1 (everything pickaxe-bound waits on the first pickaxe), falling as tiers open.
-        java.util.LinkedHashSet<String> pool = new java.util.LinkedHashSet<>();
-        Set<String> made = new HashSet<>();
-        for (TechTree.Recipe r : t.recipes()) made.add(r.result());
-        Set<String> h = new HashSet<>();
-        for (String x : have) h.add(TechTree.id(x));
-        List<TechTree.Idea> ideas = new ArrayList<>();
-        for (int wave = 0; wave < WAVES; wave++) {
-            List<TechTree.Idea> w = t.top(new HashSet<>(h), Math.max(1, top));
-            if (w.isEmpty()) break;
-            if (wave == 0) ideas.addAll(w);
-            Set<String> got = new HashSet<>();
-            for (TechTree.Idea i : w) {
-                pool.add(i.item());
-                if (need.getOrDefault(i.item(), 0) <= pickTier) got.add(i.item());
-                for (TechTree.Recipe r : t.recipes()) {
-                    if (!r.result().equals(i.item())) continue;
-                    for (Set<String> slot : r.slots()) {
-                        String bestAlt = null;
-                        int best = UNREACHABLE;
-                        for (String alt : slot) { int n = need.getOrDefault(alt, 0); if (bestAlt == null || n < best) { best = n; bestAlt = alt; } }
-                        if (bestAlt != null && !made.contains(bestAlt) && !h.contains(bestAlt)) {   // a mined input
-                            pool.add(bestAlt);
-                            if (best <= pickTier) got.add(bestAlt);
-                        }
-                    }
-                }
-            }
-            if (!h.addAll(got)) break;
-        }
-        // the waves can stay among wood and wool variants in a big tree: every item not had that needs a pickaxe counts too
-        Set<String> had = new HashSet<>();
-        for (String x : have) had.add(TechTree.id(x));
-        for (var e : need.entrySet()) if (!had.contains(e.getKey()) && e.getValue() >= 1 && e.getValue() != UNREACHABLE) pool.add(e.getKey());
+        // regression o1 / review p2: every pickaxe-bound item not had counts; one above the tier weighs the part of its
+        // tier still missing ((its tier - mine) / its tier), so each tier gained lowers every item still above it. A fresh start is high (everything waits
+        // on the first pickaxe); the share falls with each tier.
         List<String> names = new ArrayList<>();
         int of = 0;
-        for (String id : pool) {
-            int n = need.getOrDefault(id, 0);
-            if (n == UNREACHABLE || n < 1) continue;           // needs no pickaxe, or no way known: not the pickaxe's share
+        double w = 0;
+        for (var e : need.entrySet()) {
+            int n = e.getValue();
+            if (had.contains(e.getKey()) || n == UNREACHABLE || n < 1) continue;   // needs no pickaxe, or no way known
             of++;
-            if (n > pickTier) names.add(id.startsWith("minecraft:") ? id.substring(10) : id);
+            if (n > pickTier) {
+                w += (double) (n - pickTier) / n;          // the part of its tier still missing
+                names.add(e.getKey().startsWith("minecraft:") ? e.getKey().substring(10) : e.getKey());
+            }
         }
-        double share = of == 0 ? 0 : (double) names.size() / of;
-        String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound items not had (top %d ideas, their mined inputs, the tree) need better than tier %d%s",
-                names.size(), of, ideas.size(), pickTier, names.size() > 8 ? " (" + String.join(", ", names.subList(0, 8)) + ", ...)" : names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
+        java.util.Collections.sort(names);
+        double share = of == 0 ? 0 : w / of;
+        String terms = String.format(Locale.ROOT, "%d of %d pickaxe-bound items not had need better than tier %d, weighted by the tier still missing %.2f%s",
+                names.size(), of, pickTier, share, names.size() > 8 ? " (" + String.join(", ", names.subList(0, 8)) + ", ...)" : names.isEmpty() ? "" : " (" + String.join(", ", names) + ")");
         Result res = new Result(names.size(), of, share, names, terms);
         synchronized (MiningTiers.class) { lastTree = t; lastSource = s; lastKey = ck; lastResult = res; }
         return res;
     }
-
-    /** How many waves of next ideas the blocked share looks ahead (the tree opening by what the tier can get). */
-    public static final int WAVES = 4;
     private static TechTree lastTree;
     private static Source lastSource;
     private static String lastKey;

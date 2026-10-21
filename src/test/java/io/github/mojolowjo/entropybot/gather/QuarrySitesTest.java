@@ -35,9 +35,32 @@ class QuarrySitesTest {
         for (String caller : List.of("bootstrap", "TOOLS", "TORCHES")) {
             var pick = QuarrySites.choose(List.of(dry, far), dry, PL, 1000);
             assertArrayEquals(far, pick.site(), caller);
-            assertTrue(pick.dropped().get(0).startsWith("-30 -2: dug, gave nothing"), caller + " " + pick.dropped());
+            assertTrue(pick.dropped().get(0).startsWith("-30 61 -2: dug, gave nothing"), caller + " " + pick.dropped());
         }
-        assertEquals(1, QuarrySites.failures().fails(QuarrySites.DESIRE, "-30 -2"));
+        assertEquals(1, QuarrySites.failures().fails(QuarrySites.DESIRE, "-30 61 -2"));
+    }
+
+    @Test void aCaveSiteAndASurfaceSiteAtTheSameXzHoldApart() {
+        int[] cave = {-30, 40, -2};
+        QuarrySites.charge(dry, "dug, gave nothing", 0);
+        assertTrue(QuarrySites.held(dry, 1));
+        assertFalse(QuarrySites.held(cave, 1));
+        assertTrue(QuarrySites.DESIRE.contains("."), "a prefix no desire name uses");
+    }
+
+    @Test void anAreaCellDropsTheSiteBeforeAnyWalk() {
+        var pl = QuarrySites.avoiding(PL, c -> c[0] < -25 ? "the area home" : null);
+        var pick = QuarrySites.choose(List.of(dry, far), dry, pl, 0);
+        assertArrayEquals(far, pick.site());
+        assertTrue(pick.dropped().get(0).contains("the area home"), pick.dropped().toString());
+        assertTrue(QuarrySites.held(dry, 1));
+    }
+
+    @Test void aFailedWalkToASiteIsCountedAsMissed() {
+        assertTrue(QuarrySites.missed(far, dry));
+        assertFalse(QuarrySites.missed(far, new int[]{-10, 62, -1}));
+        QuarrySites.charge(far, "walk failed: no path", 0);
+        assertNull(QuarrySites.choose(List.of(far), dry, PL, 1).site() == null ? null : "chosen again");
     }
 
     @Test void noSiteSaysWhy() {

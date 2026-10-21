@@ -394,7 +394,7 @@ final class DigCommands {
      * regression o1: the quarry site for {@code n} cobblestone among my feet and the exposed stone columns within
      * QuarrySites.RADIUS (top solid block is stone; scanned every 4 blocks, cached 10 s), priced walk + dig.
      */
-    static io.github.mojolowjo.entropybot.gather.QuarrySites.Pick quarrySite(LocalPlayer p, int n) {
+    static io.github.mojolowjo.entropybot.gather.QuarrySites.Pick quarrySite(Commands c, LocalPlayer p, int n) {
         var lv = (net.minecraft.client.multiplayer.ClientLevel) p.level();
         int[] here = Jobs.here(p);
         int[] feet = Jobs.groundUnder(lv, here[0], here[1], here[2]);
@@ -412,8 +412,17 @@ final class DigCommands {
             return out;
         }));
         cand.add(0, feet);
-        return io.github.mojolowjo.entropybot.gather.QuarrySites.choose(cand, feet,
-                f -> io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), f, CampCommands.quarryDir(lv, f), n), now);
+        String dim = Storage.dim();
+        var g = Core.INSTANCE.guard.core;
+        return io.github.mojolowjo.entropybot.gather.QuarrySites.choose(cand, feet, io.github.mojolowjo.entropybot.gather.QuarrySites.avoiding(
+                f -> io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), f, CampCommands.quarryDir(lv, f), n),
+                cell -> {                                   // review p2: main / safe areas and outside the bot's areas
+                    if (!c.inAreas(dim, cell[0], cell[2])) return "a spot outside my areas";
+                    var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
+                    if (ar == null || ar.name == null) return null;
+                    var t = PolicyCommands.typeOf(c.policyArea(ar.name));
+                    return t == io.github.mojolowjo.entropybot.guard.AreaType.BASE || t == io.github.mojolowjo.entropybot.guard.AreaType.NO_BREAK ? "the area " + ar.name : null;
+                }), now);
     }
 
     static String dig(Commands c, LocalPlayer p, String rest, String from) {
