@@ -27,7 +27,7 @@ public final class Kit {
     public static final String FACT = "aa.kitDeath";
     public static final long DESPAWN_MS = 300_000;
     /** Seconds of extra cost per unit of danger at the spot that killed me. */
-    public static final double DIED_S = 60;
+    public static final double DIED_S = Tuning.defOf("diedS");
     /** Under this missing worth there is nothing to go back for. */
     public static final double MIN_RECOVER = 2;
     /** Under this loot worth there is nothing to stash. */
@@ -37,7 +37,7 @@ public final class Kit {
     /** A trip this far from the base is a far trip (blocks). */
     public static final double FAR_TRIP = 64;
     /** The stash stays under the urgent line. */
-    public static final double STASH_MAX = 74;
+    public static final double STASH_MAX = Tuning.defOf("stashMax");
 
     public record Death(String dim, int x, int y, int z, Map<String, Integer> bag, long at) {
         public Site site() { return new Site(dim, x, y, z, 0); }
@@ -161,7 +161,7 @@ public final class Kit {
     }
 
     /** The recover's cost in seconds: the walk + DIED_S x (1 + danger). */
-    public static double recoverCost(double walkS, double danger) { return walkS + DIED_S * (1 + Math.max(0, danger)); }
+    public static double recoverCost(double walkS, double danger) { return walkS + Tuning.get("diedS") * (1 + Math.max(0, danger)); }
 
     /** The recover's value before the cost (at most 99), -1 when nothing to go back for. */
     public static double recoverValue(double missing, double pThere) {
@@ -187,7 +187,7 @@ public final class Kit {
     /** loot x danger x soon, under the urgent line; -1 when there is nothing (or no reason) to stash. */
     public static double stashValue(double loot, double danger, double soon) {
         if (loot < MIN_STASH || soon <= 0 || danger <= 0) return -1;
-        return Math.min(STASH_MAX, loot * danger * soon);
+        return Math.min(Tuning.get("stashMax"), loot * danger * soon);
     }
 
     public static String terms(double loot, double danger, double soon, double v) {

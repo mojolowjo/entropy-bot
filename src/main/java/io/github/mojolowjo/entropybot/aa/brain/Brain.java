@@ -26,7 +26,7 @@ import java.util.Map;
  * and logs an incident; the next tick picks the next best.
  */
 public final class Brain extends Node {
-    public static final double BONUS = 15, URGENT = 75;
+    public static final double BONUS = Tuning.defOf("margin"), URGENT = Tuning.defOf("urgent");
     public static final long MIN_RUN_MS = 60_000, STUCK_MS = 180_000, FAST_STUCK_MS = 40_000, WAIT_MAX_S = 60, WAIT_MIN_S = 3, CD_BASE_MS = 120_000, CD_MAX_MS = 16 * 60_000,
             GAP_MS = 5_000, PROBE_MS = 60_000;
 
@@ -157,7 +157,7 @@ public final class Brain extends Node {
             v = Curves.progress(value, p, c);
             parts = "value " + Math.round(value) + " x P " + Math.round(p * 100) / 100.0 + " / cost " + Math.round(c) + "s "
                     + (!Double.isNaN(live) ? "live" : stats.n(d.id) >= BrainStats.MIN_RUNS ? "measured" : "hand");
-        } else if (d.kind == Desire.Kind.UPKEEP && v >= 0 && v < URGENT && !Double.isNaN(live)) {
+        } else if (d.kind == Desire.Kind.UPKEEP && v >= 0 && v < Tuning.get("urgent") && !Double.isNaN(live)) {
             // AA_ROUND2 1: a far source does not pull the bot off a task it is close to finishing; urgent is never divided
             double value = v;
             v = value / (1 + live / Curves.COST_C);
@@ -168,7 +168,7 @@ public final class Brain extends Node {
             // AA_ROUND2 4 (was B3's +/-10): the night's danger makes surface work dearer and work under ground cheaper;
             // review 2 item 1: before the urgent test, so post-death tools at the surface (98) fall under the shelter
             double danger = danger(bb), m = exposureFactor(ex, danger);
-            v = v >= URGENT ? v * m : Math.min(URGENT - 1, v * m);      // review: the night never makes a desire urgent
+            v = v >= Tuning.get("urgent") ? v * m : Math.min(Tuning.get("urgent") - 1, v * m);      // review: the night never makes a desire urgent
             parts += " night x" + Math.round(m * 100) / 100.0 + " (danger " + Math.round(danger * 100) / 100.0 + ")";
         }
         if (parkedWhy != null) return new Scored(d, 0, 0, "parked (infeasible)", "parked: " + parkedWhy, 0, cu > now ? 0 : Math.max(0, v));
@@ -256,7 +256,7 @@ public final class Brain extends Node {
         }
     }
 
-    static boolean urgent(Desire d, double v) { return d.kind == Desire.Kind.UPKEEP && v >= URGENT; }
+    static boolean urgent(Desire d, double v) { return d.kind == Desire.Kind.UPKEEP && v >= Tuning.get("urgent"); }
 
     /** B2 (2.9): measured runs per desire (the adapter loads and saves them). */
     public final BrainStats stats = new BrainStats();
@@ -394,7 +394,7 @@ public final class Brain extends Node {
     }
 
     /** aa-night2 P0 1: the food bar under which eating beats a trumping (night) desire. */
-    public static final int TRUMP_FOOD = 4;
+    public static final int TRUMP_FOOD = (int) Tuning.defOf("trumpFood");
 
     /**
      * aa-night2 P0 1: a desire marked {@link Desire#trumps()} at its full score ({@link Costs#SHELTER_MAX}: the full night
@@ -408,15 +408,15 @@ public final class Brain extends Node {
      * itself is never trumped; the commitment margin decides between two at the cap, so they cannot alternate.
      */
     static boolean trumps(Blackboard bb, Scored s, Desire cur, double curScore) {
-        if (curScore >= Costs.SHELTER_MAX) return false;
+        if (curScore >= Tuning.get("shelterMax")) return false;
         // AA_CLEANUP 4: a desire that trumps the trumping ones (danger) beats a running shelter or hide at its full score too
-        if (!s.d().trumps || s.own() < Costs.SHELTER_MAX || (cur.trumps && !(s.d().overTrumps && !cur.overTrumps))) return false;
-        return !(cur.id.equals("needs.food") && bb.in.food < TRUMP_FOOD);
+        if (!s.d().trumps || s.own() < Tuning.get("shelterMax") || (cur.trumps && !(s.d().overTrumps && !cur.overTrumps))) return false;
+        return !(cur.id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood"));
     }
 
     private double curScore;
     /** The commitment bonus now (the personality's margin, default {@link #BONUS}). */
-    private double bonus = BONUS;
+    private double bonus = Tuning.get("margin");
 
     private Scored challenger(Blackboard bb, Desire cur, long now) {
         List<Scored> all = scoreAll(bb);
@@ -438,12 +438,12 @@ public final class Brain extends Node {
             boolean owner = s.d().kind == Desire.Kind.OWNER && s.d().freshUntil > now && now - startedAt >= MIN_RUN_MS;
             // AA_STEP2 review 1: the cap guard is only between trumping desires; food under TRUMP_FOOD and the owner's
             // fresh order still beat a running trumping one (danger waiting out the night at 99)
-            if (cur.trumps && !s.d().trumps && (owner || s.d().id.equals("needs.food") && bb.in.food < TRUMP_FOOD && s.score() > 0)) {
+            if (cur.trumps && !s.d().trumps && (owner || s.d().id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood") && s.score() > 0)) {
                 cands.add(s);
                 continue;
             }
             // and the other way round: starving food keeps the slot against a trumping desire (no flip back)
-            if (s.d().trumps && cur.id.equals("needs.food") && bb.in.food < TRUMP_FOOD) continue;
+            if (s.d().trumps && cur.id.equals("needs.food") && bb.in.food < Tuning.get("trumpFood")) continue;
             if (!urgent(s.d(), s.own()) && !owner) continue;
             if (urgent(cur, c.own()) && !urgent(s.d(), s.own())) continue;     // an owner goal never breaks urgent upkeep
             // urgent upkeep breaks an owner goal whatever its number; otherwise the challenger must beat score + bonus
@@ -458,7 +458,7 @@ public final class Brain extends Node {
         if (interruptTimes.size() >= MAX_INTERRUPTS_PER_MIN) {
             // director 2026-10-19: upkeep at CAP_EXEMPT+ (starving) is not capped; it still needs the probe below
             cands.removeIf(s -> {
-                boolean exempt = s.d().kind == Desire.Kind.UPKEEP && s.own() >= CAP_EXEMPT;
+                boolean exempt = s.d().kind == Desire.Kind.UPKEEP && s.own() >= Tuning.get("capExempt");
                 if (!exempt) wouldNote.put(s.d().id, "interrupt cap");
                 return !exempt;
             });
@@ -487,7 +487,7 @@ public final class Brain extends Node {
     /** Blackboard fact: when an UNDER upkeep desire last could run (ms). */
     public static final String UNDER_WANTED_FACT = "aa.underWantedAt";
     /** Upkeep this urgent is exempt from the cap (probe and false-interrupt cooldown still apply). */
-    public static final double CAP_EXEMPT = 90;
+    public static final double CAP_EXEMPT = Tuning.defOf("capExempt");
     private record Held(String why, long at) {}
     private final Map<String, Held> probeHeld = new HashMap<>();
     private final java.util.ArrayDeque<Long> interruptTimes = new java.util.ArrayDeque<>();
