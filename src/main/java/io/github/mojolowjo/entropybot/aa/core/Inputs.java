@@ -32,6 +32,11 @@ public final class Inputs {
     /** Tool wear as a cost (ToolWear): the best pickaxe's break speed on stone (the game's getDestroySpeed), uses left of all pickaxes. Not in the vector. */
     public float pickSpeed = 4f;
     public int pickLeft = 131;
+    /**
+     * aa-times: the game's seconds per stone block with the best pickaxe and by hand (GameTimesLive: Efficiency, Haste,
+     * water, off the ground all in), -1 = not read (ToolWear falls back to the plain formula). Not in the vector.
+     */
+    public double digStoneS = -1, handStoneS = -1;
     public boolean bedKnown, bedInBag, tableKnown, furnaceKnown, tableInBag, furnaceInBag, baseChests, baseKnown, shelterBuilt;
     /**
      * AREAS (0.39.2, AreaFacts): the meanings at the bot's cell, hardest first ("base,work"; "" none); the nearest base

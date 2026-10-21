@@ -29,6 +29,8 @@ public final class BrainState {
     public int pickaxes = 1, pickPct = 100, pickDurability = 131;
     /** Tool wear as a cost (aa ToolWear): the best pickaxe's break speed on stone (ItemStack.getDestroySpeed), 0 none. */
     public float pickSpeed = 4f;
+    /** aa-times: the game's seconds per stone block with the best pickaxe / by hand (GameTimesLive), -1 not read. */
+    public double digStoneS = -1, handStoneS = -1;
     /** 0.23.6: the first worn armour piece ("my iron_chestplate is at 6 %"), or null. */
     public String armorWorn;
     /** 0.24.3: armour and weapon tier (0-3; harmless defaults: diamond), deaths in the last day, the level's day time

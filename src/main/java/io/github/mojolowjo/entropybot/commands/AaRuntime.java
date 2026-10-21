@@ -457,7 +457,8 @@ public final class AaRuntime implements JobPort {
                     io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), caveDist, stripWhy == null, stripWhy,
                     furnaceDist, bag.getOrDefault("furnace", 0) > 0, bag.getOrDefault("crafting_table", 0) > 0,
                     bag.getOrDefault("cobblestone", 0) + bag.getOrDefault("cobbled_deepslate", 0), io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in), fairFacts,
-                    litterSite(dim, me, ores.size()), bag.getOrDefault("raw_iron", 0));
+                    litterSite(dim, me, ores.size()), bag.getOrDefault("raw_iron", 0),
+                    io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(GameTimesLive.bestPickaxeStoneSeconds(p)));     // aa-times: the dig term from the game
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: iron facts: {}", e.toString());
             return null;
@@ -521,7 +522,8 @@ public final class AaRuntime implements JobPort {
                 var sg = io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.sightings();
                 boolean trees = sg != null && sg.treesNear(dim, me[0], me[2], io.github.mojolowjo.entropybot.aa.WoodOptions.FAR_MAX).iterator().hasNext();
                 return new io.github.mojolowjo.entropybot.aa.CoalOptions.CoalFacts(need, bb.in.pickTier, ores, opts, dd, logsNow, bb.in.planks,
-                        bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees, bb.in.cobble);
+                        bag.getOrDefault("furnace", 0) > 0, furnaceDist, trees, bb.in.cobble,
+                        io.github.mojolowjo.entropybot.aa.brain.Unit.blocks(GameTimesLive.bestPickaxeStoneSeconds(p)));     // aa-times: the dig term from the game
             });
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] aa: coal facts: {}", e.toString());
@@ -544,8 +546,10 @@ public final class AaRuntime implements JobPort {
         int bestY = r == null ? Integer.MIN_VALUE : r.peakY();
         double density = r == null ? -1 : st.density(dim, fam, io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
                 new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, -1, 1, ownerGoal)));
-        var kit = io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in);
-        double dig = io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(kit == null ? io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED : kit.speed());
+        // aa-times: the game's seconds per stone block with my best pickaxe (GameTimesLive), and the live walk speed for Unit
+        var lp = Minecraft.getInstance().player;
+        double dig = lp == null ? io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED) : GameTimesLive.bestPickaxeStoneSeconds(lp);
+        if (lp != null) io.github.mojolowjo.entropybot.aa.brain.Unit.setLiveBps(GameTimesLive.walkBps(lp));
         int down = me[1] - io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
                 new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, -1, 1, ownerGoal));
         var lv = Minecraft.getInstance().level;
@@ -1181,6 +1185,8 @@ public final class AaRuntime implements JobPort {
         in.pickaxes = s.pickaxes;
         in.pickSpeed = s.pickSpeed;
         in.pickLeft = s.pickDurability;
+        in.digStoneS = s.digStoneS;          // aa-times: the game's seconds per stone block (ToolWear's kit)
+        in.handStoneS = s.handStoneS;
         in.bedKnown = s.bedNear;
         in.bedInBag = s.bedInBag;
         // 0.36.a6: a table/furnace seen at the camp or base counts wherever the bot is (AaLadder.campLatch, saved)

@@ -47,8 +47,16 @@ public final class CoalOptions {
      * @param treesKnown a tree has been seen (cutting the missing logs needs no search)
      */
     public record CoalFacts(int need, int pickTier, List<IronOptions.Ore> ores, List<Discovery.Opt> discovery, List<String> discoveryDropped,
-                            int logs, int planks, boolean furnaceInBag, int furnaceDist, boolean treesKnown, int cobble) {
-        public CoalFacts withNeed(int n) { return new CoalFacts(n, pickTier, ores, discovery, discoveryDropped, logs, planks, furnaceInBag, furnaceDist, treesKnown, cobble); }
+                            int logs, int planks, boolean furnaceInBag, int furnaceDist, boolean treesKnown, int cobble, double digBlock) {
+        /** aa-times: {@code digBlock} = walk-blocks per stone block dug (the game's break time through Unit); this one keeps {@link IronOptions#DIG_BLOCK}. */
+        public CoalFacts(int need, int pickTier, List<IronOptions.Ore> ores, List<Discovery.Opt> discovery, List<String> discoveryDropped,
+                         int logs, int planks, boolean furnaceInBag, int furnaceDist, boolean treesKnown, int cobble) {
+            this(need, pickTier, ores, discovery, discoveryDropped, logs, planks, furnaceInBag, furnaceDist, treesKnown, cobble, IronOptions.DIG_BLOCK);
+        }
+
+        public CoalFacts withNeed(int n) { return new CoalFacts(n, pickTier, ores, discovery, discoveryDropped, logs, planks, furnaceInBag, furnaceDist, treesKnown, cobble, digBlock); }
+
+        public double digPerBlock() { return digBlock > 0 && Double.isFinite(digBlock) ? digBlock : IronOptions.DIG_BLOCK; }
     }
 
     /** Logs a charcoal batch burns: one per item and a log of planks-fuel (6 items) per 6 smelted. */
@@ -72,7 +80,7 @@ public final class CoalOptions {
                 String key = "mine " + pick.x() + " " + pick.y() + " " + pick.z();
                 if (m.blocked(key, now)) dropped.add(key + ": " + m.reason(key));
                 else {
-                    double dig = pick.openFace() ? 0 : Math.max(1, pick.depth()) * IronOptions.DIG_BLOCK;
+                    double dig = pick.openFace() ? 0 : Math.max(1, pick.depth()) * f.digPerBlock();      // aa-times: the game's dig term
                     rows.add(Options.scored("mine seen coal", "coal", "mine coal " + need + (pick.openFace() ? "" : " dig"),
                             pick.dist() + dig + MINE_ORE * need + IronOptions.CLEAR,
                             "coal seen " + Math.round(pick.dist()) + " away" + (pick.openFace() ? ", an open face" : ", dig " + pick.depth() + " deep"), key, false, m)

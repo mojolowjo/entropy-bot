@@ -82,7 +82,21 @@ public final class IronOptions {
     public record Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                         boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
                         io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair,
-                        io.github.mojolowjo.entropybot.guard.Litter.Site litter, int rawIron) {
+                        io.github.mojolowjo.entropybot.guard.Litter.Site litter, int rawIron, double digBlock) {
+        /**
+         * aa-times: {@code digBlock} = walk-blocks per stone block dug with my best pickaxe, from the game's break time
+         * (GameTimesLive, converted through Unit); this constructor keeps the old constant {@link #DIG_BLOCK} (tests).
+         */
+        public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
+                     boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
+                     io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit, Fair fair,
+                     io.github.mojolowjo.entropybot.guard.Litter.Site litter, int rawIron) {
+            this(ores, meY, inWater, throwaway, placeAllowed, caveDist, stripAllowed, stripWhy, furnaceDist, furnaceInBag, tableInBag, cobble, kit, fair, litter, rawIron, DIG_BLOCK);
+        }
+
+        /** The dig term per block: the game's when read, else {@link #DIG_BLOCK}. */
+        public double digPerBlock() { return digBlock > 0 && Double.isFinite(digBlock) ? digBlock : DIG_BLOCK; }
+
         /** aa-trees: -1 = raw_iron in the bag not known (tests): a chain that smelts is taken as it is. */
         public Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,
                      boolean stripAllowed, String stripWhy, int furnaceDist, boolean furnaceInBag, boolean tableInBag, int cobble,
@@ -176,10 +190,17 @@ public final class IronOptions {
         return ", tools " + io.github.mojolowjo.entropybot.aa.brain.ToolWear.text(blocks, f.kit()) + " +" + Math.round(wear(f, blocks));
     }
 
-    /** The dig's cost for an ore {@code depth} blocks under the surface (walk-blocks). */
-    public static double digCost(int depth) {
+    /** The dig's cost for an ore {@code depth} blocks under the surface (walk-blocks), at the constant {@link #DIG_BLOCK}. */
+    public static double digCost(int depth) { return digCost(depth, DIG_BLOCK); }
+
+    /**
+     * aa-times: the same with the game's dig term per block ({@code digBlock} walk-blocks, Facts.digPerBlock); past
+     * {@link #DIG_MAX} each block keeps its extra ({@code DIG_DEEP_BLOCK - DIG_BLOCK}: the climb back, the fall and water risk).
+     */
+    public static double digCost(int depth, double digBlock) {
         int d = Math.max(1, depth);
-        return Math.min(d, DIG_MAX) * DIG_BLOCK + Math.max(0, d - DIG_MAX) * DIG_DEEP_BLOCK;
+        double deep = digBlock + (DIG_DEEP_BLOCK - DIG_BLOCK);
+        return Math.min(d, DIG_MAX) * digBlock + Math.max(0, d - DIG_MAX) * deep;
     }
 
     /** aa-water: the block WATER_PLACE puts under its stand (the adapter offers PLACE only with cobblestone in the bag). */
@@ -321,9 +342,10 @@ public final class IronOptions {
             else if (!o.loaded()) dropped.add("dig " + o.key() + ": buried, not loaded");
             else if (o.depth() > DIG_HARD) dropped.add("dig " + o.key() + ": " + o.depth() + " blocks deep (the dig verb reaches " + DIG_HARD + ")");
             else if (m.blocked(Way.DIG_KNOWN, o, now)) dropped.add("dig " + o.key() + ": " + m.reason(Way.DIG_KNOWN, o));
-            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth()) + CLEAR + o.drown() + floatB + wear(f, o.depth()), "buried " + o.depth() + " deep" + wearWhy(f, o.depth())
+            else ranked.add(scored(Way.DIG_KNOWN, o, o.dist() + digCost(o.depth(), f.digPerBlock()) + CLEAR + o.drown() + floatB + wear(f, o.depth()), "buried " + o.depth() + " deep"
+                    + String.format(Locale.ROOT, ", dig %.1f/block", f.digPerBlock()) + wearWhy(f, o.depth())
                     + (floatWhy == null ? "" : ", " + floatWhy + " +" + Math.round(floatB))
-                    + (o.depth() > DIG_MAX ? " (+" + Math.round(digCost(o.depth()) - DIG_MAX * DIG_BLOCK) + " past " + DIG_MAX + ")" : "")
+                    + (o.depth() > DIG_MAX ? " (+" + Math.round(digCost(o.depth(), f.digPerBlock()) - DIG_MAX * f.digPerBlock()) + " past " + DIG_MAX + ")" : "")
                     + (o.drownWhy() == null ? "" : ", " + o.drownWhy() + " +" + Math.round(o.drown())), m));
             int up = o.y() - f.meY();
             if (up >= PILLAR_MIN_UP && above == null) above = o;
