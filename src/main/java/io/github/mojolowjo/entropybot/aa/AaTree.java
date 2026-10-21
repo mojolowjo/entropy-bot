@@ -58,6 +58,8 @@ public final class AaTree {
         this.slot = slot;
         this.danger = danger;
         this.brain = brain;
+        brain.optionOf = d -> d.node instanceof io.github.mojolowjo.entropybot.aa.brain.Brain in ? (in.runningDesire() == null ? null : in.runningDesire().id)
+                : d.node instanceof Need n && n.picker() != null ? n.picker().chosenId() : null;
         this.ladder = brain;
     }
 

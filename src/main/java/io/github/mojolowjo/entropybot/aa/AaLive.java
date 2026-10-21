@@ -122,6 +122,17 @@ public final class AaLive {
             ds.add(d);
         }
         o.add("desires", ds);
+        JsonArray pk = new JsonArray();                 // the last picks, newest first: time (ms), desire, score, the option it ran
+        List<Brain.Pick> ps = b.lastPicks();
+        for (int i = ps.size() - 1; i >= 0; i--) {
+            JsonObject p = new JsonObject();
+            p.addProperty("t", ps.get(i).t());
+            p.addProperty("desire", ps.get(i).desire());
+            p.addProperty("score", r1(ps.get(i).score()));
+            p.addProperty("option", ps.get(i).option());
+            pk.add(p);
+        }
+        o.add("picks", pk);
         o.add("costs", strings(Costs.lines(bb)));
         o.add("held", strings(b.heldLines(now)));
         if (b.planText() != null) o.addProperty("plan", b.planText());          // AA_ROUND3 2

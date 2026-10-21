@@ -60,6 +60,20 @@ public final class Brain extends Node {
     private List<Scored> lastScored = List.of();
     /** Counters for aa status. */
     public long picks, interrupts, stuck;
+    /** The dashboard board's pick list: one finished choice (time ms, desire, score, the option it ran: null when the desire has none). */
+    public record Pick(long t, String desire, double score, String option) {}
+    public static final int PICKS_KEPT = 10;
+    private final java.util.ArrayDeque<Pick> picked = new java.util.ArrayDeque<>();
+    /** Names the option a desire's node ran (set by AaTree: an idle set's inner pick, a rung picker's chosen way); null = none. */
+    public java.util.function.Function<Desire, String> optionOf = d -> null;
+    /** The last {@link #PICKS_KEPT} picks, oldest first. */
+    public List<Pick> lastPicks() { return List.copyOf(picked); }
+    private void notePick(Desire d, Scored sc, long now) {
+        String opt;
+        try { opt = optionOf.apply(d); } catch (RuntimeException e) { opt = "option unreadable: " + e; }
+        picked.addLast(new Pick(now, d.id, sc.score(), opt));
+        while (picked.size() > PICKS_KEPT) picked.removeFirst();
+    }
     public final Map<Desire.Kind, Long> interruptsByKind = new EnumMap<>(Desire.Kind.class);
     private long bornAt = -1;
     private String probeLast;
@@ -537,12 +551,14 @@ public final class Brain extends Node {
                 goneSince = -1;
                 sig = null;
                 picks++;
+                notePick(d, sc, now);
                 probe(bb, d.id, "RUNNING (" + Math.round(sc.score()) + top3(all, i) + ")");
                 return s;
             }
             if (s == Status.SUCCESS) {
                 lastWinner = i;
                 picks++;
+                notePick(d, sc, now);
                 ended(bb, d, s, now);
                 bb.pickNote(null);
                 return s;
