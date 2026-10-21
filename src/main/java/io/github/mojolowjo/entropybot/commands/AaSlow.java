@@ -121,7 +121,17 @@ final class AaSlow {
         if (!each && idx != 0) return false;
         long now = System.currentTimeMillis();
         String key = "task " + rt.taskSeq() + (each ? "#" + (idx + 1) : "");
-        boolean held = mode.hold(key, now, pauseS(), () -> plan(key, each ? "step" : "objective", idx));
+        boolean held;
+        try {
+            held = mode.hold(key, now, pauseS(), () -> plan(key, each ? "step" : "objective", idx));
+        } catch (RuntimeException e) {
+            // the plan could not be built: slow mode ends (said in the log and in aa slow) rather than failing every tick
+            LOG.warn("[entropybot] aa: slow: the plan could not be built, slow mode off: {}", e.toString());
+            mode.set("off");
+            renderRestore();
+            SlowRoute.clear();
+            return false;
+        }
         SlowRoute.waiting = held;
         return held;
     }
