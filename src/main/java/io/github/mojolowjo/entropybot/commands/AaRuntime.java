@@ -2163,8 +2163,13 @@ public final class AaRuntime implements JobPort {
 
     /** aa tune [name value]: lists the tuning, or sets one for this world and saves it. */
     String tune(String[] w) {
-        if (w.length == 0) return "tuning (aa tune <name> <n>; saved per world in aa-tuning.json):\n" + String.join("\n", io.github.mojolowjo.entropybot.aa.brain.Tuning.lines()) + tuningLine();
-        if (w.length != 2) return "usage: aa tune [<name> <n>]";
+        if (w.length == 0) return "tuning: " + io.github.mojolowjo.entropybot.aa.brain.Tuning.names().size() + " numbers in groups (aa tune <group> lists one group, aa tune <name> lists one, aa tune <name> <n> sets one; saved per world in aa-tuning.json):\n"
+                + String.join("\n", io.github.mojolowjo.entropybot.aa.brain.Tuning.groups()) + tuningLine();
+        if (w.length == 1) {
+            List<String> l = io.github.mojolowjo.entropybot.aa.brain.Tuning.lines(w[0]);
+            return l.isEmpty() ? "error: no tuning group or name \"" + w[0] + "\" - aa tune lists the groups" : String.join("\n", l) + tuningLine();
+        }
+        if (w.length != 2) return "usage: aa tune [<group> | <name> [<n>]]";
         double v;
         try { v = Double.parseDouble(w[1]); } catch (NumberFormatException e) { return "error: " + w[1] + " is not a number"; }
         String r = io.github.mojolowjo.entropybot.aa.brain.Tuning.set(w[0], v);

@@ -261,12 +261,46 @@ public final class Tuning {
         return errors;
     }
 
-    /** "flow 0.9 (AA_ROUND2 4: why)" per number; a tuned one shows its default. */
+    /**
+     * The numbers for {@code aa tune}, grouped by name prefix (the part before the first dot: {@code danger.}, {@code tools.},
+     * {@code walk.}, ...; names without a dot are the brain's own, listed under {@code brain}). Each group has a header line
+     * ("== danger (9) ==") and then "flow 0.9 - AA_ROUND2 4: why" per number; a tuned one shows its default.
+     */
     public static List<String> lines() {
+        Map<String, List<Entry>> groups = new java.util.TreeMap<>();
+        for (Entry e : ALL.values()) groups.computeIfAbsent(prefixOf(e.name()), k -> new ArrayList<>()).add(e);
         List<String> out = new ArrayList<>();
-        for (Entry e : ALL.values())
-            out.add(e.name() + " " + fmt(e.value()) + (e.value() != e.def() ? " (tuned, default " + fmt(e.def()) + ")" : "") + " - " + e.run() + ": " + e.why());
+        for (var g : groups.entrySet()) {
+            out.add("== " + g.getKey() + " (" + g.getValue().size() + ") ==");
+            g.getValue().sort(java.util.Comparator.comparing(Entry::name));
+            for (Entry e : g.getValue())
+                out.add(e.name() + " " + fmt(e.value()) + (e.value() != e.def() ? " (tuned, default " + fmt(e.def()) + ")" : "") + " - " + e.run() + ": " + e.why());
+        }
         return out;
+    }
+
+    /** The group lines only ("== danger (9) =="), for {@code aa tune} with no argument. */
+    public static List<String> groups() {
+        List<String> out = new ArrayList<>();
+        for (String l : lines()) if (l.startsWith("== ")) out.add(l);
+        return out;
+    }
+
+    /** The lines of one group (its prefix, e.g. {@code danger}) or of one name; empty when nothing matches. */
+    public static List<String> lines(String groupOrName) {
+        List<String> out = new ArrayList<>();
+        boolean in = false;
+        for (String l : lines()) {
+            if (l.startsWith("== ")) { in = l.startsWith("== " + groupOrName + " ("); continue; }
+            if (in || l.startsWith(groupOrName + " ")) out.add(l);
+        }
+        return out;
+    }
+
+    /** The group of a name: the part before the first dot, or {@code brain} for the brain's own dotless names. */
+    public static String prefixOf(String name) {
+        int i = name.indexOf('.');
+        return i < 0 ? "brain" : name.substring(0, i);
     }
 
     /** The default of one number (for the legacy constants and the tests). */
