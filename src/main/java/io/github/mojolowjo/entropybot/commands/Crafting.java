@@ -88,6 +88,7 @@ final class Crafting {
 
     private String giveStep(Step st, LocalPlayer p) {
         String[] w = st.text.split(" ");
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().look(st.pos[0] + 0.5, st.pos[1] + 1.0, st.pos[2] + 0.5);
         int thrown = io.github.mojolowjo.entropybot.engine.Escort.throwItems(p, w[0], Integer.parseInt(w[1]));
         return thrown > 0 ? "next" : "error: give " + w[0] + ": nothing could be thrown";
     }

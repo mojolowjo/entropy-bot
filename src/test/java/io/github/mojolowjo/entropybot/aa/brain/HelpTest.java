@@ -57,6 +57,25 @@ class HelpTest {
         assertEquals("give me oak_planks 32", p.chain());
     }
 
+    @Test void everyPickRunsOnlyVerbsThatExist() {
+        java.util.List<Help.Pick> picks = new java.util.ArrayList<>();
+        Inputs a = owner(4, "building");
+        a.ownerPlaced = "minecraft:oak_planks";
+        a.bag = Map.of("oak_planks", 50);
+        picks.add(Help.pick(a, 20));
+        a.bag = Map.of("oak_planks", 3);
+        picks.add(Help.pick(a, 20));
+        Inputs f = owner(4, "mining");
+        f.ownerHostiles = 2;
+        picks.add(Help.pick(f, 20));
+        for (Help.Pick p : picks) {
+            assertNotNull(p);
+            if (p.goal() != null) assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(p.goal().split("\\s+")[0]), p.goal());
+            for (String step : p.chain().split(" then "))
+                assertNotNull(io.github.mojolowjo.entropybot.commands.VerbTable.of(step.trim().split("\\s+")[0]), step);
+        }
+    }
+
     @Test void darkLightsThenFollowsWhenFar() {
         Inputs in = owner(30, "mining");
         in.ownerDark = true;
