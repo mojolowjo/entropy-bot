@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -137,6 +139,7 @@ public final class JsonStore {
             JsonElement e = JsonParser.parseString(text);
             return e.isJsonObject() ? e.getAsJsonObject() : null;
         } catch (RuntimeException e) {
+            Quiet.warn("JsonStore.parse failed, carrying on with the fallback", e);
             return null;
         }
     }

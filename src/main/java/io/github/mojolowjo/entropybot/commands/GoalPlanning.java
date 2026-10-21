@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -386,7 +388,8 @@ final class GoalPlanning {
             try {
                 JsonObject pl = plansStore();
                 if (pl.has(ch) && pl.get(ch).isJsonObject() && pl.getAsJsonObject(ch).has("cost")) cost = pl.getAsJsonObject(ch).get("cost").getAsDouble();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("GoalPlanning.chainState failed, carrying on with the fallback", caught);
                 // the cost is a ranking hint only; 0 when the store cannot say
             }
             return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.ready(ch, cost);
@@ -423,7 +426,7 @@ final class GoalPlanning {
         if (b.has("needs")) s.add("needs", b.get("needs").deepCopy());
         JsonArray goals = new JsonArray();
         if (b.has("goals") && b.get("goals").isJsonArray()) for (JsonElement e : b.getAsJsonArray("goals")) {
-            try { goals.add(e.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException ignored) {}
+            try { goals.add(e.getAsJsonObject().get("text").getAsString()); } catch (RuntimeException caught) { Quiet.warn("GoalPlanning.stateSummary failed, carrying on with the fallback", caught); }
         }
         s.add("goals", goals);
         JsonArray areas = new JsonArray();
@@ -432,7 +435,7 @@ final class GoalPlanning {
                 JsonObject a = e.getAsJsonObject();
                 areas.add((a.has("name") ? a.get("name").getAsString() : "box") + (a.has("type") ? " " + a.get("type").getAsString() : ""));
             }
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("GoalPlanning.stateSummary failed, carrying on with the fallback", caught); }
         s.add("areas", areas);
         JsonObject places = new JsonObject();
         for (Map.Entry<String, JsonObject> e : Core.INSTANCE.knowledge.places().entrySet()) {

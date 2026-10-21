@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 /**
  * {@code watch steer} (TLL 32b, docs/CAMERA_PLAN.md "Steer"): the pure rules of the camera-relative movement keys. In
  * our own third-person watch views W moves the bot away from the camera, S towards it, A/D to the camera's left/right.
@@ -101,6 +103,7 @@ public final class SteerRules {
             float r = Float.parseFloat(s.trim());
             return r >= TURN_RATE_MIN && r <= TURN_RATE_MAX ? r : -1f;
         } catch (RuntimeException e) {
+            Quiet.warn("SteerRules.parseTurnRate failed, carrying on with the fallback", e);
             return -1f;
         }
     }

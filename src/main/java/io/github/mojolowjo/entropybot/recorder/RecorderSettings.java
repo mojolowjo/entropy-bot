@@ -189,7 +189,8 @@ public final class RecorderSettings {
         try {
             JsonElement e = JsonParser.parseString(text);
             if (e.isJsonObject()) s.read(e.getAsJsonObject());
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         return s;
     }
 

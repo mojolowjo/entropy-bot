@@ -78,7 +78,8 @@ public final class McMenu implements GuiMenu {
 
     @Override public int slotLimit(int to, int from) {
         int n = 0;
-        try { n = slot(to).getMaxStackSize(stack(from)); } catch (RuntimeException ignored) {}
+        try { n = slot(to).getMaxStackSize(stack(from)); } catch (RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         if (n <= 0) n = stack(from).getMaxStackSize();
         return n > 0 ? n : 64;
     }

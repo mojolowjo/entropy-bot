@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.fast;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -104,7 +106,7 @@ public final class FastChannel {
         writeUp();
         if (hook == null) {
             hook = new Thread(this::shutdown, "entropybot-fast-exit");
-            try { Runtime.getRuntime().addShutdownHook(hook); } catch (RuntimeException ignored) {}
+            try { Runtime.getRuntime().addShutdownHook(hook); } catch (RuntimeException caught) { Quiet.warn("FastChannel.start failed, carrying on with the fallback", caught); }
         }
     }
 
@@ -118,6 +120,7 @@ public final class FastChannel {
             int p = c.get("port").getAsInt();
             return p >= 0 && p <= 65535 ? p : -1;          // 0 = any free port (tests)
         } catch (RuntimeException e) {
+            Quiet.warn("FastChannel.port failed, carrying on with the fallback", e);
             return -1;
         }
     }
@@ -126,11 +129,11 @@ public final class FastChannel {
     public synchronized void stop() {
         if (server != null) server.stop();
         server = null;
-        try { Files.deleteIfExists(dir.resolve(UP)); } catch (IOException ignored) {}
+        try { Files.deleteIfExists(dir.resolve(UP)); } catch (IOException caught) { Quiet.warn("FastChannel.stop failed, carrying on with the fallback", caught); }
     }
 
     private void shutdown() {
-        try { stop(); } catch (RuntimeException ignored) {}
+        try { stop(); } catch (RuntimeException caught) { Quiet.warn("FastChannel.shutdown failed, carrying on with the fallback", caught); }
     }
 
     private void writeUp() {
@@ -159,6 +162,7 @@ public final class FastChannel {
         try {
             return Files.exists(p) ? Files.readString(p, StandardCharsets.UTF_8).trim() : null;
         } catch (IOException | RuntimeException e) {
+            Quiet.warn("FastChannel.read failed, carrying on with the fallback", e);
             return null;
         }
     }

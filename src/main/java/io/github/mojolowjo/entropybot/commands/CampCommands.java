@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -295,6 +297,7 @@ final class CampCommands {
                                     && pol.protectAt(dim, x, y, z) == null && pol.protectAt(dim, x, y + 1, z) == null
                                     && !lw.blockEntity(x, y, z) && !lw.blockEntity(x, y + 1, z);
                         } catch (RuntimeException ex) {
+            Quiet.warn("CampCommands.house failed, carrying on with the fallback", ex);
                             return false;
                         }
                     }
@@ -602,7 +605,7 @@ final class CampCommands {
         Map<String, Integer> out = new LinkedHashMap<>();
         JsonObject b = brain();
         if (b.has("stockTargets") && b.get("stockTargets").isJsonObject()) for (Map.Entry<String, JsonElement> e : b.getAsJsonObject("stockTargets").entrySet()) {
-            try { out.put(e.getKey(), e.getValue().getAsInt()); } catch (RuntimeException ignored) {}
+            try { out.put(e.getKey(), e.getValue().getAsInt()); } catch (RuntimeException caught) { Quiet.warn("CampCommands.stockWant failed, carrying on with the fallback", caught); }
         }
         return out;
     }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.map;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 
@@ -45,7 +47,7 @@ public final class TileFiles {
             }
             move(tmp, file);
         } catch (IOException | RuntimeException e) {
-            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            try { Files.deleteIfExists(tmp); } catch (IOException caught) { Quiet.warn("TileFiles.writePng failed, carrying on with the fallback", caught); }
             throw e;
         }
     }
@@ -61,6 +63,7 @@ public final class TileFiles {
         try {
             img = ImageIO.read(file.toFile());
         } catch (IOException e) {
+            Quiet.warn("TileFiles.readPng failed, carrying on with the fallback", e);
             img = null;
         }
         if (img == null || img.getWidth() != n || img.getHeight() != n) {
@@ -83,7 +86,8 @@ public final class TileFiles {
             try {
                 JsonElement old = JsonParser.parseString(Files.readString(index, StandardCharsets.UTF_8));
                 if (old.isJsonObject()) for (String k : old.getAsJsonObject().keySet()) names.put(MapMath.dimFolder(k), k);
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException caught) {
+            Quiet.warn("TileFiles.writeIndex failed, carrying on with the fallback", caught);
                 // a broken index is simply rebuilt
             }
         }

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.clear;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.Set;
 
 /**
@@ -96,6 +98,7 @@ public final class OwnStations {
         try {
             return c.in(x1, y1, z1, x2, y2, z2);
         } catch (RuntimeException e) {
+            Quiet.warn("OwnStations.cellsIn failed, carrying on with the fallback", e);
             return java.util.List.of();
         }
     }
@@ -118,6 +121,7 @@ public final class OwnStations {
         try {
             return m.at(x, y, z);
         } catch (RuntimeException e) {
+            Quiet.warn("OwnStations.mineAt failed, carrying on with the fallback", e);
             return false;
         }
     }

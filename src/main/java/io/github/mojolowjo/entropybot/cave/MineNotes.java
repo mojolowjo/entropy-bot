@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.cave;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -54,7 +56,7 @@ public final class MineNotes {
                 if (memory != null) break;
                 String m = bridge.readJson(name);
                 if (m != null && !m.startsWith("error")) {
-                    try { memory = JsonParser.parseString(m).getAsJsonObject(); } catch (RuntimeException ignored) {}
+                    try { memory = JsonParser.parseString(m).getAsJsonObject(); } catch (RuntimeException caught) { Quiet.warn("MineNotes.load failed, carrying on with the fallback", caught); }
                 }
             }
         }
@@ -229,7 +231,8 @@ public final class MineNotes {
     }
 
     static long seen(JsonObject o) {
-        try { return o.has("seen") ? o.get("seen").getAsLong() : 0; } catch (RuntimeException e) { return 0; }
+        try { return o.has("seen") ? o.get("seen").getAsLong() : 0; } catch (RuntimeException e) {
+            Quiet.warn("MineNotes.seen failed, carrying on with the fallback", e); return 0; }
     }
 
     private void touchOres() { if (oresDirty < 0) oresDirty = lastTick; }

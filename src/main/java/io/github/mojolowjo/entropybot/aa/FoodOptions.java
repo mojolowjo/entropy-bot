@@ -2,7 +2,7 @@ package io.github.mojolowjo.entropybot.aa;
 
 import io.github.mojolowjo.entropybot.aa.brain.FoodModel;
 import io.github.mojolowjo.entropybot.aa.moves.Step;
-import io.github.mojolowjo.entropybot.sense.FailMemory;
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -190,7 +190,7 @@ public final class FoodOptions {
 
         @Override public boolean switchable(String end) {
             if (end == null || Options.ownerOrDanger(end)) return false;
-            return FailMemory.classify(end) != null || END.matcher(end.toLowerCase(Locale.ROOT)).find();
+            return Failures.classify(end) != null || END.matcher(end.toLowerCase(Locale.ROOT)).find();
         }
     }
 

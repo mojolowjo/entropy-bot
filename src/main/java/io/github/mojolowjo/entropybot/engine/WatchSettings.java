@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -67,6 +69,7 @@ public final class WatchSettings {
                 else bad.append(" distance ").append(v).append(" (1-8)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" distance");
         }
         try {
@@ -76,16 +79,19 @@ public final class WatchSettings {
                 else bad.append(" tunnelHeight ").append(v).append(" (1-40)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" tunnelHeight");
         }
         try {
             if (o.has("dollhouse")) dollhouse = bool(o.get("dollhouse"));
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" dollhouse");
         }
         try {
             if (o.has("steer")) steer = bool(o.get("steer"));
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" steer");
         }
         boolean turn = d.turn();
@@ -93,6 +99,7 @@ public final class WatchSettings {
         try {
             if (o.has("turn")) turn = bool(o.get("turn"));
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" turn");
         }
         try {
@@ -102,6 +109,7 @@ public final class WatchSettings {
                 else bad.append(" turnRate ").append(v).append(" (5-180)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" turnRate");
         }
         String cutMode = d.cutMode();
@@ -113,6 +121,7 @@ public final class WatchSettings {
                 else bad.append(" cutMode ").append(m).append(" (shadow|cone|outline)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" cutMode");
         }
         try {
@@ -122,6 +131,7 @@ public final class WatchSettings {
                 else bad.append(" coneRadius ").append(v).append(" (1-6)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" coneRadius");
         }
         try {
@@ -131,6 +141,7 @@ public final class WatchSettings {
                 else bad.append(" outlineMargin ").append(v).append(" (0-3)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" outlineMargin");
         }
         try {
@@ -140,6 +151,7 @@ public final class WatchSettings {
                 else bad.append(" shadowMargin ").append(v).append(" (0-2)");
             }
         } catch (RuntimeException e) {
+            Quiet.warn("WatchSettings.parse failed, carrying on with the fallback", e);
             bad.append(" shadowMargin");
         }
         Values v = new Values(distance, height, dollhouse, steer, turn, turnRate, cutMode, coneRadius, outlineMargin, shadowMargin);

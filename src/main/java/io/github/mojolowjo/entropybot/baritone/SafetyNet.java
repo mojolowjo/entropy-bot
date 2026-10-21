@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.baritone;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
@@ -63,6 +65,7 @@ public final class SafetyNet {
             try {
                 l = com.google.common.collect.ImmutableSet.copyOf(set).asList();
             } catch (Throwable t) {
+            Quiet.warn("SafetyNet.putProtected failed, carrying on with the fallback", t);
                 l = new ArrayList<>(set);
                 k = "list";
             }
@@ -97,11 +100,11 @@ public final class SafetyNet {
         IBaritone b = primary();
         if (!SafetyRules.shouldTurnOff(s.allowBreak.value, s.allowPlace.value, breakingOwned(b), placingOwned())) return;
         boolean jobRunning = false;
-        try { jobRunning = Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        try { jobRunning = Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("SafetyNet.net failed, carrying on with the fallback", caught); }
         if (b != null && SafetyRules.cancelBaritone(idle(b), jobRunning)) cancel(b);
         restore();
         LOG.info("[entropybot] safety net: turned breaking/placing back off");
-        try { Core.INSTANCE.events.push("job", "safety net: turned breaking/placing back off", null); } catch (Throwable ignored) {}
+        try { Core.INSTANCE.events.push("job", "safety net: turned breaking/placing back off", null); } catch (Throwable caught) { Quiet.warn("SafetyNet.net failed, carrying on with the fallback", caught); }
     }
 
     /**
@@ -155,6 +158,7 @@ public final class SafetyNet {
             if (j == null || j.done || !j.ownsBreaking) return false;
             return b != null && b.getMineProcess().isActive();
         } catch (Throwable t) {
+            Quiet.warn("SafetyNet.breakingOwned failed, carrying on with the fallback", t);
             return false;
         }
     }
@@ -170,6 +174,7 @@ public final class SafetyNet {
             if (j == null || j.done) return false;
             return b != null && b.getBuilderProcess().isActive();
         } catch (Throwable t) {
+            Quiet.warn("SafetyNet.builderBreakingOwned failed, carrying on with the fallback", t);
             return false;
         }
     }
@@ -182,11 +187,13 @@ public final class SafetyNet {
             // owner's place rule (aa372): a running job's walk keeps placing on under the policy's costs; idle = off again
             var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
             return pr.travelMayPlace() && pr.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL && Core.INSTANCE.commands.jobs.running();
-        } catch (Throwable t) { return false; }
+        } catch (Throwable t) {
+            Quiet.warn("SafetyNet.placingOwned failed, carrying on with the fallback", t); return false; }
     }
 
     public static IBaritone primary() {
-        try { return BaritoneAPI.getProvider().getPrimaryBaritone(); } catch (Throwable t) { return null; }
+        try { return BaritoneAPI.getProvider().getPrimaryBaritone(); } catch (Throwable t) {
+            Quiet.warn("SafetyNet.primary failed, carrying on with the fallback", t); return null; }
     }
 
     static boolean idle(IBaritone b) {
@@ -198,7 +205,7 @@ public final class SafetyNet {
         try {
             var c = b.getPathingControlManager().mostRecentInControl();
             if (c.isPresent() && c.get().displayName().contains("Pause")) b.getCommandManager().execute("cancel");
-        } catch (Throwable ignored) {}
-        try { b.getPathingBehavior().cancelEverything(); } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("SafetyNet.cancel failed, carrying on with the fallback", caught); }
+        try { b.getPathingBehavior().cancelEverything(); } catch (Throwable caught) { Quiet.warn("SafetyNet.cancel failed, carrying on with the fallback", caught); }
     }
 }

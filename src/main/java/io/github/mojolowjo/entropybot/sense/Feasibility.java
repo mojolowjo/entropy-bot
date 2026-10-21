@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.sense;
 
+import io.github.mojolowjo.entropybot.aa.brain.Failures;
+
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -8,7 +10,7 @@ import java.util.function.Predicate;
 /**
  * 0.26.2 "feasibility before every pick" (docs/BRAIN_PLAN.md 4.5b): before a brain leaf starts a chain, each step's
  * machine-checkable precondition (plan.ActionTable's {@code pre} texts) is judged against one bounded snapshot: FEASIBLE,
- * INFEASIBLE (the step, what is missing, a {@link FailMemory.Reason} class, the item a sub-chain could provide) or UNKNOWN
+ * INFEASIBLE (the step, what is missing, a {@link Failures.Reason} class, the item a sub-chain could provide) or UNKNOWN
  * (a verb this table cannot judge, or a fact the game side did not fill: then the chain starts as before).
  *
  * <p>Steps run in order, and what an earlier step gives (gather/get/craft/cut/smelt X n) counts for the later ones, so
@@ -31,7 +33,7 @@ public final class Feasibility {
      * the log ("no torches, nothing to craft them from"); item and n: what a sub-chain could provide (null: no sub-chain
      * helps, e.g. no mine marked); cls: the failure memory class (null: not remembered, e.g. sleep by day).
      */
-    public record Verdict(Kind kind, int step, String stepText, String missing, String item, int n, FailMemory.Reason cls) {
+    public record Verdict(Kind kind, int step, String stepText, String missing, String item, int n, Failures.Reason cls) {
         public boolean infeasible() { return kind == Kind.INFEASIBLE; }
 
         static Verdict ok() { return new Verdict(Kind.FEASIBLE, -1, null, null, null, 0, null); }
@@ -153,7 +155,7 @@ public final class Feasibility {
         return firstUnknown != null ? firstUnknown : Verdict.ok();
     }
 
-    private static Verdict no(int i, String st, String missing, String item, int n, FailMemory.Reason cls) {
+    private static Verdict no(int i, String st, String missing, String item, int n, Failures.Reason cls) {
         return new Verdict(Kind.INFEASIBLE, i, st, missing, item, n, cls);
     }
 
@@ -167,31 +169,31 @@ public final class Feasibility {
             case "light" -> {
                 if (sim.torches() > 0) return OK;
                 if (sim.fuel() > 0 && (sim.planksEq() > 0 || sim.sticks() > 0)) return OK;      // it crafts them (2x2: no table)
-                return no(i, st, "no torches, nothing to craft them from", "torch", 16, FailMemory.Reason.NO_ITEM);
+                return no(i, st, "no torches, nothing to craft them from", "torch", 16, Failures.Reason.NO_ITEM);
             }
             case "sleep" -> {
                 if (!s.night) return no(i, st, "it is day", null, 0, null);
                 if (s.bedNear || s.bedInBag || sim.given("bed") > 0) return OK;
-                return no(i, st, "no bed within 24 or in my bag", "white_bed", 1, FailMemory.Reason.NO_BED);
+                return no(i, st, "no bed within 24 or in my bag", "white_bed", 1, Failures.Reason.NO_BED);
             }
             case "spawn" -> {
                 if (s.bedNear || sim.given("bed") > 0) return OK;
-                return no(i, st, "no bed within 24", null, 0, FailMemory.Reason.NO_BED);
+                return no(i, st, "no bed within 24", null, 0, Failures.Reason.NO_BED);
             }
             case "shelter" -> {
                 if (w.length >= 2 && w[1].matches("status|leave")) return OK;
                 int b = sim.shelterBlocks();
                 if (b >= SHELTER_MIN) return OK;
-                return no(i, st, b + " planks, cobblestone or dirt, I need " + SHELTER_MIN, "planks", 32, FailMemory.Reason.NO_ITEM);
+                return no(i, st, b + " planks, cobblestone or dirt, I need " + SHELTER_MIN, "planks", 32, Failures.Reason.NO_ITEM);
             }
             case "eat" -> {
                 if (sim.food() > 0) return OK;
-                return no(i, st, "no food on me or in storage", "food", 8, FailMemory.Reason.NO_ITEM);
+                return no(i, st, "no food on me or in storage", "food", 8, Failures.Reason.NO_ITEM);
             }
             case "deposit", "unload" -> {
                 if (!f.known) return Verdict.unknown(i, st, "base chests not read");
-                if (!f.places.containsKey("base")) return no(i, st, "no base place", null, 0, FailMemory.Reason.NO_PLACE);
-                if (!f.baseChests) return no(i, st, "the base chests are not scanned (scan base)", null, 0, FailMemory.Reason.NONE_IN_CHESTS);
+                if (!f.places.containsKey("base")) return no(i, st, "no base place", null, 0, Failures.Reason.NO_PLACE);
+                if (!f.baseChests) return no(i, st, "the base chests are not scanned (scan base)", null, 0, Failures.Reason.NONE_IN_CHESTS);
                 return OK;
             }
             case "get", "fetch" -> {
@@ -200,12 +202,12 @@ public final class Feasibility {
                 int n = num(w, 2, 1);
                 if (it.equals("food")) {
                     if (Math.max(0, s.foodStock - s.foodItems) + sim.given("food") > 0) { sim.give("food", n); return OK; }
-                    return no(i, st, "no food in my chests", null, 0, FailMemory.Reason.NONE_IN_CHESTS);
+                    return no(i, st, "no food in my chests", null, 0, Failures.Reason.NONE_IN_CHESTS);
                 }
                 if (!f.known) { sim.give(it, n); return Verdict.unknown(i, st, "stock not read"); }
                 int have = it.equals("log") ? sumSuffix(f.stock, "_log") + sumSuffix(f.stock, "_stem") + sim.given("log") : f.stock.getOrDefault(it, 0) + sim.given(it);
                 if (have > 0) { sim.give(it, n); return OK; }
-                return no(i, st, "no " + it + " in my chests", null, 0, FailMemory.Reason.NONE_IN_CHESTS);
+                return no(i, st, "no " + it + " in my chests", null, 0, Failures.Reason.NONE_IN_CHESTS);
             }
             case "craft" -> { return craft(i, st, w, sim); }
             case "gather" -> {
@@ -236,9 +238,9 @@ public final class Feasibility {
                 String name = w[1].equals("poi") ? null : w[1];
                 if (name == null) return Verdict.unknown(i, st, "a point of interest");
                 if (!f.places.containsKey(name) && f.isArea == null) return Verdict.unknown(i, st, "areas not read");
-                if (!f.places.containsKey(name) && !f.isArea.test(name)) return no(i, st, "I have no place " + name, null, 0, FailMemory.Reason.NO_PLACE);
+                if (!f.places.containsKey(name) && !f.isArea.test(name)) return no(i, st, "I have no place " + name, null, 0, Failures.Reason.NO_PLACE);
                 int[] p = f.places.get(name);
-                if (p != null && f.walkAllowed != null && !f.walkAllowed.test(p)) return no(i, st, name + " is where the policy refuses a walk (keep-out)", null, 0, FailMemory.Reason.GUARD_REFUSED);
+                if (p != null && f.walkAllowed != null && !f.walkAllowed.test(p)) return no(i, st, name + " is where the policy refuses a walk (keep-out)", null, 0, Failures.Reason.GUARD_REFUSED);
                 return OK;
             }
             case "goto" -> {
@@ -246,11 +248,11 @@ public final class Feasibility {
                 if (!f.known || f.walkAllowed == null) return Verdict.unknown(i, st, "the policy not read");
                 int[] p;
                 try { p = new int[]{Integer.parseInt(w[1]), Integer.parseInt(w[2]), Integer.parseInt(w[3])}; } catch (NumberFormatException e) { return Verdict.unknown(i, st, "not x y z"); }
-                return f.walkAllowed.test(p) ? OK : no(i, st, p[0] + " " + p[1] + " " + p[2] + " is where the policy refuses a walk (keep-out)", null, 0, FailMemory.Reason.GUARD_REFUSED);
+                return f.walkAllowed.test(p) ? OK : no(i, st, p[0] + " " + p[1] + " " + p[2] + " is where the policy refuses a walk (keep-out)", null, 0, Failures.Reason.GUARD_REFUSED);
             }
             case "home" -> {
                 if (!f.known) return Verdict.unknown(i, st, "places not read");
-                return f.places.containsKey("base") ? OK : no(i, st, "no base place", null, 0, FailMemory.Reason.NO_PLACE);
+                return f.places.containsKey("base") ? OK : no(i, st, "no base place", null, 0, Failures.Reason.NO_PLACE);
             }
             default -> { return Verdict.unknown(i, st, w[0] + " is not judged here"); }
         }
@@ -297,11 +299,11 @@ public final class Feasibility {
             if (what.equals("planks") && have >= want) continue;
             if (have < want) {
                 String word = what.equals("fuel") ? "coal or charcoal" : what.equals("log") ? "logs" : what;
-                return no(i, st, "craft " + it + " " + n + ": " + have + " " + word + ", I need " + want, what.equals("fuel") ? "coal" : what, want, FailMemory.Reason.NO_ITEM);
+                return no(i, st, "craft " + it + " " + n + ": " + have + " " + word + ", I need " + want, what.equals("fuel") ? "coal" : what, want, Failures.Reason.NO_ITEM);
             }
         }
         if (needTable && sim.f.known && !sim.f.table && sim.planksEq() < 4 + (it.equals("crafting_table") ? 4 : 0) && sim.given("crafting_table") == 0)
-            return no(i, st, "craft " + it + ": no crafting table within 12 and no planks for one", "crafting_table", 1, FailMemory.Reason.NO_ITEM);
+            return no(i, st, "craft " + it + ": no crafting table within 12 and no planks for one", "crafting_table", 1, Failures.Reason.NO_ITEM);
         sim.give(it, n);
         return OK;
     }
@@ -324,12 +326,12 @@ public final class Feasibility {
         String ores = strip || cave ? (w.length >= 3 && !w[2].matches("\\d+.*") ? w[2] : "any") : (w.length >= 2 ? w[1] : "any");
         if (!strip && !cave) sim.give(ores.replace("_ore", ""), num(w, 2, 1));
         if (!f.known) return Verdict.unknown(i, st, "mine facts not read");
-        if (strip && !f.mineMarked && !st.contains(" at ")) return no(i, st, "no mine marked (place mine)", null, 0, FailMemory.Reason.NO_PLACE);
+        if (strip && !f.mineMarked && !st.contains(" at ")) return no(i, st, "no mine marked (place mine)", null, 0, Failures.Reason.NO_PLACE);
         int need = oreTier(ores);
         boolean stocked = false;
         for (int t = need; t <= 4; t++) if (f.stock.getOrDefault(tierName(t) + "_pickaxe", 0) > 0) stocked = true;
         if (sim.pickTier() < need && !stocked && !(need <= 2 && sim.s.pickMaterials))
-            return no(i, st, "no " + tierName(need) + " pickaxe or better (" + ores + ")", tierName(need) + "_pickaxe", 1, FailMemory.Reason.NO_ITEM);
+            return no(i, st, "no " + tierName(need) + " pickaxe or better (" + ores + ")", tierName(need) + "_pickaxe", 1, Failures.Reason.NO_ITEM);
         if (cave && !f.caveKnown) return Verdict.unknown(i, st, "no known cave (one may be in view)");
         // 0.28.0: a plain "mine <ore>" walks to known ore; none known within 64 = it would only search
         if (!strip && !cave && f.oreKnown != null && (ores.endsWith("_ore") || ores.matches("iron|coal|copper|gold|diamond|emerald|redstone|lapis"))) {

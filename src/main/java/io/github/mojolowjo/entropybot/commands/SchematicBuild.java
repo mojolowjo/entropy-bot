@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
@@ -70,7 +72,7 @@ final class SchematicBuild {
     static Loaded load(String name, String[] err) {
         Path d = dir();
         if (d == null) { err[0] = "error: no world files yet"; return null; }
-        try { Files.createDirectories(d); } catch (Exception ignored) {}
+        try { Files.createDirectories(d); } catch (Exception caught) { Quiet.warn("SchematicBuild.load failed, carrying on with the fallback", caught); }
         File f = null;
         for (String ext : List.of("litematic", "schem", "schematic")) {
             File c = d.resolve(name + "." + ext).toFile();
@@ -191,7 +193,7 @@ final class SchematicBuild {
                 if (savedLayers != null) s.buildInLayers.value = savedLayers;
                 if (savedOrder != null) s.layerOrder.value = savedOrder;
                 if (savedHeight != null) s.layerHeight.value = savedHeight;
-            } catch (Throwable ignored) {}
+            } catch (Throwable caught) { Quiet.warn("SchematicBuild.restore failed, carrying on with the fallback", caught); }
             savedLayers = null;
             savedOrder = null;
             savedHeight = null;

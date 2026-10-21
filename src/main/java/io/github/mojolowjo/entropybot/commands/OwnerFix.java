@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -48,6 +50,7 @@ public final class OwnerFix {
             double d = o.get(k).getAsDouble();
             return Double.isFinite(d) && d >= 0 && d <= 1000 ? (int) Math.round(d) : -1;
         } catch (RuntimeException e) {
+            Quiet.warn("OwnerFix.intOr failed, carrying on with the fallback", e);
             return -1;
         }
     }
@@ -85,6 +88,7 @@ public final class OwnerFix {
             if (name.isEmpty() || dim.isEmpty() || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return null;
             return new Fix(name, x, y, z, dim, received, intOr(o, "food"), intOr(o, "health"));
         } catch (RuntimeException e) {
+            Quiet.warn("OwnerFix.parse failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -101,6 +105,7 @@ public final class OwnerFix {
             size = s;
             if (f != null) cached = f;
         } catch (IOException | RuntimeException e) {
+            Quiet.warn("OwnerFix.current failed, carrying on with the fallback", e);
             // no file yet, or caught mid-replace: the next call looks again
         }
         return cached;

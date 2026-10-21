@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -536,7 +538,7 @@ public final class Chains {
             for (JsonElement e : mem.getAsJsonArray("deaths")) {
                 try {
                     if (now - e.getAsLong() < 3600000) out.add(e.getAsLong());
-                } catch (RuntimeException ignored) {}
+                } catch (RuntimeException caught) { Quiet.warn("Chains.recentDeaths failed, carrying on with the fallback", caught); }
             }
         }
         return out;
@@ -695,7 +697,7 @@ public final class Chains {
                             .withHour(0).withMinute(0).plusHours(Integer.parseInt(hm[0])).plusMinutes(Integer.parseInt(hm[1]));
                     long at = d.toInstant().toEpochMilli();
                     due = now >= at && last < at;
-                } catch (RuntimeException ignored) {}
+                } catch (RuntimeException caught) { Quiet.warn("Chains.rulesTickIn failed, carrying on with the fallback", caught); }
             } else if (arg.equals("night") || arg.equals("day")) {
                 due = io.github.mojolowjo.entropybot.camp.DayNight.due(arg, env.dayTime(), str(r, "fired", ""));
                 if (due) r.addProperty("fired", io.github.mojolowjo.entropybot.camp.DayNight.key(env.dayTime()));
@@ -733,16 +735,19 @@ public final class Chains {
 
     static String str(JsonObject o, String k, String def) {
         if (o == null || !o.has(k) || o.get(k).isJsonNull()) return def;
-        try { return o.get(k).getAsString(); } catch (RuntimeException e) { return def; }
+        try { return o.get(k).getAsString(); } catch (RuntimeException e) {
+            Quiet.warn("Chains.str failed, carrying on with the fallback", e); return def; }
     }
 
     static long num(JsonObject o, String k, long def) {
         if (o == null || !o.has(k) || o.get(k).isJsonNull()) return def;
-        try { return (long) Math.floor(o.get(k).getAsDouble()); } catch (RuntimeException e) { return def; }
+        try { return (long) Math.floor(o.get(k).getAsDouble()); } catch (RuntimeException e) {
+            Quiet.warn("Chains.num failed, carrying on with the fallback", e); return def; }
     }
 
     static long parseLong(String s, long def) {
-        try { return Long.parseLong(s.trim()); } catch (RuntimeException e) { return def; }
+        try { return Long.parseLong(s.trim()); } catch (RuntimeException e) {
+            Quiet.warn("Chains.parseLong failed, carrying on with the fallback", e); return def; }
     }
 
     static long leadingInt(String s) {

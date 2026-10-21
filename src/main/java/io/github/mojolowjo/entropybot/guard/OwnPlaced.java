@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 /**
  * rm-mining (OLD_CODE_REMOVAL item 9, live: "guard refused break at -58 63 -11: built block" on the bot's own table): a
  * block the bot placed itself (the restore ledger's {@code built: ...} entries: OwnStations, the builder leg, a shelter,
@@ -26,6 +28,7 @@ public final class OwnPlaced {
         try {
             return c.placedByMe(x, y, z);
         } catch (RuntimeException e) {
+            Quiet.warn("OwnPlaced.at failed, carrying on with the fallback", e);
             return false;
         }
     }

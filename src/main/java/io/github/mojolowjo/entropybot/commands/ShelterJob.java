@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.camp.DayNight;
 import io.github.mojolowjo.entropybot.camp.ShelterPlan;
@@ -163,7 +165,7 @@ public final class ShelterJob {
     }
 
     private static void end(State s) {
-        try { s.leases.releaseAll(); } catch (RuntimeException ignored) {}
+        try { s.leases.releaseAll(); } catch (RuntimeException caught) { Quiet.warn("ShelterJob.end failed, carrying on with the fallback", caught); }
         io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop("the shelter ended");
         if (current == s) current = null;
     }

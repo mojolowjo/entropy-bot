@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.pathing.goals.GoalGetToBlock;
@@ -219,7 +221,8 @@ public final class Jobs {
     public boolean walking() { return running() && (job.type.equals("travel") || job.type.equals("spawn")); }
 
     static IBaritone baritone() {
-        try { return BaritoneAPI.getProvider().getPrimaryBaritone(); } catch (Throwable t) { return null; }
+        try { return BaritoneAPI.getProvider().getPrimaryBaritone(); } catch (Throwable t) {
+            Quiet.warn("Jobs.baritone failed, carrying on with the fallback", t); return null; }
     }
 
     static boolean idle(IBaritone b) {
@@ -227,7 +230,7 @@ public final class Jobs {
     }
 
     static void cancel(IBaritone b) {
-        try { b.getPathingBehavior().cancelEverything(); } catch (Throwable ignored) {}
+        try { b.getPathingBehavior().cancelEverything(); } catch (Throwable caught) { Quiet.warn("Jobs.cancel failed, carrying on with the fallback", caught); }
     }
 
     /**
@@ -242,7 +245,7 @@ public final class Jobs {
             boolean build = PaperPlan.ownsBreak() || PaperPlan.ownsPlace();
             // a mine job's mid-job walks keep the MINE intent (its Baritone mine and vein clear are not travel)
             boolean mine = false;
-            try { var j = Core.INSTANCE.commands.jobs.job; mine = j != null && !j.done && j.ownsBreaking; } catch (Throwable ignored) {}
+            try { var j = Core.INSTANCE.commands.jobs.job; mine = j != null && !j.done && j.ownsBreaking; } catch (Throwable caught) { Quiet.warn("Jobs.safeSettings failed, carrying on with the fallback", caught); }
             pr.setIntent(build ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.BUILD : mine ? io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.MINE
                     : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, build ? "plan go" : mine ? "mine walk" : "walk");
             boolean travel = pr.travelMayBreak();
@@ -255,7 +258,7 @@ public final class Jobs {
             // (review: TRAVEL walks only - a mine job's walk keeps Mining's allowPlace=false, and the route map's
             // travelOnlyPlacing holds)
             BaritoneAPI.getSettings().allowPlace.value = PaperPlan.ownsPlace() || (pr.travelMayPlace() && !build && !mine);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("Jobs.safeSettings failed, carrying on with the fallback", caught); }
     }
 
     /**
@@ -705,6 +708,7 @@ public final class Jobs {
             if (j.evAtGoal) return "goal";
             if (j.evFails >= TRAVEL_FAILS) return "nopath";
         } catch (RuntimeException e) {
+            Quiet.warn("Jobs.travelEvents failed, carrying on with the fallback", e);
             j.evSeq = -1;
         }
         return null;

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.List;
 import java.util.Map;
 
@@ -85,6 +87,7 @@ final class FloorSteps {
             if (!s.isCollisionShapeFullBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE, BlockPos.ZERO)) return "it's not a full block";
             return null;
         } catch (RuntimeException e) {
+            Quiet.warn("FloorSteps.floorBlockProblem failed, carrying on with the fallback", e);
             return "it's not a block I know";
         }
     }

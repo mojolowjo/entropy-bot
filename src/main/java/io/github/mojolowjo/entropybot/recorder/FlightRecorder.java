@@ -118,7 +118,8 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         io.scheduleWithFixedDelay(this::maintainQuietly, 3, 60, TimeUnit.SECONDS);
         if (ended != null) saveSettings();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try { store.flush(); } catch (Throwable ignored) {}
+            try { store.flush(); } catch (Throwable ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }, "entropybot-recorder-exit"));
         RecorderStatus.install(this::statusJson);
         active = this;

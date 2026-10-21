@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.craft;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -100,6 +102,7 @@ public final class FurnaceJobs {
                 j.stalled = o.has("stalled") && o.get("stalled").getAsBoolean();
                 return j;
             } catch (RuntimeException e) {
+            Quiet.warn("FurnaceJobs.fromJson failed, carrying on with the fallback", e);
                 return null;
             }
         }
@@ -153,7 +156,8 @@ public final class FurnaceJobs {
                         JsonArray p = l.getAsJsonArray("pos");
                         leftovers.add(new Leftover(new int[]{p.get(0).getAsInt(), p.get(1).getAsInt(), p.get(2).getAsInt()}, str(l, "dim", "minecraft:overworld"),
                                 l.get("item").getAsString(), num(l, "count")));
-                    } catch (RuntimeException ignored) {
+                    } catch (RuntimeException caught) {
+            Quiet.warn("FurnaceJobs.FurnaceJobs failed, carrying on with the fallback", caught);
                         // a broken entry: skipped
                     }
                 }

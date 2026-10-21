@@ -183,7 +183,7 @@ public final class GuardCore {
     }
 
     /**
-     * Water plan: a seal lease for one cell just outside the areas (a dig sealing water off at its edge: the ring around a
+     * Water plan: a seal lease for one cell anywhere outside keep-out and no-break (a dig sealing water off at its edge: the ring around a
      * tunnel exactly as wide as its area). Granted only within one block of a break lease this owner holds (which lies
      * inside an area), never in a protect box or a denied dimension. A placement it covers may only fill water or air
      * ({@link #checkUnlogged} with {@link BlockInfo#airOrWater}). Returns the id, or "error: ...".
@@ -213,7 +213,7 @@ public final class GuardCore {
 
     /**
      * P1 (survival plan): the place lease for putting back one block the bot itself broke (the restore ledger). Granted
-     * in every mode, inside the areas or not, but never in a protect box or a denied dimension. It is a seal-kind lease:
+     * in every mode, in a typed area or not, but never in a protect box or a denied dimension. It is a seal-kind lease:
      * the guard lets it fill only air or water. Returns the id, or "error: ...".
      */
     public synchronized String restoreLease(String owner, String task, Box cell) {
@@ -229,7 +229,7 @@ public final class GuardCore {
         return id;
     }
 
-    /** A placement at x y z is allowed only by a seal lease (it lies outside every area): it may only fill water or air. */
+    /** A placement at x y z is allowed only by a seal lease (a plain place lease: anywhere outside keep-out and no-break): it may only fill water or air. */
     public boolean sealOnly(String dim, int x, int y, int z) {
         Policy p = policy;
         if (p.areaAt(dim, x, y, z) != null) return false;
@@ -290,7 +290,7 @@ public final class GuardCore {
 
     /**
      * The box rules only (denied dimensions, keep-out and no-break areas, leases): cheap, lock-free, safe on the
-     * pathfinder thread. {@code action} is "break", "place" or "go". AREAS: no "outside every area" verdict any more -
+     * pathfinder thread. {@code action} is "break", "place" or "go". AREAS: no open-world verdict of its own any more -
      * the world is open; a keep-out box refuses a walk goal as the floor does, a no-break box is walked through.
      */
     public Verdict checkBoxes(String dim, int x, int y, int z, String action) {
@@ -334,7 +334,7 @@ public final class GuardCore {
 
     /**
      * Mining plan phase 1: a real break click under the TRAVEL intent. The floor and the box rules as before; when only
-     * a box rule (no areas, outside every area, no lease here) would refuse and {@link BreakPolicy} allows the break
+     * a box rule (no typed area, no lease here) would refuse and {@link BreakPolicy} allows the break
      * for travel, the click goes through: travel breaks need no lease, the rule set and the cost decide. Returns the
      * policy's verdict in {@code travel} when it decided (null otherwise), so the caller can log it. Never logs.
      */

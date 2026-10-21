@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.plan;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Set;
@@ -76,7 +78,8 @@ public final class AsyncPlanner {
     private static <T> void runItem(Item<T> it) { it.then().accept(it.done()); }
 
     private void run(Item<?> it) {
-        try { runItem(it); } catch (RuntimeException e) { callbackErrors++; }
+        try { runItem(it); } catch (RuntimeException e) {
+            Quiet.warn("AsyncPlanner.run failed, carrying on with the fallback", e); callbackErrors++; }
     }
 
     public int callbackErrors() { return callbackErrors; }

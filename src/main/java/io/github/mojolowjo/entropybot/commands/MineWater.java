@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.BaritoneAPI;
 import io.github.mojolowjo.entropybot.Core;
 import org.slf4j.Logger;
@@ -54,6 +56,7 @@ public final class MineWater {
             Jobs.Job cur = Core.INSTANCE.commands.jobs.job;
             return cur == j && !j.done;
         } catch (Throwable t) {
+            Quiet.warn("MineWater.active failed, carrying on with the fallback", t);
             return false;
         }
     }
@@ -62,7 +65,8 @@ public final class MineWater {
     public static boolean walkDig() {
         if (!active()) return false;
         boolean w;
-        try { w = walking.getAsBoolean(); } catch (Throwable t) { w = false; }
+        try { w = walking.getAsBoolean(); } catch (Throwable t) {
+            Quiet.warn("MineWater.walkDig failed, carrying on with the fallback", t); w = false; }
         if (!w) return false;
         long now = System.currentTimeMillis();
         if (now - lastDigLog > 30_000) {

@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.guard;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.events.EventRing;
@@ -93,7 +95,7 @@ public final class Guard {
                 if (io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(b).toString())) continue;    // P3: a tree's log
                 if (st.hasBlockEntity()) { set.add(b); be++; }
                 else if (PROTECT_RE.matcher(BuiltInRegistries.BLOCK.getKey(b).toString()).find()) { set.add(b); named++; }
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Guard.ensureProtectedBlocks failed, carrying on with the fallback", caught); }
         }
         blockEntityCount = be;
         namedCount = named;
@@ -204,7 +206,7 @@ public final class Guard {
         // the exemption needs a running job (the same condition under which safeSettings/SafetyNet keep A* breaking on,
         // so the plan and the click agree) and a terrain block (what the ledger can put back; logs and crops keep the fence)
         boolean jobRunning = false;
-        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("Guard.vetoTravelBreak failed, carrying on with the fallback", caught); }
         boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());
         if (t.travel().allowed() && jobRunning && terrain) {
             pr.logTravelOverride(PolicyStats.SITE_CLICK, x, y, z, t.travel(), v.reason());
@@ -279,7 +281,7 @@ public final class Guard {
         }
         pr.stats.ask(PolicyStats.SITE_CLICK);
         boolean jobRunning = false;
-        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable ignored) {}
+        try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("Guard.vetoPolicyPlace failed, carrying on with the fallback", caught); }
         if (t.travel().allowed() && jobRunning) {
             pr.logOverride(PolicyStats.SITE_CLICK, in.name().toLowerCase(java.util.Locale.ROOT) + " may place", x, y, z, t.travel(), v.reason());
             return false;

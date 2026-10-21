@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.engine;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.mojang.logging.LogUtils;
 import io.github.mojolowjo.entropybot.engine.CreeperRules.Act;
 import io.github.mojolowjo.entropybot.engine.CreeperRules.Cell;
@@ -236,7 +238,7 @@ public final class CreeperDuel {
             }
             case BACK -> {
                 if (lastAct != Act.BACK && lastAct != Act.HIT) startBack(p, c, now);
-                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(p.getX() + backX * 5, p.getEyeY(), p.getZ() + backZ * 5)); } catch (RuntimeException ignored) {}
+                try { p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(p.getX() + backX * 5, p.getEyeY(), p.getZ() + backZ * 5)); } catch (RuntimeException caught) { Quiet.warn("CreeperDuel.tick failed, carrying on with the fallback", caught); }
                 moveKeys(mc, true, p.horizontalCollision && p.onGround());
                 if (p.getFoodData().getFoodLevel() > 6 && !p.isSprinting()) p.setSprinting(true);
             }
@@ -294,7 +296,7 @@ public final class CreeperDuel {
     }
 
     private static void face(LocalPlayer p, Creeper c) {
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, c.getEyePosition()); } catch (RuntimeException ignored) {}
+        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, c.getEyePosition()); } catch (RuntimeException caught) { Quiet.warn("CreeperDuel.face failed, carrying on with the fallback", caught); }
     }
 
     static int weaponRankOf(ItemStack s) {

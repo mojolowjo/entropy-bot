@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.commands;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -174,7 +176,7 @@ public final class Storage {
                 BlockState ns = mc.level.getBlockState(new BlockPos(x + s[0], y, z + s[1]));
                 if (ns.getBlock().getDescriptionId().equals(id) && chestHalf(ns) != null && !half.equals(chestHalf(ns))) core.knowledge.forgetChest(nk, now());
             }
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("Storage.forgetOtherHalf failed, carrying on with the fallback", caught); }
     }
 
     /** Is the block at p storage? A spot whose chunk isn't loaded can't be checked, so it counts. */
@@ -234,6 +236,7 @@ public final class Storage {
                 BlockState st = mc.level.getBlockState(pos);
                 if (st.hasBlockEntity() && StorageRules.isStorageId(st.getBlock().getDescriptionId())) continue;
             } catch (RuntimeException ex) {
+            Quiet.warn("Storage.pruneChestNotes failed, carrying on with the fallback", ex);
                 continue;
             }
             core.knowledge.forgetChest(e.getKey(), now());
@@ -559,14 +562,14 @@ public final class Storage {
                 try {
                     Method x = i.getMethod(m.getName(), m.getParameterTypes());
                     if (Modifier.isPublic(i.getModifiers())) return x;
-                } catch (NoSuchMethodException ignored) {}
+                } catch (NoSuchMethodException caught) { Quiet.warn("Storage.publicVersion failed, carrying on with the fallback", caught); }
                 todo.add(i);
             }
             if (k.getSuperclass() != null) {
                 try {
                     Method x = k.getSuperclass().getMethod(m.getName(), m.getParameterTypes());
                     if (Modifier.isPublic(k.getSuperclass().getModifiers())) return x;
-                } catch (NoSuchMethodException ignored) {}
+                } catch (NoSuchMethodException caught) { Quiet.warn("Storage.publicVersion failed, carrying on with the fallback", caught); }
                 todo.add(k.getSuperclass());
             }
         }
@@ -574,6 +577,7 @@ public final class Storage {
             m.setAccessible(true);
             return m;
         } catch (RuntimeException e) {
+            Quiet.warn("Storage.publicVersion failed, carrying on with the fallback", e);
             return null;
         }
     }
@@ -588,11 +592,11 @@ public final class Storage {
             Object u = call(e, "getCorpseUUID");
             if (u instanceof java.util.Optional<?> o) u = o.orElse(null);
             if (u != null) uuid = u.toString();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("Storage.ownsCorpse failed, carrying on with the fallback", caught); }
         try {
             Object n = call(e, "getCorpseName");
             if (n != null && !n.toString().isEmpty()) name = n.toString();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("Storage.ownsCorpse failed, carrying on with the fallback", caught); }
         if (uuid == null && name == null) return true;
         return p.getUUID().toString().equals(uuid) || p.getGameProfile().getName().equals(name);
     }
@@ -614,11 +618,11 @@ public final class Storage {
                 Object u = call(e, "getCorpseUUID");
                 if (u instanceof java.util.Optional<?> o) u = o.orElse(null);
                 if (u != null) uuid = u.toString();
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Storage.findOwnCorpse failed, carrying on with the fallback", caught); }
             try {
                 Object n = call(e, "getCorpseName");
                 if (n != null && !n.toString().isEmpty()) name = n.toString();
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Storage.findOwnCorpse failed, carrying on with the fallback", caught); }
             boolean mine = uuid != null || name != null ? me.equals(uuid) || myName.equals(name)
                     : death != null && Jobs.distSq(new int[]{(int) e.getX(), (int) e.getY(), (int) e.getZ()}, Jobs.pos(death)) < 64;
             if (mine && d < bestD) {
@@ -655,6 +659,7 @@ public final class Storage {
             repo = call(m, "getRepository");
             list = (List<?>) call(repo, "getViewList");
         } catch (RuntimeException e) {
+            Quiet.warn("Storage.rsGridItems failed, carrying on with the fallback", e);
             return null;
         }
         Map<String, Integer> out = new TreeMap<>();
@@ -663,7 +668,7 @@ public final class Storage {
                 long n = ((Number) call(e, "getAmount", repo)).longValue();
                 ItemStack st = (ItemStack) call(e, "getItemStack");           // fluids have no item stack: skipped
                 if (n > 0 && st != null && !st.isEmpty()) out.merge(Gui.itemId(st), (int) Math.min(n, Integer.MAX_VALUE), Integer::sum);
-            } catch (RuntimeException ignored) {}
+            } catch (RuntimeException caught) { Quiet.warn("Storage.rsGridItems failed, carrying on with the fallback", caught); }
         }
         return out;
     }
@@ -674,11 +679,12 @@ public final class Storage {
             Object repo = call(p.containerMenu, "getRepository");
             for (Object e : (List<?>) call(repo, "getViewList")) {
                 ItemStack st;
-                try { st = (ItemStack) call(e, "getItemStack"); } catch (RuntimeException x) { continue; }
+                try { st = (ItemStack) call(e, "getItemStack"); } catch (RuntimeException x) {
+            Quiet.warn("Storage.rsEntry failed, carrying on with the fallback", x); continue; }
                 if (st == null || st.isEmpty() || !Gui.itemId(st).equals(id)) continue;
                 return new Object[]{call(e, "getResourceForRecipeMods"), ((Number) call(e, "getAmount", repo)).longValue(), st.getMaxStackSize()};
             }
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException caught) { Quiet.warn("Storage.rsEntry failed, carrying on with the fallback", caught); }
         return null;
     }
 

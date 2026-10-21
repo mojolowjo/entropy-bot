@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.mixin;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.utils.BlockStateInterface;
 import io.github.mojolowjo.entropybot.baritone.CostAdvisorHook;
@@ -37,7 +39,7 @@ public abstract class GuardMixinCalculationContext {
             if (world == null) return;
             BlockStateInterface b = bsi;
             if (Guard.INSTANCE.astarDenied(world, b == null ? null : PolicyRuntime.StateAt.of(b), x, y, z)) cir.setReturnValue(true);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinCalculationContext.? failed, carrying on with the fallback", caught); }
     }
 
     /**
@@ -53,7 +55,7 @@ public abstract class GuardMixinCalculationContext {
             if (was >= ActionCosts.COST_INF) return;
             double m = CostAdvisorHook.breakMultiplier(null, Guard.dimOf(world), x, y, z, current, PolicyRuntime.StateAt.of(bsi));
             if (!Double.isNaN(m)) cir.setReturnValue(was * m);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinCalculationContext.? failed, carrying on with the fallback", caught); }
     }
 
     @Inject(method = "costOfPlacingAt(IIILnet/minecraft/world/level/block/state/BlockState;)D", at = @At("RETURN"), cancellable = true, remap = false)
@@ -64,6 +66,6 @@ public abstract class GuardMixinCalculationContext {
             if (was >= ActionCosts.COST_INF) return;
             double c = CostAdvisorHook.placeCost(null, Guard.dimOf(world), x, y, z, current, PolicyRuntime.StateAt.of(bsi), was);
             if (!Double.isNaN(c)) cir.setReturnValue(c);
-        } catch (Throwable ignored) {}
+        } catch (Throwable caught) { Quiet.warn("GuardMixinCalculationContext.? failed, carrying on with the fallback", caught); }
     }
 }

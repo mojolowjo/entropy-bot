@@ -280,7 +280,8 @@ public final class RecStore {
                 if (!Files.isRegularFile(p)) continue;
                 try {
                     out.add(new FileInfo(p, root.relativize(p).toString().replace('\\', '/'), Files.size(p), Files.getLastModifiedTime(p).toMillis()));
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
             }
         }
         return out;
@@ -436,7 +437,8 @@ public final class RecStore {
                     if (++n > MAX_READ) return true;
                     each.accept(line);
                 }
-            } catch (IOException | RuntimeException ignored) {}
+            } catch (IOException | RuntimeException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }
         return cut;
     }
@@ -470,7 +472,8 @@ public final class RecStore {
             }
         } catch (IOException e) {
             lastError = "baseline: " + e.getMessage();
-            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }
     }
 

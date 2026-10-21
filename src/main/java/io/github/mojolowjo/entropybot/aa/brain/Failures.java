@@ -23,7 +23,30 @@ public final class Failures {
     public static final long RETRY_MS = 10 * 60_000, RETRY_MAX_MS = 60 * 60_000, CD_BASE_MS = 120_000, CD_MAX_MS = 16 * 60_000;
     public static final double MOVED = 16;
 
-    /** Why it failed (FailMemory's classes, folded to what the AA sweep can clear). */
+    /** The precondition class of a job's end text (moved from the deleted sense/FailMemory; the failure store there is gone). */
+    public enum Reason { NO_ITEM, NONE_IN_CHESTS, NO_PATH, NO_BED, GUARD_REFUSED, NO_PLACE }
+
+    /** Checked in this order. */
+    private static final Object[][] PATTERNS = {
+            {Reason.NONE_IN_CHESTS, java.util.regex.Pattern.compile("none of my chests has|no chest (has|holds)")},
+            {Reason.GUARD_REFUSED, java.util.regex.Pattern.compile("would refuse|the guard refuse|refused by the guard|guard refused|fence refuse")},
+            {Reason.NO_BED, java.util.regex.Pattern.compile("no bed")},
+            {Reason.NO_PLACE, java.util.regex.Pattern.compile("i have no (place|area|mine)\\b|no places yet|i have no place, area|no (camp|base) place")},
+            {Reason.NO_PATH, java.util.regex.Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach|no trees|chopped nothing|couldn't get at its trunk")},
+            {Reason.NO_ITEM, java.util.regex.Pattern.compile("no torches|i have no |no \\S+ on me|missing \\d|not enough |none on me|i need \\d+ |i need .* there is none|no furnace recipe")},
+    };
+    /** A fight or the owner: never a precondition (checked first). */
+    private static final java.util.regex.Pattern NOT_A_CAUSE = java.util.regex.Pattern.compile("attacked by|low health|fight|stopped: your|overridden|interrupted|stopped by");
+
+    /** The precondition class of a job's end text, or null (not a precondition). */
+    public static Reason classify(String end) {
+        if (end == null) return null;
+        String t = end.toLowerCase(Locale.ROOT);
+        if (NOT_A_CAUSE.matcher(t).find()) return null;
+        for (Object[] p : PATTERNS) if (((java.util.regex.Pattern) p[1]).matcher(t).find()) return (Reason) p[0];
+        return null;
+    }
+    /** Why it failed (the Reason classes, folded to what the AA sweep can clear). */
     public enum Cause {
         NO_ITEM, NO_PATH, DANGER, OWNER, UNKNOWN;
 
@@ -32,9 +55,9 @@ public final class Failures {
             String t = reason.toLowerCase(Locale.ROOT);
             if (t.contains("stopped: your") || t.contains("overridden")) return OWNER;
             if (t.contains("attacked") || t.contains("low health") || t.contains("died")) return DANGER;
-            io.github.mojolowjo.entropybot.sense.FailMemory.Reason r = io.github.mojolowjo.entropybot.sense.FailMemory.classify(reason);
-            if (r == io.github.mojolowjo.entropybot.sense.FailMemory.Reason.NO_ITEM) return NO_ITEM;
-            if (r == io.github.mojolowjo.entropybot.sense.FailMemory.Reason.NO_PATH) return NO_PATH;
+            Reason r = classify(reason);
+            if (r == Reason.NO_ITEM) return NO_ITEM;
+            if (r == Reason.NO_PATH) return NO_PATH;
             return UNKNOWN;
         }
     }

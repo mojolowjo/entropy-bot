@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -121,7 +123,7 @@ public final class RestoreBook {
         if (o.has("mode") && o.get("mode").getAsString().matches("auto|manual|off")) r.mode = o.get("mode").getAsString();
         if (o.has("hints") && o.get("hints").isJsonArray()) {
             for (JsonElement e : o.getAsJsonArray("hints")) {
-                try { r.hints.add(BuildHint.fromJson(e.getAsJsonObject())); } catch (RuntimeException ignored) {}
+                try { r.hints.add(BuildHint.fromJson(e.getAsJsonObject())); } catch (RuntimeException caught) { Quiet.warn("RestoreBook.fromJson failed, carrying on with the fallback", caught); }
             }
         }
         return r;

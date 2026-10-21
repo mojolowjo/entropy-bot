@@ -281,8 +281,8 @@ public final class TunnelView {
             known.clear();
             try {
                 Files.move(file, root.resolve("knownair.broken.bin"), StandardCopyOption.REPLACE_EXISTING);
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
             fileNote = FILE + ": broken (" + e.getMessage() + "), set aside, starting empty";
         }
     }
@@ -579,8 +579,8 @@ public final class TunnelView {
             try {
                 Minecraft.getInstance().execute(mesh::close);
                 WatchCamera.INSTANCE.tunnelStopped();
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
         }
     }
 

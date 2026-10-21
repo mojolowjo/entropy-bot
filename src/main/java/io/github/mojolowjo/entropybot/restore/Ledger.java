@@ -1,5 +1,7 @@
 package io.github.mojolowjo.entropybot.restore;
 
+import io.github.mojolowjo.entropybot.Quiet;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -285,6 +287,7 @@ public final class Ledger {
                     l.list.add(e);
                     l.nextSeq = Math.max(l.nextSeq, e.seq + 1);
                 } catch (RuntimeException ex) {
+            Quiet.warn("Ledger.fromJson failed, carrying on with the fallback", ex);
                     bad++;
                 }
             }

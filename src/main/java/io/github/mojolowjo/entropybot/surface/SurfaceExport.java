@@ -280,7 +280,8 @@ public final class SurfaceExport {
                 lastWriteAtMs = System.currentTimeMillis();
                 lastWriteNanos = System.nanoTime() - t0;
             } catch (Throwable e) {
-                try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+                try { Files.deleteIfExists(tmp); } catch (IOException ignored) { // silent: best-effort render/recorder path; a failure here must not disturb the game
+}
                 writeFailed("write " + target.getFileName(), e);
             }
         });

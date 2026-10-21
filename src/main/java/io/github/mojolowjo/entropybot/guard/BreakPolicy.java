@@ -10,7 +10,7 @@ import java.util.Locale;
  *
  * <p>Order (first deny wins, multipliers multiply): the <b>floor</b> (never configurable), the <b>rule set</b> of the
  * area at the cell (3.2; presets per {@link AreaType} until phase 3 puts a rule set on every box), the <b>intent
- * model</b> (3.3). Leases stay the per-job permission inside the areas for MINE/DIG_OUT and are checked by
+ * model</b> (3.3). Leases stay the per-job permission outside keep-out and no-break for MINE/DIG_OUT and are checked by
  * {@link GuardCore}, not here. Unknown facts fail closed.
  *
  * <p>Phase 0 (shadow) computes this next to today's decisions; phase 1 makes the TRAVEL column live.
@@ -65,7 +65,7 @@ public final class BreakPolicy {
         public static final int TRAVEL_CAP = 24;
     }
 
-    /** 3.2: the rules behind one box (or behind "outside every area"). */
+    /** 3.2: the rules behind one box (or behind the open-world floor, where no typed area holds). */
     public record RuleSet(String name, Natural breakNatural, boolean useResources, Built breakBuilt, PlaceRule place,
                           boolean restore, double travelMultiplier, double mineMultiplier) {
         // AREAS (0.39.0): the presets by meaning; keep-out shares no-break's (nothing breaks or is placed; the walk veto is
@@ -77,15 +77,15 @@ public final class BreakPolicy {
         public static final RuleSet STORAGE = new RuleSet("storage", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
         public static final RuleSet DANGER = new RuleSet("danger", Natural.LENIENT, true, Built.OWN_ONLY, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);
         public static final RuleSet DESTROY = new RuleSet("destroy", Natural.LENIENT, true, Built.OWNER_DIG_ONLY, PlaceRule.LENIENT, false, Costs.TRAVEL, 1);
-        /** Outside every area in a singleplayer world (owner's note 2026-10-18: follows the connection, no toggle). */
+        /** The open world (no typed area) in a singleplayer world (owner's note 2026-10-18: follows the connection, no toggle). */
         public static final RuleSet OUTSIDE_SINGLEPLAYER = new RuleSet("outside (singleplayer, lenient)", Natural.LENIENT, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.TRAVEL, 1);      // 0.39.s8 owner: "Place anything outside"
-        /** Outside every area on a server: natural ground still travelled through, but dearly; built blocks never. */
+        /** The open world (no typed area) on a server: natural ground still travelled through, but dearly; built blocks never. */
         public static final RuleSet OUTSIDE_MULTIPLAYER = new RuleSet("outside (multiplayer, expensive)", Natural.TRAVEL_EXPENSIVE, true, Built.NEVER, PlaceRule.LENIENT, true, Costs.TRAVEL_EXPENSIVE, 1);      // 0.39.s8 owner: "Place anything outside"
         /** Server presets for phase 3: walkable, torches allowed, nothing broken; and travel through dirt, no resources taken. */
         public static final RuleSet NOBREAK = new RuleSet("nobreak", Natural.NEVER, false, Built.NEVER, PlaceRule.TORCHES, false, Costs.TRAVEL, 1);
         public static final RuleSet NORESOURCES = new RuleSet("noresources", Natural.LENIENT, false, Built.NEVER, PlaceRule.TORCHES, true, Costs.TRAVEL, 1);
 
-        /** The preset of an area type; {@code null} (outside every area) = the snapshot's outside rule set, not this. */
+        /** The preset of an area type; {@code null} (the open world, no typed area) = the snapshot's outside rule set, not this. */
         public static RuleSet preset(AreaType t) {
             if (t == null) return null;
             return switch (t) {
@@ -177,8 +177,7 @@ public final class BreakPolicy {
     }
 
     /**
-     * Everything a verdict depends on, immutable: the guard's policy (areas, protect boxes), the rule set outside every
-     * area (from the connection), the travel cap. Swapped whole, so the pathfinder thread reads it lock-free.
+     * Everything a verdict depends on, immutable: the guard's policy (areas, protect boxes), the rule set in the open world (no typed area) (from the connection), the travel cap. Swapped whole, so the pathfinder thread reads it lock-free.
      */
     public record Snapshot(Policy policy, RuleSet outside, boolean multiplayer, int travelCap) {
         public static Snapshot of(Policy p, boolean multiplayer) {
