@@ -120,6 +120,20 @@ public final class RunJob extends Node {
         end(bb(), Status.SUCCESS, null);
     }
 
+    /**
+     * Backbone step 2 (step3-watch: a failed burrow, then "wait 120" in the open): the running task is cancelled and the
+     * leaf FAILS with {@code why} (counted as a failure, unlike {@link #halt}). Idle: FAILURE(why) too.
+     */
+    public Status failNow(String why) {
+        if (taskId < 0) return fail(why);
+        Blackboard bb = bb();
+        bb.port.cancel(taskId, why);
+        bb.port.log("failed " + running.kind() + ": " + why);
+        bb.tracer.outcome(bb.clock.now(), "failed: " + why);
+        bb.tracer.counts.fails++;
+        return end(bb, Status.FAILURE, why);
+    }
+
     @Override public void pause(String why) {
         if (taskId < 0 || pausedAt >= 0) return;
         pausedAt = bb().clock.now();

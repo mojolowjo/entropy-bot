@@ -743,7 +743,10 @@ public final class AaDesires {
                     return Status.RUNNING;             // the next tick starts the cheaper way
                 }
                 boolean ran = job.running();           // review 3: a start refused ("busy: ...") never ran: no hold
-                Status s = job.tick(bb);
+                // backbone step 2: a danger move that failed fails its chain (no "wait 120" in the open after it)
+                Object mf = bb.fact(MOVE_FAILED_FACT);
+                if (mf != null) bb.fact(MOVE_FAILED_FACT, null);
+                Status s = ran && mf instanceof String why ? job.failNow("danger move " + why) : job.tick(bb);
                 if (s == Status.FAILURE && bb.fact(WAY_FACT) instanceof DangerOptions.Way w) {
                     bb.fact(WAY_FACT, null);
                     if (!ran) bb.port.log("danger: " + w.key() + " did not start (" + job.reason() + "): not held");
@@ -803,6 +806,8 @@ public final class AaDesires {
 
     /** 0.38.b9: blackboard fact (Boolean), a danger move (flee, cover, pillar, burrow) runs now (the adapter's). */
     public static final String MOVE_FACT = "aa.dangerMove";
+    /** Backbone step 2: blackboard fact (String), the danger move that just failed and why; set only while the danger job runs. */
+    public static final String MOVE_FAILED_FACT = "aa.dangerMoveFailed";
 
     /**
      * 0.38.b9 (review: flee flapped, "stay" got cheap a few blocks out and the job was cut mid-flee): the danger desire is

@@ -1,9 +1,8 @@
 package io.github.mojolowjo.entropybot.engine;
 
-import baritone.api.pathing.goals.Goal;
-import baritone.api.pathing.goals.GoalNear;
-import baritone.api.pathing.goals.GoalXZ;
 import com.mojang.logging.LogUtils;
+import io.github.mojolowjo.entropybot.aa.moves.BaritoneCar;
+import io.github.mojolowjo.entropybot.aa.moves.Moves;
 import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.threat.CornerEscape;
@@ -36,9 +35,16 @@ import java.util.List;
  * job (Reflexes.hold); it ends when nothing has chased the bot for 5 s, after 90 s, or when it cannot go on (always with
  * a "done ...: why" event). Never throws from a tick.
  *
- * <p>Loader notes: vanilla client calls only (MultiPlayerGameMode.continueDestroyBlock/useItemOn/attack, KeyMapping.setDown,
- * Entity.lookAt); Baritone goals through {@link EngineProcess}; the guard mixin vetoes breaks as always and the dig asks
- * {@code PolicyRuntime} (DIG_OUT) first. The pure parts are {@link CornerEscape}, {@link FleeHeading} and {@link ThreatFacts}.
+ * <p>Backbone step 2 ("AA is the driver, Baritone is the car"): a thin caller of {@link Moves}. This class finds the
+ * cells (the facts AA prices) and follows the way; every physical action (walk, run away, pillar, dig, seal, look) goes
+ * through Moves onto Baritone (goals through {@link EngineProcess}, the fork's BurrowProcess, LookBehavior). Only the
+ * strike in the hold stays here ({@code MultiPlayerGameMode.attack}: Baritone has no combat), its look through Moves.
+ * A way that fails ends the move as a failure ({@link #takeFailure}); AA's danger job then fails its chain.
+ *
+ * <p>Loader notes: vanilla client reads plus {@code MultiPlayerGameMode.attack}; Baritone API goals and the fork's
+ * {@code IBurrowProcess} through {@link io.github.mojolowjo.entropybot.aa.moves.BaritoneCar}; the guard mixin vetoes
+ * breaks as always and the finders ask {@code PolicyRuntime} (DIG_OUT) first. The pure parts are {@link CornerEscape},
+ * {@link FleeHeading}, {@link ThreatFacts} and {@link Moves}.
  */
 public final class DangerMoves {
     private static final Logger LOG = LogUtils.getLogger();
@@ -49,28 +55,27 @@ public final class DangerMoves {
     static final long CALM_TICKS = 100, MAX_TICKS = 1800;
 
     private final EventRing events;
-    private final EngineProcess engine;
+    private final Moves moves;
     private Move move = Move.NONE;
     private long now, start, calmSince;
-    private Goal goal;
-    private int[] goalXZ;
-    // pillar
-    private int pillarCell, pillarBase, pillarTop, pillarX, pillarZ;
-    private boolean pillarUp, pillarWater;
-    // niche
-    private int digStage = -1;
-    private Direction digDir;
-    private BlockPos digEntrance;
-    // burrow
-    private int burrowStage = -1, burrowDepth, burrowWait;
-    private BlockPos burrowTop;
+    private boolean holding;
+    private BlockPos anchor;              // the cell the way holds in (pillar top, burrow bottom, niche foot)
+    private List<BlockPos> digCells = List.of();
+    private String failure;
     // cover
     private int coverMob = -1;
     private long coverUntil;
 
     DangerMoves(EventRing events, EngineProcess engine) {
         this.events = events;
-        this.engine = engine;
+        this.moves = new Moves(new BaritoneCar(engine));
+    }
+
+    /** Backbone step 2: the last way that failed ("burrow: gave up at ..."), once; null none. AaRuntime feeds it to AA. */
+    public String takeFailure() {
+        String f = failure;
+        failure = null;
+        return f;
     }
 
     /** 0.38.b9 (review: a verb started a move with a stale clock and the first tick ended it): the client tick, every tick. */
@@ -81,14 +86,9 @@ public final class DangerMoves {
     public Move move() { return move; }
 
     public String doing() {
-        return switch (move) {
-            case NONE -> "none";
-            case FLEE -> "fleeing to " + (goalXZ == null ? "?" : goalXZ[0] + " " + goalXZ[1]);
-            case COVER -> "in cover";
-            case PILLAR -> pillarUp ? "pillared up, holding" : "pillaring up";
-            case NICHE -> digStage >= 5 ? "dug in, holding" : "digging into the wall";
-            case BURROW -> burrowStage > burrowDepth ? "dug down, holding" : "digging down";
-        };
+        if (move == Move.NONE) return "none";
+        String m = move.name().toLowerCase();
+        return holding ? m + " done, holding" : m + ": " + moves.why();
     }
 
     // ---- the verbs ----
@@ -102,11 +102,11 @@ public final class DangerMoves {
         if (mobs.isEmpty()) return "error: nothing to flee from";
         int[] to = FleeHeading.choose(p.getX(), p.getZ(), mobs, FLEE_RUN);
         if (to == null) return "error: cornered - no heading clear of mobs (burrow or pillar)";
-        begin(Move.FLEE, "fleeing to " + to[0] + " " + to[1]);
-        goalXZ = to;
-        goal = new GoalXZ(to[0], to[1]);
-        engine.override(goal);
-        return "ok: fleeing to " + to[0] + " " + to[1];
+        List<int[]> from = new ArrayList<>();
+        for (FleeHeading.Mob m : mobs) from.add(new int[]{(int) Math.floor(m.x()), p.getBlockY(), (int) Math.floor(m.z())});
+        begin(Move.FLEE, "running " + (int) FLEE_RUN + " from " + from.size() + " mob(s)");
+        moves.flee((int) FLEE_RUN, from);
+        return "ok: running " + (int) FLEE_RUN + " from " + from.size() + " mob(s)";
     }
 
     /** "cover": a cell out of the nearest ranged mob's sight (ThreatRuntime.cover), held 15 s or until it closes in. */
@@ -121,8 +121,7 @@ public final class DangerMoves {
         begin(Move.COVER, "taking cover from " + kind(r) + " at " + c.x() + " " + c.y() + " " + c.z());
         coverMob = r.getId();
         coverUntil = now + (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.coverS"));
-        goal = new GoalNear(new BlockPos(c.x(), c.y(), c.z()), 0);
-        engine.override(goal);
+        moves.cover(new int[]{c.x(), c.y(), c.z()});
         return "ok: cover at " + c.x() + " " + c.y() + " " + c.z();
     }
 
@@ -132,51 +131,33 @@ public final class DangerMoves {
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) return "error: not in a world";
         if (p.isInLava()) return "error: in lava";
+        // backbone step 2 (owner: water is parked): no pillar in or beside water, out of water included
+        if (waterNear(mc, p.blockPosition())) return "error: water in or beside me: no pillar here (water ways parked)";
         int[] tw = throwaway(p);
-        if (p.isInWater()) return pillarOutOfWater(mc, p, tw);
         if (!p.onGround()) return "error: not standing on ground";
         int head = headRoom(mc, p);
         int up = Math.min(CornerEscape.UP, Math.min(head, tw[0]));
         if (up < CornerEscape.MIN_UP) return "error: no pillar here (" + tw[0] + " blocks, head room " + head + ")";
-        if (!Hotbar.toHand(mc, p, tw[1])) return "error: could not take the blocks in hand";
-        begin(Move.PILLAR, "pillaring " + up + " up");
-        engine.hold();
-        stopMoving(mc);
         BlockPos feet = p.blockPosition();
-        pillarCell = pillarBase = feet.getY();
-        pillarTop = feet.getY() + up;
-        pillarX = feet.getX();
-        pillarZ = feet.getZ();
-        pillarUp = false;
-        pillarWater = false;
+        for (int k = 0; k < up; k++)
+            if (Guard.INSTANCE.placeRefused(mc.level, feet.above(k))) return "error: no placing at " + c(feet.above(k)) + " (an area rule): no pillar here";
+        begin(Move.PILLAR, "pillaring " + up + " up");
+        anchor = feet.above(up);
+        moves.pillar(new int[]{feet.getX(), feet.getY(), feet.getZ()}, up);
         return "ok: pillaring " + up + " up";
     }
 
-    /**
-     * AA_STEP3 A3: pillar out of water. The column under me is filled from the floor up to the water surface (one block a
-     * cell, placed under the feet while swimming up: the game allows a block into a water cell against the one below),
-     * so the bot ends standing dry on top. Needs a floor within {@link #WATER_FLOOR_SCAN} and a block per cell.
-     */
-    private String pillarOutOfWater(Minecraft mc, LocalPlayer p, int[] tw) {
-        int[] wf = water(mc, p);
-        if (wf[0] <= 0) return "error: in water with no floor within " + WATER_FLOOR_SCAN;
-        if (tw[0] < wf[0]) return "error: pillar out of water needs " + wf[0] + " blocks, " + tw[0] + " in the bag";
-        for (int y = wf[2] + 1; y < wf[3]; y++) {
-            BlockPos c = new BlockPos(p.getBlockX(), y, p.getBlockZ());
-            if (Guard.INSTANCE.placeRefused(mc.level, c)) return "error: no placing at " + c.getX() + " " + c.getY() + " " + c.getZ() + " (an area rule): no pillar out here";
+    private static String c(BlockPos q) {
+        return q.getX() + " " + q.getY() + " " + q.getZ();
+    }
+
+    /** Backbone step 2: water in the cell, at the head, or beside either (the danger ways are not possible there). */
+    static boolean waterNear(Minecraft mc, BlockPos feet) {
+        for (BlockPos q : new BlockPos[]{feet, feet.above()}) {
+            if (wet(mc, q)) return true;
+            for (Direction d : Direction.Plane.HORIZONTAL) if (wet(mc, q.relative(d))) return true;
         }
-        if (!Hotbar.toHand(mc, p, tw[1])) return "error: could not take the blocks in hand";
-        begin(Move.PILLAR, "pillaring out of water " + wf[0] + " up");
-        engine.hold();
-        stopMoving(mc);
-        BlockPos feet = p.blockPosition();
-        pillarCell = pillarBase = wf[2] + 1;
-        pillarTop = wf[3];
-        pillarX = feet.getX();
-        pillarZ = feet.getZ();
-        pillarUp = false;
-        pillarWater = true;
-        return "ok: pillaring out of water " + wf[0] + " up (floor " + wf[2] + ", surface " + wf[3] + ")";
+        return wet(mc, feet.below());
     }
 
     /** How far down the water facts look for a floor. */
@@ -272,62 +253,67 @@ public final class DangerMoves {
         if (p == null || mc.level == null) return "error: no player";
         if (move == Move.BURROW || move == Move.NICHE) return "ok: digging in already (" + doing() + ")";
         if (sealedHere(mc, p)) return "ok: sealed in here already";
+        BlockPos top = p.blockPosition();
+        // backbone step 2 (owner: water is parked): no burrow or dig-in in or beside water
+        if (waterNear(mc, top)) return "error: water in or beside me: no burrow or dig-in here (water ways parked)";
         int d = findBurrow(mc, p);
         if (d > 0) {
             begin(Move.BURROW, "digging down " + d + " and sealing");
-            engine.hold();
-            stopMoving(mc);
-            burrowTop = p.blockPosition();
-            burrowDepth = d;
-            burrowStage = 0;
-            burrowWait = 0;
+            anchor = top.below(d);
+            List<BlockPos> cells = new ArrayList<>();
+            for (int k = 1; k <= d; k++) cells.add(top.below(k));
+            digCells = cells;
+            moves.burrow(new int[]{top.getX(), top.getY(), top.getZ()}, d);
             return "ok: digging down " + d + " and sealing";
         }
         Direction n = findNiche(mc, p);
         if (n != null && throwaway(p)[0] >= CornerEscape.SEAL_BLOCKS) {
             begin(Move.NICHE, "digging into the wall " + n.getName() + " and sealing");
-            engine.hold();
-            stopMoving(mc);
-            digDir = n;
-            digEntrance = p.blockPosition();
-            digStage = 0;
+            anchor = top.relative(n);
+            digCells = List.of(anchor, anchor.above());
+            moves.digIn(new int[]{top.getX(), top.getY(), top.getZ()}, n.getStepX(), n.getStepZ());
             return "ok: digging into the wall " + n.getName();
         }
         return "error: no ground to dig down into and no wall to dig into here (soft ground, closed sides, no water near)";
     }
 
     private void begin(Move m, String line) {
-        clear(Minecraft.getInstance());
+        if (move != Move.NONE) moves.cancel("replaced by " + m.name().toLowerCase());
         move = m;
         start = calmSince = now;
+        holding = false;
+        anchor = null;
+        digCells = List.of();
+        coverMob = -1;
         events.push("reflex", line, null);
         LOG.info("[entropybot] danger move: {}", line);
     }
 
-    /** Ends the move: keys up, Baritone back to the job. */
+    /** Ends the move as done (got away, calm, held): Baritone back to the job. */
     public void stop(String why) {
-        if (move == Move.NONE) return;
-        Minecraft mc = Minecraft.getInstance();
-        events.push("reflex", "done " + move.name().toLowerCase() + ": " + why, null);
-        LOG.info("[entropybot] danger move {} done: {}", move.name().toLowerCase(), why);
-        clear(mc);
-        stopMoving(mc);
-        engine.release();
+        end(why, false);
     }
 
-    private void clear(Minecraft mc) {
-        if (mc != null && (move == Move.PILLAR || move == Move.NICHE)) {
-            mc.options.keyJump.setDown(false);
-            mc.options.keyUse.setDown(false);
-            mc.options.keyUp.setDown(false);
-            mc.options.keyShift.setDown(false);
-        }
+    /**
+     * Backbone step 2 (step3-watch: "burrow gave up", then "wait 120" in the open): ends the move as failed; the line is
+     * kept for {@link #takeFailure} so AA's danger job fails its chain (and holds that way) instead of going on.
+     */
+    void fail(String why) {
+        end(why, true);
+    }
+
+    private void end(String why, boolean failed) {
+        if (move == Move.NONE) return;
+        String m = move.name().toLowerCase();
+        events.push("reflex", (failed ? "failed " : "done ") + m + ": " + why, null);
+        LOG.info("[entropybot] danger move {} {}: {}", m, failed ? "failed" : "done", why);
+        if (failed) failure = m + ": " + why;
         move = Move.NONE;
-        goal = null;
-        goalXZ = null;
-        digStage = -1;
-        burrowStage = -1;
+        holding = false;
+        anchor = null;
+        digCells = List.of();
         coverMob = -1;
+        moves.release();
     }
 
     // ---- the tick ----
@@ -339,12 +325,13 @@ public final class DangerMoves {
         try {
             Entity t = nearest(mc, p);
             if (t != null) calmSince = now;
-            if (now - start >= MAX_TICKS) { stop("gave up after 90 s"); return; }
+            if (now - start >= MAX_TICKS) { fail("gave up after 90 s (" + moves.why() + ")"); return; }
+            Moves.Phase ph = moves.tick(now);
+            if (ph == Moves.Phase.FAILED) { fail(moves.why() + verdict(mc)); return; }
+            boolean arrived = ph == Moves.Phase.ARRIVED;
             switch (move) {
                 case FLEE -> {
-                    if (goalXZ != null && Math.abs(p.getX() - goalXZ[0]) + Math.abs(p.getZ() - goalXZ[1]) <= 3) { stop("got away"); return; }
-                    if (engine.mode() == EngineProcess.Mode.NONE && goal != null) engine.override(goal);    // a cancel dropped it
-                    if (ThreatFacts.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
+                    if (arrived) { stop("got away (" + moves.why() + ")"); return; }
                     if (now - calmSince >= CALM_TICKS) stop("nothing chasing me");
                 }
                 case COVER -> {
@@ -352,135 +339,50 @@ public final class DangerMoves {
                     if (m == null || !m.isAlive()) { stop("the shooter is gone"); return; }
                     if (p.distanceTo(m) <= 4) { stop("it closed in (the hit response fights it)"); return; }
                     if (now >= coverUntil) { stop("held the cover " + (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.coverS") + " s"); return; }
-                    if (engine.mode() == EngineProcess.Mode.NONE && goal != null) engine.override(goal);
                 }
-                case PILLAR -> pillarTick(mc, p, t);
-                case NICHE -> digTick(mc, p, t);
-                case BURROW -> burrowTick(mc, p, t);
+                case PILLAR, NICHE, BURROW -> {
+                    if (!arrived) return;
+                    String what = move == Move.PILLAR ? "pillar" : move == Move.NICHE ? "niche" : "burrow";
+                    if (!holding) {
+                        holding = true;
+                        calmSince = now;            // the hold starts its own calm wait
+                        events.push("reflex", (move == Move.PILLAR ? "pillared up" : move == Move.NICHE ? "dug in and sealed" : "dug down and sealed") + ", holding", null);
+                    }
+                    if (anchor != null && (p.isInWater() || p.isInLava() || Math.abs(p.getX() - (anchor.getX() + 0.5)) > 1 || Math.abs(p.getZ() - (anchor.getZ() + 0.5)) > 1)) {
+                        fail("knocked out of the " + what);
+                        return;
+                    }
+                    holdOn(mc, p, t, what);
+                }
                 default -> { }
             }
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] danger move {} failed: {}", move, e.toString());
-            stop("error: " + e);
+            fail("error: " + e);
+        }
+    }
+
+    /** The break policy's verdict on the first dig cell still standing (the "gave up" line names it). */
+    private String verdict(Minecraft mc) {
+        try {
+            for (BlockPos q : digCells) {
+                if (!solid(mc, q)) continue;
+                var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
+                var v = rt.judge("aa-corner", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK,
+                        io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.DIG_OUT, Guard.dimOf(mc.level),
+                        q.getX(), q.getY(), q.getZ(), rt.facts(mc.level, q, false), rt.where());
+                String block = BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).getPath();
+                return "; guard on " + block + " at " + c(q) + ": " + (v.allowed() ? "allowed x" + v.multiplier() + " (" + v.rule() + ")" : "refused: " + v.reason());
+            }
+            return digCells.isEmpty() ? "" : "; every dig cell is open";
+        } catch (RuntimeException e) {
+            return "; guard verdict unknown (" + e + ")";
         }
     }
 
     private void holdOn(Minecraft mc, LocalPlayer p, Entity t, String what) {
         hitInReach(mc, p, t);
         if (now - calmSince >= CALM_TICKS) stop("nothing near the " + what);
-    }
-
-    private void pillarTick(Minecraft mc, LocalPlayer p, Entity t) {
-        if (p.getBlockX() != pillarX || p.getBlockZ() != pillarZ || (p.isInWater() && !pillarWater) || p.isInLava()) { stop("knocked off the pillar"); return; }
-        if (pillarUp) { holdOn(mc, p, t, "pillar"); return; }
-        long limit = pillarWater ? CornerEscape.TIMEOUT + 40L * (pillarTop - pillarBase) : CornerEscape.TIMEOUT;
-        if (now - start > limit) { stop("pillar gave up at " + (pillarCell - pillarBase) + " up" + (pillarWater ? " (out of water, " + (pillarTop - pillarBase) + " to go)" : "")); return; }
-        if (pillarWater) { pillarWaterTick(mc, p); return; }
-        p.setXRot(90f);
-        p.setDeltaMovement(0, p.getDeltaMovement().y, 0);      // straight up: no drift off the column
-        BlockPos cell = new BlockPos(pillarX, pillarCell, pillarZ);
-        if (p.getY() >= pillarCell + 1.0 - 1e-3 && p.onGround() && !mc.level.getBlockState(cell).isAir()) pillarCell++;   // landed on the last one
-        if (pillarCell >= pillarTop) {
-            pillarUp = true;
-            mc.options.keyJump.setDown(false);
-            events.push("reflex", "pillared up to " + pillarTop + ", holding", null);
-            return;
-        }
-        int[] tw = throwaway(p);
-        if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { stop("pillar: out of blocks"); return; }
-        mc.options.keyJump.setDown(p.onGround());
-        if (Guard.INSTANCE.placeRefused(mc.level, cell)) { stop("pillar: no placing at " + cell.getX() + " " + cell.getY() + " " + cell.getZ() + " (an area rule)"); return; }
-        if (CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
-            BlockPos below = cell.below();
-            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
-            p.swing(InteractionHand.MAIN_HAND);
-        }
-    }
-
-    /** AA_STEP3 A3: one tick of the pillar out of water: sink to the next cell, swim up over it, place it, until dry on top. */
-    private void pillarWaterTick(Minecraft mc, LocalPlayer p) {
-        p.setXRot(90f);
-        p.setDeltaMovement(0, p.getDeltaMovement().y, 0);
-        BlockPos cell = new BlockPos(pillarX, pillarCell, pillarZ);
-        if (!mc.level.getBlockState(cell).canBeReplaced() && p.getY() >= pillarCell + 1.0 - 1e-3) pillarCell++;     // placed and over it
-        if (pillarCell >= pillarTop) {
-            pillarUp = true;
-            mc.options.keyJump.setDown(false);
-            mc.options.keyShift.setDown(false);
-            events.push("reflex", "pillared out of the water to " + pillarTop + ", holding", null);
-            return;
-        }
-        int[] tw = throwaway(p);
-        if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { stop("pillar: out of blocks in the water"); return; }
-        boolean high = p.getY() > pillarCell + 1.6;                 // floating over the next cell: sink to it
-        mc.options.keyShift.setDown(high);
-        mc.options.keyJump.setDown(!high);
-        cell = new BlockPos(pillarX, pillarCell, pillarZ);
-        if (Guard.INSTANCE.placeRefused(mc.level, cell)) { stop("pillar: no placing at " + cell.getX() + " " + cell.getY() + " " + cell.getZ() + " (an area rule)"); return; }
-        if (CornerEscape.placeNow(p.getY(), pillarCell) && mc.level.getBlockState(cell).canBeReplaced()) {
-            BlockPos below = cell.below();
-            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
-            p.swing(InteractionHand.MAIN_HAND);
-        }
-    }
-
-    private void digTick(Minecraft mc, LocalPlayer p, Entity t) {
-        BlockPos e = digEntrance, f = e.relative(digDir), h = f.above();
-        BlockPos at = p.blockPosition();
-        if (digStage < 5 && now - start > CornerEscape.DIG_TIMEOUT) { stop("dig-in gave up at stage " + digStage); return; }
-        if ((!at.equals(e) && !at.equals(f)) || p.isInWater() || p.isInLava()) { stop("knocked out of the niche"); return; }
-        int prev = digStage;
-        digStage = CornerEscape.nextStage(digStage, !solid(mc, f), !solid(mc, h), at.equals(f), solid(mc, e), solid(mc, e.above()));
-        if (digStage != prev && digStage == 5) events.push("reflex", "dug in and sealed, holding", null);
-        mc.options.keyUp.setDown(digStage == 2);
-        switch (digStage) {
-            case 0, 1 -> breakAt(mc, p, digStage == 0 ? f : h, digDir.getOpposite());
-            case 2 -> look(p, Vec3.atCenterOf(f));
-            case 3 -> placeAt(mc, p, e.below(), Direction.UP, e);
-            case 4 -> placeAt(mc, p, e, Direction.UP, e.above());
-            default -> holdOn(mc, p, t, "niche");
-        }
-    }
-
-    private void burrowTick(Minecraft mc, LocalPlayer p, Entity t) {
-        if (burrowStage <= burrowDepth && now - start > CornerEscape.DIG_TIMEOUT) { stop("burrow gave up"); return; }
-        if (p.isInWater() || p.isInLava() || Math.abs(p.getX() - (burrowTop.getX() + 0.5)) > 1 || Math.abs(p.getZ() - (burrowTop.getZ() + 0.5)) > 1) {
-            stop("knocked out of the burrow");
-            return;
-        }
-        BlockPos seal = burrowTop.below(burrowDepth - 2);
-        BlockPos cell = burrowStage < burrowDepth ? burrowTop.below(burrowStage + 1) : null;
-        int prev = burrowStage;
-        burrowStage = CornerEscape.burrowStage(burrowStage, burrowDepth, cell != null && !solid(mc, cell),
-                cell != null && p.blockPosition().getY() <= cell.getY() && p.onGround(), solid(mc, seal));
-        if (burrowStage < burrowDepth) {
-            BlockPos c = burrowTop.below(burrowStage + 1);
-            if (solid(mc, c)) breakAt(mc, p, c, Direction.UP);
-            return;
-        }
-        if (burrowStage == burrowDepth) {
-            for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos side = seal.relative(d);
-                if (!solid(mc, side)) continue;
-                int[] tw = throwaway(p);
-                if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) {
-                    if (++burrowWait < 30) return;          // a drop is picked up ~10 ticks after it falls
-                    stop("burrow: no dug block came into the bag to seal with");
-                    return;
-                }
-                look(p, Vec3.atCenterOf(seal));
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(side).relative(d.getOpposite(), 0.5), d.getOpposite(), side, false));
-                p.swing(InteractionHand.MAIN_HAND);
-                return;
-            }
-            stop("burrow: nothing beside the hole to seal against");
-            return;
-        }
-        if (prev == burrowDepth) {
-            calmSince = now;            // the hold starts its own calm wait
-            events.push("reflex", "dug down and sealed, holding", null);
-        }
-        holdOn(mc, p, t, "burrow");
     }
 
     // ---- the facts AA prices (ThreatFacts) ----
@@ -530,7 +432,7 @@ public final class DangerMoves {
             int[] shore = wetNow ? shore(mc, p, wf[3] != 0 ? wf[3] : p.blockPosition().getY()) : null;
             double shoreDist = shore == null ? -1 : Math.sqrt(Math.pow(shore[0] + 0.5 - p.getX(), 2) + Math.pow(shore[2] + 0.5 - p.getZ(), 2));
             return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, cover, burrow || niche, tw[0], headRoom(mc, p),
-                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist));
+                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist, waterNear(mc, p.blockPosition())));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] danger facts failed (calm facts used): {}", e.toString());
             return ThreatFacts.CALM;
@@ -574,22 +476,14 @@ public final class DangerMoves {
         return best;
     }
 
-    private static void hitInReach(Minecraft mc, LocalPlayer p, Entity t) {
-        if (t == null || p.distanceTo(t) > ReflexRules.REACH || p.getAttackStrengthScale(0f) < 0.9f || !Hostility.mayAttack(t)) return;
-        look(p, t.getEyePosition());
+    /** The strike in the hold (Baritone has no combat): the look through Moves (LookBehavior), the hit by the game mode. */
+    private void hitInReach(Minecraft mc, LocalPlayer p, Entity t) {
+        if (t == null || p.distanceTo(t) > ReflexRules.REACH || !Hostility.mayAttack(t)) return;
+        Vec3 eye = t.getEyePosition();
+        moves.lookAt(eye.x, eye.y, eye.z);
+        if (p.getAttackStrengthScale(0f) < 0.9f) return;
         mc.gameMode.attack(p, t);
         p.swing(InteractionHand.MAIN_HAND);
-    }
-
-    private static void look(LocalPlayer p, Vec3 at) {
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, at); } catch (RuntimeException ignored) {}
-    }
-
-    static void stopMoving(Minecraft mc) {
-        mc.options.keyUp.setDown(false);
-        mc.options.keySprint.setDown(false);
-        mc.options.keyJump.setDown(false);
-        if (mc.player != null && mc.player.isSprinting()) mc.player.setSprinting(false);
     }
 
     private static int headRoom(Minecraft mc, LocalPlayer p) {
@@ -634,32 +528,6 @@ public final class DangerMoves {
         } catch (RuntimeException e) {
             return false;
         }
-    }
-
-    private static void breakAt(Minecraft mc, LocalPlayer p, BlockPos c, Direction face) {
-        toolFor(mc, p, mc.level.getBlockState(c));
-        look(p, Vec3.atCenterOf(c));
-        mc.gameMode.continueDestroyBlock(c, face);       // the guard's break check runs inside
-        p.swing(InteractionHand.MAIN_HAND);
-    }
-
-    /** The hotbar tool that breaks this block fastest goes in hand. */
-    private static void toolFor(Minecraft mc, LocalPlayer p, BlockState s) {
-        int best = -1;
-        float bestSpeed = p.getInventory().getItem(p.getInventory().selected).getDestroySpeed(s);
-        for (int i = 0; i < 9; i++) {
-            float sp = p.getInventory().getItem(i).getDestroySpeed(s);
-            if (sp > bestSpeed) { bestSpeed = sp; best = i; }
-        }
-        if (best >= 0) Hotbar.toHand(mc, p, best);
-    }
-
-    private void placeAt(Minecraft mc, LocalPlayer p, BlockPos against, Direction face, BlockPos lookAtCell) {
-        int[] tw = throwaway(p);
-        if (tw[0] == 0 || !Hotbar.toHand(mc, p, tw[1])) { stop("dig-in: out of blocks"); return; }
-        look(p, Vec3.atCenterOf(lookAtCell));
-        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(against).add(0, 0.5, 0), face, against, false));
-        p.swing(InteractionHand.MAIN_HAND);
     }
 
     /** A wall direction whose two cells can be dug out and sealed behind; null = none. Never throws. */

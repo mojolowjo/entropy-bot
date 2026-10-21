@@ -115,16 +115,17 @@ public final class DangerOptions {
                 !ranged ? "nothing shoots" : w.coverDist() < 0 ? "no cell out of its sight" : "a cell out of sight " + w.coverDist() + " moves away"));
         double digD = 0;
         for (ThreatFacts.Foe x : foes) digD += x.dps() * Math.max(0, DIG_S - x.reachT());
-        all.add(priced(me, death, Way.DIG_IN, w.digIn(), digD, DIG_S + Tuning.get("danger.holdS"), w.digIn() ? "dig in and seal, wait" : "no ground to dig into here"));
+        all.add(priced(me, death, Way.DIG_IN, w.digIn() && !w.waterNear(), digD, DIG_S + Tuning.get("danger.holdS"),
+                w.waterNear() ? WATER_NEAR : w.digIn() ? "dig in and seal, wait" : "no ground to dig into here"));
         double pilD = 0;
         for (ThreatFacts.Foe x : foes) {
             if (x.ranged() || x.flies()) pilD += x.dps() * h;                       // a pillar is no cover from arrows or fliers
             else if (x.move() == ThreatRules.Move.SPIDER) pilD += x.dps() * Math.max(0, h - x.reachT());       // spiders climb
             else pilD += x.dps() * Math.max(0, PILLAR_S - x.reachT());
         }
-        boolean pillar = w.onGround() && w.pillarBlocks() >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
+        boolean pillar = w.onGround() && !w.waterNear() && w.pillarBlocks() >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
         all.add(priced(me, death, Way.PILLAR, pillar, pilD, PILLAR_S + Tuning.get("danger.holdS"),
-                pillar ? "pillar " + PILLAR_UP + " up, wait" : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
+                pillar ? "pillar " + PILLAR_UP + " up, wait" : w.waterNear() ? WATER_NEAR : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
         Priced best = stay;
         for (Priced p : all) if (p.possible() && p.costS() < best.costS()) best = p;
         double saved = stay.costS() - best.costS();
@@ -273,6 +274,9 @@ public final class DangerOptions {
     /** Review 0.39.a4 5: sinking held down (sneak) in water, blocks/s (vanilla about 1; a hand number until measured). */
     static final double SINK_BPS = 1.0;
 
+    /** Backbone step 2 (owner: water is parked): the why of a way whose cell is in or beside water. */
+    static final String WATER_NEAR = "water in or beside the cell: not possible here";
+
     /** Review 2: the open-air fallback's length (s). */
     static final double OPEN_WAIT_S = 60;
 
@@ -317,12 +321,15 @@ public final class DangerOptions {
             all.add(priced(me, death, Way.BOX, boxOk && !wet, during(near, bt) + amb * bt, bt,
                     !boxOk ? "needs " + box + " blocks, " + need.shellBlocks() + " in the bag" : wet ? wetWhy : box + " blocks (" + need.shellBlocks() + " in the bag)"));
             double ut = Tuning.get("danger.burrowS");
-            all.add(priced(me, death, Way.BURROW, w.burrow() && !wet, during(near, ut) + amb * ut, ut, wet ? wetWhy : w.burrow() ? "dig down and seal" : "no diggable floor"));
-            all.add(priced(me, death, Way.DIG_IN, w.niche() && !wet, during(near, DIG_S) + amb * DIG_S, DIG_S, wet ? wetWhy : w.niche() ? "a niche in the wall" : "no wall to dig into"));
-            boolean pil = w.onGround() && !wet && blocks >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
+            boolean wn = w.waterNear();
+            all.add(priced(me, death, Way.BURROW, w.burrow() && !wet && !wn, during(near, ut) + amb * ut, ut,
+                    wet ? wetWhy : wn ? WATER_NEAR : w.burrow() ? "dig down and seal" : "no diggable floor"));
+            all.add(priced(me, death, Way.DIG_IN, w.niche() && !wet && !wn, during(near, DIG_S) + amb * DIG_S, DIG_S,
+                    wet ? wetWhy : wn ? WATER_NEAR : w.niche() ? "a niche in the wall" : "no wall to dig into"));
+            boolean pil = w.onGround() && !wet && !wn && blocks >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
             double open = Tuning.get("danger.openS");
             all.add(priced(me, death, Way.PILLAR, pil, during(near, PILLAR_S) + amb * open, PILLAR_S,
-                    pil ? "pillar " + PILLAR_UP + " up, open to arrows " + Math.round(open) + " s" : wet ? "in water: the pillar-out row"
+                    pil ? "pillar " + PILLAR_UP + " up, open to arrows " + Math.round(open) + " s" : wet ? "in water: the pillar-out row" : wn ? WATER_NEAR
                             : "no pillar (" + blocks + " blocks, head room " + w.headRoom() + ")"));
             if (wet) {
                 // pillar out: a block per water cell from the floor up, a place and a swim-up each, under water the while
@@ -331,8 +338,8 @@ public final class DangerOptions {
                 double sink = Math.max(0, col - (w.headDepth() + 2)) / SINK_BPS;
                 double pt = sink + col * (PLACE_S + 1 / SWIM_BPS);
                 double r = io.github.mojolowjo.entropybot.guard.DrownRisk.cellRisk(col, pt, air);
-                boolean ok = col > 0 && blocks >= col && r < 1;
-                String why = col <= 0 ? "no floor under the water in reach" : blocks < col ? "needs " + col + " blocks, " + blocks + " in the bag"
+                boolean ok = col > 0 && blocks >= col && r < 1 && !wn;
+                String why = wn ? "water ways parked (owner): no pillar out of water" : col <= 0 ? "no floor under the water in reach" : blocks < col ? "needs " + col + " blocks, " + blocks + " in the bag"
                         : r >= 1 ? "not enough air (" + col + " deep, " + fmt(pt) + " s, air " + air / 20 + " s, risk " + fmt(r) + ")"
                         : col + " blocks up out of the water, " + fmt(pt) + " s, air risk " + fmt(r) + ", then open " + Math.round(open) + " s";
                 Priced po = priced(me, death, Way.PILLAR_OUT, ok, during(near, pt) + amb * (pt + open), pt, why);

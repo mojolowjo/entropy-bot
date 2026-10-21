@@ -37,8 +37,20 @@ public record ThreatFacts(Me me, List<Foe> foes, Ways ways) {
      * wall to dig into ({@link CornerEscape}). The shell's blocks come from the bag (AaDesires.shellBlocks).
      */
     public record Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
-                       boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist) {
+                       boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist,
+                       boolean waterNear) {
         public static final Ways NONE = new Ways(0, -1, -1, false, 0, 0, true);
+
+        /**
+         * Backbone step 2 (owner: water is parked): waterNear = water in or beside the feet or head cell. The burrow, the
+         * dig-in and both pillars are then impossible (their cell is in or beside water); the swim to the shore stays.
+         * The 14-value shape (tests, older callers) has no such fact (false).
+         */
+        public Ways(int fleeRun, double baseDist, int coverDist, boolean digIn, int pillarBlocks, int headRoom, boolean onGround,
+                    boolean burrow, boolean niche, boolean inWater, int waterColumn, int headDepth, int[] shoreCell, double shoreDist) {
+            this(fleeRun, baseDist, coverDist, digIn, pillarBlocks, headRoom, onGround, burrow, niche, inWater, waterColumn, headDepth,
+                    shoreCell, shoreDist, false);
+        }
 
         /**
          * AA_STEP2 1 shape (no water facts). AA_STEP3 A3/A4 add: inWater (the feet in water), waterColumn (water cells from

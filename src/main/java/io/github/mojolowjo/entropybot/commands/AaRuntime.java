@@ -1150,6 +1150,9 @@ public final class AaRuntime implements JobPort {
         // 0.38.b9: a hit response while AA's own danger job runs is part of that job (no pause of the danger chain)
         boolean aaOwn = r == Reflexes.Reflex.RETREATING || (r == Reflexes.Reflex.FIGHTING && (Core.INSTANCE.reflexes.forcing() || dangerJob));
         bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.MOVE_FACT, Core.INSTANCE.reflexes.moves.active());
+        // backbone step 2: a failed danger move fails the danger job's chain (taken once; dropped when no danger job runs)
+        String moveFailed = Core.INSTANCE.reflexes.moves.takeFailure();
+        if (moveFailed != null && dangerJob) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.MOVE_FAILED_FACT, moveFailed);
         in.danger = !aaOwn && (r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) ? 2 : !aaOwn && Core.INSTANCE.reflexes.hold() ? 1 : 0;
         in.dangerWhy = in.danger > 0 ? r.name().toLowerCase() : "";
         in.creeperClose = creeperClose();

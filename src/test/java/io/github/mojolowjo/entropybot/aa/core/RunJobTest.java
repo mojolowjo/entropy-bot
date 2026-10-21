@@ -58,6 +58,17 @@ class RunJobTest {
         assertEquals(0, tracer.counts.switches, "ends are no switches");
     }
 
+    /** Backbone step 2: a failed danger move fails the chain (the "wait 120" after it never runs in the open). */
+    @Test
+    void failNowCancelsTheChainAsAFailure() {
+        assertEquals(Status.RUNNING, job.tick(bb));
+        assertEquals(Status.FAILURE, job.failNow("danger move burrow: gave up at burrow 2 down"));
+        assertFalse(job.running());
+        assertEquals("danger move burrow: gave up at burrow 2 down", job.reason());
+        assertEquals(1, tracer.counts.fails);
+        assertTrue(port.cancelled.get(0).endsWith("gave up at burrow 2 down"), port.cancelled.get(0));
+    }
+
     @Test
     void timeoutCancelsWithAnIncident() {
         job.tick(bb);
