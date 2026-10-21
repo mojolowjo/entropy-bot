@@ -292,38 +292,6 @@ public final class PaperPlan {
     }
 
     /**
-     * PATHS_PLAN P3.4: the escape's last steps after the trail retrace: a long walking search to open sky (20 s), and
-     * when that finds no way, a plan with breaking and placing from here (the highest point the retrace reached). Only
-     * reported ("next: plan go"): digging stays the owner's choice. Never throws.
-     */
-    public void escape(Commands c, LocalPlayer p, String to) {
-        try {
-            String s = start(c, p, "surface", "walk", r -> {
-                Result res = last;
-                if (res != null && res.reachable()) {
-                    c.whisper(to, "stuck under ground: " + res.text());
-                    return;
-                }
-                // P2's open case: on foot only part of the way (a trail walked down by falling): walk to the highest
-                // point first, then dig from there
-                int[] here = Jobs.here(Minecraft.getInstance().player);
-                if (res != null && !res.cells().isEmpty() && res.highest() > here[1] + 4) {
-                    int[] e = res.cells().get(res.cells().size() - 1);
-                    c.whisper(to, "stuck under ground: on foot I get up to y " + res.highest() + " (" + Jobs.fmt(e) + ") - next: plan go, then plan path surface break");
-                    return;
-                }
-                LocalPlayer q = Minecraft.getInstance().player;
-                if (q == null) return;
-                String s2 = start(c, q, "surface", "break", r2 -> c.whisper(to, "stuck under ground, no way out on foot: " + r2));
-                LOG.info("[entropybot] escape plan: {}", s2);
-            });
-            LOG.info("[entropybot] escape plan: {}", s);
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] escape plan failed: {}", e.toString());
-        }
-    }
-
-    /**
      * 0.36.a6: AA's pillar out of a shaft: a plain walk to {@code e} (straight above) with placing on for this job only
      * (no breaking), so Baritone pillars up with its throwaway blocks. The same ownership as "plan go": placing goes
      * off again when the job ends (tick, SafetyNet backstop).

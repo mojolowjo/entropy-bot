@@ -1,6 +1,5 @@
 package io.github.mojolowjo.entropybot.aa.brain;
 
-import io.github.mojolowjo.entropybot.move.Profiles;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -25,37 +24,4 @@ class HungerConserveTest {
         assertFalse(HungerConserve.active(1001));
     }
 
-    static final class Fake implements Profiles.Access {
-        final Map<String, Object> m = new HashMap<>(Map.of("allowsprint", true, "allowparkour", true));
-        public Object get(String n) { return m.get(n); }
-        public void set(String n, Object v) { m.put(n, v); }
-    }
-
-    @Test void conserveAndRestore() {
-        Profiles p = new Profiles();
-        Fake a = new Fake();
-        p.conserve(true, false, a);
-        assertEquals(false, a.m.get("allowsprint"));
-        assertEquals(false, a.m.get("allowparkour"));
-        p.conserve(true, true, a);                       // fleeing: sprint stays allowed, parkour off
-        assertEquals(true, a.m.get("allowsprint"));
-        assertEquals(false, a.m.get("allowparkour"));
-        p.conserve(false, false, a);
-        assertEquals(true, a.m.get("allowsprint"));
-        assertEquals(true, a.m.get("allowparkour"));
-        assertFalse(p.conserving());
-    }
-
-    @Test void profileSaveKeepsOriginals() {
-        Profiles p = new Profiles();
-        Fake a = new Fake();
-        p.conserve(true, false, a);                      // settings now false
-        p.apply(Profiles.Profile.WALK, a);               // saves the originals, not the conserved false
-        p.conserve(true, false, a);
-        assertEquals(false, a.m.get("allowsprint"));
-        p.conserve(false, false, a);
-        p.apply(Profiles.Profile.NONE, a);
-        assertEquals(true, a.m.get("allowsprint"));
-        assertEquals(true, a.m.get("allowparkour"));
-    }
 }

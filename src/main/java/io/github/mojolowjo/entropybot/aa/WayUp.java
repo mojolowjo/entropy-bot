@@ -158,9 +158,7 @@ public final class WayUp {
         else if (f.throwaway() < d) dropped.add("pillar: " + f.throwaway() + " of " + d + " blocks to place");
         else RungOptions.add(rows, dropped, m, now, Options.scored("pillar", "pillar", "goto " + f.me()[0] + " " + (f.me()[1] + d) + " " + f.me()[2],
                 d * RungOptions.PILLAR_BLOCK + RungOptions.PILLAR_FIX, "an open shaft, " + f.throwaway() + " blocks", "pillar", false, m));
-        // trail, sky, nothing
-        if (f.trailEnd() == null) dropped.add("trail: no trail back to open sky");
-        else RungOptions.add(rows, dropped, m, now, Options.scored("trail", "trail", "goto " + RungOptions.xyz(f.trailEnd()), f.trailLen(), "my trail back, " + Math.round(f.trailLen()) + " long", "trail", false, m));
+        // sky, nothing (rm-routes: the trail-back row went with the trail; Baritone walks the way to the sky)
         if (f.sky() == null) dropped.add("sky: no open-sky cell found near");
         else RungOptions.add(rows, dropped, m, now, Options.scored("sky", "goto", "goto " + RungOptions.xyz(f.sky()), f.skyDist() * RungOptions.SKY_WALK, "open sky " + Math.round(f.skyDist()) + " away", "sky", false, m));
         if (!f.tableFurnaceNext()) dropped.add("nothing: the next rung needs open ground itself");

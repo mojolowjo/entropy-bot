@@ -6,7 +6,6 @@ import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
 import io.github.mojolowjo.entropybot.guard.GuardCore;
 import io.github.mojolowjo.entropybot.threat.ReachGrid;
-import io.github.mojolowjo.entropybot.threat.RunGuard;
 import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
 import java.util.function.Predicate;
 import net.minecraft.client.Minecraft;

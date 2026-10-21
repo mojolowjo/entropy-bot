@@ -455,7 +455,7 @@ public final class Commands implements Chains.Env {
     void setRouteSettings(JsonObject r) {
         brainStore.data().add("route", r);
         saved();
-        RouteCommand.syncRuntime(this);
+        PathCommand.syncRuntime(this);
     }
 
     /** The hotbar keeper holds still while a job other than a walk or a wait runs, or a reflex does. */
@@ -553,7 +553,7 @@ public final class Commands implements Chains.Env {
         sb.append(pmStore.load(files)).append("; ").append(brainStore.load(files)).append("; ").append(areaStore.load(files));
         sb.append("; ").append(RestoreLive.INSTANCE.load(this, files));          // P1: the restore ledger
         sb.append("; ").append(Storage.loadEmptied(files));                     // 0.31.1: looted corpses
-        RouteCommand.syncRuntime(this);     // routing review M1: a stored "route off" keeps the map builder off too
+        PathCommand.syncRuntime(this);
         JsonObject memory = null;
         if (!pmStore.existed() || !brainStore.existed() || !areaStore.existed()) memory = readBridgeJson(mc, "memory.json");
         if (!pmStore.existed()) {
@@ -694,7 +694,6 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 7 && !aaOn()) Clearing.keptTick(this);          // a kept craft table the chain never came back for (AA keeps its own)
-            if (tick % 5 == 1 && !chains.running()) { try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { jobs.stairsTick(); } }     // 0.27.3 (d3): a sealed pit's staircase up (a safety path)
             if (tick % 5 == 4) {
                 try {
                     try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(gathering.driver)) { gathering.tick(player); }                    // P2: the next gather step once the last one ended
@@ -1310,8 +1309,6 @@ public final class Commands implements Chains.Env {
         // package B: the hotbar layout and the tool policy (settings: instant, never "busy")
         if (verb.equals("hotbar")) return Reply.now(hotbarCommand(player, rest));
         if (verb.equals("tools")) return Reply.now(toolsCommand(rest));
-        // routing stage 1: route status|on|off|mode|build|dump are instant settings; "route test" is a job (below)
-        if (verb.equals("route") && !RouteRules.isTest(rest)) return Reply.now(RouteCommand.instant(this, player, rest));
         // P1: restore status|forget|ignore|mode are instant; "restore now" is a job (below)
         if (verb.equals("restore") && !io.github.mojolowjo.entropybot.restore.RestoreArgs.isJob(rest)) return Reply.now(RestoreLive.INSTANCE.command(player, rest));
         if (verb.equals("say")) {
@@ -1463,7 +1460,6 @@ public final class Commands implements Chains.Env {
                 }
                 return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
             }
-            case "route" -> { return RouteTestRun.start(this, jobs, storage, player, rest); }       // routing stage 1: route test
             case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
             case "wait" -> { return jobs.startWait(rest); }
             case "twerk" -> { return jobs.startTwerk(rest); }

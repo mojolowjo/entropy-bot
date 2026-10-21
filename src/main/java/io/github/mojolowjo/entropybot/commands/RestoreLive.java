@@ -9,7 +9,6 @@ import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.guard.Policy;
 import io.github.mojolowjo.entropybot.io.BotFiles;
 import io.github.mojolowjo.entropybot.restore.BuildSpotter;
-import io.github.mojolowjo.entropybot.restore.EscapePlan;
 import io.github.mojolowjo.entropybot.restore.Ledger;
 import io.github.mojolowjo.entropybot.restore.RestoreArgs;
 import io.github.mojolowjo.entropybot.restore.RestoreBook;
@@ -58,7 +57,6 @@ public final class RestoreLive {
     // the incidental contexts
     private volatile long pathJob = -1;
     private volatile Set<String> pathTargets = Set.of();
-    private final Map<String, Long> expected = new HashMap<>();
     private final Set<String> warnedHints = new HashSet<>();
 
     private RestoreLive() {}
@@ -74,7 +72,6 @@ public final class RestoreLive {
         io.github.mojolowjo.entropybot.clear.OwnStations.why = this::stationRefusal;
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
-        expected.clear();
         String text = f.readJson(FILE);
         if (text == null) {
             book = new RestoreBook();
@@ -170,10 +167,7 @@ public final class RestoreLive {
         // owner's place rule (aa372): every cell a job of mine breaks may be refilled for about nothing (BreakPolicy)
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.markDug(key);
         String reason;
-        Long esc;
-        synchronized (expected) { esc = expected.remove(key); }
-        if (esc != null && esc == j.id) reason = Ledger.ESCAPE;
-        else if (pathJob == j.id && !pathTargets.contains(id) && !purpose(id)) reason = Ledger.PATH;
+        if (pathJob == j.id && !pathTargets.contains(id) && !purpose(id)) reason = Ledger.PATH;
         // mining plan phase 1: a walk's break under the travel policy (the guard marked it) is a path break of that walk
         else if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.takeTravelBreak(key)) reason = Ledger.PATH;
         else return;                                         // the job's purpose (or no incidental context)
@@ -315,14 +309,6 @@ public final class RestoreLive {
         pathJob = job;
     }
 
-    /** The escape dig-out is about to break these cells for this job. */
-    void expectEscape(long job, List<int[]> cells, String dim) {
-        synchronized (expected) {
-            expected.clear();
-            for (int[] p : cells) expected.put(dim + " " + p[0] + " " + p[1] + " " + p[2], job);
-        }
-    }
-
     // ---- runs ----
 
     boolean auto() { return "auto".equals(book.mode); }
@@ -336,27 +322,6 @@ public final class RestoreLive {
         return new RestoreRun(plan);
     }
 
-    /** The escape entries of a travel job, put back once the bot is out (mid-walk). Null when none or not in auto. */
-    RestoreRun escapeRun(Jobs.Job j, int[] here, String dim) {
-        if (!auto()) return null;
-        List<Ledger.Entry> esc = new ArrayList<>();
-        for (Ledger.Entry e : book.ledger.forJob(j.id)) if (Ledger.ESCAPE.equals(e.reason)) esc.add(e);
-        if (esc.isEmpty()) return null;
-        return new RestoreRun(RestorePlan.plan(esc, here, dim, RestorePlan.AFTER_JOB, Gui0.inventory()));
-    }
-
-    /** True once the bot stands more than 3 blocks from every escape entry of the job (and some exist). */
-    boolean outOfEscape(Jobs.Job j, int[] here) {
-        boolean any = false;
-        for (Ledger.Entry e : book.ledger.forJob(j.id)) {
-            if (!Ledger.ESCAPE.equals(e.reason)) continue;
-            any = true;
-            long dx = e.x - here[0], dy = e.y - here[1], dz = e.z - here[2];
-            if (dx * dx + dy * dy + dz * dz <= 9) return false;
-        }
-        return any;
-    }
-
     /** The end line's restore part when no run happens (stopped, manual mode): "3 blocks to put back (restore now)". */
     String waitingNote(Jobs.Job j) {
         int n = 0;
@@ -365,10 +330,9 @@ public final class RestoreLive {
         return n + (n == 1 ? " block" : " blocks") + " to put back (restore now)";
     }
 
-    /** The job's end line with the escape report and the restore summary added. */
+    /** The job's end line with the restore summary added. */
     String endText(String msg, Jobs.Job j, RestoreRun run) {
         List<String> parts = new ArrayList<>();
-        if (j.escapeDug > 0) parts.add(EscapePlan.report(j.escapeDug, j.escapeAt, j.escapeRestored + (run == null ? 0 : run.placedEscape)));
         String sum = run == null ? null : run.summary();
         if (sum != null) parts.add(sum);
         if (run != null && !run.left.isEmpty()) {
@@ -564,33 +528,6 @@ public final class RestoreLive {
         changed();
         LOG.info("[entropybot] restore: {} built blocks near {} - suggested {}", h.count(), Jobs.fmt(h.center()), h.command());
         if (warnedHints.add(h.key())) c.whisper(c.owner(), h.whisper());
-    }
-
-    /**
-     * 0.23.4 (run 8): a walk passes center: a built cluster there that no safe or main area covers, outside the near-me
-     * zone, gets one whisper per spot ("looks like a build at x y z - area here 8 name safe?"). True when it whispered.
-     */
-    boolean walkHint(LocalPlayer p, int[] center) {
-        try {
-            BuildSpotter.Hint h = spotBuild(center);
-            if (h == null) return false;
-            String dim = Guard.dimOf(Minecraft.getInstance().level);
-            int[] k = h.center();
-            Policy pol = Core.INSTANCE.guard.core.policy();
-            io.github.mojolowjo.entropybot.guard.AreaType t = pol == null ? null : pol.typeAt(dim, k[0], k[1], k[2]);
-            Box near = Core.INSTANCE.guard.core.near.box();
-            boolean inNear = near != null && near.contains(dim, k[0], k[1], k[2]);
-            boolean mentioned = warnedHints.contains(h.key());
-            if (!BuildSpotter.walkHintAllowed(t == null ? null : t.word(), inNear, mentioned)) return false;
-            if (book.addHint(h, dim, System.currentTimeMillis()) != null) changed();
-            warnedHints.add(h.key());
-            LOG.info("[entropybot] walk: {} built blocks near {} (area type {}) - hint whispered", h.count(), Jobs.fmt(k), t == null ? "none" : t.word());
-            c.whisper(c.owner(), h.walkWhisper());
-            return true;
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] walk build hint failed: {}", e.toString());
-            return false;
-        }
     }
 
     /** 0.24.3: the cluster holds a place, a noted chest or a ledger block, or lies near where the bot respawned. */

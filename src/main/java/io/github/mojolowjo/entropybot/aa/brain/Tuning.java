@@ -165,6 +165,8 @@ public final class Tuning {
         def("hands.reflexResume", 2, "builder placements", "a reflex pause resumes a request while its age is under this many times its limit");
         def("hands.clickS", 5, "builder placements", "seconds one right-click stage (altar use) may take");
         def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
+        def("walk.stuckS", 30, "rm-routes (was Jobs.TRAVEL_STUCK_TICKS)", "seconds a walk may go without a block of progress toward its goal before it fails");
+        def("walk.farXZ", 128, "rm-routes", "blocks across beyond which a walk asks Baritone for GoalXZ first, then GoalBlock on arrival");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

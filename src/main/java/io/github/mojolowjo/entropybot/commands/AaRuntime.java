@@ -629,7 +629,7 @@ public final class AaRuntime implements JobPort {
 
     /**
      * S2 (MINING_PLAN 11): the SURFACE rung's facts, read once per pick: depth (or the hole's way out), the open shaft,
-     * throwaway blocks, placing allowed, a pickaxe, the trail back to open sky (TrailRuntime.retrace), the nearest
+     * throwaway blocks, placing allowed, a pickaxe, the nearest
      * standable open-sky cell within {@link #SKY_R} (heightmap scan of loaded columns), and whether the next rung is the
      * table/furnace one. Null when nothing can be read; a throw is caught by the picker (logged, counted).
      */
@@ -644,18 +644,6 @@ public final class AaRuntime implements JobPort {
         boolean shaft = depth > 0;
         for (int y = me[1] + 2; shaft && y <= me[1] + depth; y++) if (!openCell(lv, me[0], y, me[2])) shaft = false;
         Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
-        String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(lv);
-        int[] trailEnd = null;
-        double trailLen = 0;
-        List<int[]> hops = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail().retrace(dim, me[0], me[1], me[2], 8, 8, 400);
-        if (hops != null && !hops.isEmpty()) {
-            int[] prev = me;
-            for (int[] h : hops) {
-                trailLen += Math.sqrt(Jobs.distSq(prev, h));
-                prev = h;
-            }
-            trailEnd = hops.get(hops.size() - 1);
-        }
         long t0 = System.nanoTime();
         int[] sky = null;
         double best = Double.MAX_VALUE;
@@ -678,7 +666,7 @@ public final class AaRuntime implements JobPort {
         boolean tf = !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag);
         return new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(depth, me, shaft, AaEscape.throwaway(bag),
                 io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.travelMayPlace(), bb.in.pickaxes > 0,
-                trailEnd, trailLen, sky, sky == null ? -1 : best, tf, io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in),
+                sky, sky == null ? -1 : best, tf, io.github.mojolowjo.entropybot.aa.brain.ToolWear.kit(bb.in),
                 depth > 0 ? column(lv, me, depth) : null, depth > 0 ? headings(lv, me, depth) : null);
     }
 
@@ -2180,12 +2168,6 @@ public final class AaRuntime implements JobPort {
         return Jobs.underDepth(lv, me[0], me[1], me[2]) == 0 && holeUp(lv, me) == 0;     // review: -1 (walled in) is not out
     }
 
-    /** AA's escape from under ground runs or waits to start (Jobs: then no paper plan, no whisper). */
-    boolean ownsEscape() {
-        return on() && current >= 0 && (escapePending || escapeWay != null
-                || (chainRunning() && CHAIN.equals(myChain) && escapes < AaEscape.MAX_PER_TASK));
-    }
-
     private void clearEscape() {
         escapePending = false;
         escapeWay = null;
@@ -2234,9 +2216,9 @@ public final class AaRuntime implements JobPort {
             var f = surfaceFacts();
             if (f == null || f.depth() <= 0) { escapeResumeNow("already out"); return; }
             if (noPillar) f = new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(f.depth(), f.me(), false, f.throwaway(), false, f.pickaxe(),
-                    f.trailEnd(), f.trailLen(), f.sky(), f.skyDist(), false, f.kit(), null, f.headings());
+                    f.sky(), f.skyDist(), false, f.kit(), null, f.headings());
             else f = new io.github.mojolowjo.entropybot.aa.RungOptions.SurfaceFacts(f.depth(), f.me(), f.shaftOpen(), f.throwaway(), f.placeAllowed(), f.pickaxe(),
-                    f.trailEnd(), f.trailLen(), f.sky(), f.skyDist(), false, f.kit(), f.column(), f.headings());
+                    f.sky(), f.skyDist(), false, f.kit(), f.column(), f.headings());
             // AA_ROUND3 1: the one way-up set, priced; a failed way is held in Failures under "wayup/<id>"
             wayMem.bind(tree.brain.failures, WAYUP);
             io.github.mojolowjo.entropybot.gather.QuarrySites.bind(tree.brain.failures);     // regression o1: "quarry <x z>" holds
@@ -2408,7 +2390,7 @@ public final class AaRuntime implements JobPort {
 
     /** AA_STEP2 3: the job in the slot is only putting back blocks (a job's end restore or a restore job). */
     private boolean restoreInSlot() {
-        return c.jobs.running() && c.jobs.job.restoreRun != null && !c.jobs.job.restoreResume;
+        return c.jobs.running() && c.jobs.job.restoreRun != null;
     }
 
     /** The ladder's reasons this tick ("needs.tools: TOOLS met; needs.torches: TORCHES planning ..."). */

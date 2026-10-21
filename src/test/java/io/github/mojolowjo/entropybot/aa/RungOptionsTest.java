@@ -25,14 +25,14 @@ class RungOptionsTest {
     static final int[] ME = {0, 50, 0};
 
     @Test
-    void surfaceRanksPillarClimbTrailAndSky() {
-        SurfaceFacts f = new SurfaceFacts(10, ME, true, 20, true, true, new int[]{30, 70, 0}, 60, new int[]{20, 70, 5}, 25, false);
+    void surfaceRanksPillarClimbAndSky() {
+        SurfaceFacts f = new SurfaceFacts(10, ME, true, 20, true, true, new int[]{20, 70, 5}, 25, false);
         Options.Choice c = new RungOptions.Surface().choose(f, m, 0, null, 0, null, null);
         assertEquals("pillar", c.best().id());                  // 10 + 5
         assertEquals("goto 0 60 0", c.best().command());
-        assertEquals(List.of("pillar", "climb", "sky", "trail"), c.ranked().stream().map(Options.Option::id).toList());   // 15, 40, 50, 60
+        assertEquals(List.of("pillar", "climb", "sky"), c.ranked().stream().map(Options.Option::id).toList());   // 15, 40, 50
         assertTrue(c.why().contains("nothing: the next rung needs open ground itself"), c.why());
-        SurfaceFacts noShaft = new SurfaceFacts(10, ME, false, 0, true, false, null, 0, null, -1, true);
+        SurfaceFacts noShaft = new SurfaceFacts(10, ME, false, 0, true, false, null, -1, true);
         c = new RungOptions.Surface().choose(noShaft, m, 0, null, 0, null, null);
         assertNull(c.best());
         assertTrue(c.why().startsWith("no way up; dropped: climb: no pickaxe, pillar: no open shaft above"), c.why());

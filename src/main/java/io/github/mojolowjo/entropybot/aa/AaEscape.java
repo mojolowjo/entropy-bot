@@ -139,7 +139,7 @@ public final class AaEscape {
     public static Choice choose(int depth, boolean shaftOpen, int throwaway, boolean pickaxe) {
         if (depth <= 0) return new Choice(Way.OUT, "not under ground any more");
         // AA_ROUND3 1: a thin call into the one way-up set (no trail/sky facts here: the walk already walked its trail)
-        var f = new RungOptions.SurfaceFacts(depth, new int[]{0, 0, 0}, shaftOpen, throwaway, true, pickaxe, null, 0, null, -1, false);
+        var f = new RungOptions.SurfaceFacts(depth, new int[]{0, 0, 0}, shaftOpen, throwaway, true, pickaxe, null, -1, false);
         Options.Choice c = WayUp.choose(f, new Options.OptionMemory(), 0);
         if (c.best() == null) return new Choice(Way.NONE, c.why());
         return new Choice("pillar".equals(c.best().id()) ? Way.PILLAR : Way.CLIMB, c.why());

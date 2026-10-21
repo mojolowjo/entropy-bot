@@ -72,11 +72,4 @@ class RestorePlanTest {
         assertEquals("3 left: too far, an ore (restore now)", RestorePlan.summary(0, p.left()));
     }
 
-    @Test
-    void summaryWords() {
-        assertNull(RestorePlan.summary(0, List.of()));
-        assertEquals("put back 1 block", RestorePlan.summary(1, List.of()));
-        assertEquals("dug out 2 blocks at 1 2 3, put back 2", EscapePlan.report(2, new int[]{1, 2, 3}, 2));
-        assertEquals("dug out 1 block at 1 2 3", EscapePlan.report(1, new int[]{1, 2, 3}, -1));
-    }
 }

@@ -29,7 +29,7 @@ class V1bFourTest {
         assertEquals("chests", VerbTable.of("trust").section());
         assertEquals("moving", VerbTable.of("corpse").section());
         assertEquals("that is now spawn", OldWords.removedAnswer("bed", "", "bed"));
-        for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "route", "autominer", "reconnect", "use", "caves", "ores", "poi"))
+        for (String v : List.of("b", "memory", "watch", "recorder", "mouse", "autominer", "reconnect", "use", "caves", "ores", "poi"))
             assertTrue(OldWords.DEBUG_VERBS.contains(v), v + " stays under debug");
     }
 
