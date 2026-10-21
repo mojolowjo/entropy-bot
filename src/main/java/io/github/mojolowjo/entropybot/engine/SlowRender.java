@@ -29,13 +29,58 @@ public final class SlowRender {
     private SlowRender() {}
 
     private static int errors;
-    // Cosmetic, not done: an AABB per point per frame, and RenderType.lines() keeps its own depth state at endBatch, so the
-    // lines may not show through terrain; a see-through line needs a custom RenderType (left out on purpose).
+    /** Baritone's renderer usable (null = not tried yet); false after a linkage error: the batched fallback draws. */
+    private static Boolean baritoneDraw;
 
     public static void onStage(RenderLevelStageEvent e) {
         if (e.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
         List<int[]> pts = SlowRoute.points;
         if (pts.isEmpty()) return;
+        if (!Boolean.FALSE.equals(baritoneDraw)) {
+            try {
+                drawLikeBaritone(e, pts);
+                baritoneDraw = true;
+                return;
+            } catch (LinkageError le) {
+                // Loader note: baritone.utils.IRenderer is Baritone's internal class (present in the unoptimized jar we
+                // ship, not part of its API); a renamed or obfuscated build lands here once and the batched draw takes over
+                baritoneDraw = false;
+                LogUtils.getLogger().warn("[entropybot] aa: slow route: Baritone's renderer is missing ({}), drawing without see-through", le.toString());
+            } catch (Throwable t) {
+                if (errors++ < 5) LogUtils.getLogger().warn("[entropybot] aa: slow route draw failed: {}", t.toString());
+                return;
+            }
+        }
+        drawBatched(e, pts);
+    }
+
+    /**
+     * Baritone's own technique (PathRenderer via IRenderer): an immediate line buffer with the depth test off for these
+     * lines only, so the route shows through terrain like Baritone's path. emitAABB takes world coordinates (it subtracts
+     * the camera itself); emitLine takes camera-relative ones.
+     */
+    private static void drawLikeBaritone(RenderLevelStageEvent e, List<int[]> pts) {
+        if (Minecraft.getInstance().player == null) return;
+        boolean wait = SlowRoute.waiting;
+        java.awt.Color c = wait ? new java.awt.Color(255, 217, 26) : new java.awt.Color(89, 153, 89);
+        Vec3 cam = e.getCamera().getPosition();
+        PoseStack ps = e.getPoseStack();
+        com.mojang.blaze3d.vertex.BufferBuilder bb = baritone.utils.IRenderer.startLines(c, 0.9f, 2f, true);
+        for (int i = 0; i < pts.size(); i++) {
+            int[] p = pts.get(i);
+            baritone.utils.IRenderer.emitAABB(bb, ps, new AABB(p[0], p[1], p[2], p[0] + 1, p[1] + 1, p[2] + 1));
+            if (i > 0) {
+                int[] q = pts.get(i - 1);
+                if (q[0] == p[0] && q[1] == p[1] && q[2] == p[2]) continue;
+                baritone.utils.IRenderer.emitLine(bb, ps, q[0] + 0.5 - cam.x, q[1] + 1.0 - cam.y, q[2] + 0.5 - cam.z,
+                        p[0] + 0.5 - cam.x, p[1] + 1.0 - cam.y, p[2] + 0.5 - cam.z);
+            }
+        }
+        baritone.utils.IRenderer.endLines(bb, true);
+    }
+
+    /** The fallback without Baritone's renderer: the shared lines batch (not see-through). */
+    private static void drawBatched(RenderLevelStageEvent e, List<int[]> pts) {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null || mc.level == null) return;
