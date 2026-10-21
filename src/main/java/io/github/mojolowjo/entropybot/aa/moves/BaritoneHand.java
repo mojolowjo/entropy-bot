@@ -141,11 +141,10 @@ final class BaritoneHand implements JobHands.Hand {
         return v.allowed() ? null : "the guard (" + action + "): " + v.reason();
     }
 
-    /** The fence's walk check for a feet cell Baritone chose (keep-out and portals always, the rest with the fence on). */
+    /** The policy's walk verdict for a feet cell Baritone chose (keep-out, portals, denied dimensions). */
     private static String standVerdict(String dim, BlockPos f) {
-        var c = io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.commands();
-        return io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(
-                io.github.mojolowjo.entropybot.api.BotAPI.check(dim, f.getX(), f.getY(), f.getZ(), "go"), c != null && c.fenceOn());
+        return io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict(
+                io.github.mojolowjo.entropybot.api.BotAPI.check(dim, f.getX(), f.getY(), f.getZ(), "go"));
     }
 
     private static int[] cellOf(BlockPos q) {

@@ -699,7 +699,7 @@ final class Crafting {
         for (FurnaceJobs.Job j : auto ? fj.due(now, Storage.dim()) : fj.all()) {
             if (!j.dim.equals(Storage.dim()) || !(all || j.due(now))) continue;
             // the fence before any walk or /home
-            String why = jobs.goalAllowed(j.pos[0], j.pos[1], j.pos[2]);
+            String why = jobs.walkVerdict(j.pos[0], j.pos[1], j.pos[2]);
             if (why != null) {
                 fenced.add(j.where() + ": " + why);
                 continue;

@@ -94,16 +94,16 @@ public final class KelpRules {
     }
 
     /**
-     * The column to cut next: a column of at least 2 blocks (yield >= 1) whose cut cell passes {@code inAreas}, the
+     * The column to cut next: a column of at least 2 blocks (yield >= 1) whose cut cell passes {@code allowed} (the policy), the
      * nearest first, but a column that yields more beats one that is 6 blocks closer per extra kelp. Null: none.
      */
-    public static Column pick(List<Column> cols, int mx, int my, int mz, Predicate<int[]> inAreas) {
+    public static Column pick(List<Column> cols, int mx, int my, int mz, Predicate<int[]> allowed) {
         Column best = null;
         double bestS = Double.MAX_VALUE;
         for (Column c : cols) {
             if (c.yield() < 1) continue;
             int[] cut = c.cut();
-            if (inAreas != null && !inAreas.test(cut)) continue;
+            if (allowed != null && !allowed.test(cut)) continue;
             double d = Math.sqrt(Math.pow(cut[0] - mx, 2) + Math.pow(cut[1] - my, 2) + Math.pow(cut[2] - mz, 2));
             if (d > RANGE) continue;
             double s = d - 6.0 * Math.min(c.yield(), 6);

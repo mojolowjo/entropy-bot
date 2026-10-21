@@ -92,7 +92,7 @@ class DangerStep3aTest {
         Blackboard bb = new Blackboard(clock, port, new Tracer());
         bb.in.pickTier = 0; bb.in.pickaxes = 0; bb.in.tableKnown = false; bb.in.furnaceKnown = false; bb.in.torches = 0;
         bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
-        bb.in.areaName = null; bb.in.hungerDrains = false;
+        bb.in.basePlace = null; bb.in.hungerDrains = false;
         bb.in.pos = new int[]{-195, 60, -238};
         AaTree tree = AaTree.build(new AaScorer());
         tree.tick(bb);
@@ -156,7 +156,7 @@ class DangerStep3aTest {
         Blackboard bb = new Blackboard(clock, port, new Tracer());
         bb.in.pickTier = 0; bb.in.pickaxes = 0; bb.in.tableKnown = false; bb.in.furnaceKnown = false; bb.in.torches = 0;
         bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
-        bb.in.areaName = null; bb.in.hungerDrains = false;
+        bb.in.basePlace = null; bb.in.hungerDrains = false;
         AaTree tree = AaTree.build(new AaScorer());
         tree.tick(bb);
         bb.in.inLavaOrFire = true;

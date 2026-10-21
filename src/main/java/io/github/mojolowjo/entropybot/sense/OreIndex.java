@@ -14,14 +14,14 @@ import java.util.function.Predicate;
 
 /**
  * 0.28.0: the summaries the pass keeps, per dimension, and the ore queries over them: the nearest positions of some ore
- * ids (inside the areas and outside a protect margin: the caller's {@link Allow}), totals per family within r, the chunks
+ * ids (the policy allowing and outside a protect margin: the caller's {@link Allow}), totals per family within r, the chunks
  * seen. Past {@link #max} summaries in a dimension the oldest seen leave memory (a stale one first; files stay). Summaries
  * loaded from files are stale until the chunk is read again ({@link #loadStale}).
  *
  * <p>Plain Java, JUnit, game thread only. Loader notes: none.
  */
 public final class OreIndex {
-    /** May the bot go for ore at x y z? (areas, protect margin, the guard: the game side's rules.) */
+    /** May the bot go for ore at x y z? (the policy, protect margin, the guard: the game side's rules.) */
     public interface Allow {
         boolean test(int x, int y, int z);
     }

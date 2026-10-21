@@ -279,7 +279,7 @@ public final class AaTree {
         if (!bb.in.night) bb.fact(LIT_FACT, null);         // review: reset by the tree each day (the node is not ticked by day)
         bb.in.litTonight = bb.flag(LIT_FACT);
         Status s = root.tick(bb);
-        for (Need r : Need.all(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.areaName == null) AaLadder.noteShelter(bb);
+        for (Need r : Need.all(ladder)) if (r.id.equals("needs.base") && r.last() == Status.SUCCESS && bb.in.basePlace == null) AaLadder.noteShelter(bb);
         bb.tracer.counts.ticks++;
         return s;
     }

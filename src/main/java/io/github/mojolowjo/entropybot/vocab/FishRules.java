@@ -119,16 +119,16 @@ public final class FishRules {
     /**
      * The water surface to cast at: cells {x,y,z} that are water with air above ({@code surface}), with a 3x3 water
      * surface around them (so a pond edge or a one-block puddle is no spot), between {@link #MIN_CAST} and {@link #MAX_CAST}
-     * from {mx,mz} (flat distance), passing {@code inAreas}; the nearest in the cast window wins, else the nearest one
+     * from {mx,mz} (flat distance), passing {@code allowed} (the policy); the nearest in the cast window wins, else the nearest one
      * overall (spot far). Returns {x,y,z,farFlag(0|1)} or null.
      */
-    public static int[] pick(List<int[]> surface, int mx, int mz, Predicate<int[]> inAreas) {
+    public static int[] pick(List<int[]> surface, int mx, int mz, Predicate<int[]> allowed) {
         java.util.Set<Long> set = new java.util.HashSet<>();
         for (int[] c : surface) set.add(key(c[0], c[2], c[1]));
         int[] near = null, far = null;
         double nd = Double.MAX_VALUE, fd = Double.MAX_VALUE;
         for (int[] c : surface) {
-            if (inAreas != null && !inAreas.test(c)) continue;
+            if (allowed != null && !allowed.test(c)) continue;
             boolean open = true;
             for (int dx = -1; dx <= 1 && open; dx++)
                 for (int dz = -1; dz <= 1 && open; dz++) if (!set.contains(key(c[0] + dx, c[2] + dz, c[1]))) open = false;

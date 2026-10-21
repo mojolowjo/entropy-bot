@@ -367,7 +367,7 @@ public final class Need extends Node {
             String held = failures.held(id, "planner " + g, bb.clock.now());
             if (held != null) return "planner " + g + " held: " + held;
             JobPort.Resolved r = bb.port.resolveState(g);
-            if (r.state() == JobPort.PlanState.NONE && Ways.logsMissing(r.why()) == 0) return "no plan for " + g + ": " + r.why();
+            if (r.state() == JobPort.PlanState.NONE && r.logsMissing() == 0) return "no plan for " + g + ": " + r.why();
             return null;
         }
         picker.refresh(bb);

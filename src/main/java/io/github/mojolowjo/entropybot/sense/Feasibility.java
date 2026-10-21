@@ -55,9 +55,9 @@ public final class Feasibility {
         /** An area of this name exists; null = unknown (a go to a name that is no place is then UNKNOWN). */
         public Predicate<String> isArea;
         public boolean baseChests, table, furnace, trees, mineMarked, caveKnown;
-        /** The fence: a spot (x y z) the bot may walk to (an area or the near-me zone); null = unknown. */
-        public Predicate<int[]> inFence;
-        /** 0.28.0: an ore family ("iron") is known within 64 inside the areas (the chunk pass's index); null = unknown. */
+        /** The policy's walk verdict: a spot (x y z) the bot may walk to (not keep-out, not by a portal); null = unknown. */
+        public Predicate<int[]> walkAllowed;
+        /** 0.28.0: an ore family ("iron") is known within 64 where the policy allows (the chunk pass's index); null = unknown. */
         public Predicate<String> oreKnown;
     }
 
@@ -223,7 +223,7 @@ public final class Feasibility {
             }
             case "cut", "chop" -> {
                 sim.give("log", num(w, 1, 4));
-                return f.known && f.trees ? OK : Verdict.unknown(i, st, "no trees seen near (there may be some in my areas)");
+                return f.known && f.trees ? OK : Verdict.unknown(i, st, "no trees seen near");
             }
             case "smelt", "cook" -> {
                 if (w.length >= 2 && !w[1].equals("collect") && !w[1].equals("jobs")) sim.give(id(w[1]), num(w, 2, 1));
@@ -238,15 +238,15 @@ public final class Feasibility {
                 if (!f.places.containsKey(name) && f.isArea == null) return Verdict.unknown(i, st, "areas not read");
                 if (!f.places.containsKey(name) && !f.isArea.test(name)) return no(i, st, "I have no place " + name, null, 0, FailMemory.Reason.NO_PLACE);
                 int[] p = f.places.get(name);
-                if (p != null && f.inFence != null && !f.inFence.test(p)) return no(i, st, name + " is outside my areas", null, 0, FailMemory.Reason.OUTSIDE);
+                if (p != null && f.walkAllowed != null && !f.walkAllowed.test(p)) return no(i, st, name + " is where the policy refuses a walk (keep-out)", null, 0, FailMemory.Reason.GUARD_REFUSED);
                 return OK;
             }
             case "goto" -> {
                 if (w.length < 4) return Verdict.unknown(i, st, "not x y z");
-                if (!f.known || f.inFence == null) return Verdict.unknown(i, st, "the fence not read");
+                if (!f.known || f.walkAllowed == null) return Verdict.unknown(i, st, "the policy not read");
                 int[] p;
                 try { p = new int[]{Integer.parseInt(w[1]), Integer.parseInt(w[2]), Integer.parseInt(w[3])}; } catch (NumberFormatException e) { return Verdict.unknown(i, st, "not x y z"); }
-                return f.inFence.test(p) ? OK : no(i, st, p[0] + " " + p[1] + " " + p[2] + " is outside my areas", null, 0, FailMemory.Reason.OUTSIDE);
+                return f.walkAllowed.test(p) ? OK : no(i, st, p[0] + " " + p[1] + " " + p[2] + " is where the policy refuses a walk (keep-out)", null, 0, FailMemory.Reason.GUARD_REFUSED);
             }
             case "home" -> {
                 if (!f.known) return Verdict.unknown(i, st, "places not read");
@@ -335,10 +335,10 @@ public final class Feasibility {
         if (sim.pickTier() < need && !stocked && !(need <= 2 && sim.s.pickMaterials))
             return no(i, st, "no " + tierName(need) + " pickaxe or better (" + ores + ")", tierName(need) + "_pickaxe", 1, FailMemory.Reason.NO_ITEM);
         if (cave && !f.caveKnown) return Verdict.unknown(i, st, "no known cave (one may be in view)");
-        // 0.28.0: a plain "mine <ore>" walks to known ore; none known within 64 in the areas = it would only search
+        // 0.28.0: a plain "mine <ore>" walks to known ore; none known within 64 = it would only search
         if (!strip && !cave && f.oreKnown != null && (ores.endsWith("_ore") || ores.matches("iron|coal|copper|gold|diamond|emerald|redstone|lapis"))) {
             String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(ores);
-            if (!f.oreKnown.test(fam)) return no(i, st, "no " + fam + " ore known within 64 in my areas", null, 0, null);
+            if (!f.oreKnown.test(fam)) return no(i, st, "no " + fam + " ore known within 64", null, 0, null);
         }
         return OK;
     }

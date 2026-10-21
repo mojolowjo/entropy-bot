@@ -16,7 +16,7 @@ class FoodOptionsTest {
     static final int[] ME = {0, 64, 0};
 
     static FoodOptions.FoodFacts facts(int food, Map<String, Integer> bag, boolean furnace, Map<String, Integer> animals, String huntWhy) {
-        return new FoodOptions.FoodFacts(food, 0, bag, 24, furnace, animals, 0, huntWhy,
+        return new FoodOptions.FoodFacts(food, 0, bag, 24, furnace, animals, huntWhy,
                 null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME);
     }
 
@@ -25,8 +25,8 @@ class FoodOptionsTest {
     }
 
     static FoodOptions.FoodFacts withHerds(Map<String, Integer> animals, java.util.List<FoodOptions.Herd> herds) {
-        return new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, animals, 0, null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of(), 20, 96, null, null, herds);
+        return new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, animals, null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 0, null, herds);
     }
 
     @Test
@@ -71,21 +71,25 @@ class FoodOptionsTest {
     }
 
     @Test
-    void urgentFoodHuntsOutsideTheAreas() {
-        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(5, 0, Map.of(), 24, true, Map.of(), 3, null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20);
+    void theHuntIsOneRowPricedByItsWalk() {
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(5, 0, Map.of(), 24, true, Map.of("cow", 3), null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 30, null);
         Options.Choice c = choose(f);
         assertNotNull(c.best(), c.why());
-        assertEquals("hunt out cow", c.best().id());
-        assertTrue(c.best().command().startsWith("hunt 2 cow out then cook beef"), c.best().command());
-        FoodOptions.FoodFacts calm = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of(), 3, null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20);
+        assertEquals("hunt cow", c.best().id());
+        assertEquals("hunt 2 cow then cook beef 2", c.best().command(), "no out word: the hunt walks to the animals itself");
+        assertTrue(c.best().why().contains("travel 2x30"), c.best().why());
+        FoodOptions.FoodFacts calm = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 30, null);
         Options.Choice cc = choose(calm);
-        assertEquals("hunt out cow", cc.best().id(), "aa-costs: not urgent, still the only way, at a dearer travel");
+        assertEquals("hunt cow", cc.best().id(), "not urgent, still the only way, at a dearer travel");
         assertTrue(cc.best().cost() > c.best().cost(), cc.why());
-        FoodOptions.FoodFacts calmBerry = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of(), 3, null,
-                null, "oak", -1, new int[]{5, 64, 5}, 5, null, null, null, false, false, 0, false, ME, Map.of("cow", 3), 20, 40);
+        FoodOptions.FoodFacts calmBerry = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
+                null, "oak", -1, new int[]{5, 64, 5}, 5, null, null, null, false, false, 0, false, ME, 20, 30, null);
         assertEquals("berries", choose(calmBerry).best().id(), "a berry bush near beats a far hunt when not urgent: " + choose(calmBerry).why());
+        FoodOptions.FoodFacts near = new FoodOptions.FoodFacts(12, 0, Map.of(), 24, true, Map.of("cow", 3), null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 3, null);
+        assertTrue(choose(near).best().cost() < cc.best().cost(), "a near herd is cheaper than a far one");
     }
 
     @Test
@@ -116,7 +120,7 @@ class FoodOptionsTest {
 
     @Test
     void foragingWaysAndAWheatFieldWhenNotHungry() {
-        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "oak_planks", 4), 24, true, Map.of(), 0, null,
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "oak_planks", 4), 24, true, Map.of(), null,
                 new int[]{5, 64, 5}, "oak", 7, new int[]{3, 64, 0}, 3, new int[]{1, 64, 1}, new int[]{2, 64, 2}, null, true, false, 0, true, ME);
         Options.Choice c = choose(f);
         java.util.Set<String> ids = new java.util.HashSet<>();
@@ -128,7 +132,7 @@ class FoodOptionsTest {
         Options.Option stew = c.ranked().stream().filter(o -> o.id().equals("stew")).findFirst().orElseThrow();
         assertEquals("dig 1 64 1 1 64 1 then dig 2 64 2 2 64 2 then craft bowl 1 then craft mushroom_stew 1", stew.command());
         // hungry: no field (too slow)
-        FoodOptions.FoodFacts hungry = new FoodOptions.FoodFacts(5, 0, f.bag(), 24, true, Map.of(), 0, null,
+        FoodOptions.FoodFacts hungry = new FoodOptions.FoodFacts(5, 0, f.bag(), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME);
         assertTrue(choose(hungry).why().contains("wheat: too slow while hungry"), choose(hungry).why());
     }
@@ -137,39 +141,21 @@ class FoodOptionsTest {
     @Test
     void wheatFieldByTheWaterOrWithABucket() {
         int[] spot = {8, 64, 0};
-        FoodOptions.FoodFacts byWater = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5), 24, true, Map.of(), 0, null,
-                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, Map.of(), 20, 24, null, spot);
+        FoodOptions.FoodFacts byWater = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5), 24, true, Map.of(), null,
+                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, 20, 24, spot);
         Options.Choice c = choose(byWater);
         Options.Option w = c.ranked().stream().filter(o -> o.id().equals("wheat by water")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
         assertEquals("goto 8 64 0 then farm plant wheat here 4 then place farm 8 64 0", w.command());
         assertTrue(c.why().contains("wheat with a bucket: no water bucket"), c.why());
-        FoodOptions.FoodFacts bucket = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), 0, null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of(), 20, 24, null, null);
+        FoodOptions.FoodFacts bucket = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), null,
+                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, 20, 24, null);
         Options.Choice b = choose(bucket);
         Options.Option here = b.ranked().stream().filter(o -> o.id().equals("wheat with a bucket")).findFirst().orElseThrow(() -> new AssertionError(b.why()));
         assertEquals("farm plant wheat here 4 then place farm 0 64 0", here.command());
         // both: the walk to the water is weighed against the bucket's extra minute
-        FoodOptions.FoodFacts both = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), 0, null,
-                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, Map.of(), 20, 24, null, spot);
+        FoodOptions.FoodFacts both = new FoodOptions.FoodFacts(16, 2, Map.of("wheat_seeds", 5, "water_bucket", 1), 24, true, Map.of(), null,
+                null, "oak", -1, null, -1, null, null, null, true, false, 0, false, ME, 20, 24, spot);
         assertEquals("wheat by water", choose(both).best().id(), choose(both).why());
-    }
-
-    /** Owner's rule 2026-10-19 (b): a food stock may walk out to animals at any hunger, beside the hunt inside; costed. */
-    @Test
-    void walkingOutIsACostedOptionBesideTheHuntInside() {
-        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(19, 5, Map.of(), 24, true, Map.of("chicken", 1), 0, null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 4), 20, 30, new int[]{30, 64, 0}, null);
-        Options.Choice c = choose(f);
-        assertTrue(c.ranked().stream().anyMatch(o -> o.id().equals("hunt chicken")), c.why());
-        Options.Option out = c.ranked().stream().filter(o -> o.id().equals("hunt out cow")).findFirst().orElseThrow(() -> new AssertionError(c.why()));
-        assertTrue(out.command().startsWith("hunt 2 cow out"), out.command());
-        assertTrue(c.ranked().indexOf(out) > 0, "not hungry: the walk out is dear, the hunt inside wins: " + c.why());
-        // far (past the hunt's reach): walk there first
-        FoodOptions.FoodFacts far = new FoodOptions.FoodFacts(19, 5, Map.of(), 24, true, Map.of(), 0, null,
-                null, "oak", -1, null, -1, null, null, null, false, false, 0, false, ME, Map.of("cow", 4), 20, 70, new int[]{70, 64, 0}, null);
-        Options.Choice fc = choose(far);
-        assertEquals("hunt out cow", fc.best().id(), "the only way: taken at its cost: " + fc.why());
-        assertTrue(fc.best().command().startsWith("goto 70 64 0 then hunt 2 cow out"), fc.best().command());
     }
 
     @Test
@@ -179,7 +165,7 @@ class FoodOptionsTest {
         assertNotNull(why);
         assertTrue(why.startsWith("no food source: ") && why.contains("hunt: no animal in reach"), why);
         assertNull(FoodOptions.noSource(facts(6, Map.of(), true, Map.of("pig", 1), null)));
-        FoodOptions.FoodFacts stored = new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, Map.of(), 0, null,
+        FoodOptions.FoodFacts stored = new FoodOptions.FoodFacts(6, 0, Map.of(), 24, true, Map.of(), null,
                 null, "oak", -1, null, -1, null, null, null, false, false, 3, false, ME);
         assertNull(FoodOptions.noSource(stored), "food in storage: the planner fetches it");
         assertNull(FoodOptions.noSource(null), "no facts: never parked");
@@ -187,7 +173,7 @@ class FoodOptionsTest {
 
     @Test
     void aSlowWayThatGainedNothingIsChargedNotRerunForever() {
-        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of(), 24, true, Map.of(), 0, null,
+        FoodOptions.FoodFacts f = new FoodOptions.FoodFacts(16, 2, Map.of(), 24, true, Map.of(), null,
                 new int[]{5, 64, 5}, "oak", 7, null, -1, null, null, null, false, false, 0, false, ME);
         FoodOptions.Food set = new FoodOptions.Food();
         Options.OptionMemory m = new Options.OptionMemory();

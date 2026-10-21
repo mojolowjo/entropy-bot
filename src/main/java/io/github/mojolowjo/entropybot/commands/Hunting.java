@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * 0.24.3 {@code hunting on|off} (commands.json "hunting", default off) and {@code hunt <n> [animal]}: with hunting on it
  * kills the allowed farm animals (the "animals" kind; HuntRules' filter: never tamed, named, owned, babies, villagers,
- * players) within 32 blocks inside the areas or the near-me zone, one at a time through the reflexes' forced attack
+ * players) within 32 blocks, one at a time through the reflexes' forced attack
  * (the threat test still comes first: hostiles are fought before), walks over the drop spot, and stops at n raw meat
  * (or 10 minutes, or stop). Loader notes: vanilla entities (TamableAnimal/OwnableEntity via Hostility, AgeableMob,
  * AbstractVillager), nothing loader-specific.
@@ -42,8 +42,6 @@ final class Hunting {
         long started, nextAt, idleSince = -1;
         int noneLooks;
         String why;
-        boolean out, saidOut;
-        int[] start;
         int targetId = -1;
         int[] dropAt;
         /** AA_ROUND3 5: "at x z": where the animals were seen ({x, z}); arrived there; the visit noted in Sightings. */
@@ -102,14 +100,12 @@ final class Hunting {
         Minecraft mc = Minecraft.getInstance();
         if (p == null || mc.level == null) return out;
         List<String> allowed = c.vocab.expand("animals");
-        String dim = Storage.dim();
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !e.isAlive() || p.distanceTo(e) > HuntRules.RANGE) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
             if (!HuntRules.MEAT.containsKey(type)) continue;
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
-            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ());
-            HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, false, false, e instanceof AgeableMob am && am.isBaby(), inAreas);
+            HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, false, false, e instanceof AgeableMob am && am.isBaby());
             if (HuntRules.mayTake(t, allowed, null)) out.merge(type.substring(10), 1, Integer::sum);
         }
         return out;
@@ -154,15 +150,13 @@ final class Hunting {
             return new Chains.Reply(reply, r.req);
         }
         Object[] a = HuntRules.parse(rest);
-        if (a == null) return Chains.Reply.now("usage: hunt <n> [cow|pig|chicken|sheep] [at x z] [out] | hunt <n> <mob> for <item> [count] [at x z] | hunt status");
+        if (a == null) return Chains.Reply.now("usage: hunt <n> [cow|pig|chicken|sheep] [at x z] | hunt <n> <mob> for <item> [count] [at x z] | hunt status");
         Run r = new Run();
         r.from = from;
         r.n = (Integer) a[0];
         r.want = (String) a[1];
         r.started = Core.INSTANCE.tick();
-        r.out = HuntRules.outWord(HuntRules.withoutAt(rest));
         r.at = HuntRules.at(rest);
-        r.start = p == null ? null : Jobs.here(p);
         String reply = "started: hunting until I have " + r.n + " raw " + (r.want == null ? "meat" : HuntRules.MEAT.get(r.want).substring(10)) + " (hunt status)";
         r.req = c.requests.local("hunt", from, raw, reply, l);
         run = r;
@@ -252,13 +246,11 @@ final class Hunting {
             }
         }
         List<String> allowed = c.vocab.expand("animals");
-        Entity best = null, outside = null;
-        double bestD = Double.MAX_VALUE, outD = Double.MAX_VALUE;
+        Entity best = null;
+        double bestD = Double.MAX_VALUE;
         int seen = 0;
-        String dim = Storage.dim();
-        // 0.33.0 (Haiku run 2026-10-16: "hunt 3 cow" sat at 0/3 for 6 min, the cows just outside the small grove area):
-        // every animal the client sees counts (no 32-block cap: the bot walks to it), and the nearest one I could take
-        // but for the areas is kept for the reason
+        // 0.33.0 (Haiku run 2026-10-16: "hunt 3 cow" sat at 0/3 for 6 min):
+        // every animal the client sees counts (no 32-block cap: the bot walks to it)
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == p || !e.isAlive()) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
@@ -268,26 +260,11 @@ final class Hunting {
             if (r.at != null && !HuntRules.atOk(r.at, e.getBlockX(), e.getBlockZ())) continue;
             double d = p.distanceTo(e);
             boolean pet = io.github.mojolowjo.entropybot.engine.Hostility.protectedMob(e);
-            boolean inAreas = c.inAreas(dim, e.getBlockX(), e.getBlockZ());
-            // the director (2026-10-19): an urgent "out" hunt may take animals up to 48 from its start, outside my areas
-            if (!inAreas && r.start != null && HuntRules.outOk(r.out, Math.sqrt(Jobs.distSq(r.start, new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()})))) {
-                inAreas = true;
-                if (!r.saidOut && HuntRules.MEAT.containsKey(type)) {
-                    r.saidOut = true;
-                    LOG.info("[entropybot] hunt: hunting outside my areas (up to {} from {})", HuntRules.OUT_R, Jobs.fmt(r.start));
-                }
-            }
-            if (!inAreas && r.at != null) inAreas = true;            // the place's 16 are its own out-rule (as hunt out)
             HuntRules.Target t = new HuntRules.Target(type, pet, e.hasCustomName(), pet, e instanceof Player, e instanceof AbstractVillager,
-                    e instanceof AgeableMob am && am.isBaby(), inAreas);
+                    e instanceof AgeableMob am && am.isBaby());
             if (target && (r.want == null || r.want.equals(type))) seen++;
             boolean friendly = e.getType().getCategory().isFriendly();
-            if (!(r.item != null ? HuntRules.mayTakeFor(t, friendly, allowed, r.want) : HuntRules.mayTake(t, allowed, r.want))) {
-                HuntRules.Target in = new HuntRules.Target(t.type(), t.tamed(), t.named(), t.owned(), t.player(), t.villager(), t.baby(), true);
-                boolean couldIn = r.item != null ? HuntRules.mayTakeFor(in, friendly, allowed, r.want) : HuntRules.mayTake(in, allowed, r.want);
-                if (!inAreas && couldIn && d < outD) { outD = d; outside = e; }
-                continue;
-            }
+            if (!(r.item != null ? HuntRules.mayTakeFor(t, friendly, allowed, r.want) : HuntRules.mayTake(t, allowed, r.want))) continue;
             if (d < bestD) { bestD = d; best = e; }
         }
         if (r.at != null) {
@@ -315,15 +292,11 @@ final class Hunting {
         }
         if (best == null) {
             String what = r.want == null ? "animal" : r.want.substring(10);
-            int[] me = Jobs.here(p);
-            r.why = outside != null
-                    ? "the nearest " + BuiltInRegistries.ENTITY_TYPE.getKey(outside.getType()).getPath() + " I could take is at " + outside.getBlockX() + " " + outside.getBlockY() + " "
-                      + outside.getBlockZ() + ", outside my areas - " + io.github.mojolowjo.entropybot.chop.ChopRules.areaCover(me[0], me[2], outside.getBlockX(), outside.getBlockZ(), 8, "pasture", c.areaNames()) + " takes it in"
-                    : seen > 0 ? "I see " + seen + " " + what + (seen > 1 ? "s" : "") + " but none I may take (babies, named or tamed ones, or not in the animals kind)"
+            r.why = seen > 0 ? "I see " + seen + " " + what + (seen > 1 ? "s" : "") + " but none I may take (babies, named or tamed ones, or not in the animals kind)"
                     : "I see no " + what + " (I see about " + Minecraft.getInstance().options.getEffectiveRenderDistance() * 16 + " blocks around me) - walk me to some";
             if (r.idleSince < 0) r.idleSince = now;
             // aa395: nothing of the kind in view at all, 3 looks in a row: the step ends at once (the 40 s watchdog came first)
-            boolean none = outside == null && seen == 0;
+            boolean none = seen == 0;
             r.noneLooks = none ? r.noneLooks + 1 : 0;
             r.nextAt = now + (none ? 40 : 100);
             boolean ending = now - r.idleSince >= IDLE_END || io.github.mojolowjo.entropybot.vocab.HuntRules.noneEnds(r.noneLooks);

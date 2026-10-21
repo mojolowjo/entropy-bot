@@ -33,7 +33,6 @@ import java.util.function.ToDoubleFunction;
  *
  * <p>B2 scores (0..100; a met rung -1; the owner's {@code aa do} 100):
  * <ul>
- * <li>GATE: area 100, tree area 95, surface 90 (hard limits; never interrupt).</li>
  * <li>UPKEEP: tools (aa-costs: no pickaxe 55 + 30 x blocked share, wooden 55 + 20 x it, worn 40 + curve; no cap), food {@code 175 x shortfall^2} of 18 (aa-food:
  *     10 -> 35, 6 -> 78 urgent, 4 -> 100) or its stock score (25..60) under the stock target, parked with no source, torches 30 + {@code 30 x shortfall^2} of 16, bag 20 + {@code 60 x shortfall^2} of 10 free.
  *     A pickaxe count that flickers in a craft must not break a running task: the adapter smooths the tier (Costs.ToolSmoother).</li>
@@ -44,7 +43,7 @@ import java.util.function.ToDoubleFunction;
  *     above it after two failures in a row (P 0.5).</li>
  * <li>ideas (2.8): the best thing the recipes say can be made now, from an iron pickaxe on: value 30 x its share.</li>
  * </ul>
- * With these numbers a Peaceful fresh world runs in the ladder's order (area, tools, table/furnace, torches, base, iron).
+ * With these numbers a Peaceful fresh world runs in the ladder's order (tools, table/furnace, torches, base, iron).
  */
 public final class AaDesires {
     private AaDesires() {}
@@ -168,8 +167,9 @@ public final class AaDesires {
         // round 4A O: craft+place at the cell, cut + craft, the planner, a known one (StationOptions); a gather climbs first there
         Need tableFurnace = new Need(STATION_ID, TaskKind.TABLE_FURNACE,
                 bb -> !(bb.in.tableKnown || bb.in.tableInBag) || !(bb.in.furnaceKnown || bb.in.furnaceInBag) || !campChest(bb),
+                // rm-areas: the chest has no chain of its own: the station set's place / craft rows own it
                 bb -> null, bb -> !(bb.in.tableKnown || bb.in.tableInBag) ? "goal table" : !(bb.in.furnaceKnown || bb.in.furnaceInBag) ? "goal furnace"
-                        : chestChain(bb.in), new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
+                        : null, new Options.Picker<>("STATION", STATION_FACTS, StationOptions.StationFacts.class, new StationOptions.Set()));
         Need spare = new Need("needs.spareTable", TaskKind.TABLE_FURNACE,
                 bb -> AaLadder.spareTableWanted(bb.in.tableInBag, bb.in.planks),
                 bb -> null, bb -> "craft crafting_table 1").hand(io.github.mojolowjo.entropybot.aa.brain.ToolWear.CRAFT_S);
@@ -179,10 +179,10 @@ public final class AaDesires {
                 bb -> "goal torch " + CoalOptions.Torches.target(), new CoalOptions.Torches());
         Need base = new Need("needs.base", TaskKind.BASE_BED,
                 bb -> !bb.in.baseKnown && !bb.flag(AaLadder.SHELTER_FACT),
-                bb -> null, bb -> bb.in.areaName != null ? "house " + bb.in.areaName : "goal shelter",
+                bb -> null, bb -> bb.in.basePlace != null ? "house " + bb.in.basePlace : "goal shelter",
                 // round 4A O: house <area>, shelter here, burrow, priced with the night (BaseOptions; its rows climb first)
                 new Options.Picker<>("BASE", BaseOptions.FACTS, BaseOptions.BaseFacts.class, new BaseOptions.Set())
-                        .withoutFacts((b, planned) -> b.in.areaName != null ? "house " + b.in.areaName : planned));
+                        .withoutFacts((b, planned) -> b.in.basePlace != null ? "house " + b.in.basePlace : planned));
         // round 4 fix 4: the ways to a bed are priced (BedOptions); the climb is the first step of its row under ground
         Need bed = new Need("needs.bed", TaskKind.BASE_BED,
                 bb -> !bb.in.bedKnown && !bb.in.bedInBag,
@@ -267,33 +267,6 @@ public final class AaDesires {
 
     /** aa-kit camp: a chest stands at the base (scanned), or the camp has none yet. */
     static boolean campChest(Blackboard b) { return b.in.baseChests; }
-
-    /**
-     * aa-kit: the camp's chest chain: a chest (crafted unless in the bag; short of planks the craft fails and the rung cools) placed next to the base (or, no base yet,
-     * next to me, which becomes the base), then {@code scan base} so the deposit verb knows it.
-     */
-    public static String chestChain(int[] base, int[] me, boolean chestInBag) {
-        // not "goal chest": a chain starting with "goal " goes whole to the planner (AaRuntime.resolveState)
-        String get = chestInBag ? "" : "craft chest 1 then ";
-        if (base != null) return get + "go base then place chest " + (base[0] + 1) + " " + base[1] + " " + base[2] + " then scan base";
-        if (me == null) return null;
-        return get + "place chest " + (me[0] + 1) + " " + me[1] + " " + me[2] + " then place base " + me[0] + " " + me[1] + " " + me[2] + " then scan base";
-    }
-
-    /**
-     * aa-r1fix: the chest chain with the cell ChestSpot chose (free, inside the areas, next to the table; the cheapest the game
-     * has not refused). No cell read yet and none refused: the old rule (one east of the base); every cell refused or none free: null
-     * (the rung says why, the refused cells stay in the facts until a chest stands).
-     */
-    public static String chestChain(Inputs in) {
-        boolean inBag = in.bag != null && in.bag.getOrDefault("chest", 0) > 0;
-        if (in.chestCell == null) return in.chestWhy == null && in.chestFailed.isEmpty() ? chestChain(in.basePos, in.pos, inBag) : null;
-        int[] c = in.chestCell;
-        String get = inBag ? "" : "craft chest 1 then ", at = "place chest " + c[0] + " " + c[1] + " " + c[2];
-        if (in.basePos != null) return get + "go base then " + at + " then scan base";
-        if (in.pos == null) return null;
-        return get + at + " then place base " + in.pos[0] + " " + in.pos[1] + " " + in.pos[2] + " then scan base";
-    }
 
     /** What a bed saves tonight: the night's danger at the current facts (any time of day; Peaceful 0). */
     static double bedDanger(Blackboard b) {
@@ -548,7 +521,7 @@ public final class AaDesires {
     }
 
     static String buildInfeasible(Blackboard bb) {
-        if (bb.in.areaName == null) return "no area fits a house (7x7 or more)";
+        if (bb.in.basePlace == null) return "no base place fits a house (7x7 or more)";
         if (bb.in.baseKnown) return "a house stands already (base known)";
         if (!bb.flag(AaLadder.SHELTER_FACT)) return "needs.base builds the first one";
         return null;
@@ -557,7 +530,7 @@ public final class AaDesires {
     /** Owner default (Q3): build a house (where only a shelter stands), explore, tidy the bag into the chests. */
     public static List<Desire> wants() {
         return List.of(
-                want("build", TaskKind.BASE_BED, bb -> bb.in.areaName == null ? null : "house " + bb.in.areaName, AaDesires::buildInfeasible, Desire.Exposure.SURFACE),
+                want("build", TaskKind.BASE_BED, bb -> bb.in.basePlace == null ? null : "house " + bb.in.basePlace, AaDesires::buildInfeasible, Desire.Exposure.SURFACE),
                 want("explore", TaskKind.EXPLORE, bb -> "explore 5", bb -> null, Desire.Exposure.SURFACE),
                 want("tidy", TaskKind.DEPOSIT, bb -> "deposit", bb -> bb.in.baseChests ? null : "no base chests to put things in", Desire.Exposure.ANY));
     }

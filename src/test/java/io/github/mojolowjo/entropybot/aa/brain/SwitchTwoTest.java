@@ -111,14 +111,14 @@ class SwitchTwoTest {
     void aDeepStaircaseIsALeg() {
         List<String> dd = new ArrayList<>();
         // at Y 70, best band Y 16: 54 levels down (108 steps: refused as one chain)
-        var f = new Discovery.Facts(-1, 1, false, true, null, 100, 70, 200, 16, 0.002, 0.4, false);
+        var f = new Discovery.Facts(-1, 1, false, 100, 70, 200, 16, 0.002, 0.4, false);
         var strip = Discovery.rank(f, "iron", 3, dd).stream().filter(o -> o.kind() == Discovery.Kind.STRIP).findFirst().orElseThrow();
         String[] steps = strip.command().split(" then ");
         assertEquals(2 * Discovery.STAIR_LEG, steps.length, strip.command());
         assertFalse(strip.command().contains("place mine"), strip.command());
         assertTrue(strip.why().contains("this leg " + Discovery.STAIR_LEG + " of "), strip.why());
         // a shallow band: the whole way and the mine, as before
-        f = new Discovery.Facts(-1, 1, false, true, null, 100, 30, 200, 16, 0.002, 0.4, false);
+        f = new Discovery.Facts(-1, 1, false, 100, 30, 200, 16, 0.002, 0.4, false);
         strip = Discovery.rank(f, "iron", 3, dd).stream().filter(o -> o.kind() == Discovery.Kind.STRIP).findFirst().orElseThrow();
         assertTrue(strip.command().contains("place mine"), strip.command());
     }

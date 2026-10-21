@@ -6,7 +6,6 @@ import io.github.mojolowjo.entropybot.clear.Pos;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -15,8 +14,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * strip2, stripfar): which boxes, which order, torches, collecting, the base trip, the walk legs, the label.
  */
 class StripPlanTest {
-    /** The bridge's MAP_AREA (x -272..223, z -64..431) as the owner's one area. */
-    static final Predicate<ClearBox> MAP = b -> b.x1() >= -272 && b.x2() <= 223 && b.z1() >= -64 && b.z2() <= 431;
     static final MineGeom MINE = new MineGeom(0, 40, 0, "north");
 
     static JsonObject note(int k, boolean setup) {
@@ -48,7 +45,7 @@ class StripPlanTest {
 
     @Test
     void stripRunOneSetsUpThenDigsAndCollects() {
-        StripPlan.Run r = StripPlan.run(MINE, note(1, false), 1, 12, true, MAP, new int[]{0, 40, 0});
+        StripPlan.Run r = StripPlan.run(MINE, note(1, false), 1, 12, true, new int[]{0, 40, 0});
         assertEquals("strip mining branch 1 (setting up chests first)", r.label());
         assertEquals(List.of(
                 "setupplan",
@@ -66,33 +63,20 @@ class StripPlanTest {
 
     @Test
     void stripRunTwoNearTheMineHasNoLegsAndATorchInTheCorridor() {
-        StripPlan.Run r = StripPlan.run(MINE, note(2, true), 1, 12, true, MAP, new int[]{0, 40, -3});
+        StripPlan.Run r = StripPlan.run(MINE, note(2, true), 1, 12, true, new int[]{0, 40, -3});
         assertEquals("strip mining branch 2", r.label());
         assertEquals("dig corridor 2 0 40 -6 to 0 41 -4 collect keepOres=false dump=mine torches=[0 40 -6] 'digging the mine corridor (branch 2)'", lines(r).get(1));
     }
 
     @Test
-    void stripoutLeavesOresAndHasNoBaseTrip() {
-        MineGeom out = new MineGeom(300, 40, 0, "north");
-        StripPlan.Run r = StripPlan.run(out, note(1, true), 1, 12, true, MAP, new int[]{300, 40, 0});
-        assertEquals(List.of(
-                "craft torch 16 unless minecraft:torch 8 optional",
-                "dig corridor 1 300 40 -3 to 300 41 -1 keepOres=false dump=mine 'digging the mine corridor (branch 1)'",
-                "dig left 1 288 40 -3 to 299 41 -3 dump=mine torches=[289 40 -3, 295 40 -3] 'digging branch 1 left'",
-                "dig right 1 301 40 -3 to 312 41 -3 dump=mine torches=[311 40 -3, 305 40 -3] 'digging branch 1 right'",
-                "minedone 1"), lines(r));
-        assertTrue(r.items().get(2).opts.keepOres, "outside the area the branches list the ores");
-    }
-
-    @Test
-    void collectingOffInsideTheAreaIsLikeOutside() {
-        StripPlan.Run r = StripPlan.run(MINE, note(1, true), 1, 12, false, MAP, new int[]{0, 40, 0});
+    void collectingOffListsTheOresAndHasNoBaseTrip() {
+        StripPlan.Run r = StripPlan.run(MINE, note(1, true), 1, 12, false, new int[]{0, 40, 0});
         assertTrue(lines(r).stream().noneMatch(l -> l.startsWith("oredig") || l.equals("basedeposit")));
     }
 
     @Test
     void severalBranchesAndABaseTripOnlyAtTheEnd() {
-        StripPlan.Run r = StripPlan.run(MINE, note(3, true), 3, 16, true, MAP, new int[]{0, 40, -6});
+        StripPlan.Run r = StripPlan.run(MINE, note(3, true), 3, 16, true, new int[]{0, 40, -6});
         assertEquals("strip mining branches 3-5", r.label());
         List<String> l = lines(r);
         assertEquals(1, l.stream().filter("basedeposit"::equals).count());
@@ -104,7 +88,7 @@ class StripPlanTest {
     void aBranchNotedBadIsNotDugAgain() {
         JsonObject n = note(7, true);
         MineBook.addBad(n, "7 left");
-        List<String> l = lines(StripPlan.run(MINE, n, 1, 12, true, MAP, new int[]{0, 40, -18}));
+        List<String> l = lines(StripPlan.run(MINE, n, 1, 12, true, new int[]{0, 40, -18}));
         assertTrue(l.stream().noneMatch(s -> s.startsWith("dig left 7")), l.toString());
         assertTrue(l.stream().anyMatch(s -> s.startsWith("dig right 7")), l.toString());
     }
@@ -112,15 +96,15 @@ class StripPlanTest {
     @Test
     void stripfarWalksEntranceThenCorridorLegs() {
         // the sim's stripfar: the corridor dug out to branch 30, the bot at the base's /home spot
-        StripPlan.Run r = StripPlan.run(MINE, note(30, true), 1, 12, true, MAP, new int[]{45, 53, 38});
+        StripPlan.Run r = StripPlan.run(MINE, note(30, true), 1, 12, true, new int[]{45, 53, 38});
         List<String> l = lines(r);
         assertEquals(List.of(
                 "leg 0 40 0 within 8 (the mine entrance)",
                 "leg 0 40 -40 within 8 (the corridor end)",
                 "leg 0 40 -80 within 8 (the corridor end)",
                 "leg 0 40 -87 within 6 (the corridor end)"), l.subList(0, 4));
-        // (branch 30 reaches z -90, past the mapped area's z -64: nothing is collected there)
-        assertEquals("dig corridor 30 0 40 -90 to 0 41 -88 keepOres=false dump=mine torches=[0 40 -90] 'digging the mine corridor (branch 30)'", l.get(5));
+        // (branch 30 reaches z -90: the world is open, its ores are collected as anywhere)
+        assertEquals("dig corridor 30 0 40 -90 to 0 41 -88 collect keepOres=false dump=mine torches=[0 40 -90] 'digging the mine corridor (branch 30)'", l.get(5));
         for (int i = 0; i < 4; i++) assertEquals(2, r.items().get(i).leg.tries());
     }
 

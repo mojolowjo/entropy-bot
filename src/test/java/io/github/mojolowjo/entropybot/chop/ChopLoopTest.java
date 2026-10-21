@@ -181,16 +181,13 @@ class ChopLoopTest {
     }
 
     @Test void failMemoryNoTreesIsNoPath() {
-        assertEquals(FailMemory.Reason.NO_PATH, FailMemory.classify("error: chopped nothing - no trees in my areas"));
+        assertEquals(FailMemory.Reason.NO_PATH, FailMemory.classify("error: chopped nothing - no trees within 32"));
     }
 
     @Test void failMemoryAxeNoteAloneIsNoClass() {
         assertNull(FailMemory.classify("ok: chopped 3 trees, 14 oak_log, replanted 3; no axe, and no crafting table near me to make one - chopped by hand"));
     }
 
-    @Test void failMemoryOutsideStillWins() {
-        assertEquals(FailMemory.Reason.OUTSIDE, FailMemory.classify("error: chopped nothing - I'm outside my areas"));
-    }
 
     @Test void brainKeysHaveDefaults() {
         assertEquals(24, ChopLoop.DEFAULT_MAX_CHOPS);      // AA_CLEANUP 3: the BrainConfig keys went, these defaults stay

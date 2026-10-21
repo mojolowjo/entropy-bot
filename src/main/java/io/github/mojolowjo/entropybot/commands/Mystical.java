@@ -196,7 +196,7 @@ final class Mystical {
         boolean bestIn = false;
         long bestD = Long.MAX_VALUE;
         for (int[] a : all) {
-            boolean in = jobs.goalAllowed(a[0], a[1], a[2]) == null;
+            boolean in = jobs.walkVerdict(a[0], a[1], a[2]) == null;
             long d = Jobs.distSq(a, me);
             if (best == null || (in && !bestIn) || (in == bestIn && d < bestD)) {
                 best = a;

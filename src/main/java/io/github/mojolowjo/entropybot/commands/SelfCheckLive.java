@@ -125,8 +125,6 @@ public final class SelfCheckLive implements ConfirmGate.Facts {
         } catch (RuntimeException e) {
             f.add(new SelfCheck.Finding("reconnectcheck", "couldn't check reconnect: " + e, "status"));
         }
-        String rl = c.respawn.checkLine();                  // 0.24.3: joined/respawned outside every area
-        if (rl != null) f.add(new SelfCheck.Finding("outside", rl, "area here 48 camp neutral then bootstrap"));
         try {                                               // 0.28.1 (trial fix C/A): a hole, a camp mark in the air
             net.minecraft.client.player.LocalPlayer me = net.minecraft.client.Minecraft.getInstance().player;
             if (me != null) {

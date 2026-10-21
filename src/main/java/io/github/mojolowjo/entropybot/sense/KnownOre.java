@@ -57,7 +57,7 @@ public final class KnownOre {
 
     /** The end line of a mine (or the seek's reason) when the index knows none in reach. */
     public static String noneText(String family, int chunks) {
-        return "no " + family + " ore known in my areas (I have seen " + chunks + " chunk" + (chunks == 1 ? "" : "s") + " here) - explore or mine cave";
+        return "no " + family + " ore known (I have seen " + chunks + " chunk" + (chunks == 1 ? "" : "s") + " here) - explore or mine cave";
     }
 
     /** 0.30.7: the most a mine on an empty ore index may have walked before it ends (it starts no seek walk of its own). */

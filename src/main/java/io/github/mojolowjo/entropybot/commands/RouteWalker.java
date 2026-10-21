@@ -91,8 +91,8 @@ final class RouteWalker {
                 RLOG.error("planner.available", t);
                 available = false;
             }
-            boolean inStart = c.inAreas(here, me[0], me[2]);
-            boolean inGoal = dest != null && c.inAreas(gd, dest[0], dest[2]);
+            boolean inStart = c.workAllowed(here, me[0], me[2]);
+            boolean inGoal = dest != null && c.workAllowed(gd, dest[0], dest[2]);
             double dist = dest == null ? 0 : Math.sqrt(Jobs.distSq(me, dest));
             RouteDecision.Result d = RouteDecision.decide(enabled, available, breakingOn(), sd, gdi, inStart, inGoal, dist,
                     fixedGoal && dest != null);

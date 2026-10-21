@@ -26,7 +26,7 @@ class KnownOreTest {
         assertFalse(KnownOre.family("minecraft:coal_ore", "iron"));
         assertEquals("iron", KnownOre.familyOf("iron_ore"));
         assertEquals("oritech:nickel", KnownOre.familyOf("oritech:deepslate_nickel_ore"));
-        assertEquals("no iron ore known in my areas (I have seen 12 chunks here) - explore or mine cave", KnownOre.noneText("iron", 12));
+        assertEquals("no iron ore known (I have seen 12 chunks here) - explore or mine cave", KnownOre.noneText("iron", 12));
         assertArrayEquals(new Object[]{"iron", 16}, KnownOre.args("known iron 16"));
         assertArrayEquals(new Object[]{null, 64}, KnownOre.args("known"));
     }

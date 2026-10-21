@@ -206,7 +206,7 @@ public final class RestoreLive {
         return e != null && e.why != null && e.why.startsWith("built:");
     }
 
-    /** 0.33.0 (A3): a station I placed myself (ledger "built: station"), inside my own areas, that may be picked up. */
+    /** 0.33.0 (A3): a station I placed myself (ledger "built: station") that may be picked up. */
     boolean stationOfMine(int x, int y, int z) {
         return stationRefusal(x, y, z) == null;
     }
@@ -221,7 +221,6 @@ public final class RestoreLive {
         String dim = Guard.dimOf(mc.level);
         io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
         if (e == null || !"built: station".equals(e.why)) return "I didn't place a station at " + x + " " + y + " " + z;
-        if (!c.inAreas(dim, x, z)) return "the station at " + x + " " + y + " " + z + " is outside my areas";
         String now = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(new net.minecraft.core.BlockPos(x, y, z)).getBlock()).getPath();
         if (!io.github.mojolowjo.entropybot.clear.OwnStations.station(now)) return "no station at " + x + " " + y + " " + z + " any more";
         Long gone = stationRemoved.get(dim + " " + x + " " + y + " " + z);

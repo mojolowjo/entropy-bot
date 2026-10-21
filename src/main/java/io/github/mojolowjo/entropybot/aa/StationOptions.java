@@ -68,7 +68,8 @@ public final class StationOptions {
                     "one " + Price.r(d) + " away" + (f.knownDist() >= 0 ? "" : " (distance not sensed, priced at base.distGuess)"), "known " + item, false, m)
                     .withSite(Site.of(f.knownAt())));
         }
-        String place = f.cell() == null ? null : "place " + item + " " + RungOptions.xyz(f.cell());
+        // a placed chest is noted by a scan round me (the base chests fact reads the noted chests)
+        String place = f.cell() == null ? null : "place " + item + " " + RungOptions.xyz(f.cell()) + (k == Kind.CHEST ? " then scan" : "");
         if (place == null) dropped.add("place " + item + ": no free cell");
         // 2. from the bag
         if (f.inBag()) {

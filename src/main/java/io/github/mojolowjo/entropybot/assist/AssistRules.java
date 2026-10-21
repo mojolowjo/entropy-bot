@@ -222,7 +222,7 @@ public final class AssistRules {
     /**
      * The blocks of the owner's kind to mine: that id within {@link #MINE_R} of their last broken block, each with air
      * on a side (reachable from the hole they dug), nearest first, at most {@link #MINE_MAX}. Only ores and natural
-     * stone ({@link #mineable}); the dig itself still refuses built blocks and checks the areas.
+     * stone ({@link #mineable}); the dig itself still refuses built blocks and asks the policy.
      */
     public static List<Box> mineTargets(World w, int cx, int cy, int cz, String id) {
         if (!mineable(id)) return List.of();

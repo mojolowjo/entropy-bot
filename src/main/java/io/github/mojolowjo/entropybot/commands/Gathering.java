@@ -25,7 +25,7 @@ import java.util.Map;
 /**
  * P2 (SURVIVAL_PLAN P2): {@code gather <item> [n] [<min>m]}. Not a job of its own: a driver like the chains, which
  * runs ordinary verbs one at a time (get, craft, mine strip / mine / mine cave, chop, farm, ...) through
- * {@link Commands#handle} as internal steps, so the areas, the guard, the tool rules, base trips and fights apply
+ * {@link Commands#handle} as internal steps, so the policy, the guard, the tool rules, base trips and fights apply
  * unchanged - they live in those verbs. After each step it re-plans from the bag and the storage notes
  * ({@link GatherPlan}), so partial progress counts. It holds one {@link JobRequests.Request} open for its whole run:
  * a chain step or a rule waits for it, rules, the autominer and the furnace pickup stay quiet meanwhile.
@@ -116,7 +116,7 @@ final class Gathering {
             return Chains.Reply.now("error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't gather"));
         }
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(Storage.dim(), me[0], me[2])) return Chains.Reply.now("error: I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " - I gather nothing here");
+        if (!commands.workAllowed(Storage.dim(), me[0], me[2])) return Chains.Reply.now("error: I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " - I gather nothing here");
         commands.jobs.replaceWalk();
         Run r = new Run();
         r.from = from;
@@ -173,7 +173,7 @@ final class Gathering {
             return;
         }
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(Storage.dim(), me[0], me[2])) {
+        if (!commands.workAllowed(Storage.dim(), me[0], me[2])) {
             end(r, p, GatherRules.endText(r.item, r.want, bag(p, r.item), r.tally, "I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " at " + Jobs.fmt(me), "walk me out of it"));
             return;
         }

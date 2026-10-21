@@ -22,11 +22,11 @@ public final class HuntRules {
     public static final int RANGE = 32;
 
     /** One seen entity. */
-    public record Target(String type, boolean tamed, boolean named, boolean owned, boolean player, boolean villager, boolean baby, boolean inAreas) {}
+    public record Target(String type, boolean tamed, boolean named, boolean owned, boolean player, boolean villager, boolean baby) {}
 
     /** May hunt take it? allowed: the animals kind (ids) after the owner's exclusions; want: one animal word or null. */
     public static boolean mayTake(Target t, List<String> allowed, String want) {
-        if (t == null || t.player() || t.villager() || t.tamed() || t.named() || t.owned() || t.baby() || !t.inAreas()) return false;
+        if (t == null || t.player() || t.villager() || t.tamed() || t.named() || t.owned() || t.baby()) return false;
         if (allowed == null || !allowed.contains(t.type())) return false;
         return want == null || t.type().equals(want);
     }
@@ -42,29 +42,15 @@ public final class HuntRules {
         return meat(bag, want) >= n;
     }
 
-    /** The director (2026-10-19): an urgent hunt ("hunt n [animal] out") may take animals this far from where it started, outside my areas. */
-    public static final int OUT_R = 48;
-
-    /** Food urgent enough to leave the areas for a hunt: hunger 6 or less, or health under 10. */
-    /** aa395: "I see no cow" this many looks in a row (nothing of the kind in view, none outside, none merely not takable) ends the hunt step. */
+    /** aa395: "I see no cow" this many looks in a row (nothing of the kind in view, none merely not takable) ends the hunt step. */
     public static final int NONE_LOOKS = 3;
 
     public static boolean noneEnds(int looksInARow) { return looksInARow >= NONE_LOOKS; }
 
-    public static boolean urgentOut(int food, float health) { return food <= 6 || health < 10; }
-
-    /** An animal outside my areas, {@code fromStart} blocks from the hunt's start: may an "out" hunt take it? */
-    public static boolean outOk(boolean out, double fromStart) { return out && fromStart <= OUT_R; }
-
-    /** "hunt n [animal] out": the trailing "out" word, else false. */
-    public static boolean outWord(String rest) {
-        return rest != null && rest.trim().toLowerCase(Locale.ROOT).matches(".*\\s+out$");
-    }
 
     /**
      * AA_ROUND3 5: "hunt n [animal] at x z" (and "hunt n mob for item [count] at x z"): the hunt starts at a place where
-     * the animals were seen; it walks there and takes only animals within {@link #AT_R} of it (outside my areas too, as
-     * an out hunt). Arriving to none there ends it ({@link #AT_NONE}).
+     * the animals were seen; it walks there and takes only animals within {@link #AT_R} of it. Arriving to none there ends it ({@link #AT_NONE}).
      */
     public static final int AT_R = 16, AT_ARRIVED = 8;
     private static final java.util.regex.Pattern AT = java.util.regex.Pattern.compile("(?i)\\s+at\\s+(-?\\d{1,8})\\s+(-?\\d{1,8})(?=\\s|$)");
@@ -89,10 +75,9 @@ public final class HuntRules {
     /** The end text when an "at" hunt arrives to none (FoodOptions' switch words: "none"). */
     public static final String AT_NONE = "none at the place I saw them";
 
-    /** "hunt <n> [animal] [out]": {n, animal id or null}; null = bad. The "out" word: {@link #outWord}. */
+    /** "hunt <n> [animal]": {n, animal id or null}; null = bad. */
     public static Object[] parse(String rest) {
         rest = withoutAt(rest);
-        if (outWord(rest)) rest = rest.trim().replaceFirst("(?i)\\s+out$", "");
         String[] w = (rest == null ? "" : rest.trim().toLowerCase(Locale.ROOT)).split("\\s+");
         if (w.length == 0 || w[0].isEmpty()) return new Object[]{4, null};
         if (!w[0].matches("^\\d{1,3}$")) return null;
@@ -134,7 +119,7 @@ public final class HuntRules {
      * and either friendly (not a monster) or in the owner's animals kind (owner-allowed).
      */
     public static boolean mayTakeFor(Target t, boolean friendly, List<String> allowed, String want) {
-        if (t == null || t.player() || t.villager() || t.tamed() || t.named() || t.owned() || t.baby() || !t.inAreas()) return false;
+        if (t == null || t.player() || t.villager() || t.tamed() || t.named() || t.owned() || t.baby()) return false;
         if (!t.type().equals(want)) return false;
         return friendly || (allowed != null && allowed.contains(t.type()));
     }

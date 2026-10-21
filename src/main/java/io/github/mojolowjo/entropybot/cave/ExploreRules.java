@@ -19,17 +19,6 @@ public final class ExploreRules {
     public static final long WALK_TICKS = 20 * 90;
     public static final int ARRIVED = 24;
 
-    /** aa385: explore's leash, blocks from the nearest area cell. */
-    public static final int LEASH = 64;
-
-    /** An area cell within {@code r} blocks (grid of 8, then the exact distance; areas are boxes far wider than 8). */
-    public static boolean nearAreas(java.util.function.BiPredicate<Integer, Integer> inAreas, int x, int z, int r) {
-        for (int dx = -r; dx <= r; dx += 8)
-            for (int dz = -r; dz <= r; dz += 8)
-                if (dx * dx + dz * dz <= r * r && inAreas.test(x + dx, z + dz)) return true;
-        return false;
-    }
-
     public static String key(String dim, int cx, int cz) {
         return dim + " " + cx + " " + cz;
     }
@@ -54,9 +43,9 @@ public final class ExploreRules {
     /** What the target search needs from the world. */
     public interface Land {
         boolean explored(String key);
-        /** Inside the owner's areas (x and z only). */
-        boolean inside(int x, int z);
-        /** The guard refuses walking to x y z (a portal nearby, outside the fence...). */
+        /** The policy allows work in the column x z (no keep-out / no-break area there). */
+        boolean allowed(int x, int z);
+        /** The guard refuses walking to x y z (a portal nearby, a keep-out area...). */
         boolean refused(int x, int y, int z);
         /** A chunk the guard refused: never again (memory.explored). */
         void markRefused(String key);
@@ -66,7 +55,7 @@ public final class ExploreRules {
     public record Target(int x, int z) {}
 
     /**
-     * The nearest unexplored chunk centre inside the areas from block x y z (the bridge's exploreTarget); skip: a job's
+     * The nearest unexplored chunk centre the policy allows from block x y z (the bridge's exploreTarget); skip: a job's
      * own chunks to pass over too (never written to the explored notes); null when there is none.
      */
     public static Target target(String dim, int x, int y, int z, Land land, Set<String> skip) {
@@ -77,7 +66,7 @@ public final class ExploreRules {
                 String k = key(dim, cx + dx, cz + dz);
                 if (land.explored(k) || (skip != null && skip.contains(k))) continue;
                 int tx = ((cx + dx) << 4) + 8, tz = ((cz + dz) << 4) + 8;
-                if (!land.inside(tx, tz)) continue;
+                if (!land.allowed(tx, tz)) continue;
                 if (land.refused(tx, y, tz)) {
                     land.markRefused(k);
                     continue;
@@ -148,6 +137,4 @@ public final class ExploreRules {
         int i = (int) Math.floorMod(Math.round(deg / 45.0), 8L);
         return "went " + d + " blocks " + names[i] + ", " + at;
     }
-
-    public static final String NO_AREAS = "error: I explore only inside my areas, and there are none - ";
 }

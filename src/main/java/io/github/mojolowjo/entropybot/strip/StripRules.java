@@ -174,13 +174,13 @@ public final class StripRules {
 
     /**
      * mineSpotCheck: null when a mine may start at p going dir: a loaded spot I can stand in, the fence lets me walk
-     * there (goalAllowed: null or the reason), and the first 3 cells of its corridor hold nothing a corridor stops at
+     * there (walkVerdict: null or the reason), and the first 3 cells of its corridor hold nothing a corridor stops at
      * (water or lava by them, a container or built block, bedrock), and the guard would let me dig them.
      */
-    public static String mineSpotCheck(StripWorld w, Pos p, String dir, Function<Pos, String> goalAllowed, GuardCheck guard, boolean fenceOn) {
+    public static String mineSpotCheck(StripWorld w, Pos p, String dir, Function<Pos, String> walkVerdict, GuardCheck guard, boolean fenceOn) {
         if (!w.loaded(p.x(), p.y(), p.z())) return "I can't see " + p.key() + " from here";
         String r = standCheck(w, p);
-        if (r == null) r = goalAllowed.apply(p);
+        if (r == null) r = walkVerdict.apply(p);
         if (r != null) return r;
         int[] f = MineGeom.DIRS.get(dir);
         for (int i = 1; i <= 3; i++) {
@@ -313,9 +313,9 @@ public final class StripRules {
         return Action.TURN;
     }
 
-    /** "branch 7 right skipped (outside my areas)". */
-    public static String skipText(int k, String part, String kind, String why) {
-        return "branch " + k + " " + part + " skipped (" + (kind.equals("area") ? "outside my areas" : why) + ")";
+    /** "branch 7 right skipped (in pit (keep-out))": the reason as the guard or the dig named it. */
+    public static String skipText(int k, String part, String why) {
+        return "branch " + k + " " + part + " skipped (" + why + ")";
     }
 
     // ---- the trip to the base ----

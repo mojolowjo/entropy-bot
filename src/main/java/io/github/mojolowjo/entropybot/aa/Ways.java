@@ -10,8 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Round 4A N (AA_ROUND4 A2, A3): the rows every {@link Need} shares. The planner is a row: READY at its plan cost
@@ -98,7 +96,7 @@ public final class Ways {
             default -> {
                 st.searchSince = -1;
                 if (!java.util.Objects.equals(st.woodFor, r.why()) || st.woodAt < 0 || now - st.woodAt >= 1000) {
-                    st.woodRow = wood(bb, woodMem, r.why(), now);
+                    st.woodRow = wood(bb, woodMem, r.logsMissing(), now);
                     st.woodFor = r.why();
                     st.woodAt = now;
                 }
@@ -107,18 +105,14 @@ public final class Ways {
         }
     }
 
-    private static final Pattern MISSING_LOGS = Pattern.compile("missing (\\d+) logs");
-
-    /** "missing N logs - ... no trees in my areas" -> max(4, min(64, N)) logs to cut; any other reason 0. */
-    public static int logsMissing(String why) {
-        if (why == null || !why.contains("no trees in my areas")) return 0;
-        Matcher m = MISSING_LOGS.matcher(why);
-        return m.find() ? Math.max(4, Math.min(64, Integer.parseInt(m.group(1)))) : 0;
+    /** The planner's missing logs (its number, 0 = none) -> max(4, min(64, N)) logs to cut; 0 stays 0. */
+    public static int logsToCut(int missing) {
+        return missing <= 0 ? 0 : Math.max(4, Math.min(64, missing));
     }
 
     /** The best wood row for the planner's missing logs (WoodOptions over the wood facts; none readable: the plain cut). */
-    static Options.Option wood(Blackboard bb, Options.OptionMemory m, String why, long now) {
-        int n = logsMissing(why);
+    static Options.Option wood(Blackboard bb, Options.OptionMemory m, int missing, long now) {
+        int n = logsToCut(missing);
         if (n <= 0) return null;
         WoodOptions.WoodFacts wf = null;
         if (bb.fact(WoodOptions.FACTS) instanceof Supplier<?> sup) {
@@ -128,9 +122,8 @@ public final class Ways {
                 bb.port.log("wood facts: " + e);
             }
         }
-        if (wf == null) wf = new WoodOptions.WoodFacts(n, List.of(), 0, false);
         m.sweep(bb.in);
-        Options.Choice c = WoodOptions.choose(new WoodOptions.WoodFacts(n, wf.trees(), wf.areasMade(), wf.outsideLogs()), m, now);
+        Options.Choice c = WoodOptions.choose(new WoodOptions.WoodFacts(n, wf == null ? List.of() : wf.trees()), m, now);
         if (c.best() == null) {
             bb.port.log("no wood way for the planner's missing logs: " + c.why());
             return null;

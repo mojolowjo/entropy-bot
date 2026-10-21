@@ -16,6 +16,15 @@ class StationOptionsTest {
     }
 
     @Test
+    void theStationSetOwnsTheChestAndScansIt() {
+        // rm-areas: the camp chest chain is gone; the placed chest is noted by a scan (the base chests fact)
+        Options.Choice c = StationOptions.choose(f(Kind.CHEST, true, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, null, 0, null);
+        assertEquals("place chest 1 64 0 then scan", c.best().command());
+        Options.Choice t = StationOptions.choose(f(Kind.TABLE, true, false, -1, 0, 0, 0, 0, CELL, null, false), new Options.OptionMemory(), 0, null, 0, null);
+        assertEquals("place crafting_table 1 64 0", t.best().command(), "only the chest scans");
+    }
+
+    @Test
     void materialsInTheBagCraftAndPlaceAtTheTimeModelsPrice() {
         Options.Choice c = StationOptions.choose(f(Kind.TABLE, false, false, -1, 4, 0, 0, 0, CELL, WOOD, false), new Options.OptionMemory(), 0, null, 0, "none");
         assertEquals("craft crafting_table 1 then place crafting_table 1 64 0", c.best().command());
@@ -36,7 +45,7 @@ class StationOptionsTest {
     @Test
     void woodShortPrependsTheWoodRowAndTheClimbUnderGround() {
         Options.Choice c = StationOptions.choose(f(Kind.CHEST, false, false, -1, 2, 0, 0, 0, CELL, WOOD, true), new Options.OptionMemory(), 0, null, 0, null);
-        assertEquals("climb then cut 2 then craft chest 1 then place chest 1 64 0", c.best().command());
+        assertEquals("climb then cut 2 then craft chest 1 then place chest 1 64 0 then scan", c.best().command());
         assertTrue(c.best().cost() > 40, "the wood row's price is in it");
         assertTrue(c.why().contains("climb"), c.why());
     }

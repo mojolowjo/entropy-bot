@@ -117,12 +117,6 @@ final class Mining {
     /** S1: the protect boxes, for the cave's targets. */
     private List<Box> protectBoxes() { return boxes(policy(), "protect"); }
 
-    private static List<String> areaNames(JsonObject pol) {
-        List<String> out = new ArrayList<>();
-        for (Box b : boxes(pol, "areas")) out.add(b.name != null ? b.name : "box");
-        return out;
-    }
-
     private static boolean strict(JsonObject pol) {
         try { return pol.has("strict") && pol.get("strict").getAsBoolean(); } catch (RuntimeException e) { return false; }
     }
@@ -130,8 +124,8 @@ final class Mining {
     private ExploreRules.Land land(String dim) {
         return new ExploreRules.Land() {
             @Override public boolean explored(String key) { return notes().explored(key); }
-            @Override public boolean inside(int x, int z) { return commands.inAreas(dim, x, z); }
-            @Override public boolean refused(int x, int y, int z) { return jobs.goalAllowed(x, y, z) != null; }
+            @Override public boolean allowed(int x, int z) { return commands.workAllowed(dim, x, z); }
+            @Override public boolean refused(int x, int y, int z) { return jobs.walkVerdict(x, y, z) != null; }
             @Override public void markRefused(String key) { notes().markExplored(List.of(key)); }
         };
     }
@@ -292,13 +286,13 @@ final class Mining {
         return io.github.mojolowjo.entropybot.sense.KnownOre.summary(r, within, nearest, chunks, stale);
     }
 
-    /** Is a family ("iron", "nickel") known within SENSE_KNOWN_R inside the areas (gather's ore source, the brain's feasibility)? */
+    /** Is a family ("iron", "nickel") known within SENSE_KNOWN_R where the policy allows (gather's ore source, the brain's feasibility)? */
     boolean oreKnownNear(LocalPlayer p, String family) {
         if (!indexReady() || p == null) return false;
         int[] me = Jobs.here(p);
         String d = dim();
         return !pass().nearest(d, id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, family), me[0], me[1], me[2],
-                io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.inAreas(d, x, y, z) && fairOk(d, x, y, z)).isEmpty();
+                io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, 1, (x, y, z) -> commands.workAllowed(d, x, y, z) && fairOk(d, x, y, z)).isEmpty();
     }
 
     /** AA_ROUND3 3: under {@code aa fair} (default on) only an ore cell I have seen counts (sense.Seen); off: every indexed one. */
@@ -308,11 +302,11 @@ final class Mining {
         return s != null && s.has(d, x, y, z);
     }
 
-    /** Chunks seen within the mine reach inside the areas ("I have seen N chunks here"). */
+    /** Chunks seen within the mine reach the policy allows ("I have seen N chunks here"). */
     private int chunksHere(LocalPlayer p) {
         int[] me = Jobs.here(p);
         String d = dim();
-        return pass().chunksSeen(d, me[0], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, (x, y, z) -> commands.inAreas(d, x, y, z));
+        return pass().chunksSeen(d, me[0], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_MINE_R, (x, y, z) -> commands.workAllowed(d, x, y, z));
     }
 
     /** One face of the block at q is open (air, water, a plant): Baritone's mine without "dig" can reach it. */
@@ -324,7 +318,7 @@ final class Mining {
         return false;
     }
 
-    /** The mine's known ore: its block, in the areas, off the protect margin, the guard allows, not tried; loaded: still there (and open without dig). */
+    /** The mine's known ore: its block, the policy allowing, off the protect margin, the guard allows, not tried; loaded: still there (and open without dig). */
     private List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> knownHits(LocalPlayer p, MineRun j, int n) {
         if (!indexReady() && j.at == null) return List.of();      // the at form names its cell: no index needed
         String d = dim();
@@ -342,9 +336,9 @@ final class Mining {
             if (j.knownTried.contains(BlockPos.asLong(x, y, z))) return false;
             if (!fairOk(d, x, y, z)) return false;          // AA_ROUND3 3: the at form, the index and the live scan: seen cells only
             if (MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), tick)) return false;   // 0.36.a3: timed, not for good
-            if (!commands.inAreas(d, x, y, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.goalAllowed(x, y, z) != null) return false;
-            // 0.28.0 live (LAN flat world): the clear engine stands only inside an area in 3D (Clearing.standCheck), so an
-            // area whose floor is above the cell under/beside the ore left "nowhere to stand": that ore is no candidate
+            if (!commands.workAllowed(d, x, y, z) || MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) != null || jobs.walkVerdict(x, y, z) != null) return false;
+            // 0.28.0 live (LAN flat world): the clear engine stands only where the policy allows (Clearing.standCheck):
+            // an ore with nowhere to stand under/beside it is no candidate
             if (stand != null && !stand.ok(x, y - 1, z) && !stand.ok(x, y, z)) return false;
             BlockPos q = new BlockPos(x, y, z);
             if (!level.isLoaded(q)) return true;              // known from before: go and look
@@ -428,7 +422,7 @@ final class Mining {
     /**
      * 0.36.a8 (AA's iron option scorer, MINING_PLAN 3.6): the nearest known ore of a family with the facts the scorer
      * reads: loaded, a dry open face, sky-open, the dig depth from the surface, the water rule (a dig down from in the
-     * water), and the break policy's MINE verdict at the cell. Same fence as the mine's own pick (my areas, the protect
+     * water), and the break policy's MINE verdict at the cell. Same fence as the mine's own pick (the policy, the protect
      * margin, the guard); no tried-set (the scorer keeps its own memory). Never throws; empty when the index is not ready.
      */
     List<io.github.mojolowjo.entropybot.aa.IronOptions.Ore> aaOres(LocalPlayer p, String fam, int n) { return aaOres(p, fam, n, 0); }
@@ -450,8 +444,8 @@ final class Mining {
             Level level = p.level();
             List<Box> prot = boxes(policy(), "protect");
             java.util.function.Predicate<String> idOk = id -> io.github.mojolowjo.entropybot.sense.KnownOre.family(id, fam);
-            io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.inAreas(d, x, y, z)
-                    && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null;
+            io.github.mojolowjo.entropybot.sense.OreIndex.Allow fence = (x, y, z) -> commands.workAllowed(d, x, y, z)
+                    && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.walkVerdict(x, y, z) == null;
             io.github.mojolowjo.entropybot.sense.OreIndex.Allow ok = (x, y, z) -> fairOk(d, x, y, z) && fence.test(x, y, z);     // AA_ROUND3 4: the seen lookup first (cheap, mostly no)
             if (unseen > 0 && io.github.mojolowjo.entropybot.sense.Seen.fair())
                 for (io.github.mojolowjo.entropybot.sense.OreIndex.Hit h : pass().nearest(d, idOk, me[0], me[1], me[2], io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R, unseen,
@@ -549,7 +543,7 @@ final class Mining {
     /** 0.34.0: at most this many walks to ore Baritone remembers per mine. */
     static final int FAR_TRIPS = 3;
 
-    /** 0.34.0: ore of the mine's block (or family) Baritone's cache remembers, in my areas, not tried, live-checked when loaded. */
+    /** 0.34.0: ore of the mine's block (or family) Baritone's cache remembers, the policy allowing, not tried, live-checked when loaded. */
     private List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> farOres(LocalPlayer p, MineRun j) {
         if (j.kFarTrips >= FAR_TRIPS || j.at != null) return List.of();
         // 0.34.1 (review): one recall per job; later asks reuse its list (tried and now-gone spots taken out)
@@ -579,8 +573,8 @@ final class Mining {
         List<Box> prot = boxes(policy(), "protect");
         j.kFarCache = new ArrayList<>(io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) ->
                 !j.knownTried.contains(BlockPos.asLong(x, y, z)) && !MineRules.skipHolds(j.kWaterSkip.get(BlockPos.asLong(x, y, z)), now())
-                        && commands.inAreas(d, x, y, z) && fairOk(d, x, y, z)
-                        && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.goalAllowed(x, y, z) == null
+                        && commands.workAllowed(d, x, y, z) && fairOk(d, x, y, z)
+                        && MineRules.protectNear(prot, d, x, y, z, MineRules.PROTECT_MARGIN) == null && jobs.walkVerdict(x, y, z) == null
                         && (j.dig || io.github.mojolowjo.entropybot.sense.BaritoneMemory.exposedInCache(x, y, z)), 8, "mine"));   // 0.34.1: walkable faces only
         return j.kFarCache.isEmpty() ? List.of() : List.of(j.kFarCache.get(0));
     }
@@ -715,8 +709,7 @@ final class Mining {
                 if (!r.equals("wait") || j.kTries >= io.github.mojolowjo.entropybot.sense.KnownOre.MAX_TARGETS) return r;      // the job ended: no "try 6/5"
             }
         }
-        boolean inside = commands.inAreas(d, me[0], me[2]);
-        if (!inside || now > j.deadline) return end(s, j, "stopped: " + (!inside ? MineRules.leftAreasText(Jobs.fmt(me)) : MineRules.timeUpText()) + ", mining " + sid(j) + gains(p, j));
+        if (now > j.deadline) return end(s, j, "stopped: " + MineRules.timeUpText() + ", mining " + sid(j) + gains(p, j));
         if (j.at == null && j.count > 0 && mineCount(p, j) >= j.count)
             return end(s, j, MineRules.shortText(j.target, mineCount(p, j), j.count, (j.kBlocks.isEmpty() ? "" : "blocks " + blocksText(j) + " ") + "from known ore (" + j.knownVeins + " vein" + (j.knownVeins == 1 ? "" : "s") + (j.kDug > 0 ? ", dug to " + j.kDug + " of them" : "") + ", " + j.kTries + " missed)", gains(p, j), j.toolNote));
         String pc = pickCheck(s, p, j);
@@ -780,7 +773,7 @@ final class Mining {
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> hits = knownHits(p, j, 64);
         if (hits.isEmpty() && j.at != null) {
             BlockPos q = new BlockPos(j.at[0], j.at[1], j.at[2]);
-            String why = !commands.inAreas(d, j.at[0], j.at[2]) ? "it is outside my areas"
+            String why = !commands.workAllowed(d, j.at[0], j.at[1], j.at[2]) ? "it is " + commands.policy.blockedText(d, j.at[0], j.at[2])
                     : p.level().isLoaded(q) && !io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(p.level().getBlockState(q).getBlock()).toString(), fam)
                     ? "no " + fam + " ore there any more" : !j.dig && p.level().isLoaded(q) ? "buried, and this is the walk form (dig digs to it)" : "off limits (protect margin, guard or no place to stand)";
             return atEnd(s, p, j, why);
@@ -994,14 +987,14 @@ final class Mining {
         return true;
     }
 
-    /** The at form's vein: the named cell and the loaded same-family cells touching it (MineRules.vein, at most AT_VEIN), in my areas. */
+    /** The at form's vein: the named cell and the loaded same-family cells touching it (MineRules.vein, at most AT_VEIN), the policy allowing. */
     private List<Pos> atVein(Level level, MineRun j) {
         String fam = io.github.mojolowjo.entropybot.sense.KnownOre.familyOf(j.target);
         String d = dim();
         List<Pos> out = new ArrayList<>();
         for (int[] c : MineRules.vein(j.at, n -> {
             BlockPos q = new BlockPos(n[0], n[1], n[2]);
-            return level.isLoaded(q) && commands.inAreas(d, n[0], n[1], n[2]) && jobs.goalAllowed(n[0], n[1], n[2]) == null
+            return level.isLoaded(q) && commands.workAllowed(d, n[0], n[1], n[2]) && jobs.walkVerdict(n[0], n[1], n[2]) == null
                     && io.github.mojolowjo.entropybot.sense.KnownOre.family(BuiltInRegistries.BLOCK.getKey(level.getBlockState(q).getBlock()).toString(), fam);
         }, MineRules.AT_VEIN)) out.add(new Pos(c[0], c[1], c[2]));
         return out;
@@ -1066,7 +1059,7 @@ final class Mining {
         final Set<Integer> poiIds = new HashSet<>();
         final Set<String> bases = new HashSet<>();
         ExploreRules.Target target;
-        /** 0.23.1: gathering outside the areas (explore ... gather off = false); the bot's spot for the roam permission; the bases seen. */
+        /** 0.23.1: gathering on the way (explore ... gather off = false); the bot's spot; the bases seen. */
         boolean gather = true;
         final int[] at = new int[3];
         final List<int[]> baseSpots = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -1083,8 +1076,8 @@ final class Mining {
     static final int GATHER_MAX = 8, GATHER_EVERY = 40, GATHER_LOGS_BELOW = 32;
 
     /**
-     * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json), inside or outside the areas (a
-     * walk lease: explore may leave them, never into a safe area), then home; someone's base out there is kept off and
+     * V1b: "explore [north|south|east|west] [minutes]": never-seen land (explored.json; never into a keep-out area),
+     * then home; someone's base out there is kept off and
      * noted. The report names the new points of interest.
      */
     String explore(LocalPlayer p, String rest) {
@@ -1133,7 +1126,6 @@ final class Mining {
         runs.put(s, ex);
         String r = jobs.startSeq(s, "always");
         jobs.job.holdOnFight = true;              // a fight holds the walk (the mod fights), it doesn't end it
-        jobs.job.goalInside = true;               // V1b: explore and find may walk outside the areas (the position watch leaves it be)
         ex.gather = gather;
         System.arraycopy(me, 0, ex.at, 0, 3);
         return r + (gather ? "" : " (no gathering while exploring)");
@@ -1145,7 +1137,7 @@ final class Mining {
         if (!ex.gather) return null;
         final List<int[]> bases = ex.baseSpots;
         java.util.function.Predicate<int[]> ok = c -> {
-            if (!commands.inAreas(d, c[0], c[1], c[2])) return false;
+            if (!commands.workAllowed(d, c[0], c[1], c[2])) return false;
             for (int[] b : bases) if (Math.abs(c[0] - b[0]) <= 16 && Math.abs(c[2] - b[2]) <= 16) return false;
             return true;
         };
@@ -1161,7 +1153,7 @@ final class Mining {
             return null;
         }
         Pos f = vein.get(0);
-        LOG.info("[entropybot] explore: mining {} exposed ore blocks at {} {} {} outside my areas", vein.size(), f.x(), f.y(), f.z());
+        LOG.info("[entropybot] explore: mining {} exposed ore blocks at {} {} {}", vein.size(), f.x(), f.y(), f.z());
         List<Seq.Step> add = new ArrayList<>();
         add.add(Seq.Step.walk(new int[]{f.x(), f.y(), f.z()}, true));
         add.add(Clearing.clearStep(new ClearJob.Options().only(vein).soft(true).label("mining the ore at " + f.x() + " " + f.y() + " " + f.z())));
@@ -1231,7 +1223,7 @@ final class Mining {
         return "next";
     }
 
-    /** V1b: a scan of 16 blocks round the bot (y -6..+6) for someone's base; only outside the areas. */
+    /** V1b: a scan of 16 blocks round the bot (y -6..+6) for someone's base. */
     private io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan baseScan(LocalPlayer p) {
         Level level = p.level();
         int[] me = Jobs.here(p);
@@ -1351,10 +1343,8 @@ final class Mining {
         ex.at[2] = me[2];
         if (now() % 20 == 0 && notes().markExplored(ExploreRules.around(d, me[0], me[2])) > 0) ex.chunks++;
         String done = now() > ex.until ? "the time is up" : null;
-        // aa385: the leash - never farther than LEASH blocks from my areas (live: explore went 363 blocks out); the
-        // brain's return leg (aa.core.WayBack) brings it back
-        // owner 2026-10-20: no leash any more - exploring may leave the areas freely; the way home is priced instead
-        // (Discovery's explore row: the return trip to my areas, night-weighted, within the horizon)
+        // owner 2026-10-20: no leash - the way home is priced instead (Discovery's explore row: the return trip to
+        // the base place, night-weighted, within the horizon)
         // V1b find: stop when it turned up
         // AA_ROUND3 5 (live aa-seen2: the step runs on even ticks, so "% 20 == 5" never came): once a second by the clock
         if (ex.find != null && done == null && (ex.findAt < 0 || now() - ex.findAt >= 20)) {
@@ -1371,8 +1361,8 @@ final class Mining {
                 return "next";
             }
         }
-        // V1b: outside the areas, someone's base within 16: keep off (mark its chunks seen), note it once, walk elsewhere
-        if (done == null && now() - ex.scanAt >= 100 && !commands.inAreas(d, me[0], me[2])) {
+        // V1b: someone's base within 16: keep off (mark its chunks seen), note it once, walk elsewhere
+        if (done == null && now() - ex.scanAt >= 100) {
             ex.scanAt = now();
             try {
                 io.github.mojolowjo.entropybot.vocab.ExploreWords.Scan sc = baseScan(p);
@@ -1402,9 +1392,9 @@ final class Mining {
                 LOG.warn("[entropybot] explore base scan: {}", e.toString());
             }
         }
-        // 0.23.1 (VOCABULARY 6b): outside the areas, off any base, take what keeps it going: a tree, an exposed ore vein
+        // 0.23.1 (VOCABULARY 6b): off any base, take what keeps it going: a tree, an exposed ore vein
         // 0.33.1: only as a side effect of the walk (ExploreRules.gatherAllowed), so a short explore still walks
-        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY && !commands.inAreas(d, me[0], me[2])
+        if (done == null && ex.gather && ex.gathers < GATHER_MAX && now() - ex.gatherAt >= GATHER_EVERY
                 && ExploreRules.gatherAllowed(now() - ex.start, ex.until - now(), ex.gatherTicks, ex.chunks, ex.chunksAtGather)) {
             ex.gatherAt = now();
             try {
@@ -1439,15 +1429,14 @@ final class Mining {
         if (ex.target != null && !ExploreRules.arrived(me[0], me[2], ex.target)) notes().markExplored(List.of(ExploreRules.key(d, ex.target.x() >> 4, ex.target.z() >> 4)));
         ex.target = null;
         if (done == null) {
-            // V1b: the nearest never-seen chunk (that way, with a direction), inside or outside the areas; never a refused spot
+            // V1b: the nearest never-seen chunk (that way, with a direction); never a spot the policy refuses
             final int y = me[1];
             int[] c = io.github.mojolowjo.entropybot.vocab.ExploreWords.next(me[0] >> 4, me[2] >> 4, ex.sx, ex.sz, ex.dir,
                     // 0.23.1: unvisited = not in explored.json AND no painted map tile (a tile still loading counts as seen this round)
                     (cx, cz) -> io.github.mojolowjo.entropybot.vocab.ExploreWords.seen(notes().explored(ExploreRules.key(d, cx, cz)),
                             core.terrain() == null ? Boolean.FALSE : core.terrain().painted(d, cx, cz)),
                     (cx, cz) -> {
-                        String why = io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"),
-                                commands.fenceOn(), io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.EXPLORE);
+                        String why = io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(d, (cx << 4) + 8, y, (cz << 4) + 8, "go"));
                         if (why != null) notes().markExplored(List.of(ExploreRules.key(d, cx, cz)));
                         return why != null;
                     });
@@ -1491,7 +1480,7 @@ final class Mining {
 
     private String lastScout = "no scouting yet";
 
-    /** "scout <dir|x z> [n] [<min>m] [from me]" / "scout status": walk out in legs inside the areas, note, come back. */
+    /** "scout <dir|x z> [n] [<min>m] [from me]" / "scout status": walk out in legs, note, come back. */
     String scout(LocalPlayer p, String rest, int[] ownerAt) {
         ScoutRules.Parsed m = ScoutRules.parse(rest);
         if (m.kind() == ScoutRules.Kind.ERROR) return m.error();
@@ -1512,9 +1501,9 @@ final class Mining {
             if (ownerAt == null) return "error: I can't see you (and no companion position) - say it without \"from me\"";
             start = ownerAt;
         }
-        if (!commands.inAreas(d, start[0], start[2])) return "error: " + start[0] + " " + start[2] + " is " + commands.policy.blockedText(d, start[0], start[2]);
+        if (!commands.workAllowed(d, start[0], start[2])) return "error: " + start[0] + " " + start[2] + " is " + commands.policy.blockedText(d, start[0], start[2]);
         final int y = start[1];
-        ScoutRules.Plan plan = ScoutRules.legs(start[0], start[2], m, (x, z) -> commands.inAreas(d, x, z) && jobs.goalAllowed(x, y, z) == null);
+        ScoutRules.Plan plan = ScoutRules.legs(start[0], start[2], m, (x, z) -> commands.workAllowed(d, x, z) && jobs.walkVerdict(x, y, z) == null);
         if (plan.legs().isEmpty()) {
             if (plan.cutAt() != null) return "error: " + plan.dirText() + " runs into a keep-out or no-break area at once (" + plan.cutAt()[0] + " " + plan.cutAt()[1] + ")";
             return "error: that is where I start - name a direction or a farther point";
@@ -1775,12 +1764,12 @@ final class Mining {
         if (c == null) return "the cave search failed: no cave called " + cv.name;
         core.caves.visit(c, me[0], me[1], me[2], System.currentTimeMillis(), now());
         // 0.27.3: a dark spot or ore in a keep-out / no-break area is no candidate (AREAS: the world is open otherwise)
-        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || !commands.inAreas(d, x, y, z);
+        CaveSearch.OffLimits off = (x, y, z) -> CaveRules.offLimits(prot, d, x, y, z) != null || !commands.workAllowed(d, x, y, z);
         CaveSearch.Result r = CaveSearch.search(new LevelWorld(level), me[0], me[1], me[2], c.visited, cv.ids::contains, c.ex, c.ey, c.ez, CaveRules.FROM_ENTRANCE, off);
         cv.steps++;
         // ores first: one vein at a time
         List<CaveSearch.Ore> vein = CaveRules.pickVein(r.ores(), cv.tried,
-                o -> jobs.goalAllowed(o.x(), o.y(), o.z()) != null || off.test(o.x(), o.y(), o.z()),
+                o -> jobs.walkVerdict(o.x(), o.y(), o.z()) != null || off.test(o.x(), o.y(), o.z()),
                 o -> canMineAt(p, o.x(), o.y(), o.z()), cv.tooHard);
         if (!vein.isEmpty()) {
             List<Pos> cells = new ArrayList<>();
@@ -1811,7 +1800,7 @@ final class Mining {
             return caveFinish(s, cv, "no dark corner left in reach", true, false);
         }
         CaveSearch.Cell f = r.frontier();
-        if (jobs.goalAllowed(f.x(), f.y(), f.z()) != null || off.test(f.x(), f.y(), f.z())) {
+        if (jobs.walkVerdict(f.x(), f.y(), f.z()) != null || off.test(f.x(), f.y(), f.z())) {
             visit(cv, f.x(), f.y(), f.z());
             return "wait";
         }
@@ -1834,7 +1823,7 @@ final class Mining {
         Level level = p.level();
         long reach2 = (long) CaveRules.FROM_ENTRANCE * CaveRules.FROM_ENTRANCE;
         List<io.github.mojolowjo.entropybot.sense.OreIndex.Hit> h = pass().nearest(dim(), cv.ids::contains, me[0], me[1], me[2], CaveRules.FROM_ENTRANCE, 1, (x, y, z) -> {
-            if (cv.knownTried.contains(BlockPos.asLong(x, y, z)) || off.test(x, y, z) || jobs.goalAllowed(x, y, z) != null || !fairOk(dim(), x, y, z)) return false;
+            if (cv.knownTried.contains(BlockPos.asLong(x, y, z)) || off.test(x, y, z) || jobs.walkVerdict(x, y, z) != null || !fairOk(dim(), x, y, z)) return false;
             long dx = x - c.ex, dy = y - c.ey, dz = z - c.ez;
             if (dx * dx + dy * dy + dz * dz > reach2) return false;
             BlockPos q = new BlockPos(x, y, z);
@@ -1866,7 +1855,7 @@ final class Mining {
     /** closeForGood (S1: a cave in a protect box): the cave is closed even when an earlier job made it. */
     /** 0.27.3, AREAS: x z lies in a keep-out or no-break column. */
     private boolean outsideFenced(String d, int x, int z) {
-        return !commands.inAreas(d, x, z);
+        return !commands.workAllowed(d, x, z);
     }
 
     private String caveMove(Seq s, CaveRun cv, LocalPlayer p, String why, boolean closeForGood) {
@@ -1881,7 +1870,7 @@ final class Mining {
         if (cv.moves > CaveRules.MOVES) return caveFinish(s, cv, CaveRules.noCaveText(cv.noCaveAt, why), false, true);
         // S1: never a known cave whose entrance lies in or by a protect box
         CaveRules.Known best = CaveRules.nearestKnown(knownCaves(), d, me[0], me[1], me[2], CaveRules.closedNames(cv.noCaveAt),
-                k -> jobs.goalAllowed(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null || outsideFenced(d, k.x(), k.z()));
+                k -> jobs.walkVerdict(k.x(), k.y(), k.z()) != null || CaveRules.offLimits(prot, d, k.x(), k.y(), k.z()) != null || outsideFenced(d, k.x(), k.z()));
         List<Seq.Step> steps = new ArrayList<>();
         ExploreRules.Target t = null;
         if (best != null) {
@@ -1895,7 +1884,7 @@ final class Mining {
             // S1: unexplored land in or by a protect box is passed over (that chunk goes in the job's skip set)
             for (int n = 0; n < 12; n++) {
                 t = ExploreRules.target(d, me[0], me[1], me[2], land(d), cv.skip);
-                if (t == null || (CaveRules.offLimits(prot, d, t.x(), me[1], t.z()) == null && !outsideFenced(d, t.x(), t.z()))) break;      // 0.27.3: and inside the areas
+                if (t == null || (CaveRules.offLimits(prot, d, t.x(), me[1], t.z()) == null && !outsideFenced(d, t.x(), t.z()))) break;      // 0.27.3: and the policy allows it
                 cv.skip.add(ExploreRules.key(d, t.x() >> 4, t.z() >> 4));
                 t = null;
             }
@@ -2051,7 +2040,7 @@ final class Mining {
         JsonObject pol = policy();
         String d = dim();
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(d, me[0], me[2])) return "error: I am " + commands.policy.blockedText(d, me[0], me[2]) + " - I mine nothing here";
+        if (!commands.workAllowed(d, me[0], me[2])) return "error: I am " + commands.policy.blockedText(d, me[0], me[2]) + " - I mine nothing here";
         if (Jobs.baritone() == null) return "error: baritone not loaded";
         // wave 1, item 8: Baritone's mine digs where it likes, so never inside or near a protect box (the base)
         MineRules.Near pn = MineRules.protectNear(boxes(pol, "protect"), d, me[0], me[1], me[2], MineRules.PROTECT_MARGIN);
@@ -2107,7 +2096,7 @@ final class Mining {
 
     private static String sid(MineRun j) { return MineRules.shortId(j.target); }
 
-    /** The break leases around me (the areas minus the protect boxes, sliced): null, or the refusal (strict mode). */
+    /** The break leases around me (the mine box minus the protect boxes, sliced): null, or the refusal (strict mode). */
     private String takeLeases(MineRun j, int[] me) {
         JsonObject pol = policy();
         String d = dim(), task = "mine " + sid(j);
@@ -2173,11 +2162,11 @@ final class Mining {
         // 0.36.8: the known-ore walk may dig now too, so the path context is set for every mine job (without dig and
         // outside that walk Baritone breaks only the target, which is never a path break)
         RestoreLive.INSTANCE.pathContext(job.id, BuiltInRegistries.BLOCK.getKey(j.block).toString());
-        // 0.36.8: while this job runs, breaking next to water is allowed; its known-ore walk may dig inside my areas
+        // 0.36.8: while this job runs, breaking next to water is allowed; its known-ore walk may dig where the policy allows
         MineWater.start(job, () -> {
             if (j.kTarget == null) return false;
             var pl = net.minecraft.client.Minecraft.getInstance().player;
-            return pl != null && core.commands.inAreas(Storage.dim(), (int) Math.floor(pl.getX()), (int) Math.floor(pl.getZ()));
+            return pl != null && core.commands.workAllowed(Storage.dim(), (int) Math.floor(pl.getX()), (int) Math.floor(pl.getZ()));
         });
         job.onHold = () -> {
             j.held = true;
@@ -2330,10 +2319,8 @@ final class Mining {
         if (j.phase.equals("known")) return knownStep(s, p, j);       // 0.28.0
         IBaritone b = Jobs.baritone();
         int[] me = Jobs.here(p);
-        boolean inside = commands.inAreas(dim(), me[0], me[2]);
-        if (b != null && (!inside || now > j.deadline)) {
-            String why = !inside ? MineRules.leftAreasText(Jobs.fmt(me)) : MineRules.timeUpText();
-            return end(s, j, "stopped: " + why + ", mining " + sid(j) + gains(p, j));
+        if (b != null && now > j.deadline) {
+            return end(s, j, "stopped: " + MineRules.timeUpText() + ", mining " + sid(j) + gains(p, j));
         }
         if (now - j.startTick < 60) return "wait";
         j.anchor = me;
@@ -2455,7 +2442,7 @@ final class Mining {
         LOG.info("[entropybot] mine: walking back to {} ({}){}", Jobs.fmt(j.anchor), why, j.legs.size() > 1 ? " in " + j.legs.size() + " legs" : "");
     }
 
-    /** The ore in view ran out (or no progress): walk to the nearest unexplored chunk of the areas, or end saying so. */
+    /** The ore in view ran out (or no progress): walk to the nearest unexplored chunk the policy allows, or end saying so. */
     private String seek(Seq s, LocalPlayer p, MineRun j, String why) {
         int[] me = Jobs.here(p);
         String d = dim();
@@ -2477,8 +2464,8 @@ final class Mining {
         ExploreRules.Target t = null;
         for (int n = 0; n < 12; n++) {
             t = ExploreRules.target(d, me[0], me[1], me[2], land(d), j.skip);
-            // where "mine" may work (the areas) and away from the protect boxes (the base)
-            if (t == null || (commands.inAreas(d, t.x(), t.z()) && MineRules.protectNear(prot, d, t.x(), me[1], t.z(), MineRules.PROTECT_MARGIN + 16) == null)) break;
+            // where the policy lets "mine" work, away from the protect boxes (the base)
+            if (t == null || (commands.workAllowed(d, t.x(), t.z()) && MineRules.protectNear(prot, d, t.x(), me[1], t.z(), MineRules.PROTECT_MARGIN + 16) == null)) break;
             j.skip.add(ExploreRules.key(d, t.x() >> 4, t.z() >> 4));
             t = null;
         }

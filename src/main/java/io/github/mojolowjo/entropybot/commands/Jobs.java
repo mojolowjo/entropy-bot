@@ -44,8 +44,6 @@ public final class Jobs {
         public final io.github.mojolowjo.entropybot.aa.door.Driver driver = io.github.mojolowjo.entropybot.aa.door.Door.current();
         public String type, status, label, goal;
         public boolean done, reflex;
-        /** 28b: a walk whose goal the fence allowed (inside an area); the position watch leaves it be, so it can walk back in. */
-        boolean goalInside;
         Request req;
         long startTick, until, total, ticks;
         int[] dest;
@@ -163,16 +161,6 @@ public final class Jobs {
                 // 0.36.7 (owner, aa366): in water it is never sealed in - Baritone swims; the dig-out refused every
                 // side by the water and ended the walk "no path" while the iron was reachable
                 return p != null && !p.isInWater() && bestFreeStep(p, null) == null;
-            }
-
-            @Override
-            public boolean insideAreas(int x, int z) {         // AREAS: everywhere but a keep-out / no-break column
-                return commands.inAreas(Storage.dim(), x, z);
-            }
-
-            @Override
-            public int[] insideFor(int[] xz) {                 // AREAS: no "nearest area" to clip a leg to - the world is open
-                return null;
             }
 
             @Override
@@ -306,15 +294,15 @@ public final class Jobs {
         return io.github.mojolowjo.entropybot.world.SurfaceRule.inAir(yy -> surfaceCell(level, x, yy, z), y);
     }
 
-    /** 0.23.3: the long walk's dig-out rule (the escape's own): underground and inside the areas. */
+    /** 0.23.3: the long walk's dig-out rule (the escape's own): underground and the policy allows work here. */
     boolean digOutAllowed(int[] me) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
         int surface = surfaceNoLeaves(mc.level, me[0], me[2]);
         boolean sky = mc.level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
-        boolean under = RestoreRules.underground(sky, surface, me[1]), in = commands.inAreas(Guard.dimOf(mc.level), me[0], me[2]);
-        LOG.info("[entropybot] long walk: dig-out check at {}: underground {} (surface {}), in my areas {}", fmt(me), under, surface, in);
-        if (under && in) return true;
+        boolean under = RestoreRules.underground(sky, surface, me[1]), allowed = commands.workAllowed(Guard.dimOf(mc.level), me[0], me[2]);
+        LOG.info("[entropybot] long walk: dig-out check at {}: underground {} (surface {}), the policy allows {}", fmt(me), under, surface, allowed);
+        if (under && allowed) return true;
         // 0.27.2: the surface dig-out (leaves, plants, own shelter blocks) wherever the bot stands
         try {
             return surfacePlan(mc.level, Guard.dimOf(mc.level), me, null, false) != null;
@@ -401,7 +389,7 @@ public final class Jobs {
         try {
             java.util.Set<String> own = ShelterJob.knownOwn(commands, me);
             java.util.function.Predicate<int[]> closed = c -> !level.getBlockState(new BlockPos(c[0], c[1], c[2])).canBeReplaced();
-            // 0.27.4: a natural cell the dig rules allow (underground inside my areas) may be the other half of the way out
+            // 0.27.4: a natural cell the dig rules allow (underground, the policy allowing) may be the other half of the way out
             java.util.function.Predicate<int[]> mayDig = c -> level instanceof net.minecraft.client.multiplayer.ClientLevel cl
                     && closed.test(c) && ShelterJob.mayDig(commands, cl, me, c);
             java.util.List<int[]> r = SurfaceSeal.ownExit(me, own, closed, mayDig);
@@ -453,7 +441,7 @@ public final class Jobs {
                 return id + " (not leaves, a plant or my own block)";
             }
             if (k != SurfaceSeal.Kind.OWN && !io.github.mojolowjo.entropybot.guard.GuardCore.cellLeasable(core.guard.core.policy(), dim, c[0], c[1], c[2]))
-                return id + " (not leasable: outside my areas' box or in a protect box)";
+                return id + " (not leasable: a keep-out / no-break area or a protect box)";
             return id;
         } catch (RuntimeException e) {
             return "unknown (" + e + ")";
@@ -579,7 +567,7 @@ public final class Jobs {
         if (lr.failure() != null) {
             int[] d = travelDest(j) != null ? travelDest(j) : j.dest;
             if (d != null && WalkEnd.arrived(here(p), d)) return "ok";       // the goal block itself is unreachable but I'm there (goalVerdict judges it)
-            // 0.33.0 (A1, live: the staircase fired before the retrace inside an area): the trail retrace and the paper
+            // 0.33.0 (A1, live: the staircase fired before the retrace): the trail retrace and the paper
             // escape come first; the staircase only for a walk whose retrace was tried and no paper escape runs
             String st = j.retraceTried && !j.paperEscape ? sealedStairs(p, here(p), d) : null;
             if (st != null) return "ok: " + st;                               // 0.27.4: the job ends with the whisper; the staircase runs next
@@ -644,7 +632,7 @@ public final class Jobs {
                     : io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, build ? "plan go" : mine ? "mine walk" : "walk");
             boolean travel = pr.travelMayBreak();
             // 0.32.3: a plan-go job keeps the breaking/placing its plan needs (PaperPlan owns them for that job only)
-            // 0.36.8: a mine job's walk to a known ore may dig (MineWater: inside my areas; next to water too, never lava)
+            // 0.36.8: a mine job's walk to a known ore may dig (MineWater: the policy allowing; next to water too, never lava)
             BaritoneAPI.getSettings().allowBreak.value = PaperPlan.ownsBreak() || MineWater.walkDig() || travel;
             MineWater.set(MineWater.active() || travel);
             // owner's place rule (aa372): a walk may place under the policy's costs (x3 travel, a refill of its own dug
@@ -947,10 +935,10 @@ public final class Jobs {
 
     // ---- the fence ----
 
-    /** Null when the bot may walk to x y z, else the guard's reason (FenceRules.goalAllowed). */
-    String goalAllowed(int x, int y, int z) {
+    /** Null when the bot may walk to x y z, else the guard's reason (FenceRules.walkVerdict). */
+    String walkVerdict(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
-        return FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(mc.level), x, y, z, "go"), commands.fenceOn());
+        return FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(mc.level), x, y, z, "go"));
     }
 
     static String withAreaHint(String reason) { return FenceRules.withAreaHint(reason); }
@@ -967,11 +955,6 @@ public final class Jobs {
     long lastTravelAt;
 
     public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex) {
-        return startTravel(goal, label, dest, destDim, reflex, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER);
-    }
-
-    /** V1a: walker OWNER_ORDER (the owner's own goto/go) may walk outside every area; digging rules are unchanged. */
-    public String startTravel(String goal, String label, int[] dest, String destDim, boolean reflex, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker walker) {
         if (!door("travel " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("travel " + label);
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
@@ -984,7 +967,7 @@ public final class Jobs {
         }
         if (!reflex) {
             int[] spot = dest != null ? dest : FenceRules.goalSpot(goal, (int) Math.floor(p.getY()));
-            String why = spot == null ? null : FenceRules.goalAllowed(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(Minecraft.getInstance().level), spot[0], spot[1], spot[2], "go"), commands.fenceOn(), walker);
+            String why = spot == null ? null : FenceRules.walkVerdict(io.github.mojolowjo.entropybot.api.BotAPI.check(Guard.dimOf(Minecraft.getInstance().level), spot[0], spot[1], spot[2], "go"));
             if (why != null) return FenceRules.gotoRefusal(why);
             lastTravelAt = System.currentTimeMillis();     // package D: an errand (come, goto, go...) holds the furnace pickups
         }
@@ -998,7 +981,6 @@ public final class Jobs {
         j.goal = goal;
         j.dest = dest;
         j.reflex = reflex;
-        j.goalInside = !reflex && (dest != null || FenceRules.goalSpot(goal, 0) != null);
         if (dest != null && tpWorth(p, dest, destDim)) {
             // stand still for /home (in case the server has a warm-up), then walk the rest
             cancel(b);
@@ -1122,7 +1104,7 @@ public final class Jobs {
         int x = Integer.parseInt(w[1]), y = Integer.parseInt(w[2]), z = Integer.parseInt(w[3]);
         IBaritone b = baritone();
         if (b == null) return "error: baritone not loaded";
-        String why = goalAllowed(x, y, z);
+        String why = walkVerdict(x, y, z);
         if (why != null) return fenceError(why);
         b.getCustomGoalProcess().setGoalAndPath(new GoalGetToBlock(new BlockPos(x, y, z)));
         Job j = new Job();
@@ -1444,7 +1426,7 @@ public final class Jobs {
                     j.shortTries++;
                     LOG.info("[entropybot] walk ended short at {} ({} from {}): stepping off or digging out, then again", fmt(me),
                             Math.round(Math.sqrt(distSq(me, d))), fmt(d));
-                    // a free step: step there and plan again; none: the escape dig-out (underground, inside the areas)
+                    // a free step: step there and plan again; none: the escape dig-out (underground, the policy allowing)
                     if (recoverShort(p, j)) return;
                 }
                 if (!j.doorTried && j.doorFinal == null && b != null) {
@@ -1602,7 +1584,7 @@ public final class Jobs {
     /** Picks the free spot next to the bot nearest the destination and starts walking onto it; false when there is none. */
     boolean startUnstick(LocalPlayer p, Job j) {
         BlockPos best = bestFreeStep(p, travelDest(j));
-        if (best == null) {                                   // P1: boxed in: dig out (underground, inside the areas only)
+        if (best == null) {                                   // P1: boxed in: dig out (underground, the policy allowing)
             boolean r = startEscape(p, j);
             if (r) io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.digOutStarted(core.tick());      // 0.27.3: short walks count in path status too
             return r;
@@ -1620,7 +1602,7 @@ public final class Jobs {
      */
     /** 0.31.1: the box (x1 y1 z1 x2 y2 z2, sorted) of a house-like area (a box with heights) whose walls d lies strictly inside; null: none. */
     int[] houseBoxOf(int[] d, String[] house) {
-        for (com.google.gson.JsonElement e : commands.effectiveAreas()) {
+        for (com.google.gson.JsonElement e : commands.places()) {
             if (!e.isJsonObject() || !e.getAsJsonObject().has("name")) continue;
             String name = e.getAsJsonObject().get("name").getAsString();
             String[] err = new String[1];
@@ -1827,8 +1809,7 @@ public final class Jobs {
     String startPlanGo(int[] e, boolean brk, boolean plc, String from, java.util.function.LongConsumer onJob) {
         LocalPlayer p = Minecraft.getInstance().player;
         if (p == null) return "error: not in a world";
-        String r = startTravel("goto " + fmt(e), "plan go to " + fmt(e), e, Guard.dimOf(p.level()), false,
-                io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OWNER_ORDER);
+        String r = startTravel("goto " + fmt(e), "plan go to " + fmt(e), e, Guard.dimOf(p.level()), false);
         Job j = job;
         if (r == null || r.startsWith("error") || r.startsWith("busy") || j == null || j.done) return r;
         onJob.accept(j.id);
@@ -1945,7 +1926,7 @@ public final class Jobs {
     }
 
     /**
-     * No free step next to the bot: when it is underground (no sky, 3+ under the surface) and inside the areas, break
+     * No free step next to the bot: when it is underground (no sky, 3+ under the surface) and the policy allows, break
      * the fewest natural blocks that open one step out (EscapePlan), each recorded in the restore ledger as "escape", then
      * step there. False (and a log line saying why) when it may not or can't.
      */
@@ -1992,7 +1973,7 @@ public final class Jobs {
             LOG.info("[entropybot] stuck at {} with no free step, on the surface: no way out by leaves, plants or own blocks (owner's rule): {}", fmt(me), surfaceWhy(level, dim, me));
             return false;
         }
-        if (!commands.inAreas(dim, me[0], me[2])) {
+        if (!commands.workAllowed(dim, me[0], me[2])) {
             if (startSurfaceEscape(p, j, me, dim, towardGoal)) return true;
             LOG.info("[entropybot] stuck at {} with no free step, {}: no dig-out (surface: {})", fmt(me), commands.policy.blockedText(dim, me[0], me[2]), surfaceWhy(level, dim, me));
             return false;
@@ -2003,7 +1984,7 @@ public final class Jobs {
             if (stuckLogDue("noway", me)) LOG.info("[entropybot] stuck at {} underground: no way out without breaking a built block, a container, a block by water or lava, or more than {}: {}", fmt(me), EscapePlan.MAX_BREAKS,
                     EscapePlan.explain((x, y, z) -> escapeKind(level, pol, dim, x, y, z), c -> surfaceWhat(level, dim, c), me));
             core.events.push("job", "escape: no safe dig-out at " + fmt(me), null);
-            // 0.27.3 (d3): underground inside the areas: a staircase up toward the surface instead (after this job ends)
+            // 0.27.3 (d3): underground: a staircase up toward the surface instead (after this job ends)
             if (!io.github.mojolowjo.entropybot.camp.ShelterPlan.anyOwn(me, ShelterJob.knownOwn(commands, me)))      // never from inside my own shell
                 planStairsUp(me, surface, travelDest(j), (x, y, z) -> escapeKind(level, pol, dim, x, y, z));
             return false;
@@ -2111,7 +2092,7 @@ public final class Jobs {
     private int stairCount;
 
     /**
-     * 0.27.4: a failed walk underground inside the areas toward a goal above: the staircase up to the goal's height, then
+     * 0.27.4: a failed walk underground toward a goal above: the staircase up to the goal's height, then
      * a goto back to the goal (a chain, started by stairsTick once nothing runs). Returns the whisper line, or null (the
      * caller reports the walk's failure) with the reason logged.
      */
@@ -2125,9 +2106,9 @@ public final class Jobs {
             int surface = surfaceNoLeaves(level, me[0], me[2]);
             boolean sky = level.canSeeSky(new BlockPos(me[0], me[1] + 1, me[2])) || RestoreRules.openAbove(surface, me[1]);
             boolean under = RestoreRules.underground(sky, surface, me[1]);
-            boolean inAreas = commands.inAreas(dim, me[0], me[2]);
-            if (!SealedWalk.want(under, inAreas, d, me, true, stairCount)) {
-                if (under && inAreas && d[1] > me[1] + 2) LOG.info("[entropybot] sealed walk at {}: no more staircases for {} ({} dug)", fmt(me), fmt(d), stairCount);
+            boolean allowed = commands.workAllowed(dim, me[0], me[2]);
+            if (!SealedWalk.want(under, allowed, d, me, true, stairCount)) {
+                if (under && allowed && d[1] > me[1] + 2) LOG.info("[entropybot] sealed walk at {}: no more staircases for {} ({} dug)", fmt(me), fmt(d), stairCount);
                 return null;
             }
             io.github.mojolowjo.entropybot.guard.Policy pol = core.guard.core.policy();
@@ -2304,20 +2285,20 @@ public final class Jobs {
 
     /**
      * Every 20 ticks with the fence on: a follow ends when its player walks where the bot may not go. AREAS (0.39.0): the
-     * position watch ("a job outside every area stops", its grace, the walk back inside) is gone - the world is open.
+     * old position watch is gone - the world is open.
      */
     private void fenceWatch(LocalPlayer p) {
-        // review 5: no fenceOn gate - goalAllowed refuses a keep-out box (and a portal) in every mode, nothing else
+        // review 5: no fenceOn gate - walkVerdict refuses a keep-out box (and a portal) in every mode, nothing else
         if (followWatch != null) {
             Player t = findPlayer(followWatch[0]);
             if (t == null) return;
             int[] tp = here(t);
-            String why = goalAllowed(tp[0], tp[1], tp[2]);
+            String why = walkVerdict(tp[0], tp[1], tp[2]);
             if (why != null) {
                 IBaritone b = baritone();
                 if (b != null) cancel(b);
                 commands.whisper(followWatch[1], FenceRules.followLeft(followWatch[0], tp));
-                LOG.info("[entropybot] follow stopped: {} left the areas at {} ({})", followWatch[0], fmt(tp), why);
+                LOG.info("[entropybot] follow stopped: {} went where I don't go, at {} ({})", followWatch[0], fmt(tp), why);
                 followWatch = null;
             }
         }

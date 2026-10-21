@@ -62,12 +62,12 @@ class StripReportTest {
         n.addClear("ok: finished digging branch 2 right - broke 16 blocks; 8 left, e.g. 308 41 -6 next to water/lava, 309 41 -6 out of reach (nowhere to stand close enough)");
         n.setupNote = "used the chest at 101 40 0 already there";
         n.toolNote = "fetched an iron pickaxe for the deepslate_redstone_ore at 100 40 -5";
-        n.addSkip("branch 2 right skipped (outside my areas)");
+        n.addSkip("branch 2 right skipped (in pit (keep-out))");
         n.addSkip("branch 3 left skipped (stuck - 8 tries)");
         n.baseNote = "no trip to the base (I know no base chests - PM \"scan base\" at the base first)";
         assertEquals("39 blocks dug, 1 ores left for you (PM \"ores\"), 1 tunnel(s) stopped short of water/lava, no trip to the base (I know no base chests - "
                         + "PM \"scan base\" at the base first), used the chest at 101 40 0 already there, fetched an iron pickaxe for the deepslate_redstone_ore at 100 40 -5, "
-                        + "branch 2 right skipped (outside my areas), branch 3 left skipped (stuck - 8 tries) - next run digs branch 3",
+                        + "branch 2 right skipped (in pit (keep-out)), branch 3 left skipped (stuck - 8 tries) - next run digs branch 3",
                 n.doneNote(2, 0));
         // the setup, tool and skip notes are said once; the totals and the base note run on, as in the bridge
         assertEquals("39 blocks dug, 1 ores left for you (PM \"ores\"), 1 tunnel(s) stopped short of water/lava, no trip to the base (I know no base chests - "
@@ -101,21 +101,18 @@ class StripReportTest {
     void replies() {
         MineGeom g = new MineGeom(-119, -54, 194, "east");
         JsonObject n = MineBook.fresh(g.key());
-        assertEquals("mine at -119 -54 194 going east: 0 branch pairs dug, not set up yet; ores: collecting inside the mapped area", StripTexts.status(g, n, true));
+        assertEquals("mine at -119 -54 194 going east: 0 branch pairs dug, not set up yet; ores: collecting", StripTexts.status(g, n, true));
         MineBook.setSetup(n, List.of(new Pos(-120, -54, 194), new Pos(-120, -54, 195)), new Pos(-119, -54, 193));
         MineBook.setK(n, 44);
         assertEquals("mine at -119 -54 194 going east: 43 branch pairs dug, chests at -120 -54 194 and -120 -54 195; ores: listing only", StripTexts.status(g, n, false));
         assertEquals("ok: the mine starts over from branch 1 (the chests stay where they are)", StripTexts.resetReply());
-        assertEquals("ok: I'll mine the ores I pass inside my areas (map, home) and take them to the base; elsewhere they stay listed - from the next run on",
-                StripTexts.oresSet(true, StripTexts.areaText(List.of("map", "home"))));
-        assertEquals("ok: I'll leave ores in place and list them (PM \"ores\") - from the next run on", StripTexts.oresSet(false, "x"));
-        assertTrue(StripTexts.oresMode(true).startsWith("ores: mined inside the mapped area"));
+        assertEquals("ok: I'll mine the ores I pass and take them to the base (a keep-out or no-break area keeps its ores) - from the next run on",
+                StripTexts.oresSet(true));
+        assertEquals("ok: I'll leave ores in place and list them (PM \"ores\") - from the next run on", StripTexts.oresSet(false));
+        assertTrue(StripTexts.oresMode(true).startsWith("ores: mined and taken"));
         assertTrue(StripTexts.oresMode(false).startsWith("ores: left in place"));
-        assertEquals("my areas (none set - area here 48 work neutral)", StripTexts.areaText(List.of()));
         assertEquals(StripTexts.NO_MINE, StripTexts.noMine("mine"));
         assertTrue(StripTexts.noMine("deepmine").contains("deepmine is no mine"));
-        assertEquals("error: the mine mine (300 40 0) is outside my areas (map), where I mine no ores - area here 48 work neutral",
-                StripTexts.outsideAreas("mine", new Pos(300, 40, 0), "my areas (map)"));
         assertEquals("ok: when a \"mine\" names no ores I go for iron,coal, in that order", StripTexts.preferSet("iron,coal"));
         assertEquals("I go for iron,coal when a \"mine\" names no ores", StripTexts.preferShow("iron,coal"));
         assertEquals("no preferred ores yet - \"ores prefer diamond,iron,copper\"", StripTexts.preferShow(null));

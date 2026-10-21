@@ -8,13 +8,13 @@ import static org.junit.jupiter.api.Assertions.*;
 /** aa-costs items 2-7: the hard-wired rules as costs and values (pure scoring). */
 class CostsTest {
     @Test
-    void huntOutTravelShrinksWithUrgency() {
+    void huntTravelShrinksWithUrgency() {
         assertEquals(1, Costs.foodUrgency(6, 20), 1e-9);
         assertEquals(1, Costs.foodUrgency(18, 9), 1e-9, "low health is urgent too");
         assertEquals(0.05, Costs.foodUrgency(20, 20), 1e-9);
-        assertEquals(60, Costs.huntOutTravel(30, 6, 20), 1e-9, "urgent: just there and back");
-        assertTrue(Costs.huntOutTravel(30, 16, 20) > 3 * Costs.huntOutTravel(30, 6, 20), "fed: the trip is dear");
-        assertTrue(Costs.huntOutTerms(30, 6, 20).contains("urgency 1.0"));
+        assertEquals(60, Costs.huntTravel(30, 6, 20), 1e-9, "urgent: just there and back");
+        assertTrue(Costs.huntTravel(30, 16, 20) > 3 * Costs.huntTravel(30, 6, 20), "fed: the trip is dear");
+        assertTrue(Costs.huntTerms(30, 6, 20).contains("urgency 1.0"));
     }
 
     @Test

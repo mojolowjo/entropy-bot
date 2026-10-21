@@ -33,14 +33,14 @@ public final class ActionTable {
     }
 
     static {
-        a("walk", "goto x y z | go <place> [marker] | come | home", "a spot, a place or the owner", "the spot inside my areas or the near-me zone (the fence)", "at(spot)", "1 per block", true, false);
+        a("walk", "goto x y z | go <place> [marker] | come | home", "a spot, a place or the owner", "the spot the policy allows (no keep-out area)", "at(spot)", "1 per block", true, false);
         a("fetch", "get <item|kind> [n]", "item, n", "the item in the chests or the RS network (stock)", "have(item, n)", "3", true, true);
-        a("cut", "cut <n> logs", "n", "trees in my areas", "have(log, n)", "3 + 2 per log", true, true);
+        a("cut", "cut <n> logs", "n", "a tree seen near me", "have(log, n)", "3 + 2 per log", true, true);
         a("craft", "craft <item> [n]", "item, n", "the recipe's inputs (the craft planner fetches and makes parts); a crafting table within 12 for 3x3 recipes", "have(item, n)", "2", true, true);
-        a("place", "place <block> x y z", "block, a free spot in reach", "have(block, 1); the spot inside my areas", "the block stands there (table/furnace near)", "3", true, true);
+        a("place", "place <block> x y z", "block, a free spot in reach", "have(block, 1); the spot the policy allows", "the block stands there (table/furnace near)", "3", true, true);
         a("smelt", "smelt <item> [n] then smelt collect all", "item, n", "a furnace near; the raw item; fuel (1 per 8)", "have(item, n)", "6 + 1 per item", true, true);
         a("mine", "mine strip <ore> [n] | mine <ore>_ore [n] | mine cave <ore> [n]", "ore family, n", "a pickaxe of the ore's tier; a marked mine, an ore in view, or a known cave", "have(ore drop, n)", "10 + 3 per item", true, true);
-        a("quarry", "dig x1 y1 z1 x2 y2 z2 (8 staircase columns, as bootstrap)", "the bot's spot", "a pickaxe; stone under me; inside my areas", "have(cobblestone, ~40)", "25", true, true);
+        a("quarry", "dig x1 y1 z1 x2 y2 z2 (8 staircase columns, as bootstrap)", "the bot's spot", "a pickaxe; stone under me; the policy allows the dig", "have(cobblestone, ~40)", "25", true, true);
         a("gather", "gather <item|kind> [n]", "item, n", "the gather verb's sources (storage, craft, smelt, mine, cut, farm)", "have(item, n)", "20 + 2 per item", true, true);
         a("build", "shelter", "a block kind", "have(block, 32)", "shelter around me", "10", true, true);
         a("light", "light here <r> | light x1 z1 x2 z2", "an area", "torches (it fetches or crafts them)", "torches every 6 blocks", "10 + per torch", true, false);
@@ -51,7 +51,7 @@ public final class ActionTable {
         a("burrow", "burrow", "", "soft ground under me, closed sides, no water near", "sealed in a hole 2-3 down", "5", true, false);
         a("chest", "open x y z | take <item> [n] | put <item> [n] | close", "a chest", "the chest trusted", "items moved", "3", true, false);
         a("area", "area here <r> <name> [type] [down up]", "radius, name", "owner", "an area where I may work", "1", true, false);
-        a("camp", "camp here", "", "inside my areas", "a camp place with a bed marker, torches", "20", true, false);
+        a("camp", "camp here", "", "the policy allows the spot", "a camp place with a bed marker, torches", "20", true, false);
     }
 
     /** Every VerbTable verb: the action it is ("a:<id>") or why the planner never uses it ("n:<why>"). */

@@ -21,7 +21,7 @@ class FeasibilityTest {
         f.known = true;
         for (String p : new String[]{"base", "camp", "mine", "farm"}) f.places.put(p, new int[]{0, 64, 0});
         f.isArea = n -> n.equals("yard");
-        f.inFence = p -> Math.abs(p[0]) < 100 && Math.abs(p[2]) < 100;
+        f.walkAllowed = p -> Math.abs(p[0]) < 100 && Math.abs(p[2]) < 100;
         f.baseChests = true;
         f.mineMarked = true;
         return s;
@@ -154,10 +154,10 @@ class FeasibilityTest {
         @Test void goKnown() { assertEquals(FEASIBLE, v("go base", empty()).kind()); }
         @Test void goArea() { assertEquals(FEASIBLE, v("go yard", empty()).kind()); }
         @Test void goUnknownPlace() { assertEquals(FailMemory.Reason.NO_PLACE, v("go village", empty()).cls()); }
-        @Test void goOutsideFence() { BrainState s = empty(); s.feas.places.put("camp", new int[]{500, 64, 0}); assertEquals(FailMemory.Reason.OUTSIDE, v("go camp", s).cls()); }
+        @Test void goIntoKeepOutIsRefused() { BrainState s = empty(); s.feas.places.put("camp", new int[]{500, 64, 0}); assertEquals(FailMemory.Reason.GUARD_REFUSED, v("go camp", s).cls()); }
         @Test void gotoInside() { assertEquals(FEASIBLE, v("goto 10 64 10", empty()).kind()); }
-        @Test void gotoOutside() { assertEquals(FailMemory.Reason.OUTSIDE, v("goto 500 64 10", empty()).cls()); }
-        @Test void gotoFenceUnknown() { BrainState s = empty(); s.feas.inFence = null; assertEquals(UNKNOWN, v("goto 500 64 10", s).kind()); }
+        @Test void gotoIntoKeepOutIsRefused() { assertEquals(FailMemory.Reason.GUARD_REFUSED, v("goto 500 64 10", empty()).cls()); }
+        @Test void gotoFenceUnknown() { BrainState s = empty(); s.feas.walkAllowed = null; assertEquals(UNKNOWN, v("goto 500 64 10", s).kind()); }
         @Test void homeNeedsBase() { BrainState s = empty(); s.feas.places.clear(); assertEquals(FailMemory.Reason.NO_PLACE, v("dismiss then home", s).cls()); }
     }
 

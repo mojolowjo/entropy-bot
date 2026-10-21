@@ -46,12 +46,12 @@ public final class BrainState {
 
     /**
      * 0.26.1 inputs, each a bounded read on the game side: coal + charcoal and logs (not planks) in the bag; a bed in the
-     * bag; the level thunders and the bot's head cell sees the sky; the bot stands inside one of its areas; how long the
+     * bag; the level thunders and the bot's head cell sees the sky; how long the
      * owner has been offline (ms, 0 online); the stock view changed (a scan or deposit); materials for a pickaxe of the
      * stage's tier in the bag.
      */
     public int coal, logs;
-    public boolean bedInBag, thundering, skyAbove = true, areasHere = true;
+    public boolean bedInBag, thundering, skyAbove = true;
     public long ownerOfflineMs;
     public long storageSeq;
     public boolean pickMaterials;

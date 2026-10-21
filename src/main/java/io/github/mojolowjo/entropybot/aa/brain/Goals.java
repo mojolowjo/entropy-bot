@@ -129,17 +129,16 @@ public final class Goals {
         // overnight 2026-10-19 (coal goal: "mine strip" with no mine marked failed twice): the iron-style ways in order
         if (bb.fact(WAYS_FACT) instanceof Ways ws) {
             if (ws.caveDist() >= 0) return "mine cave " + w + " " + left;
-            if (ws.mineMarked() && ws.inAreas()) return "mine strip " + w + " " + left;
-            if (ws.inAreas()) return "place mine north then mine strip " + w + " " + left;
-            return "explore 5";
+            if (ws.mineMarked()) return "mine strip " + w + " " + left;
+            return "place mine north then mine strip " + w + " " + left;
         }
         return "mine strip " + w + " " + left;
     }
 
-    /** The adapter's ore-goal facts (set with {@link #KNOWN_FACT}): a known cave within reach (-1 none), a mine marked, in my areas. */
+    /** The adapter's ore-goal facts (set with {@link #KNOWN_FACT}): a known cave within reach (-1 none), a mine marked. */
     public static final String WAYS_FACT = "aa.oreWays";
 
-    public record Ways(int caveDist, boolean mineMarked, boolean inAreas) {}
+    public record Ways(int caveDist, boolean mineMarked) {}
 
     /**
      * aa-costs (was: 4 coal kept back while a coal goal is open): the open coal goal's score and size, {score, n}

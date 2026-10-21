@@ -457,10 +457,10 @@ final class CampCommands {
         if (box == null) return Chains.Reply.now(LightGrid.USAGE);
         String dim = Guard.dimOf(lv);
         List<int[]> spots = new ArrayList<>();
-        int water = 0, air = 0, outside = 0, lit = 0;
+        int water = 0, air = 0, refused = 0, lit = 0;
         for (int[] s : LightGrid.spots(box[0], box[1], box[2], box[3])) {
-            if (c.fenceOn() && !c.inAreas(dim, s[0], s[1])) {
-                outside++;
+            if (!c.workAllowed(dim, s[0], s[1])) {
+                refused++;
                 continue;
             }
             int[] g = ground(lv, s[0], me[1], s[1]);
@@ -481,9 +481,9 @@ final class CampCommands {
         List<String> why = new ArrayList<>();
         if (water > 0) why.add(water + " water");
         if (air > 0) why.add(air + " no ground");
-        if (outside > 0) why.add(outside + " outside my areas");
+        if (refused > 0) why.add(refused + " refused by a keep-out / no-break area");
         if (lit > 0) why.add(lit + " lit already");
-        int skipped = water + air + outside + lit;
+        int skipped = water + air + refused + lit;
         if (spots.isEmpty()) return Chains.Reply.now("ok: " + LightGrid.report(0, skipped, String.join(", ", why)));
         Map<String, Integer> bag = Gui.inventory(p);
         int have = bag.getOrDefault("minecraft:torch", 0);

@@ -225,20 +225,13 @@ class ChopTest {
         Map<String, Integer> got = new LinkedHashMap<>();
         got.put("minecraft:oak_log", 23);
         assertEquals("ok: chopped 4 trees, 23 oak_log, replanted 4", ChopRules.endText(4, got, 4, "", List.of(), null));
-        assertEquals("ok: chopped 2 trees, 23 oak_log - no more trees in my areas (replanted 2)",
-                ChopRules.endText(2, got, 2, "no more trees in my areas", List.of(), null));
-        String none = ChopRules.endText(0, new LinkedHashMap<>(), 0, "no trees in my areas", List.of(), "area add");
-        assertTrue(none.startsWith("error: chopped nothing - no trees in my areas"), none);
-        assertTrue(none.endsWith("- next: area add"), none);
+        assertEquals("ok: chopped 2 trees, 23 oak_log - no more trees near (replanted 2)",
+                ChopRules.endText(2, got, 2, "no more trees near", List.of(), null));
+        String none = ChopRules.endText(0, new LinkedHashMap<>(), 0, "no trees within 32", List.of(), "take me to where trees grow");
+        assertTrue(none.startsWith("error: chopped nothing - no trees within 32"), none);
+        assertTrue(none.endsWith("- next: take me to where trees grow"), none);
         Map<String, Integer> before = Map.of("minecraft:oak_log", 5), after = Map.of("minecraft:oak_log", 9, "minecraft:stick", 3);
         assertEquals(Map.of("minecraft:oak_log", 4), ChopRules.gained(before, after, id -> id.endsWith("_log")));
     }
 
-    /** 0.33.0: the filled-in area offer for a tree just outside (Haiku run: me -43 -18, log -74 -21). */
-    @Test
-    void areaCover() {
-        assertEquals("area here 37 trees neutral", ChopRules.areaCover(-43, -18, -74, -21, 6, "trees", List.of("base")));
-        assertEquals("area here 37 trees3 neutral", ChopRules.areaCover(-43, -18, -74, -21, 6, "trees", List.of("Trees", "trees2")));
-        assertEquals("area here 8 pasture neutral", ChopRules.areaCover(0, 0, 0, 0, 8, "pasture", null));
-    }
 }

@@ -130,8 +130,8 @@ public final class PolicyCommands {
         }
     }
 
-    /** The labelled areas (AREAS: the near-me zone is a fact, never an area; kept for the readers of "my areas"). */
-    public JsonArray effectiveAreas() {
+    /** The typed places (the labelled areas: home, camp, chest places and the rest; the near-me zone is a fact). */
+    public JsonArray places() {
         return areas();
     }
 
@@ -204,18 +204,18 @@ public final class PolicyCommands {
     }
 
     /**
-     * AREAS (0.39.0): the bot may work in the column (x, z) of that dimension: true everywhere except in the footprint
-     * of a keep-out or no-break area (heights aside: a protected box binds its whole column here, the conservative
-     * reading). The old "inside one of my areas" is gone - the world is open.
+     * The policy's work verdict: the bot may work in the column (x, z) of that dimension - true everywhere except in
+     * the footprint of a keep-out or no-break area (heights aside: a protected box binds its whole column here, the
+     * conservative reading). The world is open.
      */
-    public boolean inAreas(String dim, int x, int z) {
+    public boolean workAllowed(String dim, int x, int z) {
         io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();        // review 3: the guard's snapshot, no JSON per call
         if (pol != null) return pol.protectColumn(dim, x, z) == null;
         return blocker(dim, x, z) == null;
     }
 
     /** AREAS review 8: the same with the height: a no-break box over a mine far below it does not block the mine. */
-    public boolean inAreas(String dim, int x, int y, int z) {
+    public boolean workAllowed(String dim, int x, int y, int z) {
         io.github.mojolowjo.entropybot.guard.Policy pol = guard.policy();
         if (pol != null) return pol.protectAt(dim, x, y, z) == null;
         JsonObject b = blocker(dim, x, z);
@@ -507,7 +507,7 @@ public final class PolicyCommands {
         return null;
     }
 
-    /** V1a: "fence check" names where the spot lies: " (in mine, destroy)" / " (outside every area)". */
+    /** V1a: "fence check" names where the spot lies: " (in mine, destroy)" / " (no area)". */
     String whereText(String dim, int x, int y, int z) {
         for (JsonArray l : List.of(protect(), areas())) {
             for (JsonElement e : l) {

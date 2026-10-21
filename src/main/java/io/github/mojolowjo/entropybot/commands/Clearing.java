@@ -198,7 +198,7 @@ public final class Clearing {
         LeaseSet leases;
         /** the table pickup to arm once the table really went down (18a) */
         Seq.Step pickup;
-        /** water plan: a block sealing water off at the edge of this dig box (a seal lease when the cell is outside the areas) */
+        /** water plan: a block sealing water off at the edge of this dig box (a seal lease, LeaseSet.sealLease) */
         ClearBox seal;
     }
 
@@ -636,7 +636,7 @@ public final class Clearing {
         for (String id : inv.keySet()) wood |= PlaceRules.wood(id);
         PlaceRules.TableChoice choice = PlaceRules.tableChoice(dist, carries, wood);
         if (choice == PlaceRules.TableChoice.USE_NEAR || choice == PlaceRules.TableChoice.WALK_FAR) return null;
-        // T2: only where the guard lets it place (inside an area, outside protect boxes, with the fence on) and at the
+        // T2: only where the guard lets it place (no keep-out / no-break box, with the fence on) and at the
         // side of the walkway; the pickup below takes it back after the craft
         Pos spot = PlaceRules.tableSpot(s.world, McClearWorld.botOf(p), s.job.box, Clearing::placeCellAllowed);
         if (spot == null) {
@@ -875,12 +875,12 @@ public final class Clearing {
         return false;
     }
 
-    /** T3: with the fence on, stand spots and drops only inside an area of this dimension (the guard's policy, read live); else null. */
+    /** T3: with the fence on, stand spots and drops only where the policy allows (no keep-out / no-break box, read live); else null. */
     static ClearJob.StandCheck standCheck(Commands c) {
         if (!c.fenceOn()) return null;
         String dim = Minecraft.getInstance().level != null ? Storage.dim() : "minecraft:overworld";
         GuardCore g = Core.INSTANCE.guard.core;
-        return (x, y, z) -> g.policy().areaAt(dim, x, y, z) != null;
+        return (x, y, z) -> GuardCore.cellLeasable(g.policy(), dim, x, y, z);
     }
 
     /** T2: the guard's box rules would let a place lease cover this cell (strict mode; log mode: always). */
@@ -892,7 +892,7 @@ public final class Clearing {
     }
 
     /**
-     * B7e F: a floor cell or a cave step the fill may place: inside an area and outside protect boxes in every guard mode
+     * B7e F: a floor cell or a cave step the fill may place: outside keep-out / no-break boxes in every guard mode
      * (log mode only records, so this is the fill's own fence).
      */
     static boolean floorCellAllowed(Pos c) {
@@ -1047,7 +1047,7 @@ public final class Clearing {
         return placeAt(p, id, x, y, z, leases, null);
     }
 
-    /** As above; seal: the dig box a water seal belongs to (its lease may lie just outside the areas, LeaseSet.sealLease). */
+    /** As above; seal: the dig box a water seal belongs to (its seal lease, LeaseSet.sealLease). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal) {
         return placeAt(p, id, x, y, z, leases, seal, false);
     }
@@ -1212,7 +1212,7 @@ public final class Clearing {
             ps.tries = 0;
             if (Gui.inventory(p).getOrDefault(id, 0) <= 0) return ps.optional ? "next" : "I have no " + sid + " to place";
             // builder placements: Baritone's builder walks to a spot of its own choosing; the cell must be one I may go near
-            String fence = seq.jobs.goalAllowed(pos[0], pos[1], pos[2]);
+            String fence = seq.jobs.walkVerdict(pos[0], pos[1], pos[2]);
             if (fence != null) return Jobs.withAreaHint(fence + " (" + Jobs.fmt(pos) + ")");
             Jobs.safeSettings();
             seq.setStatus(seq.label + " - placing a " + sid);
@@ -1716,7 +1716,7 @@ public final class Clearing {
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (!(e instanceof ItemEntity) || !e.isAlive()) continue;
                 int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
-                // near the box, not down a hole under the walkway, and (T3) never outside the areas with the fence on
+                // near the box, not down a hole under the walkway, and (T3) never where the policy refuses with the fence on
                 if (!job.dropWanted(x, y, z)) continue;
                 // B7e F: with "junk drop", junk drops stay where they lie (but the floor's block while it has few)
                 if (job.junkDrop && !io.github.mojolowjo.entropybot.clear.JunkDrop.chase(Gui.itemId(((ItemEntity) e).getItem()), job, inv(), x, y, z, seq.now())) continue;
@@ -1779,7 +1779,7 @@ public final class Clearing {
     }
 
     /** The dimension check for a box the verbs are given: AREAS, the box touches no keep-out / no-break area (x/z/y). */
-    static boolean boxInAreas(ClearBox b) {
+    static boolean boxAllowed(ClearBox b) {
         var pol = Core.INSTANCE.guard.core.policy();
         return pol.safeTouching(new io.github.mojolowjo.entropybot.guard.Box("box", Storage.dim(), b.x1(), b.y1(), b.z1(), b.x2(), b.y2(), b.z2())) == null;
     }

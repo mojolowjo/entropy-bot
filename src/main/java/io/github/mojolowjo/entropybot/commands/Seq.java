@@ -344,7 +344,7 @@ public final class Seq {
             io.github.mojolowjo.entropybot.clear.ClearWorld w = new io.github.mojolowjo.entropybot.clear.McClearWorld(mc.level, p, Clearing.avoidPredicate());
             String dim = Storage.dim();
             List<io.github.mojolowjo.entropybot.clear.Pos> vein = io.github.mojolowjo.entropybot.clear.OreDetour.pick(w, me[0], me[1], me[2], r,
-                    id -> canMine(p, id), (x, z) -> jobs.commands().inAreas(dim, x, z), (x, y, z) -> Mining.fairOk(dim, x, y, z));    // AA_ROUND3 3
+                    id -> canMine(p, id), (x, z) -> jobs.commands().workAllowed(dim, x, z), (x, y, z) -> Mining.fairOk(dim, x, y, z));    // AA_ROUND3 3
             if (vein.isEmpty()) return false;
             var valuer = io.github.mojolowjo.entropybot.clear.OreDetour.valuer;
             if (valuer != null) {          // small-3: valued, not radius-based (AA on)
@@ -398,7 +398,7 @@ public final class Seq {
         }
         if (stage == null) {
             // the fence first (package D review: never a /home for a walk the guard would refuse anyway)
-            String fence = jobs.goalAllowed(st.pos[0], st.pos[1], st.pos[2]);
+            String fence = jobs.walkVerdict(st.pos[0], st.pos[1], st.pos[2]);
             if (fence != null) return Jobs.withAreaHint(fence + " (" + fmt + ")");
             // a long way back to base: /home first (once per step), then walk the rest
             if (!st.noHome && tpStep != idx && jobs.tpWorth(p, st.pos, null)) {
@@ -410,8 +410,8 @@ public final class Seq {
                 return "wait";
             }
             if (b == null) return "baritone not loaded";
-            // the fence: the goal has to lie inside an area (ends the errand with the guard's reason)
-            String why = jobs.goalAllowed(st.pos[0], st.pos[1], st.pos[2]);
+            // the policy's walk verdict (a keep-out area ends the errand with the guard's reason)
+            String why = jobs.walkVerdict(st.pos[0], st.pos[1], st.pos[2]);
             if (why != null) return Jobs.withAreaHint(why + " (" + fmt + ")");
             // near: just get close (e.g. where it died), no need to touch the block
             BlockPos bp = new BlockPos(st.pos[0], st.pos[1], st.pos[2]);
@@ -522,7 +522,7 @@ public final class Seq {
         }
         Vec3 center = new Vec3(st.pos[0] + 0.5, st.pos[1] + 0.5, st.pos[2] + 0.5);
         if (p.getEyePosition().distanceTo(center) > 4.5) {
-            // P1 fix: ended short: step off, or dig out when enclosed underground inside the areas, then walk again
+            // P1 fix: ended short: step off, or dig out when enclosed underground, then walk again
             if (WalkEnd.retryShort(j.shortTries)) {
                 j.shortTries++;
                 if (jobs.recoverShort(p, j)) return "wait";

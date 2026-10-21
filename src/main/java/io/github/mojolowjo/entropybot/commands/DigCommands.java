@@ -203,7 +203,7 @@ final class DigCommands {
                 // 0.28.3 (trial 3, Haiku: a natural dip after a walk, "no side is my own wall"): a natural block that is
                 // not protected (no block entity, not a building block) may go too; built blocks only when they are mine
                 ClimbPlan.Own own = (ox, oy, oz) -> shelter.contains(ox + " " + oy + " " + oz) || RestoreLive.INSTANCE.builtByMe(ox, oy, oz)
-                        || inMainArea(c, g.policy().areaAt(dim, ox, oy, oz))
+                        || atBase(c, g.policy().areaAt(dim, ox, oy, oz))
                         || !Core.INSTANCE.guard.isProtectedBlock(lv.getBlockState(new net.minecraft.core.BlockPos(ox, oy, oz)).getBlock());
                 out = ClimbPlan.walledIn((cx, cy, cz) -> climbCell(lv, cx, cy, cz), own, x, y, z, doorSide(c, x, z));
             } catch (RuntimeException e) {
@@ -303,8 +303,8 @@ final class DigCommands {
         return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
     }
 
-    /** 0.28.2 (D): a box of the guard's policy that is one of my main areas. */
-    static boolean inMainArea(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
+    /** 0.28.2 (D): a box of the guard's policy that is the owner's base place (a home fact). */
+    static boolean atBase(Commands c, io.github.mojolowjo.entropybot.guard.Box ar) {
         if (ar == null || ar.name == null) return false;
         JsonObject ab = c.policyArea(ar.name);
         return ab != null && PolicyCommands.typeOf(ab) == io.github.mojolowjo.entropybot.guard.AreaType.BASE;
@@ -355,7 +355,7 @@ final class DigCommands {
 
     /**
      * 0.28.2 (B1, trial fix package 2) "dig stone [n]": gather's cobblestone source. A walkable staircase quarry (StonePit)
-     * from my feet, long enough for n stone; one careful clear of exactly those cells (the areas, leases, tools, base
+     * from my feet, long enough for n stone; one careful clear of exactly those cells (the policy, leases, tools, base
      * trips and water rules apply), so I walk back up my own steps. Never inside a main area (the house goes there).
      */
     static String stoneQuarry(Commands c, LocalPlayer p, String rest, String from, boolean via) {
@@ -416,8 +416,8 @@ final class DigCommands {
         var g = Core.INSTANCE.guard.core;
         return io.github.mojolowjo.entropybot.gather.QuarrySites.choose(cand, feet, io.github.mojolowjo.entropybot.gather.QuarrySites.avoiding(
                 f -> io.github.mojolowjo.entropybot.gather.StonePit.plan((x, y, z) -> stoneCell(lv, x, y, z), f, CampCommands.quarryDir(lv, f), n),
-                cell -> {                                   // review p2: main / safe areas and outside the bot's areas
-                    if (!c.inAreas(dim, cell[0], cell[2])) return "a spot outside my areas";
+                cell -> {                                   // review p2: the base place and the policy's keep-out / no-break
+                    if (!c.workAllowed(dim, cell[0], cell[1], cell[2])) return c.policy.blockedText(dim, cell[0], cell[2]);
                     var ar = g.policy().areaAt(dim, cell[0], cell[1], cell[2]);
                     if (ar == null || ar.name == null) return null;
                     var t = PolicyCommands.typeOf(c.policyArea(ar.name));
@@ -455,8 +455,8 @@ final class DigCommands {
         // V1a: a dig box that touches a safe area is refused whole, not block by block
         var safe = Core.INSTANCE.guard.core.policy().safeTouching(new io.github.mojolowjo.entropybot.guard.Box("dig", Storage.dim(), box.x1(), box.y1(), box.z1(), box.x2(), box.y2(), box.z2()));
         if (safe != null) return "error: that box touches " + (safe.name == null ? "a protected area" : safe.name) + " (" + safe.type.word() + ") - nothing in a " + safe.type.word() + " area is dug; make the box smaller";
-        // a dig box has to lie inside an area: in strict mode the lease says so, in log mode this gate does
-        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
+        // a dig box may not touch a keep-out / no-break area: in strict mode the lease says so, in log mode this gate does
+        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxAllowed(box)) {
             List<String> names = new ArrayList<>();
             for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
             return "error: that box touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";
@@ -485,7 +485,7 @@ final class DigCommands {
         return startClear(c, p, o, restockSteps(c, p, box.volume()));
     }
 
-    /** 0.33.0 (A3): the box holds a station I placed myself inside my areas (OwnStations). */
+    /** 0.33.0 (A3): the box holds a station I placed myself (OwnStations: the ledger). */
     static boolean hasOwnStation(LocalPlayer p, ClearBox box) {
         // 0.33.0 review: only my recorded station cells in the box are read, not every cell of a large box
         net.minecraft.world.level.Level lv = p.level();
@@ -571,7 +571,7 @@ final class DigCommands {
     /**
      * 0.19.5: "dig x1 z1 x2 z2 down|up N [words]": the per-column list from the surface ({@link SurfaceDig}), built once
      * from the client level, then the same careful clear as a box (Options.only: reach, sight, never containers or
-     * protected blocks, never next to water or lava, the ores rule, the areas and leases, base trips).
+     * protected blocks, never next to water or lava, the ores rule, the policy and leases, base trips).
      */
     static String digSurface(Commands c, LocalPlayer p, DigArgs a, String rest, String from) {
         if (a.floor()) return "error: floor works with a box dig only (dig x1 y1 z1 x2 y2 z2 floor)";
@@ -598,7 +598,7 @@ final class DigCommands {
         ClearBox box = SurfaceDig.bounds(plan.blocks());
         if (force && plan.blocks().size() > 64) return "error: dig ... force is for small digs (64 blocks max)";
         if (force && (from == null || !from.equalsIgnoreCase(c.owner()))) return "only " + c.owner() + " can dig ... force";
-        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxInAreas(box)) {
+        if (Core.INSTANCE.guard.core.mode() != io.github.mojolowjo.entropybot.guard.GuardCore.Mode.STRICT && !Clearing.boxAllowed(box)) {
             List<String> names = new ArrayList<>();
             for (var ar : Core.INSTANCE.guard.core.policy().protect) names.add(ar.name == null ? "?" : ar.name);
             return "error: that rectangle touches a keep-out or no-break area (" + (names.isEmpty() ? "none set" : String.join(", ", names)) + ")";

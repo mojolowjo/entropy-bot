@@ -192,7 +192,7 @@ public final class Mule {
     private String reachable(LocalPlayer p, String who, String from) {
         int[] t = target(who, from);
         if (t == null) return "I can't see " + (who.equalsIgnoreCase(from) ? "you" : who) + " from here (I'm at " + Jobs.fmt(Jobs.here(p)) + ")";
-        String why = commands.jobs.goalAllowed(t[0], t[1], t[2]);
+        String why = commands.jobs.walkVerdict(t[0], t[1], t[2]);
         return why == null ? null : FenceRules.comeRefusal(why, t[0], t[2]);
     }
 
@@ -252,7 +252,7 @@ public final class Mule {
             r.goal = null;
             return;
         }
-        String why = commands.jobs.goalAllowed(o[0], o[1], o[2]);
+        String why = commands.jobs.walkVerdict(o[0], o[1], o[2]);
         if (why != null) {
             stopWalk();
             end(r, "stopped: carry - " + FenceRules.followRefusal(r.from, why, o[0], o[2]));
@@ -290,7 +290,7 @@ public final class Mule {
                 end(r, "error: I can't see " + (r.to.equalsIgnoreCase(r.from) ? "you" : r.to) + " any more (I'm at " + Jobs.fmt(Jobs.here(p)) + ")");
                 return;
             }
-            String why = commands.jobs.goalAllowed(t[0], t[1], t[2]);
+            String why = commands.jobs.walkVerdict(t[0], t[1], t[2]);
             if (why != null) {
                 stopWalk();
                 end(r, "stopped: " + FenceRules.comeRefusal(why, t[0], t[2]));
@@ -427,7 +427,7 @@ public final class Mule {
         if (b == null) return;
         boolean same = r.goal != null && Math.abs(r.goal[0] - at[0]) <= 1 && Math.abs(r.goal[1] - at[1]) <= 1 && Math.abs(r.goal[2] - at[2]) <= 1;
         if (same && !Jobs.idle(b)) return;
-        if (commands.jobs.goalAllowed(at[0], at[1], at[2]) != null) return;
+        if (commands.jobs.walkVerdict(at[0], at[1], at[2]) != null) return;
         r.goal = at.clone();
         Jobs.safeSettings();
         BlockPos pos = new BlockPos(at[0], at[1], at[2]);
@@ -441,7 +441,7 @@ public final class Mule {
 
     private boolean allowed(Entity e) {
         int[] at = block(e);
-        return commands.jobs.goalAllowed(at[0], at[1], at[2]) == null;
+        return commands.jobs.walkVerdict(at[0], at[1], at[2]) == null;
     }
 
     private static int[] block(Entity e) {

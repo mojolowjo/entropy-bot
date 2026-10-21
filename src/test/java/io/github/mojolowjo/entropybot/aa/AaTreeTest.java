@@ -32,7 +32,7 @@ class AaTreeTest {
         bb.in.baseChests = false;
         bb.in.freeSlots = 36;
         bb.in.wool = 0;
-        bb.in.areaName = null;
+        bb.in.basePlace = null;
         bb.in.hungerDrains = false;
     }
 
@@ -130,7 +130,7 @@ class AaTreeTest {
         pick(3);                                  // AA_ROUND2 4: Peaceful base (16) comes after iron
         stocked();
         bb.in.tableKnown = bb.in.furnaceKnown = true;
-        bb.in.areaName = "main";
+        bb.in.basePlace = "main";
         tree.tick(bb);
         assertEquals("house main", lastChain());
         port.done(1, "done");

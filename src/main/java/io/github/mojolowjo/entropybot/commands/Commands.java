@@ -203,8 +203,8 @@ public final class Commands implements Chains.Env {
     final Hunting hunting;
     final Kelping kelping;
     final Fishing fishing;
-    /** 0.24.3: the join/respawn-outside-the-areas check, and where it respawned (no build hints there). */
-    final io.github.mojolowjo.entropybot.camp.RespawnRule respawn = new io.github.mojolowjo.entropybot.camp.RespawnRule();
+    /** Where it respawned (a home fact: no build hints there). */
+    final io.github.mojolowjo.entropybot.camp.RespawnHomes respawn = new io.github.mojolowjo.entropybot.camp.RespawnHomes();
     /** C6: hold this, give, carry, unload, fetch. */
     final Mule mule;
     /** 0.24.2: assist (help the owner with what they are doing). */
@@ -219,9 +219,8 @@ public final class Commands implements Chains.Env {
     /** B3: goal, plan, actions, actions.json, the brain's planner hook. */
     final GoalPlanning planning = new GoalPlanning(this);
 
-    /** B3: the areas as the fence sees them (an empty array without a policy). */
-
-    com.google.gson.JsonArray effectiveAreas() { return policy == null ? new com.google.gson.JsonArray() : policy.effectiveAreas(); }
+    /** The owner's typed places (camp, base, chest and other labelled areas; an empty array without a policy). */
+    com.google.gson.JsonArray places() { return policy == null ? new com.google.gson.JsonArray() : policy.places(); }
 
     Chains chainsRef() { return chains; }
 
@@ -314,7 +313,7 @@ public final class Commands implements Chains.Env {
     static final int PICKUP_NEAR_BASE = 48;
 
     /**
-     * An idle pickup only when the bot is near the base or inside its areas, and wasn't sent somewhere (come, goto,
+     * An idle pickup only when the bot is near the base or in one of the owner's typed places (home facts), and wasn't sent somewhere (come, goto,
      * follow, go) in the last 10 minutes: the owner's errand comes first.
      */
     private boolean pickupFromHere(LocalPlayer player, long now) {
@@ -325,7 +324,7 @@ public final class Commands implements Chains.Env {
             int[] bp = Jobs.pos(b);
             if (Math.abs(me[0] - bp[0]) <= PICKUP_NEAR_BASE && Math.abs(me[2] - bp[2]) <= PICKUP_NEAR_BASE && Math.abs(me[1] - bp[1]) <= 24) return true;
         }
-        return fenceOn() && inAreas(Storage.dim(), me[0], me[2]);
+        return core.guard.core.policy().areaAt(Storage.dim(), me[0], me[1], me[2]) != null;
     }
 
     /** Only the owner's "supplies set|clear" (PM, dashboard, bridge) calls this: it also notes the ids as the owner's. */
@@ -732,19 +731,7 @@ public final class Commands implements Chains.Env {
                 }
             }
             if (tick % 20 == 5 && !aaOn()) chains.deathTick(dead);     // 0.36.0: with AA on, AA re-chooses after a death (no chain resume)
-            if (worldTicks == 1) respawn.joined();
-            if (tick % 20 == 6) {
-                try {                                         // 0.24.3: joined or respawned outside every area: say so once
-                    int[] me = Jobs.here(player);
-                    String w = respawn.tick(dead, tick, me, !dead && inAreas(Storage.dim(), me[0], me[2]));
-                    if (w != null) {
-                        LOG.info("[entropybot] {}", w);
-                        whisper(owner(), w);
-                    }
-                } catch (RuntimeException e) {
-                    if (errors++ < 5) LOG.warn("[entropybot] respawn check: {}", e.toString());
-                }
-            }
+            if (tick % 20 == 6) respawn.tick(dead, tick, Jobs.here(player));     // where it respawned (a home fact)
             if (!chains.resumeChecked() && worldTicks > 200) {
                 if (aaOn()) chains.dropRun("aa is on: it chooses by itself");     // 0.36.1: no saved run resumes under AA
                 else chains.resumeRun();
@@ -1399,11 +1386,6 @@ public final class Commands implements Chains.Env {
 
     private String jobBusyText() { return jobs.running() && !jobs.walking() ? "busy: " + jobs.job.status + " (pm \"stop\" first)" : null; }
 
-    /** V1a: the owner's own goto/go may walk outside every area (no digging out there); anyone else's may not. */
-    io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker ownerWalker(String from) {
-        return from == null || from.equalsIgnoreCase(owner()) ? io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OWNER_ORDER
-                : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER;
-    }
 
     /** The jobs the mod runs itself (B7b part 1): walks, the teleport home, the bed, wait, twerk, find. */
     String modJob(String verb, String rest, String from, LocalPlayer player) {
@@ -1413,12 +1395,12 @@ public final class Commands implements Chains.Env {
                 // in view, else the position the owner's companion mod sent in the last 10 s (same dimension), else ask
                 int[] t = target != null ? Jobs.here(target) : ownerFixPos(from);
                 if (t == null) return "I can't see you from here (I'm at " + Jobs.fmt(Jobs.here(player)) + "). PM me: goto x y z";
-                String why = jobs.goalAllowed(t[0], t[1], t[2]);
+                String why = jobs.walkVerdict(t[0], t[1], t[2]);
                 if (why != null) return FenceRules.comeRefusal(why, t[0], t[2]);
                 return jobs.startTravel("goto " + Jobs.fmt(t), "coming to " + from, null, null, false);
             }
             case "follow" -> {
-                // the fence: the player has to be inside an area now, and the watch stops the follow when they leave
+                // the policy: the player may not stand in a keep-out area, and the watch stops the follow when they go in one
                 String name = rest.isEmpty() ? from : rest;
                 // not in view but the owner's companion mod sends a fresh position: walk to it, again as it moves
                 // (only for the sender themselves: another player can't make the bot walk to the owner)
@@ -1429,7 +1411,7 @@ public final class Commands implements Chains.Env {
                 Player target = Jobs.findPlayer(name);              // review 5: a keep-out box refuses in every mode, fence on or off
                 if (target != null) {
                     int[] t = Jobs.here(target);
-                    String why = jobs.goalAllowed(t[0], t[1], t[2]);
+                    String why = jobs.walkVerdict(t[0], t[1], t[2]);
                     if (why != null) return FenceRules.followRefusal(name, why, t[0], t[2]);
                 }
                 String r = jobs.startTravel("follow player " + name, "following " + name, null, null, false);
@@ -1448,7 +1430,7 @@ public final class Commands implements Chains.Env {
                     int gx = Integer.parseInt(gm.group(1)), gy = Integer.parseInt(gm.group(2)), gz = Integer.parseInt(gm.group(3));
                     if (Jobs.targetInAir(player.level(), gx, gy, gz)) {
                         int[] g = Jobs.groundUnder(player.level(), gx, gy, gz);
-                        return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false, ownerWalker(from)),
+                        return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(g), "going to " + Jobs.fmt(g), null, null, false),
                                 io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(g[0], g[1], g[2]));
                     }
                     String solidId = Jobs.solidAt(player.level(), gx, gy, gz);       // 0.31.0 (5): a target inside a block
@@ -1461,11 +1443,11 @@ public final class Commands implements Chains.Env {
                                     + " blocks - next: goto a spot next to it";
                         }
                         LOG.info("[entropybot] goto {}: inside {}, going to {} instead", t, solidId, Jobs.fmt(f));
-                        String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false, ownerWalker(from));
+                        String r = jobs.startTravel("goto " + Jobs.fmt(f), "going to " + Jobs.fmt(f), null, null, false);
                         return r != null && r.startsWith("error") ? r : Texts.withNote(r, t + " is inside " + solidId + ": going to " + Jobs.fmt(f) + " instead");
                     }
                 }
-                String gr = jobs.startTravel("goto " + rest, "going to " + rest, null, null, false, ownerWalker(from));
+                String gr = jobs.startTravel("goto " + rest, "going to " + rest, null, null, false);
                 // 0.33.1: the ended-short retrace/paper plans only for an order typed by the owner or operator, not a chain's leg
                 if (gr != null && gr.startsWith("ok") && jobs.job != null && !chainRunning() && rest.trim().matches("-?\\d+ -?\\d+"))
                     jobs.job.xzOrder = true;
@@ -1483,7 +1465,7 @@ public final class Commands implements Chains.Env {
                     String[] gerr = new String[1];
                     io.github.mojolowjo.entropybot.vocab.PlaceWords.Spot sp = vocab.goSpot(rest, gerr);
                     if (sp != null) return jobs.startTravel("goto " + sp.x() + " " + sp.y() + " " + sp.z(), "going to " + sp.name(), new int[]{sp.x(), sp.y(), sp.z()},
-                            Guard.dimOf(player.level()), false, ownerWalker(from));
+                            Guard.dimOf(player.level()), false);
                     if (gerr[0] != null && gerr[0].startsWith("error")) return gerr[0];
                 }
                 if (pos == null) return "I have no place called " + name + " - next: " + Hints.placeFix(name);
@@ -1492,10 +1474,9 @@ public final class Commands implements Chains.Env {
                 if (!dim.equals(Guard.dimOf(player.level())) && !jobs.tpWorth(player, p, dim)) return name + " is in " + dim;
                 if (dim.equals(Guard.dimOf(player.level())) && Jobs.targetInAir(player.level(), p[0], p[1], p[2])) {     // 0.28.1 (trial fix A)
                     p = Jobs.groundUnder(player.level(), p[0], p[1], p[2]);
-                    return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false, verb.equals("go") ? ownerWalker(from)
-                            : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER), io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(p[0], p[1], p[2]));
+                    return Texts.withNote(jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false), io.github.mojolowjo.entropybot.world.SurfaceRule.airNote(p[0], p[1], p[2]));
                 }
-                return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false, verb.equals("go") ? ownerWalker(from) : io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker.OTHER);
+                return jobs.startTravel("goto " + Jobs.fmt(p), "going to " + name, p, dim, false);
             }
             case "route" -> { return RouteTestRun.start(this, jobs, storage, player, rest); }       // routing stage 1: route test
             case "restore" -> { return RestoreLive.INSTANCE.startNow(player, rest); }              // P1: restore now [r]
@@ -1696,7 +1677,7 @@ public final class Commands implements Chains.Env {
         }
         BlockPos below = feet.below();
         String r = MineSpot.standReason(c[0], c[1], !mc.level.getBlockState(below).getCollisionShape(mc.level, below).isEmpty(), pos.x() + " " + pos.y() + " " + pos.z());
-        return r != null ? r : jobs.goalAllowed(pos.x(), pos.y(), pos.z());
+        return r != null ? r : jobs.walkVerdict(pos.x(), pos.y(), pos.z());
     }
 
     void putPlace(String name, JsonObject o) {
@@ -2685,7 +2666,7 @@ public final class Commands implements Chains.Env {
         return SettingsBlock.build(brainStore.data(), areaStore.data(), live);
     }
 
-    /** 0.33.0: the names of my areas (for a filled-in "area here R name" offer that doesn't clash). */
+    /** The names of the owner's typed places (home facts: the base place a house fits). */
     List<String> areaNames() {
         List<String> out = new ArrayList<>();
         if (policy == null) return out;
@@ -2696,9 +2677,9 @@ public final class Commands implements Chains.Env {
     /** The policy as areas.json holds it: {areas, protect, strict, corner1} (the miner's area checks read it). */
     public String policyJson() {
         if (policy == null) return "{}";
-        // 0.21.2: the miner, chopper and gatherer read the areas from here: the near-me zone counts as one
+        // 0.21.2: the miner, chopper and gatherer read the places and protect boxes from here
         JsonObject o = areaStore.data().deepCopy();
-        o.add("areas", policy.effectiveAreas().deepCopy());
+        o.add("areas", policy.places().deepCopy());
         return o.toString();
     }
 
@@ -2771,10 +2752,10 @@ public final class Commands implements Chains.Env {
 
     @Override public JsonObject minePlace() { return core.knowledge.places().get("mine"); }
 
-    @Override public boolean inAreas(String dim, int x, int z) { return policy.inAreas(dim, x, z); }
+    @Override public boolean workAllowed(String dim, int x, int z) { return policy.workAllowed(dim, x, z); }
 
     /** AREAS review 8: with the height (a protect box's y range counts). */
-    public boolean inAreas(String dim, int x, int y, int z) { return policy.inAreas(dim, x, y, z); }
+    public boolean workAllowed(String dim, int x, int y, int z) { return policy.workAllowed(dim, x, y, z); }
 
     @Override public long dayTime() {
         Minecraft mc = Minecraft.getInstance();

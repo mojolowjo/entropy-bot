@@ -85,7 +85,7 @@ public final class McClearWorld implements ClearWorld {
     @Override public boolean blockEntity(int x, int y, int z) {
         BlockState st = at(x, y, z);
         if (!st.hasBlockEntity() || ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) return false;     // P3: TreeChop's log
-        // 0.33.0 (A3): a station I placed myself inside my areas counts as a built block (force picks it up), not a block entity
+        // 0.33.0 (A3): a station I placed myself (the ledger) counts as a built block (force picks it up), not a block entity
         return !(OwnStations.station(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString()) && OwnStations.mineAt(x, y, z));
     }
 
@@ -104,7 +104,7 @@ public final class McClearWorld implements ClearWorld {
     @Override public boolean avoided(int x, int y, int z) {
         if (avoided == null || !avoided.test(at(x, y, z).getBlock())) return false;
         // 0.33.0 (A3, live: "left 1 built block alone" on my own table with force): Baritone's never-break list holds
-        // every station; one I placed myself inside my areas is not avoided by my engine
+        // every station; one I placed myself (the ledger) is not avoided by my engine
         return !(OwnStations.station(id(x, y, z)) && OwnStations.mineAt(x, y, z));
     }
 

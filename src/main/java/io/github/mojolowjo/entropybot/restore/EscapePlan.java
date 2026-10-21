@@ -18,7 +18,7 @@ public final class EscapePlan {
     public enum Kind {
         /** Nothing to bump into, no fluid. */
         OPEN,
-        /** A full natural block the escape may break (inside the areas, outside protect boxes, no fluid next to it). */
+        /** A full natural block the escape may break (the policy allowing, outside protect boxes, no fluid next to it). */
         BREAKABLE,
         /** A full block that must stay (built, a container, by fluid, in a protect box): only a floor. */
         FLOOR_ONLY,

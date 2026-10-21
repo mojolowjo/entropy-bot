@@ -18,20 +18,16 @@ class FenceTest {
             + "{\"name\":\"hell\",\"dim\":\"minecraft:the_nether\",\"x1\":0,\"z1\":0,\"x2\":50,\"z2\":50}]").getAsJsonArray();
 
     @Test
-    void outsideEveryAreaIsNoRefusalAnyMore() {
-        assertNull(FenceRules.goalAllowed("would refuse: outside every area", true), "the world is open");
-        assertNull(FenceRules.goalAllowed("would refuse: no areas set", true));
-        assertNull(FenceRules.goalAllowed("ok", true), "goto inside works");
-        assertNull(FenceRules.goalAllowed("would refuse (log mode): in pit (no-break)", true), "log mode only records");
-        assertNull(FenceRules.goalAllowed("would refuse: outside every area", false), "the fence off: anywhere");
-        assertEquals("guard error: boom", FenceRules.goalAllowed("error: boom", true));
+    void thePolicysWalkVerdictPassesOkAndLogMode() {
+        assertNull(FenceRules.walkVerdict("ok"), "goto works");
+        assertNull(FenceRules.walkVerdict("would refuse (log mode): in pit (no-break)"), "log mode only records");
+        assertEquals("guard error: boom", FenceRules.walkVerdict("error: boom"));
+        assertEquals("guard error: no answer", FenceRules.walkVerdict(null));
     }
-
     @Test
     void aKeepOutAreaIsRefusedInEveryModeByItsName() {
         String r = "would refuse: in pit (keep-out)";
-        assertEquals("in pit (keep-out)", FenceRules.goalAllowed(r, false), "the floor: fence or no fence");
-        assertEquals("in pit (keep-out)", FenceRules.goalAllowed(r, true));
+        assertEquals("in pit (keep-out)", FenceRules.walkVerdict(r), "the floor: every mode");
         assertEquals("error: in pit (keep-out)", FenceRules.gotoRefusal("in pit (keep-out)"), "no area hint: the box names itself");
         assertEquals("you're in pit (keep-out) (60 150) - I don't go in there", FenceRules.comeRefusal("in pit (keep-out)", 60, 150));
         assertEquals("mojolowjo is in pit (keep-out) (60 150) - I don't go in there", FenceRules.followRefusal("mojolowjo", "in pit (keep-out)", 60, 150));
@@ -41,9 +37,8 @@ class FenceTest {
     @Test
     void aPortalIsRefusedInEveryMode() {
         String r = "would refuse: next to a nether_portal (I stay out of the Nether and the End)";
-        String why = FenceRules.goalAllowed(r, false);
-        assertEquals("next to a nether_portal (I stay out of the Nether and the End)", why, "the floor: fence or no fence");
-        assertEquals(why, FenceRules.goalAllowed(r, true));
+        String why = FenceRules.walkVerdict(r);
+        assertEquals("next to a nether_portal (I stay out of the Nether and the End)", why, "the floor: every mode");
         assertEquals("error: " + why, FenceRules.gotoRefusal(why), "no area hint for a portal");
         assertEquals("you're " + why, FenceRules.comeRefusal(why, 1, 2));
     }

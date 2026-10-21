@@ -120,7 +120,7 @@ final class FloorSteps {
         if (fs.leases == null) fs.leases = Clearing.newLeases();
         if (fs.run == null) {
             Jobs.safeSettings();                // Baritone only walks; the fill's clicks are its own
-            // the floor layer and the cave steps lie inside the areas in every guard mode (log mode included)
+            // the floor layer and the cave steps stay out of keep-out / no-break boxes in every guard mode (log mode included)
             fs.run = new FloorFill.Run(fs.world, fs.opts.box, fs.opts.floorBlock, Clearing::floorCellAllowed, Clearing.standCheck(c),
                     fs.climbOnly).carry(fs.prev);
         }
@@ -195,7 +195,7 @@ final class FloorSteps {
                 return "the climb's travel settings could not be set (" + t + ")";
             }
             try {
-                b.getCustomGoalProcess().setGoalAndPath(new ClimbGoal(new ClimbRule(y, box, (x, yy, z) -> seq.jobs.goalAllowed(x, yy, z) == null)));
+                b.getCustomGoalProcess().setGoalAndPath(new ClimbGoal(new ClimbRule(y, box, (x, yy, z) -> seq.jobs.walkVerdict(x, yy, z) == null)));
             } catch (Throwable t) {
                 saved.restore();
                 return "Baritone did not take the climb goal (" + t + ")";

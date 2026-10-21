@@ -44,14 +44,15 @@ public final class FakePort implements JobPort {
 
     @Override public String resolve(String chain) { return "*".equals(resolveTo) ? chain : resolveTo; }
 
-    /** Non-null: the planner answers NONE with this reason. */
+    /** Non-null: the planner answers NONE with this reason (and noPlanLogs: the logs its dead end lacked). */
     public String noPlan;
+    public int noPlanLogs;
     public double planCost;
     public int resolveCalls;
 
     @Override public Resolved resolveState(String text) {
         resolveCalls++;
-        if (noPlan != null) return Resolved.none(noPlan);
+        if (noPlan != null) return Resolved.none(noPlan, noPlanLogs);
         String c = resolve(text);
         return c == null ? Resolved.searching() : Resolved.ready(c, planCost);
     }

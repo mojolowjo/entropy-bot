@@ -45,7 +45,7 @@ public final class ShelterJob {
         boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
-        /** 0.27.3 (d3): natural shell cells the dig rules allow (underground inside the areas): a way out with one own cell. */
+        /** 0.27.3 (d3): natural shell cells the dig rules allow (underground, the policy allowing): a way out with one own cell. */
         final Set<String> dig = new HashSet<>();
         int[][] exit;
         int idx;
@@ -213,7 +213,7 @@ public final class ShelterJob {
                 if (n == ShelterPlan.Stage.OPEN) {
                     ps.exit = ShelterPlan.exit(ps.feet, ps.own, x -> ps.dig.contains(ShelterPlan.key(x)));      // 0.27.3: one own + one natural cell too
                     if (ps.exit == null) {
-                        s.jobs.finish("error: my shelter has no wall of my own to open (all its sides were there before) - next: a goto (underground inside my areas I dig a staircase up), or dig me out by hand");
+                        s.jobs.finish("error: my shelter has no wall of my own to open (all its sides were there before) - next: a goto (underground I dig a staircase up), or dig me out by hand");
                         return "wait";
                     }
                     ps.idx = 0;
@@ -540,11 +540,11 @@ public final class ShelterJob {
         }
     }
 
-    /** 0.27.3 (d3): a natural shell cell the dig rules allow: underground (no sky over the head) inside the areas, natural, no container, no fluid next to it. */
+    /** 0.27.3 (d3): a natural shell cell the dig rules allow: underground (no sky over the head), the policy allowing, natural, no container, no fluid next to it. */
     static boolean mayDig(Commands c, ClientLevel lv, int[] f, int[] cell) {
         try {
             BlockPos bp = new BlockPos(cell[0], cell[1], cell[2]);
-            if (lv.canSeeSky(new BlockPos(f[0], f[1] + 1, f[2])) || !c.inAreas(Storage.dim(), cell[0], cell[2])) return false;
+            if (lv.canSeeSky(new BlockPos(f[0], f[1] + 1, f[2])) || !c.workAllowed(Storage.dim(), cell[0], cell[2])) return false;
             if (Jobs.houseCell(Storage.dim(), cell[0], cell[1], cell[2])) return false;       // 0.30.6
             var st = lv.getBlockState(bp);
             String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();

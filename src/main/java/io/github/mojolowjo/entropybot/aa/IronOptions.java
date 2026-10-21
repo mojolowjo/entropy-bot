@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * <tr><td>DIG_KNOWN</td><td>a buried known ore under at most {@value #DIG_MAX} blocks, not a dig down from in the water</td><td>distance + {@value #DIG_BLOCK} per block + the clear</td><td>{@code mine iron N dig}</td></tr>
  * <tr><td>PILLAR_KNOWN</td><td>a known ore {@value #PILLAR_MIN_UP}+ above me, enough throwaway blocks, placing allowed</td><td>distance + {@value #PLACE_BLOCK} per block up + the clear</td><td>{@code goto <over the ore> then mine iron N dig} (a TRAVEL walk places by the policy's costs: refilling my own shaft is nearly free)</td></tr>
  * <tr><td>CAVE</td><td>a known cave with frontier left</td><td>distance to its entrance + {@value #CAVE_TIME}</td><td>{@code mine cave iron N}</td></tr>
- * <tr><td>STRIP</td><td>a mine marked, inside my areas</td><td>{@value #STRIP_TIME}</td><td>{@code mine strip iron N}</td></tr>
+ * <tr><td>STRIP</td><td>a mine marked</td><td>{@value #STRIP_TIME}</td><td>{@code mine strip iron N}</td></tr>
  * </table>
  * Score = cost x (1 + failures of that option here); an option the policy's floor denies, or whose failure is still
  * remembered ({@link #RETRY_MS} per failure), is dropped with its reason. The nearest ores are each an option of their own,
@@ -76,7 +76,7 @@ public final class IronOptions {
 
     /**
      * @param caveDist     blocks to the nearest known cave entrance with frontier left, -1 none
-     * @param stripAllowed a mine is marked and I stand in my areas; else {@code stripWhy} says why not
+     * @param stripAllowed a mine is marked; else {@code stripWhy} says why not
      * @param furnaceDist  blocks to the nearest known furnace (the camp's), -1 none
      */
     public record Facts(List<Ore> ores, int meY, boolean inWater, int throwaway, boolean placeAllowed, int caveDist,

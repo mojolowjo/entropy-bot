@@ -18,8 +18,8 @@ import java.nio.file.Path;
 /**
  * 0.24.2 {@code assist}: the game side of {@link AssistRules}. Once a second (Commands' tick) it reads owner.json,
  * settles the owner's activity and does its part: chopping = the half-cut trees near their last log, else {@code cut};
- * mining = that kind within 12 of their last block ({@code dig} box by box: natural blocks, the areas and the near-me
- * zone as for any dig); farming = a farm round when the farm place is within 16 of them; building = stay close and
+ * mining = that kind within 12 of their last block ({@code dig} box by box: natural blocks, the policy
+ * as for any dig); farming = a farm round when the farm place is within 16 of them; building = stay close and
  * {@code give} the block they place when they run low; fighting = the escort; idle = follow and {@code carry all}.
  * Between jobs, and when the owner is idle for 60 s or there is no fresh report, it escorts (follow + fight what
  * threatens either). Its jobs run as the quiet chain "assist". Never throws out of tick (Commands catches too).

@@ -129,12 +129,12 @@ class LootDataTest {
         assertEquals(3, HuntRules.parseFor("3 cow for leather")[3]);
         assertNull(HuntRules.parseFor("3 cow leather"));
         assertNull(HuntRules.parseFor("0 cow for leather"));
-        HuntRules.Target spider = new HuntRules.Target("minecraft:spider", false, false, false, false, false, false, true);
+        HuntRules.Target spider = new HuntRules.Target("minecraft:spider", false, false, false, false, false, false);
         assertFalse(HuntRules.mayTakeFor(spider, false, List.of(), "minecraft:spider"), "hostile, not allowed");
         assertTrue(HuntRules.mayTakeFor(spider, false, List.of("minecraft:spider"), "minecraft:spider"));
-        HuntRules.Target horse = new HuntRules.Target("minecraft:horse", false, false, false, false, false, false, true);
+        HuntRules.Target horse = new HuntRules.Target("minecraft:horse", false, false, false, false, false, false);
         assertTrue(HuntRules.mayTakeFor(horse, true, List.of(), "minecraft:horse"), "passive");
-        HuntRules.Target pet = new HuntRules.Target("minecraft:horse", true, false, true, false, false, false, true);
+        HuntRules.Target pet = new HuntRules.Target("minecraft:horse", true, false, true, false, false, false);
         assertFalse(HuntRules.mayTakeFor(pet, true, List.of(), "minecraft:horse"), "tamed never");
         assertFalse(HuntRules.mayTakeFor(horse, true, List.of(), "minecraft:cow"), "only the wanted mob");
     }

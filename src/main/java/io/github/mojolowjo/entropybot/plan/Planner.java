@@ -41,8 +41,11 @@ public final class Planner {
     /** One step of a found plan: its command text (may hold "then"), its cost, the action id. */
     public record PlanStep(String text, int cost, String action) {}
 
-    /** steps: in run order; missing: why no plan (null when found); error: the search's limit (null when it ran out normally). */
-    public record Result(List<PlanStep> steps, int cost, int nodes, long ms, String missing, String error) {
+    /**
+     * steps: in run order; missing: why no plan (null when found); error: the search's limit (null when it ran out
+     * normally); logsMissing: the logs the cheapest dead end lacked (0 when it ended on something else) - the wood way's number.
+     */
+    public record Result(List<PlanStep> steps, int cost, int nodes, long ms, String missing, String error, int logsMissing) {
         public boolean ok() { return missing == null && error == null; }
 
         public String chain() {
@@ -135,7 +138,7 @@ public final class Planner {
     /** World facts no action gives, with the hint for the owner. */
     static final Map<String, String> WORLD = new LinkedHashMap<>();
     static {
-        WORLD.put("trees", "trees in my areas (area here 48 woods neutral where trees grow)");
+        WORLD.put("trees", "a tree seen near me (a farther one is a priced wood way)");
         WORLD.put("stone", "stone under me to quarry (go to stony ground, or put cobblestone in a chest)");
         WORLD.put("quarry", "solid ground beside me to quarry");
         WORLD.put("spot:table", "a free spot next to me for the crafting table (goto a flat, open spot)");
@@ -159,10 +162,10 @@ public final class Planner {
         q.add(root);
         int nodes = 0;
         String bestMissing = null;
-        int bestMissingG = Integer.MAX_VALUE;
+        int bestMissingG = Integer.MAX_VALUE, bestLogs = 0;
         while (!q.isEmpty()) {
-            if (nodes >= maxNodes) return new Result(List.of(), 0, nodes, ms(t0), null, "plan search hit its limit (" + maxNodes + " nodes)");
-            if (ms(t0) > budgetMs) return new Result(List.of(), 0, nodes, ms(t0), null, "plan search hit its time limit (" + budgetMs + " ms)");
+            if (nodes >= maxNodes) return new Result(List.of(), 0, nodes, ms(t0), null, "plan search hit its limit (" + maxNodes + " nodes)", 0);
+            if (ms(t0) > budgetMs) return new Result(List.of(), 0, nodes, ms(t0), null, "plan search hit its time limit (" + budgetMs + " ms)", 0);
             Node n = q.poll();
             nodes++;
             Req r = settle(n);
@@ -170,7 +173,7 @@ public final class Planner {
             if (r == null) {
                 List<Step> order = order(n);
                 if (order == null) continue;
-                return new Result(texts(order, facts), n.g, nodes, ms(t0), null, null);
+                return new Result(texts(order, facts), n.g, nodes, ms(t0), null, null, 0);
             }
             List<String> why = new ArrayList<>();
             List<Node> kids = r.flag() ? flagProviders(n, r, facts, why) : itemProviders(n, r, facts, why);
@@ -178,9 +181,10 @@ public final class Planner {
             if (kids.isEmpty() && n.g < bestMissingG) {
                 bestMissingG = n.g;
                 bestMissing = (r.flag() ? r.what() : r.n() + " " + word(r.what())) + (why.isEmpty() ? "" : " - " + String.join("; ", why));
+                bestLogs = !r.flag() && r.what().equals("log") ? r.n() : 0;
             }
         }
-        return new Result(List.of(), 0, nodes, ms(t0), bestMissing == null ? "no action gives it" : bestMissing, null);
+        return new Result(List.of(), 0, nodes, ms(t0), bestMissing == null ? "no action gives it" : bestMissing, null, bestLogs);
     }
 
     static long ms(long t0) { return (System.nanoTime() - t0) / 1_000_000; }

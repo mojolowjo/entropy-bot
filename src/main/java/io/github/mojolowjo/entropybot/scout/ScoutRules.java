@@ -132,7 +132,7 @@ public final class ScoutRules {
             out.add(new int[]{x, z});
             if (d >= total) break;
         }
-        return new Plan(out, cut, cut == null ? null : "outside my areas", total, dirText);
+        return new Plan(out, cut, cut == null ? null : "the policy refuses it (keep-out / no-break)", total, dirText);
     }
 
     private static String word(String w) {
@@ -182,7 +182,7 @@ public final class ScoutRules {
         if (!mobParts.isEmpty()) parts.add(String.join(", ", mobParts));
         sb.append(": ").append(parts.isEmpty() ? "nothing to note" : String.join(", ", parts));
         if (blocked != null) sb.append("; no path past ").append(blocked);
-        else if (plan.cutAt() != null) sb.append("; my areas end at ").append(plan.cutAt()[0]).append(" ").append(plan.cutAt()[1]);
+        else if (plan.cutAt() != null) sb.append("; the policy stops me at ").append(plan.cutAt()[0]).append(" ").append(plan.cutAt()[1]);
         return sb.toString();
     }
 

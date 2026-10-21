@@ -96,14 +96,14 @@ public final class SleepJob {
             noteRefused(lv);
             io.github.mojolowjo.entropybot.aa.BedSpot.Spot spot = bedSpot(c, lv, Jobs.here(p));
             if (spot == null) return Hints.next("error: no room for my bed within " + io.github.mojolowjo.entropybot.aa.BedSpot.FAR
-                    + " blocks (2 free blocks in a row on solid ground inside my areas; " + REFUSED.size() + " cells refused)", "goto an open spot, then sleep");
+                    + " blocks (2 free blocks in a row on solid ground the policy allows; " + REFUSED.size() + " cells refused)", "goto an open spot, then sleep");
             bed = spot.cell();
             tried = spot.key();
             LOG.info("[entropybot] sleep: bed cell {}: {}", spot.key(), spot.why());
             steps.add(Clearing.placeStep(bed, id));
             placed = id;
         }
-        String why = c.jobs.goalAllowed(bed[0], bed[1], bed[2]);
+        String why = c.jobs.walkVerdict(bed[0], bed[1], bed[2]);
         if (why != null) return Jobs.withAreaHint(why);
         steps.add(Seq.Step.walk(bed, true));
         Seq.Step s = new Seq.Step("sleep");
@@ -138,7 +138,7 @@ public final class SleepJob {
     }
 
     /**
-     * aa-r2fix: the bed's cell, chosen like the chest's (BedSpot): a free 2-cell footprint on solid ground, inside my areas, near the
+     * aa-r2fix: the bed's cell, chosen like the chest's (BedSpot): a free 2-cell footprint on solid ground the policy allows, near the
      * table or chest, by cost; refused cells skipped; none near the camp: the wider ring (the bed goes down elsewhere).
      */
     static io.github.mojolowjo.entropybot.aa.BedSpot.Spot bedSpot(Commands c, ClientLevel lv, int[] me) {
@@ -150,7 +150,7 @@ public final class SleepJob {
                     BlockPos b = new BlockPos(cc[0], cc[1], cc[2]);
                     return lv.isLoaded(b) && CampCommands.placeable(lv, b) && lv.getBlockState(b.above()).canBeReplaced();
                 },
-                cc -> c.jobs.goalAllowed(cc[0], cc[1], cc[2]) == null, REFUSED);
+                cc -> c.jobs.walkVerdict(cc[0], cc[1], cc[2]) == null, REFUSED);
     }
 
     static void wake() {
