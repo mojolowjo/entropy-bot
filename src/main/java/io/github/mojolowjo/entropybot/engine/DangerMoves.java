@@ -83,7 +83,10 @@ public final class DangerMoves {
     }
 
     /** 0.38.b9 (review: a verb started a move with a stale clock and the first tick ended it): the client tick, every tick. */
-    void time(long tick) { now = tick; }
+    void time(long tick) {
+        now = tick;
+        moves.clock(tick);      // 0.39.s7: the legs' clock too (a burrow 'timed out after 40 s' on its first tick)
+    }
 
     public boolean active() { return move != Move.NONE; }
 

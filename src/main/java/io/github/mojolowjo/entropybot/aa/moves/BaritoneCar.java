@@ -108,7 +108,8 @@ public final class BaritoneCar implements Car {
      * everything goes back when the leg ends.
      */
     private void reflexContext() {
-        if (!reflex) return;
+        // 0.39.s7 (staged: the danger desire's burrow, the night answer, was refused on grass the same way): AA's danger
+        // car runs its moves under the same travel rule set as the reflex car
         var pr = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
         try {
             savedIntent = pr.intent();
@@ -261,6 +262,7 @@ public final class BaritoneCar implements Car {
         if (!reflex) {
             JobHands.get().preempt("danger move burrow");
             engine.hold();
+            reflexContext();         // 0.39.s7: the danger burrow digs under the travel rule set too
         } else {
             engine.endReflex();      // a reflex goal before it (the run) would sit at 10 over the burrow
             reflexContext();         // reflex probe 0.39.s5: the burrow's digs under the travel rule set, not walking-only
@@ -343,13 +345,16 @@ public final class BaritoneCar implements Car {
         fresh();
         JobHands.get().preempt("danger move burrow");     // step 3 review: a job's hands end with a reason, never silently
         engine.hold();          // the job stays paused; BurrowProcess (-0.25) outranks the hold (-0.5)
+        reflexContext();        // 0.39.s7: the dig-in under the travel rule set
         try {
             var s = BaritoneAPI.getSettings();
-            savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
-            List<Item> list = new ArrayList<>(savedThrow);
-            for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
-            s.acceptableThrowawayItems.value = list;
-            setThrow = list;
+            if (savedThrow == null) {           // reflexContext set the list already (the bag's blocks)
+                savedThrow = new ArrayList<>(s.acceptableThrowawayItems.value);
+                List<Item> list = new ArrayList<>(savedThrow);
+                for (Item i : bagBlocks()) if (!list.contains(i)) list.add(i);
+                s.acceptableThrowawayItems.value = list;
+                setThrow = list;
+            }
             List<BlockPos> d = new ArrayList<>(), sl = new ArrayList<>();
             for (int[] c : dig) d.add(pos(c));
             for (int[] c : seal) sl.add(pos(c));
@@ -383,6 +388,7 @@ public final class BaritoneCar implements Car {
     private Status status0() {
         try {
             if (forced != null) return forced;
+            if (savedBreak != null) beat();      // 0.39.s7: a burrow leg beats too (its status returns before the goal part)
             if (burrow != null) {
                 return switch (burrow.status()) {
                     case DONE -> Status.done(burrow.why());
@@ -399,7 +405,7 @@ public final class BaritoneCar implements Car {
             // path is still being walked (a dug cell changed the world) is not the leg's end
             if (reflex && pathReady()) calcAtStart = engine.calcFails();
             // staged 0.39.s5: a leg that started a tick before the bot fell into the lava gets the lava wade once it is in
-            if (reflex && savedBreak != null) {
+            if (savedBreak != null) {
                 beat();
                 boolean inLava = ctx.player().isInLava();
                 if (setLavaCost == 0 && inLava) lavaWade();
