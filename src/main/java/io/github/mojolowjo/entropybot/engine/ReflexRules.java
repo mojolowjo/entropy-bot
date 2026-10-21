@@ -49,76 +49,6 @@ public final class ReflexRules {
         return air * 3 < maxAir ? Air.TAKEOVER : Air.DEFER;
     }
 
-    /** Backbone step 4: what the air reflex's surface search sees in a cell. */
-    public enum Cell { WATER, OPEN, SOLID }
-
-    public interface Cells { Cell at(int x, int y, int z); }
-
-    /** Backbone step 4: how far up the surface search looks, and how far around when straight up is shut. */
-    public static final int SURFACE_UP = 24, SURFACE_R = 4;
-
-    /**
-     * Backbone step 4: the swim-up's GoalBlock cell: the top water cell with an open cell over it (the head is above the
-     * surface there). Straight up from the feet first; a solid cell on the way up shuts the column. Then the columns
-     * around, ring by ring out to {@link #SURFACE_R} (within a ring the nearest), each scanned up from the feet height
-     * (from the first water cell in it at most 2 under). Null: no air within reach (the jump fallback alone).
-     */
-    public static int[] surface(int x, int y, int z, Cells c) {
-        return surface(x, y, z, c, (bx, bz) -> false);
-    }
-
-    /**
-     * 0.39.m2: the same, skipping the columns {@code bad} names (a swim-up there stalled: the GoalBlock was not
-     * reachable). The caller makes a cell WATER only when it has no collision (a waterlogged slab, ice, a lily pad are
-     * SOLID), and the cell over the surface must be OPEN (no collision, no fluid), so the head fits there.
-     */
-    public static int[] surface(int x, int y, int z, Cells c, java.util.function.BiPredicate<Integer, Integer> bad) {
-        Cells cc = (qx, qy, qz) -> bad.test(qx, qz) ? Cell.SOLID : c.at(qx, qy, qz);
-        return surface0(x, y, z, cc);
-    }
-
-    /** 0.39.m2: the air reflex's jump. Head under water: held unless Baritone has the swim-up path and either the air
-     * lasts (a third or more) or the bot is rising; a path that goes down or sideways first never costs the air. */
-    public static boolean airJump(boolean underWater, boolean pathReady, int air, int maxAir, boolean rising) {
-        if (!underWater) return false;
-        if (!pathReady) return true;
-        return air * 3 < maxAir && !rising;
-    }
-
-    /** 0.39.m2: ticks a swim-up may run under water with its path and no rise before its column is marked bad. */
-    public static final int SWIM_STALL_TICKS = 40;
-
-    private static int[] surface0(int x, int y, int z, Cells c) {
-        int[] up = column(x, y, z, c);
-        if (up != null) return up;
-        for (int r = 1; r <= SURFACE_R; r++) {
-            int[] best = null;
-            double bestD = Double.MAX_VALUE;
-            for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
-                if (Math.abs(dx) != r && Math.abs(dz) != r) continue;
-                int sy = y;
-                while (sy > y - 2 && c.at(x + dx, sy, z + dz) != Cell.WATER) sy--;
-                if (c.at(x + dx, sy, z + dz) != Cell.WATER) continue;
-                int[] s = column(x + dx, sy, z + dz, c);
-                if (s == null) continue;
-                double d = dx * dx + dz * dz + (s[1] - y) * (s[1] - y) * 0.25;
-                if (d < bestD) { bestD = d; best = s; }
-            }
-            if (best != null) return best;
-        }
-        return null;
-    }
-
-    private static int[] column(int x, int y, int z, Cells c) {
-        for (int k = 0; k <= SURFACE_UP; k++) {
-            Cell here = c.at(x, y + k, z);
-            if (here == Cell.SOLID) return null;
-            if (here == Cell.WATER && c.at(x, y + k + 1, z) == Cell.OPEN) return new int[]{x, y + k, z};
-            if (here == Cell.OPEN && k == 0) return null;      // the feet are not in water: not the swim-up's column
-        }
-        return null;
-    }
-
     /** 0.34.3: a dry cell to stand on (solid ground under it, feet and head free of blocks and fluid). */
     public interface Dry { boolean standable(int x, int y, int z); }
 
@@ -151,8 +81,10 @@ public final class ReflexRules {
     }
 
     public static final double REACH = 2.8;         // attack from this close
-    public static final double CREEPER_RUN = 6;     // run from a creeper this close
-    public static final int CREEPER_RUN_TO = 12;    // ... to a spot this far away
+    /** Run from a creeper this close (Tuning reflex.creeper.run). */
+    public static double creeperRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.run"); }
+    /** ... to this far away (Tuning reflex.creeper.runTo). */
+    public static int creeperRunTo() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.creeper.runTo"); }
     public static final double URGENT = 5;          // a monster this close stops a bridge job (as the bridge did)
 
     /** Worth eating now: food 14 or less, or below 18 while hurt. */

@@ -39,7 +39,7 @@ import org.slf4j.Logger;
  * and logged, the reflex then stands down).
  *
  * <p>Loader notes: vanilla only: Entity.getRemainingFireTicks/hasEffect, MobEffects holders, DataComponents.POTION_CONTENTS,
- * MultiPlayerGameMode.useItemOn/useItem/handleInventoryMouseClick (SWAP), KeyMapping.setDown; Baritone goals through
+ * MultiPlayerGameMode.useItem/handleInventoryMouseClick (SWAP), KeyMapping.setDown (the drink only); the bucket goes on Baritone's hit result (IPlayerContext.objectMouseOver, its LookBehavior owns the face); Baritone goals through
  * {@link EngineProcess}; the water placement asks {@link GuardCore#check} first (and the guard mixin vetoes as always).
  */
 public final class FireReflex {
@@ -47,8 +47,6 @@ public final class FireReflex {
 
     private enum Use { NONE, AIM_WATER, DRINK, WATER_PLACED }
 
-    /** Backbone step 4: ticks the bucket waits for LookBehavior to bring the camera down before it is used anyway (logged). */
-    static final int AIM_TICKS = 10;
 
     private final EventRing events;
     private final EngineProcess engine;
@@ -94,13 +92,28 @@ public final class FireReflex {
             useTicks++;
             BlockPos below = waterAt.below();
             moves.lookAt(below.getX() + 0.5, below.getY() + 1.0, below.getZ() + 0.5);
-            if (p.getXRot() < 60 && useTicks < AIM_TICKS) return true;
-            if (p.getXRot() < 60) LOG.info("[entropybot] fire reflex: the look did not come down in {} ticks (pitch {}), using the bucket anyway", AIM_TICKS, Math.round(p.getXRot()));
+            // The one look target the mod names (allowed by the reflex-choosers brief: "Moves.lookAt the target then
+            // useItem on Baritone's hit result"): the block under the feet, through LookBehavior; no face, no rotation.
+            // reflex choosers: the bucket goes on Baritone's own hit result (its look owns the face); the target is only
+            // "water into my feet cell": the hit's block + face must land there
+            String hit = baritoneHit();
+            boolean onIt = hitInto(waterAt);
+            if (!onIt && useTicks < aimTicks()) return true;
+            if (!onIt) {
+                String why = "the water bucket: Baritone's look did not land water into my feet cell in " + aimTicks() + " ticks (hit: " + hit + ")";
+                LOG.info("[entropybot] fire reflex: {} - no bucket this time, the ladder's next way", why);
+                charge(why);
+                bucketOff = true;
+                use = Use.NONE;
+                Guard.INSTANCE.releaseLeases(leases);
+                leases = null;
+                return true;
+            }
             if (!p.getMainHandItem().is(Items.WATER_BUCKET) && !select(mc, p, find(p, s -> s.is(Items.WATER_BUCKET)))) {
                 stand(mc, "the water bucket is gone");
                 return true;
             }
-            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(below).add(0, 0.5, 0), Direction.UP, below, false));
+            mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);     // the game's own ray from Baritone's look
             use = Use.WATER_PLACED;
             useTicks = 0;
             return true;
@@ -136,7 +149,13 @@ public final class FireReflex {
         boolean inHazard = hazard(level, feet) || hazard(level, feet.above());
         boolean onFire = p.getRemainingFireTicks() > 0 || p.isOnFire();
         if (onFire || inHazard) {
-            int bucket = find(p, s -> s.is(Items.WATER_BUCKET));
+            if (fireCell == null) {
+                fireCell = new int[]{feet.getX(), feet.getY(), feet.getZ()};
+                fireKind = level.getBlockState(feet).getFluidState().is(FluidTags.LAVA) || level.getBlockState(feet.above()).getFluidState().is(FluidTags.LAVA)
+                        ? io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.LAVA : io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.FIRE;
+            }
+            if (spent) return false;         // every way spent: FAILED went to the danger desire; no input of ours
+            int bucket = bucketOff ? -1 : find(p, s -> s.is(Items.WATER_BUCKET));
             boolean nether = level.dimensionType().ultraWarm();
             // the guard part: restore-kind leases for the own feet cell (and the block clicked under it), held until picked up
             boolean pre = bucket >= 0 && onFire && !resistant && !inHazard && SurvivalRules.mayPlaceWater(true, nether, containerNear(level, feet), feetFree(level, feet));
@@ -157,7 +176,7 @@ public final class FireReflex {
                     // backbone step 4: GoalRunAway from the lava / fire cells around, at the reflex priority, at once
                     String what = level.getBlockState(feet).getFluidState().is(FluidTags.LAVA) ? "lava" : "fire";
                     begin("stepping out of " + what);
-                    escape(now, level, what, ESCAPE_STEP, hazards(level, feet, 2), feet);
+                    escape(now, what, escapeStep(), hazards(level, feet, 2), feet, false);
                     return true;
                 }
                 case PLACE_WATER -> {
@@ -182,61 +201,115 @@ public final class FireReflex {
                     return drink(mc, p, potion);
                 }
                 case WALK_WATER -> {
-                    begin("on fire: walking into the water at " + water.getX() + " " + water.getY() + " " + water.getZ());
-                    // backbone step 4: GoalBlock into the water at the reflex priority; a failed one again after a second
-                    boolean mine = "walk into water".equals(moves.way());
-                    boolean failed = mine && moves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED;
-                    if (!mine || moves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE || failed && now - lastStep > 20) {
-                        if (failed) LOG.info("[entropybot] fire reflex: {} - again", moves.why());
-                        moves.reach("walk into water", new int[]{water.getX(), water.getY(), water.getZ()});
-                        lastStep = now;
-                    }
+                    // reflex choosers: water seen near is a fact; the goal is "feet in water", Baritone picks the water
+                    begin("on fire: walking into water (water near)");
+                    escape(now, "fire", escapeAway(), hazards(level, feet, 3), feet, true);
                     return true;
                 }
                 case MOVE_AWAY -> {
                     begin("on fire: moving away from the fire");
                     // backbone step 4: GoalRunAway from the fire / lava near (none seen: from where I burn)
-                    escape(now, level, "fire", ESCAPE_AWAY, hazards(level, feet, 3), feet);
+                    escape(now, "fire", escapeAway(), hazards(level, feet, 3), feet, false);
                     return true;
                 }
                 default -> { }
             }
         }
         if (active && doing.startsWith("on fire") || active && doing.startsWith("stepping")) stand(mc, onFire ? "fire resistant" : "the fire is out");
+        // reflex choosers: out of the fire / lava: the episode ends; one that was not spent forgets its tries
+        if (fireCell != null) {
+            if (!spent) io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.ended(fireKind);
+            fireCell = null;
+            fireWay = null;
+            spent = false;
+            bucketOff = false;
+        }
         return false;
     }
 
 
     /** Backbone step 4: blocks the escape runs from the hazard cells (stepping out; moving away while burning). */
-    static final int ESCAPE_STEP = 3, ESCAPE_AWAY = 6;
+    static int escapeStep() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.fire.escapeStep"); }
 
-    /**
-     * Backbone step 4: the escape way on the reflexes' Moves: started once (the car re-asks after a Baritone cancel), a
-     * failed or finished one started again after a second (a failure logged). No hazard cells: from the feet.
-     */
-    private void escape(long now, Level level, String what, int dist, java.util.List<int[]> cells, BlockPos feet) {
-        if (cells.isEmpty()) cells = java.util.List.of(new int[]{feet.getX(), feet.getY(), feet.getZ()});
-        var ph = moves.phase();
-        String w = moves.way();
-        boolean mine = ("escape " + what).equals(w), fallback = STEP_OUT_WAY.equals(w);
-        if ((mine || fallback) && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING) return;
-        // 0.39.m2 (documented exception to "GoalRunAway"): Baritone found no run-away cell: at once the old step-out,
-        // GoalBlock on a dry neighbour (safeNeighbour), so a failed path never leaves the bot burning
-        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) {
-            BlockPos out = safeNeighbour(level, feet);
-            LOG.info("[entropybot] fire reflex: {} - {}", moves.why(), out == null ? "no dry neighbour either, the run again" : "stepping to the dry cell " + out.getX() + " " + out.getY() + " " + out.getZ());
-            if (out != null) {
-                moves.reach(STEP_OUT_WAY, new int[]{out.getX(), out.getY(), out.getZ()});
-                lastStep = now;
-                return;
-            }
-        } else if ((mine || fallback) && ph != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && now - lastStep < 20) return;
-        if (fallback && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) LOG.info("[entropybot] fire reflex: {} - the run again", moves.why());
-        moves.escape(what, dist, cells);
-        lastStep = now;
+    static int escapeAway() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.fire.escapeAway"); }
+
+    /** Reflex choosers: the ladder's cell and kind (set when the reflex starts), the way running, spent = FAILED sent. */
+    private int[] fireCell;
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind fireKind = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.FIRE, curKind = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Kind.FIRE;
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way fireWay;
+    private boolean spent, bucketOff;
+    private volatile String failure;
+
+    static final String TO_WATER_WAY = "to water";
+
+    /** The tick the to-water way arrived (-1: not yet); the burn may go out a few ticks later. */
+    private long waterAtTick = -1;
+
+    static int aimTicks() { return (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.fire.aimTicks"); }
+
+    /** The last lava / fire reflex whose every way was spent, once; null none. */
+    public String takeFailure() {
+        String f = failure;
+        failure = null;
+        return f;
     }
 
-    static final String STEP_OUT_WAY = "step out";
+    private boolean fireWayRunning() {
+        String w = moves.way();
+        return fireWay != null && (w.startsWith("escape ") || w.equals(TO_WATER_WAY));
+    }
+
+    /** One failed try charged under {@code reflex.lava|fire <cell>}; true when a way is left. */
+    private io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way charge(String why) {
+        if (fireCell == null) return null;
+        var w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.charge(curKind, fireCell, why, null);
+        LOG.info("[entropybot] fire reflex: charged {} {} ({} tries): {}, next: {}", fireKind.key(), io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.cell(fireCell),
+                io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.fails(curKind, fireCell), why, w == null ? "FAILED" : w.label);
+        if (w == null) spend(why);
+        return w;
+    }
+
+    private void spend(String why) {
+        if (spent) return;
+        spent = true;
+        endWay();
+        failure = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.spent(curKind, fireCell, why);
+        events.push("reflex", failure, null);
+        LOG.warn("[entropybot] {} - to the danger desire", failure);
+    }
+
+    /**
+     * Reflex choosers: the lava / fire ladder on the reflexes' Moves (run from the hazard = GoalRunAway from the lava /
+     * fire cells, none seen = from the feet; to water = feet in water, Baritone picks the water; then FAILED to the
+     * danger desire). A try that failed, or arrived with the bot still burning, is charged in Failures and the ladder's
+     * way for the count runs; {@code waterNear}: the water-first order (same record). No mod-picked cell, no key fallback.
+     */
+    private void escape(long now, String what, int dist, java.util.List<int[]> cells, BlockPos feet,
+                        boolean waterNear) {
+        curKind = waterNear ? fireKind.waterNear() : fireKind;
+        if (spent) return;
+        if (cells.isEmpty()) cells = java.util.List.of(new int[]{feet.getX(), feet.getY(), feet.getZ()});
+        var ph = moves.phase();
+        boolean mine = fireWayRunning();
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.RUNNING) return;
+        if (now - lastStep < io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.retryTicks()) return;
+        io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way w;
+        if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) w = charge(moves.why());
+        else if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED && fireWay == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.TO_WATER
+                && (waterAtTick < 0 ? (waterAtTick = now) >= 0 : now - waterAtTick < (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.fire.waterGraceTicks"))) return;
+        // 0.39.s3 review: in water and still burning / in lava past the grace = a failed try, charged (the ladder goes on to FAILED)
+        else if (mine && ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.ARRIVED) w = charge(moves.why() + ", still " + (what.equals("lava") ? "in lava" : "burning"));
+        else w = io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.way(curKind, fireCell);
+        if (w == null) {
+            spend(moves.why());
+            return;
+        }
+        fireWay = w;
+        lastStep = now;
+        waterAtTick = -1;
+        if (w == io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.Way.TO_WATER) moves.toWater(TO_WATER_WAY);
+        else moves.escape(what, dist, cells);
+    }
 
     /** The lava / fire cells within r of the feet (dy -1..2). */
     private static java.util.List<int[]> hazards(Level level, BlockPos feet, int r) {
@@ -249,7 +322,7 @@ public final class FireReflex {
     /** Ends the reflexes' way when it is one of the fire reflex's own. */
     private void endWay() {
         String w = moves.way();
-        if (moves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && (w.startsWith("escape ") || w.equals("walk into water") || w.equals(STEP_OUT_WAY))) moves.release();
+        if (moves.phase() != io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE && (w.startsWith("escape ") || w.equals(TO_WATER_WAY))) moves.release();
     }
 
     private void begin(String what) {
@@ -343,27 +416,34 @@ public final class FireReflex {
         return false;
     }
 
-    private static BlockPos safeNeighbour(Level level, BlockPos feet) {
-        BlockPos best = null;
-        for (int r = 1; r <= 2 && best == null; r++) {
-            for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos q = feet.relative(d, r);
-                if (!hazard(level, q) && !hazard(level, q.above()) && !hazard(level, q.below())
-                        && level.getBlockState(q).getCollisionShape(level, q).isEmpty()
-                        && !level.getBlockState(q.below()).getCollisionShape(level, q.below()).isEmpty()) {
-                    best = q;
-                    break;
-                }
-            }
+    /** Baritone's hit result now (its look owns the face), for the log line. */
+    private static String baritoneHit() {
+        try {
+            var hr = baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().objectMouseOver();
+            if (hr instanceof BlockHitResult bh && hr.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK)
+                return bh.getBlockPos().getX() + " " + bh.getBlockPos().getY() + " " + bh.getBlockPos().getZ() + " face " + bh.getDirection().getName();
+            return hr == null ? "nothing" : hr.getType().name().toLowerCase();
+        } catch (RuntimeException e) {
+            return "unknown (" + e + ")";
         }
-        return best;
     }
 
+    /** Baritone's hit result puts a placed fluid into {@code cell} (the block beside the hit face is the cell). */
+    private static boolean hitInto(BlockPos cell) {
+        try {
+            var hr = baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().objectMouseOver();
+            return hr instanceof BlockHitResult bh && hr.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                    && bh.getBlockPos().relative(bh.getDirection()).equals(cell);
+        } catch (RuntimeException e) {
+            LOG.warn("[entropybot] fire reflex: Baritone's hit result unknown: {}", e.toString());
+            return false;
+        }
+    }
     /** The nearest water cell within 8 on the threat grid, or null. */
     private static BlockPos nearestWater(LocalPlayer p) {
         ReachGrid g = ThreatRuntime.INSTANCE.grid();
         if (g == null) return null;
-        int bx = p.getBlockX(), by = p.getBlockY(), bz = p.getBlockZ(), r = SurvivalRules.WATER_R;
+        int bx = p.getBlockX(), by = p.getBlockY(), bz = p.getBlockZ(), r = (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.fire.waterR");
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         for (int dy = -3; dy <= 2; dy++) for (int dz = -r; dz <= r; dz++) for (int dx = -r; dx <= r; dx++) {

@@ -51,11 +51,14 @@ public final class DangerMoves {
 
     public enum Move { NONE, FLEE, COVER, PILLAR, NICHE, BURROW }
 
-    static final double FLEE_RUN = 16;
+    static double fleeRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.fleeRun"); }
     static final long CALM_TICKS = 100, MAX_TICKS = 1800;
 
     private final EventRing events;
     private final Moves moves;
+    private final BaritoneCar car;
+    /** The cell a burrow started in (its dig-time hold check). */
+    private BlockPos burrowFrom;
     private Move move = Move.NONE;
     private long now, start, calmSince;
     private boolean holding;
@@ -68,7 +71,8 @@ public final class DangerMoves {
 
     DangerMoves(EventRing events, EngineProcess engine) {
         this.events = events;
-        this.moves = new Moves(new BaritoneCar(engine));
+        this.car = new BaritoneCar(engine);
+        this.moves = new Moves(car);
     }
 
     /** Backbone step 2: the last way that failed ("burrow: gave up at ..."), once; null none. AaRuntime feeds it to AA. */
@@ -100,13 +104,14 @@ public final class DangerMoves {
         if (p == null || mc.level == null) return "error: not in a world";
         List<FleeHeading.Mob> mobs = mobs(mc, p);
         if (mobs.isEmpty()) return "error: nothing to flee from";
-        int[] to = FleeHeading.choose(p.getX(), p.getZ(), mobs, FLEE_RUN);
-        if (to == null) return "error: cornered - no heading clear of mobs (burrow or pillar)";
-        List<int[]> from = new ArrayList<>();
-        for (FleeHeading.Mob m : mobs) from.add(new int[]{(int) Math.floor(m.x()), p.getBlockY(), (int) Math.floor(m.z())});
-        begin(Move.FLEE, "running " + (int) FLEE_RUN + " from " + from.size() + " mob(s)");
-        moves.flee((int) FLEE_RUN, from);
-        return "ok: running " + (int) FLEE_RUN + " from " + from.size() + " mob(s)";
+        // 0.39.s3 review: FleeHeading gates nothing; its least-threat heading is only the run's heuristic term
+        // (PreferredRunAway, Baritone may refuse it); none clear = plain GoalRunAway from the mobs' own cells
+        int[] to = FleeHeading.choose(p.getX(), p.getZ(), mobs, fleeRun());
+        double[] prefer = to == null ? null : new double[]{to[0] + 0.5 - p.getX(), to[1] + 0.5 - p.getZ()};
+        List<int[]> from = mobCells(mc, p);
+        begin(Move.FLEE, "running " + (int) fleeRun() + " from " + from.size() + " mob(s)" + (prefer == null ? "" : " leaning on the flee heading"));
+        moves.flee((int) fleeRun(), from, prefer);
+        return "ok: running " + (int) fleeRun() + " from " + from.size() + " mob(s)";
     }
 
     /** "cover": a cell out of the nearest ranged mob's sight (ThreatRuntime.cover), held 15 s or until it closes in. */
@@ -258,12 +263,11 @@ public final class DangerMoves {
         if (waterNear(mc, top)) return "error: water in or beside me: no burrow or dig-in here (water ways parked)";
         int d = findBurrow(mc, p);
         if (d > 0) {
+            // reflex choosers: "burrow here, d deep"; the fork's BurrowProcess picks the cells from where the bot stands
             begin(Move.BURROW, "digging down " + d + " and sealing");
-            anchor = top.below(d);
-            List<BlockPos> cells = new ArrayList<>();
-            for (int k = 1; k <= d; k++) cells.add(top.below(k));
-            digCells = cells;
-            moves.burrow(new int[]{top.getX(), top.getY(), top.getZ()}, d);
+            anchor = null;          // the hold cell is where the fork's burrow leaves the bot (set when it arrives)
+            burrowFrom = top;
+            moves.burrowHere("burrow", d, false);
             return "ok: digging down " + d + " and sealing";
         }
         Direction n = findNiche(mc, p);
@@ -325,7 +329,7 @@ public final class DangerMoves {
         try {
             Entity t = nearest(mc, p);
             if (t != null) calmSince = now;
-            if (now - start >= MAX_TICKS) { fail("gave up after 90 s (" + moves.why() + ")"); return; }
+            if (now - start >= MAX_TICKS) { fail("gave up at " + move.name().toLowerCase() + " after " + MAX_TICKS / 20 + " s at " + c(p.blockPosition()) + " (" + moves.why() + ")" + verdict(mc)); return; }
             Moves.Phase ph = moves.tick(now);
             if (ph == Moves.Phase.FAILED) { fail(moves.why() + verdict(mc)); return; }
             boolean arrived = ph == Moves.Phase.ARRIVED;
@@ -341,10 +345,18 @@ public final class DangerMoves {
                     if (now >= coverUntil) { stop("held the cover " + (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.coverS") + " s"); return; }
                 }
                 case PILLAR, NICHE, BURROW -> {
+                    // 0.39.s3 review: the burrow's hold-cell check runs while it digs too (from the cell it started in;
+                    // the fork digs straight down there)
+                    if (!arrived && move == Move.BURROW && burrowFrom != null && (p.isInWater() || p.isInLava()
+                            || Math.abs(p.getX() - (burrowFrom.getX() + 0.5)) > 1 || Math.abs(p.getZ() - (burrowFrom.getZ() + 0.5)) > 1)) {
+                        fail("knocked out of the burrow while digging (started at " + c(burrowFrom) + ", now " + c(p.blockPosition()) + ")");
+                        return;
+                    }
                     if (!arrived) return;
                     String what = move == Move.PILLAR ? "pillar" : move == Move.NICHE ? "niche" : "burrow";
                     if (!holding) {
                         holding = true;
+                        if (anchor == null) anchor = p.blockPosition();     // the fork's burrow left the bot here
                         calmSince = now;            // the hold starts its own calm wait
                         events.push("reflex", (move == Move.PILLAR ? "pillared up" : move == Move.NICHE ? "dug in and sealed" : "dug down and sealed") + ", holding", null);
                     }
@@ -365,7 +377,8 @@ public final class DangerMoves {
     /** The break policy's verdict on the first dig cell still standing (the "gave up" line names it). */
     private String verdict(Minecraft mc) {
         try {
-            for (BlockPos q : digCells) {
+            List<BlockPos> cells = !digCells.isEmpty() ? digCells : car.burrowCells();      // a burrow's cells are the fork's
+            for (BlockPos q : cells) {
                 if (!solid(mc, q)) continue;
                 var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
                 var v = rt.judge("aa-corner", io.github.mojolowjo.entropybot.guard.BreakPolicy.Action.BREAK,
@@ -374,7 +387,7 @@ public final class DangerMoves {
                 String block = BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).getPath();
                 return "; guard on " + block + " at " + c(q) + ": " + (v.allowed() ? "allowed x" + v.multiplier() + " (" + v.rule() + ")" : "refused: " + v.reason());
             }
-            return digCells.isEmpty() ? "" : "; every dig cell is open";
+            return cells.isEmpty() ? "" : "; every dig cell is open";
         } catch (RuntimeException e) {
             return "; guard verdict unknown (" + e + ")";
         }
@@ -413,7 +426,7 @@ public final class DangerMoves {
             ThreatFacts.Me me = new ThreatFacts.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), armor, Hostility.weaponHit(p),
                     p.getFoodData().getFoodLevel());
             // AA_STEP2 1: the ways are filled with no foe near too (the night ways: box, burrow, dig in, home)
-            int flee = FleeHeading.choose(p.getX(), p.getZ(), mobs, FLEE_RUN) == null ? 0 : (int) FLEE_RUN;
+            int flee = FleeHeading.choose(p.getX(), p.getZ(), mobs, fleeRun()) == null ? 0 : (int) fleeRun();
             double baseDist = -1;
             if (base != null && (baseDim == null || baseDim.equals(Guard.dimOf(mc.level)))) {
                 double dx = p.getX() - base[0] - 0.5, dy = p.getY() - base[1], dz = p.getZ() - base[2] - 0.5, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -442,6 +455,15 @@ public final class DangerMoves {
     // ---- helpers ----
 
     private static String kind(Entity e) { return BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(); }
+
+    /** The cells of the hostiles {@link #mobs} counts (what the flee runs from). */
+    private List<int[]> mobCells(Minecraft mc, LocalPlayer p) {
+        List<int[]> out = new ArrayList<>();
+        for (Entity e : mc.level.entitiesForRendering())
+            if (e != p && e instanceof LivingEntity le && le.isAlive() && p.distanceTo(e) <= ReflexRules.lookRadius(true) && Hostility.INSTANCE.kind(e, true).counts())
+                out.add(new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
+        return out;
+    }
 
     private List<FleeHeading.Mob> mobs(Minecraft mc, LocalPlayer p) {
         List<FleeHeading.Mob> out = new ArrayList<>();

@@ -1152,6 +1152,9 @@ public final class AaRuntime implements JobPort {
 
     /** The fixed inputs (AA_PLAN 7) from the sense snapshot plus a few direct reads. */
     private boolean sheepLatch;
+    /** Reflex choosers: the last spent reflex's line and until when it holds the danger at 2 (bb clock ms). */
+    private String reflexFailedLine;
+    private long reflexFailedUntil;
     private final io.github.mojolowjo.entropybot.aa.brain.Costs.ToolSmoother toolSmoother = new io.github.mojolowjo.entropybot.aa.brain.Costs.ToolSmoother();
 
     private void fill(Inputs in, BrainState s, LocalPlayer p, Minecraft mc) {
@@ -1173,6 +1176,20 @@ public final class AaRuntime implements JobPort {
         if (moveFailed != null && dangerJob) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.MOVE_FAILED_FACT, moveFailed);
         in.danger = !aaOwn && (r == Reflexes.Reflex.FIGHTING || r == Reflexes.Reflex.FLEEING) ? 2 : !aaOwn && Core.INSTANCE.reflexes.hold() ? 1 : 0;
         in.dangerWhy = in.danger > 0 ? r.name().toLowerCase() : "";
+        // reflex choosers: a reflex whose every way is spent (its tries charged in the brain's Failures as
+        // reflex.<kind> <cell>) goes to the danger desire: full danger for reflex.failedS with the line as the reason
+        io.github.mojolowjo.entropybot.aa.moves.ReflexLadder.bind(tree.brain.failures);
+        String reflexFailed = Core.INSTANCE.reflexes.takeReflexFailure();
+        if (reflexFailed != null) {
+            reflexFailedLine = reflexFailed;
+            reflexFailedUntil = bb.clock.now() + (long) (1000 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("reflex.failedS"));
+            LOG.info("[entropybot] aa: {} - the danger desire takes it", reflexFailed);
+            if (dangerJob) bb.fact(io.github.mojolowjo.entropybot.aa.AaDesires.MOVE_FAILED_FACT, reflexFailed);
+        }
+        if (reflexFailedLine != null && bb.clock.now() < reflexFailedUntil) {
+            in.danger = 2;
+            in.dangerWhy = reflexFailedLine;
+        } else reflexFailedLine = null;
         in.creeperClose = creeperClose();
         in.air = p.getAirSupply();
         in.inLavaOrFire = p.isInLava() || p.isOnFire();
