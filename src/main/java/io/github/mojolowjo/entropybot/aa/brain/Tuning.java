@@ -134,6 +134,18 @@ public final class Tuning {
         def("quarry.digK", 1.5, "AA_ROUND4 C", "walk-blocks one planned dig cell costs in a quarry site's price");
         def("run.weight", 2, "aa-danger 2", "heuristic units per block along the preferred run heading (Baritone walks ~4.6 per block)");
         def("planner.gapMs", 5000, "aa371", "milliseconds between two planner asks after which the earlier search wait is over (AA ticks at 4 Hz)");
+        // builder placements (0.39.q1): the movers' time limits and retries, out of aa/moves
+        def("moves.calcFails", 20, "backbone step 2", "Baritone ticks of failed path calculation before a move leg fails");
+        def("moves.walkS", 30, "backbone step 2", "seconds a walk / cover leg may take");
+        def("moves.pillarS", 15, "backbone step 2", "seconds a pillar leg may take");
+        def("moves.digS", 40, "backbone step 2", "seconds a burrow / dig-in leg may take");
+        def("moves.reflexS", 15, "backbone step 4", "seconds a reflex leg (swim-up, flee, lava escape) may take");
+        def("hands.retries", 2, "backbone step 3", "times a job's hand request restarts after another process took control away");
+        def("moves.climbS", 30, "builder placements", "seconds a climb back up onto the floor fill's walkway may take (Baritone's own way up)");
+        def("hands.waitS", 120, "builder placements", "seconds a caller waits for a running build / click before it counts a try (twice a leg, a reflex pause in between)");
+        def("hands.reflexResume", 2, "builder placements", "a reflex pause resumes a request while its age is under this many times its limit");
+        def("hands.clickS", 5, "builder placements", "seconds one right-click stage (altar use) may take");
+        def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }
@@ -154,6 +166,13 @@ public final class Tuning {
         if (strict) throw new IllegalArgumentException(msg);
         if (REPORTED.add(name)) org.slf4j.LoggerFactory.getLogger(Tuning.class).error("[entropybot] aa: {} (the number reads 0)", msg);
         return 0;
+    }
+
+    /** The value of a name code must have: same as get (an unknown name is loud there). */
+    public static double need(String name) {
+        double v = get(name);
+        if (Double.isNaN(v)) throw new IllegalStateException("no tuning \"" + name + "\"");
+        return v;
     }
 
     /** Sets one; returns the reply line ("ok: ..." or "error: ..."). */

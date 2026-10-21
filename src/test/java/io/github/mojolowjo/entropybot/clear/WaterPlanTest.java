@@ -54,16 +54,6 @@ class WaterPlanTest {
     }
 
     @Test
-    void withTheFenceItOnlyStandsInsideTheArea() {
-        FakeWorld w = pool();
-        ClearJob.StandCheck fence = (x, y, z) -> TUNNEL.contains(x, y, z);
-        WaterPlan.Round r = WaterPlan.round(in(w, Bot.at(5.5, 40, 0.5), new Pos(8, 41, 0), fence, null));
-        assertNull(r.blocked());
-        assertFalse(r.placements().isEmpty());
-        for (WaterPlan.Placement p : r.placements()) assertTrue(TUNNEL.contains(p.from().x(), p.from().y(), p.from().z()), p.toString());
-    }
-
-    @Test
     void theOrderAlwaysHasAFaceToClick() {
         // more water around the pool: every placement still has a face to click when its turn comes
         FakeWorld w = pool();
@@ -84,8 +74,8 @@ class WaterPlanTest {
     void theReportNamesWhatWasSealed() {
         WaterPlan.Tally t = new WaterPlan.Tally();
         assertEquals("", t.text());
-        List<WaterPlan.Placement> ps = List.of(new WaterPlan.Placement(new Pos(377, -45, 854), null, "minecraft:cobblestone", WaterShell.Role.FILL),
-                new WaterPlan.Placement(new Pos(381, -44, 853), null, "minecraft:cobblestone", WaterShell.Role.RING));
+        List<WaterPlan.Placement> ps = List.of(new WaterPlan.Placement(new Pos(377, -45, 854), "minecraft:cobblestone", WaterShell.Role.FILL),
+                new WaterPlan.Placement(new Pos(381, -44, 853), "minecraft:cobblestone", WaterShell.Role.RING));
         t.add(new WaterPlan.Round(null, WaterScan.Kind.SOURCES_INSIDE, ps, false, 2, 1, ""), new WaterShell.Axis(true, 1), TUNNEL);
         assertEquals("sealed 2 water cells (1 source) at x 377-381", t.text());
     }

@@ -46,7 +46,7 @@ class WaterWordsTest {
         assertEquals("ok: done digging x - broke 4 blocks", WaterPlan.endMessage("ok: done digging x - broke 4 blocks", t, 4, true));
         t.broken = 100;
         t.add(new WaterPlan.Round(null, WaterScan.Kind.SOURCES_INSIDE,
-                List.of(new WaterPlan.Placement(new Pos(377, -45, 854), null, "minecraft:cobbled_deepslate", WaterShell.Role.FILL)), false, 1, 1, ""),
+                List.of(new WaterPlan.Placement(new Pos(377, -45, 854), "minecraft:cobbled_deepslate", WaterShell.Role.FILL)), false, 1, 1, ""),
                 null, ClearBox.of(0, -46, 853, 500, -44, 855));
         assertEquals("ok: done digging x - broke 104 blocks; sealed 1 water cell (1 source) at x 377",
                 WaterPlan.endMessage("ok: done digging x - broke 4 blocks", t, 4, true));

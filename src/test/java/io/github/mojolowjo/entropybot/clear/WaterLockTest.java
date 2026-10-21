@@ -112,8 +112,6 @@ class WaterLockTest {
         assertEquals(List.of(new Pos(1, 50, 2)), r.placements().stream().map(WaterPlan.Placement::cell).toList(), "the entry only");
         assertTrue(r.drain());
         WaterPlan.Placement p = r.placements().get(0);
-        assertNotNull(p.from(), "a dry spot to place it from");
-        assertFalse(w.fluid(p.from().x(), p.from().y(), p.from().z()));
         // the seal goes in, the rest drains (no source feeds it any more); the dig again finishes
         w.set(1, 50, 2, "cobbled_deepslate");
         for (int x = 0; x <= 2; x++) for (int z = -1; z <= 1; z++) w.set(x, 50, z, "air");

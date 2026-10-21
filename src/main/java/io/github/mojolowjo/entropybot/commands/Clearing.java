@@ -66,7 +66,7 @@ import org.slf4j.Logger;
  * at {@code step.pos} (walking into reach first, taking a place lease, never breaking anything) and returns "next", or
  * an error text.
  *
- * <p>D1's additions (2026-10-03): {@link #placeStep(int[], String, int[], boolean)} (a stand spot and optional, the
+ * <p>D1's additions (2026-10-03): {@link #placeStep(int[], String, boolean)} (optional, the
  * strip mine's hole fills), {@link #oreTally()} / {@link #talliedSince} (the bridge's global oreTally, for "mine ...
  * until N ores"), {@link #oreBook()} (the ores listed for players, in the knowledge files), {@link #placeAt} (the
  * bridge's placeAt). The game-free run is {@link ClearRun}; the rules for placing and the table are {@link PlaceRules}.
@@ -100,10 +100,9 @@ public final class Clearing {
      * D1: a placement from a given stand spot (null: wherever reaches, walking there when nothing does); optional: a
      * placement that can't be done (no item, nothing to click, it didn't stay) is skipped instead of failing the job.
      */
-    public static Seq.Step placeStep(int[] pos, String item, int[] from, boolean optional) {
+    public static Seq.Step placeStep(int[] pos, String item, boolean optional) {
         Seq.Step s = placeStep(pos, item);
         PlaceState ps = new PlaceState();
-        ps.from = from;
         ps.optional = optional;
         s.optional = optional;
         s.state = ps;
@@ -188,13 +187,10 @@ public final class Clearing {
 
     /** A placeblock step's state. */
     static final class PlaceState {
-        int[] from;
         boolean optional, clicked;
         String stage;
         long stageTick;
         int tries;
-        /** 0.30.6: walks to a fresh stand spot after a "nothing in reach" click (once) */
-        int walks;
         /** 0.30.7: the tick a mob was first found in the cell (-1: none); it is waited for PlaceRules.MOB_WAIT_TICKS */
         long mobSince = -1;
         /** 0.30.7 (review): the entity that wait is for (a new one starts its own wait) */
@@ -671,7 +667,7 @@ public final class Clearing {
         }
         int[] at = {spot.x(), spot.y(), spot.z()};
         Seq.Step pickup = pickupStep(spot, why);
-        Seq.Step place = placeStep(at, "minecraft:crafting_table", null, false);
+        Seq.Step place = placeStep(at, "minecraft:crafting_table", false);
         ((PlaceState) place.state).pickup = pickup;
         out.add(place);
         out.addAll(middle);
@@ -713,7 +709,7 @@ public final class Clearing {
     static Seq.Step[] furnaceHere(int[] spot) {
         Pos at = new Pos(spot[0], spot[1], spot[2]);
         Seq.Step pickup = pickupStep(at, WHY_OWN_FURNACE, PlaceRules.FURNACE_ID);
-        Seq.Step place = placeStep(spot, PlaceRules.FURNACE_ID, null, false);
+        Seq.Step place = placeStep(spot, PlaceRules.FURNACE_ID, false);
         ((PlaceState) place.state).pickup = pickup;
         return new Seq.Step[]{place, pickup};
     }
@@ -1043,8 +1039,8 @@ public final class Clearing {
     }
 
     /**
-     * placeAt: puts block item {@code id} into the empty cell x y z by clicking a solid neighbour (the floor first,
-     * then the walls, then the ceiling), never a chest or a table. The place lease covers what the guard checks (T1:
+     * placeAt: puts block item {@code id} into the empty cell x y z through Baritone's builder (a one-block schematic;
+     * Baritone picks the stand spot, the face and the click). The place lease covers what the guard checks (T1:
      * the cell; for a bucket also the clicked block) and goes into {@code leases} (once per box). "ok: ..." or "error: ...".
      */
     public static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases) {
@@ -1058,19 +1054,6 @@ public final class Clearing {
 
     /** restore (P1): the cell is one the bot broke itself; its lease is LeaseSet.restoreLease (any mode, never a protect box). */
     static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore) {
-        return placeAt(p, id, x, y, z, leases, seal, restore, null);
-    }
-
-    /**
-     * 0.30.2 (package 5): place against the given neighbour (side: the offset from the cell to the clicked block; the
-     * clicked face is side.face(), the anchor's face that borders the cell, so the block goes into x y z). The lease
-     * logic is placeAt's. The anchor must still be clickable and its face in reach.
-     */
-    public static String placeAgainst(LocalPlayer p, String id, int x, int y, int z, PlaceRules.Side side, LeaseSet leases) {
-        return placeAt(p, id, x, y, z, leases, null, false, side);
-    }
-
-    private static String placeAt(LocalPlayer p, String id, int x, int y, int z, LeaseSet leases, ClearBox seal, boolean restore, PlaceRules.Side forced) {
         Minecraft mc = Minecraft.getInstance();
         BlockPos pos = new BlockPos(x, y, z);
         BlockState target = mc.level.getBlockState(pos);
@@ -1079,26 +1062,19 @@ public final class Clearing {
         }
         String inWay = entityInWay(p, x, y, z);
         if (inWay != null) return inWay;
-        LiveWorld w = new LiveWorld();
-        w.set(p);
-        PlaceRules.Side s = forced == null ? PlaceRules.placeSideSeen(w, x, y, z, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH)
-                : PlaceRules.clickable(w, x + forced.dx(), y + forced.dy(), z + forced.dz())
-                        && io.github.mojolowjo.entropybot.clear.RimPlan.clickableFrom(w, new Pos(x, y, z), forced, p.getX(), p.getEyeY(), p.getZ())
-                        ? forced : null;
-        if (s == null) return "error: nothing in reach to place " + GuiCore.shortId(id) + " against at " + x + " " + y + " " + z;
-        // T1: lease only what the guard checks for this item (a block item: the cell; a bucket: the clicked block too)
+        // builder placements: the block items only (the builder places blocks; a bucket / seed / hoe is a click)
+        if (!isBlockItem(id)) return "error: " + GuiCore.shortId(id) + " is not a block: the builder can't place it at " + x + " " + y + " " + z;
+        // T1: lease the cell the guard checks
         String le = restore ? leases.restoreLease(x, y, z, "putting back " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
-                : seal != null && isBlockItem(id)
+                : seal != null
                 ? leases.sealLease(x, y, z, seal, "sealing water with " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z))
-                : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z, s, isBlockItem(id)), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
+                : leases.placeLease(PlaceRules.placeLeaseBox(x, y, z), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z));
         if (le != null) return le;
-        if (!holdItem(p, id)) return "error: I have no " + GuiCore.shortId(id);      // the laid-out hotbar slot first; Baritone keeps it in hand
-        // backbone step 3 ("Baritone is the car"): Baritone's look and right-click on the anchor's face, the item to
-        // hand by Baritone (JobHands -> BurrowProcess.startJob); the guard checks the click in useItemOn as before.
+        if (Gui.inventory(p).getOrDefault(id, 0) <= 0) return "error: I have no " + GuiCore.shortId(id) + " in the bag";
+        // builder placements ("Baritone decides where to stand, where to look and what to click"): a one-block schematic
+        // for Baritone's BuilderProcess (fork buildLeg); the guard checks its click in useItemOn as before.
         // Asynchronous: "ok: placing" while it runs (callers check the cell later, Clearing.placing holds their tries),
         // "error: gave up at <stage>: <why>; guard ..." once when Baritone failed.
-        int[] on = {x + s.dx(), y + s.dy(), z + s.dz()};
-        String face = McClearWorld.direction(s.face()).getName();
         boolean station = !restore && io.github.mojolowjo.entropybot.clear.OwnStations.station(id);
         Runnable noted = !station ? null : () -> {
             // 0.33.0 (A3): a station I place is noted as mine (ledger "built: station"), so I may pick it up again later
@@ -1108,7 +1084,7 @@ public final class Clearing {
                 LOG.warn("[entropybot] place: couldn't note {} at {} {} {} as mine: {}", id, x, y, z, e.toString());
             }
         };
-        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().click(on, face, id, 100, "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z), noted);
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().build(new int[]{x, y, z}, id, (int) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("hands.buildS")), "placing " + GuiCore.shortId(id) + " at " + Pos.key(x, y, z), noted);
         // 0.23.1: the game refusing the placement (no room for a bed's other half, the guard) is an error, not "ok: FAIL"
         if (r.failed()) return "error: the game refused placing " + GuiCore.shortId(id) + " at " + x + " " + y + " " + z + " (" + r.why() + ")";
         return r.done() ? "ok: placed" : "ok: placing (" + r.why() + ")";
@@ -1201,24 +1177,7 @@ public final class Clearing {
             String here = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(cell).getBlock()).getPath();
             String vanished = lastPlaceBlock != null && !lastPlaceBlock.equals(here) ? " (was " + lastPlaceBlock + ")" : "";
             lastPlaceBlock = here;
-            LiveWorld w = new LiveWorld();
-            w.set(p);
-            PlaceRules.Side s = PlaceRules.placeSide(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ());   // the distance pick: shows a hidden face too
-            String face = "none";
-            if (s != null) {
-                BlockPos on = new BlockPos(pos[0] + s.dx(), pos[1] + s.dy(), pos[2] + s.dz());
-                net.minecraft.world.phys.Vec3 eye = p.getEyePosition();
-                net.minecraft.world.phys.Vec3 fc = new net.minecraft.world.phys.Vec3(pos[0] + 0.5 + s.dx() * 0.5, pos[1] + 0.5 + s.dy() * 0.5, pos[2] + 0.5 + s.dz() * 0.5);
-                var d = fc.subtract(eye);
-                float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z)), pitch = (float) Math.toDegrees(-Math.atan2(d.y, Math.hypot(d.x, d.z)));
-                var hit = mc.level.clip(new net.minecraft.world.level.ClipContext(eye, fc, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, p));
-                String hitS = hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
-                        ? Jobs.fmt(new int[]{hit.getBlockPos().getX(), hit.getBlockPos().getY(), hit.getBlockPos().getZ()}) + " " + hit.getDirection().getName() + " ("
-                          + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(hit.getBlockPos()).getBlock()).getPath() + ")" : "nothing";
-                face = Jobs.fmt(new int[]{on.getX(), on.getY(), on.getZ()}) + " " + McClearWorld.direction(s.face()).getName() + " ("
-                        + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(on).getBlock()).getPath() + ") dist " + String.format("%.2f", d.length())
-                        + " look " + String.format("%.0f/%.0f", yaw, pitch) + " vs " + String.format("%.0f/%.0f", p.getYRot(), p.getXRot()) + " ray to the face hits " + hitS;
-            }
+            String face = "feet " + Jobs.fmt(Jobs.here(p)) + String.format(" look %.0f/%.0f", p.getYRot(), p.getXRot());
             var b = Jobs.baritone();
             String proc = b == null ? "-" : b.getPathingControlManager().mostRecentInControl().map(x -> x.displayName()).orElse("none");
             LOG.info("[entropybot] place debug: stage {} try {} cell {} = {}{} face {} | slot {} {} | crosshair {} | baritone {} busy {} | last {}",
@@ -1252,39 +1211,11 @@ public final class Clearing {
         if (ps.stage == null) {
             ps.tries = 0;
             if (Gui.inventory(p).getOrDefault(id, 0) <= 0) return ps.optional ? "next" : "I have no " + sid + " to place";
-            IBaritone b = Jobs.baritone();
-            int[] stand = ps.from;
-            LiveWorld w0 = new LiveWorld();
-            w0.set(p);
-            // 0.39.p4 (review 2): a preset stand spot that sees no face of the cell is replaced by one that does
-            if (stand != null && PlaceRules.placeSideSeen(w0, pos[0], pos[1], pos[2], stand[0] + 0.5, stand[1] + io.github.mojolowjo.entropybot.clear.Bot.EYE, stand[2] + 0.5, PlaceRules.PLACE_REACH) == null) {
-                LOG.info("[entropybot] place: {} at {} - no face seen from the preset spot {}: picking a stand spot", sid, Jobs.fmt(pos), Jobs.fmt(stand));
-                stand = null;
-            }
-            if (stand == null) {
-                LiveWorld w = w0;
-                if (PlaceRules.placeSideSeen(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH) == null) {
-                    var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p), standCheck(seq.jobs.core().commands), true);
-                    if (spot == null) return ps.optional ? "next" : "nowhere to stand within reach of " + Jobs.fmt(pos) + " to place the " + sid;
-                    stand = new int[]{spot.x(), spot.y(), spot.z()};
-                }
-            }
-            if (stand != null && b != null) {
-                String fence = seq.jobs.goalAllowed(stand[0], stand[1], stand[2]);
-                if (fence != null) return Jobs.withAreaHint(fence + " (" + Jobs.fmt(stand) + ")");
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(stand[0], stand[1], stand[2])));
-                ps.stage = "walking";
-                ps.stageTick = now;
-                seq.setStatus(seq.label + " - going to place a " + sid);
-                return "wait";
-            }
-            ps.stage = "place";
-        }
-        if (ps.stage.equals("walking")) {
-            if (now - ps.stageTick < 20) return "wait";
-            IBaritone b = Jobs.baritone();
-            if (b != null && !Jobs.idle(b)) return now - ps.stageTick > 20 * 60 ? "took too long walking to place the " + sid + " at " + Jobs.fmt(pos) : "wait";
+            // builder placements: Baritone's builder walks to a spot of its own choosing; the cell must be one I may go near
+            String fence = seq.jobs.goalAllowed(pos[0], pos[1], pos[2]);
+            if (fence != null) return Jobs.withAreaHint(fence + " (" + Jobs.fmt(pos) + ")");
+            Jobs.safeSettings();
+            seq.setStatus(seq.label + " - placing a " + sid);
             ps.stage = "place";
         }
         if (ps.stage.equals("retry")) {
@@ -1320,16 +1251,6 @@ public final class Clearing {
                     }
                     return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
                 }
-                // 0.30.6 (live, shed2: "place chest" right after the door dig, the bot still outside): nothing in reach
-                // from where the walk ended (or from where the bot stood when the step began and then moved on): walk to
-                // a stand spot picked afresh, once, before the three tries count
-                if (r.contains("nothing in reach") && ps.walks < 1) {
-                    ps.walks++;
-                    ps.stage = null;
-                    ps.from = null;
-                    LOG.info("[entropybot] place: {} at {} - nothing in reach from {}: walking to a stand spot", sid, Jobs.fmt(pos), Jobs.fmt(Jobs.here(p)));
-                    return "wait";
-                }
                 // a placement that fails 3 times ends the step and says why (it never stands there for good)
                 ps.tries++;
                 if (ps.tries >= 3) return ps.optional ? "next" : "couldn't place the " + sid + " at " + Jobs.fmt(pos) + ": " + r.replaceFirst("^error: ", "");
@@ -1342,7 +1263,7 @@ public final class Clearing {
             return "wait";
         }
         // placed blocks show up a tick or two later; try up to 3 times (backbone step 3: not while Baritone still places)
-        if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < 20 * 10) return "wait";
+        if (now - ps.stageTick < 6 || placing(pos[0], pos[1], pos[2]) && now - ps.stageTick < io.github.mojolowjo.entropybot.aa.moves.JobHands.waitTicks()) return "wait";
         ps.tries++;
         if (ps.tries >= 3) {
             String last = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().lastFailure(pos[0], pos[1], pos[2]);
@@ -1544,31 +1465,8 @@ public final class Clearing {
                     return "wait";
                 }
                 seq.setStatus(bs.status + " - placing the rest myself (" + missing.size() + " left)");
-                // 0.31.0: the pick in the log (cell, stance, face, from where), for "nowhere to stand" reports
-                LOG.info("[entropybot] build rim: pick {} stand {} side {} (try {}) from {} {} {}", pk.cell().key(), pk.stand() == null ? "here" : pk.stand().key(),
-                        pk.side(), bs.tries.getOrDefault(pk.cell(), 0) + 1, String.format("%.1f", p.getX()), String.format("%.1f", p.getY()), String.format("%.1f", p.getZ()));
-                if (pk.stand() == null) {
-                    bs.stage = "place";
-                    return "wait";
-                }
-                Pos s = pk.stand();
-                String fence = seq.jobs.goalAllowed(s.x(), s.y(), s.z());
-                IBaritone b = Jobs.baritone();
-                if (fence != null || b == null) {
-                    giveUpCell(bs, pk.cell(), io.github.mojolowjo.entropybot.clear.RimPlan.Why.NO_STAND);
-                    return "wait";
-                }
-                Jobs.safeSettings();
-                b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(s.x(), s.y(), s.z())));
-                bs.stage = "walking";
-                bs.stageTick = now;
-                return "wait";
-            }
-            case "walking" -> {
-                if (now - bs.stageTick < 20) return "wait";
-                IBaritone b = Jobs.baritone();
-                if (b != null && !Jobs.idle(b) && now - bs.stageTick < 30 * 20) return "wait";
-                if (b != null && !Jobs.idle(b)) Jobs.cancel(b);
+                // builder placements: the cell only; Baritone's builder walks to its own spot and face
+                LOG.info("[entropybot] build rim: pick {} (try {})", pk.cell().key(), bs.tries.getOrDefault(pk.cell(), 0) + 1);
                 bs.stage = "place";
                 return "wait";
             }
@@ -1584,14 +1482,8 @@ public final class Clearing {
                 if (coverFirst) r = "error: a cover in the cell";
                 else try {
                     String pid = bs.placeId != null ? bs.placeId : bs.id;
-                    // the side stance clicks its anchor's face (seen from the feet cell); the top stance lets placeAt pick
-                    PlaceRules.Side side = bs.pick.side();
-                    if (side != null) {
-                        PlaceRules.Side seen = io.github.mojolowjo.entropybot.clear.RimPlan.seenFrom(w, c, p.getX(), p.getEyeY(), p.getZ());
-                        if (seen != null) side = seen;
-                    }
-                    r = side != null ? placeAgainst(p, pid, c.x(), c.y(), c.z(), side, bs.leases)
-                            : placeAt(p, pid, c.x(), c.y(), c.z(), bs.leases);
+                    // builder placements: Baritone's builder picks the face (and the spot) for the rim cell too
+                    r = placeAt(p, pid, c.x(), c.y(), c.z(), bs.leases);
                 } catch (RuntimeException ex) {
                     r = "error: " + ex;
                 }

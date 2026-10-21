@@ -125,11 +125,10 @@ final class WaterSteps {
         t.broken += broken;
         List<Seq.Step> steps = new ArrayList<>();
         for (WaterPlan.Placement pl : r.placements()) {
-            Pos cell = pl.cell(), f = pl.from();
+            Pos cell = pl.cell();
             // optional: a seal that can't be done is skipped; the clear still never breaks next to water, so the next
             // round sees what is left
-            Seq.Step ps = Clearing.placeStep(new int[]{cell.x(), cell.y(), cell.z()}, pl.block(),
-                    f != null ? new int[]{f.x(), f.y(), f.z()} : null, true);
+            Seq.Step ps = Clearing.placeStep(new int[]{cell.x(), cell.y(), cell.z()}, pl.block(), true);
             ((Clearing.PlaceState) ps.state).seal = box;
             steps.add(ps);
         }

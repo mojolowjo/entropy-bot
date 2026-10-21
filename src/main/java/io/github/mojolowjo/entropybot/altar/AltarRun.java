@@ -214,6 +214,10 @@ public final class AltarRun {
 
     private Out verify(AltarWorld w, long now) {
         if (now - stageTick < VERIFY) return waitOut();
+        // builder placements: the click is Baritone's; wait for its end, a failed click fails with its reason
+        String cs = w.clickState();
+        if (AltarWorld.CLICK_RUNNING.equals(cs)) return waitOut();
+        if (cs != null) return fail("the click failed: " + cs, w, now);
         AltarPlan.Target t = targets.get(ti);
         String where = t.altar() ? "the altar at " + fmt(t.pos()) : "the pedestal at " + fmt(t.pos());
         Map<Integer, AltarWorld.Stack> it = w.items(t.pos());
@@ -293,6 +297,10 @@ public final class AltarRun {
 
     private Out taken(AltarWorld w, long now) {
         if (now - stageTick < VERIFY) return waitOut();
+        // builder placements: the click is Baritone's; wait for its end, a failed click fails with its reason
+        String cs = w.clickState();
+        if (AltarWorld.CLICK_RUNNING.equals(cs)) return waitOut();
+        if (cs != null) return fail("the click failed: " + cs, w, now);
         Map<Integer, AltarWorld.Stack> alt = w.items(layout.altar());
         AltarWorld.Stack out = alt == null ? null : alt.get(1);
         int gained = w.bag(takeId) - bagBefore;
@@ -363,6 +371,10 @@ public final class AltarRun {
 
     private Out retrieved(AltarWorld w, long now) {
         if (now - stageTick < VERIFY) return waitOut();
+        // builder placements: the click is Baritone's; wait for its end, a failed click fails with its reason
+        String cs = w.clickState();
+        if (AltarWorld.CLICK_RUNNING.equals(cs)) return waitOut();
+        if (cs != null) return fail("the click failed: " + cs, w, now);
         int[] pos = todo.get(0);
         Map<Integer, AltarWorld.Stack> it = w.items(pos);
         AltarWorld.Stack s = it == null ? null : it.get(0);

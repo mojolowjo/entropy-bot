@@ -361,7 +361,7 @@ final class FarmPlanting {
             }
             r.digging = null;
             // pour: Baritone right-clicks the top of the hole's floor with the bucket (the bucket's ray lands in the cell)
-            var hr = hands().click(new int[] {c.x(), c.y() - 1, c.z()}, "up", "minecraft:water_bucket", 100, "farm plant water", null);
+            var hr = hands().click(new int[] {c.x(), c.y() - 1, c.z()}, "minecraft:water_bucket", 100, "farm plant water", null);
             if (hr.failed()) {
                 LOG.info("[entropybot] farm plant: pouring at {}: {}", key, hr.why());
                 r.tries.merge(key, 5, Integer::sum);
@@ -429,7 +429,7 @@ final class FarmPlanting {
             } else if (till) {
                 p.getInventory().selected = selectHoe(mc, p);
                 String hoe = io.github.mojolowjo.entropybot.gui.Gui.itemId(p.getInventory().getItem(p.getInventory().selected));
-                hr = hands().click(g3, "up", hoe, 100, "farm plant: tilling " + key, null);
+                hr = hands().click(g3, hoe, 100, "farm plant: tilling " + key, null);
                 if (!hr.failed() && r.tilledSet.add(key)) r.tilled++;
                 s.setStatus(s.label + " - tilling (" + r.tilled + ")");
             } else {
@@ -437,7 +437,7 @@ final class FarmPlanting {
                     r.stopWhy = "no seeds";
                     continue;
                 }
-                hr = hands().click(g3, "up", r.seed, 100, "farm plant: planting " + key, null);
+                hr = hands().click(g3, r.seed, 100, "farm plant: planting " + key, null);
                 if (!hr.failed()) r.seeded.add(key);
                 s.setStatus(s.label + " - planting (" + (r.planted + 1) + ")");
             }

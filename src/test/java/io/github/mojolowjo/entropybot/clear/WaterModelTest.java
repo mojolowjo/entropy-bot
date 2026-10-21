@@ -49,11 +49,6 @@ class WaterModelTest {
             for (WaterPlan.Placement p : r.placements()) {
                 Pos c = p.cell();
                 assertTrue(FloorFill.supported(w, c), "a face to click at " + c);
-                Pos f = p.from();
-                assertFalse(w.fluid(f.x(), f.y(), f.z()) || w.fluid(f.x(), f.y() + 1, f.z()), "never stands in water: " + f);
-                boolean there = Math.floor(d.x) == f.x() && Math.floor(d.y + 0.01) == f.y() && Math.floor(d.z) == f.z();
-                if (!there) assertTrue(d.walkTo(f.x(), f.y(), f.z()), "walks to " + f + " for " + c);
-                assertNotNull(PlaceRules.placeSide(w, c.x(), c.y(), c.z(), d.x, d.y + Bot.EYE, d.z), "in reach from " + f + " for " + c);
                 assertFalse(FloorFill.bodyHits(d.x, d.y, d.z, c), "not into itself");
                 assertTrue(w.replaceable(c.x(), c.y(), c.z()) || !w.fluid(c.x(), c.y(), c.z()), "only into water or air: " + c);
                 w.set(c, ClearRules.blockName(p.block()));

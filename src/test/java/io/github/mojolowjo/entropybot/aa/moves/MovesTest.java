@@ -82,8 +82,8 @@ class MovesTest {
         m.tick(100);
         m.pillar(new int[]{1, 64, 1}, 3);
         assertEquals("1 67 1", FakeCar.s(car.top));
-        assertEquals(Moves.Phase.RUNNING, m.tick(100 + Moves.PILLAR_TICKS));
-        assertEquals(Moves.Phase.FAILED, m.tick(101 + Moves.PILLAR_TICKS));
+        assertEquals(Moves.Phase.RUNNING, m.tick(100 + Moves.pillarTicks()));
+        assertEquals(Moves.Phase.FAILED, m.tick(101 + Moves.pillarTicks()));
         assertTrue(car.calls.contains("stop timed out"));
         assertTrue(m.why().contains("timed out after 15 s"), m.why());
     }
@@ -183,7 +183,7 @@ class MovesTest {
         assertEquals("runAway 3 2", car.calls.get(0));
         assertEquals("escape lava", m.way());
         assertEquals(Moves.Phase.RUNNING, m.tick(1));
-        assertEquals(Moves.Phase.FAILED, m.tick(2 + Moves.REFLEX_TICKS), "a reflex leg has its own time limit");
+        assertEquals(Moves.Phase.FAILED, m.tick(2 + Moves.reflexTicks()), "a reflex leg has its own time limit");
     }
 
     @Test

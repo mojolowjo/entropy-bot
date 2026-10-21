@@ -50,6 +50,8 @@ final class FloorSteps {
         final Clearing.LiveWorld world = new Clearing.LiveWorld();
         long lastBeat = -1000;
         boolean done;
+        /** 0.39.q4: the settings from before a running climb, put back at its end */
+        Jobs.Saved climbSaved;
 
         FloorState(ClearJob.Options opts, boolean climbOnly) {
             this.opts = opts;
@@ -91,6 +93,10 @@ final class FloorSteps {
     static void ended(FloorState fs) {
         fs.done = true;
         if (fs.leases != null) fs.leases.releaseAll();
+        // 0.39.q4: a climb cut short by the job's end (stop, cancel, fail) puts its intent and settings back
+        Jobs.Saved s = fs.climbSaved;
+        fs.climbSaved = null;
+        if (s != null) s.restore();
     }
 
     static String floorRun(Seq seq, Seq.Step st, LocalPlayer p) {
@@ -177,16 +183,32 @@ final class FloorSteps {
 
         @Override public boolean placing(Pos cell) { return Clearing.placing(cell.x(), cell.y(), cell.z()); }
 
-        @Override public void walkBlock(int x, int y, int z) {
+        @Override public String climbTo(int y, io.github.mojolowjo.entropybot.clear.ClearBox box) {
             IBaritone b = Jobs.baritone();
-            if (b == null) return;
-            String fence = seq.jobs.goalAllowed(x, y, z);
-            if (fence != null) {
-                LOG.info("[entropybot] floor: not walking to {} {} {}: {}", x, y, z, fence);
-                return;
+            if (b == null) return "no Baritone to climb out with";
+            // Baritone finds the way up (its own pillaring under the TRAVEL intent; the guard prices every break/place);
+            // the goal: feet at y or higher inside the fill's footprint, on a cell the fence lets it walk to
+            Jobs.Saved saved;
+            try {
+                saved = Jobs.travelSettings();
+            } catch (Throwable t) {
+                return "the climb's travel settings could not be set (" + t + ")";
             }
-            Jobs.safeSettings();
-            b.getCustomGoalProcess().setGoalAndPath(new GoalBlock(new BlockPos(x, y, z)));
+            try {
+                b.getCustomGoalProcess().setGoalAndPath(new ClimbGoal(new ClimbRule(y, box, (x, yy, z) -> seq.jobs.goalAllowed(x, yy, z) == null)));
+            } catch (Throwable t) {
+                saved.restore();
+                return "Baritone did not take the climb goal (" + t + ")";
+            }
+            climbEnded();                       // a stale one from an earlier climb (restore is once-only)
+            fs.climbSaved = saved;
+            return null;
+        }
+
+        @Override public void climbEnded() {
+            Jobs.Saved s = fs.climbSaved;
+            fs.climbSaved = null;
+            if (s != null) s.restore();
         }
 
         @Override public boolean walkIdle() {

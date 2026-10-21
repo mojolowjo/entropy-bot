@@ -10,10 +10,17 @@ import java.util.List;
 public interface Car {
     enum State { RUNNING, DONE, FAILED }
 
-    record Status(State state, String why) {
+    /**
+     * lostControl: the end was another Baritone process taking control (the fork's typed end, never a text match);
+     * cell: the cell the end is about as the fork reported it (null: none).
+     */
+    record Status(State state, String why, boolean lostControl, int[] cell) {
+        public Status(State state, String why) { this(state, why, false, null); }
         public static Status running(String why) { return new Status(State.RUNNING, why); }
         public static Status done(String why) { return new Status(State.DONE, why); }
         public static Status failed(String why) { return new Status(State.FAILED, why); }
+        public static Status failed(String why, int[] cell) { return new Status(State.FAILED, why, false, cell); }
+        public static Status lost(String why) { return new Status(State.FAILED, why, true, null); }
     }
 
     /** GoalGetToBlock: next to / in this cell. */

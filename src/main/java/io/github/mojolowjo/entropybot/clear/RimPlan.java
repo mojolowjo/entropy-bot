@@ -25,9 +25,6 @@ public final class RimPlan {
     public static final int MAX_TRIES = 2;
     /** The rim placer's cap per layer, in ticks (90 s). */
     public static final int LAYER_CAP_TICKS = 90 * 20;
-    /** Reach used to choose the stand spot (PlaceRules.STAND_REACH: Baritone ends a walk a little off the centre). */
-    public static final double REACH = PlaceRules.STAND_REACH;
-
     /** Why a cell is left. */
     public enum Why {
         NO_SUPPORT("no block under it"), NO_NEIGHBOUR("no solid neighbour"), NO_STAND("nowhere to stand"), NO_BLOCKS("out of blocks"),
@@ -98,39 +95,6 @@ public final class RimPlan {
         return PlaceRules.clickable(w, c.x(), c.y() - 1, c.z());
     }
 
-    /** The bot can stand with its feet at x y z: something solid under them, room for the body, no fluid. */
-    public static boolean standable(ClearWorld w, int x, int y, int z) {
-        if (w.noCollision(x, y - 1, z) || w.fluid(x, y - 1, z)) return false;
-        return w.noCollision(x, y, z) && w.noCollision(x, y + 1, z) && !w.fluid(x, y, z) && !w.fluid(x, y + 1, z);
-    }
-
-    /** The top face of the block under the cell is in reach from feet at x y z (eye 1.62 above). */
-    public static boolean reaches(Pos c, double fx, double fy, double fz, double reach) {
-        double dx = c.x() + 0.5 - fx, dy = c.y() - (fy + 1.62), dz = c.z() + 0.5 - fz;
-        return dx * dx + dy * dy + dz * dz <= reach * reach;
-    }
-
-    private static final int[][] AROUND = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
-
-    /**
-     * Where to stand for cell c: feet on a neighbour column at the cell's level + 1 (standing on a placed or solid block
-     * at the cell's level), the nearest to the bot's feet bx by bz first; null when none.
-     */
-    public static Pos standFor(ClearWorld w, Pos c, double bx, double by, double bz) {
-        Pos best = null;
-        double bestD = Double.MAX_VALUE;
-        for (int[] d : AROUND) {
-            int x = c.x() + d[0], y = c.y() + 1, z = c.z() + d[1];
-            if (!standable(w, x, y, z)) continue;
-            double dd = sq(x + 0.5 - bx) + sq(y - by) + sq(z + 0.5 - bz);
-            if (dd < bestD) {
-                bestD = dd;
-                best = new Pos(x, y, z);
-            }
-        }
-        return best;
-    }
-
     private static double sq(double v) { return v * v; }
 
     /**
@@ -149,41 +113,6 @@ public final class RimPlan {
     /** The cell has a solid neighbour below or on a side to place against. */
     public static boolean anchored(ClearWorld w, Pos c) { return !anchors(w, c).isEmpty(); }
 
-    /** The eye is in front of the anchor face that borders cell c (the face points from the anchor into the cell). */
-    static boolean inFront(Pos c, PlaceRules.Side s, double ex, double ey, double ez) {
-        double hx = c.x() + 0.5 + s.dx() * 0.5, hy = c.y() + 0.5 + s.dy() * 0.5, hz = c.z() + 0.5 + s.dz() * 0.5;
-        return (ex - hx) * -s.dx() + (ey - hy) * -s.dy() + (ez - hz) * -s.dz() > 0.05;
-    }
-
-    /** The centre of the anchor face that borders cell c is within reach of the eye. */
-    public static boolean faceInReach(Pos c, PlaceRules.Side s, double ex, double ey, double ez, double reach) {
-        double hx = c.x() + 0.5 + s.dx() * 0.5, hy = c.y() + 0.5 + s.dy() * 0.5, hz = c.z() + 0.5 + s.dz() * 0.5;
-        return sq(hx - ex) + sq(hy - ey) + sq(hz - ez) <= reach * reach;
-    }
-
-    /**
-     * An eye at ex ey ez can click the face of anchor s that borders cell c: the eye is in front of that face, its
-     * centre is in reach and the ray to it reaches the anchor block first (nothing in between).
-     */
-    public static boolean sees(ClearWorld w, Pos c, PlaceRules.Side s, double ex, double ey, double ez, double reach) {
-        if (!inFront(c, s, ex, ey, ez) || !faceInReach(c, s, ex, ey, ez, reach)) return false;
-        double hx = c.x() + 0.5 + s.dx() * 0.55, hy = c.y() + 0.5 + s.dy() * 0.55, hz = c.z() + 0.5 + s.dz() * 0.55;
-        // a snow layer or grass (no collision; the cell's own one is replaced by the placement) does not block the click:
-        // the ray goes on from where it leaves that block
-        double sx = ex, sy = ey, sz = ez;
-        for (int i = 0; i < 6; i++) {
-            ClearWorld.Hit h = w.clip(sx, sy, sz, hx, hy, hz);
-            if (h == null) return false;
-            if (h.x() == c.x() + s.dx() && h.y() == c.y() + s.dy() && h.z() == c.z() + s.dz()) return true;
-            if (!replaceable(w, h.x(), h.y(), h.z())) return false;
-            double t = exitT(sx, sy, sz, hx, hy, hz, h.x(), h.y(), h.z());
-            if (t < 0 || t >= 1) return false;
-            double nx = sx + (hx - sx) * t, ny = sy + (hy - sy) * t, nz = sz + (hz - sz) * t;
-            sx = nx; sy = ny; sz = nz;
-        }
-        return false;
-    }
-
     /**
      * review b: a block a ray (and a placement) may pass: no collision, not air, no fluid, and neither a built block
      * nor a block entity (a snow layer, grass, a fern; never a torch, a button, a rail or a crop).
@@ -192,117 +121,10 @@ public final class RimPlan {
         return !w.air(x, y, z) && w.noCollision(x, y, z) && !w.fluid(x, y, z) && !w.builtBlock(x, y, z) && !w.blockEntity(x, y, z);
     }
 
-    /** The segment from a to b leaves the unit cube at x y z at parameter t (a little past it); -1 when it never does. */
-    static double exitT(double ax, double ay, double az, double bx, double by, double bz, int x, int y, int z) {
-        double t = Double.MAX_VALUE;
-        double[] a = {ax, ay, az}, d = {bx - ax, by - ay, bz - az};
-        int[] lo = {x, y, z};
-        for (int k = 0; k < 3; k++) {
-            if (d[k] > 1e-9) t = Math.min(t, (lo[k] + 1 - a[k]) / d[k]);
-            else if (d[k] < -1e-9) t = Math.min(t, (lo[k] - a[k]) / d[k]);
-        }
-        return t == Double.MAX_VALUE || t < 0 ? -1 : t + 1e-4;
-    }
-
-    /** The side stance: feet beside the cell and the anchor face to click from there. */
-    public record Stance(Pos feet, PlaceRules.Side side) {}
-
     /**
-     * The second stance (walls, the upper rows of fill and shell, a roof cell over a wall): stand on the floor beside
-     * the cell, feet at the cell's level or one below, on the 8 neighbours or one further out (inside or outside the
-     * wall line), and click an anchor's face that borders the cell. Stances from which the face is seen come first, then
-     * the ones that only reach it; nearest to the bot's feet bx by bz first. null when none.
+     * The next cell's plan: the cell (Baritone's builder picks where to stand and the face), or why it is left.
      */
-    public static Stance sideStand(ClearWorld w, Pos c, double bx, double by, double bz) {
-        List<PlaceRules.Side> an = anchors(w, c);
-        if (an.isEmpty()) return null;
-        Stance st = sideStand(w, c, an, c.y(), c.y() - 1, bx, by, bz);
-        // 0.30.7 (live, shed3 5 high: 15 roof cells "nowhere to stand", the bot on the wall top at the roof's level):
-        // an inner roof cell has no floor in reach; stand on a placed roof cell (feet at the cell's level + 1) and click
-        // the side face of a placed neighbour. Only when nothing lower works (a wall is still built from the floor).
-        // a wall or floor cell (a block under it) keeps the old order; an overhang (a roof cell) skips a touching stance
-        if (st != null && (supported(w, c) || !touches(st.feet().x(), st.feet().y(), st.feet().z(), c))) return st;
-        Stance touching = st;
-        // live (0.31.0, the sunken house): a bot inside, under the roof layer, picked a wall-top stance over the roof it
-        // could not walk to ("nothing in reach" x2 per cell): from below the cell the floor stances come first
-        if (by < c.y()) {
-            st = sideStand(w, c, an, c.y() - 2, c.y() - 3, bx, by, bz);
-            if (st != null) return st;
-        }
-        st = sideStand(w, c, an, c.y() + 1, c.y() + 1, bx, by, bz);
-        if (st != null) return st;
-        // 0.31.0 (trial 11, item 3: a house dug into the ground, the roof at the pit's top under the earth around it: no
-        // floor beside the roof cell, no room on the wall tops; "nowhere to stand" for inner roof cells): stand on the
-        // floor inside, feet 2 or 3 below the cell, and click the side face of a wall top or a placed roof cell above.
-        // A stance beside the cell at body height (live: the bot ended with its body in the cell) only when none of these.
-        st = sideStand(w, c, an, c.y() - 2, c.y() - 3, bx, by, bz);
-        return st != null ? st : touching;
-    }
-
-    /** 0.31.0: the ranking cost added to a stance whose body is right beside the cell at its height. */
-    static final double TOUCH_PENALTY = 1000;
-
-    /** 0.31.0: feet x fy z put the body (fy, fy + 1) right beside cell c (a side or a corner) at the cell's height. */
-    static boolean touches(int x, int fy, int z, Pos c) {
-        return (c.y() == fy || c.y() == fy + 1) && Math.abs(x - c.x()) <= 1 && Math.abs(z - c.z()) <= 1;
-    }
-
-    /** sideStand over the feet levels fyTop down to fyLow. */
-    private static Stance sideStand(ClearWorld w, Pos c, List<PlaceRules.Side> an, int fyTop, int fyLow, double bx, double by, double bz) {
-        Stance best = null, blind = null;
-        double bestD = Double.MAX_VALUE, blindD = Double.MAX_VALUE;
-        boolean overhang = !supported(w, c);
-        for (int fy = fyTop; fy >= fyLow; fy--) {
-            for (int dx = -2; dx <= 2; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (dx == 0 && dz == 0) continue;
-                    int x = c.x() + dx, z = c.z() + dz;
-                    if (PlaceRules.bodyIn(x, fy, z, c) || !standable(w, x, fy, z)) continue;
-                    double ex = x + 0.5, ey = fy + 1.62, ez = z + 0.5;
-                    // 0.31.0 (live, the sunken house: "the game refused placing" twice, the bot 0.4 off its stance's
-                    // centre with its body in the roof cell): a stance right beside the cell at body height ranks after
-                    // the ones the body can't reach into
-                    double dd = sq(ex - bx) + sq(fy - by) + sq(ez - bz) + (overhang && touches(x, fy, z, c) ? TOUCH_PENALTY : 0);
-                    for (PlaceRules.Side s : an) {
-                        if (sees(w, c, s, ex, ey, ez, REACH)) {
-                            if (dd < bestD) { bestD = dd; best = new Stance(new Pos(x, fy, z), s); }
-                            break;
-                        }
-                        if (dd < blindD && inFront(c, s, ex, ey, ez) && faceInReach(c, s, ex, ey, ez, REACH)) {
-                            blindD = dd;
-                            blind = new Stance(new Pos(x, fy, z), s);
-                        }
-                    }
-                }
-            }
-        }
-        return best != null ? best : blind;
-    }
-
-    /**
-     * 0.30.4 (live: a corner wall cell of the lowest layer, reachable only from the diagonal inner floor cell, where the
-     * ray to the floor's top face runs along the edge of the two wall blocks): the server checks the reach of a click,
-     * not the line of sight, so a face in front of the eye and within place reach is clickable even when not seen.
-     */
-    public static boolean clickableFrom(ClearWorld w, Pos c, PlaceRules.Side s, double ex, double ey, double ez) {
-        return sees(w, c, s, ex, ey, ez, PlaceRules.PLACE_REACH)
-                || inFront(c, s, ex, ey, ez) && faceInReach(c, s, ex, ey, ez, PlaceRules.PLACE_REACH);
-    }
-
-    /** An anchor face of cell c the eye at ex ey ez sees within place reach, or null. */
-    public static PlaceRules.Side seenFrom(ClearWorld w, Pos c, double ex, double ey, double ez) {
-        for (PlaceRules.Side s : anchors(w, c)) if (sees(w, c, s, ex, ey, ez, PlaceRules.PLACE_REACH)) return s;
-        return null;
-    }
-
-    /**
-     * The next cell's plan: where to stand (null: place from where the bot stands), or why the cell is left. side: the
-     * anchor face to click (the side stance; null: placeAt picks, the floor first).
-     */
-    public record Pick(Pos cell, Pos stand, Why why, boolean filler, PlaceRules.Side side) {
-        public Pick(Pos cell, Pos stand, Why why, boolean filler) { this(cell, stand, why, filler, null); }
-        public Pick(Pos cell, Pos stand, Why why) { this(cell, stand, why, false, null); }
-    }
+    public record Pick(Pos cell, Why why, boolean filler) {}
 
     /** Filler blocks for a hole under a cell, in order (then the build block itself). */
     public static final List<String> FILLERS = List.of("minecraft:cobblestone", "minecraft:dirt");
@@ -315,8 +137,7 @@ public final class RimPlan {
 
     /**
      * The next cell to place among {@code missing}: lowest layer first, then supported ones nearest the bot; a cell
-     * tried {@link #MAX_TRIES} times is skipped. null when nothing is left to try. A cell in reach from the bot's feet
-     * needs no walk (stand null) on its first try only (a second try always walks to a stand spot); one with no stand spot is a Pick with NO_STAND (the caller marks it tried out).
+     * tried {@link #MAX_TRIES} times is skipped. null when nothing is left to try (builder placements: no stand spot here).
      */
     public static Pick next(ClearWorld w, List<Pos> missing, Map<Pos, Integer> tries, double bx, double by, double bz) {
         List<Pos> open = new ArrayList<>();
@@ -335,22 +156,7 @@ public final class RimPlan {
         int low = open.stream().mapToInt(Pos::y).min().getAsInt();
         open.removeIf(c -> c.y() != low);
         open.sort(Comparator.comparingDouble(c -> sq(c.x() + 0.5 - bx) + sq(c.y() - by) + sq(c.z() + 0.5 - bz)));
-        Pos c = open.get(0);
-        // the feet are on a block of the cell's level (or higher) and the cell is not under the body: place from here
-        int fx = (int) Math.floor(bx), fy = (int) Math.floor(by), fz = (int) Math.floor(bz);
-        boolean sup = supported(w, c);
-        boolean first = tries.getOrDefault(c, 0) == 0 && !PlaceRules.bodyIn(fx, fy, fz, c);
-        if (first && sup && fy > c.y() && reaches(c, bx, by, bz, PlaceRules.PLACE_REACH)) return new Pick(c, null, null, filler);
-        // stance 1 (on top): a cell with a block under it and a standable neighbour at its level + 1
-        Pos s = sup ? standFor(w, c, bx, by, bz) : null;
-        if (s != null) return new Pick(c, s, null, filler);
-        // stance 2 (beside, 0.30.2): an anchor face seen from here on the first try, else walk to a feet cell beside it
-        if (first) {
-            PlaceRules.Side here = seenFrom(w, c, bx, by + 1.62, bz);
-            if (here != null) return new Pick(c, null, null, filler, here);
-        }
-        Stance st = sideStand(w, c, bx, by, bz);
-        return st == null ? new Pick(c, null, Why.NO_STAND, filler) : new Pick(c, st.feet(), null, filler, st.side());
+        return new Pick(open.get(0), null, filler);
     }
 
     /** Why a missing cell was left at the end (no support, else the reason it was given up with). */

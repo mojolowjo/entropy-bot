@@ -41,6 +41,24 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
         minZ = Math.min(minZ, nz);
     }
 
+    /** The fake Baritone climb: up to feet level y where it stands (Baritone would pillar or find stairs). */
+    /** 0.39.q4: a reason here makes the climb fail at once (no Baritone, settings not set). */
+    String climbRefusal;
+    int climbEnds;
+
+    @Override public void climbEnded() { climbEnds++; }
+
+    @Override public String climbTo(int y, ClearBox footprint) {
+        if (climbRefusal != null) return climbRefusal;
+        walks++;
+        Bot b = bot();
+        int x = (int) Math.floor(b.x()), z = (int) Math.floor(b.z());
+        // Baritone pillars under itself with the bag's blocks: a column up to the level, the bot on top
+        for (int yy = (int) Math.floor(b.y() + 0.01); yy < y; yy++) w.set(new Pos(x, yy, z), "cobblestone");
+        moveTo(b.x(), y, b.z());
+        return null;
+    }
+
     /** A walk arrives only when the bot can walk there without breaking or placing. */
     @Override public void walkBlock(int gx, int gy, int gz) {
         long t0 = System.nanoTime();
@@ -72,7 +90,7 @@ class FillDriver extends RunDriver implements FloorFill.Run.Body {
         if (bag.getOrDefault(id, 0) <= 0) return "error: I have no " + id;
         if (!FloorFill.fillable(w, c.x(), c.y(), c.z())) return "error: something is in the way at " + c.key();
         if (FloorFill.bodyHits(x, y, z, c)) return "error: I'm standing in it";
-        if (PlaceRules.placeSide(w, c.x(), c.y(), c.z(), x, y + Bot.EYE, z) == null) return "error: nothing in reach to place against at " + c.key();
+        // builder placements: the fake builder walks to its own spot (no reach test here)
         w.set(c, ClearRules.blockName(id));
         bag.merge(id, -1, Integer::sum);
         placedCells.add(c);

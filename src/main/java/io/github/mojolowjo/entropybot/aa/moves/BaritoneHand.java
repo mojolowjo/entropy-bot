@@ -33,6 +33,8 @@ final class BaritoneHand implements JobHands.Hand {
     private static final Logger LOG = LogUtils.getLogger();
 
     private static boolean warned;
+
+    static void warn(String line) { LOG.warn(line); }
     private IBurrowProcess proc;
     private int mine = -1;
     private Car.Status forced;
@@ -43,24 +45,30 @@ final class BaritoneHand implements JobHands.Hand {
 
     @Override public void start(List<int[]> dig, List<JobHands.Click> clicks, int timeoutTicks) {
         proc = null;
+        builder = null;
         forced = null;
         try {
             List<BlockPos> d = new ArrayList<>();
             for (int[] c : dig) d.add(pos(c));
             List<IBurrowProcess.Click> k = new ArrayList<>();
             for (JobHands.Click c : clicks) {
-                Direction f = Direction.byName(c.face());
-                if (f == null) { forced = Car.Status.failed("no face called " + c.face()); return; }
                 Item it = null;
                 if (c.item() != null) {
                     ResourceLocation rl = ResourceLocation.tryParse(c.item());
                     it = rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
                     if (it == Items.AIR) { forced = Car.Status.failed("no item called " + c.item()); return; }
                 }
-                k.add(new IBurrowProcess.Click(pos(c.on()), f, it));
+                k.add(new IBurrowProcess.Click(pos(c.on()), null, it));      // null face: Baritone picks the face
             }
             proc = b().getBurrowProcess();
-            proc.startJob(d, k, timeoutTicks);
+            var lv = Minecraft.getInstance().level;
+            if (lv == null) { forced = Car.Status.failed("stage plan: no world"); return; }
+            String dim = Guard.dimOf(lv);
+            proc.startJob(d, k, timeoutTicks, new IBurrowProcess.JobGuard() {
+                @Override public String stand(BlockPos f) { return standVerdict(dim, f); }
+
+                @Override public String breakCell(BlockPos q) { return guardVerdict(lv, dim, q, "break"); }
+            });
             mine = proc.run();
         } catch (LinkageError e) {
             forced = Car.Status.failed("this Baritone has no job hands (an older jar? install the entropy fork from baritone-backbone3): " + e);
@@ -73,8 +81,105 @@ final class BaritoneHand implements JobHands.Hand {
         }
     }
 
+    // ---- builder placements (fork: IBuilderProcess.buildLeg; its settings are set and put back by the fork) ----
+    private baritone.api.process.IBuilderProcess builder;
+    private int buildRun = -1;
+
+    @Override public void startBuild(List<int[]> cells, List<String> items, int timeoutTicks, boolean replace) {
+        proc = null;
+        builder = null;
+        forced = null;
+        try {
+            var p = Minecraft.getInstance().player;
+            var lv = Minecraft.getInstance().level;
+            if (p == null || lv == null) { forced = Car.Status.failed("stage plan: no player"); return; }
+            java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> want = new java.util.LinkedHashMap<>();
+            java.util.Map<Item, Integer> need = new java.util.LinkedHashMap<>();
+            for (int i = 0; i < cells.size(); i++) {
+                ResourceLocation rl = ResourceLocation.tryParse(items.get(i));
+                Item it = rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
+                if (!(it instanceof net.minecraft.world.item.BlockItem bi)) {
+                    forced = Car.Status.failed("stage plan: " + items.get(i) + " is not a block item (the builder places blocks only)", cells.get(i));
+                    return;
+                }
+                want.put(pos(cells.get(i)), bi.getBlock().defaultBlockState());
+                need.merge(it, 1, Integer::sum);
+            }
+            // the builder can't fetch: every item comes from the bag, a missing one fails here with its name
+            for (var e : need.entrySet()) {
+                int have = p.getInventory().countItem(e.getKey());
+                if (have < e.getValue()) {
+                    forced = Car.Status.failed("stage items: need " + e.getValue() + " " + BuiltInRegistries.ITEM.getKey(e.getKey()).getPath() + ", the bag has " + have, cells.get(0));
+                    return;
+                }
+            }
+            String dim = Guard.dimOf(lv);
+            baritone.api.process.IBuilderProcess.LegGuard g = new baritone.api.process.IBuilderProcess.LegGuard() {
+                @Override public String cell(BlockPos q) { return guardVerdict(lv, dim, q, "place"); }
+
+                @Override public String stand(BlockPos f) { return standVerdict(dim, f); }
+
+                @Override public String breakCell(BlockPos q) { return guardVerdict(lv, dim, q, "break"); }
+            };
+            builder = b().getBuilderProcess();
+            builder.buildLeg("place " + String.join(",", items), want, timeoutTicks, g, replace);
+            buildRun = builder.legRun();
+        } catch (LinkageError e) {
+            forced = Car.Status.failed("this Baritone has no build legs (an older jar? install the entropy fork from baritone-builder): " + e);
+            if (!warned) {
+                warned = true;
+                LOG.warn("[entropybot] job hands: {}", forced.why());
+            }
+        } catch (RuntimeException e) {
+            forced = Car.Status.failed("start: " + e);
+        }
+    }
+
+    /** The guard's dry run for this action on the cell: null = allowed, else "the guard: why". */
+    private static String guardVerdict(net.minecraft.world.level.Level lv, String dim, BlockPos q, String action) {
+        var v = Guard.INSTANCE.core.checkUnlogged(dim, q.getX(), q.getY(), q.getZ(), action, Guard.INSTANCE.infoFor(lv, q));
+        return v.allowed() ? null : "the guard (" + action + "): " + v.reason();
+    }
+
+    /** The fence's walk check for a feet cell Baritone chose (keep-out and portals always, the rest with the fence on). */
+    private static String standVerdict(String dim, BlockPos f) {
+        var c = io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.commands();
+        return io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(
+                io.github.mojolowjo.entropybot.api.BotAPI.check(dim, f.getX(), f.getY(), f.getZ(), "go"), c != null && c.fenceOn());
+    }
+
+    private static int[] cellOf(BlockPos q) {
+        return q == null ? null : new int[]{q.getX(), q.getY(), q.getZ()};
+    }
+
+    private Car.Status buildStatus() {
+        if (builder.legRun() != buildRun) return Car.Status.failed("another build leg took the builder (run " + builder.legRun() + ", mine " + buildRun + ")");
+        int[] at = cellOf(builder.legCell());
+        return switch (builder.legStatus()) {
+            case DONE -> Car.Status.done(builder.legWhy());
+            case FAILED -> builder.legEnd() == baritone.api.process.LegEnd.LOST_CONTROL
+                    ? Car.Status.lost("stage build: " + builder.legWhy())
+                    : Car.Status.failed("stage build: " + builder.legWhy(), at);
+            case IDLE -> Car.Status.failed("never started");
+            default -> Car.Status.running(builder.legWhy());
+        };
+    }
+
+    /** A higher temporary process (a reflex goal, the pause, a danger burrow) holds Baritone now. */
+    @Override public boolean reflexActive() {
+        try {
+            var in = b().getPathingControlManager().mostRecentInControl();
+            return in.isPresent() && in.get().isTemporary() && in.get().priority() > baritone.api.process.IBuilderProcess.LEG_PRIORITY;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("[entropybot] job hands: who holds Baritone unreadable: {}", e.toString());
+            return false;
+        }
+    }
     @Override public Car.Status status() {
         if (forced != null) return forced;
+        if (builder != null) {
+            try { return buildStatus(); } catch (RuntimeException | LinkageError e) { return Car.Status.failed("status: " + e); }
+        }
         if (proc == null) return Car.Status.failed("nothing started");
         try {
             // review 2: another run (a danger move's burrow) took the process: its status is not mine
@@ -82,7 +187,7 @@ final class BaritoneHand implements JobHands.Hand {
             if (now != mine) return Car.Status.failed("another Baritone burrow run took the process (run " + now + ", mine " + mine + ")");
             return switch (proc.status()) {
                 case DONE -> Car.Status.done(proc.why());
-                case FAILED -> Car.Status.failed(proc.why());
+                case FAILED -> proc.end() == baritone.api.process.LegEnd.LOST_CONTROL ? Car.Status.lost(proc.why()) : Car.Status.failed(proc.why(), cellOf(proc.clickedCell()));
                 case IDLE -> Car.Status.failed("never started");
                 default -> Car.Status.running(proc.why());
             };
@@ -94,9 +199,11 @@ final class BaritoneHand implements JobHands.Hand {
     @Override public void cancel(String why) {
         try {
             if (proc != null && proc.run() == mine && proc.status() == IBurrowProcess.Status.RUNNING) proc.cancel(why);
+            if (builder != null && builder.legRun() == buildRun) builder.cancelLeg(why);
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("[entropybot] job hands: cancel failed: {}", e.toString());
         }
+        builder = null;
         proc = null;
         forced = null;
     }

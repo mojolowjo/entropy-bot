@@ -196,7 +196,7 @@ public final class RestoreLive {
 
     // ---- the contexts ----
 
-    Commands commands() { return c; }
+    public Commands commands() { return c; }
 
     /** 0.24.3: the ledger says the bot built this cell itself (why starts "built:"). */
     boolean builtByMe(int x, int y, int z) {

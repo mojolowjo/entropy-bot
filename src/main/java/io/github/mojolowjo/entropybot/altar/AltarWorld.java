@@ -33,4 +33,9 @@ public interface AltarWorld {
 
     /** Holds {@code item} (null = an empty hand), right-clicks the block: null when the click was sent, else why not. */
     String use(int[] pos, String item);
+
+    /** The last use's click (Baritone's, asynchronous): {@link #CLICK_RUNNING}, null when it ended well (or none), else why it failed. */
+    default String clickState() { return null; }
+
+    String CLICK_RUNNING = "running";
 }

@@ -33,7 +33,7 @@ public final class WaterPlan {
     public static final int RESERVE = 64;
 
     /** One block to put down: where, from where (feet; null: wherever reaches), which block, and why. */
-    public record Placement(Pos cell, Pos from, String block, WaterShell.Role role) {}
+    public record Placement(Pos cell, String block, WaterShell.Role role) {}
 
     /**
      * A round's answer. blocked: why it can't go on (null: it can); kind: what the water was; placements: in order;
@@ -146,7 +146,7 @@ public final class WaterPlan {
                 water++;
                 if (f.source()) sources++;
             }
-            out.add(new Placement(p, o.from().get(i), ids.get(i), c.role()));
+            out.add(new Placement(p, ids.get(i), c.role()));
         }
         return new Round(null, scan.kind(), out, drain, water, sources, what);
     }
@@ -155,8 +155,8 @@ public final class WaterPlan {
 
     // ---- order, support and stand spots ----
 
-    /** The placement order: cells, their stand spots (same index), or why it is stuck. */
-    public record Ordered(List<WaterShell.Cell> cells, List<Pos> from, String stuck) {}
+    /** The placement order: cells, or why it is stuck (builder placements: Baritone picks where to stand). */
+    public record Ordered(List<WaterShell.Cell> cells, String stuck) {}
 
     /**
      * Orders the cells so each has a solid face to click when its turn comes (blocks placed before it count), each with a
@@ -170,11 +170,7 @@ public final class WaterPlan {
         List<WaterShell.Cell> left = new ArrayList<>(cells);
         left.sort(Comparator.<WaterShell.Cell>comparingInt(c -> c.role().ordinal())
                 .thenComparingDouble(c -> sq(c.pos().x() + 0.5 - bot.x()) + sq(c.pos().y() + 0.5 - bot.y()) + sq(c.pos().z() + 0.5 - bot.z())));
-        ClearBox around = ClearBox.around(planned.isEmpty() ? List.of(new Pos((int) Math.floor(bot.x()), (int) Math.floor(bot.y()), (int) Math.floor(bot.z()))) : planned);
-        ClearGrid g = ClearGrid.build(w, around, bot, null, 5, 3);
-        int[] dist = g.walkDistances(bot);
         List<WaterShell.Cell> outCells = new ArrayList<>();
-        List<Pos> outFrom = new ArrayList<>();
         String lastWhy = null;
         while (!left.isEmpty()) {
             boolean placed = false;
@@ -184,58 +180,15 @@ public final class WaterPlan {
                     lastWhy = "nothing to place a block against at " + c.pos().key();
                     continue;
                 }
-                Pos from = standFor(ov, g, dist, c.pos(), bot, planned, standOk);
-                if (from == null) {
-                    lastWhy = "nowhere dry to stand within reach of " + c.pos().key();
-                    continue;
-                }
                 outCells.add(c);
-                outFrom.add(from);
                 ov.solid.add(c.pos());
                 left.remove(i);
                 placed = true;
                 break;
             }
-            if (!placed) return new Ordered(outCells, outFrom, lastWhy);
+            if (!placed) return new Ordered(outCells, lastWhy);
         }
-        return new Ordered(outCells, outFrom, null);
-    }
-
-    /**
-     * A dry stand spot (feet cell) from which a face next to {@code cell} is in reach: feet and head open and not wet,
-     * something solid below, neither cell planned for a block, not inside the cell; walkable spots by walking cost, the
-     * one it stands on first; with the fence on ({@code standOk}) only walkable ones it may stand on.
-     */
-    static Pos standFor(ClearWorld ov, ClearGrid g, int[] dist, Pos cell, Bot bot, Set<Pos> planned, ClearJob.StandCheck standOk) {
-        int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());
-        // where it stands now, when that reaches (the eye exactly where it is)
-        if (!FloorFill.bodyHits(bot.x(), bot.y(), bot.z(), cell) && !ov.fluid(bx, by, bz) && !ov.fluid(bx, by + 1, bz)
-                && PlaceRules.placeSideSeen(ov, cell.x(), cell.y(), cell.z(), bot.x(), bot.eyeY(), bot.z(), PlaceRules.PLACE_REACH) != null) {
-            return new Pos(bx, by, bz);
-        }
-        Pos best = null;
-        double bestCost = Double.MAX_VALUE;
-        for (int x = cell.x() - 4; x <= cell.x() + 4; x++) {
-            for (int z = cell.z() - 4; z <= cell.z() + 4; z++) {
-                for (int y = cell.y() - 4; y <= cell.y() + 3; y++) {
-                    if (PlaceRules.bodyIn(x, y, z, cell)) continue;
-                    int i = g.idx(x, y, z);
-                    if (i < 0 || !g.stand(x, y, z) || g.wet(x, y, z) || g.wet(x, y + 1, z)) continue;
-                    if (planned.contains(new Pos(x, y, z)) || planned.contains(new Pos(x, y + 1, z))) continue;
-                    if (standOk != null && !standOk.ok(x, y, z)) continue;
-                    double cost;
-                    if (dist[i] >= 0) cost = dist[i];
-                    else if (standOk != null) continue;
-                    else cost = 1000 + Math.sqrt(sq(x - bot.x()) + sq(y - bot.y()) + sq(z - bot.z()));
-                    if (cost >= bestCost) continue;
-                    // 0.39.p4: the distance pick here (the planned seal blocks are not in the ray test); the place step re-walks to a seen face
-                    if (PlaceRules.placeSide(ov, cell.x(), cell.y(), cell.z(), x + 0.5, y + Bot.EYE, z + 0.5) == null) continue;
-                    best = new Pos(x, y, z);
-                    bestCost = cost;
-                }
-            }
-        }
-        return best;
+        return new Ordered(outCells, null);
     }
 
     /** The world with the planned blocks already in: they are solid, full and clickable. */
