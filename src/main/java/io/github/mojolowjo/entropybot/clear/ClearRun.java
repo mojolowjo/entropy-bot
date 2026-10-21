@@ -54,6 +54,9 @@ public final class ClearRun {
         /** Places a torch at t (with its place lease): "ok..." or why not. */
         String placeTorch(Pos t);
 
+        /** Step 3 review 1: Baritone is still placing for this run (a torch): the run waits (default: never). */
+        default boolean handsBusy() { return false; }
+
         void walkBlock(int x, int y, int z);
 
         void walkNear(int x, int y, int z, int r);
@@ -210,6 +213,10 @@ public final class ClearRun {
     // ---- pick ----
 
     private Out pick(Body b, long now) {
+        if (b.handsBusy()) {
+            b.status(job.status("placing a torch"));
+            return Out.RUN;
+        }
         if (!job.torches.isEmpty()) {
             Pos t = ClearEngine.nextTorch(w, b.bot(), job, b.haveTorches());
             if (t != null && b.placeTorch(t).startsWith("ok")) {

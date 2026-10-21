@@ -32,7 +32,7 @@ import java.util.Set;
  */
 public final class ShelterJob {
     private static final Logger LOG = LogUtils.getLogger();
-    static final long PLACE_TICKS = 6, BREAK_TICKS = 800, OUT_TICKS = 60, MAX_WAIT = 20 * 60 * 20;
+    static final long PLACE_TICKS = 6, BREAK_TICKS = 800, OUT_TICKS = 200, MAX_WAIT = 20 * 60 * 20;      // backbone step 3: OUT 3 -> 10 s (Baritone plans the step first)
 
     private ShelterJob() {}
 
@@ -41,7 +41,7 @@ public final class ShelterJob {
         int[] feet;
         String block;
         long timer = -1, keep, startedAt, stageAt, lastAct;
-        long lastTime = -1;
+        long lastTime = -1, torchSince = -1;
         boolean sawNight, leave, torchDone, recovered;
         List<int[]> todo = new ArrayList<>();
         final Set<String> own = new HashSet<>();
@@ -164,9 +164,7 @@ public final class ShelterJob {
 
     private static void end(State s) {
         try { s.leases.releaseAll(); } catch (RuntimeException ignored) {}
-        Minecraft mc = Minecraft.getInstance();
-        try { mc.options.keyUp.setDown(false); } catch (RuntimeException ignored) {}
-        try { if (mc.gameMode != null) mc.gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop("the shelter ended");
         if (current == s) current = null;
     }
 
@@ -245,9 +243,18 @@ public final class ShelterJob {
         if (ps.idx >= ps.todo.size() && !ps.skipped.isEmpty()) return retrySkipped(ps, lv, p, now);
         if (ps.idx >= ps.todo.size()) {
             if (!ps.torchDone) {
-                ps.torchDone = true;
-                if (Gui.inventory(p).getOrDefault("minecraft:torch", 0) > 0) {
-                    String r = Clearing.placeAt(p, "minecraft:torch", ps.feet[0], ps.feet[1] + 1, ps.feet[2], ps.leases);
+                // step 3 review 1: Baritone's click takes ticks: done only when the cell holds the torch (or it failed / 10 s)
+                int[] tc = {ps.feet[0], ps.feet[1] + 1, ps.feet[2]};
+                if (ps.torchSince < 0) ps.torchSince = now;
+                boolean there = Clearing.blockId(tc).endsWith("torch");
+                if (there || Gui.inventory(p).getOrDefault("minecraft:torch", 0) <= 0 || now - ps.torchSince > 200) {
+                    ps.torchDone = true;
+                    LOG.info("[entropybot] shelter: torch inside: {}", there ? "placed" : "none placed (" + (now - ps.torchSince > 200 ? "10 s passed" : "no torch") + ")");
+                    return false;
+                }
+                String r = Clearing.placeAt(p, "minecraft:torch", tc[0], tc[1], tc[2], ps.leases);
+                if (r.startsWith("error")) {
+                    ps.torchDone = true;
                     LOG.info("[entropybot] shelter: torch inside: {}", r);
                 }
                 return false;
@@ -372,15 +379,10 @@ public final class ShelterJob {
                 return false;
             }
         }
-        Vec3 center = Vec3.atCenterOf(bp);
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
-        Vec3 eye = p.getEyePosition();
-        Direction face = Direction.getNearest((float) (eye.x - center.x), (float) (eye.y - center.y), (float) (eye.z - center.z));
-        if (ps.hit == null || ps.hit != c) {
-            mc.gameMode.startDestroyBlock(bp, face);
-            ps.hit = c;
-        } else mc.gameMode.continueDestroyBlock(bp, face);
-        p.swing(InteractionHand.MAIN_HAND);
+        // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool break the wall (JobHands)
+        ps.hit = c;
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(c, (int) BREAK_TICKS, "opening my shelter");
+        if (r.failed()) ps.note = "error: couldn't open my shelter at " + Jobs.fmt(c) + ": " + r.why();
         return false;
     }
 
@@ -398,23 +400,32 @@ public final class ShelterJob {
     }
 
     private static boolean out(State ps, LocalPlayer p, ClientLevel lv, long now) {
-        Minecraft mc = Minecraft.getInstance();
         int[] to = ps.exit[2];
         int[] me = Jobs.here(p);
         boolean outside = me[0] != ps.feet[0] || me[2] != ps.feet[2];
+        var b = Jobs.baritone();
         if (outside && Math.abs(p.getX() - (ps.exit[0][0] + 0.5)) + Math.abs(p.getZ() - (ps.exit[0][2] + 0.5)) > 0.9) {
-            mc.options.keyUp.setDown(false);
+            if (b != null) b.getCustomGoalProcess().setGoal(null);
             ps.idx = 0;
             ps.stageAt = now;
             return true;
         }
         if (now - ps.stageAt > OUT_TICKS) {
-            mc.options.keyUp.setDown(false);
-            ps.note = "error: couldn't step out of my shelter (the way out at " + Jobs.fmt(ps.exit[0]) + " is open)";
+            if (b != null) b.getCustomGoalProcess().setGoal(null);
+            ps.note = "error: couldn't step out of my shelter (the way out at " + Jobs.fmt(ps.exit[0]) + " is open; Baritone didn't take me to " + Jobs.fmt(to)
+                    + " in " + OUT_TICKS / 20 + " s, I am at " + Jobs.fmt(me) + ")";
             return false;
         }
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(to[0] + 0.5, p.getEyeY(), to[2] + 0.5));
-        mc.options.keyUp.setDown(true);
+        // backbone step 3 ("Baritone is the car"): the step out is a GoalBlock, not the forward key and a camera
+        if (ps.hit != to) {
+            ps.hit = to;
+            if (b == null) {
+                ps.note = "error: couldn't step out of my shelter: no Baritone";
+                return false;
+            }
+            Jobs.safeSettings();
+            b.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(to[0], to[1], to[2]));
+        }
         return false;
     }
 

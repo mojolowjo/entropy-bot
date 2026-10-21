@@ -63,6 +63,8 @@ public final class Jobs {
         long bestTick, lastStepTick = -1;
         // stepping off a block Baritone can't plan from (a modded altar, a pedestal): ticks left, tries made
         int unstickLeft, unstickTries;
+        /** Backbone step 3: the step off is a Baritone GoalBlock (set on the first unstick tick). */
+        boolean unstickGoal;
         /** P1 fix: how often a walk that Baritone ended short of its goal tried again (WalkEnd). */
         int shortTries;
         /** 0.31.1: a goto into a house that ended short walks to the doorway's outside step once (doorFinal: the real goal). */
@@ -126,7 +128,7 @@ public final class Jobs {
     static final int ESCAPE_MAX = 5;
     static final long ESCAPE_BLOCK_TICKS = 200;
 
-    static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 12;
+    static final int UNSTICK_TRIES = 2, UNSTICK_TICKS = 40;      // backbone step 3: a Baritone step needs its path first (was 12 ticks of keys)
     static final long UNSTICK_EARLY = 100;
 
     private final Core core;
@@ -747,6 +749,7 @@ public final class Jobs {
         Minecraft mc = Minecraft.getInstance();
         if (j.type.equals("twerk") || j.seq != null) mc.options.keyShift.setDown(false);      // twerk, a farm round's crouch
         if (j.unstickLeft > 0) endUnstick(j);
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop("the job ended");
         if (j.seq != null) { try { String m = Clearing.ended(j.seq, msg); if (m != null && !m.equals(msg)) { msg = m; j.status = m; } } catch (RuntimeException e) { LOG.warn("[entropybot] clear end hook: {}", e.toString()); } }           // B7d D1: a clear's leases end with the job, however it ends (a table left is named); never keeps the request open
         if (j.seq != null) {
             LocalPlayer p = mc.player;
@@ -1230,12 +1233,22 @@ public final class Jobs {
     /** Once a tick in a world. */
     void tick(LocalPlayer p) {
         long now = core.tick();
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().tick();      // backbone step 3: the job hands follow Baritone
         reflexWatch(p);
         if (now % 20 == 10) fenceWatch(p);
         if (now % 20 == 15) followFixTick(p);
         if (!running()) return;
         if (core.reflexes.hold()) {                      // a reflex holds the job still
-            if (job.unstickLeft > 0) endUnstick(job);
+            if (job.unstickLeft > 0) {
+                boolean ours = job.unstickGoal;
+                endUnstick(job);
+                // backbone step 3: the step-off goal is Baritone's now; the job's own goal goes back under the hold
+                IBaritone hb = baritone();
+                if (ours && hb != null && !job.longRoute) {
+                    if (job.goalObj != null) hb.getCustomGoalProcess().setGoalAndPath(job.goalObj);
+                    else if (job.goal != null) hb.getCommandManager().execute(job.goal);
+                }
+            }
             return;
         }
         Job j = job;
@@ -1831,11 +1844,22 @@ public final class Jobs {
     }
 
     private void unstickStep(LocalPlayer p, Job j) {
-        Minecraft mc = Minecraft.getInstance();
-        p.lookAt(EntityAnchorArgument.Anchor.FEET, new Vec3(j.unstickTo[0], p.getY(), j.unstickTo[2]));
-        mc.options.keyUp.setDown(true);
-        mc.options.keyJump.setDown(j.unstickTo[1] >= Math.floor(p.getY()));
-        if (--j.unstickLeft > 0) return;
+        // backbone step 3 ("Baritone is the car"): the step off is a GoalBlock on the next cell, not keys and a camera
+        BlockPos to = BlockPos.containing(j.unstickTo[0], j.unstickTo[1], j.unstickTo[2]);
+        IBaritone sb = baritone();
+        if (!j.unstickGoal) {
+            j.unstickGoal = true;
+            if (sb == null) {
+                LOG.info("[entropybot] unstick: no Baritone to step to {} {} {}", to.getX(), to.getY(), to.getZ());
+                j.unstickLeft = 1;
+            } else {
+                safeSettings();
+                sb.getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(to));
+            }
+        }
+        boolean there = to.equals(BlockPos.containing(p.getX(), p.getY() + 0.01, p.getZ()));
+        if (!there && --j.unstickLeft > 0) return;
+        if (!there) LOG.info("[entropybot] unstick: Baritone did not reach {} {} {} in {} ticks (at {})", to.getX(), to.getY(), to.getZ(), UNSTICK_TICKS, fmt(here(p)));
         endUnstick(j);
         // and plan again from the new spot (a fresh stuck clock and fresh path events)
         IBaritone b = baritone();
@@ -2134,24 +2158,19 @@ public final class Jobs {
             LOG.info("[entropybot] escape: dug out, stepping to {}", fmt(j.escapeTo));
             return;
         }
-        if (now - j.escapeTick > ESCAPE_BLOCK_TICKS) {
-            String what = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+        String what = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+        if (now - j.escapeTick > ESCAPE_BLOCK_TICKS + 20) {        // Baritone's own 10 s per cell ends first; this is the backstop
             endEscape(j);
-            mc.options.keyAttack.setDown(false);
             finish("error: stuck at " + fmt(here(p)) + " and couldn't dig out: the " + what + " at " + fmt(c) + " didn't break in 10 s");
             return;
         }
-        Vec3 center = Vec3.atCenterOf(bp);
-        p.lookAt(EntityAnchorArgument.Anchor.EYES, center);
-        Vec3 eye = p.getEyePosition();
-        Direction face = Direction.getNearest((float) (eye.x - center.x), (float) (eye.y - center.y), (float) (eye.z - center.z));
-        if (j.escapeHit == null || j.escapeHit[0] != c[0] || j.escapeHit[1] != c[1] || j.escapeHit[2] != c[2]) {
-            mc.gameMode.startDestroyBlock(bp, face);
-            j.escapeHit = c;
-        } else {
-            mc.gameMode.continueDestroyBlock(bp, face);
+        // backbone step 3 ("Baritone is the car"): the break goes through Baritone's look, click and tool (JobHands)
+        j.escapeHit = c;
+        var r = io.github.mojolowjo.entropybot.aa.moves.JobHands.get().dig(c, (int) ESCAPE_BLOCK_TICKS, "the dig-out");
+        if (r.failed()) {
+            endEscape(j);
+            finish("error: stuck at " + fmt(here(p)) + " and couldn't dig out: the " + what + " at " + fmt(c) + ": " + r.why());
         }
-        p.swing(InteractionHand.MAIN_HAND);
     }
 
     /** The dig-out's lease goes, its expected cells are forgotten. */
@@ -2163,13 +2182,11 @@ public final class Jobs {
         j.escapeBreaks = null;
         j.escapeHit = null;
         RestoreLive.INSTANCE.expectEscape(j.id, java.util.List.of(), "");
-        try { Minecraft.getInstance().gameMode.stopDestroyBlock(); } catch (RuntimeException ignored) {}
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop("the dig-out ended");
     }
 
     static void endUnstick(Job j) {
-        Minecraft mc = Minecraft.getInstance();
-        mc.options.keyUp.setDown(false);
-        mc.options.keyJump.setDown(false);
+        j.unstickGoal = false;
         j.unstickLeft = 0;
     }
 

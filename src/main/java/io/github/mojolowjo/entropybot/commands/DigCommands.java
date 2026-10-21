@@ -783,7 +783,9 @@ final class DigCommands {
         // 0.30.7 (live): a mob in the cell: the place job waits for it (10 s) instead of the instant click's error
         String inWay = PlaceRules.free(w, x, y, z) ? Clearing.entityInWay(p, x, y, z) : null;
         boolean mobWait = inWay != null && inWay.endsWith("(waiting)");
-        if (!mobWait && (PlaceRules.placeSide(w, x, y, z, p.getX(), p.getEyeY(), p.getZ()) != null || !PlaceRules.free(w, x, y, z))) {
+        // backbone step 3: the click is Baritone's and takes a few ticks, so the lease must outlive this call: only a
+        // filled cell answers at once; every placement runs as the place step (it holds the lease until the block is there)
+        if (!mobWait && !PlaceRules.free(w, x, y, z)) {
             io.github.mojolowjo.entropybot.clear.LeaseSet leases = Clearing.newLeases();
             try {
                 return Clearing.placeAt(p, id, x, y, z, leases);

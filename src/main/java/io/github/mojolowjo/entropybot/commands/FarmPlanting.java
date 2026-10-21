@@ -267,6 +267,11 @@ final class FarmPlanting {
 
     // ==== the steps ====
 
+    /** Backbone step 3: the planting's hands (break, till, plant, pour) are Baritone's. */
+    private static io.github.mojolowjo.entropybot.aa.moves.JobHands hands() {
+        return io.github.mojolowjo.entropybot.aa.moves.JobHands.get();
+    }
+
     String step(Seq s, Seq.Step st, LocalPlayer p, long elapsed) {
         Run r = runs.get(s);
         if (r == null) return "the planting run is gone";
@@ -279,7 +284,7 @@ final class FarmPlanting {
         }
         if (!res.equals("wait") && r.leases != null) {
             r.leases.releaseAll();
-            Minecraft.getInstance().options.keyAttack.setDown(false);
+            hands().stop("the planting ended");
         }
         return res;
     }
@@ -326,7 +331,7 @@ final class FarmPlanting {
             if (bag(p, "minecraft:water_bucket") <= 0 || r.tries.getOrDefault(key, 0) >= 40 || !sealed(level, c)) {
                 r.done.add(key);
                 r.waterFailed++;
-                if (r.digging != null) mc.options.keyAttack.setDown(false);
+                if (r.digging != null) hands().stop("the water hole was given up");
                 continue;
             }
             int[] me = Jobs.here(p);
@@ -343,34 +348,26 @@ final class FarmPlanting {
                         continue;
                     }
                 }
-                p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(c.x() + 0.5, c.y() + 0.5, c.z() + 0.5));
-                if (r.digging == null || r.digging[0] != c.x() || r.digging[2] != c.z()) {
-                    mc.gameMode.startDestroyBlock(pos, Direction.UP);
-                    r.digging = new int[] {c.x(), c.y(), c.z()};
-                } else {
-                    mc.gameMode.continueDestroyBlock(pos, Direction.UP);
+                // backbone step 3 ("Baritone is the car"): Baritone's look, click and tool dig the hole (JobHands)
+                r.digging = new int[] {c.x(), c.y(), c.z()};
+                var hr = hands().dig(r.digging, 200, "farm plant water hole");
+                if (hr.failed()) {
+                    LOG.info("[entropybot] farm plant: water hole at {}: {}", key, hr.why());
+                    r.tries.merge(key, 10, Integer::sum);
+                    return "wait";
                 }
-                p.swing(InteractionHand.MAIN_HAND);
-                r.tries.merge(key, 1, Integer::sum);
                 s.setStatus(s.label + " - digging a water hole at " + c.x() + " " + c.y() + " " + c.z());
                 return "wait";
             }
             r.digging = null;
-            Long at = r.clickedAt.get(key);
-            if (at != null && now - at < 10) return "wait";
-            // aim into the hole and pour: the bucket's own ray must land in this cell
-            if (!Clearing.holdItem(p, "minecraft:water_bucket")) continue;
-            p.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(c.x() + 0.5, c.y() + 0.4, c.z() + 0.5));
-            mc.gameRenderer.pick(1.0f);
-            if (!(mc.hitResult instanceof BlockHitResult h) || h.getType() != HitResult.Type.BLOCK
-                    || !h.getBlockPos().relative(h.getDirection()).equals(pos)) {
+            // pour: Baritone right-clicks the top of the hole's floor with the bucket (the bucket's ray lands in the cell)
+            var hr = hands().click(new int[] {c.x(), c.y() - 1, c.z()}, "up", "minecraft:water_bucket", 100, "farm plant water", null);
+            if (hr.failed()) {
+                LOG.info("[entropybot] farm plant: pouring at {}: {}", key, hr.why());
                 r.tries.merge(key, 5, Integer::sum);
                 return walkTo(r, w, key + " close", new int[] {c.x() + 1, c.y() + 1, c.z()}, 0, now);
             }
-            mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
-            p.swing(InteractionHand.MAIN_HAND);
-            r.clickedAt.put(key, now);
-            r.tries.merge(key, 10, Integer::sum);
+            if (hr.done()) r.tries.merge(key, 10, Integer::sum);
             s.setStatus(s.label + " - pouring water at " + c.x() + " " + c.y() + " " + c.z());
             return "wait";
         }
@@ -422,32 +419,33 @@ final class FarmPlanting {
                 }
                 continue;
             }
-            p.lookAt(EntityAnchorArgument.Anchor.EYES, top);
+            // backbone step 3 ("Baritone is the car"): Baritone's look and clicks break, till and plant (JobHands)
+            int[] g3 = {c.x(), c.y(), c.z()};
+            io.github.mojolowjo.entropybot.aa.moves.JobHands.Result hr;
             if (!a.isAir() && isPlant(level, above, a)) {
                 // short grass on it: a hoe needs air above, so it goes first
-                mc.gameMode.startDestroyBlock(above, Direction.UP);
-                p.swing(InteractionHand.MAIN_HAND);
-                r.clickedAt.put(key, now - 6);
-                return "wait";
-            }
-            if (till) {
+                hr = hands().dig(new int[] {c.x(), c.y() + 1, c.z()}, 100, "farm plant: the plant on " + key);
+                s.setStatus(s.label + " - clearing the plant on " + key);
+            } else if (till) {
                 p.getInventory().selected = selectHoe(mc, p);
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(top, Direction.UP, gpos, false));
-                p.swing(InteractionHand.MAIN_HAND);
-                if (r.tilledSet.add(key)) r.tilled++;
+                String hoe = io.github.mojolowjo.entropybot.gui.Gui.itemId(p.getInventory().getItem(p.getInventory().selected));
+                hr = hands().click(g3, "up", hoe, 100, "farm plant: tilling " + key, null);
+                if (!hr.failed() && r.tilledSet.add(key)) r.tilled++;
                 s.setStatus(s.label + " - tilling (" + r.tilled + ")");
             } else {
                 if (!Clearing.holdItem(p, r.seed)) {
                     r.stopWhy = "no seeds";
                     continue;
                 }
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(top, Direction.UP, gpos, false));
-                p.swing(InteractionHand.MAIN_HAND);
-                r.seeded.add(key);
+                hr = hands().click(g3, "up", r.seed, 100, "farm plant: planting " + key, null);
+                if (!hr.failed()) r.seeded.add(key);
                 s.setStatus(s.label + " - planting (" + (r.planted + 1) + ")");
             }
-            r.clickedAt.put(key, now);
-            r.tries.merge(key, 1, Integer::sum);
+            if (hr.failed()) {
+                LOG.info("[entropybot] farm plant: {}", hr.why());
+                r.clickedAt.put(key, now);
+                r.tries.merge(key, 1, Integer::sum);
+            }
             return "wait";
         }
         if (walkTo != null) return walkTo(r, w, walkTo.key(), new int[] {walkTo.x(), walkTo.y() + 1, walkTo.z()}, 2, now);
