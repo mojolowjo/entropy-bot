@@ -34,17 +34,20 @@ public final class EngineProcess implements IBaritoneProcess {
 
     /** Baritone stands still, keeping the goal it had. */
     public void hold() {
+        reflex = false;
         mode = Mode.HOLD;
         goal = null;
     }
 
     /** Baritone walks to this goal instead, until {@link #release()}. */
     public void override(Goal g) {
+        reflex = false;
         mode = Mode.OVERRIDE;
         goal = g;
     }
 
     public void release() {
+        reflex = false;
         mode = Mode.NONE;
         goal = null;
     }
@@ -81,13 +84,32 @@ public final class EngineProcess implements IBaritoneProcess {
     /** Baritone's cancel (the bridge's stop): drop the goal; a reflex still running asks again next tick. */
     @Override
     public void onLostControl() {
+        reflex = false;
         mode = Mode.NONE;
         goal = null;
     }
 
+    /**
+     * Backbone step 4: a reflex goal (the air swim-up, the creeper flee, the lava/fire escape) runs above every other
+     * Baritone process (the fork's BurrowProcess -0.25, Baritone's own -1, its pause 0): {@link #REFLEX_PRIORITY} while
+     * this override lasts. PathingControlManager sorts the active processes by priority every tick, so the goal is
+     * taken on Baritone's next tick.
+     */
+    public static final double REFLEX_PRIORITY = 10;
+    private volatile boolean reflex;
+
+    /** Backbone step 4: {@link #override} at {@link #REFLEX_PRIORITY}, until hold/override/release/lost control. */
+    public void overrideReflex(Goal g) {
+        override(g);
+        reflex = true;
+    }
+
+    /** A reflex goal holds the engine now. */
+    public boolean reflexGoal() { return reflex && mode == Mode.OVERRIDE; }
+
     @Override
     public double priority() {
-        return -0.5;
+        return reflexGoal() ? REFLEX_PRIORITY : -0.5;
     }
 
     @Override

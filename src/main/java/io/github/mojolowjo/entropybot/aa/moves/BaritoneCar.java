@@ -48,8 +48,21 @@ public final class BaritoneCar implements Car {
     private Boolean savedPlace;
     private List<Item> savedThrow, setThrow;
 
+    /** Backbone step 4: a reflex car's goals run at {@link EngineProcess#REFLEX_PRIORITY} (above every process). */
+    private final boolean reflex;
+
     public BaritoneCar(EngineProcess engine) {
+        this(engine, false);
+    }
+
+    public BaritoneCar(EngineProcess engine, boolean reflex) {
         this.engine = engine;
+        this.reflex = reflex;
+    }
+
+    private void push(Goal g) {
+        if (reflex) engine.overrideReflex(g);
+        else engine.override(g);
     }
 
     private static IBaritone b() {
@@ -68,7 +81,31 @@ public final class BaritoneCar implements Car {
         goal = g;
         this.what = what;
         calcAtStart = engine.calcFails();
-        engine.override(g);
+        push(g);
+    }
+
+    @Override public void runAway(int dist, List<int[]> from, double[] prefer) {
+        if (prefer == null) { runAway(dist, from); return; }
+        BlockPos[] at = new BlockPos[from.size()];
+        for (int i = 0; i < at.length; i++) at[i] = pos(from.get(i));
+        if (at.length == 0) { fresh(); forced = Status.failed("nothing to run from"); return; }
+        var p = Minecraft.getInstance().player;
+        if (p == null) { fresh(); forced = Status.failed("no player"); return; }
+        drive(new PreferredRunAway(dist, prefer, p.getBlockX(), p.getBlockZ(), at), "run " + dist + " away, heading yaw "
+                + Math.round(Math.toDegrees(Math.atan2(-prefer[0], prefer[1]))));
+    }
+
+    @Override public void reach(int[] cell) {
+        drive(new GoalBlock(pos(cell)), "reach " + cell[0] + " " + cell[1] + " " + cell[2]);
+    }
+
+    @Override public boolean pathReady() {
+        try {
+            var pb = b().getPathingBehavior();
+            return goal != null && pb.getCurrent() != null && pb.getGoal() == goal;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     @Override public void cover(int[] cell) {
@@ -100,7 +137,7 @@ public final class BaritoneCar implements Car {
         goal = new GoalBlock(pos(top));
         what = "pillar to " + top[0] + " " + top[1] + " " + top[2];
         calcAtStart = engine.calcFails();
-        engine.override(goal);
+        push(goal);
     }
 
     @Override public void burrow(List<int[]> dig, int[] stand, List<int[]> seal, int timeoutTicks) {
@@ -160,7 +197,7 @@ public final class BaritoneCar implements Car {
             if (ctx.player() == null) return Status.failed("no player");
             if (goal.isInGoal(ctx.playerFeet())) return Status.done(what);
             if (engine.calcFails() - calcAtStart >= CALC_FAILS) return Status.failed("Baritone found no path (" + what + ")");
-            if (engine.mode() != EngineProcess.Mode.OVERRIDE) engine.override(goal);     // a cancel dropped it
+            if (engine.mode() != EngineProcess.Mode.OVERRIDE || reflex != engine.reflexGoal()) push(goal);     // a cancel dropped it
             return Status.running(what);
         } catch (RuntimeException e) {
             return Status.failed("status: " + e);

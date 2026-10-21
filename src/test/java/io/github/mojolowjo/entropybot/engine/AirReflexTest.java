@@ -18,5 +18,16 @@ class AirReflexTest {
     @Test void takeoverHoldsAtSurfaceUntilFull() { assertEquals(ReflexRules.Air.TAKEOVER, ReflexRules.air(false, true, 200, 300, true, true)); }
     @Test void takeoverEndsWhenFull() { assertEquals(ReflexRules.Air.NONE, ReflexRules.air(false, true, 300, 300, true, true)); }
     @Test void takeoverEndsOutOfWater() { assertEquals(ReflexRules.Air.NONE, ReflexRules.air(false, false, 200, 300, true, true)); }
+    // backbone step 4: the swim-up's GoalBlock cell (water below y 63, air from 63; a stone roof at x 0 z 0 y 66 when asked)
+    static ReflexRules.Cells sea(boolean roof, int roofHole) {
+        return (x, y, z) -> {
+            if (roof && y == 60 && !(x == roofHole && z == 0)) return ReflexRules.Cell.SOLID;
+            return y < 63 ? ReflexRules.Cell.WATER : ReflexRules.Cell.OPEN;
+        };
+    }
+    @Test void surfaceStraightUp() { assertArrayEquals(new int[]{0, 62, 0}, ReflexRules.surface(0, 55, 0, sea(false, 0))); }
+    @Test void aRoofSendsItToTheNearestOpenColumn() { assertArrayEquals(new int[]{2, 62, 0}, ReflexRules.surface(0, 58, 0, sea(true, 2))); }
+    @Test void noOpeningInReachIsNull() { assertNull(ReflexRules.surface(0, 58, 0, sea(true, 9))); }
+    @Test void tooDeepIsNull() { assertNull(ReflexRules.surface(0, 62 - ReflexRules.SURFACE_UP - 1, 0, sea(false, 0))); }
     @Test void dryDoesNothing() { assertEquals(ReflexRules.Air.NONE, ReflexRules.air(false, false, 0, 300, false, false)); }
 }

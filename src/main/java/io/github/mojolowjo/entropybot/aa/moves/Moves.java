@@ -73,6 +73,45 @@ public final class Moves {
         begin("dig in", new Leg("dig into the wall at " + c(f), car -> car.burrow(List.of(f, h), f, List.of(entrance.clone(), e2), (int) DIG_TICKS), DIG_TICKS));
     }
 
+    // ---- backbone step 4: the reflexes' ways (a car made with the reflex priority runs them) ----
+
+    /** Ticks a reflex leg may take. */
+    static final long REFLEX_TICKS = 20 * 15;
+
+    /** Air: GoalBlock with the feet in the top water cell (the head above the surface). */
+    public void swimUp(int[] surface) {
+        int[] s = surface.clone();
+        begin("swim up", new Leg("swim up to " + c(s), car -> car.reach(s), REFLEX_TICKS));
+    }
+
+    /** The creeper flee: GoalRunAway {@code dist} from the hostiles, leaning toward FleeHeading's {@code prefer}. */
+    public void flee(int dist, List<int[]> from, double[] prefer) {
+        List<int[]> f = List.copyOf(from);
+        double[] h = prefer == null ? null : prefer.clone();
+        begin("flee", new Leg("run " + dist + " from " + f.size() + " mob(s)" + (h == null ? "" : " on the flee heading"),
+                car -> car.runAway(dist, f, h), REFLEX_TICKS));
+    }
+
+    /** Lava / fire: GoalRunAway {@code dist} from the hazard cells ({@code what}: "lava", "fire"). */
+    public void escape(String what, int dist, List<int[]> cells) {
+        List<int[]> f = List.copyOf(cells);
+        begin("escape " + what, new Leg("run " + dist + " from " + f.size() + " " + what + " cell(s)", car -> car.runAway(dist, f, null), REFLEX_TICKS));
+    }
+
+    /** A plain GoalBlock way (the fire reflex walking into water). */
+    public void reach(String way, int[] cell) {
+        int[] s = cell.clone();
+        begin(way, new Leg(way + " " + c(s), car -> car.reach(s), REFLEX_TICKS));
+    }
+
+    /** Baritone holds a path for the running leg's goal (the air reflex's jump gap is over). */
+    public boolean pathReady() {
+        return phase == Phase.RUNNING && car.pathReady();
+    }
+
+    /** The tick the running leg started (for the latency line). */
+    public long legStart() { return legStart; }
+
     /** The camera: Baritone's LookBehavior target this tick. */
     public void lookAt(double x, double y, double z) {
         car.look(x, y, z);

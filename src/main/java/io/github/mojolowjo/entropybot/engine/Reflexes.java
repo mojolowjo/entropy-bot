@@ -2,9 +2,7 @@ package io.github.mojolowjo.entropybot.engine;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
-import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalNear;
-import baritone.api.pathing.goals.GoalXZ;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
@@ -19,7 +17,6 @@ import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -78,7 +75,6 @@ public final class Reflexes {
     private long eatCooldownUntil;
     // creepers
     private long fleeUntil;
-    private Goal fleeGoal;
     // the base and the /home landing (Commands.pushPlaces)
     private volatile Place base, home;
     // death
@@ -98,11 +94,21 @@ public final class Reflexes {
     /** AA_CLEANUP 4: the danger moves AA's danger desire (or the owner) starts: flee, cover, pillar, burrow. */
     public final DangerMoves moves;
 
+    /**
+     * Backbone step 4 ("AA is the driver, Baritone is the car"): the reflexes' own Moves on a car whose goals run at
+     * {@link EngineProcess#REFLEX_PRIORITY}, above every Baritone process: the air swim-up (GoalBlock at the surface),
+     * the creeper flee (GoalRunAway leaning on FleeHeading), the lava/fire escape (GoalRunAway from the hazard), and the
+     * look of the hit response (LookBehavior). One way at a time; a new one replaces the last.
+     */
+    private final io.github.mojolowjo.entropybot.aa.moves.Moves reflexMoves;
+    private boolean reflexPathLogged;
+
     public Reflexes(EventRing events, EngineProcess engine, Knowledge knowledge) {
         this.events = events;
         this.engine = engine;
         this.duel = new CreeperDuel(events);
-        this.fire = new FireReflex(events, engine);
+        this.reflexMoves = new io.github.mojolowjo.entropybot.aa.moves.Moves(new io.github.mojolowjo.entropybot.aa.moves.BaritoneCar(engine, true));
+        this.fire = new FireReflex(events, engine, reflexMoves);
         this.moves = new DangerMoves(events, engine);
         Motor.INSTANCE.bind(engine);        // 0.27.0: the motor pauses the job's Baritone through the same process
     }
@@ -315,8 +321,10 @@ public final class Reflexes {
             releaseSwim(mc);
             if (reflex != Reflex.NONE) settle("left the world");
             moves.stop("left the world");
+            endWay(null, "left the world");
             return;
         }
+        followReflexWay();
         io.github.mojolowjo.entropybot.threat.HitWatch.INSTANCE.observe(p);     // 0.24.4 damage log
         if (p.isDeadOrDying()) {
             releaseSwim(mc);
@@ -336,7 +344,6 @@ public final class Reflexes {
         Motor.INSTANCE.tick(mc, p, now, reflex != Reflex.NONE);      // 0.27.0: the running short move (never throws)
         // AA_CLEANUP 4: the lava/fire reflex is a true reflex: it runs under AA too (the milk and potions went)
         if (reflex != Reflex.EATING && fire.tick(mc, p, now, reflex == Reflex.FIGHTING || duel.active())) {     // 0.23.6
-            if (moves.active()) mc.options.keyJump.setDown(false);      // review: the fire reflex drives this tick
             return;
         }
         // AA_CLEANUP 4: a danger move (AA's or the owner's) runs; only a creeper this close takes over (the creeper flee)
@@ -409,9 +416,9 @@ public final class Reflexes {
             target = "creeper";
             targetDist = t.d;
             urgent = false;
+            endWay("flee", "keeping away, standing");
             engine.hold();
-            stopMoving(mc);
-            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+            look(t.e);
             return;
         }
         if (t != null && t.creeper && t.d >= ReflexRules.CREEPER_RUN && now >= fleeUntil && now >= forceFleeUntil && !hurt) t = null;   // keep an eye on it, no more
@@ -453,7 +460,9 @@ public final class Reflexes {
         // a screen open (chest, inventory): no input of ours; let go of a held jump
         if (mc.screen != null) { releaseSwim(mc); shore.reset(); return; }
         IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
-        boolean drives = reflex != Reflex.NONE || (b != null && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
+        // backbone step 4: our own swim-up goal is not "something else driving"
+        boolean ownAir = airGoal && engine.reflexGoal();
+        boolean drives = reflex != Reflex.NONE || (b != null && !ownAir && (b.getPathingBehavior().isPathing() || b.getPathingControlManager().mostRecentInControl().isPresent()));
         // review: an underwater dig/build/chest job sits between Baritone legs for a tick: it drives too (a plain walk doesn't)
         if (!drives) {
             try {
@@ -483,16 +492,81 @@ public final class Reflexes {
         if (a == ReflexRules.Air.SWIM || a == ReflexRules.Air.TAKEOVER) {
             boolean take = a == ReflexRules.Air.TAKEOVER;
             if (take && !airHeld) {
-                LOG.info("[entropybot] air reflex: air {}/{} at {} {} {} - taking over: Baritone paused, swimming up until the air is full",
+                LOG.info("[entropybot] air reflex: air {}/{} at {} {} {} - taking over: Baritone swims up at the reflex priority until the air is full",
                         p.getAirSupply(), p.getMaxAirSupply(), (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()));
             } else if (!take && !swimming && now - swimLogAt > 200 && (swimLogAt = now) > 0) LOG.info("[entropybot] air reflex: head under water at {} {} {}, air {}/{} - swimming up",
                     (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()), p.getAirSupply(), p.getMaxAirSupply());
-            if (take && reflex == Reflex.NONE) engine.hold();   // Baritone stops digging/walking: no fight over jump or look
             airHeld = take;
-            swimming = true;
-            mc.options.keyJump.setDown(true);
+            // backbone step 4: Baritone swims up: GoalBlock with the feet in the top water cell, at the reflex priority
+            // (above the job's dig/walk and the burrow), started this tick
+            if (!airGoal && now >= airRetryAt) {
+                int[] s = surfaceCell(p);
+                if (s != null) {
+                    reflexMoves.swimUp(s);
+                    airGoal = true;
+                    reflexPathLogged = false;
+                } else {
+                    airRetryAt = now + 20;
+                    if (!airNoSurfaceLogged) LOG.info("[entropybot] air reflex: no air above the water within {} up / {} around at {} {} {} - holding jump only",
+                            ReflexRules.SURFACE_UP, ReflexRules.SURFACE_R, (int) Math.floor(p.getX()), (int) Math.floor(p.getY()), (int) Math.floor(p.getZ()));
+                    airNoSurfaceLogged = true;
+                }
+            }
+            if (airGoal && reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED) {
+                LOG.info("[entropybot] air reflex: Baritone's swim-up failed ({}) - holding jump, again in 1 s", reflexMoves.why());
+                airGoal = false;
+                airRetryAt = now + 20;
+            }
+            // the documented exception (MoversTest): jump held only in the gap - head under water and no Baritone path
+            // for the swim-up yet (calculating, failed, or no surface cell) - so the bot never sinks while it computes
+            boolean jump = p.isUnderWater() && !(airGoal && reflexMoves.pathReady());
+            if (jump != swimming) mc.options.keyJump.setDown(jump);
+            swimming = jump;
         } else releaseSwim(mc);
         shore.tick(p, b, drives, now);
+    }
+
+    /** Backbone step 4: the air reflex's Baritone swim-up runs (released with the reflex). */
+    private boolean airGoal, airNoSurfaceLogged;
+    private long airRetryAt;
+
+    /** Backbone step 4: the top water cell with air over it, straight up or close around (ReflexRules.surface), or null. */
+    private static int[] surfaceCell(LocalPlayer p) {
+        var lv = p.level();
+        return ReflexRules.surface(p.getBlockX(), p.getBlockY(), p.getBlockZ(), (x, y, z) -> {
+            BlockPos q = new BlockPos(x, y, z);
+            var st = lv.getBlockState(q);
+            if (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) return ReflexRules.Cell.WATER;
+            return st.getCollisionShape(lv, q).isEmpty() && st.getFluidState().isEmpty() ? ReflexRules.Cell.OPEN : ReflexRules.Cell.SOLID;
+        });
+    }
+
+    /**
+     * Backbone step 4: follows the reflex way each tick (the car re-asks for its goal after a Baritone cancel) and logs
+     * the latency once: ticks from the goal to Baritone's first path.
+     */
+    private void followReflexWay() {
+        reflexMoves.tick(now);
+        if (!reflexPathLogged && reflexMoves.pathReady()) {
+            reflexPathLogged = true;
+            LOG.info("[entropybot] reflex {}: Baritone path in {} ticks", reflexMoves.way(), now - reflexMoves.legStart());
+        }
+    }
+
+    /** Backbone step 4: starts a reflex way and arms its latency line. */
+    private void wayStarted() { reflexPathLogged = false; }
+
+    /** Ends the reflex way when it is {@code way} (null: any). */
+    private void endWay(String way, String why) {
+        if (reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE) return;
+        if (way != null && !reflexMoves.way().equals(way)) return;
+        reflexMoves.release();
+    }
+
+    /** Backbone step 4: the hit response's look (and every reflex look) through Baritone's LookBehavior. */
+    private void look(Entity e) {
+        var v = e.getEyePosition();
+        reflexMoves.lookAt(v.x, v.y, v.z);
     }
 
     /** AA_CLEANUP 4: the shore watch lives in its own class (afloat and idle: swim to the nearest shore). */
@@ -500,10 +574,14 @@ public final class Reflexes {
 
     /** Lets go of the air reflex's jump (every way out: the conditions gone, a screen, death, leaving, settle). */
     private void releaseSwim(Minecraft mc) {
+        airNoSurfaceLogged = false;
+        airRetryAt = 0;
+        if (airGoal) {
+            airGoal = false;
+            endWay("swim up", "air reflex ended");      // backbone step 4: the swim-up goal goes, the job's process resumes
+        }
         if (airHeld) {
             airHeld = false;
-            // 0.36.a1: our takeover's hold only (a reflex that holds/overrides Baritone keeps its own)
-            if (reflex == Reflex.NONE && engine.mode() == EngineProcess.Mode.HOLD) engine.release();
             LOG.info("[entropybot] air reflex: air back ({}) - Baritone resumes", mc != null && mc.player != null ? mc.player.getAirSupply() : -1);
         }
         if (!swimming) return;
@@ -519,7 +597,7 @@ public final class Reflexes {
         releaseSwim(mc);
         duel.abort(why);
         cspr.abort(why);
-        if (reflex == Reflex.FLEEING) stopMoving(mc);     // 0.23.2: safe, stop sprinting
+        endWay("flee", why);     // backbone step 4: the flee is Baritone's GoalRunAway (it stops sprinting itself)
         if (reflex == Reflex.EATING) mc.options.keyUse.setDown(false);
         if (reflex != Reflex.NONE) events.push("reflex", "done " + reflex.name().toLowerCase() + ": " + why, null);
         reflex = Reflex.NONE;
@@ -632,7 +710,7 @@ public final class Reflexes {
             }
             begin(Reflex.FIGHTING, mc, "guarding " + escort.name() + " from a creeper");
             holdWeapon(mc, p);
-            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+            look(t.e);
             BlockPos ip = escort.interpose(mc, t.e);
             if (ip != null && (now % 20 == 0 || engine.mode() != EngineProcess.Mode.OVERRIDE)) engine.override(new GoalNear(ip, 0));
             if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
@@ -653,8 +731,9 @@ public final class Reflexes {
 
     private void fight(Minecraft mc, LocalPlayer p, Threat t) {
         begin(Reflex.FIGHTING, mc, "fighting " + t.id);
+        endWay("flee", "fighting " + t.id);
         holdWeapon(mc, p);
-        try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
+        look(t.e);      // backbone step 4: LookBehavior (the strike itself stays the mod's input: Baritone has no combat)
         if (t.d <= ReflexRules.REACH) {
             engine.hold();
             if (p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {     // never a player or a pet (0.19.1)
@@ -683,14 +762,15 @@ public final class Reflexes {
         target = "creeper";
         targetDist = t.d;
         urgent = true;
-        engine.hold();              // the sprint drives the keys; Baritone stands by with its goal
         if (a == CreeperSprint.Act.HIT) {
             holdWeapon(mc, p);
-            try { p.lookAt(EntityAnchorArgument.Anchor.EYES, t.e.getEyePosition()); } catch (RuntimeException ignored) {}
-            mc.gameMode.attack(p, t.e);
+            look(t.e);
+            mc.gameMode.attack(p, t.e);     // the strike: the mod's input (Baritone has no combat)
             p.swing(InteractionHand.MAIN_HAND);
         }
-        driveSprint(mc, p);         // the same tick: the next movement tick runs away
+        // backbone step 4: the run is Baritone's GoalRunAway at the reflex priority, leaning on the escape heading
+        // (Baritone sprints, and keeps off drops, lava and fire itself); started this tick
+        runFrom(mc, p, t.e, esc);
         long seen = ThreatRuntime.INSTANCE.firstSeen(t.e.getId());
         String line = "creeper at " + Math.round(t.d * 10) / 10.0 + ": " + cspr.how() + " (heading run " + (int) esc[2]
                 + (seen < 0 ? "" : ", " + (now - seen) + " ticks after it appeared") + ")";
@@ -708,49 +788,46 @@ public final class Reflexes {
             settle(why);
             return false;
         }
-        // stuck against something: a new heading from the grid
-        if (p.horizontalCollision && now % 5 == 0) {
-            double[] esc = creeperEscape(mc, p, c);
-            cspr.steer(esc[0], esc[1]);
-        }
         target = "creeper";
         targetDist = d;
         urgent = true;
-        driveSprint(mc, p);
+        // backbone step 4: Baritone found no way out (or a cancel ended it): a new run from where the bot is, once a
+        // half second at most (logged), so a failed path never leaves the bot standing silently
+        var ph = reflexMoves.phase();
+        if ((ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED || ph == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.IDLE
+                || !reflexMoves.way().equals("flee")) && now - fleeRetryAt >= 10 && c != null) {
+            if (reflexMoves.phase() == io.github.mojolowjo.entropybot.aa.moves.Moves.Phase.FAILED)
+                LOG.info("[entropybot] creeper sprint: {} - a new run", reflexMoves.why());
+            fleeRetryAt = now;
+            runFrom(mc, p, c, creeperEscape(mc, p, c));
+        }
         return true;
     }
 
-    private String guardNote;
+    private long fleeRetryAt = -1000;
 
-    private void driveSprint(Minecraft mc, LocalPlayer p) {
-        // 0.23.6: never off a drop over 3, into lava, water or fire: the next 2 cells along the run, each tick
-        io.github.mojolowjo.entropybot.threat.RunGuard.Verdict g = ThreatRuntime.INSTANCE.runGuard(p, cspr.dirX(), cspr.dirZ());
-        if (!g.go() && !g.why().equals(guardNote)) {
-            guardNote = g.why();
-            events.push("reflex", "run guard: " + g.why(), null);
-            LOG.info("[entropybot] run guard: {}", g.why());
-        }
-        if (g.stop()) {
-            stopMoving(mc);
-            return;
-        }
-        if (!g.go()) cspr.steer(g.dirX(), g.dirZ());
-        float yaw = (float) Math.toDegrees(Math.atan2(-cspr.dirX(), cspr.dirZ()));
-        p.setYRot(yaw);
-        p.setYHeadRot(yaw);
-        mc.options.keyUp.setDown(true);
-        boolean sprint = ThreatFacts.sprint(true, p.getFoodData().getFoodLevel());
-        mc.options.keySprint.setDown(sprint);
-        if (sprint && !p.isSprinting()) p.setSprinting(true);
-        mc.options.keyJump.setDown(p.horizontalCollision && p.onGround());
+    /**
+     * Backbone step 4: the creeper flee on Baritone: GoalRunAway {@link ReflexRules#CREEPER_RUN_TO} from every counted
+     * hostile near ({@code from} always), its heuristic leaning toward {@code dir} ({dx, dz}: FleeHeading / EscapeDir).
+     */
+    private void runFrom(Minecraft mc, LocalPlayer p, Entity from, double[] dir) {
+        reflexMoves.flee(ReflexRules.CREEPER_RUN_TO, fleeCells(mc, p, from), dir == null ? null : new double[]{dir[0], dir[1]});
+        wayStarted();
     }
 
-    /** Keys up and no sprint (a retreat or a sprint ended: safe). */
-    private static void stopMoving(Minecraft mc) {
-        mc.options.keyUp.setDown(false);
-        mc.options.keySprint.setDown(false);
-        mc.options.keyJump.setDown(false);
-        if (mc.player != null && mc.player.isSprinting()) mc.player.setSprinting(false);
+    /** The cells of every counted hostile near, {@code from} always included. */
+    private List<int[]> fleeCells(Minecraft mc, LocalPlayer p, Entity from) {
+        List<int[]> out = new java.util.ArrayList<>();
+        Hostility h = Hostility.INSTANCE;
+        boolean seenFrom = false;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive()) continue;
+            if (e != from && (p.distanceTo(e) > ReflexRules.lookRadius(true) || !h.kind(e, true).counts())) continue;
+            seenFrom |= e == from;
+            out.add(new int[]{e.getBlockX(), e.getBlockY(), e.getBlockZ()});
+        }
+        if (!seenFrom && from != null) out.add(new int[]{from.getBlockX(), from.getBlockY(), from.getBlockZ()});
+        return out;
     }
 
     /** 0.23.2: the blast a melee creeper duel should expect (a hit-and-back-off that fails at about 3 blocks). */
@@ -772,16 +849,12 @@ public final class Reflexes {
         }
         begin(Reflex.FLEEING, mc, "avoiding a " + t.id);
         // one escape spot for 3 seconds: picking a new one every tick makes Baritone re-plan non-stop
+        // backbone step 4: GoalRunAway from every hostile near at the reflex priority, leaning on FleeHeading's
+        // least-threat heading (cornered: no lean, Baritone picks); the car re-asks after a Baritone cancel
         if ((t.d < ReflexRules.CREEPER_RUN || now < forceFleeUntil) && now >= fleeUntil) {
-            int[] a = fleeHeading(mc, p, t.e, ReflexRules.CREEPER_RUN_TO);
-            if (a == null) a = ReflexRules.awayFrom(p.getX(), p.getZ(), t.e.getX(), t.e.getZ(), ReflexRules.CREEPER_RUN_TO);   // cornered: straight away as before
-            fleeGoal = new GoalXZ(a[0], a[1]);
-            engine.override(fleeGoal);
+            runFrom(mc, p, t.e, fleeDir(mc, p, t.e));
             fleeUntil = now + 60;
-        } else if (now < fleeUntil && fleeGoal != null && engine.mode() == EngineProcess.Mode.NONE) {
-            engine.override(fleeGoal);      // a Baritone cancel (the bridge stopping a job) dropped it
         }
-        if (ThreatFacts.sprint(p.getDeltaMovement().horizontalDistance() > 0.05, p.getFoodData().getFoodLevel()) && !p.isSprinting()) p.setSprinting(true);
         // one that is already right here gets knocked back
         if (t.d <= ReflexRules.REACH && p.getAttackStrengthScale(0f) >= 0.9f && (Hostility.mayAttack(t.e) || forcedAllows(t.e))) {
             holdWeapon(mc, p);
@@ -828,13 +901,13 @@ public final class Reflexes {
         if (reflex == Reflex.FIGHTING || reflex == Reflex.FLEEING) settle("not hit and out of reach: AA's danger desire decides");
     }
 
-    /** Live aa376: the run end on the heading with the least threat over every nearby hostile (FleeHeading), null = cornered. Never throws. */
-    private int[] fleeHeading(Minecraft mc, LocalPlayer p, Entity from, double dist) {
+    /** Live aa376: the heading {dx, dz} with the least threat over every nearby hostile (FleeHeading), null = cornered. Never throws. */
+    private double[] fleeDir(Minecraft mc, LocalPlayer p, Entity from) {
         try {
-            return io.github.mojolowjo.entropybot.threat.FleeHeading.choose(p.getX(), p.getZ(), fleeMobs(mc, p, from), dist);
+            return io.github.mojolowjo.entropybot.threat.FleeHeading.direction(p.getX(), p.getZ(), fleeMobs(mc, p, from), ReflexRules.CREEPER_RUN_TO);
         } catch (RuntimeException e) {
-            LOG.warn("[entropybot] threat: flee heading failed, straight away instead: {}", e.toString());
-            return from == null ? null : ReflexRules.awayFrom(p.getX(), p.getZ(), from.getX(), from.getZ(), dist);
+            LOG.warn("[entropybot] threat: flee heading failed, GoalRunAway with no lean: {}", e.toString());
+            return null;
         }
     }
 
