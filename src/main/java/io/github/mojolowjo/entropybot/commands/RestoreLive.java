@@ -9,7 +9,6 @@ import io.github.mojolowjo.entropybot.guard.MixinFlags;
 import io.github.mojolowjo.entropybot.guard.Policy;
 import io.github.mojolowjo.entropybot.io.BotFiles;
 import io.github.mojolowjo.entropybot.restore.BuildSpotter;
-import io.github.mojolowjo.entropybot.restore.EscapePlan;
 import io.github.mojolowjo.entropybot.restore.Ledger;
 import io.github.mojolowjo.entropybot.restore.RestoreArgs;
 import io.github.mojolowjo.entropybot.restore.RestoreBook;
@@ -58,7 +57,6 @@ public final class RestoreLive {
     // the incidental contexts
     private volatile long pathJob = -1;
     private volatile Set<String> pathTargets = Set.of();
-    private final Map<String, Long> expected = new HashMap<>();
     private final Set<String> warnedHints = new HashSet<>();
 
     private RestoreLive() {}
@@ -72,9 +70,9 @@ public final class RestoreLive {
         io.github.mojolowjo.entropybot.clear.OwnStations.mine = this::stationOfMine;     // 0.33.0 (A3)
         io.github.mojolowjo.entropybot.clear.OwnStations.cells = this::stationCells;     // 0.33.0 review: recorded cells only
         io.github.mojolowjo.entropybot.clear.OwnStations.why = this::stationRefusal;
+        io.github.mojolowjo.entropybot.guard.OwnPlaced.cells = this::builtByMe;      // rm-mining: my placements are mine, never a built block
         readOnly = false;                    // 0.31.0 (c): loaded again for another world
         dirtySince = -1;
-        expected.clear();
         String text = f.readJson(FILE);
         if (text == null) {
             book = new RestoreBook();
@@ -170,10 +168,7 @@ public final class RestoreLive {
         // owner's place rule (aa372): every cell a job of mine breaks may be refilled for about nothing (BreakPolicy)
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.markDug(key);
         String reason;
-        Long esc;
-        synchronized (expected) { esc = expected.remove(key); }
-        if (esc != null && esc == j.id) reason = Ledger.ESCAPE;
-        else if (pathJob == j.id && !pathTargets.contains(id) && !purpose(id)) reason = Ledger.PATH;
+        if (pathJob == j.id && !pathTargets.contains(id) && !purpose(id)) reason = Ledger.PATH;
         // mining plan phase 1: a walk's break under the travel policy (the guard marked it) is a path break of that walk
         else if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.takeTravelBreak(key)) reason = Ledger.PATH;
         else return;                                         // the job's purpose (or no incidental context)
@@ -202,8 +197,7 @@ public final class RestoreLive {
     boolean builtByMe(int x, int y, int z) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
-        io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(Guard.dimOf(mc.level), x, y, z);
-        return e != null && e.why != null && e.why.startsWith("built:");
+        return book.ledger.placedByMe(Guard.dimOf(mc.level), x, y, z);
     }
 
     /** 0.33.0 (A3): a station I placed myself (ledger "built: station") that may be picked up. */
@@ -233,18 +227,8 @@ public final class RestoreLive {
             contents = n;
             seen = note.get("seen").getAsLong();
         }
-        // a furnace the bot took everything out of itself is never kept as a chest note: its own record says so
-        contents = io.github.mojolowjo.entropybot.clear.OwnStations.contentsKnown(contents, seen, stationEmptied.get(dim + " " + x + " " + y + " " + z), e.at);
+        contents = io.github.mojolowjo.entropybot.clear.OwnStations.contentsKnown(contents, seen, null, e.at);
         return io.github.mojolowjo.entropybot.clear.OwnStations.pickUp(e.block, now, gone != null && gone >= e.at, now, contents, x, y, z);
-    }
-
-    /** "smelt ... here": a station of mine (a furnace) the bot took everything out of, at this ms; the pickup may then break it. */
-    private final java.util.Map<String, Long> stationEmptied = new java.util.concurrent.ConcurrentHashMap<>();
-
-    public void noteStationEmptied(int x, int y, int z) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
-        stationEmptied.put(Guard.dimOf(mc.level) + " " + x + " " + y + " " + z, System.currentTimeMillis());
     }
 
     /** 0.33.0 review: station cells of mine whose block was removed (ms), from the block-change hook; a new placement clears it. */
@@ -253,7 +237,13 @@ public final class RestoreLive {
     /** The block-change hook (any thread, never throws): a recorded station cell lost its block. */
     public void blockChanged(String dim, int x, int y, int z, String fromId, String toId) {
         try {
-            if (fromId == null || fromId.equals(toId) || !io.github.mojolowjo.entropybot.clear.OwnStations.station(fromId)) return;
+            if (fromId == null || fromId.equals(toId)) return;
+            if (!io.github.mojolowjo.entropybot.clear.OwnStations.station(fromId)) {
+                // rm-mining: a block I placed is gone (broken, replaced): the cell is no longer mine (a later block there is not)
+                io.github.mojolowjo.entropybot.restore.Ledger.Entry p = book.ledger.at(dim, x, y, z);
+                if (p != null && PLACED.equals(p.why) && fromId.equals(p.block) && book.ledger.remove(p)) changed();
+                return;
+            }
             io.github.mojolowjo.entropybot.restore.Ledger.Entry e = book.ledger.at(dim, x, y, z);
             if (e != null && "built: station".equals(e.why)) stationRemoved.put(dim + " " + x + " " + y + " " + z, System.currentTimeMillis());
         } catch (RuntimeException ex) {
@@ -315,14 +305,6 @@ public final class RestoreLive {
         pathJob = job;
     }
 
-    /** The escape dig-out is about to break these cells for this job. */
-    void expectEscape(long job, List<int[]> cells, String dim) {
-        synchronized (expected) {
-            expected.clear();
-            for (int[] p : cells) expected.put(dim + " " + p[0] + " " + p[1] + " " + p[2], job);
-        }
-    }
-
     // ---- runs ----
 
     boolean auto() { return "auto".equals(book.mode); }
@@ -336,27 +318,6 @@ public final class RestoreLive {
         return new RestoreRun(plan);
     }
 
-    /** The escape entries of a travel job, put back once the bot is out (mid-walk). Null when none or not in auto. */
-    RestoreRun escapeRun(Jobs.Job j, int[] here, String dim) {
-        if (!auto()) return null;
-        List<Ledger.Entry> esc = new ArrayList<>();
-        for (Ledger.Entry e : book.ledger.forJob(j.id)) if (Ledger.ESCAPE.equals(e.reason)) esc.add(e);
-        if (esc.isEmpty()) return null;
-        return new RestoreRun(RestorePlan.plan(esc, here, dim, RestorePlan.AFTER_JOB, Gui0.inventory()));
-    }
-
-    /** True once the bot stands more than 3 blocks from every escape entry of the job (and some exist). */
-    boolean outOfEscape(Jobs.Job j, int[] here) {
-        boolean any = false;
-        for (Ledger.Entry e : book.ledger.forJob(j.id)) {
-            if (!Ledger.ESCAPE.equals(e.reason)) continue;
-            any = true;
-            long dx = e.x - here[0], dy = e.y - here[1], dz = e.z - here[2];
-            if (dx * dx + dy * dy + dz * dz <= 9) return false;
-        }
-        return any;
-    }
-
     /** The end line's restore part when no run happens (stopped, manual mode): "3 blocks to put back (restore now)". */
     String waitingNote(Jobs.Job j) {
         int n = 0;
@@ -365,10 +326,9 @@ public final class RestoreLive {
         return n + (n == 1 ? " block" : " blocks") + " to put back (restore now)";
     }
 
-    /** The job's end line with the escape report and the restore summary added. */
+    /** The job's end line with the restore summary added. */
     String endText(String msg, Jobs.Job j, RestoreRun run) {
         List<String> parts = new ArrayList<>();
-        if (j.escapeDug > 0) parts.add(EscapePlan.report(j.escapeDug, j.escapeAt, j.escapeRestored + (run == null ? 0 : run.placedEscape)));
         String sum = run == null ? null : run.summary();
         if (sum != null) parts.add(sum);
         if (run != null && !run.left.isEmpty()) {
@@ -464,23 +424,32 @@ public final class RestoreLive {
     /** What Baritone throws away as scaffold: only these, placed under a walk's travel intent, are litter. */
     private static boolean scaffold(String itemPath) { return io.github.mojolowjo.entropybot.clear.FloorFill.isFallback(itemPath.contains(":") ? itemPath : "minecraft:" + itemPath); }
 
+    /** rm-mining: the ledger note of any other block a job of mine placed (a station from the builder leg, a torch, a block). */
+    static final String PLACED = "built: placed";
+
     /**
-     * From the place hook (client thread, after the guard let the placement through): a walk (travel intent, a job
-     * running) put a throwaway block into a cell it did not dig itself. Noted in the ledger as {@code built: litter}
-     * until the step's end takes it down ({@code restore placed}) or keeps it ({@code restore keep}). Never throws.
+     * From the place hook (client thread, after the guard let the placement through), while a job of mine runs: a walk's
+     * throwaway block (travel intent, a cell it did not dig itself) is noted {@code built: litter} until the step's end takes
+     * it down ({@code restore placed}) or keeps it ({@code restore keep}); rm-mining: every other placement is noted as mine
+     * ({@code built: station} for a station, else {@link #PLACED}), so the guard never protects it from me as a "built
+     * block" (guard/OwnPlaced). A cell the ledger already holds keeps its first note. Never throws.
      */
-    public void noteLitter(BlockPos pos, String itemPath) {
+    public void notePlaced(BlockPos pos, String itemPath) {
         try {
             Minecraft mc = Minecraft.getInstance();
             Commands cm = c;
-            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null || !scaffold(itemPath)) return;
-            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() != io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) return;
+            if (cm == null || mc.level == null || readOnly || !cm.jobs.running() || itemPath == null) return;
             String dim = Guard.dimOf(mc.level);
-            if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole
             if (book.ledger.at(dim, pos.getX(), pos.getY(), pos.getZ()) != null) return;
-            noteBuilt(List.of(new int[]{pos.getX(), pos.getY(), pos.getZ()}), "minecraft:" + itemPath, io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER);
+            List<int[]> cell = List.of(new int[]{pos.getX(), pos.getY(), pos.getZ()});
+            if (scaffold(itemPath) && io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.intent() == io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL) {
+                if (io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.dug(dim, pos.getX(), pos.getY(), pos.getZ())) return;     // a refill of my own hole
+                noteBuilt(cell, "minecraft:" + itemPath, io.github.mojolowjo.entropybot.restore.PlacedPlan.LITTER);
+                return;
+            }
+            noteBuilt(cell, "minecraft:" + itemPath, io.github.mojolowjo.entropybot.clear.OwnStations.station(itemPath) ? "built: station" : PLACED);
         } catch (RuntimeException e) {
-            LOG.debug("[entropybot] litter note failed: {}", e.toString());
+            LOG.warn("[entropybot] restore: the placement note at {} {} {} failed: {}", pos.getX(), pos.getY(), pos.getZ(), e.toString());
         }
     }
 
@@ -564,33 +533,6 @@ public final class RestoreLive {
         changed();
         LOG.info("[entropybot] restore: {} built blocks near {} - suggested {}", h.count(), Jobs.fmt(h.center()), h.command());
         if (warnedHints.add(h.key())) c.whisper(c.owner(), h.whisper());
-    }
-
-    /**
-     * 0.23.4 (run 8): a walk passes center: a built cluster there that no safe or main area covers, outside the near-me
-     * zone, gets one whisper per spot ("looks like a build at x y z - area here 8 name safe?"). True when it whispered.
-     */
-    boolean walkHint(LocalPlayer p, int[] center) {
-        try {
-            BuildSpotter.Hint h = spotBuild(center);
-            if (h == null) return false;
-            String dim = Guard.dimOf(Minecraft.getInstance().level);
-            int[] k = h.center();
-            Policy pol = Core.INSTANCE.guard.core.policy();
-            io.github.mojolowjo.entropybot.guard.AreaType t = pol == null ? null : pol.typeAt(dim, k[0], k[1], k[2]);
-            Box near = Core.INSTANCE.guard.core.near.box();
-            boolean inNear = near != null && near.contains(dim, k[0], k[1], k[2]);
-            boolean mentioned = warnedHints.contains(h.key());
-            if (!BuildSpotter.walkHintAllowed(t == null ? null : t.word(), inNear, mentioned)) return false;
-            if (book.addHint(h, dim, System.currentTimeMillis()) != null) changed();
-            warnedHints.add(h.key());
-            LOG.info("[entropybot] walk: {} built blocks near {} (area type {}) - hint whispered", h.count(), Jobs.fmt(k), t == null ? "none" : t.word());
-            c.whisper(c.owner(), h.walkWhisper());
-            return true;
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] walk build hint failed: {}", e.toString());
-            return false;
-        }
     }
 
     /** 0.24.3: the cluster holds a place, a noted chest or a ledger block, or lies near where the bot respawned. */

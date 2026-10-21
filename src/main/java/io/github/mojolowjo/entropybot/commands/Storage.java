@@ -1071,6 +1071,9 @@ public final class Storage {
     String goPoi(LocalPlayer p, int id) {
         JsonObject poi = null;
         try {
+            String d = dim();       // rm-mining: refreshed from the chunk index on demand
+            if (d.equals(io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.dim()))
+                io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.refreshPois(core.pois, d, p.getBlockX(), p.getBlockZ(), io.github.mojolowjo.entropybot.memory.Limits.SENSE_KNOWN_R);
             JsonArray list = JsonParser.parseString(core.pois.toJson().toString()).getAsJsonObject().getAsJsonArray("pois");
             for (JsonElement e : list) if (e.getAsJsonObject().get("id").getAsInt() == id) poi = e.getAsJsonObject();
         } catch (RuntimeException e) {

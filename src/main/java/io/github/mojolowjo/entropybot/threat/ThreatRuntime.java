@@ -285,24 +285,6 @@ public final class ThreatRuntime {
     /** 0.23.6: the grid snapshot when fresh, else null (the fire reflex's water search, the run guard). */
     public ReachGrid grid() { return gridOk() ? cache.grid() : null; }
 
-    /**
-     * 0.23.6 run guard for a raw run along (dx, dz): go, turn or stop ({@link RunGuard}). Fire comes from the level (no
-     * collision box, so not in the grid). Without a fresh grid it says go (the old behaviour). Never throws.
-     */
-    public RunGuard.Verdict runGuard(LocalPlayer p, double dx, double dz) {
-        try {
-            // 0.36.7 (owner, aa366: stopped in a flooded cave): already in water, water ahead is no hazard - swim on
-            if (p.isInWater()) return new RunGuard.Verdict("go", dx, dz, "in water");
-            Level level = p.level();
-            BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-            RunGuard.Fire fire = (x, y, z) -> level.getBlockState(m.set(x, y, z)).is(net.minecraft.tags.BlockTags.FIRE);
-            return RunGuard.decide(grid(), p.getX(), p.getBlockY(), p.getZ(), dx, dz, fire);
-        } catch (RuntimeException e) {
-            error("run guard", e);
-            return new RunGuard.Verdict("go", dx, dz, "error");
-        }
-    }
-
     public void verdict(String line) {
         verdictLine = line;
         verdictAt = System.currentTimeMillis();

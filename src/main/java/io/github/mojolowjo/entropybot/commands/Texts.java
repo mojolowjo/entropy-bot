@@ -30,7 +30,7 @@ public final class Texts {
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
             "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "give", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "cut", "shelter");
+            "dig", "build", "place", "stripmine", "mine", "explore", "restore", "chop", "cook", "sleep", "cut", "shelter");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");

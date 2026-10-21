@@ -221,8 +221,4 @@ public final class ClimbPlan {
         return "climb " + p.up() + " up (a staircase " + p.dir() + ", " + p.dig() + " blocks to dig) to " + e[0] + " " + e[1] + " " + e[2];
     }
 
-    /** The hint a failed walk or dig gets when the bot ends in a hole. */
-    public static String holeHint(int depth) {
-        return "I'm in a hole (the rim is " + depth + " above me) - next: climb";
-    }
 }

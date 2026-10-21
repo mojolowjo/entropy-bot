@@ -560,23 +560,18 @@ public final class Clearing {
             // picked up (or gone): disarmed; still standing there: stays armed, so the job's end names it
             String id = blockId(st.pos);
             String want = PlaceRules.pickupBlock(st.id), name = PlaceRules.pickupName(want);
-            boolean furnace = WHY_OWN_FURNACE.equals(st.why);
             if (id != null && !want.equals(id)) {
-                if (furnace && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.furnaceTakenBack(Jobs.fmt(st.pos)));
-                else if (WHY_OWN_TABLE.equals(st.why) && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.takenBack(Jobs.fmt(st.pos)));
+                if (WHY_OWN_TABLE.equals(st.why) && st.got != null) seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.takenBack(Jobs.fmt(st.pos)));
                 st.got = null;
             } else if (armedPickup(st)) {
                 LOG.info("[entropybot] clear: couldn't pick up my {} at {}", name, Jobs.fmt(st.pos));
-                if (furnace) {
-                    seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.furnaceLeftAt(Jobs.fmt(st.pos)));
-                    st.got = null;
-                } else if (WHY_OWN_TABLE.equals(st.why)) {
+                if (WHY_OWN_TABLE.equals(st.why)) {
                     LEFT_OWN_TABLES.add(Jobs.fmt(st.pos));
                     seq.note = join(seq.note, io.github.mojolowjo.entropybot.craft.OwnTable.leftAt(Jobs.fmt(st.pos)));
                     st.got = null;              // named in the note already
                 }
             }
-            if (WHY_OWN_TABLE.equals(st.why) || furnace) return "next";
+            if (WHY_OWN_TABLE.equals(st.why)) return "next";
         }
         if (KIND_FINISH.equals(st.kind)) {
             seq.jobs.finish(msg);
@@ -697,22 +692,6 @@ public final class Clearing {
         return pickup;
     }
 
-    /** 0.36.a9: the pickup steps of the furnace "smelt ... here" put down itself (its {@code why}). */
-    static final String WHY_OWN_FURNACE = "ownfurnace";
-
-    /**
-     * 0.36.a9 ("smelt <item> here", mining-policy Phase 4 open item): the place step of the furnace from the bag at spot,
-     * with the armed pickup that takes exactly that furnace back after the smelt. The pickup is armed only by our own
-     * click on a free cell (placeTick) and only breaks a furnace the ledger holds as mine and the bot emptied
-     * (RestoreLive.stationRefusal); the camp's own furnace is never touched. Returns {place, pickup}.
-     */
-    static Seq.Step[] furnaceHere(int[] spot) {
-        Pos at = new Pos(spot[0], spot[1], spot[2]);
-        Seq.Step pickup = pickupStep(at, WHY_OWN_FURNACE, PlaceRules.FURNACE_ID);
-        Seq.Step place = placeStep(spot, PlaceRules.FURNACE_ID, false);
-        ((PlaceState) place.state).pickup = pickup;
-        return new Seq.Step[]{place, pickup};
-    }
 
     /** A craft's own table left standing for the next back-to-back craft (x y z), or null. */
     static int[] keptOwnTable;

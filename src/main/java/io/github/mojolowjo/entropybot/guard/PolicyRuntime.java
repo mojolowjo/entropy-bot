@@ -93,7 +93,7 @@ public final class PolicyRuntime {
             BlockState s = at.at(lx, ly, lz);
             if (s == null) return -1;
             return (s.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString()))
-                    || g.isProtectedBlock(s.getBlock()) ? 1 : 0;
+                    || (g.isProtectedBlock(s.getBlock()) && !OwnPlaced.at(lx, ly, lz)) ? 1 : 0;     // rm-mining: my own placement makes nothing built
         };
         return BuiltNear.counts(false, ore, true, look, x, y, z);
     }
@@ -255,7 +255,8 @@ public final class PolicyRuntime {
             be = !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(id);
         }
         boolean ore = st.is(Tags.Blocks.ORES);
-        boolean built = g.isProtectedBlock(st.getBlock()) || (!be && !st.isAir() && builtNear(at, x, y, z, ore));     // AREAS review 1
+        // rm-mining: a block the bot placed itself is its own, never a built block (OwnPlaced, the restore ledger)
+        boolean built = OwnPlaced.built(g.isProtectedBlock(st.getBlock()) || (!be && !st.isAir() && builtNear(at, x, y, z, ore)), x, y, z);     // AREAS review 1
         boolean unbreakable = st.getBlock().defaultDestroyTime() < 0;
         // in the cell: a pure liquid block only (kelp, seagrass and waterlogged stairs are broken like any block)
         Fluid in = st.getBlock() instanceof LiquidBlock ? fluidOf(st) : Fluid.NONE;

@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 /**
  * The Baritone mine job's rules ("mine &lt;ore&gt; [n] [dig]"; the bridge's startMine and package A wave 1: protectNear,
- * boxMinus, mineLeases, minePickSlot, mineCount, mineTrail/mineLegs and the texts), game-free so JUnit drives them.
+ * boxMinus, mineLeases, minePickSlot, mineCount and the texts; rm-mining: the per-ore step's command and its Failures cell key), game-free so JUnit drives them.
  */
 public final class MineRules {
     private MineRules() {}
@@ -62,10 +62,13 @@ public final class MineRules {
     /** Plain "mine" takes ores (the c:ores tag) and these loose natural blocks only. */
     public static final Pattern EXTRA = Pattern.compile("^minecraft:(sand|red_sand|gravel|clay|short_grass|tall_grass|fern|large_fern)$");
     public static final Pattern BLOCK_ID = Pattern.compile("^[a-z0-9_.-]+:[a-z0-9_./-]+$");
-    public static final long MAX_TICKS = 20L * 60 * 20, STALL_TICKS = 20L * 60;
-    public static final int PROTECT_MARGIN = 16, SEEKS = 3, RETURN_R = 8, TRAIL_STEP = 12, LEG = 40, TRAIL_MAX = 300, TOOL_TRIPS = 2;
-    /** The walks: to new land 90 s, back to the spot 120 s; at least 40 ticks before "arrived" counts. */
-    public static final long SEEK_TICKS = 20 * 90, RETURN_TICKS = 20 * 120;
+    /** The job's time limit and the no-progress stop, in ticks (aa/brain/Tuning: mine.maxMin, mine.stallS). */
+    public static long maxTicks() { return (long) (20 * 60 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("mine.maxMin")); }
+
+    public static long stallTicks() { return (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("mine.stallS")); }
+
+    /** Policy: the distance Baritone's free mine keeps from protect boxes (the guard's no-break). */
+    public static final int PROTECT_MARGIN = 16;
     /** A lease covers at most this many blocks (GuardCore.MAX_LEASE_VOLUME): bigger boxes are sliced. */
     public static final long LEASE_MAX = 4096;
     static final Map<String, Integer> DROPS_PER = Map.of("redstone", 4, "lapis", 4, "copper", 3);
@@ -166,9 +169,9 @@ public final class MineRules {
 
     public static String anA(String w) { return (w.matches("(?i)^[aeiou].*") ? "an " : "a ") + w; }
 
-    /** The status while mining: "mining 4 minecraft:iron_ore (exposed only)" (+ " - look 2" after a walk to new land). */
-    public static String status(int count, String id, boolean dig, int seeks) {
-        return "mining " + count + " " + id + (dig ? " (digging allowed)" : " (exposed only)") + (seeks > 0 ? " - look " + (seeks + 1) : "");
+    /** The status while mining: "mining 4 minecraft:iron_ore (exposed only)". */
+    public static String status(int count, String id, boolean dig) {
+        return "mining " + count + " " + id + (dig ? " (digging allowed)" : " (exposed only)");
     }
 
     // ---- the protect boxes (wave 1 item 8): Baritone's mine digs where it likes ----
@@ -358,47 +361,6 @@ public final class MineRules {
         return " - got " + String.join(", ", out);
     }
 
-    // ---- the way back (review fix 3) ----
-
-    static long d2(int[] a, int[] b) {
-        long dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
-        return dx * dx + dy * dy + dz * dz;
-    }
-
-    /** A point every TRAIL_STEP blocks while it mines (the first point, where it was asked to mine, stays). */
-    public static void trail(List<int[]> trail, int[] me) {
-        if (d2(me, trail.get(trail.size() - 1)) < (long) TRAIL_STEP * TRAIL_STEP) return;
-        trail.add(me.clone());
-        if (trail.size() > TRAIL_MAX) trail.remove(1);
-    }
-
-    /** The legs from me back to the anchor: straight there when close, else along the trail from its point nearest me. */
-    public static List<int[]> legs(List<int[]> trail, int[] anchor, int[] me) {
-        List<int[]> legs = new ArrayList<>();
-        long leg2 = (long) LEG * LEG;
-        if (d2(me, anchor) <= leg2 || trail == null || trail.isEmpty()) {
-            legs.add(anchor.clone());
-            return legs;
-        }
-        int best = 0;
-        long bestD = Long.MAX_VALUE;
-        for (int i = 0; i < trail.size(); i++) {
-            long d = d2(me, trail.get(i));
-            if (d < bestD) { bestD = d; best = i; }
-        }
-        int[] last = me;
-        long step2 = (long) (LEG - 10) * (LEG - 10);
-        for (int i = best; i < trail.size(); i++) {
-            if (d2(trail.get(i), anchor) <= leg2) break;
-            if (i == best || d2(trail.get(i), last) >= step2) {
-                legs.add(trail.get(i));
-                last = trail.get(i);
-            }
-        }
-        legs.add(anchor.clone());
-        return legs;
-    }
-
     // ---- the ends ----
 
     public static String doneText(String target, String gains, String toolNote) {
@@ -410,57 +372,47 @@ public final class MineRules {
     }
 
     public static String stalledText(String target, String at, String gains) {
-        return "stopped: no progress for a minute mining " + shortId(target) + " at " + at + ", twice" + gains;
+        return "stopped: stall: no progress for " + stallTicks() / 20 + " s mining " + shortId(target) + " at " + at + gains;
     }
 
-    public static String noPickLeftText(String target, int trips, String gains) {
-        return "stopped: I have no pickaxe left that can mine " + shortId(target) + " (fetched or made " + trips + " already)" + gains;
+    public static String noPickText(String target, String gains) {
+        return "stopped: tool: I have no pickaxe left that can mine " + shortId(target) + gains;
     }
 
-    public static String stuckBackText(String target, String anchor, String me, String leg, String gains) {
-        return "stopped: I couldn't get back to where I was mining " + shortId(target) + " (" + anchor + ") - stuck at " + me + " on the way to " + leg + gains;
-    }
-
-    public static String timeUpText() { return "time is up (" + MAX_TICKS / 1200 + " min)"; }
+    public static String timeUpText() { return "time is up (" + maxTicks() / 1200 + " min)"; }
 
     /** Digits as an int, capped (a 10-digit count would overflow parseInt). */
     static int safeInt(String s) {
         return s.length() > 9 ? 999_999_999 : Integer.parseInt(s);
     }
 
-    /**
-     * 0.36.8 (owner's rule 2026-10-18): skip a known ore as a target when I'm in water and it lies two or more below me
-     * without water touching it (reaching it means digging down through solid blocks with no air). Pure.
-     */
-    public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater) {
-        return inWater && oreY <= meY - 2 && !oreTouchesWater;
+    // ---- rm-mining: the per-ore step and its failures (the old known-target list, its 5 tries and water skips are gone) ----
+
+    /** The Failures desire a failed ore cell is charged under (a prefix no AA desire uses). */
+    public static final String CELL_DESIRE = "site.mine";
+
+    private static volatile io.github.mojolowjo.entropybot.aa.brain.Failures failures = new io.github.mojolowjo.entropybot.aa.brain.Failures();
+
+    /** The AA brain's failure record (so aa why shows the holds); a private one until bound. */
+    public static void bind(io.github.mojolowjo.entropybot.aa.brain.Failures f) { if (f != null) failures = f; }
+
+    public static io.github.mojolowjo.entropybot.aa.brain.Failures failures() { return failures; }
+
+    /** The cell key: "iron 10 -20 30". */
+    public static String cellKey(String family, int x, int y, int z) { return family + " " + x + " " + y + " " + z; }
+
+    /** A per-ore step that failed: charged under its cell with the stage and the reason; never retried in place. */
+    public static io.github.mojolowjo.entropybot.aa.brain.Failures.Rec charge(String family, int[] cell, String stage, String reason, long nowMs) {
+        return failures.failed(CELL_DESIRE, cellKey(family, cell[0], cell[1], cell[2]), stage + ": " + reason, nowMs, null);
     }
 
-    /**
-     * 0.36.a3 (aa370: the walk to a cave ore 15 below dug down from the pool and ran out of air): the walk is digging
-     * down from in the water - in water, breaking a block below the feet. Pure.
-     */
-    public static boolean waterDigDown(boolean inWater, boolean breaking, int breakY, int feetY) {
-        return inWater && breaking && breakY < feetY;
+    /** The cell is held (it failed and its hold has not lapsed): no pick takes it. */
+    public static boolean held(String family, int x, int y, int z, long nowMs) {
+        return failures.blocked(CELL_DESIRE, cellKey(family, x, y, z), nowMs);
     }
 
-    /** aa-costs: the skip with the drowning risk (DrownRisk) in place of the fixed "2 below": skipped only when fatal. */
-    public static boolean waterDownSkip(boolean inWater, int meY, int oreY, boolean oreTouchesWater, int air, int waterAbove, int tier) {
-        return waterDownSkip(inWater, meY, oreY, oreTouchesWater)
-                && io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(io.github.mojolowjo.entropybot.guard.DrownRisk.risk(meY - oreY, waterAbove, air, tier));
-    }
-
-    /** aa-costs: the walk's stop with the drowning risk of the dig still ahead ({@code targetY}): stopped only when fatal. */
-    public static boolean waterDigDown(boolean inWater, boolean breaking, int breakY, int feetY, int targetY, int air, int waterAbove, int tier) {
-        return waterDigDown(inWater, breaking, breakY, feetY)
-                && io.github.mojolowjo.entropybot.guard.DrownRisk.fatal(io.github.mojolowjo.entropybot.guard.DrownRisk.risk(Math.max(1, feetY - targetY), waterAbove, air, tier));
-    }
-
-    /** 0.36.a3: how long (ticks) a known ore dropped for the water stays out of the pick; then it is a candidate again. */
-    public static final long WATER_SKIP_TICKS = 1200;
-
-    /** 0.36.a3: a timed skip still holds (until: the tick it ends, null: none). Pure. */
-    public static boolean skipHolds(Long until, long now) {
-        return until != null && now < until;
+    /** The per-ore step's command: "mine iron_ore 1 at 10 -20 30 dig" (walk without dig); parseAt reads it back. */
+    public static String perOre(String ore, int[] cell, boolean dig) {
+        return "mine " + shortId(ore) + " 1 at " + cell[0] + " " + cell[1] + " " + cell[2] + (dig ? " dig" : " walk");
     }
 }

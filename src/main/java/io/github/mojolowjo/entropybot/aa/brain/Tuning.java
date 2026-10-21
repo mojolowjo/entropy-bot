@@ -139,7 +139,9 @@ public final class Tuning {
         def("sprint.drainFloor", 0.25, "aa-costs 4", "the least measured-drain scale the sprint price trusts (a low reading cannot make sprinting free)");
         def("quarry.radius", 48, "AA_ROUND4 C", "blocks around the bot the quarry scan looks at");
         def("quarry.cacheMs", 10000, "AA_ROUND4 C", "milliseconds the quarry scan is reused while the bot stays near");
-        def("quarry.digK", 1.5, "AA_ROUND4 C", "walk-blocks one planned dig cell costs in a quarry site's price");
+        def("mine.maxMin", 20, "0.25 bridge port (rm-mining moved it)", "minutes one mine job may run before it stops with \"time is up\"");
+        def("mine.stallS", 60, "0.25 bridge port (rm-mining moved it)", "seconds without a move or a pickup while Baritone mines before the job stops (stage stall)");
+        def("quarry.digK", 1.5, "AA_ROUND4 C","walk-blocks one planned dig cell costs in a quarry site's price");
         def("run.weight", 2, "aa-danger 2", "heuristic units per block along the preferred run heading (Baritone walks ~4.6 per block)");
         def("planner.gapMs", 5000, "aa371", "milliseconds between two planner asks after which the earlier search wait is over (AA ticks at 4 Hz)");
         // builder placements (0.39.q1): the movers' time limits and retries, out of aa/moves
@@ -177,6 +179,8 @@ public final class Tuning {
         def("hands.reflexResume", 2, "builder placements", "a reflex pause resumes a request while its age is under this many times its limit");
         def("hands.clickS", 5, "builder placements", "seconds one right-click stage (altar use) may take");
         def("hands.buildS", 60, "builder placements", "seconds one builder placement leg (walk, face, click) may take");
+        def("walk.stuckS", 30, "rm-routes (was Jobs.TRAVEL_STUCK_TICKS)", "seconds a walk may go without a block of progress toward its goal before it fails");
+        def("walk.farXZ", 128, "rm-routes", "blocks across beyond which a walk asks Baritone for GoalXZ first, then GoalBlock on arrival");
     }
 
     private static void def(String name, double v, String run, String why) { ALL.put(name, new Entry(name, v, v, run, why)); }

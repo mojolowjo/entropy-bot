@@ -40,7 +40,7 @@ final class RestoreRun {
     final List<RestorePlan.Action> queue;
     final List<RestorePlan.Left> left = new ArrayList<>();
     final LeaseSet leases = Clearing.newLeases();
-    int placed, placedEscape, idx, tries;
+    int placed, idx, tries;
     String stage, item;
     long stageTick;
     boolean ended;
@@ -292,7 +292,6 @@ final class RestoreRun {
 
     private void done(Ledger.Entry e) {
         placed++;
-        if (Ledger.ESCAPE.equals(e.reason)) placedEscape++;
         RestoreLive.INSTANCE.drop(e);
         next();
     }

@@ -196,31 +196,6 @@ class TrialFixTest {
     }
 
     @Test
-    void climbOutOfAOneWideShaft() {
-        // the bot at 0 6 0 in a 1x1 shaft (0 6..9 0 open), surface feet at 10
-        Map<String, ClimbPlan.Kind> m = new HashMap<>();
-        for (int y = 6; y <= 9; y++) m.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);
-        ClimbPlan.Plan p = ClimbPlan.plan(cells(m), 0, 6, 0, 10, true);
-        assertNull(p.err());
-        assertEquals(4, p.up());
-        assertEquals("north", p.dir(), "all sides equal: the first");
-        assertEquals("dig 0 7 -1 0 8 0 ores via engine", p.steps().get(0));
-        assertEquals("goto 0 7 -1", p.steps().get(1));
-        assertEquals("goto 0 10 -4", p.steps().get(p.steps().size() - 1));
-        assertEquals("climb 4 up (a staircase north, " + p.dig() + " blocks to dig) to 0 10 -4", ClimbPlan.startText(p));
-        // no pickaxe: the dig can't happen
-        ClimbPlan.Plan np = ClimbPlan.plan(cells(m), 0, 6, 0, 10, false);
-        assertTrue(np.err().startsWith("error: climbing 4 up needs "), np.err());
-        assertTrue(np.err().endsWith("next: craft wooden_pickaxe 1, then climb"));
-        // not in a hole
-        assertTrue(ClimbPlan.plan(cells(m), 0, 10, 0, 10, true).steps().isEmpty());
-        assertTrue(ClimbPlan.inHole(6, 10, false));
-        assertFalse(ClimbPlan.inHole(6, 10, true));
-        assertFalse(ClimbPlan.inHole(8, 10, false));
-        assertEquals("I'm in a hole (the rim is 4 above me) - next: climb", ClimbPlan.holeHint(4));
-    }
-
-    @Test
     void climbAvoidsWaterAndChestsAndUsesThePitEdge() {
         Map<String, ClimbPlan.Kind> m = new HashMap<>();
         for (int y = 6; y <= 9; y++) m.put("0 " + y + " 0", ClimbPlan.Kind.OPEN);

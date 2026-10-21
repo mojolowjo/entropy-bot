@@ -114,7 +114,7 @@ public final class Guard {
         boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(bid)
                 // 0.33.0 (A3): my own station (the ledger says so) is a built block here (a force lease may take it), not floor
                 && !(io.github.mojolowjo.entropybot.clear.OwnStations.station(bid) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(pos.getX(), pos.getY(), pos.getZ()));
-        boolean built = s.contains(st.getBlock());
+        boolean built = OwnPlaced.built(s.contains(st.getBlock()), pos.getX(), pos.getY(), pos.getZ());     // rm-mining: my own placement is mine
         // AREAS review 1 (BuiltNear): off the owner's typed places (home facts: their own work is theirs to dig) a natural
         // block beside a built one or a block entity is built too
         if (!built && !be && !st.isAir() && core.policy().typeAt(dimOf(level), pos.getX(), pos.getY(), pos.getZ()) == null) {
@@ -122,7 +122,7 @@ public final class Guard {
                 BlockPos q = new BlockPos(x, y, z);
                 if (!level.isLoaded(q)) return -1;
                 BlockState t = level.getBlockState(q);
-                return (t.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(t.getBlock()).toString())) || s.contains(t.getBlock()) ? 1 : 0;
+                return (t.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(BuiltInRegistries.BLOCK.getKey(t.getBlock()).toString())) || (s.contains(t.getBlock()) && !OwnPlaced.at(x, y, z)) ? 1 : 0;
             };
             built = BuiltNear.counts(false, st.is(net.neoforged.neoforge.common.Tags.Blocks.ORES), true, look, pos.getX(), pos.getY(), pos.getZ());
         }

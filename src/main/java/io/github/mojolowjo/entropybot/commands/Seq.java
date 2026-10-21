@@ -52,8 +52,6 @@ public final class Seq {
         public boolean all, pickup, redo;
         /** Package E: a walk onto exactly this block (the spot by the altar that reaches all 8 pedestals). */
         public boolean exact;
-        /** Routing stage 1 (route test): a walk that never sends /home first (the trips measure walking). */
-        public boolean noHome;
         /** 0.25.1: the ore-detour look ran for this walk (once per step). */
         boolean oreChecked;
         Object state;
@@ -127,9 +125,6 @@ public final class Seq {
     final java.util.Set<Integer> doneJobs = new java.util.HashSet<>();
     /** Package D: what this job's pickups took per furnace job id (smeltstore puts away only that). */
     final Map<Integer, Integer> pickupTook = new java.util.HashMap<>();
-    /** Routing stage 1: the walk mode a route test trip asks for (null = the route settings), and the test itself. */
-    io.github.mojolowjo.entropybot.routewalk.RouteWalk.Mode routeMode;
-    RouteTestRun routeTest;
 
     Seq(Jobs jobs, Storage storage, String label, List<Step> steps, String closeOnEnd) {
         this.jobs = jobs;
@@ -158,7 +153,7 @@ public final class Seq {
                     + (tpNote != null ? "; " + tpNote : "") + (detourNote != null ? "; " + detourNote : ""));
             return;
         }
-        if (routeTest != null) routeTest.poll();         // routing stage 1: the trip's path events and Baritone's debug lines
+
         String r;
         try {
             r = step(steps.get(idx), p);
@@ -175,7 +170,7 @@ public final class Seq {
         }
         if (Clearing.ownTableCaught(this, r)) return;    // 0.28.2: the craft's own table is always taken back
         if (Clearing.caught(this, r)) return;            // B7d D1: a trip a clear spliced in failed: the clear hears it and goes on
-        if (routeTest != null && routeTest.caught(this, r, p)) return;      // a failed test trip is recorded, the next one goes on
+
         if (Chopping.caught(this, r, p)) return;          // P2: a failed axe fetch/craft in a chop goes on by hand
         if (steps.get(idx).optional && Mining.get().caught(this, r)) return;     // 0.28.0: a known-ore walk/dig failed: the mine tries the next one
         jobs.finish("error: " + r + " (while " + label + ")");
@@ -203,17 +198,11 @@ public final class Seq {
             stage = null;
             stepStart = now();
         }
-        if (t.equals("walk") && ("walking".equals(stage) || "planning".equals(stage))) stage = null;     // plan the walk again
+        if (t.equals("walk") && "walking".equals(stage)) stage = null;     // set the walk's goal again
     }
 
     void splice(int at, List<Step> add) { steps.addAll(at, add); }
 
-    /** 0.23.3: the next walk step's goal while the current step is not a walk (ReadyPaths pre-plans it), else null. */
-    int[] nextWalkGoal() {
-        if (idx >= steps.size() || steps.get(idx).type.equals("walk")) return null;
-        for (int i = idx + 1; i < steps.size(); i++) if (steps.get(i).type.equals("walk") && steps.get(i).pos != null) return steps.get(i).pos;
-        return null;
-    }
 
     private String step(Step st, LocalPlayer p) {
         long elapsed = now() - stepStart;
@@ -230,17 +219,10 @@ public final class Seq {
                     if (stop) {
                         IBaritone wb = Jobs.baritone();
                         if (wb != null) Jobs.cancel(wb);
-                        endWalkRoute(false);
-                        if (jobs.job != null && jobs.job.longRoute) {
-                            io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
-                            jobs.job.longRoute = false;
-                        }
                         return "next";
                     }
                 }
-                String r = walkStep(st, p, elapsed);
-                if (!"wait".equals(r)) endWalkRoute(!"next".equals(r));
-                return r;
+                return walkStep(st, p, elapsed);
             }
             case "open": return openStep(st, p, elapsed);
             case "ops": return opsStep(st, p);
@@ -270,8 +252,7 @@ public final class Seq {
             case "rsmove": return storage.rsMoveStep(this, st, p, elapsed);
             case "diskshere": return storage.disksHereStep(this, st, p);           // package F: the RS disk drives
             case "rsdisks": return storage.rsDisksStep(this, st, p, elapsed);
-            case "routetrip": return routeTest == null ? "next" : routeTest.begin(this, st, p);          // routing stage 1: route test
-            case "routetripend": return routeTest == null ? "next" : routeTest.end(this, st, p);
+
             case "clear":
             case "placeblock": return Clearing.step(this, st, p, elapsed);
             case "sleep": return SleepJob.step(this, st, p);                    // C4: in bed until morning
@@ -289,23 +270,8 @@ public final class Seq {
 
     // ---- walk ----
 
-    /**
-     * Review note: a walk step ended. The leg end goes (the stuck watchdog of a later step measures to its own goal);
-     * a plan still being made when the step failed is cancelled (the planner thread skips it) and the route dropped.
-     * A finished route stays on the job for the route test's trip note ({@code RouteTestRun.record}); the next walk step
-     * replaces it.
-     */
-    private void endWalkRoute(boolean failed) {
-        Jobs.Job j = job();
-        if (j == null) return;
-        j.legDest = null;
-        if (failed && j.route != null && j.route.phase() == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) {
-            j.route.cancel();
-            j.route = null;
-        }
-    }
 
-    /** 0.25.1: what the ore detours of this job did (the end note), and the counters for "path status". */
+    /** 0.25.1: what the ore detours of this job did (the end note). */
     String detourNote;
 
     /**
@@ -317,7 +283,7 @@ public final class Seq {
     private boolean oreDetour(Step st, LocalPlayer p) {
         try {
             int r = 8;      // AA_CLEANUP 3: was BrainConfig path.oreDetour (its default)
-            if (r <= 0 || st.pos == null || st.exact || routeTest != null) return false;
+            if (r <= 0 || st.pos == null || st.exact) return false;
             com.google.gson.JsonObject base = jobs.core().knowledge.places().get("base");
             if (base == null || !Jobs.dimOf(base).equals(Storage.dim())) return false;
             int[] b = Jobs.pos(base), me = Jobs.here(p);
@@ -344,14 +310,13 @@ public final class Seq {
             Step c = Clearing.clearStep(new io.github.mojolowjo.entropybot.clear.ClearJob.Options().only(vein).collect(true).soft(true).label(line));
             splice(idx, List.of(c));
             stepStart = now();
-            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.oreDetourLine = java.time.LocalTime.now().withNano(0) + " " + line;
+
             detourNote = detourNote == null ? line : detourNote + "; " + line;
             setStatus(label + " - " + line);
             org.slf4j.LoggerFactory.getLogger(Seq.class).info("[entropybot] {}", line);
             return true;
         } catch (RuntimeException e) {
-            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.oreDetourErrors++;
-            org.slf4j.LoggerFactory.getLogger(Seq.class).warn("[entropybot] ore detour failed, walking on: {}", e.toString());
+            org.slf4j.LoggerFactory.getLogger(Seq.class).warn("[entropybot] ore detour failed at the pick stage, walking on: {}", e.toString());
             return false;
         }
     }
@@ -385,7 +350,7 @@ public final class Seq {
             String fence = jobs.walkVerdict(st.pos[0], st.pos[1], st.pos[2]);
             if (fence != null) return Jobs.withAreaHint(fence + " (" + fmt + ")");
             // a long way back to base: /home first (once per step), then walk the rest
-            if (!st.noHome && tpStep != idx && jobs.tpWorth(p, st.pos, null)) {
+            if (tpStep != idx && jobs.tpWorth(p, st.pos, null)) {
                 tpStep = idx;
                 if (b != null) Jobs.cancel(b);
                 jobs.sendHome(p, j);
@@ -403,24 +368,7 @@ public final class Seq {
             Jobs.safeSettings();
             j.goal = null;
             j.dest = st.pos;
-            j.unstickTries = 0;
-            j.shortTries = 0;
-            j.plainGoal = goal;
-            j.legDest = null;
-            // 0.23.3: a far walk goes through the long-route process (legs fed inside Baritone's loop)
-            if (!st.exact && jobs.startLong(p, j, st.pos, goal)) {
-                stage = "long";
-                setStatus(label + " - walking (long route) to " + (st.why != null ? st.why : fmt));
-                return "wait";
-            }
-            // routing stage 1: ask the router (a plan within 300 ms, else plain); exact spots (the altar) stay plain
-            j.route = st.exact ? null : RouteWalker.begin(jobs.commands(), p, st.pos, null, RouteWalker.radiusOf(goal), true, routeMode);
-            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.walkStarted(p, st.pos, now());      // 0.23.3: instant start
-            if (j.route != null) {
-                stage = "planning";
-                setStatus(label + " - planning the way to " + (st.why != null ? st.why : fmt));
-                return "wait";
-            }
+            // rm-routes: the step's walk is one Baritone goal
             b.getCustomGoalProcess().setGoalAndPath(goal);
             j.goalObj = goal;
             j.startTick = now();
@@ -430,28 +378,7 @@ public final class Seq {
             setStatus(label + " - walking to " + (st.why != null ? st.why : fmt));
             return "wait";
         }
-        if (stage.equals("long")) {
-            String r = jobs.longTick(p, j);
-            if (r.equals("wait")) return "wait";
-            j.longRoute = false;
-            io.github.mojolowjo.entropybot.baritone.LongRouteProcess.INSTANCE.stop();
-            if (r.equals("ok")) return "next";
-            return r.replaceFirst("^error: ", "");
-        }
-        if (stage.equals("planning")) {
-            if (RouteWalker.poll(j.route) == io.github.mojolowjo.entropybot.routewalk.RouteWalk.Phase.PLANNING) return "wait";
-            if (b == null) return "baritone not loaded";
-            // not routed (no plan, a timeout): goalFor gives the plain goal; the walk keeps j.route for its "used" note
-            Jobs.walkGoal(b, j, RouteWalker.goalFor(j.route, j.plainGoal));
-            j.legDest = RouteWalker.legDest(j.route);
-            j.startTick = now();
-            j.lastStepTick = -1;
-            jobs.watch(j);
-            stage = "walking";
-            stepStart = now();
-            setStatus(label + " - walking to " + (st.why != null ? st.why : fmt));
-            return "wait";
-        }
+
         if (stage.equals("tp")) {
             String r = jobs.tpResult(p, j);
             if (r == null) return "wait";
@@ -462,24 +389,17 @@ public final class Seq {
             return "wait";
         }
         if (elapsed < 20 || now() - j.startTick < 40) return "wait";
-        // stuck on a block Baritone can't plan from, no path, or no progress for 30 s: step off it by hand (B7b part 1)
+        // rm-routes: no path or no progress ends the step with Baritone's reason (the caller's next option runs)
         if (elapsed % 20 < 2) {
             String ev = jobs.travelEvents(j);
-            boolean stuck = ev == null && jobs.travelStuck(p, j);
-            // routing stage 1: a routed walk with no path or stuck walks the plain goal once (the stretch is rebuilt)
-            if ((stuck || "nopath".equals(ev)) && b != null && j.route != null && RouteWalker.fallBack(j.route, stuck ? "stuck" : "no path", p)) {
-                Jobs.cancel(b);
-                j.legDest = null;
-                Jobs.walkGoal(b, j, j.plainGoal);
-                j.startTick = now();
-                j.lastStepTick = -1;
-                jobs.watch(j);
-                stepStart = now();
-                return "wait";
+            if ("nopath".equals(ev)) {
+                if (b != null) Jobs.cancel(b);
+                return "walk to " + fmt + ": Baritone found no path";
             }
-            boolean early = ev == null && j.lastStepTick >= 0 && !Jobs.onFullBlock(p) && now() - j.bestTick > Jobs.UNSTICK_EARLY;
-            if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < Jobs.UNSTICK_TRIES && jobs.startUnstick(p, j)) return "wait";
-            if (stuck && b != null) Jobs.cancel(b);
+            if (ev == null && jobs.travelStuck(p, j)) {
+                if (b != null) Jobs.cancel(b);
+                return "walk to " + fmt + ": no progress for " + (long) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("walk.stuckS") + " s";
+            }
         }
         if (b != null && !Jobs.idle(b)) {
             if (elapsed > 20 * 90) {
@@ -488,16 +408,7 @@ public final class Seq {
             }
             return "wait";
         }
-        if (b != null && j.route != null && j.route.hasNextLeg()) {
-            // legs mode: this leg is done (or Baritone gave up on it: the next leg or the fallback takes over)
-            j.route.nextLeg();
-            Jobs.walkGoal(b, j, RouteWalker.goalFor(j.route, j.plainGoal));
-            j.legDest = RouteWalker.legDest(j.route);
-            j.startTick = now();
-            j.lastStepTick = -1;
-            jobs.watch(j);
-            return "wait";
-        }
+
         if (st.near) return "next";
         if (st.exact) {
             int[] h = Jobs.here(p);
@@ -506,12 +417,7 @@ public final class Seq {
         }
         Vec3 center = new Vec3(st.pos[0] + 0.5, st.pos[1] + 0.5, st.pos[2] + 0.5);
         if (p.getEyePosition().distanceTo(center) > 4.5) {
-            // P1 fix: ended short: step off, or dig out when enclosed underground, then walk again
-            if (WalkEnd.retryShort(j.shortTries)) {
-                j.shortTries++;
-                if (jobs.recoverShort(p, j)) return "wait";
-            }
-            return "couldn't get close to " + fmt;
+            return "couldn't get close to " + fmt + " (walk: Baritone stopped short)";
         }
         return "next";
     }
@@ -716,7 +622,6 @@ public final class Seq {
                 job().dest = new int[]{(int) Math.floor(c.getX()), (int) Math.floor(c.getY()), (int) Math.floor(c.getZ())};
                 job().startTick = now();
                 job().lastStepTick = -1;
-                job().unstickTries = 0;
                 jobs.watch(job());
                 stage = "walking";
                 stageTick = now();
@@ -733,8 +638,6 @@ public final class Seq {
                 Jobs.Job j = job();
                 String ev = jobs.travelEvents(j);
                 boolean stuck = ev == null && jobs.travelStuck(p, j);
-                boolean early = ev == null && j.lastStepTick >= 0 && !Jobs.onFullBlock(p) && now() - j.bestTick > Jobs.UNSTICK_EARLY;
-                if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < Jobs.UNSTICK_TRIES && jobs.startUnstick(p, j)) return "wait";
                 if (stuck && b != null) Jobs.cancel(b);
             }
             if (b != null && !Jobs.idle(b)) {

@@ -199,8 +199,8 @@ class MiningRulesTest {
         for (int i = 1; i <= 5; i++) five.put("minecraft:i" + i, i);
         assertEquals(" - got 5 i5, 4 i4, 3 i3, 2 i2, +1 more", MineRules.gains(five));
         assertEquals(Map.of("minecraft:raw_iron", 2), MineRules.gained(Map.of("minecraft:raw_iron", 1, "minecraft:dirt", 5), Map.of("minecraft:raw_iron", 3, "minecraft:dirt", 4)));
-        assertEquals("mining 4 minecraft:iron_ore (exposed only)", MineRules.status(4, "minecraft:iron_ore", false, 0));
-        assertEquals("mining 4 minecraft:iron_ore (digging allowed) - look 2", MineRules.status(4, "minecraft:iron_ore", true, 1));
+        assertEquals("mining 4 minecraft:iron_ore (exposed only)", MineRules.status(4, "minecraft:iron_ore", false));
+        assertEquals("mining 4 minecraft:iron_ore (digging allowed)", MineRules.status(4, "minecraft:iron_ore", true));
         assertEquals("done: mining iron_ore: got 2 of 4 - ran out of ore in view, also in 3 more places I walked to, breaking turned back off - got 2 raw_iron; made a stone pickaxe for mining iron_ore",
                 MineRules.shortText("minecraft:iron_ore", 2, 4, "ran out of ore in view, also in 3 more places I walked to", " - got 2 raw_iron", "made a stone pickaxe for mining iron_ore"));
         assertEquals("done: mining iron_ore stopped, breaking turned back off - got 4 raw_iron", MineRules.doneText("minecraft:iron_ore", " - got 4 raw_iron", null));
@@ -272,31 +272,28 @@ class MiningRulesTest {
         assertEquals("a stone", MineRules.anA("stone"));
     }
 
+    /** rm-mining: the per-ore step's command forms (parseAt reads them back) and a failed cell held in Failures, never retried in place. */
     @Test
-    void theWayBack() {
-        List<int[]> trail = new ArrayList<>();
-        trail.add(new int[]{0, 40, 0});
-        MineRules.trail(trail, new int[]{5, 40, 0});
-        assertEquals(1, trail.size(), "a point every 12 blocks");
-        for (int x = 12; x <= 120; x += 12) MineRules.trail(trail, new int[]{x, 40, 0});
-        assertEquals(11, trail.size());
-        int[] anchor = {120, 40, 0};
-        List<int[]> legs = MineRules.legs(trail, anchor, new int[]{110, 40, 5});
-        assertEquals(1, legs.size(), "close: straight there");
-        // from far away (after /home near the start): along the trail, legs at most ~30-40 apart, the anchor last
-        legs = MineRules.legs(trail, anchor, new int[]{-2, 40, 3});
-        assertArrayEquals(new int[]{0, 40, 0}, legs.get(0));
-        assertArrayEquals(anchor, legs.get(legs.size() - 1));
-        for (int i = 1; i < legs.size(); i++) {
-            long d = Math.abs(legs.get(i)[0] - legs.get(i - 1)[0]);
-            assertTrue(d <= 48, "leg " + d);
-        }
-        assertEquals(List.of(0, 36, 72, 120), legs.stream().map(l -> l[0]).toList());
-        // the trail keeps its first point and at most 300
-        List<int[]> t2 = new ArrayList<>();
-        t2.add(new int[]{0, 0, 0});
-        for (int i = 1; i <= 400; i++) MineRules.trail(t2, new int[]{i * 20, 0, 0});
-        assertEquals(300, t2.size());
-        assertArrayEquals(new int[]{0, 0, 0}, t2.get(0));
+    void perOreStepAndHeldCell() {
+        assertEquals("mine iron_ore 1 at 10 -20 30 dig", MineRules.perOre("minecraft:iron_ore", new int[]{10, -20, 30}, true));
+        assertEquals("mine coal_ore 1 at 1 2 3 walk", MineRules.perOre("coal_ore", new int[]{1, 2, 3}, false));
+        MineRules.At at = MineRules.parseAt(MineRules.perOre("minecraft:iron_ore", new int[]{10, -20, 30}, true).substring(5));
+        assertNull(at.error());
+        assertEquals("10 -20 30", at.cell());
+        assertTrue(at.dig());
+        assertFalse(MineRules.parseAt("coal_ore 1 at 1 2 3 walk").dig());
+        io.github.mojolowjo.entropybot.aa.brain.Failures f = new io.github.mojolowjo.entropybot.aa.brain.Failures();
+        MineRules.bind(f);
+        long now = 1_000_000;
+        assertFalse(MineRules.held("iron", 10, -20, 30, now));
+        var rec = MineRules.charge("iron", new int[]{10, -20, 30}, "walk", "no path", now);
+        assertEquals("walk: no path", rec.reason(), "stage + reason");
+        assertTrue(MineRules.held("iron", 10, -20, 30, now + 1), "a failed cell is held");
+        assertFalse(MineRules.held("iron", 10, -20, 31, now + 1), "its neighbour is not");
+        assertFalse(MineRules.held("coal", 10, -20, 30, now + 1), "another family is its own key");
+        assertTrue(f.blocked(MineRules.CELL_DESIRE, "iron 10 -20 30", now + 1), "charged in the bound Failures under the cell key");
+        assertFalse(MineRules.held("iron", 10, -20, 30, rec.until()), "the hold lapses");
+        assertEquals(60, MineRules.stallTicks() / 20);
+        assertEquals(20 * 60 * 20, MineRules.maxTicks());
     }
 }

@@ -25,28 +25,28 @@ class WayUpTest {
         return new WayUp.Heading(dir, n, col(n * 4, c), refused);
     }
 
-    static RungOptions.SurfaceFacts facts(int depth, List<Replan.Cell> column, List<WayUp.Heading> hs, int[] trail, double trailLen, int[] sky, double skyDist) {
-        return new RungOptions.SurfaceFacts(depth, ME, false, 20, true, true, trail, trailLen, sky, skyDist, false, KIT, column, hs);
+    static RungOptions.SurfaceFacts facts(int depth, List<Replan.Cell> column, List<WayUp.Heading> hs, int[] sky, double skyDist) {
+        return new RungOptions.SurfaceFacts(depth, ME, false, 20, true, true, sky, skyDist, false, KIT, column, hs);
     }
 
     @Test
     void theSixOptionsArePriced() {
         // an open own shaft: pillar at 0.05 a level
-        var c = WayUp.choose(facts(6, col(6, Replan.Cell.air()), List.of(heading("east", 6, Replan.Cell.stone(false), null)), null, 0, null, -1), new Options.OptionMemory(), 0);
+        var c = WayUp.choose(facts(6, col(6, Replan.Cell.air()), List.of(heading("east", 6, Replan.Cell.stone(false), null)), null, -1), new Options.OptionMemory(), 0);
         assertEquals("pillar", c.best().id(), c.why());
         assertEquals("goto 0 46 0", c.best().command());
         assertTrue(c.ranked().stream().anyMatch(o -> o.id().equals("stairs east")), c.why());
-        // rock overhead: tunnel (breaks + the tool's seconds and wear) vs stairs, trail, sky
+        // rock overhead: tunnel (breaks + the tool's seconds and wear) vs stairs, sky
         c = WayUp.choose(facts(6, col(6, Replan.Cell.stone(false)), List.of(heading("east", 6, Replan.Cell.stone(false), null)),
-                new int[]{30, 60, 0}, 200, new int[]{10, 60, 0}, 90), new Options.OptionMemory(), 0);
+                new int[]{10, 60, 0}, 90), new Options.OptionMemory(), 0);
         assertEquals("tunnel", c.best().id(), c.why());
         assertTrue(c.best().why().contains("tools use"), "the wear term is in the price: " + c.best().why());
-        assertEquals(List.of("tunnel", "stairs east", "sky", "trail"), c.ranked().stream().map(Options.Option::id).toList(), c.why());
+        assertEquals(List.of("tunnel", "stairs east", "sky"), c.ranked().stream().map(Options.Option::id).toList(), c.why());
         // a near open-sky cell beats digging
-        c = WayUp.choose(facts(6, col(6, Replan.Cell.stone(false)), List.of(), null, 0, new int[]{3, 41, 0}, 4), new Options.OptionMemory(), 0);
+        c = WayUp.choose(facts(6, col(6, Replan.Cell.stone(false)), List.of(), new int[]{3, 41, 0}, 4), new Options.OptionMemory(), 0);
         assertEquals("sky", c.best().id());
         // none fits: wait (no best; the line says why)
-        var none = new RungOptions.SurfaceFacts(6, ME, false, 0, false, false, null, 0, null, -1, false, new ToolWear.Kit(0, 0, ToolWear.INF), null, List.of(heading("east", 6, Replan.Cell.stone(false), null)));
+        var none = new RungOptions.SurfaceFacts(6, ME, false, 0, false, false, null, -1, false, new ToolWear.Kit(0, 0, ToolWear.INF), null, List.of(heading("east", 6, Replan.Cell.stone(false), null)));
         c = WayUp.choose(none, new Options.OptionMemory(), 0);
         assertNull(c.best());
         assertTrue(c.why().contains("stairs east: no pickaxe"), c.why());
@@ -58,17 +58,17 @@ class WayUpTest {
                 heading("north", 6, Replan.Cell.stone(false), null),
                 heading("south", 6, new Replan.Cell(false, false, Double.POSITIVE_INFINITY, false, false, false), null));
         var m = new Options.OptionMemory();
-        var c = WayUp.choose(facts(6, null, hs, null, 0, null, -1), m, 0);
+        var c = WayUp.choose(facts(6, null, hs, null, -1), m, 0);
         assertEquals("stairs north", c.best().id(), c.why());
         assertTrue(c.why().contains("stairs west: the policy refuses a cell at -3 43 0"), c.why());
         assertTrue(c.why().contains("stairs south: a cell may not be broken"), c.why());
         assertTrue(c.best().command().startsWith("dig 0 41 -1 0 42 0 ores via engine then goto 0 41 -1"), c.best().command());
         m.failed(c.best().memoryKey(), "stopped at step 9 (dig ...): that box touches pit (keep-out)", 0);
-        c = WayUp.choose(facts(6, null, hs, null, 0, null, -1), m, 1);
+        c = WayUp.choose(facts(6, null, hs, null, -1), m, 1);
         assertNull(c.best(), "north is held, west and south dropped: " + c.why());
         assertTrue(c.why().contains("stairs north:"), c.why());
         // too short (the 40-step cap) does not reach the step-out level
-        c = WayUp.choose(facts(50, null, List.of(heading("east", 40, Replan.Cell.air(), null)), null, 0, null, -1), new Options.OptionMemory(), 0);
+        c = WayUp.choose(facts(50, null, List.of(heading("east", 40, Replan.Cell.air(), null)), null, -1), new Options.OptionMemory(), 0);
         assertTrue(c.why().contains("reach only 40 of 50"), c.why());
     }
 

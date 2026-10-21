@@ -51,7 +51,6 @@ class MoversTest {
             Map.entry("commands/FloorSteps.java", 2),
             Map.entry("commands/Fishing.java", 1),
             Map.entry("commands/Crafting.java", 2),
-            Map.entry("move/MovePackage.java", 5),
             Map.entry("commands/Commands.java", 2),
             Map.entry("commands/AaRuntime.java", 2)));
 

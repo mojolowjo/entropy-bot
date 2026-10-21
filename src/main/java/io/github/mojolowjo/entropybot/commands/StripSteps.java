@@ -292,7 +292,6 @@ final class StripSteps {
             j.dest = target;
             j.startTick = seq.now();
             j.lastStepTick = -1;
-            j.unstickTries = 0;
             seq.jobs.watch(j);
             seq.stage = "walking";
             d.legStart = seq.stepStart;
@@ -314,12 +313,10 @@ final class StripSteps {
             return "wait";
         }
         if (elapsed < 20) return "wait";
-        // S1: the seq walk's unstick (stuck on a block Baritone can't plan from, no path, no progress for 30 s)
+        // S1: no progress (Tuning walk.stuckS): Baritone is stopped, the end check below names it
         if (seq.now() - j.startTick >= 40 && elapsed % 20 < 2) {
             String ev = seq.jobs.travelEvents(j);
             boolean stuck = ev == null && seq.jobs.travelStuck(p, j);
-            boolean early = ev == null && j.lastStepTick >= 0 && !Jobs.onFullBlock(p) && seq.now() - j.bestTick > Jobs.UNSTICK_EARLY;
-            if ((stuck || early || "nopath".equals(ev)) && j.unstickTries < Jobs.UNSTICK_TRIES && seq.jobs.startUnstick(p, j)) return "wait";
             if (stuck && b != null) Jobs.cancel(b);
         }
         if (b != null && !Jobs.idle(b)) {

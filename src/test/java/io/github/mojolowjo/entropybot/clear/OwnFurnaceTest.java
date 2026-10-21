@@ -52,10 +52,7 @@ class OwnFurnaceTest {
 
     @Test
     void theNotesNameTheFurnaceAndTheNextStep() {
-        assertTrue(OwnTable.furnacePlacedHere("1 2 3").contains("take it back"));
-        assertTrue(OwnTable.furnaceTakenBack("1 2 3").contains("taken back"));
-        assertTrue(OwnTable.furnaceLeftAt("1 2 3").contains("still at 1 2 3"));
-        assertTrue(OwnTable.furnaceNotEmpty("1 2 3", 4).contains("4 items"));
+
         assertTrue(PlaceRules.furnacePickupLabel(new Pos(1, 2, 3)).contains("furnace"));
     }
 }

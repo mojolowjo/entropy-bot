@@ -21,7 +21,7 @@ public final class ReplyShaper {
     /** Verbs whose answer is the information itself (shown whole). */
     static final Set<String> PASS = Set.of("why", "look", "help", "?", "debug", "check", "memory", "summary", "status",
             "reply", "area", "areas", "places", "have", "stock", "recipe", "actions", "goals", "plan", "goal", "brain",
-            "route", "pois", "poi", "caves", "ores", "allowed", "commands", "routines", "queue",
+            "pois", "poi", "caves", "ores", "allowed", "commands", "routines", "queue",
             // review 5: lists and coordinates are never cut
             "where", "stripmine", "inv", "tools", "deaths", "death", "find", "hotbar", "supplies", "need", "gather");
 

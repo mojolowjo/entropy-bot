@@ -25,7 +25,7 @@ public abstract class GuardMixinBlockItem {
             if (!level.isClientSide()) return;
             String path = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(context.getItemInHand().getItem()).getPath();
             if (Guard.INSTANCE.vetoPlace(level, context.getClickedPos(), path.endsWith("torch"))) cir.setReturnValue(InteractionResult.FAIL);
-            else io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.noteLitter(context.getClickedPos(), path);      // aa-litter: a walk's scaffold is noted
+            else io.github.mojolowjo.entropybot.commands.RestoreLive.INSTANCE.notePlaced(context.getClickedPos(), path);      // aa-litter + rm-mining: my placements are noted as mine
         } catch (Throwable ignored) {}
     }
 }

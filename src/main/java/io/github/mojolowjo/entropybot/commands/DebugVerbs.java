@@ -80,18 +80,6 @@ public final class DebugVerbs {
         // the recorder's own verbs work without a world (its data is on disk)
         switch (verb) {
             case "trail" -> {
-                // 0.32.2 (P2): "debug trail walked [n]": the walked trail of this world (the newest n points)
-                if (w.size() >= 2 && w.get(1).equalsIgnoreCase("walked")) {
-                    var tr = io.github.mojolowjo.entropybot.trail.TrailRuntime.INSTANCE.trail();
-                    var pts = tr.points();
-                    int n = w.size() >= 3 ? Math.max(1, Math.min(60, Integer.parseInt(w.get(2)))) : 12;
-                    StringBuilder sb = new StringBuilder(tr.counters()).append("; newest first:");
-                    for (int i = pts.size() - 1; i >= 0 && i >= pts.size() - n; i--) {
-                        var q = pts.get(i);
-                        sb.append(" ").append(q.x()).append(",").append(q.y()).append(",").append(q.z()).append(q.sky() ? "" : "u");
-                    }
-                    return sb.append(" (u = under ground)").toString();
-                }
                 return trail(rec, w, now, zone);
             }
             case "incident", "incidents" -> { return incident(rec, w, now, zone); }

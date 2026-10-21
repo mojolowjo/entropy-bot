@@ -12,8 +12,6 @@ final class WalkEnd {
     static final int TOLERANCE = 3;
     /** 0.33.1: a two-number goto may end on top of a wall column or drift in a water column: a little more room. */
     static final int XZ_TOLERANCE = 5;
-    /** How often a walk that ended short tries to step off / dig out and walk again before it gives up. */
-    static final int SHORT_TRIES = 6;
 
     /** True when the end spot is within the arrival tolerance of the destination (or there is no fixed destination). */
     static boolean arrived(int[] me, int[] dest) {
@@ -113,25 +111,4 @@ final class WalkEnd {
         return "error: couldn't get there (" + far + " blocks away, stopped at " + me[0] + " " + me[1] + " " + me[2] + ")";
     }
 
-    /**
-     * Does the best free step next to the bot help a walk that ended short? Only when it is clearly closer to the goal;
-     * else (none, or the cell it came from) the bot counts as enclosed and the escape dig-out is the way (live 0.19.7:
-     * a one-step escape pocket made the unstick step back and forth).
-     */
-    static boolean stepHelps(double stepDist, double hereDist) {
-        return stepDist < hereDist - 0.5;
-    }
-
-    /** Should a walk that ended short try again (step off, or dig out when enclosed)? */
-    static boolean retryShort(int shortTries) {
-        return shortTries < SHORT_TRIES;
-    }
-
-    /**
-     * The escape dig-out trigger: no free step next to the bot, underground, the policy allowing, and escapes left.
-     * Used by startUnstick (no free step) for every walk end, stuck, no-path or ended-short alike.
-     */
-    static boolean escapeTrigger(boolean freeStep, boolean underground, boolean policyAllows, int escapes, int maxEscapes, boolean reflex) {
-        return !freeStep && underground && policyAllows && escapes < maxEscapes && !reflex;
-    }
 }

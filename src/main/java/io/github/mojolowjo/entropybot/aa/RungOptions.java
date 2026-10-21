@@ -25,24 +25,23 @@ public final class RungOptions {
      * @param depth          blocks of ground over the bot, or for a hole open to the sky the levels up to step out
      * @param me             the bot's feet
      * @param shaftOpen      the column above the head is open up to the surface
-     * @param trailEnd       the open-sky end of the trail back (TrailRuntime.retrace), null none; {@code trailLen} its length
      * @param sky            the nearest standable open-sky cell (a scan), null none; {@code skyDist} straight-line blocks
      * @param tableFurnaceNext the next rung down is the table/furnace one (its place steps walk to their own spot)
      */
     public record SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
-                               int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext,
+                               int[] sky, double skyDist, boolean tableFurnaceNext,
                                io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit,
                                List<Replan.Cell> column, List<WayUp.Heading> headings) {
         public SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
-                            int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext) {
-            this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, trailEnd, trailLen, sky, skyDist, tableFurnaceNext, null);
+                            int[] sky, double skyDist, boolean tableFurnaceNext) {
+            this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, sky, skyDist, tableFurnaceNext, null);
         }
 
         /** Without the column and heading facts (pillar by the open-shaft flag, the climb verb row). */
         public SurfaceFacts(int depth, int[] me, boolean shaftOpen, int throwaway, boolean placeAllowed, boolean pickaxe,
-                            int[] trailEnd, double trailLen, int[] sky, double skyDist, boolean tableFurnaceNext,
+                            int[] sky, double skyDist, boolean tableFurnaceNext,
                             io.github.mojolowjo.entropybot.aa.brain.ToolWear.Kit kit) {
-            this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, trailEnd, trailLen, sky, skyDist, tableFurnaceNext, kit, null, null);
+            this(depth, me, shaftOpen, throwaway, placeAllowed, pickaxe, sky, skyDist, tableFurnaceNext, kit, null, null);
         }
     }
 

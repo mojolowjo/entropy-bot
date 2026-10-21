@@ -82,19 +82,17 @@ public final class BaritoneHook {
                     } catch (RuntimeException ignored) {}
                 }
 
-                /** 0.23.3: ready legs and the long walk's leg near a changed block are planned again. */
+                /** 0.29.0: the builder dig hears changed blocks. */
                 @Override
                 public void onBlockChange(baritone.api.event.events.BlockChangeEvent event) {
                     try {
                         for (var pr : event.getBlocks()) {
                             net.minecraft.core.BlockPos bp = pr.first();
-                            io.github.mojolowjo.entropybot.move.MovePackage.INSTANCE.blockChanged(bp.getX(), bp.getY(), bp.getZ());
                             io.github.mojolowjo.entropybot.commands.BuilderDig.blockChanged(bp.getX(), bp.getY(), bp.getZ(), pr.second() != null && pr.second().isAir());     // 0.29.0
                         }
                     } catch (RuntimeException ignored) {}
                 }
             });
-            LongRouteProcess.INSTANCE.register(b);          // 0.23.3: the long-route process
             Settings s = BaritoneAPI.getSettings();
             Consumer<Component> previous = s.logger.value;
             s.logger.value = previous.andThen(msg -> {
