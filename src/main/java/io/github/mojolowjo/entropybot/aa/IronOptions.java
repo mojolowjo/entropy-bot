@@ -179,10 +179,12 @@ public final class IronOptions {
      * new one first, by hand) adds over a fresh stone pickaxe's dig time, which {@link #digCost} already holds. 0 with
      * no kit (tests, unreadable facts).
      */
-    static double wear(Facts f, int blocks) {
+    public static double wear(Facts f, int blocks) {
         if (f.kit() == null) return 0;
         var b = io.github.mojolowjo.entropybot.aa.brain.ToolWear.best(blocks, f.kit());
-        return Math.max(0, b.seconds() - blocks * io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED));
+        // aa-times review: digCost already holds the blocks at the kit's own (live) seconds, so only what the cheapest
+        // way adds over that stays here (the wear / replacement, a craft first); never the fixed stone baseline
+        return Math.max(0, b.seconds() - blocks * f.kit().toolSeconds());
     }
 
     static String wearWhy(Facts f, int blocks) {

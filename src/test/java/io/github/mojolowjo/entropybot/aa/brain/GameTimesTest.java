@@ -3,6 +3,7 @@ package io.github.mojolowjo.entropybot.aa.brain;
 import io.github.mojolowjo.entropybot.aa.CoalOptions;
 import io.github.mojolowjo.entropybot.aa.IronOptions;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -13,8 +14,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class GameTimesTest {
     static final double STONE = 1.5;
 
+    @BeforeEach
     @AfterEach
-    void reset() { Unit.setLiveBps(0); }
+    void reset() { Unit.setLiveBps(0); }          // review: Unit's live speed is static; never leaks between tests
+
+    @Test
+    void wearIsOnlyWhatTheCheapestWayAddsOverTheKitsOwnSeconds() {
+        // a worn stone pickaxe read under no effects: digCost carries 10 x 0.6 already, wear adds the replacement share only
+        ToolWear.Kit k = new ToolWear.Kit(4f, 20, ToolWear.CRAFT_S);
+        IronOptions.Facts f = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0, k);
+        double w = IronOptions.wear(f, 10);
+        assertEquals(10 / 20.0 * ToolWear.CRAFT_S, w, 1e-6);
+        // the kit's seconds read slower (Mining Fatigue): the hand penalty is not counted twice
+        ToolWear.Kit slow = new ToolWear.Kit(4f, 131, ToolWear.INF, 2.0, 25.0);
+        IronOptions.Facts fs = new IronOptions.Facts(List.of(), 64, false, 0, false, -1, false, "x", -1, false, false, 0, slow);
+        assertEquals(10 / 131.0 * ToolWear.GATHER_S, IronOptions.wear(fs, 10), 1e-6);
+    }
 
     @Test
     void stoneByHandIsSevenAndAHalfSeconds() {

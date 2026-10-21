@@ -428,6 +428,7 @@ public final class AaRuntime implements JobPort {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null || sensed == null) return null;
+            GameTimesLive.refreshUnit(p);              // aa-times: the live walk speed, fresh per facts build
             int[] me = Jobs.here(p);
             String dim = io.github.mojolowjo.entropybot.guard.Guard.dimOf(mc.level);
             boolean fair = io.github.mojolowjo.entropybot.sense.Seen.fair();
@@ -500,6 +501,7 @@ public final class AaRuntime implements JobPort {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer p = mc.player;
             if (p == null || mc.level == null || sensed == null) return null;
+            GameTimesLive.refreshUnit(p);              // aa-times: the live walk speed, fresh per facts build
             int[] me = Jobs.here(p);
             Map<String, Integer> bag = sensed.feas != null ? sensed.feas.bag : Map.of();
             int logs = 0;
@@ -549,7 +551,7 @@ public final class AaRuntime implements JobPort {
         // aa-times: the game's seconds per stone block with my best pickaxe (GameTimesLive), and the live walk speed for Unit
         var lp = Minecraft.getInstance().player;
         double dig = lp == null ? io.github.mojolowjo.entropybot.aa.brain.ToolWear.withTool(io.github.mojolowjo.entropybot.aa.brain.ToolWear.STONE_SPEED) : GameTimesLive.bestPickaxeStoneSeconds(lp);
-        if (lp != null) io.github.mojolowjo.entropybot.aa.brain.Unit.setLiveBps(GameTimesLive.walkBps(lp));
+        GameTimesLive.refreshUnit(lp);
         int down = me[1] - io.github.mojolowjo.entropybot.aa.brain.Discovery.stripY(
                 new io.github.mojolowjo.entropybot.aa.brain.Discovery.Facts(caveDist, 0, mineMarked, sensed.areasHere, stripWhy, me[0], me[1], me[2], bestY, -1, 1, ownerGoal));
         var lv = Minecraft.getInstance().level;

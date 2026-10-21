@@ -83,28 +83,38 @@ public final class GameTimesLive {
         }
     }
 
-    public static double breakSeconds(Player p, BlockState block, ItemStack tool) {
+    /** The block in front of me now: the player's own water / ground state (a live check, not a plan). */
+    public static double breakSecondsNow(Player p, BlockState block, ItemStack tool) {
         return breakSeconds(p, block, tool, p.isEyeInFluid(FluidTags.WATER), p.onGround());
     }
 
-    /** Seconds per stone block with {@code tool} (empty = by hand) here and now. */
+    /**
+     * A planned dig: on the ground, dry (review: the facts are read where I stand, not where the dig happens, so a
+     * mid-jump or pillaring bot must not price every dig x5 and a swimming one x5 cheaper; the water terms are priced
+     * by WaterWays / the drowning cost).
+     */
+    public static double breakSeconds(Player p, BlockState block, ItemStack tool) {
+        return breakSeconds(p, block, tool, false, true);
+    }
+
+    /** Seconds per planned stone block with {@code tool} (empty = by hand): effects and enchantments in, dry, on the ground. */
     public static double stoneSeconds(Player p, ItemStack tool) {
         return breakSeconds(p, Blocks.STONE.defaultBlockState(), tool);
     }
 
     /**
-     * Seconds per stone block with the best pickaxe in the bag (36 slots, the lowest time wins); by hand when there is
-     * none. The ToolWear default (a stone pickaxe) when the player cannot be read.
+     * Seconds per planned stone block with the best pickaxe in the bag (36 slots, the lowest time wins); by hand when
+     * there is none. Dry and on the ground (see {@link #breakSeconds(Player, BlockState, ItemStack)}). The ToolWear
+     * default (a stone pickaxe) when the player cannot be read.
      */
     public static double bestPickaxeStoneSeconds(Player p) {
         try {
             BlockState stone = Blocks.STONE.defaultBlockState();
-            boolean water = p.isEyeInFluid(FluidTags.WATER), ground = p.onGround();
-            double best = breakSeconds(p, stone, ItemStack.EMPTY, water, ground);
+            double best = breakSeconds(p, stone, ItemStack.EMPTY);
             for (int i = 0; i < 36; i++) {
                 ItemStack st = p.getInventory().getItem(i);
                 if (st.isEmpty() || !Commands.itemId(st).endsWith("_pickaxe")) continue;
-                best = Math.min(best, breakSeconds(p, stone, st, water, ground));
+                best = Math.min(best, breakSeconds(p, stone, st));
             }
             return best;
         } catch (RuntimeException e) {
@@ -127,6 +137,14 @@ public final class GameTimesLive {
             warn("walk speed", e);
             return GameTimes.BASE_WALK_BPS;
         }
+    }
+
+    /**
+     * Review: Unit's live walk speed is refreshed on every facts build (iron, coal, discovery), never left from an older
+     * one, so a Speed effect that ended does not rescale stale; no player = back to the constant.
+     */
+    public static void refreshUnit(Player p) {
+        io.github.mojolowjo.entropybot.aa.brain.Unit.setLiveBps(p == null ? 0 : walkBps(p));
     }
 
     /** Blocks a second swimming, Depth Strider (WATER_MOVEMENT_EFFICIENCY) in. */
