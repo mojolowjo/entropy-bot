@@ -13,9 +13,9 @@ import java.util.Locale;
  * <tr><th>Option</th><th>When</th><th>Cost per ore</th><th>Runs</th></tr>
  * <tr><td>explore cave</td><td>a known cave within reach</td><td>its distance + 60 s per {@value #CAVE_BLOCKS_MIN} blocks explored,
  *   over the ore seen per minute of caving (learned by Seen, a prior until then)</td><td>{@code mine cave <ore> n}</td></tr>
- * <tr><td>strip at Y</td><td>a mine marked, or my areas here</td><td>the way down to OreStats' best band + the tunnel blocks per ore
+ * <tr><td>strip at Y</td><td>always (a mine marked, or a staircase down the policy allows)</td><td>the way down to OreStats' best band + the tunnel blocks per ore
  *   ({@value #EXPOSED} cells seen per tunnel block x the learned density there) at my pickaxe's speed</td><td>{@code [place mine x Y z north then] mine strip <ore> n}</td></tr>
- * <tr><td>clear chunk</td><td>the owner's goal only, in my areas</td><td>a 16x16x{@value #SLAB} slab at the best band, over the ores it should hold</td><td>{@code dig ... ores}</td></tr>
+ * <tr><td>clear chunk</td><td>the owner's goal only</td><td>a 16x16x{@value #SLAB} slab at the best band, over the ores it should hold</td><td>{@code dig ... ores}</td></tr>
  * </table>
  * Pure (JUnit: DiscoveryTest). Loader notes: none (the adapter, AaRuntime, reads Seen, OreStats and the caves).
  */
@@ -38,27 +38,25 @@ public final class Discovery {
      * @param caveDist   blocks to the nearest known cave within reach, -1 none
      * @param caveRate   ore of this family seen per minute of caving (Seen.caveRate, prior included)
      * @param mineMarked a mine is marked (its own Y is used)
-     * @param inAreas    I stand in my areas (a mine may be placed here)
-     * @param stripWhy   why strip is not possible (null: it is)
      * @param bestY      OreStats' busiest band's middle for the family here, Integer.MIN_VALUE unknown
      * @param density    listed ore per block in that band, -1 unknown
      * @param secPerBlock seconds to dig one stone block with my best pickaxe
      * @param ownerGoal  the owner asked for it (clear chunk is offered)
-     * @param downs      AA_ROUND3 4: the staircase down per heading (StairPlan.cells, read by the adapter against my areas
+     * @param downs      AA_ROUND3 4: the staircase down per heading (StairPlan.cells, read by the adapter against the policy
      *                   and the break policy); null = not read (north, the old way)
      */
-    public record Facts(int caveDist, double caveRate, boolean mineMarked, boolean inAreas, String stripWhy,
+    public record Facts(int caveDist, double caveRate, boolean mineMarked,
                         int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal,
                         List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downs, int[] seenCave, double cavesPer100,
                         double homeDist, double horizonBlocks, long dayTime) {
         /**
-         * Owner 2026-10-20 (no explore leash): homeDist = blocks to my base/areas (-1 unknown), horizonBlocks = the
+         * Owner 2026-10-20 (no explore leash): homeDist = blocks to my base (-1 unknown), horizonBlocks = the
          * horizon in walk-blocks (0: none), dayTime = the world's day time (-1 unknown) for the night weight.
          */
-        public Facts(int caveDist, double caveRate, boolean mineMarked, boolean inAreas, String stripWhy,
+        public Facts(int caveDist, double caveRate, boolean mineMarked,
                      int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal,
                      List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downs, int[] seenCave, double cavesPer100) {
-            this(caveDist, caveRate, mineMarked, inAreas, stripWhy, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, downs, seenCave, cavesPer100, -1, 0, -1);
+            this(caveDist, caveRate, mineMarked, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, downs, seenCave, cavesPer100, -1, 0, -1);
         }
 
         /**
@@ -66,22 +64,21 @@ public final class Discovery {
          * {@link #SEEN_CAVE_WITHIN}, null none; cavesPer100 = the learned chance to see one per 100 blocks walked (0: not
          * read, no explore row).
          */
-        public Facts(int caveDist, double caveRate, boolean mineMarked, boolean inAreas, String stripWhy,
+        public Facts(int caveDist, double caveRate, boolean mineMarked,
                      int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal,
                      List<io.github.mojolowjo.entropybot.aa.WayUp.Heading> downs) {
-            this(caveDist, caveRate, mineMarked, inAreas, stripWhy, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, downs, null, 0);
+            this(caveDist, caveRate, mineMarked, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, downs, null, 0);
         }
 
-        public Facts(int caveDist, double caveRate, boolean mineMarked, boolean inAreas, String stripWhy,
+        public Facts(int caveDist, double caveRate, boolean mineMarked,
                      int meX, int meY, int meZ, int bestY, double density, double secPerBlock, boolean ownerGoal) {
-            this(caveDist, caveRate, mineMarked, inAreas, stripWhy, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, null);
+            this(caveDist, caveRate, mineMarked, meX, meY, meZ, bestY, density, secPerBlock, ownerGoal, null);
         }
     }
 
     /**
-     * AA_ROUND3 4 (aa-fair: the staircase ran north and its bottom left my areas, so place mine refused): the cheapest
-     * heading down by its ground (WayUp.ground: own/foreign breaks x the policy, hazards); one leaving my areas or with a
-     * cell the policy denies is dropped with why. Null when every heading is dropped; north when no headings were read.
+     * AA_ROUND3 4: the cheapest heading down by its ground (WayUp.ground: own/foreign breaks x the policy, hazards); one
+     * with a cell the policy refuses is dropped with why. Null when every heading is dropped; north when no headings were read.
      */
     static io.github.mojolowjo.entropybot.aa.WayUp.Heading stairHeading(Facts f, List<String> dropped) {
         if (f.downs() == null) return null;
@@ -178,8 +175,7 @@ public final class Discovery {
         double per = tunnelPerOre(f.density());
         String dens = f.density() <= 0 ? "density not learned" : String.format(Locale.ROOT, "%.4f per block learned", f.density());
         var stair = f.mineMarked() || down == 0 ? null : stairHeading(f, dropped);
-        if (!f.inAreas()) dropped.add("strip at Y: " + (f.stripWhy() == null ? "outside my areas" : f.stripWhy()));
-        else if (!f.mineMarked() && down > 0 && f.downs() != null && stair == null) dropped.add("strip at Y: no staircase heading down stays in my areas and may be dug");
+        if (!f.mineMarked() && down > 0 && f.downs() != null && stair == null) dropped.add("strip at Y: no staircase heading down may be dug (the policy or the ground refuses each)");
         else {
             // the way down: a staircase digs about 2 blocks per level and walks it, plus its heading's ground (AA_ROUND3 4)
             var g = stair == null ? null : io.github.mojolowjo.entropybot.aa.WayUp.ground(stair);
@@ -205,7 +201,6 @@ public final class Discovery {
                     g == null ? "" : String.format(Locale.ROOT, ", stairs %s ground %.0f s", dir, g.cost())), cmd));
         }
         if (!f.ownerGoal()) dropped.add("clear chunk: the owner's goals only");
-        else if (!f.inAreas()) dropped.add("clear chunk: outside my areas");
         else {
             int x0 = Math.floorDiv(f.meX(), 16) * 16, z0 = Math.floorDiv(f.meZ(), 16) * 16;
             int cells = 16 * 16 * SLAB;

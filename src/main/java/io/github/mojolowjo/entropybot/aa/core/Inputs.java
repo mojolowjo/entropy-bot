@@ -62,7 +62,7 @@ public final class Inputs {
     /** AA_STEP3 A1: the world spawn (where a death respawns the bot without a bed), null unknown. Not in the vector. */
     public int[] spawnPos;
     /**
-     * aa-r1fix: the camp chest's cell (ChestSpot: free, inside my areas, next to the table, cheapest not refused), null none
+     * aa-r1fix: the camp chest's cell (ChestSpot: free, the policy allowing, next to the table, cheapest not refused), null none
      * found; why it was chosen; the cells the game refused ("x y z"). Not in the vector.
      */
     public int[] chestCell;
@@ -91,8 +91,8 @@ public final class Inputs {
     public boolean ownerOrderPending, aiRequestPending, menuOpen, parked, inWorld = true;
     /** Something not AA's runs (the owner's chain, a job, a gather...): its name, else null. */
     public String otherJob;
-    /** The first base or work area a house fits (AaRuntime.houseFits), else null; the food bar drains (not Peaceful). */
-    public String areaName;
+    /** The owner's base (or work) place a house fits (AaRuntime.houseFits; a home fact), else null; the food bar drains (not Peaceful). */
+    public String basePlace;
     public boolean hungerDrains;
     /**
      * B6 (2.11): the owner's flat distance (-1 unknown), their activity from the companion report ("building", "idle"...;

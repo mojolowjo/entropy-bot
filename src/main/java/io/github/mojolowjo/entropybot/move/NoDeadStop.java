@@ -7,7 +7,7 @@ package io.github.mojolowjo.entropybot.move;
  * <ol>
  *   <li>1st failure in a row: NEXT_WAYPOINT (skip the leg that failed, its map edge penalised);</li>
  *   <li>2nd: DETOUR (the whole route planned again from here, the failed edges now cost more);</li>
- *   <li>3rd: DIG_OUT when underground inside the areas and not tried yet in this run of failures, else REPORT;</li>
+ *   <li>3rd: DIG_OUT when underground, the policy allowing, and not tried yet in this run of failures, else REPORT;</li>
  *   <li>after a dig-out, the next failure: REPORT ({@code couldn't get there (stopped at x y z: <reason>)}).</li>
  * </ol>
  * A leg reached resets the count. Pure.
@@ -25,7 +25,7 @@ public final class NoDeadStop {
 
     public int totalFails() { return total; }
 
-    /** A leg search failed; canDigOut: underground and inside the areas. */
+    /** A leg search failed; canDigOut: underground and the policy allows the dig. */
     public Action onFail(boolean canDigOut) {
         return onFail(canDigOut, false);
     }

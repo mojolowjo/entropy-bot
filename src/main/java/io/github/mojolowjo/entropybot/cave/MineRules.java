@@ -157,15 +157,6 @@ public final class MineRules {
         return "error: \"mine\" only takes ores (and sand, gravel, clay, grass): " + shortId(id) + " could be part of a build. \"dig x1 y1 z1 x2 y2 z2\" clears a box";
     }
 
-    /** The areas' names for the refusal outside them: "my areas (map, home)" / "my areas (none set - hint)". */
-    public static String areasText(List<String> names, String hint) {
-        return "my areas (" + (names.isEmpty() ? "none set - " + hint : String.join(", ", names)) + ")";
-    }
-
-    public static String outsideAreas(List<String> names, String hint) {
-        return "error: I only \"mine\" inside " + areasText(names, hint) + "; elsewhere use stripmine";
-    }
-
     public static String shortId(String id) { return String.valueOf(id).replaceFirst("^minecraft:", ""); }
 
     public static String anA(String w) { return (w.matches("(?i)^[aeiou].*") ? "an " : "a ") + w; }
@@ -424,8 +415,6 @@ public final class MineRules {
     public static String stuckBackText(String target, String anchor, String me, String leg, String gains) {
         return "stopped: I couldn't get back to where I was mining " + shortId(target) + " (" + anchor + ") - stuck at " + me + " on the way to " + leg + gains;
     }
-
-    public static String leftAreasText(String at) { return "I left my areas at " + at; }
 
     public static String timeUpText() { return "time is up (" + MAX_TICKS / 1200 + " min)"; }
 

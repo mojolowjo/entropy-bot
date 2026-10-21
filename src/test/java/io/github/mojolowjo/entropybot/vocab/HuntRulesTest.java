@@ -8,15 +8,13 @@ import org.junit.jupiter.api.Test;
 
 /** 0.24.3: hunt's target filter, stop rule and the food source order with hunting on/off. */
 class HuntRulesTest {
-    static HuntRules.Target t(String type) { return new HuntRules.Target(type, false, false, false, false, false, false, true); }
+    static HuntRules.Target t(String type) { return new HuntRules.Target(type, false, false, false, false, false, false); }
 
-    /** AA_ROUND3 5: "hunt n animal at x z [out]" and the loot form with "at". */
+    /** AA_ROUND3 5: "hunt n animal at x z" and the loot form with "at". */
     @Test void atPlace() {
         assertArrayEquals(new int[]{80, -12}, HuntRules.at("3 cow at 80 -12"));
         assertNull(HuntRules.at("3 cow"));
         assertArrayEquals(new Object[]{3, "minecraft:cow"}, HuntRules.parse("3 cow at 80 -12"));
-        assertArrayEquals(new Object[]{3, "minecraft:cow"}, HuntRules.parse("3 cow at 80 -12 out"));
-        assertTrue(HuntRules.outWord(HuntRules.withoutAt("3 cow at 80 -12 out")));
         assertArrayEquals(new Object[]{2, "minecraft:cow", "minecraft:leather", 3}, HuntRules.parseFor("2 cow for leather 3 at 5 6"));
         assertTrue(HuntRules.atOk(new int[]{80, 0}, 90, 10), "within 16");
         assertFalse(HuntRules.atOk(new int[]{80, 0}, 100, 0), "20 off: not taken");
@@ -27,12 +25,12 @@ class HuntRulesTest {
         List<String> ok = HuntRules.ANIMALS;
         assertTrue(HuntRules.mayTake(t("minecraft:cow"), ok, null));
         assertFalse(HuntRules.mayTake(t("minecraft:wolf"), ok, null));
-        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", true, false, false, false, false, false, true), ok, null));   // tamed
-        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", false, true, false, false, false, false, true), ok, null));   // named
-        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", false, false, false, false, false, true, true), ok, null));   // a calf
-        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", false, false, false, false, false, false, false), ok, null));  // outside the areas
-        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:villager", false, false, false, false, true, false, true), ok, null));
-        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:player", false, false, false, true, false, false, true), ok, null));
+        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", true, false, false, false, false, false), ok, null));   // tamed
+        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", false, true, false, false, false, false), ok, null));   // named
+        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", false, false, false, false, false, true), ok, null));   // a calf
+        assertTrue(HuntRules.mayTake(new HuntRules.Target("minecraft:cow", false, false, false, false, false, false), ok, null));   // anywhere: the world is open
+        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:villager", false, false, false, false, true, false), ok, null));
+        assertFalse(HuntRules.mayTake(new HuntRules.Target("minecraft:player", false, false, false, true, false, false), ok, null));
         assertFalse(HuntRules.mayTake(t("minecraft:pig"), ok, "minecraft:cow"));                   // hunt 3 cow
         assertFalse(HuntRules.mayTake(t("minecraft:sheep"), List.of("minecraft:cow"), null));     // kinds animals exclude sheep
     }

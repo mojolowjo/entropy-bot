@@ -23,7 +23,7 @@ import static io.github.mojolowjo.entropybot.clear.ClearRules.floor;
  * ({@link #chooseBlock}) and the tick loop ({@link Run}) over a {@link ClearWorld}; what it does to the game goes
  * through {@link Run.Body}.
  *
- * <p>Safety: never into or next to water/lava, only cells the guard would lease ({@code allowed}: inside an area,
+ * <p>Safety: never into or next to water/lava, only cells the guard would lease ({@code allowed}: the policy,
  * outside protect boxes), only from stand spots the fence allows ({@code standOk}), and on the walkway: the fill stands
  * with its feet above the layer. A bot that finds itself below it (in the cave) first walks back up, or, when no walk
  * gets there, puts down the fewest blocks at its feet that make a step up (counted in the report) - so it never seals
@@ -51,7 +51,7 @@ public final class FloorFill {
     }
 
     public static final String LIQUID = "next to water/lava";
-    public static final String FENCED = "outside my areas or in a protect box";
+    public static final String FENCED = "in a keep-out / no-break area or a protect box";
     public static final String NO_SUPPORT = "nothing to place it against";
     public static final String NO_STAND = "nowhere to stand within reach";
     public static final String NO_REACH = "couldn't get within reach";

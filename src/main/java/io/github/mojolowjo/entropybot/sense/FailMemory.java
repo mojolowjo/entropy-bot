@@ -13,16 +13,15 @@ public final class FailMemory {
     private FailMemory() {}
 
     /** NO_PLACE (0.26.1 live check): a place, area or mine the chain names is not marked. */
-    public enum Reason { NO_ITEM, OUTSIDE, NONE_IN_CHESTS, NO_PATH, NO_BED, GUARD_REFUSED, NO_PLACE }
+    public enum Reason { NO_ITEM, NONE_IN_CHESTS, NO_PATH, NO_BED, GUARD_REFUSED, NO_PLACE }
 
-    /** Checked in this order (a guard refusal names "outside my areas" too: OUTSIDE wins, the cause it clears on). */
+    /** Checked in this order. */
     private static final Object[][] PATTERNS = {
             {Reason.NONE_IN_CHESTS, Pattern.compile("none of my chests has|no chest (has|holds)")},
-            {Reason.OUTSIDE, Pattern.compile("outside (my|every|the) areas?|outside every work area")},
             {Reason.GUARD_REFUSED, Pattern.compile("would refuse|the guard refuse|refused by the guard|guard refused|fence refuse")},
             {Reason.NO_BED, Pattern.compile("no bed")},
             {Reason.NO_PLACE, Pattern.compile("i have no (place|area|mine)\\b|no places yet|i have no place, area|no (camp|base) place")},
-            {Reason.NO_PATH, Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach|no trees in my areas|chopped nothing|couldn't get at its trunk")},
+            {Reason.NO_PATH, Pattern.compile("no path|couldn't get there|could not get there|can't get there|couldn't reach|can't reach|no trees|chopped nothing|couldn't get at its trunk")},
             {Reason.NO_ITEM, Pattern.compile("no torches|i have no |no \\S+ on me|missing \\d|not enough |none on me|i need \\d+ |i need .* there is none|no furnace recipe")},
     };
     /** A fight or the owner: never a precondition (checked first). */

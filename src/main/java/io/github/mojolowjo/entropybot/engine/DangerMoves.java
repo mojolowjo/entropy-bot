@@ -5,7 +5,7 @@ import io.github.mojolowjo.entropybot.aa.moves.BaritoneCar;
 import io.github.mojolowjo.entropybot.aa.moves.Moves;
 import io.github.mojolowjo.entropybot.events.EventRing;
 import io.github.mojolowjo.entropybot.guard.Guard;
-import io.github.mojolowjo.entropybot.threat.CornerEscape;
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.threat.FleeHeading;
 import io.github.mojolowjo.entropybot.threat.ThreatFacts;
 import io.github.mojolowjo.entropybot.threat.ThreatRuntime;
@@ -29,27 +29,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * AA_CLEANUP 4: the danger desire's moves, out of the reflexes. The verbs {@code flee}, {@code cover}, {@code pillar} and
+ * AA_CLEANUP 4: the danger desire's moves, out of the reflexes. The verbs {@code flee}, {@code pillar} and
  * {@code burrow} (dig down, else into a wall, and seal) start one; AA's danger desire runs them as chain steps (or the
  * owner types them). Nothing here decides: AA prices the ways on {@link #facts}. While a move runs the reflexes hold the
  * job (Reflexes.hold); it ends when nothing has chased the bot for 5 s, after 90 s, or when it cannot go on (always with
  * a "done ...: why" event). Never throws from a tick.
  *
- * <p>Backbone step 2 ("AA is the driver, Baritone is the car"): a thin caller of {@link Moves}. This class finds the
- * cells (the facts AA prices) and follows the way; every physical action (walk, run away, pillar, dig, seal, look) goes
+ * <p>Backbone step 2 ("AA is the driver, Baritone is the car"): a thin caller of {@link Moves}. rm-threat: the burrow
+ * and the dig-in say only "burrow here, d deep" / "dig into the nearest wall"; whether that is possible here (soft
+ * ground, closed sides, a wall) is the fork's BurrowProcess answer ({@code canBurrowHere}, {@code canDigInHere}), and
+ * its no (stage, block, reason) goes into the facts AA prices. This class follows the way; every physical action (walk, run away, pillar, dig, seal, look) goes
  * through Moves onto Baritone (goals through {@link EngineProcess}, the fork's BurrowProcess, LookBehavior). Only the
  * strike in the hold stays here ({@code MultiPlayerGameMode.attack}: Baritone has no combat), its look through Moves.
  * A way that fails ends the move as a failure ({@link #takeFailure}); AA's danger job then fails its chain.
  *
  * <p>Loader notes: vanilla client reads plus {@code MultiPlayerGameMode.attack}; Baritone API goals and the fork's
  * {@code IBurrowProcess} through {@link io.github.mojolowjo.entropybot.aa.moves.BaritoneCar}; the guard mixin vetoes
- * breaks as always and the finders ask {@code PolicyRuntime} (DIG_OUT) first. The pure parts are {@link CornerEscape},
- * {@link FleeHeading}, {@link ThreatFacts} and {@link Moves}.
+ * breaks as always and the fork's break rules ask the CostAdvisor hook. The pure parts are {@link FleeHeading},
+ * {@link ThreatFacts} and {@link Moves}.
  */
 public final class DangerMoves {
     private static final Logger LOG = LogUtils.getLogger();
 
-    public enum Move { NONE, FLEE, COVER, PILLAR, NICHE, BURROW }
+    public enum Move { NONE, FLEE, PILLAR, NICHE, BURROW }
 
     static double fleeRun() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.fleeRun"); }
     static final long CALM_TICKS = 100, MAX_TICKS = 1800;
@@ -63,11 +65,7 @@ public final class DangerMoves {
     private long now, start, calmSince;
     private boolean holding;
     private BlockPos anchor;              // the cell the way holds in (pillar top, burrow bottom, niche foot)
-    private List<BlockPos> digCells = List.of();
     private String failure;
-    // cover
-    private int coverMob = -1;
-    private long coverUntil;
 
     DangerMoves(EventRing events, EngineProcess engine) {
         this.events = events;
@@ -117,23 +115,7 @@ public final class DangerMoves {
         return "ok: running " + (int) fleeRun() + " from " + from.size() + " mob(s)";
     }
 
-    /** "cover": a cell out of the nearest ranged mob's sight (ThreatRuntime.cover), held 15 s or until it closes in. */
-    public String cover() {
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer p = mc.player;
-        if (p == null || mc.level == null) return "error: not in a world";
-        Entity r = nearestRanged(mc, p);
-        if (r == null) return "error: nothing shoots at me";
-        var c = ThreatRuntime.INSTANCE.cover(p, r);
-        if (c == null) return "error: no cell out of the " + kind(r) + "'s sight near (or no threat grid)";
-        begin(Move.COVER, "taking cover from " + kind(r) + " at " + c.x() + " " + c.y() + " " + c.z());
-        coverMob = r.getId();
-        coverUntil = now + (long) (20 * io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.coverS"));
-        moves.cover(new int[]{c.x(), c.y(), c.z()});
-        return "ok: cover at " + c.x() + " " + c.y() + " " + c.z();
-    }
-
-    /** "pillar": 3 up on throwaway blocks, then hold and hit what comes in reach. */
+    /** "pillar": Tuning danger.pillarUp on throwaway blocks, then hold and hit what comes in reach. */
     public String pillar() {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
@@ -144,8 +126,8 @@ public final class DangerMoves {
         int[] tw = throwaway(p);
         if (!p.onGround()) return "error: not standing on ground";
         int head = headRoom(mc, p);
-        int up = Math.min(CornerEscape.UP, Math.min(head, tw[0]));
-        if (up < CornerEscape.MIN_UP) return "error: no pillar here (" + tw[0] + " blocks, head room " + head + ")";
+        int up = Math.min((int) Tuning.get("danger.pillarUp"), Math.min(head, tw[0]));
+        if (up < (int) Tuning.get("danger.pillarMinUp")) return "error: no pillar here (" + tw[0] + " blocks, head room " + head + ")";
         BlockPos feet = p.blockPosition();
         for (int k = 0; k < up; k++)
             if (Guard.INSTANCE.placeRefused(mc.level, feet.above(k))) return "error: no placing at " + c(feet.above(k)) + " (an area rule): no pillar here";
@@ -264,24 +246,24 @@ public final class DangerMoves {
         BlockPos top = p.blockPosition();
         // backbone step 2 (owner: water is parked): no burrow or dig-in in or beside water
         if (waterNear(mc, top)) return "error: water in or beside me: no burrow or dig-in here (water ways parked)";
-        int d = findBurrow(mc, p);
-        if (d > 0) {
-            // reflex choosers: "burrow here, d deep"; the fork's BurrowProcess picks the cells from where the bot stands
+        // rm-threat: "burrow here, d deep" / "dig into the nearest wall"; the fork's BurrowProcess says whether it can
+        int d = (int) Tuning.get("danger.burrowDepth");
+        String noBurrow = car.burrowVerdict(d);
+        if (noBurrow == null) {
             begin(Move.BURROW, "digging down " + d + " and sealing");
             anchor = null;          // the hold cell is where the fork's burrow leaves the bot (set when it arrives)
             burrowFrom = top;
             moves.burrowHere("burrow", d, false);
             return "ok: digging down " + d + " and sealing";
         }
-        Direction n = findNiche(mc, p);
-        if (n != null && throwaway(p)[0] >= CornerEscape.SEAL_BLOCKS) {
-            begin(Move.NICHE, "digging into the wall " + n.getName() + " and sealing");
-            anchor = top.relative(n);
-            digCells = List.of(anchor, anchor.above());
-            moves.digIn(new int[]{top.getX(), top.getY(), top.getZ()}, n.getStepX(), n.getStepZ());
-            return "ok: digging into the wall " + n.getName();
+        String noWall = car.digInVerdict();
+        if (noWall == null) {
+            begin(Move.NICHE, "digging into the nearest wall and sealing");
+            anchor = null;          // the hold cell is the niche the fork picked (set when it arrives)
+            moves.digInHere();
+            return "ok: digging into the nearest wall";
         }
-        return "error: no ground to dig down into and no wall to dig into here (soft ground, closed sides, no water near)";
+        return "error: no burrow here (" + noBurrow + ") and no wall to dig into (" + noWall + ")";
     }
 
     private void begin(Move m, String line) {
@@ -290,8 +272,6 @@ public final class DangerMoves {
         start = calmSince = now;
         holding = false;
         anchor = null;
-        digCells = List.of();
-        coverMob = -1;
         events.push("reflex", line, null);
         LOG.info("[entropybot] danger move: {}", line);
     }
@@ -318,8 +298,6 @@ public final class DangerMoves {
         move = Move.NONE;
         holding = false;
         anchor = null;
-        digCells = List.of();
-        coverMob = -1;
         moves.release();
     }
 
@@ -340,12 +318,6 @@ public final class DangerMoves {
                 case FLEE -> {
                     if (arrived) { stop("got away (" + moves.why() + ")"); return; }
                     if (now - calmSince >= CALM_TICKS) stop("nothing chasing me");
-                }
-                case COVER -> {
-                    Entity m = mc.level.getEntity(coverMob);
-                    if (m == null || !m.isAlive()) { stop("the shooter is gone"); return; }
-                    if (p.distanceTo(m) <= 4) { stop("it closed in (the hit response fights it)"); return; }
-                    if (now >= coverUntil) { stop("held the cover " + (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("danger.coverS") + " s"); return; }
                 }
                 case PILLAR, NICHE, BURROW -> {
                     // 0.39.s3 review: the burrow's hold-cell check runs while it digs too (from the cell it started in;
@@ -380,7 +352,7 @@ public final class DangerMoves {
     /** The break policy's verdict on the first dig cell still standing (the "gave up" line names it). */
     private String verdict(Minecraft mc) {
         try {
-            List<BlockPos> cells = !digCells.isEmpty() ? digCells : car.burrowCells();      // a burrow's cells are the fork's
+            List<BlockPos> cells = car.burrowCells();      // a burrow's and a dig-in's cells are the fork's
             for (BlockPos q : cells) {
                 if (!solid(mc, q)) continue;
                 var rt = io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE;
@@ -411,7 +383,6 @@ public final class DangerMoves {
         try {
             List<ThreatFacts.Foe> foes = new ArrayList<>();
             List<FleeHeading.Mob> mobs = new ArrayList<>();
-            Entity ranged = null;
             int armor = p.getArmorValue();
             Hostility h = Hostility.INSTANCE;
             for (Entity e : mc.level.entitiesForRendering()) {
@@ -424,7 +395,6 @@ public final class DangerMoves {
                         io.github.mojolowjo.entropybot.threat.MobDamage.INSTANCE);
                 foes.add(f);
                 mobs.add(new FleeHeading.Mob(e.getX(), e.getZ(), 1));
-                if (f.ranged() && (ranged == null || d < p.distanceTo(ranged))) ranged = e;
             }
             ThreatFacts.Me me = new ThreatFacts.Me(p.getHealth() + p.getAbsorptionAmount(), p.getMaxHealth(), armor, Hostility.weaponHit(p),
                     p.getFoodData().getFoodLevel());
@@ -435,20 +405,20 @@ public final class DangerMoves {
                 double dx = p.getX() - base[0] - 0.5, dy = p.getY() - base[1], dz = p.getZ() - base[2] - 0.5, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
                 if (d > 8 && d <= io.github.mojolowjo.entropybot.move.ServerCmds.maxWalk()) baseDist = d;
             }
-            int cover = -1;
-            if (ranged != null) {
-                var c = ThreatRuntime.INSTANCE.cover(p, ranged);
-                if (c != null) cover = c.moves();
-            }
             int[] tw = throwaway(p);
-            boolean burrow = findBurrow(mc, p) > 0, niche = tw[0] >= CornerEscape.SEAL_BLOCKS && findNiche(mc, p) != null;
             // AA_STEP3 A3/A4: the water facts (the column to fill, the swim up, the nearest shore)
             boolean wetNow = p.isInWater();
+            boolean wn = waterNear(mc, p.blockPosition());
+            // rm-threat: the fork answers "burrow here" / "dig in here" (its no names the stage, the block, the reason);
+            // in or beside water neither is asked (the ways are parked there, DangerOptions says why)
+            String noBurrow = wetNow || wn ? "water in or beside me" : car.burrowVerdict((int) Tuning.get("danger.burrowDepth"));
+            String noNiche = wetNow || wn ? "water in or beside me" : car.digInVerdict();
+            boolean burrow = noBurrow == null, niche = noNiche == null;
             int[] wf = wetNow ? water(mc, p) : new int[]{0, 0, 0, 0};
             int[] shore = wetNow ? shore(mc, p, wf[3] != 0 ? wf[3] : p.blockPosition().getY()) : null;
             double shoreDist = shore == null ? -1 : Math.sqrt(Math.pow(shore[0] + 0.5 - p.getX(), 2) + Math.pow(shore[2] + 0.5 - p.getZ(), 2));
-            return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, cover, burrow || niche, tw[0], headRoom(mc, p),
-                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist, waterNear(mc, p.blockPosition())));
+            return new ThreatFacts(me, foes, new ThreatFacts.Ways(flee, baseDist, burrow || niche, tw[0], headRoom(mc, p),
+                    p.onGround() && !wetNow, burrow, niche, wetNow, wf[0], wf[1], shore, shoreDist, wn, noBurrow, noNiche));
         } catch (RuntimeException e) {
             LOG.warn("[entropybot] danger facts failed (calm facts used): {}", e.toString());
             return ThreatFacts.CALM;
@@ -456,8 +426,6 @@ public final class DangerMoves {
     }
 
     // ---- helpers ----
-
-    private static String kind(Entity e) { return BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(); }
 
     /** The cells of the hostiles {@link #mobs} counts (what the flee runs from). */
     private List<int[]> mobCells(Minecraft mc, LocalPlayer p) {
@@ -488,19 +456,6 @@ public final class DangerMoves {
         return best;
     }
 
-    private static Entity nearestRanged(Minecraft mc, LocalPlayer p) {
-        Entity best = null;
-        double bd = io.github.mojolowjo.entropybot.threat.ThreatFacts.RANGED_RANGE + 4;
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == p || !(e instanceof LivingEntity le) || !le.isAlive() || !Hostility.INSTANCE.kind(e, true).counts()) continue;
-            if (io.github.mojolowjo.entropybot.threat.ThreatRules.moveOf(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString())
-                    != io.github.mojolowjo.entropybot.threat.ThreatRules.Move.RANGED) continue;
-            double d = p.distanceTo(e);
-            if (d < bd) { bd = d; best = e; }
-        }
-        return best;
-    }
-
     /** The strike in the hold (Baritone has no combat): the look through Moves (LookBehavior), the hit by the game mode. */
     private void hitInReach(Minecraft mc, LocalPlayer p, Entity t) {
         if (t == null || p.distanceTo(t) > ReflexRules.REACH || !Hostility.mayAttack(t)) return;
@@ -514,7 +469,8 @@ public final class DangerMoves {
     private static int headRoom(Minecraft mc, LocalPlayer p) {
         BlockPos feet = p.blockPosition();
         int head = 0;
-        while (head < CornerEscape.UP && mc.level.getBlockState(feet.above(2 + head)).getCollisionShape(mc.level, feet.above(2 + head)).isEmpty()) head++;
+        int up = (int) Tuning.get("danger.pillarUp");
+        while (head < up &&mc.level.getBlockState(feet.above(2 + head)).getCollisionShape(mc.level, feet.above(2 + head)).isEmpty()) head++;
         return head;
     }
 
@@ -555,72 +511,11 @@ public final class DangerMoves {
         }
     }
 
-    /** A wall direction whose two cells can be dug out and sealed behind; null = none. Never throws. */
-    private static Direction findNiche(Minecraft mc, LocalPlayer p) {
-        try {
-            BlockPos feet = p.blockPosition();
-            for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos f = feet.relative(d), h = f.above();
-                BlockState fs = mc.level.getBlockState(f), hs = mc.level.getBlockState(h);
-                boolean breakable = solid(mc, f) && solid(mc, h)
-                        && fs.getDestroySpeed(mc.level, f) >= 0 && hs.getDestroySpeed(mc.level, h) >= 0
-                        && !fs.hasBlockEntity() && !hs.hasBlockEntity()
-                        && !(fs.getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
-                        && !(hs.getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
-                        && policyBreaks(mc, f) && policyBreaks(mc, h);
-                if (!breakable) continue;
-                int enclosed = 0;
-                for (Direction s : new Direction[]{d, d.getClockWise(), d.getCounterClockWise()}) {
-                    BlockPos side = f.relative(s);
-                    if (solid(mc, side) && solid(mc, side.above())) enclosed++;
-                }
-                BlockPos ceil = h.above();
-                boolean fluid = !mc.level.getFluidState(ceil).isEmpty() || !mc.level.getFluidState(f.below()).isEmpty();
-                if (CornerEscape.nicheOk(breakable, enclosed, solid(mc, ceil), solid(mc, f.below()), fluid)) return d;
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] danger: niche search failed: {}", e.toString());
-        }
-        return null;
-    }
-
-    /** A cell this burrow may dig: solid, breakable soon (soft, or the right tool in the bag), not falling, no block entity, no fluid near, the policy allows. */
-    private static boolean burrowDiggable(Minecraft mc, LocalPlayer p, BlockPos q) {
-        BlockState s = mc.level.getBlockState(q);
-        if (!solid(mc, q) || s.hasBlockEntity() || s.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
-        float hard = s.getDestroySpeed(mc.level, q);
-        if (hard < 0) return false;
-        boolean tool = false;
-        for (int i = 0; i < 9 && !tool; i++) tool = p.getInventory().getItem(i).isCorrectToolForDrops(s) && hard <= 3.5f;
-        if (hard > 0.8f && !tool) return false;           // stone by hand: 7.5 s a block, and it drops nothing to seal with
-        for (Direction d : Direction.values()) if (!mc.level.getFluidState(q.relative(d)).isEmpty()) return false;
-        return policyBreaks(mc, q);
-    }
-
-    /** The cells at feet and head of a final depth closed on 4 sides, the floor under it solid. */
+    /** The cells at feet and head closed on 4 sides, the floor under it solid (the "sealed in here already" fact). */
     private static boolean burrowClosed(Minecraft mc, BlockPos feet) {
         BlockPos head = feet.above();
         for (Direction d : Direction.Plane.HORIZONTAL) if (!solid(mc, feet.relative(d)) || !solid(mc, head.relative(d))) return false;
         return solid(mc, feet.below());
-    }
-
-    /** The burrow depth here (2 or 3), 0 = none. Never throws. */
-    private static int findBurrow(Minecraft mc, LocalPlayer p) {
-        try {
-            if (!p.onGround() || p.isInWater() || p.isInLava()) return 0;
-            BlockPos top = p.blockPosition();
-            boolean[] dig = new boolean[3];
-            for (int k = 0; k < 3; k++) dig[k] = burrowDiggable(mc, p, top.below(k + 1));
-            boolean sealSide = false;          // depth 3 seals in the first dug cell; it needs a side to place against
-            for (Direction d : Direction.Plane.HORIZONTAL) sealSide |= solid(mc, top.below().relative(d));
-            boolean[] sides = {burrowClosed(mc, top.below(2)), sealSide && burrowClosed(mc, top.below(3))};
-            boolean feetSide = false;
-            for (Direction d : Direction.Plane.HORIZONTAL) feetSide |= solid(mc, top.relative(d));
-            return CornerEscape.burrowDepth(dig, sides, feetSide);
-        } catch (RuntimeException e) {
-            LOG.warn("[entropybot] danger: burrow check failed: {}", e.toString());
-            return 0;
-        }
     }
 
     /** Feet and head closed on 4 sides and a solid block over the head. */

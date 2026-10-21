@@ -77,7 +77,7 @@ final class GoalPlanning {
         List<int[]> free = CampCommands.freeRing(lv, feet, f.dir);
         if (free.size() < 2) {
             // 0.36.4 (aa40c: at the top of a climb no cell by the feet was free for 30 min): the nearest standable cell
-            // inside my areas with two free cells by it, within 6 first, then 24; the place steps walk there first
+            // the policy allowing, with two free cells by it, within 6 first, then 24; the place steps walk there first
             int[] s = openSpot(lv, feet, f.dir, 6, 1);
             if (s == null) s = openSpot(lv, feet, f.dir, 24, 2);
             if (s != null) {
@@ -100,7 +100,7 @@ final class GoalPlanning {
      * the bag's namespaced ("minecraft:oak_log"): both are compared short, else nothing was taken off and the planner
      * planned "get coal 1" / "get planks 3" for what the bag already held (aa-v0 open point h).
      */
-    /** 0.36.4: the nearest cell within r (step) where the bot can stand, sky open, inside my areas, 2+ free cells by it. */
+    /** 0.36.4: the nearest cell within r (step) where the bot can stand, sky open, the policy allowing, 2+ free cells by it. */
     private int[] openSpot(ClientLevel lv, int[] f, int[] dir, int r, int step) {
         String dim = Storage.dim();
         int[] best = null;
@@ -110,7 +110,7 @@ final class GoalPlanning {
             if (d == 0 || d >= bestD) continue;
             int[] cell = {f[0] + dx, f[1] + dy, f[2] + dz};
             BlockPos b = new BlockPos(cell[0], cell[1], cell[2]);
-            if (!c.inAreas(dim, cell[0], cell[2]) || !lv.isLoaded(b)) continue;
+            if (!c.workAllowed(dim, cell[0], cell[2]) || !lv.isLoaded(b)) continue;
             if (!CampCommands.placeable(lv, b) || !lv.getBlockState(b.above()).canBeReplaced() || !lv.canSeeSky(b.above())) continue;
             if (CampCommands.freeRing(lv, cell, dir).size() < 2) continue;
             best = cell;
@@ -365,7 +365,7 @@ final class GoalPlanning {
                         // S0 (MINING_PLAN 10.1): why there is no chain, for AA's NONE
                         String why = ch != null ? null : r == null ? "the search threw" : !r.ok() ? (r.missing() != null ? "missing " + r.missing() : String.valueOf(r.error()))
                                 : r.steps().isEmpty() ? "nothing to do - I have it" : "the plan could not be saved";
-                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch, why});
+                        hookCache.put(goalText, new Object[]{System.currentTimeMillis(), ch, why, ch == null && r != null ? r.logsMissing() : 0});
                     });
                     return null;
                 }
@@ -396,7 +396,7 @@ final class GoalPlanning {
         }
         Object[] hit = hookCache.get(goalText);
         if (hit != null && System.currentTimeMillis() - (Long) hit[0] < 60_000 && hit[1] == null)
-            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.none(hit.length > 2 ? (String) hit[2] : null);
+            return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.none(hit.length > 2 ? (String) hit[2] : null, hit.length > 3 ? (Integer) hit[3] : 0);
         return io.github.mojolowjo.entropybot.aa.core.JobPort.Resolved.searching();
     }
 
@@ -431,7 +431,7 @@ final class GoalPlanning {
         s.add("goals", goals);
         JsonArray areas = new JsonArray();
         try {
-            for (JsonElement e : c.effectiveAreas()) {
+            for (JsonElement e : c.places()) {
                 JsonObject a = e.getAsJsonObject();
                 areas.add((a.has("name") ? a.get("name").getAsString() : "box") + (a.has("type") ? " " + a.get("type").getAsString() : ""));
             }

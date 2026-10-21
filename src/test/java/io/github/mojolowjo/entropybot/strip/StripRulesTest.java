@@ -119,9 +119,9 @@ class StripRulesTest {
         assertNull(StripRules.judge(null, "ok: gave up mining 3 ore blocks next to branch 1 (stuck)", () -> null).fail());
         assertEquals("couldn't place it", StripRules.judge(null, "error: couldn't place it", () -> null).fail());
         // the guard's refusal, as the dig step words it
-        String area = "stopped: blocked:area at 190 40 -6 (that box is not inside one of my areas)";
+        String area = "stopped: blocked:area at 190 40 -6 (in pit (keep-out))";
         assertEquals("area", StripRules.kindOf(area));
-        assertEquals("blocked:area at 190 40 -6 (that box is not inside one of my areas)", StripRules.whyOf(area));
+        assertEquals("blocked:area at 190 40 -6 (in pit (keep-out))", StripRules.whyOf(area));
     }
 
     @Test
@@ -134,8 +134,8 @@ class StripRulesTest {
         assertEquals(StripRules.Action.SKIP, StripRules.recover("area", "right", 1));
         assertEquals(StripRules.Action.TURN, StripRules.recover("area", "corridor", 1));
         assertEquals(StripRules.Action.TURN, StripRules.recover("liquid", "corridor", 1));
-        assertEquals("branch 7 right skipped (outside my areas)", StripRules.skipText(7, "right", "area", "blocked:area at 1 2 3 (x)"));
-        assertEquals("branch 7 left skipped (stuck - 8 tries)", StripRules.skipText(7, "left", "stuck", "stuck - 8 tries"));
+        assertEquals("branch 7 right skipped (blocked:area at 1 2 3 (in pit (keep-out)))", StripRules.skipText(7, "right", "blocked:area at 1 2 3 (in pit (keep-out))"));
+        assertEquals("branch 7 left skipped (stuck - 8 tries)", StripRules.skipText(7, "left", "stuck - 8 tries"));
     }
 
     @Test
@@ -154,8 +154,8 @@ class StripRulesTest {
         TestWorld w2 = afterRun1(190, false);
         MineGeom m = new MineGeom(190, 40, -3, "west");
         StripRules.Turn none = StripRules.chooseTurn(StripRules.turnOptions(m, 1, null), o -> StripRules.mineSpotCheck(w2, o.pos(), o.dir(), q -> null,
-                (x, y, z) -> z < -4 || z > -2 ? "would refuse: outside every area" : "would refuse: no lease here", true));
-        assertEquals("the mine can't turn - south at 190 40 -3: the guard says no at 190 40 -1 (outside every area); north at 190 40 -3: the guard says no at 190 40 -5 (outside every area)", none.err());
+                (x, y, z) -> z < -4 || z > -2 ? "would refuse: in pit (keep-out)" : "would refuse: no lease here", true));
+        assertEquals("the mine can't turn - south at 190 40 -3: the guard says no at 190 40 -1 (in pit (keep-out)); north at 190 40 -3: the guard says no at 190 40 -5 (in pit (keep-out))", none.err());
         // with k > 1 the fresh mines 8 along the last branch come after left and right
         List<StripRules.TurnOption> all = StripRules.turnOptions(MINE, 3, null);
         assertEquals(6, all.size());
@@ -167,9 +167,9 @@ class StripRulesTest {
     void theGuardInLogModeOnlyNotes() {
         TestWorld w = afterRun1(0, false);
         // a log-mode refusal of the area counts only with the fence on
-        assertNull(StripRules.mineSpotCheck(w, new Pos(0, 40, -3), "west", q -> null, (x, y, z) -> "would refuse (log mode): outside every area", false));
+        assertNull(StripRules.mineSpotCheck(w, new Pos(0, 40, -3), "west", q -> null, (x, y, z) -> "would refuse (log mode): in pit (keep-out)", false));
         assertNotNull(StripRules.mineSpotCheck(w, new Pos(0, 40, -3), "west", q -> null, (x, y, z) -> "would refuse: protected (base)", false));
-        assertEquals("outside my areas", StripRules.mineSpotCheck(w, new Pos(0, 40, -3), "west", q -> "outside my areas", null, true));
+        assertEquals("in pit (keep-out)", StripRules.mineSpotCheck(w, new Pos(0, 40, -3), "west", q -> "in pit (keep-out)", null, true));
         assertEquals("I can't see 0 40 -3 from here", StripRules.mineSpotCheck(unloaded(afterRun1(0, false)), new Pos(0, 40, -3), "west", q -> null, null, true));
     }
 
@@ -264,11 +264,8 @@ class StripRulesTest {
     }
 
     @Test
-    void theUnionBoxDecidesCollecting() {
-        // a mine whose right branch reaches past the area's edge collects nothing in that branch pair
+    void theUnionBoxOfABranchPair() {
         MineGeom edge = new MineGeom(215, 40, 0, "north");
-        ClearBox u = edge.union(1, 12);
-        assertEquals(new ClearBox(203, 40, -3, 227, 41, -1), u);
-        assertFalse(StripPlanTest.MAP.test(u));
+        assertEquals(new ClearBox(203, 40, -3, 227, 41, -1), edge.union(1, 12));
     }
 }

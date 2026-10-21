@@ -69,20 +69,4 @@ class R1FixTest {
         assertEquals(Set.of("11 64 5"), failed);
     }
 
-    @Test void chestChainUsesTheChosenCell() {
-        Inputs in = new Inputs();
-        in.basePos = new int[]{10, 64, 5};
-        in.pos = new int[]{1, 70, 3};
-        in.chestCell = new int[]{9, 64, 6};
-        in.chestWhy = "x";
-        assertEquals("craft chest 1 then go base then place chest 9 64 6 then scan base", AaDesires.chestChain(in));
-        in.basePos = null;
-        assertEquals("craft chest 1 then place chest 9 64 6 then place base 1 70 3 then scan base", AaDesires.chestChain(in));
-        in.chestCell = null;
-        in.chestFailed.add("9 64 6");
-        assertNull(AaDesires.chestChain(in), "every cell refused: no fixed spot");
-        in.chestFailed.clear();
-        in.chestWhy = null;
-        assertEquals("craft chest 1 then place chest 2 70 3 then place base 1 70 3 then scan base", AaDesires.chestChain(in), "facts not read yet: the old rule");
-    }
 }

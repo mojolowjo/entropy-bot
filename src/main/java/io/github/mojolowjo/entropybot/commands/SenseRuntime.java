@@ -177,14 +177,13 @@ public final class SenseRuntime {
         if (s.ownerOnline) ownerOffAt = -1;
         else if (ownerOffAt < 0) ownerOffAt = s.now;
         s.ownerOfflineMs = s.ownerOnline ? 0 : s.now - ownerOffAt;
-        s.areasHere = c.inAreas(Storage.dim(), s.botPos[0], s.botPos[2]);      // 0.26.1 R1
         JsonObject base = core.knowledge.places().get("base");
         if (base != null) s.basePos = xyz(base);
         JsonObject m = c.minePlace();
         boolean mineReady = false;
         if (m != null) {
             int[] mine = xyz(m);
-            mineReady = mine != null && m.has("dir") && c.inAreas(m.has("dim") ? m.get("dim").getAsString() : "minecraft:overworld", mine[0], mine[2]);
+            mineReady = mine != null && m.has("dir") && c.workAllowed(m.has("dim") ? m.get("dim").getAsString() : "minecraft:overworld", mine[0], mine[2]);
         }
         feasFacts(p, s, bag, mineReady);
         return s;
@@ -216,7 +215,7 @@ public final class SenseRuntime {
             f.caveKnown = core.caves.size() > 0;
             f.oreKnown = Mining.indexReady() ? fam -> Mining.get().oreKnownNear(p, fam) : null;      // 0.28.0: the chunk pass's index
             String dim = Storage.dim();
-            f.inFence = q -> {
+            f.walkAllowed = q -> {
                 String r = io.github.mojolowjo.entropybot.api.BotAPI.check(dim, q[0], q[1], q[2], "go");
                 return r == null || !r.startsWith("would refuse");
             };

@@ -35,8 +35,8 @@ public final class RouteDecision {
      * @param breakingOn       Baritone's allowBreak (or allowPlace) is on: a mining walk, never routed (review R5).
      * @param startDim         the bot's dimension id ({@code RoutePlannerHolder.dimId}); stage 1 routes only dim 0.
      * @param goalDim          the goal's dimension id.
-     * @param startInArea      the bot stands inside one of the owner's areas.
-     * @param goalInArea       the goal lies inside one of them.
+     * @param startInArea      the policy allows work where the bot stands (no keep-out / no-break area).
+     * @param goalInArea       the same at the goal.
      * @param distance         straight-line blocks from the bot to the goal.
      * @param fixedGoal        the goal is a fixed spot (not a moving player, not "goto x z").
      */
@@ -47,7 +47,7 @@ public final class RouteDecision {
         if (breakingOn) return new Result(false, "breaking is on");
         if (startDim != goalDim) return new Result(false, "another dimension");
         if (startDim != 0) return new Result(false, "not the overworld");
-        if (!startInArea || !goalInArea) return new Result(false, startInArea ? "goal outside my areas" : "start outside my areas");
+        if (!startInArea || !goalInArea) return new Result(false, startInArea ? "goal in a keep-out / no-break area" : "start in a keep-out / no-break area");
         if (!(distance > MIN_DISTANCE)) return new Result(false, "short walk");
         if (!plannerAvailable) return new Result(false, "planner not running");
         return new Result(true, "ok");

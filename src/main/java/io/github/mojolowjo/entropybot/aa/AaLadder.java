@@ -3,8 +3,7 @@ package io.github.mojolowjo.entropybot.aa;
 import io.github.mojolowjo.entropybot.aa.core.Blackboard;
 
 /**
- * What is left of the AA v0 ladder after round 4A N: the rungs, the gates ({@code openGate}, {@code needsOpenGround},
- * needs.surface/area/woodArea) and the ladder order are gone - the needs are {@link Need}s with option sets
+ * What is left of the AA v0 ladder after round 4A N: the rungs, the gates and the ladder order are gone - the needs are {@link Need}s with option sets
  * ({@link AaDesires#needs}), the climb is a priced first step ({@link Ways#climb}). Kept: the shared names and pure
  * helpers below. Loader notes: none.
  */

@@ -26,8 +26,9 @@ class NeedTest {
     @Test
     void aPrerequisiteEndKeepsTheNeedRunningNoSettleHole() {
         Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal table");
-        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
-        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0, List.of(new WoodOptions.Tree(10, 64, 0, 10, null)), 0, true));
+        port.noPlan = "missing 1 log - none in storage";
+        port.noPlanLogs = 1;
+        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0, List.of(new WoodOptions.Tree(10, 64, 0, 10, null))));
         assertEquals(Status.RUNNING, n.tick(bb));
         assertTrue(port.started.get(0).chain().endsWith("then cut 4"), port.started.get(0).chain());
         assertTrue(n.options().contains("cut + planner"), n.options());
@@ -47,7 +48,8 @@ class NeedTest {
     @Test
     void theWaitIsBoundedBySettleMaxS() {
         Need n = new Need("needs.table", TaskKind.TABLE_FURNACE, b -> true, b -> null, b -> "goal table");
-        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        port.noPlan = "missing 1 log - none in storage";
+        port.noPlanLogs = 1;
         n.tick(bb);
         port.done(1, "done");
         n.tick(bb);
@@ -82,8 +84,9 @@ class NeedTest {
     @Test
     void theWoodRowIsChosenOncePerSecondNotPerTick() {
         int[] reads = {0};
-        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> { reads[0]++; return new WoodOptions.WoodFacts(0, List.of(), 0, true); });
-        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> { reads[0]++; return new WoodOptions.WoodFacts(0, List.of()); });
+        port.noPlan = "missing 1 log - none in storage";
+        port.noPlanLogs = 1;
         Ways.State st = new Ways.State();
         var f = new io.github.mojolowjo.entropybot.aa.brain.Failures();
         Options.OptionMemory m = new Options.OptionMemory();
@@ -105,7 +108,7 @@ class NeedTest {
         Options.Option p = c.ranked().stream().filter(o -> o.command().equals(Ways.WAIT_PLAN)).findFirst().orElseThrow();
         assertEquals(Unit.blocks(hand + pen), p.cost(), 1e-9, "hand + searchPenalty, in walk-blocks");
         // the planner said missing logs: cut (a tree 10 away: 10 + 6 x 4 + 10 = 44) + the planner's hand price
-        Options.Option wood = WoodOptions.choose(new WoodOptions.WoodFacts(4, List.of(new WoodOptions.Tree(10, 64, 0, 10, null)), 0, true), m, 0).best();
+        Options.Option wood = WoodOptions.choose(new WoodOptions.WoodFacts(4, List.of(new WoodOptions.Tree(10, 64, 0, 10, null))), m, 0).best();
         assertEquals(44, wood.cost(), 1e-9);
         Ways.Plan none = new Ways.Plan("goal stone tools", JobPort.PlanState.NONE, null, 0, "missing 1 logs", 0, wood);
         Options.Choice d = Ways.withPlan(tools, none, new Ways.State(), m, 0);

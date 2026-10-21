@@ -37,11 +37,6 @@ public final class Moves {
 
     // ---- the ways ----
 
-    /** Cover: GoalGetToBlock to the cell out of the shooter's sight. */
-    public void cover(int[] cell) {
-        begin("cover", new Leg("walk to cover " + c(cell), car -> car.cover(cell), walkTicks()));
-    }
-
     /** Flee: GoalRunAway {@code dist} from the hostiles' positions. */
     public void flee(int dist, List<int[]> from) {
         List<int[]> f = List.copyOf(from);
@@ -54,14 +49,9 @@ public final class Moves {
         begin("pillar", new Leg("pillar " + up + " up to " + c(top), car -> car.pillar(top), pillarTicks()));
     }
 
-    /**
-     * Dig-in: BurrowProcess digs the two wall cells beside the entrance ({@code dx, dz} one step), steps into the foot
-     * one, and seals the entrance's two cells behind.
-     */
-    public void digIn(int[] entrance, int dx, int dz) {
-        int[] f = {entrance[0] + dx, entrance[1], entrance[2] + dz}, h = {f[0], f[1] + 1, f[2]};
-        int[] e2 = {entrance[0], entrance[1] + 1, entrance[2]};
-        begin("dig in", new Leg("dig into the wall at " + c(f), car -> car.burrow(List.of(f, h), f, List.of(entrance.clone(), e2), (int) digTicks()), digTicks()));
+    /** rm-threat: dig in here: the fork's BurrowProcess picks the wall beside the feet, digs it, steps in and seals. */
+    public void digInHere() {
+        begin("dig in", new Leg("dig into the nearest wall", car -> car.digInHere((int) digTicks()), digTicks()));
     }
 
     // ---- backbone step 4: the reflexes' ways (a car made with the reflex priority runs them) ----

@@ -55,13 +55,10 @@ class SelfCheckTest {
 
     @Test
     void eachRuleWithItsFix() {
-        SelfCheck.Finding f = only(with(good(), "areas", 0));
-        assertEquals("areas", f.key());
-        assertEquals("area here 60 <name>", f.fix());
-        f = only(with(good(), "strict", false));
+        assertTrue(SelfCheck.run(with(good(), "areas", 0)).isEmpty(), "no areas is fine: the world is open");
+        SelfCheck.Finding f = only(with(good(), "strict", false));
         assertEquals("logmode", f.key());
         assertEquals("fence mode strict", f.fix());
-        assertEquals("areas", only(with(with(good(), "strict", false), "areas", 0)).key(), "no areas says that, not log mode");
         assertEquals("place base (standing at the base)", only(with(good(), "baseMarked", false)).fix());
         assertEquals("scan base", only(with(good(), "baseChests", 0)).fix());
         assertEquals("food", only(with(good(), "foodChest", false)).key());
@@ -148,7 +145,7 @@ class SelfCheckTest {
     @Test
     void idleWhispersOneLineAndNoGearWithoutSupplies() {
         List<SelfCheck.Finding> f = SelfCheck.run(fresh(0));
-        assertTrue(SelfCheck.keys(f).containsAll(Set.of("areas", "base", "food", "home", "ironpick", "bag", "tool:bow", "tool:iron_pickaxe")), "check still lists everything");
+        assertTrue(SelfCheck.keys(f).containsAll(Set.of("base", "food", "home", "ironpick", "bag", "tool:bow", "tool:iron_pickaxe")), "check still lists everything");
         SelfCheck.Idle r = SelfCheck.idle(Set.of(), f, Set.of(), 0, 100 * MIN, -1);
         assertNotNull(r.whisper());
         assertFalse(r.whisper().contains("\n"), "one line");

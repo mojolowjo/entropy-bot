@@ -158,8 +158,8 @@ public final class ShelterPlan {
 
     /**
      * 0.27.3 (d3, live: a shelter in a 1x1 pit with 2 own planks, roof and one wall, was "not in one" after a restart):
-     * the way out where a side may also be one own cell plus one natural cell the dig rules allow (mayDig: underground
-     * inside the areas). Both own first, then mixed; null if none.
+     * the way out where a side may also be one own cell plus one natural cell the dig rules allow (mayDig: underground,
+     * the policy allowing). Both own first, then mixed; null if none.
      */
     public static int[][] exit(int[] f, Set<String> own, Predicate<int[]> mayDig) {
         int[][] both = exit(f, own);

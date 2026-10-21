@@ -86,26 +86,28 @@ class OptionsTest {
     void pickerRungRoutesMissingLogsThroughTheWoodOptions() {
         Need r = rung("goal x");
         facts = new F(false, false);          // review 2: no planner-free option, so the priced prerequisite is the only way
-        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        port.noPlan = "missing 1 log - none in storage";
+        port.noPlanLogs = 1;
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
-                List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
+                List.of(new WoodOptions.Tree(50, 64, 0, 50, null))));
         assertEquals(Status.RUNNING, r.tick(bb));
-        assertEquals("area 30 -20 70 20 trees1 neutral then cut 4", port.started.get(0).chain(), "the priced wood prerequisite, not the picker's alpha");
-        port.fail(1, "error: chopped nothing - no trees in my areas");
+        assertEquals("goto 50 64 0 then cut 4", port.started.get(0).chain(), "the priced wood prerequisite, not the picker's alpha");
+        port.fail(1, "error: chopped nothing - no trees within 32");
         r.tick(bb);
         clock.advance(1000);
         r.tick(bb);
         assertTrue(port.started.size() >= 2, "the next wood option starts, no fail loop");
-        assertTrue(port.started.get(1).chain().startsWith("area 42 -8 58 8 treeat"), port.started.get(1).chain());
+        assertEquals("cut 4", port.started.get(1).chain(), "the seen tree held: the plain cut");
     }
 
     /** Review 2 (2a), b2/b4 smoke: "cut 4" ran before bootstrap tools (which chops its own wood); now the picker prices both. */
     @Test
     void stonePickaxePathIsNotBlockedByTheWoodPrerequisite() {
         Need r = rung("goal stone tools");
-        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        port.noPlan = "missing 1 log - none in storage";
+        port.noPlanLogs = 1;
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
-                List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
+                List.of(new WoodOptions.Tree(50, 64, 0, 50, null))));
         assertEquals(Status.RUNNING, r.tick(bb));
         assertEquals("do alpha", port.started.get(0).chain(), "the planner-free whole-job option is cheaper than cut + the rest");
         assertTrue(r.options().contains("cut + planner"), "round 4A N: the wood prerequisite is a priced row: " + r.options());
@@ -116,9 +118,10 @@ class OptionsTest {
     void aDonePrerequisiteWaitsRunningNotFailing() {
         Need r = rung("goal stone tools");
         facts = new F(false, false);
-        port.noPlan = "missing 1 logs - none in storage; no trees in my areas";
+        port.noPlan = "missing 1 log - none in storage";
+        port.noPlanLogs = 1;
         bb.fact(WoodOptions.FACTS, (Supplier<WoodOptions.WoodFacts>) () -> new WoodOptions.WoodFacts(0,
-                List.of(new WoodOptions.Tree(50, 64, 0, 50, null)), 0, true));
+                List.of(new WoodOptions.Tree(50, 64, 0, 50, null))));
         assertEquals(Status.RUNNING, r.tick(bb));
         assertEquals(1, port.started.size());
         port.done(1, "done");

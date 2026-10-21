@@ -128,10 +128,10 @@ final class WalkEnd {
     }
 
     /**
-     * The escape dig-out trigger: no free step next to the bot, underground, inside the areas, and escapes left.
+     * The escape dig-out trigger: no free step next to the bot, underground, the policy allowing, and escapes left.
      * Used by startUnstick (no free step) for every walk end, stuck, no-path or ended-short alike.
      */
-    static boolean escapeTrigger(boolean freeStep, boolean underground, boolean inAreas, int escapes, int maxEscapes, boolean reflex) {
-        return !freeStep && underground && inAreas && escapes < maxEscapes && !reflex;
+    static boolean escapeTrigger(boolean freeStep, boolean underground, boolean policyAllows, int escapes, int maxEscapes, boolean reflex) {
+        return !freeStep && underground && policyAllows && escapes < maxEscapes && !reflex;
     }
 }

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 /**
  * aa-r1fix (round 1: 2x "failed TABLE_FURNACE: stopped at step N (place chest x y z): the game refused placing"): the camp chest
  * was placed at one block east of the base, whatever stood there. Now the cell is chosen like the table's and furnace's:
- * free (the game can put a block there, air above), inside my areas, not the cell the bot or the base stands on, ranked by cost
+ * free (the game can put a block there, air above), the policy allowing, not the cell the bot or the base stands on, ranked by cost
  * (the walk from the base, plus a penalty for each block it lies off the table). The ranked list holds the fallbacks: a cell
  * the game refused is remembered ({@link #noteFailure}) and the next one is used. Pure; loader notes: none.
  */
@@ -33,16 +33,16 @@ public final class ChestSpot {
      * @param table the table's cell, null unknown (no table penalty)
      * @param me    the bot's cell, never a candidate (the game refuses a block on the bot)
      * @param free  the game can put a block in the cell now and the cell above it is free
-     * @param inside the cell lies inside my areas
+     * @param allowed the policy allows work at the cell (no keep-out / no-break box)
      */
-    public static List<Spot> rank(int[] anchor, int[] table, int[] me, Predicate<int[]> free, Predicate<int[]> inside) {
+    public static List<Spot> rank(int[] anchor, int[] table, int[] me, Predicate<int[]> free, Predicate<int[]> allowed) {
         List<Spot> out = new ArrayList<>();
         if (anchor == null) return out;
         for (int dx = -RADIUS; dx <= RADIUS; dx++) for (int dz = -RADIUS; dz <= RADIUS; dz++) {
             if (dx == 0 && dz == 0) continue;
             int[] c = {anchor[0] + dx, anchor[1], anchor[2] + dz};
             if (same(c, me) || same(c, table)) continue;
-            if (!free.test(c) || !inside.test(c)) continue;
+            if (!free.test(c) || !allowed.test(c)) continue;
             double walk = Math.sqrt(dx * dx + dz * dz), off = 0;
             String why = "walk " + Math.round(walk * 10) / 10.0;
             if (table != null) {

@@ -70,12 +70,15 @@ public interface JobPort {
      * The planner's answer with its state and cost (the planner's own step-cost sum; 0 for a text that is not a goal).
      * Ends the 45 s freeze (aa371): a rung can tell "no plan" from "still searching".
      */
-    record Resolved(String chain, double cost, PlanState state, String why) {
-        public static Resolved ready(String chain, double cost) { return new Resolved(chain, cost, PlanState.READY, null); }
+    record Resolved(String chain, double cost, PlanState state, String why, int logsMissing) {
+        public static Resolved ready(String chain, double cost) { return new Resolved(chain, cost, PlanState.READY, null, 0); }
 
-        public static Resolved searching() { return new Resolved(null, 0, PlanState.SEARCHING, null); }
+        public static Resolved searching() { return new Resolved(null, 0, PlanState.SEARCHING, null, 0); }
 
-        public static Resolved none(String why) { return new Resolved(null, 0, PlanState.NONE, why == null ? "the planner found no plan" : why); }
+        public static Resolved none(String why) { return none(why, 0); }
+
+        /** No plan; logsMissing: the logs the planner's dead end lacked (the wood way answers them), else 0. */
+        public static Resolved none(String why, int logsMissing) { return new Resolved(null, 0, PlanState.NONE, why == null ? "the planner found no plan" : why, Math.max(0, logsMissing)); }
     }
 
     /** The tri-state answer; default: {@link #resolve}'s null is SEARCHING (an adapter that can tell NONE overrides it). */

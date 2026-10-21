@@ -77,7 +77,7 @@ public final class Chains {
         /** The "mine" place or null. */
         JsonObject minePlace();
 
-        boolean inAreas(String dim, int x, int z);
+        boolean workAllowed(String dim, int x, int z);
 
         String dim();
 
@@ -1089,7 +1089,7 @@ public final class Chains {
             break;
         }
         JsonObject m = env.minePlace();
-        if (gaveUp == null && m != null && m.has("dir") && env.inAreas(str(m, "dim", "minecraft:overworld"), (int) num(m, "x", 0), (int) num(m, "z", 0))) {
+        if (gaveUp == null && m != null && m.has("dir") && env.workAllowed(str(m, "dim", "minecraft:overworld"), (int) num(m, "x", 0), (int) num(m, "z", 0))) {
             return new String[]{"mine strip " + ores + " 32", "my mine at " + num(m, "x", 0) + " " + num(m, "y", 0) + " " + num(m, "z", 0) + " is ready"};
         }
         if (gaveUp != null) {

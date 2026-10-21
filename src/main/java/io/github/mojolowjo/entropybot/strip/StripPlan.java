@@ -100,10 +100,10 @@ public final class StripPlan {
     public record Run(List<Item> items, String label) {}
 
     /**
-     * stripSteps: branches branch pairs of `length` at mine g, from its note's k on. wantCollect: ores are mined (per
-     * branch only when everything it digs is inside the areas: inArea tests the x/z bounds); me: where the bot is.
+     * stripSteps: branches branch pairs of `length` at mine g, from its note's k on. wantCollect: ores are mined (the
+     * guard refuses a keep-out / no-break cell on its own); me: where the bot is.
      */
-    public static Run run(MineGeom g, JsonObject note, int branches, int length, boolean wantCollect, Predicate<ClearBox> inArea, int[] me) {
+    public static Run run(MineGeom g, JsonObject note, int branches, int length, boolean wantCollect, int[] me) {
         int k0 = MineBook.k(note);
         boolean setup = MineBook.setup(note);
         List<String> bad = MineBook.bad(note);
@@ -115,7 +115,7 @@ public final class StripPlan {
         for (int b = 0; b < branches; b++) {
             int k = k0 + b;
             ClearBox cb = g.corridor(k), lb = g.branch(k, 1, length), rb = g.branch(k, -1, length);
-            boolean collect = wantCollect && inArea.test(g.union(k, length));
+            boolean collect = wantCollect;
             if (collect) collectAny = true;
             // the corridor has to end up open (the bridge's mustFinish): StripSteps checks what is left after it
             out.add(dig(new ClearJob.Options().box(cb).keepOres(false).collect(collect).torches(g.corridorTorches(k))

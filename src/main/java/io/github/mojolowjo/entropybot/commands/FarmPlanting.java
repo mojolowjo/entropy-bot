@@ -35,7 +35,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * P5 "farm plant &lt;crop&gt; [x1 z1 x2 z2 | here &lt;r&gt;]": inside the box (in the areas; it becomes the farm), water
+ * P5 "farm plant &lt;crop&gt; [x1 z1 x2 z2 | here &lt;r&gt;]": inside the box (the policy allowing; it becomes the farm), water
  * sources from carried water buckets on the {@link FarmPlant} lattice (a cell dug out, the bucket emptied into it), grass
  * and dirt tilled with a hoe (from the bag, the chests, or made), seeds planted on the wet cells. Never outside the box:
  * the job's break and place leases cover the box alone (the guard checks every click). Steps "plant..." (Seq routes them
@@ -119,7 +119,7 @@ final class FarmPlanting {
         if (Math.abs(cx - me[0]) > 48 || Math.abs(cz - me[2]) > 48) return "error: the farm box is more than 48 blocks from me - walk me nearer first";
         for (int x = box[0]; x <= box[2]; x++) {
             for (int z = box[1]; z <= box[3]; z++) {
-                if (!commands.inAreas(dim, x, z)) return "error: the farm box reaches " + commands.policy.blockedText(dim, x, z) + " at " + x + " " + z;
+                if (!commands.workAllowed(dim, x, z)) return "error: the farm box reaches " + commands.policy.blockedText(dim, x, z) + " at " + x + " " + z;
             }
         }
         if (Jobs.baritone() == null) return "error: baritone not loaded";

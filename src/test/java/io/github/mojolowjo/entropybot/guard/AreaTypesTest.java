@@ -205,18 +205,12 @@ class AreaTypesTest {
     }
 
     @Test
-    void everyWalkerWalksOutsideOnlyKeepOutRefuses() {
-        // AREAS: the world is open; the fence only refuses a keep-out box and the floor (a portal)
-        String out = "would refuse: outside every area";
-        for (AreaTypeRules.Walker w : AreaTypeRules.Walker.values()) {
-            assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed(out, true, w), w.name());
-            assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: no areas set", true, w), w.name());
-            assertEquals("in pit (keep-out)", io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: in pit (keep-out)", true, w), w.name());
-            assertNotNull(io.github.mojolowjo.entropybot.commands.FenceRules.goalAllowed("would refuse: next to a nether_portal (I stay out)", true, w),
-                    "the floor holds for everyone");
-        }
+    void onlyKeepOutAndTheFloorRefuseAWalk() {
+        // AREAS: the world is open; the policy's walk verdict refuses a keep-out box and the floor (a portal) only
+        assertEquals("in pit (keep-out)", io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict("would refuse: in pit (keep-out)"));
+        assertNotNull(io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict("would refuse: next to a nether_portal (I stay out)"), "the floor holds");
+        assertNull(io.github.mojolowjo.entropybot.commands.FenceRules.walkVerdict("ok"));
     }
-
     @Test
     void theDestroyLease() {
         GuardCore g = guard();

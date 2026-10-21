@@ -105,10 +105,4 @@ class KitTest {
         assertTrue(s.score() > 20, s.parts());
     }
 
-    @Test
-    void campChestChain() {
-        assertEquals("craft chest 1 then go base then place chest 11 64 5 then scan base", AaDesires.chestChain(new int[]{10, 64, 5}, null, false));
-        assertEquals("place chest 2 70 3 then place base 1 70 3 then scan base", AaDesires.chestChain(null, new int[]{1, 70, 3}, true));
-        assertNull(AaDesires.chestChain(null, null, true));
-    }
 }

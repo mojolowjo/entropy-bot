@@ -4,9 +4,9 @@ import java.util.Set;
 
 /**
  * 0.33.0 (A3, Haiku run item 6: "own crafting table can't be broken even with force"): a station (crafting table,
- * furnace, chest...) that the bot placed itself, inside its own areas, may be picked up again by a {@code force} dig.
+ * furnace, chest...) that the bot placed itself (the ledger says so) may be picked up again by a {@code force} dig.
  * Every other block entity stays protected. Pure apart from the {@link #mine} hook, which the game side sets (the
- * restore ledger's "built: station" entries plus the areas test). Loader notes: none.
+ * restore ledger's "built: station" entries). Loader notes: none.
  */
 public final class OwnStations {
     private OwnStations() {}
@@ -19,7 +19,7 @@ public final class OwnStations {
         boolean at(int x, int y, int z);
     }
 
-    /** Set by the game side: the cell holds a station I placed myself (ledger), inside my areas. Null: none. */
+    /** Set by the game side: the cell holds a station I placed myself (ledger). Null: none. */
     public static volatile Mine mine;
 
     public static boolean station(String id) {

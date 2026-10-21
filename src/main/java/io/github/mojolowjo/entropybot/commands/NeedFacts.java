@@ -46,7 +46,7 @@ public final class NeedFacts {
         // round 4A N: the one station need reads the station it lacks now (table, then furnace, then the camp chest)
         bb.fact(AaDesires.STATION_FACTS, memo(() -> station(AaDesires.stationKind(bb.in), bb.in, bb.in.bag, wood.get())));
         bb.fact(BedOptions.FACTS, memo(() -> bed(rt.bedFacts(), bb.in)));
-        bb.fact(BaseOptions.FACTS, memo(() -> base(bb.in, bb.in.bag, rt.areaCell(bb.in.areaName), burrowCell(bb))));
+        bb.fact(BaseOptions.FACTS, memo(() -> base(bb.in, bb.in.bag, rt.areaCell(bb.in.basePlace), burrowCell(bb))));
         bb.fact(BagOptions.FACTS, memo(() -> bag(bb.in, bb.in.bag, JunkRules.DEFAULT, AaDesires.bagLeave())));      // the need's own band: slots it wants free
     }
 
@@ -103,7 +103,7 @@ public final class NeedFacts {
     public static BaseOptions.BaseFacts base(Inputs in, Map<String, Integer> bag, int[] areaCell, boolean burrowCell) {
         int blocks = in.cobble + in.planks + count(bag, "minecraft:dirt") + count(bag, "minecraft:cobbled_deepslate");
         double danger = in.night ? Costs.nightDanger(in.difficulty, in.armorPoints, in.health, in.maxHealth, in.torchesNear, in.hostilesNear) : 0;
-        return new BaseOptions.BaseFacts(in.areaName, areaCell, blocks, in.night, danger, in.underGround, in.underDepth, burrowCell);
+        return new BaseOptions.BaseFacts(in.basePlace, areaCell, blocks, in.night, danger, in.underGround, in.underDepth, burrowCell);
     }
 
     /** @param want slots the need wants free */

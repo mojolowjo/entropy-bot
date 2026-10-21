@@ -9,11 +9,11 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * AA_CLEANUP 4: the danger desire's options. Fight, flee, retreat home, cover, dig in, pillar are priced on the threat
+ * AA_CLEANUP 4: the danger desire's options. Fight, flee, retreat home, dig in, pillar are priced on the threat
  * facts ({@link ThreatFacts}) in seconds: the expected damage (health points x what a point is worth now, plus a likely
  * death) and the time lost. "Stay" is the baseline: the work goes on and the hit response strikes back when hit. The
  * desire's score is the seconds the best way saves over staying ({@code Tuning danger.perS} a second), so "a zombie and
- * a pickaxe" picks flee or dig-in by number, a sword fights, a skeleton at range is covered from. Creepers are left out:
+ * a pickaxe" picks flee or dig-in by number, a sword fights. Creepers are left out:
  * the creeper flee is a reflex. Pure; JUnit DangerOptionsTest; loader notes: none.
  */
 public final class DangerOptions {
@@ -21,7 +21,7 @@ public final class DangerOptions {
 
     /** AA_STEP2 1: BOX (the built shell), BURROW (dig down, seal), BASE (flee home), SLEEP, WAIT (in my shell) are the night ways. */
     /** AA_STEP3 A3/A4: PILLAR_OUT (fill the water column under me, stand dry on top), SHORE (swim to the nearest shore, then a ground way there). */
-    public enum Way { STAY, FIGHT, FLEE, HOME, COVER, DIG_IN, PILLAR, BOX, BURROW, BASE, SLEEP, WAIT, PILLAR_OUT, SHORE;
+    public enum Way { STAY, FIGHT, FLEE, HOME, DIG_IN, PILLAR, BOX, BURROW, BASE, SLEEP, WAIT, PILLAR_OUT, SHORE;
 
         /** The memory key a failure is held by (Failures option): "box", "dig in"... */
         public String key() { return name().toLowerCase(Locale.ROOT).replace('_', ' '); }
@@ -61,8 +61,8 @@ public final class DangerOptions {
     static final double SWING_S = 0.65, FIST_S = 0.25;
     /** Seconds to dig two cells down (or into a wall) and seal; to jump-place a 3-high pillar. */
     static final double DIG_S = 3, PILLAR_S = 1.5;
-    /** Blocks and head room a pillar needs (3 up: out of a zombie's reach). */
-    static final int PILLAR_UP = 3;
+    /** Blocks and head room a pillar needs (Tuning danger.pillarUp: out of a zombie's reach). */
+    static int pillarUp() { return (int) Tuning.get("danger.pillarUp"); }
 
     /** Prices every way on the facts. Pure. */
     public static Choice choose(ThreatFacts f) { return choose(f, Tuning.get("danger.deathS")); }
@@ -106,26 +106,19 @@ public final class DangerOptions {
         double homeT = w.baseDist() > 0 ? w.baseDist() / HOME_SPEED : 0;
         all.add(priced(me, death, Way.HOME, w.baseDist() > 0, w.baseDist() > 0 ? pursuit(foes, homeT, HOME_SPEED) : 0, 2 * homeT,
                 w.baseDist() > 0 ? "the base " + Math.round(w.baseDist()) + " away, there and back, the chasers counted" : "no base in reach"));
-        boolean ranged = false;
-        for (ThreatFacts.Foe x : foes) ranged |= x.ranged();
-        double moveT = w.coverDist() < 0 ? 0 : w.coverDist() / 4.3 + 0.5, coverD = 0;
-        for (ThreatFacts.Foe x : foes) coverD += x.ranged() ? x.dps() * moveT : 0;
-        coverD += meleeOnly(me, foes, h);
-        all.add(priced(me, death, Way.COVER, ranged && w.coverDist() >= 0, coverD, moveT + Tuning.get("danger.coverS"),
-                !ranged ? "nothing shoots" : w.coverDist() < 0 ? "no cell out of its sight" : "a cell out of sight " + w.coverDist() + " moves away"));
         double digD = 0;
         for (ThreatFacts.Foe x : foes) digD += x.dps() * Math.max(0, DIG_S - x.reachT());
         all.add(priced(me, death, Way.DIG_IN, w.digIn() && !w.waterNear(), digD, DIG_S + Tuning.get("danger.holdS"),
-                w.waterNear() ? WATER_NEAR : w.digIn() ? "dig in and seal, wait" : "no ground to dig into here"));
+                w.waterNear() ? WATER_NEAR : w.digIn() ? "dig in and seal, wait" : "the fork: " + forkNo(w)));
         double pilD = 0;
         for (ThreatFacts.Foe x : foes) {
             if (x.ranged() || x.flies()) pilD += x.dps() * h;                       // a pillar is no cover from arrows or fliers
             else if (x.move() == ThreatRules.Move.SPIDER) pilD += x.dps() * Math.max(0, h - x.reachT());       // spiders climb
             else pilD += x.dps() * Math.max(0, PILLAR_S - x.reachT());
         }
-        boolean pillar = w.onGround() && !w.waterNear() && w.pillarBlocks() >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
+        boolean pillar = w.onGround() && !w.waterNear() && w.pillarBlocks() >= pillarUp() && w.headRoom() >= pillarUp();
         all.add(priced(me, death, Way.PILLAR, pillar, pilD, PILLAR_S + Tuning.get("danger.holdS"),
-                pillar ? "pillar " + PILLAR_UP + " up, wait" : w.waterNear() ? WATER_NEAR : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
+                pillar ? "pillar " + pillarUp() + " up, wait" : w.waterNear() ? WATER_NEAR : "no pillar (" + w.pillarBlocks() + " blocks, head room " + w.headRoom() + ")"));
         Priced best = stay;
         for (Priced p : all) if (p.possible() && p.costS() < best.costS()) best = p;
         double saved = stay.costS() - best.costS();
@@ -194,13 +187,6 @@ public final class DangerOptions {
         return new double[]{dmg, t};
     }
 
-    /** The damage the melee foes alone do while the hit response fights them where I stand. */
-    static double meleeOnly(ThreatFacts.Me me, List<ThreatFacts.Foe> foes, double h) {
-        List<ThreatFacts.Foe> m = new ArrayList<>();
-        for (ThreatFacts.Foe x : foes) if (!x.ranged()) m.add(x);
-        return m.isEmpty() ? 0 : fight(me, m, true, h)[0];
-    }
-
     /** Seconds to kill one (its health / my hit, a swing each). */
     static double kill(ThreatFacts.Me me, ThreatFacts.Foe x) {
         double hit = Math.max(1, me.weaponHit());
@@ -258,7 +244,6 @@ public final class DangerOptions {
             case FIGHT -> "attack nearest then wait " + wait;
             case FLEE -> "flee then wait " + wait;
             case HOME -> "go base";
-            case COVER -> "cover then wait " + wait;
             case DIG_IN -> "burrow then wait " + wait;
             case PILLAR -> "pillar then wait " + wait;
             case BOX -> "shelter";
@@ -282,8 +267,22 @@ public final class DangerOptions {
     /** Backbone step 2 (owner: water is parked): the why of a way whose cell is in or beside water. */
     static final String WATER_NEAR = "water in or beside the cell: not possible here";
 
-    /** Review 2: the open-air fallback's length (s). */
-    static final double OPEN_WAIT_S = 60;
+    /** Review 2: the open-air fallback's length (s), Tuning danger.waitS. */
+    static double waitS() { return Tuning.get("danger.waitS"); }
+
+    /**
+     * rm-threat (TIME_MODEL: wait = 0 when the time passes anyway): at a hostile night every night way's own seconds
+     * pass the night as the open wait's do, so none of them is charged as time; what sets them apart is the exposure
+     * (night danger x seconds in the open x the hp curve) and the hits. By day (danger 0) the seconds are charged.
+     */
+    static double nightT(Need need, double s) { return need.danger() > 0 ? 0 : s; }
+
+    /** The fork's no for the burrow / the dig-in (stage, block, reason), or the plain fact when it gave none. */
+    static String forkNo(ThreatFacts.Ways w) {
+        String b = w.burrowNo(), n = w.nicheNo();
+        if (b == null && n == null) return "no ground or wall to dig into";
+        return (b == null ? "" : "burrow: " + b) + (b != null && n != null ? "; " : "") + (n == null ? "" : "dig in: " + n);
+    }
 
     /** Review 2: the night ways other than the fallback that are possible and not held (a failure then holds only briefly when 0). */
     public static int openWays(Choice c, java.util.function.Function<String, String> held) {
@@ -323,18 +322,18 @@ public final class DangerOptions {
             int box = (int) Tuning.get("danger.boxBlocks");
             double bt = Tuning.get("danger.boxS");
             boolean boxOk = need.shellBlocks() >= box;
-            all.add(priced(me, death, Way.BOX, boxOk && !wet, during(near, bt) + amb * bt, bt,
+            all.add(priced(me, death, Way.BOX, boxOk && !wet, during(near, bt) + amb * bt, nightT(need, bt),
                     !boxOk ? "needs " + box + " blocks, " + need.shellBlocks() + " in the bag" : wet ? wetWhy : box + " blocks (" + need.shellBlocks() + " in the bag)"));
             double ut = Tuning.get("danger.burrowS");
             boolean wn = w.waterNear();
-            all.add(priced(me, death, Way.BURROW, w.burrow() && !wet && !wn, during(near, ut) + amb * ut, ut,
-                    wet ? wetWhy : wn ? WATER_NEAR : w.burrow() ? "dig down and seal" : "no diggable floor"));
-            all.add(priced(me, death, Way.DIG_IN, w.niche() && !wet && !wn, during(near, DIG_S) + amb * DIG_S, DIG_S,
-                    wet ? wetWhy : wn ? WATER_NEAR : w.niche() ? "a niche in the wall" : "no wall to dig into"));
-            boolean pil = w.onGround() && !wet && !wn && blocks >= PILLAR_UP && w.headRoom() >= PILLAR_UP;
+            all.add(priced(me, death, Way.BURROW, w.burrow() && !wet && !wn, during(near, ut) + amb * ut, nightT(need, ut),
+                    wet ? wetWhy : wn ? WATER_NEAR : w.burrow() ? "dig down and seal" : "the fork: " + (w.burrowNo() == null ? "no diggable floor" : w.burrowNo())));
+            all.add(priced(me, death, Way.DIG_IN, w.niche() && !wet && !wn, during(near, DIG_S) + amb * DIG_S, nightT(need, DIG_S),
+                    wet ? wetWhy : wn ? WATER_NEAR : w.niche() ? "a niche in the wall" : "the fork: " + (w.nicheNo() == null ? "no wall to dig into" : w.nicheNo())));
+            boolean pil = w.onGround() && !wet && !wn && blocks >= pillarUp() && w.headRoom() >= pillarUp();
             double open = Tuning.get("danger.openS");
-            all.add(priced(me, death, Way.PILLAR, pil, during(near, PILLAR_S) + amb * open, PILLAR_S,
-                    pil ? "pillar " + PILLAR_UP + " up, open to arrows " + Math.round(open) + " s" : wet ? "in water: the pillar-out row" : wn ? WATER_NEAR
+            all.add(priced(me, death, Way.PILLAR, pil, during(near, PILLAR_S) + amb * open, nightT(need, PILLAR_S),
+                    pil ? "pillar " + pillarUp() + " up, open to arrows " + Math.round(open) + " s" : wet ? "in water: the pillar-out row" : wn ? WATER_NEAR
                             : "no pillar (" + blocks + " blocks, head room " + w.headRoom() + ")"));
             if (wet) {
                 // pillar out: a block per water cell from the floor up, a place and a swim-up each, under water the while
@@ -347,7 +346,7 @@ public final class DangerOptions {
                 String why = wn ? "water ways parked (owner): no pillar out of water" : col <= 0 ? "no floor under the water in reach" : blocks < col ? "needs " + col + " blocks, " + blocks + " in the bag"
                         : r >= 1 ? "not enough air (" + col + " deep, " + fmt(pt) + " s, air " + air / 20 + " s, risk " + fmt(r) + ")"
                         : col + " blocks up out of the water, " + fmt(pt) + " s, air risk " + fmt(r) + ", then open " + Math.round(open) + " s";
-                Priced po = priced(me, death, Way.PILLAR_OUT, ok, during(near, pt) + amb * (pt + open), pt, why);
+                Priced po = priced(me, death, Way.PILLAR_OUT, ok, during(near, pt) + amb * (pt + open), nightT(need, pt), why);
                 all.add(ok ? plus(po, airLoss(death, col, pt, air), "air " + Math.round(airLoss(death, col, pt, air)) + " s", null) : po);
                 // the shore first: the swim (TIME_MODEL swim 2.2 blocks/s, straight x 1.3, 2 s the water edge), then the box
                 // there when the bag has its blocks, else a burrow there (its floor unknown from here: tried there)
@@ -357,27 +356,31 @@ public final class DangerOptions {
                     double gt = boxOk ? bt : ut;
                     String ground = boxOk ? "box" : "burrow";
                     double al = airLoss(death, w.headDepth(), 0, air);
-                    Priced sp = priced(me, death, Way.SHORE, true, during(near, st + gt) + amb * (st + gt), st + gt,
+                    Priced sp = priced(me, death, Way.SHORE, true, during(near, st + gt) + amb * (st + gt), nightT(need, st + gt),
                             "swim " + Math.round(w.shoreDist()) + " to the shore " + sc[0] + " " + sc[1] + " " + sc[2] + " " + fmt(st) + " s, then " + ground + " " + fmt(gt) + " s");
                     all.add(plus(sp, al, "air " + Math.round(al) + " s", "goto " + sc[0] + " " + sc[1] + " " + sc[2] + (boxOk ? " then shelter" : " then burrow then wait 120")));
                 } else all.add(new Priced(Way.SHORE, false, 0, 0, 0, "no dry cell within " + ThreatFacts.SHORE_REACH));
             }
             boolean home = need.base() && w.baseDist() > 0;
             double ht = home ? w.baseDist() / HOME_SPEED : 0;
-            all.add(priced(me, death, Way.BASE, home, home ? pursuit(near, ht, HOME_SPEED) + amb * ht : 0, ht,
+            all.add(priced(me, death, Way.BASE, home, home ? pursuit(near, ht, HOME_SPEED) + amb * ht : 0, nightT(need, ht),
                     home ? "flee home " + Math.round(w.baseDist()) + " (" + near.size() + " on the way)" : need.base() ? "the base out of reach" : "no base"));
             double st = Tuning.get("danger.bedS");
-            all.add(priced(me, death, Way.SLEEP, need.bed(), during(near, st) + amb * st, st, need.bed() ? "a bed known" : "no bed known"));
+            all.add(priced(me, death, Way.SLEEP, need.bed(), during(near, st) + amb * st, nightT(need, st), need.bed() ? "a bed known" : "no bed known"));
             // review 2: the always-possible fallback with its real cost: stand here in the open for a minute (never held)
             // AA_STEP3 A2: the wait priced where it stands: the hits over its seconds; its 60 s charged unless it is the night
             // (that passes anyway); in water the sinking: the air over the wait (the death cost x the drown risk)
-            double waitT = need.danger() > 0 ? 0 : OPEN_WAIT_S;
-            Priced wp = priced(me, death, Way.WAIT, true, during(near, OPEN_WAIT_S) + amb * OPEN_WAIT_S, waitT,
-                    (wet ? "wait here in water " : "wait here in the open ") + Math.round(OPEN_WAIT_S) + " s" + (waitT > 0 ? " (charged: no night to pass)" : ""));
+            // rm-threat: the exposure is the night danger x the wait's seconds (spawns come to a dark field whether a mob is
+            // in view or not), through the hp curve; every term in aa why
+            double waitT = nightT(need, waitS());
+            Priced wp = priced(me, death, Way.WAIT, true, during(near, waitS()) + amb * waitS(), waitT,
+                    (wet ? "wait here in water " : "wait here in the open ") + Math.round(waitS()) + " s: night danger " + fmt(need.danger())
+                            + " x " + Math.round(waitS()) + " s x " + Tuning.get("danger.nightHpS") + " hp/s = " + fmt(amb * waitS()) + " hp at "
+                            + Math.round(hpS(me, death)) + " s a point" + (waitT > 0 ? " (charged: no night to pass)" : ""));
             if (wet) {
                 int d = Math.max(1, w.headDepth());
-                double al = airLoss(death, d, OPEN_WAIT_S, air);
-                wp = plus(wp, al, "sinking: air " + Math.round(al) + " s (risk " + fmt(io.github.mojolowjo.entropybot.guard.DrownRisk.cellRisk(d, OPEN_WAIT_S, air)) + ")", null);
+                double al = airLoss(death, d, waitS(), air);
+                wp = plus(wp, al, "sinking: air " + Math.round(al) + " s (risk " + fmt(io.github.mojolowjo.entropybot.guard.DrownRisk.cellRisk(d, waitS(), air)) + ")", null);
             }
             all.add(wp);
         }

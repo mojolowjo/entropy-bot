@@ -303,33 +303,6 @@ public final class ThreatRuntime {
         }
     }
 
-    /** 0.23.2: the escape heading from a creeper, from the grid ({dirX, dirZ, run}; run -1 = no grid, straight away). */
-    public double[] escape(LocalPlayer p, Entity from) {
-        return escape(p, p.getX() - from.getX(), p.getZ() - from.getZ());
-    }
-
-    /** brain-b1: the same, around a given "away" direction (FleeHeading's least-threat heading). Never throws. */
-    public double[] escape(LocalPlayer p, double ax, double az) {
-        try {
-            return EscapeDir.choose(gridOk() ? cache.grid() : null, p.getBlockX(), p.getBlockY(), p.getBlockZ(), ax, az);
-        } catch (RuntimeException e) {
-            error("escape", e);
-            return EscapeDir.choose(null, 0, 0, 0, ax, az);
-        }
-    }
-
-    /** 0.25.1 cover rule: a cell out of this mob's sight on the fresh grid, else null. Never throws. */
-    public Cover.Spot cover(LocalPlayer p, Entity mob) {
-        try {
-            ReachGrid g = grid();
-            if (g == null || mob == null) return null;
-            return Cover.find(g, p.getBlockX(), p.getBlockY(), p.getBlockZ(), mob.getX(), mob.getEyeY(), mob.getZ());
-        } catch (RuntimeException e) {
-            error("cover", e);
-            return null;
-        }
-    }
-
     public void verdict(String line) {
         verdictLine = line;
         verdictAt = System.currentTimeMillis();
@@ -342,11 +315,6 @@ public final class ThreatRuntime {
         StringBuilder b = new StringBuilder();
         b.append("threat test: ").append(gridOk() ? "grid ok" : "fallback (straight distance)");
         if (verdictLine != null) b.append("\nlast verdict (").append((System.currentTimeMillis() - verdictAt) / 1000).append(" s ago): ").append(verdictLine);
-        try {
-            String m = io.github.mojolowjo.entropybot.motor.Motor.INSTANCE.whyLine();      // 0.27.0
-            if (m != null) b.append('\n').append(m);
-        } catch (RuntimeException ignored) {
-        }
         Map<Integer, ThreatRules.Decision> now = latest;
         if (!now.isEmpty() && gridOk()) {
             b.append("\nnow:");

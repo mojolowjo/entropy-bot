@@ -50,8 +50,8 @@ class RouteDecisionTest {
 
     @Test
     void areas() {
-        assertEquals("start outside my areas", RouteDecision.decide(true, true, false, 0, 0, false, true, 100, true).why());
-        assertEquals("goal outside my areas", RouteDecision.decide(true, true, false, 0, 0, true, false, 100, true).why());
+        assertEquals("start in a keep-out / no-break area", RouteDecision.decide(true, true, false, 0, 0, false, true, 100, true).why());
+        assertEquals("goal in a keep-out / no-break area", RouteDecision.decide(true, true, false, 0, 0, true, false, 100, true).why());
     }
 
     @Test

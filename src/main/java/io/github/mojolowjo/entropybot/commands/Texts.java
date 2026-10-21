@@ -13,15 +13,15 @@ public final class Texts {
     private Texts() {}
 
     /** V1b: what allowed players who aren't the owner may use (plus the read-only forms in {@link #guestRefusal}). */
-    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss", "hold", "why");
+    public static final Set<String> GUEST_VERBS = Set.of("help", "", "status", "inv", "queue", "places", "have", "find", "come", "follow", "goto", "stop", "restart", "dismiss", "why");
 
     /** Every command word of the surface (V1b: docs/VOCABULARY.md and nothing else); routine names can't use these nor {@link OldWords#REMOVED}. */
-    public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "fetch", "need", "needs", "goal", "goals", "have", "stock", "get",
+    public static final List<String> BUILTIN_VERBS = List.of("place", "marker", "places", "area", "fence", "need", "needs", "goal", "goals", "have", "stock", "get",
             "supplies", "deposit", "mine", "dig", "build", "cut", "gather", "light", "junk", "defence", "defend", "guard", "escort", "assist", "dismiss", "attack", "queue", "status", "inv",
-            "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "scout", "done", "free", "sleep",
+            "stop", "routine", "routines", "rule", "rules", "repeat", "wait", "confirm", "check", "summary", "kinds", "tools", "hotbar", "explore", "find", "done", "free", "sleep",
             "camp", "bootstrap", "climb", "house", "restore", "come", "follow", "goto", "go", "home", "open", "take", "put", "close", "drop", "wear", "scan", "rs", "pots", "craft", "kit", "recipe",
-            "smelt", "cook", "eat", "burrow", "flee", "cover", "pillar", "farm", "compact", "infuse", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
-            "why", "look", "reply", "brain", "idle", "dayplan", "plan", "actions", "deaths", "resume", "death", "corpse", "hold", "give", "carry", "unload", "restock", "say", "twerk", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "fish", "blind", "ai", "aa");
+            "smelt", "cook", "eat", "burrow", "flee", "pillar", "farm", "compact", "upgrade", "help", "allow", "deny", "restart", "surface", "sense", "path", "server", "debug",
+            "why", "look", "reply", "brain", "idle", "dayplan", "plan", "actions", "deaths", "resume", "death", "corpse", "give", "restock", "say", "twerk", "spawn", "trust", "untrust", "shelter", "hunt", "hunting", "fish", "blind", "ai", "aa");
 
     /**
      * The jobs the mod runs itself: walks since B7b part 1, the storage errands (and "go poi") since part 2, crafting,
@@ -29,8 +29,8 @@ public final class Texts {
      */
     public static final Set<String> MOD_JOB_VERBS = Set.of("come", "follow", "goto", "spawn", "bed", "go", "base", "home", "wait", "twerk", "find",
             "open", "scan", "deposit", "corpse", "death", "rs", "pots",
-            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "infuse", "upgrade",
-            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "scout", "cut", "shelter");
+            "craft", "kit", "smelt", "get", "restock", "farm", "compact", "recipe", "need", "supplies", "give", "upgrade",
+            "dig", "build", "place", "stripmine", "mine", "explore", "route", "restore", "chop", "cook", "sleep", "cut", "shelter");
 
     /** The instant GUI verbs the mod does since B7b part 2 (no job). */
     public static final Set<String> MOD_VERBS = Set.of("take", "put", "close", "drop", "use", "wear", "equip");

@@ -19,9 +19,4 @@ class RepeatFailTest {
         assertFalse(r.note("cut 4", "x", 2100), "another step: afresh");
     }
 
-    @Test
-    void leash() {
-        assertTrue(ExploreRules.nearAreas((x, z) -> x < 0, 60, 0, 64));
-        assertFalse(ExploreRules.nearAreas((x, z) -> x < 0, 70, 0, 64));
-    }
 }

@@ -154,7 +154,7 @@ public final class GatherRules {
                     + " ore, or " + put;
             case LOG -> "\"area here 48 woods neutral\" where trees grow, or " + put;
             case CROP -> "check the farm has " + x + " crops (\"farm here\" by it), or " + put;
-            case BLOCK -> "take me near some " + GatherSources.shortId(s.block()) + " inside my areas, or " + put;
+            case BLOCK -> "take me near some " + GatherSources.shortId(s.block()) + ", or " + put;
             case OVERRIDE -> "check your source (gather source " + x + " ...: \"" + s.command() + "\"), or " + put;
             default -> s.hint() != null ? s.hint() : put;
         };

@@ -25,7 +25,7 @@ class IronFairTest {
 
     static Fair fair(Set<String> seen) {
         List<String> dd = new ArrayList<>();
-        var opts = Discovery.rank(new Discovery.Facts(-1, 0.5, false, true, null, 100, 64, 200, 16, 0.002, 0.4, false), "iron", 3, dd);
+        var opts = Discovery.rank(new Discovery.Facts(-1, 0.5, false, 100, 64, 200, 16, 0.002, 0.4, false), "iron", 3, dd);
         return new Fair(seen, opts, dd);
     }
 

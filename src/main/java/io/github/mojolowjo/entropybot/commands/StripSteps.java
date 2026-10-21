@@ -269,7 +269,7 @@ final class StripSteps {
         String fmt = pos.key();
         IBaritone b = Jobs.baritone();
         if (seq.stage == null) {
-            String fence = seq.jobs.goalAllowed(pos.x(), pos.y(), pos.z());
+            String fence = seq.jobs.walkVerdict(pos.x(), pos.y(), pos.z());
             if (fence != null) return Jobs.withAreaHint(fence + " (" + fmt + ")");
             // S1: a corridor that runs over lava, water or a deep hole can't be walked: say so before trying
             String bad = badCorridor(d.run, p, pos, false);
@@ -485,13 +485,13 @@ final class StripSteps {
                 return "next";
             }
             case SKIP -> {
-                // a branch stuck again (noted bad) or refused (outside my areas): the run goes on without it
+                // a branch stuck again (noted bad) or refused by the policy: the run goes on without it
                 if (kind.equals("stuck")) {
                     JsonObject cur = d.run.note(sm);
                     if (cur != null) MineBook.addBad(cur, d.k + " " + d.part);
                     sm.saved();
                 }
-                run.notes.addSkip(StripRules.skipText(d.k, d.part, kind, why));
+                run.notes.addSkip(StripRules.skipText(d.k, d.part, why));
                 return "next";
             }
             default -> {
@@ -522,7 +522,7 @@ final class StripSteps {
     private static String oreStep(Seq seq, StripMine sm, Data d, LocalPlayer p) {
         Run run = d.run;
         String dim = sm.dim(p);
-        List<Pos> veins = Veins.findVeins(sm.world(p), d.boxes, run.spec == null ? null : id -> run.spec.match(id) >= 0, (x, z) -> sm.inArea(dim, x, z));
+        List<Pos> veins = Veins.findVeins(sm.world(p), d.boxes, run.spec == null ? null : id -> run.spec.match(id) >= 0, (x, z) -> sm.workAllowed(dim, x, z));
         if (veins.isEmpty()) return "next";
         int feetY = Veins.feetY(d.boxes);
         List<Pos> ch = d.dumpMine ? MineBook.chests(d.run.note(sm)) : List.of();
@@ -580,7 +580,7 @@ final class StripSteps {
         JsonObject note = sm.book().select(g.key());
         run.key = g.key();
         sm.saved();
-        StripPlan.Run plan = StripPlan.run(g, note, 1, d.length, true, b -> sm.boxInArea(sm.placeDim(place, p), b), Jobs.here(p));
+        StripPlan.Run plan = StripPlan.run(g, note, 1, d.length, true, Jobs.here(p));
         List<Seq.Step> add = toSteps(plan.items(), run);
         Data nx = new Data(run);
         nx.length = d.length;

@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * aa-kelpfish {@code gather kelp <n> [<min>m] [cook]} / {@code gather kelp status}: cut kelp columns inside the areas
+ * aa-kelpfish {@code gather kelp <n> [<min>m] [cook]} / {@code gather kelp status}: cut kelp columns the policy allows
  * (one block above the base, so the base regrows and the column above drops), walk over the drops, stop at n kelp (or
  * the minutes, or stop). Each cut is the dig verb's water mode, so the mod's own water rules and leases apply; the air
  * reflex owns surfacing (this verb waits for a breath before the next dive, {@link KelpRules#mayDive}, and never runs
@@ -136,9 +136,9 @@ final class Kelping {
             r.nextAt = now + 40;
             return;
         }
-        KelpRules.Column col = KelpRules.pick(scan(p), p.getBlockX(), p.getBlockY(), p.getBlockZ(), this::inAreas);
+        KelpRules.Column col = KelpRules.pick(scan(p), p.getBlockX(), p.getBlockY(), p.getBlockZ(), this::workAllowed);
         if (col == null) {
-            r.why = "I see no kelp column of 2+ blocks inside my areas within " + KelpRules.RANGE + " blocks - walk me to some";
+            r.why = "I see no kelp column of 2+ blocks within " + KelpRules.RANGE + " blocks - walk me to some";
             if (r.idleSince < 0) r.idleSince = now;
             r.nextAt = now + 100;
             if (now - r.idleSince >= IDLE_END) end(r, "stopped: gather kelp " + have + "/" + r.goal.n() + " - " + r.why);
@@ -160,9 +160,9 @@ final class Kelping {
         r.nextAt = now + 20;
     }
 
-    private boolean inAreas(int[] cell) {
+    private boolean workAllowed(int[] cell) {
         String dim = Storage.dim();
-        return c.inAreas(dim, cell[0], cell[2]);
+        return c.workAllowed(dim, cell[0], cell[2]);
     }
 
     /** The kelp columns within range (one scan per pick). */

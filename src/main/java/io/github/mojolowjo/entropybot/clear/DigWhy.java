@@ -33,7 +33,7 @@ public final class DigWhy {
                                 Collection<String> noSpot, Map<String, String> protectedLeft, Map<String, String> names) {
         if (broken > 0) return null;
         if (prefix != null && prefix.contains("next:")) return null;
-        if (prefix != null && (prefix.contains("refused") || prefix.contains("fence"))) return "next: area list (the dig must be inside one of my areas)";
+        if (prefix != null && (prefix.contains("refused") || prefix.contains("fence"))) return "next: fence check (a keep-out or no-break area, or no lease there)";
         for (Map.Entry<String, String> e : skip.entrySet()) {
             String w = e.getValue() == null ? "" : e.getValue();
             if (w.startsWith("needs a better tool")) {
@@ -53,7 +53,7 @@ public final class DigWhy {
         for (String k : noSpot) return "nowhere to stand within reach of " + k + " - next: goto " + k + " (stand next to it), then dig again";
         for (Map.Entry<String, String> e : fails.entrySet()) {
             String w = e.getValue() == null ? "" : e.getValue();
-            if (w.contains("guard") || w.contains("fence") || w.contains("lease") || w.contains("area")) return "the fence refused " + e.getKey() + " (outside my areas) - next: area list (dig inside one of them)";
+            if (w.contains("guard") || w.contains("fence") || w.contains("lease") || w.contains("area")) return "the fence refused " + e.getKey() + " (" + w + ") - next: fence check " + e.getKey();
         }
         for (Map.Entry<String, String> e : protectedLeft.entrySet()) return e.getKey() + " is protected (a built block: " + e.getValue() + ") - next: dig " + e.getKey() + " " + e.getKey() + " force (if it is yours)";
         for (Map.Entry<String, String> e : skip.entrySet()) {

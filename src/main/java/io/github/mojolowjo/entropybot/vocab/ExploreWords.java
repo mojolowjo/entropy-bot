@@ -5,9 +5,9 @@ import java.util.Locale;
 import java.util.function.Predicate;
 
 /**
- * V1b (VOCABULARY 6b): {@code explore [north|south|east|west] [minutes]} may leave the areas and prefers chunks never
+ * V1b (VOCABULARY 6b): {@code explore [north|south|east|west] [minutes]} goes anywhere but a keep-out area and prefers chunks never
  * seen (not in explored.json); {@code find cave|<poi kind>|<structure>|<biome> [minutes]} walks until it finds one and
- * notes it as a point of interest ({@code find <block>} stays the nearby list). Outside the areas a cluster of built
+ * notes it as a point of interest ({@code find <block>} stays the nearby list). A cluster of built
  * blocks, any container or bed or sign, or a named mob within 16 is someone's base: keep off, never take, note it as a
  * {@code safe} candidate. Pure.
  */
@@ -109,7 +109,7 @@ public final class ExploreWords {
                 + " named mobs) - I keep 16 blocks off and take nothing; a safe-area candidate: area here 16 <name> safe";
     }
 
-    /** 0.23.1: the report's tail for what explore/find took outside the areas: "; took 12 oak_log, 4 coal" ("" for nothing). */
+    /** 0.23.1: the report's tail for what explore/find took on the way: "; took 12 oak_log, 4 coal" ("" for nothing). */
     public static String took(java.util.Map<String, Integer> took) {
         if (took == null || took.isEmpty()) return "";
         List<String> parts = new java.util.ArrayList<>();
@@ -125,7 +125,7 @@ public final class ExploreWords {
         public Find(FindKind kind, String what, int minutes) { this(kind, what, minutes, true); }
     }
 
-    /** 0.23.1: {rest without "gather off", "off" or null}: "gather off" anywhere switches the gathering outside the areas off. */
+    /** 0.23.1: {rest without "gather off", "off" or null}: "gather off" anywhere switches the gathering on the way off. */
     public static String[] gatherOff(String rest) {
         String t = rest == null ? "" : rest.trim();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)(^|\\s)gather\\s+off(\\s|$)").matcher(t);

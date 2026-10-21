@@ -159,7 +159,7 @@ public final class ClimbPlan {
         }
         return new Plan(steps, names[bestK], up, digN, null, new int[]{ox + d[0] * up, sy + up, oz + d[1] * up});
     }
-    /** 0.28.2 (D): a cell that is one of my own blocks (the restore/build ledger, my shelter) or inside my main area. */
+    /** 0.28.2 (D): a cell that is one of my own blocks (the restore/build ledger, my shelter) or in the owner's base place. */
     public interface Own { boolean at(int x, int y, int z); }
 
     /** The surface way out: the side, the cells to dig (feet and head), or why not. */

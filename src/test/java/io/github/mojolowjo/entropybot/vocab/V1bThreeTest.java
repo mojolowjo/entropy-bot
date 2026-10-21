@@ -112,6 +112,6 @@ class V1bThreeTest {
         assertNull(Texts.guestRefusal("escort", "me", "escort me", "o"));
         assertNull(Texts.guestRefusal("area", "list", "area list", "o"));
         assertNull(Texts.guestRefusal("fence", "", "fence", "o"));
-        for (String g : List.of("stock", "recipe", "scout", "routines", "rules")) assertNotNull(Texts.guestRefusal(g, "", g, "o"), g);
+        for (String g : List.of("stock", "recipe", "routines", "rules")) assertNotNull(Texts.guestRefusal(g, "", g, "o"), g);
     }
 }

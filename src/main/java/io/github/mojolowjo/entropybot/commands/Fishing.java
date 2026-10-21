@@ -22,7 +22,7 @@ import java.util.Map;
 
 /**
  * aa-kelpfish {@code fish <n|minutes>} / {@code fish status}: craft a rod when the bag has 3 sticks + 2 string and no
- * rod, walk to a water surface (a 3x3 patch inside the areas, 3 to 9 blocks away), cast, wait, reel in when the
+ * rod, walk to a water surface (a 3x3 patch, 3 to 9 blocks away), cast, wait, reel in when the
  * bobber's bite flag is set, cast again; stops at n fish (cod, salmon, tropical fish) or the minutes, or stop. Every
  * 5 ticks (a bite lasts 20 to 40 ticks, so the reaction is in time). The bite flag is read from the bobber's public
  * {@code SynchedEntityData.getNonDefaultValues()} (DATA_BITING itself is private); the status says "bobber unreadable"
@@ -150,7 +150,7 @@ final class Fishing {
         if (busy && !(r.goal.timed() ? now - r.started >= r.goal.minutes() * 1200L : caught >= r.goal.n() || now - r.started >= FishRules.COUNT_MAX)) return;
         int[] spotInfo = null;
         boolean needSpot = hook == null && haveRod && now - r.reelAt >= FishRules.RECAST_DELAY;
-        if (needSpot) spotInfo = FishRules.pick(surface(p), p.getBlockX(), p.getBlockZ(), this::inAreas);
+        if (needSpot) spotInfo = FishRules.pick(surface(p), p.getBlockX(), p.getBlockZ(), this::workAllowed);
         boolean spotOk = spotInfo != null && spotInfo[3] == 0, spotFar = spotInfo != null && spotInfo[3] == 1;
         FishRules.State st = new FishRules.State(haveRod, FishRules.canCraftRod(sticks, string), r.craftTried, hook != null, biting,
                 hook == null || r.castAt < 0 ? 0 : now - r.castAt, now - r.reelAt, spotOk, spotFar, caught, r.goal, now - r.started);
@@ -183,7 +183,7 @@ final class Fishing {
                 r.nextAt = now + 60;
             }
             case NO_WATER -> {
-                r.why = "I see no water surface (3x3 patch) inside my areas within " + FishRules.RANGE + " blocks - walk me to some";
+                r.why = "I see no water surface (3x3 patch) within " + FishRules.RANGE + " blocks - walk me to some";
                 if (r.idleSince < 0) r.idleSince = now;
                 r.nextAt = now + 100;
                 if (now - r.idleSince >= IDLE_END) end(r, "stopped: fish " + caught + "/" + r.goal.n() + " - " + r.why);
@@ -224,9 +224,9 @@ final class Fishing {
         }
     }
 
-    private boolean inAreas(int[] cell) {
+    private boolean workAllowed(int[] cell) {
         String dim = Storage.dim();
-        return c.inAreas(dim, cell[0], cell[2]);
+        return c.workAllowed(dim, cell[0], cell[2]);
     }
 
     /** Water source cells with air above, near me (one scan per cast). */

@@ -29,8 +29,8 @@ public final class WayUp {
     public static final String STAIRS = "stairs ";
     public static final String[] DIRS = {"north", "south", "east", "west"};
 
-    /** One stair heading: the direction, the steps up, the cells it cuts (bottom up, as read), the first cell outside my areas. */
-    public record Heading(String dir, int n, List<Replan.Cell> cells, int[] outsideAt) {}
+    /** One stair heading: the direction, the steps up, the cells it cuts (bottom up, as read), the first cell the policy refuses (keep-out / no-break), or null. */
+    public record Heading(String dir, int n, List<Replan.Cell> cells, int[] refusedAt) {}
 
     /** {dx, dz} for a heading name. */
     public static int[] dir(String d) {
@@ -88,7 +88,7 @@ public final class WayUp {
 
     /**
      * A heading's ground, without the tool: the breaks priced own/foreign x the policy's multiplier and the hazards
-     * (seconds), or infinite with why (a cell outside my areas, a cell the policy denies). Shared by the stairs up and
+     * (seconds), or infinite with why (a cell in a keep-out / no-break box, a cell the policy denies). Shared by the stairs up and
      * AA_ROUND3 4's staircase down (Discovery's strip at Y).
      */
     public record Ground(double brk, double haz, int breaks, String dropWhy) {
@@ -97,7 +97,7 @@ public final class WayUp {
     }
 
     public static Ground ground(Heading h) {
-        if (h.outsideAt() != null) return new Ground(0, 0, 0, "leaves my areas at " + RungOptions.xyz(h.outsideAt()));
+        if (h.refusedAt() != null) return new Ground(0, 0, 0, "the policy refuses a cell at " + RungOptions.xyz(h.refusedAt()));
         double brk = 0, haz = 0;
         int breaks = 0;
         for (Replan.Cell c : h.cells()) {
@@ -113,7 +113,7 @@ public final class WayUp {
     }
 
     public static StairPrice stairs(Heading h, int levels, ToolWear.Kit kit) {
-        if (h.outsideAt() != null) return new StairPrice(Double.POSITIVE_INFINITY, "leaves my areas at " + RungOptions.xyz(h.outsideAt()), null);
+        if (h.refusedAt() != null) return new StairPrice(Double.POSITIVE_INFINITY, "the policy refuses a cell at " + RungOptions.xyz(h.refusedAt()), null);
         if (h.n() < levels) return new StairPrice(Double.POSITIVE_INFINITY, h.n() + " steps reach only " + h.n() + " of " + levels + " up", null);
         Ground g = ground(h);
         if (!g.ok()) return new StairPrice(Double.POSITIVE_INFINITY, g.dropWhy(), null);

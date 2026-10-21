@@ -43,7 +43,7 @@ public final class Costs {
 
     static String f1(double v) { return String.format(Locale.ROOT, "%.1f", v); }
 
-    // ---- 2: food urgency and the hunt outside the areas ----
+    // ---- 2: food urgency and the hunt's walk ----
 
     /** 0.05..1: how badly food is needed (the bar from 20 down to 6, or health from 20 down to 10). */
     public static double foodUrgency(int food, float health) {
@@ -51,13 +51,13 @@ public final class Costs {
         return Math.max(0.05, Math.min(1, u));
     }
 
-    /** The out-hunt's travel (there and back, walk-blocks) divided by the urgency: far and not hungry is dear. */
-    public static double huntOutTravel(double dist, int food, float health) {
+    /** The hunt's travel to the nearest animal (there and back, walk-blocks) divided by the urgency: far and not hungry is dear. */
+    public static double huntTravel(double dist, int food, float health) {
         return 2 * Math.max(0, dist) / foodUrgency(food, health);
     }
 
-    public static String huntOutTerms(double dist, int food, float health) {
-        return "travel 2x" + Math.round(dist) + " / urgency " + f1(foodUrgency(food, health)) + " = " + Math.round(huntOutTravel(dist, food, health));
+    public static String huntTerms(double dist, int food, float health) {
+        return "travel 2x" + Math.round(dist) + " / urgency " + f1(foodUrgency(food, health)) + " = " + Math.round(huntTravel(dist, food, health));
     }
 
     // ---- 3: coal for torches vs for the coal goal ----

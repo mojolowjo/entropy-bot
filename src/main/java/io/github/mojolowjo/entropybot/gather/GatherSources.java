@@ -113,7 +113,7 @@ public final class GatherSources {
     }
 
     /**
-     * 0.28.0: oreKnown = the chunk pass's index knows this family within 64 blocks inside the areas: then "mine &lt;ore&gt;"
+     * 0.28.0: oreKnown = the chunk pass's index knows this family within 64 blocks (the policy allowing): then "mine &lt;ore&gt;"
      * (which walks to the known ore) goes first, before the strip mine and the cave.
      */
     public static List<String> commands(Source s, int n, boolean mineMarked, boolean anyWood, boolean oreKnown) {

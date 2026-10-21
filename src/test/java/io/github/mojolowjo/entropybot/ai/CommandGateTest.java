@@ -14,7 +14,7 @@ class CommandGateTest {
         for (String v : List.of("aa want iron_ore 8", "aa want diamond_pickaxe", "aa drop iron_ore", "aa status", "aa why", "status", "aa", "AA  Want bed high"))
             assertEquals(CommandGate.Kind.RUN, gate.check(v).kind(), v);
         for (String v : List.of("say hello", "inv", "dig", "house house", "brain status", "brain set x 1", "fence", "area list", "mine iron", "defence on",
-                "help dig", "restart", "server on", "allow bob", "give bob diamond", "confirm", "ai off", "idle", "aa on", "aa off", "aa like build 30",
+                "help dig", "restart", "server on", "allow bob", "deposit", "confirm", "ai off", "idle", "aa on", "aa off", "aa like build 30",
                 "goto 1 64 2", "queue aa want x", "repeat 3 status"))
             assertEquals(CommandGate.Kind.DENIED, gate.check(v).kind(), v);
         CommandGate.Verdict d = gate.check("dig");

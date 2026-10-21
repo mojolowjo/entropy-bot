@@ -9,8 +9,8 @@ import java.util.function.Predicate;
 /**
  * aa-r2fix (round 2: "couldn't place the white_bed at x y z" and "no room for my bed next to me (2 free blocks in a row)"): the bed
  * went one block east of the bot, whatever stood there. Now the cell is chosen like the chest's ({@link ChestSpot}): a free,
- * standable cell whose 2-cell footprint (the foot here, the head one block on, in any of the four directions) is free, inside
- * my areas, ranked by cost: the walk from the anchor (the table / base / me), plus a penalty for each block it lies off the
+ * standable cell whose 2-cell footprint (the foot here, the head one block on, in any of the four directions) is free, the policy
+ * allowing (no keep-out / no-break box), ranked by cost: the walk from the anchor (the table / base / me), plus a penalty for each block it lies off the
  * table or chest, plus a small one for each direction the head could not go (the game picks the head by the way the bot faces,
  * so more free directions means less risk of a refusal). A cell the game refused is remembered by the caller and skipped. Pure;
  * loader notes: none.
@@ -55,19 +55,19 @@ public final class BedSpot {
      * @param chest the chest's cell, null unknown
      * @param me    the bot's cell, never a candidate or a head (a block on the bot is refused)
      * @param free  the game can put a block in the cell now (replaceable, a full block under it, no fluid)
-     * @param inside the cell lies inside my areas
+     * @param allowed the policy allows work at the cell (no keep-out / no-break box)
      */
-    public static List<Spot> rank(int[] anchor, int[] table, int[] chest, int[] me, int radius, Predicate<int[]> free, Predicate<int[]> inside) {
+    public static List<Spot> rank(int[] anchor, int[] table, int[] chest, int[] me, int radius, Predicate<int[]> free, Predicate<int[]> allowed) {
         List<Spot> out = new ArrayList<>();
         if (anchor == null) return out;
         for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
             int[] c = {anchor[0] + dx, anchor[1], anchor[2] + dz};
             if (same(c, me) || same(c, table) || same(c, chest)) continue;
-            if (!free.test(c) || !inside.test(c)) continue;
+            if (!free.test(c) || !allowed.test(c)) continue;
             int heads = 0;
             for (int[] d : DIRS) {
                 int[] h = {c[0] + d[0], c[1], c[2] + d[1]};
-                if (!same(h, me) && !same(h, table) && !same(h, chest) && free.test(h) && inside.test(h)) heads++;
+                if (!same(h, me) && !same(h, table) && !same(h, chest) && free.test(h) && allowed.test(h)) heads++;
             }
             if (heads == 0) continue;
             double walk = Math.sqrt(dx * dx + dz * dz), off = 0;
@@ -92,9 +92,9 @@ public final class BedSpot {
     }
 
     /** The near ring first; when it holds nothing unrefused, the wider ring (the bed is put down elsewhere, as a shelter step). */
-    public static Spot choose(int[] anchor, int[] table, int[] chest, int[] me, Predicate<int[]> free, Predicate<int[]> inside, Set<String> failed) {
-        Spot s = pick(rank(anchor, table, chest, me, NEAR, free, inside), failed);
-        return s != null ? s : pick(rank(anchor, table, chest, me, FAR, free, inside), failed);
+    public static Spot choose(int[] anchor, int[] table, int[] chest, int[] me, Predicate<int[]> free, Predicate<int[]> allowed, Set<String> failed) {
+        Spot s = pick(rank(anchor, table, chest, me, NEAR, free, allowed), failed);
+        return s != null ? s : pick(rank(anchor, table, chest, me, FAR, free, allowed), failed);
     }
 
     private static int cheb(int[] a, int[] b) { return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[2] - b[2])); }

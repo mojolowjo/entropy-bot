@@ -112,10 +112,11 @@ public final class Guard {
         BlockState st = level.getBlockState(pos);
         String bid = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
         boolean be = st.hasBlockEntity() && !io.github.mojolowjo.entropybot.clear.ClearRules.choppedLog(bid)
-                // 0.33.0 (A3): my own station inside my areas is a built block here (a force lease may take it), not floor
+                // 0.33.0 (A3): my own station (the ledger says so) is a built block here (a force lease may take it), not floor
                 && !(io.github.mojolowjo.entropybot.clear.OwnStations.station(bid) && io.github.mojolowjo.entropybot.clear.OwnStations.mineAt(pos.getX(), pos.getY(), pos.getZ()));
         boolean built = s.contains(st.getBlock());
-        // AREAS review 1 (BuiltNear): outside every area a natural block beside a built one or a block entity is built too
+        // AREAS review 1 (BuiltNear): off the owner's typed places (home facts: their own work is theirs to dig) a natural
+        // block beside a built one or a block entity is built too
         if (!built && !be && !st.isAir() && core.policy().typeAt(dimOf(level), pos.getX(), pos.getY(), pos.getZ()) == null) {
             BuiltNear.Look look = (x, y, z) -> {
                 BlockPos q = new BlockPos(x, y, z);
@@ -187,7 +188,7 @@ public final class Guard {
 
     /**
      * Mining plan phase 1: a break while a walk runs (TRAVEL intent). The floor and the fence's boxes as before; where
-     * only a box rule would refuse (outside every area, no lease), the policy decides (GuardCore.checkTravelBreak). A
+     * only a box rule would refuse (no lease), the policy decides (GuardCore.checkTravelBreak). A
      * break let through is a travel break: counted toward the cap and handed to the restore ledger as a path break.
      */
     private boolean vetoTravelBreak(Level level, BlockPos pos, String dim, PolicyRuntime pr) {
@@ -235,7 +236,7 @@ public final class Guard {
 
     /**
      * Review 0.39.a4 2: the area rule for a placement asked ahead (a scan, the danger ways' shore cell): no event, no
-     * log, no policy lease. True = the areas refuse it.
+     * log, no policy lease. True = the policy refuses it (a keep-out / no-break area, the floor).
      */
     public boolean placeRefused(Level level, BlockPos pos) {
         if (level == null || !level.isLoaded(pos)) return false;
@@ -243,11 +244,11 @@ public final class Guard {
         boolean airOrWater = st.isAir() || (st.getFluidState().is(net.minecraft.tags.FluidTags.WATER) && st.canBeReplaced());
         return !core.check(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), "place", GuardCore.BlockInfo.placing(airOrWater, false)).allowed();
     }
-    /** 0.23.1: torch = the item put down is a torch (roaming outside the areas places nothing else). */
+    /** 0.23.1: torch = the item put down is a torch. */
     public boolean vetoPlace(Level level, BlockPos pos, boolean torch) {
         if (level == null) level = Minecraft.getInstance().level;
         if (level == null) return false;
-        // water plan: a seal lease (just outside the areas) only fills air or water
+        // water plan: a seal lease only fills air or water
         GuardCore.BlockInfo info = GuardCore.BlockInfo.PLAIN;
         if (level.isLoaded(pos)) {
             var st = level.getBlockState(pos);

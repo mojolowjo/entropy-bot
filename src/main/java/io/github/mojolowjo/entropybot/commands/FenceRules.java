@@ -18,24 +18,14 @@ public final class FenceRules {
     private static final Pattern GOTO3 = Pattern.compile("^goto (-?\\d+) (-?\\d+) (-?\\d+)$"), GOTO2 = Pattern.compile("^goto (-?\\d+) (-?\\d+)$");
 
     /**
-     * Null when the bot may walk to the spot, else the reason. check: the guard's dry run for "go" there ("ok",
-     * "would refuse: ...", "would refuse (log mode): ...", "error: ..."); fenceOn: strict mode. Next to a portal and
-     * a keep-out area are refused in every mode (the floor); the rest only with the fence on.
+     * The policy's walk verdict: null when the bot may walk to the spot, else the reason. check: the guard's dry run
+     * for "go" there ("ok", "would refuse: ...", "would refuse (log mode): ...", "error: ..."). For a walk the guard
+     * refuses only on the floor (a keep-out area, next to a portal, a denied dimension), in every mode.
      */
-    public static String goalAllowed(String check, boolean fenceOn) {
+    public static String walkVerdict(String check) {
         String r = check == null ? "error: no answer" : check;
-        if (r.startsWith("would refuse: next to a ")) return r.replaceFirst("^would refuse: ", "");
-        if (r.startsWith("would refuse: in ") && r.contains("(keep-out)")) return r.replaceFirst("^would refuse: ", "");
-        if (!fenceOn) return null;
         if (r.equals("ok") || r.startsWith("would refuse (log mode)")) return null;
-        String why = r.replaceFirst("^would refuse: ", "").replaceFirst("^error: ", "guard error: ");
-        // AREAS: an old guard answer about areas (none set, outside every area) is no refusal any more
-        return why.startsWith("outside every area") || why.startsWith("no areas set") ? null : why;
-    }
-
-    /** As {@link #goalAllowed(String, boolean)}; the walker no longer matters (kept for the callers). */
-    public static String goalAllowed(String check, boolean fenceOn, io.github.mojolowjo.entropybot.guard.AreaTypeRules.Walker who) {
-        return goalAllowed(check, fenceOn);
+        return r.replaceFirst("^would refuse: ", "").replaceFirst("^error: ", "guard error: ");
     }
 
     /** Where a travel goal ends, for the fence: "goto x y z", "goto x z" (at the bot's level y); null for a follow. */

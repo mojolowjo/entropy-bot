@@ -76,7 +76,7 @@ final class RouteTestRun {
             if (o == null) return "I have no place called " + names[i] + " - next: " + Hints.placeFix(names[i]);
             if (!Jobs.dimOf(o).equals(dim)) return "error: " + names[i] + " is in " + Jobs.dimOf(o) + " (route test walks, no teleports)";
             pos[i] = Jobs.pos(o);
-            String why = jobs.goalAllowed(pos[i][0], pos[i][1], pos[i][2]);
+            String why = jobs.walkVerdict(pos[i][0], pos[i][1], pos[i][2]);
             if (why != null) return Jobs.fenceError(why);
         }
         RouteTestRun run = new RouteTestRun(Core.INSTANCE, a.a(), pos[0], a.b(), pos[1], a.trips());

@@ -39,7 +39,7 @@ class DangerStep3aTest {
     @Test
     void theWatchCaseDeepWaterPricesTheShoreOrPillarOutUnderTheWait() {
         // step2-watch: deep water (12 cells to the floor, 2 over the head), 16 blocks, night, danger 1.0, 4 hp, a shore 20 away
-        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, -1, false, 16, 3, false, false, false, true, 12, 2, new int[]{-180, 63, -238}, 20);
+        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 12, 2, new int[]{-180, 63, -238}, 20);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(4), List.of(), w), night(16, false, 200, 200));
         DangerOptions.Priced wait = way(c, DangerOptions.Way.WAIT);
         assertTrue(c.best().way() == DangerOptions.Way.SHORE || c.best().way() == DangerOptions.Way.PILLAR_OUT, c.terms());
@@ -48,18 +48,20 @@ class DangerStep3aTest {
         assertTrue(c.chain().startsWith("goto -180 63 -238 then shelter"), c.chain());
         assertTrue(c.terms().contains("sinking: air"), c.terms());
         // a shallow pond (2 cells), no shore: the pillar out
-        ThreatFacts.Ways pond = new ThreatFacts.Ways(0, -1, -1, false, 16, 3, false, false, false, true, 2, 0, null, -1);
+        ThreatFacts.Ways pond = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 2, 0, null, -1);
         DangerOptions.Choice p = DangerOptions.choose(new ThreatFacts(me(20), List.of(), pond), night(16, false, 300, 200));
         assertEquals(DangerOptions.Way.PILLAR_OUT, p.best().way(), p.terms());
         assertEquals("pillar then wait 60", p.chain());
     }
 
     @Test
-    void aWaitOnLandAtFullHealthStillBeatsABoxWithNoMobNear() {
-        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, -1, false, 0, 3, true, false, false);
+    void aBoxBeatsTheOpenWaitOnLandEvenAtFullHealthWithNoMobNear() {
+        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, false, 0, 3, true, false, false);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(20), List.of(), land), night(16, false, 300, 200));
-        assertEquals(DangerOptions.Way.WAIT, c.best().way(), c.terms());
-        // a 3 hp loss at 4 hp prices above a box
+        // rm-threat (watch-s7: four "wait 60" on a dark field): the wait prices the night danger x its seconds, and the
+        // box's own seconds pass the night as the wait's do: the box wins at full health too
+        assertEquals(DangerOptions.Way.BOX, c.best().way(), c.terms());
+        // a 3 hp loss at 4 hp prices further above a box
         DangerOptions.Choice low = DangerOptions.choose(new ThreatFacts(me(4), List.of(), land), night(16, false, 300, 200));
         assertEquals(DangerOptions.Way.BOX, low.best().way(), low.terms());
         assertTrue(way(low, DangerOptions.Way.WAIT).costS() > way(low, DangerOptions.Way.BOX).costS(), low.terms());
@@ -73,7 +75,7 @@ class DangerStep3aTest {
         assertEquals(AaDesires.shellBlocks(Map.of("oak_planks", 16, "dirt", 3)), AaEscape.pillarBlocks(Map.of("oak_planks", 16, "dirt", 3)), "one list");
         assertEquals(14, AaEscape.pillarBlocks(Map.of("minecraft:cobblestone", 4, "planks", 16)));
         // the facts said 0 (an older count), the bag 16: the pillar is possible
-        ThreatFacts.Ways land = new ThreatFacts.Ways(0, -1, -1, false, 0, 3, true, false, false);
+        ThreatFacts.Ways land = new ThreatFacts.Ways(0, -1, false, 0, 3, true, false, false);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(20), List.of(), land), night(16, false, 300, 200));
         assertTrue(way(c, DangerOptions.Way.PILLAR).possible(), c.terms());
     }
@@ -92,7 +94,7 @@ class DangerStep3aTest {
         Blackboard bb = new Blackboard(clock, port, new Tracer());
         bb.in.pickTier = 0; bb.in.pickaxes = 0; bb.in.tableKnown = false; bb.in.furnaceKnown = false; bb.in.torches = 0;
         bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
-        bb.in.areaName = null; bb.in.hungerDrains = false;
+        bb.in.basePlace = null; bb.in.hungerDrains = false;
         bb.in.pos = new int[]{-195, 60, -238};
         AaTree tree = AaTree.build(new AaScorer());
         tree.tick(bb);
@@ -122,12 +124,13 @@ class DangerStep3aTest {
     @Test
     void review5TheSinkToTheFloorCountsForTheAir() {
         // 8 deep, at the surface (head 0 under): 6 s of sinking first makes the pillar out too long for 5 s of air
-        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, -1, false, 16, 3, false, false, false, true, 8, 0, null, -1);
+        ThreatFacts.Ways w = new ThreatFacts.Ways(0, -1, false, 16, 3, false, false, false, true, 8, 0, null, -1);
         DangerOptions.Choice c = DangerOptions.choose(new ThreatFacts(me(20), List.of(), w), night(16, false, 100, 200));
         DangerOptions.Priced po = way(c, DangerOptions.Way.PILLAR_OUT);
         assertFalse(po.possible(), c.terms());
         assertTrue(po.why().contains("not enough air"), po.why());
-        assertTrue(po.timeS() > 8 * (DangerOptions.PLACE_S + 1 / DangerOptions.SWIM_BPS), "the sink is in the time");
+        // rm-threat: at night the seconds show in the why (6 s down + 8 places and swims), not as charged time
+        assertTrue(po.why().contains("8 deep, 11.6 s"), "the sink is in the time: " + po.why());
     }
 
     @Test
@@ -140,7 +143,7 @@ class DangerStep3aTest {
         bb.in.difficulty = 2;
         bb.in.pos = new int[]{0, 64, 0};
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Brain.SURFACE_Y_FACT, (java.util.function.IntBinaryOperator) (x, z) -> 64);
-        ThreatFacts land = new ThreatFacts(ThreatFacts.CALM.me(), List.of(), new ThreatFacts.Ways(0, -1, -1, false, 0, 3, true, false, false));
+        ThreatFacts land = new ThreatFacts(ThreatFacts.CALM.me(), List.of(), new ThreatFacts.Ways(0, -1, false, 0, 3, true, false, false));
         bb.fact(AaDesires.THREAT_FACT, (java.util.function.Supplier<ThreatFacts>) () -> land);
         io.github.mojolowjo.entropybot.aa.core.RunJob job = io.github.mojolowjo.entropybot.aa.core.RunJob.of("j", io.github.mojolowjo.entropybot.aa.core.TaskKind.WAIT, "goto 5 64 5 then shelter", "danger");
         job.tick(bb);
@@ -156,7 +159,7 @@ class DangerStep3aTest {
         Blackboard bb = new Blackboard(clock, port, new Tracer());
         bb.in.pickTier = 0; bb.in.pickaxes = 0; bb.in.tableKnown = false; bb.in.furnaceKnown = false; bb.in.torches = 0;
         bb.in.baseKnown = false; bb.in.bedKnown = false; bb.in.baseChests = false; bb.in.freeSlots = 36; bb.in.wool = 0;
-        bb.in.areaName = null; bb.in.hungerDrains = false;
+        bb.in.basePlace = null; bb.in.hungerDrains = false;
         AaTree tree = AaTree.build(new AaScorer());
         tree.tick(bb);
         bb.in.inLavaOrFire = true;

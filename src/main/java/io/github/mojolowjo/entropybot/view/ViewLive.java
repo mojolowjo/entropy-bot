@@ -38,7 +38,7 @@ public final class ViewLive {
             int x = (int) Math.floor(p.getX()), y = (int) Math.floor(p.getY()), z = (int) Math.floor(p.getZ());
             StringBuilder sb = new StringBuilder().append(x).append(' ').append(y).append(' ').append(z);
             Box a = Core.INSTANCE.guard.core.policy().innermostAreaAt(Guard.dimOf(lv), x, y, z);
-            sb.append(a == null ? ", outside my areas" : ", in " + a.name + " (" + a.type.name().toLowerCase() + ")");
+            if (a != null) sb.append(", in ").append(a.name).append(" (").append(a.type.name().toLowerCase()).append(")");
             int depth = io.github.mojolowjo.entropybot.commands.Jobs.underDepth(lv, x, y, z);      // 0.34.3: the shared rule (leaves ignored)
             if (depth > 0) sb.append(", under ground (surface ").append(depth).append(" up)");
             sb.append(", hp ").append(Math.round(p.getHealth())).append(" food ").append(p.getFoodData().getFoodLevel());

@@ -242,7 +242,7 @@ public final class ConfirmGate {
             }
             case AREA_REMOVE -> {
                 String name = w.get(1), a = facts.area(name);
-                return "area del forgets the area " + name + (a != null ? " (" + a + ")" : "") + "; a job whose box falls outside my areas stops";
+                return "area del forgets the area " + name + (a != null ? " (" + a + ")" : "");
             }
             default -> {
                 String m = facts.mine();

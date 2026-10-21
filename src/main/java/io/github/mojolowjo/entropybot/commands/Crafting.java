@@ -51,7 +51,7 @@ final class Crafting {
     private final Storage storage;
     final McRecipes recipes = new McRecipes();
     final CraftPlanner planner = new CraftPlanner(recipes);
-    /** Package E: infuse and upgrade (Mystical Agriculture). */
+    /** Package E: upgrade (Mystical Agriculture). */
     final Mystical mystical;
 
     Crafting(Core core, Commands commands, Jobs jobs, Storage storage) {
@@ -62,8 +62,36 @@ final class Crafting {
         this.mystical = new Mystical(this, core, commands, jobs, storage);
     }
 
-    /** Package E: "infuse &lt;seed&gt; [n]" on the infusion altar. */
-    String infuse(LocalPlayer p, String text) { return mystical.infuse(p, text); }
+    /**
+     * "give me &lt;item&gt; [n]": one Baritone walk to the asker (near their position), then the inventory THROW click
+     * toward them (an item action, no key presses). Only what the bag holds goes; none in the bag is an error.
+     */
+    String give(LocalPlayer p, String text, int[] at) {
+        String[] w = text.trim().split("\\s+");
+        if (w.length > 0 && w[0].equalsIgnoreCase("me")) w = java.util.Arrays.copyOfRange(w, 1, w.length);
+        if (w.length == 0 || w[0].isEmpty()) return "usage: give me <item> [n]";
+        int n = 1;
+        if (w.length > 1) {
+            try { n = Integer.parseInt(w[1]); } catch (NumberFormatException e) { return "usage: give me <item> [n]"; }
+        }
+        if (n < 1) return "usage: give me <item> [n]";
+        String id = io.github.mojolowjo.entropybot.gui.GuiCore.normId(w[0]);
+        int have = io.github.mojolowjo.entropybot.gui.Gui.inventory(p).getOrDefault(id, 0);
+        if (have <= 0) return "error: give " + w[0] + ": I have none in my bag";
+        int k = Math.min(n, have);
+        Step walk = Step.walk(at, true);
+        Step g = new Step("give");
+        g.text = id + " " + k;
+        g.pos = at;
+        return jobs.startSeq(new Seq(jobs, storage, "giving " + k + " " + w[0], List.of(walk, g), "always"), "always");
+    }
+
+    private String giveStep(Step st, LocalPlayer p) {
+        String[] w = st.text.split(" ");
+        io.github.mojolowjo.entropybot.aa.moves.JobHands.get().look(st.pos[0] + 0.5, st.pos[1] + 1.0, st.pos[2] + 0.5);
+        int thrown = io.github.mojolowjo.entropybot.engine.Escort.throwItems(p, w[0], Integer.parseInt(w[1]));
+        return thrown > 0 ? "next" : "error: give " + w[0] + ": nothing could be thrown";
+    }
 
     /** Package E: "upgrade &lt;essence&gt; [n]", the essence tiers in bag-sized rounds. */
     String upgrade(LocalPlayer p, String text) { return mystical.upgrade(p, text); }
@@ -699,7 +727,7 @@ final class Crafting {
         for (FurnaceJobs.Job j : auto ? fj.due(now, Storage.dim()) : fj.all()) {
             if (!j.dim.equals(Storage.dim()) || !(all || j.due(now))) continue;
             // the fence before any walk or /home
-            String why = jobs.goalAllowed(j.pos[0], j.pos[1], j.pos[2]);
+            String why = jobs.walkVerdict(j.pos[0], j.pos[1], j.pos[2]);
             if (why != null) {
                 fenced.add(j.where() + ": " + why);
                 continue;
@@ -1078,8 +1106,7 @@ final class Crafting {
             case "compactdone": return compactStep(s, st, p);
             // package E: Mystical Agriculture
             case "upgraderound": return mystical.upgradeRound(s, st, p);
-            case "altarfind": return mystical.altarFind(s, st, p);
-            case "infuse": return mystical.infuseStep(s, st, p);
+            case "give": return giveStep(st, p);
             default:
                 if (st.type.startsWith("farm") && s.farm != null) return farmStep(s, st, p, elapsed);
                 return "unknown step " + st.type;
@@ -1557,8 +1584,6 @@ final class Crafting {
             c.stage = null;
             if (c.loop != null) c.loop.interrupted();      // a batch in flight is still counted (never dropped)
         }
-        // package E: the altar looks again (what it placed is found again), unless it is crafting or taking the seed
-        if (st.state instanceof io.github.mojolowjo.entropybot.altar.AltarRun r) r.interrupted();
         Minecraft.getInstance().options.keyShift.setDown(false);
     }
 

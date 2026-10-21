@@ -27,7 +27,7 @@ class ReflexAfterTest {
     @Test
     void aSpentReflexAtDayAndFullHealthStillActs() {
         // day, full health, nothing near (Need.NONE): the old desire scored -1 and did nothing; now a way that acts
-        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, -1, true, 16, 3, true, true, true);
+        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, true, 16, 3, true, true, true);
         DangerOptions.Choice c = DangerOptions.afterReflex(new ThreatFacts(me(20), List.of(), land), DangerOptions.Need.NONE, AIR, ReflexLadder.dangerHeld(ReflexLadder.Kind.AIR), k -> null);
         assertNotNull(c.best(), c.terms());
         assertTrue(c.score() > 0, c.terms());
@@ -38,7 +38,7 @@ class ReflexAfterTest {
 
     @Test
     void theCreeperReflexsOwnBurrowIsHeld() {
-        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, -1, true, 16, 3, true, true, true);
+        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, true, 16, 3, true, true, true);
         DangerOptions.Choice c = DangerOptions.afterReflex(new ThreatFacts(me(20), List.of(), land), DangerOptions.Need.NONE, CREEPER, ReflexLadder.dangerHeld(ReflexLadder.Kind.CREEPER), k -> null);
         assertNotNull(c.best(), c.terms());
         assertNotEquals(DangerOptions.Way.BURROW, c.best().way(), c.terms());
@@ -49,7 +49,7 @@ class ReflexAfterTest {
     @Test
     void noWayThatActsSaysWhy() {
         // floating, no blocks, no shore, nothing to dig: only the wait is possible, and it is not an action
-        ThreatFacts.Ways none = new ThreatFacts.Ways(0, -1, -1, false, 0, 0, false, false, false);
+        ThreatFacts.Ways none = new ThreatFacts.Ways(0, -1, false, 0, 0, false, false, false);
         DangerOptions.Choice c = DangerOptions.afterReflex(new ThreatFacts(me(20), List.of(), none), DangerOptions.Need.NONE, AIR, ReflexLadder.dangerHeld(ReflexLadder.Kind.AIR), k -> null);
         assertNull(c.best());
         assertEquals(-1, c.score());
@@ -58,7 +58,7 @@ class ReflexAfterTest {
 
     @Test
     void aWayHeldByTheBrainStaysOut() {
-        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, -1, true, 16, 3, true, true, true);
+        ThreatFacts.Ways land = new ThreatFacts.Ways(16, -1, true, 16, 3, true, true, true);
         DangerOptions.Choice first = DangerOptions.afterReflex(new ThreatFacts(me(20), List.of(), land), DangerOptions.Need.NONE, AIR, ReflexLadder.dangerHeld(ReflexLadder.Kind.AIR), k -> null);
         String k1 = first.best().way().key();
         DangerOptions.Choice next = DangerOptions.afterReflex(new ThreatFacts(me(20), List.of(), land), DangerOptions.Need.NONE, AIR, ReflexLadder.dangerHeld(ReflexLadder.Kind.AIR),

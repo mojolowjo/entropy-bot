@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 /**
  * C4: {@code light here <r>} / {@code light x1 z1 x2 z2}: torches on a grid every {@link #STEP} blocks. Pure (the
  * grid, the argument parsing and the end line); the game side (CampCommands) finds the ground of each spot, leaves out
- * water, air, spots outside the areas and spots that already have light, and places each torch with its own place
+ * water, air, spots the policy refuses (keep-out / no-break) and spots that already have light, and places each torch with its own place
  * lease (protect boxes are refused there by the guard).
  *
  * <p>Loader notes: none.
@@ -17,7 +17,7 @@ public final class LightGrid {
     private LightGrid() {}
 
     public static final int STEP = 6, MAX_R = 32, MAX_SPOTS = 64;
-    public static final String USAGE = "usage: light here <r> | light x1 z1 x2 z2 (torches every " + STEP + " blocks, inside my areas)";
+    public static final String USAGE = "usage: light here <r> | light x1 z1 x2 z2 (torches every " + STEP + " blocks)";
 
     /** x1 z1 x2 z2 (sorted), or null for a bad line. here: the bot's x z. */
     public static int[] parse(String rest, int[] here) {

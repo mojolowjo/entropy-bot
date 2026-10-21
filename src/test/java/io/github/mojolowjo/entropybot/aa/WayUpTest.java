@@ -21,8 +21,8 @@ class WayUpTest {
         return out;
     }
 
-    static WayUp.Heading heading(String dir, int n, Replan.Cell c, int[] outside) {
-        return new WayUp.Heading(dir, n, col(n * 4, c), outside);
+    static WayUp.Heading heading(String dir, int n, Replan.Cell c, int[] refused) {
+        return new WayUp.Heading(dir, n, col(n * 4, c), refused);
     }
 
     static RungOptions.SurfaceFacts facts(int depth, List<Replan.Cell> column, List<WayUp.Heading> hs, int[] trail, double trailLen, int[] sky, double skyDist) {
@@ -53,17 +53,17 @@ class WayUpTest {
     }
 
     @Test
-    void stairsStayInsideTheAreasAndAFailedHeadingIsHeld() {
+    void stairsThePolicyRefusesAreDroppedAndAFailedHeadingIsHeld() {
         List<WayUp.Heading> hs = List.of(heading("west", 6, Replan.Cell.stone(false), new int[]{-3, 43, 0}),
                 heading("north", 6, Replan.Cell.stone(false), null),
                 heading("south", 6, new Replan.Cell(false, false, Double.POSITIVE_INFINITY, false, false, false), null));
         var m = new Options.OptionMemory();
         var c = WayUp.choose(facts(6, null, hs, null, 0, null, -1), m, 0);
         assertEquals("stairs north", c.best().id(), c.why());
-        assertTrue(c.why().contains("stairs west: leaves my areas at -3 43 0"), c.why());
+        assertTrue(c.why().contains("stairs west: the policy refuses a cell at -3 43 0"), c.why());
         assertTrue(c.why().contains("stairs south: a cell may not be broken"), c.why());
         assertTrue(c.best().command().startsWith("dig 0 41 -1 0 42 0 ores via engine then goto 0 41 -1"), c.best().command());
-        m.failed(c.best().memoryKey(), "stopped at step 9 (dig ...): that box is not inside one of my areas", 0);
+        m.failed(c.best().memoryKey(), "stopped at step 9 (dig ...): that box touches pit (keep-out)", 0);
         c = WayUp.choose(facts(6, null, hs, null, 0, null, -1), m, 1);
         assertNull(c.best(), "north is held, west and south dropped: " + c.why());
         assertTrue(c.why().contains("stairs north:"), c.why());

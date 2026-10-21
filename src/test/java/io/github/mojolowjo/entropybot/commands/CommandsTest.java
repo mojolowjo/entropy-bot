@@ -188,7 +188,7 @@ class CommandsTest {
         @Override public JsonObject supplies() { return supplies; }
         @Override public String orePrefer() { return null; }
         @Override public JsonObject minePlace() { return mine; }
-        @Override public boolean inAreas(String dim, int x, int z) { return true; }
+        @Override public boolean workAllowed(String dim, int x, int z) { return true; }
         @Override public String dim() { return "minecraft:overworld"; }
         @Override public void saved() {}
         int[] pos;                                            // (wave 1) where the bot stands; null = unknown
@@ -439,8 +439,8 @@ class CommandsTest {
         PolicyCommands.Pos here = new PolicyCommands.Pos(10, 64, 20, "minecraft:overworld");
         assertTrue(pc.command("area", "list", true, "owner", here, here).startsWith("no areas set - the world is open"));
         assertEquals("ok: area home (work, white: -20 -10 to 40 50) added | mod: ok: 1 areas", pc.command("area", "here 30 home", true, "owner", here, here));
-        assertTrue(pc.inAreas("minecraft:overworld", 0, 0));
-        assertTrue(pc.inAreas("minecraft:overworld", 100, 0), "AREAS: open outside the areas too");
+        assertTrue(pc.workAllowed("minecraft:overworld", 0, 0));
+        assertTrue(pc.workAllowed("minecraft:overworld", 100, 0), "AREAS: open outside the areas too");
         assertEquals("only owner can change where I may go and dig", pc.command("area", "here 3 x", false, "owner", here, here));
         assertTrue(pc.command("area", "show home", false, "owner", here, here).contains("edges: west 30, east 30"));
         assertEquals("ok: area base (no-break, green: 0 10 to 20 30, y 56..80) added (safe = no-break now) | mod: ok: 1 areas", pc.command("area", "here 10 base safe", true, "owner", here, here));
@@ -582,13 +582,13 @@ class CommandsTest {
         assertTrue(saves[0] >= 3, "every change saves areas.json");
         assertTrue(pc.command("area", "near sideways", true, "owner", here, here).startsWith("usage: area near"));
         // AREAS: the zone is a fact, never a permission: inAreas is true everywhere but a keep-out / no-break column
-        assertTrue(pc.inAreas("minecraft:overworld", 100, 100), "the world is open");
+        assertTrue(pc.workAllowed("minecraft:overworld", 100, 100), "the world is open");
         g.near = io.github.mojolowjo.entropybot.guard.NearZone.boxAt("minecraft:overworld", 100, 64, 100, 16).toJson();
-        assertEquals(0, pc.effectiveAreas().size(), "the zone is no area");
-        assertTrue(pc.inAreas("minecraft:overworld", 117, 100), "outside the zone: still open");
+        assertEquals(0, pc.places().size(), "the zone is no area");
+        assertTrue(pc.workAllowed("minecraft:overworld", 117, 100), "outside the zone: still open");
         assertEquals("a circle of 16 around 100 100, y 48..80", PolicyCommands.boxText(g.near));
         pc.command("area", "here 4 hole keep-out", true, "owner", here, here);
-        assertFalse(pc.inAreas("minecraft:overworld", here.x(), here.z()));
+        assertFalse(pc.workAllowed("minecraft:overworld", here.x(), here.z()));
         assertEquals("in hole (keep-out)", pc.blockedText("minecraft:overworld", here.x(), here.z()));
         assertNull(pc.blockedText("minecraft:overworld", here.x() + 5, here.z()));
         // a broken near entry falls back to the defaults

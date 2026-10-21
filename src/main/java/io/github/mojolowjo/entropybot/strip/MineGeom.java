@@ -57,7 +57,7 @@ public final class MineGeom {
     /** side 1 = left, -1 = right. */
     public ClearBox branch(int k, int side, int length) { return box(cell(3 * k, side), cell(3 * k, side * length), 2); }
 
-    /** The x/z bounds of branch k's three boxes (collecting needs all of it inside the areas). */
+    /** The x/z bounds of branch k's three boxes . */
     public ClearBox union(int k, int length) {
         ClearBox c = corridor(k), l = branch(k, 1, length), r = branch(k, -1, length);
         return new ClearBox(Math.min(c.x1(), Math.min(l.x1(), r.x1())), c.y1(), Math.min(c.z1(), Math.min(l.z1(), r.z1())),

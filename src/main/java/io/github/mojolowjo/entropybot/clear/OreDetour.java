@@ -10,7 +10,7 @@ import java.util.function.Predicate;
 /**
  * 0.25.1 ore detour (the owner's play, 2026-10-08: a one-minute stop on the way home = an ore seen nearby, grabbed):
  * at the start of a walk home, the nearest ore the bot can see (an exposed face: air or a see-through block beside it)
- * within {@code path.oreDetour} blocks, that its pickaxe can mine ({@code canMine}), inside the areas, and with no water,
+ * within {@code path.oreDetour} blocks, that its pickaxe can mine ({@code canMine}), the policy allowing, and with no water,
  * lava, sand or gravel next to any of its blocks; then its vein (joined face to face, the same rules) up to
  * {@link #CAP} blocks. The clear that mines it keeps the guard's leases and the careful-clear rules. Pure (JUnit on
  * FakeWorld); loader notes: none.

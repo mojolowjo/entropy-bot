@@ -195,7 +195,7 @@ final class VocabCommands {
             if (s == null) return "error: I have no area, place or marker called " + n + " (area list, places)";
             hold = new Hold("guarding " + s.name(), dim, s.x(), s.y(), s.z(), io.github.mojolowjo.entropybot.vocab.HoldRules.GUARD_R, null, from);
         }
-        String why = c.jobs.goalAllowed(hold.x(), hold.y(), hold.z());
+        String why = c.jobs.walkVerdict(hold.x(), hold.y(), hold.z());
         if (why != null && !from.equalsIgnoreCase(c.owner())) {
             hold = null;
             return FenceRules.gotoRefusal(why);

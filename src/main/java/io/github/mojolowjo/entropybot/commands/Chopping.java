@@ -99,7 +99,7 @@ final class Chopping {
         StringBuilder sb = new StringBuilder("column " + x + " " + z + ": top " + top + ", kinds");
         for (int y = Math.min(top, me[1] + 40); y >= Math.min(top, me[1] + 40) - 8; y--) sb.append(" ").append(y).append("=").append(src.kind(x, y, z)).append("/").append(src.family(x, y, z));
         int y = ChopRules.logTop(src, x, z, me[1] + 40, me[1] - 24);
-        sb.append("; log top ").append(y).append("; in areas ").append(commands.inAreas(Storage.dim(), x, z));
+        sb.append("; log top ").append(y).append("; policy ").append(commands.workAllowed(Storage.dim(), x, z) ? "allows" : "refuses");
         if (y != ChopRules.NONE) {
             TreeFinder.Result r = TreeFinder.find(new Live(p.clientLevel), x, y, z);
             sb.append("; ").append(r.ok() ? "a tree of " + r.tree().logs().size() + " " + ChopRules.shortId(r.tree().logId()) + " at " + r.tree().at() : r.why());
@@ -117,7 +117,7 @@ final class Chopping {
         final Set<String> tried = new HashSet<>();
         final List<String> notes = new ArrayList<>();
         int skippedBuilt;
-        String firstBuilt, nearestOutside, axeNote, firstWhy;
+        String firstBuilt, axeNote, firstWhy;
         int notLogs;            // 0.32.1: wood/stripped column tops skipped
         int looked;
         TreeFinder.Tree tree;
@@ -155,7 +155,7 @@ final class Chopping {
             return "error: " + MineRules.badPolicyText(e).replace("I won't mine", "I won't chop");
         }
         int[] me = Jobs.here(p);
-        if (!commands.inAreas(Storage.dim(), me[0], me[2])) return "error: I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " - I cut nothing here";
+        if (!commands.workAllowed(Storage.dim(), me[0], me[2])) return "error: I am " + commands.policy.blockedText(Storage.dim(), me[0], me[2]) + " - I cut nothing here";
         if (Jobs.baritone() == null) return "error: baritone not loaded";
         Run r = new Run();
         r.args = a;
@@ -253,9 +253,8 @@ final class Chopping {
         if (t == null) {
             String far = farTree(s, r, p);
             if (far != null) return far;
-            String none = r.trees == 0 ? "no trees in my areas" + (r.looked > 0 ? " (" + r.looked + " log columns looked at" + (r.firstWhy != null ? "; " + r.firstWhy : "") + ")"
-                    : r.nearestOutside != null ? " (nearest log at " + r.nearestOutside + " is outside; " + coverOutside(r.nearestOutside, p) + ")" : "")
-                    : "no more trees in my areas";
+            String none = r.trees == 0 ? "no trees within " + ChopRules.RADIUS + (r.looked > 0 ? " (" + r.looked + " log columns looked at" + (r.firstWhy != null ? "; " + r.firstWhy : "") + ")" : "")
+                    : "no more trees near";
             return end(s, r, p, none);
         }
         r.tree = t;
@@ -285,8 +284,8 @@ final class Chopping {
     static final int FAR_MAX = 256;
 
     /**
-     * 0.34.0: no tree in the live scan - ask Baritone's chunk cache (our build remembers logs) for the nearest log in my
-     * areas beyond what the scan saw, walk there and look again. A remembered log whose chunk is loaded and gone is
+     * 0.34.0: no tree in the live scan - ask Baritone's chunk cache (our build remembers logs) for the nearest log the
+     * policy allows beyond what the scan saw, walk there and look again. A remembered log whose chunk is loaded and gone is
      * dropped (BaritoneMemory logs it). Null: nothing remembered (the run ends as before).
      */
     private String farTree(Seq s, Run r, LocalPlayer p) {
@@ -312,7 +311,7 @@ final class Chopping {
         List<io.github.mojolowjo.entropybot.sense.MemoryPick.Spot> got = io.github.mojolowjo.entropybot.sense.BaritoneMemory.recall(p, ids, (x, y, z) -> {
             if (r.tried.contains("far " + x + " " + z)) return false;
             if (io.github.mojolowjo.entropybot.chop.Unreachable.blocked(x, z, System.currentTimeMillis())) return false;      // 0.36.3
-            if (!commands.inAreas(dim, x, y, z) || jobs.goalAllowed(x, y, z) != null) return false;
+            if (!commands.workAllowed(dim, x, y, z) || jobs.walkVerdict(x, y, z) != null) return false;
             // 0.34.1 (review): never toward a protect box (margin as the mine's), nor a loaded log the tree finder
             // judges built (a log house) or not a tree; unloaded ones are judged by the scan on arrival
             if (MineRules.protectNear(prot, dim, x, y, z, MineRules.PROTECT_MARGIN) != null) return false;
@@ -490,14 +489,13 @@ final class Chopping {
         r.planted = List.of();
     }
 
-    /** The nearest tree in my areas that passes the finder (and the type), or null. */
+    /** The nearest tree the policy allows that passes the finder (and the type), or null. */
     private TreeFinder.Tree nextTree(Run r, LocalPlayer p, Live w) {
         String dim = Storage.dim();
         List<Box> prot = MineRules.policyBoxes(MineRules.parsePolicy(commands.policyJson()), "protect", PolicyCommands.DEFAULT_DIM);
         int[] me = Jobs.here(p);
         SurfaceColumns.Source src = SurfaceExport.liveSource(p.clientLevel);
-        List<int[]> inside = new ArrayList<>();
-        long bestOut = Long.MAX_VALUE;
+        List<int[]> cols = new ArrayList<>();
         for (int x = me[0] - ChopRules.RADIUS; x <= me[0] + ChopRules.RADIUS; x++)
             for (int z = me[2] - ChopRules.RADIUS; z <= me[2] + ChopRules.RADIUS; z++) {
                 int y = ChopRules.logTop(src, x, z, me[1] + 40, me[1] - 24);
@@ -505,22 +503,15 @@ final class Chopping {
                 // 0.32.1 (P1, Haiku run: "no log at -249 71 123" three runs in a row): the column source counts stripped
                 // logs and 6-sided wood as LOG, the tree finder doesn't: only a column whose top is a real log is a candidate
                 if (!w.log(x, y, z)) { r.notLogs++; continue; }
-                if (commands.inAreas(dim, x, y, z)) inside.add(new int[]{x, y, z});
-                else {
-                    long d = (long) (x - me[0]) * (x - me[0]) + (long) (z - me[2]) * (z - me[2]);
-                    if (d < bestOut) {
-                        bestOut = d;
-                        r.nearestOutside = x + " " + y + " " + z;
-                    }
-                }
+                if (commands.workAllowed(dim, x, y, z)) cols.add(new int[]{x, y, z});
             }
-        r.looked = inside.size();
-        LOG.info("[entropybot] chop: {} log columns in my areas within {} (nearest outside: {}; {} wood/stripped tops skipped)", inside.size(), ChopRules.RADIUS, r.nearestOutside, r.notLogs);
+        r.looked = cols.size();
+        LOG.info("[entropybot] chop: {} log columns the policy allows within {} ({} wood/stripped tops skipped)", cols.size(), ChopRules.RADIUS, r.notLogs);
         int checked = 0;
         List<ChopLoop.Cand> cands = new ArrayList<>();
         Map<String, TreeFinder.Tree> found = new java.util.HashMap<>();
         int limit = Math.max(24, setting("chop.maxTrees", ChopLoop.DEFAULT_MAX_TREES) * 2);
-        for (int[] c : ChopRules.order(inside, me[0], me[1], me[2])) {
+        for (int[] c : ChopRules.order(cols, me[0], me[1], me[2])) {
             if (checked >= limit) break;
             TreeFinder.Result res = TreeFinder.find(w, c[0], c[1], c[2]);
             if (!res.ok()) {
@@ -551,20 +542,20 @@ final class Chopping {
                 if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " is " + ChopRules.shortId(t.logId());
                 continue;
             }
-            String fence = jobs.goalAllowed(b[0], b[1], b[2]);
+            String fence = jobs.walkVerdict(b[0], b[1], b[2]);
             if (fence != null) {
                 if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + ": " + fence;
                 continue;
             }
             boolean off = false;
             for (int[] l : t.logs()) {
-                if (!commands.inAreas(dim, l[0], l[1], l[2]) || MineRules.protectNear(prot, dim, l[0], l[1], l[2], 0) != null) {
+                if (!commands.workAllowed(dim, l[0], l[1], l[2]) || MineRules.protectNear(prot, dim, l[0], l[1], l[2], 0) != null) {
                     off = true;
                     break;
                 }
             }
             if (off) {
-                if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " reaches out of my areas or into a protect box";
+                if (r.firstWhy == null) r.firstWhy = "the tree at " + t.at() + " reaches into a keep-out / no-break area or a protect box";
                 r.tried.add(TreeFinder.key(b[0], b[1], b[2]));
                 continue;
             }
@@ -641,7 +632,7 @@ final class Chopping {
             if (!(e instanceof ItemEntity ie) || !e.isAlive()) continue;
             if (!nearTree(r.tree, e.getX(), e.getY(), e.getZ())) continue;
             int x = (int) Math.floor(e.getX()), y = (int) Math.floor(e.getY() + 0.01), z = (int) Math.floor(e.getZ());
-            if (jobs.goalAllowed(x, y, z) != null) continue;
+            if (jobs.walkVerdict(x, y, z) != null) continue;
             if (p.getInventory().getFreeSlot() < 0 && p.getInventory().getSlotWithRemainingSpace(ie.getItem()) < 0) continue;
             left++;
             double d = e.distanceTo(p) - (ownDrop(r.tree, BuiltInRegistries.ITEM.getKey(ie.getItem().getItem()).toString()) ? 8 : 0);
@@ -734,11 +725,11 @@ final class Chopping {
         return "next";
     }
 
-    // ---- 0.23.1: one tree while exploring outside the areas (VOCABULARY 6b) ----
+    // ---- 0.23.1: one tree while exploring (VOCABULARY 6b) ----
 
     /**
-     * The steps that fell the nearest tree within 12 blocks whose every log the predicate allows (the roaming permission:
-     * outside the areas, near the bot, off any base), for the explore job's own Seq; null when there is none. No replant
+     * The steps that fell the nearest tree within 12 blocks whose every log the predicate allows (the policy, near the
+     * bot, off any base), for the explore job's own Seq; null when there is none. No replant
      * (roaming places nothing but torches). The pickup follows; the explore job's tally step counts what came in.
      */
     List<Seq.Step> gatherTree(Seq s, LocalPlayer p, java.util.function.Predicate<int[]> allowed) {
@@ -778,7 +769,7 @@ final class Chopping {
             r.rounds = 0;
             r.lastLeft = t.logs().size();
             r.brokeAny = 0;
-            LOG.info("[entropybot] explore: cutting the tree at {} ({} logs of {}) outside my areas", t.at(), t.logs().size(), t.logId());
+            LOG.info("[entropybot] explore: cutting the tree at {} ({} logs of {})", t.at(), t.logs().size(), t.logId());
             List<Seq.Step> add = new ArrayList<>();
             add.add(Seq.Step.walk(b.clone(), true));
             add.addAll(breakSteps(r, TreeFinder.lowest(t.logs())));
@@ -918,8 +909,8 @@ final class Chopping {
         if (r.skippedBuilt > 0) notes.add(r.skippedBuilt + " skipped: " + r.firstBuilt.replaceFirst("^the tree at \\S+ \\S+ \\S+ is ", "")
                 + (r.skippedBuilt > 1 ? " and more" : ""));
         notes.addAll(r.notes.size() > 4 ? r.notes.subList(0, 4) : r.notes);
-        String next = r.trees == 0 ? (r.skippedBuilt > 0 ? "make that build a safe area (area here 16 build safe), or an area with trees away from builds"
-                : r.nearestOutside != null ? null : "\"area here 48 woods neutral\" where trees grow") : null;
+        String next = r.trees == 0 ? (r.skippedBuilt > 0 ? "make that build a no-break area (area here 16 build no-break), or take me to trees away from builds"
+                : "take me to where trees grow") : null;
         String text = ChopRules.endText(r.trees, r.got, r.replanted, why, notes, next);
         treesTotal += r.trees;
         logsTotal += ChopRules.total(r.got);
@@ -928,14 +919,6 @@ final class Chopping {
         LOG.info("[entropybot] chop: {}", text);
         jobs.finish(text);
         return "wait";
-    }
-
-    /** 0.33.0: the exact area command that takes in the nearest log outside ("x y z"), from where I stand. */
-    private String coverOutside(String at, LocalPlayer p) {
-        String[] a = at.split(" ");
-        int[] me = Jobs.here(p);
-        return ChopRules.areaCover(me[0], me[2], Integer.parseInt(a[0]), Integer.parseInt(a[2]), 6, "trees", commands.areaNames())
-                + " takes it in, then ask again";
     }
 
     /** The base chests trip (like the clear's), or null when there is nothing to put away / no chests known. */

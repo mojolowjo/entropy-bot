@@ -54,7 +54,7 @@ public final class GatherPlan {
          */
         default boolean knownBlock(String block) { return true; }
 
-        /** 0.28.0: the chunk pass's index knows ore of this family within 64 blocks inside the areas. */
+        /** 0.28.0: the chunk pass's index knows ore of this family within 64 blocks, the policy allowing. */
         default boolean oreKnown(String family) { return false; }
     }
 

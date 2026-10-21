@@ -11,7 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Overnight 2026-10-19 fixes: climb out at dawn, the coal goal's ways and reserve, the urgent hunt outside the areas. */
+/** Overnight 2026-10-19 fixes: climb out at dawn, the coal goal's ways and reserve, the hunt priced by its walk (no out hunt). */
 class AaFix3Test {
     final Clock.Fake clock = new Clock.Fake(10_000_000);
     final Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
@@ -43,14 +43,12 @@ class AaFix3Test {
         bb.in.pickTier = 2;
         Goals.Goal g = Goals.add(bb, COAL, 16, 0, clock.now());
         assertEquals("mine strip coal 16", Goals.chain(bb, g), "no facts: as before");
-        bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, false, true));
-        assertEquals("place mine north then mine strip coal 16", Goals.chain(bb, g), "no mine marked: place one in my areas");
-        bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, true, true));
+        bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, false));
+        assertEquals("place mine north then mine strip coal 16", Goals.chain(bb, g), "no mine marked: place one where I stand (the world is open)");
+        bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, true));
         assertEquals("mine strip coal 16", Goals.chain(bb, g));
-        bb.fact(Goals.WAYS_FACT, new Goals.Ways(30, true, true));
+        bb.fact(Goals.WAYS_FACT, new Goals.Ways(30, true));
         assertEquals("mine cave coal 16", Goals.chain(bb, g), "a known cave first");
-        bb.fact(Goals.WAYS_FACT, new Goals.Ways(-1, false, false));
-        assertEquals("explore 5", Goals.chain(bb, g), "outside my areas: look around");
         bb.fact(Goals.KNOWN_FACT, Map.of(g.r.key(), 5));
         assertEquals("mine coal 16 dig", Goals.chain(bb, g), "known ore: dig to it");
     }
@@ -76,15 +74,8 @@ class AaFix3Test {
     }
 
     @Test
-    void urgentHuntMayGoOut48() {
-        assertTrue(HuntRules.urgentOut(6, 20));
-        assertTrue(HuntRules.urgentOut(18, 9));
-        assertFalse(HuntRules.urgentOut(7, 10));
-        assertTrue(HuntRules.outOk(true, 48));
-        assertFalse(HuntRules.outOk(true, 49));
-        assertFalse(HuntRules.outOk(false, 5));
-        assertTrue(HuntRules.outWord("4 cow out"));
-        assertFalse(HuntRules.outWord("4 cow"));
-        assertArrayEquals(new Object[]{4, "minecraft:cow"}, HuntRules.parse("4 cow out"));
+    void theHuntHasNoOutWord() {
+        assertArrayEquals(new Object[]{4, "minecraft:cow"}, HuntRules.parse("4 cow"));
+        assertNull(HuntRules.parse("4 cow out"), "no out hunt: the walk to the animals is priced");
     }
 }

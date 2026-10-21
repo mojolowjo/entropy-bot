@@ -105,13 +105,13 @@ class MineNotesTest {
         return o;
     }
 
-    /** The world explore's target search sees: a set of explored chunks, an area, refused spots. */
+    /** The world explore's target search sees: a set of explored chunks, the box the policy allows (keep-out outside it), refused spots. */
     static final class Land implements ExploreRules.Land {
         final Set<String> explored = new HashSet<>();
         int x1 = -1000, x2 = 1000, z1 = -1000, z2 = 1000;
         Set<String> refusedAt = new HashSet<>();
         @Override public boolean explored(String key) { return explored.contains(key); }
-        @Override public boolean inside(int x, int z) { return x >= x1 && x <= x2 && z >= z1 && z <= z2; }
+        @Override public boolean allowed(int x, int z) { return x >= x1 && x <= x2 && z >= z1 && z <= z2; }
         @Override public boolean refused(int x, int y, int z) { return refusedAt.contains(x + " " + z); }
         @Override public void markRefused(String key) { explored.add(key); }
     }
@@ -131,7 +131,7 @@ class MineNotesTest {
         assertNotNull(t);
         assertTrue(Math.max(Math.abs(t.x()), Math.abs(t.z())) >= 32, "the nearest unexplored chunk: ring 3");
         assertEquals(8, Math.floorMod(t.x(), 16), "a chunk centre");
-        // the area ends at x 20: nothing east of it; a refused centre is marked and skipped
+        // the policy refuses east of x 20 (keep-out): nothing there; a refused centre is marked and skipped
         land.x2 = 20;
         land.x1 = -20;
         land.z1 = -20;
@@ -139,7 +139,7 @@ class MineNotesTest {
         land.refusedAt.add("-8 56");
         t = ExploreRules.target(OW, 0, 64, 0, land, null);
         assertNotNull(t);
-        assertEquals("8 56", t.x() + " " + t.z(), "inside the area, past the refused centre");
+        assertEquals("8 56", t.x() + " " + t.z(), "where the policy allows, past the refused centre");
         assertTrue(land.explored.contains(OW + " -1 3"), "the refused chunk is never tried again");
         // a job's own skip set
         Set<String> skip = new HashSet<>(List.of(ExploreRules.key(OW, t.x() >> 4, t.z() >> 4)));
@@ -163,7 +163,6 @@ class MineNotesTest {
         for (int i = 1; i <= 8; i++) fresh.add(new ExploreRules.Poi(i, i % 2 == 0 ? "dungeon" : "geode", i, 30, -i));
         assertEquals("explored 3 chunks in 2 min (nothing left to explore in reach); new: geode at 1 30 -1, dungeon at 2 30 -2, geode at 3 30 -3, dungeon at 4 30 -4, "
                 + "geode at 5 30 -5, dungeon at 6 30 -6 (+2 more, \"poi\")", ExploreRules.note(3, 2400, "nothing left to explore in reach", fresh));
-        assertEquals("error: I explore only inside my areas, and there are none - area here 48 work neutral", ExploreRules.NO_AREAS + "area here 48 work neutral");
     }
 
     /** 0.33.0: the report says how far the walk went and where it ended (Haiku run: -43 -18 to -268 117). */

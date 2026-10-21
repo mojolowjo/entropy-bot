@@ -8,14 +8,12 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PrereqTest {
-    @Test void woodPrereqFromPlannerWhy() {
-        String why = "missing 1 logs - none in storage; no trees in my areas (area here 48 woods neutral where trees grow)";
-        assertEquals(4, Ways.logsMissing(why));
-        assertEquals(64, Ways.logsMissing("missing 64 logs - none in storage; no trees in my areas"));
-        assertEquals(0, Ways.logsMissing("missing 24 cobblestone - none in storage; one quarry per plan"));
-        assertEquals(0, Ways.logsMissing(null));
+    @Test void woodPrereqFromThePlannersNumber() {
+        assertEquals(4, Ways.logsToCut(1));
+        assertEquals(64, Ways.logsToCut(64));
+        assertEquals(64, Ways.logsToCut(200));
+        assertEquals(0, Ways.logsToCut(0), "no logs missing: no wood row");
     }
-
     @Test void zeroGainIsFailure() {
         assertTrue(AaLadder.zeroGain("done - mining coal: got 0 of 32 - no coal ore known yet (walked 0 blocks)"));
         assertFalse(AaLadder.zeroGain("done - mining coal: got 10 of 32"));

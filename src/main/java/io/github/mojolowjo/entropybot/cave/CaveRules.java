@@ -46,7 +46,7 @@ public final class CaveRules {
      *
      * @param ores    the search's ores, nearest first
      * @param tried   "x y z" -> tries (updated)
-     * @param refused the guard refuses walking to it (goalAllowed != null)
+     * @param refused the guard refuses walking to it (walkVerdict != null)
      * @param canMine a pickaxe in the bag gets its drops
      * @param tooHard short ids left for a better pickaxe (updated)
      */
