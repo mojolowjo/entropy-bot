@@ -69,10 +69,22 @@ public final class AaDesires {
      * (Costs.tools); the anti-flicker is the adapter's smoothed pickaxe tier (Costs.ToolSmoother), not a cap.
      */
     static double tools(Blackboard bb) {
-        double blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(bb.in.pickTier, bb.in.furnaceKnown || bb.in.furnaceInBag,
-                bb.in.coal, bb.in.torches, ownerOreGoal(bb));
+        double blocked;
+        String why;
+        TechTree tt = tree(bb);
+        var tiers = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.source();
+        if (tt != null && tiers != null) {           // AA_ROUND4 C: from the tags and the recipes
+            var r = io.github.mojolowjo.entropybot.aa.brain.MiningTiers.blocked(tt, tiers, have(bb), bb.in.pickTier,
+                    (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("blockedTop"));
+            blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(r, bb.in.pickTier, ownerOreGoal(bb));
+            why = r.terms();
+        } else {                                     // no recipe graph or mining tags read yet: the old table, said so
+            blocked = io.github.mojolowjo.entropybot.aa.brain.Costs.blocked(bb.in.pickTier, bb.in.furnaceKnown || bb.in.furnaceInBag,
+                    bb.in.coal, bb.in.torches, ownerOreGoal(bb));
+            why = "blocked share from the fallback table (" + (tt == null ? "no recipe graph" : "no mining tags") + " yet)";
+        }
         double sword = io.github.mojolowjo.entropybot.aa.brain.Costs.sword(bb.in.zombieSeen, bb.in.armed);
-        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "tools", io.github.mojolowjo.entropybot.aa.brain.Costs.toolsTerms(bb.in.pickTier, bb.in.pickPct, blocked)
+        io.github.mojolowjo.entropybot.aa.brain.Costs.note(bb, "tools", io.github.mojolowjo.entropybot.aa.brain.Costs.toolsTerms(bb.in.pickTier, bb.in.pickPct, blocked, why)
                 + (sword > 0 ? ", + " + Math.round(sword) + " no weapon (a zombie seen)" : ""));
         // the pickaxe's worth only while it is wanted (a stone pickaxe at 100%: the sword alone)
         boolean pickWanted = bb.in.pickTier < 2 || (bb.in.pickPct < 15 && bb.in.pickaxes < 2);

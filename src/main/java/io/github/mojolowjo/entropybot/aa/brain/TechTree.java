@@ -138,13 +138,24 @@ public final class TechTree {
     private int ideasN;
     private List<Idea> ideasLast = List.of();
 
-    private List<Idea> ideas0(Set<String> have, int n) {
+    /** All recipes (normalised ids), read-only: the mining-tier pass walks them. */
+    public List<Recipe> recipes() { return java.util.Collections.unmodifiableList(recipes); }
+
+    /**
+     * The top {@code n} things worth making that are not had, best first, whether or not their ingredients are had yet
+     * (what {@link MiningTiers} asks of: which of these does the pickaxe tier hold back).
+     */
+    public synchronized List<Idea> top(Set<String> have, int n) { return ideas0(have, n, false); }
+
+    private List<Idea> ideas0(Set<String> have, int n) { return ideas0(have, n, true); }
+
+    private List<Idea> ideas0(Set<String> have, int n, boolean needIngredients) {
         Set<String> h = norm(have);
         Map<String, Double> best = new HashMap<>();
         for (Recipe r : recipes) {
             if (h.contains(r.result()) || best.containsKey(r.result())) continue;
             boolean ok = true;
-            for (Set<String> s : r.slots()) {
+            if (needIngredients) for (Set<String> s : r.slots()) {
                 boolean any = false;
                 for (String i : s) if (h.contains(i)) { any = true; break; }
                 if (!any) { ok = false; break; }

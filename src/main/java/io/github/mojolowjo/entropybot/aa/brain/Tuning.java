@@ -61,6 +61,7 @@ public final class Tuning {
         def("torchCut", 0.05, "AA_ROUND4 B2", "each torch within 16 cuts the night danger by this share");
         def("lightFloor", 0.7, "AA_ROUND4 B2", "the most the torches may cut the night danger to");
         def("swordValue", 25, "aa-night2 P0 2", "a weapon's worth once a zombie was seen, added to the tools need");
+        def("blockedTop", 8, "AA_ROUND4 C", "how many of the tech tree's top ideas the pickaxe tier is checked against (Costs.blocked)");
         def("chestMin", 35, "aa-kit camp", "the camp chest's least worth");
         def("hidePerHp", 7, "aa-night2 P0 1", "the hide's score per missing health point x the night danger");
         def("danger.hpS", 6, "AA_CLEANUP 4", "seconds one health point is worth at full health (regen + food), the cost_of_hp curve's low end");

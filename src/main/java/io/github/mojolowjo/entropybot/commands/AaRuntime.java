@@ -2486,6 +2486,13 @@ public final class AaRuntime implements JobPort {
                     } catch (RuntimeException e) {
                         LOG.warn("[entropybot] aa: item worth data not read - the tables stay in use: {}", e.toString());
                     }
+                    try {       // AA_ROUND4 C: the pickaxe tier each block needs (Costs.blocked)
+                        var mt = MiningTierSource.read();
+                        io.github.mojolowjo.entropybot.aa.brain.MiningTiers.use(mt);
+                        LOG.info("[entropybot] aa: mining tiers from data: {} pickaxes, {} blocks need a tool", mt.pickaxes, mt.blocksNeedingTool);
+                    } catch (RuntimeException e) {
+                        LOG.warn("[entropybot] aa: mining tier data not read - the blocked share uses the old table: {}", e.toString());
+                    }
                     treeError = null;
                     LOG.info("[entropybot] aa: tech tree from {} recipes ({} usable)", all.size(), t.size());
                 }
