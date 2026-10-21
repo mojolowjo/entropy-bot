@@ -763,7 +763,7 @@ public final class FloorFill {
         /** From feet x y z (eye ey) a neighbour of c is in reach, and the bot's body isn't in c. */
         boolean placeableFrom(double x, double y, double z, double ey, Pos c) {
             if (bodyHits(x, y, z, c)) return false;
-            return PlaceRules.placeSide(w, c.x(), c.y(), c.z(), x, ey, z) != null;
+            return PlaceRules.placeSideSeen(w, c.x(), c.y(), c.z(), x, ey, z, PlaceRules.PLACE_REACH) != null;
         }
 
         /** The stand spot for a floor cell: on the walkway (feet above the layer), the fence's, not in water, cheapest walk. */

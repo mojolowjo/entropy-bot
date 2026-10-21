@@ -210,7 +210,7 @@ public final class WaterPlan {
         int bx = (int) Math.floor(bot.x()), by = (int) Math.floor(bot.y() + 0.01), bz = (int) Math.floor(bot.z());
         // where it stands now, when that reaches (the eye exactly where it is)
         if (!FloorFill.bodyHits(bot.x(), bot.y(), bot.z(), cell) && !ov.fluid(bx, by, bz) && !ov.fluid(bx, by + 1, bz)
-                && PlaceRules.placeSide(ov, cell.x(), cell.y(), cell.z(), bot.x(), bot.eyeY(), bot.z()) != null) {
+                && PlaceRules.placeSideSeen(ov, cell.x(), cell.y(), cell.z(), bot.x(), bot.eyeY(), bot.z(), PlaceRules.PLACE_REACH) != null) {
             return new Pos(bx, by, bz);
         }
         Pos best = null;
@@ -228,6 +228,7 @@ public final class WaterPlan {
                     else if (standOk != null) continue;
                     else cost = 1000 + Math.sqrt(sq(x - bot.x()) + sq(y - bot.y()) + sq(z - bot.z()));
                     if (cost >= bestCost) continue;
+                    // 0.39.p4: the distance pick here (the planned seal blocks are not in the ray test); the place step re-walks to a seen face
                     if (PlaceRules.placeSide(ov, cell.x(), cell.y(), cell.z(), x + 0.5, y + Bot.EYE, z + 0.5) == null) continue;
                     best = new Pos(x, y, z);
                     bestCost = cost;

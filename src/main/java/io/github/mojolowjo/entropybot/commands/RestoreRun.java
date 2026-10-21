@@ -139,11 +139,11 @@ final class RestoreRun {
             w.set(p);
             boolean botInCell = p.getBoundingBox().intersects(new AABB(pos));
             boolean reach = !botInCell && p.getEyePosition().distanceTo(pos.getCenter()) <= 4.5
-                    && PlaceRules.placeSide(w, e.x, e.y, e.z, p.getX(), p.getEyeY(), p.getZ()) != null;
+                    && PlaceRules.placeSideSeen(w, e.x, e.y, e.z, p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH) != null;
             if (reach) {
                 stage = "place";
             } else {
-                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null);
+                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null, true);
                 IBaritone b = Jobs.baritone();
                 if (spot == null || b == null || (spot.x() == e.x && spot.z() == e.z && (spot.y() == e.y || spot.y() + 1 == e.y))) {
                     skip(e, "couldn't reach");
@@ -276,7 +276,7 @@ final class RestoreRun {
                 stageTick = now;
                 breakStarted = false;
             } else {
-                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null);
+                ClearGrid.Spot spot = PlaceRules.standFor(w, new Pos(e.x, e.y, e.z), McClearWorld.botOf(p), null, true);
                 IBaritone b = Jobs.baritone();
                 if (spot == null || b == null || (spot.x() == e.x && spot.z() == e.z && (spot.y() == e.y || spot.y() + 1 == e.y))) {
                     skip(e, "couldn't reach");

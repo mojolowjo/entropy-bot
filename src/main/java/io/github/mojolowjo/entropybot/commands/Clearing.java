@@ -1254,9 +1254,15 @@ public final class Clearing {
             if (Gui.inventory(p).getOrDefault(id, 0) <= 0) return ps.optional ? "next" : "I have no " + sid + " to place";
             IBaritone b = Jobs.baritone();
             int[] stand = ps.from;
+            LiveWorld w0 = new LiveWorld();
+            w0.set(p);
+            // 0.39.p4 (review 2): a preset stand spot that sees no face of the cell is replaced by one that does
+            if (stand != null && PlaceRules.placeSideSeen(w0, pos[0], pos[1], pos[2], stand[0] + 0.5, stand[1] + io.github.mojolowjo.entropybot.clear.Bot.EYE, stand[2] + 0.5, PlaceRules.PLACE_REACH) == null) {
+                LOG.info("[entropybot] place: {} at {} - no face seen from the preset spot {}: picking a stand spot", sid, Jobs.fmt(pos), Jobs.fmt(stand));
+                stand = null;
+            }
             if (stand == null) {
-                LiveWorld w = new LiveWorld();
-                w.set(p);
+                LiveWorld w = w0;
                 if (PlaceRules.placeSideSeen(w, pos[0], pos[1], pos[2], p.getX(), p.getEyeY(), p.getZ(), PlaceRules.PLACE_REACH) == null) {
                     var spot = PlaceRules.standFor(w, new Pos(pos[0], pos[1], pos[2]), McClearWorld.botOf(p), standCheck(seq.jobs.core().commands), true);
                     if (spot == null) return ps.optional ? "next" : "nowhere to stand within reach of " + Jobs.fmt(pos) + " to place the " + sid;
