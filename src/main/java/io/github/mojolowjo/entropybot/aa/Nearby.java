@@ -44,6 +44,8 @@ public final class Nearby {
         boolean allowed(int x, int y, int z);
         /** The block id at the cell. */
         String blockAt(int x, int y, int z);
+        /** The most logs one chop takes as one tree (Baritone's chopComponentMax); unknown: no cap. */
+        default int treeCap() { return Integer.MAX_VALUE; }  // structural: no cap known
     }
 
     /**
@@ -70,7 +72,7 @@ public final class Nearby {
                 String id = s.blockAt(p[0], p[1], p[2]);
                 if (id == null || !blocks.contains(id) || !s.allowed(p[0], p[1], p[2]) || !s.fairOk(p[0], p[1], p[2])) continue;
                 if (s.isLog(id) && !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                return new Spot(p[0], p[1], p[2], dist(p, me), id);
+                return new Spot(p[0], p[1], p[2], dist(p, me), id, s.isLog(id) ? treeLogs(s.logs(scanR()), p, s.treeCap()) : 0);
             }
         }
         return fallback == null ? null : fallback.get();
@@ -84,14 +86,41 @@ public final class Nearby {
     public static Spot log(Scan s, int[] me, Supplier<Spot> fallback) {
         if (s != null) {
             int checked = 0;
-            for (int[] p : sorted(s.logs(scanR()), me)) {
+            List<int[]> logs = s.logs(scanR());
+            for (int[] p : sorted(logs, me)) {
                 if (checked++ >= maxChecks()) break;
                 if (!s.allowed(p[0], p[1], p[2]) || !s.leavesNear(p[0], p[1], p[2], leafReach())) continue;
-                return new Spot(p[0], p[1], p[2], dist(p, me), s.blockAt(p[0], p[1], p[2]));
+                return new Spot(p[0], p[1], p[2], dist(p, me), s.blockAt(p[0], p[1], p[2]), treeLogs(logs, p, s.treeCap()));
             }
         }
         return fallback == null ? null : fallback.get();
     }
+
+    /**
+     * S20: the tree's log count, the fork chop's own rule (its ChopTree.component): the log cells of Baritone's scan connected to
+     * {@code start} through the 26 neighbours, at most {@code cap} (Baritone's chopComponentMax). At least 1 (the start).
+     */
+    public static int treeLogs(List<int[]> logs, int[] start, int cap) {
+        Set<String> cells = new java.util.HashSet<>();
+        if (logs != null) for (int[] p : logs) cells.add(key(p[0], p[1], p[2]));
+        cells.add(key(start[0], start[1], start[2]));
+        Set<String> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+        seen.add(key(start[0], start[1], start[2]));
+        queue.add(start);
+        int n = 0;
+        while (!queue.isEmpty() && n < cap) {
+            int[] at = queue.poll();
+            n++;
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+                String k = key(at[0] + dx, at[1] + dy, at[2] + dz);
+                if (cells.contains(k) && seen.add(k)) queue.add(new int[]{at[0] + dx, at[1] + dy, at[2] + dz});
+            }
+        }
+        return n;
+    }
+
+    private static String key(int x, int y, int z) { return x + "," + y + "," + z; }
 
     private static List<int[]> sorted(List<int[]> in, int[] me) {
         List<int[]> out = new ArrayList<>(in == null ? List.of() : in);

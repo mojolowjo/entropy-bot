@@ -48,7 +48,7 @@ import java.util.function.ToDoubleFunction;
 public final class NeedChain {
     private NeedChain() {}
 
-    /** A seen source: a cell to walk to, the straight-line {@code dist}, the block's id (its pickaxe tier comes from it), how many blocks there are (0: not counted, as many as needed). */
+    /** A seen source: a cell to walk to, the straight-line {@code dist}, the block's id (its pickaxe tier comes from it), how many blocks there are (0: not counted, as many as needed; a tree: its connected logs, all of which the chop takes). */
     public record Spot(int x, int y, int z, double dist, String block, int count) {
         public Spot(int x, int y, int z, double dist, String block) { this(x, y, z, dist, block, 0); }
         String key() { return x + "," + y + "," + z; }
@@ -681,19 +681,23 @@ public final class NeedChain {
             double per = perBlock(c, item, sp.block());
             int blocksWanted = (int) Math.ceil(remaining / per - 1e-9);  // structural: epsilon
             int avail = sp.count() <= 0 ? blocksWanted : sp.count() - c.taken.getOrDefault(sp.key(), 0);
-            int take = Math.min(avail, blocksWanted);
+            // S20 (owner 2026-10-22): the chop takes the whole tree (the fork's ChopTree), so a counted tree is priced and
+            // bagged by all its logs, the surplus to stock; the next tree only while the need is not covered
+            boolean whole = log && sp.count() > 0;
+            int take = whole ? avail : Math.min(avail, blocksWanted);
             if (take <= 0) continue;
-            int got = Math.min(remaining, (int) Math.floor(take * per + 1e-9));  // structural: epsilon
+            int got = whole ? (int) Math.floor(take * per + 1e-9) : Math.min(remaining, (int) Math.floor(take * per + 1e-9));  // structural: epsilon
             if (got <= 0) got = Math.min(remaining, take);
+            int wanted = Math.min(remaining, got);                       // the step's number: what the need asks of this source
             Integer at = c.leafAt.get(sp.key());
             if (at != null) {
                 Step prev = c.steps.get(at);
-                c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + got, t.log())
-                        : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + got));
+                c.steps.set(at, prev instanceof Step.ChopTree t ? new Step.ChopTree(t.at(), t.logs() + wanted, t.log())
+                        : new Step.Collect(((Step.Collect) prev).item(), ((Step.Collect) prev).n() + wanted));
             } else {
                 // chop: no walk step before a block source (the cut/collect paths itself; the spot names the blocks and the price)
                 c.leafAt.put(sp.key(), c.steps.size());
-                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, got, null) : new Step.Collect(sh(item), got));
+                c.steps.add(log ? new Step.ChopTree(new int[]{sp.x(), sp.y(), sp.z()}, wanted, null) : new Step.Collect(sh(item), wanted));
                 c.seconds += walkS(sp.dist());
                 c.away = sp.dist();
             }

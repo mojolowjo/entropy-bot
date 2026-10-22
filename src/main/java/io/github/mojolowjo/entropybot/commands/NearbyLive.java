@@ -136,6 +136,14 @@ final class NearbyLive {
                 return false;
             }
             @Override public boolean allowed(int x, int y, int z) { return c.workAllowed(adim, x, y, z); }
+            @Override public int treeCap() {
+                try {
+                    return BaritoneAPI.getSettings().chopComponentMax.value;      // the fork's chop: one tree is at most this many logs
+                } catch (LinkageError e) {
+                    io.github.mojolowjo.entropybot.Quiet.warn("nearby: this Baritone has no chopComponentMax (not the Entropy fork), trees counted uncapped", e);
+                    return Nearby.Scan.super.treeCap();
+                }
+            }
             @Override public String blockAt(int x, int y, int z) {
                 BlockPos q = new BlockPos(x, y, z);
                 return mc.level.isLoaded(q) ? BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(q).getBlock()).toString() : null;

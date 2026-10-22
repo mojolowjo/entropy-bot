@@ -61,13 +61,14 @@ class ScenariosTest {
         assertTrue(c.dropped().isEmpty(), c.dropped().toString());
     }
 
+    /** S2 (S20 rule): walk 10 m 3.01 + the whole tree, 4 logs x 3.0 = 12.0: 15.01 s (was 6.0, 1 log wanted). */
     @Test
     void s2_aTreeSeenTenMetresIsWalkPlusBreakAndNoExplore() {
         world("wooden");
         Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 4)))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(6.0, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 6.0 s"), c.why());
+        assertEquals(15.01, c.seconds(), TOL, c.why());
+        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 15.0 s"), c.why());
         assertTrue(c.dropped().isEmpty(), c.dropped().toString());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Explore), c.steps().toString());
     }
@@ -86,18 +87,20 @@ class ScenariosTest {
 
     static Map<String, List<Spot>> s4Seen() { return Map.of("oak_log", List.of(tree(30, 6)), "cobblestone", List.of(STONE_12)); }
 
+    /** S4 (S20 rule): the tree term is walk 30 m 9.03 + the whole tree, 6 logs x 3.0 = 18.0 (was 3 x 3.0): 28.05 + 9.0 = 37.05 s. */
     @Test
     void s4_threeCobblestoneTakeTheWoodenPickaxeAndDropTheLoopAndTheUnknownSources() {
         world("wooden", "stone", "iron", "golden");
         Chain c = NeedChain.resolve("cobblestone", 3, w(Map.of(), false, false, s4Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(28.05, c.seconds(), TOL, c.why());
+        assertEquals(37.05, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("cobblestone <- dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
         assertTrue(chain.contains("craft: 3 oak_planks") && chain.contains("2 stick") && chain.contains("table") && chain.contains("tree seen 30 m"), c.why());
         assertFalse(chain.contains("gold") || chain.contains("iron") || chain.contains("stone_pickaxe"), "no other pickaxe in the chain: " + c.why());
         Step.ChopTree chop = c.steps().stream().filter(s -> s instanceof Step.ChopTree).map(s -> (Step.ChopTree) s).findFirst().orElseThrow();
-        assertEquals(3, chop.logs(), "9 planks = 3 logs: " + c.steps());
+        assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.ChopTree).count(), "one cut: " + c.steps());
+        assertEquals(1, chop.logs(), "S20: the first planks craft asks 1 log; the cut takes all 6, the other 2 of the 3 come from the bag: " + c.steps());
         assertEquals(6, c.steps().stream().filter(s -> s instanceof Step.Craft).count(), "3 planks, sticks, table, pickaxe: " + c.steps());
         assertEquals(3, c.dropped().size(), c.dropped().toString());
         assertTrue(c.dropped().get(0).startsWith("golden_pickaxe: no known source"), c.dropped().toString());
@@ -106,29 +109,32 @@ class ScenariosTest {
         assertTrue(c.dropped().stream().noneMatch(d -> d.contains(" blocks")), "one unit, seconds: " + c.dropped());
     }
 
+    /** S5 (S20 rule): S4 37.05 + walk back 12 m 3.6 + craft 0.3 = 40.95 s (was 31.95). */
     @Test
     void s5_theStonePickaxeAddsTheWalkBackToTheTableAndOneCraftSticksAreReused() {
         world("wooden", "stone", "iron", "golden");
         Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, s4Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(31.95, c.seconds(), TOL, c.why());
+        assertEquals(40.95, c.seconds(), TOL, c.why());
         assertTrue(c.why().startsWith("stone_pickaxe <- craft: 3 cobblestone <- dig cobblestone seen 12 m with wooden_pickaxe"), c.why());
         assertEquals(1, crafts(c, "stick"), "4 sticks made, 2 used, the 2 left are the stone pickaxe's: " + c.steps());
         assertEquals("stone_pickaxe", ((Step.Craft) c.steps().get(c.steps().size() - 1)).item(), c.steps().toString());
         assertFalse(chainPart(c.why()).contains("gold"), c.why());
     }
 
+    /** S6 (S20 rule): near 3.01 + 5 logs x 3.0 = 18.01 s (was 6.0); far 12.04 + 15.0 = 27.04 s (was 15.0), dropped. */
     @Test
     void s6_twoTreesTheNearOneIsCutAndTheFarOneIsDroppedWithItsSeconds() {
         world("wooden");
         Chain c = NeedChain.resolve("oak_log", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(40, 5), tree(10, 5)))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(6.0, c.seconds(), TOL, c.why());
-        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 6.0 s"), c.why());
+        assertEquals(18.01, c.seconds(), TOL, c.why());
+        assertTrue(c.why().startsWith("oak_log <- cut tree seen 10 m: 18.0 s"), c.why());
         assertEquals(1, c.dropped().size(), c.dropped().toString());
-        assertTrue(c.dropped().get(0).startsWith("tree 40 m: 15.0 s"), c.dropped().toString());
+        assertTrue(c.dropped().get(0).startsWith("tree 40 m: 27.0 s"), c.dropped().toString());
     }
 
+    /** S7 (S20 rule): after is 10.05 s as before; the tree term gone is 9.0 + 6 x 3.0 = 27.0 (was 9.0 + 3 x 3.0 = 18.0). */
     @Test
     void s7_afterTheLogsAreInTheBagTheChainReadsFromPlanksAndNothingIsCountedTwice() {
         world("wooden", "stone", "iron", "golden");
@@ -137,7 +143,7 @@ class ScenariosTest {
         Chain after = NeedChain.resolve("cobblestone", 3, w(Map.of("minecraft:oak_log", 3), false, false, seen));
         assertTrue(after.ok() && !after.explore(), after.why());
         assertEquals(10.05, after.seconds(), TOL, after.why());
-        assertEquals(18.0, before.seconds() - after.seconds(), TOL, "the tree term (9.0 + 3 x 3.0) is gone");
+        assertEquals(27.0, before.seconds() - after.seconds(), TOL, "the tree term (9.0 + 6 x 3.0, the whole tree) is gone");
         assertTrue(after.steps().stream().noneMatch(s -> s instanceof Step.ChopTree), after.steps().toString());
         assertFalse(chainPart(after.why()).contains("tree"), after.why());
     }
@@ -162,13 +168,14 @@ class ScenariosTest {
         assertEquals(1, crafts(c, "gold_trinket"), c.steps().toString());
     }
 
+    /** S9 (S20 rule): the whole 6-log tree, 18.0 instead of 3 logs 9.0: 28.35 + 9.0 = 37.35 s. */
     @Test
     void s9_fromNothingTheTableIsAnItemWoodTableWoodenPickaxeCobblestoneStonePickaxeAndNoCellIsAsked() {
         world("wooden", "stone");
         Spot stone16 = new Spot(0, 60, 16, 16, "minecraft:stone", 40);
         Chain c = NeedChain.resolve("stone_pickaxe", 1, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(28.35, c.seconds(), TOL, c.why());
+        assertEquals(37.35, c.seconds(), TOL, c.why());
         assertFalse(c.why().contains("free cell") || c.why().contains("no free"), c.why());
         assertTrue(c.dropped().stream().noneMatch(d -> d.contains("cell")), c.dropped().toString());
         int chop = -1, table = -1, wooden = -1, dig = -1, stonePick = -1;
@@ -181,7 +188,8 @@ class ScenariosTest {
             else if (s instanceof Step.Craft k && k.item().equals("stone_pickaxe")) stonePick = i;
         }
         assertTrue(chop >= 0 && chop < table && table < wooden && wooden < dig && dig < stonePick, c.steps().toString());
-        assertEquals(3, ((Step.ChopTree) c.steps().get(chop)).logs(), "9 planks = 3 logs: " + c.steps());
+        assertEquals(1, c.steps().stream().filter(s -> s instanceof Step.ChopTree).count(), "one cut: " + c.steps());
+        assertEquals(1, ((Step.ChopTree) c.steps().get(chop)).logs(), "S20: the first planks craft asks 1 log; the cut takes all 6, the rest from the bag: " + c.steps());
     }
 
     /** The tool tags the scenarios' tool group reads (ToolGroup), for the materials the planner data has recipes for. */
@@ -205,12 +213,12 @@ class ScenariosTest {
      * Coal ore asks for tier 1 (wood), so the dig pulls in the lowest pickaxe: the wooden one. No furnace (coal is mined, not
      * smelted) and no stone pickaxe.
      * <pre>
-     * wood:   walk 10 m 3.01 (10 x 1.3 / 4.317), 3 logs x 3.0 = 9.0                          = 12.01
+     * wood:   walk 10 m 3.01 (10 x 1.3 / 4.317), the whole tree (S20), 6 logs x 3.0 = 18.0    = 21.01  (was 3 logs, 12.01)
      *         planks: 3 batches of 4 (pickaxe 3, its sticks 2, the table 4 = 9; 3 left) x 0.3 = 0.9;
      *         sticks 0.3 (4 made, 2 for the pickaxe); table 0.3, place 0.15; wooden pickaxe 0.3   = 1.95
      * coal:   walk 20 m 6.02, 4 ore x (3 x 30 / 2 = 45 ticks = 2.25 s, wooden pickaxe) 9.0    = 15.02
      * torches: 4 sticks wanted, 2 left: one more stick craft 0.3 (2 of the 3 spare planks); 4 torch crafts x 0.3 = 1.2   = 1.5
-     * total 12.01 + 1.95 + 15.02 + 1.5 = 30.48 s
+     * total 21.01 + 1.95 + 15.02 + 1.5 = 39.48 s (was 30.48)
      * (one-planner: coal is coal, the torch's ingredient is the game's coals tag; charcoal, the other member, would need 7 logs
      * of a 6-log tree: it ends in an explore and stands no chance)
      * </pre>
@@ -223,7 +231,7 @@ class ScenariosTest {
         assertEquals(16, (int) io.github.mojolowjo.entropybot.aa.brain.Tuning.get("torch.target"));
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, Map.of("oak_log", List.of(tree(10, 6)), "coal", List.of(coal), "cobblestone", List.of(stone16))));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(30.48, c.seconds(), TOL, c.why());
+        assertEquals(39.48, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertFalse(chain.contains("stone_pickaxe") || chain.contains("furnace"), "wood tier digs coal ore: " + c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Smelt || s instanceof Step.Explore), c.steps().toString());
@@ -289,11 +297,12 @@ class ScenariosTest {
      * torch's ingredient is the game's coals tag (coal | charcoal); coal has no known source, so charcoal: 4 logs smelted in a furnace
      * (8 cobblestone, a wooden pickaxe, a table), the burn from the fuel table (3 planks of 300 ticks for 4 smelts of 200, left in the bag).
      * <pre>
-     * walk to the tree 10 m 3.01; 8 logs x 3.0 = 24.0 (4 charcoal, 4 for planks: pickaxe, its sticks, the table, the torches' sticks)
-     * crafts: planks x4 1.2, sticks x2 0.6, table 0.3, wooden pickaxe 0.3, furnace 0.3, torches x4 1.2 = 3.9; places: table, furnace 0.3
+     * walk to the tree 10 m 3.01; the whole tree (S20), 12 logs x 3.0 = 36.0 (4 charcoal, 3 for planks: pickaxe, its sticks, the
+     *   table, the torches' sticks = 11 planks; 3 of the surplus logs are the burn; 2 left)
+     * crafts: planks x3 0.9, sticks x2 0.6, table 0.3, wooden pickaxe 0.3, furnace 0.3, torches x4 1.2 = 3.6; places: table, furnace 0.3
      * walk to the stone 16 m 4.82; 8 cobblestone x 1.5 (wooden pickaxe: 2 x 30 / 2 = 30 ticks) = 12.0; walk back to the table 4.82
-     * smelt 4 x 10 = 40.0 (the bot waits); the burn: 3 planks already in the bag, 0
-     * total 3.01 + 24.0 + 3.9 + 0.3 + 4.82 + 12.0 + 4.82 + 40.0 = 92.85 s
+     * smelt 4 x 10 = 40.0 (the bot waits); the burn: 3 logs already in the bag (300 ticks each, the fuel table's cheapest), 0
+     * total 3.01 + 36.0 + 3.6 + 0.3 + 4.82 + 12.0 + 4.82 + 40.0 = 104.55 s (was 92.85: 8 logs 24.0, planks x4, burn 3 planks)
      * </pre>
      */
     @Test
@@ -301,10 +310,10 @@ class ScenariosTest {
         world("wooden", "stone");
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, s12Seen()));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(92.85, c.seconds(), TOL, c.why());
+        assertEquals(104.55, c.seconds(), TOL, c.why());
         String chain = chainPart(c.why());
         assertTrue(chain.startsWith("torch <- craft: 4 charcoal <- smelt 4 oak_log <- cut tree seen 10 m + furnace <- craft: 8 cobblestone"), c.why());
-        assertTrue(chain.contains("burn 3 oak_planks (in the bag)"), "planks burn, from the game's fuel table: " + c.why());
+        assertTrue(chain.contains("burn 3 oak_log (in the bag)"), "the tree's surplus logs burn, from the game's fuel table: " + c.why());
         assertFalse(c.why().contains("fuel"), "no family word anywhere: " + c.why());
         List<Class<?>> order = List.of(Step.ChopTree.class, Step.PlaceNear.class, Step.Collect.class, Step.Smelt.class);
         int last = -1;
@@ -320,9 +329,10 @@ class ScenariosTest {
     }
 
     /**
-     * S13: S12 plus coal ore 20 m (4 blocks): the coal path (S10's chain, 30.48 s) beats charcoal, which is listed with its seconds:
-     * the charcoal trial is S12 without the torches' own sticks and crafts (1 log 3.0 + planks 0.3 + sticks 0.3 + torches 1.2 = 4.8):
-     * 92.85 - 4.8 = 88.05 s. No furnace in the chain.
+     * S13: S12 plus coal ore 20 m (4 blocks): the coal path (S10's chain on S12's 12-log tree: 39.48 + 6 more logs x 3.0 = 57.48 s,
+     * was 30.48) beats charcoal, which is listed with its seconds: the charcoal trial is S12 without the torches' own sticks and crafts
+     * (the whole tree is cut anyway, so no log is saved; sticks 0.3 + torches 1.2 = 1.5): 104.55 - 1.5 = 103.05 s (was 88.05).
+     * No furnace in the chain.
      */
     @Test
     void s13_coalKnownBeatsCharcoalAndCharcoalIsDroppedWithItsSeconds() {
@@ -331,11 +341,11 @@ class ScenariosTest {
         seen.put("coal", List.of(new Spot(0, 40, 20, 20, "minecraft:coal_ore", 4)));
         Chain c = NeedChain.resolve("torch", 16, w(Map.of(), false, false, seen));
         assertTrue(c.ok() && !c.explore(), c.why());
-        assertEquals(30.48, c.seconds(), TOL, c.why());
+        assertEquals(57.48, c.seconds(), TOL, c.why());
         assertTrue(chainPart(c.why()).contains("4 coal <- dig coal seen 20 m with wooden_pickaxe"), c.why());
         assertFalse(chainPart(c.why()).contains("furnace"), c.why());
         String charcoal = c.dropped().stream().filter(d -> d.startsWith("charcoal: ")).findFirst().orElseThrow(() -> new AssertionError(c.dropped().toString()));
-        assertTrue(charcoal.startsWith("charcoal: 88.0 s (dearer than coal)"), charcoal);
+        assertTrue(charcoal.startsWith("charcoal: 103.0 s (dearer than coal)"), charcoal);
     }
 
     /** S14: the food need's world: the game's loot data says a cow drops 2 beef a kill, a wheat crop 1 wheat. */
@@ -466,11 +476,10 @@ class ScenariosTest {
      * chop paths itself; the spot only names the blocks and gives the price) and one cut of 3 at the tree. The fork's chop takes
      * the whole tree (its ChopTreeTest: quantity 3 keeps all 8 as targets, ends "have 8 valid items"), so the bag ends with 8.
      * <pre>
-     * the chain (what AA prices, unchanged rule):  walk 10 m 3.01 (10 x 1.3 / 4.317) + 3 logs x 3.0 = 9.0     = 12.01 s
-     * the run (what the chop does):               walk 10 m 3.01 + 8 logs x 3.0 = 24.0                       = 27.01 s
+     * the chain (S20 rule, the whole tree): walk 10 m 3.01 (10 x 1.3 / 4.317) + 8 logs x 3.0 = 24.0   = 27.01 s (was 12.01, 3 logs)
+     * the run (what the chop does):        walk 10 m 3.01 + 8 logs x 3.0 = 24.0                       = 27.01 s
      * </pre>
-     * The chain still prices the logs wanted (S2, S4, S9, S10, S12, S13 hold their hand numbers on that rule); pricing the
-     * whole tree is the owner's call (it would change those numbers).
+     * The chain and the run now agree. The step still asks for 3 (the need); the chop takes all 8.
      */
     @Test
     void s17_cutThreeLogsIsOneCutWithNoWalkAndTheChopTakesTheWholeTree() {
@@ -483,10 +492,39 @@ class ScenariosTest {
         assertEquals(3, cut.logs());
         assertArrayEquals(new int[]{10, 64, 0}, cut.at());
         assertEquals("cut at 10 64 0", NeedChain.sourceKey(cut), "its source key is the tree");
-        assertEquals(12.01, c.seconds(), TOL, c.why());
-        double walk = NeedChain.walkS(10), perLog = (c.seconds() - walk) / cut.logs();
-        assertEquals(3.0, perLog, TOL);
-        assertEquals(27.01, walk + 8 * perLog, TOL, "the run: the chop takes all 8 logs of the tree");
+        assertEquals(27.01, c.seconds(), TOL, "priced as the run: the chop takes all 8 logs of the tree: " + c.why());
+        assertEquals(3.0, (c.seconds() - NeedChain.walkS(10)) / 8, TOL, "3.0 s a log, 8 logs");
+    }
+
+    /**
+     * S20 (the tree price, owner 2026-10-22): the chain prices a cut by the whole tree, not by the logs wanted: need 3 logs, the
+     * nearest tree 8 logs 10 m. The chop takes all 8; the bag ends with 8, the 5 over are stock (a later craft in the same chain
+     * reads them from the bag). A second tree is taken only when the first does not cover the need.
+     * <pre>
+     * need 3, tree A 10 m (8 logs):                        walk 3.01 + 8 x 3.0 = 24.0                      = 27.01 s, one cut
+     * need 10, A 10 m (8) and B 40 m (8): A does not cover: 27.01 + walk 40 m 12.04 + 8 x 3.0 = 24.0          = 63.05 s, two cuts
+     * </pre>
+     */
+    @Test
+    void s20_aCutIsPricedByTheWholeTreeAndASecondTreeOnlyWhenTheFirstFallsShort() {
+        world("wooden");
+        Spot a = tree(10, 8), b = tree(40, 8);
+        World both = w(Map.of(), false, false, Map.of("oak_log", List.of(a, b)));
+        Chain three = NeedChain.resolve("oak_log", 3, both);
+        assertTrue(three.ok() && !three.explore(), three.why());
+        assertEquals(27.01, three.seconds(), TOL, three.why());
+        assertEquals(1, three.steps().size(), "the first tree covers 3: no second cut: " + three.steps());
+        assertEquals("cut 3 at 10 64 0", three.steps().get(0).text());
+        Chain ten = NeedChain.resolve("oak_log", 10, both);
+        assertEquals(63.05, ten.seconds(), TOL, ten.why());
+        assertEquals(List.of("cut 8 at 10 64 0", "cut 2 at 40 64 0"), ten.steps().stream().map(Step::text).toList(), "A short by 2: B too");
+        // the planks of 3 logs from the same tree in one chain: the surplus is in the bag, the tree is cut once
+        Chain planks = NeedChain.resolve("oak_planks", 20, both);
+        assertEquals(1, planks.steps().stream().filter(s -> s instanceof Step.ChopTree).count(), planks.steps().toString());
+        // the tree's count from Baritone's scan: the logs connected through the 26 neighbours, capped by the chop's own cap
+        List<int[]> scan = List.of(new int[]{0, 64, 0}, new int[]{0, 65, 0}, new int[]{1, 66, 1}, new int[]{0, 67, 0}, new int[]{5, 64, 5});
+        assertEquals(4, Nearby.treeLogs(scan, new int[]{0, 64, 0}, Integer.MAX_VALUE), "the 4 connected, not the far log");
+        assertEquals(2, Nearby.treeLogs(scan, new int[]{0, 64, 0}, 2), "the cap");
     }
 
     /**
@@ -536,8 +574,8 @@ class ScenariosTest {
      * S19 (chop D): cut 3 logs, tree A 10 m and tree B 40 m (8 logs each). The cut at A fails "none in range": that source is
      * held by its key (cut at 10 64 0), the chain is priced again at once and runs B; the chain row and B are not held.
      * <pre>
-     * first:  walk 10 m 3.01 + 3 x 3.0 = 12.01 s (A)
-     * again:  walk 40 m 12.04 (40 x 1.3 / 4.317) + 3 x 3.0 = 21.04 s (B, A out)
+     * first:  walk 10 m 3.01 + the whole tree 8 x 3.0 = 27.01 s (A; was 3 x 3.0, 12.01)
+     * again:  walk 40 m 12.04 (40 x 1.3 / 4.317) + 8 x 3.0 = 36.04 s (B, A out; was 21.04)
      * </pre>
      */
     @Test
@@ -545,8 +583,8 @@ class ScenariosTest {
         world("wooden");
         Spot a = tree(10, 8), b = tree(40, 8);
         World both = w(Map.of(), false, false, Map.of("oak_log", List.of(a, b)));
-        assertEquals(12.01, NeedChain.resolve("oak_log", 3, both).seconds(), TOL);
-        assertEquals(21.04, NeedChain.resolve("oak_log", 3, both.without((item, sp) -> sp.x() == 10)).seconds(), TOL, "B with A out");
+        assertEquals(27.01, NeedChain.resolve("oak_log", 3, both).seconds(), TOL);
+        assertEquals(36.04, NeedChain.resolve("oak_log", 3, both.without((item, sp) -> sp.x() == 10)).seconds(), TOL, "B with A out");
         var clock = new io.github.mojolowjo.entropybot.aa.core.Clock.Fake(10_000_000);
         var port = new io.github.mojolowjo.entropybot.aa.core.FakePort();
         var bb = new io.github.mojolowjo.entropybot.aa.core.Blackboard(clock, port, new io.github.mojolowjo.entropybot.aa.core.Tracer());
